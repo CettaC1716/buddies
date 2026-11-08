@@ -14,6 +14,10 @@ import type {
   Nep171OwnershipHistoryEntry,
   NearOnboardingMode,
 } from './nearClient';
+import {
+  type FishNftMarketplaceListing,
+  INITIAL_DEMO_FISH_MARKET_LISTINGS,
+} from '../game/buddiesFishingMarket';
 
 const DEFAULT_SUPABASE_URL = '';
 const DEFAULT_SUPABASE_ANON_KEY = '';
@@ -99,7 +103,11 @@ export interface DbMarketTransactionInsert {
     | 'fast_forward_week'
     | 'mint_gamepass'
     | 'transfer_gamepass'
-    | 'claim_base_plot';
+    | 'claim_base_plot'
+    | 'sell_fish'
+    | 'mint_fish_nft'
+    | 'list_fish_nft'
+    | 'buy_fish_nft';
   item_id?: string | null;
   nep245_token_id?: string | null;
   currency: 'LUL' | 'CYON' | 'RESPITE' | 'GOLD';
@@ -246,7 +254,11 @@ export async function fetchGamepassNftLedgerFromSupabase(
   try {
     const supabase = getSupabaseClient();
     if (!supabase) return null;
-    let query = supabase.from('bb_gamepass_nfts').select('*').limit(1);
+    let query = supabase
+      .from('bb_gamepass_nfts')
+      .select('*')
+      .neq('token_id', 'kai_fish_marketplace_ledger')
+      .limit(1);
     if (tokenIdOrOwner) {
       const clean = tokenIdOrOwner.trim().toLowerCase();
       if (clean.startsWith('nep171-')) {
@@ -650,5 +662,94 @@ export function subscribeToBuddiesBlitzRealtime(callbacks: {
     };
   } catch {
     return () => {};
+  }
+}
+
+/**
+ * Fetches live player-listed Fish NFTs at Kai's Beach Marketplace from `public.bb_gamepass_nfts`
+ * (`token_id = 'kai_fish_marketplace_ledger'`), initializing with demo listings if empty.
+ */
+export async function fetchFishMarketplaceListingsFromSupabase(): Promise<
+  FishNftMarketplaceListing[]
+> {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return INITIAL_DEMO_FISH_MARKET_LISTINGS;
+    const { data } = await supabase
+      .from('bb_gamepass_nfts')
+      .select('ownership_history')
+      .eq('token_id', 'kai_fish_marketplace_ledger')
+      .maybeSingle();
+
+    if (data && Array.isArray(data.ownership_history) && data.ownership_history.length > 0) {
+      return data.ownership_history as unknown as FishNftMarketplaceListing[];
+    }
+
+    await supabase.from('bb_gamepass_nfts').upsert(
+      {
+        token_id: 'kai_fish_marketplace_ledger',
+        owner_near_account: 'kai-merchant.buddiesblitz.testnet',
+        sub_account_id: 'fishmarket.kai-merchant.buddiesblitz.testnet',
+        treasury_respite: 0,
+        total_earned_respite: 0,
+        total_paid_out_respite: 0,
+        pending_payout_respite: 0,
+        active_access_key: 'ed25519:kai_fish_marketplace',
+        ownership_history: INITIAL_DEMO_FISH_MARKET_LISTINGS,
+        network: 'testnet',
+        tx_hash: 'kai-fish-marketplace-init',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'token_id' },
+    );
+
+    return INITIAL_DEMO_FISH_MARKET_LISTINGS;
+  } catch {
+    return INITIAL_DEMO_FISH_MARKET_LISTINGS;
+  }
+}
+
+/**
+ * Persists updated player Fish NFT listings at Kai's Beach Marketplace to `public.bb_gamepass_nfts`
+ * and logs the transaction in `public.bb_market_transactions`.
+ */
+export async function syncFishMarketplaceListingsToSupabase(params: {
+  listings: FishNftMarketplaceListing[];
+  transaction?: DbMarketTransactionInsert;
+}): Promise<boolean> {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+    await supabase.from('bb_gamepass_nfts').upsert(
+      {
+        token_id: 'kai_fish_marketplace_ledger',
+        owner_near_account: 'kai-merchant.buddiesblitz.testnet',
+        sub_account_id: 'fishmarket.kai-merchant.buddiesblitz.testnet',
+        treasury_respite: 0,
+        total_earned_respite: 0,
+        total_paid_out_respite: 0,
+        pending_payout_respite: 0,
+        active_access_key: 'ed25519:kai_fish_marketplace',
+        ownership_history: params.listings,
+        network: 'testnet',
+        tx_hash: params.transaction?.near_tx_hash || 'kai-fish-marketplace-sync',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'token_id' },
+    );
+
+    if (params.transaction) {
+      await insertMarketTransactionReceipt(params.transaction);
+      await supabase
+        .from('bb_npc_merchants')
+        .update({
+          last_headline: params.transaction.reasoning_summary.slice(0, 280),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('merchant_id', 'beach_house');
+    }
+    return true;
+  } catch {
+    return false;
   }
 }

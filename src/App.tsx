@@ -68,6 +68,7 @@ import {
   type Nep171GamepassSubAccountLedger,
 } from './lib/nearClient';
 import {
+  fetchFishMarketplaceListingsFromSupabase,
   fetchGamepassNftLedgerFromSupabase,
   fetchNpcMerchantsFromSupabase,
   fetchOrCreatePlayerProfile,
@@ -75,11 +76,19 @@ import {
   insertSocialChatMessageToSupabase,
   subscribeToBuddiesBlitzRealtime,
   syncBasePlotToSupabase,
+  syncFishMarketplaceListingsToSupabase,
   syncGamepassNftLedgerToSupabase,
   syncHouseInteriorToSupabase,
   syncNpcMerchantAndLogTransaction,
   syncPlayerBalancesToSupabase,
 } from './lib/supabaseClient';
+import {
+  detectNearbyFishingWaterZone,
+  rollRandomCaughtFish,
+  INITIAL_DEMO_FISH_MARKET_LISTINGS,
+  type CaughtFishItem,
+  type FishNftMarketplaceListing,
+} from './game/buddiesFishingMarket';
 
 const INITIAL_HUD: HudSnapshot = {
   hp: PLAYER_WARZONE_MAX_HP,
@@ -297,12 +306,23 @@ export default function App() {
   const [socialLoginInput, setSocialLoginInput] = useState<string>('commander@near.org');
   const [transferBuyerInput, setTransferBuyerInput] = useState<string>('buyer-omega.testnet');
   const [transferAuditBanner, setTransferAuditBanner] = useState<string | null>(null);
+  const [caughtFishBucket, setCaughtFishBucket] = useState<CaughtFishItem[]>([]);
+  const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>(
+    INITIAL_DEMO_FISH_MARKET_LISTINGS,
+  );
+  const [fishingPhase, setFishingPhase] = useState<'idle' | 'casting' | 'bite'>('idle');
+  const [lastCaughtFishToast, setLastCaughtFishToast] = useState<CaughtFishItem | null>(null);
 
   // Hydrate initial state from NEAR Testnet RPC & Supabase PostgreSQL + Realtime
   useEffect(() => {
     let mounted = true;
     void fetchNearNetworkStatus().then((status) => {
       if (mounted) setNearRpcStatus(status);
+    });
+    void fetchFishMarketplaceListingsFromSupabase().then((listings) => {
+      if (mounted && listings.length > 0) {
+        setFishMarketListings(listings);
+      }
     });
     void fetchNpcMerchantsFromSupabase().then((rows) => {
       if (!mounted || rows.length === 0) return;
@@ -336,6 +356,9 @@ export default function App() {
       onMerchantUpdated: (row) => {
         if (!mounted) return;
         setSupabaseConnected(true);
+        void fetchFishMarketplaceListingsFromSupabase().then((listings) => {
+          if (mounted) setFishMarketListings(listings);
+        });
         setMarketState((prev) => ({
           ...prev,
           treasuryCyon: row.cyon_treasury,
@@ -973,6 +996,42 @@ export default function App() {
     handleCycleLighting,
     handleToggleFovMode,
   ]);
+
+  const playerRadarDot = hud.radarDots.find((d) => d.kind === 'player');
+  const nearbyWaterZone = detectNearbyFishingWaterZone(
+    playerRadarDot?.x ?? 0,
+    playerRadarDot?.z ?? 0,
+  );
+
+  const handleTriggerFishingAction = useCallback(() => {
+    const pDot = hudRef.current.radarDots.find((d) => d.kind === 'player');
+    const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
+    const activeZone = waterCheck.zoneId ?? 'east_beach';
+    const actorAccount =
+      hudRef.current.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+
+    soundEngine.playUiClick();
+    dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+
+    if (fishingPhase === 'bite') {
+      const caught = rollRandomCaughtFish({
+        waterZone: activeZone,
+        caughtByAccount: actorAccount,
+      });
+      setCaughtFishBucket((prev) => [caught, ...prev]);
+      setLastCaughtFishToast(caught);
+      setFishingPhase('idle');
+      return;
+    }
+
+    if (fishingPhase === 'idle') {
+      setFishingPhase('casting');
+      setLastCaughtFishToast(null);
+      window.setTimeout(() => {
+        setFishingPhase((curr) => (curr === 'casting' ? 'bite' : curr));
+      }, 1600);
+    }
+  }, [dispatchBuddyAction, fishingPhase, nep171Ledger.ownerNearAccount]);
 
   const currentPresetConfig = LIGHTING_PRESETS[lightingPreset];
   const scaleX = hexRect.width / 500;
@@ -2368,6 +2427,110 @@ export default function App() {
           )}
 
           {/* =================================================================
+              3E-2. BOTTOM-CENTER: SHORELINE FISHING BAR (Active Near Any Water: Central Oasis Lake or East Beach)
+             ================================================================= */}
+          {playMode !== 'editor' && (nearbyWaterZone.canFish || lastCaughtFishToast) && (
+            <div
+              data-fishing-hud-bar="true"
+              className="fixed bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2"
+            >
+              {lastCaughtFishToast && (
+                <div
+                  data-caught-fish-toast="true"
+                  className="bg-[#0f172a] text-white border-3 border-black ring-2 ring-[#b8ff3c] shadow-[4px_4px_0_#000] px-3.5 py-2 flex items-center gap-3"
+                >
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black text-[9px] font-black uppercase">
+                        CAUGHT ({lastCaughtFishToast.rarity})
+                      </span>
+                      <span className="text-xs font-black uppercase text-[#fec83e]">
+                        {lastCaughtFishToast.speciesName} ({lastCaughtFishToast.weightKg.toFixed(2)} kg)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-300">
+                      Sell to Kai for +{lastCaughtFishToast.sellValueLul} LUL or Mint as NFT (-{lastCaughtFishToast.mintFeeLul} LUL fee)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    data-open-fish-market-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setMerchantLocation('beach_house');
+                      setActiveSpecialModal('npc_merchant');
+                      window.setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('open-npc-fish-market'));
+                      }, 30);
+                    }}
+                    className="-skew-x-6 px-3 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                  >
+                    <span className="skew-x-6 inline-block">OPEN FISH MARKET</span>
+                  </button>
+                </div>
+              )}
+
+              {nearbyWaterZone.canFish && (
+                <div className="bg-[#14161d]/95 text-white border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-3.5 py-2 flex items-center gap-3">
+                  <div className="flex flex-col">
+                    <span className="text-[9.5px] font-black uppercase tracking-wider text-[#38bdf8]">
+                      WATER DETECTED: {nearbyWaterZone.zoneLabel}
+                    </span>
+                    <span className="text-[10.5px] font-bold text-white/90">
+                      {fishingPhase === 'casting'
+                        ? 'Bobber in water... Waiting for fish bite...'
+                        : fishingPhase === 'bite'
+                          ? 'STRIKE! Fish on the hook — Reel in now!'
+                          : `Fish Bucket: ${caughtFishBucket.length} caught`}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-cast-fishing-rod-btn="true"
+                    disabled={fishingPhase === 'casting'}
+                    onClick={handleTriggerFishingAction}
+                    className={`-skew-x-12 px-3.5 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase transition-transform ${
+                      fishingPhase === 'bite'
+                        ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black animate-bounce cursor-pointer'
+                        : fishingPhase === 'casting'
+                          ? 'bg-slate-600 text-slate-300 cursor-wait'
+                          : 'bg-[#fec83e] hover:bg-[#fde047] text-black cursor-pointer active:scale-95'
+                    }`}
+                  >
+                    <span className="skew-x-12 inline-block">
+                      {fishingPhase === 'bite'
+                        ? 'REEL IN CATCH!'
+                        : fishingPhase === 'casting'
+                          ? 'WAITING FOR BITE...'
+                          : 'CAST FISHING ROD'}
+                    </span>
+                  </button>
+
+                  {caughtFishBucket.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setMerchantLocation('beach_house');
+                        setActiveSpecialModal('npc_merchant');
+                        window.setTimeout(() => {
+                          window.dispatchEvent(new CustomEvent('open-npc-fish-market'));
+                        }, 30);
+                      }}
+                      className="-skew-x-12 px-2.5 py-1.5 bg-[#2bb3b1] hover:bg-[#5eead4] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase cursor-pointer"
+                    >
+                      <span className="skew-x-12 inline-block">
+                        KAI MARKET ({caughtFishBucket.length})
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================
               3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR (Speech Bubble Above Character Head)
              ================================================================= */}
           {playMode !== 'editor' && (
@@ -2973,6 +3136,178 @@ export default function App() {
           }));
         }}
         onConnectWallet={() => dispatchBuddyAction('nearConnectAndMint')}
+        caughtFishBucket={caughtFishBucket}
+        fishMarketListings={fishMarketListings}
+        playerNearAccount={
+          hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet'
+        }
+        onSellCaughtFish={(fish: CaughtFishItem) => {
+          const actorAccount =
+            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+          if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);
+          dispatchBuddyAction(`adjustPlayerLul:${fish.sellValueLul}`);
+          const nextLul = hud.gold + fish.sellValueLul;
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: actorAccount,
+            lulBalance: nextLul,
+            cyonBalance,
+            respiteBalance,
+          });
+          void insertMarketTransactionReceipt({
+            merchant_id: 'beach_house',
+            actor_near_account: actorAccount,
+            action_type: 'sell_fish',
+            item_id: fish.speciesId,
+            currency: 'LUL',
+            amount: fish.sellValueLul,
+            unit_price: fish.sellValueLul,
+            reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai for +${fish.sellValueLul} LUL.`,
+          });
+        }}
+        onMintFishAsNft={(fish: CaughtFishItem) => {
+          if (hud.gold < fish.mintFeeLul) return;
+          const actorAccount =
+            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
+          const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
+          const nearTxHash = `near-fish-mint-${Date.now().toString(36)}`;
+          dispatchBuddyAction(`adjustPlayerLul:${-fish.mintFeeLul}`);
+          const nextLul = Math.max(0, hud.gold - fish.mintFeeLul);
+          setCaughtFishBucket((prev) =>
+            prev.map((f) =>
+              f.id === fish.id
+                ? {
+                    ...f,
+                    isMintedNft: true,
+                    nftTokenId,
+                    nearTxHash,
+                  }
+                : f,
+            ),
+          );
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: actorAccount,
+            lulBalance: nextLul,
+            cyonBalance,
+            respiteBalance,
+            ownedTokenIds: [...ownedMerchantItemIds, nftTokenId],
+          });
+          void insertMarketTransactionReceipt({
+            merchant_id: 'beach_house',
+            actor_near_account: actorAccount,
+            action_type: 'mint_fish_nft',
+            item_id: fish.speciesId,
+            nep245_token_id: nftTokenId,
+            currency: 'LUL',
+            amount: fish.mintFeeLul,
+            unit_price: fish.mintFeeLul,
+            reasoning_summary: `Self-minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NFT ${nftTokenId} (-${fish.mintFeeLul} LUL fee).`,
+            near_tx_hash: nearTxHash,
+          });
+        }}
+        onListFishNftOnMarket={(fish: CaughtFishItem, priceLul: number) => {
+          if (!fish.isMintedNft || !fish.nftTokenId) return;
+          const actorAccount =
+            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const newListing: FishNftMarketplaceListing = {
+            listingId: `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+            nftTokenId: fish.nftTokenId,
+            speciesId: fish.speciesId,
+            speciesName: fish.speciesName,
+            waterZone: fish.waterZone,
+            waterZoneLabel: fish.waterZoneLabel,
+            rarity: fish.rarity,
+            weightKg: fish.weightKg,
+            colorHex: fish.colorHex,
+            caughtByAccount: fish.caughtByAccount,
+            sellerNearAccount: actorAccount,
+            priceLul: Math.max(10, Math.round(priceLul)),
+            nearTxHash: fish.nearTxHash || `near-list-${Date.now().toString(36)}`,
+            listedAtIso: new Date().toISOString(),
+          };
+          setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+          setFishMarketListings((prev) => {
+            const next = [newListing, ...prev];
+            void syncFishMarketplaceListingsToSupabase({
+              listings: next,
+              transaction: {
+                merchant_id: 'beach_house',
+                actor_near_account: actorAccount,
+                action_type: 'list_fish_nft',
+                item_id: fish.speciesId,
+                nep245_token_id: newListing.nftTokenId,
+                currency: 'LUL',
+                amount: newListing.priceLul,
+                unit_price: newListing.priceLul,
+                reasoning_summary: `${actorAccount} listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) on Kai's Marketplace for ${newListing.priceLul} LUL.`,
+                near_tx_hash: newListing.nearTxHash,
+              },
+            });
+            return next;
+          });
+        }}
+        onBuyFishNftFromMarket={(listing: FishNftMarketplaceListing) => {
+          const actorAccount =
+            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const isOwnListing =
+            listing.sellerNearAccount.toLowerCase() === actorAccount.toLowerCase();
+          if (!isOwnListing && hud.gold < listing.priceLul) return;
+
+          if (!isOwnListing) {
+            dispatchBuddyAction(`adjustPlayerLul:${-listing.priceLul}`);
+            const nextLul = Math.max(0, hud.gold - listing.priceLul);
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: actorAccount,
+              lulBalance: nextLul,
+              cyonBalance,
+              respiteBalance,
+              ownedTokenIds: [...ownedMerchantItemIds, listing.nftTokenId],
+            });
+          }
+
+          const reclaimedFish: CaughtFishItem = {
+            id: `fish-nft-${Date.now()}`,
+            speciesId: listing.speciesId,
+            speciesName: listing.speciesName,
+            waterZone: listing.waterZone,
+            waterZoneLabel: listing.waterZoneLabel,
+            rarity: listing.rarity,
+            weightKg: listing.weightKg,
+            sellValueLul: Math.max(25, Math.round(listing.priceLul * 0.6)),
+            mintFeeLul: 0,
+            colorHex: listing.colorHex,
+            loreTag: `Acquired on Kai's P2P Fish Marketplace (Original Angler: ${listing.caughtByAccount}).`,
+            caughtByAccount: listing.caughtByAccount,
+            caughtAtIso: listing.listedAtIso,
+            isMintedNft: true,
+            nftTokenId: listing.nftTokenId,
+            nearTxHash: listing.nearTxHash,
+          };
+
+          setCaughtFishBucket((prev) => [reclaimedFish, ...prev]);
+          setFishMarketListings((prev) => {
+            const next = prev.filter((l) => l.listingId !== listing.listingId);
+            void syncFishMarketplaceListingsToSupabase({
+              listings: next,
+              transaction: {
+                merchant_id: 'beach_house',
+                actor_near_account: actorAccount,
+                action_type: 'buy_fish_nft',
+                item_id: listing.speciesId,
+                nep245_token_id: listing.nftTokenId,
+                currency: 'LUL',
+                amount: isOwnListing ? 0 : listing.priceLul,
+                unit_price: listing.priceLul,
+                reasoning_summary: isOwnListing
+                  ? `${actorAccount} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Kai's Marketplace.`
+                  : `${actorAccount} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listing.priceLul} LUL.`,
+                near_tx_hash: `near-trade-${Date.now().toString(36)}`,
+              },
+            });
+            return next;
+          });
+        }}
       />
 
       {/* =====================================================================
