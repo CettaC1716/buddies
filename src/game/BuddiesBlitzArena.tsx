@@ -210,6 +210,7 @@ import {
 } from './audio';
 import {
   loadAllRealBlitzAssets,
+  getCachedLoadedBlitzAssets,
   createBlitzInfiniteGrassSystem,
   createTolanCurvedPlanetEnvironment,
   applyPlanetCurvatureToObject,
@@ -1220,7 +1221,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // 4B. CURVED PLANET INFINITE GRASS + FLOATING DANDELION SEEDS SHADER
     // =========================================================================
     const blitzGrassSystem = createBlitzInfiniteGrassSystem(scene, windUniforms, isSoftwareGl);
-    let loadedBlitzAssets: LoadedBlitzAssets | null = null;
+    let loadedBlitzAssets: LoadedBlitzAssets | null = getCachedLoadedBlitzAssets();
     const realPropsGroup = new THREE.Group();
     realPropsGroup.name = 'RealBlitzFactoryProps';
     scene.add(realPropsGroup);
@@ -1932,6 +1933,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // 3. Spawn all trees & props from layout
       layout.props.forEach((p) => spawnSingleMapProp(p));
+      scene.userData.__staticWorldAligned = false;
       navGridDirty = true;
     };
 
@@ -3473,228 +3475,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     // Load all real bundled Blitz .glb models & .ktx2 textures via GLTFLoader + DRACOLoader + KTX2Loader
     let isDisposed = false;
-    let earlyLoadedCharGltf: LoadedBlitzAssets['charBuddiesGltf'] = null;
-    let earlyLoadedManGltf: LoadedBlitzAssets['manCharacterBuddiesGltf'] = null;
-    loadAllRealBlitzAssets(renderer, (charGltf, manGltf) => {
-      if (isDisposed) return;
-      earlyLoadedCharGltf = charGltf;
-      earlyLoadedManGltf = manGltf;
-      const earlyCharGltf =
-        getDefaultCharacterGender() === 'male' ? manGltf ?? charGltf : charGltf;
-      if (earlyCharGltf && playerUnit) {
-        upgradeBuddyRigWithCharBuddiesGlb(playerUnit.rig, earlyCharGltf);
-        updateCharacterWeaponStance(
-          playerUnit.rig,
-          playerUnit.weaponId,
-          playerUnit.walkCycle,
-          false,
-          playerUnit.carryingCrate !== 'none',
-          playerUnit.saluteTimer,
-          playerUnit.weaponRecoil,
-        );
-      }
-      // Stagger remaining AI & NPC character skeleton clones across animation frames so main thread never blocks
-      const pendingUnits = buddyUnits.filter((b) => !b.isPlayer);
-      let staggerIdx = 0;
-      const stepStaggeredUpgrades = () => {
-        if (isDisposed) return;
-        const activeChar =
-          getDefaultCharacterGender() === 'male'
-            ? earlyLoadedManGltf ?? earlyLoadedCharGltf
-            : earlyLoadedCharGltf;
-        if (staggerIdx < pendingUnits.length) {
-          const b = pendingUnits[staggerIdx++];
-          if (activeChar) {
-            upgradeBuddyRigWithCharBuddiesGlb(b.rig, activeChar);
-            updateCharacterWeaponStance(
-              b.rig,
-              b.weaponId,
-              b.walkCycle,
-              false,
-              b.carryingCrate !== 'none',
-              b.saluteTimer,
-              b.weaponRecoil,
-            );
-          }
-          requestAnimationFrame(stepStaggeredUpgrades);
-        } else if (earlyLoadedCharGltf || earlyLoadedManGltf) {
-          if (earlyLoadedCharGltf) {
-            upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, earlyLoadedCharGltf);
-          }
-          const kaiEarlyGltf = earlyLoadedManGltf ?? earlyLoadedCharGltf;
-          if (kaiEarlyGltf) {
-            upgradeBuddyRigWithCharBuddiesGlb(beachHouseNpc.npcRig, kaiEarlyGltf);
-          }
-          lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
-          beachHouseNpc.npcRig.weaponRigGroup.visible = false;
-          if (activeChar) {
-            tanks.forEach((t) => {
-              if (t.riderGroup.userData.riderRig) {
-                upgradeBuddyRigWithCharBuddiesGlb(t.riderGroup.userData.riderRig, activeChar);
-              }
-            });
-          }
-        }
-      };
-      requestAnimationFrame(stepStaggeredUpgrades);
-    })
-      .then((assets) => {
-        if (isDisposed) return;
-        loadedBlitzAssets = assets;
-        document.body.dataset.assetsLoaded = 'true';
-
-        // 1. Rebuild all trees (8-10 units tall with lush canopies), courtyard garden trees & real .glb props from currentMapLayout
-        rebuildMapFromLayout(currentMapLayout);
-        populateMilitaryBaseGardenTreesFromGlb(blueBase.baseGroup, assets, windUniforms, isSoftwareGl);
-        populateMilitaryBaseGardenTreesFromGlb(redBase.baseGroup, assets, windUniforms, isSoftwareGl);
-
-        // 2. Populate any active Tanks & Dump Trucks with real buddy-tank.glb or dump-truck.glb (without concrete pipes!)
-        const activeCharGltf =
-          getDefaultCharacterGender() === 'male'
-            ? assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf
-            : assets.charBuddiesGltf;
-        tanks.forEach((t) => {
-          if (t.riderGroup.userData.riderRig) {
-            upgradeBuddyRigWithCharBuddiesGlb(
-              t.riderGroup.userData.riderRig,
-              activeCharGltf,
-            );
-          }
-          if (t.vehicleKind === 'plane') return;
-          if (t.vehicleKind === 'truck') {
-            populateRealBlitzDumpTruckFromGlb(
-              t.bodyGroup,
-              t.turretGroup,
-              t.riderGroup,
-              assets,
-              windUniforms,
-              isSoftwareGl,
-            );
-            syncBlitzDumpTruckCargoVisuals(t.bodyGroup, t.storedCrates);
-            return;
-          }
-          populateRealBlitzTankFromGlb(
-            t.bodyGroup,
-            t.turretGroup,
-            t.barrelGroup,
-            t.riderGroup,
-            t.muzzleFlash,
-            assets.playerGltf?.scene ?? null,
-            assets.playerTrackPoints,
-            windUniforms,
-            t.isSuper,
-            isSoftwareGl,
-          );
-        });
-
-        // 3. Populate all active Dropped Crates, Overhead Carried Crates, and Pad Slots with real Buddies Blitz wooden-box.glb & metal-box-1a.glb!
-        worldCrates.forEach((c) => {
-          populateRealBlitzCrateBoxFromGlb(
-            c.boxVisualGroup,
-            c.kind,
-            assets,
-            windUniforms,
-            isSoftwareGl,
-            UNIFIED_WORLD_CRATE_SIZE,
-          );
-        });
-        worldPickups.forEach((pk) => {
-          pk.mesh.traverse((obj) => {
-            if (obj.userData?.rifleGroupRef) {
-              populateAr99AssaultFromGlb(
-                obj.userData.rifleGroupRef as THREE.Group,
-                assets.ar99AssaultGltf,
-                isSoftwareGl,
-              );
-            }
-          });
-        });
-        buddyUnits.forEach((b) => {
-          upgradeBuddyRigWithCharBuddiesGlb(
-            b.rig,
-            activeCharGltf,
-            assets.ar99AssaultGltf,
-          );
-          updateCharacterWeaponStance(
-            b.rig,
-            b.weaponId,
-            b.walkCycle,
-            false,
-            b.carryingCrate !== 'none',
-            b.saluteTimer,
-            b.weaponRecoil,
-          );
-          if (b.isPlayer) {
-            const hidePlayerHandWeapon =
-              !qcForceWeaponVisible &&
-              (worldModeRef.current === 'lobby' ||
-                worldModeRef.current === 'safezone' ||
-                cityArenaMode === 'safezone');
-            if (hidePlayerHandWeapon) {
-              b.rig.weaponRigGroup.visible = false;
-              b.rig.pistolGroup.visible = false;
-              b.rig.rifleGroup.visible = false;
-              b.rig.bazookaGroup.visible = false;
-              if (b.rig.laserGroup) b.rig.laserGroup.visible = false;
-              if (b.rig.gatlingGroup) b.rig.gatlingGroup.visible = false;
-              b.weaponMesh.visible = false;
-            }
-          }
-          if (b.carryingCrate !== 'none') {
-            populateRealBlitzCrateBoxFromGlb(
-              b.overheadCrateGroup,
-              b.carryingCrate,
-              assets,
-              windUniforms,
-              isSoftwareGl,
-              UNIFIED_WORLD_CRATE_SIZE,
-            );
-          }
-        });
-        upgradeBuddyRigWithCharBuddiesGlb(
-          lobbyCafeNpc.npcRig,
-          assets.charBuddiesGltf,
-        );
-        upgradeBuddyRigWithCharBuddiesGlb(
-          beachHouseNpc.npcRig,
-          assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf,
-        );
-        lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
-        beachHouseNpc.npcRig.weaponRigGroup.visible = false;
-        syncPadVisuals(blueBase, bluePadSlots, 'BLUE', blueBaseHp);
-        syncPadVisuals(redBase, redPadSlots, 'RED', redBaseHp);
-
-        // 4. Populate Projectile Pool with Real 3D Bullet Shells from blitz-shell.glb (Bullet_Boss, Bullet_Player, Bullet_Fodder)
-        const bulletTemplates: Blitz3dBulletTemplates | null = buildRealBlitzBulletTemplates(
-          assets.bulletGltf,
-          windUniforms,
-        );
-        if (bulletTemplates) {
-          for (const p of projectiles) {
-            const bossShell = bulletTemplates.bossShell.clone(true);
-            const playerShell = bulletTemplates.playerShell.clone(true);
-            const fodderShell = bulletTemplates.fodderShell.clone(true);
-            bossShell.visible = false;
-            playerShell.visible = false;
-            fodderShell.visible = false;
-            p.mesh.add(bossShell);
-            p.mesh.add(playerShell);
-            p.mesh.add(fodderShell);
-            p.bossShell = bossShell;
-            p.playerShell = playerShell;
-            p.fodderShell = fodderShell;
-            p.has3dShells = true;
-          }
-        }
-
-        // Optional ?tank=1 or ?truck=1 inspection flag
-        if (window.location.search.includes('tank=1') && tanks.length === 0) {
-          tanks.push(createBlitzTankVehicle(3.8, 12.2, false, 'blue'));
-        }
-      })
-      .catch(() => {
-        // Fallback procedural meshes remain active if optional GLB assets are unavailable
-      });
+    let earlyLoadedCharGltf: LoadedBlitzAssets['charBuddiesGltf'] =
+      loadedBlitzAssets?.charBuddiesGltf ?? null;
+    let earlyLoadedManGltf: LoadedBlitzAssets['manCharacterBuddiesGltf'] =
+      loadedBlitzAssets?.manCharacterBuddiesGltf ?? null;
 
     // 1. Clean Zero-Prebuilt Start: All 4 Stacking Pads per Base start completely empty (0/8 crates)
     const createEmptyPadSlots = (): CrateSlotType[] => [
@@ -5404,6 +5188,241 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       },
     });
     const projectiles = projectilePool.slots;
+
+    loadAllRealBlitzAssets(renderer, (charGltf, manGltf) => {
+      if (isDisposed) return;
+      earlyLoadedCharGltf = charGltf;
+      earlyLoadedManGltf = manGltf;
+      const earlyCharGltf =
+        getDefaultCharacterGender() === 'male' ? manGltf ?? charGltf : charGltf;
+      if (earlyCharGltf && playerUnit) {
+        upgradeBuddyRigWithCharBuddiesGlb(playerUnit.rig, earlyCharGltf);
+        updateCharacterWeaponStance(
+          playerUnit.rig,
+          playerUnit.weaponId,
+          playerUnit.walkCycle,
+          false,
+          playerUnit.carryingCrate !== 'none',
+          playerUnit.saluteTimer,
+          playerUnit.weaponRecoil,
+        );
+        const hidePlayerHandWeapon =
+          !qcForceWeaponVisible &&
+          (worldModeRef.current === 'lobby' ||
+            worldModeRef.current === 'safezone' ||
+            cityArenaMode === 'safezone');
+        if (hidePlayerHandWeapon) {
+          playerUnit.rig.weaponRigGroup.visible = false;
+          playerUnit.rig.pistolGroup.visible = false;
+          playerUnit.rig.rifleGroup.visible = false;
+          playerUnit.rig.bazookaGroup.visible = false;
+          if (playerUnit.rig.laserGroup) playerUnit.rig.laserGroup.visible = false;
+          if (playerUnit.rig.gatlingGroup) playerUnit.rig.gatlingGroup.visible = false;
+          playerUnit.weaponMesh.visible = false;
+        }
+      }
+      // Stagger remaining AI & NPC character skeleton clones across animation frames so main thread never blocks
+      const pendingUnits = buddyUnits.filter((b) => !b.isPlayer);
+      let staggerIdx = 0;
+      const stepStaggeredUpgrades = () => {
+        if (isDisposed) return;
+        const activeChar =
+          getDefaultCharacterGender() === 'male'
+            ? earlyLoadedManGltf ?? earlyLoadedCharGltf
+            : earlyLoadedCharGltf;
+        if (staggerIdx < pendingUnits.length) {
+          const b = pendingUnits[staggerIdx++];
+          if (activeChar) {
+            upgradeBuddyRigWithCharBuddiesGlb(b.rig, activeChar);
+            updateCharacterWeaponStance(
+              b.rig,
+              b.weaponId,
+              b.walkCycle,
+              false,
+              b.carryingCrate !== 'none',
+              b.saluteTimer,
+              b.weaponRecoil,
+            );
+          }
+          requestAnimationFrame(stepStaggeredUpgrades);
+        } else if (earlyLoadedCharGltf || earlyLoadedManGltf) {
+          if (earlyLoadedCharGltf) {
+            upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, earlyLoadedCharGltf);
+          }
+          const kaiEarlyGltf = earlyLoadedManGltf ?? earlyLoadedCharGltf;
+          if (kaiEarlyGltf) {
+            upgradeBuddyRigWithCharBuddiesGlb(beachHouseNpc.npcRig, kaiEarlyGltf);
+          }
+          lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
+          beachHouseNpc.npcRig.weaponRigGroup.visible = false;
+          if (activeChar) {
+            tanks.forEach((t) => {
+              if (t.riderGroup.userData.riderRig) {
+                upgradeBuddyRigWithCharBuddiesGlb(t.riderGroup.userData.riderRig, activeChar);
+              }
+            });
+          }
+        }
+      };
+      requestAnimationFrame(stepStaggeredUpgrades);
+    })
+      .then((assets) => {
+        if (isDisposed) return;
+        loadedBlitzAssets = assets;
+        document.body.dataset.assetsLoaded = 'true';
+
+        // 1. Rebuild all trees (8-10 units tall with lush canopies), courtyard garden trees & real .glb props from currentMapLayout
+        rebuildMapFromLayout(currentMapLayout);
+        populateMilitaryBaseGardenTreesFromGlb(blueBase.baseGroup, assets, windUniforms, isSoftwareGl);
+        populateMilitaryBaseGardenTreesFromGlb(redBase.baseGroup, assets, windUniforms, isSoftwareGl);
+
+        // 2. Populate any active Tanks & Dump Trucks with real buddy-tank.glb or dump-truck.glb (without concrete pipes!)
+        const activeCharGltf =
+          getDefaultCharacterGender() === 'male'
+            ? assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf
+            : assets.charBuddiesGltf;
+        tanks.forEach((t) => {
+          if (t.riderGroup.userData.riderRig) {
+            upgradeBuddyRigWithCharBuddiesGlb(
+              t.riderGroup.userData.riderRig,
+              activeCharGltf,
+            );
+          }
+          if (t.vehicleKind === 'plane') return;
+          if (t.vehicleKind === 'truck') {
+            populateRealBlitzDumpTruckFromGlb(
+              t.bodyGroup,
+              t.turretGroup,
+              t.riderGroup,
+              assets,
+              windUniforms,
+              isSoftwareGl,
+            );
+            syncBlitzDumpTruckCargoVisuals(t.bodyGroup, t.storedCrates);
+            return;
+          }
+          populateRealBlitzTankFromGlb(
+            t.bodyGroup,
+            t.turretGroup,
+            t.barrelGroup,
+            t.riderGroup,
+            t.muzzleFlash,
+            assets.playerGltf?.scene ?? null,
+            assets.playerTrackPoints,
+            windUniforms,
+            t.isSuper,
+            isSoftwareGl,
+          );
+        });
+
+        // 3. Populate all active Dropped Crates, Overhead Carried Crates, and Pad Slots with real Buddies Blitz wooden-box.glb & metal-box-1a.glb!
+        worldCrates.forEach((c) => {
+          populateRealBlitzCrateBoxFromGlb(
+            c.boxVisualGroup,
+            c.kind,
+            assets,
+            windUniforms,
+            isSoftwareGl,
+            UNIFIED_WORLD_CRATE_SIZE,
+          );
+        });
+        worldPickups.forEach((pk) => {
+          pk.mesh.traverse((obj) => {
+            if (obj.userData?.rifleGroupRef) {
+              populateAr99AssaultFromGlb(
+                obj.userData.rifleGroupRef as THREE.Group,
+                assets.ar99AssaultGltf,
+                isSoftwareGl,
+              );
+            }
+          });
+        });
+        buddyUnits.forEach((b) => {
+          upgradeBuddyRigWithCharBuddiesGlb(
+            b.rig,
+            activeCharGltf,
+            assets.ar99AssaultGltf,
+          );
+          updateCharacterWeaponStance(
+            b.rig,
+            b.weaponId,
+            b.walkCycle,
+            false,
+            b.carryingCrate !== 'none',
+            b.saluteTimer,
+            b.weaponRecoil,
+          );
+          if (b.isPlayer) {
+            const hidePlayerHandWeapon =
+              !qcForceWeaponVisible &&
+              (worldModeRef.current === 'lobby' ||
+                worldModeRef.current === 'safezone' ||
+                cityArenaMode === 'safezone');
+            if (hidePlayerHandWeapon) {
+              b.rig.weaponRigGroup.visible = false;
+              b.rig.pistolGroup.visible = false;
+              b.rig.rifleGroup.visible = false;
+              b.rig.bazookaGroup.visible = false;
+              if (b.rig.laserGroup) b.rig.laserGroup.visible = false;
+              if (b.rig.gatlingGroup) b.rig.gatlingGroup.visible = false;
+              b.weaponMesh.visible = false;
+            }
+          }
+          if (b.carryingCrate !== 'none') {
+            populateRealBlitzCrateBoxFromGlb(
+              b.overheadCrateGroup,
+              b.carryingCrate,
+              assets,
+              windUniforms,
+              isSoftwareGl,
+              UNIFIED_WORLD_CRATE_SIZE,
+            );
+          }
+        });
+        upgradeBuddyRigWithCharBuddiesGlb(
+          lobbyCafeNpc.npcRig,
+          assets.charBuddiesGltf,
+        );
+        upgradeBuddyRigWithCharBuddiesGlb(
+          beachHouseNpc.npcRig,
+          assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf,
+        );
+        lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
+        beachHouseNpc.npcRig.weaponRigGroup.visible = false;
+        syncPadVisuals(blueBase, bluePadSlots, 'BLUE', blueBaseHp);
+        syncPadVisuals(redBase, redPadSlots, 'RED', redBaseHp);
+
+        // 4. Populate Projectile Pool with Real 3D Bullet Shells from blitz-shell.glb (Bullet_Boss, Bullet_Player, Bullet_Fodder)
+        const bulletTemplates: Blitz3dBulletTemplates | null = buildRealBlitzBulletTemplates(
+          assets.bulletGltf,
+          windUniforms,
+        );
+        if (bulletTemplates) {
+          for (const p of projectiles) {
+            const bossShell = bulletTemplates.bossShell.clone(true);
+            const playerShell = bulletTemplates.playerShell.clone(true);
+            const fodderShell = bulletTemplates.fodderShell.clone(true);
+            bossShell.visible = false;
+            playerShell.visible = false;
+            fodderShell.visible = false;
+            p.mesh.add(bossShell);
+            p.mesh.add(playerShell);
+            p.mesh.add(fodderShell);
+            p.bossShell = bossShell;
+            p.playerShell = playerShell;
+            p.fodderShell = fodderShell;
+            p.has3dShells = true;
+          }
+        }
+
+        // Optional ?tank=1 or ?truck=1 inspection flag
+        if (window.location.search.includes('tank=1') && tanks.length === 0) {
+          tanks.push(createBlitzTankVehicle(3.8, 12.2, false, 'blue'));
+        }
+      })
+      .catch((err) => {
+        console.error('[BuddiesBlitzArena] Failed to populate Blitz 3D assets:', err);
+      });
 
     const activeNuclearLaunchers: NuclearLauncherTurretRig[] = [];
     let nukeStrikeState: NuclearStrikeSequenceState = createInitialNuclearStrikeState();

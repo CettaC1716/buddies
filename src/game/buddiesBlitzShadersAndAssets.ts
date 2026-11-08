@@ -3808,6 +3808,10 @@ export interface LoadedBlitzAssets {
   treeFoliageTex: THREE.Texture;
 }
 
+export function getCachedLoadedBlitzAssets(): LoadedBlitzAssets | null {
+  return cachedLoadedBlitzAssets;
+}
+
 /**
  * Loads the real bundled .glb models and .ktx2 textures using GLTFLoader + DRACOLoader + KTX2Loader
  */
@@ -3816,11 +3820,23 @@ export async function loadAllRealBlitzAssets(
   onCharacterGltfReady?: (charBuddiesGltf: GLTF | null, manCharacterBuddiesGltf: GLTF | null) => void,
 ): Promise<LoadedBlitzAssets> {
   if (cachedLoadedBlitzAssets) {
-    onCharacterGltfReady?.(
-      cachedLoadedBlitzAssets.charBuddiesGltf,
-      cachedLoadedBlitzAssets.manCharacterBuddiesGltf,
-    );
+    if (onCharacterGltfReady) {
+      const cached = cachedLoadedBlitzAssets;
+      Promise.resolve().then(() => {
+        onCharacterGltfReady(cached.charBuddiesGltf, cached.manCharacterBuddiesGltf);
+      });
+    }
     return cachedLoadedBlitzAssets;
+  }
+  if (inFlightLoadedBlitzAssetsPromise) {
+    if (onCharacterGltfReady) {
+      inFlightLoadedBlitzAssetsPromise
+        .then((loaded) => {
+          onCharacterGltfReady(loaded.charBuddiesGltf, loaded.manCharacterBuddiesGltf);
+        })
+        .catch(() => {});
+    }
+    return inFlightLoadedBlitzAssetsPromise;
   }
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url) => {
@@ -3878,47 +3894,7 @@ export async function loadAllRealBlitzAssets(
       .catch(() => {});
   }
 
-  const [
-    playerGltf,
-    tree1aGltf,
-    tree1bGltf,
-    hydrantGltf,
-    explosiveBarrelGltf,
-    powerCoreGltf,
-    turbineGltf,
-    concreteFenceGltf,
-    concreteFence1bGltf,
-    concretePipeGltf,
-    barricadeGltf,
-    lamppost1aGltf,
-    lamppost1bGltf,
-    benchGltf,
-    chimneyGltf,
-    giantTankGltf,
-    dumpTruckGltf,
-    craneGltf,
-    recycleBinGltf,
-    trafficConeGltf,
-    wheelbarrowGltf,
-    tank1aGltf,
-    tank1bGltf,
-    pipeCluster1aGltf,
-    pipeCluster1bGltf,
-    giantPipe1aGltf,
-    giantPipe1bGltf,
-    pallet1aGltf,
-    barrel1cGltf,
-    fuelGltf,
-    circuitGltf,
-    hBeamGltf,
-    forkliftGltf,
-    bulletGltf,
-    charBuddiesGltf,
-    manCharacterBuddiesGltf,
-    ar99AssaultGltf,
-    playerTrackPoints,
-    treeFoliageTex,
-  ] = await Promise.all([
+  inFlightLoadedBlitzAssetsPromise = Promise.all([
     loadOptionalGltf('/assets/buddies/models/buddy-tank.glb'),
     loadOptionalGltf('/assets/buddies/models/tree-1a.glb'),
     loadOptionalGltf('/assets/buddies/models/tree-1b.glb'),
@@ -3960,54 +3936,102 @@ export async function loadAllRealBlitzAssets(
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null),
     loadFoliageTex(),
-  ]);
+  ]).then(
+    ([
+      playerGltf,
+      tree1aGltf,
+      tree1bGltf,
+      hydrantGltf,
+      explosiveBarrelGltf,
+      powerCoreGltf,
+      turbineGltf,
+      concreteFenceGltf,
+      concreteFence1bGltf,
+      concretePipeGltf,
+      barricadeGltf,
+      lamppost1aGltf,
+      lamppost1bGltf,
+      benchGltf,
+      chimneyGltf,
+      giantTankGltf,
+      dumpTruckGltf,
+      craneGltf,
+      recycleBinGltf,
+      trafficConeGltf,
+      wheelbarrowGltf,
+      tank1aGltf,
+      tank1bGltf,
+      pipeCluster1aGltf,
+      pipeCluster1bGltf,
+      giantPipe1aGltf,
+      giantPipe1bGltf,
+      pallet1aGltf,
+      barrel1cGltf,
+      fuelGltf,
+      circuitGltf,
+      hBeamGltf,
+      forkliftGltf,
+      bulletGltf,
+      charBuddiesGltf,
+      manCharacterBuddiesGltf,
+      ar99AssaultGltf,
+      playerTrackPoints,
+      treeFoliageTex,
+    ]) => {
+      dracoLoader.dispose();
+      ktx2Loader.dispose();
+      const loaded: LoadedBlitzAssets = {
+        playerGltf,
+        tree1aGltf,
+        tree1bGltf,
+        hydrantGltf,
+        explosiveBarrelGltf,
+        powerCoreGltf,
+        turbineGltf,
+        concreteFenceGltf,
+        concreteFence1bGltf,
+        concretePipeGltf,
+        barricadeGltf,
+        lamppost1aGltf,
+        lamppost1bGltf,
+        benchGltf,
+        chimneyGltf,
+        giantTankGltf,
+        dumpTruckGltf,
+        craneGltf,
+        recycleBinGltf,
+        trafficConeGltf,
+        wheelbarrowGltf,
+        tank1aGltf,
+        tank1bGltf,
+        pipeCluster1aGltf,
+        pipeCluster1bGltf,
+        giantPipe1aGltf,
+        giantPipe1bGltf,
+        pallet1aGltf,
+        barrel1cGltf,
+        fuelGltf,
+        circuitGltf,
+        hBeamGltf,
+        forkliftGltf,
+        bulletGltf,
+        charBuddiesGltf,
+        manCharacterBuddiesGltf,
+        ar99AssaultGltf,
+        playerTrackPoints,
+        treeFoliageTex,
+      };
+      cachedLoadedBlitzAssets = loaded;
+      inFlightLoadedBlitzAssetsPromise = null;
+      return loaded;
+    },
+  );
 
-  const loaded: LoadedBlitzAssets = {
-    playerGltf,
-    tree1aGltf,
-    tree1bGltf,
-    hydrantGltf,
-    explosiveBarrelGltf,
-    powerCoreGltf,
-    turbineGltf,
-    concreteFenceGltf,
-    concreteFence1bGltf,
-    concretePipeGltf,
-    barricadeGltf,
-    lamppost1aGltf,
-    lamppost1bGltf,
-    benchGltf,
-    chimneyGltf,
-    giantTankGltf,
-    dumpTruckGltf,
-    craneGltf,
-    recycleBinGltf,
-    trafficConeGltf,
-    wheelbarrowGltf,
-    tank1aGltf,
-    tank1bGltf,
-    pipeCluster1aGltf,
-    pipeCluster1bGltf,
-    giantPipe1aGltf,
-    giantPipe1bGltf,
-    pallet1aGltf,
-    barrel1cGltf,
-    fuelGltf,
-    circuitGltf,
-    hBeamGltf,
-    forkliftGltf,
-    bulletGltf,
-    charBuddiesGltf,
-    manCharacterBuddiesGltf,
-    ar99AssaultGltf,
-    playerTrackPoints,
-    treeFoliageTex,
-  };
-  cachedLoadedBlitzAssets = loaded;
-  return loaded;
+  return inFlightLoadedBlitzAssetsPromise;
 }
 
 let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
+let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
 
@@ -4246,6 +4270,20 @@ export function spawnRealBlitzPropFromGlb(
     const cachedTemplate = sceneCache.get(cacheKey);
     if (cachedTemplate) {
       const clonedWrapper = cachedTemplate.clone(true);
+      clonedWrapper.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (m.isMesh && m.material && (m.material as THREE.ShaderMaterial).isShaderMaterial) {
+          const sm = m.material as THREE.ShaderMaterial;
+          if (sm.uniforms) {
+            if (sm.uniforms.uLightDirection) {
+              sm.uniforms.uLightDirection = windUniforms.uLightDirection;
+            }
+            if (sm.uniforms.uLightColor) {
+              sm.uniforms.uLightColor = windUniforms.uLightColor;
+            }
+          }
+        }
+      });
       clonedWrapper.position.set(x, getRawGroundElevation(x, z), z);
       clonedWrapper.rotation.set(0, rotY, 0);
       clonedWrapper.userData.windFanNodes = [];
