@@ -302,30 +302,27 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
       )}
 
       {/* =====================================================================
-          2. MOBILE & TABLET VIRTUAL MOVEMENT JOYSTICK (BOTTOM-LEFT)
-             + TOUCH QUICK-ACTION BUTTONS (BOTTOM-RIGHT)
+          2. MOBILE & TABLET VIRTUAL MOVEMENT JOYSTICK (BOTTOM-LEFT, RAISED ABOVE CHAT BAR)
+             + SEMI-TRANSPARENT TOUCH QUICK-ACTION BUTTONS (BOTTOM-RIGHT)
          ===================================================================== */}
       {showMobileJoystick && (
         <div
           aria-label="Mobile & Tablet Touch Controls"
           data-mobile-controls-layer="true"
           data-device-form-factor={viewport.formFactor}
-          className="fixed inset-0 pointer-events-none z-30 select-none overflow-hidden"
+          className="fixed inset-0 pointer-events-none z-[25] select-none overflow-hidden"
         >
-          {/* BOTTOM-LEFT: 360° Analog Virtual Movement Joystick */}
+          {/* BOTTOM-LEFT (RAISED ABOVE CHAT INPUT BAR): Semi-Transparent 360° Analog Virtual Movement Joystick */}
           <div
             className={`pointer-events-auto fixed ${
-              isCompactLandscape ? 'bottom-3 left-3' : 'bottom-5 left-5 sm:bottom-6 sm:left-6'
-            } flex flex-col items-center gap-1 touch-none`}
+              isCompactLandscape
+                ? 'bottom-[64px] left-3.5'
+                : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
+            } flex flex-col items-center gap-1 touch-none transition-opacity duration-150 ${
+              isJoystickActive ? 'opacity-90' : 'opacity-55 hover:opacity-75'
+            }`}
           >
-            {/* Status Pill Above Joystick */}
-            <div className="-skew-x-12 px-2 py-0.5 bg-[#12151c]/90 text-white border border-black shadow-[2px_2px_0_#000] text-[9px] font-black uppercase tracking-wider">
-              <span className="skew-x-12 inline-block">
-                {isJoystickActive ? (isSprinting ? '⚡ SPRINTING' : '● MOVING') : 'MOVE JOYSTICK'}
-              </span>
-            </div>
-
-            {/* Circular Joystick Touch Pad */}
+            {/* Circular Semi-Transparent Joystick Touch Pad */}
             <div
               ref={joystickBaseRef}
               role="application"
@@ -337,57 +334,61 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
               onPointerCancel={handleJoystickPointerUpOrCancel}
               style={{ touchAction: 'none' }}
               className={`relative ${
-                isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-32 sm:h-32'
-              } rounded-full bg-[#12151c]/75 border-3 border-black ring-2 ${
+                isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'
+              } rounded-full border-2 ${
                 isSprinting
-                  ? 'ring-[#facc15] shadow-[0_0_14px_rgba(250,204,21,0.55)]'
+                  ? 'bg-black/35 border-[#facc15]/75 shadow-[0_0_12px_rgba(250,204,21,0.35)]'
                   : isJoystickActive
-                    ? 'ring-[#b8ff3c] shadow-[0_0_12px_rgba(184,255,60,0.45)]'
-                    : 'ring-white/75 shadow-[4px_4px_0_#000]'
-              } backdrop-blur-xs flex items-center justify-center cursor-grab active:cursor-grabbing transition-shadow`}
+                    ? 'bg-black/30 border-[#b8ff3c]/70 shadow-[0_0_10px_rgba(184,255,60,0.3)]'
+                    : 'bg-black/20 border-white/35'
+              } backdrop-blur-[1.5px] flex items-center justify-center cursor-grab active:cursor-grabbing transition-all`}
             >
               {/* Inner Crosshair Ring & Cardinal Direction Indicators */}
-              <div className="absolute inset-3 rounded-full border border-dashed border-white/25 pointer-events-none" />
+              <div className="absolute inset-3 rounded-full border border-dashed border-white/20 pointer-events-none" />
               <ArrowUp
-                className="w-3.5 h-3.5 text-white/45 absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/35 absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <ArrowDown
-                className="w-3.5 h-3.5 text-white/45 absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/35 absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <ArrowLeft
-                className="w-3.5 h-3.5 text-white/45 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/35 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <ArrowRight
-                className="w-3.5 h-3.5 text-white/45 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/35 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
                 aria-hidden="true"
               />
 
-              {/* Draggable Thumb Stick Knob */}
+              {/* Semi-Transparent Draggable Thumb Stick Knob */}
               <div
                 data-mobile-joystick-knob="true"
                 style={{
                   transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
                 }}
                 className={`${
-                  isCompactLandscape ? 'w-10 h-10' : 'w-12 h-12 sm:w-13 sm:h-13'
+                  isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11 sm:w-12 sm:h-12'
                 } rounded-full ${
                   isSprinting
-                    ? 'bg-[#facc15] text-black'
-                    : 'bg-[#b8ff3c] text-black'
-                } border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] flex items-center justify-center font-black text-[9px] uppercase tracking-tighter pointer-events-none transition-colors`}
+                    ? 'bg-[#facc15]/70 text-black border-2 border-white/85'
+                    : isJoystickActive
+                      ? 'bg-[#b8ff3c]/65 text-black border-2 border-white/80'
+                      : 'bg-white/30 text-white/90 border-2 border-white/50'
+                } flex items-center justify-center font-black text-[8.5px] uppercase tracking-tighter pointer-events-none transition-colors`}
               >
-                {isSprinting ? 'RUN' : 'GO'}
+                {isSprinting ? 'RUN' : 'MOVE'}
               </div>
             </div>
           </div>
 
-          {/* BOTTOM-RIGHT: Mobile Touch Action Buttons (Jump & Contextual Interact) */}
+          {/* BOTTOM-RIGHT: Semi-Transparent Mobile Touch Action Buttons (Jump & Contextual Interact) */}
           <div
             className={`pointer-events-auto fixed ${
-              isCompactLandscape ? 'bottom-14 right-3' : 'bottom-16 right-4 sm:bottom-20 sm:right-5'
+              isCompactLandscape
+                ? 'bottom-[64px] right-3.5'
+                : 'bottom-[74px] right-4 sm:bottom-20 sm:right-6'
             } flex flex-col items-end gap-2 touch-none`}
           >
             {primaryContextualAction && (
@@ -399,7 +400,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   soundEngine.playUiClick();
                   onTriggerBuddyAction(primaryContextualAction.actionEvent);
                 }}
-                className="-skew-x-6 px-3.5 py-2 bg-[#facc15] hover:bg-[#fde047] active:scale-95 text-black border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
+                className="-skew-x-6 px-3 py-1.5 bg-[#facc15]/65 hover:bg-[#facc15]/85 active:scale-95 text-black border-2 border-white/70 backdrop-blur-[1.5px] font-black text-[11px] uppercase tracking-wider cursor-pointer"
               >
                 <span className="skew-x-6 inline-block">
                   {primaryContextualAction.label}
@@ -417,8 +418,8 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
               }}
               aria-label="Jump"
               className={`${
-                isCompactLandscape ? 'w-12 h-12 text-[10px]' : 'w-14 h-14 text-xs'
-              } rounded-full bg-[#38bdf8] hover:bg-[#7dd3fc] active:scale-90 text-black border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer`}
+                isCompactLandscape ? 'w-11 h-11 text-[9.5px]' : 'w-13 h-13 text-[10.5px]'
+              } rounded-full bg-[#38bdf8]/40 hover:bg-[#38bdf8]/65 active:scale-90 text-white border-2 border-white/55 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all`}
             >
               JUMP
             </button>

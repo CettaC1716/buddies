@@ -5191,7 +5191,6 @@ export default function App() {
         isModalBlocking={
           isKioskModalOpen ||
           isProfileModalOpen ||
-          isSocialChatModalOpen ||
           isPersonalWalletModalOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
