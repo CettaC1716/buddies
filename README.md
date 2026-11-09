@@ -2,7 +2,7 @@
 
 A 60 FPS WebGL 3D social city, shoreline fishing ground, and crate-stacking tactical arena built in Three.js and React 19, paired with seedless NEAR Protocol sub-accounts (`<name>.buddiesblitz.testnet`) and an on-chain P2P Fish NFT marketplace (`market.buddiesblitz.testnet`).
 
-Live deployment: **[https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)**
+Live deployment: **[https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)** · Video walkthrough (66s 1080p MP4 with voiceover): **[`docs/buddies-blitz-demo.mp4`](docs/buddies-blitz-demo.mp4)**
 
 ![East Beach shoreline boardwalk and Merchant Kai's fishing pier](docs/hero-1-beach-pier.jpg)
 
