@@ -11889,9 +11889,14 @@ export function connectNearWalletAndMintGamepass(
   state: NearGamepassSessionState,
   customAccountId = 'commander-p1.near',
 ): NearGamepassSessionState {
-  const cleanAccount = customAccountId.trim().endsWith('.near')
-    ? customAccountId.trim().toLowerCase()
-    : `${customAccountId.trim().toLowerCase() || 'commander-p1'}.near`;
+  const trimmed = customAccountId.trim().toLowerCase();
+  const cleanAccount =
+    trimmed.endsWith('.near') ||
+    trimmed.endsWith('.testnet') ||
+    trimmed.includes('.') ||
+    /^[0-9a-f]{64}$/.test(trimmed)
+      ? trimmed
+      : `${trimmed || 'commander-p1'}.near`;
   const tokenId = `nep171-gamepass-${cleanAccount.replace(/[^a-z0-9]/g, '-')}-01`;
   return {
     ...state,
@@ -11910,9 +11915,14 @@ export function generateNearHarvesterSwarmSubAccounts(
   _commanderIdx?: number,
   count = 2,
 ): string[] {
-  const cleanWallet = nearAccountId.trim().endsWith('.near')
-    ? nearAccountId.trim().toLowerCase()
-    : `${nearAccountId.trim().toLowerCase() || 'commander-p1'}.near`;
+  const trimmed = nearAccountId.trim().toLowerCase();
+  const cleanWallet =
+    trimmed.endsWith('.near') ||
+    trimmed.endsWith('.testnet') ||
+    trimmed.includes('.') ||
+    /^[0-9a-f]{64}$/.test(trimmed)
+      ? trimmed
+      : `${trimmed || 'commander-p1'}.near`;
   const result: string[] = [];
   for (let i = 1; i <= count; i++) {
     result.push(`harvester-${i}.${cleanWallet}`);

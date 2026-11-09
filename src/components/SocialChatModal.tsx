@@ -26,6 +26,8 @@ interface SocialChatModalProps {
   isOpen: boolean;
   onClose: () => void;
   playerName?: string;
+  playerUid?: string;
+  onChangePlayerName?: (newName: string) => void;
   nearbyUsers: NearbyEntityUser[];
   onSendPublicChat: (text: string) => void;
   onSendPrivateChat: (recipient: NearbyEntityUser, text: string) => void;
@@ -51,6 +53,9 @@ const simplifyDisplayName = (rawName: string): string => {
 export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   isOpen,
   onClose,
+  playerName = 'YOU',
+  playerUid = '',
+  onChangePlayerName,
   nearbyUsers,
   onSendPublicChat,
   onSendPrivateChat,
@@ -69,8 +74,14 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   onChangeBubbleTextColor,
 }) => {
   const [activeTab, setActiveTab] = useState<'publik' | 'private' | 'daftar_online' | 'settings'>('publik');
+  const [usernameDraft, setUsernameDraft] = useState<string>(playerName);
+  const [usernameSavedFlash, setUsernameSavedFlash] = useState<boolean>(false);
   const publicScrollRef = useRef<HTMLDivElement>(null);
   const privateScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setUsernameDraft(playerName);
+  }, [playerName]);
 
   // Switch to PRIVATE tab automatically when a private user is chosen externally (e.g. BISIKAN button)
   useEffect(() => {
@@ -403,12 +414,69 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           </div>
         )}
 
-        {/* Tab 4: SETTINGS (Sound Toggle, House Decoration when Inside House, Chat Colors) */}
+        {/* Tab 4: SETTINGS (Change Username Anytime, Sound Toggle, House Decoration when Inside House, Chat Colors) */}
         {activeTab === 'settings' && (
           <div
             data-social-chat-settings-panel="true"
             className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3.5 min-h-0"
           >
+            {/* 0. Player UID (Wallet Address) & Change Username Anytime */}
+            <div
+              data-social-modal-change-username="true"
+              className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black uppercase tracking-wide text-black">
+                  PLAYER IDENTITY &amp; CHANGE USERNAME
+                </span>
+                {playerUid && (
+                  <span
+                    data-social-modal-player-uid="true"
+                    className="px-2 py-0.5 bg-[#0f172a] text-[#38bdf8] font-mono text-[9.5px] font-bold border border-black truncate max-w-[200px]"
+                    title={`Player UID: ${playerUid}`}
+                  >
+                    UID: {playerUid}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  maxLength={24}
+                  data-social-modal-username-input="true"
+                  value={usernameDraft}
+                  onChange={(e) => setUsernameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && usernameDraft.trim()) {
+                      soundEngine.playUiClick();
+                      onChangePlayerName?.(usernameDraft.trim());
+                      setUsernameSavedFlash(true);
+                      window.setTimeout(() => setUsernameSavedFlash(false), 1800);
+                    }
+                  }}
+                  placeholder="Enter new username..."
+                  aria-label="Change Display Username"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
+                />
+                <button
+                  type="button"
+                  data-social-modal-save-username-btn="true"
+                  onClick={() => {
+                    if (!usernameDraft.trim()) return;
+                    soundEngine.playUiClick();
+                    onChangePlayerName?.(usernameDraft.trim());
+                    setUsernameSavedFlash(true);
+                    window.setTimeout(() => setUsernameSavedFlash(false), 1800);
+                  }}
+                  className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase cursor-pointer active:scale-95 shrink-0"
+                >
+                  <span className="skew-x-6 inline-block">
+                    {usernameSavedFlash ? 'SAVED ✓' : 'SAVE NAME'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* 1. Sound Toggle & Volume Control */}
             <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
               <div className="flex items-center justify-between">

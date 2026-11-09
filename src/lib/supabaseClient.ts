@@ -208,6 +208,7 @@ export async function fetchOrCreatePlayerProfile(params: {
  */
 export async function syncPlayerBalancesToSupabase(params: {
   nearAccountId: string;
+  displayName?: string;
   lulBalance: number;
   cyonBalance: number;
   respiteBalance: number;
@@ -226,6 +227,9 @@ export async function syncPlayerBalancesToSupabase(params: {
       respite_balance: Math.max(0, Math.min(100000, params.respiteBalance)),
       updated_at: new Date().toISOString(),
     };
+    if (typeof params.displayName === 'string' && params.displayName.trim().length > 0) {
+      payload.display_name = params.displayName.trim().slice(0, 48);
+    }
     if (typeof params.warzoneGold === 'number') {
       payload.warzone_gold = Math.max(0, Math.min(1000000, params.warzoneGold));
     }
@@ -234,6 +238,40 @@ export async function syncPlayerBalancesToSupabase(params: {
     }
     if (Array.isArray(params.unlockedSkins)) {
       payload.unlocked_skins = params.unlockedSkins;
+    }
+
+    const { error } = await supabase
+      .from('bb_profiles')
+      .upsert(payload, { onConflict: 'near_account_id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Updates the player's display username (`display_name`) in `public.bb_profiles` keyed by their NEAR Wallet UID (`near_account_id`).
+ * Allows players to change their username at any time while keeping their wallet address as their permanent UID.
+ */
+export async function updatePlayerDisplayNameInSupabase(params: {
+  nearAccountId: string;
+  displayName: string;
+  gender?: 'male' | 'female';
+}): Promise<boolean> {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+    const cleanAccount = params.nearAccountId.trim().toLowerCase().slice(0, 64);
+    const cleanName = params.displayName.trim().slice(0, 48);
+    if (!cleanAccount || !cleanName) return false;
+
+    const payload: Record<string, unknown> = {
+      near_account_id: cleanAccount,
+      display_name: cleanName,
+      updated_at: new Date().toISOString(),
+    };
+    if (params.gender) {
+      payload.unlocked_skins = ['default', `gender:${params.gender}`];
     }
 
     const { error } = await supabase

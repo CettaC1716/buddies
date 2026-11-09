@@ -61,13 +61,21 @@ import {
   uiStateToEmitterConfigPatch,
 } from './components/ParticleEmitterPanel';
 import {
+  connectInjectedNearExtensionWallet,
+  consumeNearWalletCallbackFromUrl,
   createInitialNep171SubAccountLedger,
   deriveSocialInvisibleNearAccount,
+  detectNetworkFromAccountId,
+  disconnectNearWalletSession,
   executeAtomicNep171SubAccountTransfer,
+  fetchNearAccountView,
   fetchNearNetworkStatus,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
+  isValidNearAccountId,
   recordNep171SubAccountEarning,
+  redirectToNearWebWalletLogin,
+  type NearAccountOnChainView,
   type NearRpcStatusSnapshot,
   type Nep171GamepassSubAccountLedger,
 } from './lib/nearClient';
@@ -85,6 +93,7 @@ import {
   syncHouseInteriorToSupabase,
   syncNpcMerchantAndLogTransaction,
   syncPlayerBalancesToSupabase,
+  updatePlayerDisplayNameInSupabase,
 } from './lib/supabaseClient';
 import {
   detectNearbyFishingWaterZone,
@@ -240,16 +249,37 @@ export default function App() {
     return 'auth_choice';
   });
   const [playerDisplayName, setPlayerDisplayName] = useState<string>('Buddy Male');
+  const [playerUid, setPlayerUid] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const savedWallet = window.localStorage.getItem('bb_last_connected_wallet_id');
+      if (savedWallet) return savedWallet.toLowerCase();
+      let guestUid = window.localStorage.getItem('bb_guest_uid');
+      if (!guestUid) {
+        const randHex = Math.floor(100000 + Math.random() * 900000).toString(16);
+        guestUid = `guest-${randHex}.testnet`;
+        window.localStorage.setItem('bb_guest_uid', guestUid);
+      }
+      return guestUid;
+    }
+    return 'guest.testnet';
+  });
   const [isCustomGuestNameEdited, setIsCustomGuestNameEdited] = useState<boolean>(false);
   const [isEditingGuestName, setIsEditingGuestName] = useState<boolean>(false);
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
   const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('bb_last_connected_wallet_id') || 'commander-p1.testnet';
+      return window.localStorage.getItem('bb_last_connected_wallet_id') || '';
     }
-    return 'commander-p1.testnet';
+    return '';
   });
+  const [walletNetworkChoice, setWalletNetworkChoice] = useState<'testnet' | 'mainnet'>('testnet');
+  const [isVerifyingNearWallet, setIsVerifyingNearWallet] = useState<boolean>(false);
+  const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
+  const [nearOnChainAccountView, setNearOnChainAccountView] =
+    useState<NearAccountOnChainView | null>(null);
+  const [walletUsernameDraft, setWalletUsernameDraft] = useState<string>('Buddy Male');
+  const [walletUsernameSavedToast, setWalletUsernameSavedToast] = useState<boolean>(false);
   const [savedWalletSummary, setSavedWalletSummary] = useState<{
     walletId: string;
     displayName: string;
@@ -958,13 +988,34 @@ export default function App() {
   );
 
   const handleConnectWalletAndEnterLobby = useCallback(
-    (rawWalletInput: string) => {
+    async (rawWalletInput: string) => {
       soundEngine.playUiClick();
-      const cleanInput = rawWalletInput.trim().toLowerCase() || 'commander-p1.testnet';
+      setWalletConnectError(null);
+      const cleanInput = rawWalletInput.trim().toLowerCase();
+      if (!cleanInput) {
+        setWalletConnectError(
+          'Please enter your NEAR wallet address (e.g. yourname.testnet or yourname.near) or click Sign In with MyNearWallet above.',
+        );
+        return;
+      }
+      const defaultSuffix = walletNetworkChoice === 'mainnet' ? 'near' : 'testnet';
       const normalizedWallet =
-        cleanInput.includes('.') || cleanInput.startsWith('0x')
+        cleanInput.includes('.') || /^[0-9a-f]{64}$/.test(cleanInput)
           ? cleanInput
-          : `${cleanInput.replace(/[^a-z0-9_-]/g, '')}.testnet`;
+          : `${cleanInput.replace(/[^a-z0-9_-]/g, '')}.${defaultSuffix}`;
+
+      if (!isValidNearAccountId(normalizedWallet)) {
+        setWalletConnectError(
+          `Invalid NEAR account format "${normalizedWallet}". Use a valid .testnet, .near, or 64-char implicit hex wallet address.`,
+        );
+        return;
+      }
+
+      setIsVerifyingNearWallet(true);
+      const detectedNet = detectNetworkFromAccountId(normalizedWallet, walletNetworkChoice);
+      const accountView = await fetchNearAccountView(normalizedWallet, detectedNet);
+      setNearOnChainAccountView(accountView);
+      setIsVerifyingNearWallet(false);
 
       // 1. Check local saved wallet profile first for instant restoration
       let restoredGender: 'male' | 'female' = characterGender;
@@ -988,15 +1039,19 @@ export default function App() {
         }
       }
 
+      // Bind Wallet Address as Player UID
+      setPlayerUid(normalizedWallet);
+      setWalletConnectInput(normalizedWallet);
       setCharacterGender(restoredGender);
       setPlayerDisplayName(restoredName);
+      setWalletUsernameDraft(restoredName);
       setOnboardingAuthMode('wallet');
       setOnboardingLoadingProgress(12);
       setOnboardingStep('entering_lobby');
 
-      const nextLedger = createInitialNep171SubAccountLedger(normalizedWallet, 'testnet');
+      const nextLedger = createInitialNep171SubAccountLedger(normalizedWallet, detectedNet);
       setNep171Ledger(nextLedger);
-      dispatchBuddyAction('nearConnectAndMint');
+      dispatchBuddyAction(`nearConnectAndMint:${normalizedWallet}`);
       dispatchBuddyAction(`setCharacterGender:${restoredGender}`);
       dispatchBuddyAction(`setPlayerDisplayName:${restoredName}`);
       setHud((prev) => ({
@@ -1008,7 +1063,7 @@ export default function App() {
       }));
       persistWalletProfileLocally(normalizedWallet, restoredName, restoredGender);
 
-      // 2. Also fetch/restore existing profile from Supabase `bb_profiles`
+      // 2. Fetch or restore existing profile from Supabase `bb_profiles` keyed by Wallet UID (`near_account_id`)
       void fetchOrCreatePlayerProfile({
         nearAccountId: normalizedWallet,
         displayName: restoredName,
@@ -1030,11 +1085,13 @@ export default function App() {
           const finalName = profile.display_name || restoredName;
           setCharacterGender(finalGender);
           setPlayerDisplayName(finalName);
+          setWalletUsernameDraft(finalName);
           dispatchBuddyAction(`setCharacterGender:${finalGender}`);
           dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
           persistWalletProfileLocally(normalizedWallet, finalName, finalGender);
           void syncPlayerBalancesToSupabase({
             nearAccountId: normalizedWallet,
+            displayName: finalName,
             lulBalance: hudRef.current.gold,
             cyonBalance: profile.cyon_balance,
             respiteBalance: profile.respite_balance,
@@ -1044,14 +1101,77 @@ export default function App() {
       });
       void syncGamepassNftLedgerToSupabase(nextLedger);
     },
-    [characterGender, dispatchBuddyAction, persistWalletProfileLocally],
+    [characterGender, dispatchBuddyAction, persistWalletProfileLocally, walletNetworkChoice],
+  );
+
+  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`) on mount
+  useEffect(() => {
+    const callback = consumeNearWalletCallbackFromUrl();
+    if (callback && callback.accountId) {
+      void handleConnectWalletAndEnterLobby(callback.accountId);
+    }
+  }, [handleConnectWalletAndEnterLobby]);
+
+  /**
+   * Allows the player to change their username at any time (in Chat Settings, Personal Wallet, or Citizen Profile),
+   * while keeping their Wallet Address (`playerUid`) as their permanent UID.
+   */
+  const handleUpdatePlayerUsername = useCallback(
+    (rawNewName: string) => {
+      const cleanName = rawNewName.trim().slice(0, 24);
+      if (!cleanName) return;
+      setPlayerDisplayName(cleanName);
+      setWalletUsernameDraft(cleanName);
+      setIsCustomGuestNameEdited(true);
+      dispatchBuddyAction(`setPlayerDisplayName:${cleanName}`);
+
+      setSelectedTargetUser((prev) => {
+        if (!prev) return prev;
+        const isSelf =
+          String(prev.id) === '0' ||
+          prev.name.toUpperCase().includes('KAMU') ||
+          prev.name.toUpperCase().includes('YOU');
+        return isSelf ? { ...prev, name: cleanName } : prev;
+      });
+      setProfileTargetUser((prev) => {
+        if (!prev) return prev;
+        const isSelf =
+          String(prev.id) === '0' ||
+          prev.name.toUpperCase().includes('KAMU') ||
+          prev.name.toUpperCase().includes('YOU');
+        return isSelf ? { ...prev, name: cleanName } : prev;
+      });
+
+      const activeUid =
+        hudRef.current.nearWalletId || playerUid || nep171Ledger.ownerNearAccount;
+      if (activeUid) {
+        persistWalletProfileLocally(activeUid, cleanName, characterGender);
+        void updatePlayerDisplayNameInSupabase({
+          nearAccountId: activeUid,
+          displayName: cleanName,
+          gender: characterGender,
+        });
+      }
+    },
+    [characterGender, dispatchBuddyAction, nep171Ledger.ownerNearAccount, persistWalletProfileLocally, playerUid],
   );
 
   const handleConfirmGuestCharacterAndEnterLobby = useCallback(() => {
     soundEngine.playUiClick();
     const cleanGuestName =
       playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
+    let guestUid = 'guest.testnet';
+    if (typeof window !== 'undefined') {
+      guestUid = window.localStorage.getItem('bb_guest_uid') || '';
+      if (!guestUid) {
+        const randHex = Math.floor(100000 + Math.random() * 900000).toString(16);
+        guestUid = `guest-${randHex}.testnet`;
+        window.localStorage.setItem('bb_guest_uid', guestUid);
+      }
+    }
+    setPlayerUid(guestUid);
     setPlayerDisplayName(cleanGuestName);
+    setWalletUsernameDraft(cleanGuestName);
     setIsEditingGuestName(false);
     setOnboardingAuthMode('guest');
     setOnboardingLoadingProgress(10);
@@ -1585,24 +1705,100 @@ export default function App() {
               </button>
             </div>
 
-            {/* Option 2: Continue with Connect Wallet (Restores Existing Account) */}
+            {/* Option 2: Continue with Real NEAR Protocol Wallet (Wallet Address = Player UID) */}
             <div className="p-4 bg-[#0f172a] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
-                  OPTION 2 · CONTINUE WITH WALLET
+                  OPTION 2 · CONNECT NEAR WALLET (UID = WALLET)
                 </span>
-                <Wallet className="w-4 h-4 text-[#38bdf8]" aria-hidden="true" />
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    data-wallet-net-testnet="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setWalletNetworkChoice('testnet');
+                    }}
+                    className={`px-1.5 py-0.5 text-[9px] font-black uppercase border cursor-pointer ${
+                      walletNetworkChoice === 'testnet'
+                        ? 'bg-[#38bdf8] text-black border-black'
+                        : 'bg-black/40 text-white/70 border-white/20'
+                    }`}
+                  >
+                    TESTNET
+                  </button>
+                  <button
+                    type="button"
+                    data-wallet-net-mainnet="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setWalletNetworkChoice('mainnet');
+                    }}
+                    className={`px-1.5 py-0.5 text-[9px] font-black uppercase border cursor-pointer ${
+                      walletNetworkChoice === 'mainnet'
+                        ? 'bg-[#10b981] text-black border-black'
+                        : 'bg-black/40 text-white/70 border-white/20'
+                    }`}
+                  >
+                    MAINNET
+                  </button>
+                </div>
               </div>
               <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Returning wallet players will automatically sign into their existing account, avatar, and balance.
+                Your NEAR wallet address acts as your unique Player UID. Returning wallet players automatically restore their saved username, avatar, and balances.
               </p>
 
+              {/* Real NEAR Web Wallet & Browser Extension Buttons */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  data-mynearwallet-redirect-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    redirectToNearWebWalletLogin({
+                      networkId: walletNetworkChoice,
+                      provider: 'mynearwallet',
+                    });
+                  }}
+                  className="-skew-x-6 py-2 px-2.5 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                >
+                  <span className="skew-x-6 inline-block">MYNEARWALLET LOGIN ↗</span>
+                </button>
+                <button
+                  type="button"
+                  data-meteor-wallet-btn="true"
+                  onClick={async () => {
+                    soundEngine.playUiClick();
+                    const ext = await connectInjectedNearExtensionWallet();
+                    if (ext.connected && ext.accountId) {
+                      void handleConnectWalletAndEnterLobby(ext.accountId);
+                    } else {
+                      redirectToNearWebWalletLogin({
+                        networkId: walletNetworkChoice,
+                        provider: 'meteor',
+                      });
+                    }
+                  }}
+                  className="-skew-x-6 py-2 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                >
+                  <span className="skew-x-6 inline-block">METEOR / EXTENSION ↗</span>
+                </button>
+              </div>
+
               {savedWalletSummary && (
-                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between">
-                  <span>
-                    Saved Account: <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong> ({savedWalletSummary.gender === 'male' ? 'Male' : 'Female'})
-                  </span>
-                  <span className="text-[9.5px] font-mono text-[#38bdf8]">{savedWalletSummary.walletId}</span>
+                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                  <div className="min-w-0 truncate">
+                    Saved UID: <strong className="text-[#38bdf8] font-mono">{savedWalletSummary.walletId}</strong> ·{' '}
+                    <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    data-reconnect-saved-wallet-btn="true"
+                    onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
+                    className="px-2 py-0.5 bg-[#38bdf8] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
+                  >
+                    RECONNECT
+                  </button>
                 </div>
               )}
 
@@ -1611,20 +1807,51 @@ export default function App() {
                   type="text"
                   data-wallet-connect-input="true"
                   value={walletConnectInput}
-                  onChange={(e) => setWalletConnectInput(e.target.value)}
-                  placeholder="commander-p1.testnet"
-                  aria-label="Wallet Account ID"
+                  onChange={(e) => {
+                    setWalletConnectInput(e.target.value);
+                    if (walletConnectError) setWalletConnectError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      void handleConnectWalletAndEnterLobby(
+                        walletConnectInput || savedWalletSummary?.walletId || '',
+                      );
+                    }
+                  }}
+                  placeholder={
+                    walletNetworkChoice === 'mainnet'
+                      ? 'Enter NEAR Wallet Address (e.g. yourname.near)'
+                      : 'Enter NEAR Wallet Address (e.g. yourname.testnet)'
+                  }
+                  aria-label="NEAR Wallet Account ID"
                   className="w-full px-3 py-2 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
                 />
+                {walletConnectError && (
+                  <div
+                    data-wallet-connect-error="true"
+                    className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
+                  >
+                    {walletConnectError}
+                  </div>
+                )}
                 <button
                   type="button"
                   data-connect-wallet-enter-btn="true"
-                  onClick={() => handleConnectWalletAndEnterLobby(walletConnectInput)}
-                  className="-skew-x-6 w-full py-3 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
+                  disabled={isVerifyingNearWallet}
+                  onClick={() =>
+                    void handleConnectWalletAndEnterLobby(
+                      walletConnectInput || savedWalletSummary?.walletId || '',
+                    )
+                  }
+                  className="-skew-x-6 w-full py-3 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
                 >
                   <div className="skew-x-6 flex items-center justify-center gap-2">
                     <Wallet className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
-                    <span>CONTINUE WITH CONNECT WALLET</span>
+                    <span>
+                      {isVerifyingNearWallet
+                        ? 'VERIFYING ON NEAR RPC...'
+                        : 'CONTINUE WITH CONNECT WALLET'}
+                    </span>
                   </div>
                 </button>
               </div>
@@ -4012,6 +4239,8 @@ export default function App() {
         isOpen={isSocialChatModalOpen}
         onClose={() => setIsSocialChatModalOpen(false)}
         playerName={playerDisplayName || 'YOU'}
+        playerUid={hud.nearWalletId || playerUid}
+        onChangePlayerName={handleUpdatePlayerUsername}
         nearbyUsers={hud.nearbyRadiusUsers ?? []}
         selectedPrivateUser={selectedPrivateUser}
         onSelectPrivateUser={setSelectedPrivateUser}
@@ -4271,6 +4500,103 @@ export default function App() {
                 NEAR {nearRpcStatus?.networkId?.toUpperCase() || 'TESTNET'} · BLOCK #
                 {nearRpcStatus?.latestBlockHeight?.toLocaleString() || '184,920,415'} ↗
               </a>
+            </div>
+
+            {/* PLAYER UID (WALLET ADDRESS) & CHANGE USERNAME ANYTIME */}
+            <div
+              data-wallet-uid-and-username-card="true"
+              className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                    PLAYER UID (NEAR WALLET ADDRESS)
+                  </div>
+                  <div
+                    data-wallet-active-uid="true"
+                    className="text-xs font-mono font-black text-[#38bdf8] break-all"
+                  >
+                    {hud.nearWalletId || playerUid}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-switch-or-disconnect-wallet-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    disconnectNearWalletSession();
+                    setIsPersonalWalletModalOpen(false);
+                    setOnboardingStep('auth_choice');
+                  }}
+                  className="-skew-x-6 px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
+                >
+                  <span className="skew-x-6 inline-block">SWITCH WALLET</span>
+                </button>
+              </div>
+
+              {nearOnChainAccountView && (
+                <div className="flex items-center justify-between text-[9.5px] font-bold bg-black/40 px-2 py-1 border border-white/15">
+                  <span
+                    className={
+                      nearOnChainAccountView.existsOnChain ? 'text-[#10b981]' : 'text-[#facc15]'
+                    }
+                  >
+                    {nearOnChainAccountView.existsOnChain
+                      ? `● ON-CHAIN VERIFIED (${nearOnChainAccountView.balanceNearFormatted})`
+                      : `● NEAR ${nearOnChainAccountView.networkId.toUpperCase()} ACCOUNT`}
+                  </span>
+                  <a
+                    href={nearOnChainAccountView.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[#38bdf8] hover:underline font-mono"
+                  >
+                    NearBlocks ↗
+                  </a>
+                </div>
+              )}
+
+              <div className="pt-1.5 border-t border-white/15 space-y-1">
+                <div className="text-[10px] font-black uppercase text-white/90">
+                  DISPLAY USERNAME (CHANGE ANYTIME)
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    maxLength={24}
+                    data-wallet-change-username-input="true"
+                    value={walletUsernameDraft}
+                    onChange={(e) => setWalletUsernameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && walletUsernameDraft.trim()) {
+                        soundEngine.playUiClick();
+                        handleUpdatePlayerUsername(walletUsernameDraft);
+                        setWalletUsernameSavedToast(true);
+                        window.setTimeout(() => setWalletUsernameSavedToast(false), 1800);
+                      }
+                    }}
+                    placeholder="Enter new username..."
+                    aria-label="Change Display Username"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 bg-white text-black font-bold text-xs border-2 border-black"
+                  />
+                  <button
+                    type="button"
+                    data-wallet-save-username-btn="true"
+                    onClick={() => {
+                      if (!walletUsernameDraft.trim()) return;
+                      soundEngine.playUiClick();
+                      handleUpdatePlayerUsername(walletUsernameDraft);
+                      setWalletUsernameSavedToast(true);
+                      window.setTimeout(() => setWalletUsernameSavedToast(false), 1800);
+                    }}
+                    className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
+                  >
+                    <span className="skew-x-6 inline-block">
+                      {walletUsernameSavedToast ? 'SAVED ✓' : 'SAVE NAME'}
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Social / Email Zero-Popup Login (Track: games) */}
@@ -4822,6 +5148,8 @@ export default function App() {
         lulBalance={hud.gold}
         cyonBalance={cyonBalance}
         respiteBalance={respiteBalance}
+        playerUid={hud.nearWalletId || playerUid}
+        onChangePlayerName={handleUpdatePlayerUsername}
         onStartWhisper={(user) => {
           setIsProfileModalOpen(false);
           setSelectedPrivateUser(user);

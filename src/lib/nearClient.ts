@@ -88,6 +88,32 @@ export interface AtomicNep171TransferResult {
 const DEFAULT_TESTNET_RPC = 'https://rpc.testnet.near.org';
 const FALLBACK_TESTNET_RPC = 'https://test.rpc.fastnear.com';
 const DEFAULT_MAINNET_RPC = 'https://rpc.mainnet.near.org';
+const FALLBACK_MAINNET_RPC = 'https://free.rpc.fastnear.com';
+
+/**
+ * Validates whether a string conforms to NEAR Protocol Account ID rules:
+ * - Named accounts (`alice.testnet`, `bob.near`, sub-accounts `sub.alice.testnet`, 2..64 chars)
+ * - Implicit 64-character hex accounts (`0..9a..f`)
+ */
+export function isValidNearAccountId(accountId: string): boolean {
+  const clean = accountId.trim().toLowerCase();
+  if (clean.length < 2 || clean.length > 64) return false;
+  if (/^[0-9a-f]{64}$/.test(clean)) return true;
+  return /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(clean);
+}
+
+/**
+ * Infers NEAR network (`mainnet` vs `testnet`) from an account ID suffix.
+ */
+export function detectNetworkFromAccountId(
+  accountId: string,
+  fallback: NearNetworkId = 'testnet',
+): NearNetworkId {
+  const clean = accountId.trim().toLowerCase();
+  if (clean.endsWith('.near')) return 'mainnet';
+  if (clean.endsWith('.testnet')) return 'testnet';
+  return fallback;
+}
 
 export function getNearConfig(): {
   networkId: NearNetworkId;
@@ -475,10 +501,17 @@ export async function fetchNearNetworkStatus(): Promise<NearRpcStatusSnapshot> {
 /**
  * Queries a real account on NEAR Testnet/Mainnet via JSON-RPC (`query` -> `view_account`).
  */
-export async function fetchNearAccountView(accountId: string): Promise<NearAccountOnChainView> {
+export async function fetchNearAccountView(
+  accountId: string,
+  preferredNetwork?: NearNetworkId,
+): Promise<NearAccountOnChainView> {
   const cfg = getNearConfig();
   const cleanAccount = accountId.trim().toLowerCase();
-  const urls = [cfg.rpcUrl, FALLBACK_TESTNET_RPC];
+  const targetNetwork = preferredNetwork || detectNetworkFromAccountId(cleanAccount, cfg.networkId);
+  const urls =
+    targetNetwork === 'mainnet'
+      ? [DEFAULT_MAINNET_RPC, FALLBACK_MAINNET_RPC]
+      : [cfg.rpcUrl, FALLBACK_TESTNET_RPC];
 
   for (const url of urls) {
     try {
@@ -515,14 +548,14 @@ export async function fetchNearAccountView(accountId: string): Promise<NearAccou
         const nearWhole = Number(yocto / BigInt(1e20)) / 1e4;
         return {
           accountId: cleanAccount,
-          networkId: cfg.networkId,
+          networkId: targetNetwork,
           existsOnChain: true,
           amountYocto: json.result.amount,
           balanceNearFormatted: `${nearWhole.toFixed(2)} NEAR`,
           storageUsageBytes: json.result.storage_usage || 0,
           blockHeight: json.result.block_height || 0,
           blockHash: json.result.block_hash || '',
-          explorerUrl: getNearBlocksAccountUrl(cleanAccount, cfg.networkId),
+          explorerUrl: getNearBlocksAccountUrl(cleanAccount, targetNetwork),
         };
       }
     } catch {
@@ -530,16 +563,184 @@ export async function fetchNearAccountView(accountId: string): Promise<NearAccou
     }
   }
 
-  // Relayer-managed virtual / implicit sub-account fallback
   return {
     accountId: cleanAccount,
-    networkId: cfg.networkId,
+    networkId: targetNetwork,
     existsOnChain: false,
-    amountYocto: '25000000000000000000000000',
-    balanceNearFormatted: '25.00 NEAR (Relayer Sub-Account)',
-    storageUsageBytes: 1420,
-    blockHeight: 184_920_415,
-    blockHash: generateDeterministicNearTxHash(`account:${cleanAccount}`),
-    explorerUrl: getNearBlocksAccountUrl(cleanAccount, cfg.networkId),
+    amountYocto: '0',
+    balanceNearFormatted: '0.00 NEAR',
+    storageUsageBytes: 0,
+    blockHeight: 0,
+    blockHash: '',
+    explorerUrl: getNearBlocksAccountUrl(cleanAccount, targetNetwork),
   };
+}
+
+/**
+ * Initiates a real NEAR Web Wallet OAuth-style redirect login (MyNearWallet or Meteor Web Wallet).
+ * After the user approves in their NEAR wallet, the wallet redirects back to `success_url`
+ * with `?account_id=<wallet.testnet>&public_key=...&all_keys=...`.
+ */
+export function redirectToNearWebWalletLogin(options?: {
+  networkId?: NearNetworkId;
+  provider?: 'mynearwallet' | 'meteor';
+}): void {
+  if (typeof window === 'undefined') return;
+  const cfg = getNearConfig();
+  const net = options?.networkId || cfg.networkId;
+  const provider = options?.provider || 'mynearwallet';
+
+  const baseWalletUrl =
+    provider === 'meteor'
+      ? net === 'mainnet'
+        ? 'https://wallet.meteorwallet.app/connect/mainnet/login'
+        : 'https://wallet.meteorwallet.app/connect/testnet/login'
+      : net === 'mainnet'
+        ? 'https://app.mynearwallet.com/login/'
+        : 'https://testnet.mynearwallet.com/login/';
+
+  const callbackBase = `${window.location.origin}${window.location.pathname}`;
+  const loginUrl = new URL(baseWalletUrl);
+  loginUrl.searchParams.set('referrer', 'Buddies Blitz 3D');
+  loginUrl.searchParams.set('success_url', callbackBase);
+  loginUrl.searchParams.set('failure_url', callbackBase);
+
+  window.location.assign(loginUrl.toString());
+}
+
+/**
+ * Consumes `?account_id=...` callback query parameters when returning from MyNearWallet / Meteor Wallet.
+ * Cleans the URL parameters via `window.history.replaceState` and persists the connected wallet UID.
+ */
+export function consumeNearWalletCallbackFromUrl(): {
+  accountId: string;
+  publicKey: string | null;
+  allKeys: string[];
+} | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const url = new URL(window.location.href);
+    const rawAccountId = url.searchParams.get('account_id')?.trim().toLowerCase();
+    if (!rawAccountId || !isValidNearAccountId(rawAccountId)) {
+      return null;
+    }
+    const publicKey = url.searchParams.get('public_key');
+    const allKeysRaw = url.searchParams.get('all_keys');
+    const allKeys = allKeysRaw ? allKeysRaw.split(',').map((k) => k.trim()).filter(Boolean) : [];
+
+    window.localStorage.setItem('bb_last_connected_wallet_id', rawAccountId);
+    if (publicKey || allKeys[0]) {
+      window.localStorage.setItem('bb_near_access_key', publicKey || allKeys[0]);
+    }
+
+    url.searchParams.delete('account_id');
+    url.searchParams.delete('public_key');
+    url.searchParams.delete('all_keys');
+    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+
+    return {
+      accountId: rawAccountId,
+      publicKey: publicKey || allKeys[0] || null,
+      allKeys,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Attempts to connect to an injected NEAR browser extension wallet (Sender, Meteor Extension, Nightly, or `window.near`).
+ */
+export async function connectInjectedNearExtensionWallet(): Promise<{
+  connected: boolean;
+  accountId: string | null;
+  providerName: string;
+  error?: string;
+}> {
+  if (typeof window === 'undefined') {
+    return { connected: false, accountId: null, providerName: 'none', error: 'Window unavailable' };
+  }
+  const win = window as unknown as {
+    near?: {
+      accountId?: string;
+      getAccountId?: () => string | null;
+      requestSignIn?: (params?: { contractId?: string }) => Promise<{ accountId?: string } | void>;
+    };
+    sender?: {
+      accountId?: string;
+      getAccountId?: () => string | null;
+      requestSignIn?: (params?: { contractId?: string }) => Promise<{ accountId?: string; error?: string }>;
+    };
+    meteorWallet?: {
+      requestSignIn?: (params?: { contractId?: string }) => Promise<{ accountId?: string }>;
+    };
+  };
+
+  try {
+    const provider = win.sender || win.near || win.meteorWallet;
+    const providerName = win.sender
+      ? 'Sender Wallet'
+      : win.meteorWallet
+        ? 'Meteor Wallet'
+        : win.near
+          ? 'NEAR Browser Wallet'
+          : 'none';
+
+    if (!provider) {
+      return {
+        connected: false,
+        accountId: null,
+        providerName: 'none',
+        error: 'No NEAR browser extension detected. Use MyNearWallet Web Redirect or enter your NEAR Account ID below.',
+      };
+    }
+
+    if (typeof provider.requestSignIn === 'function') {
+      const cfg = getNearConfig();
+      const res = await provider.requestSignIn({ contractId: cfg.gamepassContractId });
+      const resObj = (res || {}) as { accountId?: string };
+      const resolvedId =
+        resObj.accountId ||
+        ('getAccountId' in provider && typeof provider.getAccountId === 'function'
+          ? provider.getAccountId()
+          : null) ||
+        ('accountId' in provider ? provider.accountId : null);
+
+      if (resolvedId && isValidNearAccountId(resolvedId)) {
+        const cleanId = resolvedId.trim().toLowerCase();
+        window.localStorage.setItem('bb_last_connected_wallet_id', cleanId);
+        return {
+          connected: true,
+          accountId: cleanId,
+          providerName,
+        };
+      }
+    }
+    return {
+      connected: false,
+      accountId: null,
+      providerName,
+      error: 'Wallet extension did not return an active NEAR account.',
+    };
+  } catch (err) {
+    return {
+      connected: false,
+      accountId: null,
+      providerName: 'NEAR Extension',
+      error: err instanceof Error ? err.message : 'Wallet extension connection cancelled.',
+    };
+  }
+}
+
+/**
+ * Clears the stored NEAR wallet session from localStorage so the player can disconnect or switch wallets.
+ */
+export function disconnectNearWalletSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem('bb_last_connected_wallet_id');
+    window.localStorage.removeItem('bb_near_access_key');
+  } catch {
+    // ignore
+  }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Check,
   ChevronLeft,
@@ -6,6 +6,7 @@ import {
   Heart,
   MapPin,
   MessageSquare,
+  Pencil,
   Shield,
   Trophy,
   Crown,
@@ -25,6 +26,8 @@ interface CharacterProfileModalProps {
   lulBalance?: number;
   cyonBalance?: number;
   respiteBalance?: number;
+  playerUid?: string;
+  onChangePlayerName?: (newName: string) => void;
 }
 
 interface BadgeItem {
@@ -83,6 +86,8 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   lulBalance = 2500,
   cyonBalance = 60,
   respiteBalance = 45,
+  playerUid = '',
+  onChangePlayerName,
 }) => {
   const [activeBadgeIndex, setActiveBadgeIndex] = useState<number>(0);
   const [likesCount, setLikesCount] = useState<number>(() => {
@@ -90,8 +95,21 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   });
   const [hasLiked, setHasLiked] = useState<boolean>(false);
   const [isFriendRequested, setIsFriendRequested] = useState<boolean>(false);
+  const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const [nameDraft, setNameDraft] = useState<string>(targetUser?.name || '');
+
+  useEffect(() => {
+    if (targetUser?.name) {
+      setNameDraft(targetUser.name);
+    }
+  }, [targetUser?.name]);
 
   if (!isOpen || !targetUser) return null;
+
+  const isSelfProfile =
+    String(targetUser.id) === '0' ||
+    targetUser.name.toUpperCase().includes('KAMU') ||
+    targetUser.name.toUpperCase().includes('YOU');
 
   const currentBadge = BADGES_COLLECTION[activeBadgeIndex] || BADGES_COLLECTION[0];
   const CurrentBadgeIcon = currentBadge.Icon;
@@ -252,10 +270,72 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
               />
             </div>
 
-            {/* Character Name */}
-            <h3 className="text-base sm:text-lg font-black text-black text-center mt-3 tracking-wide break-words leading-tight uppercase">
-              {targetUser.name}
-            </h3>
+            {/* Character Name (Editable Anytime When Viewing Own Profile) */}
+            {isSelfProfile && isEditingName ? (
+              <div className="mt-3 flex items-center justify-center gap-1.5">
+                <input
+                  type="text"
+                  maxLength={24}
+                  data-profile-edit-username-input="true"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && nameDraft.trim()) {
+                      soundEngine.playUiClick();
+                      onChangePlayerName?.(nameDraft.trim());
+                      setIsEditingName(false);
+                    }
+                  }}
+                  className="px-2 py-1 bg-white text-black font-black text-xs border-2 border-black w-40 text-center"
+                />
+                <button
+                  type="button"
+                  data-profile-save-username-btn="true"
+                  onClick={() => {
+                    if (!nameDraft.trim()) return;
+                    soundEngine.playUiClick();
+                    onChangePlayerName?.(nameDraft.trim());
+                    setIsEditingName(false);
+                  }}
+                  className="w-7 h-7 bg-[#10b981] text-black border-2 border-black flex items-center justify-center cursor-pointer"
+                  aria-label="Save Username"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center justify-center gap-1.5">
+                <h3 className="text-base sm:text-lg font-black text-black text-center tracking-wide break-words leading-tight uppercase">
+                  {targetUser.name}
+                </h3>
+                {isSelfProfile && (
+                  <button
+                    type="button"
+                    data-profile-edit-username-trigger="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setNameDraft(targetUser.name);
+                      setIsEditingName(true);
+                    }}
+                    title="Change Username"
+                    aria-label="Change Username"
+                    className="w-6 h-6 bg-[#facc15] hover:bg-[#fde047] text-black border border-black flex items-center justify-center cursor-pointer"
+                  >
+                    <Pencil className="w-3 h-3 stroke-[2.5]" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Player UID (Wallet Address) when viewing own profile */}
+            {isSelfProfile && playerUid && (
+              <div
+                data-profile-player-uid="true"
+                className="mt-1.5 px-2 py-0.5 bg-[#0f172a] text-[#38bdf8] border border-black font-mono text-[10px] font-bold text-center break-all"
+              >
+                UID: {playerUid}
+              </div>
+            )}
 
             {/* Location */}
             <div className="flex items-center justify-center gap-1.5 text-xs text-slate-800 mt-1.5 font-extrabold text-center">

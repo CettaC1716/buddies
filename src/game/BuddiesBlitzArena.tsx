@@ -10097,9 +10097,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           emitHudImmediately();
           window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
         }
-      } else if (act === 'nearConnectAndMint') {
+      } else if (act === 'nearConnectAndMint' || act.startsWith('nearConnectAndMint:')) {
         soundEngine.playPickup();
-        nearSessionState = connectNearWalletAndMintGamepass(nearSessionState);
+        const customWalletId = act.startsWith('nearConnectAndMint:')
+          ? act.slice('nearConnectAndMint:'.length).trim()
+          : (typeof window !== 'undefined'
+              ? window.localStorage.getItem('bb_last_connected_wallet_id')
+              : null) || undefined;
+        nearSessionState = connectNearWalletAndMintGamepass(
+          nearSessionState,
+          customWalletId || undefined,
+        );
         kioskStatusMessage = nearSessionState.sessionStatusBanner;
         kioskStatusTimer = 5.5;
         if (playerUnit && playerUnit.alive) {
@@ -10119,7 +10127,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
         const isSafezone = cityArenaMode === 'safezone';
         if (!nearSessionState.walletConnected || !nearSessionState.hasGamepassNft) {
-          nearSessionState = connectNearWalletAndMintGamepass(nearSessionState);
+          const savedWallet =
+            typeof window !== 'undefined'
+              ? window.localStorage.getItem('bb_last_connected_wallet_id') || undefined
+              : undefined;
+          nearSessionState = connectNearWalletAndMintGamepass(nearSessionState, savedWallet);
         }
         const targetTeam = nearestKiosk.team;
         const targetPlotIdx =
