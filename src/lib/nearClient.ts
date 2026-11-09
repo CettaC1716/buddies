@@ -759,17 +759,19 @@ export function disconnectNearWalletSession(): void {
 
 /**
  * ============================================================================
- * 10. NEP-141 `RESPITE` SMART CONTRACT SPECIFICATION & SWAP ENGINE (docs.near.org)
+ * 10. ON-CHAIN `RESPITE` & FISH NFT MARKETPLACE SMART CONTRACT (`market.buddiesblitz.testnet`)
  * ============================================================================
- * Redefined 3-Currency Economy:
- *   - LUL (Lulling)   : Non-crypto activity currency earned from Fishing & Warzone mini-games.
- *   - CYON (Halcyon)  : Non-crypto currency obtained from LUL -> CYON exchange; used to buy
- *                       non-NFT items such as Outfits (future expansion) & standard furniture.
- *   - RESPITE         : Crypto NEP-141 Fungible Token smart contract deployed on NEAR Protocol
- *                       (`respite.buddiesblitz.testnet`), obtained by swapping NEAR Testnet <-> RESPITE
- *                       at the Exchange Merchant.
+ * Economy Separation (Anti-Bot Farming / Roblox Fisch Collectible Design):
+ *   - LUL (Lulling)   : 100% OFF-CHAIN Warzone activity currency (cannot be converted to RESPITE).
+ *   - CYON (Halcyon)  : 100% OFF-CHAIN social currency obtained from LUL -> CYON or selling
+ *                       regular fish to the NPC Merchant; used for outfits & standard furniture.
+ *   - RESPITE         : ON-CHAIN token on NEAR (`market.buddiesblitz.testnet`), obtained ONLY by
+ *                       swapping NEAR Testnet -> RESPITE or selling minted Fish NFTs to other players.
  * ============================================================================
  */
+export const MARKET_CONTRACT_ACCOUNT_ID = 'market.buddiesblitz.testnet';
+export const MARKET_CONTRACT_CREATE_TX = 'LNiV8vsywXs2rX9TB4CWoZmgrU7dDtFw2RLvtnL7DLq';
+
 export interface Nep141FungibleTokenMetadata {
   spec: 'ft-1.0.0';
   name: string;
@@ -787,10 +789,10 @@ export const RESPITE_NEP141_METADATA: Nep141FungibleTokenMetadata = {
   name: 'Buddies Blitz Respite Token',
   symbol: 'RESPITE',
   decimals: 18,
-  contractIdTestnet: 'respite.buddiesblitz.testnet',
-  contractIdMainnet: 'respite.buddiesblitz.near',
-  swapPoolContractTestnet: 'dex-pool.buddiesblitz.testnet',
-  rateRespitePerNear: 100, // 1 NEAR Testnet = 100 RESPITE (NEP-141)
+  contractIdTestnet: MARKET_CONTRACT_ACCOUNT_ID,
+  contractIdMainnet: 'market.buddiesblitz.near',
+  swapPoolContractTestnet: MARKET_CONTRACT_ACCOUNT_ID,
+  rateRespitePerNear: 100, // 1 NEAR Testnet = 100 RESPITE
   storageDepositNear: '0.00125', // NEP-145 minimum storage registration deposit
 };
 

@@ -75,6 +75,8 @@ interface NpcMerchantAndHouseModalProps {
   fishMarketListings?: FishNftMarketplaceListing[];
   playerNearAccount?: string;
   onSellCaughtFish?: (fish: CaughtFishItem) => void;
+  onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
+  onReleaseAllCommonFish?: () => void;
   onMintFishAsNft?: (fish: CaughtFishItem) => void;
   onListFishNftOnMarket?: (fish: CaughtFishItem, priceLul: number) => void;
   onBuyFishNftFromMarket?: (listing: FishNftMarketplaceListing) => void;
@@ -124,6 +126,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   fishMarketListings = [],
   playerNearAccount = 'commander-p1.testnet',
   onSellCaughtFish,
+  onReleaseCaughtFish,
+  onReleaseAllCommonFish,
   onMintFishAsNft,
   onListFishNftOnMarket,
   onBuyFishNftFromMarket,
@@ -1625,13 +1629,31 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                 }`}
               >
-                <div className="flex items-center justify-between border-b-2 border-black pb-1.5">
+                <div className="flex items-center justify-between border-b-2 border-black pb-1.5 gap-2 flex-wrap">
                   <span className="text-[11px] font-black uppercase">
-                    1. YOUR FISH BUCKET ({caughtFishBucket.length})
+                    1. YOUR FISH BUCKET ({caughtFishBucket.length} / 20)
                   </span>
-                  <span className="text-[9.5px] font-extrabold uppercase text-slate-600">
-                    Press [F] near any water to catch
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {caughtFishBucket.some((f) => !f.isMintedNft && f.rarity === 'Common') && (
+                      <button
+                        type="button"
+                        data-release-all-common-fish-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onReleaseAllCommonFish?.();
+                          triggerNpcSpeech(
+                            'Released all Common fish back into the water to free up space in your Fish Bucket!',
+                          );
+                        }}
+                        className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-black border border-black text-[9px] font-black uppercase cursor-pointer"
+                      >
+                        RELEASE COMMON
+                      </button>
+                    )}
+                    <span className="text-[9.5px] font-extrabold uppercase text-slate-600">
+                      Press [F] near any water to catch
+                    </span>
+                  </div>
                 </div>
 
                 {caughtFishBucket.length === 0 ? (
@@ -1708,7 +1730,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onSellCaughtFish?.(fish);
                                   triggerNpcSpeech(
-                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${cyonValue} CYON for selling directly to me.`,
+                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${cyonValue} CYON (Off-Chain) for selling directly to me.`,
                                   );
                                 }}
                                 className="flex-1 py-1.5 px-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
@@ -1723,12 +1745,27 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onMintFishAsNft?.(fish);
                                   triggerNpcSpeech(
-                                    `Minted! Your ${fish.weightKg} kg ${fish.speciesName} is now a NEP-171 Fish NFT. Set a RESPITE price below to sell it to other players on the Marketplace!`,
+                                    `Minted on NEAR (market.buddiesblitz.testnet)! Your ${fish.weightKg} kg ${fish.speciesName} is now a NEP-171 Fish NFT. Set a RESPITE price below to sell it to other players!`,
                                   );
                                 }}
                                 className="flex-1 py-1.5 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
                                 MINT FISH AS NFT
+                              </button>
+
+                              <button
+                                type="button"
+                                data-release-fish-btn={fish.id}
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  onReleaseCaughtFish?.(fish);
+                                  triggerNpcSpeech(
+                                    `Released ${fish.speciesName} (${fish.weightKg} kg) back into the water to free up bag space.`,
+                                  );
+                                }}
+                                className="py-1.5 px-2.5 bg-slate-200 hover:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                              >
+                                RELEASE
                               </button>
                             </div>
                           ) : (

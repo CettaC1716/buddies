@@ -1668,20 +1668,23 @@ export default function App() {
         waterZone: activeZone,
         caughtByAccount: actorAccount,
       });
-      setCaughtFishBucket((prev) => [caught, ...prev]);
+      setCaughtFishBucket((prev) => [caught, ...prev].slice(0, 20));
       setLastCaughtFishToast(caught);
       setFishingPhase('idle');
       return;
     }
 
     if (fishingPhase === 'idle') {
+      if (caughtFishBucket.length >= 20) {
+        return;
+      }
       setFishingPhase('casting');
       setLastCaughtFishToast(null);
       window.setTimeout(() => {
         setFishingPhase((curr) => (curr === 'casting' ? 'bite' : curr));
       }, 1600);
     }
-  }, [dispatchBuddyAction, fishingPhase, nep171Ledger.ownerNearAccount]);
+  }, [caughtFishBucket.length, dispatchBuddyAction, fishingPhase, nep171Ledger.ownerNearAccount]);
 
   const currentPresetConfig = LIGHTING_PRESETS[lightingPreset];
   const scaleX = hexRect.width / 500;
@@ -4172,9 +4175,22 @@ export default function App() {
                       </span>
                     </div>
                     <span className="text-[10px] font-bold text-slate-300">
-                      Visit NPC Kai at East Beach to sell for +{lastCaughtFishToast.sellValueCyon || lastCaughtFishToast.sellValueLul} CYON or Mint as NFT to sell on the Marketplace for RESPITE
+                      Sell to NPC Kai for +{lastCaughtFishToast.sellValueCyon || lastCaughtFishToast.sellValueLul} CYON (Off-Chain), Mint as NFT for RESPITE, or Release if unwanted
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    data-toast-release-fish-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      const targetId = lastCaughtFishToast.id;
+                      setCaughtFishBucket((prev) => prev.filter((f) => f.id !== targetId));
+                      setLastCaughtFishToast(null);
+                    }}
+                    className="-skew-x-6 px-2.5 py-1 bg-slate-200 hover:bg-white text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer shrink-0"
+                  >
+                    <span className="skew-x-6 inline-block">RELEASE</span>
+                  </button>
                 </div>
               )}
 
@@ -4189,14 +4205,16 @@ export default function App() {
                         ? 'Bobber in water... Waiting for fish bite...'
                         : fishingPhase === 'bite'
                           ? 'STRIKE! Fish on the hook — Reel in now!'
-                          : `Fish Bucket: ${caughtFishBucket.length} caught (Sell/Mint at Beach NPC Kai)`}
+                          : caughtFishBucket.length >= 20
+                            ? 'Fish Bucket Full (20/20) — Release or Sell fish at NPC Kai first!'
+                            : `Fish Bucket: ${caughtFishBucket.length}/20 (Sell for CYON, Mint for RESPITE, or Release)`}
                     </span>
                   </div>
 
                   <button
                     type="button"
                     data-cast-fishing-rod-btn="true"
-                    disabled={fishingPhase === 'casting'}
+                    disabled={fishingPhase === 'casting' || (fishingPhase === 'idle' && caughtFishBucket.length >= 20)}
                     onClick={handleTriggerFishingAction}
                     className={`-skew-x-12 px-3.5 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase transition-transform ${
                       fishingPhase === 'bite'
@@ -5074,8 +5092,20 @@ export default function App() {
             currency: 'CYON',
             amount: earnedCyon,
             unit_price: earnedCyon,
-            reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedCyon} CYON.`,
+            reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedCyon} CYON (Off-Chain).`,
           });
+        }}
+        onReleaseCaughtFish={(fish: CaughtFishItem) => {
+          setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+          if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);
+        }}
+        onReleaseAllCommonFish={() => {
+          setCaughtFishBucket((prev) =>
+            prev.filter((f) => f.isMintedNft || f.rarity !== 'Common'),
+          );
+          if (lastCaughtFishToast?.rarity === 'Common') {
+            setLastCaughtFishToast(null);
+          }
         }}
         onMintFishAsNft={(fish: CaughtFishItem) => {
           const actorAccount =
