@@ -128,7 +128,7 @@ const INITIAL_HUD: HudSnapshot = {
   hp: PLAYER_WARZONE_MAX_HP,
   maxHp: PLAYER_WARZONE_MAX_HP,
   score: 0,
-  gold: 2500,
+  gold: 0,
   bestScore: 0,
   speedKmh: 0,
   isBoosting: false,
@@ -408,8 +408,8 @@ export default function App() {
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
-  const [cyonBalance, setCyonBalance] = useState<number>(60);
-  const [respiteBalance, setRespiteBalance] = useState<number>(45);
+  const [cyonBalance, setCyonBalance] = useState<number>(0);
+  const [respiteBalance, setRespiteBalance] = useState<number>(0);
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(12.5);
   const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
   const [hasHouseOwnership, setHasHouseOwnership] = useState<boolean>(false);
@@ -1103,7 +1103,7 @@ export default function App() {
         return;
       }
 
-      // If this is a player sub-account under buddiesblitz-master.testnet, register/verify it in Master Registry
+      // If this is a player sub-account under buddiesblitz.testnet, register/verify it in Master Registry
       if (isManagedSubAccountOfMaster(normalizedWallet)) {
         const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(normalizedWallet);
         setManagedSubAccounts(allSubAccounts);
@@ -1116,9 +1116,6 @@ export default function App() {
         setRespiteBalance(subAccount.respiteBalance);
         setCyonBalance(subAccount.cyonBalance);
         setNearTestnetBalance(12.5);
-        if (hudRef.current.gold <= 0) {
-          dispatchBuddyAction('adjustPlayerLul:120');
-        }
       }
 
       setIsVerifyingNearWallet(true);
@@ -4068,7 +4065,7 @@ export default function App() {
                       </span>
                     </div>
                     <span className="text-[10px] font-bold text-slate-300">
-                      Visit NPC Kai at East Beach to sell (+{lastCaughtFishToast.sellValueLul} LUL) or Mint as NFT (-{lastCaughtFishToast.mintFeeLul} LUL fee)
+                      Visit NPC Kai at East Beach to sell for +{lastCaughtFishToast.sellValueCyon || lastCaughtFishToast.sellValueLul} CYON or Mint as NFT to sell on the Marketplace for RESPITE
                     </span>
                   </div>
                 </div>
@@ -4580,15 +4577,17 @@ export default function App() {
           setRecruitedFamilyMembers((prev) =>
             prev.map((m) => (m.agentId === agentId ? { ...m, activeOrder: orderId } : m)),
           );
-          dispatchBuddyAction(`adjustPlayerLul:${orderSpec.rewardLul}`);
           if (orderId === 'go_fishing') {
             const caught = rollRandomCaughtFish({
               waterZone: 'east_beach',
               caughtByAccount: hud.nearWalletId || playerUid || 'commander-p1.testnet',
             });
             setCaughtFishBucket((prev) => [caught, ...prev]);
-          } else if (orderId === 'armed_warzone_attack') {
-            dispatchBuddyAction('kioskSelectRecipe:buddy_infantry');
+          } else {
+            dispatchBuddyAction(`adjustPlayerLul:${orderSpec.rewardLul}`);
+            if (orderId === 'armed_warzone_attack') {
+              dispatchBuddyAction('kioskSelectRecipe:buddy_infantry');
+            }
           }
         }}
         ownedItemIds={ownedMerchantItemIds}
@@ -4946,14 +4945,18 @@ export default function App() {
         onSellCaughtFish={(fish: CaughtFishItem) => {
           const actorAccount =
             hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const earnedCyon = fish.sellValueCyon || fish.sellValueLul || 15;
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);
-          dispatchBuddyAction(`adjustPlayerLul:${fish.sellValueLul}`);
-          const nextLul = hud.gold + fish.sellValueLul;
+          const nextCyon = cyonBalance + earnedCyon;
+          setCyonBalance(nextCyon);
+          if (isManagedSubAccountOfMaster(actorAccount)) {
+            setManagedSubAccounts(updateSubAccountBalances(actorAccount, 0, earnedCyon));
+          }
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
-            lulBalance: nextLul,
-            cyonBalance,
+            lulBalance: hud.gold,
+            cyonBalance: nextCyon,
             respiteBalance,
           });
           void insertMarketTransactionReceipt({
@@ -4961,21 +4964,18 @@ export default function App() {
             actor_near_account: actorAccount,
             action_type: 'sell_fish',
             item_id: fish.speciesId,
-            currency: 'LUL',
-            amount: fish.sellValueLul,
-            unit_price: fish.sellValueLul,
-            reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai for +${fish.sellValueLul} LUL.`,
+            currency: 'CYON',
+            amount: earnedCyon,
+            unit_price: earnedCyon,
+            reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedCyon} CYON.`,
           });
         }}
         onMintFishAsNft={(fish: CaughtFishItem) => {
-          if (hud.gold < fish.mintFeeLul) return;
           const actorAccount =
             hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
           const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
           const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
           const nearTxHash = `near-fish-mint-${Date.now().toString(36)}`;
-          dispatchBuddyAction(`adjustPlayerLul:${-fish.mintFeeLul}`);
-          const nextLul = Math.max(0, hud.gold - fish.mintFeeLul);
           setCaughtFishBucket((prev) =>
             prev.map((f) =>
               f.id === fish.id
@@ -4990,7 +4990,7 @@ export default function App() {
           );
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
-            lulBalance: nextLul,
+            lulBalance: hud.gold,
             cyonBalance,
             respiteBalance,
             ownedTokenIds: [...ownedMerchantItemIds, nftTokenId],
@@ -5001,17 +5001,18 @@ export default function App() {
             action_type: 'mint_fish_nft',
             item_id: fish.speciesId,
             nep245_token_id: nftTokenId,
-            currency: 'LUL',
-            amount: fish.mintFeeLul,
-            unit_price: fish.mintFeeLul,
-            reasoning_summary: `Self-minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NFT ${nftTokenId} (-${fish.mintFeeLul} LUL fee).`,
+            currency: 'RESPITE',
+            amount: 0,
+            unit_price: 0,
+            reasoning_summary: `Minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NEP-171 Fish NFT ${nftTokenId}.`,
             near_tx_hash: nearTxHash,
           });
         }}
-        onListFishNftOnMarket={(fish: CaughtFishItem, priceLul: number) => {
+        onListFishNftOnMarket={(fish: CaughtFishItem, priceRespiteInput: number) => {
           if (!fish.isMintedNft || !fish.nftTokenId) return;
           const actorAccount =
             hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const cleanRespitePrice = Math.max(1, Math.round(priceRespiteInput));
           const newListing: FishNftMarketplaceListing = {
             listingId: `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
             nftTokenId: fish.nftTokenId,
@@ -5024,7 +5025,8 @@ export default function App() {
             colorHex: fish.colorHex,
             caughtByAccount: fish.caughtByAccount,
             sellerNearAccount: actorAccount,
-            priceLul: Math.max(10, Math.round(priceLul)),
+            priceRespite: cleanRespitePrice,
+            priceLul: cleanRespitePrice,
             nearTxHash: fish.nearTxHash || `near-list-${Date.now().toString(36)}`,
             listedAtIso: new Date().toISOString(),
           };
@@ -5039,10 +5041,10 @@ export default function App() {
                 action_type: 'list_fish_nft',
                 item_id: fish.speciesId,
                 nep245_token_id: newListing.nftTokenId,
-                currency: 'LUL',
-                amount: newListing.priceLul,
-                unit_price: newListing.priceLul,
-                reasoning_summary: `${actorAccount} listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) on Kai's Marketplace for ${newListing.priceLul} LUL.`,
+                currency: 'RESPITE',
+                amount: newListing.priceRespite,
+                unit_price: newListing.priceRespite,
+                reasoning_summary: `${actorAccount} listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) on Kai's Marketplace for ${newListing.priceRespite} RESPITE.`,
                 near_tx_hash: newListing.nearTxHash,
               },
             });
@@ -5054,20 +5056,38 @@ export default function App() {
             hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
           const isOwnListing =
             listing.sellerNearAccount.toLowerCase() === actorAccount.toLowerCase();
-          if (!isOwnListing && hud.gold < listing.priceLul) return;
+          const listingPriceRespite = Math.max(
+            1,
+            listing.priceRespite ||
+              (listing.priceLul > 200
+                ? Math.round(listing.priceLul / 50)
+                : listing.priceLul),
+          );
+          if (!isOwnListing && respiteBalance < listingPriceRespite) return;
 
           if (!isOwnListing) {
-            dispatchBuddyAction(`adjustPlayerLul:${-listing.priceLul}`);
-            const nextLul = Math.max(0, hud.gold - listing.priceLul);
+            const nextRespite = Math.max(0, respiteBalance - listingPriceRespite);
+            setRespiteBalance(nextRespite);
+            if (isManagedSubAccountOfMaster(actorAccount)) {
+              setManagedSubAccounts(
+                updateSubAccountBalances(actorAccount, -listingPriceRespite, 0),
+              );
+            }
+            if (isManagedSubAccountOfMaster(listing.sellerNearAccount)) {
+              setManagedSubAccounts(
+                updateSubAccountBalances(listing.sellerNearAccount, listingPriceRespite, 0),
+              );
+            }
             void syncPlayerBalancesToSupabase({
               nearAccountId: actorAccount,
-              lulBalance: nextLul,
+              lulBalance: hud.gold,
               cyonBalance,
-              respiteBalance,
+              respiteBalance: nextRespite,
               ownedTokenIds: [...ownedMerchantItemIds, listing.nftTokenId],
             });
           }
 
+          const sellCyonFallback = Math.max(15, Math.round(listingPriceRespite * 2));
           const reclaimedFish: CaughtFishItem = {
             id: `fish-nft-${Date.now()}`,
             speciesId: listing.speciesId,
@@ -5076,8 +5096,10 @@ export default function App() {
             waterZoneLabel: listing.waterZoneLabel,
             rarity: listing.rarity,
             weightKg: listing.weightKg,
-            sellValueLul: Math.max(25, Math.round(listing.priceLul * 0.6)),
+            sellValueCyon: sellCyonFallback,
+            sellValueLul: sellCyonFallback,
             mintFeeLul: 0,
+            suggestedRespitePrice: listingPriceRespite,
             colorHex: listing.colorHex,
             loreTag: `Acquired on Kai's P2P Fish Marketplace (Original Angler: ${listing.caughtByAccount}).`,
             caughtByAccount: listing.caughtByAccount,
@@ -5098,12 +5120,12 @@ export default function App() {
                 action_type: 'buy_fish_nft',
                 item_id: listing.speciesId,
                 nep245_token_id: listing.nftTokenId,
-                currency: 'LUL',
-                amount: isOwnListing ? 0 : listing.priceLul,
-                unit_price: listing.priceLul,
+                currency: 'RESPITE',
+                amount: isOwnListing ? 0 : listingPriceRespite,
+                unit_price: listingPriceRespite,
                 reasoning_summary: isOwnListing
                   ? `${actorAccount} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Kai's Marketplace.`
-                  : `${actorAccount} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listing.priceLul} LUL.`,
+                  : `${actorAccount} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`,
                 near_tx_hash: `near-trade-${Date.now().toString(36)}`,
               },
             });

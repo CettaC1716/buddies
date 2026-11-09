@@ -3626,7 +3626,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let activePriorityRecipe: KioskBuildPriorityRecipeId = 'buddy_infantry';
     let blueBuildQueue: KioskBuildPriorityRecipeId[] = ['buddy_infantry'];
     let useCustomHologramRecipe = true;
-    let gold = 1500;
+    const winLulStore = window as unknown as { __bb_earned_warzone_lul?: number };
+    let gold =
+      typeof winLulStore.__bb_earned_warzone_lul === 'number'
+        ? winLulStore.__bb_earned_warzone_lul
+        : worldModeRef.current === 'warzone'
+          ? 200
+          : 0;
     let kioskStatusMessage: string | null = null;
     let kioskStatusTimer = 0;
     let warzoneGoldSpawnTimer = 0;
@@ -4520,7 +4526,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       blueBaseHp = 2000;
       redBaseHp = 2000;
       score = 0;
-      gold = playModeRef.current === 'sandbox' ? 2500 : 1200;
+      gold =
+        typeof winLulStore.__bb_earned_warzone_lul === 'number'
+          ? winLulStore.__bb_earned_warzone_lul
+          : worldModeRef.current === 'warzone'
+            ? 200
+            : 0;
       playerWarzoneLives = PLAYER_WARZONE_MAX_LIVES;
       activePriorityRecipe = Object.keys(
         KIOSK_BUILD_PRIORITY_RECIPES,
@@ -10641,6 +10652,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const delta = Number(act.slice('adjustPlayerLul:'.length));
         if (!Number.isNaN(delta)) {
           gold = Math.max(0, gold + delta);
+          winLulStore.__bb_earned_warzone_lul = gold;
           emitHudImmediately();
         }
       } else if (act.startsWith('applyHouseTheme:')) {
@@ -19064,6 +19076,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // Floating prompts are rendered via direct 60 FPS DOM overlay with Math.round & hysteresis (zero React re-render)
       const floatingPrompts: FloatingWorldPrompt[] = [];
+      winLulStore.__bb_earned_warzone_lul = gold;
 
       return {
         hp: mountedTank ? mountedTank.hp : playerUnit.hp,

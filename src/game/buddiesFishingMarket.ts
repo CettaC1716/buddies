@@ -1,14 +1,13 @@
 /**
  * ============================================================================
- * BUDDIES BLITZ 3D — FISHING, SELF-PAID FISH NFT MINTING & KAI MARKETPLACE
+ * BUDDIES BLITZ 3D — FISHING, FISH NFT MINTING & KAI'S RESPITE MARKETPLACE
  * ============================================================================
- * Implements the "Catch Anywhere With Water -> Sell to Merchant for LUL OR
- * Self-Pay Mint as Fish NFT -> List & Trade on KAI's Beach Marketplace" loop.
- *
- * Water detection uses the exact Signed Distance Fields (SDF) from
- * `buddiesPlanetCurvature.ts` (`evaluateNwLakeSdf` for Central Oasis Lake and
- * `evaluateSeHarborSdf` for East Beach / Harbor Ocean), so players can fish
- * at any shoreline and discover surprise freshwater vs. saltwater species.
+ * Economy Rules:
+ *   1. LUL is earned ONLY in the Warzone (high supply from combat & crates).
+ *   2. Fishing has its own skill/difficulty at East Beach or Central Oasis Lake:
+ *      - Option A (Direct Sale): Sell caught fish directly to Merchant Kai for CYON.
+ *      - Option B (NFT Marketplace): Mint caught fish into a NEP-171 Fish NFT and
+ *        list it on Kai's P2P Marketplace, where other players buy it using RESPITE.
  * ============================================================================
  */
 
@@ -31,8 +30,10 @@ export interface FishSpeciesSpec {
   rarity: FishRarityTier;
   minWeightKg: number;
   maxWeightKg: number;
+  baseCyonPerKg: number;
   baseLulPerKg: number;
   mintFeeLul: number;
+  suggestedRespitePrice: number;
   dropWeight: number;
   colorHex: string;
   loreTag: string;
@@ -46,8 +47,10 @@ export interface CaughtFishItem {
   waterZoneLabel: string;
   rarity: FishRarityTier;
   weightKg: number;
+  sellValueCyon: number;
   sellValueLul: number;
   mintFeeLul: number;
+  suggestedRespitePrice: number;
   colorHex: string;
   loreTag: string;
   caughtByAccount: string;
@@ -69,6 +72,7 @@ export interface FishNftMarketplaceListing {
   colorHex: string;
   caughtByAccount: string;
   sellerNearAccount: string;
+  priceRespite: number;
   priceLul: number;
   nearTxHash: string;
   listedAtIso: string;
@@ -83,8 +87,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Common',
     minWeightKg: 0.4,
     maxWeightKg: 1.8,
-    baseLulPerKg: 28,
-    mintFeeLul: 60,
+    baseCyonPerKg: 12,
+    baseLulPerKg: 12,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 5,
     dropWeight: 44,
     colorHex: '#38bdf8',
     loreTag: 'Schooling coastal fish found along the East Beach seawall.',
@@ -96,8 +102,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Common',
     minWeightKg: 0.9,
     maxWeightKg: 3.4,
-    baseLulPerKg: 32,
-    mintFeeLul: 75,
+    baseCyonPerKg: 14,
+    baseLulPerKg: 14,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 8,
     dropWeight: 30,
     colorHex: '#60a5fa',
     loreTag: 'Fast saltwater swimmer prized by Kai at the Beach Safezone.',
@@ -109,8 +117,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Uncommon',
     minWeightKg: 1.8,
     maxWeightKg: 6.2,
-    baseLulPerKg: 48,
-    mintFeeLul: 110,
+    baseCyonPerKg: 20,
+    baseLulPerKg: 20,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 15,
     dropWeight: 16,
     colorHex: '#2dd4bf',
     loreTag: 'Vibrant turquoise scales that shimmer under coastal sunlight.',
@@ -122,8 +132,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Rare',
     minWeightKg: 5.5,
     maxWeightKg: 16.0,
-    baseLulPerKg: 75,
-    mintFeeLul: 160,
+    baseCyonPerKg: 30,
+    baseLulPerKg: 30,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 28,
     dropWeight: 7,
     colorHex: '#facc15',
     loreTag: 'Deep-water trophy predator rarely venturing near the pier.',
@@ -135,8 +147,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Mythic',
     minWeightKg: 12.0,
     maxWeightKg: 34.0,
-    baseLulPerKg: 135,
-    mintFeeLul: 250,
+    baseCyonPerKg: 55,
+    baseLulPerKg: 55,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 60,
     dropWeight: 3,
     colorHex: '#c084fc',
     loreTag: 'Ancient bioluminescent relic of the East Trench. Collector NFT centerpiece.',
@@ -150,8 +164,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Common',
     minWeightKg: 0.6,
     maxWeightKg: 2.4,
-    baseLulPerKg: 30,
-    mintFeeLul: 65,
+    baseCyonPerKg: 12,
+    baseLulPerKg: 12,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 6,
     dropWeight: 42,
     colorHex: '#94a3b8',
     loreTag: 'Calm freshwater carp thriving in the Central Oasis basin.',
@@ -163,8 +179,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Common',
     minWeightKg: 0.8,
     maxWeightKg: 3.1,
-    baseLulPerKg: 35,
-    mintFeeLul: 80,
+    baseCyonPerKg: 15,
+    baseLulPerKg: 15,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 8,
     dropWeight: 28,
     colorHex: '#4ade80',
     loreTag: 'Camouflaged among the lush green reeds of the central lake.',
@@ -176,8 +194,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Uncommon',
     minWeightKg: 2.0,
     maxWeightKg: 6.8,
-    baseLulPerKg: 54,
-    mintFeeLul: 120,
+    baseCyonPerKg: 22,
+    baseLulPerKg: 22,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 16,
     dropWeight: 18,
     colorHex: '#fb7185',
     loreTag: 'Ornamental koi patterned like cherry blossoms.',
@@ -189,11 +209,13 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Rare',
     minWeightKg: 6.5,
     maxWeightKg: 19.5,
-    baseLulPerKg: 82,
-    mintFeeLul: 175,
+    baseCyonPerKg: 34,
+    baseLulPerKg: 34,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 32,
     dropWeight: 8,
     colorHex: '#38bdf8',
-    loreTag: ' apex freshwater giant charged by nearby wind-turbine currents.',
+    loreTag: 'Apex freshwater giant charged by nearby wind-turbine currents.',
   },
   {
     speciesId: 'astral_dragon_arowana',
@@ -202,8 +224,10 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     rarity: 'Mythic',
     minWeightKg: 11.0,
     maxWeightKg: 29.0,
-    baseLulPerKg: 150,
-    mintFeeLul: 260,
+    baseCyonPerKg: 60,
+    baseLulPerKg: 60,
+    mintFeeLul: 0,
+    suggestedRespitePrice: 65,
     dropWeight: 4,
     colorHex: '#f59e0b',
     loreTag: 'Legendary golden lake guardian sought by every collector on NEAR.',
@@ -287,9 +311,9 @@ export function rollRandomCaughtFish(params: {
           ? 1.1
           : 1.0;
 
-  const sellValueLul = Math.max(
-    15,
-    Math.round(weightKg * chosen.baseLulPerKg * rarityMultiplier),
+  const sellValueCyon = Math.max(
+    10,
+    Math.round(weightKg * chosen.baseCyonPerKg * rarityMultiplier),
   );
 
   const uniqueSuffix = Math.floor(100000 + rand() * 900000);
@@ -303,8 +327,10 @@ export function rollRandomCaughtFish(params: {
       chosen.waterZone === 'central_oasis' ? 'Central Oasis Lake' : 'East Beach Shoreline',
     rarity: chosen.rarity,
     weightKg,
-    sellValueLul,
-    mintFeeLul: chosen.mintFeeLul,
+    sellValueCyon,
+    sellValueLul: sellValueCyon,
+    mintFeeLul: 0,
+    suggestedRespitePrice: chosen.suggestedRespitePrice,
     colorHex: chosen.colorHex,
     loreTag: chosen.loreTag,
     caughtByAccount: params.caughtByAccount,
@@ -326,9 +352,10 @@ export const INITIAL_DEMO_FISH_MARKET_LISTINGS: FishNftMarketplaceListing[] = [
     rarity: 'Rare',
     weightKg: 13.45,
     colorHex: '#facc15',
-    caughtByAccount: 'kai-angler.testnet',
-    sellerNearAccount: 'kai-angler.testnet',
-    priceLul: 1450,
+    caughtByAccount: 'kai-angler.buddiesblitz.testnet',
+    sellerNearAccount: 'kai-angler.buddiesblitz.testnet',
+    priceRespite: 25,
+    priceLul: 25,
     nearTxHash: '9fK2vL8xM1pQ4zW7nB3cR6tY5uJ8hG2dF4sA1eN',
     listedAtIso: new Date(Date.now() - 3600 * 1000 * 2).toISOString(),
   },
@@ -342,9 +369,10 @@ export const INITIAL_DEMO_FISH_MARKET_LISTINGS: FishNftMarketplaceListing[] = [
     rarity: 'Mythic',
     weightKg: 24.8,
     colorHex: '#f59e0b',
-    caughtByAccount: 'oasis-hunter.testnet',
-    sellerNearAccount: 'oasis-hunter.testnet',
-    priceLul: 4200,
+    caughtByAccount: 'oasis-hunter.buddiesblitz.testnet',
+    sellerNearAccount: 'oasis-hunter.buddiesblitz.testnet',
+    priceRespite: 55,
+    priceLul: 55,
     nearTxHash: '4xP9mN2vK7qL1wZ8cR5tY3uJ6hG9dF2sA7eB4nM',
     listedAtIso: new Date(Date.now() - 3600 * 1000 * 5).toISOString(),
   },

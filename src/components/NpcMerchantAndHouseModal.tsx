@@ -1548,7 +1548,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                         soundEngine.playUiClick();
                                         onCommandFamilyMember?.(member.agentId, orderSpec.id);
                                         triggerNpcSpeech(
-                                          `Order confirmed for ${member.name}: ${orderSpec.label}. ${orderSpec.description} (+${orderSpec.rewardLul} LUL activity reward).`,
+                                          orderSpec.id === 'go_fishing'
+                                            ? `Order confirmed for ${member.name}: ${orderSpec.label}. ${orderSpec.description} Caught fish added to your Fish Bucket.`
+                                            : `Order confirmed for ${member.name}: ${orderSpec.label}. ${orderSpec.description} (+${orderSpec.rewardLul} LUL Warzone reward).`,
                                         );
                                       }}
                                       className={`py-1.5 px-2 border border-black text-[9px] font-black uppercase cursor-pointer transition-colors ${
@@ -1574,27 +1576,55 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           })()}
 
           {/* ===============================================================
-              TAB 4: FISH MARKET (Beach NPC Kai Only: Sell Raw Fish for LUL, Self-Pay Mint Rare Fish NFT, & P2P Marketplace)
+              TAB 4: FISH MARKET (Beach NPC Kai Only: Sell Raw Fish to Merchant for CYON, or Mint Fish NFT & Sell on P2P Marketplace for RESPITE)
              =============================================================== */}
           {merchantLocation === 'beach_house' && activeTab === 'fish_market' && (
             <div className="space-y-3" data-fish-market-panel="true">
-              {/* Top Balance & Ecosystem Header */}
-              <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-1">
-                <div className="flex items-center justify-between gap-2">
+              {/* Top Balance / Registration Gate Header */}
+              <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-1.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[11px] font-black uppercase text-[#b8ff3c]">
-                    KAI&apos;S COASTAL &amp; OASIS FISH EXCHANGE
+                    {walletConnected
+                      ? 'KAI COASTAL AND OASIS FISH MARKET'
+                      : 'REGISTRATION REQUIRED FOR FISH MARKET'}
                   </span>
-                  <span className="px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[10px] font-black uppercase">
-                    BALANCE: {lulBalance.toLocaleString()} LUL
-                  </span>
+                  {walletConnected ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9.5px] font-black uppercase">
+                        {cyonBalance.toLocaleString()} CYON
+                      </span>
+                      <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase">
+                        {respiteBalance.toLocaleString()} RESPITE
+                      </span>
+                    </div>
+                  ) : (
+                    onConnectWallet && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onConnectWallet();
+                        }}
+                        className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer"
+                      >
+                        <span className="skew-x-6 inline-block">REGISTER</span>
+                      </button>
+                    )
+                  )}
                 </div>
                 <p className="text-[10px] font-bold text-slate-300 leading-snug">
-                  Fish near any water (East Beach or Central Oasis Lake). Sell normal catches for instant LUL, or pay the mint fee yourself to turn rare catches into tradable NFTs on Kai&apos;s Marketplace.
+                  {walletConnected
+                    ? 'Catch fish at East Beach or Central Oasis Lake. Sell your catch directly to Merchant Kai for CYON, or mint your fish as an NFT to list on the Marketplace where other players buy it with RESPITE.'
+                    : 'You are playing as a Guest. Please register to sell fish for CYON or mint and trade Fish NFTs for RESPITE.'}
                 </p>
               </div>
 
-              {/* SECTION 1: YOUR FISH BUCKET (RAW CATCHES & MINTED FISH NFTs) */}
-              <div className="p-3 bg-[#f8fafc] border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5">
+              {/* SECTION 1: YOUR FISH BUCKET (RAW CATCHES -> CYON OR MINT NFT -> RESPITE MARKETPLACE) */}
+              <div
+                className={`p-3 bg-[#f8fafc] border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5 ${
+                  !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                }`}
+              >
                 <div className="flex items-center justify-between border-b-2 border-black pb-1.5">
                   <span className="text-[11px] font-black uppercase">
                     1. YOUR FISH BUCKET ({caughtFishBucket.length})
@@ -1606,21 +1636,21 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                 {caughtFishBucket.length === 0 ? (
                   <div className="py-4 px-3 bg-white border-2 border-dashed border-slate-400 text-center text-[11px] font-bold text-slate-600">
-                    Your Fish Bucket is empty. Walk to the East Beach shoreline or the Central Oasis Lake and press [F] CAST ROD to catch fish!
+                    Your Fish Bucket is empty. Walk to the East Beach shoreline or the Central Oasis Lake and press [F] CAST ROD to catch fish.
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                     {caughtFishBucket.map((fish) => {
-                      const canAffordMint = lulBalance >= fish.mintFeeLul;
-                      const defaultSuggestedPrice = Math.max(
-                        fish.sellValueLul + fish.mintFeeLul + 100,
-                        Math.round(fish.sellValueLul * 2.2),
+                      const cyonValue = fish.sellValueCyon || fish.sellValueLul || 15;
+                      const defaultSuggestedRespite = Math.max(
+                        1,
+                        fish.suggestedRespitePrice || Math.round(cyonValue / 3),
                       );
                       const priceInputStr =
-                        listingPriceByFishId[fish.id] ?? String(defaultSuggestedPrice);
-                      const parsedListPrice = Math.max(
-                        10,
-                        Math.floor(Number(priceInputStr) || defaultSuggestedPrice),
+                        listingPriceByFishId[fish.id] ?? String(defaultSuggestedRespite);
+                      const parsedListPriceRespite = Math.max(
+                        1,
+                        Math.floor(Number(priceInputStr) || defaultSuggestedRespite),
                       );
 
                       const rarityBadgeStyle =
@@ -1678,45 +1708,39 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onSellCaughtFish?.(fish);
                                   triggerNpcSpeech(
-                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${fish.sellValueLul} LUL for your catch.`,
+                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${cyonValue} CYON for selling directly to me.`,
                                   );
                                 }}
-                                className="flex-1 py-1.5 px-2.5 bg-[#fec83e] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                SELL TO MERCHANT (+{fish.sellValueLul} LUL)
+                                SELL TO MERCHANT (+{cyonValue} CYON)
                               </button>
 
                               <button
                                 type="button"
                                 data-mint-fish-btn={fish.id}
-                                disabled={!canAffordMint}
                                 onClick={() => {
-                                  if (!canAffordMint) return;
                                   soundEngine.playUiClick();
                                   onMintFishAsNft?.(fish);
                                   triggerNpcSpeech(
-                                    `Minted! Your ${fish.weightKg} kg ${fish.speciesName} is now a verifiable NEP-171 Fish NFT. You can list it on my marketplace below!`,
+                                    `Minted! Your ${fish.weightKg} kg ${fish.speciesName} is now a NEP-171 Fish NFT. Set a RESPITE price below to sell it to other players on the Marketplace!`,
                                   );
                                 }}
-                                className={`flex-1 py-1.5 px-2.5 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase ${
-                                  canAffordMint
-                                    ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black cursor-pointer'
-                                    : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                                }`}
+                                className="flex-1 py-1.5 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                MINT AS NFT (-{fish.mintFeeLul} LUL FEE)
+                                MINT FISH AS NFT
                               </button>
                             </div>
                           ) : (
                             <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
                               <div className="flex items-center gap-1">
                                 <span className="text-[9.5px] font-black uppercase">
-                                  SET PRICE (LUL):
+                                  SET PRICE (RESPITE):
                                 </span>
                                 <input
                                   type="number"
-                                  min={10}
-                                  step={10}
+                                  min={1}
+                                  step={1}
                                   value={priceInputStr}
                                   onChange={(e) =>
                                     setListingPriceByFishId((prev) => ({
@@ -1724,7 +1748,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       [fish.id]: e.target.value,
                                     }))
                                   }
-                                  className="w-24 px-2 py-1 bg-slate-100 border-2 border-black text-[10.5px] font-black"
+                                  className="w-20 px-2 py-1 bg-slate-100 border-2 border-black text-[10.5px] font-black"
                                 />
                               </div>
                               <button
@@ -1732,14 +1756,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 data-list-fish-nft-btn={fish.id}
                                 onClick={() => {
                                   soundEngine.playUiClick();
-                                  onListFishNftOnMarket?.(fish, parsedListPrice);
+                                  onListFishNftOnMarket?.(fish, parsedListPriceRespite);
                                   triggerNpcSpeech(
-                                    `Listed! Your ${fish.speciesName} NFT (${fish.weightKg} kg) is now live on Kai's Marketplace for ${parsedListPrice} LUL.`,
+                                    `Listed! Your ${fish.speciesName} NFT (${fish.weightKg} kg) is now on the Marketplace for ${parsedListPriceRespite} RESPITE.`,
                                   );
                                 }}
                                 className="flex-1 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                LIST ON MARKETPLACE ({parsedListPrice} LUL)
+                                LIST ON MARKETPLACE ({parsedListPriceRespite} RESPITE)
                               </button>
                             </div>
                           )}
@@ -1750,20 +1774,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 )}
               </div>
 
-              {/* SECTION 2: KAI'S P2P FISH NFT MARKETPLACE (LIVE SUPABASE SYNC) */}
-              <div className="p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5">
+              {/* SECTION 2: KAI'S P2P FISH NFT MARKETPLACE (BOUGHT & SOLD USING RESPITE) */}
+              <div
+                className={`p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5 ${
+                  !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                }`}
+              >
                 <div className="flex items-center justify-between border-b border-white/20 pb-1.5">
-                  <span className="text-[11px] font-black uppercase text-[#38bdf8]">
-                    2. KAI&apos;S P2P FISH NFT MARKETPLACE ({fishMarketListings.length} LISTED)
+                  <span className="text-[11px] font-black uppercase text-[#d8b4fe]">
+                    2. PLAYER FISH NFT MARKETPLACE ({fishMarketListings.length} LISTED · RESPITE)
                   </span>
-                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-[#10b981] text-black">
-                    LIVE P2P
+                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-[#d8b4fe] text-black">
+                    RESPITE P2P
                   </span>
                 </div>
 
                 {fishMarketListings.length === 0 ? (
                   <div className="py-4 text-center text-[11px] font-bold text-slate-400">
-                    No Fish NFTs currently listed. Mint a rare catch above and be the first to list!
+                    No Fish NFTs currently listed. Mint a caught fish above and list it for RESPITE.
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[230px] overflow-y-auto pr-1">
@@ -1771,7 +1799,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       const isOwnListing =
                         listing.sellerNearAccount.toLowerCase() ===
                         playerNearAccount.toLowerCase();
-                      const canBuy = isOwnListing || lulBalance >= listing.priceLul;
+                      const listingPriceRespite = Math.max(
+                        1,
+                        listing.priceRespite ||
+                          (listing.priceLul > 200
+                            ? Math.round(listing.priceLul / 50)
+                            : listing.priceLul),
+                      );
+                      const canBuy =
+                        walletConnected &&
+                        (isOwnListing || respiteBalance >= listingPriceRespite);
                       const rarityBadgeStyle =
                         listing.rarity === 'Mythic'
                           ? 'bg-[#c084fc] text-black'
@@ -1815,24 +1852,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             onClick={() => {
                               if (!canBuy) return;
                               soundEngine.playUiClick();
-                              onBuyFishNftFromMarket?.(listing);
+                              onBuyFishNftFromMarket?.({
+                                ...listing,
+                                priceRespite: listingPriceRespite,
+                                priceLul: listingPriceRespite,
+                              });
                               triggerNpcSpeech(
                                 isOwnListing
                                   ? `Listing cancelled! ${listing.speciesName} (${listing.weightKg} kg) returned to your Fish Bucket.`
-                                  : `Purchased ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listing.priceLul} LUL!`,
+                                  : `Purchased ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE!`,
                               );
                             }}
                             className={`px-3 py-2 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase shrink-0 ${
                               isOwnListing
                                 ? 'bg-[#facc15] hover:bg-[#fde047] text-black cursor-pointer'
                                 : canBuy
-                                  ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
+                                  ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
                                   : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                             }`}
                           >
                             {isOwnListing
                               ? 'UNLIST NFT'
-                              : `BUY (${listing.priceLul.toLocaleString()} LUL)`}
+                              : `BUY (${listingPriceRespite.toLocaleString()} RESPITE)`}
                           </button>
                         </div>
                       );

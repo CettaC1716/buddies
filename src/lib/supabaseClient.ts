@@ -239,10 +239,10 @@ export async function fetchOrCreatePlayerProfile(params: {
     if (existing) {
       return {
         ...existing,
-        lul_balance: Number(existing.lul_balance ?? 120),
-        cyon_balance: Number(existing.cyon_balance ?? 95),
-        respite_balance: Number(existing.respite_balance ?? 25),
-        warzone_gold: Number(existing.warzone_gold ?? 600),
+        lul_balance: Number(existing.lul_balance ?? 0),
+        cyon_balance: Number(existing.cyon_balance ?? 0),
+        respite_balance: Number(existing.respite_balance ?? 0),
+        warzone_gold: Number(existing.warzone_gold ?? 0),
         owned_token_ids: Array.isArray(existing.owned_token_ids)
           ? existing.owned_token_ids
           : ['nep245:theme:japanese_zen'],
@@ -257,10 +257,10 @@ export async function fetchOrCreatePlayerProfile(params: {
       auth_mode: params.authMode || 'social_invisible',
       display_name: (params.displayName || cleanAccount.split('.')[0].toUpperCase()).slice(0, 48),
       email: null, // Never store raw PII email in public table
-      lul_balance: 120,
-      cyon_balance: 95,
-      respite_balance: 25,
-      warzone_gold: 600,
+      lul_balance: 0,
+      cyon_balance: 0,
+      respite_balance: 0,
+      warzone_gold: 0,
       owned_token_ids: ['nep245:theme:japanese_zen'],
       unlocked_skins: ['default'],
     };

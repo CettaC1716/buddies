@@ -589,7 +589,7 @@ export function generateNpcMerchantReply(
     q.includes('petunjuk') ||
     q.includes('cara main')
   ) {
-    return `Here is how to play Buddies Blitz: First, register with Google to receive your personal wallet and starter coins. Second, catch fish near water or collect boxes in the Warzone to earn LUL. Third, use the Exchange tab to convert currencies, and open the Catalog tab to buy a House and recruit Family Members.${guestNotice}`;
+    return `Here is how to play Buddies Blitz: First, register with Google to create your personal citizen wallet. Second, enter the Warzone to earn LUL, or catch fish at East Beach and Central Oasis Lake. You can sell caught fish directly to Merchant Kai for CYON, or mint your fish as an NFT to sell on the Marketplace for RESPITE. You can also swap NEAR for RESPITE in the Exchange tab.${guestNotice}`;
   }
 
   // 4. Registration / Account / Wallet questions
@@ -606,7 +606,7 @@ export function generateNpcMerchantReply(
     q.includes('akun')
   ) {
     if (!balances.walletConnected) {
-      return `You are currently playing as a Guest with zero coins and read-only shop access. Click the REGISTER button in the Exchange or Catalog tab to sign up with Google and automatically receive your personal wallet address.`;
+      return `You are currently playing as a Guest with zero coins and read-only shop access. Click the REGISTER button in the Exchange or Catalog tab to sign up with Google and create your personal wallet address.`;
     }
     return `Your account is already registered and your personal wallet is active. You can view and copy your wallet address anytime inside your Personal Wallet menu.`;
   }
@@ -628,7 +628,7 @@ export function generateNpcMerchantReply(
     q.includes('uang') ||
     q.includes('koin')
   ) {
-    return `Buddies Blitz uses three currencies: LUL is earned from fishing and Warzone activity, CYON is exchanged from LUL to buy furniture and shop items, and RESPITE is used in the Catalog to buy a House and recruit Family Members. Your current balance is ${balances.lul} LUL, ${balances.cyon} CYON, and ${balances.respite} RESPITE.${guestNotice}`;
+    return `Buddies Blitz uses three currencies: LUL can only be earned in the Warzone, CYON is obtained by exchanging LUL or selling caught fish directly to Merchant Kai, and RESPITE is obtained by swapping NEAR in the Exchange tab or by minting caught fish into NFTs and selling them to other players on the Fish Marketplace. Your current balance is ${balances.lul} LUL, ${balances.cyon} CYON, and ${balances.respite} RESPITE.${guestNotice}`;
   }
 
   // 6. House, Family Members & Catalog
@@ -660,7 +660,7 @@ export function generateNpcMerchantReply(
     q.includes('ikan') ||
     q.includes('pantai')
   ) {
-    return `You can fish at the Central Oasis Lake or along the East Beach shoreline by pressing F near the water. Bring your caught fish to Kai at the East Beach House to sell them for LUL or mint rare fish into tradable items.${guestNotice}`;
+    return `You can fish at the Central Oasis Lake or along the East Beach shoreline by pressing F near the water. Bring your caught fish to Kai at the East Beach House: if you do not want to mint the fish as an NFT, sell it directly to the merchant for CYON, or mint it as an NFT and list it on the Marketplace where other players buy it with RESPITE.${guestNotice}`;
   }
 
   // 8. Warzone / Combat / Crates
