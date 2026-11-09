@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { usePrivy, useLogin } from '@privy-io/react-auth';
 import {
   MessageSquare,
   User,
@@ -1217,53 +1218,138 @@ export default function App() {
     [characterGender, dispatchBuddyAction, persistWalletProfileLocally, walletNetworkChoice],
   );
 
+  const {
+    ready: privyReady,
+    authenticated: privyAuthenticated,
+    user: privyUser,
+    logout: privyLogout,
+  } = usePrivy();
+  const pendingPrivyGoogleFlowRef = useRef<boolean>(false);
+
+  const openCitizenWalletNamingModal = useCallback((rawEmail?: string) => {
+    setWalletConnectError(null);
+    setCitizenWalletNameError(null);
+    const cleanEmail = (rawEmail ?? '').trim().toLowerCase();
+    if (cleanEmail) {
+      const resolvedEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@gmail.com`;
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
+        } catch {
+          // ignore
+        }
+      }
+      setConnectedGoogleEmail(resolvedEmail);
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem('bb_pending_privy_google_login');
+      } catch {
+        // ignore
+      }
+    }
+    setGameState('playing');
+    setCitizenWalletNameDraft('');
+    setOnboardingStep('completed');
+    setCitizenWalletModalPhase('choose_name');
+  }, []);
+
+  const { login: privyLogin } = useLogin({
+    onComplete: ({ user, wasAlreadyAuthenticated }) => {
+      const googleEmail = user?.google?.email || user?.email?.address || '';
+      const hasPendingRedirect =
+        typeof window !== 'undefined' &&
+        (window.sessionStorage.getItem('bb_pending_privy_google_login') === '1' ||
+          window.location.search.includes('privy_oauth_'));
+
+      if (pendingPrivyGoogleFlowRef.current || hasPendingRedirect || !wasAlreadyAuthenticated) {
+        pendingPrivyGoogleFlowRef.current = false;
+        setIsVerifyingNearWallet(false);
+        openCitizenWalletNamingModal(googleEmail);
+      } else if (googleEmail) {
+        setConnectedGoogleEmail(googleEmail);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem('bb_connected_google_email', googleEmail);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    },
+    onError: (err) => {
+      pendingPrivyGoogleFlowRef.current = false;
+      setIsVerifyingNearWallet(false);
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.removeItem('bb_pending_privy_google_login');
+        } catch {
+          // ignore
+        }
+      }
+      if (String(err) !== 'exited_auth_flow') {
+        openCitizenWalletNamingModal();
+      }
+    },
+  });
+
   /**
-   * Step 1 of Google Login: Initiates Google Sign-In and opens the "Choose Your Wallet Name" modal
-   * so the player can input their custom wallet name before provisioning `<name>.buddiesblitz-master.testnet`.
+   * Step 1 of Google Login (via Privy.io): Initiates Privy Google Sign-In and opens the
+   * "Choose Your Wallet Name" modal so the player can type their custom wallet name
+   * before provisioning `<name>.buddiesblitz.testnet`.
    */
   const handleStartGoogleLoginAndOpenWalletNaming = useCallback(
     async (rawEmailInput?: string) => {
       soundEngine.playUiClick();
       setWalletConnectError(null);
       setCitizenWalletNameError(null);
-      const cleanEmail = (rawEmailInput ?? walletConnectInput).trim().toLowerCase();
+      const cleanEmail = (rawEmailInput ?? '').trim().toLowerCase();
 
-      if (!cleanEmail) {
-        setIsVerifyingNearWallet(true);
-        const oauthRes = await signInWithGoogleOAuth();
-        setIsVerifyingNearWallet(false);
-        if (oauthRes.redirected) {
-          return;
-        }
-      } else {
-        const resolvedEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@gmail.com`;
+      if (cleanEmail) {
+        openCitizenWalletNamingModal(cleanEmail);
+        return;
+      }
+
+      if (privyReady && privyAuthenticated) {
+        const activePrivyEmail =
+          privyUser?.google?.email || privyUser?.email?.address || connectedGoogleEmail;
+        openCitizenWalletNamingModal(activePrivyEmail);
+        return;
+      }
+
+      if (privyReady && !privyAuthenticated) {
+        pendingPrivyGoogleFlowRef.current = true;
         if (typeof window !== 'undefined') {
           try {
-            window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
+            window.sessionStorage.setItem('bb_pending_privy_google_login', '1');
           } catch {
             // ignore
           }
         }
-        setConnectedGoogleEmail(resolvedEmail);
+        privyLogin({ loginMethods: ['google'] });
+        return;
       }
 
-      const emailPrefix = cleanEmail
-        ? cleanEmail
-            .split('@')[0]
-            .replace(/\./g, '')
-            .replace(/[^a-z0-9_-]/g, '')
-            .slice(0, 20)
-        : '';
-      const initialWalletName =
-        emailPrefix && emailPrefix !== 'player1' ? emailPrefix : '';
-      setCitizenWalletNameDraft(initialWalletName);
-      setOnboardingStep('completed');
-      setCitizenWalletModalPhase('choose_name');
+      // Fallback when Privy iframe is still initializing or running in offline test mode
+      setIsVerifyingNearWallet(true);
+      const oauthRes = await signInWithGoogleOAuth();
+      setIsVerifyingNearWallet(false);
+      if (oauthRes.redirected) {
+        return;
+      }
+      openCitizenWalletNamingModal();
     },
-    [walletConnectInput],
+    [
+      connectedGoogleEmail,
+      openCitizenWalletNamingModal,
+      privyAuthenticated,
+      privyLogin,
+      privyReady,
+      privyUser,
+    ],
   );
 
-  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`) or Supabase Google OAuth session on mount
+  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`), Privy OAuth redirect, or Supabase Google OAuth session on mount
   useEffect(() => {
     const callback = consumeNearWalletCallbackFromUrl();
     if (callback && callback.accountId) {
@@ -1271,13 +1357,26 @@ export default function App() {
     }
     const unsubGoogle = subscribeToSupabaseGoogleAuth((email) => {
       if (email) {
-        void handleStartGoogleLoginAndOpenWalletNaming(email);
+        openCitizenWalletNamingModal(email);
       }
     });
     return () => {
       unsubGoogle();
     };
-  }, [handleConnectWalletAndEnterLobby, handleStartGoogleLoginAndOpenWalletNaming]);
+  }, [handleConnectWalletAndEnterLobby, openCitizenWalletNamingModal]);
+
+  // If returning from a full-page Privy Google OAuth redirect, automatically enter game and open Wallet Naming modal
+  useEffect(() => {
+    if (!privyReady || !privyAuthenticated) return;
+    const hasPendingRedirect =
+      typeof window !== 'undefined' &&
+      (window.sessionStorage.getItem('bb_pending_privy_google_login') === '1' ||
+        window.location.search.includes('privy_oauth_'));
+    if (hasPendingRedirect) {
+      const googleEmail = privyUser?.google?.email || privyUser?.email?.address || '';
+      openCitizenWalletNamingModal(googleEmail);
+    }
+  }, [openCitizenWalletNamingModal, privyAuthenticated, privyReady, privyUser]);
 
   useEffect(() => {
     if (citizenWalletModalPhase !== 'preparing') return;
@@ -2248,6 +2347,14 @@ export default function App() {
                 <p className="text-xs font-bold text-slate-300">
                   Enter a name to create your personal citizen wallet.
                 </p>
+                {connectedGoogleEmail && (
+                  <div className="px-3 py-1.5 bg-[#0f172a] border border-[#38bdf8]/40 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                    <span className="font-black uppercase text-slate-400">GOOGLE ACCOUNT</span>
+                    <span className="font-mono text-[#38bdf8] truncate">
+                      {connectedGoogleEmail}
+                    </span>
+                  </div>
+                )}
 
                 <div className="text-left space-y-2">
                   <div className="flex items-center justify-between">
@@ -5518,6 +5625,17 @@ export default function App() {
                   onClick={() => {
                     soundEngine.playUiClick();
                     disconnectNearWalletSession();
+                    if (privyAuthenticated) {
+                      void privyLogout();
+                    }
+                    setConnectedGoogleEmail('');
+                    if (typeof window !== 'undefined') {
+                      try {
+                        window.localStorage.removeItem('bb_connected_google_email');
+                      } catch {
+                        // ignore
+                      }
+                    }
                     setIsPersonalWalletModalOpen(false);
                     setOnboardingStep('auth_choice');
                   }}
