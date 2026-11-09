@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import {
+  MASTER_TREASURY_ACCOUNT_ID,
+  MASTER_WALLET_ACCOUNT_ID,
   NEAR_WALLET_SELECTOR_OPTIONS,
   NearNetworkId,
   NearWalletSelectorOption,
@@ -7,6 +9,7 @@ import {
   connectInjectedNearExtensionWallet,
   isValidNearAccountId,
   redirectToNearWebWalletLogin,
+  setCustomMasterWalletId,
 } from '../lib/nearClient';
 import { soundEngine } from '../game/audio';
 
@@ -43,8 +46,8 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
   onConnectAccountId,
 }) => {
   const [selectedOptionId, setSelectedOptionId] =
-    useState<NearWalletSelectorOption['id']>('my-near-wallet');
-  const [accountInput, setAccountInput] = useState<string>(currentWalletId || '');
+    useState<NearWalletSelectorOption['id']>('meteor-wallet');
+  const [accountInput, setAccountInput] = useState<string>(currentWalletId || MASTER_WALLET_ACCOUNT_ID);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
 
@@ -276,14 +279,14 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                     className="-skew-x-6 w-full py-3 px-4 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
                   >
                     <span className="skew-x-6 inline-block">
-                      OPEN {networkId.toUpperCase()}.MYNEARWALLET.COM ↗
+                      OPEN {networkId.toUpperCase()}.MYNEARWALLET.COM
                     </span>
                   </button>
                 </div>
               )}
 
               {selectedOption.id === 'meteor-wallet' && (
-                <div className="space-y-2.5 pt-1">
+                <div className="space-y-2 pt-1">
                   <button
                     type="button"
                     data-selector-launch-meteor="true"
@@ -293,6 +296,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                       const ext = await connectInjectedNearExtensionWallet();
                       setIsConnecting(false);
                       if (ext.connected && ext.accountId) {
+                        setCustomMasterWalletId(ext.accountId);
                         await onConnectAccountId(ext.accountId);
                         onClose();
                       } else {
@@ -305,11 +309,40 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                     className="-skew-x-6 w-full py-3 px-4 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
                   >
                     <span className="skew-x-6 inline-block">
-                      {isConnecting ? 'CONNECTING METEOR...' : 'CONNECT METEOR WALLET ↗'}
+                      {isConnecting ? 'CONNECTING METEOR...' : 'CONNECT METEOR CHROME WALLET'}
                     </span>
                   </button>
+                  <div className="text-[10px] font-bold text-slate-300">
+                    Your seed phrase remains strictly inside your Chrome Meteor Wallet extension.
+                  </div>
                 </div>
               )}
+
+              {/* Quick Master Admin UID Login Button */}
+              <div className="p-2.5 bg-[#1e1b4b] border-2 border-black space-y-1.5">
+                <div className="text-[10px] font-black uppercase text-[#facc15]">
+                  PROVISIONED MASTER &amp; TREASURY ACCOUNTS
+                </div>
+                <div className="text-[9.5px] font-mono text-white/85">
+                  Master UID: {MASTER_WALLET_ACCOUNT_ID} | Treasury: {MASTER_TREASURY_ACCOUNT_ID}
+                </div>
+                <button
+                  type="button"
+                  data-login-master-uid-btn="true"
+                  onClick={async () => {
+                    soundEngine.playUiClick();
+                    setAccountInput(MASTER_WALLET_ACCOUNT_ID);
+                    setCustomMasterWalletId(MASTER_WALLET_ACCOUNT_ID);
+                    await onConnectAccountId(MASTER_WALLET_ACCOUNT_ID);
+                    onClose();
+                  }}
+                  className="-skew-x-6 w-full py-2 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black font-black text-[10px] uppercase tracking-wider cursor-pointer"
+                >
+                  <span className="skew-x-6 inline-block">
+                    LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA &amp; TREASURY
+                  </span>
+                </button>
+              </div>
 
               {selectedOption.id === 'sender-extension' && (
                 <div className="space-y-2.5 pt-1">

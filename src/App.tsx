@@ -48,6 +48,7 @@ import {
   HouseInteriorPlacementState,
 } from './components/NpcMerchantAndHouseModal';
 import {
+  MERCHANT_CATALOG_ITEMS,
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
   investInMerchantShop,
@@ -65,6 +66,8 @@ import {
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
+  MASTER_TREASURY_ACCOUNT_ID,
+  MASTER_WALLET_ACCOUNT_ID,
   connectInjectedNearExtensionWallet,
   consumeNearWalletCallbackFromUrl,
   createInitialNep171SubAccountLedger,
@@ -77,9 +80,11 @@ import {
   fetchNearNetworkStatus,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
+  isMasterAdminWallet,
   isValidNearAccountId,
   recordNep171SubAccountEarning,
   redirectToNearWebWalletLogin,
+  setCustomMasterWalletId,
   type NearAccountOnChainView,
   type NearRpcStatusSnapshot,
   type Nep171GamepassSubAccountLedger,
@@ -355,6 +360,10 @@ export default function App() {
   const [recruitedFamilyMembers, setRecruitedFamilyMembers] = useState<
     RecruitedFamilyMemberAgent[]
   >([]);
+  const [masterTreasuryNear, setMasterTreasuryNear] = useState<number>(100);
+  const [masterTreasuryRespite, setMasterTreasuryRespite] = useState<number>(50000);
+  const [masterTreasuryCyon, setMasterTreasuryCyon] = useState<number>(10000);
+  const [masterTreasuryNote, setMasterTreasuryNote] = useState<string>('');
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([
     'tatami_tea_table',
     'sakura_bonsai_pot',
@@ -1060,6 +1069,11 @@ export default function App() {
       setOnboardingAuthMode('wallet');
       setOnboardingLoadingProgress(12);
       setOnboardingStep('entering_lobby');
+
+      // Unlock QA & Treasury Management Menu automatically if logged in with Master UID
+      if (isMasterAdminWallet(normalizedWallet)) {
+        setIsQcMenuUnlocked(true);
+      }
 
       const nextLedger = createInitialNep171SubAccountLedger(normalizedWallet, detectedNet);
       setNep171Ledger(nextLedger);
@@ -1796,7 +1810,7 @@ export default function App() {
                   }}
                   className="-skew-x-6 py-2 px-2.5 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                 >
-                  <span className="skew-x-6 inline-block">MYNEARWALLET LOGIN ↗</span>
+                  <span className="skew-x-6 inline-block">MYNEARWALLET LOGIN</span>
                 </button>
                 <button
                   type="button"
@@ -1805,6 +1819,7 @@ export default function App() {
                     soundEngine.playUiClick();
                     const ext = await connectInjectedNearExtensionWallet();
                     if (ext.connected && ext.accountId) {
+                      setCustomMasterWalletId(ext.accountId);
                       void handleConnectWalletAndEnterLobby(ext.accountId);
                     } else {
                       redirectToNearWebWalletLogin({
@@ -1815,9 +1830,23 @@ export default function App() {
                   }}
                   className="-skew-x-6 py-2 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                 >
-                  <span className="skew-x-6 inline-block">METEOR / EXTENSION ↗</span>
+                  <span className="skew-x-6 inline-block">METEOR CHROME WALLET</span>
                 </button>
               </div>
+
+              <button
+                type="button"
+                data-master-quick-login-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  void handleConnectWalletAndEnterLobby(MASTER_WALLET_ACCOUNT_ID);
+                }}
+                className="-skew-x-6 w-full py-2 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#facc15] border-2 border-[#facc15]/80 font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+              >
+                <span className="skew-x-6 inline-block">
+                  LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA & TREASURY
+                </span>
+              </button>
 
               {savedWalletSummary && (
                 <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
@@ -2611,15 +2640,17 @@ export default function App() {
                 );
               })()}
 
-              {/* Skewed Polygonal Menu Button (Hidden in online deploy unless VITE_ENABLE_QC=true or Ctrl+Shift+Q) */}
-              {isQcMenuUnlocked && (
+              {/* Skewed Polygonal QA & Treasury Menu Button (Automatically shown when logged in with Master Wallet UID) */}
+              {(isQcMenuUnlocked || isMasterAdminWallet(hud.nearWalletId || playerUid)) && (
                 <button
                   type="button"
-                  aria-label="Settings & Developer Menu"
+                  aria-label="QA and Treasury Management Menu"
                   aria-expanded={isSpawnDrawerOpen}
                   data-sandbox-toggle="true"
+                  data-master-qa-menu-btn="true"
                   onClick={() => {
                     soundEngine.playUiClick();
+                    setIsQcMenuUnlocked(true);
                     setIsSpawnDrawerOpen((prev) => !prev);
                     if (!isSpawnDrawerOpen) {
                       setIsParticlePanelOpen(false);
@@ -2631,17 +2662,293 @@ export default function App() {
                       : 'bg-white hover:bg-[#fec83e] text-[#1a1a1a]'
                   }`}
                 >
-                  <span className="skew-x-12 inline-block">MENU</span>
+                  <span className="skew-x-12 inline-block">QA / TREASURY</span>
                 </button>
               )}
             </div>
 
-            {/* Pop-up Developer & Utility Drawer (Opened via [MENU]) */}
-            {isQcMenuUnlocked && isSpawnDrawerOpen && (
+            {/* Pop-up QA & Treasury Management Drawer (Opened via [QA / TREASURY]) */}
+            {(isQcMenuUnlocked || isMasterAdminWallet(hud.nearWalletId || playerUid)) &&
+              isSpawnDrawerOpen && (
               <div
                 aria-label="Developer & Settings Drawer"
-                className="w-80 max-h-[82vh] overflow-y-auto bg-white border-3 border-[#1a1a1a] ring-2 ring-white shadow-[6px_6px_0_#1a1a1a] p-3 flex flex-col gap-2.5 text-[#1a1a1a]"
+                data-master-qa-treasury-drawer="true"
+                className="w-80 sm:w-88 max-h-[82vh] overflow-y-auto bg-white border-3 border-[#1a1a1a] ring-2 ring-white shadow-[6px_6px_0_#1a1a1a] p-3 flex flex-col gap-2.5 text-[#1a1a1a]"
               >
+                {/* =========================================================
+                    MASTER TREASURY & MERCHANT TREASURY MANAGEMENT PANEL
+                    (Simple English Text - No Emojis)
+                   ========================================================= */}
+                <div
+                  data-treasury-management-panel="true"
+                  className="p-2.5 bg-[#0f172a] text-white border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] space-y-2.5"
+                >
+                  <div className="border-b border-white/15 pb-1.5">
+                    <div className="text-[10.5px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                      MASTER &amp; MERCHANT TREASURY CONTROL
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-300 mt-0.5 break-all">
+                      Master UID: {MASTER_WALLET_ACCOUNT_ID}
+                    </div>
+                    <div className="text-[9px] font-mono text-[#38bdf8] break-all">
+                      Treasury Vault: {MASTER_TREASURY_ACCOUNT_ID}
+                    </div>
+                  </div>
+
+                  {/* 1. MASTER TREASURY */}
+                  <div
+                    data-master-treasury-box="true"
+                    className="p-2 bg-[#1e293b] border border-white/20 space-y-1.5"
+                  >
+                    <div className="text-[10px] font-black uppercase text-[#facc15]">
+                      1. MASTER TREASURY RESERVES
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div className="p-1 bg-black/40 border border-white/10">
+                        <div className="text-[8px] font-bold text-slate-400">NEAR</div>
+                        <div className="text-[10px] font-black text-[#38bdf8]">
+                          {masterTreasuryNear.toFixed(1)}
+                        </div>
+                      </div>
+                      <div className="p-1 bg-black/40 border border-white/10">
+                        <div className="text-[8px] font-bold text-slate-400">RESPITE</div>
+                        <div className="text-[10px] font-black text-[#d8b4fe]">
+                          {masterTreasuryRespite.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="p-1 bg-black/40 border border-white/10">
+                        <div className="text-[8px] font-bold text-slate-400">CYON</div>
+                        <div className="text-[10px] font-black text-[#10b981]">
+                          {masterTreasuryCyon.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 pt-0.5">
+                      <button
+                        type="button"
+                        data-master-mint-respite-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setMasterTreasuryRespite((prev) => prev + 1000);
+                          setMasterTreasuryNote(
+                            'Minted +1000 RESPITE into Master Treasury (buddiesblitz-treasury.testnet).',
+                          );
+                        }}
+                        className="py-1 px-1.5 bg-[#d8b4fe] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        MINT +1000 RESPITE
+                      </button>
+                      <button
+                        type="button"
+                        data-master-add-cyon-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setMasterTreasuryCyon((prev) => prev + 500);
+                          setMasterTreasuryNote(
+                            'Added +500 CYON to Master Treasury reserves.',
+                          );
+                        }}
+                        className="py-1 px-1.5 bg-[#38bdf8] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        ADD +500 MASTER CYON
+                      </button>
+                      <button
+                        type="button"
+                        data-master-grant-player-respite-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          if (masterTreasuryRespite < 100) return;
+                          setMasterTreasuryRespite((prev) => Math.max(0, prev - 100));
+                          setRespiteBalance((prev) => prev + 100);
+                          setMasterTreasuryNote(
+                            'Transferred 100 RESPITE from Master Treasury to active wallet.',
+                          );
+                        }}
+                        className="py-1 px-1.5 bg-[#b8ff3c] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        GRANT +100 RESPITE
+                      </button>
+                      <button
+                        type="button"
+                        data-bind-meteor-master-btn="true"
+                        onClick={async () => {
+                          soundEngine.playUiClick();
+                          const ext = await connectInjectedNearExtensionWallet();
+                          if (ext.connected && ext.accountId) {
+                            setCustomMasterWalletId(ext.accountId);
+                            setMasterTreasuryNote(
+                              `Bound Meteor Chrome Wallet (${ext.accountId}) as Master Admin UID.`,
+                            );
+                          } else {
+                            setCustomMasterWalletId(hud.nearWalletId || playerUid);
+                            setMasterTreasuryNote(
+                              `Bound active wallet (${hud.nearWalletId || playerUid}) as Master Admin UID.`,
+                            );
+                          }
+                        }}
+                        className="py-1 px-1.5 bg-[#facc15] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        BIND METEOR WALLET
+                      </button>
+                      <button
+                        type="button"
+                        data-master-add-near-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setMasterTreasuryNear((prev) => prev + 10);
+                          setMasterTreasuryNote(
+                            'Added +10 NEAR to Master Treasury gas and swap reserve.',
+                          );
+                        }}
+                        className="col-span-2 py-1 px-1.5 bg-[#10b981] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        TOP UP +10 MASTER NEAR
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. MERCHANT TREASURY */}
+                  <div
+                    data-merchant-treasury-box="true"
+                    className="p-2 bg-[#1e293b] border border-white/20 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-[#38bdf8]">
+                        2. MERCHANT TREASURY
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.2 text-[8.5px] font-black uppercase border border-black ${
+                          marketState.isShopBroke
+                            ? 'bg-[#ff3b30] text-white'
+                            : 'bg-[#10b981] text-black'
+                        }`}
+                      >
+                        {marketState.isShopBroke ? 'SHOP BANKRUPT' : 'SHOP ACTIVE'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 text-center">
+                      <div className="p-1 bg-black/40 border border-white/10">
+                        <div className="text-[8px] font-bold text-slate-400">MERCHANT CYON</div>
+                        <div className="text-[10px] font-black text-[#38bdf8]">
+                          {marketState.treasuryCyon.toLocaleString()} CYON
+                        </div>
+                      </div>
+                      <div className="p-1 bg-black/40 border border-white/10">
+                        <div className="text-[8px] font-bold text-slate-400">MERCHANT LUL POOL</div>
+                        <div className="text-[10px] font-black text-[#fec83e]">
+                          {marketState.treasuryLulPool.toLocaleString()} LUL
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 pt-0.5">
+                      <button
+                        type="button"
+                        data-transfer-master-to-merchant-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const transferCyon = Math.min(200, masterTreasuryCyon);
+                          if (transferCyon <= 0) return;
+                          setMasterTreasuryCyon((prev) => Math.max(0, prev - transferCyon));
+                          setMarketState((prev) => {
+                            const nextCyon = prev.treasuryCyon + transferCyon;
+                            return {
+                              ...prev,
+                              treasuryCyon: nextCyon,
+                              isShopBroke: nextCyon < 20,
+                              lastMarketHeadline: `Master Treasury injected +${transferCyon} CYON into Merchant Treasury.`,
+                            };
+                          });
+                          setMasterTreasuryNote(
+                            `Transferred ${transferCyon} CYON from Master Treasury to Merchant Treasury.`,
+                          );
+                        }}
+                        className="py-1 px-1.5 bg-[#10b981] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        FUND +200 CYON
+                      </button>
+                      <button
+                        type="button"
+                        data-withdraw-merchant-to-master-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const withdrawCyon = Math.min(100, marketState.treasuryCyon);
+                          if (withdrawCyon <= 0) return;
+                          setMasterTreasuryCyon((prev) => prev + withdrawCyon);
+                          setMarketState((prev) => {
+                            const nextCyon = Math.max(0, prev.treasuryCyon - withdrawCyon);
+                            return {
+                              ...prev,
+                              treasuryCyon: nextCyon,
+                              isShopBroke: nextCyon < 20,
+                              lastMarketHeadline: `Master Treasury withdrew ${withdrawCyon} CYON from Merchant Treasury.`,
+                            };
+                          });
+                          setMasterTreasuryNote(
+                            `Withdrew ${withdrawCyon} CYON from Merchant Treasury to Master Treasury.`,
+                          );
+                        }}
+                        className="py-1 px-1.5 bg-[#facc15] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        WITHDRAW 100 CYON
+                      </button>
+                      <button
+                        type="button"
+                        data-merchant-add-lul-pool-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setMarketState((prev) => ({
+                            ...prev,
+                            treasuryLulPool: prev.treasuryLulPool + 1000,
+                          }));
+                          setMasterTreasuryNote('Added +1000 LUL to Merchant LUL Pool.');
+                        }}
+                        className="py-1 px-1.5 bg-[#38bdf8] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        +1000 MERCHANT LUL
+                      </button>
+                      <button
+                        type="button"
+                        data-merchant-restock-all-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const fullStock: Record<string, number> = {};
+                          const zeroDemand: Record<string, number> = {};
+                          for (const it of MERCHANT_CATALOG_ITEMS) {
+                            fullStock[it.id] = it.targetStock;
+                            zeroDemand[it.id] = 0;
+                          }
+                          setMarketState((prev) => ({
+                            ...prev,
+                            stockByItemId: fullStock,
+                            demandByItemId: zeroDemand,
+                            isShopBroke: false,
+                            lastMarketHeadline:
+                              'Master Treasury restocked all Merchant catalog items to full capacity.',
+                          }));
+                          setMasterTreasuryNote(
+                            'Restocked all Merchant catalog items and reset demand.',
+                          );
+                        }}
+                        className="py-1 px-1.5 bg-[#b8ff3c] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                      >
+                        RESTOCK ALL ITEMS
+                      </button>
+                    </div>
+                  </div>
+
+                  {masterTreasuryNote && (
+                    <div
+                      data-master-treasury-status-note="true"
+                      className="p-1.5 bg-black/50 border border-[#b8ff3c] text-[9px] font-bold text-[#b8ff3c]"
+                    >
+                      {masterTreasuryNote}
+                    </div>
+                  )}
+                </div>
+
                 {/* Section 0: Character Gender Toggle (FEMALE / MALE) for Quality Control */}
                 <div className="p-2 bg-[#14161d] text-white border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">

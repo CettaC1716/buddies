@@ -1057,4 +1057,58 @@ export interface RecruitedFamilyMemberAgent {
   nearTxHash: string;
 }
 
+/**
+ * ============================================================================
+ * 13. MASTER ADMIN UID, TREASURY VAULT & METEOR CHROME WALLET SECURITY
+ * ============================================================================
+ * On-Chain Provisioned Accounts (via `near-cli-rs`):
+ *   - Master Admin UID : `buddiesblitz-master.testnet`
+ *     (Tx: GU5LVuq8YeBjaES1RyQVCfMYqyC4QUw4VC4ZQp9X7Vgb)
+ *   - Master Treasury  : `buddiesblitz-treasury.testnet`
+ *     (Tx: 5nU2ZWURqyUayWMaaKvSv4U9jyXfSTB75k61ZVG267AK)
+ *
+ * Security Architecture:
+ *   - Seed phrases remain strictly inside the user's Meteor Chrome Extension
+ *     or local OS Keychain (`~/.near-credentials`), never inside the codebase.
+ *   - Logging in with `buddiesblitz-master.testnet` (or a bound Meteor Chrome
+ *     Wallet address) automatically unlocks the hidden QA & Treasury Menu.
+ * ============================================================================
+ */
+export const MASTER_WALLET_ACCOUNT_ID = 'buddiesblitz-master.testnet';
+export const MASTER_TREASURY_ACCOUNT_ID = 'buddiesblitz-treasury.testnet';
+const METEOR_MASTER_STORAGE_KEY = 'bb_meteor_master_wallet_id';
+
+export function getCustomMasterWalletId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const val = window.localStorage.getItem(METEOR_MASTER_STORAGE_KEY);
+    return val ? val.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCustomMasterWalletId(accountId: string): void {
+  if (typeof window === 'undefined') return;
+  const clean = accountId.trim().toLowerCase();
+  if (!clean) return;
+  try {
+    window.localStorage.setItem(METEOR_MASTER_STORAGE_KEY, clean);
+  } catch {
+    // ignore
+  }
+}
+
+export function isMasterAdminWallet(accountId: string | null | undefined): boolean {
+  if (!accountId) return false;
+  const clean = accountId.trim().toLowerCase();
+  const customMaster = getCustomMasterWalletId();
+  return (
+    clean === MASTER_WALLET_ACCOUNT_ID ||
+    clean === MASTER_TREASURY_ACCOUNT_ID ||
+    (Boolean(customMaster) && clean === customMaster)
+  );
+}
+
+
 
