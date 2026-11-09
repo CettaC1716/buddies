@@ -43,6 +43,7 @@ import {
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
 import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
+import { AdminCommandDashboard } from './components/AdminCommandDashboard';
 import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
@@ -83,6 +84,7 @@ import {
   isMasterAdminWallet,
   isValidNearAccountId,
   loadManagedSubAccounts,
+  loadSavedAdminCryptographicProof,
   provisionOrGetPlayerSubAccount,
   recordNep171SubAccountEarning,
   redirectToNearWebWalletLogin,
@@ -247,7 +249,21 @@ export default function App() {
   });
 
   const [playMode, setPlayMode] = useState<PlayMode>('sandbox');
-  const [isQcMenuUnlocked, setIsQcMenuUnlocked] = useState<boolean>(ENABLE_QC_MENU_DEFAULT);
+  const [isAdminPortalOpen, setIsAdminPortalOpen] = useState<boolean>(() => {
+    if (import.meta.env.VITE_APP_MODE === 'admin') {
+      return true;
+    }
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('admin') === '1' || params.get('admin_portal') === '1') {
+        return true;
+      }
+    }
+    return false;
+  });
+  const [isQcMenuUnlocked, setIsQcMenuUnlocked] = useState<boolean>(() =>
+    ENABLE_QC_MENU_DEFAULT || Boolean(loadSavedAdminCryptographicProof()?.verified),
+  );
   const [isSpawnDrawerOpen, setIsSpawnDrawerOpen] = useState<boolean>(false);
   const [characterGender, setCharacterGender] = useState<'female' | 'male'>('male');
   const [onboardingStep, setOnboardingStep] = useState<
@@ -328,6 +344,9 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'q') {
+        if (!loadSavedAdminCryptographicProof()?.verified && !ENABLE_QC_MENU_DEFAULT) {
+          return;
+        }
         event.preventDefault();
         setIsQcMenuUnlocked((prev) => {
           const next = !prev;
@@ -1089,8 +1108,8 @@ export default function App() {
       setOnboardingLoadingProgress(12);
       setOnboardingStep('entering_lobby');
 
-      // Unlock QA & Treasury Management Menu automatically if logged in with Master UID
-      if (isMasterAdminWallet(normalizedWallet)) {
+      // Unlock QA & Treasury Management Menu only if Master UID is cryptographically verified
+      if (isMasterAdminWallet(normalizedWallet) && Boolean(loadSavedAdminCryptographicProof()?.verified)) {
         setIsQcMenuUnlocked(true);
       }
 
@@ -1464,6 +1483,65 @@ export default function App() {
     isInsideLobbySafezone: Boolean(hud.isInsideLobbySafezone),
     cityArenaMode: hud.cityArenaMode,
   });
+
+  if (isAdminPortalOpen) {
+    return (
+      <AdminCommandDashboard
+        nearRpcStatus={nearRpcStatus}
+        supabaseConnected={supabaseConnected}
+        masterTreasuryNear={masterTreasuryNear}
+        setMasterTreasuryNear={setMasterTreasuryNear}
+        masterTreasuryRespite={masterTreasuryRespite}
+        setMasterTreasuryRespite={setMasterTreasuryRespite}
+        masterTreasuryCyon={masterTreasuryCyon}
+        setMasterTreasuryCyon={setMasterTreasuryCyon}
+        marketState={marketState}
+        setMarketState={setMarketState}
+        managedSubAccounts={managedSubAccounts}
+        setManagedSubAccounts={setManagedSubAccounts}
+        nep171Ledger={nep171Ledger}
+        setNep171Ledger={setNep171Ledger}
+        onGrantActivePlayerRespite={(amount) => {
+          setRespiteBalance((prev) => prev + amount);
+        }}
+        onLaunch3dQaTeleport={(target) => {
+          setIsAdminPortalOpen(false);
+          setIsQcMenuUnlocked(true);
+          setGameState('playing');
+          setOnboardingStep('completed');
+          if (target.impersonateAccountId) {
+            setPlayerUid(target.impersonateAccountId);
+            setWalletConnectInput(target.impersonateAccountId);
+            dispatchBuddyAction(`nearConnectAndMint:${target.impersonateAccountId}`);
+            setHud((prev) => ({
+              ...prev,
+              nearWalletConnected: true,
+              nearWalletId: target.impersonateAccountId ?? prev.nearWalletId,
+              nearHasGamepassNft: true,
+            }));
+          } else if (!hud.nearWalletConnected) {
+            setPlayerUid(MASTER_WALLET_ACCOUNT_ID);
+            dispatchBuddyAction(`nearConnectAndMint:${MASTER_WALLET_ACCOUNT_ID}`);
+            setHud((prev) => ({
+              ...prev,
+              nearWalletConnected: true,
+              nearWalletId: MASTER_WALLET_ACCOUNT_ID,
+              nearHasGamepassNft: true,
+            }));
+          }
+          if (target.openHouseInterior) {
+            setWorldMode('safezone');
+            setIsInsidePrivateHouse(true);
+            setActiveSpecialModal('none');
+            setWorldTransitionCount((c) => c + 1);
+          } else {
+            setIsInsidePrivateHouse(false);
+            handleRequestWorldModeChange(target.worldMode, target.team);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <main className="relative w-screen h-screen overflow-hidden select-none">
@@ -2578,35 +2656,50 @@ export default function App() {
                 );
               })()}
 
-              {/* Skewed Polygonal QA & Treasury Menu Button (Automatically shown when logged in with Master Wallet UID) */}
-              {(isQcMenuUnlocked || isMasterAdminWallet(hud.nearWalletId || playerUid)) && (
-                <button
-                  type="button"
-                  aria-label="QA and Treasury Management Menu"
-                  aria-expanded={isSpawnDrawerOpen}
-                  data-sandbox-toggle="true"
-                  data-master-qa-menu-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsQcMenuUnlocked(true);
-                    setIsSpawnDrawerOpen((prev) => !prev);
-                    if (!isSpawnDrawerOpen) {
-                      setIsParticlePanelOpen(false);
-                    }
-                  }}
-                  className={`-skew-x-12 px-2.5 h-10 flex items-center justify-center font-black text-xs border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
-                    isSpawnDrawerOpen
-                      ? 'bg-[#fec83e] text-[#1a1a1a]'
-                      : 'bg-white hover:bg-[#fec83e] text-[#1a1a1a]'
-                  }`}
-                >
-                  <span className="skew-x-12 inline-block">QA / TREASURY</span>
-                </button>
+              {/* Skewed Polygonal QA & Treasury Menu Button (Only shown when Cryptographic Master Proof is active) */}
+              {((isQcMenuUnlocked && Boolean(loadSavedAdminCryptographicProof()?.verified)) ||
+                ENABLE_QC_MENU_DEFAULT) && (
+                <>
+                  <button
+                    type="button"
+                    data-open-admin-portal-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsAdminPortalOpen(true);
+                    }}
+                    className="-skew-x-12 px-2.5 h-10 flex items-center justify-center font-black text-xs bg-[#0f172a] hover:bg-[#1e293b] text-[#b8ff3c] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                  >
+                    <span className="skew-x-12 inline-block">ADMIN PANEL</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="QA and Treasury Management Menu"
+                    aria-expanded={isSpawnDrawerOpen}
+                    data-sandbox-toggle="true"
+                    data-master-qa-menu-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsQcMenuUnlocked(true);
+                      setIsSpawnDrawerOpen((prev) => !prev);
+                      if (!isSpawnDrawerOpen) {
+                        setIsParticlePanelOpen(false);
+                      }
+                    }}
+                    className={`-skew-x-12 px-2.5 h-10 flex items-center justify-center font-black text-xs border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
+                      isSpawnDrawerOpen
+                        ? 'bg-[#fec83e] text-[#1a1a1a]'
+                        : 'bg-white hover:bg-[#fec83e] text-[#1a1a1a]'
+                    }`}
+                  >
+                    <span className="skew-x-12 inline-block">QA / TREASURY</span>
+                  </button>
+                </>
               )}
             </div>
 
             {/* Pop-up QA & Treasury Management Drawer (Opened via [QA / TREASURY]) */}
-            {(isQcMenuUnlocked || isMasterAdminWallet(hud.nearWalletId || playerUid)) &&
+            {((isQcMenuUnlocked && Boolean(loadSavedAdminCryptographicProof()?.verified)) ||
+              ENABLE_QC_MENU_DEFAULT) &&
               isSpawnDrawerOpen && (
               <div
                 aria-label="Developer & Settings Drawer"

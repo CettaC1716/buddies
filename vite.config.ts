@@ -1,6 +1,8 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {execFile} from 'child_process';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import {defineConfig, type Plugin} from 'vite';
 
@@ -8,6 +10,36 @@ function nearSubAccountProvisionerPlugin(): Plugin {
   return {
     name: 'near-subaccount-provisioner',
     configureServer(server) {
+      server.middlewares.use('/api/near/verify-local-master-key', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        try {
+          const credPath = path.join(
+            os.homedir(),
+            '.near-credentials',
+            'testnet',
+            'buddiesblitz-master.testnet.json',
+          );
+          if (!fs.existsSync(credPath)) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ok: false, error: 'Local master keychain not found'}));
+            return;
+          }
+          const raw = fs.readFileSync(credPath, 'utf-8');
+          const parsed = JSON.parse(raw) as {account_id?: string; public_key?: string};
+          res.statusCode = 200;
+          res.end(
+            JSON.stringify({
+              ok: true,
+              accountId: parsed.account_id || 'buddiesblitz-master.testnet',
+              publicKey: parsed.public_key || '',
+            }),
+          );
+        } catch (e) {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ok: false, error: (e as Error).message}));
+        }
+      });
+
       server.middlewares.use('/api/near/spawn-subaccount', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405;
