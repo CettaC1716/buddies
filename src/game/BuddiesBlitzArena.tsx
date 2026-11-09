@@ -8970,6 +8970,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // 11. INPUT LISTENERS (WASD, MOUSE AIM, SCROLL ZOOM, CLICK SHOOT / EDITOR)
     // =========================================================================
     const keys: Record<string, boolean> = {};
+    let mobileJoyRight = 0;
+    let mobileJoyForward = 0;
+    let mobileJoySprint = false;
     const mouseNdc = new THREE.Vector2(0, 0);
     const raycaster = new THREE.Raycaster();
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.2);
@@ -8986,6 +8989,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       for (const k of Object.keys(keys)) {
         keys[k] = false;
       }
+      mobileJoyRight = 0;
+      mobileJoyForward = 0;
+      mobileJoySprint = false;
       isPointerDown = false;
       isEditorPanning = false;
       isEditorOrbiting = false;
@@ -9001,6 +9007,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         mountedTank.vz = 0;
         mountedTank.forwardSpeed = 0;
       }
+    };
+
+    const onMobileJoystickInput = (e: Event) => {
+      const ce = e as CustomEvent<{ x?: number; y?: number; sprint?: boolean }>;
+      const rx = Number(ce.detail?.x ?? 0);
+      const ry = Number(ce.detail?.y ?? 0);
+      mobileJoyRight = Number.isFinite(rx) ? clamp(rx, -1, 1) : 0;
+      mobileJoyForward = Number.isFinite(ry) ? clamp(ry, -1, 1) : 0;
+      mobileJoySprint = Boolean(ce.detail?.sprint);
+
+      // Sync digital WASD keys for vehicle physics (Tank, Truck, Plane) & sprint
+      keys['KeyW'] = mobileJoyForward > 0.25;
+      keys['KeyS'] = mobileJoyForward < -0.25;
+      keys['KeyD'] = mobileJoyRight > 0.25;
+      keys['KeyA'] = mobileJoyRight < -0.25;
+      keys['ShiftLeft'] = mobileJoySprint;
     };
 
     const onWindowBlurOrVisibilityReset = () => {
@@ -10683,6 +10705,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
+    window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
     window.addEventListener('focusin', onDocumentFocusIn);
@@ -12213,20 +12236,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
         if (ghostGuard.shouldClearKeys) {
           isPointerDown = false;
+          mobileJoyRight = 0;
+          mobileJoyForward = 0;
+          mobileJoySprint = false;
         }
         let moveX = ghostGuard.vx;
         let moveZ = ghostGuard.vz;
+        const joyMag = Math.hypot(mobileJoyRight, mobileJoyForward);
+        if (!ghostGuard.shouldClearKeys && joyMag > 0.06 && npcCameraMode !== 'house_visit' && npcCameraMode !== 'house_interior') {
+          const mirrorSign =
+            !isEditorOrPeacefulCamera && (playerUnit?.team ?? 'blue') === 'red' ? -1 : 1;
+          moveX = mobileJoyRight * mirrorSign;
+          moveZ = -mobileJoyForward * mirrorSign;
+        }
         if (npcCameraMode === 'house_visit') {
           if (isTextInputFocused) {
             moveX = 0;
             moveZ = 0;
           } else {
             const inFwd =
-              (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) -
-              (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
+              joyMag > 0.06
+                ? mobileJoyForward
+                : (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) -
+                  (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
             const inRight =
-              (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) -
-              (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+              joyMag > 0.06
+                ? mobileJoyRight
+                : (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) -
+                  (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
             const fwdX = -Math.sin(houseVisitCamYaw);
             const fwdZ = -Math.cos(houseVisitCamYaw);
             const rightX = Math.cos(houseVisitCamYaw);
@@ -19268,6 +19305,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
+      window.removeEventListener('mobile-joystick-input', onMobileJoystickInput);
       window.removeEventListener('blur', onWindowBlurOrVisibilityReset);
       document.removeEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
       window.removeEventListener('focusin', onDocumentFocusIn);

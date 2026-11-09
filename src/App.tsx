@@ -41,6 +41,7 @@ import {
   ChatMessage,
 } from './components/SocialChatModal';
 import { CharacterProfileModal } from './components/CharacterProfileModal';
+import { MobileResponsiveControls } from './components/MobileResponsiveControls';
 import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
@@ -1667,9 +1668,9 @@ export default function App() {
         <section
           aria-label="Buddies Blitz Login & Onboarding"
           data-onboarding-step="auth_choice"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-[3px] pointer-events-auto select-none"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/55 backdrop-blur-[3px] pointer-events-auto select-none"
         >
-          <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-5">
+          <div className="w-full max-w-md max-h-[92dvh] overflow-y-auto bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-4 sm:p-6 space-y-4 sm:space-y-5">
             <div className="text-center space-y-1.5 border-b-2 border-white/15 pb-4">
               <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-widest">
                 <span className="skew-x-12 inline-block">BUDDIES BLITZ ONLINE</span>
@@ -2161,8 +2162,8 @@ export default function App() {
                     aria-label="Mini Radar Arena"
                     data-radar-level={radarSpec.level}
                     data-radar-active="true"
-                  className="pointer-events-auto relative w-32 h-32 sm:w-36 sm:h-36 bg-[#070a0f] border-3 border-[#1a1a1a] ring-2 ring-white rounded-xl overflow-hidden shadow-[4px_4px_0_#1a1a1a] shrink-0"
-                >
+                    className="pointer-events-auto relative w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 bg-[#070a0f] border-3 border-[#1a1a1a] ring-2 ring-white rounded-xl overflow-hidden shadow-[4px_4px_0_#1a1a1a] shrink-0"
+                  >
                   {/* 1:1 Orthographic Top-Down Map of the Current 3-Part Mirrored Arena ([-125, +125]) */}
                   <img
                     src="/assets/kiosk/radar_arena_map.png"
@@ -5172,6 +5173,38 @@ export default function App() {
           setSelectedPrivateUser(user);
           setIsSocialChatModalOpen(true);
         }}
+      />
+
+      {/* =====================================================================
+          11. DESKTOP, MOBILE & TABLET ADAPTIVE CONTROLS:
+              - Portrait Mode "Please Rotate Your Screen" English Overlay
+              - Bottom-Left 360° Virtual Touch Movement Joystick for Mobile/Tablet
+              - Bottom-Right Touch Action Buttons (Jump & Contextual Interact)
+         ===================================================================== */}
+      <MobileResponsiveControls
+        isGameplayActive={
+          gameState === 'playing' &&
+          !isFullMapOverview &&
+          onboardingStep === 'completed' &&
+          playMode !== 'editor'
+        }
+        isModalBlocking={
+          isKioskModalOpen ||
+          isProfileModalOpen ||
+          isSocialChatModalOpen ||
+          isPersonalWalletModalOpen ||
+          activeSpecialModal !== 'none' ||
+          activeTeleportKioskModal !== 'none'
+        }
+        onTriggerBuddyAction={dispatchBuddyAction}
+        primaryContextualAction={
+          hud.floatingPrompts.length > 0
+            ? {
+                label: hud.floatingPrompts[0].actionLabel,
+                actionEvent: hud.floatingPrompts[0].actionEvent,
+              }
+            : null
+        }
       />
     </main>
   );

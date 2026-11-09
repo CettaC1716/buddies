@@ -165,14 +165,14 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={`Character Profile ${targetUser.name}`}
-      className="fixed inset-0 z-50 flex bg-white text-black border-4 border-black overflow-hidden select-none"
+      className="fixed inset-0 z-50 flex flex-col md:flex-row bg-white text-black border-4 border-black overflow-y-auto md:overflow-hidden select-none"
     >
       {/* ====================================================================
           LEFT COLUMN (45% Width): Full-body 3D character showcase area
          ==================================================================== */}
       <section
         aria-label="Character Visual"
-        className="w-[45%] h-full relative flex flex-col items-center justify-between p-6 sm:p-8 border-r-4 border-black bg-slate-50 overflow-hidden"
+        className="w-full md:w-[45%] md:h-full relative flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 border-b-4 md:border-b-0 md:border-r-4 border-black bg-slate-50 overflow-hidden shrink-0"
       >
         {/* Decorative Background (Subtle Grid) */}
         <div
@@ -201,7 +201,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
             <img
               src={avatarImgSrc}
               alt={targetUser.name}
-              className="max-h-[68vh] w-auto object-contain pointer-events-none"
+              className="max-h-[45vh] md:max-h-[68vh] w-auto object-contain pointer-events-none"
             />
           </div>
         </div>
@@ -220,7 +220,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
          ==================================================================== */}
       <section
         aria-label="Profile Panel"
-        className="w-[30%] h-full p-5 sm:p-6 flex flex-col justify-between border-r-4 border-black bg-white overflow-y-auto gap-3.5"
+        className="w-full md:w-[30%] md:h-full p-4 sm:p-5 md:p-6 flex flex-col justify-between border-b-4 md:border-b-0 md:border-r-4 border-black bg-white md:overflow-y-auto gap-3.5 shrink-0"
       >
         <div>
           {/* Top-Left Profile Header */}
@@ -469,7 +469,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
          ==================================================================== */}
       <section
         aria-label="Showcase Panel"
-        className="w-[25%] h-full p-5 sm:p-6 flex flex-col justify-between bg-slate-50 overflow-y-auto gap-3.5 text-black"
+        className="w-full md:w-[25%] md:h-full p-4 sm:p-5 md:p-6 flex flex-col justify-between bg-slate-50 md:overflow-y-auto gap-3.5 text-black shrink-0"
       >
         <div className="flex flex-col">
           {/* Header with Large Close (X) Button */}
