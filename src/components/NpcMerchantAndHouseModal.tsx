@@ -15,8 +15,14 @@ import {
 import { soundEngine } from '../game/audio';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
 import {
+  FAMILY_MEMBER_CONTRACT_PLANS,
+  FAMILY_MEMBER_ORDER_SPECS,
+  HOUSE_OWNERSHIP_PRICE_RESPITE,
   RESPITE_NEP141_METADATA,
+  type FamilyMemberContractPlanId,
+  type FamilyMemberOrderId,
   type NearRespiteSwapReceipt,
+  type RecruitedFamilyMemberAgent,
 } from '../lib/nearClient';
 
 export interface HouseInteriorPlacementState {
@@ -37,6 +43,13 @@ interface NpcMerchantAndHouseModalProps {
   respiteBalance: number;
   nearTestnetBalance?: number;
   walletConnected: boolean;
+  hasHouseOwnership?: boolean;
+  onBuyHouseWithRespite?: (priceRespite: number) => boolean | void;
+  recruitedFamilyMembers?: RecruitedFamilyMemberAgent[];
+  onRecruitFamilyMember?: (
+    planId: FamilyMemberContractPlanId,
+  ) => RecruitedFamilyMemberAgent | null | void;
+  onCommandFamilyMember?: (agentId: string, orderId: FamilyMemberOrderId) => void;
   ownedItemIds: string[];
   activeHouseThemeId: string;
   interiorPlacement: HouseInteriorPlacementState;
@@ -84,6 +97,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   respiteBalance,
   nearTestnetBalance = 12.5,
   walletConnected,
+  hasHouseOwnership = false,
+  onBuyHouseWithRespite,
+  recruitedFamilyMembers = [],
+  onRecruitFamilyMember,
+  onCommandFamilyMember,
   ownedItemIds,
   activeHouseThemeId,
   interiorPlacement,
@@ -123,6 +141,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('1');
   const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
     useState<NearRespiteSwapReceipt | null>(null);
+  const [selectedFamilyPlanId, setSelectedFamilyPlanId] =
+    useState<FamilyMemberContractPlanId>('1_week');
   const [listingPriceByFishId, setListingPriceByFishId] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -183,11 +203,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   // Initial greeting when NPC modal opens
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
-      const locLabel = merchantLocation === 'lobby_cafe' ? 'Mini Café Lobby' : 'East Beach House';
+      const locLabel = merchantLocation === 'lobby_cafe' ? 'Mini Cafe Lobby' : 'East Beach House';
       const greeting =
         merchantLocation === 'beach_house'
-          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, mint rare catches as NFTs, or trade on the P2P FISH MARKET tab — plus exchange LUL -> CYON or browse collectibles!`
-          : `Hello Buddy! Welcome to ${locLabel}. How can I help you today? You can chat with me in the CHAT SESSION tab, exchange LUL -> CYON in the EXCHANGE tab, or browse collectibles in the CATALOG tab!`;
+          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, mint rare catches as NFTs, or visit the CATALOG tab to buy a House and recruit a Family Member smart contract AI agent using RESPITE.`
+          : `Hello Buddy! Welcome to ${locLabel}. You can chat with me in CHAT SESSION, exchange LUL to CYON or swap NEAR Testnet and RESPITE in EXCHANGE, or open the CATALOG tab to buy a House and recruit a Family Member AI agent!`;
       setNpcFullText(greeting);
       setNpcTypedText('');
       setLastPlayerMessage('');
@@ -1200,129 +1220,345 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           })()}
 
           {/* ===============================================================
-              TAB 3: CATALOG (Kiosk-Style Gamepass Catalog with Product Image)
+              TAB 3: CATALOG (Buy House & Recruit Family Member Smart Contract AI Agent)
              =============================================================== */}
-          {activeTab === 'katalog' && (
-            <div className="space-y-3">
-              {/* Connect Wallet Box Above Catalog */}
-              <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
-                <span className="text-[10.5px] font-bold">
-                  Connect NEAR Wallet to claim Gamepasses, House Theme NFTs, &amp; special collectibles.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    onConnectWallet?.();
-                  }}
-                  className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
-                >
-                  <span className="skew-x-6 inline-block">CONNECT WALLET</span>
-                </button>
-              </div>
+          {activeTab === 'katalog' && (() => {
+            const selectedFamilyPlan =
+              FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === selectedFamilyPlanId) ||
+              FAMILY_MEMBER_CONTRACT_PLANS[0];
+            const isHouseOwned = Boolean(hasHouseOwnership || walletConnected);
+            const canAffordHouse = respiteBalance >= HOUSE_OWNERSHIP_PRICE_RESPITE;
+            const canAffordFamilyMember = respiteBalance >= selectedFamilyPlan.priceRespite;
 
-              {/* Kiosk-Style Product Card Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div
-                  data-katalog-card="buddies_vip_gamepass"
-                  className="group relative h-[156px] sm:h-[168px] text-left select-none bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
-                >
-                  <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
-                    {/* Top-Right Teal Corner Checkmark Badge */}
-                    <div
-                      className="absolute -top-[2px] -right-[2px] w-7 h-7 bg-[#2bb3b1] border-l-[2.5px] border-b-[2.5px] border-[#0d0f12] flex items-center justify-center z-10"
-                      style={{
-                        clipPath: 'polygon(0 0, 100% 0, 100% 100%, 22% 100%, 0 78%)',
-                      }}
-                    >
-                      <svg
-                        viewBox="0 0 20 20"
-                        className="w-4 h-4 stroke-[#0d0f12] fill-none"
-                        strokeWidth="3.2"
-                      >
-                        <polyline
-                          points="3.5,10.5 8,15 16.5,5.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+            return (
+              <div className="space-y-3.5" data-catalog-house-and-family-panel="true">
+                {/* Top RESPITE Balance & Wallet Connection Bar */}
+                <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
+                      HOUSE &amp; FAMILY MEMBER CATALOG (RESPITE)
+                    </div>
+                    <div className="text-[10px] font-bold text-white/85 mt-0.5">
+                      RESPITE Balance: {respiteBalance.toLocaleString()} RESPITE | Buy a House and recruit Smart Contract AI Family Members.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onConnectWallet?.();
+                    }}
+                    className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
+                  >
+                    <span className="skew-x-6 inline-block">
+                      {walletConnected ? 'WALLET CONNECTED' : 'CONNECT WALLET'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Product Card Grid: 1) HOUSE (Buy House) & 2) FAMILY MEMBER (Smart Contract AI Agent) */}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Card 1: BUY HOUSE (Replaces Gamepass) */}
+                  <div
+                    data-katalog-card="buddies_house_ownership"
+                    className="group relative h-[162px] sm:h-[172px] text-left select-none bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
+                  >
+                    <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
+                      <div className="flex items-start justify-between gap-1">
+                        <div>
+                          <div
+                            className="text-[11.5px] sm:text-[13px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
+                            style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
+                          >
+                            HOUSE
+                          </div>
+                          <div className="text-[9px] sm:text-[9.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
+                            [BUY HOUSE // NEP-171]
+                          </div>
+                        </div>
+                        <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[9px] font-black uppercase shrink-0">
+                          {HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex items-center justify-center h-[80px] sm:h-[86px]">
+                        <img
+                          src="/assets/kiosk/hq_super_command.png"
+                          alt="Private House Ownership"
+                          draggable={false}
+                          className="w-full h-[76px] sm:h-[82px] object-contain select-none pointer-events-none"
                         />
-                      </svg>
-                    </div>
-
-                    <div className="pr-6">
-                      <div
-                        className="text-[11.5px] sm:text-[13px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
-                        style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-                      >
-                        VIP PLOT &amp; HARVESTER PASS
                       </div>
-                      <div className="text-[9.5px] sm:text-[10px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
-                        [NEP-171 // GAMEPASS]
+
+                      <div className="text-[9px] font-bold text-[#1c2026] truncate">
+                        Unlocks Private House &amp; Base Plot
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-1 flex items-center justify-center h-[82px] sm:h-[90px]">
-                      <img
-                        src="/assets/kiosk/hq_super_command.png"
-                        alt="VIP Plot & Harvester Gamepass"
-                        draggable={false}
-                        className="w-full h-[80px] sm:h-[88px] object-contain select-none pointer-events-none"
-                      />
+                  {/* Card 2: FAMILY MEMBER (Smart Contract AI Agent) */}
+                  <div
+                    data-katalog-card="buddies_family_member_agent"
+                    className="group relative h-[162px] sm:h-[172px] text-left select-none bg-[#facc15] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
+                  >
+                    <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
+                      <div className="flex items-start justify-between gap-1">
+                        <div>
+                          <div
+                            className="text-[11.5px] sm:text-[13px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
+                            style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
+                          >
+                            FAMILY MEMBER
+                          </div>
+                          <div className="text-[9px] sm:text-[9.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
+                            [SMART CONTRACT AI AGENT]
+                          </div>
+                        </div>
+                        <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[9px] font-black uppercase shrink-0">
+                          {selectedFamilyPlan.priceRespite} RESPITE
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex items-center justify-center h-[80px] sm:h-[86px]">
+                        <img
+                          src="/assets/kiosk/street_rookie.png"
+                          alt="Family Member Smart Contract AI Agent"
+                          draggable={false}
+                          className="w-full h-[76px] sm:h-[82px] object-contain select-none pointer-events-none"
+                        />
+                      </div>
+
+                      <div className="text-[9px] font-bold text-[#1c2026] truncate">
+                        Collect Boxes, Fish, or Attack in Warzone
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Kiosk-Style Status Bar */}
-              <div className="mt-3 px-3 py-2 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2px_0_#0d0f12] flex items-center justify-between gap-2">
-                <span className="text-[10.5px] font-black uppercase tracking-tight text-[#0d0f12]">
-                  GAMEPASS STATUS:
-                </span>
-                <span
-                  className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[10.5px] font-black uppercase shadow-[0_1.5px_0_#0d0f12] ${
-                    walletConnected
-                      ? 'bg-[#b8ff3c] text-[#0d0f12]'
-                      : 'bg-[#2bb3b1] text-[#0d0f12]'
-                  }`}
+                {/* ===========================================================
+                    SECTION 1: BUY HOUSE (WITH RESPITE)
+                   =========================================================== */}
+                <div
+                  data-buy-house-section="true"
+                  className="p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5"
                 >
-                  {walletConnected ? 'ACTIVE (OWNED)' : 'AVAILABLE (NEP-171)'}
-                </span>
-              </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-tight text-[#0d0f12]">
+                        1. BUY HOUSE (PRIVATE HOUSE OWNERSHIP)
+                      </div>
+                      <div className="text-[10px] font-bold text-[#1c2026]/85">
+                        Grants permanent ownership of your Private House and Plot access.
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[10px] font-black uppercase shadow-[0_1.5px_0_#0d0f12] shrink-0 ${
+                        isHouseOwned
+                          ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                          : 'bg-[#d8b4fe] text-[#0d0f12]'
+                      }`}
+                    >
+                      {isHouseOwned ? 'HOUSE OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                    </span>
+                  </div>
 
-              {/* Kiosk-Style Footer Action Bar */}
-              <div className="mt-3.5 pt-1 flex items-center justify-between gap-3">
-                <div className="px-3 h-11 bg-[#f4f6f8] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center text-[11px] font-black tracking-tight text-[#0d0f12] select-none">
-                  01 / 01
+                  <button
+                    type="button"
+                    data-buy-house-btn="true"
+                    disabled={!isHouseOwned && !canAffordHouse}
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      if (isHouseOwned) {
+                        triggerNpcSpeech(
+                          'You already own your House. You can enter your Private House or claim a plot anytime.',
+                        );
+                        return;
+                      }
+                      const ok = onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
+                      if (ok !== false) {
+                        triggerNpcSpeech(
+                          `House purchased for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE! Your Private House ownership is now active on NEAR.`,
+                        );
+                      }
+                    }}
+                    className={`w-full py-2.5 px-4 border-[2.5px] border-[#0d0f12] font-black text-xs uppercase tracking-wider shadow-[2px_3px_0_#0d0f12] -skew-x-6 transition-all ${
+                      isHouseOwned
+                        ? 'bg-[#b8ff3c] text-[#0d0f12] cursor-pointer'
+                        : canAffordHouse
+                          ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                          : 'bg-slate-400 text-slate-700 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="inline-block skew-x-6">
+                      {isHouseOwned
+                        ? 'HOUSE OWNED (ACTIVE)'
+                        : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
+                    </span>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    if (!walletConnected && onConnectWallet) {
-                      onConnectWallet();
-                      triggerNpcSpeech(
-                        'Congratulations! Your NEP-171 VIP Plot & Harvester Gamepass is now active! You can now claim private house plots & base plots.',
-                      );
-                    } else {
-                      triggerNpcSpeech(
-                        'Your VIP Gamepass is already active! You can claim any house plot or base plot directly at the Plot Kiosk.',
-                      );
-                    }
-                  }}
-                  className={`h-11 px-6 sm:px-8 active:translate-y-0.5 border-[3.5px] border-[#0d0f12] font-black text-base sm:text-lg uppercase tracking-tight shadow-[3px_4px_0_#0d0f12] -skew-x-6 cursor-pointer transition-all ${
-                    walletConnected
-                      ? 'bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12]'
-                      : 'bg-[#e2e6ea] hover:bg-[#2bb3b1] text-[#0d0f12]'
-                  }`}
-                  style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
+                {/* ===========================================================
+                    SECTION 2: RECRUIT FAMILY MEMBER (SMART CONTRACT AI AGENT)
+                    Contract Duration Options: 1 Week, 1 Month, 1 Year (Price Difference in RESPITE)
+                   =========================================================== */}
+                <div
+                  data-recruit-family-member-section="true"
+                  className="p-3 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-3"
                 >
-                  <span className="inline-block skew-x-6">
-                    {walletConnected ? 'ACTIVE' : 'BUY GAMEPASS'}
-                  </span>
-                </button>
+                  <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-wider text-[#facc15]">
+                        2. RECRUIT FAMILY MEMBER (SMART CONTRACT AI AGENT)
+                      </div>
+                      <div className="text-[10px] font-bold text-slate-300 mt-0.5">
+                        Family Member is an AI agent based on a NEAR smart contract. Select a contract duration to recruit with RESPITE:
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
+                      ACTIVE: {recruitedFamilyMembers.length}
+                    </span>
+                  </div>
+
+                  {/* Contract Duration Options: 1 Week, 1 Month, 1 Year */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {FAMILY_MEMBER_CONTRACT_PLANS.map((plan) => {
+                      const isSelected = plan.id === selectedFamilyPlan.id;
+                      return (
+                        <button
+                          key={plan.id}
+                          type="button"
+                          data-family-contract-plan={plan.id}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setSelectedFamilyPlanId(plan.id);
+                          }}
+                          className={`p-2 text-center border-2 border-black transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#facc15] text-black shadow-[2px_2px_0_#000]'
+                              : 'bg-[#1e293b] hover:bg-[#334155] text-white'
+                          }`}
+                        >
+                          <div className="text-[10px] font-black uppercase">{plan.shortLabel}</div>
+                          <div
+                            className={`text-xs font-black mt-0.5 ${
+                              isSelected ? 'text-black' : 'text-[#d8b4fe]'
+                            }`}
+                          >
+                            {plan.priceRespite} RESPITE
+                          </div>
+                          <div
+                            className={`text-[8.5px] font-bold mt-0.5 ${
+                              isSelected ? 'text-black/80' : 'text-slate-300'
+                            }`}
+                          >
+                            {plan.durationDays} Days
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    data-recruit-family-member-btn="true"
+                    disabled={!canAffordFamilyMember}
+                    onClick={() => {
+                      if (!canAffordFamilyMember) return;
+                      soundEngine.playUiClick();
+                      const recruited = onRecruitFamilyMember?.(selectedFamilyPlan.id);
+                      triggerNpcSpeech(
+                        recruited
+                          ? `Recruited ${recruited.name} on a ${selectedFamilyPlan.label} for ${selectedFamilyPlan.priceRespite} RESPITE! You can now order your Family Member to Collect Boxes, Go Fishing, or launch an Armed Warzone Attack.`
+                          : `Family Member recruited on a ${selectedFamilyPlan.label} (${selectedFamilyPlan.priceRespite} RESPITE)!`,
+                      );
+                    }}
+                    className={`-skew-x-6 w-full py-2.5 px-4 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[3px_3px_0_#000] transition-all ${
+                      canAffordFamilyMember
+                        ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
+                        : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="inline-block skew-x-6">
+                      RECRUIT FAMILY MEMBER ({selectedFamilyPlan.shortLabel} -{' '}
+                      {selectedFamilyPlan.priceRespite} RESPITE)
+                    </span>
+                  </button>
+
+                  {/* =========================================================
+                      SECTION 3: COMMAND RECRUITED FAMILY MEMBERS
+                      Orders: Collect Boxes, Go Fishing, Armed Warzone Attack
+                     ========================================================= */}
+                  <div className="pt-2 border-t border-white/15 space-y-2">
+                    <div className="text-[10.5px] font-black uppercase tracking-wider text-[#38bdf8]">
+                      3. COMMAND FAMILY MEMBER AI AGENTS
+                    </div>
+                    {recruitedFamilyMembers.length === 0 ? (
+                      <div className="p-2.5 bg-black/40 border border-white/15 text-[10px] font-bold text-slate-300">
+                        No Family Member recruited yet. Choose a 1 Week, 1 Month, or 1 Year contract above and click RECRUIT FAMILY MEMBER to deploy your smart contract AI agent.
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {recruitedFamilyMembers.map((member) => {
+                          const currentOrderSpec =
+                            FAMILY_MEMBER_ORDER_SPECS.find((o) => o.id === member.activeOrder) ||
+                            FAMILY_MEMBER_ORDER_SPECS[0];
+                          return (
+                            <div
+                              key={member.agentId}
+                              data-family-member-item={member.agentId}
+                              className="p-2.5 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] space-y-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="text-[11px] font-black uppercase text-white">
+                                    {member.name} ({member.planLabel})
+                                  </div>
+                                  <div className="text-[9.5px] font-mono text-[#38bdf8]">
+                                    Contract: {member.contractAddress} | Active Order:{' '}
+                                    {currentOrderSpec.label}
+                                  </div>
+                                </div>
+                                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black text-[9px] font-black uppercase border border-black shrink-0">
+                                  ACTIVE
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {FAMILY_MEMBER_ORDER_SPECS.map((orderSpec) => {
+                                  const isOrderActive = member.activeOrder === orderSpec.id;
+                                  return (
+                                    <button
+                                      key={orderSpec.id}
+                                      type="button"
+                                      data-family-order-btn={`${member.agentId}-${orderSpec.id}`}
+                                      onClick={() => {
+                                        soundEngine.playUiClick();
+                                        onCommandFamilyMember?.(member.agentId, orderSpec.id);
+                                        triggerNpcSpeech(
+                                          `Order confirmed for ${member.name}: ${orderSpec.label}. ${orderSpec.description} (+${orderSpec.rewardLul} LUL activity reward).`,
+                                        );
+                                      }}
+                                      className={`py-1.5 px-2 border border-black text-[9px] font-black uppercase cursor-pointer transition-colors ${
+                                        isOrderActive
+                                          ? 'bg-[#b8ff3c] text-black'
+                                          : 'bg-[#0f172a] hover:bg-black text-white'
+                                      }`}
+                                    >
+                                      {orderSpec.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ===============================================================
               TAB 4: FISH MARKET (Beach NPC Kai Only: Sell Raw Fish for LUL, Self-Pay Mint Rare Fish NFT, & P2P Marketplace)

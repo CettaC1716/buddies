@@ -63,6 +63,8 @@ import {
   uiStateToEmitterConfigPatch,
 } from './components/ParticleEmitterPanel';
 import {
+  FAMILY_MEMBER_CONTRACT_PLANS,
+  FAMILY_MEMBER_ORDER_SPECS,
   connectInjectedNearExtensionWallet,
   consumeNearWalletCallbackFromUrl,
   createInitialNep171SubAccountLedger,
@@ -81,6 +83,7 @@ import {
   type NearAccountOnChainView,
   type NearRpcStatusSnapshot,
   type Nep171GamepassSubAccountLedger,
+  type RecruitedFamilyMemberAgent,
 } from './lib/nearClient';
 import {
   fetchFishMarketplaceListingsFromSupabase,
@@ -348,6 +351,10 @@ export default function App() {
   const [respiteBalance, setRespiteBalance] = useState<number>(45);
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(12.5);
   const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
+  const [hasHouseOwnership, setHasHouseOwnership] = useState<boolean>(false);
+  const [recruitedFamilyMembers, setRecruitedFamilyMembers] = useState<
+    RecruitedFamilyMemberAgent[]
+  >([]);
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([
     'tatami_tea_table',
     'sakura_bonsai_pot',
@@ -3670,6 +3677,105 @@ export default function App() {
         respiteBalance={respiteBalance}
         nearTestnetBalance={nearTestnetBalance}
         walletConnected={Boolean(hud.nearWalletConnected)}
+        hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
+        onBuyHouseWithRespite={(priceRespite) => {
+          if (respiteBalance < priceRespite) return false;
+          const actorAccount =
+            hud.nearWalletId || playerUid || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const nextRespite = Math.max(0, respiteBalance - priceRespite);
+          setRespiteBalance(nextRespite);
+          setHasHouseOwnership(true);
+          dispatchBuddyAction('nearConnectAndMint');
+          setHud((prev) => ({
+            ...prev,
+            nearHasGamepassNft: true,
+          }));
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: actorAccount,
+            lulBalance: hud.gold,
+            cyonBalance,
+            respiteBalance: nextRespite,
+            ownedTokenIds: [...ownedMerchantItemIds, 'nep171:house:ownership'],
+          });
+          void insertMarketTransactionReceipt({
+            merchant_id: merchantLocation,
+            actor_near_account: actorAccount,
+            action_type: 'buy_item',
+            item_id: 'house_ownership',
+            nep245_token_id: 'nep171:house:ownership',
+            currency: 'RESPITE',
+            amount: 1,
+            unit_price: priceRespite,
+            reasoning_summary: `Purchased Private House ownership for ${priceRespite} RESPITE.`,
+          });
+          return true;
+        }}
+        recruitedFamilyMembers={recruitedFamilyMembers}
+        onRecruitFamilyMember={(planId) => {
+          const plan =
+            FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === planId) ||
+            FAMILY_MEMBER_CONTRACT_PLANS[0];
+          if (respiteBalance < plan.priceRespite) return null;
+          const actorAccount =
+            hud.nearWalletId || playerUid || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const nextRespite = Math.max(0, respiteBalance - plan.priceRespite);
+          setRespiteBalance(nextRespite);
+
+          const memberNumber = recruitedFamilyMembers.length + 1;
+          const now = new Date();
+          const expires = new Date(now.getTime() + plan.durationDays * 86400 * 1000);
+          const newMember: RecruitedFamilyMemberAgent = {
+            agentId: `family-member-${Date.now().toString(36)}`,
+            name: `FAMILY MEMBER #${memberNumber}`,
+            contractAddress: `family-${memberNumber}.buddiesblitz.testnet`,
+            planId: plan.id,
+            planLabel: plan.shortLabel,
+            pricePaidRespite: plan.priceRespite,
+            recruitedAtIso: now.toISOString(),
+            expiresAtIso: expires.toISOString(),
+            activeOrder: 'collect_boxes',
+            nearTxHash: `near-family-${Date.now().toString(36)}`,
+          };
+          setRecruitedFamilyMembers((prev) => [newMember, ...prev]);
+
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: actorAccount,
+            lulBalance: hud.gold,
+            cyonBalance,
+            respiteBalance: nextRespite,
+          });
+          void insertMarketTransactionReceipt({
+            merchant_id: merchantLocation,
+            actor_near_account: actorAccount,
+            action_type: 'buy_item',
+            item_id: `family_member_${plan.id}`,
+            nep245_token_id: newMember.contractAddress,
+            currency: 'RESPITE',
+            amount: 1,
+            unit_price: plan.priceRespite,
+            reasoning_summary: `Recruited ${newMember.name} (${plan.label}) for ${plan.priceRespite} RESPITE.`,
+            near_tx_hash: newMember.nearTxHash,
+          });
+          return newMember;
+        }}
+        onCommandFamilyMember={(agentId, orderId) => {
+          const orderSpec =
+            FAMILY_MEMBER_ORDER_SPECS.find((o) => o.id === orderId) ||
+            FAMILY_MEMBER_ORDER_SPECS[0];
+          setRecruitedFamilyMembers((prev) =>
+            prev.map((m) => (m.agentId === agentId ? { ...m, activeOrder: orderId } : m)),
+          );
+          dispatchBuddyAction(`adjustPlayerLul:${orderSpec.rewardLul}`);
+          if (orderId === 'go_fishing') {
+            const caught = rollRandomCaughtFish({
+              waterZone: 'east_beach',
+              caughtByAccount: hud.nearWalletId || playerUid || 'commander-p1.testnet',
+            });
+            setCaughtFishBucket((prev) => [caught, ...prev]);
+          } else if (orderId === 'armed_warzone_attack') {
+            dispatchBuddyAction('kioskSelectRecipe:buddy_infantry');
+          }
+        }}
         ownedItemIds={ownedMerchantItemIds}
         activeHouseThemeId={activeHouseThemeId}
         interiorPlacement={interiorPlacement}

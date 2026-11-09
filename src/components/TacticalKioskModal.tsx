@@ -420,7 +420,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
     0: {
       headerTitle: 'WEAPON ARMORY',
       headerSubtitle:
-        'Assign AI Harvesters to assemble infantry firearms, rotary gatlings, or photon lance rifles on the build pad.',
+        'Assign Family Member AI Agents to assemble infantry firearms, rotary gatlings, or photon lance rifles on the build pad.',
       cards: [
         {
           id: 'ar99_rifle',
@@ -776,10 +776,10 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
             <p className="mt-1.5 h-[34px] sm:h-[36px] line-clamp-2 overflow-hidden text-[12px] sm:text-[13px] font-medium leading-[1.32] text-[#1c2026]">
               {!isPlotClaimedAndDeployed
                 ? isScanningGamepass
-                  ? 'Scanning NEAR wallet for NEP-171 Gamepass ownership verification...'
+                  ? 'Scanning NEAR wallet for NEP-171 House ownership verification...'
                   : isGamepassVerified
-                  ? 'Gamepass verified! Click CLAIM PLOT below to deploy your Command Base, activate AI Harvesters, and unlock the catalog.'
-                  : 'Connect your NEAR wallet in the top-right corner to verify Gamepass ownership and deploy your Command Base.'
+                  ? 'House ownership verified! Click CLAIM PLOT below to deploy your Command Base, activate Family Member AI Agents, and unlock the catalog.'
+                  : 'Connect your NEAR wallet in the top-right corner or buy a House in Hana Catalog to deploy your Command Base.'
                 : isSafezoneCityMode
                 ? 'Configure automatic perimeter gate permissions and trusted friend wallets for your claimed safezone plot.'
                 : currentPage.headerSubtitle}
@@ -810,7 +810,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 }`}
               >
                 {isScanningGamepass
-                  ? 'SCANNING GAMEPASS OWNERSHIP...'
+                  ? 'SCANNING HOUSE OWNERSHIP...'
                   : `CLAIM PLOT${targetPlotLabel}`}
               </button>
             </div>

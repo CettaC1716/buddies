@@ -550,8 +550,18 @@ export function generateNpcMerchantReply(
     return `Your current CYON balance is ${balances.cyon} CYON. CYON is a pure non-crypto currency obtained by exchanging LUL -> CYON, used to purchase non-NFT items such as Outfits (future expansion) and private house furniture!`;
   }
 
+  if (
+    q.includes('family') ||
+    q.includes('harvester') ||
+    q.includes('recruit') ||
+    q.includes('agent') ||
+    q.includes('contract')
+  ) {
+    return `In the CATALOG tab, you can buy a House (25 RESPITE) and recruit a Family Member (Smart Contract AI Agent) using RESPITE for 1 Week (15 RESPITE), 1 Month (45 RESPITE), or 1 Year (180 RESPITE). Your Family Member can be ordered to Collect Boxes, Go Fishing, or launch an Armed Warzone Attack!`;
+  }
+
   if (q.includes('respite') || q.includes('near') || q.includes('crypto') || q.includes('swap') || q.includes('nft') || q.includes('tema') || q.includes('japanese') || q.includes('rumah') || q.includes('theme') || q.includes('house')) {
-    return `Your RESPITE balance is ${balances.respite} RESPITE. RESPITE is our NEAR Protocol NEP-141 smart contract coin (respite.buddiesblitz.testnet). You can obtain RESPITE by swapping NEAR Testnet <-> RESPITE in the EXCHANGE tab below LUL -> CYON!`;
+    return `Your RESPITE balance is ${balances.respite} RESPITE. RESPITE is our NEAR Protocol NEP-141 smart contract coin (respite.buddiesblitz.testnet). Use RESPITE in the CATALOG tab to buy a House and recruit Family Member AI agents, or swap NEAR Testnet and RESPITE in the EXCHANGE tab!`;
   }
 
   if (q.includes('harga') || q.includes('mahal') || q.includes('murah') || q.includes('pasar') || q.includes('price') || q.includes('market')) {

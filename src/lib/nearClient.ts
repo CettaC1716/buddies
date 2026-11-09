@@ -954,3 +954,107 @@ export const NEAR_WALLET_SELECTOR_OPTIONS: readonly NearWalletSelectorOption[] =
   },
 ];
 
+/**
+ * ============================================================================
+ * 12. FAMILY MEMBER SMART CONTRACT AI AGENT & HOUSE OWNERSHIP
+ * ============================================================================
+ * Redefines Harvester into "Family Member" — an autonomous AI Agent governed
+ * by a NEAR smart contract (`family-agent.buddiesblitz.testnet`).
+ * Recruited in Hana's Catalog using RESPITE currency with 3 contract durations
+ * (1 Week, 1 Month, 1 Year) and commandable for:
+ *   1) Collect Boxes
+ *   2) Go Fishing
+ *   3) Armed Warzone Attack
+ * ============================================================================
+ */
+export const HOUSE_OWNERSHIP_PRICE_RESPITE = 25;
+
+export type FamilyMemberContractPlanId = '1_week' | '1_month' | '1_year';
+
+export type FamilyMemberOrderId =
+  | 'collect_boxes'
+  | 'go_fishing'
+  | 'armed_warzone_attack';
+
+export interface FamilyMemberContractPlanSpec {
+  id: FamilyMemberContractPlanId;
+  label: string;
+  shortLabel: string;
+  durationDays: number;
+  priceRespite: number;
+  description: string;
+}
+
+export const FAMILY_MEMBER_CONTRACT_PLANS: readonly FamilyMemberContractPlanSpec[] = [
+  {
+    id: '1_week',
+    label: '1 WEEK CONTRACT',
+    shortLabel: '1 WEEK',
+    durationDays: 7,
+    priceRespite: 15,
+    description: '7-day smart contract AI agent active service.',
+  },
+  {
+    id: '1_month',
+    label: '1 MONTH CONTRACT',
+    shortLabel: '1 MONTH',
+    durationDays: 30,
+    priceRespite: 45,
+    description: '30-day smart contract AI agent active service.',
+  },
+  {
+    id: '1_year',
+    label: '1 YEAR CONTRACT',
+    shortLabel: '1 YEAR',
+    durationDays: 365,
+    priceRespite: 180,
+    description: '365-day smart contract AI agent active service.',
+  },
+];
+
+export interface FamilyMemberOrderSpec {
+  id: FamilyMemberOrderId;
+  label: string;
+  description: string;
+  rewardLul: number;
+  contractMethod: string;
+}
+
+export const FAMILY_MEMBER_ORDER_SPECS: readonly FamilyMemberOrderSpec[] = [
+  {
+    id: 'collect_boxes',
+    label: 'COLLECT BOXES',
+    description: 'Order Family Member to collect supply boxes and crates.',
+    rewardLul: 160,
+    contractMethod: 'agent_order_collect_boxes',
+  },
+  {
+    id: 'go_fishing',
+    label: 'GO FISHING',
+    description: 'Order Family Member to catch fish at the beach and oasis.',
+    rewardLul: 190,
+    contractMethod: 'agent_order_go_fishing',
+  },
+  {
+    id: 'armed_warzone_attack',
+    label: 'ARMED WARZONE ATTACK',
+    description: 'Arm Family Member with weapons to attack enemies in Warzone.',
+    rewardLul: 280,
+    contractMethod: 'agent_order_armed_warzone_attack',
+  },
+];
+
+export interface RecruitedFamilyMemberAgent {
+  agentId: string;
+  name: string;
+  contractAddress: string;
+  planId: FamilyMemberContractPlanId;
+  planLabel: string;
+  pricePaidRespite: number;
+  recruitedAtIso: string;
+  expiresAtIso: string;
+  activeOrder: FamilyMemberOrderId;
+  nearTxHash: string;
+}
+
+
