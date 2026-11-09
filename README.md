@@ -59,6 +59,9 @@ npm run build    # TypeScript check + production bundle into dist/
 4. **Warzone `2x2x2` Crate Stacking & Tactical Base Kiosk**
    - **Do:** Enter the **Warzone** portal, stand near your base's **Tactical Kiosk** (`B`) to select a Weapon Armory or Vehicle Hangar contract, pick up a supply crate (`E`), and throw it onto the glowing hologram slots on your 8-slot `2x2x2` pad (`F` to craft).
    - **See:** The 3D occupancy bitmask validates the crate formation (`1x1x1`, `1x1x2`, `2x1x1`, `2x2x1`, `2x2x2`) and spawns the corresponding firearm, AI squad buddy, mini-tank, or VTOL aircraft.
+5. **P2P Wallet-to-Wallet `RESPITE` Transfer (`NEP-141` `ft_transfer`)**
+   - **Do:** Click your character in the 3D viewport -> click **`WALLET`** on the bottom target bar -> enter any `.testnet` wallet (or short citizen handle like `kxvqmr`) and an amount in the **`SEND RESPITE TO WALLET (NEP-141)`** card, then click **`SEND RESPITE`**.
+   - **See:** The contract executes `ft_transfer` on **`market.buddiesblitz.testnet`**, emits a standard `EVENT_JSON` (`nep141` `ft_transfer`), updates both wallets' `RESPITE` balances, and prints a direct NearBlocks Testnet transaction link.
 
 ---
 
@@ -118,7 +121,8 @@ OFF-CHAIN (Supabase PostgreSQL — Zero On-Chain Liquidity Risk)
   Common / Unminted Fish  ──────────► Sell to NPC Kai ──► CYON (or RELEASE to free bag space)
 
 ON-CHAIN (NEAR Testnet: market.buddiesblitz.testnet)
-  NEAR Testnet ──► swap_near_for_respite() ──► RESPITE
+  NEAR Testnet ──► swap_near_for_respite() ──► RESPITE (NEP-141 Fungible Token)
+  RESPITE ──► ft_transfer() ──► Peer-to-Peer Wallet Transfer (<friend>.buddiesblitz.testnet)
   Rare Caught Fish ──► mint_fish_nft() ──► list_fish_nft() ◄──► buy_fish_nft() (Paid in RESPITE)
   RESPITE ──► purchase_citizen_asset() ──► Private House Deed & Family Member AI Contracts
 ```
@@ -139,13 +143,15 @@ Each player carries a **20-fish bucket (`caughtFishBucket.length / 20`)**. When 
 - If the player lands a heavy `Rare` or `Mythic` specimen, they click **`MINT FISH AS NFT`**, minting a **NEP-171 Fish NFT** with its exact `species_id`, `weight_kg`, and `rarity`, and list it on the **Player Fish NFT Marketplace** for **`RESPITE`**.
 
 ### 3. On-chain smart contract (`market.buddiesblitz.testnet`)
-The Rust smart contract in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs) (built on `near-sdk` v5) is deployed to **`market.buddiesblitz.testnet`** under the master account **`buddiesblitz.testnet`**:
+The smart contract in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs) (compiled to [`contracts/buddies-market/target/near/buddies_market.wasm`](contracts/buddies-market/target/near/buddies_market.wasm)) is deployed live on NEAR Testnet at **`market.buddiesblitz.testnet`** under the master account **`buddiesblitz.testnet`**:
 
-- `swap_near_for_respite()` (`#[payable]`) — Accepts native Testnet `NEAR` and credits on-chain `RESPITE` (`1 NEAR = 100 RESPITE`).
-- `mint_fish_nft(token_id, species_id, species_name, water_zone, rarity, weight_kg_x100)` — Mints a NEP-171 Fish NFT to `env::predecessor_account_id()` and emits a standard `EVENT_JSON` (`nep171` `nft_mint`).
+- `ft_metadata()`, `ft_total_supply()`, `ft_balance_of(account_id)` & `storage_balance_of(account_id)` — Exposes **`RESPITE`** as a standard **NEP-141 / NEP-145 Fungible Token** (`symbol: "RESPITE"`, `decimals: 0`) discoverable in NEAR wallets and NearBlocks Explorer.
+- `ft_transfer(receiver_id, amount, memo)` — Transfers `RESPITE` directly between any two `.testnet` wallets (either from inside the in-game `WALLET` modal or via external wallets like Meteor Wallet / MyNearWallet) and emits `EVENT_JSON` (`nep141` `ft_transfer`).
+- `swap_near_for_respite()` (`#[payable]`) — Accepts native Testnet `NEAR`, credits on-chain `RESPITE` (`1 NEAR = 100 RESPITE`), and emits `EVENT_JSON` (`nep141` `ft_mint`).
+- `nft_metadata()` & `mint_fish_nft(token_id, species_id, species_name, water_zone, rarity, weight_kg_x100)` — Mints a **NEP-171 Fish NFT** (`symbol: "BBFISH"`) to the angler's wallet and emits a standard `EVENT_JSON` (`nep171` `nft_mint`).
 - `list_fish_nft(listing_id, token_id, price_respite)` — Places the caller's Fish NFT on the P2P order book for `RESPITE`.
 - `buy_fish_nft(listing_id)` — Atomically transfers `price_respite` from buyer to seller, transfers `owner_id` of the Fish NFT to the buyer, and emits `EVENT_JSON` (`nep171` `nft_transfer`).
-- `purchase_citizen_asset(asset_id, price_respite)` — Deducts `RESPITE` to unlock Private House ownership (`25 RESPITE`) or recruit an autonomous **Family Member** AI contract (`15 / 45 / 180 RESPITE` for `1 Week / 1 Month / 1 Year`).
+- `purchase_citizen_asset(asset_id, price_respite)` — Deducts `RESPITE` and mints on-chain NEP-171 deeds for **Private House ownership** (`25 RESPITE`) or autonomous **Family Member AI** contracts (`15 / 45 / 180 RESPITE` for `1 Week / 1 Month / 1 Year`).
 
 ---
 
