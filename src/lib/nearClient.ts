@@ -1689,29 +1689,47 @@ export async function executeMarketContractCallOnChain(params: {
     | 'list_fish_nft'
     | 'buy_fish_nft'
     | 'purchase_citizen_asset'
-    | 'swap_near_for_respite';
+    | 'swap_near_for_respite'
+    | 'ft_transfer';
   ownerId: string;
   tokenIds: string[];
   memoData: Record<string, unknown>;
-  eventType?: 'nft_mint' | 'nft_transfer' | 'market_action';
+  eventType?: 'nft_mint' | 'nft_transfer' | 'market_action' | 'ft_transfer';
+  receiverId?: string;
+  amountStr?: string;
 }): Promise<{
   ok: boolean;
   contractId: string;
   txHash: string;
   logs: string[];
 }> {
-  const nep171Payload = {
-    standard: 'nep171',
-    version: '1.0.0',
-    event: params.eventType || 'nft_mint',
-    data: [
-      {
-        owner_id: params.ownerId,
-        token_ids: params.tokenIds,
-        memo: JSON.stringify(params.memoData),
-      },
-    ],
-  };
+  const isFtTransfer = params.methodName === 'ft_transfer' || params.eventType === 'ft_transfer';
+  const nepPayload = isFtTransfer
+    ? {
+        standard: 'nep141',
+        version: '1.0.0',
+        event: 'ft_transfer',
+        data: [
+          {
+            old_owner_id: params.ownerId,
+            new_owner_id: params.receiverId || params.tokenIds[0] || 'buddiesblitz.testnet',
+            amount: params.amountStr || '1',
+            memo: JSON.stringify(params.memoData),
+          },
+        ],
+      }
+    : {
+        standard: 'nep171',
+        version: '1.0.0',
+        event: params.eventType || 'nft_mint',
+        data: [
+          {
+            owner_id: params.ownerId,
+            token_ids: params.tokenIds,
+            memo: JSON.stringify(params.memoData),
+          },
+        ],
+      };
 
   try {
     const res = await fetch('/api/near/market-call', {
@@ -1719,7 +1737,7 @@ export async function executeMarketContractCallOnChain(params: {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         methodName: params.methodName,
-        args: nep171Payload,
+        args: nepPayload,
       }),
     });
     if (res.ok) {
@@ -1747,7 +1765,7 @@ export async function executeMarketContractCallOnChain(params: {
     txHash: generateDeterministicNearTxHash(
       `${MARKET_CONTRACT_ACCOUNT_ID}:${params.methodName}:${params.ownerId}:${params.tokenIds.join(',')}:${Date.now()}`,
     ),
-    logs: [`EVENT_JSON:${JSON.stringify(nep171Payload)}`],
+    logs: [`EVENT_JSON:${JSON.stringify(nepPayload)}`],
   };
 }
 

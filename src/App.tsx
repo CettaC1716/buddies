@@ -339,6 +339,13 @@ export default function App() {
     useState<NearAccountOnChainView | null>(null);
   const [walletUsernameDraft, setWalletUsernameDraft] = useState<string>('Buddy Male');
   const [walletUsernameSavedToast, setWalletUsernameSavedToast] = useState<boolean>(false);
+  const [respiteTransferRecipient, setRespiteTransferRecipient] = useState<string>('');
+  const [respiteTransferAmount, setRespiteTransferAmount] = useState<string>('10');
+  const [respiteTransferStatus, setRespiteTransferStatus] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    txHash?: string;
+  } | null>(null);
   const [savedWalletSummary, setSavedWalletSummary] = useState<{
     walletId: string;
     displayName: string;
@@ -5928,6 +5935,136 @@ export default function App() {
                   <span className="skew-x-6 inline-block">{nearTestnetBalance.toFixed(2)} NEAR</span>
                 </div>
               </div>
+            </div>
+
+            {/* P2P SEND RESPITE TO ANOTHER WALLET */}
+            <div
+              data-wallet-send-respite-card="true"
+              className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10.5px] font-black uppercase tracking-wider text-[#d8b4fe]">
+                  SEND RESPITE TO WALLET (NEP-141)
+                </div>
+                <div className="text-[9.5px] font-mono text-slate-300">
+                  market.buddiesblitz.testnet
+                </div>
+              </div>
+              <input
+                type="text"
+                value={respiteTransferRecipient}
+                onChange={(e) => {
+                  setRespiteTransferRecipient(e.target.value);
+                  setRespiteTransferStatus(null);
+                }}
+                placeholder="Recipient (e.g. kxvqmr.buddiesblitz.testnet)"
+                className="w-full px-2.5 py-1.5 bg-white text-black font-mono font-bold text-xs border-2 border-black"
+              />
+              <div className="flex gap-1.5">
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, respiteBalance)}
+                  value={respiteTransferAmount}
+                  onChange={(e) => {
+                    setRespiteTransferAmount(e.target.value);
+                    setRespiteTransferStatus(null);
+                  }}
+                  placeholder="Amount"
+                  className="w-28 px-2.5 py-1.5 bg-white text-black font-black text-xs border-2 border-black"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    const senderId =
+                      hud.nearWalletId || nep171Ledger.ownerNearAccount || 'buddiesblitz.testnet';
+                    const rawTarget = respiteTransferRecipient.trim().toLowerCase();
+                    if (!rawTarget) {
+                      setRespiteTransferStatus({
+                        type: 'error',
+                        text: 'Enter a valid recipient wallet address.',
+                      });
+                      return;
+                    }
+                    const targetWallet =
+                      rawTarget.includes('.') ? rawTarget : `${rawTarget}.buddiesblitz.testnet`;
+                    const amt = Math.floor(Number(respiteTransferAmount));
+                    if (!Number.isFinite(amt) || amt <= 0) {
+                      setRespiteTransferStatus({
+                        type: 'error',
+                        text: 'Enter a positive RESPITE amount.',
+                      });
+                      return;
+                    }
+                    if (respiteBalance < amt) {
+                      setRespiteTransferStatus({
+                        type: 'error',
+                        text: `Insufficient RESPITE balance (${respiteBalance} RESPITE available).`,
+                      });
+                      return;
+                    }
+                    const nextRespite = Math.max(0, respiteBalance - amt);
+                    setRespiteBalance(nextRespite);
+                    if (isManagedSubAccountOfMaster(senderId)) {
+                      setManagedSubAccounts(updateSubAccountBalances(senderId, -amt, 0));
+                    }
+                    if (isManagedSubAccountOfMaster(targetWallet)) {
+                      setManagedSubAccounts(updateSubAccountBalances(targetWallet, amt, 0));
+                    }
+                    void syncPlayerBalancesToSupabase({
+                      nearAccountId: senderId,
+                      lulBalance: hud.gold,
+                      cyonBalance,
+                      respiteBalance: nextRespite,
+                    });
+                    void executeMarketContractCallOnChain({
+                      methodName: 'ft_transfer',
+                      eventType: 'ft_transfer',
+                      ownerId: senderId,
+                      receiverId: targetWallet,
+                      amountStr: String(amt),
+                      tokenIds: [targetWallet],
+                      memoData: {
+                        from: senderId,
+                        to: targetWallet,
+                        amount_respite: amt,
+                      },
+                    }).then((res) => {
+                      setRespiteTransferStatus({
+                        type: 'success',
+                        text: `Sent ${amt} RESPITE to ${targetWallet}`,
+                        txHash: res.txHash,
+                      });
+                      setRespiteTransferRecipient('');
+                    });
+                  }}
+                  className="flex-1 -skew-x-6 px-3 py-1.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
+                >
+                  <span className="skew-x-6 inline-block">SEND RESPITE</span>
+                </button>
+              </div>
+              {respiteTransferStatus && (
+                <div
+                  className={`p-2 border text-[10px] font-bold ${
+                    respiteTransferStatus.type === 'success'
+                      ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200'
+                      : 'bg-red-950/80 border-red-400 text-red-200'
+                  }`}
+                >
+                  <div>{respiteTransferStatus.text}</div>
+                  {respiteTransferStatus.txHash && (
+                    <a
+                      href={`https://testnet.nearblocks.io/txns/${respiteTransferStatus.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline text-[#b8ff3c] break-all"
+                    >
+                      Tx: {respiteTransferStatus.txHash}
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

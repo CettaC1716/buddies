@@ -192,6 +192,7 @@ function nearSubAccountProvisionerPlugin(): Plugin {
               'buy_fish_nft',
               'purchase_citizen_asset',
               'swap_near_for_respite',
+              'ft_transfer',
             ]);
             const methodName = parsed.methodName || 'mint_fish_nft';
             if (!allowedMethods.has(methodName)) {
