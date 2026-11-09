@@ -275,6 +275,16 @@ near contract deploy market.buddiesblitz.testnet \
 
 ---
 
+## Prototype status & production roadmap
+
+This repository is an active **NEAR Testnet playable prototype** built for the **NEAR Hackathon**. While the core 3-zone loop (`Lobby`, `Safezone City`, `Warzone`), Privy Google OAuth sub-account onboarding (`<name>.buddiesblitz.testnet`), and on-chain NEP-141 (`RESPITE`) + NEP-171/181 (`BBFISH`) marketplace contract (`market.buddiesblitz.testnet`) are live and playable end-to-end, several areas are under active development prior to a production Mainnet release:
+
+- **Security & Mainnet custody hardening** — Moving the Testnet sub-account relayer (`buddiesblitz.testnet`) to an isolated KMS / MPC signing service with per-account `FunctionCall` gas allowances, server-authoritative catch weight/rarity verification before `mint_fish_nft` signatures, and a third-party smart contract audit.
+- **3D graphics, shaders & asset pipeline** — Expanding custom `.glb` character and vehicle animations, real-time coastal water shaders, richer interior furniture models, and GPU instanced Level-of-Detail (LOD) rendering for higher concurrent city density.
+- **Gameplay depth & social progression** — Adding multi-player fishing boats, seasonal on-chain angler leaderboards, additional `2x2x2` co-op vehicle and air-support recipes, and persistent citizen neighborhood customization.
+
+---
+
 ## NEAR Hackathon track alignment & disclosures
 
 - **Tracks**:
