@@ -5071,6 +5071,18 @@ export default function App() {
           setNearTestnetBalance(nextNear);
           setRespiteBalance(nextRespite);
 
+          void executeMarketContractCallOnChain({
+            methodName: 'swap_near_for_respite',
+            ownerId: actorAccount,
+            tokenIds: ['respite-ft'],
+            memoData: {
+              direction,
+              near_amount: receipt.nearAmount,
+              respite_amount: receipt.respiteAmount,
+            },
+            eventType: 'market_action',
+          });
+
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
             lulBalance: hud.gold,
