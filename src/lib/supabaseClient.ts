@@ -56,10 +56,69 @@ export function getSupabaseClient(): SupabaseClient | null {
       auth: {
         persistSession: typeof window !== 'undefined',
         autoRefreshToken: typeof window !== 'undefined',
+        detectSessionInUrl: typeof window !== 'undefined',
       },
     });
   }
   return sharedSupabaseClient;
+}
+
+/**
+ * Initiates Supabase Google OAuth redirect login (`accounts.google.com`).
+ * Returns `{ redirected: true }` when OAuth redirect starts, or `{ redirected: false, error }` if Google provider is not yet enabled in Supabase dashboard.
+ */
+export async function signInWithGoogleOAuth(): Promise<{
+  redirected: boolean;
+  error?: string;
+}> {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase || typeof window === 'undefined') {
+      return { redirected: false, error: 'Supabase client is not configured.' };
+    }
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+    if (error || !data?.url) {
+      return {
+        redirected: false,
+        error: error?.message || 'Google OAuth provider is not enabled yet.',
+      };
+    }
+    return { redirected: true };
+  } catch (err) {
+    return {
+      redirected: false,
+      error: err instanceof Error ? err.message : 'Failed to launch Google OAuth.',
+    };
+  }
+}
+
+/**
+ * Subscribes to Supabase Auth session changes (e.g. returning from Google OAuth redirect)
+ * and invokes `onGoogleUser(email, displayName)` when a verified Google user session is active.
+ */
+export function subscribeToSupabaseGoogleAuth(
+  onGoogleUser: (email: string, displayName?: string) => void,
+): () => void {
+  const supabase = getSupabaseClient();
+  if (!supabase) return () => {};
+
+  const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user?.email) {
+      const fullName =
+        (session.user.user_metadata?.full_name as string | undefined) ||
+        (session.user.user_metadata?.name as string | undefined);
+      onGoogleUser(session.user.email, fullName);
+    }
+  });
+
+  return () => {
+    sub.subscription.unsubscribe();
+  };
 }
 
 export interface DbPlayerProfileRow {

@@ -4,6 +4,7 @@ import {
   formatPlayerSubAccountFromMaster,
   isValidNearAccountId,
 } from '../lib/nearClient';
+import { signInWithGoogleOAuth } from '../lib/supabaseClient';
 import { soundEngine } from '../game/audio';
 
 interface NearWalletSelectorModalProps {
@@ -37,14 +38,17 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
   if (!isOpen) return null;
 
   const isRegistered = Boolean(currentWalletId && currentWalletId !== 'guest');
-  const previewWalletAddress = emailInput.trim()
-    ? formatPlayerSubAccountFromMaster(emailInput)
-    : null;
 
   const handleRegisterWithGoogle = async () => {
     const raw = emailInput.trim().toLowerCase();
     if (!raw) {
-      setStatusError('Please enter your Google email address to register.');
+      setIsConnecting(true);
+      const oauthRes = await signInWithGoogleOAuth();
+      setIsConnecting(false);
+      if (oauthRes.redirected) {
+        return;
+      }
+      setStatusError('Please enter your Google email address below to continue.');
       return;
     }
     const cleanWallet = formatPlayerSubAccountFromMaster(raw);
@@ -143,15 +147,6 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               placeholder="name@gmail.com"
               className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
             />
-
-            {previewWalletAddress && (
-              <div className="p-2.5 bg-[#0f172a] border border-white/20 flex items-center justify-between gap-2 text-[10px]">
-                <span className="font-black uppercase text-slate-400">WALLET ADDRESS</span>
-                <span className="font-mono font-bold text-[#38bdf8] truncate">
-                  {previewWalletAddress}
-                </span>
-              </div>
-            )}
 
             <button
               type="button"

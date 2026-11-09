@@ -104,7 +104,9 @@ import {
   fetchOrCreatePlayerProfile,
   insertMarketTransactionReceipt,
   insertSocialChatMessageToSupabase,
+  signInWithGoogleOAuth,
   subscribeToBuddiesBlitzRealtime,
+  subscribeToSupabaseGoogleAuth,
   syncBasePlotToSupabase,
   syncFishMarketplaceListingsToSupabase,
   syncGamepassNftLedgerToSupabase,
@@ -299,6 +301,10 @@ export default function App() {
   const [isEditingGuestName, setIsEditingGuestName] = useState<boolean>(false);
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
   const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
+  const [citizenWalletModalPhase, setCitizenWalletModalPhase] = useState<
+    'idle' | 'preparing' | 'ready'
+  >('idle');
+  const [citizenWalletSetupProgress, setCitizenWalletSetupProgress] = useState<number>(0);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -1051,6 +1057,12 @@ export default function App() {
       setWalletConnectError(null);
       const cleanInput = rawWalletInput.trim().toLowerCase();
       if (!cleanInput) {
+        setIsVerifyingNearWallet(true);
+        const oauthRes = await signInWithGoogleOAuth();
+        setIsVerifyingNearWallet(false);
+        if (oauthRes.redirected) {
+          return;
+        }
         setWalletConnectError('Please enter your Google email address to continue.');
         return;
       }
@@ -1122,18 +1134,16 @@ export default function App() {
         }
       }
 
-      // Bind Wallet Address as Player UID
+      // Bind Wallet Address as Player UID & Launch "Preparing Your Wallet -> Citizen Wallet Active" Modal
       setPlayerUid(normalizedWallet);
       setWalletConnectInput(normalizedWallet);
       setCharacterGender(restoredGender);
       setPlayerDisplayName(restoredName);
       setWalletUsernameDraft(restoredName);
       setOnboardingAuthMode('wallet');
-      setOnboardingStep((prevStep) => {
-        if (prevStep === 'completed') return 'completed';
-        setOnboardingLoadingProgress(12);
-        return 'entering_lobby';
-      });
+      setOnboardingStep('completed');
+      setCitizenWalletSetupProgress(15);
+      setCitizenWalletModalPhase('preparing');
 
       // Unlock QA & Treasury Management Menu only if Master UID is cryptographically verified
       if (isMasterAdminWallet(normalizedWallet) && Boolean(loadSavedAdminCryptographicProof()?.verified)) {
@@ -1195,13 +1205,36 @@ export default function App() {
     [characterGender, dispatchBuddyAction, persistWalletProfileLocally, walletNetworkChoice],
   );
 
-  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`) on mount
+  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`) or Supabase Google OAuth session on mount
   useEffect(() => {
     const callback = consumeNearWalletCallbackFromUrl();
     if (callback && callback.accountId) {
       void handleConnectWalletAndEnterLobby(callback.accountId);
     }
+    const unsubGoogle = subscribeToSupabaseGoogleAuth((email) => {
+      if (email) {
+        void handleConnectWalletAndEnterLobby(email);
+      }
+    });
+    return () => {
+      unsubGoogle();
+    };
   }, [handleConnectWalletAndEnterLobby]);
+
+  useEffect(() => {
+    if (citizenWalletModalPhase !== 'preparing') return;
+    const interval = window.setInterval(() => {
+      setCitizenWalletSetupProgress((prev) => Math.min(100, prev + 22));
+    }, 180);
+    const doneTimer = window.setTimeout(() => {
+      setCitizenWalletSetupProgress(100);
+      setCitizenWalletModalPhase('ready');
+    }, 1100);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(doneTimer);
+    };
+  }, [citizenWalletModalPhase]);
 
   /**
    * Allows the player to change their username at any time (in Chat Settings, Personal Wallet, or Citizen Profile),
@@ -1870,9 +1903,7 @@ export default function App() {
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      void handleConnectWalletAndEnterLobby(
-                        walletConnectInput || savedWalletSummary?.walletId || 'player1@gmail.com',
-                      );
+                      void handleConnectWalletAndEnterLobby(walletConnectInput);
                     }
                   }}
                   placeholder="Enter Google email (e.g. name@gmail.com)"
@@ -1880,24 +1911,11 @@ export default function App() {
                   className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
                 />
 
-                {walletConnectInput.trim() && (
-                  <div className="px-2.5 py-1.5 bg-[#0f172a] border border-white/15 flex items-center justify-between gap-2 text-[10px]">
-                    <span className="font-black uppercase text-slate-400">WALLET ADDRESS</span>
-                    <span className="font-mono font-bold text-[#38bdf8] truncate">
-                      {formatPlayerSubAccountFromMaster(walletConnectInput)}
-                    </span>
-                  </div>
-                )}
-
                 <button
                   type="button"
                   data-connect-wallet-enter-btn="true"
                   disabled={isVerifyingNearWallet}
-                  onClick={() =>
-                    void handleConnectWalletAndEnterLobby(
-                      walletConnectInput || savedWalletSummary?.walletId || 'player1@gmail.com',
-                    )
-                  }
+                  onClick={() => void handleConnectWalletAndEnterLobby(walletConnectInput)}
                   className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                 >
                   <span className="skew-x-6 flex items-center justify-center gap-2">
@@ -2165,6 +2183,95 @@ export default function App() {
             </div>
           </div>
         )}
+
+      {/* STEP 4: Post-Login Citizen Wallet Provisioning & Welcome Modal (Simple English, No Emoji) */}
+      {citizenWalletModalPhase !== 'idle' && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Citizen Wallet Activation Modal"
+          data-citizen-wallet-modal={citizenWalletModalPhase}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-[3px] pointer-events-auto select-none"
+        >
+          <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-4 text-center">
+            {citizenWalletModalPhase === 'preparing' ? (
+              <>
+                <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
+                  <span className="skew-x-12 inline-block">PREPARING WALLET</span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
+                  Please wait, preparing your wallet...
+                </h2>
+                <div className="w-full h-3 bg-[#0b0e16] border-2 border-white/80 overflow-hidden shadow-[2px_2px_0_#000]">
+                  <div
+                    className="h-full bg-[#b8ff3c] transition-all duration-150"
+                    style={{ width: `${citizenWalletSetupProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs font-bold text-slate-300">
+                  Creating your personal citizen wallet ({citizenWalletSetupProgress}%)...
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
+                  <span className="skew-x-12 inline-block">WALLET ACTIVE</span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
+                  Welcome Citizen, your wallet is now active.
+                </h2>
+
+                <div className="p-3 bg-[#0f172a] border-2 border-black shadow-[3px_3px_0_#000] text-left space-y-1.5">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                    WALLET ADDRESS
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div
+                      data-citizen-active-wallet-address="true"
+                      className="text-xs font-mono font-black text-[#38bdf8] break-all"
+                    >
+                      {hud.nearWalletId || playerUid}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        const addr = hud.nearWalletId || playerUid;
+                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          void navigator.clipboard.writeText(addr);
+                        }
+                        setWalletAddressCopiedToast(true);
+                        window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
+                      }}
+                      className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
+                    >
+                      <span className="skew-x-6 inline-block">
+                        {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs font-bold text-slate-300 leading-relaxed">
+                  Please explore the city. Your Currency Exchange and full Catalog access are now unlocked.
+                </p>
+
+                <button
+                  type="button"
+                  data-citizen-explore-city-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setCitizenWalletModalPhase('idle');
+                  }}
+                  className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                >
+                  <span className="skew-x-6 inline-block">EXPLORE THE CITY</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* =====================================================================
           3. PLAYING HUD: STYLIZED TACTICAL ARCADE OVERHAUL
