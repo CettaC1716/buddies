@@ -24,6 +24,7 @@ Requires Node 18+ and npm.
 ```bash
 npm install
 npm run dev      # Vite dev server on http://localhost:3000 (includes local NEAR sub-account middleware)
+npm test         # Run the 81-test gameplay, economy, and NEAR sub-account verification suite
 npm run build    # TypeScript check + production bundle into dist/
 ```
 
@@ -43,6 +44,21 @@ npm run build    # TypeScript check + production bundle into dist/
 | `Esc` | close active modal or pause |
 
 **Where to walk:** From the Lobby spawn, walk toward the **Safezone City** terminal on the left to enter the coastal city. Walk east (`x > 52`) until the tarmac gives way to sand and timber piers — the shoreline detector (`detectNearbyFishingWaterZone` in [`src/game/buddiesFishingMarket.ts`](src/game/buddiesFishingMarket.ts)) lights up the fishing bar as soon as you reach the water's edge or the Central Oasis Lake (`(0, 0)`). Press `F` to cast your bobber, wait for the strike, and press `F` again to land the fish. Unwanted common catches can be released immediately back into the water from the catch banner (`RELEASE`) so your 20-slot fish bucket never clogs; valuable catches can be carried to **Merchant Kai** on the beach pier to sell for off-chain `CYON` or minted on-chain as a **NEP-171 Fish NFT** to trade with other citizens for `RESPITE`.
+
+### Step-by-step verification for judges (`Do X -> See Y`)
+
+1. **Seedless Social Login & Sub-Account Creation (`SOCIAL LOGIN` + `SUB-ACCOUNTS`)**
+   - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000/?title=1`), click **`CONTINUE WITH GOOGLE`** (or play as Guest and click **`REGISTER`** inside any NPC modal), then type a handle in **`Choose your wallet name`** and click **`CREATE WALLET`**.
+   - **See:** The onboarding flow transitions through `Please wait, preparing your wallet...`, provisions `<name>.buddiesblitz.testnet` under `buddiesblitz.testnet` with Dual-Key custody (`FUNCTION CALL KEYS` + master recovery), and opens the city with `Welcome Citizen, your wallet is now active.`
+2. **Shoreline Fishing, Bucket Release, and P2P Fish NFT Trading (`NEP-171` + `AGENT NPCS`)**
+   - **Do:** In Safezone City, walk to the **Central Oasis Lake** (`(0, 0)`) or **East Beach Shoreline** (`x > 52`). Press `F` when the `WATER DETECTED — CAST FISHING ROD` bar appears, wait for a bite, and press `F` to reel in.
+   - **See:** A catch banner appears with the fish's exact weight (`kg`) and rarity. Click **`RELEASE`** to throw unwanted common fish back into the water (`0/20` bucket capacity), or walk to **Merchant Kai** (`kai-beach.buddiesblitz.testnet`) and press `E` to either **`SELL TO MERCHANT`** for off-chain `CYON` or **`MINT FISH AS NFT`** (`NEP-171`) and list it on the P2P Fish Marketplace for on-chain `RESPITE`.
+3. **NPC Autonomous Pricing, House Cutaway Interior & Family Member AI (`AGENT NPCS` + `NEP-245` + `DYNAMIC NFTS`)**
+   - **Do:** Talk to **Hana** (`hana-cafe.buddiesblitz.testnet`), **Kai** (`kai-beach.buddiesblitz.testnet`), or **Hiro** (`hiro-warzone.buddiesblitz.testnet`) by pressing `E`. Open the **`EXCHANGE`** or **`CATALOG`** tab, or walk to your Private House plot to step inside the 3D cutaway interior.
+   - **See:** Each NPC operates its own NEAR sub-account treasury, quotes dynamic `LUL -> CYON` exchange rates based on treasury reserves, sells `NEP-245` furniture/themes, and lets registered citizens unlock a **Private House Deed** (`25 RESPITE`) or hire autonomous **Family Member AI** contracts (`15 / 45 / 180 RESPITE`) that harvest and stack crates on your base pad.
+4. **Warzone `2x2x2` Crate Stacking & Tactical Base Kiosk**
+   - **Do:** Enter the **Warzone** portal, stand near your base's **Tactical Kiosk** (`B`) to select a Weapon Armory or Vehicle Hangar contract, pick up a supply crate (`E`), and throw it onto the glowing hologram slots on your 8-slot `2x2x2` pad (`F` to craft).
+   - **See:** The 3D occupancy bitmask validates the crate formation (`1x1x1`, `1x1x2`, `2x1x1`, `2x2x1`, `2x2x2`) and spawns the corresponding firearm, AI squad buddy, mini-tank, or VTOL aircraft.
 
 ---
 
@@ -219,3 +235,13 @@ near contract deploy market.buddiesblitz.testnet \
   sign-with-legacy-keychain \
   send
 ```
+
+---
+
+## NEAR Hackathon track alignment & disclosures
+
+- **Tracks**:
+  - **`games` (Games With Real Economies)** — Built around **AGENT NPCS** (`hana-cafe.buddiesblitz.testnet`, `kai-beach.buddiesblitz.testnet`, `hiro-warzone.buddiesblitz.testnet`), **SOCIAL LOGIN** (Privy Google OAuth into `<name>.buddiesblitz.testnet`), **NEP-245** multi-token furnishings, and a player-owned fish marketplace where players never touch seed phrases or gas popups.
+  - **`nfts` (NFTs That Do Something)** — **DYNAMIC NFTS**, **NEP-171** Fish NFTs with on-chain species/weight/rarity metadata traded peer-to-peer for `RESPITE`, Commander Gamepass estates with **SUB-ACCOUNTS** (`estate-01.buddiesblitz.testnet`), and **FUNCTION CALL KEYS** rotation on transfer.
+- **Libraries & baseline disclosure (`Q-005`)**: Built during the NEAR Hackathon window using `Three.js` (`v0.183`), `React 19`, `Vite 8`, `@privy-io/react-auth`, `@supabase/supabase-js`, `near-sdk` (`v5.5`, Rust), `lucide-react`, and `Tailwind CSS v4`.
+- **License (`Q-014`)**: Released under the [MIT License](LICENSE).
