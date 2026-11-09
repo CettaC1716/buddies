@@ -64,8 +64,9 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 /**
- * Initiates Supabase Google OAuth redirect login (`accounts.google.com`).
- * Returns `{ redirected: true }` when OAuth redirect starts, or `{ redirected: false, error }` if Google provider is not yet enabled in Supabase dashboard.
+ * Initiates Supabase Google OAuth redirect login (`accounts.google.com`) ONLY if
+ * the Google Auth provider is enabled in Supabase (`/auth/v1/settings` -> `external.google === true`).
+ * Prevents redirecting the browser to a blank error page when Google OAuth is not yet enabled in Supabase.
  */
 export async function signInWithGoogleOAuth(): Promise<{
   redirected: boolean;
@@ -73,9 +74,31 @@ export async function signInWithGoogleOAuth(): Promise<{
 }> {
   try {
     const supabase = getSupabaseClient();
-    if (!supabase || typeof window === 'undefined') {
+    if (!supabase || typeof window === 'undefined' || !SUPABASE_PROJECT_URL || !SUPABASE_ANON_KEY) {
       return { redirected: false, error: 'Supabase client is not configured.' };
     }
+
+    // Check if Google OAuth provider is enabled on this Supabase project before redirecting the browser
+    const settingsResp = await fetch(`${SUPABASE_PROJECT_URL}/auth/v1/settings`, {
+      headers: { apikey: SUPABASE_ANON_KEY },
+    });
+    if (settingsResp.ok) {
+      const settingsJson = (await settingsResp.json()) as {
+        external?: { google?: boolean };
+      };
+      if (!settingsJson?.external?.google) {
+        return {
+          redirected: false,
+          error: 'Google OAuth provider is not enabled yet in Supabase.',
+        };
+      }
+    } else {
+      return {
+        redirected: false,
+        error: 'Unable to verify Google OAuth provider status.',
+      };
+    }
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
