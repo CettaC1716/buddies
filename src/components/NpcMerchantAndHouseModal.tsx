@@ -204,15 +204,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
       const locLabel = merchantLocation === 'lobby_cafe' ? 'Mini Cafe Lobby' : 'East Beach House';
-      const greeting =
-        merchantLocation === 'beach_house'
+      const greeting = !walletConnected
+        ? `Hello and welcome, Buddy. It looks like you have not registered yet. Please register to access the Exchange and the full Catalog. Feel free to walk around or ask me any questions about this game.`
+        : merchantLocation === 'beach_house'
           ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, or visit the CATALOG tab to buy a House and recruit a Family Member.`
           : `Hello Buddy! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
       setNpcFullText(greeting);
       setNpcTypedText('');
       setLastPlayerMessage('');
     }
-  }, [activeModalMode, merchantLocation]);
+  }, [activeModalMode, merchantLocation, walletConnected]);
 
   // Typewriter effect for NPC dialogue
   useEffect(() => {
@@ -881,6 +882,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const parsedLul = Math.max(0, Math.floor(Number(exchangeLulAmountStr) || 0));
             const calculatedCyon = Math.floor((parsedLul / rateLul) * rateCyon);
             const canPerformExchange =
+              walletConnected &&
               exchangeQuote.canExchange &&
               parsedLul >= rateLul &&
               parsedLul <= lulBalance &&
@@ -893,26 +895,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               ? Math.floor(parsedCryptoInput * respitePerNearRate)
               : Number((parsedCryptoInput / respitePerNearRate).toFixed(4));
 
-            const canPerformCryptoSwap = isNearToRespite
-              ? parsedCryptoInput >= 0.05 &&
-                parsedCryptoInput <= nearTestnetBalance &&
-                calculatedCryptoOutput >= 1
-              : parsedCryptoInput >= 10 &&
-                parsedCryptoInput <= respiteBalance &&
-                calculatedCryptoOutput > 0;
+            const canPerformCryptoSwap =
+              walletConnected &&
+              (isNearToRespite
+                ? parsedCryptoInput >= 0.05 &&
+                  parsedCryptoInput <= nearTestnetBalance &&
+                  calculatedCryptoOutput >= 1
+                : parsedCryptoInput >= 10 &&
+                  parsedCryptoInput <= respiteBalance &&
+                  calculatedCryptoOutput > 0);
 
             return (
               <div className="space-y-3.5">
-                {/* Top-Up / NEAR Wallet Selector Box */}
+                {/* Top-Up / Register or Wallet Box */}
                 <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                      NEAR WALLET &amp; 3-CURRENCY ECONOMY
+                      {walletConnected ? 'WALLET AND CURRENCY EXCHANGE' : 'REGISTRATION REQUIRED'}
                     </div>
                     <div className="text-[10px] font-bold text-white/85 mt-0.5">
                       {walletConnected
-                        ? `UID: ${playerNearAccount} · ${nearTestnetBalance.toFixed(2)} NEAR | ${respiteBalance.toLocaleString()} RESPITE`
-                        : 'Connect NEAR Wallet to swap NEAR Testnet <-> RESPITE (NEP-141 Coin).'}
+                        ? `${playerNearAccount} | ${nearTestnetBalance.toFixed(2)} NEAR | ${respiteBalance.toLocaleString()} RESPITE`
+                        : 'You are playing as a Guest. Please register to receive your wallet and unlock the Exchange.'}
                     </div>
                   </div>
                   {onConnectWallet && (
@@ -923,10 +927,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onConnectWallet();
                       }}
-                      className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
+                      className={`-skew-x-6 px-3 py-1.5 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
+                        walletConnected
+                          ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
+                          : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                      }`}
                     >
                       <span className="skew-x-6 inline-block">
-                        {walletConnected ? 'WALLET SELECTOR' : 'CONNECT WALLET'}
+                        {walletConnected ? 'WALLET' : 'REGISTER'}
                       </span>
                     </button>
                   )}
@@ -934,11 +942,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                 {/* ===========================================================
                     CARD 1: NON-CRYPTO EXCHANGE (LUL -> CYON)
-                    LUL (earned from Fishing & Warzone mini-games) -> CYON (for Outfits & non-NFT items)
+                    Locked when playing as an unregistered Guest
                    =========================================================== */}
                 <div
                   data-lul-cyon-exchange-card="true"
-                  className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
+                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
                 >
                   {/* Exchange Banner */}
                   <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
@@ -1036,10 +1046,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                 {/* ===========================================================
                     CARD 2: NEAR <-> RESPITE SWAP
+                    Locked when playing as an unregistered Guest
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
-                  className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
+                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
                 >
                   {/* Header Banner */}
                   <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
@@ -1209,20 +1222,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const selectedFamilyPlan =
               FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === selectedFamilyPlanId) ||
               FAMILY_MEMBER_CONTRACT_PLANS[0];
-            const isHouseOwned = Boolean(hasHouseOwnership || walletConnected);
-            const canAffordHouse = respiteBalance >= HOUSE_OWNERSHIP_PRICE_RESPITE;
-            const canAffordFamilyMember = respiteBalance >= selectedFamilyPlan.priceRespite;
+            const isHouseOwned = Boolean(walletConnected && hasHouseOwnership);
+            const canAffordHouse =
+              walletConnected && respiteBalance >= HOUSE_OWNERSHIP_PRICE_RESPITE;
+            const canAffordFamilyMember =
+              walletConnected && respiteBalance >= selectedFamilyPlan.priceRespite;
 
             return (
               <div className="space-y-3.5" data-catalog-house-and-family-panel="true">
-                {/* Top RESPITE Balance Bar */}
+                {/* Top RESPITE Balance / Registration Required Bar */}
                 <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
-                      HOUSE AND FAMILY MEMBER
+                      {walletConnected
+                        ? 'HOUSE AND FAMILY MEMBER'
+                        : 'REGISTRATION REQUIRED FOR FULL CATALOG'}
                     </div>
                     <div className="text-[10px] font-bold text-white/85 mt-0.5">
-                      Balance: {respiteBalance.toLocaleString()} RESPITE
+                      {walletConnected
+                        ? `Balance: ${respiteBalance.toLocaleString()} RESPITE`
+                        : 'You are playing as a Guest. Register your account to unlock House ownership and Family Member recruitment.'}
                     </div>
                   </div>
                   <button
@@ -1231,14 +1250,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       soundEngine.playUiClick();
                       onConnectWallet?.();
                     }}
-                    className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
+                    className={`-skew-x-6 px-3 py-1.5 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
+                      walletConnected
+                        ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
+                        : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                    }`}
                   >
-                    <span className="skew-x-6 inline-block">WALLET</span>
+                    <span className="skew-x-6 inline-block">
+                      {walletConnected ? 'WALLET' : 'REGISTER'}
+                    </span>
                   </button>
                 </div>
 
                 {/* Product Card Grid: 1) HOUSE & 2) FAMILY MEMBER */}
-                <div className="grid grid-cols-2 gap-3">
+                <div
+                  className={`grid grid-cols-2 gap-3 ${
+                    !walletConnected ? 'opacity-70 pointer-events-none select-none' : ''
+                  }`}
+                >
                   {/* Card 1: BUY HOUSE */}
                   <div
                     data-katalog-card="buddies_house_ownership"
@@ -1317,11 +1346,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
 
                 {/* ===========================================================
-                    SECTION 1: BUY HOUSE (WITH RESPITE)
-                   =========================================================== */}
+                     SECTION 1: BUY HOUSE (WITH RESPITE)
+                    =========================================================== */}
                 <div
                   data-buy-house-section="true"
-                  className="p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5"
+                  className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5 ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div>
@@ -1379,12 +1410,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
 
                 {/* ===========================================================
-                    SECTION 2: RECRUIT FAMILY MEMBER
-                    Contract Duration Options: 1 Week, 1 Month, 1 Year
-                   =========================================================== */}
+                     SECTION 2: RECRUIT FAMILY MEMBER
+                     Contract Duration Options: 1 Week, 1 Month, 1 Year
+                    =========================================================== */}
                 <div
                   data-recruit-family-member-section="true"
-                  className="p-3 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-3"
+                  className={`p-3 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-3 ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
                     <div>

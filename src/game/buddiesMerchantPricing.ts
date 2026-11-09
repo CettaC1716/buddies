@@ -534,47 +534,168 @@ export function generateNpcMerchantReply(
   state: MerchantAgentMarketState,
   balances: { lul: number; cyon: number; respite: number; walletConnected: boolean },
 ): string {
-  const q = userMessage.toLowerCase();
-  const locName = location === 'lobby_cafe' ? 'Mini Café Lobby' : 'East Beach House';
-  const quote = evaluateLulToCyonExchangeQuote(state);
+  const q = userMessage.trim().toLowerCase();
+  const locName = location === 'lobby_cafe' ? 'Mini Cafe Lobby' : 'East Beach House';
+  const npcName = location === 'lobby_cafe' ? 'Hana' : 'Kai';
+  const guestNotice = !balances.walletConnected
+    ? ' Please register your account first to unlock the Exchange and full Catalog.'
+    : '';
 
-  if (state.isShopBroke && !q.includes('invest')) {
-    return `Oh no Buddy, the CYON treasury at ${locName} is currently empty (${state.treasuryCyon} CYON) due to heavy LUL exchanges! Click the [INVEST 300 LUL] button below so my shop can reopen and you get a -15% discount!`;
+  if (state.isShopBroke && q.includes('invest')) {
+    return `Thank you for asking. My shop CYON reserve at ${locName} is currently low (${state.treasuryCyon} CYON). Registered players can invest LUL to restore shop liquidity.${guestNotice}`;
   }
 
-  if (q.includes('lul') || q.includes('tukar') || q.includes('kurs') || q.includes('gold') || q.includes('exchange') || q.includes('rate')) {
-    return `You currently have ${balances.lul.toLocaleString()} LUL (non-crypto currency earned from Fishing & Warzone mini-games). You can exchange LUL -> CYON for non-NFT items & Outfits, or scroll down in the EXCHANGE tab to swap NEAR Testnet <-> RESPITE (NEP-141 crypto smart contract coin)!`;
+  // 1. Greetings
+  if (
+    /^(hi|hello|hey|halo|hallo|yo|greetings|good morning|good afternoon|good evening|selamat)\b/.test(
+      q,
+    )
+  ) {
+    if (!balances.walletConnected) {
+      return `Hello and welcome, Buddy. It looks like you have not registered yet. Please register to access the Exchange and the full Catalog. Meanwhile, you can walk around and ask me any questions about this game.`;
+    }
+    return `Hello Buddy, welcome back to ${locName}. My name is ${npcName}. Ask me about where you are, how to play, currencies, houses, family members, fishing, or the Warzone.`;
   }
 
-  if (q.includes('cyon') || q.includes('outfit') || q.includes('perabot') || q.includes('barang') || q.includes('furnitur') || q.includes('furniture') || q.includes('item')) {
-    return `Your current CYON balance is ${balances.cyon} CYON. CYON is a pure non-crypto currency obtained by exchanging LUL -> CYON, used to purchase non-NFT items such as Outfits (future expansion) and private house furniture!`;
+  // 2. Where am I / What is this place / Who are you
+  if (
+    q.includes('where am i') ||
+    q.includes('where is this') ||
+    q.includes('what is this') ||
+    q.includes('what place') ||
+    q.includes('who are you') ||
+    q.includes('apa ini') ||
+    q.includes('dimana ini') ||
+    q.includes('di mana ini') ||
+    q.includes('siapa kamu') ||
+    q.includes('location') ||
+    q.includes('lobby') ||
+    q.includes('city') ||
+    q.includes('map')
+  ) {
+    return `You are currently inside the ${locName} in Buddies Blitz, and my name is ${npcName}. This world has three main areas: the Mini Cafe Lobby, the peaceful Safezone City with private houses and fishing waters, and the Warzone Arena for team battles.${guestNotice}`;
   }
 
+  // 3. Game guide / How to play / Hints
+  if (
+    q.includes('how to play') ||
+    q.includes('guide') ||
+    q.includes('help') ||
+    q.includes('hint') ||
+    q.includes('tips') ||
+    q.includes('tutorial') ||
+    q.includes('what to do') ||
+    q.includes('objective') ||
+    q.includes('petunjuk') ||
+    q.includes('cara main')
+  ) {
+    return `Here is how to play Buddies Blitz: First, register with Google to receive your personal wallet and starter coins. Second, catch fish near water or collect boxes in the Warzone to earn LUL. Third, use the Exchange tab to convert currencies, and open the Catalog tab to buy a House and recruit Family Members.${guestNotice}`;
+  }
+
+  // 4. Registration / Account / Wallet questions
+  if (
+    q.includes('register') ||
+    q.includes('sign up') ||
+    q.includes('signup') ||
+    q.includes('login') ||
+    q.includes('google') ||
+    q.includes('wallet') ||
+    q.includes('account') ||
+    q.includes('guest') ||
+    q.includes('daftar') ||
+    q.includes('akun')
+  ) {
+    if (!balances.walletConnected) {
+      return `You are currently playing as a Guest with zero coins and read-only shop access. Click the REGISTER button in the Exchange or Catalog tab to sign up with Google and automatically receive your personal wallet address.`;
+    }
+    return `Your account is already registered and your personal wallet is active. You can view and copy your wallet address anytime inside your Personal Wallet menu.`;
+  }
+
+  // 5. Currencies & Exchange (LUL, CYON, RESPITE, NEAR)
+  if (
+    q.includes('lul') ||
+    q.includes('cyon') ||
+    q.includes('respite') ||
+    q.includes('near') ||
+    q.includes('coin') ||
+    q.includes('money') ||
+    q.includes('currency') ||
+    q.includes('exchange') ||
+    q.includes('swap') ||
+    q.includes('rate') ||
+    q.includes('tukar') ||
+    q.includes('kurs') ||
+    q.includes('uang') ||
+    q.includes('koin')
+  ) {
+    return `Buddies Blitz uses three currencies: LUL is earned from fishing and Warzone activity, CYON is exchanged from LUL to buy furniture and shop items, and RESPITE is used in the Catalog to buy a House and recruit Family Members. Your current balance is ${balances.lul} LUL, ${balances.cyon} CYON, and ${balances.respite} RESPITE.${guestNotice}`;
+  }
+
+  // 6. House, Family Members & Catalog
   if (
     q.includes('family') ||
     q.includes('harvester') ||
     q.includes('recruit') ||
     q.includes('agent') ||
-    q.includes('contract')
+    q.includes('contract') ||
+    q.includes('house') ||
+    q.includes('home') ||
+    q.includes('furniture') ||
+    q.includes('catalog') ||
+    q.includes('rumah') ||
+    q.includes('katalog')
   ) {
-    return `In the CATALOG tab, you can buy a House (25 RESPITE) and recruit a Family Member (Smart Contract AI Agent) using RESPITE for 1 Week (15 RESPITE), 1 Month (45 RESPITE), or 1 Year (180 RESPITE). Your Family Member can be ordered to Collect Boxes, Go Fishing, or launch an Armed Warzone Attack!`;
+    return `In the Catalog tab, registered players can buy a Private House for 25 RESPITE and recruit a Family Member helper for 1 Week (15 RESPITE), 1 Month (45 RESPITE), or 1 Year (180 RESPITE). Family Members can be ordered to collect boxes, go fishing, or join Warzone combat.${guestNotice}`;
   }
 
-  if (q.includes('respite') || q.includes('near') || q.includes('crypto') || q.includes('swap') || q.includes('nft') || q.includes('tema') || q.includes('japanese') || q.includes('rumah') || q.includes('theme') || q.includes('house')) {
-    return `Your RESPITE balance is ${balances.respite} RESPITE. RESPITE is our NEAR Protocol NEP-141 smart contract coin (respite.buddiesblitz.testnet). Use RESPITE in the CATALOG tab to buy a House and recruit Family Member AI agents, or swap NEAR Testnet and RESPITE in the EXCHANGE tab!`;
+  // 7. Fishing & East Beach
+  if (
+    q.includes('fish') ||
+    q.includes('rod') ||
+    q.includes('lake') ||
+    q.includes('beach') ||
+    q.includes('kai') ||
+    q.includes('water') ||
+    q.includes('mancing') ||
+    q.includes('ikan') ||
+    q.includes('pantai')
+  ) {
+    return `You can fish at the Central Oasis Lake or along the East Beach shoreline by pressing F near the water. Bring your caught fish to Kai at the East Beach House to sell them for LUL or mint rare fish into tradable items.${guestNotice}`;
   }
 
-  if (q.includes('harga') || q.includes('mahal') || q.includes('murah') || q.includes('pasar') || q.includes('price') || q.includes('market')) {
-    return `Day ${state.dayCounter} Market Report: ${state.lastMarketHeadline} Hover over any price button to read my full pricing breakdown!`;
+  // 8. Warzone / Combat / Crates
+  if (
+    q.includes('warzone') ||
+    q.includes('fight') ||
+    q.includes('battle') ||
+    q.includes('crate') ||
+    q.includes('box') ||
+    q.includes('weapon') ||
+    q.includes('tank') ||
+    q.includes('blue') ||
+    q.includes('red') ||
+    q.includes('perang') ||
+    q.includes('senjata') ||
+    q.includes('kotak')
+  ) {
+    return `To enter the Warzone, step onto the Warzone Teleport pad in the Lobby and choose Blue Team or Red Team. In the Warzone, grab supply boxes with E, stack them on your base pad, and press F to craft weapons, infantry, or vehicles. Every player has 5 lives per deployment.`;
   }
 
-  if (q.includes('kerja') || q.includes('mancing') || q.includes('fish') || q.includes('cafe') || q.includes('work') || q.includes('job')) {
-    return `If you want to chill without fighting, press the [BARISTA SHIFT / FISHING (+120 LUL)] button to earn LUL safely at ${locName}!`;
+  // 9. Prices / Market Stock
+  if (
+    q.includes('price') ||
+    q.includes('market') ||
+    q.includes('stock') ||
+    q.includes('cost') ||
+    q.includes('harga') ||
+    q.includes('pasar')
+  ) {
+    const quote = evaluateLulToCyonExchangeQuote(state);
+    return `Today is Market Day ${state.dayCounter}. The exchange rate is ${quote.lulCostFor10Cyon} LUL for 10 CYON, and catalog prices adjust based on item stock and player demand.${guestNotice}`;
   }
 
-  return `Welcome to ${locName}! I am merchant agent [${
-    location === 'lobby_cafe' ? state.cafeWalletId : state.beachWalletId
-  }]. The current exchange rate is ${quote.lulCostFor10Cyon} LUL = 10 CYON. Would you like to exchange LUL for CYON, buy home furniture (CYON), or mint an NFT House Theme (RESPITE)?`;
+  // 10. Off-Topic / Irrelevant Questions -> Polite fallback directing player to ask people around
+  return `I do not know about that topic. Perhaps you can ask the other people around the plaza, or ask me about Buddies Blitz locations, currencies, houses, family members, fishing, or the Warzone.`;
 }
 
 /**

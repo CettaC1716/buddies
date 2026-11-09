@@ -1088,6 +1088,10 @@ export default function App() {
         }
         setRespiteBalance(subAccount.respiteBalance);
         setCyonBalance(subAccount.cyonBalance);
+        setNearTestnetBalance(12.5);
+        if (hudRef.current.gold <= 0) {
+          dispatchBuddyAction('adjustPlayerLul:120');
+        }
       }
 
       setIsVerifyingNearWallet(true);
@@ -1125,8 +1129,11 @@ export default function App() {
       setPlayerDisplayName(restoredName);
       setWalletUsernameDraft(restoredName);
       setOnboardingAuthMode('wallet');
-      setOnboardingLoadingProgress(12);
-      setOnboardingStep('entering_lobby');
+      setOnboardingStep((prevStep) => {
+        if (prevStep === 'completed') return 'completed';
+        setOnboardingLoadingProgress(12);
+        return 'entering_lobby';
+      });
 
       // Unlock QA & Treasury Management Menu only if Master UID is cryptographically verified
       if (isMasterAdminWallet(normalizedWallet) && Boolean(loadSavedAdminCryptographicProof()?.verified)) {
@@ -1252,32 +1259,29 @@ export default function App() {
     soundEngine.playUiClick();
     const cleanGuestName =
       playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
-    const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(cleanGuestName);
-    setManagedSubAccounts(allSubAccounts);
-    const guestUid = subAccount.subAccountId;
-    if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem('bb_guest_uid', guestUid);
-      } catch {
-        // ignore
-      }
-    }
-    setPlayerUid(guestUid);
-    setRespiteBalance(subAccount.respiteBalance);
-    setCyonBalance(subAccount.cyonBalance);
+    setConnectedGoogleEmail('');
+    setPlayerUid('guest');
+    setRespiteBalance(0);
+    setCyonBalance(0);
+    setNearTestnetBalance(0);
+    setHasHouseOwnership(false);
     setPlayerDisplayName(cleanGuestName);
     setWalletUsernameDraft(cleanGuestName);
     setIsEditingGuestName(false);
     setOnboardingAuthMode('guest');
     setOnboardingLoadingProgress(10);
     setOnboardingStep('entering_lobby');
-    dispatchBuddyAction(`nearConnectAndMint:${guestUid}`);
+    dispatchBuddyAction('nearDisconnectSession');
+    dispatchBuddyAction(`adjustPlayerLul:${-Math.max(0, hudRef.current.gold)}`);
     dispatchBuddyAction(`setCharacterGender:${characterGender}`);
     dispatchBuddyAction(`setPlayerDisplayName:${cleanGuestName}`);
     setHud((prev) => ({
       ...prev,
-      nearWalletConnected: true,
-      nearWalletId: guestUid,
+      gold: 0,
+      nearWalletConnected: false,
+      nearWalletId: null,
+      nearHasGamepassNft: false,
+      nearGamepassTokenId: null,
     }));
   }, [characterGender, dispatchBuddyAction, playerDisplayName]);
 
@@ -5256,37 +5260,59 @@ export default function App() {
                 </button>
               </div>
 
-              {/* CREATED SUB-ACCOUNT WALLET ADDRESS */}
-              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
+              {/* CREATED SUB-ACCOUNT WALLET ADDRESS OR GUEST REGISTER PROMPT */}
+              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1.5">
                 <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
                   WALLET ADDRESS
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <div
-                    data-wallet-active-uid="true"
-                    className="text-xs font-mono font-black text-[#38bdf8] break-all"
-                  >
-                    {hud.nearWalletId || playerUid}
+                {hud.nearWalletConnected && hud.nearWalletId ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div
+                      data-wallet-active-uid="true"
+                      className="text-xs font-mono font-black text-[#38bdf8] break-all"
+                    >
+                      {hud.nearWalletId}
+                    </div>
+                    <button
+                      type="button"
+                      data-copy-wallet-address-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        const addr = hud.nearWalletId || playerUid;
+                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          void navigator.clipboard.writeText(addr);
+                        }
+                        setWalletAddressCopiedToast(true);
+                        window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
+                      }}
+                      className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
+                    >
+                      <span className="skew-x-6 inline-block">
+                        {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
+                      </span>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    data-copy-wallet-address-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      const addr = hud.nearWalletId || playerUid;
-                      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                        void navigator.clipboard.writeText(addr);
-                      }
-                      setWalletAddressCopiedToast(true);
-                      window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
-                    }}
-                    className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 inline-block">
-                      {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
-                    </span>
-                  </button>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div
+                      data-wallet-active-uid="true"
+                      className="text-[11px] font-bold text-slate-300"
+                    >
+                      Not registered yet. Register to get your wallet address and coins.
+                    </div>
+                    <button
+                      type="button"
+                      data-personal-wallet-open-selector-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setIsNearWalletSelectorOpen(true);
+                      }}
+                      className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
+                    >
+                      <span className="skew-x-6 inline-block">REGISTER</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 border-t border-white/15 space-y-1">
