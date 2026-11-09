@@ -302,16 +302,14 @@ export default function App() {
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
   const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
   const [citizenWalletModalPhase, setCitizenWalletModalPhase] = useState<
-    'idle' | 'preparing' | 'ready'
+    'idle' | 'choose_name' | 'preparing' | 'ready'
   >('idle');
   const [citizenWalletSetupProgress, setCitizenWalletSetupProgress] = useState<number>(0);
+  const [citizenWalletNameDraft, setCitizenWalletNameDraft] = useState<string>('');
+  const [citizenWalletNameError, setCitizenWalletNameError] = useState<string | null>(null);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return (
-        window.localStorage.getItem('bb_connected_google_email') ||
-        window.localStorage.getItem('bb_last_connected_wallet_id') ||
-        ''
-      );
+      return window.localStorage.getItem('bb_connected_google_email') || '';
     }
     return '';
   });
@@ -1205,6 +1203,50 @@ export default function App() {
     [characterGender, dispatchBuddyAction, persistWalletProfileLocally, walletNetworkChoice],
   );
 
+  /**
+   * Step 1 of Google Login: Initiates Google Sign-In and opens the "Choose Your Wallet Name" modal
+   * so the player can input their custom wallet name before provisioning `<name>.buddiesblitz-master.testnet`.
+   */
+  const handleStartGoogleLoginAndOpenWalletNaming = useCallback(
+    async (rawEmailInput?: string) => {
+      soundEngine.playUiClick();
+      setWalletConnectError(null);
+      setCitizenWalletNameError(null);
+      const cleanEmail = (rawEmailInput ?? walletConnectInput).trim().toLowerCase();
+
+      if (!cleanEmail) {
+        setIsVerifyingNearWallet(true);
+        const oauthRes = await signInWithGoogleOAuth();
+        setIsVerifyingNearWallet(false);
+        if (oauthRes.redirected) {
+          return;
+        }
+      } else {
+        const resolvedEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@gmail.com`;
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
+          } catch {
+            // ignore
+          }
+        }
+        setConnectedGoogleEmail(resolvedEmail);
+      }
+
+      const defaultPrefix = cleanEmail
+        ? cleanEmail
+            .split('@')[0]
+            .replace(/\./g, '')
+            .replace(/[^a-z0-9_-]/g, '')
+            .slice(0, 20)
+        : '';
+      setCitizenWalletNameDraft(defaultPrefix === 'player1' ? '' : defaultPrefix);
+      setOnboardingStep('completed');
+      setCitizenWalletModalPhase('choose_name');
+    },
+    [walletConnectInput],
+  );
+
   // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`) or Supabase Google OAuth session on mount
   useEffect(() => {
     const callback = consumeNearWalletCallbackFromUrl();
@@ -1213,13 +1255,13 @@ export default function App() {
     }
     const unsubGoogle = subscribeToSupabaseGoogleAuth((email) => {
       if (email) {
-        void handleConnectWalletAndEnterLobby(email);
+        void handleStartGoogleLoginAndOpenWalletNaming(email);
       }
     });
     return () => {
       unsubGoogle();
     };
-  }, [handleConnectWalletAndEnterLobby]);
+  }, [handleConnectWalletAndEnterLobby, handleStartGoogleLoginAndOpenWalletNaming]);
 
   useEffect(() => {
     if (citizenWalletModalPhase !== 'preparing') return;
@@ -1869,53 +1911,38 @@ export default function App() {
               </h1>
             </div>
 
-            {/* 1. Google Login -> Auto Sub-Account Provisioning */}
+            {/* 1. Google Login -> Opens Wallet Name Setup Modal */}
             <div className="space-y-2.5">
-              {savedWalletSummary && (
-                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-black text-[#facc15]">
-                      {savedWalletSummary.displayName}
+              {savedWalletSummary &&
+                savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' && (
+                  <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-black text-[#facc15]">
+                        {savedWalletSummary.displayName}
+                      </div>
+                      <div className="truncate font-mono text-[10px] text-[#38bdf8]">
+                        {savedWalletSummary.walletId}
+                      </div>
                     </div>
-                    <div className="truncate font-mono text-[10px] text-[#38bdf8]">
-                      {savedWalletSummary.walletId}
-                    </div>
+                    <button
+                      type="button"
+                      data-reconnect-saved-wallet-btn="true"
+                      onClick={() =>
+                        void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)
+                      }
+                      className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
+                    >
+                      CONTINUE
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    data-reconnect-saved-wallet-btn="true"
-                    onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
-                    className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
-                  >
-                    CONTINUE
-                  </button>
-                </div>
-              )}
+                )}
 
               <div className="space-y-2">
-                <input
-                  type="email"
-                  data-wallet-connect-input="true"
-                  value={walletConnectInput}
-                  onChange={(e) => {
-                    setWalletConnectInput(e.target.value);
-                    if (walletConnectError) setWalletConnectError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      void handleConnectWalletAndEnterLobby(walletConnectInput);
-                    }
-                  }}
-                  placeholder="Enter Google email (e.g. name@gmail.com)"
-                  aria-label="Google Email Address"
-                  className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
-                />
-
                 <button
                   type="button"
                   data-connect-wallet-enter-btn="true"
                   disabled={isVerifyingNearWallet}
-                  onClick={() => void handleConnectWalletAndEnterLobby(walletConnectInput)}
+                  onClick={() => void handleStartGoogleLoginAndOpenWalletNaming()}
                   className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                 >
                   <span className="skew-x-6 flex items-center justify-center gap-2">
@@ -2184,7 +2211,7 @@ export default function App() {
           </div>
         )}
 
-      {/* STEP 4: Post-Login Citizen Wallet Provisioning & Welcome Modal (Simple English, No Emoji) */}
+      {/* STEP 4: Post-Login Citizen Wallet Naming, Provisioning & Welcome Modal (Simple English, No Emoji) */}
       {citizenWalletModalPhase !== 'idle' && (
         <div
           role="dialog"
@@ -2194,7 +2221,85 @@ export default function App() {
           className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-[3px] pointer-events-auto select-none"
         >
           <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-4 text-center">
-            {citizenWalletModalPhase === 'preparing' ? (
+            {citizenWalletModalPhase === 'choose_name' ? (
+              <>
+                <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#facc15] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
+                  <span className="skew-x-12 inline-block">CREATE WALLET</span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
+                  Choose your wallet name
+                </h2>
+                <p className="text-xs font-bold text-slate-300">
+                  Enter a name to create your personal citizen wallet.
+                </p>
+
+                <div className="text-left space-y-2">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                    WALLET NAME
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    data-citizen-wallet-name-input="true"
+                    value={citizenWalletNameDraft}
+                    onChange={(e) => {
+                      const cleaned = e.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9_-]/g, '');
+                      setCitizenWalletNameDraft(cleaned);
+                      if (citizenWalletNameError) setCitizenWalletNameError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const cleanName = citizenWalletNameDraft.trim();
+                        if (!cleanName || cleanName.length < 2) {
+                          setCitizenWalletNameError(
+                            'Please enter a wallet name with at least 2 characters.',
+                          );
+                          return;
+                        }
+                        void handleConnectWalletAndEnterLobby(cleanName);
+                      }
+                    }}
+                    placeholder="Enter wallet name (e.g. charvi, rakyan)"
+                    className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
+                  />
+
+                  <div className="p-2.5 bg-[#0f172a] border border-white/20 flex items-center justify-between gap-2 text-[10.5px]">
+                    <span className="font-black uppercase text-slate-400">WALLET ADDRESS</span>
+                    <span className="font-mono font-bold text-[#38bdf8] truncate">
+                      {citizenWalletNameDraft.trim()
+                        ? `${citizenWalletNameDraft.trim()}.${MASTER_WALLET_ACCOUNT_ID}`
+                        : `<name>.${MASTER_WALLET_ACCOUNT_ID}`}
+                    </span>
+                  </div>
+
+                  {citizenWalletNameError && (
+                    <div className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold">
+                      {citizenWalletNameError}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  data-citizen-create-wallet-submit-btn="true"
+                  onClick={() => {
+                    const cleanName = citizenWalletNameDraft.trim();
+                    if (!cleanName || cleanName.length < 2) {
+                      setCitizenWalletNameError(
+                        'Please enter a wallet name with at least 2 characters.',
+                      );
+                      return;
+                    }
+                    void handleConnectWalletAndEnterLobby(cleanName);
+                  }}
+                  className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                >
+                  <span className="skew-x-6 inline-block">CREATE WALLET</span>
+                </button>
+              </>
+            ) : citizenWalletModalPhase === 'preparing' ? (
               <>
                 <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
                   <span className="skew-x-12 inline-block">PREPARING WALLET</span>
@@ -4755,7 +4860,7 @@ export default function App() {
         }}
         onConnectWallet={() => {
           soundEngine.playUiClick();
-          setIsNearWalletSelectorOpen(true);
+          void handleStartGoogleLoginAndOpenWalletNaming();
         }}
         onSwapNearAndRespite={(direction, inputAmount) => {
           const actorAccount =
@@ -5412,7 +5517,7 @@ export default function App() {
                       data-personal-wallet-open-selector-btn="true"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        setIsNearWalletSelectorOpen(true);
+                        void handleStartGoogleLoginAndOpenWalletNaming();
                       }}
                       className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
                     >
