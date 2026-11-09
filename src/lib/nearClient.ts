@@ -1184,11 +1184,12 @@ export function formatPlayerSubAccountFromMaster(rawInput: string): string {
     return clean;
   }
 
-  // Otherwise, treat it as a seedless player handle and spawn `<slug>.buddiesblitz-master.testnet`
+  // Otherwise, treat it as a Google email or seedless player handle and spawn `<slug>.buddiesblitz-master.testnet`
+  const baseHandle = clean.includes('@')
+    ? clean.split('@')[0].replace(/\./g, '')
+    : clean.split('.')[0];
   const slug =
-    clean
-      .split('@')[0]
-      .split('.')[0]
+    baseHandle
       .replace(/[^a-z0-9_-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')

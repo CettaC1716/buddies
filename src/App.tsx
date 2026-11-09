@@ -65,7 +65,6 @@ import {
   uiStateToEmitterConfigPatch,
 } from './components/ParticleEmitterPanel';
 import {
-  DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
   MASTER_FULL_ACCESS_PUBLIC_KEY,
@@ -87,7 +86,6 @@ import {
   loadSavedAdminCryptographicProof,
   provisionOrGetPlayerSubAccount,
   recordNep171SubAccountEarning,
-  redirectToNearWebWalletLogin,
   rotateSubAccountSessionKey,
   setCustomMasterWalletId,
   spawnSubAccountOnChainViaMaster,
@@ -303,10 +301,21 @@ export default function App() {
   const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('bb_last_connected_wallet_id') || '';
+      return (
+        window.localStorage.getItem('bb_connected_google_email') ||
+        window.localStorage.getItem('bb_last_connected_wallet_id') ||
+        ''
+      );
     }
     return '';
   });
+  const [connectedGoogleEmail, setConnectedGoogleEmail] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.localStorage.getItem('bb_connected_google_email') || '';
+    }
+    return '';
+  });
+  const [walletAddressCopiedToast, setWalletAddressCopiedToast] = useState<boolean>(false);
   const [walletNetworkChoice, setWalletNetworkChoice] = useState<'testnet' | 'mainnet'>('testnet');
   const [isVerifyingNearWallet, setIsVerifyingNearWallet] = useState<boolean>(false);
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
@@ -1042,10 +1051,21 @@ export default function App() {
       setWalletConnectError(null);
       const cleanInput = rawWalletInput.trim().toLowerCase();
       if (!cleanInput) {
-        setWalletConnectError(
-          'Please enter a player username (creates <username>.buddiesblitz-master.testnet with no seed phrase) or connect your Master Wallet.',
-        );
+        setWalletConnectError('Please enter your Google email address to continue.');
         return;
+      }
+      const resolvedEmail = cleanInput.includes('@')
+        ? cleanInput
+        : !cleanInput.endsWith('.testnet') && !cleanInput.endsWith('.near')
+          ? `${cleanInput}@gmail.com`
+          : '';
+      if (resolvedEmail && typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
+        } catch {
+          // ignore
+        }
+        setConnectedGoogleEmail(resolvedEmail);
       }
       const normalizedWallet = formatPlayerSubAccountFromMaster(cleanInput);
 
@@ -1812,54 +1832,32 @@ export default function App() {
               </h1>
             </div>
 
-            {/* 1. Primary Action: Choose 3D Character & Play */}
-            <button
-              type="button"
-              data-login-guest-btn="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setCharacterGender('male');
-                if (!isCustomGuestNameEdited) {
-                  setPlayerDisplayName('Buddy Male');
-                }
-                dispatchBuddyAction('setCharacterGender:male');
-                setOnboardingStep('guest_character_select');
-              }}
-              className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-            >
-              <span className="skew-x-6 inline-block">NEW PLAYER / SELECT CHARACTER</span>
-            </button>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-white/15" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                OR CONTINUE
-              </span>
-              <div className="flex-1 h-px bg-white/15" />
-            </div>
-
-            {/* 2. Returning Player Username / Account Input */}
+            {/* 1. Google Login -> Auto Sub-Account Provisioning */}
             <div className="space-y-2.5">
               {savedWalletSummary && (
                 <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                  <span className="truncate font-black text-[#facc15]">
-                    {savedWalletSummary.displayName}
-                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate font-black text-[#facc15]">
+                      {savedWalletSummary.displayName}
+                    </div>
+                    <div className="truncate font-mono text-[10px] text-[#38bdf8]">
+                      {savedWalletSummary.walletId}
+                    </div>
+                  </div>
                   <button
                     type="button"
                     data-reconnect-saved-wallet-btn="true"
                     onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
-                    className="px-2.5 py-0.5 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
+                    className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
                   >
                     CONTINUE
                   </button>
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <input
-                  type="text"
+                  type="email"
                   data-wallet-connect-input="true"
                   value={walletConnectInput}
                   onChange={(e) => {
@@ -1869,27 +1867,57 @@ export default function App() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       void handleConnectWalletAndEnterLobby(
-                        walletConnectInput || savedWalletSummary?.walletId || DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
+                        walletConnectInput || savedWalletSummary?.walletId || 'player1@gmail.com',
                       );
                     }
                   }}
-                  placeholder="Username or Account ID"
-                  aria-label="Username or Account ID"
-                  className="flex-1 min-w-0 px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
+                  placeholder="Enter Google email (e.g. name@gmail.com)"
+                  aria-label="Google Email Address"
+                  className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
                 />
+
+                {walletConnectInput.trim() && (
+                  <div className="px-2.5 py-1.5 bg-[#0f172a] border border-white/15 flex items-center justify-between gap-2 text-[10px]">
+                    <span className="font-black uppercase text-slate-400">WALLET ADDRESS</span>
+                    <span className="font-mono font-bold text-[#38bdf8] truncate">
+                      {formatPlayerSubAccountFromMaster(walletConnectInput)}
+                    </span>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   data-connect-wallet-enter-btn="true"
                   disabled={isVerifyingNearWallet}
                   onClick={() =>
                     void handleConnectWalletAndEnterLobby(
-                      walletConnectInput || savedWalletSummary?.walletId || DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
+                      walletConnectInput || savedWalletSummary?.walletId || 'player1@gmail.com',
                     )
                   }
-                  className="-skew-x-6 px-4 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer shrink-0"
+                  className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                 >
-                  <span className="skew-x-6 inline-block">
-                    {isVerifyingNearWallet ? 'WAIT...' : 'ENTER'}
+                  <span className="skew-x-6 flex items-center justify-center gap-2">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                      />
+                    </svg>
+                    <span>
+                      {isVerifyingNearWallet ? 'CREATING WALLET...' : 'CONTINUE WITH GOOGLE'}
+                    </span>
                   </span>
                 </button>
               </div>
@@ -1902,42 +1930,34 @@ export default function App() {
                   {walletConnectError}
                 </div>
               )}
-
-              {/* 3. Clean Wallet Connect Row */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  data-meteor-wallet-btn="true"
-                  onClick={async () => {
-                    soundEngine.playUiClick();
-                    const ext = await connectInjectedNearExtensionWallet();
-                    if (ext.connected && ext.accountId) {
-                      setCustomMasterWalletId(ext.accountId);
-                      void handleConnectWalletAndEnterLobby(ext.accountId);
-                    } else {
-                      redirectToNearWebWalletLogin({
-                        networkId: walletNetworkChoice,
-                        provider: 'meteor',
-                      });
-                    }
-                  }}
-                  className="-skew-x-6 py-2.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10.5px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                >
-                  <span className="skew-x-6 inline-block">METEOR WALLET</span>
-                </button>
-                <button
-                  type="button"
-                  data-open-near-wallet-selector-modal-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsNearWalletSelectorOpen(true);
-                  }}
-                  className="-skew-x-6 py-2.5 px-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10.5px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                >
-                  <span className="skew-x-6 inline-block">CONNECT WALLET</span>
-                </button>
-              </div>
             </div>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-white/15" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                OR
+              </span>
+              <div className="flex-1 h-px bg-white/15" />
+            </div>
+
+            {/* 2. Secondary Action: Play as Guest / Choose 3D Character */}
+            <button
+              type="button"
+              data-login-guest-btn="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setCharacterGender('male');
+                if (!isCustomGuestNameEdited) {
+                  setPlayerDisplayName('Buddy Male');
+                }
+                dispatchBuddyAction('setCharacterGender:male');
+                setOnboardingStep('guest_character_select');
+              }}
+              className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+            >
+              <span className="skew-x-6 inline-block">PLAY AS GUEST / SELECT CHARACTER</span>
+            </button>
           </div>
         </section>
       )}
@@ -5207,47 +5227,64 @@ export default function App() {
           </div>
 
           <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
-            {/* ACCOUNT & USERNAME CARD */}
+            {/* ACCOUNT, WALLET ADDRESS & USERNAME CARD */}
             <div
               data-wallet-uid-and-username-card="true"
               className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                    ACCOUNT ID
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    LOGIN ACCOUNT
                   </div>
+                  <div className="text-xs font-bold text-white truncate">
+                    {connectedGoogleEmail || 'Guest Session'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-switch-or-disconnect-wallet-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    disconnectNearWalletSession();
+                    setIsPersonalWalletModalOpen(false);
+                    setOnboardingStep('auth_choice');
+                  }}
+                  className="-skew-x-6 px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
+                >
+                  <span className="skew-x-6 inline-block">LOG OUT</span>
+                </button>
+              </div>
+
+              {/* CREATED SUB-ACCOUNT WALLET ADDRESS */}
+              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
+                <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                  WALLET ADDRESS
+                </div>
+                <div className="flex items-center justify-between gap-2">
                   <div
                     data-wallet-active-uid="true"
-                    className="text-xs font-mono font-black text-[#38bdf8] truncate"
+                    className="text-xs font-mono font-black text-[#38bdf8] break-all"
                   >
                     {hud.nearWalletId || playerUid}
                   </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    data-personal-wallet-open-selector-btn="true"
+                    data-copy-wallet-address-btn="true"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      setIsNearWalletSelectorOpen(true);
+                      const addr = hud.nearWalletId || playerUid;
+                      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                        void navigator.clipboard.writeText(addr);
+                      }
+                      setWalletAddressCopiedToast(true);
+                      window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
                     }}
-                    className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
+                    className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
                   >
-                    <span className="skew-x-6 inline-block">WALLET</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-switch-or-disconnect-wallet-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      disconnectNearWalletSession();
-                      setIsPersonalWalletModalOpen(false);
-                      setOnboardingStep('auth_choice');
-                    }}
-                    className="-skew-x-6 px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
-                  >
-                    <span className="skew-x-6 inline-block">LOG OUT</span>
+                    <span className="skew-x-6 inline-block">
+                      {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
+                    </span>
                   </button>
                 </div>
               </div>
