@@ -816,6 +816,10 @@ export default function App() {
       setIsInsidePrivateHouse(true);
       setActiveSpecialModal('none');
     };
+    const onExitHouseInterior = () => {
+      setIsInsidePrivateHouse(false);
+      setActiveSpecialModal('none');
+    };
     const onOpenCharacterProfile = (e: Event) => {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
       if (customEv.detail?.user) {
@@ -868,6 +872,7 @@ export default function App() {
     window.addEventListener('close-kiosk-ui', onCloseKiosk);
     window.addEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
     window.addEventListener('open-house-interior-ui', onOpenHouseInterior);
+    window.addEventListener('exit-house-interior-ui', onExitHouseInterior);
     window.addEventListener('open-character-profile-modal', onOpenCharacterProfile);
     window.addEventListener('close-character-profile-modal', onCloseCharacterProfile);
     window.addEventListener('open-social-chat-whisper', onOpenSocialChatWhisper);
@@ -880,6 +885,7 @@ export default function App() {
       window.removeEventListener('close-kiosk-ui', onCloseKiosk);
       window.removeEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
       window.removeEventListener('open-house-interior-ui', onOpenHouseInterior);
+      window.removeEventListener('exit-house-interior-ui', onExitHouseInterior);
       window.removeEventListener('open-character-profile-modal', onOpenCharacterProfile);
       window.removeEventListener('close-character-profile-modal', onCloseCharacterProfile);
       window.removeEventListener('open-social-chat-whisper', onOpenSocialChatWhisper);
@@ -1841,32 +1847,6 @@ export default function App() {
       {gameState === 'playing' && !isFullMapOverview && onboardingStep === 'completed' && (
         <div className="fixed inset-0 z-20 pointer-events-none">
           {/* =================================================================
-              3A-0. PRIVATE HOUSE NORMAL VISIT HUD BAR (Only when inside house & not editing)
-             ================================================================= */}
-          {isInsidePrivateHouse && activeSpecialModal === 'none' && (
-            <div
-              data-house-visit-hud="true"
-              className="fixed top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-wrap items-center gap-2.5 bg-[#14161d]/95 text-white border-3 border-black ring-2 ring-white shadow-[4px_4px_0_#000] px-4 py-2 select-none"
-            >
-              <div className="text-[11px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                PRIVATE HOUSE INTERIOR · WALK WITH WASD · OPEN CHAT SETTINGS [⚙] TO DECORATE ROOM
-              </div>
-              <button
-                type="button"
-                data-exit-house-visit-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setIsInsidePrivateHouse(false);
-                  setActiveSpecialModal('none');
-                }}
-                className="-skew-x-6 px-3 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase tracking-wider cursor-pointer active:scale-95"
-              >
-                <span className="skew-x-6 inline-block">EXIT HOUSE</span>
-              </button>
-            </div>
-          )}
-
-          {/* =================================================================
               3A. MINIMALIST CONTEXTUAL 3D-TO-2D FLOATING ICONS
                   - Item / Crate Pickup & Deposit: Hand Emoji ONLY (✋)
                   - Machine / Kiosk / Pad / Vehicle: Tilted White-Black Polygon Dot Icon
@@ -1934,8 +1914,9 @@ export default function App() {
               3B. TOP-LEFT: COMPACT RADAR/MINIMAP + [Q: 1x1x2] PAD STATUS
              ================================================================= */}
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
-            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room) */}
-            {peacefulUiState.minimapRadarVisible &&
+            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room and Private House interior) */}
+            {!isInsidePrivateHouse &&
+              peacefulUiState.minimapRadarVisible &&
               (() => {
                 const ccLevel = hud.commandCenterLevel ?? hud.baseBuildingLevel;
                 const radarSpec = evaluateCommandCenterRadarSpec(ccLevel, true);

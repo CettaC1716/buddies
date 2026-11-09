@@ -588,6 +588,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     enterHousePromptBtn.setAttribute('data-enter-house-floating-btn', 'true');
 
+    const EXIT_HOUSE_ROOM_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 16px; background:#ef4444; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(239,68,68,0.85); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">EXIT ROOM [E]</span></span>`;
+    const exitHouseRoomPromptBtn = createPromptButton(
+      EXIT_HOUSE_ROOM_BTN_HTML,
+      'EXIT ROOM [E]',
+      'exitPrivateHouseInterior',
+    );
+    exitHouseRoomPromptBtn.setAttribute('data-exit-house-room-floating-btn', 'true');
+
     // Green Holographic Ground Selection Ring for Clicked Character (#22c55e)
     const characterSelectionRing = new THREE.Mesh(
       new THREE.RingGeometry(0.70, 0.96, 36),
@@ -2514,6 +2522,62 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     addCutawayWallSegment(0.65, J + L, 0, Yn, N, N + L);
     addCutawayWallSegment(J, J + L, 0, Yn, T, N);
 
+    // 3D Exit Door Frame, Wooden Door Panel, Gold Handle & Glowing Exit Mat at Front Doorway (x = 0, z = N = 3.7)
+    const houseExitDoorGrp = new THREE.Group();
+    houseExitDoorGrp.position.set(0, 0, N);
+    const doorFrameMat = new THREE.MeshStandardMaterial({
+      color: '#2b2118',
+      roughness: 0.55,
+    });
+    const doorPanelMat = new THREE.MeshStandardMaterial({
+      color: '#5c3e26',
+      roughness: 0.48,
+    });
+    const doorHandleMat = new THREE.MeshStandardMaterial({
+      color: '#facc15',
+      roughness: 0.25,
+      metalness: 0.85,
+    });
+    const exitSignGlowMat = new THREE.MeshBasicMaterial({
+      color: '#10b981',
+      fog: false,
+    });
+    const leftJamb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.15, 0.18), doorFrameMat);
+    leftJamb.position.set(-0.62, 1.075, 0.04);
+    const rightJamb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.15, 0.18), doorFrameMat);
+    rightJamb.position.set(0.62, 1.075, 0.04);
+    const topLintel = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.12, 0.2), doorFrameMat);
+    topLintel.position.set(0, 2.18, 0.04);
+    const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.14, 2.08, 0.06), doorPanelMat);
+    doorLeaf.position.set(0, 1.04, 0.04);
+    const doorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.12), doorHandleMat);
+    doorHandle.position.set(0.42, 1.02, -0.01);
+    const exitSignBoard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.16, 0.08), exitSignGlowMat);
+    exitSignBoard.position.set(0, 2.32, 0.02);
+    const exitFloorMat = new THREE.Mesh(
+      new THREE.BoxGeometry(1.32, 0.018, 0.68),
+      new THREE.MeshStandardMaterial({
+        color: '#0f766e',
+        emissive: '#0d9488',
+        emissiveIntensity: 0.35,
+        roughness: 0.75,
+      }),
+    );
+    exitFloorMat.position.set(0, 0.01, -0.42);
+    houseExitDoorGrp.add(
+      leftJamb,
+      rightJamb,
+      topLintel,
+      doorLeaf,
+      doorHandle,
+      exitSignBoard,
+      exitFloorMat,
+    );
+    houseExitDoorGrp.traverse((c) => {
+      c.raycast = () => {};
+    });
+    houseInteriorRoomGrp.add(houseExitDoorGrp);
+
     // Interior Half-Height Partition Walls (`_a = 1.3m`) with Doorway Passages (`Da`, `Ia`)
     addCutawayWallSegment(fe - U / 2, fe + U / 2, 0, _a, T, Da.z0);
     addCutawayWallSegment(fe - U / 2, fe + U / 2, 0, _a, Da.z1, N);
@@ -2868,6 +2932,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let houseCamDist = 12.6;
     const houseCamTarget = new THREE.Vector3(-0.3, 1.05, -0.2);
 
+    // 3rd-Person Perspective Camera State when player is walking inside the room (`house_visit`)
+    let houseVisitCamYaw = 0.0;
+    let houseVisitCamPitch = 0.32;
+    let houseVisitCamDist = 3.25;
+    let isOrbitingHouseVisitCamera = false;
+    let houseVisitOrbitDragStart = { x: 0, y: 0, yaw: 0.0, pitch: 0.32 };
+
     const emitHouseInteriorStateToUi = () => {
       window.dispatchEvent(
         new CustomEvent('house-interior-state-updated', {
@@ -3015,10 +3086,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               yaw: playerUnit.yaw,
             };
             playerUnit.x = 0.0;
-            playerUnit.z = 1.4;
+            playerUnit.z = 2.05;
             playerUnit.vx = 0;
             playerUnit.vz = 0;
             playerUnit.yaw = Math.PI / 2;
+            houseVisitCamYaw = 0.0;
+            houseVisitCamPitch = 0.32;
+            houseVisitCamDist = 3.25;
           }
         } else if (wasHouseMode && playerUnit) {
           playerUnit.root.scale.setScalar(1.0);
@@ -9039,6 +9113,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (e.code === 'KeyE') {
         e.preventDefault();
+        if (npcCameraMode === 'house_visit' && playerUnit) {
+          const distToExitDoor = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
+          if (distToExitDoor <= 1.85) {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('exit-house-interior-ui'));
+            return;
+          }
+        }
         const actorX = mountedTank ? mountedTank.x : playerUnit.x;
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
 
@@ -9192,6 +9274,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const onPointerMove = (e: PointerEvent) => {
       updateMouseWorldAim(e.clientX, e.clientY);
+      if (npcCameraMode === 'house_visit') {
+        if (isOrbitingHouseVisitCamera) {
+          const dx = e.clientX - houseVisitOrbitDragStart.x;
+          const dy = e.clientY - houseVisitOrbitDragStart.y;
+          houseVisitCamYaw = houseVisitOrbitDragStart.yaw - dx * 0.007;
+          houseVisitCamPitch = clamp(houseVisitOrbitDragStart.pitch + dy * 0.0055, 0.1, 0.82);
+        }
+        return;
+      }
+
       if (npcCameraMode === 'house_interior') {
         if (draggingHouseFurnitureId) {
           const draggedItem = housePlacedItems.find(
@@ -9281,6 +9373,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const onPointerDown = (e: PointerEvent) => {
       if (gameStateRef.current !== 'playing') return;
       updateMouseWorldAim(e.clientX, e.clientY);
+
+      if (npcCameraMode === 'house_visit') {
+        if (e.button === 0) {
+          // Check if player clicked on a furniture piece inside the room to interact/jiggle it
+          raycaster.setFromCamera(mouseNdc, camera);
+          const hits = raycaster.intersectObjects(placedFurnitureContainer.children, true);
+          const hitInstId = hits.find(
+            (h) => typeof h.object.userData?.houseFurnitureInstanceId === 'string',
+          )?.object.userData.houseFurnitureInstanceId as string | undefined;
+          if (hitInstId) {
+            const hitItem = housePlacedItems.find((it) => it.instanceId === hitInstId);
+            if (hitItem) {
+              soundEngine.playPickup();
+              hitItem.vy = Math.max(hitItem.vy, 1.35);
+            }
+          }
+        }
+        isOrbitingHouseVisitCamera = true;
+        houseVisitOrbitDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          yaw: houseVisitCamYaw,
+          pitch: houseVisitCamPitch,
+        };
+        return;
+      }
 
       if (npcCameraMode === 'house_interior') {
         if (e.button === 0) {
@@ -9678,6 +9796,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      if (npcCameraMode === 'house_visit') {
+        isOrbitingHouseVisitCamera = false;
+        isPointerDown = false;
+        return;
+      }
+
       if (npcCameraMode === 'house_interior') {
         if (draggingHouseFurnitureId) {
           const droppedItem = housePlacedItems.find(
@@ -9707,6 +9831,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onWheel = (e: WheelEvent) => {
+      if (npcCameraMode === 'house_visit') {
+        houseVisitCamDist = clamp(houseVisitCamDist + Math.sign(e.deltaY) * 0.3, 1.9, 5.2);
+        return;
+      }
+
       if (npcCameraMode === 'house_interior') {
         if (draggingHouseFurnitureId || (e.shiftKey && selectedHouseFurnitureId)) {
           const targetId = draggingHouseFurnitureId ?? selectedHouseFurnitureId;
@@ -10470,6 +10599,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (act === 'enterPrivateHouseInterior') {
         soundEngine.playUiClick();
         window.dispatchEvent(new CustomEvent('open-house-interior-ui'));
+      } else if (act === 'exitPrivateHouseInterior') {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('exit-house-interior-ui'));
       } else if (act.startsWith('adjustPlayerLul:')) {
         const delta = Number(act.slice('adjustPlayerLul:'.length));
         if (!Number.isNaN(delta)) {
@@ -12071,6 +12203,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         let moveX = ghostGuard.vx;
         let moveZ = ghostGuard.vz;
+        if (npcCameraMode === 'house_visit') {
+          if (isTextInputFocused) {
+            moveX = 0;
+            moveZ = 0;
+          } else {
+            const inFwd =
+              (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) -
+              (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
+            const inRight =
+              (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) -
+              (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+            const fwdX = -Math.sin(houseVisitCamYaw);
+            const fwdZ = -Math.cos(houseVisitCamYaw);
+            const rightX = Math.cos(houseVisitCamYaw);
+            const rightZ = -Math.sin(houseVisitCamYaw);
+            moveX = inFwd * fwdX + inRight * rightX;
+            moveZ = inFwd * fwdZ + inRight * rightZ;
+          }
+        } else if (npcCameraMode === 'house_interior') {
+          moveX = 0;
+          moveZ = 0;
+        }
 
         if (socialTalkTimer > 0) {
           socialTalkTimer = Math.max(0, socialTalkTimer - dt);
@@ -13261,13 +13415,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             soundEngine.updateVehicleMovementLoop(0, false, false);
             const spec = BUDDY_CLASSES[playerUnit.classId];
             const playerRoadBoost = evaluateRoadSurfaceSpeedBoost(playerUnit.x, playerUnit.z);
-            const moveSpeed = computeBuddyFootMoveSpeed({
-              isPlayer: true,
-              classSpeedMultiplier: spec.speedMultiplier,
-              carryingCrate: playerUnit.carryingCrate !== 'none',
-              isBoosting,
-              onRoadOrZebra: playerRoadBoost.onRoadOrZebra,
-            });
+            const moveSpeed =
+              npcCameraMode === 'house_visit'
+                ? isBoosting
+                  ? 4.4
+                  : 3.0
+                : computeBuddyFootMoveSpeed({
+                    isPlayer: true,
+                    classSpeedMultiplier: spec.speedMultiplier,
+                    carryingCrate: playerUnit.carryingCrate !== 'none',
+                    isBoosting,
+                    onRoadOrZebra: playerRoadBoost.onRoadOrZebra,
+                  });
 
             const inputLen = Math.hypot(moveX, moveZ);
             // Ghost Movement Fix: Player unit is NEVER moved by AI pathfinding and immediately halts (vx = 0, vz = 0) when no WASD/Arrow keys are pressed!
@@ -13401,7 +13560,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               playerUnit.carryingCrate === 'none' &&
               playerUnit.weaponId !== 'unarmed' &&
               playerUnit.weaponId !== 'fishing_rod';
-            if ((isPointerDown || isArmedAimStance) && Math.hypot(aimDx, aimDz) > 0.2) {
+            if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+              if (inputLen > 0.01) {
+                playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
+              }
+            } else if ((isPointerDown || isArmedAimStance) && Math.hypot(aimDx, aimDz) > 0.2) {
               playerUnit.yaw = Math.atan2(-aimDz, aimDx);
             } else if (inputLen > 0.01) {
               playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
@@ -16387,31 +16550,49 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
-        // 4. Cutaway Dollhouse Camera:
-        //    - In 'house_visit', follow the player character walking inside the room
-        //    - In 'house_interior' (Edit Room mode), use the free cutaway studio camera
-        const cosPitch = Math.cos(houseCamPitch);
-        const sinPitch = Math.sin(houseCamPitch);
-        const focusX =
-          npcCameraMode === 'house_visit' && playerUnit
-            ? playerUnit.x * 0.45
-            : houseCamTarget.x;
-        const focusZ =
-          npcCameraMode === 'house_visit' && playerUnit
-            ? playerUnit.z * 0.45
-            : houseCamTarget.z;
-        const activeDist = npcCameraMode === 'house_visit' ? 11.4 : houseCamDist;
-        const camX = focusX + Math.sin(houseCamYaw) * cosPitch * activeDist;
-        const camY = HOUSE_ORIGIN_Y + houseCamTarget.y + sinPitch * activeDist;
-        const camZ = focusZ + Math.cos(houseCamYaw) * cosPitch * activeDist;
-        camera.up.set(0, 1, 0);
-        camera.position.set(camX, camY, camZ);
-        camera.lookAt(
-          focusX,
-          HOUSE_ORIGIN_Y + houseCamTarget.y,
-          focusZ,
-        );
-        camera.updateMatrixWorld();
+        // 4. Camera Inside Private House:
+        //    - In 'house_visit', use a true 3rd-person perspective camera following behind/above the character
+        //    - In 'house_interior' (Edit Room mode), use the cutaway studio camera
+        if (npcCameraMode === 'house_visit' && playerUnit) {
+          const targetVisitFov = 52;
+          if (camera.fov !== targetVisitFov) {
+            camera.fov = targetVisitFov;
+            camera.updateProjectionMatrix();
+          }
+          const lookX = playerUnit.x;
+          const lookY = HOUSE_ORIGIN_Y + 0.92;
+          const lookZ = playerUnit.z;
+          const cosPitch = Math.cos(houseVisitCamPitch);
+          const sinPitch = Math.sin(houseVisitCamPitch);
+          const camX = lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist;
+          const camY = lookY + sinPitch * houseVisitCamDist;
+          const camZ = lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist;
+          camera.up.set(0, 1, 0);
+          camera.position.set(camX, camY, camZ);
+          camera.lookAt(lookX, lookY, lookZ);
+          camera.updateMatrixWorld();
+        } else {
+          const targetEditFov = 34;
+          if (camera.fov !== targetEditFov) {
+            camera.fov = targetEditFov;
+            camera.updateProjectionMatrix();
+          }
+          const cosPitch = Math.cos(houseCamPitch);
+          const sinPitch = Math.sin(houseCamPitch);
+          const focusX = houseCamTarget.x;
+          const focusZ = houseCamTarget.z;
+          const camX = focusX + Math.sin(houseCamYaw) * cosPitch * houseCamDist;
+          const camY = HOUSE_ORIGIN_Y + houseCamTarget.y + sinPitch * houseCamDist;
+          const camZ = focusZ + Math.cos(houseCamYaw) * cosPitch * houseCamDist;
+          camera.up.set(0, 1, 0);
+          camera.position.set(camX, camY, camZ);
+          camera.lookAt(
+            focusX,
+            HOUSE_ORIGIN_Y + houseCamTarget.y,
+            focusZ,
+          );
+          camera.updateMatrixWorld();
+        }
       } else {
         if (playerUnit && playerUnit.alive && !mountedTank) {
           playerUnit.root.visible = true;
@@ -17260,6 +17441,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.isPlayer,
         );
         const localY = getTerrainElevation(b.x, b.z);
+        if (b.isPlayer && (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')) {
+          b.bodyGroup.position.y = (floatY + b.jumpOffset + bHitPose.hopY) * 0.55;
+          b.root.position.set(b.x, HOUSE_ORIGIN_Y, b.z);
+          b.root.rotation.set(0, 0, 0);
+          b.root.scale.setScalar(0.55);
+          continue;
+        }
         const seatLift =
           b.isPlayer && b.isSitting && activeSeatedSpot ? activeSeatedSpot.seatLiftY : 0;
         b.bodyGroup.position.y = floatY + b.jumpOffset + bHitPose.hopY + seatLift;
@@ -18205,6 +18393,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       return { x: sx, y: sy, visible };
     };
 
+    const projectFlatRoomToScreenPixels = (wx: number, wy: number, wz: number) => {
+      scratchProjectVec.set(wx, wy, wz);
+      scratchProjectVec.project(camera);
+      if (scratchProjectVec.z > 1) {
+        return { x: 0, y: 0, visible: false };
+      }
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const sx = Math.round(((scratchProjectVec.x + 1.0) * 0.5) * w);
+      const sy = Math.round(((1.0 - scratchProjectVec.y) * 0.5) * h);
+      const visible = sx >= 12 && sx <= w - 12 && sy >= 12 && sy <= h - 12;
+      return { x: sx, y: sy, visible };
+    };
+
     const isBuildingViewUrlParam =
       typeof window !== 'undefined' &&
       Boolean(new URLSearchParams(window.location.search).get('buildingview'));
@@ -18236,6 +18438,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         exitTramPromptBtn.style.display = 'none';
         npcMerchantPromptBtn.style.display = 'none';
         enterHousePromptBtn.style.display = 'none';
+        exitHouseRoomPromptBtn.style.display = 'none';
         socialSpeechBubbleEl.style.display = 'none';
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
@@ -18248,6 +18451,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
       const w = window.innerWidth;
       const h = window.innerHeight;
+
+      // 0A-00. Floating "EXIT ROOM [E]" at the Exit Door inside Private House ('house_visit')
+      if (
+        npcCameraMode === 'house_visit' &&
+        !isKioskModalOpenCanvas &&
+        Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35) <= 1.85
+      ) {
+        const proj = projectFlatRoomToScreenPixels(0.0, HOUSE_ORIGIN_Y + 1.25, 3.65);
+        const sx = proj.visible ? proj.x : clamp(proj.x || Math.round(w * 0.5), 96, Math.max(96, w - 96));
+        const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.65), 64, Math.max(64, h - 64));
+        exitHouseRoomPromptBtn.style.display = 'block';
+        exitHouseRoomPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
+      } else {
+        exitHouseRoomPromptBtn.style.display = 'none';
+      }
 
       // 0A-0. Floating "TALK" at Lobby Mini Café (-94.0, -13.8) or East Beach House (85.8, 60.0)
       const dCafeNpc = getPlanetShortestDistance(actorX, actorZ, -94.0, -13.8);
@@ -18469,8 +18687,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (socialTalkMessage && socialTalkTimer > 0 && playerUnit && playerUnit.alive) {
         const bx = playerUnit.x;
         const bz = playerUnit.z;
-        const by = getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95);
-        const proj = projectWorldToScreenPixels(bx, by, bz);
+        const proj =
+          npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
+            ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
+            : projectWorldToScreenPixels(
+                bx,
+                getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95),
+                bz,
+              );
         const sx = proj.visible ? proj.x : Math.round(w * 0.5);
         const sy = proj.visible ? proj.y : Math.round(h * 0.38);
         socialSpeechBubbleEl.style.display = 'block';
