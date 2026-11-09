@@ -153,6 +153,37 @@ The smart contract in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-
 - `buy_fish_nft(listing_id)` — Atomically transfers `price_respite` from buyer to seller, transfers `owner_id` of the Fish NFT to the buyer, and emits `EVENT_JSON` (`nep171` `nft_transfer`).
 - `purchase_citizen_asset(asset_id, price_respite)` — Deducts `RESPITE` and mints on-chain NEP-171 deeds for **Private House ownership** (`25 RESPITE`) or autonomous **Family Member AI** contracts (`15 / 45 / 180 RESPITE` for `1 Week / 1 Month / 1 Year`).
 
+### 4. Live on-chain verification (NearBlocks Explorer & JSON-RPC)
+
+All on-chain accounts, deployed WebAssembly bytecode, NEP-141 `RESPITE` balances, and NEP-171/181 NFTs can be verified directly on NEAR Testnet without running the client:
+
+| On-Chain Entity / Action | NEAR Testnet Identifier / Transaction | Explorer Link |
+|---|---|---|
+| **Master Treasury & Sub-Account Factory** | `buddiesblitz.testnet` | [View on NearBlocks](https://testnet.nearblocks.io/address/buddiesblitz.testnet) |
+| **NEP-141 (`RESPITE`) + NEP-171/181 (`BBFISH`) Smart Contract** | `market.buddiesblitz.testnet` | [View on NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
+| **Sample Provisioned Citizen Sub-Account** | `kxvqmr.buddiesblitz.testnet` | [View on NearBlocks](https://testnet.nearblocks.io/address/kxvqmr.buddiesblitz.testnet) |
+| **Contract Deploy + NEP-181 Enumeration (`buddies_market.wasm`)** | `88SbE7m1VQKh8GXqYwy9uvxkAFkaLFZ6vtAd5wsowLB4` | [View Transaction](https://testnet.nearblocks.io/txns/88SbE7m1VQKh8GXqYwy9uvxkAFkaLFZ6vtAd5wsowLB4) |
+| **NEP-141 `RESPITE` Mint & Liquidity (`swap_near_for_respite`)** | `9sgTn5qEJ5j18ezn2ERwZvbCRByD3Y7dhmRwWt8ZrAdy` | [View Transaction](https://testnet.nearblocks.io/txns/9sgTn5qEJ5j18ezn2ERwZvbCRByD3Y7dhmRwWt8ZrAdy) |
+| **NEP-141 P2P Wallet Transfer (`ft_transfer` `100 RESPITE`)** | `9J1P1afc8i9zp9kPqJazwFDP1tWeH4HgCyZjPpyL7ywK` | [View Transaction](https://testnet.nearblocks.io/txns/9J1P1afc8i9zp9kPqJazwFDP1tWeH4HgCyZjPpyL7ywK) |
+| **NEP-171 Mythic Fish NFT Mint (`mint_fish_nft`)** | `WyPMk1AvfKxhyGAiS3pBCLZWiHKvSR2aCeN2hWjmX41` | [View Transaction](https://testnet.nearblocks.io/txns/WyPMk1AvfKxhyGAiS3pBCLZWiHKvSR2aCeN2hWjmX41) |
+| **NEP-171 Private House Deed & Family Member AI Mint (`purchase_citizen_asset`)** | `CJRDR26vjD6j9bJL8ZezWSSaNbdZVqK3HQ8JqZUpyUif` | [View Transaction](https://testnet.nearblocks.io/txns/CJRDR26vjD6j9bJL8ZezWSSaNbdZVqK3HQ8JqZUpyUif) |
+
+**One-command terminal verification (`curl` against `rpc.testnet.near.org` & `test.api.fastnear.com`):**
+
+```bash
+# 1. Verify NEP-141 RESPITE token & NEP-171 NFT indexer state for buddiesblitz.testnet
+curl -s https://test.api.fastnear.com/v1/account/buddiesblitz.testnet/ft
+curl -s https://test.api.fastnear.com/v1/account/buddiesblitz.testnet/nft
+
+# 2. Query NEP-141 ft_metadata() on market.buddiesblitz.testnet
+curl -s -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"ft_metadata","args_base64":"e30="}}'
+
+# 3. Query NEP-181 nft_tokens_for_owner() on market.buddiesblitz.testnet
+curl -s -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"nft_tokens_for_owner","args_base64":"eyJhY2NvdW50X2lkIjoiYnVkZGllc2JsaXR6LnRlc3RuZXQifQ=="}}'
+```
+
 ---
 
 ## Seedless citizen onboarding (`Privy Google OAuth -> <name>.buddiesblitz.testnet`)
