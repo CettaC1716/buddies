@@ -2449,24 +2449,9 @@ export default function App() {
                       </span>
                     </div>
                     <span className="text-[10px] font-bold text-slate-300">
-                      Sell to Kai for +{lastCaughtFishToast.sellValueLul} LUL or Mint as NFT (-{lastCaughtFishToast.mintFeeLul} LUL fee)
+                      Visit NPC Kai at East Beach to sell (+{lastCaughtFishToast.sellValueLul} LUL) or Mint as NFT (-{lastCaughtFishToast.mintFeeLul} LUL fee)
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    data-open-fish-market-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setMerchantLocation('beach_house');
-                      setActiveSpecialModal('npc_merchant');
-                      window.setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent('open-npc-fish-market'));
-                      }, 30);
-                    }}
-                    className="-skew-x-6 px-3 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
-                  >
-                    <span className="skew-x-6 inline-block">OPEN FISH MARKET</span>
-                  </button>
                 </div>
               )}
 
@@ -2481,7 +2466,7 @@ export default function App() {
                         ? 'Bobber in water... Waiting for fish bite...'
                         : fishingPhase === 'bite'
                           ? 'STRIKE! Fish on the hook — Reel in now!'
-                          : `Fish Bucket: ${caughtFishBucket.length} caught`}
+                          : `Fish Bucket: ${caughtFishBucket.length} caught (Sell/Mint at Beach NPC Kai)`}
                     </span>
                   </div>
 
@@ -2506,25 +2491,6 @@ export default function App() {
                           : 'CAST FISHING ROD'}
                     </span>
                   </button>
-
-                  {caughtFishBucket.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setMerchantLocation('beach_house');
-                        setActiveSpecialModal('npc_merchant');
-                        window.setTimeout(() => {
-                          window.dispatchEvent(new CustomEvent('open-npc-fish-market'));
-                        }, 30);
-                      }}
-                      className="-skew-x-12 px-2.5 py-1.5 bg-[#2bb3b1] hover:bg-[#5eead4] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase cursor-pointer"
-                    >
-                      <span className="skew-x-12 inline-block">
-                        KAI MARKET ({caughtFishBucket.length})
-                      </span>
-                    </button>
-                  )}
                 </div>
               )}
             </div>

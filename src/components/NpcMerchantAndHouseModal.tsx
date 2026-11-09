@@ -110,11 +110,19 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   useEffect(() => {
     const onOpenFishTab = () => {
-      setActiveTab('fish_market');
+      if (merchantLocation === 'beach_house') {
+        setActiveTab('fish_market');
+      }
     };
     window.addEventListener('open-npc-fish-market', onOpenFishTab);
     return () => window.removeEventListener('open-npc-fish-market', onOpenFishTab);
-  }, []);
+  }, [merchantLocation]);
+
+  useEffect(() => {
+    if (merchantLocation !== 'beach_house' && activeTab === 'fish_market') {
+      setActiveTab('sesi_chat');
+    }
+  }, [merchantLocation, activeTab]);
 
   // `buddies-blitz.com/interior` ("Set the Mood") Cutaway Studio State
   const [daylightHour, setDaylightHour] = useState<number>(18.5);
@@ -159,7 +167,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
       const locLabel = merchantLocation === 'lobby_cafe' ? 'Mini Café Lobby' : 'East Beach House';
-      const greeting = `Hello Buddy! Welcome to ${locLabel}. How can I help you today? You can chat with me in the CHAT SESSION tab, exchange LUL -> CYON in the EXCHANGE tab, or browse collectibles in the CATALOG tab!`;
+      const greeting =
+        merchantLocation === 'beach_house'
+          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, mint rare catches as NFTs, or trade on the P2P FISH MARKET tab — plus exchange LUL -> CYON or browse collectibles!`
+          : `Hello Buddy! Welcome to ${locLabel}. How can I help you today? You can chat with me in the CHAT SESSION tab, exchange LUL -> CYON in the EXCHANGE tab, or browse collectibles in the CATALOG tab!`;
       setNpcFullText(greeting);
       setNpcTypedText('');
       setLastPlayerMessage('');
@@ -739,23 +750,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               <span className="skew-x-6 inline-block">CATALOG</span>
             </button>
 
-            <button
-              type="button"
-              data-fish-market-tab="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('fish_market');
-              }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
-                activeTab === 'fish_market'
-                  ? 'bg-[#b8ff3c] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#d9f99d] text-black'
-              }`}
-            >
-              <span className="skew-x-6 inline-block">
-                FISH MARKET ({caughtFishBucket.length})
-              </span>
-            </button>
+            {merchantLocation === 'beach_house' && (
+              <button
+                type="button"
+                data-fish-market-tab="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setActiveTab('fish_market');
+                }}
+                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                  activeTab === 'fish_market'
+                    ? 'bg-[#b8ff3c] text-black -translate-y-0.5'
+                    : 'bg-slate-50 hover:bg-[#d9f99d] text-black'
+                }`}
+              >
+                <span className="skew-x-6 inline-block">
+                  FISH MARKET ({caughtFishBucket.length})
+                </span>
+              </button>
+            )}
           </div>
 
           <button
@@ -1082,9 +1095,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           )}
 
           {/* ===============================================================
-              TAB 4: FISH MARKET (Sell Raw Fish for LUL, Self-Pay Mint Rare Fish NFT, & P2P Marketplace)
+              TAB 4: FISH MARKET (Beach NPC Kai Only: Sell Raw Fish for LUL, Self-Pay Mint Rare Fish NFT, & P2P Marketplace)
              =============================================================== */}
-          {activeTab === 'fish_market' && (
+          {merchantLocation === 'beach_house' && activeTab === 'fish_market' && (
             <div className="space-y-3" data-fish-market-panel="true">
               {/* Top Balance & Ecosystem Header */}
               <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-1">
