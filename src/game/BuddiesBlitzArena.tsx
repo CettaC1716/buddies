@@ -852,6 +852,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);
 
+    let playerCustomDisplayName =
+      (typeof window !== 'undefined' && window.localStorage.getItem('bb_active_display_name')) ||
+      'YOU';
+
     // Listen for select-character-by-id event to synchronize 3D selection ring and nameplate from React HUD
     const onSelectCharacterById = (e: Event) => {
       const customEv = e as CustomEvent<{ id: string | number }>;
@@ -861,7 +865,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (targetId === playerUnit.id) {
         found = {
           id: playerUnit.id,
-          name: 'YOU',
+          name: playerCustomDisplayName,
           isNpc: false,
           team: playerUnit.team,
           status: 'Your Profile (Self)',
@@ -900,7 +904,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (u) {
           found = {
             id: u.id,
-            name: u.isPlayer ? 'YOU' : `BUDDY #${u.id}`,
+            name: u.isPlayer ? playerCustomDisplayName : `BUDDY #${u.id}`,
             isNpc: false,
             team: u.team,
             status: u.carryingCrate !== 'none' ? 'Carrying Crate' : u.weaponName || 'Chilling',
@@ -2042,7 +2046,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const nameplate = createGlassmorphicNameplate(
         2.8,
         0.72,
-        isPlayer ? 'YOU' : `BUDDY #${nextEntityId}`,
+        isPlayer ? playerCustomDisplayName : `BUDDY #${nextEntityId}`,
         '',
         false,
       );
@@ -2956,13 +2960,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     applyHouseDaylightVisuals(houseCurrentDaylightHour, 0);
 
-    let npcCameraMode: 'none' | 'npc_merchant' | 'house_interior' = 'none';
+    let npcCameraMode: 'none' | 'npc_merchant' | 'house_interior' | 'character_select' = 'none';
     let npcCameraLocation: 'lobby_cafe' | 'beach_house' = 'lobby_cafe';
 
     const onSyncNpcCameraMode = (ev: Event) => {
       const detail = (
         ev as CustomEvent<{
-          mode?: 'none' | 'npc_merchant' | 'house_interior';
+          mode?: 'none' | 'npc_merchant' | 'house_interior' | 'character_select';
           location?: 'lobby_cafe' | 'beach_house';
           themeId?: string;
           daylightHour?: number;
@@ -9494,7 +9498,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             bestCharDist = rayDist;
             clickedCharacter = {
               id: u.id,
-              name: u.isPlayer ? 'YOU' : `BUDDY #${u.id} (${u.classId.toUpperCase()})`,
+              name: u.isPlayer ? playerCustomDisplayName : `BUDDY #${u.id} (${u.classId.toUpperCase()})`,
               isNpc: false,
               team: u.team,
               status: u.carryingCrate !== 'none' ? 'Carrying Crate' : u.weaponName || 'Chilling',
@@ -9514,7 +9518,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             bestCharDist = rayDist;
             clickedCharacter = {
               id: playerUnit.id,
-              name: 'YOU',
+              name: playerCustomDisplayName,
               isNpc: false,
               team: playerUnit.team,
               status: playerUnit.carryingCrate !== 'none' ? 'Carrying Crate' : playerUnit.weaponName || 'Chilling',
@@ -9737,7 +9741,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       else if (act === 'sandboxSpawnTruck') handleSandboxQuickSpawnTruck();
       else if (act === 'setCharacterGender:female') applyCharacterGenderSwitch('female');
       else if (act === 'setCharacterGender:male') applyCharacterGenderSwitch('male');
-      else if (act === 'toggleCharacterGender')
+      else if (act.startsWith('setPlayerDisplayName:')) {
+        const nextName = act.slice('setPlayerDisplayName:'.length).trim() || 'YOU';
+        playerCustomDisplayName = nextName;
+        if (playerUnit?.nameplate?.updatePlate) {
+          playerUnit.nameplate.updatePlate(nextName, '');
+        }
+      } else if (act === 'toggleCharacterGender')
         applyCharacterGenderSwitch(getDefaultCharacterGender() === 'male' ? 'female' : 'male');
       else if (act === 'toggleSitting') handleToggleSitting(null);
       else if (act === 'qcToggleSitting') handleToggleSitting('female');
@@ -12016,7 +12026,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           keysPressed: keys,
           isWindowBlurred: false,
           isTalkInputFocused: isTextInputFocused,
-          isFloatingButtonOrModalOpen: false,
+          isFloatingButtonOrModalOpen: npcCameraMode === 'character_select',
           moveSpeed: 1,
           playerTeam: playerUnit?.team ?? 'blue',
           isEditorOrPeacefulCamera,
@@ -16268,6 +16278,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.lookAt(npcX, npcY + 2.95, npcZ + lateralShiftZ);
         }
         camera.updateMatrixWorld();
+      } else if (npcCameraMode === 'character_select') {
+        if (playerUnit) {
+          playerUnit.root.visible = true;
+          playerUnit.yaw = 0;
+          playerUnit.bodyGroup.rotation.set(0, Math.PI / 2, 0);
+          updateCharacterWeaponStance(playerUnit.rig, 'unarmed', 0, false, false, 0, 0);
+          playerUnit.rig.weaponRigGroup.visible = false;
+        }
+        const targetSelectFov = 38;
+        if (camera.fov !== targetSelectFov) {
+          camera.fov = targetSelectFov;
+          camera.updateProjectionMatrix();
+        }
+        const px = playerUnit ? playerUnit.x : LOBBY_SAFEZONE_BOUNDS.spawnX;
+        const pz = playerUnit ? playerUnit.z : LOBBY_SAFEZONE_BOUNDS.spawnZ;
+        const py = getTerrainElevation(px, pz);
+        camera.up.set(0, 1, 0);
+        camera.position.set(px + 6.35, py + 2.32, pz);
+        camera.lookAt(px, py + 1.82, pz);
+        camera.updateMatrixWorld();
       } else if (npcCameraMode === 'house_interior') {
         if (playerUnit) {
           playerUnit.root.visible = false;
@@ -18865,7 +18895,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             if (dist <= 35.0) {
               list.push({
                 id: u.id,
-                name: u.isPlayer ? 'YOU' : `BUDDY #${u.id}`,
+                name: u.isPlayer ? playerCustomDisplayName : `BUDDY #${u.id}`,
                 isNpc: false,
                 distance: dist,
                 team: u.team,

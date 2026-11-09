@@ -3,9 +3,13 @@ import {
   MessageSquare,
   User,
   MessageCircle,
+  ChevronLeft,
   ChevronRight,
   Settings,
   Wallet,
+  Pencil,
+  Check,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   BuddiesBlitzArena,
@@ -218,7 +222,60 @@ export default function App() {
   const [playMode, setPlayMode] = useState<PlayMode>('sandbox');
   const [isQcMenuUnlocked, setIsQcMenuUnlocked] = useState<boolean>(ENABLE_QC_MENU_DEFAULT);
   const [isSpawnDrawerOpen, setIsSpawnDrawerOpen] = useState<boolean>(false);
-  const [characterGender, setCharacterGender] = useState<'female' | 'male'>('female');
+  const [characterGender, setCharacterGender] = useState<'female' | 'male'>('male');
+  const [onboardingStep, setOnboardingStep] = useState<
+    'auth_choice' | 'guest_character_select' | 'entering_lobby' | 'completed'
+  >(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (
+        params.get('skipOnboarding') === '1' ||
+        params.get('fullmap') === '1' ||
+        params.get('planeview') ||
+        (params.get('world') && params.get('world') !== 'lobby')
+      ) {
+        return 'completed';
+      }
+    }
+    return 'auth_choice';
+  });
+  const [playerDisplayName, setPlayerDisplayName] = useState<string>('Buddy Pria');
+  const [isCustomGuestNameEdited, setIsCustomGuestNameEdited] = useState<boolean>(false);
+  const [isEditingGuestName, setIsEditingGuestName] = useState<boolean>(false);
+  const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
+  const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
+  const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.localStorage.getItem('bb_last_connected_wallet_id') || 'commander-p1.testnet';
+    }
+    return 'commander-p1.testnet';
+  });
+  const [savedWalletSummary, setSavedWalletSummary] = useState<{
+    walletId: string;
+    displayName: string;
+    gender: 'male' | 'female';
+  } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+      const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
+      if (!lastId || !rawMap) return null;
+      const parsed = JSON.parse(rawMap) as Record<
+        string,
+        { displayName: string; gender: 'male' | 'female' }
+      >;
+      const entry = parsed[lastId.toLowerCase()];
+      if (!entry) return null;
+      return {
+        walletId: lastId.toLowerCase(),
+        displayName: entry.displayName,
+        gender: entry.gender,
+      };
+    } catch {
+      return null;
+    }
+  });
+  const guestNameInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -831,17 +888,175 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const effectiveMode =
+      onboardingStep === 'guest_character_select' ? 'character_select' : activeSpecialModal;
     window.dispatchEvent(
       new CustomEvent('sync-npc-camera-mode', {
         detail: {
-          mode: activeSpecialModal,
+          mode: effectiveMode,
           location: merchantLocation,
           themeId: activeHouseThemeId,
           placement: interiorPlacement,
         },
       }),
     );
-  }, [activeSpecialModal, merchantLocation, activeHouseThemeId, interiorPlacement]);
+  }, [onboardingStep, activeSpecialModal, merchantLocation, activeHouseThemeId, interiorPlacement]);
+
+  useEffect(() => {
+    const cleanName = playerDisplayName.trim() || 'YOU';
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('bb_active_display_name', cleanName);
+    }
+    dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+    dispatchBuddyAction(`setPlayerDisplayName:${cleanName}`);
+    const t1 = window.setTimeout(() => {
+      dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+      dispatchBuddyAction(`setPlayerDisplayName:${cleanName}`);
+    }, 320);
+    return () => window.clearTimeout(t1);
+  }, [characterGender, playerDisplayName, worldMode, worldTransitionCount, dispatchBuddyAction]);
+
+  const persistWalletProfileLocally = useCallback(
+    (walletId: string, displayName: string, gender: 'male' | 'female') => {
+      if (typeof window === 'undefined') return;
+      const cleanWallet = walletId.trim().toLowerCase();
+      if (!cleanWallet) return;
+      try {
+        window.localStorage.setItem('bb_last_connected_wallet_id', cleanWallet);
+        const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
+        const map: Record<string, { displayName: string; gender: 'male' | 'female' }> = rawMap
+          ? JSON.parse(rawMap)
+          : {};
+        map[cleanWallet] = { displayName, gender };
+        window.localStorage.setItem('bb_saved_wallet_profiles_v1', JSON.stringify(map));
+        setSavedWalletSummary({ walletId: cleanWallet, displayName, gender });
+      } catch {
+        // ignore storage errors
+      }
+    },
+    [],
+  );
+
+  const handleConnectWalletAndEnterLobby = useCallback(
+    (rawWalletInput: string) => {
+      soundEngine.playUiClick();
+      const cleanInput = rawWalletInput.trim().toLowerCase() || 'commander-p1.testnet';
+      const normalizedWallet =
+        cleanInput.includes('.') || cleanInput.startsWith('0x')
+          ? cleanInput
+          : `${cleanInput.replace(/[^a-z0-9_-]/g, '')}.testnet`;
+
+      // 1. Check local saved wallet profile first for instant restoration
+      let restoredGender: 'male' | 'female' = characterGender;
+      let restoredName = normalizedWallet.split('.')[0].toUpperCase();
+      if (typeof window !== 'undefined') {
+        try {
+          const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
+          if (rawMap) {
+            const parsed = JSON.parse(rawMap) as Record<
+              string,
+              { displayName: string; gender: 'male' | 'female' }
+            >;
+            const saved = parsed[normalizedWallet];
+            if (saved) {
+              restoredGender = saved.gender;
+              restoredName = saved.displayName;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      setCharacterGender(restoredGender);
+      setPlayerDisplayName(restoredName);
+      setOnboardingAuthMode('wallet');
+      setOnboardingLoadingProgress(12);
+      setOnboardingStep('entering_lobby');
+
+      const nextLedger = createInitialNep171SubAccountLedger(normalizedWallet, 'testnet');
+      setNep171Ledger(nextLedger);
+      dispatchBuddyAction('nearConnectAndMint');
+      dispatchBuddyAction(`setCharacterGender:${restoredGender}`);
+      dispatchBuddyAction(`setPlayerDisplayName:${restoredName}`);
+      setHud((prev) => ({
+        ...prev,
+        nearWalletConnected: true,
+        nearWalletId: normalizedWallet,
+        nearHasGamepassNft: true,
+        nearGamepassTokenId: nextLedger.tokenId,
+      }));
+      persistWalletProfileLocally(normalizedWallet, restoredName, restoredGender);
+
+      // 2. Also fetch/restore existing profile from Supabase `bb_profiles`
+      void fetchOrCreatePlayerProfile({
+        nearAccountId: normalizedWallet,
+        displayName: restoredName,
+        authMode: 'near_wallet',
+      }).then((profile) => {
+        if (profile) {
+          setSupabaseConnected(true);
+          setCyonBalance(profile.cyon_balance);
+          setRespiteBalance(profile.respite_balance);
+          const dbGenderTag = profile.unlocked_skins?.find(
+            (s) => s === 'gender:male' || s === 'gender:female',
+          );
+          const finalGender: 'male' | 'female' =
+            dbGenderTag === 'gender:female'
+              ? 'female'
+              : dbGenderTag === 'gender:male'
+                ? 'male'
+                : restoredGender;
+          const finalName = profile.display_name || restoredName;
+          setCharacterGender(finalGender);
+          setPlayerDisplayName(finalName);
+          dispatchBuddyAction(`setCharacterGender:${finalGender}`);
+          dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
+          persistWalletProfileLocally(normalizedWallet, finalName, finalGender);
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: normalizedWallet,
+            lulBalance: hudRef.current.gold,
+            cyonBalance: profile.cyon_balance,
+            respiteBalance: profile.respite_balance,
+            unlockedSkins: ['default', `gender:${finalGender}`],
+          });
+        }
+      });
+      void syncGamepassNftLedgerToSupabase(nextLedger);
+    },
+    [characterGender, dispatchBuddyAction, persistWalletProfileLocally],
+  );
+
+  const handleConfirmGuestCharacterAndEnterLobby = useCallback(() => {
+    soundEngine.playUiClick();
+    const cleanGuestName =
+      playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita');
+    setPlayerDisplayName(cleanGuestName);
+    setIsEditingGuestName(false);
+    setOnboardingAuthMode('guest');
+    setOnboardingLoadingProgress(10);
+    setOnboardingStep('entering_lobby');
+    dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+    dispatchBuddyAction(`setPlayerDisplayName:${cleanGuestName}`);
+  }, [characterGender, dispatchBuddyAction, playerDisplayName]);
+
+  useEffect(() => {
+    if (onboardingStep !== 'entering_lobby') return;
+    const interval = window.setInterval(() => {
+      setOnboardingLoadingProgress((prev) => {
+        const next = Math.min(100, prev + 18);
+        return next;
+      });
+    }, 180);
+    const doneTimer = window.setTimeout(() => {
+      setOnboardingLoadingProgress(100);
+      setOnboardingStep('completed');
+    }, 1150);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(doneTimer);
+    };
+  }, [onboardingStep]);
 
   useEffect(() => {
     if (!isFastForwardRunning) return;
@@ -1295,6 +1510,313 @@ export default function App() {
       )}
 
       {/* =====================================================================
+          2B. ONBOARDING & AUTH FLOW:
+              1) 'auth_choice': Login as a Guest OR Continue with Connect Wallet (Restores Old Account)
+              2) 'guest_character_select': Avakin-Style 3D Full-Body Character & Temporary Username Selector
+              3) 'entering_lobby': Loading State before entering Mini Café Lobby
+         ===================================================================== */}
+      {gameState === 'playing' && !isFullMapOverview && onboardingStep === 'auth_choice' && (
+        <section
+          aria-label="Buddies Blitz Login & Onboarding"
+          data-onboarding-step="auth_choice"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-[3px] pointer-events-auto select-none"
+        >
+          <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-5">
+            <div className="text-center space-y-1.5 border-b-2 border-white/15 pb-4">
+              <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-widest">
+                <span className="skew-x-12 inline-block">BUDDIES BLITZ ONLINE</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-white pt-1">
+                PILIH AKSES MASUK
+              </h1>
+              <p className="text-xs font-bold text-slate-300">
+                Masuk sebagai tamu untuk memilih karakter baru, atau gunakan Connect Wallet untuk melanjutkan akun lama kamu.
+              </p>
+            </div>
+
+            {/* Option 1: Login as a Guest */}
+            <div className="p-4 bg-[#1e2230] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-[#b8ff3c]">
+                  OPSI 1 · PEMAIN BARU / TAMU
+                </span>
+                <span className="px-2 py-0.5 bg-black/50 text-[10px] font-black uppercase text-white/80 border border-white/20">
+                  PILIH KARAKTER 3D
+                </span>
+              </div>
+              <p className="text-[11px] font-bold text-slate-300 leading-snug">
+                Pilih karakter Laki-Laki atau Perempuan dan tentukan username sementara sebelum masuk ke Lobby.
+              </p>
+              <button
+                type="button"
+                data-login-guest-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setCharacterGender('male');
+                  if (!isCustomGuestNameEdited) {
+                    setPlayerDisplayName('Buddy Pria');
+                  }
+                  dispatchBuddyAction('setCharacterGender:male');
+                  setOnboardingStep('guest_character_select');
+                }}
+                className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+              >
+                <span className="skew-x-6 inline-block">LOGIN AS A GUEST</span>
+              </button>
+            </div>
+
+            {/* Option 2: Continue with Connect Wallet (Restores Existing Account) */}
+            <div className="p-4 bg-[#0f172a] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
+                  OPSI 2 · LANJUTKAN DENGAN WALLET
+                </span>
+                <Wallet className="w-4 h-4 text-[#38bdf8]" aria-hidden="true" />
+              </div>
+              <p className="text-[11px] font-bold text-slate-300 leading-snug">
+                Jika sudah pernah Connect Wallet, kamu akan langsung masuk ke akun lama beserta karakter &amp; saldo milikmu.
+              </p>
+
+              {savedWalletSummary && (
+                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between">
+                  <span>
+                    Akun Lama: <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong> ({savedWalletSummary.gender === 'male' ? 'Laki-Laki' : 'Perempuan'})
+                  </span>
+                  <span className="text-[9.5px] font-mono text-[#38bdf8]">{savedWalletSummary.walletId}</span>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  data-wallet-connect-input="true"
+                  value={walletConnectInput}
+                  onChange={(e) => setWalletConnectInput(e.target.value)}
+                  placeholder="commander-p1.testnet"
+                  aria-label="Wallet Account ID"
+                  className="w-full px-3 py-2 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
+                />
+                <button
+                  type="button"
+                  data-connect-wallet-enter-btn="true"
+                  onClick={() => handleConnectWalletAndEnterLobby(walletConnectInput)}
+                  className="-skew-x-6 w-full py-3 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
+                >
+                  <div className="skew-x-6 flex items-center justify-center gap-2">
+                    <Wallet className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+                    <span>CONTINUE WITH CONNECT WALLET</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* STEP 2: Avakin-Style 3D Character Selection Studio (When 'Login as a Guest' is clicked) */}
+      {gameState === 'playing' &&
+        !isFullMapOverview &&
+        onboardingStep === 'guest_character_select' && (
+          <section
+            aria-label="Select Character & Temporary Username"
+            data-onboarding-step="guest_character_select"
+            className="fixed inset-0 z-50 flex flex-col justify-between items-center py-6 px-4 pointer-events-none select-none"
+          >
+            {/* Top Header Pill */}
+            <div className="pointer-events-auto bg-[#121318]/90 text-white border-2 border-black px-5 py-2 shadow-[4px_4px_0_#000] text-center">
+              <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
+                GUEST SESSION · PEMILIHAN KARAKTER 3D
+              </div>
+              <div className="text-xs font-bold text-white/90">
+                Gunakan panah &lt; &gt; untuk memilih Laki-Laki / Perempuan dan ubah username sementara
+              </div>
+            </div>
+
+            {/* Bottom Avakin-Style Dark Translucent Character Bar */}
+            <div className="pointer-events-auto w-full max-w-md bg-[#121318]/92 text-white border-2 border-black/90 shadow-[0_10px_30px_rgba(0,0,0,0.75)] px-5 py-4 space-y-3.5">
+              {/* Row 1: Editable Temporary Username + Pencil Icon */}
+              <div className="relative flex items-center justify-center border-b border-white/15 pb-2.5">
+                {isEditingGuestName ? (
+                  <div className="flex items-center gap-2 w-full max-w-xs">
+                    <input
+                      ref={guestNameInputRef}
+                      type="text"
+                      maxLength={20}
+                      data-guest-username-input="true"
+                      value={playerDisplayName}
+                      onChange={(e) => {
+                        setIsCustomGuestNameEdited(true);
+                        setPlayerDisplayName(e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setIsEditingGuestName(false);
+                        }
+                      }}
+                      placeholder="Ketik username sementara..."
+                      className="flex-1 px-2.5 py-1 bg-white text-black font-black text-base text-center border-2 border-[#b8ff3c] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setIsEditingGuestName(false);
+                      }}
+                      aria-label="Simpan Username"
+                      className="w-8 h-8 bg-[#b8ff3c] text-black border-2 border-black flex items-center justify-center cursor-pointer"
+                    >
+                      <Check className="w-4 h-4 stroke-[3]" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    data-edit-guest-username-trigger="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsEditingGuestName(true);
+                      window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setIsEditingGuestName(true);
+                        window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-3 cursor-pointer group px-4 py-0.5"
+                    title="Klik untuk mengganti username sementara"
+                  >
+                    <span className="text-xl sm:text-2xl font-bold tracking-wide text-white group-hover:text-[#b8ff3c] transition-colors">
+                      {playerDisplayName || (characterGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita')}
+                    </span>
+                    <Pencil className="w-4 h-4 text-white/80 group-hover:text-[#b8ff3c] transition-colors" />
+                  </div>
+                )}
+              </div>
+
+              {/* Row 2: Back Button, < 1/2 > Gender Switcher, and Confirm / Enter Lobby Button */}
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setOnboardingStep('auth_choice');
+                  }}
+                  title="Kembali ke Pilihan Login"
+                  aria-label="Kembali"
+                  className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                >
+                  <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+                </button>
+
+                <div className="flex items-center gap-5">
+                  <button
+                    type="button"
+                    data-char-select-prev="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      const nextGender: 'male' | 'female' =
+                        characterGender === 'male' ? 'female' : 'male';
+                      setCharacterGender(nextGender);
+                      dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+                      if (!isCustomGuestNameEdited) {
+                        setPlayerDisplayName(
+                          nextGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita',
+                        );
+                      }
+                    }}
+                    aria-label="Karakter Sebelumnya"
+                    className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
+                  >
+                    <ChevronLeft className="w-8 h-8 stroke-[2.8]" />
+                  </button>
+
+                  <div className="text-center min-w-[100px]">
+                    <div className="text-lg font-bold tracking-wider text-white">
+                      {characterGender === 'male' ? '1/2' : '2/2'}
+                    </div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
+                      {characterGender === 'male' ? 'LAKI-LAKI' : 'PEREMPUAN'}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-char-select-next="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      const nextGender: 'male' | 'female' =
+                        characterGender === 'male' ? 'female' : 'male';
+                      setCharacterGender(nextGender);
+                      dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+                      if (!isCustomGuestNameEdited) {
+                        setPlayerDisplayName(
+                          nextGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita',
+                        );
+                      }
+                    }}
+                    aria-label="Karakter Berikutnya"
+                    className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
+                  >
+                    <ChevronRight className="w-8 h-8 stroke-[2.8]" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  data-confirm-guest-character-btn="true"
+                  onClick={handleConfirmGuestCharacterAndEnterLobby}
+                  className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                >
+                  <span className="skew-x-6 inline-block">MASUK LOBBY</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+      {/* STEP 3: Loading State Before Entering Mini Café Lobby */}
+      {gameState === 'playing' &&
+        !isFullMapOverview &&
+        onboardingStep === 'entering_lobby' && (
+          <div
+            data-onboarding-step="entering_lobby"
+            style={{ backgroundColor: '#0b0e16', opacity: 1 }}
+            className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-[#0b0e16] text-white pointer-events-auto select-none px-4"
+          >
+            <div className="flex flex-col items-center gap-3.5 max-w-md w-full text-center">
+              <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase animate-pulse">
+                <span className="skew-x-12 inline-block">LOADING LOBBY...</span>
+              </div>
+
+              <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#38bdf8]">
+                {onboardingAuthMode === 'wallet'
+                  ? `MEMULIHKAN AKUN WALLET (${hud.nearWalletId || walletConnectInput})`
+                  : `MENYIAPKAN SESI GUEST · ${playerDisplayName.toUpperCase()}`}
+              </div>
+
+              <div className="px-3 py-1 bg-[#1e293b] border border-white/25 text-[11px] font-black uppercase text-[#facc15]">
+                KARAKTER: {characterGender === 'male' ? 'LAKI-LAKI (MALE)' : 'PEREMPUAN (FEMALE)'} · USERNAME: {playerDisplayName}
+              </div>
+
+              {/* Animated Progress Bar */}
+              <div className="w-64 sm:w-72 h-3 bg-[#14161d] border-2 border-white/80 rounded-full overflow-hidden mt-1 shadow-[2px_2px_0_#000]">
+                <div
+                  className="h-full bg-[#b8ff3c] transition-all duration-150"
+                  style={{ width: `${onboardingLoadingProgress}%` }}
+                />
+              </div>
+
+              <div className="text-[10.5px] font-bold text-white/65 tracking-wider">
+                Menyiapkan avatar 3D &amp; memasuki Mini Café Lobby ({onboardingLoadingProgress}%)...
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* =====================================================================
           3. PLAYING HUD: STYLIZED TACTICAL ARCADE OVERHAUL
              - Top-Left: Compact Radar/Minimap + [Q: 1x1x2] Pad Badge
              - Top-Center: Skewed Arcade Health/Score Bar ("BLUE 2000 vs RED 2000")
@@ -1302,7 +1824,7 @@ export default function App() {
              - Viewport: 3D-to-2D Contextual Hexagonal Floating Prompts ([E] AMBIL, [F] RAKIT, [G] NAIK, [B] KIOSK)
              - Bottom-Right: Compact 3 Weapon Slots ([1] Pistol, [2] Rifle, [3] Bazooka)
          ===================================================================== */}
-      {gameState === 'playing' && !isFullMapOverview && (
+      {gameState === 'playing' && !isFullMapOverview && onboardingStep === 'completed' && (
         <div className="fixed inset-0 z-20 pointer-events-none">
           {/* =================================================================
               3A. MINIMALIST CONTEXTUAL 3D-TO-2D FLOATING ICONS
@@ -3396,7 +3918,7 @@ export default function App() {
       <SocialChatModal
         isOpen={isSocialChatModalOpen}
         onClose={() => setIsSocialChatModalOpen(false)}
-        playerName="YOU"
+        playerName={playerDisplayName || 'YOU'}
         nearbyUsers={hud.nearbyRadiusUsers ?? []}
         selectedPrivateUser={selectedPrivateUser}
         onSelectPrivateUser={setSelectedPrivateUser}
@@ -3405,9 +3927,10 @@ export default function App() {
         playerBubbleTextColor={chatBubbleTextColor}
         onSendPublicChat={(text) => {
           const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const senderLabel = playerDisplayName || 'YOU';
           const newMsg: ChatMessage = {
             id: `pub-${Date.now()}`,
-            senderName: 'YOU',
+            senderName: senderLabel,
             isSelf: true,
             text,
             timestamp: nowStr,
@@ -3416,7 +3939,7 @@ export default function App() {
           setChatMessages((prev) => [...prev, newMsg]);
           dispatchBuddyAction(`socialTalk:${text}`);
           void insertSocialChatMessageToSupabase({
-            senderName: hud.nearWalletId || 'YOU',
+            senderName: senderLabel,
             senderNearAccount: hud.nearWalletId || nep171Ledger.ownerNearAccount,
             message: text,
             bubbleColor: chatBubbleBgColor,
@@ -3424,9 +3947,10 @@ export default function App() {
         }}
         onSendPrivateChat={(recipient, text) => {
           const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const senderLabel = playerDisplayName || 'YOU';
           const newMsg: ChatMessage = {
             id: `priv-${Date.now()}`,
-            senderName: 'YOU',
+            senderName: senderLabel,
             recipientName: recipient.name,
             isSelf: true,
             text,
@@ -3436,7 +3960,7 @@ export default function App() {
           setChatMessages((prev) => [...prev, newMsg]);
           dispatchBuddyAction(`socialTalk:[Whisper @${recipient.name}] ${text}`);
           void insertSocialChatMessageToSupabase({
-            senderName: hud.nearWalletId || 'YOU',
+            senderName: senderLabel,
             senderNearAccount: hud.nearWalletId || nep171Ledger.ownerNearAccount,
             recipientName: recipient.name,
             message: text,
@@ -3615,7 +4139,7 @@ export default function App() {
                   supabaseConnected ? 'bg-[#10b981] text-black' : 'bg-[#facc15] text-black'
                 }`}
               >
-                {supabaseConnected ? '● SUPABASE DB LIVE (penfodwizsqxitafhfcf)' : '● SUPABASE READY'}
+                {supabaseConnected ? '● SUPABASE DB LIVE (ichkymzdwzgdtpptrsvr)' : '● SUPABASE READY'}
               </span>
               <a
                 href={getNearBlocksAccountUrl(nep171Ledger.ownerNearAccount, nep171Ledger.network)}
@@ -3664,12 +4188,17 @@ export default function App() {
                       nearHasGamepassNft: true,
                       nearGamepassTokenId: nextLedger.tokenId,
                     }));
+                    persistWalletProfileLocally(
+                      derived.accountId,
+                      playerDisplayName || derived.displayName,
+                      characterGender,
+                    );
                     setTransferAuditBanner(
                       `Social Login active: ${derived.accountId} provisioned with gasless session key (${derived.sessionPublicKey.slice(0, 22)}...).`,
                     );
                     void fetchOrCreatePlayerProfile({
                       nearAccountId: derived.accountId,
-                      displayName: derived.displayName,
+                      displayName: playerDisplayName || derived.displayName,
                       authMode: 'social_invisible',
                       email: socialLoginInput,
                     }).then((profile) => {
@@ -3677,6 +4206,13 @@ export default function App() {
                         setSupabaseConnected(true);
                         setCyonBalance(profile.cyon_balance);
                         setRespiteBalance(profile.respite_balance);
+                        void syncPlayerBalancesToSupabase({
+                          nearAccountId: derived.accountId,
+                          lulBalance: hud.gold,
+                          cyonBalance: profile.cyon_balance,
+                          respiteBalance: profile.respite_balance,
+                          unlockedSkins: ['default', `gender:${characterGender}`],
+                        });
                       }
                     });
                     void syncGamepassNftLedgerToSupabase(nextLedger);
@@ -3704,8 +4240,14 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   soundEngine.playUiClick();
+                  const activeWallet = hud.nearWalletId || nep171Ledger.ownerNearAccount;
                   dispatchBuddyAction('nearConnectAndMint');
                   setRespiteBalance((prev) => prev + 30);
+                  persistWalletProfileLocally(
+                    activeWallet,
+                    playerDisplayName || 'YOU',
+                    characterGender,
+                  );
                   void syncGamepassNftLedgerToSupabase(nep171Ledger);
                 }}
                 className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
