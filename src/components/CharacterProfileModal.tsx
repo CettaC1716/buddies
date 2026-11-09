@@ -107,6 +107,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   if (!isOpen || !targetUser) return null;
 
   const isSelfProfile =
+    Boolean(targetUser.isSelf) ||
     String(targetUser.id) === '0' ||
     targetUser.name.toUpperCase().includes('KAMU') ||
     targetUser.name.toUpperCase().includes('YOU');
@@ -230,9 +231,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           </div>
 
           {/* Personal Balances (Only visible on own profile) */}
-          {(String(targetUser.id) === '0' ||
-            targetUser.name.toUpperCase().includes('KAMU') ||
-            targetUser.name.toUpperCase().includes('YOU')) && (
+          {isSelfProfile && (
             <div
               data-private-profile-balances="true"
               className="mb-3 p-2.5 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000]"
@@ -568,47 +567,49 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           </div>
         </div>
 
-        {/* Bottom Action Buttons */}
-        <div className="flex flex-col gap-2.5 mt-auto pt-3 border-t-2 border-black">
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick();
-              onStartWhisper(targetUser);
-            }}
-            className="-skew-x-6 w-full py-2.5 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-          >
-            <div className="skew-x-6 flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
-              <span>SEND WHISPER MESSAGE</span>
-            </div>
-          </button>
+        {/* Bottom Action Buttons (Only shown when viewing another player / NPC profile) */}
+        {!isSelfProfile && (
+          <div className="flex flex-col gap-2.5 mt-auto pt-3 border-t-2 border-black">
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onStartWhisper(targetUser);
+              }}
+              className="-skew-x-6 w-full py-2.5 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+            >
+              <div className="skew-x-6 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+                <span>SEND WHISPER MESSAGE</span>
+              </div>
+            </button>
 
-          <button
-            type="button"
-            onClick={handleSendFriendRequest}
-            disabled={isFriendRequested}
-            className={`-skew-x-6 w-full py-2.5 px-4 border-2 border-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-              isFriendRequested
-                ? 'bg-slate-200 text-slate-600 cursor-default border-black'
-                : 'bg-[#facc15] hover:bg-[#fde047] text-black shadow-[3px_3px_0px_#000] cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none'
-            }`}
-          >
-            <div className="skew-x-6 flex items-center gap-2">
-              {isFriendRequested ? (
-                <>
-                  <Check className="w-4 h-4 stroke-[3]" aria-hidden="true" />
-                  <span>REQUEST SENT</span>
-                </>
-              ) : (
-                <>
-                  <UserPlus className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
-                  <span>ADD FRIEND</span>
-                </>
-              )}
-            </div>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={handleSendFriendRequest}
+              disabled={isFriendRequested}
+              className={`-skew-x-6 w-full py-2.5 px-4 border-2 border-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                isFriendRequested
+                  ? 'bg-slate-200 text-slate-600 cursor-default border-black'
+                  : 'bg-[#facc15] hover:bg-[#fde047] text-black shadow-[3px_3px_0px_#000] cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none'
+              }`}
+            >
+              <div className="skew-x-6 flex items-center gap-2">
+                {isFriendRequested ? (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                    <span>REQUEST SENT</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+                    <span>ADD FRIEND</span>
+                  </>
+                )}
+              </div>
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );

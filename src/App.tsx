@@ -1128,18 +1128,26 @@ export default function App() {
       setSelectedTargetUser((prev) => {
         if (!prev) return prev;
         const isSelf =
+          Boolean(prev.isSelf) ||
           String(prev.id) === '0' ||
+          (!prev.isNpc &&
+            Boolean(playerDisplayName.trim()) &&
+            prev.name.trim().toUpperCase() === playerDisplayName.trim().toUpperCase()) ||
           prev.name.toUpperCase().includes('KAMU') ||
           prev.name.toUpperCase().includes('YOU');
-        return isSelf ? { ...prev, name: cleanName } : prev;
+        return isSelf ? { ...prev, id: 0, isSelf: true, name: cleanName } : prev;
       });
       setProfileTargetUser((prev) => {
         if (!prev) return prev;
         const isSelf =
+          Boolean(prev.isSelf) ||
           String(prev.id) === '0' ||
+          (!prev.isNpc &&
+            Boolean(playerDisplayName.trim()) &&
+            prev.name.trim().toUpperCase() === playerDisplayName.trim().toUpperCase()) ||
           prev.name.toUpperCase().includes('KAMU') ||
           prev.name.toUpperCase().includes('YOU');
-        return isSelf ? { ...prev, name: cleanName } : prev;
+        return isSelf ? { ...prev, id: 0, isSelf: true, name: cleanName } : prev;
       });
 
       const activeUid =
@@ -4908,13 +4916,39 @@ export default function App() {
           {/* Top Section: Compact Action Buttons (Only Shown When Black Name Bar is Clicked / Expanded) */}
           {isTargetMenuExpanded && (() => {
             const isSelfTarget =
+              Boolean(selectedTargetUser.isSelf) ||
               String(selectedTargetUser.id) === '0' ||
+              (!selectedTargetUser.isNpc &&
+                Boolean(playerDisplayName.trim()) &&
+                selectedTargetUser.name.trim().toUpperCase() ===
+                  playerDisplayName.trim().toUpperCase()) ||
               selectedTargetUser.name.toUpperCase().includes('KAMU') ||
               selectedTargetUser.name.toUpperCase().includes('YOU');
 
             if (isSelfTarget) {
               return (
                 <div className="flex flex-col gap-1.5 mb-0.5">
+                  <button
+                    type="button"
+                    data-self-profile-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setProfileTargetUser({
+                        ...selectedTargetUser,
+                        id: 0,
+                        isSelf: true,
+                      });
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
+                  >
+                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
+                      <User className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
+                      <span>Profile</span>
+                    </div>
+                  </button>
+
                   <button
                     type="button"
                     data-self-wallet-btn="true"
@@ -4934,23 +4968,6 @@ export default function App() {
                     <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
                       <Wallet className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
                       <span>Wallet</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-self-profile-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsTargetMenuExpanded(false);
-                      setProfileTargetUser(selectedTargetUser);
-                      setIsProfileModalOpen(true);
-                    }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
-                  >
-                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                      <User className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                      <span>Profile</span>
                     </div>
                   </button>
                 </div>

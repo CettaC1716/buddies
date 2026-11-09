@@ -5,6 +5,7 @@ export interface NearbyEntityUser {
   id: string | number;
   name: string;
   isNpc: boolean;
+  isSelf?: boolean;
   distance: number;
   team: 'blue' | 'red';
   status: string;

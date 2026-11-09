@@ -870,9 +870,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const targetId = customEv.detail?.id;
       if (targetId === undefined || targetId === null) return;
       let found: typeof selectedCharacterTarget = null;
-      if (targetId === playerUnit.id) {
+      if (targetId === playerUnit.id || String(targetId) === '0') {
         found = {
-          id: playerUnit.id,
+          id: 0,
           name: playerCustomDisplayName,
           isNpc: false,
           team: playerUnit.team,
@@ -911,14 +911,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const u = buddyUnits.find((b) => String(b.id) === String(targetId) && b.alive);
         if (u) {
           found = {
-            id: u.id,
+            id: u.isPlayer ? 0 : u.id,
             name: u.isPlayer ? playerCustomDisplayName : `BUDDY #${u.id}`,
             isNpc: false,
             team: u.team,
             status: u.carryingCrate !== 'none' ? 'Carrying Crate' : u.weaponName || 'Chilling',
             root: u.root,
             nameplate: u.nameplate,
-            isSelf: false,
+            isSelf: Boolean(u.isPlayer),
           };
         }
       }
@@ -9650,7 +9650,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (rayDist < bestCharDist) {
             bestCharDist = rayDist;
             clickedCharacter = {
-              id: u.id,
+              id: u.isPlayer ? 0 : u.id,
               name: u.isPlayer ? playerCustomDisplayName : `BUDDY #${u.id} (${u.classId.toUpperCase()})`,
               isNpc: false,
               team: u.team,
@@ -9670,7 +9670,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (rayDist < bestCharDist) {
             bestCharDist = rayDist;
             clickedCharacter = {
-              id: playerUnit.id,
+              id: 0,
               name: playerCustomDisplayName,
               isNpc: false,
               team: playerUnit.team,
@@ -9751,9 +9751,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             new CustomEvent('character-selected', {
               detail: {
                 user: {
-                  id: clickedCharacter.id,
+                  id: clickedCharacter.isSelf ? 0 : clickedCharacter.id,
                   name: clickedCharacter.name,
                   isNpc: clickedCharacter.isNpc,
+                  isSelf: Boolean(clickedCharacter.isSelf),
                   team: clickedCharacter.team,
                   distance: getPlanetShortestDistance(
                     playerUnit?.x ?? 0,
