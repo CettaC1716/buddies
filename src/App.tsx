@@ -42,6 +42,7 @@ import {
 } from './components/SocialChatModal';
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
+import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
 import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
@@ -69,6 +70,7 @@ import {
   detectNetworkFromAccountId,
   disconnectNearWalletSession,
   executeAtomicNep171SubAccountTransfer,
+  executeNearTestnetAndRespiteSwap,
   fetchNearAccountView,
   fetchNearNetworkStatus,
   getNearBlocksAccountUrl,
@@ -344,6 +346,8 @@ export default function App() {
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
   const [cyonBalance, setCyonBalance] = useState<number>(60);
   const [respiteBalance, setRespiteBalance] = useState<number>(45);
+  const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(12.5);
+  const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([
     'tatami_tea_table',
     'sakura_bonsai_pot',
@@ -1757,7 +1761,21 @@ export default function App() {
                 Your NEAR wallet address acts as your unique Player UID. Returning wallet players automatically restore their saved username, avatar, and balances.
               </p>
 
-              {/* Real NEAR Web Wallet & Browser Extension Buttons */}
+              {/* Real NEAR Wallet Selector Modal & Web Wallet Buttons */}
+              <button
+                type="button"
+                data-open-near-wallet-selector-modal-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setIsNearWalletSelectorOpen(true);
+                }}
+                className="-skew-x-6 w-full py-2.5 px-3 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+              >
+                <span className="skew-x-6 inline-block">
+                  OPEN NEAR WALLET SELECTOR MODAL (@near-wallet-selector)
+                </span>
+              </button>
+
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -3650,6 +3668,7 @@ export default function App() {
         lulBalance={hud.gold}
         cyonBalance={cyonBalance}
         respiteBalance={respiteBalance}
+        nearTestnetBalance={nearTestnetBalance}
         walletConnected={Boolean(hud.nearWalletConnected)}
         ownedItemIds={ownedMerchantItemIds}
         activeHouseThemeId={activeHouseThemeId}
@@ -3951,7 +3970,53 @@ export default function App() {
             },
           }));
         }}
-        onConnectWallet={() => dispatchBuddyAction('nearConnectAndMint')}
+        onConnectWallet={() => {
+          soundEngine.playUiClick();
+          setIsNearWalletSelectorOpen(true);
+        }}
+        onSwapNearAndRespite={(direction, inputAmount) => {
+          const actorAccount =
+            hud.nearWalletId || playerUid || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const receipt = executeNearTestnetAndRespiteSwap({
+            direction,
+            signerAccountId: actorAccount,
+            inputAmount,
+            networkId: walletNetworkChoice,
+          });
+          const nextNear =
+            direction === 'near_to_respite'
+              ? Math.max(0, Number((nearTestnetBalance - receipt.nearAmount).toFixed(4)))
+              : Number((nearTestnetBalance + receipt.nearAmount).toFixed(4));
+          const nextRespite =
+            direction === 'near_to_respite'
+              ? respiteBalance + receipt.respiteAmount
+              : Math.max(0, respiteBalance - receipt.respiteAmount);
+
+          setNearTestnetBalance(nextNear);
+          setRespiteBalance(nextRespite);
+
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: actorAccount,
+            lulBalance: hud.gold,
+            cyonBalance,
+            respiteBalance: nextRespite,
+          });
+          void insertMarketTransactionReceipt({
+            merchant_id: merchantLocation,
+            actor_near_account: actorAccount,
+            action_type: 'exchange_lul_cyon',
+            nep245_token_id: receipt.tokenContractId,
+            currency: 'RESPITE',
+            amount: receipt.respiteAmount,
+            unit_price: receipt.nearAmount,
+            reasoning_summary:
+              direction === 'near_to_respite'
+                ? `Swapped ${receipt.nearAmount} NEAR Testnet -> +${receipt.respiteAmount} RESPITE (${receipt.tokenContractId})`
+                : `Swapped ${receipt.respiteAmount} RESPITE -> +${receipt.nearAmount} NEAR Testnet (${receipt.tokenContractId})`,
+            near_tx_hash: receipt.txHash,
+          });
+          return receipt;
+        }}
         caughtFishBucket={caughtFishBucket}
         fishMarketListings={fishMarketListings}
         playerNearAccount={
@@ -4684,47 +4749,42 @@ export default function App() {
             <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                  WALLET ACCOUNT &amp; NEAR WALLET
+                  NEAR PROTOCOL WALLET SELECTOR
                 </div>
                 <div className="text-[10px] font-bold text-white/85 mt-0.5 truncate">
                   {hud.nearWalletConnected
-                    ? `Connected (${hud.nearWalletId ?? nep171Ledger.ownerNearAccount})`
+                    ? `Connected (${hud.nearWalletId ?? nep171Ledger.ownerNearAccount}) · ${nearTestnetBalance.toFixed(2)} NEAR`
                     : `Active Account: ${nep171Ledger.ownerNearAccount}`}
                 </div>
               </div>
               <button
                 type="button"
+                data-personal-wallet-open-selector-btn="true"
                 onClick={() => {
                   soundEngine.playUiClick();
-                  const activeWallet = hud.nearWalletId || nep171Ledger.ownerNearAccount;
-                  dispatchBuddyAction('nearConnectAndMint');
-                  setRespiteBalance((prev) => prev + 30);
-                  persistWalletProfileLocally(
-                    activeWallet,
-                    playerDisplayName || 'YOU',
-                    characterGender,
-                  );
-                  void syncGamepassNftLedgerToSupabase(nep171Ledger);
+                  setIsNearWalletSelectorOpen(true);
                 }}
                 className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
               >
                 <span className="skew-x-6 inline-block">
-                  {hud.nearWalletConnected ? 'TOP-UP RESPITE' : 'CONNECT WALLET'}
+                  {hud.nearWalletConnected ? 'WALLET SELECTOR' : 'CONNECT WALLET'}
                 </span>
               </button>
             </div>
 
-            {/* 3 Personal Currency Balances */}
+            {/* 3 Personal Currency Balances (Redefined: LUL & CYON = Non-Crypto; RESPITE = NEAR NEP-141 Crypto Coin) */}
             <div className="space-y-2">
               <div className="text-[11px] font-black uppercase tracking-wider text-slate-700">
-                YOUR CURRENCY BALANCES
+                YOUR CURRENCY BALANCES (NON-CRYPTO &amp; NEAR CRYPTO)
               </div>
 
               <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase text-black">LUL (LULLING)</div>
+                  <div className="text-xs font-black uppercase text-black">
+                    LUL (LULLING · NON-CRYPTO)
+                  </div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Activity &amp; session gameplay currency
+                    Earned from Fishing &amp; Warzone mini-games · Exchangeable to CYON
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -4734,9 +4794,11 @@ export default function App() {
 
               <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase text-black">CYON (HALCYON)</div>
+                  <div className="text-xs font-black uppercase text-black">
+                    CYON (HALCYON · NON-CRYPTO)
+                  </div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Lifestyle currency exchanged at the Merchant ATM
+                    Obtained from LUL → CYON exchange · For Outfits &amp; Non-NFT items
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -4746,9 +4808,11 @@ export default function App() {
 
               <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase text-black">RESPITE (NEP-141)</div>
+                  <div className="text-xs font-black uppercase text-black">
+                    RESPITE (NEAR NEP-141 SMART CONTRACT COIN)
+                  </div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Special collectibles &amp; house theme token
+                    Crypto coin on NEAR Protocol · Swapped via NEAR Testnet ↔ RESPITE
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#d8b4fe] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -5192,6 +5256,7 @@ export default function App() {
           isKioskModalOpen ||
           isProfileModalOpen ||
           isPersonalWalletModalOpen ||
+          isNearWalletSelectorOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
         }
@@ -5204,6 +5269,22 @@ export default function App() {
               }
             : null
         }
+      />
+
+      {/* =====================================================================
+          12. NEAR WALLET SELECTOR MODAL (@near-wallet-selector/modal-ui Adaptation)
+         ===================================================================== */}
+      <NearWalletSelectorModal
+        isOpen={isNearWalletSelectorOpen}
+        onClose={() => setIsNearWalletSelectorOpen(false)}
+        networkId={walletNetworkChoice}
+        onChangeNetworkId={setWalletNetworkChoice}
+        currentWalletId={hud.nearWalletId || playerUid}
+        nearTestnetBalance={nearTestnetBalance}
+        respiteBalance={respiteBalance}
+        onConnectAccountId={async (accountId) => {
+          await handleConnectWalletAndEnterLobby(accountId);
+        }}
       />
     </main>
   );

@@ -4,14 +4,16 @@
  * ============================================================================
  * Readable single-file economy engine for NEAR Hackathon Track: `games` & `nfts`.
  *
- * Three-Tier Currency Architecture (Inspired by Avakin Life + Anti-Bot Shield):
- *  1. `LUL` (Lulling)   — Activity currency earned in Warzone (high reward) or
- *                         Safezone jobs (Mini Café barista shift / East Beach fishing).
- *  2. `CYON` (Halcyon)  — Non-crypto main currency obtained by exchanging `LUL`
- *                         at the NPC Merchant / ATM. Buys Non-NFT furniture & gear.
- *  3. `RESPITE`         — Crypto currency (NEAR / NEP-141) from connected wallet.
- *                         Mints exclusive NEP-245 NFT House Themes & Collector Items.
- *                         Cannot be bot-farmed from free in-game grinding.
+ * Three-Tier Currency Architecture (Non-Crypto vs NEAR Protocol Crypto):
+ *  1. `LUL` (Lulling)   — Non-crypto activity currency earned from mini-games such as
+ *                         East Beach Fishing and Warzone battles. Exchangeable into `CYON`.
+ *  2. `CYON` (Halcyon)  — Non-crypto currency obtained by exchanging `LUL -> CYON`
+ *                         at the Exchange Merchant. Used to buy non-NFT items such as
+ *                         Outfits (future expansion) & standard interior furniture.
+ *  3. `RESPITE`         — Crypto smart contract coin (`NEP-141` Fungible Token on NEAR Protocol:
+ *                         `respite.buddiesblitz.testnet`). Obtained by swapping
+ *                         `NEAR Testnet <-> RESPITE` in the Exchange Merchant. Used for
+ *                         exclusive Web3 NFT House Themes & Collector Items.
  * ============================================================================
  */
 
@@ -541,15 +543,15 @@ export function generateNpcMerchantReply(
   }
 
   if (q.includes('lul') || q.includes('tukar') || q.includes('kurs') || q.includes('gold') || q.includes('exchange') || q.includes('rate')) {
-    return `You currently have ${balances.lul.toLocaleString()} LUL. The rate at ${locName} on Day ${state.dayCounter} is ${quote.lulCostFor10Cyon} LUL for 10 CYON. You can earn plenty of LUL in the Warzone, or work peacefully at the Café & go fishing at the Beach!`;
+    return `You currently have ${balances.lul.toLocaleString()} LUL (non-crypto currency earned from Fishing & Warzone mini-games). You can exchange LUL -> CYON for non-NFT items & Outfits, or scroll down in the EXCHANGE tab to swap NEAR Testnet <-> RESPITE (NEP-141 crypto smart contract coin)!`;
   }
 
-  if (q.includes('cyon') || q.includes('perabot') || q.includes('barang') || q.includes('furnitur') || q.includes('furniture') || q.includes('item')) {
-    return `Your current CYON balance is ${balances.cyon} CYON. With CYON (non-crypto currency), you can buy furniture like the Chabudai Tea Table, Shoji Lamp, Sofa, or Arcade Cabinet to decorate your Private House!`;
+  if (q.includes('cyon') || q.includes('outfit') || q.includes('perabot') || q.includes('barang') || q.includes('furnitur') || q.includes('furniture') || q.includes('item')) {
+    return `Your current CYON balance is ${balances.cyon} CYON. CYON is a pure non-crypto currency obtained by exchanging LUL -> CYON, used to purchase non-NFT items such as Outfits (future expansion) and private house furniture!`;
   }
 
-  if (q.includes('respite') || q.includes('nft') || q.includes('tema') || q.includes('japanese') || q.includes('rumah') || q.includes('theme') || q.includes('house')) {
-    return `Your RESPITE balance is ${balances.respite} RESPITE. RESPITE is a crypto token used to mint NFT House Themes (such as Cyber Neon & Imperial Gold alongside the default Japanese Style) as well as rare NEP-245 collectibles!`;
+  if (q.includes('respite') || q.includes('near') || q.includes('crypto') || q.includes('swap') || q.includes('nft') || q.includes('tema') || q.includes('japanese') || q.includes('rumah') || q.includes('theme') || q.includes('house')) {
+    return `Your RESPITE balance is ${balances.respite} RESPITE. RESPITE is our NEAR Protocol NEP-141 smart contract coin (respite.buddiesblitz.testnet). You can obtain RESPITE by swapping NEAR Testnet <-> RESPITE in the EXCHANGE tab below LUL -> CYON!`;
   }
 
   if (q.includes('harga') || q.includes('mahal') || q.includes('murah') || q.includes('pasar') || q.includes('price') || q.includes('market')) {

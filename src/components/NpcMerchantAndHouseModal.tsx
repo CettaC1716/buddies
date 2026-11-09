@@ -14,6 +14,10 @@ import {
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
+import {
+  RESPITE_NEP141_METADATA,
+  type NearRespiteSwapReceipt,
+} from '../lib/nearClient';
 
 export interface HouseInteriorPlacementState {
   center_table: string | null;
@@ -31,6 +35,7 @@ interface NpcMerchantAndHouseModalProps {
   lulBalance: number;
   cyonBalance: number;
   respiteBalance: number;
+  nearTestnetBalance?: number;
   walletConnected: boolean;
   ownedItemIds: string[];
   activeHouseThemeId: string;
@@ -39,6 +44,10 @@ interface NpcMerchantAndHouseModalProps {
   onClose: () => void;
   onEarnSafezoneLul: (amount: number, reason: string) => void;
   onExchangeLulToCyon: (customLulSpent?: number, customCyonGranted?: number) => void;
+  onSwapNearAndRespite?: (
+    direction: 'near_to_respite' | 'respite_to_near',
+    inputAmount: number,
+  ) => NearRespiteSwapReceipt | null | void;
   onInvestInMerchant: () => void;
   onBuyMerchantItem: (item: MerchantCatalogItem, price: number) => void;
   onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => void;
@@ -73,6 +82,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   lulBalance,
   cyonBalance,
   respiteBalance,
+  nearTestnetBalance = 12.5,
   walletConnected,
   ownedItemIds,
   activeHouseThemeId,
@@ -81,6 +91,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onClose,
   onEarnSafezoneLul: _onEarnSafezoneLul,
   onExchangeLulToCyon,
+  onSwapNearAndRespite,
   onInvestInMerchant: _onInvestInMerchant,
   onBuyMerchantItem: _onBuyMerchantItem,
   onSellMerchantItem: _onSellMerchantItem,
@@ -106,6 +117,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [lastPlayerMessage, setLastPlayerMessage] = useState<string>('');
   const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('2000');
+  const [cryptoSwapDirection, setCryptoSwapDirection] = useState<
+    'near_to_respite' | 'respite_to_near'
+  >('near_to_respite');
+  const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('1');
+  const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
+    useState<NearRespiteSwapReceipt | null>(null);
   const [listingPriceByFishId, setListingPriceByFishId] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -834,7 +851,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           )}
 
           {/* ===============================================================
-              TAB 2: EXCHANGE (LUL -> CYON Exchange)
+              TAB 2: EXCHANGE
+              1) Top Card: Non-Crypto Exchange (LUL -> CYON)
+              2) Bottom Card: NEAR Protocol Crypto Smart Contract Swap (NEAR Testnet <-> RESPITE NEP-141)
              =============================================================== */}
           {activeTab === 'transaksi' && (() => {
             const rateLul = 20;
@@ -847,23 +866,39 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               parsedLul <= lulBalance &&
               calculatedCyon > 0;
 
+            const respitePerNearRate = RESPITE_NEP141_METADATA.rateRespitePerNear; // 1 NEAR = 100 RESPITE
+            const parsedCryptoInput = Math.max(0, Number(cryptoSwapInputStr) || 0);
+            const isNearToRespite = cryptoSwapDirection === 'near_to_respite';
+            const calculatedCryptoOutput = isNearToRespite
+              ? Math.floor(parsedCryptoInput * respitePerNearRate)
+              : Number((parsedCryptoInput / respitePerNearRate).toFixed(4));
+
+            const canPerformCryptoSwap = isNearToRespite
+              ? parsedCryptoInput >= 0.05 &&
+                parsedCryptoInput <= nearTestnetBalance &&
+                calculatedCryptoOutput >= 1
+              : parsedCryptoInput >= 10 &&
+                parsedCryptoInput <= respiteBalance &&
+                calculatedCryptoOutput > 0;
+
             return (
-              <div className="space-y-3">
-                {/* Top-Up RESPITE / Connect Wallet Box */}
+              <div className="space-y-3.5">
+                {/* Top-Up / NEAR Wallet Selector Box */}
                 <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                      NEAR WALLET &amp; RESPITE TOP-UP
+                      NEAR WALLET &amp; 3-CURRENCY ECONOMY
                     </div>
                     <div className="text-[10px] font-bold text-white/85 mt-0.5">
                       {walletConnected
-                        ? `Connected · Balance: ${lulBalance.toLocaleString()} LUL | ${cyonBalance.toLocaleString()} CYON | ${respiteBalance.toLocaleString()} RESPITE`
-                        : 'Connect NEAR Wallet to receive RESPITE balance & full access.'}
+                        ? `UID: ${playerNearAccount} · ${nearTestnetBalance.toFixed(2)} NEAR | ${respiteBalance.toLocaleString()} RESPITE`
+                        : 'Connect NEAR Wallet to swap NEAR Testnet <-> RESPITE (NEP-141 Coin).'}
                     </div>
                   </div>
                   {onConnectWallet && (
                     <button
                       type="button"
+                      data-merchant-open-wallet-selector-btn="true"
                       onClick={() => {
                         soundEngine.playUiClick();
                         onConnectWallet();
@@ -871,22 +906,35 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
                     >
                       <span className="skew-x-6 inline-block">
-                        {walletConnected ? 'TOP-UP RESPITE' : 'CONNECT WALLET'}
+                        {walletConnected ? 'WALLET SELECTOR' : 'CONNECT WALLET'}
                       </span>
                     </button>
                   )}
                 </div>
 
-                {/* LUL -> CYON Exchange Card */}
+                {/* ===========================================================
+                    CARD 1: NON-CRYPTO EXCHANGE (LUL -> CYON)
+                    LUL (earned from Fishing & Warzone mini-games) -> CYON (for Outfits & non-NFT items)
+                   =========================================================== */}
                 <div
                   data-lul-cyon-exchange-card="true"
                   className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
                 >
-                  <div className="p-5 space-y-4">
+                  {/* Non-Crypto Tier Banner */}
+                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                    <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase">
+                      <span className="skew-x-6 inline-block">1 · NON-CRYPTO EXCHANGE</span>
+                    </span>
+                    <span className="text-[9.5px] font-bold text-slate-300">
+                      Fishing &amp; Warzone LUL → CYON (Outfits &amp; Non-NFT Items)
+                    </span>
+                  </div>
+
+                  <div className="p-4 sm:p-5 space-y-3.5">
                     {/* Exchange Rate Header */}
-                    <div className="text-center space-y-1.5">
-                      <div className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-200">
-                        Current exchange rate
+                    <div className="text-center space-y-1">
+                      <div className="text-xs font-black uppercase tracking-wider text-slate-200">
+                        Non-Crypto Exchange Rate
                       </div>
                       <div className="flex items-center justify-center gap-2.5 text-lg sm:text-xl font-black">
                         <span className="inline-flex items-center gap-1.5">
@@ -907,7 +955,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                     {/* LUL Amount Input Row */}
                     <div className="flex items-center gap-3 max-w-xs mx-auto">
-                      <div className="-skew-x-6 w-14 py-2 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
+                      <div className="-skew-x-6 w-16 py-2 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
                         <span className="skew-x-6 inline-block">LUL</span>
                       </div>
                       <input
@@ -923,13 +971,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
 
                     {/* Middle Label: You will receive */}
-                    <div className="text-center text-xs sm:text-sm font-black uppercase tracking-wider text-slate-200">
-                      You will receive
+                    <div className="text-center text-xs font-black uppercase tracking-wider text-slate-200">
+                      You will receive (for Outfits &amp; Non-NFT Items)
                     </div>
 
                     {/* CYON Output Row */}
                     <div className="flex items-center gap-3 max-w-xs mx-auto">
-                      <div className="-skew-x-6 w-14 py-2 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
+                      <div className="-skew-x-6 w-16 py-2 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
                         <span className="skew-x-6 inline-block">CYON</span>
                       </div>
                       <div
@@ -942,7 +990,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
 
                   {/* Bottom Divider & Exchange Button */}
-                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-4 flex justify-center">
+                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3.5 flex justify-center">
                     <button
                       type="button"
                       data-exchange-submit-btn="true"
@@ -952,16 +1000,198 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onExchangeLulToCyon(parsedLul, calculatedCyon);
                         triggerNpcSpeech(
-                          `Done! ${parsedLul} LUL has been exchanged for +${calculatedCyon} CYON!`,
+                          `Done! ${parsedLul} LUL (non-crypto) has been exchanged for +${calculatedCyon} CYON!`,
                         );
                       }}
-                      className={`-skew-x-6 min-w-[180px] py-2.5 px-6 border-2 border-black text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
+                      className={`-skew-x-6 min-w-[190px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
                         canPerformExchange
                           ? 'bg-[#10b981] hover:bg-[#34d399] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
                           : 'bg-slate-600 text-slate-300 cursor-not-allowed'
                       }`}
                     >
-                      <span className="skew-x-6 inline-block">EXCHANGE</span>
+                      <span className="skew-x-6 inline-block">EXCHANGE LUL → CYON</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ===========================================================
+                    CARD 2: NEAR PROTOCOL CRYPTO SWAP (NEAR TESTNET <-> RESPITE NEP-141)
+                    RESPITE is a smart contract coin on NEAR (`respite.buddiesblitz.testnet`)
+                   =========================================================== */}
+                <div
+                  data-near-respite-swap-card="true"
+                  className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
+                >
+                  {/* Crypto Smart Contract Header Banner */}
+                  <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                    <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase">
+                      <span className="skew-x-6 inline-block">
+                        2 · NEAR CRYPTO SWAP (NEP-141 COIN)
+                      </span>
+                    </span>
+                    <span className="text-[9.5px] font-mono font-bold text-[#38bdf8]">
+                      {RESPITE_NEP141_METADATA.contractIdTestnet}
+                    </span>
+                  </div>
+
+                  <div className="p-4 sm:p-5 space-y-3.5">
+                    {/* Swap Direction Switch & Live Rate */}
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="flex items-center gap-1.5 bg-black/45 p-1 border border-white/20">
+                        <button
+                          type="button"
+                          data-swap-dir-near-to-respite="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setCryptoSwapDirection('near_to_respite');
+                            setCryptoSwapInputStr('1');
+                          }}
+                          className={`px-2.5 py-1 text-[10px] font-black uppercase cursor-pointer transition-colors ${
+                            isNearToRespite
+                              ? 'bg-[#38bdf8] text-black border border-black'
+                              : 'text-white/75 hover:text-white'
+                          }`}
+                        >
+                          NEAR TESTNET → RESPITE
+                        </button>
+                        <button
+                          type="button"
+                          data-swap-dir-respite-to-near="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setCryptoSwapDirection('respite_to_near');
+                            setCryptoSwapInputStr('100');
+                          }}
+                          className={`px-2.5 py-1 text-[10px] font-black uppercase cursor-pointer transition-colors ${
+                            !isNearToRespite
+                              ? 'bg-[#d8b4fe] text-black border border-black'
+                              : 'text-white/75 hover:text-white'
+                          }`}
+                        >
+                          RESPITE → NEAR TESTNET
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-2.5 text-base sm:text-lg font-black pt-0.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="-skew-x-6 px-2 py-0.5 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
+                            <span className="skew-x-6 inline-block">NEAR TESTNET</span>
+                          </span>
+                          <span className="text-white">1</span>
+                        </span>
+                        <span className="text-slate-400">=</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
+                            <span className="skew-x-6 inline-block">RESPITE</span>
+                          </span>
+                          <span className="text-white">{respitePerNearRate}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Input Row (NEAR Testnet or RESPITE) */}
+                    <div className="flex items-center gap-3 max-w-xs mx-auto">
+                      <div
+                        className={`-skew-x-6 w-24 py-2 ${
+                          isNearToRespite ? 'bg-[#38bdf8]' : 'bg-[#d8b4fe]'
+                        } text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[10px] font-black uppercase shrink-0`}
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {isNearToRespite ? 'NEAR TESTNET' : 'RESPITE'}
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        min={isNearToRespite ? 0.1 : 10}
+                        step={isNearToRespite ? 0.5 : 10}
+                        max={isNearToRespite ? nearTestnetBalance : respiteBalance}
+                        data-near-respite-swap-input="true"
+                        value={cryptoSwapInputStr}
+                        onChange={(e) => setCryptoSwapInputStr(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#d8b4fe]"
+                      />
+                    </div>
+
+                    {/* Middle Label: You will receive */}
+                    <div className="text-center text-xs font-black uppercase tracking-wider text-slate-200">
+                      You will receive ({isNearToRespite ? 'NEP-141 Smart Contract Coin' : 'NEAR Testnet'})
+                    </div>
+
+                    {/* Output Row (RESPITE or NEAR Testnet) */}
+                    <div className="flex items-center gap-3 max-w-xs mx-auto">
+                      <div
+                        className={`-skew-x-6 w-24 py-2 ${
+                          isNearToRespite ? 'bg-[#d8b4fe]' : 'bg-[#38bdf8]'
+                        } text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[10px] font-black uppercase shrink-0`}
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {isNearToRespite ? 'RESPITE' : 'NEAR TESTNET'}
+                        </span>
+                      </div>
+                      <div
+                        data-near-respite-swap-output="true"
+                        className="flex-1 px-3 py-2 bg-[#1e293b] text-[#d8b4fe] font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000]"
+                      >
+                        {calculatedCryptoOutput}
+                      </div>
+                    </div>
+
+                    {/* Latest NEP-141 Swap Receipt Banner */}
+                    {lastCryptoSwapReceipt && (
+                      <div
+                        data-near-respite-swap-receipt="true"
+                        className="p-2.5 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 flex items-center justify-between gap-2"
+                      >
+                        <span className="truncate">
+                          ✓ <strong className="text-[#10b981]">{lastCryptoSwapReceipt.methodName}</strong>:{' '}
+                          {lastCryptoSwapReceipt.nearAmount} NEAR ↔{' '}
+                          {lastCryptoSwapReceipt.respiteAmount} RESPITE
+                        </span>
+                        <a
+                          href={lastCryptoSwapReceipt.explorerUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#38bdf8] hover:underline font-mono shrink-0"
+                        >
+                          Tx ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bottom Divider & Swap Submit Button */}
+                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3.5 flex items-center justify-center gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      data-near-respite-swap-submit-btn="true"
+                      disabled={!canPerformCryptoSwap}
+                      onClick={() => {
+                        if (!canPerformCryptoSwap) return;
+                        soundEngine.playUiClick();
+                        const receipt = onSwapNearAndRespite?.(
+                          cryptoSwapDirection,
+                          parsedCryptoInput,
+                        );
+                        if (receipt) {
+                          setLastCryptoSwapReceipt(receipt);
+                        }
+                        triggerNpcSpeech(
+                          isNearToRespite
+                            ? `NEP-141 Swap complete! Swapped ${parsedCryptoInput} NEAR Testnet for +${calculatedCryptoOutput} RESPITE on ${RESPITE_NEP141_METADATA.contractIdTestnet}!`
+                            : `NEP-141 Swap complete! Swapped ${parsedCryptoInput} RESPITE for +${calculatedCryptoOutput} NEAR Testnet!`,
+                        );
+                      }}
+                      className={`-skew-x-6 min-w-[210px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
+                        canPerformCryptoSwap
+                          ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
+                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className="skew-x-6 inline-block">
+                        {isNearToRespite
+                          ? 'SWAP NEAR TESTNET → RESPITE'
+                          : 'SWAP RESPITE → NEAR TESTNET'}
+                      </span>
                     </button>
                   </div>
                 </div>
