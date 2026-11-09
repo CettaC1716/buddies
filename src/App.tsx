@@ -79,6 +79,7 @@ import {
   fetchNearAccountView,
   fetchNearNetworkStatus,
   formatPlayerSubAccountFromMaster,
+  generateRandomWalletLetters,
   isManagedSubAccountOfMaster,
   isMasterAdminWallet,
   isValidNearAccountId,
@@ -286,11 +287,20 @@ export default function App() {
   const [playerUid, setPlayerUid] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const savedWallet = window.localStorage.getItem('bb_last_connected_wallet_id');
-      if (savedWallet) return savedWallet.toLowerCase();
+      if (
+        savedWallet &&
+        !savedWallet.toLowerCase().startsWith('player1.') &&
+        !savedWallet.toLowerCase().endsWith('.buddiesblitz-master.testnet')
+      ) {
+        return savedWallet.toLowerCase();
+      }
+      if (savedWallet) {
+        window.localStorage.removeItem('bb_last_connected_wallet_id');
+      }
       let guestUid = window.localStorage.getItem('bb_guest_uid');
       if (!guestUid) {
-        const randHex = Math.floor(100000 + Math.random() * 900000).toString(16);
-        guestUid = `guest-${randHex}.testnet`;
+        const randLetters = generateRandomWalletLetters(6);
+        guestUid = `guest-${randLetters}.testnet`;
         window.localStorage.setItem('bb_guest_uid', guestUid);
       }
       return guestUid;
@@ -336,7 +346,14 @@ export default function App() {
     try {
       const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
       const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
-      if (!lastId || !rawMap) return null;
+      if (
+        !lastId ||
+        !rawMap ||
+        lastId.toLowerCase().startsWith('player1.') ||
+        lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
+      ) {
+        return null;
+      }
       const parsed = JSON.parse(rawMap) as Record<
         string,
         { displayName: string; gender: 'male' | 'female' }
@@ -1233,14 +1250,18 @@ export default function App() {
         setConnectedGoogleEmail(resolvedEmail);
       }
 
-      const defaultPrefix = cleanEmail
+      const emailPrefix = cleanEmail
         ? cleanEmail
             .split('@')[0]
             .replace(/\./g, '')
             .replace(/[^a-z0-9_-]/g, '')
             .slice(0, 20)
         : '';
-      setCitizenWalletNameDraft(defaultPrefix === 'player1' ? '' : defaultPrefix);
+      const initialWalletName =
+        emailPrefix && emailPrefix !== 'player1'
+          ? emailPrefix
+          : generateRandomWalletLetters(6);
+      setCitizenWalletNameDraft(initialWalletName);
       setOnboardingStep('completed');
       setCitizenWalletModalPhase('choose_name');
     },
@@ -2234,9 +2255,23 @@ export default function App() {
                 </p>
 
                 <div className="text-left space-y-2">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                    WALLET NAME
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                      WALLET NAME
+                    </label>
+                    <button
+                      type="button"
+                      data-randomize-wallet-name-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setCitizenWalletNameDraft(generateRandomWalletLetters(6));
+                        if (citizenWalletNameError) setCitizenWalletNameError(null);
+                      }}
+                      className="px-2 py-0.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
+                    >
+                      RANDOM LETTERS
+                    </button>
+                  </div>
                   <input
                     type="text"
                     maxLength={24}
@@ -2251,17 +2286,11 @@ export default function App() {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const cleanName = citizenWalletNameDraft.trim();
-                        if (!cleanName || cleanName.length < 2) {
-                          setCitizenWalletNameError(
-                            'Please enter a wallet name with at least 2 characters.',
-                          );
-                          return;
-                        }
+                        const cleanName = citizenWalletNameDraft.trim() || generateRandomWalletLetters(6);
                         void handleConnectWalletAndEnterLobby(cleanName);
                       }
                     }}
-                    placeholder="Enter wallet name (e.g. charvi, rakyan)"
+                    placeholder="Enter wallet name or use random letters"
                     className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
                   />
 
@@ -2285,13 +2314,7 @@ export default function App() {
                   type="button"
                   data-citizen-create-wallet-submit-btn="true"
                   onClick={() => {
-                    const cleanName = citizenWalletNameDraft.trim();
-                    if (!cleanName || cleanName.length < 2) {
-                      setCitizenWalletNameError(
-                        'Please enter a wallet name with at least 2 characters.',
-                      );
-                      return;
-                    }
+                    const cleanName = citizenWalletNameDraft.trim() || generateRandomWalletLetters(6);
                     void handleConnectWalletAndEnterLobby(cleanName);
                   }}
                   className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"

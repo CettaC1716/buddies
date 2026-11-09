@@ -13,12 +13,19 @@ function nearSubAccountProvisionerPlugin(): Plugin {
       server.middlewares.use('/api/near/verify-local-master-key', (_req, res) => {
         res.setHeader('Content-Type', 'application/json');
         try {
-          const credPath = path.join(
+          const primaryCredPath = path.join(
+            os.homedir(),
+            '.near-credentials',
+            'testnet',
+            'buddiesblitz.testnet.json',
+          );
+          const fallbackCredPath = path.join(
             os.homedir(),
             '.near-credentials',
             'testnet',
             'buddiesblitz-master.testnet.json',
           );
+          const credPath = fs.existsSync(primaryCredPath) ? primaryCredPath : fallbackCredPath;
           if (!fs.existsSync(credPath)) {
             res.statusCode = 200;
             res.end(JSON.stringify({ok: false, error: 'Local master keychain not found'}));
@@ -30,7 +37,7 @@ function nearSubAccountProvisionerPlugin(): Plugin {
           res.end(
             JSON.stringify({
               ok: true,
-              accountId: parsed.account_id || 'buddiesblitz-master.testnet',
+              accountId: parsed.account_id || 'buddiesblitz.testnet',
               publicKey: parsed.public_key || '',
             }),
           );
@@ -66,7 +73,7 @@ function nearSubAccountProvisionerPlugin(): Plugin {
               res.end(JSON.stringify({ok: false, error: 'Invalid sub-account prefix'}));
               return;
             }
-            const subAccountId = `${cleanPrefix}.buddiesblitz-master.testnet`;
+            const subAccountId = `${cleanPrefix}.buddiesblitz.testnet`;
             const masterPubKey = 'ed25519:4iZ3Q6wnahUGS9W2hQPruFeqQx5TngXdxNzesVTwtv48';
             execFile(
               'near',
@@ -79,7 +86,7 @@ function nearSubAccountProvisionerPlugin(): Plugin {
                 'use-manually-provided-public-key',
                 masterPubKey,
                 'sign-as',
-                'buddiesblitz-master.testnet',
+                'buddiesblitz.testnet',
                 'network-config',
                 'testnet',
                 'sign-with-legacy-keychain',

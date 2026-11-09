@@ -154,6 +154,15 @@ export function getNearBlocksTxUrl(txHash: string, networkId: NearNetworkId = 't
   return `${base}/txns/${encodeURIComponent(txHash)}`;
 }
 
+export function generateRandomWalletLetters(length = 6): string {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += letters.charAt(Math.floor(Math.random() * letters.length));
+  }
+  return result;
+}
+
 /**
  * Deterministically derives a clean NEAR account ID from an email, social handle, or wallet string.
  * Satisfies Track `games` ("Players sign in with a social or email login. No seed phrases, no wallet popups").
@@ -168,13 +177,16 @@ export function deriveSocialInvisibleNearAccount(
   sessionPublicKey: string;
 } {
   const cleaned = emailOrHandle.trim().toLowerCase();
-  const localPart = (cleaned.split('@')[0].split('.')[0] || 'player1')
-    .replace(/[^a-z0-9_-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 24) || 'player1';
+  const rawBase = cleaned.split('@')[0].split('.')[0];
+  const fallbackRandom = generateRandomWalletLetters(6);
+  const localPart =
+    (rawBase && rawBase !== 'player1' ? rawBase : fallbackRandom)
+      .replace(/[^a-z0-9_-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 24) || fallbackRandom;
   const suffix = networkId === 'mainnet' ? 'near' : 'testnet';
-  const accountId = `${localPart}.buddiesblitz-master.${suffix}`;
+  const accountId = `${localPart}.buddiesblitz.${suffix}`;
   const hashSeed = Array.from(accountId).reduce((acc, ch, i) => (acc * 31 + ch.charCodeAt(0) + i) >>> 0, 2166136261);
   const sessionPublicKey = `ed25519:SessionKey${hashSeed.toString(16).padStart(8, '0')}9xQp2Lz8R4wN1yB5cT6hJ8dF`;
 
@@ -1062,19 +1074,22 @@ export interface RecruitedFamilyMemberAgent {
  * 13. MASTER ADMIN UID, TREASURY VAULT & METEOR CHROME WALLET SECURITY
  * ============================================================================
  * On-Chain Provisioned Accounts (via `near-cli-rs`):
- *   - Master Admin UID : `buddiesblitz-master.testnet`
+ *   - Master Parent UID : `buddiesblitz.testnet`
+ *     (Tx: Gn2K6j8WEuN11Rjm3eJAziJ5Y45H8ym1DYicw9m7WXi7)
+ *   - Master Admin UID  : `buddiesblitz-master.testnet`
  *     (Tx: GU5LVuq8YeBjaES1RyQVCfMYqyC4QUw4VC4ZQp9X7Vgb)
- *   - Master Treasury  : `buddiesblitz-treasury.testnet`
+ *   - Master Treasury   : `buddiesblitz-treasury.testnet`
  *     (Tx: 5nU2ZWURqyUayWMaaKvSv4U9jyXfSTB75k61ZVG267AK)
  *
  * Security Architecture:
  *   - Seed phrases remain strictly inside the user's Meteor Chrome Extension
  *     or local OS Keychain (`~/.near-credentials`), never inside the codebase.
- *   - Logging in with `buddiesblitz-master.testnet` (or a bound Meteor Chrome
- *     Wallet address) automatically unlocks the hidden QA & Treasury Menu.
+ *   - Logging in with `buddiesblitz.testnet` (or `buddiesblitz-master.testnet`)
+ *     automatically unlocks the hidden QA & Treasury Menu when verified.
  * ============================================================================
  */
-export const MASTER_WALLET_ACCOUNT_ID = 'buddiesblitz-master.testnet';
+export const MASTER_WALLET_ACCOUNT_ID = 'buddiesblitz.testnet';
+export const LEGACY_MASTER_WALLET_ACCOUNT_ID = 'buddiesblitz-master.testnet';
 export const MASTER_TREASURY_ACCOUNT_ID = 'buddiesblitz-treasury.testnet';
 const METEOR_MASTER_STORAGE_KEY = 'bb_meteor_master_wallet_id';
 
@@ -1105,6 +1120,7 @@ export function isMasterAdminWallet(accountId: string | null | undefined): boole
   const customMaster = getCustomMasterWalletId();
   return (
     clean === MASTER_WALLET_ACCOUNT_ID ||
+    clean === LEGACY_MASTER_WALLET_ACCOUNT_ID ||
     clean === MASTER_TREASURY_ACCOUNT_ID ||
     (Boolean(customMaster) && clean === customMaster)
   );
@@ -1114,30 +1130,30 @@ export function isMasterAdminWallet(accountId: string | null | undefined): boole
  * ============================================================================
  * 14. HIERARCHICAL SUB-ACCOUNT PROVISIONING & DUAL-KEY MASTER CUSTODY ENGINE
  * ============================================================================
- * Seedless Player Onboarding Architecture (`<player>.buddiesblitz-master.testnet`):
+ * Seedless Player Onboarding Architecture (`<player>.buddiesblitz.testnet`):
  *   - Players join WITHOUT seed phrases or external wallet extensions.
  *   - Instead of connecting an external personal wallet, the Master account
- *     (`buddiesblitz-master.testnet`) spawns a hierarchical sub-account:
- *     `<username>.buddiesblitz-master.testnet`.
+ *     (`buddiesblitz.testnet`) spawns a hierarchical sub-account:
+ *     `<username>.buddiesblitz.testnet`.
  *   - Dual-Key Custody:
- *     1. `masterFullAccessKey`: Held by `buddiesblitz-master.testnet` (Master Admin),
+ *     1. `masterFullAccessKey`: Held by `buddiesblitz.testnet` (Master Admin),
  *        granting complete control to fund, sweep/recall tokens, rotate keys, or
  *        freeze/unfreeze any player sub-account.
  *     2. `playerSessionKey`: `FunctionCall` access key stored in the player's
  *        device session for seamless, seedless gameplay.
  *   - Verified On-Chain Default Sub-Account (`near-cli-rs`):
- *     `player1.buddiesblitz-master.testnet`
- *     (Tx: `3jYNZtd6QXjVKimXzGPUdYhi4WtN6jFmi5Kfheuw1bTF`)
+ *     `kxvqmr.buddiesblitz.testnet`
+ *     (Tx: `4fASWaAvYxtMXidoGwzV7q1FdcBPL3ZMiQDJyo4JScHC`)
  * ============================================================================
  */
 export const MASTER_FULL_ACCESS_PUBLIC_KEY =
   'ed25519:4iZ3Q6wnahUGS9W2hQPruFeqQx5TngXdxNzesVTwtv48';
 export const DEFAULT_ONCHAIN_SUB_ACCOUNT_ID =
-  'player1.buddiesblitz-master.testnet';
+  'kxvqmr.buddiesblitz.testnet';
 export const DEFAULT_ONCHAIN_SUB_ACCOUNT_TX =
-  '3jYNZtd6QXjVKimXzGPUdYhi4WtN6jFmi5Kfheuw1bTF';
+  '4fASWaAvYxtMXidoGwzV7q1FdcBPL3ZMiQDJyo4JScHC';
 
-const SUB_ACCOUNT_REGISTRY_STORAGE_KEY = 'bb_master_subaccount_registry_v1';
+const SUB_ACCOUNT_REGISTRY_STORAGE_KEY = 'bb_master_subaccount_registry_v2';
 
 export interface MasterManagedSubAccount {
   subAccountId: string;
@@ -1158,21 +1174,35 @@ export interface MasterManagedSubAccount {
 export function isManagedSubAccountOfMaster(accountId: string | null | undefined): boolean {
   if (!accountId) return false;
   const clean = accountId.trim().toLowerCase();
-  return clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`);
+  return (
+    clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`) ||
+    clean.endsWith(`.${LEGACY_MASTER_WALLET_ACCOUNT_ID}`)
+  );
 }
 
 /**
  * Formats any player username, handle, or raw input into a hierarchical
- * sub-account under `buddiesblitz-master.testnet`, while preserving
+ * sub-account under `buddiesblitz.testnet`, while preserving
  * explicit master/external NEAR accounts if they are already full `.testnet`/`.near` IDs.
  */
 export function formatPlayerSubAccountFromMaster(rawInput: string): string {
   const clean = rawInput.trim().toLowerCase();
-  if (!clean) return DEFAULT_ONCHAIN_SUB_ACCOUNT_ID;
+  if (!clean || clean === 'player1' || clean.startsWith('player1.')) {
+    return `${generateRandomWalletLetters(6)}.${MASTER_WALLET_ACCOUNT_ID}`;
+  }
+
+  // Upgrade legacy `.buddiesblitz-master.testnet` sub-accounts to `.buddiesblitz.testnet`
+  if (clean.endsWith(`.${LEGACY_MASTER_WALLET_ACCOUNT_ID}`)) {
+    const prefix = clean.slice(0, -`.${LEGACY_MASTER_WALLET_ACCOUNT_ID}`.length);
+    const safePrefix =
+      !prefix || prefix === 'player1' ? generateRandomWalletLetters(6) : prefix;
+    return `${safePrefix}.${MASTER_WALLET_ACCOUNT_ID}`;
+  }
 
   // Preserve Master, Treasury, or already-formatted sub-accounts of Master
   if (
     clean === MASTER_WALLET_ACCOUNT_ID ||
+    clean === LEGACY_MASTER_WALLET_ACCOUNT_ID ||
     clean === MASTER_TREASURY_ACCOUNT_ID ||
     clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`)
   ) {
@@ -1184,7 +1214,7 @@ export function formatPlayerSubAccountFromMaster(rawInput: string): string {
     return clean;
   }
 
-  // Otherwise, treat it as a Google email or seedless player handle and spawn `<slug>.buddiesblitz-master.testnet`
+  // Otherwise, treat it as a Google email or seedless player handle and spawn `<slug>.buddiesblitz.testnet`
   const baseHandle = clean.includes('@')
     ? clean.split('@')[0].replace(/\./g, '')
     : clean.split('.')[0];
@@ -1193,7 +1223,7 @@ export function formatPlayerSubAccountFromMaster(rawInput: string): string {
       .replace(/[^a-z0-9_-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .slice(0, 24) || 'player1';
+      .slice(0, 24) || generateRandomWalletLetters(6);
 
   return `${slug}.${MASTER_WALLET_ACCOUNT_ID}`;
 }
@@ -1208,17 +1238,17 @@ export function getDefaultManagedSubAccounts(): MasterManagedSubAccount[] {
     {
       subAccountId: DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
       parentMasterAccountId: MASTER_WALLET_ACCOUNT_ID,
-      displayName: 'PLAYER1',
+      displayName: 'KXVQMR',
       masterFullAccessKey: MASTER_FULL_ACCESS_PUBLIC_KEY,
       playerSessionKey: buildSessionKeyForSubAccount(DEFAULT_ONCHAIN_SUB_ACCOUNT_ID, 1),
       keyVersion: 1,
       status: 'ACTIVE',
       respiteBalance: 50,
       cyonBalance: 20,
-      nearDeposit: 0.5,
+      nearDeposit: 0.1,
       txHash: DEFAULT_ONCHAIN_SUB_ACCOUNT_TX,
       isOnChainVerified: true,
-      createdAtIso: '2026-11-09T06:11:55.000Z',
+      createdAtIso: '2026-11-09T07:59:00.000Z',
     },
   ];
 }
@@ -1260,7 +1290,7 @@ export function provisionOrGetPlayerSubAccount(
   const formattedId = formatPlayerSubAccountFromMaster(handleOrAccountId);
   const subAccountId = formattedId.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`)
     ? formattedId
-    : `${formattedId.split('.')[0].replace(/[^a-z0-9_-]/g, '-') || 'player1'}.${MASTER_WALLET_ACCOUNT_ID}`;
+    : `${formattedId.split('.')[0].replace(/[^a-z0-9_-]/g, '-') || generateRandomWalletLetters(6)}.${MASTER_WALLET_ACCOUNT_ID}`;
 
   const currentList = loadManagedSubAccounts();
   const existing = currentList.find((item) => item.subAccountId === subAccountId);
@@ -1505,7 +1535,11 @@ export async function verifyMasterAdminWithMeteorOrKey(options?: {
 
   if (ext.connected && ext.accountId) {
     candidateAccountId = ext.accountId.trim().toLowerCase();
-    if (candidateAccountId === MASTER_WALLET_ACCOUNT_ID && !candidatePubKey) {
+    if (
+      (candidateAccountId === MASTER_WALLET_ACCOUNT_ID ||
+        candidateAccountId === LEGACY_MASTER_WALLET_ACCOUNT_ID) &&
+      !candidatePubKey
+    ) {
       candidatePubKey = MASTER_FULL_ACCESS_PUBLIC_KEY;
     }
   }
@@ -1566,8 +1600,10 @@ export async function verifyMasterAdminWithMeteorOrKey(options?: {
     candidatePubKey = `ed25519:${candidatePubKey}`;
   }
 
-  // Verify that the account is `buddiesblitz-master.testnet` AND the public key matches an on-chain FullAccessKey
-  const isAccountMaster = candidateAccountId === MASTER_WALLET_ACCOUNT_ID;
+  // Verify that the account is `buddiesblitz.testnet` (or `buddiesblitz-master.testnet`) AND the public key matches an on-chain FullAccessKey
+  const isAccountMaster =
+    candidateAccountId === MASTER_WALLET_ACCOUNT_ID ||
+    candidateAccountId === LEGACY_MASTER_WALLET_ACCOUNT_ID;
   const isKeyOnChain =
     Boolean(candidatePubKey) && fullAccessKeys.includes(candidatePubKey);
 
@@ -1624,7 +1660,8 @@ export function loadSavedAdminCryptographicProof(): AdminCryptographicProof | nu
     if (
       parsed &&
       parsed.verified &&
-      parsed.accountId === MASTER_WALLET_ACCOUNT_ID &&
+      (parsed.accountId === MASTER_WALLET_ACCOUNT_ID ||
+        parsed.accountId === LEGACY_MASTER_WALLET_ACCOUNT_ID) &&
       parsed.publicKey === MASTER_FULL_ACCESS_PUBLIC_KEY
     ) {
       return parsed;
