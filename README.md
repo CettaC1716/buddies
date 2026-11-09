@@ -4,6 +4,13 @@ A 60 FPS WebGL 3D social city, shoreline fishing ground, and crate-stacking tact
 
 Live deployment: **[https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)**
 
+![East Beach shoreline boardwalk and Merchant Kai's fishing pier](docs/hero-1-beach-pier.jpg)
+
+| | |
+|---|---|
+| ![Safezone City articulated tram and transit shelter](docs/hero-2-tram-station.jpg) | ![Private citizen cutaway house interior](docs/hero-3-house-interior.jpg) |
+| ![Hana's Lobby Cafe and off-chain LUL to CYON exchange](docs/hero-4-hana-exchange.jpg) | ![Merchant Kai's coastal fish bucket and P2P Fish NFT marketplace](docs/hero-5-kai-fish-market.jpg) |
+
 ---
 
 It opens on a hexagonal comic-cutout title frame and steps into a three-zone world that shares one continuous character rig, lighting pipeline, and spatial chat layer:
@@ -77,6 +84,11 @@ Instead of buying units from a flat shop menu during battle, players select a pr
 - **`2x2x2` (full 8-crate cube)** — Heavy tanks and super air support
 
 When a crate is thrown onto a glowing hologram slot, the pad validates the 3D occupancy bitmask and resolves the recipe in place.
+
+| | |
+|---|---|
+| ![Stacking supply crates on the 2x2x2 base pad with Family Member AI buddies](docs/hero-7-crate-stacking-pad.jpg) | ![Central Oasis Lake shoreline fishing and supply crate drop](docs/hero-6-oasis-lake.jpg) |
+| ![Tactical Base Kiosk Weapon Armory contract selector](docs/hero-8-weapon-armory.jpg) | ![Tactical Base Kiosk Vehicle Hangar contract selector](docs/hero-9-vehicle-hangar.jpg) |
 
 ---
 
@@ -160,6 +172,17 @@ contracts/
   buddies-market/
     Cargo.toml                          near-sdk 5.5 Rust manifest for market.buddiesblitz.testnet
     src/lib.rs                          On-chain RESPITE, NEP-171 Fish NFT & P2P Marketplace contract
+
+docs/
+  hero-1-beach-pier.jpg                 East Beach shoreline boardwalk & fishing prompt
+  hero-2-tram-station.jpg               Safezone City articulated tram & transit shelter
+  hero-3-house-interior.jpg             Private citizen house cutaway interior
+  hero-4-hana-exchange.jpg              Hana's Lobby Cafe & off-chain LUL -> CYON exchange
+  hero-5-kai-fish-market.jpg            Merchant Kai's fish bucket & P2P Fish NFT marketplace
+  hero-6-oasis-lake.jpg                 Central Oasis Lake fishing & Warzone HUD
+  hero-7-crate-stacking-pad.jpg         2x2x2 base crate pad & Family Member AI buddies
+  hero-8-weapon-armory.jpg              Tactical Base Kiosk Weapon Armory modal
+  hero-9-vehicle-hangar.jpg             Tactical Base Kiosk Vehicle Hangar modal
 ```
 
 ---
