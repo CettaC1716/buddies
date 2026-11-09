@@ -64,8 +64,10 @@ import {
   uiStateToEmitterConfigPatch,
 } from './components/ParticleEmitterPanel';
 import {
+  DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
+  MASTER_FULL_ACCESS_PUBLIC_KEY,
   MASTER_TREASURY_ACCOUNT_ID,
   MASTER_WALLET_ACCOUNT_ID,
   connectInjectedNearExtensionWallet,
@@ -78,13 +80,22 @@ import {
   executeNearTestnetAndRespiteSwap,
   fetchNearAccountView,
   fetchNearNetworkStatus,
+  formatPlayerSubAccountFromMaster,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
+  isManagedSubAccountOfMaster,
   isMasterAdminWallet,
   isValidNearAccountId,
+  loadManagedSubAccounts,
+  provisionOrGetPlayerSubAccount,
   recordNep171SubAccountEarning,
   redirectToNearWebWalletLogin,
+  rotateSubAccountSessionKey,
   setCustomMasterWalletId,
+  spawnSubAccountOnChainViaMaster,
+  toggleSubAccountFreezeStatus,
+  updateSubAccountBalances,
+  type MasterManagedSubAccount,
   type NearAccountOnChainView,
   type NearRpcStatusSnapshot,
   type Nep171GamepassSubAccountLedger,
@@ -364,6 +375,11 @@ export default function App() {
   const [masterTreasuryRespite, setMasterTreasuryRespite] = useState<number>(50000);
   const [masterTreasuryCyon, setMasterTreasuryCyon] = useState<number>(10000);
   const [masterTreasuryNote, setMasterTreasuryNote] = useState<string>('');
+  const [managedSubAccounts, setManagedSubAccounts] = useState<MasterManagedSubAccount[]>(() =>
+    loadManagedSubAccounts(),
+  );
+  const [newSubAccountPrefixInput, setNewSubAccountPrefixInput] = useState<string>('');
+  const [isSpawningSubAccount, setIsSpawningSubAccount] = useState<boolean>(false);
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([
     'tatami_tea_table',
     'sakura_bonsai_pot',
@@ -1015,21 +1031,31 @@ export default function App() {
       const cleanInput = rawWalletInput.trim().toLowerCase();
       if (!cleanInput) {
         setWalletConnectError(
-          'Please enter your NEAR wallet address (e.g. yourname.testnet or yourname.near) or click Sign In with MyNearWallet above.',
+          'Please enter a player username (creates <username>.buddiesblitz-master.testnet with no seed phrase) or connect your Master Wallet.',
         );
         return;
       }
-      const defaultSuffix = walletNetworkChoice === 'mainnet' ? 'near' : 'testnet';
-      const normalizedWallet =
-        cleanInput.includes('.') || /^[0-9a-f]{64}$/.test(cleanInput)
-          ? cleanInput
-          : `${cleanInput.replace(/[^a-z0-9_-]/g, '')}.${defaultSuffix}`;
+      const normalizedWallet = formatPlayerSubAccountFromMaster(cleanInput);
 
       if (!isValidNearAccountId(normalizedWallet)) {
         setWalletConnectError(
-          `Invalid NEAR account format "${normalizedWallet}". Use a valid .testnet, .near, or 64-char implicit hex wallet address.`,
+          `Invalid NEAR account format "${normalizedWallet}". Enter a username or a valid .testnet/.near address.`,
         );
         return;
+      }
+
+      // If this is a player sub-account under buddiesblitz-master.testnet, register/verify it in Master Registry
+      if (isManagedSubAccountOfMaster(normalizedWallet)) {
+        const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(normalizedWallet);
+        setManagedSubAccounts(allSubAccounts);
+        if (subAccount.status === 'FROZEN') {
+          setWalletConnectError(
+            `Sub-account ${normalizedWallet} is currently FROZEN by Master Admin (${MASTER_WALLET_ACCOUNT_ID}). Unfreeze it in the Master QA / Treasury menu.`,
+          );
+          return;
+        }
+        setRespiteBalance(subAccount.respiteBalance);
+        setCyonBalance(subAccount.cyonBalance);
       }
 
       setIsVerifyingNearWallet(true);
@@ -1194,24 +1220,33 @@ export default function App() {
     soundEngine.playUiClick();
     const cleanGuestName =
       playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
-    let guestUid = 'guest.testnet';
+    const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(cleanGuestName);
+    setManagedSubAccounts(allSubAccounts);
+    const guestUid = subAccount.subAccountId;
     if (typeof window !== 'undefined') {
-      guestUid = window.localStorage.getItem('bb_guest_uid') || '';
-      if (!guestUid) {
-        const randHex = Math.floor(100000 + Math.random() * 900000).toString(16);
-        guestUid = `guest-${randHex}.testnet`;
+      try {
         window.localStorage.setItem('bb_guest_uid', guestUid);
+      } catch {
+        // ignore
       }
     }
     setPlayerUid(guestUid);
+    setRespiteBalance(subAccount.respiteBalance);
+    setCyonBalance(subAccount.cyonBalance);
     setPlayerDisplayName(cleanGuestName);
     setWalletUsernameDraft(cleanGuestName);
     setIsEditingGuestName(false);
     setOnboardingAuthMode('guest');
     setOnboardingLoadingProgress(10);
     setOnboardingStep('entering_lobby');
+    dispatchBuddyAction(`nearConnectAndMint:${guestUid}`);
     dispatchBuddyAction(`setCharacterGender:${characterGender}`);
     dispatchBuddyAction(`setPlayerDisplayName:${cleanGuestName}`);
+    setHud((prev) => ({
+      ...prev,
+      nearWalletConnected: true,
+      nearWalletId: guestUid,
+    }));
   }, [characterGender, dispatchBuddyAction, playerDisplayName]);
 
   useEffect(() => {
@@ -1708,18 +1743,18 @@ export default function App() {
               </p>
             </div>
 
-            {/* Option 1: Login as a Guest */}
+            {/* Option 1: New Player (Auto Sub-Account from Master, No Seed Phrase) */}
             <div className="p-4 bg-[#1e2230] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-[#b8ff3c]">
-                  OPTION 1 · NEW PLAYER / GUEST
+                  OPTION 1 - NEW PLAYER (NO SEED PHRASE)
                 </span>
                 <span className="px-2 py-0.5 bg-black/50 text-[10px] font-black uppercase text-white/80 border border-white/20">
                   SELECT 3D AVATAR
                 </span>
               </div>
               <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Choose a Male or Female character and set your temporary username before entering the Lobby.
+                Pick a Male or Female 3D avatar and username. Master automatically spawns your sub-account (&lt;name&gt;.{MASTER_WALLET_ACCOUNT_ID}) with zero seed phrase required.
               </p>
               <button
                 type="button"
@@ -1735,15 +1770,15 @@ export default function App() {
                 }}
                 className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
               >
-                <span className="skew-x-6 inline-block">LOGIN AS A GUEST</span>
+                <span className="skew-x-6 inline-block">CREATE PLAYER SUB-ACCOUNT &amp; AVATAR</span>
               </button>
             </div>
 
-            {/* Option 2: Continue with Real NEAR Protocol Wallet (Wallet Address = Player UID) */}
+            {/* Option 2: Player Sub-Account Login (No Seed Phrase) & Master Wallet Control */}
             <div className="p-4 bg-[#0f172a] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
-                  OPTION 2 · CONNECT NEAR WALLET (UID = WALLET)
+                  OPTION 2 - SUB-ACCOUNT &amp; MASTER WALLET
                 </span>
                 <div className="flex items-center gap-1">
                   <button
@@ -1779,93 +1814,17 @@ export default function App() {
                 </div>
               </div>
               <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Your NEAR wallet address acts as your unique Player UID. Returning wallet players automatically restore their saved username, avatar, and balances.
+                Players connect without a personal wallet or seed phrase: Master ({MASTER_WALLET_ACCOUNT_ID}) spawns and controls your sub-account (&lt;name&gt;.{MASTER_WALLET_ACCOUNT_ID}). Master Admin connects via Meteor Chrome Wallet to control all sub-accounts and treasuries.
               </p>
 
-              {/* Real NEAR Wallet Selector Modal & Web Wallet Buttons */}
-              <button
-                type="button"
-                data-open-near-wallet-selector-modal-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setIsNearWalletSelectorOpen(true);
-                }}
-                className="-skew-x-6 w-full py-2.5 px-3 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-              >
-                <span className="skew-x-6 inline-block">
-                  OPEN NEAR WALLET SELECTOR MODAL (@near-wallet-selector)
-                </span>
-              </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  data-mynearwallet-redirect-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    redirectToNearWebWalletLogin({
-                      networkId: walletNetworkChoice,
-                      provider: 'mynearwallet',
-                    });
-                  }}
-                  className="-skew-x-6 py-2 px-2.5 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                >
-                  <span className="skew-x-6 inline-block">MYNEARWALLET LOGIN</span>
-                </button>
-                <button
-                  type="button"
-                  data-meteor-wallet-btn="true"
-                  onClick={async () => {
-                    soundEngine.playUiClick();
-                    const ext = await connectInjectedNearExtensionWallet();
-                    if (ext.connected && ext.accountId) {
-                      setCustomMasterWalletId(ext.accountId);
-                      void handleConnectWalletAndEnterLobby(ext.accountId);
-                    } else {
-                      redirectToNearWebWalletLogin({
-                        networkId: walletNetworkChoice,
-                        provider: 'meteor',
-                      });
-                    }
-                  }}
-                  className="-skew-x-6 py-2 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                >
-                  <span className="skew-x-6 inline-block">METEOR CHROME WALLET</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                data-master-quick-login-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  void handleConnectWalletAndEnterLobby(MASTER_WALLET_ACCOUNT_ID);
-                }}
-                className="-skew-x-6 w-full py-2 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#facc15] border-2 border-[#facc15]/80 font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-              >
-                <span className="skew-x-6 inline-block">
-                  LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA & TREASURY
-                </span>
-              </button>
-
-              {savedWalletSummary && (
-                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                  <div className="min-w-0 truncate">
-                    Saved UID: <strong className="text-[#38bdf8] font-mono">{savedWalletSummary.walletId}</strong> ·{' '}
-                    <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong>
-                  </div>
-                  <button
-                    type="button"
-                    data-reconnect-saved-wallet-btn="true"
-                    onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
-                    className="px-2 py-0.5 bg-[#38bdf8] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
-                  >
-                    RECONNECT
-                  </button>
+              {/* Player Sub-Account Input & Instant Spawn/Login */}
+              <div className="space-y-2 p-2.5 bg-[#1e293b] border border-white/20">
+                <div className="flex items-center justify-between text-[9.5px] font-black uppercase">
+                  <span className="text-[#b8ff3c]">PLAYER SUB-ACCOUNT (NO SEED PHRASE)</span>
+                  <span className="text-[#38bdf8] font-mono truncate max-w-[200px]">
+                    {formatPlayerSubAccountFromMaster(walletConnectInput || 'player1')}
+                  </span>
                 </div>
-              )}
-
-              <div className="space-y-2">
                 <input
                   type="text"
                   data-wallet-connect-input="true"
@@ -1877,16 +1836,12 @@ export default function App() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       void handleConnectWalletAndEnterLobby(
-                        walletConnectInput || savedWalletSummary?.walletId || '',
+                        walletConnectInput || savedWalletSummary?.walletId || DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
                       );
                     }
                   }}
-                  placeholder={
-                    walletNetworkChoice === 'mainnet'
-                      ? 'Enter NEAR Wallet Address (e.g. yourname.near)'
-                      : 'Enter NEAR Wallet Address (e.g. yourname.testnet)'
-                  }
-                  aria-label="NEAR Wallet Account ID"
+                  placeholder="Enter username (auto-creates <name>.buddiesblitz-master.testnet)"
+                  aria-label="NEAR Sub-Account or Wallet Account ID"
                   className="w-full px-3 py-2 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
                 />
                 {walletConnectError && (
@@ -1903,19 +1858,90 @@ export default function App() {
                   disabled={isVerifyingNearWallet}
                   onClick={() =>
                     void handleConnectWalletAndEnterLobby(
-                      walletConnectInput || savedWalletSummary?.walletId || '',
+                      walletConnectInput || savedWalletSummary?.walletId || DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
                     )
                   }
-                  className="-skew-x-6 w-full py-3 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
+                  className="-skew-x-6 w-full py-2.5 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
                 >
                   <div className="skew-x-6 flex items-center justify-center gap-2">
                     <Wallet className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
                     <span>
                       {isVerifyingNearWallet
                         ? 'VERIFYING ON NEAR RPC...'
-                        : 'CONTINUE WITH CONNECT WALLET'}
+                        : 'ENTER WITH PLAYER SUB-ACCOUNT (NO SEED PHRASE)'}
                     </span>
                   </div>
+                </button>
+              </div>
+
+              {savedWalletSummary && (
+                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                  <div className="min-w-0 truncate">
+                    Saved UID: <strong className="text-[#38bdf8] font-mono">{savedWalletSummary.walletId}</strong> -{' '}
+                    <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    data-reconnect-saved-wallet-btn="true"
+                    onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
+                    className="px-2 py-0.5 bg-[#38bdf8] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
+                  >
+                    RECONNECT
+                  </button>
+                </div>
+              )}
+
+              {/* Master Admin & Meteor Chrome Wallet Section */}
+              <div className="pt-1 border-t border-white/15 space-y-2">
+                <div className="text-[9.5px] font-black uppercase text-[#facc15]">
+                  MASTER ADMIN &amp; WALLET SELECTOR (UNLOCKS QA, TREASURY &amp; SUB-ACCOUNTS)
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    data-meteor-wallet-btn="true"
+                    onClick={async () => {
+                      soundEngine.playUiClick();
+                      const ext = await connectInjectedNearExtensionWallet();
+                      if (ext.connected && ext.accountId) {
+                        setCustomMasterWalletId(ext.accountId);
+                        void handleConnectWalletAndEnterLobby(ext.accountId);
+                      } else {
+                        redirectToNearWebWalletLogin({
+                          networkId: walletNetworkChoice,
+                          provider: 'meteor',
+                        });
+                      }
+                    }}
+                    className="-skew-x-6 py-2 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                  >
+                    <span className="skew-x-6 inline-block">METEOR CHROME WALLET</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-open-near-wallet-selector-modal-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsNearWalletSelectorOpen(true);
+                    }}
+                    className="-skew-x-6 py-2 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                  >
+                    <span className="skew-x-6 inline-block">WALLET SELECTOR MODAL</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  data-master-quick-login-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    void handleConnectWalletAndEnterLobby(MASTER_WALLET_ACCOUNT_ID);
+                  }}
+                  className="-skew-x-6 w-full py-2 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#facc15] border-2 border-[#facc15]/80 font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                >
+                  <span className="skew-x-6 inline-block">
+                    LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA &amp; TREASURY
+                  </span>
                 </button>
               </div>
             </div>
@@ -2936,6 +2962,209 @@ export default function App() {
                       >
                         RESTOCK ALL ITEMS
                       </button>
+                    </div>
+                  </div>
+
+                  {/* 3. PLAYER SUB-ACCOUNT CONTROL (*.buddiesblitz-master.testnet) */}
+                  <div
+                    data-master-subaccount-control-box="true"
+                    className="p-2 bg-[#1e293b] border border-white/20 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between text-[9.5px] font-black uppercase">
+                      <span className="text-[#38bdf8]">3. PLAYER SUB-ACCOUNTS (MASTER CUSTODY)</span>
+                      <span className="px-1.5 py-0.5 text-[8px] font-black bg-[#b8ff3c] text-black">
+                        {managedSubAccounts.length} SUB-ACCOUNTS
+                      </span>
+                    </div>
+                    <div className="text-[8.5px] font-mono text-slate-300 truncate">
+                      Master FullAccessKey: {MASTER_FULL_ACCESS_PUBLIC_KEY.slice(0, 28)}...
+                    </div>
+
+                    {/* Spawn New Sub-Account Input */}
+                    <div className="flex gap-1 pt-0.5">
+                      <input
+                        type="text"
+                        data-spawn-subaccount-input="true"
+                        value={newSubAccountPrefixInput}
+                        onChange={(e) => setNewSubAccountPrefixInput(e.target.value)}
+                        placeholder="New player prefix (e.g. player2)"
+                        className="flex-1 min-w-0 px-2 py-1 bg-white text-black font-bold text-[9.5px] border border-black"
+                      />
+                      <button
+                        type="button"
+                        data-spawn-subaccount-btn="true"
+                        disabled={isSpawningSubAccount}
+                        onClick={async () => {
+                          soundEngine.playUiClick();
+                          const prefix = newSubAccountPrefixInput.trim();
+                          if (!prefix) return;
+                          setIsSpawningSubAccount(true);
+                          const res = await spawnSubAccountOnChainViaMaster(prefix);
+                          setIsSpawningSubAccount(false);
+                          setManagedSubAccounts(res.allSubAccounts);
+                          setNewSubAccountPrefixInput('');
+                          setMasterTreasuryNote(
+                            res.onChainCreated
+                              ? `Spawned on-chain sub-account ${res.subAccount.subAccountId} (Tx: ${res.subAccount.txHash.slice(0, 12)}...).`
+                              : `Provisioned sub-account ${res.subAccount.subAccountId} under Master control.`,
+                          );
+                        }}
+                        className="px-2 py-1 bg-[#b8ff3c] text-black font-black text-[9px] uppercase border border-black cursor-pointer shrink-0"
+                      >
+                        {isSpawningSubAccount ? 'SPAWNING...' : 'SPAWN SUB'}
+                      </button>
+                    </div>
+
+                    {/* Managed Sub-Accounts List */}
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5 pt-1">
+                      {managedSubAccounts.map((sub) => (
+                        <div
+                          key={sub.subAccountId}
+                          data-managed-subaccount-row={sub.subAccountId}
+                          className="p-1.5 bg-black/45 border border-white/15 space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[9px] font-mono font-black text-[#38bdf8] truncate">
+                              {sub.subAccountId}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span
+                                className={`px-1 py-0.2 text-[7.5px] font-black uppercase ${
+                                  sub.isOnChainVerified
+                                    ? 'bg-[#38bdf8] text-black'
+                                    : 'bg-white/20 text-white'
+                                }`}
+                              >
+                                {sub.isOnChainVerified ? 'ON-CHAIN' : 'MANAGED'}
+                              </span>
+                              <span
+                                className={`px-1 py-0.2 text-[7.5px] font-black uppercase ${
+                                  sub.status === 'ACTIVE'
+                                    ? 'bg-[#10b981] text-black'
+                                    : 'bg-[#ff3b30] text-white'
+                                }`}
+                              >
+                                {sub.status}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[8.5px] font-bold text-slate-300">
+                            <span>
+                              RESPITE: <strong className="text-[#d8b4fe]">{sub.respiteBalance}</strong> | CYON:{' '}
+                              <strong className="text-[#10b981]">{sub.cyonBalance}</strong>
+                            </span>
+                            <span className="font-mono text-[8px] text-slate-400">
+                              Session Key v{sub.keyVersion}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-5 gap-1 pt-0.5">
+                            <button
+                              type="button"
+                              data-sub-grant-respite-btn={sub.subAccountId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                if (masterTreasuryRespite < 50) return;
+                                setMasterTreasuryRespite((prev) => Math.max(0, prev - 50));
+                                const next = updateSubAccountBalances(sub.subAccountId, 50, 0);
+                                setManagedSubAccounts(next);
+                                if (
+                                  (hud.nearWalletId || playerUid).toLowerCase() ===
+                                  sub.subAccountId
+                                ) {
+                                  setRespiteBalance((prev) => prev + 50);
+                                }
+                                setMasterTreasuryNote(
+                                  `Granted +50 RESPITE from Master Treasury to ${sub.subAccountId}.`,
+                                );
+                              }}
+                              className="py-0.5 px-1 bg-[#d8b4fe] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
+                            >
+                              +50 RSP
+                            </button>
+                            <button
+                              type="button"
+                              data-sub-sweep-respite-btn={sub.subAccountId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                const recallAmt = sub.respiteBalance;
+                                if (recallAmt <= 0) return;
+                                setMasterTreasuryRespite((prev) => prev + recallAmt);
+                                const next = updateSubAccountBalances(
+                                  sub.subAccountId,
+                                  -recallAmt,
+                                  0,
+                                );
+                                setManagedSubAccounts(next);
+                                if (
+                                  (hud.nearWalletId || playerUid).toLowerCase() ===
+                                  sub.subAccountId
+                                ) {
+                                  setRespiteBalance(0);
+                                }
+                                setMasterTreasuryNote(
+                                  `Recalled ${recallAmt} RESPITE from ${sub.subAccountId} to Master Treasury.`,
+                                );
+                              }}
+                              className="py-0.5 px-1 bg-[#facc15] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
+                            >
+                              SWEEP
+                            </button>
+                            <button
+                              type="button"
+                              data-sub-rotate-key-btn={sub.subAccountId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                const next = rotateSubAccountSessionKey(sub.subAccountId);
+                                setManagedSubAccounts(next);
+                                setMasterTreasuryNote(
+                                  `Rotated FunctionCall session key for ${sub.subAccountId} (Master FullAccessKey preserved).`,
+                                );
+                              }}
+                              className="py-0.5 px-1 bg-[#38bdf8] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
+                            >
+                              KEY ROT
+                            </button>
+                            <button
+                              type="button"
+                              data-sub-freeze-btn={sub.subAccountId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                const next = toggleSubAccountFreezeStatus(sub.subAccountId);
+                                setManagedSubAccounts(next);
+                                const updated = next.find(
+                                  (item) => item.subAccountId === sub.subAccountId,
+                                );
+                                setMasterTreasuryNote(
+                                  `Updated ${sub.subAccountId} status to ${updated?.status || 'FROZEN'}.`,
+                                );
+                              }}
+                              className={`py-0.5 px-1 font-black text-[7.5px] uppercase border border-black cursor-pointer ${
+                                sub.status === 'ACTIVE'
+                                  ? 'bg-[#ff3b30] text-white'
+                                  : 'bg-[#10b981] text-black'
+                              }`}
+                            >
+                              {sub.status === 'ACTIVE' ? 'FREEZE' : 'UNFREEZE'}
+                            </button>
+                            <button
+                              type="button"
+                              data-sub-use-btn={sub.subAccountId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                void handleConnectWalletAndEnterLobby(sub.subAccountId);
+                                setMasterTreasuryNote(
+                                  `Switched active session to sub-account ${sub.subAccountId}.`,
+                                );
+                              }}
+                              className="py-0.5 px-1 bg-[#b8ff3c] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
+                            >
+                              USE SUB
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
 

@@ -168,15 +168,15 @@ export function deriveSocialInvisibleNearAccount(
   sessionPublicKey: string;
 } {
   const cleaned = emailOrHandle.trim().toLowerCase();
-  const localPart = (cleaned.split('@')[0] || 'commander')
+  const localPart = (cleaned.split('@')[0].split('.')[0] || 'player1')
     .replace(/[^a-z0-9_-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 24) || 'commander';
+    .slice(0, 24) || 'player1';
   const suffix = networkId === 'mainnet' ? 'near' : 'testnet';
-  const accountId = `${localPart}.buddiesblitz.${suffix}`;
+  const accountId = `${localPart}.buddiesblitz-master.${suffix}`;
   const hashSeed = Array.from(accountId).reduce((acc, ch, i) => (acc * 31 + ch.charCodeAt(0) + i) >>> 0, 2166136261);
-  const sessionPublicKey = `ed25519:SocialKey${hashSeed.toString(16).padStart(8, '0')}9xQp2Lz8R4wN1yB5cT6hJ8dF`;
+  const sessionPublicKey = `ed25519:SessionKey${hashSeed.toString(16).padStart(8, '0')}9xQp2Lz8R4wN1yB5cT6hJ8dF`;
 
   return {
     accountId,
@@ -1109,6 +1109,302 @@ export function isMasterAdminWallet(accountId: string | null | undefined): boole
     (Boolean(customMaster) && clean === customMaster)
   );
 }
+
+/**
+ * ============================================================================
+ * 14. HIERARCHICAL SUB-ACCOUNT PROVISIONING & DUAL-KEY MASTER CUSTODY ENGINE
+ * ============================================================================
+ * Seedless Player Onboarding Architecture (`<player>.buddiesblitz-master.testnet`):
+ *   - Players join WITHOUT seed phrases or external wallet extensions.
+ *   - Instead of connecting an external personal wallet, the Master account
+ *     (`buddiesblitz-master.testnet`) spawns a hierarchical sub-account:
+ *     `<username>.buddiesblitz-master.testnet`.
+ *   - Dual-Key Custody:
+ *     1. `masterFullAccessKey`: Held by `buddiesblitz-master.testnet` (Master Admin),
+ *        granting complete control to fund, sweep/recall tokens, rotate keys, or
+ *        freeze/unfreeze any player sub-account.
+ *     2. `playerSessionKey`: `FunctionCall` access key stored in the player's
+ *        device session for seamless, seedless gameplay.
+ *   - Verified On-Chain Default Sub-Account (`near-cli-rs`):
+ *     `player1.buddiesblitz-master.testnet`
+ *     (Tx: `3jYNZtd6QXjVKimXzGPUdYhi4WtN6jFmi5Kfheuw1bTF`)
+ * ============================================================================
+ */
+export const MASTER_FULL_ACCESS_PUBLIC_KEY =
+  'ed25519:4iZ3Q6wnahUGS9W2hQPruFeqQx5TngXdxNzesVTwtv48';
+export const DEFAULT_ONCHAIN_SUB_ACCOUNT_ID =
+  'player1.buddiesblitz-master.testnet';
+export const DEFAULT_ONCHAIN_SUB_ACCOUNT_TX =
+  '3jYNZtd6QXjVKimXzGPUdYhi4WtN6jFmi5Kfheuw1bTF';
+
+const SUB_ACCOUNT_REGISTRY_STORAGE_KEY = 'bb_master_subaccount_registry_v1';
+
+export interface MasterManagedSubAccount {
+  subAccountId: string;
+  parentMasterAccountId: string;
+  displayName: string;
+  masterFullAccessKey: string;
+  playerSessionKey: string;
+  keyVersion: number;
+  status: 'ACTIVE' | 'FROZEN';
+  respiteBalance: number;
+  cyonBalance: number;
+  nearDeposit: number;
+  txHash: string;
+  isOnChainVerified: boolean;
+  createdAtIso: string;
+}
+
+export function isManagedSubAccountOfMaster(accountId: string | null | undefined): boolean {
+  if (!accountId) return false;
+  const clean = accountId.trim().toLowerCase();
+  return clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`);
+}
+
+/**
+ * Formats any player username, handle, or raw input into a hierarchical
+ * sub-account under `buddiesblitz-master.testnet`, while preserving
+ * explicit master/external NEAR accounts if they are already full `.testnet`/`.near` IDs.
+ */
+export function formatPlayerSubAccountFromMaster(rawInput: string): string {
+  const clean = rawInput.trim().toLowerCase();
+  if (!clean) return DEFAULT_ONCHAIN_SUB_ACCOUNT_ID;
+
+  // Preserve Master, Treasury, or already-formatted sub-accounts of Master
+  if (
+    clean === MASTER_WALLET_ACCOUNT_ID ||
+    clean === MASTER_TREASURY_ACCOUNT_ID ||
+    clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`)
+  ) {
+    return clean;
+  }
+
+  // If the user explicitly typed another full external `.testnet` or `.near` address (e.g. Meteor wallet)
+  if ((clean.endsWith('.testnet') || clean.endsWith('.near')) && isValidNearAccountId(clean)) {
+    return clean;
+  }
+
+  // Otherwise, treat it as a seedless player handle and spawn `<slug>.buddiesblitz-master.testnet`
+  const slug =
+    clean
+      .split('@')[0]
+      .split('.')[0]
+      .replace(/[^a-z0-9_-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 24) || 'player1';
+
+  return `${slug}.${MASTER_WALLET_ACCOUNT_ID}`;
+}
+
+function buildSessionKeyForSubAccount(subAccountId: string, keyVersion = 1): string {
+  const hash = generateDeterministicNearTxHash(`session-key:${subAccountId}:v${keyVersion}`);
+  return `ed25519:FnKey_v${keyVersion}_${hash.slice(0, 24)}`;
+}
+
+export function getDefaultManagedSubAccounts(): MasterManagedSubAccount[] {
+  return [
+    {
+      subAccountId: DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
+      parentMasterAccountId: MASTER_WALLET_ACCOUNT_ID,
+      displayName: 'PLAYER1',
+      masterFullAccessKey: MASTER_FULL_ACCESS_PUBLIC_KEY,
+      playerSessionKey: buildSessionKeyForSubAccount(DEFAULT_ONCHAIN_SUB_ACCOUNT_ID, 1),
+      keyVersion: 1,
+      status: 'ACTIVE',
+      respiteBalance: 50,
+      cyonBalance: 20,
+      nearDeposit: 0.5,
+      txHash: DEFAULT_ONCHAIN_SUB_ACCOUNT_TX,
+      isOnChainVerified: true,
+      createdAtIso: '2026-11-09T06:11:55.000Z',
+    },
+  ];
+}
+
+export function loadManagedSubAccounts(): MasterManagedSubAccount[] {
+  const defaults = getDefaultManagedSubAccounts();
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const raw = window.localStorage.getItem(SUB_ACCOUNT_REGISTRY_STORAGE_KEY);
+    if (!raw) {
+      window.localStorage.setItem(SUB_ACCOUNT_REGISTRY_STORAGE_KEY, JSON.stringify(defaults));
+      return defaults;
+    }
+    const parsed = JSON.parse(raw) as MasterManagedSubAccount[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return defaults;
+    const hasDefault = parsed.some((item) => item.subAccountId === DEFAULT_ONCHAIN_SUB_ACCOUNT_ID);
+    return hasDefault ? parsed : [...defaults, ...parsed];
+  } catch {
+    return defaults;
+  }
+}
+
+export function saveManagedSubAccounts(list: MasterManagedSubAccount[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SUB_ACCOUNT_REGISTRY_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
+export function provisionOrGetPlayerSubAccount(
+  handleOrAccountId: string,
+): {
+  subAccount: MasterManagedSubAccount;
+  allSubAccounts: MasterManagedSubAccount[];
+  createdNew: boolean;
+} {
+  const formattedId = formatPlayerSubAccountFromMaster(handleOrAccountId);
+  const subAccountId = formattedId.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`)
+    ? formattedId
+    : `${formattedId.split('.')[0].replace(/[^a-z0-9_-]/g, '-') || 'player1'}.${MASTER_WALLET_ACCOUNT_ID}`;
+
+  const currentList = loadManagedSubAccounts();
+  const existing = currentList.find((item) => item.subAccountId === subAccountId);
+  if (existing) {
+    return {
+      subAccount: existing,
+      allSubAccounts: currentList,
+      createdNew: false,
+    };
+  }
+
+  const prefix = subAccountId.split('.')[0] || 'player';
+  const txHash = generateDeterministicNearTxHash(
+    `spawn-subaccount:${MASTER_WALLET_ACCOUNT_ID}->${subAccountId}:${Date.now()}`,
+  );
+  const newEntry: MasterManagedSubAccount = {
+    subAccountId,
+    parentMasterAccountId: MASTER_WALLET_ACCOUNT_ID,
+    displayName: prefix.toUpperCase(),
+    masterFullAccessKey: MASTER_FULL_ACCESS_PUBLIC_KEY,
+    playerSessionKey: buildSessionKeyForSubAccount(subAccountId, 1),
+    keyVersion: 1,
+    status: 'ACTIVE',
+    respiteBalance: 25,
+    cyonBalance: 10,
+    nearDeposit: 0.1,
+    txHash,
+    isOnChainVerified: false,
+    createdAtIso: new Date().toISOString(),
+  };
+
+  const nextList = [newEntry, ...currentList];
+  saveManagedSubAccounts(nextList);
+  return {
+    subAccount: newEntry,
+    allSubAccounts: nextList,
+    createdNew: true,
+  };
+}
+
+export function rotateSubAccountSessionKey(subAccountId: string): MasterManagedSubAccount[] {
+  const clean = subAccountId.trim().toLowerCase();
+  const list = loadManagedSubAccounts();
+  const next = list.map((item) => {
+    if (item.subAccountId !== clean) return item;
+    const nextVersion = item.keyVersion + 1;
+    return {
+      ...item,
+      keyVersion: nextVersion,
+      playerSessionKey: buildSessionKeyForSubAccount(clean, nextVersion),
+      txHash: generateDeterministicNearTxHash(`rotate-key:${clean}:v${nextVersion}:${Date.now()}`),
+    };
+  });
+  saveManagedSubAccounts(next);
+  return next;
+}
+
+export function toggleSubAccountFreezeStatus(subAccountId: string): MasterManagedSubAccount[] {
+  const clean = subAccountId.trim().toLowerCase();
+  const list = loadManagedSubAccounts();
+  const next = list.map((item) => {
+    if (item.subAccountId !== clean) return item;
+    const nextStatus: 'ACTIVE' | 'FROZEN' = item.status === 'ACTIVE' ? 'FROZEN' : 'ACTIVE';
+    return {
+      ...item,
+      status: nextStatus,
+    };
+  });
+  saveManagedSubAccounts(next);
+  return next;
+}
+
+export function updateSubAccountBalances(
+  subAccountId: string,
+  deltaRespite: number,
+  deltaCyon = 0,
+): MasterManagedSubAccount[] {
+  const clean = subAccountId.trim().toLowerCase();
+  const list = loadManagedSubAccounts();
+  const next = list.map((item) => {
+    if (item.subAccountId !== clean) return item;
+    return {
+      ...item,
+      respiteBalance: Math.max(0, item.respiteBalance + deltaRespite),
+      cyonBalance: Math.max(0, item.cyonBalance + deltaCyon),
+    };
+  });
+  saveManagedSubAccounts(next);
+  return next;
+}
+
+export async function spawnSubAccountOnChainViaMaster(
+  prefixOrAccountId: string,
+): Promise<{
+  subAccount: MasterManagedSubAccount;
+  allSubAccounts: MasterManagedSubAccount[];
+  onChainCreated: boolean;
+}> {
+  const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(prefixOrAccountId);
+  const prefix = subAccount.subAccountId.split('.')[0];
+
+  try {
+    const resp = await fetch('/api/near/spawn-subaccount', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix }),
+    });
+    if (resp.ok) {
+      const data = (await resp.json()) as {
+        ok?: boolean;
+        subAccountId?: string;
+        txHash?: string | null;
+      };
+      if (data.ok && data.txHash) {
+        const updatedList = loadManagedSubAccounts().map((item) =>
+          item.subAccountId === subAccount.subAccountId
+            ? {
+                ...item,
+                txHash: data.txHash || item.txHash,
+                isOnChainVerified: true,
+              }
+            : item,
+        );
+        saveManagedSubAccounts(updatedList);
+        const updatedItem =
+          updatedList.find((item) => item.subAccountId === subAccount.subAccountId) || subAccount;
+        return {
+          subAccount: updatedItem,
+          allSubAccounts: updatedList,
+          onChainCreated: true,
+        };
+      }
+    }
+  } catch {
+    // Fallback to local registry when static / offline
+  }
+
+  return {
+    subAccount,
+    allSubAccounts,
+    onChainCreated: subAccount.isOnChainVerified,
+  };
+}
+
+
 
 
 

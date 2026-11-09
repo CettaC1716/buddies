@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+   DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
   MASTER_TREASURY_ACCOUNT_ID,
   MASTER_WALLET_ACCOUNT_ID,
   NEAR_WALLET_SELECTOR_OPTIONS,
@@ -7,6 +8,7 @@ import {
   NearWalletSelectorOption,
   RESPITE_NEP141_METADATA,
   connectInjectedNearExtensionWallet,
+  formatPlayerSubAccountFromMaster,
   isValidNearAccountId,
   redirectToNearWebWalletLogin,
   setCustomMasterWalletId,
@@ -58,12 +60,10 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     NEAR_WALLET_SELECTOR_OPTIONS[0];
 
   const handleConnectDirectRpc = async () => {
-    const clean = accountInput.trim().toLowerCase();
+    const clean = formatPlayerSubAccountFromMaster(accountInput);
     if (!clean || !isValidNearAccountId(clean)) {
       setStatusError(
-        networkId === 'mainnet'
-          ? 'Please enter a valid NEAR Mainnet address (e.g. yourname.near).'
-          : 'Please enter a valid NEAR Testnet address (e.g. yourname.testnet).',
+        'Please enter a player username (creates <name>.buddiesblitz-master.testnet) or a valid NEAR address.',
       );
       return;
     }
@@ -318,30 +318,50 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 </div>
               )}
 
-              {/* Quick Master Admin UID Login Button */}
+              {/* Quick Master Admin UID & Sub-Account Login Buttons */}
               <div className="p-2.5 bg-[#1e1b4b] border-2 border-black space-y-1.5">
                 <div className="text-[10px] font-black uppercase text-[#facc15]">
-                  PROVISIONED MASTER &amp; TREASURY ACCOUNTS
+                  MASTER &amp; PLAYER SUB-ACCOUNT HIERARCHY
                 </div>
                 <div className="text-[9.5px] font-mono text-white/85">
-                  Master UID: {MASTER_WALLET_ACCOUNT_ID} | Treasury: {MASTER_TREASURY_ACCOUNT_ID}
+                  Master: {MASTER_WALLET_ACCOUNT_ID} | Treasury: {MASTER_TREASURY_ACCOUNT_ID}
                 </div>
-                <button
-                  type="button"
-                  data-login-master-uid-btn="true"
-                  onClick={async () => {
-                    soundEngine.playUiClick();
-                    setAccountInput(MASTER_WALLET_ACCOUNT_ID);
-                    setCustomMasterWalletId(MASTER_WALLET_ACCOUNT_ID);
-                    await onConnectAccountId(MASTER_WALLET_ACCOUNT_ID);
-                    onClose();
-                  }}
-                  className="-skew-x-6 w-full py-2 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black font-black text-[10px] uppercase tracking-wider cursor-pointer"
-                >
-                  <span className="skew-x-6 inline-block">
-                    LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA &amp; TREASURY
-                  </span>
-                </button>
+                <div className="text-[9px] font-bold text-slate-300">
+                  Players without a wallet are automatically assigned &lt;name&gt;.{MASTER_WALLET_ACCOUNT_ID} with zero seed phrase. Master retains FullAccessKey control.
+                </div>
+                <div className="grid grid-cols-1 gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    data-login-default-subaccount-btn="true"
+                    onClick={async () => {
+                      soundEngine.playUiClick();
+                      setAccountInput(DEFAULT_ONCHAIN_SUB_ACCOUNT_ID);
+                      await onConnectAccountId(DEFAULT_ONCHAIN_SUB_ACCOUNT_ID);
+                      onClose();
+                    }}
+                    className="-skew-x-6 w-full py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black font-black text-[10px] uppercase tracking-wider cursor-pointer"
+                  >
+                    <span className="skew-x-6 inline-block">
+                      ENTER AS PLAYER SUB-ACCOUNT ({DEFAULT_ONCHAIN_SUB_ACCOUNT_ID})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-login-master-uid-btn="true"
+                    onClick={async () => {
+                      soundEngine.playUiClick();
+                      setAccountInput(MASTER_WALLET_ACCOUNT_ID);
+                      setCustomMasterWalletId(MASTER_WALLET_ACCOUNT_ID);
+                      await onConnectAccountId(MASTER_WALLET_ACCOUNT_ID);
+                      onClose();
+                    }}
+                    className="-skew-x-6 w-full py-2 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black font-black text-[10px] uppercase tracking-wider cursor-pointer"
+                  >
+                    <span className="skew-x-6 inline-block">
+                      LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA &amp; TREASURY
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {selectedOption.id === 'sender-extension' && (
@@ -361,7 +381,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                       } else {
                         setStatusError(
                           ext.error ||
-                            'No injected NEAR browser extension found. Use Direct NEAR Account ID below or MyNearWallet.',
+                            'No injected NEAR browser extension found. Use Player Sub-Account input below.',
                         );
                       }
                     }}
@@ -374,10 +394,10 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 </div>
               )}
 
-              {/* Direct NEAR Account ID input is always available as quick fallback or primary when selected */}
+              {/* Player Sub-Account or Direct NEAR Account ID input */}
               <div className="pt-2 border-t border-white/15 space-y-2">
                 <div className="text-[10px] font-black uppercase text-[#b8ff3c]">
-                  BIND NEAR WALLET ADDRESS (JSON-RPC VERIFIED UID)
+                  CREATE OR CONNECT PLAYER SUB-ACCOUNT (NO SEED PHRASE)
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -393,9 +413,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                         void handleConnectDirectRpc();
                       }
                     }}
-                    placeholder={
-                      networkId === 'mainnet' ? 'yourname.near' : 'yourname.testnet'
-                    }
+                    placeholder="Enter username (creates <name>.buddiesblitz-master.testnet)"
                     className="flex-1 min-w-0 px-3 py-2 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
                   />
                   <button
@@ -421,9 +439,9 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
 
             {/* Footer Note on 3-Currency Separation */}
             <div className="p-2.5 bg-black/50 border border-white/15 text-[10px] font-bold text-slate-300 leading-snug">
-              <strong className="text-[#fec83e]">NON-CRYPTO:</strong> LUL (Fishing &amp; Warzone) →
-              CYON (Outfits &amp; Non-NFT items).{' '}
-              <strong className="text-[#d8b4fe]">CRYPTO (NEAR):</strong> Swap NEAR Testnet ↔
+              <strong className="text-[#fec83e]">NON-CRYPTO:</strong> LUL (Fishing and Warzone) to
+              CYON (Outfits and Non-NFT items).{' '}
+              <strong className="text-[#d8b4fe]">CRYPTO (NEAR):</strong> Swap NEAR Testnet and
               RESPITE (NEP-141 Smart Contract) at the Exchange Merchant.
             </div>
           </div>

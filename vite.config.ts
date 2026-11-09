@@ -1,11 +1,98 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import {execFile} from 'child_process';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, type Plugin} from 'vite';
+
+function nearSubAccountProvisionerPlugin(): Plugin {
+  return {
+    name: 'near-subaccount-provisioner',
+    configureServer(server) {
+      server.middlewares.use('/api/near/spawn-subaccount', (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ok: false, error: 'Method not allowed'}));
+          return;
+        }
+        let body = '';
+        req.on('data', (chunk) => {
+          body += chunk;
+        });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}') as {prefix?: string};
+            const cleanPrefix = (parsed.prefix || '')
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9_-]/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '')
+              .slice(0, 24);
+            if (!cleanPrefix) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ok: false, error: 'Invalid sub-account prefix'}));
+              return;
+            }
+            const subAccountId = `${cleanPrefix}.buddiesblitz-master.testnet`;
+            const masterPubKey = 'ed25519:4iZ3Q6wnahUGS9W2hQPruFeqQx5TngXdxNzesVTwtv48';
+            execFile(
+              'near',
+              [
+                'account',
+                'create-account',
+                'fund-myself',
+                subAccountId,
+                '0.1 NEAR',
+                'use-manually-provided-public-key',
+                masterPubKey,
+                'sign-as',
+                'buddiesblitz-master.testnet',
+                'network-config',
+                'testnet',
+                'sign-with-legacy-keychain',
+                'send',
+              ],
+              {timeout: 25000},
+              (err, stdout, stderr) => {
+                const combined = `${stdout || ''}\n${stderr || ''}`;
+                const txMatch = combined.match(/Transaction ID:\s*([A-Za-z0-9]+)/);
+                res.setHeader('Content-Type', 'application/json');
+                if (err && !txMatch) {
+                  res.statusCode = 200;
+                  res.end(
+                    JSON.stringify({
+                      ok: false,
+                      subAccountId,
+                      error: stderr || err.message,
+                    }),
+                  );
+                  return;
+                }
+                res.statusCode = 200;
+                res.end(
+                  JSON.stringify({
+                    ok: true,
+                    subAccountId,
+                    txHash: txMatch ? txMatch[1] : null,
+                  }),
+                );
+              },
+            );
+          } catch (e) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ok: false, error: (e as Error).message}));
+          }
+        });
+      });
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), nearSubAccountProvisionerPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
