@@ -1258,9 +1258,7 @@ export default function App() {
             .slice(0, 20)
         : '';
       const initialWalletName =
-        emailPrefix && emailPrefix !== 'player1'
-          ? emailPrefix
-          : generateRandomWalletLetters(6);
+        emailPrefix && emailPrefix !== 'player1' ? emailPrefix : '';
       setCitizenWalletNameDraft(initialWalletName);
       setOnboardingStep('completed');
       setCitizenWalletModalPhase('choose_name');
@@ -2286,11 +2284,17 @@ export default function App() {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const cleanName = citizenWalletNameDraft.trim() || generateRandomWalletLetters(6);
+                        const cleanName = citizenWalletNameDraft.trim();
+                        if (!cleanName || cleanName.length < 2) {
+                          setCitizenWalletNameError(
+                            'Please enter a wallet name with at least 2 characters.',
+                          );
+                          return;
+                        }
                         void handleConnectWalletAndEnterLobby(cleanName);
                       }
                     }}
-                    placeholder="Enter wallet name or use random letters"
+                    placeholder="Enter wallet name (e.g. charvi, rakyan)"
                     className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
                   />
 
@@ -2314,7 +2318,13 @@ export default function App() {
                   type="button"
                   data-citizen-create-wallet-submit-btn="true"
                   onClick={() => {
-                    const cleanName = citizenWalletNameDraft.trim() || generateRandomWalletLetters(6);
+                    const cleanName = citizenWalletNameDraft.trim();
+                    if (!cleanName || cleanName.length < 2) {
+                      setCitizenWalletNameError(
+                        'Please enter a wallet name with at least 2 characters.',
+                      );
+                      return;
+                    }
                     void handleConnectWalletAndEnterLobby(cleanName);
                   }}
                   className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
