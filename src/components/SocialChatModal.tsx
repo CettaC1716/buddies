@@ -34,6 +34,14 @@ interface SocialChatModalProps {
   onSelectPrivateUser: (user: NearbyEntityUser | null) => void;
   playerBubbleBgColor?: string;
   playerBubbleTextColor?: string;
+  isInsidePrivateHouse?: boolean;
+  isMuted?: boolean;
+  audioVolumePct?: number;
+  onToggleAudio?: () => void;
+  onChangeVolumePct?: (pct: number) => void;
+  onOpenHouseDecoration?: () => void;
+  onChangeBubbleBgColor?: (hex: string) => void;
+  onChangeBubbleTextColor?: (hex: string) => void;
 }
 
 const simplifyDisplayName = (rawName: string): string => {
@@ -51,8 +59,16 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   onSelectPrivateUser,
   playerBubbleBgColor = '#38bdf8',
   playerBubbleTextColor = '#0f172a',
+  isInsidePrivateHouse = false,
+  isMuted = false,
+  audioVolumePct = 100,
+  onToggleAudio,
+  onChangeVolumePct,
+  onOpenHouseDecoration,
+  onChangeBubbleBgColor,
+  onChangeBubbleTextColor,
 }) => {
-  const [activeTab, setActiveTab] = useState<'publik' | 'private' | 'daftar_online'>('publik');
+  const [activeTab, setActiveTab] = useState<'publik' | 'private' | 'daftar_online' | 'settings'>('publik');
   const publicScrollRef = useRef<HTMLDivElement>(null);
   const privateScrollRef = useRef<HTMLDivElement>(null);
 
@@ -170,6 +186,22 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
               }`}
             >
               <span className="skew-x-6 inline-block">ONLINE LIST</span>
+            </button>
+
+            <button
+              type="button"
+              data-social-tab="settings"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setActiveTab('settings');
+              }}
+              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                activeTab === 'settings'
+                  ? 'bg-[#d8b4fe] text-black -translate-y-0.5'
+                  : 'bg-slate-50 hover:bg-[#f3e8ff] text-black'
+              }`}
+            >
+              <span className="skew-x-6 inline-block">SETTINGS</span>
             </button>
           </div>
 
@@ -368,6 +400,155 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Tab 4: SETTINGS (Sound Toggle, House Decoration when Inside House, Chat Colors) */}
+        {activeTab === 'settings' && (
+          <div
+            data-social-chat-settings-panel="true"
+            className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3.5 min-h-0"
+          >
+            {/* 1. Sound Toggle & Volume Control */}
+            <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wide text-black">
+                  SOUND &amp; AUDIO SETTINGS
+                </span>
+                <button
+                  type="button"
+                  data-social-modal-sound-toggle="true"
+                  onClick={() => onToggleAudio?.()}
+                  className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase cursor-pointer transition-all ${
+                    isMuted ? 'bg-[#ff3b30] text-white' : 'bg-[#10b981] text-black'
+                  }`}
+                >
+                  <span className="skew-x-6 inline-block">
+                    {isMuted ? 'SOUND: MUTE' : 'SOUND: ON'}
+                  </span>
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[10.5px] font-black uppercase text-slate-700 min-w-[68px]">
+                  VOLUME {isMuted ? 0 : audioVolumePct}%
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={isMuted ? 0 : audioVolumePct}
+                  onChange={(e) => onChangeVolumePct?.(Number(e.target.value))}
+                  aria-label="Master Volume"
+                  className="flex-1 h-2.5 accent-[#10b981] cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* 2. House Decoration — ONLY visible when player is inside their private house */}
+            {isInsidePrivateHouse && (
+              <div
+                data-social-modal-house-decor="true"
+                className="p-3.5 bg-[#fef08a] border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wide text-black">
+                    HOUSE DECORATION · EDIT ROOM
+                  </span>
+                  <span className="px-2 py-0.5 bg-black text-[#b8ff3c] text-[9.5px] font-black uppercase">
+                    INSIDE HOUSE
+                  </span>
+                </div>
+                <p className="text-[11px] font-bold text-slate-800 leading-snug">
+                  You are currently inside your house. Open the Room Decoration Studio to place furniture, paintings, plants, and trophies or switch architectural themes.
+                </p>
+                <button
+                  type="button"
+                  data-social-modal-open-house-decor-btn="true"
+                  onClick={() => onOpenHouseDecoration?.()}
+                  className="-skew-x-6 w-full py-2.5 px-4 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[3px_3px_0_#000] text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                >
+                  <span className="skew-x-6 inline-block">
+                    DECORATE HOUSE / EDIT ROOM
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {/* 3. Chat Bubble & Text Color Customization */}
+            <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2.5">
+              <div className="text-xs font-black uppercase tracking-wide text-black">
+                CHAT BUBBLE &amp; TEXT COLOR
+              </div>
+
+              <div>
+                <div className="text-[10px] font-black uppercase text-slate-700 mb-1">
+                  CHAT BUBBLE COLOR
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { label: 'White', hex: '#ffffff' },
+                    { label: 'Dark', hex: '#0f172a' },
+                    { label: 'Yellow', hex: '#facc15' },
+                    { label: 'Cyan', hex: '#38bdf8' },
+                    { label: 'Green', hex: '#10b981' },
+                    { label: 'Purple', hex: '#d8b4fe' },
+                  ].map((sw) => (
+                    <button
+                      key={sw.hex}
+                      type="button"
+                      title={`Bubble ${sw.label}`}
+                      onClick={() => onChangeBubbleBgColor?.(sw.hex)}
+                      style={{ backgroundColor: sw.hex }}
+                      className={`w-6 h-6 border-2 border-black cursor-pointer transition-transform ${
+                        playerBubbleBgColor === sw.hex
+                          ? 'scale-110 ring-2 ring-black shadow-[2px_2px_0_#000]'
+                          : 'opacity-85 hover:opacity-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-black uppercase text-slate-700 mb-1">
+                  CHAT TEXT COLOR
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { label: 'Black', hex: '#0f172a' },
+                    { label: 'White', hex: '#ffffff' },
+                    { label: 'Yellow', hex: '#fde047' },
+                    { label: 'Cyan', hex: '#38bdf8' },
+                    { label: 'Green', hex: '#4ade80' },
+                    { label: 'Red', hex: '#ff3b30' },
+                  ].map((sw) => (
+                    <button
+                      key={sw.hex}
+                      type="button"
+                      title={`Text ${sw.label}`}
+                      onClick={() => onChangeBubbleTextColor?.(sw.hex)}
+                      style={{ backgroundColor: sw.hex }}
+                      className={`w-6 h-6 border-2 border-black cursor-pointer transition-transform ${
+                        playerBubbleTextColor === sw.hex
+                          ? 'scale-110 ring-2 ring-black shadow-[2px_2px_0_#000]'
+                          : 'opacity-85 hover:opacity-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  backgroundColor: playerBubbleBgColor,
+                  color: playerBubbleTextColor,
+                }}
+                className="px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black"
+              >
+                Hello Buddy! This is your chat color preview.
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -2960,13 +2960,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     applyHouseDaylightVisuals(houseCurrentDaylightHour, 0);
 
-    let npcCameraMode: 'none' | 'npc_merchant' | 'house_interior' | 'character_select' = 'none';
+    let npcCameraMode:
+      | 'none'
+      | 'npc_merchant'
+      | 'house_interior'
+      | 'house_visit'
+      | 'character_select' = 'none';
     let npcCameraLocation: 'lobby_cafe' | 'beach_house' = 'lobby_cafe';
+    let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
 
     const onSyncNpcCameraMode = (ev: Event) => {
       const detail = (
         ev as CustomEvent<{
-          mode?: 'none' | 'npc_merchant' | 'house_interior' | 'character_select';
+          mode?:
+            | 'none'
+            | 'npc_merchant'
+            | 'house_interior'
+            | 'house_visit'
+            | 'character_select';
           location?: 'lobby_cafe' | 'beach_house';
           themeId?: string;
           daylightHour?: number;
@@ -2989,10 +3000,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       ).detail;
       if (!detail) return;
       if (detail.mode) {
+        const wasHouseMode =
+          npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
+        const isHouseMode =
+          detail.mode === 'house_interior' || detail.mode === 'house_visit';
         npcCameraMode = detail.mode;
-        houseInteriorRoomGrp.visible = detail.mode === 'house_interior';
-        if (detail.mode === 'house_interior') {
+        houseInteriorRoomGrp.visible = isHouseMode;
+        if (isHouseMode) {
           syncHousePlacedFurnitureMeshes();
+          if (!wasHouseMode && playerUnit) {
+            savedOutdoorHousePos = {
+              x: playerUnit.x,
+              z: playerUnit.z,
+              yaw: playerUnit.yaw,
+            };
+            playerUnit.x = 0.0;
+            playerUnit.z = 1.4;
+            playerUnit.vx = 0;
+            playerUnit.vz = 0;
+            playerUnit.yaw = Math.PI / 2;
+          }
+        } else if (wasHouseMode && playerUnit) {
+          playerUnit.root.scale.setScalar(1.0);
+          if (savedOutdoorHousePos) {
+            playerUnit.x = savedOutdoorHousePos.x;
+            playerUnit.z = savedOutdoorHousePos.z;
+            playerUnit.yaw = savedOutdoorHousePos.yaw;
+            savedOutdoorHousePos = null;
+          }
         }
         resetAllPlayerMovementInputs();
         if (detail.mode !== 'house_interior') {
@@ -13262,22 +13297,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               }
             }
 
-            // Resolve character collision against solid buildings/pipes/trees and pushable props/crates (skip when seated on a bench)
-            if (!(playerUnit.isSitting && activeSeatedSpot)) {
-              resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);
-            }
-            // Enforce Concrete Wall Boundary (x = -76.2) between Lobby and City:
-            // - In Lobby scene (worldModeRef.current === 'lobby'), clamp player inside Lobby (x <= -76.55)
-            // - In City scene (warzone/safezone), prevent walking through the concrete wall into Lobby (x >= -75.85)
-            if (worldModeRef.current === 'lobby') {
-              if (playerUnit.x > LOBBY_SAFEZONE_BOUNDS.maxX - 0.35) {
-                playerUnit.x = LOBBY_SAFEZONE_BOUNDS.maxX - 0.35;
+            // Resolve character collision against solid buildings/pipes/trees and pushable props/crates (skip when seated on a bench or inside elevated private house)
+            if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+              playerUnit.x = clamp(
+                playerUnit.x,
+                CUTAWAY_ROOM_BOUNDS.minX + 0.55,
+                CUTAWAY_ROOM_BOUNDS.maxX - 0.55,
+              );
+              playerUnit.z = clamp(
+                playerUnit.z,
+                CUTAWAY_ROOM_BOUNDS.minZ + 0.55,
+                CUTAWAY_ROOM_BOUNDS.maxZ - 0.55,
+              );
+            } else {
+              if (!(playerUnit.isSitting && activeSeatedSpot)) {
+                resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);
               }
-            } else if (
-              playerUnit.x < LOBBY_SAFEZONE_BOUNDS.maxX + 0.35 &&
-              Math.abs(playerUnit.z) < LOBBY_SAFEZONE_BOUNDS.maxZ
-            ) {
-              playerUnit.x = LOBBY_SAFEZONE_BOUNDS.maxX + 0.35;
+              // Enforce Concrete Wall Boundary (x = -76.2) between Lobby and City:
+              // - In Lobby scene (worldModeRef.current === 'lobby'), clamp player inside Lobby (x <= -76.55)
+              // - In City scene (warzone/safezone), prevent walking through the concrete wall into Lobby (x >= -75.85)
+              if (worldModeRef.current === 'lobby') {
+                if (playerUnit.x > LOBBY_SAFEZONE_BOUNDS.maxX - 0.35) {
+                  playerUnit.x = LOBBY_SAFEZONE_BOUNDS.maxX - 0.35;
+                }
+              } else if (
+                playerUnit.x < LOBBY_SAFEZONE_BOUNDS.maxX + 0.35 &&
+                Math.abs(playerUnit.z) < LOBBY_SAFEZONE_BOUNDS.maxZ
+              ) {
+                playerUnit.x = LOBBY_SAFEZONE_BOUNDS.maxX + 0.35;
+              }
             }
             if (inputLen <= 0.01) {
               playerUnit.vx = 0;
@@ -14518,7 +14566,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             b.y = terrainY + floatY + b.jumpOffset + hitPose.hopY;
             syncUnitFootRingTeamColor(b);
             b.root.rotation.order = 'YXZ';
-            b.root.position.set(b.x, terrainY, b.z);
+            const isPlayerInHouseNow =
+              b.isPlayer &&
+              (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior');
+            b.root.position.set(b.x, isPlayerInHouseNow ? HOUSE_ORIGIN_Y : terrainY, b.z);
+            if (b.isPlayer) {
+              b.root.scale.setScalar(isPlayerInHouseNow ? 0.54 : 1.0);
+            }
             const seatLift =
               b.isPlayer && b.isSitting && activeSeatedSpot ? activeSeatedSpot.seatLiftY : 0;
             b.bodyGroup.rotation.order = 'YXZ';
@@ -16298,9 +16352,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         camera.position.set(px + 6.35, py + 2.32, pz);
         camera.lookAt(px, py + 1.82, pz);
         camera.updateMatrixWorld();
-      } else if (npcCameraMode === 'house_interior') {
+      } else if (npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit') {
         if (playerUnit) {
-          playerUnit.root.visible = false;
+          playerUnit.root.visible = npcCameraMode === 'house_visit';
         }
         // 1. Smoothly interpolate Daylight Time Slider (`5.5 .. 23.5`) & Volumetric God-Rays + Dust Motes
         houseCurrentDaylightHour +=
@@ -16333,18 +16387,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
-        // 4. Cutaway Dollhouse Spherical Orbit/Pan/Zoom Camera (`Mo[0]` in buddies-blitz.com/interior)
+        // 4. Cutaway Dollhouse Camera:
+        //    - In 'house_visit', follow the player character walking inside the room
+        //    - In 'house_interior' (Edit Room mode), use the free cutaway studio camera
         const cosPitch = Math.cos(houseCamPitch);
         const sinPitch = Math.sin(houseCamPitch);
-        const camX = houseCamTarget.x + Math.sin(houseCamYaw) * cosPitch * houseCamDist;
-        const camY = HOUSE_ORIGIN_Y + houseCamTarget.y + sinPitch * houseCamDist;
-        const camZ = houseCamTarget.z + Math.cos(houseCamYaw) * cosPitch * houseCamDist;
+        const focusX =
+          npcCameraMode === 'house_visit' && playerUnit
+            ? playerUnit.x * 0.45
+            : houseCamTarget.x;
+        const focusZ =
+          npcCameraMode === 'house_visit' && playerUnit
+            ? playerUnit.z * 0.45
+            : houseCamTarget.z;
+        const activeDist = npcCameraMode === 'house_visit' ? 11.4 : houseCamDist;
+        const camX = focusX + Math.sin(houseCamYaw) * cosPitch * activeDist;
+        const camY = HOUSE_ORIGIN_Y + houseCamTarget.y + sinPitch * activeDist;
+        const camZ = focusZ + Math.cos(houseCamYaw) * cosPitch * activeDist;
         camera.up.set(0, 1, 0);
         camera.position.set(camX, camY, camZ);
         camera.lookAt(
-          houseCamTarget.x,
+          focusX,
           HOUSE_ORIGIN_Y + houseCamTarget.y,
-          houseCamTarget.z,
+          focusZ,
         );
         camera.updateMatrixWorld();
       } else {

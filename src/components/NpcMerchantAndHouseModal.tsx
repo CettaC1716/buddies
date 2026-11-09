@@ -309,7 +309,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             }}
             className="px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-[#0d0f12] text-[10px] font-black uppercase cursor-pointer"
           >
-            EXIT HOUSE [ESC]
+            DONE EDITING [ESC]
           </button>
         </div>
 

@@ -239,7 +239,7 @@ export default function App() {
     }
     return 'auth_choice';
   });
-  const [playerDisplayName, setPlayerDisplayName] = useState<string>('Buddy Pria');
+  const [playerDisplayName, setPlayerDisplayName] = useState<string>('Buddy Male');
   const [isCustomGuestNameEdited, setIsCustomGuestNameEdited] = useState<boolean>(false);
   const [isEditingGuestName, setIsEditingGuestName] = useState<boolean>(false);
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
@@ -308,6 +308,7 @@ export default function App() {
   const [activeSpecialModal, setActiveSpecialModal] = useState<
     'none' | 'npc_merchant' | 'house_interior'
   >('none');
+  const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
   const [cyonBalance, setCyonBalance] = useState<number>(60);
@@ -546,6 +547,7 @@ export default function App() {
       }
       setIsKioskModalOpen(false);
       setActiveSpecialModal('none');
+      setIsInsidePrivateHouse(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -811,7 +813,8 @@ export default function App() {
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-      setActiveSpecialModal('house_interior');
+      setIsInsidePrivateHouse(true);
+      setActiveSpecialModal('none');
     };
     const onOpenCharacterProfile = (e: Event) => {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
@@ -889,7 +892,11 @@ export default function App() {
 
   useEffect(() => {
     const effectiveMode =
-      onboardingStep === 'guest_character_select' ? 'character_select' : activeSpecialModal;
+      onboardingStep === 'guest_character_select'
+        ? 'character_select'
+        : activeSpecialModal === 'none' && isInsidePrivateHouse
+          ? 'house_visit'
+          : activeSpecialModal;
     window.dispatchEvent(
       new CustomEvent('sync-npc-camera-mode', {
         detail: {
@@ -900,7 +907,14 @@ export default function App() {
         },
       }),
     );
-  }, [onboardingStep, activeSpecialModal, merchantLocation, activeHouseThemeId, interiorPlacement]);
+  }, [
+    onboardingStep,
+    activeSpecialModal,
+    isInsidePrivateHouse,
+    merchantLocation,
+    activeHouseThemeId,
+    interiorPlacement,
+  ]);
 
   useEffect(() => {
     const cleanName = playerDisplayName.trim() || 'YOU';
@@ -1030,7 +1044,7 @@ export default function App() {
   const handleConfirmGuestCharacterAndEnterLobby = useCallback(() => {
     soundEngine.playUiClick();
     const cleanGuestName =
-      playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita');
+      playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
     setPlayerDisplayName(cleanGuestName);
     setIsEditingGuestName(false);
     setOnboardingAuthMode('guest');
@@ -1527,10 +1541,10 @@ export default function App() {
                 <span className="skew-x-12 inline-block">BUDDIES BLITZ ONLINE</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-white pt-1">
-                PILIH AKSES MASUK
+                CHOOSE ACCESS MODE
               </h1>
               <p className="text-xs font-bold text-slate-300">
-                Masuk sebagai tamu untuk memilih karakter baru, atau gunakan Connect Wallet untuk melanjutkan akun lama kamu.
+                Login as a Guest to pick a 3D character, or continue with Connect Wallet to restore your existing account.
               </p>
             </div>
 
@@ -1538,14 +1552,14 @@ export default function App() {
             <div className="p-4 bg-[#1e2230] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-[#b8ff3c]">
-                  OPSI 1 · PEMAIN BARU / TAMU
+                  OPTION 1 · NEW PLAYER / GUEST
                 </span>
                 <span className="px-2 py-0.5 bg-black/50 text-[10px] font-black uppercase text-white/80 border border-white/20">
-                  PILIH KARAKTER 3D
+                  SELECT 3D AVATAR
                 </span>
               </div>
               <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Pilih karakter Laki-Laki atau Perempuan dan tentukan username sementara sebelum masuk ke Lobby.
+                Choose a Male or Female character and set your temporary username before entering the Lobby.
               </p>
               <button
                 type="button"
@@ -1554,7 +1568,7 @@ export default function App() {
                   soundEngine.playUiClick();
                   setCharacterGender('male');
                   if (!isCustomGuestNameEdited) {
-                    setPlayerDisplayName('Buddy Pria');
+                    setPlayerDisplayName('Buddy Male');
                   }
                   dispatchBuddyAction('setCharacterGender:male');
                   setOnboardingStep('guest_character_select');
@@ -1569,18 +1583,18 @@ export default function App() {
             <div className="p-4 bg-[#0f172a] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
-                  OPSI 2 · LANJUTKAN DENGAN WALLET
+                  OPTION 2 · CONTINUE WITH WALLET
                 </span>
                 <Wallet className="w-4 h-4 text-[#38bdf8]" aria-hidden="true" />
               </div>
               <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Jika sudah pernah Connect Wallet, kamu akan langsung masuk ke akun lama beserta karakter &amp; saldo milikmu.
+                Returning wallet players will automatically sign into their existing account, avatar, and balance.
               </p>
 
               {savedWalletSummary && (
                 <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between">
                   <span>
-                    Akun Lama: <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong> ({savedWalletSummary.gender === 'male' ? 'Laki-Laki' : 'Perempuan'})
+                    Saved Account: <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong> ({savedWalletSummary.gender === 'male' ? 'Male' : 'Female'})
                   </span>
                   <span className="text-[9.5px] font-mono text-[#38bdf8]">{savedWalletSummary.walletId}</span>
                 </div>
@@ -1625,10 +1639,10 @@ export default function App() {
             {/* Top Header Pill */}
             <div className="pointer-events-auto bg-[#121318]/90 text-white border-2 border-black px-5 py-2 shadow-[4px_4px_0_#000] text-center">
               <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                GUEST SESSION · PEMILIHAN KARAKTER 3D
+                GUEST SESSION · 3D CHARACTER SELECTION
               </div>
               <div className="text-xs font-bold text-white/90">
-                Gunakan panah &lt; &gt; untuk memilih Laki-Laki / Perempuan dan ubah username sementara
+                Use &lt; &gt; arrows to choose Male or Female and edit your temporary username
               </div>
             </div>
 
@@ -1653,7 +1667,7 @@ export default function App() {
                           setIsEditingGuestName(false);
                         }
                       }}
-                      placeholder="Ketik username sementara..."
+                      placeholder="Enter temporary username..."
                       className="flex-1 px-2.5 py-1 bg-white text-black font-black text-base text-center border-2 border-[#b8ff3c] focus:outline-none"
                     />
                     <button
@@ -1662,7 +1676,7 @@ export default function App() {
                         soundEngine.playUiClick();
                         setIsEditingGuestName(false);
                       }}
-                      aria-label="Simpan Username"
+                      aria-label="Save Username"
                       className="w-8 h-8 bg-[#b8ff3c] text-black border-2 border-black flex items-center justify-center cursor-pointer"
                     >
                       <Check className="w-4 h-4 stroke-[3]" />
@@ -1686,10 +1700,10 @@ export default function App() {
                       }
                     }}
                     className="flex items-center justify-center gap-3 cursor-pointer group px-4 py-0.5"
-                    title="Klik untuk mengganti username sementara"
+                    title="Click to edit temporary username"
                   >
                     <span className="text-xl sm:text-2xl font-bold tracking-wide text-white group-hover:text-[#b8ff3c] transition-colors">
-                      {playerDisplayName || (characterGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita')}
+                      {playerDisplayName || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female')}
                     </span>
                     <Pencil className="w-4 h-4 text-white/80 group-hover:text-[#b8ff3c] transition-colors" />
                   </div>
@@ -1704,8 +1718,8 @@ export default function App() {
                     soundEngine.playUiClick();
                     setOnboardingStep('auth_choice');
                   }}
-                  title="Kembali ke Pilihan Login"
-                  aria-label="Kembali"
+                  title="Back to Login Options"
+                  aria-label="Back"
                   className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                 >
                   <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
@@ -1723,11 +1737,11 @@ export default function App() {
                       dispatchBuddyAction(`setCharacterGender:${nextGender}`);
                       if (!isCustomGuestNameEdited) {
                         setPlayerDisplayName(
-                          nextGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita',
+                          nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
                         );
                       }
                     }}
-                    aria-label="Karakter Sebelumnya"
+                    aria-label="Previous Character"
                     className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
                   >
                     <ChevronLeft className="w-8 h-8 stroke-[2.8]" />
@@ -1738,7 +1752,7 @@ export default function App() {
                       {characterGender === 'male' ? '1/2' : '2/2'}
                     </div>
                     <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                      {characterGender === 'male' ? 'LAKI-LAKI' : 'PEREMPUAN'}
+                      {characterGender === 'male' ? 'MALE' : 'FEMALE'}
                     </div>
                   </div>
 
@@ -1753,11 +1767,11 @@ export default function App() {
                       dispatchBuddyAction(`setCharacterGender:${nextGender}`);
                       if (!isCustomGuestNameEdited) {
                         setPlayerDisplayName(
-                          nextGender === 'male' ? 'Buddy Pria' : 'Buddy Wanita',
+                          nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
                         );
                       }
                     }}
-                    aria-label="Karakter Berikutnya"
+                    aria-label="Next Character"
                     className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
                   >
                     <ChevronRight className="w-8 h-8 stroke-[2.8]" />
@@ -1770,7 +1784,7 @@ export default function App() {
                   onClick={handleConfirmGuestCharacterAndEnterLobby}
                   className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                 >
-                  <span className="skew-x-6 inline-block">MASUK LOBBY</span>
+                  <span className="skew-x-6 inline-block">ENTER LOBBY</span>
                 </button>
               </div>
             </div>
@@ -1793,12 +1807,12 @@ export default function App() {
 
               <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#38bdf8]">
                 {onboardingAuthMode === 'wallet'
-                  ? `MEMULIHKAN AKUN WALLET (${hud.nearWalletId || walletConnectInput})`
-                  : `MENYIAPKAN SESI GUEST · ${playerDisplayName.toUpperCase()}`}
+                  ? `RESTORING WALLET ACCOUNT (${hud.nearWalletId || walletConnectInput})`
+                  : `PREPARING GUEST SESSION · ${playerDisplayName.toUpperCase()}`}
               </div>
 
               <div className="px-3 py-1 bg-[#1e293b] border border-white/25 text-[11px] font-black uppercase text-[#facc15]">
-                KARAKTER: {characterGender === 'male' ? 'LAKI-LAKI (MALE)' : 'PEREMPUAN (FEMALE)'} · USERNAME: {playerDisplayName}
+                CHARACTER: {characterGender === 'male' ? 'MALE' : 'FEMALE'} · USERNAME: {playerDisplayName}
               </div>
 
               {/* Animated Progress Bar */}
@@ -1810,7 +1824,7 @@ export default function App() {
               </div>
 
               <div className="text-[10.5px] font-bold text-white/65 tracking-wider">
-                Menyiapkan avatar 3D &amp; memasuki Mini Café Lobby ({onboardingLoadingProgress}%)...
+                Preparing 3D avatar &amp; entering Mini Café Lobby ({onboardingLoadingProgress}%)...
               </div>
             </div>
           </div>
@@ -1826,6 +1840,32 @@ export default function App() {
          ===================================================================== */}
       {gameState === 'playing' && !isFullMapOverview && onboardingStep === 'completed' && (
         <div className="fixed inset-0 z-20 pointer-events-none">
+          {/* =================================================================
+              3A-0. PRIVATE HOUSE NORMAL VISIT HUD BAR (Only when inside house & not editing)
+             ================================================================= */}
+          {isInsidePrivateHouse && activeSpecialModal === 'none' && (
+            <div
+              data-house-visit-hud="true"
+              className="fixed top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-wrap items-center gap-2.5 bg-[#14161d]/95 text-white border-3 border-black ring-2 ring-white shadow-[4px_4px_0_#000] px-4 py-2 select-none"
+            >
+              <div className="text-[11px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                PRIVATE HOUSE INTERIOR · WALK WITH WASD · OPEN CHAT SETTINGS [⚙] TO DECORATE ROOM
+              </div>
+              <button
+                type="button"
+                data-exit-house-visit-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setIsInsidePrivateHouse(false);
+                  setActiveSpecialModal('none');
+                }}
+                className="-skew-x-6 px-3 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase tracking-wider cursor-pointer active:scale-95"
+              >
+                <span className="skew-x-6 inline-block">EXIT HOUSE</span>
+              </button>
+            </div>
+          )}
+
           {/* =================================================================
               3A. MINIMALIST CONTEXTUAL 3D-TO-2D FLOATING ICONS
                   - Item / Crate Pickup & Deposit: Hand Emoji ONLY (✋)
@@ -3023,15 +3063,15 @@ export default function App() {
              ================================================================= */}
           {playMode !== 'editor' && (
             <div className="fixed bottom-3 left-3 z-30 pointer-events-auto">
-              {/* Chat Bubble & Text Color Settings Popover */}
+              {/* Chat, Sound & House Decoration Settings Popover */}
               {isChatBubbleStyleOpen && (
                 <div
                   data-chat-bubble-style-popover="true"
-                  className="mb-2 w-72 bg-white border-3 border-black shadow-[4px_4px_0px_#000] p-3 text-black select-none space-y-2.5"
+                  className="mb-2 w-80 bg-white border-3 border-black shadow-[4px_4px_0px_#000] p-3 text-black select-none space-y-3"
                 >
                   <div className="flex items-center justify-between border-b-2 border-black pb-1.5">
                     <span className="text-[10.5px] font-black uppercase tracking-wider">
-                      CHAT BUBBLE &amp; TEXT COLOR
+                      CHAT &amp; GAME SETTINGS
                     </span>
                     <button
                       type="button"
@@ -3044,6 +3084,77 @@ export default function App() {
                       X
                     </button>
                   </div>
+
+                  {/* Sound Toggle & Volume Control */}
+                  <div className="p-2 bg-slate-50 border-2 border-black shadow-[2px_2px_0_#000] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] font-black uppercase text-slate-800">
+                        GAME SOUND &amp; AUDIO
+                      </span>
+                      <button
+                        type="button"
+                        data-chat-settings-sound-toggle="true"
+                        onClick={handleToggleAudio}
+                        className={`-skew-x-6 px-2.5 py-0.5 border-2 border-black shadow-[2px_2px_0_#000] text-[9.5px] font-black uppercase cursor-pointer ${
+                          isMuted ? 'bg-[#ff3b30] text-white' : 'bg-[#10b981] text-black'
+                        }`}
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {isMuted ? 'SOUND: MUTE' : 'SOUND: ON'}
+                        </span>
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black uppercase text-slate-600">
+                        VOL {isMuted ? 0 : audioVolumePct}%
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={isMuted ? 0 : audioVolumePct}
+                        onChange={(e) => handleChangeVolumePct(Number(e.target.value))}
+                        aria-label="Master Volume"
+                        className="flex-1 h-2 accent-[#10b981] cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* House Decoration Option — ONLY visible when player is inside their house */}
+                  {isInsidePrivateHouse && (
+                    <div
+                      data-chat-settings-house-decor="true"
+                      className="p-2.5 bg-[#fef08a] border-2 border-black shadow-[2px_2px_0_#000] space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9.5px] font-black uppercase text-black">
+                          HOUSE DECORATION (INSIDE HOUSE)
+                        </span>
+                        <span className="px-1.5 py-0.5 bg-black text-[#b8ff3c] text-[8.5px] font-black uppercase">
+                          ROOM STUDIO
+                        </span>
+                      </div>
+                      <p className="text-[9.5px] font-bold text-slate-800 leading-tight">
+                        Customize your room furniture, wall paintings, trophy slots, and architectural themes.
+                      </p>
+                      <button
+                        type="button"
+                        data-open-house-decor-from-settings="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setIsChatBubbleStyleOpen(false);
+                          setIsSocialChatModalOpen(false);
+                          setActiveSpecialModal('house_interior');
+                        }}
+                        className="-skew-x-6 w-full py-1.5 px-3 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase tracking-wider cursor-pointer active:scale-95"
+                      >
+                        <span className="skew-x-6 inline-block">
+                          DECORATE HOUSE / EDIT ROOM
+                        </span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Bubble Color Options */}
                   <div>
@@ -3893,7 +4004,8 @@ export default function App() {
           soundEngine.playUiClick();
           setIsKioskModalOpen(false);
           window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-          setActiveSpecialModal('house_interior');
+          setIsInsidePrivateHouse(true);
+          setActiveSpecialModal('none');
         }}
       />
 
@@ -3925,6 +4037,34 @@ export default function App() {
         chatMessages={chatMessages}
         playerBubbleBgColor={chatBubbleBgColor}
         playerBubbleTextColor={chatBubbleTextColor}
+        isInsidePrivateHouse={isInsidePrivateHouse}
+        isMuted={isMuted}
+        audioVolumePct={audioVolumePct}
+        onToggleAudio={handleToggleAudio}
+        onChangeVolumePct={handleChangeVolumePct}
+        onOpenHouseDecoration={() => {
+          soundEngine.playUiClick();
+          setIsSocialChatModalOpen(false);
+          setActiveSpecialModal('house_interior');
+        }}
+        onChangeBubbleBgColor={(hex) => {
+          soundEngine.playUiClick();
+          setChatBubbleBgColor(hex);
+          window.dispatchEvent(
+            new CustomEvent('update-social-bubble-style', {
+              detail: { bgColor: hex, textColor: chatBubbleTextColor },
+            }),
+          );
+        }}
+        onChangeBubbleTextColor={(hex) => {
+          soundEngine.playUiClick();
+          setChatBubbleTextColor(hex);
+          window.dispatchEvent(
+            new CustomEvent('update-social-bubble-style', {
+              detail: { bgColor: chatBubbleBgColor, textColor: hex },
+            }),
+          );
+        }}
         onSendPublicChat={(text) => {
           const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const senderLabel = playerDisplayName || 'YOU';
