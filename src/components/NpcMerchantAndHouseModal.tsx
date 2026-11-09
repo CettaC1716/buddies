@@ -206,8 +206,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       const locLabel = merchantLocation === 'lobby_cafe' ? 'Mini Cafe Lobby' : 'East Beach House';
       const greeting =
         merchantLocation === 'beach_house'
-          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, mint rare catches as NFTs, or visit the CATALOG tab to buy a House and recruit a Family Member smart contract AI agent using RESPITE.`
-          : `Hello Buddy! Welcome to ${locLabel}. You can chat with me in CHAT SESSION, exchange LUL to CYON or swap NEAR Testnet and RESPITE in EXCHANGE, or open the CATALOG tab to buy a House and recruit a Family Member AI agent!`;
+          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, or visit the CATALOG tab to buy a House and recruit a Family Member.`
+          : `Hello Buddy! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
       setNpcFullText(greeting);
       setNpcTypedText('');
       setLastPlayerMessage('');
@@ -940,13 +940,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   data-lul-cyon-exchange-card="true"
                   className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
                 >
-                  {/* Non-Crypto Tier Banner */}
+                  {/* Exchange Banner */}
                   <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
                     <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase">
-                      <span className="skew-x-6 inline-block">1 · NON-CRYPTO EXCHANGE</span>
+                      <span className="skew-x-6 inline-block">LUL TO CYON</span>
                     </span>
                     <span className="text-[9.5px] font-bold text-slate-300">
-                      Fishing &amp; Warzone LUL → CYON (Outfits &amp; Non-NFT Items)
+                      Exchange LUL for CYON
                     </span>
                   </div>
 
@@ -954,7 +954,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {/* Exchange Rate Header */}
                     <div className="text-center space-y-1">
                       <div className="text-xs font-black uppercase tracking-wider text-slate-200">
-                        Non-Crypto Exchange Rate
+                        Exchange Rate
                       </div>
                       <div className="flex items-center justify-center gap-2.5 text-lg sm:text-xl font-black">
                         <span className="inline-flex items-center gap-1.5">
@@ -992,7 +992,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                     {/* Middle Label: You will receive */}
                     <div className="text-center text-xs font-black uppercase tracking-wider text-slate-200">
-                      You will receive (for Outfits &amp; Non-NFT Items)
+                      You will receive
                     </div>
 
                     {/* CYON Output Row */}
@@ -1020,7 +1020,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onExchangeLulToCyon(parsedLul, calculatedCyon);
                         triggerNpcSpeech(
-                          `Done! ${parsedLul} LUL (non-crypto) has been exchanged for +${calculatedCyon} CYON!`,
+                          `Done! ${parsedLul} LUL has been exchanged for +${calculatedCyon} CYON.`,
                         );
                       }}
                       className={`-skew-x-6 min-w-[190px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
@@ -1029,28 +1029,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           : 'bg-slate-600 text-slate-300 cursor-not-allowed'
                       }`}
                     >
-                      <span className="skew-x-6 inline-block">EXCHANGE LUL → CYON</span>
+                      <span className="skew-x-6 inline-block">EXCHANGE LUL TO CYON</span>
                     </button>
                   </div>
                 </div>
 
                 {/* ===========================================================
-                    CARD 2: NEAR PROTOCOL CRYPTO SWAP (NEAR TESTNET <-> RESPITE NEP-141)
-                    RESPITE is a smart contract coin on NEAR (`respite.buddiesblitz.testnet`)
+                    CARD 2: NEAR <-> RESPITE SWAP
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
                   className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
                 >
-                  {/* Crypto Smart Contract Header Banner */}
+                  {/* Header Banner */}
                   <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
                     <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase">
-                      <span className="skew-x-6 inline-block">
-                        2 · NEAR CRYPTO SWAP (NEP-141 COIN)
-                      </span>
+                      <span className="skew-x-6 inline-block">NEAR AND RESPITE</span>
                     </span>
-                    <span className="text-[9.5px] font-mono font-bold text-[#38bdf8]">
-                      {RESPITE_NEP141_METADATA.contractIdTestnet}
+                    <span className="text-[9.5px] font-bold text-slate-300">
+                      Swap NEAR and RESPITE
                     </span>
                   </div>
 
@@ -1072,7 +1069,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               : 'text-white/75 hover:text-white'
                           }`}
                         >
-                          NEAR TESTNET → RESPITE
+                          NEAR TO RESPITE
                         </button>
                         <button
                           type="button"
@@ -1088,14 +1085,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               : 'text-white/75 hover:text-white'
                           }`}
                         >
-                          RESPITE → NEAR TESTNET
+                          RESPITE TO NEAR
                         </button>
                       </div>
 
                       <div className="flex items-center justify-center gap-2.5 text-base sm:text-lg font-black pt-0.5">
                         <span className="inline-flex items-center gap-1.5">
                           <span className="-skew-x-6 px-2 py-0.5 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
-                            <span className="skew-x-6 inline-block">NEAR TESTNET</span>
+                            <span className="skew-x-6 inline-block">NEAR</span>
                           </span>
                           <span className="text-white">1</span>
                         </span>
@@ -1109,7 +1106,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     </div>
 
-                    {/* Input Row (NEAR Testnet or RESPITE) */}
+                    {/* Input Row */}
                     <div className="flex items-center gap-3 max-w-xs mx-auto">
                       <div
                         className={`-skew-x-6 w-24 py-2 ${
@@ -1117,7 +1114,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         } text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[10px] font-black uppercase shrink-0`}
                       >
                         <span className="skew-x-6 inline-block">
-                          {isNearToRespite ? 'NEAR TESTNET' : 'RESPITE'}
+                          {isNearToRespite ? 'NEAR' : 'RESPITE'}
                         </span>
                       </div>
                       <input
@@ -1134,10 +1131,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                     {/* Middle Label: You will receive */}
                     <div className="text-center text-xs font-black uppercase tracking-wider text-slate-200">
-                      You will receive ({isNearToRespite ? 'NEP-141 Smart Contract Coin' : 'NEAR Testnet'})
+                      You will receive
                     </div>
 
-                    {/* Output Row (RESPITE or NEAR Testnet) */}
+                    {/* Output Row */}
                     <div className="flex items-center gap-3 max-w-xs mx-auto">
                       <div
                         className={`-skew-x-6 w-24 py-2 ${
@@ -1145,7 +1142,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         } text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[10px] font-black uppercase shrink-0`}
                       >
                         <span className="skew-x-6 inline-block">
-                          {isNearToRespite ? 'RESPITE' : 'NEAR TESTNET'}
+                          {isNearToRespite ? 'RESPITE' : 'NEAR'}
                         </span>
                       </div>
                       <div
@@ -1156,25 +1153,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     </div>
 
-                    {/* Latest NEP-141 Swap Receipt Banner */}
                     {lastCryptoSwapReceipt && (
                       <div
                         data-near-respite-swap-receipt="true"
-                        className="p-2.5 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 flex items-center justify-between gap-2"
+                        className="p-2 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 text-center"
                       >
-                        <span className="truncate">
-                          ✓ <strong className="text-[#10b981]">{lastCryptoSwapReceipt.methodName}</strong>:{' '}
-                          {lastCryptoSwapReceipt.nearAmount} NEAR ↔{' '}
-                          {lastCryptoSwapReceipt.respiteAmount} RESPITE
-                        </span>
-                        <a
-                          href={lastCryptoSwapReceipt.explorerUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[#38bdf8] hover:underline font-mono shrink-0"
-                        >
-                          Tx ↗
-                        </a>
+                        Swapped {lastCryptoSwapReceipt.nearAmount} NEAR and{' '}
+                        {lastCryptoSwapReceipt.respiteAmount} RESPITE
                       </div>
                     )}
                   </div>
@@ -1197,8 +1182,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         }
                         triggerNpcSpeech(
                           isNearToRespite
-                            ? `NEP-141 Swap complete! Swapped ${parsedCryptoInput} NEAR Testnet for +${calculatedCryptoOutput} RESPITE on ${RESPITE_NEP141_METADATA.contractIdTestnet}!`
-                            : `NEP-141 Swap complete! Swapped ${parsedCryptoInput} RESPITE for +${calculatedCryptoOutput} NEAR Testnet!`,
+                            ? `Swap complete! Swapped ${parsedCryptoInput} NEAR for +${calculatedCryptoOutput} RESPITE.`
+                            : `Swap complete! Swapped ${parsedCryptoInput} RESPITE for +${calculatedCryptoOutput} NEAR.`,
                         );
                       }}
                       className={`-skew-x-6 min-w-[210px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
@@ -1208,9 +1193,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       }`}
                     >
                       <span className="skew-x-6 inline-block">
-                        {isNearToRespite
-                          ? 'SWAP NEAR TESTNET → RESPITE'
-                          : 'SWAP RESPITE → NEAR TESTNET'}
+                        {isNearToRespite ? 'SWAP NEAR TO RESPITE' : 'SWAP RESPITE TO NEAR'}
                       </span>
                     </button>
                   </div>
@@ -1220,7 +1203,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           })()}
 
           {/* ===============================================================
-              TAB 3: CATALOG (Buy House & Recruit Family Member Smart Contract AI Agent)
+              TAB 3: CATALOG (Buy House & Recruit Family Member)
              =============================================================== */}
           {activeTab === 'katalog' && (() => {
             const selectedFamilyPlan =
@@ -1232,14 +1215,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             return (
               <div className="space-y-3.5" data-catalog-house-and-family-panel="true">
-                {/* Top RESPITE Balance & Wallet Connection Bar */}
+                {/* Top RESPITE Balance Bar */}
                 <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
-                      HOUSE &amp; FAMILY MEMBER CATALOG (RESPITE)
+                      HOUSE AND FAMILY MEMBER
                     </div>
                     <div className="text-[10px] font-bold text-white/85 mt-0.5">
-                      RESPITE Balance: {respiteBalance.toLocaleString()} RESPITE | Buy a House and recruit Smart Contract AI Family Members.
+                      Balance: {respiteBalance.toLocaleString()} RESPITE
                     </div>
                   </div>
                   <button
@@ -1250,15 +1233,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     }}
                     className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
                   >
-                    <span className="skew-x-6 inline-block">
-                      {walletConnected ? 'WALLET CONNECTED' : 'CONNECT WALLET'}
-                    </span>
+                    <span className="skew-x-6 inline-block">WALLET</span>
                   </button>
                 </div>
 
-                {/* Product Card Grid: 1) HOUSE (Buy House) & 2) FAMILY MEMBER (Smart Contract AI Agent) */}
+                {/* Product Card Grid: 1) HOUSE & 2) FAMILY MEMBER */}
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Card 1: BUY HOUSE (Replaces Gamepass) */}
+                  {/* Card 1: BUY HOUSE */}
                   <div
                     data-katalog-card="buddies_house_ownership"
                     className="group relative h-[162px] sm:h-[172px] text-left select-none bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
@@ -1273,7 +1254,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             HOUSE
                           </div>
                           <div className="text-[9px] sm:text-[9.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
-                            [BUY HOUSE // NEP-171]
+                            PRIVATE HOME
                           </div>
                         </div>
                         <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[9px] font-black uppercase shrink-0">
@@ -1291,12 +1272,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
 
                       <div className="text-[9px] font-bold text-[#1c2026] truncate">
-                        Unlocks Private House &amp; Base Plot
+                        Unlocks Private House and Plot
                       </div>
                     </div>
                   </div>
 
-                  {/* Card 2: FAMILY MEMBER (Smart Contract AI Agent) */}
+                  {/* Card 2: FAMILY MEMBER */}
                   <div
                     data-katalog-card="buddies_family_member_agent"
                     className="group relative h-[162px] sm:h-[172px] text-left select-none bg-[#facc15] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
@@ -1311,7 +1292,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             FAMILY MEMBER
                           </div>
                           <div className="text-[9px] sm:text-[9.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
-                            [SMART CONTRACT AI AGENT]
+                            COMPANION HELPER
                           </div>
                         </div>
                         <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[9px] font-black uppercase shrink-0">
@@ -1322,7 +1303,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       <div className="mt-1 flex items-center justify-center h-[80px] sm:h-[86px]">
                         <img
                           src="/assets/kiosk/street_rookie.png"
-                          alt="Family Member Smart Contract AI Agent"
+                          alt="Family Member Companion"
                           draggable={false}
                           className="w-full h-[76px] sm:h-[82px] object-contain select-none pointer-events-none"
                         />
@@ -1345,10 +1326,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-[11px] font-black uppercase tracking-tight text-[#0d0f12]">
-                        1. BUY HOUSE (PRIVATE HOUSE OWNERSHIP)
+                        BUY HOUSE
                       </div>
                       <div className="text-[10px] font-bold text-[#1c2026]/85">
-                        Grants permanent ownership of your Private House and Plot access.
+                        Grants permanent ownership of your Private House.
                       </div>
                     </div>
                     <span
@@ -1370,14 +1351,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       soundEngine.playUiClick();
                       if (isHouseOwned) {
                         triggerNpcSpeech(
-                          'You already own your House. You can enter your Private House or claim a plot anytime.',
+                          'You already own your House. You can enter your Private House anytime.',
                         );
                         return;
                       }
                       const ok = onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
                       if (ok !== false) {
                         triggerNpcSpeech(
-                          `House purchased for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE! Your Private House ownership is now active on NEAR.`,
+                          `House purchased for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE!`,
                         );
                       }
                     }}
@@ -1391,15 +1372,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   >
                     <span className="inline-block skew-x-6">
                       {isHouseOwned
-                        ? 'HOUSE OWNED (ACTIVE)'
+                        ? 'HOUSE OWNED'
                         : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
                     </span>
                   </button>
                 </div>
 
                 {/* ===========================================================
-                    SECTION 2: RECRUIT FAMILY MEMBER (SMART CONTRACT AI AGENT)
-                    Contract Duration Options: 1 Week, 1 Month, 1 Year (Price Difference in RESPITE)
+                    SECTION 2: RECRUIT FAMILY MEMBER
+                    Contract Duration Options: 1 Week, 1 Month, 1 Year
                    =========================================================== */}
                 <div
                   data-recruit-family-member-section="true"
@@ -1408,10 +1389,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
                     <div>
                       <div className="text-[11px] font-black uppercase tracking-wider text-[#facc15]">
-                        2. RECRUIT FAMILY MEMBER (SMART CONTRACT AI AGENT)
+                        RECRUIT FAMILY MEMBER
                       </div>
                       <div className="text-[10px] font-bold text-slate-300 mt-0.5">
-                        Family Member is an AI agent based on a NEAR smart contract. Select a contract duration to recruit with RESPITE:
+                        Select a duration to recruit with RESPITE:
                       </div>
                     </div>
                     <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
@@ -1468,8 +1449,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       const recruited = onRecruitFamilyMember?.(selectedFamilyPlan.id);
                       triggerNpcSpeech(
                         recruited
-                          ? `Recruited ${recruited.name} on a ${selectedFamilyPlan.label} for ${selectedFamilyPlan.priceRespite} RESPITE! You can now order your Family Member to Collect Boxes, Go Fishing, or launch an Armed Warzone Attack.`
-                          : `Family Member recruited on a ${selectedFamilyPlan.label} (${selectedFamilyPlan.priceRespite} RESPITE)!`,
+                          ? `Recruited ${recruited.name} (${selectedFamilyPlan.shortLabel}) for ${selectedFamilyPlan.priceRespite} RESPITE!`
+                          : `Family Member recruited (${selectedFamilyPlan.shortLabel})!`,
                       );
                     }}
                     className={`-skew-x-6 w-full py-2.5 px-4 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[3px_3px_0_#000] transition-all ${
@@ -1490,11 +1471,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                      ========================================================= */}
                   <div className="pt-2 border-t border-white/15 space-y-2">
                     <div className="text-[10.5px] font-black uppercase tracking-wider text-[#38bdf8]">
-                      3. COMMAND FAMILY MEMBER AI AGENTS
+                      FAMILY MEMBER ORDERS
                     </div>
                     {recruitedFamilyMembers.length === 0 ? (
                       <div className="p-2.5 bg-black/40 border border-white/15 text-[10px] font-bold text-slate-300">
-                        No Family Member recruited yet. Choose a 1 Week, 1 Month, or 1 Year contract above and click RECRUIT FAMILY MEMBER to deploy your smart contract AI agent.
+                        No Family Member recruited yet.
                       </div>
                     ) : (
                       <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -1513,9 +1494,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   <div className="text-[11px] font-black uppercase text-white">
                                     {member.name} ({member.planLabel})
                                   </div>
-                                  <div className="text-[9.5px] font-mono text-[#38bdf8]">
-                                    Contract: {member.contractAddress} | Active Order:{' '}
-                                    {currentOrderSpec.label}
+                                  <div className="text-[9.5px] font-bold text-[#38bdf8]">
+                                    Order: {currentOrderSpec.label}
                                   </div>
                                 </div>
                                 <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black text-[9px] font-black uppercase border border-black shrink-0">

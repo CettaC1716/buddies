@@ -73,16 +73,12 @@ import {
   connectInjectedNearExtensionWallet,
   consumeNearWalletCallbackFromUrl,
   createInitialNep171SubAccountLedger,
-  deriveSocialInvisibleNearAccount,
   detectNetworkFromAccountId,
   disconnectNearWalletSession,
-  executeAtomicNep171SubAccountTransfer,
   executeNearTestnetAndRespiteSwap,
   fetchNearAccountView,
   fetchNearNetworkStatus,
   formatPlayerSubAccountFromMaster,
-  getNearBlocksAccountUrl,
-  getNearBlocksTxUrl,
   isManagedSubAccountOfMaster,
   isMasterAdminWallet,
   isValidNearAccountId,
@@ -428,9 +424,6 @@ export default function App() {
   const [nep171Ledger, setNep171Ledger] = useState<Nep171GamepassSubAccountLedger>(() =>
     createInitialNep171SubAccountLedger('commander-p1.testnet', 'testnet'),
   );
-  const [socialLoginInput, setSocialLoginInput] = useState<string>('commander@near.org');
-  const [transferBuyerInput, setTransferBuyerInput] = useState<string>('buyer-omega.testnet');
-  const [transferAuditBanner, setTransferAuditBanner] = useState<string | null>(null);
   const [caughtFishBucket, setCaughtFishBucket] = useState<CaughtFishItem[]>([]);
   const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>(
     INITIAL_DEMO_FISH_MARKET_LISTINGS,
@@ -1728,103 +1721,65 @@ export default function App() {
         <section
           aria-label="Buddies Blitz Login & Onboarding"
           data-onboarding-step="auth_choice"
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/55 backdrop-blur-[3px] pointer-events-auto select-none"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[3px] pointer-events-auto select-none"
         >
-          <div className="w-full max-w-md max-h-[92dvh] overflow-y-auto bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-4 sm:p-6 space-y-4 sm:space-y-5">
-            <div className="text-center space-y-1.5 border-b-2 border-white/15 pb-4">
-              <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-widest">
-                <span className="skew-x-12 inline-block">BUDDIES BLITZ ONLINE</span>
+          <div className="w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-5 space-y-4">
+            {/* Compact Game Title Header */}
+            <div className="text-center space-y-1 border-b-2 border-white/15 pb-3">
+              <div className="inline-block -skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
+                <span className="skew-x-12 inline-block">BUDDIES BLITZ</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-white pt-1">
-                CHOOSE ACCESS MODE
+              <h1 className="text-2xl font-black uppercase tracking-wide text-white pt-0.5">
+                START GAME
               </h1>
-              <p className="text-xs font-bold text-slate-300">
-                Login as a Guest to pick a 3D character, or continue with Connect Wallet to restore your existing account.
-              </p>
             </div>
 
-            {/* Option 1: New Player (Auto Sub-Account from Master, No Seed Phrase) */}
-            <div className="p-4 bg-[#1e2230] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-[#b8ff3c]">
-                  OPTION 1 - NEW PLAYER (NO SEED PHRASE)
-                </span>
-                <span className="px-2 py-0.5 bg-black/50 text-[10px] font-black uppercase text-white/80 border border-white/20">
-                  SELECT 3D AVATAR
-                </span>
-              </div>
-              <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Pick a Male or Female 3D avatar and username. Master automatically spawns your sub-account (&lt;name&gt;.{MASTER_WALLET_ACCOUNT_ID}) with zero seed phrase required.
-              </p>
-              <button
-                type="button"
-                data-login-guest-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setCharacterGender('male');
-                  if (!isCustomGuestNameEdited) {
-                    setPlayerDisplayName('Buddy Male');
-                  }
-                  dispatchBuddyAction('setCharacterGender:male');
-                  setOnboardingStep('guest_character_select');
-                }}
-                className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-              >
-                <span className="skew-x-6 inline-block">CREATE PLAYER SUB-ACCOUNT &amp; AVATAR</span>
-              </button>
+            {/* 1. Primary Action: Choose 3D Character & Play */}
+            <button
+              type="button"
+              data-login-guest-btn="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setCharacterGender('male');
+                if (!isCustomGuestNameEdited) {
+                  setPlayerDisplayName('Buddy Male');
+                }
+                dispatchBuddyAction('setCharacterGender:male');
+                setOnboardingStep('guest_character_select');
+              }}
+              className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+            >
+              <span className="skew-x-6 inline-block">NEW PLAYER / SELECT CHARACTER</span>
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-white/15" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                OR CONTINUE
+              </span>
+              <div className="flex-1 h-px bg-white/15" />
             </div>
 
-            {/* Option 2: Player Sub-Account Login (No Seed Phrase) & Master Wallet Control */}
-            <div className="p-4 bg-[#0f172a] border-2 border-black shadow-[4px_4px_0_#000] space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
-                  OPTION 2 - SUB-ACCOUNT &amp; MASTER WALLET
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    data-wallet-net-testnet="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setWalletNetworkChoice('testnet');
-                    }}
-                    className={`px-1.5 py-0.5 text-[9px] font-black uppercase border cursor-pointer ${
-                      walletNetworkChoice === 'testnet'
-                        ? 'bg-[#38bdf8] text-black border-black'
-                        : 'bg-black/40 text-white/70 border-white/20'
-                    }`}
-                  >
-                    TESTNET
-                  </button>
-                  <button
-                    type="button"
-                    data-wallet-net-mainnet="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setWalletNetworkChoice('mainnet');
-                    }}
-                    className={`px-1.5 py-0.5 text-[9px] font-black uppercase border cursor-pointer ${
-                      walletNetworkChoice === 'mainnet'
-                        ? 'bg-[#10b981] text-black border-black'
-                        : 'bg-black/40 text-white/70 border-white/20'
-                    }`}
-                  >
-                    MAINNET
-                  </button>
-                </div>
-              </div>
-              <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                Players connect without a personal wallet or seed phrase: Master ({MASTER_WALLET_ACCOUNT_ID}) spawns and controls your sub-account (&lt;name&gt;.{MASTER_WALLET_ACCOUNT_ID}). Master Admin connects via Meteor Chrome Wallet to control all sub-accounts and treasuries.
-              </p>
-
-              {/* Player Sub-Account Input & Instant Spawn/Login */}
-              <div className="space-y-2 p-2.5 bg-[#1e293b] border border-white/20">
-                <div className="flex items-center justify-between text-[9.5px] font-black uppercase">
-                  <span className="text-[#b8ff3c]">PLAYER SUB-ACCOUNT (NO SEED PHRASE)</span>
-                  <span className="text-[#38bdf8] font-mono truncate max-w-[200px]">
-                    {formatPlayerSubAccountFromMaster(walletConnectInput || 'player1')}
+            {/* 2. Returning Player Username / Account Input */}
+            <div className="space-y-2.5">
+              {savedWalletSummary && (
+                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                  <span className="truncate font-black text-[#facc15]">
+                    {savedWalletSummary.displayName}
                   </span>
+                  <button
+                    type="button"
+                    data-reconnect-saved-wallet-btn="true"
+                    onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
+                    className="px-2.5 py-0.5 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
+                  >
+                    CONTINUE
+                  </button>
                 </div>
+              )}
+
+              <div className="flex gap-2">
                 <input
                   type="text"
                   data-wallet-connect-input="true"
@@ -1840,18 +1795,10 @@ export default function App() {
                       );
                     }
                   }}
-                  placeholder="Enter username (auto-creates <name>.buddiesblitz-master.testnet)"
-                  aria-label="NEAR Sub-Account or Wallet Account ID"
-                  className="w-full px-3 py-2 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
+                  placeholder="Username or Account ID"
+                  aria-label="Username or Account ID"
+                  className="flex-1 min-w-0 px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
                 />
-                {walletConnectError && (
-                  <div
-                    data-wallet-connect-error="true"
-                    className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
-                  >
-                    {walletConnectError}
-                  </div>
-                )}
                 <button
                   type="button"
                   data-connect-wallet-enter-btn="true"
@@ -1861,87 +1808,55 @@ export default function App() {
                       walletConnectInput || savedWalletSummary?.walletId || DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
                     )
                   }
-                  className="-skew-x-6 w-full py-2.5 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
+                  className="-skew-x-6 px-4 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer shrink-0"
                 >
-                  <div className="skew-x-6 flex items-center justify-center gap-2">
-                    <Wallet className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
-                    <span>
-                      {isVerifyingNearWallet
-                        ? 'VERIFYING ON NEAR RPC...'
-                        : 'ENTER WITH PLAYER SUB-ACCOUNT (NO SEED PHRASE)'}
-                    </span>
-                  </div>
+                  <span className="skew-x-6 inline-block">
+                    {isVerifyingNearWallet ? 'WAIT...' : 'ENTER'}
+                  </span>
                 </button>
               </div>
 
-              {savedWalletSummary && (
-                <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                  <div className="min-w-0 truncate">
-                    Saved UID: <strong className="text-[#38bdf8] font-mono">{savedWalletSummary.walletId}</strong> -{' '}
-                    <strong className="text-[#facc15]">{savedWalletSummary.displayName}</strong>
-                  </div>
-                  <button
-                    type="button"
-                    data-reconnect-saved-wallet-btn="true"
-                    onClick={() => void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)}
-                    className="px-2 py-0.5 bg-[#38bdf8] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
-                  >
-                    RECONNECT
-                  </button>
+              {walletConnectError && (
+                <div
+                  data-wallet-connect-error="true"
+                  className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
+                >
+                  {walletConnectError}
                 </div>
               )}
 
-              {/* Master Admin & Meteor Chrome Wallet Section */}
-              <div className="pt-1 border-t border-white/15 space-y-2">
-                <div className="text-[9.5px] font-black uppercase text-[#facc15]">
-                  MASTER ADMIN &amp; WALLET SELECTOR (UNLOCKS QA, TREASURY &amp; SUB-ACCOUNTS)
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    data-meteor-wallet-btn="true"
-                    onClick={async () => {
-                      soundEngine.playUiClick();
-                      const ext = await connectInjectedNearExtensionWallet();
-                      if (ext.connected && ext.accountId) {
-                        setCustomMasterWalletId(ext.accountId);
-                        void handleConnectWalletAndEnterLobby(ext.accountId);
-                      } else {
-                        redirectToNearWebWalletLogin({
-                          networkId: walletNetworkChoice,
-                          provider: 'meteor',
-                        });
-                      }
-                    }}
-                    className="-skew-x-6 py-2 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                  >
-                    <span className="skew-x-6 inline-block">METEOR CHROME WALLET</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-open-near-wallet-selector-modal-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsNearWalletSelectorOpen(true);
-                    }}
-                    className="-skew-x-6 py-2 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                  >
-                    <span className="skew-x-6 inline-block">WALLET SELECTOR MODAL</span>
-                  </button>
-                </div>
-
+              {/* 3. Clean Wallet Connect Row */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  data-master-quick-login-btn="true"
+                  data-meteor-wallet-btn="true"
+                  onClick={async () => {
+                    soundEngine.playUiClick();
+                    const ext = await connectInjectedNearExtensionWallet();
+                    if (ext.connected && ext.accountId) {
+                      setCustomMasterWalletId(ext.accountId);
+                      void handleConnectWalletAndEnterLobby(ext.accountId);
+                    } else {
+                      redirectToNearWebWalletLogin({
+                        networkId: walletNetworkChoice,
+                        provider: 'meteor',
+                      });
+                    }
+                  }}
+                  className="-skew-x-6 py-2.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10.5px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                >
+                  <span className="skew-x-6 inline-block">METEOR WALLET</span>
+                </button>
+                <button
+                  type="button"
+                  data-open-near-wallet-selector-modal-btn="true"
                   onClick={() => {
                     soundEngine.playUiClick();
-                    void handleConnectWalletAndEnterLobby(MASTER_WALLET_ACCOUNT_ID);
+                    setIsNearWalletSelectorOpen(true);
                   }}
-                  className="-skew-x-6 w-full py-2 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#facc15] border-2 border-[#facc15]/80 font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                  className="-skew-x-6 py-2.5 px-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10.5px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                 >
-                  <span className="skew-x-6 inline-block">
-                    LOGIN AS MASTER UID ({MASTER_WALLET_ACCOUNT_ID}) - UNLOCKS QA &amp; TREASURY
-                  </span>
+                  <span className="skew-x-6 inline-block">CONNECT WALLET</span>
                 </button>
               </div>
             </div>
@@ -1949,7 +1864,7 @@ export default function App() {
         </section>
       )}
 
-      {/* STEP 2: Avakin-Style 3D Character Selection Studio (When 'Login as a Guest' is clicked) */}
+      {/* STEP 2: Avakin-Style 3D Character Selection Studio */}
       {gameState === 'playing' &&
         !isFullMapOverview &&
         onboardingStep === 'guest_character_select' && (
@@ -1960,11 +1875,8 @@ export default function App() {
           >
             {/* Top Header Pill */}
             <div className="pointer-events-auto bg-[#121318]/90 text-white border-2 border-black px-5 py-2 shadow-[4px_4px_0_#000] text-center">
-              <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                GUEST SESSION · 3D CHARACTER SELECTION
-              </div>
-              <div className="text-xs font-bold text-white/90">
-                Use &lt; &gt; arrows to choose Male or Female and edit your temporary username
+              <div className="text-xs font-black uppercase tracking-widest text-[#b8ff3c]">
+                SELECT CHARACTER
               </div>
             </div>
 
@@ -2718,6 +2630,11 @@ export default function App() {
                     </div>
                     <div className="text-[9px] font-mono text-[#38bdf8] break-all">
                       Treasury Vault: {MASTER_TREASURY_ACCOUNT_ID}
+                    </div>
+                    <div className="text-[8.5px] font-mono text-slate-400 mt-0.5">
+                      RPC Block #{nearRpcStatus?.latestBlockHeight || 0} | DB:{' '}
+                      {supabaseConnected ? 'ONLINE' : 'LOCAL'} | On-Chain:{' '}
+                      {nearOnChainAccountView?.existsOnChain ? 'VERIFIED' : 'SESSION'}
                     </div>
                   </div>
 
@@ -5180,7 +5097,7 @@ export default function App() {
             <div className="-skew-x-6 px-3.5 py-1 bg-[#facc15] border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase flex items-center gap-2">
               <div className="skew-x-6 flex items-center gap-1.5">
                 <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                <span>PERSONAL WALLET &amp; NEAR SUB-ACCOUNT</span>
+                <span>WALLET</span>
               </div>
             </div>
             <button
@@ -5197,84 +5114,54 @@ export default function App() {
           </div>
 
           <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
-            {/* Live Supabase + NEAR Testnet RPC Status Pills */}
-            <div className="flex flex-wrap items-center justify-between gap-1.5 text-[9.5px] font-black uppercase">
-              <span
-                data-supabase-status-badge="true"
-                className={`px-2 py-0.5 border-2 border-black shadow-[2px_2px_0_#000] ${
-                  supabaseConnected ? 'bg-[#10b981] text-black' : 'bg-[#facc15] text-black'
-                }`}
-              >
-                {supabaseConnected ? '● SUPABASE DB LIVE (ichkymzdwzgdtpptrsvr)' : '● SUPABASE READY'}
-              </span>
-              <a
-                href={getNearBlocksAccountUrl(nep171Ledger.ownerNearAccount, nep171Ledger.network)}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2 py-0.5 bg-[#0f172a] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] hover:underline"
-              >
-                NEAR {nearRpcStatus?.networkId?.toUpperCase() || 'TESTNET'} · BLOCK #
-                {nearRpcStatus?.latestBlockHeight?.toLocaleString() || '184,920,415'} ↗
-              </a>
-            </div>
-
-            {/* PLAYER UID (WALLET ADDRESS) & CHANGE USERNAME ANYTIME */}
+            {/* ACCOUNT & USERNAME CARD */}
             <div
               data-wallet-uid-and-username-card="true"
               className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
             >
               <div className="flex items-center justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                    PLAYER UID (NEAR WALLET ADDRESS)
+                    ACCOUNT ID
                   </div>
                   <div
                     data-wallet-active-uid="true"
-                    className="text-xs font-mono font-black text-[#38bdf8] break-all"
+                    className="text-xs font-mono font-black text-[#38bdf8] truncate"
                   >
                     {hud.nearWalletId || playerUid}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  data-switch-or-disconnect-wallet-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    disconnectNearWalletSession();
-                    setIsPersonalWalletModalOpen(false);
-                    setOnboardingStep('auth_choice');
-                  }}
-                  className="-skew-x-6 px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
-                >
-                  <span className="skew-x-6 inline-block">SWITCH WALLET</span>
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    data-personal-wallet-open-selector-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsNearWalletSelectorOpen(true);
+                    }}
+                    className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
+                  >
+                    <span className="skew-x-6 inline-block">WALLET</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-switch-or-disconnect-wallet-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      disconnectNearWalletSession();
+                      setIsPersonalWalletModalOpen(false);
+                      setOnboardingStep('auth_choice');
+                    }}
+                    className="-skew-x-6 px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
+                  >
+                    <span className="skew-x-6 inline-block">LOG OUT</span>
+                  </button>
+                </div>
               </div>
 
-              {nearOnChainAccountView && (
-                <div className="flex items-center justify-between text-[9.5px] font-bold bg-black/40 px-2 py-1 border border-white/15">
-                  <span
-                    className={
-                      nearOnChainAccountView.existsOnChain ? 'text-[#10b981]' : 'text-[#facc15]'
-                    }
-                  >
-                    {nearOnChainAccountView.existsOnChain
-                      ? `● ON-CHAIN VERIFIED (${nearOnChainAccountView.balanceNearFormatted})`
-                      : `● NEAR ${nearOnChainAccountView.networkId.toUpperCase()} ACCOUNT`}
-                  </span>
-                  <a
-                    href={nearOnChainAccountView.explorerUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[#38bdf8] hover:underline font-mono"
-                  >
-                    NearBlocks ↗
-                  </a>
-                </div>
-              )}
-
-              <div className="pt-1.5 border-t border-white/15 space-y-1">
+              <div className="pt-2 border-t border-white/15 space-y-1">
                 <div className="text-[10px] font-black uppercase text-white/90">
-                  DISPLAY USERNAME (CHANGE ANYTIME)
+                  USERNAME
                 </div>
                 <div className="flex gap-1.5">
                   <input
@@ -5291,7 +5178,7 @@ export default function App() {
                         window.setTimeout(() => setWalletUsernameSavedToast(false), 1800);
                       }
                     }}
-                    placeholder="Enter new username..."
+                    placeholder="Enter username..."
                     aria-label="Change Display Username"
                     className="flex-1 min-w-0 px-2.5 py-1.5 bg-white text-black font-bold text-xs border-2 border-black"
                   />
@@ -5308,125 +5195,24 @@ export default function App() {
                     className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
                   >
                     <span className="skew-x-6 inline-block">
-                      {walletUsernameSavedToast ? 'SAVED ✓' : 'SAVE NAME'}
+                      {walletUsernameSavedToast ? 'SAVED' : 'SAVE'}
                     </span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Social / Email Zero-Popup Login (Track: games) */}
-            <div
-              data-social-login-box="true"
-              className="p-3 bg-slate-100 border-2 border-black shadow-[3px_3px_0px_#000] space-y-2"
-            >
-              <div className="text-[10.5px] font-black uppercase text-slate-900">
-                FRICTIONLESS SOCIAL / EMAIL LOGIN (ZERO SEED PHRASES OR GAS POPUPS)
-              </div>
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={socialLoginInput}
-                  onChange={(e) => setSocialLoginInput(e.target.value)}
-                  placeholder="commander@near.org"
-                  aria-label="Social or Email Login"
-                  className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border-2 border-black text-xs font-bold text-black"
-                />
-                <button
-                  type="button"
-                  data-social-login-submit="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    const derived = deriveSocialInvisibleNearAccount(socialLoginInput, 'testnet');
-                    dispatchBuddyAction('nearConnectAndMint');
-                    const nextLedger = createInitialNep171SubAccountLedger(
-                      derived.accountId,
-                      'testnet',
-                    );
-                    setNep171Ledger(nextLedger);
-                    setHud((prev) => ({
-                      ...prev,
-                      nearWalletConnected: true,
-                      nearWalletId: derived.accountId,
-                      nearHasGamepassNft: true,
-                      nearGamepassTokenId: nextLedger.tokenId,
-                    }));
-                    persistWalletProfileLocally(
-                      derived.accountId,
-                      playerDisplayName || derived.displayName,
-                      characterGender,
-                    );
-                    setTransferAuditBanner(
-                      `Social Login active: ${derived.accountId} provisioned with gasless session key (${derived.sessionPublicKey.slice(0, 22)}...).`,
-                    );
-                    void fetchOrCreatePlayerProfile({
-                      nearAccountId: derived.accountId,
-                      displayName: playerDisplayName || derived.displayName,
-                      authMode: 'social_invisible',
-                      email: socialLoginInput,
-                    }).then((profile) => {
-                      if (profile) {
-                        setSupabaseConnected(true);
-                        setCyonBalance(profile.cyon_balance);
-                        setRespiteBalance(profile.respite_balance);
-                        void syncPlayerBalancesToSupabase({
-                          nearAccountId: derived.accountId,
-                          lulBalance: hud.gold,
-                          cyonBalance: profile.cyon_balance,
-                          respiteBalance: profile.respite_balance,
-                          unlockedSkins: ['default', `gender:${characterGender}`],
-                        });
-                      }
-                    });
-                    void syncGamepassNftLedgerToSupabase(nextLedger);
-                  }}
-                  className="-skew-x-6 px-3 py-1.5 bg-[#10b981] hover:bg-[#34d399] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
-                >
-                  <span className="skew-x-6 inline-block">SOCIAL SIGN-IN</span>
-                </button>
-              </div>
-            </div>
-
-            {/* NEAR Wallet Status Box */}
-            <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                  NEAR PROTOCOL WALLET SELECTOR
-                </div>
-                <div className="text-[10px] font-bold text-white/85 mt-0.5 truncate">
-                  {hud.nearWalletConnected
-                    ? `Connected (${hud.nearWalletId ?? nep171Ledger.ownerNearAccount}) · ${nearTestnetBalance.toFixed(2)} NEAR`
-                    : `Active Account: ${nep171Ledger.ownerNearAccount}`}
-                </div>
-              </div>
-              <button
-                type="button"
-                data-personal-wallet-open-selector-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setIsNearWalletSelectorOpen(true);
-                }}
-                className="-skew-x-6 px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
-              >
-                <span className="skew-x-6 inline-block">
-                  {hud.nearWalletConnected ? 'WALLET SELECTOR' : 'CONNECT WALLET'}
-                </span>
-              </button>
-            </div>
-
-            {/* 3 Personal Currency Balances (Redefined: LUL & CYON = Non-Crypto; RESPITE = NEAR NEP-141 Crypto Coin) */}
+            {/* BALANCES */}
             <div className="space-y-2">
               <div className="text-[11px] font-black uppercase tracking-wider text-slate-700">
-                YOUR CURRENCY BALANCES (NON-CRYPTO &amp; NEAR CRYPTO)
+                BALANCES
               </div>
 
               <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase text-black">
-                    LUL (LULLING · NON-CRYPTO)
-                  </div>
+                  <div className="text-xs font-black uppercase text-black">LUL</div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Earned from Fishing &amp; Warzone mini-games · Exchangeable to CYON
+                    Fishing and Warzone rewards
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -5436,11 +5222,9 @@ export default function App() {
 
               <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase text-black">
-                    CYON (HALCYON · NON-CRYPTO)
-                  </div>
+                  <div className="text-xs font-black uppercase text-black">CYON</div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Obtained from LUL → CYON exchange · For Outfits &amp; Non-NFT items
+                    Shop items and outfits
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -5450,158 +5234,26 @@ export default function App() {
 
               <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase text-black">
-                    RESPITE (NEAR NEP-141 SMART CONTRACT COIN)
-                  </div>
+                  <div className="text-xs font-black uppercase text-black">RESPITE</div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Crypto coin on NEAR Protocol · Swapped via NEAR Testnet ↔ RESPITE
+                    House and Family Member token
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#d8b4fe] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
                   <span className="skew-x-6 inline-block">{respiteBalance} RESPITE</span>
                 </div>
               </div>
-            </div>
 
-            {/* NEP-171 Programmable Gamepass Sub-Account & History Ledger (Track: nfts) */}
-            <div
-              data-nep171-subaccount-ledger="true"
-              className="p-3 bg-[#1e1b4b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-black uppercase text-[#facc15]">
-                  ⚡ NEP-171 NFT SUB-ACCOUNT &amp; HISTORY LEDGER
-                </span>
-                <span className="px-2 py-0.5 bg-[#d8b4fe] text-black font-black text-[9px] uppercase border border-black">
-                  {nep171Ledger.tokenId}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-1.5 text-center">
-                <div className="p-1.5 bg-black/40 border border-white/20">
-                  <div className="text-[9px] font-bold text-white/70">SUB-ACCOUNT</div>
-                  <div className="text-[10px] font-black text-[#38bdf8] truncate">
-                    {nep171Ledger.subAccountId}
+              <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase text-black">NEAR</div>
+                  <div className="text-[10px] font-bold text-slate-600">
+                    Connected wallet balance
                   </div>
                 </div>
-                <div className="p-1.5 bg-black/40 border border-white/20">
-                  <div className="text-[9px] font-bold text-white/70">TREASURY</div>
-                  <div className="text-[10px] font-black text-[#10b981]">
-                    {nep171Ledger.treasuryRespite} RESPITE
-                  </div>
+                <div className="-skew-x-6 px-3 py-1 bg-[#10b981] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
+                  <span className="skew-x-6 inline-block">{nearTestnetBalance.toFixed(2)} NEAR</span>
                 </div>
-                <div className="p-1.5 bg-black/40 border border-white/20">
-                  <div className="text-[9px] font-bold text-white/70">EARNED / PAID</div>
-                  <div className="text-[10px] font-black text-[#facc15]">
-                    {nep171Ledger.totalEarnedRespite} / {nep171Ledger.totalPaidOutRespite}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-[9.5px] font-mono text-white/80 bg-black/35 p-1.5 border border-white/15 truncate">
-                Active Key: {nep171Ledger.activeAccessKey}
-              </div>
-
-              {/* Per-NFT Ownership & Payout History View */}
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-black uppercase text-[#38bdf8]">
-                  PER-NFT OWNERSHIP, EARNINGS &amp; PAYOUT HISTORY
-                </div>
-                <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
-                  {nep171Ledger.ownershipHistory.map((item, idx) => (
-                    <div
-                      key={`${item.owner}-${idx}`}
-                      className="p-2 bg-black/45 border border-white/20 text-[9.5px] space-y-0.5"
-                    >
-                      <div className="flex items-center justify-between font-black">
-                        <span className="text-[#facc15]">{item.owner}</span>
-                        <span className="text-white/70">
-                          {item.transferredAt ? 'PAST HOLDER' : 'CURRENT HOLDER'}
-                        </span>
-                      </div>
-                      <div className="text-white/85 font-bold">
-                        Earned: <span className="text-[#10b981]">+{item.earnedRespite} RESPITE</span> ·
-                        Paid Out: <span className="text-[#38bdf8]">{item.paidOutRespite} RESPITE</span>
-                      </div>
-                      <div className="text-white/70">{item.note}</div>
-                      <a
-                        href={getNearBlocksTxUrl(item.txHash, nep171Ledger.network)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-block text-[#38bdf8] hover:underline font-mono text-[8.5px]"
-                      >
-                        Tx: {item.txHash.slice(0, 20)}... ↗
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Atomic NFT + Sub-Account Transfer (Mid-Payout Sale Verification) */}
-              <div className="pt-2 border-t border-white/20 space-y-1.5">
-                <div className="text-[10px] font-black uppercase text-[#facc15]">
-                  ATOMIC NFT TRANSFER (REVOKES SELLER KEY &amp; MOVES SUB-ACCOUNT)
-                </div>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={transferBuyerInput}
-                    onChange={(e) => setTransferBuyerInput(e.target.value)}
-                    placeholder="buyer-omega.testnet"
-                    aria-label="New Buyer NEAR Account"
-                    className="flex-1 min-w-0 px-2 py-1 bg-white text-black font-bold text-xs border-2 border-black"
-                  />
-                  <button
-                    type="button"
-                    data-atomic-nft-transfer-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      try {
-                        const result = executeAtomicNep171SubAccountTransfer({
-                          ledger: nep171Ledger,
-                          callerAccount: nep171Ledger.ownerNearAccount,
-                          newOwnerAccount: transferBuyerInput,
-                          inFlightPayoutRespite: 4.5,
-                        });
-                        setNep171Ledger(result.updatedLedger);
-                        setHud((prev) => ({
-                          ...prev,
-                          nearWalletConnected: true,
-                          nearWalletId: result.newOwner,
-                          nearHasGamepassNft: true,
-                          nearGamepassTokenId: result.updatedLedger.tokenId,
-                        }));
-                        setTransferAuditBanner(result.securityAuditNote);
-                        void syncGamepassNftLedgerToSupabase(result.updatedLedger);
-                        void insertMarketTransactionReceipt({
-                          actor_near_account: result.newOwner,
-                          action_type: 'transfer_gamepass',
-                          nep245_token_id: result.updatedLedger.tokenId,
-                          currency: 'RESPITE',
-                          amount: result.transferredTreasuryToBuyer,
-                          unit_price: result.settledMidSalePayoutToSeller,
-                          reasoning_summary: result.securityAuditNote,
-                          near_tx_hash: result.txHash,
-                        });
-                      } catch (err) {
-                        setTransferAuditBanner(
-                          err instanceof Error ? err.message : 'Transfer rejected',
-                        );
-                      }
-                    }}
-                    className="-skew-x-6 px-2.5 py-1 bg-[#facc15] hover:bg-[#fde047] text-black font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 inline-block">TRANSFER NFT</span>
-                  </button>
-                </div>
-                {transferAuditBanner && (
-                  <div
-                    data-transfer-audit-banner="true"
-                    className="p-2 bg-black/60 border border-[#10b981] text-[#10b981] text-[9.5px] font-bold"
-                  >
-                    {transferAuditBanner}
-                  </div>
-                )}
               </div>
             </div>
           </div>
