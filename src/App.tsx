@@ -76,6 +76,7 @@ import {
   createInitialNep171SubAccountLedger,
   detectNetworkFromAccountId,
   disconnectNearWalletSession,
+  executeMarketContractCallOnChain,
   executeNearTestnetAndRespiteSwap,
   fetchNearAccountView,
   fetchNearNetworkStatus,
@@ -4645,6 +4646,15 @@ export default function App() {
             unit_price: priceRespite,
             reasoning_summary: `Purchased Private House ownership for ${priceRespite} RESPITE.`,
           });
+          void executeMarketContractCallOnChain({
+            methodName: 'purchase_citizen_asset',
+            ownerId: actorAccount,
+            tokenIds: [`house-deed-${actorAccount.replace(/[^a-z0-9]/gi, '-')}`],
+            memoData: {
+              asset_type: 'private_house_deed',
+              price_respite: priceRespite,
+            },
+          });
           return true;
         }}
         recruitedFamilyMembers={recruitedFamilyMembers}
@@ -4674,6 +4684,27 @@ export default function App() {
             nearTxHash: `near-family-${Date.now().toString(36)}`,
           };
           setRecruitedFamilyMembers((prev) => [newMember, ...prev]);
+
+          void executeMarketContractCallOnChain({
+            methodName: 'purchase_citizen_asset',
+            ownerId: actorAccount,
+            tokenIds: [newMember.agentId],
+            memoData: {
+              asset_type: 'family_member_contract',
+              plan_id: plan.id,
+              duration_days: plan.durationDays,
+              price_respite: plan.priceRespite,
+              contract_address: newMember.contractAddress,
+            },
+          }).then((res) => {
+            if (res.txHash) {
+              setRecruitedFamilyMembers((prev) =>
+                prev.map((m) =>
+                  m.agentId === newMember.agentId ? { ...m, nearTxHash: res.txHash } : m,
+                ),
+              );
+            }
+          });
 
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
@@ -5125,6 +5156,24 @@ export default function App() {
                 : f,
             ),
           );
+          void executeMarketContractCallOnChain({
+            methodName: 'mint_fish_nft',
+            ownerId: actorAccount,
+            tokenIds: [nftTokenId],
+            memoData: {
+              species_id: fish.speciesId,
+              species_name: fish.speciesName,
+              water_zone: fish.waterZone,
+              rarity: fish.rarity,
+              weight_kg: fish.weightKg,
+            },
+          }).then((res) => {
+            if (res.txHash) {
+              setCaughtFishBucket((prev) =>
+                prev.map((f) => (f.id === fish.id ? { ...f, nearTxHash: res.txHash } : f)),
+              );
+            }
+          });
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
             lulBalance: hud.gold,
@@ -5168,6 +5217,27 @@ export default function App() {
             listedAtIso: new Date().toISOString(),
           };
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+          void executeMarketContractCallOnChain({
+            methodName: 'list_fish_nft',
+            ownerId: actorAccount,
+            tokenIds: [newListing.nftTokenId],
+            memoData: {
+              listing_id: newListing.listingId,
+              species_name: fish.speciesName,
+              weight_kg: fish.weightKg,
+              rarity: fish.rarity,
+              price_respite: newListing.priceRespite,
+            },
+            eventType: 'market_action',
+          }).then((res) => {
+            if (res.txHash) {
+              setFishMarketListings((prev) =>
+                prev.map((l) =>
+                  l.listingId === newListing.listingId ? { ...l, nearTxHash: res.txHash } : l,
+                ),
+              );
+            }
+          });
           setFishMarketListings((prev) => {
             const next = [newListing, ...prev];
             void syncFishMarketplaceListingsToSupabase({
@@ -5247,6 +5317,26 @@ export default function App() {
           };
 
           setCaughtFishBucket((prev) => [reclaimedFish, ...prev]);
+          void executeMarketContractCallOnChain({
+            methodName: 'buy_fish_nft',
+            ownerId: actorAccount,
+            tokenIds: [listing.nftTokenId],
+            memoData: {
+              listing_id: listing.listingId,
+              seller_account: listing.sellerNearAccount,
+              buyer_account: actorAccount,
+              price_respite: listingPriceRespite,
+            },
+            eventType: 'nft_transfer',
+          }).then((res) => {
+            if (res.txHash) {
+              setCaughtFishBucket((prev) =>
+                prev.map((f) =>
+                  f.id === reclaimedFish.id ? { ...f, nearTxHash: res.txHash } : f,
+                ),
+              );
+            }
+          });
           setFishMarketListings((prev) => {
             const next = prev.filter((l) => l.listingId !== listing.listingId);
             void syncFishMarketplaceListingsToSupabase({
