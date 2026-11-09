@@ -4,8 +4,7 @@ import App from './App.tsx';
 import './index.css';
 
 export const PRIVY_APP_ID =
-  (import.meta.env.VITE_PRIVY_APP_ID as string | undefined)?.trim() ||
-  'cmw9085hh004s0hl29d6ts78f';
+  (import.meta.env.VITE_PRIVY_APP_ID as string | undefined)?.trim() || '';
 
 createRoot(document.getElementById('root')!).render(
   <PrivyProvider

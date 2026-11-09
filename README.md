@@ -123,7 +123,7 @@ Each player carries a **20-fish bucket (`caughtFishBucket.length / 20`)**. When 
 - If the player lands a heavy `Rare` or `Mythic` specimen, they click **`MINT FISH AS NFT`**, minting a **NEP-171 Fish NFT** with its exact `species_id`, `weight_kg`, and `rarity`, and list it on the **Player Fish NFT Marketplace** for **`RESPITE`**.
 
 ### 3. On-chain smart contract (`market.buddiesblitz.testnet`)
-The Rust smart contract in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs) (built on `near-sdk` v5) is deployed to **`market.buddiesblitz.testnet`** (`Tx: LNiV8vsywXs2rX9TB4CWoZmgrU7dDtFw2RLvtnL7DLq`) under the master account **`buddiesblitz.testnet`** (`Tx: Gn2K6j8WEuN11Rjm3eJAziJ5Y45H8ym1DYicw9m7WXi7`):
+The Rust smart contract in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs) (built on `near-sdk` v5) is deployed to **`market.buddiesblitz.testnet`** under the master account **`buddiesblitz.testnet`**:
 
 - `swap_near_for_respite()` (`#[payable]`) — Accepts native Testnet `NEAR` and credits on-chain `RESPITE` (`1 NEAR = 100 RESPITE`).
 - `mint_fish_nft(token_id, species_id, species_name, water_zone, rarity, weight_kg_x100)` — Mints a NEP-171 Fish NFT to `env::predecessor_account_id()` and emits a standard `EVENT_JSON` (`nep171` `nft_mint`).
@@ -193,7 +193,7 @@ Create a `.env` file in the project root (or configure in Vercel Project Setting
 
 | variable | description |
 |---|---|
-| `VITE_PRIVY_APP_ID` | Privy App ID configured with Google OAuth enabled (`cmw9085hh004s0hl29d6ts78f`). |
+| `VITE_PRIVY_APP_ID` | Privy App ID configured with Google OAuth enabled (`<your-privy-app-id>`). |
 | `VITE_SUPABASE_URL` | Supabase project URL (`https://<project-ref>.supabase.co`). |
 | `VITE_SUPABASE_ANON_KEY` | Supabase public `anon` API key. |
 | `VITE_NEAR_NETWORK` | NEAR network target (`testnet` by default). |
