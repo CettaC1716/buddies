@@ -11921,6 +11921,45 @@ export function connectNearWalletAndMintGamepass(
   };
 }
 
+/**
+ * Synchronizes a connected NEAR wallet session WITHOUT falsely granting House/Gamepass ownership.
+ * `hasGamepassNft` is ONLY `true` when `ownsHouse` has been verified on `market.buddiesblitz.testnet`.
+ */
+export function syncNearWalletSessionOwnership(
+  state: NearGamepassSessionState,
+  customAccountId: string | undefined,
+  ownsHouse: boolean,
+  houseTokenId?: string | null,
+): NearGamepassSessionState {
+  const trimmed = (customAccountId ?? '').trim().toLowerCase();
+  if (!trimmed) {
+    return createInitialNearGamepassSessionState();
+  }
+  const cleanAccount =
+    trimmed.endsWith('.near') ||
+    trimmed.endsWith('.testnet') ||
+    trimmed.includes('.') ||
+    /^[0-9a-f]{64}$/.test(trimmed)
+      ? trimmed
+      : `${trimmed}.testnet`;
+  const resolvedTokenId = ownsHouse
+    ? (houseTokenId && houseTokenId.trim() ? houseTokenId.trim() : 'house-deed-0001')
+    : null;
+  return {
+    ...state,
+    walletConnected: true,
+    accountId: cleanAccount,
+    walletId: cleanAccount,
+    hasGamepassNft: Boolean(ownsHouse),
+    tokenId: resolvedTokenId,
+    claimedTeam: ownsHouse ? state.claimedTeam : null,
+    claimedPlotIndex: ownsHouse ? state.claimedPlotIndex : null,
+    sessionStatusBanner: ownsHouse
+      ? `HOUSE DEED VERIFIED (${cleanAccount} · ${resolvedTokenId})! Visit an empty plot Kiosk to Claim Plot.`
+      : `WALLET CONNECTED (${cleanAccount}). Purchase House Ownership (25 RESPITE) from Hana to claim a plot.`,
+  };
+}
+
 export function generateNearHarvesterSwarmSubAccounts(
   nearAccountId: string,
   _team?: 'blue' | 'red',

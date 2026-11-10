@@ -248,12 +248,107 @@ export async function getOrCreateCitizenSessionPublicKey(): Promise<string> {
 }
 
 /**
- * Provisions or resolves `<handle>.buddiesblitz.testnet` via `/api/near-relayer` with a scoped
- * `FunctionCall` session key (`market.buddiesblitz.testnet`).
+ * Checks live NEAR Testnet availability for `<handle>.buddiesblitz.testnet`.
+ * If the account already exists, checks whether THIS browser's Ed25519 key already owns it.
+ */
+export async function checkCitizenSubAccountAvailability(handle: string): Promise<{
+  cleanHandle: string;
+  subAccountId: string;
+  validFormat: boolean;
+  available: boolean;
+  ownedByCurrentDevice: boolean;
+  reason?: string;
+}> {
+  const cleanHandle = handle
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32);
+  const subAccountId = cleanHandle ? `${cleanHandle}.${NEAR_CONFIG.masterAccountId}` : '';
+
+  if (cleanHandle.length < 2) {
+    return {
+      cleanHandle,
+      subAccountId,
+      validFormat: false,
+      available: false,
+      ownedByCurrentDevice: false,
+      reason: 'Minimal 2 karakter huruf kecil / angka (contoh: xyz).',
+    };
+  }
+
+  if (cleanHandle === 'market' || cleanHandle === 'admin' || cleanHandle === 'treasury') {
+    return {
+      cleanHandle,
+      subAccountId,
+      validFormat: false,
+      available: false,
+      ownedByCurrentDevice: false,
+      reason: `Nama "${cleanHandle}" dicadangkan untuk sistem smart contract.`,
+    };
+  }
+
+  const existing = await fetchNearAccountView(subAccountId);
+  if (!existing) {
+    return {
+      cleanHandle,
+      subAccountId,
+      validFormat: true,
+      available: true,
+      ownedByCurrentDevice: false,
+    };
+  }
+
+  try {
+    const sessionPublicKey = await getOrCreateCitizenSessionPublicKey();
+    const { rpcUrl } = resolveNearRpcUrl(subAccountId);
+    const akResp = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'check-subaccount-owner',
+        method: 'query',
+        params: {
+          request_type: 'view_access_key',
+          finality: 'final',
+          account_id: subAccountId,
+          public_key: sessionPublicKey,
+        },
+      }),
+    });
+    const akJson = await akResp.json();
+    if (akJson?.result?.permission) {
+      return {
+        cleanHandle,
+        subAccountId,
+        validFormat: true,
+        available: true,
+        ownedByCurrentDevice: true,
+      };
+    }
+  } catch {
+    // ignore RPC error
+  }
+
+  return {
+    cleanHandle,
+    subAccountId,
+    validFormat: true,
+    available: false,
+    ownedByCurrentDevice: false,
+    reason: `Alamat ${subAccountId} sudah terdaftar oleh warga lain. Pilih nama depan lain.`,
+  };
+}
+
+/**
+ * Provisions or resolves `<handle>.buddiesblitz.testnet` via `/api/near-relayer` with a browser
+ * self-custodial Ed25519 key isolated strictly to `<handle>.buddiesblitz.testnet`.
  */
 export async function spawnSubAccountOnChainViaMaster(params: {
   handle: string;
   email?: string;
+  strictUniqueHandle?: boolean;
 }): Promise<{
   ok: boolean;
   subAccountId: string;
@@ -274,7 +369,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
       subAccountId: '',
       sessionPublicKey: '',
       custodyMode: 'session_key_ready',
-      error: 'Citizen wallet handle must be at least 2 characters.',
+      error: 'Nama depan sub-wallet minimal 2 karakter (contoh: xyz).',
     };
   }
 
@@ -290,24 +385,36 @@ export async function spawnSubAccountOnChainViaMaster(params: {
         handle: cleanHandle,
         sessionPublicKey,
         email: params.email || undefined,
+        strictUniqueHandle: Boolean(params.strictUniqueHandle),
       }),
     });
-    if (resp.ok) {
-      const json = await resp.json();
-      if (json?.ok) {
-        return {
-          ok: true,
-          subAccountId: String(json.subAccountId || subAccountId),
-          sessionPublicKey,
-          custodyMode: json.custodyMode || 'session_key_ready',
-          txHash: json.txHash ? String(json.txHash) : undefined,
-        };
-      }
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok || json?.ok === false) {
+      return {
+        ok: false,
+        subAccountId,
+        sessionPublicKey,
+        custodyMode: 'session_key_ready',
+        error: String(
+          json?.error || `Gagal membuat sub-wallet ${subAccountId}. Silakan coba nama depan lain.`,
+        ),
+      };
+    }
+    if (json?.ok) {
+      setActiveWalletAuthKind('citizen-subaccount');
+      return {
+        ok: true,
+        subAccountId: String(json.subAccountId || subAccountId),
+        sessionPublicKey,
+        custodyMode: json.custodyMode || 'session_key_ready',
+        txHash: json.txHash ? String(json.txHash) : undefined,
+      };
     }
   } catch {
     // Offline or static preview fallback
   }
 
+  setActiveWalletAuthKind('citizen-subaccount');
   return {
     ok: true,
     subAccountId,
@@ -597,8 +704,6 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
       const title = String(t?.metadata?.title || '').toLowerCase();
       return (
         tid.startsWith('house-deed-') ||
-        tid.startsWith('nep171-pass-') ||
-        tid.startsWith('nep171-gamepass-') ||
         extra.includes('"house_deed"') ||
         title.includes('house deed')
       );
@@ -1175,8 +1280,10 @@ function extractExecutionFailureMessage(outcome: unknown): string | null {
 }
 
 /**
- * Signs and broadcasts a zero-deposit FunctionCall directly via FastNEAR RPC when the browser's
- * persistent Ed25519 session key (`bb_citizen_fc_keypair_v2`) is authorized on `signerAccountId`.
+ * Signs and broadcasts a FunctionCall directly via FastNEAR RPC when the browser's
+ * persistent Ed25519 key (`bb_citizen_fc_keypair_v2`) is authorized on `signerAccountId`.
+ * Supports both zero-deposit FunctionCall keys and attached-deposit calls when the browser key
+ * holds `FullAccess` on the citizen's isolated `<handle>.buddiesblitz.testnet` sub-account.
  */
 async function trySignAndBroadcastWithLocalSessionKey(params: {
   signerAccountId: string;
@@ -1186,7 +1293,6 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
   gas: string;
   depositYocto: string;
 }): Promise<{ ok: boolean; txHash: string; error?: string } | null> {
-  if (params.depositYocto !== '0') return null;
   const cleanSigner = params.signerAccountId.trim().toLowerCase();
   if (!cleanSigner || isActiveWalletReadOnlyObserver()) return null;
 
@@ -1195,6 +1301,7 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
     return null;
   }
 
+  const depositBigInt = BigInt(params.depositYocto || '0');
   const { rpcUrl } = resolveNearRpcUrl(cleanSigner);
   try {
     const akResp = await fetch(rpcUrl, {
@@ -1218,6 +1325,12 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
       return null;
     }
 
+    const isFullAccess = akJson.result.permission === 'FullAccess';
+    if (depositBigInt > 0n && !isFullAccess) {
+      // Scoped FunctionCall keys cannot attach NEAR deposit > 0 on NEAR protocol
+      return null;
+    }
+
     const nextNonce = BigInt(akJson.result.nonce) + 1n;
     const blockHashBytes = decodeBase58(String(akJson.result.block_hash));
     const pubKeyBytes = decodeBase58(publicKey.replace(/^ed25519:/i, ''));
@@ -1232,7 +1345,7 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
       borshU32LE(argsBytes.length),
       argsBytes,
       borshU64LE(BigInt(params.gas)),
-      borshU128LE(0n),
+      borshU128LE(depositBigInt),
     ]);
 
     const txBytes = concatBytes([
@@ -1307,8 +1420,8 @@ async function signAndSendNearTransaction(params: {
   lastNearTransactionError = null;
   const network = resolveNearRpcUrl(params.receiverId).network;
 
-  // 1. Zero-deposit Citizen FunctionCall session key (instant popup-free signing when authorized on-chain)
-  if (params.signerAccountId && params.depositYocto === '0') {
+  // 1. Browser self-custody Ed25519 key on `<handle>.buddiesblitz.testnet` (instant popup-free signing!)
+  if (params.signerAccountId) {
     const sessionResult = await trySignAndBroadcastWithLocalSessionKey({
       signerAccountId: params.signerAccountId,
       receiverId: params.receiverId,
@@ -1536,7 +1649,8 @@ export type BuddiesMarketMethodName =
   | 'authorize_deed_session_key'
   | 'claim_deed_payout'
   | 'mint_merchant_item'
-  | 'mt_transfer';
+  | 'mt_transfer'
+  | 'claim_hana_welcome_near';
 
 const ONE_YOCTO_REQUIRED_METHODS: ReadonlySet<BuddiesMarketMethodName> = new Set([
   'ft_transfer',
@@ -1586,6 +1700,73 @@ export async function executeMarketContractCallOnChain(params: {
     explorerUrl: res.txHash ? getNearBlocksTxUrl(res.txHash, NEAR_CONFIG.network) : '',
     contractId: NEAR_CONFIG.marketContractId,
     methodName: params.methodName,
+    error: res.error,
+  };
+}
+
+export interface HanaSmartContractTreasuryStatus {
+  grantAmountNear: number;
+  liquidTreasuryNear: number;
+  callerAlreadyClaimed: boolean;
+}
+
+function formatYoctoNearToNear(yocto: string): number {
+  try {
+    const raw = BigInt((yocto || '0').trim() || '0');
+    const milliNear = Number(raw / 10n ** 21n);
+    return Math.round(milliNear) / 1000;
+  } catch {
+    return 0;
+  }
+}
+
+export async function fetchHanaTreasuryStatus(
+  accountId?: string,
+): Promise<HanaSmartContractTreasuryStatus> {
+  const cleanId = (accountId || '').trim().toLowerCase();
+  const parsed = await callNearContractViewMethod<{
+    grant_amount_yocto?: string;
+    liquid_treasury_yocto?: string;
+    caller_already_claimed?: boolean;
+  }>({
+    contractId: NEAR_CONFIG.marketContractId,
+    methodName: 'get_hana_treasury_status',
+    args: cleanId ? { account_id: cleanId } : {},
+    networkOrAccount: cleanId || NEAR_CONFIG.marketContractId,
+  });
+
+  if (!parsed) {
+    return {
+      grantAmountNear: 0.3,
+      liquidTreasuryNear: 0,
+      callerAlreadyClaimed: false,
+    };
+  }
+
+  return {
+    grantAmountNear: formatYoctoNearToNear(String(parsed.grant_amount_yocto || '300000000000000000000000')),
+    liquidTreasuryNear: formatYoctoNearToNear(String(parsed.liquid_treasury_yocto || '0')),
+    callerAlreadyClaimed: Boolean(parsed.caller_already_claimed),
+  };
+}
+
+export async function claimHanaWelcomeNearOnChain(signerAccountId: string): Promise<{
+  ok: boolean;
+  txHash: string;
+  explorerUrl: string;
+  amountNear: number;
+  error?: string;
+}> {
+  const res = await executeMarketContractCallOnChain({
+    methodName: 'claim_hana_welcome_near',
+    args: {},
+    signerAccountId,
+  });
+  return {
+    ok: res.ok,
+    txHash: res.txHash,
+    explorerUrl: res.explorerUrl,
+    amountNear: 0.3,
     error: res.error,
   };
 }

@@ -13,6 +13,8 @@ pub const FAMILY_PLAN_1_WEEK_PRICE_RESPITE: u128 = 15;
 pub const FAMILY_PLAN_1_MONTH_PRICE_RESPITE: u128 = 45;
 pub const FAMILY_PLAN_1_YEAR_PRICE_RESPITE: u128 = 180;
 pub const MIN_STORAGE_DEPOSIT_YOCTO: u128 = 1_250_000_000_000_000_000_000; // 0.00125 NEAR
+pub const HANA_WELCOME_GRANT_YOCTO: u128 = 300_000_000_000_000_000_000_000; // 0.30 NEAR starter grant
+pub const TREASURY_STORAGE_SAFETY_BUFFER_YOCTO: u128 = 100_000_000_000_000_000_000_000; // 0.10 NEAR buffer
 
 const RESPITE_SVG_DATA_URI: &str = "data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%230f172a%22/><circle cx=%2232%22 cy=%2232%22 r=%2224%22 fill=%22%23d8b4fe%22 stroke=%22%23b8ff3c%22 stroke-width=%224%22/><text x=%2232%22 y=%2240%22 font-family=%22Arial,sans-serif%22 font-weight=%22900%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%230f172a%22>R</text></svg>";
 
@@ -169,6 +171,14 @@ pub struct ContractOverview {
     pub total_family_contracts: u64,
     pub total_fish_nfts_minted: u64,
     pub active_fish_listings: u64,
+}
+
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HanaTreasuryStatus {
+    pub grant_amount_yocto: U128,
+    pub liquid_treasury_yocto: U128,
+    pub caller_already_claimed: bool,
 }
 
 #[near(contract_state)]
@@ -1145,6 +1155,96 @@ impl BuddiesMarketContract {
         );
     }
 
+    // =========================================================================
+    // 6. HANA SMART CONTRACT TREASURY (`claim_hana_welcome_near`)
+    // =========================================================================
+
+    fn hana_welcome_storage_key(account_id: &AccountId) -> Vec<u8> {
+        let mut key = b"hw:".to_vec();
+        key.extend_from_slice(account_id.as_bytes());
+        key
+    }
+
+    fn compute_liquid_treasury_yocto(&self) -> u128 {
+        let required_storage_yocto = (env::storage_usage() as u128)
+            .saturating_mul(env::storage_byte_cost().as_yoctonear())
+            .saturating_add(TREASURY_STORAGE_SAFETY_BUFFER_YOCTO);
+        env::account_balance()
+            .as_yoctonear()
+            .saturating_sub(required_storage_yocto)
+    }
+
+    pub fn has_claimed_hana_welcome(&self, account_id: AccountId) -> bool {
+        env::storage_has_key(&Self::hana_welcome_storage_key(&account_id))
+    }
+
+    pub fn get_hana_treasury_status(&self, account_id: Option<AccountId>) -> HanaTreasuryStatus {
+        let claimed = account_id
+            .as_ref()
+            .map(|id| env::storage_has_key(&Self::hana_welcome_storage_key(id)))
+            .unwrap_or(false);
+        HanaTreasuryStatus {
+            grant_amount_yocto: U128(HANA_WELCOME_GRANT_YOCTO),
+            liquid_treasury_yocto: U128(self.compute_liquid_treasury_yocto()),
+            caller_already_claimed: claimed,
+        }
+    }
+
+    /// Allows Master/Developer treasury to top up Hana's on-chain NEAR starter grant pool.
+    #[payable]
+    pub fn fund_hana_welcome_treasury(&mut self) -> U128 {
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "Attach NEAR to fund Hana's welcome treasury");
+        let funder = env::predecessor_account_id();
+        let liquid = self.compute_liquid_treasury_yocto();
+        Self::emit_nep_event(
+            "buddies_hana_treasury",
+            "treasury_funded",
+            json!([{
+                "funder_id": funder,
+                "deposit_yocto": deposit.to_string(),
+                "liquid_treasury_yocto": liquid.to_string()
+            }]),
+        );
+        U128(liquid)
+    }
+
+    /// One-time onboarding grant distributed directly from Hana's smart contract treasury
+    /// (`0.30 NEAR`) after a new citizen finishes Hana's Central Plaza Cafe tutorial chat.
+    pub fn claim_hana_welcome_near(&mut self) -> Promise {
+        let caller = env::predecessor_account_id();
+        let key = Self::hana_welcome_storage_key(&caller);
+        require!(
+            !env::storage_has_key(&key),
+            "Citizen has already claimed Hana's welcome NEAR grant"
+        );
+
+        // Record claim before checking storage usage so its trie cost is accounted for
+        env::storage_write(&key, &[1u8]);
+        if !self.storage_deposits.contains_key(&caller) {
+            self.storage_deposits
+                .insert(caller.clone(), MIN_STORAGE_DEPOSIT_YOCTO);
+        }
+
+        let liquid = self.compute_liquid_treasury_yocto();
+        require!(
+            liquid >= HANA_WELCOME_GRANT_YOCTO,
+            "Hana smart contract treasury has insufficient liquid NEAR"
+        );
+
+        Self::emit_nep_event(
+            "buddies_hana_treasury",
+            "welcome_near_claimed",
+            json!([{
+                "citizen_id": caller,
+                "amount_yocto": HANA_WELCOME_GRANT_YOCTO.to_string(),
+                "amount_near": "0.30"
+            }]),
+        );
+
+        Promise::new(caller).transfer(NearToken::from_yoctonear(HANA_WELCOME_GRANT_YOCTO))
+    }
+
     fn emit_nep_event(standard: &str, event: &str, data: near_sdk::serde_json::Value) {
         let payload = json!({
             "standard": standard,
@@ -1381,5 +1481,44 @@ mod tests {
             ],
         );
         assert_eq!(batch, vec![U128(2), U128(0)]);
+    }
+
+    #[test]
+    fn test_hana_welcome_near_claim_once_per_citizen() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("xyz.buddiesblitz.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+
+        assert!(!contract.has_claimed_hana_welcome(acct("xyz.buddiesblitz.testnet")));
+        let _ = contract.claim_hana_welcome_near();
+        assert!(contract.has_claimed_hana_welcome(acct("xyz.buddiesblitz.testnet")));
+        let status = contract.get_hana_treasury_status(Some(acct("xyz.buddiesblitz.testnet")));
+        assert!(status.caller_already_claimed);
+        assert_eq!(status.grant_amount_yocto.0, HANA_WELCOME_GRANT_YOCTO);
+    }
+
+    #[test]
+    #[should_panic(expected = "Citizen has already claimed Hana's welcome NEAR grant")]
+    fn test_hana_welcome_near_prevents_double_claim() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("xyz.buddiesblitz.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+
+        let _ = contract.claim_hana_welcome_near();
+        let _ = contract.claim_hana_welcome_near();
     }
 }

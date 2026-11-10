@@ -170,6 +170,7 @@ import {
   NearGamepassSessionState,
   createInitialNearGamepassSessionState,
   connectNearWalletAndMintGamepass,
+  syncNearWalletSessionOwnership,
   claimEmptyBasePlotWithNearGamepass,
   releaseClaimedOnlineSessionBase,
   PLAYER_WARZONE_MAX_HP,
@@ -3499,6 +3500,75 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
     window.addEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
+
+    // =========================================================================
+    // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
+    // =========================================================================
+    let activeTutorialWaypointTarget: 'none' | 'hana' | 'kiosk' = 'none';
+    const tutorialWaypointGroup = new THREE.Group();
+    tutorialWaypointGroup.name = 'TutorialWaypointPathGroup3D';
+    tutorialWaypointGroup.visible = false;
+    scene.add(tutorialWaypointGroup);
+
+    const chevronShape = new THREE.Shape();
+    chevronShape.moveTo(0, 0.42);
+    chevronShape.lineTo(0.42, -0.22);
+    chevronShape.lineTo(0.24, -0.34);
+    chevronShape.lineTo(0, 0.04);
+    chevronShape.lineTo(-0.24, -0.34);
+    chevronShape.lineTo(-0.42, -0.22);
+    chevronShape.closePath();
+    const tutorialChevronGeo = new THREE.ShapeGeometry(chevronShape);
+    tutorialChevronGeo.rotateX(-Math.PI / 2);
+
+    const TUTORIAL_CHEVRON_COUNT = 16;
+    const tutorialChevronMeshes: Array<{
+      mesh: THREE.Mesh;
+      mat: THREE.MeshBasicMaterial;
+    }> = [];
+    for (let i = 0; i < TUTORIAL_CHEVRON_COUNT; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: '#b8ff3c',
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(tutorialChevronGeo, mat);
+      mesh.visible = false;
+      mesh.renderOrder = 18;
+      tutorialWaypointGroup.add(mesh);
+      tutorialChevronMeshes.push({ mesh, mat });
+    }
+
+    const tutorialDestRingGeo = new THREE.RingGeometry(1.15, 1.55, 36);
+    tutorialDestRingGeo.rotateX(-Math.PI / 2);
+    const tutorialDestRingMat = new THREE.MeshBasicMaterial({
+      color: '#b8ff3c',
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const tutorialDestRingMesh = new THREE.Mesh(tutorialDestRingGeo, tutorialDestRingMat);
+    tutorialDestRingMesh.renderOrder = 18;
+    tutorialWaypointGroup.add(tutorialDestRingMesh);
+
+    const onSetTutorialWaypoint = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ target?: 'none' | 'hana' | 'kiosk' }>).detail;
+      const nextTarget = detail?.target ?? 'none';
+      activeTutorialWaypointTarget =
+        nextTarget === 'hana' || nextTarget === 'kiosk' ? nextTarget : 'none';
+      const hex = activeTutorialWaypointTarget === 'kiosk' ? '#38bdf8' : '#b8ff3c';
+      tutorialDestRingMat.color.set(hex);
+      for (const item of tutorialChevronMeshes) {
+        item.mat.color.set(hex);
+      }
+      if (activeTutorialWaypointTarget === 'none') {
+        tutorialWaypointGroup.visible = false;
+      }
+    };
+    window.addEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
 
     const createBlitzTankVehicle = (spawnX: number, spawnZ: number, isSuper: boolean, team: 'blue' | 'red'): TankVehicle => {
       const root = new THREE.Group();
@@ -10424,12 +10494,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           emitHudImmediately();
           window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
         }
+      } else if (act === 'nearDisconnectSession') {
+        releaseActiveNearSessionBaseAndHarvesters();
+        nearSessionState = createInitialNearGamepassSessionState();
+        emitHudImmediately();
+      } else if (act.startsWith('nearSyncWalletSession:')) {
+        const rest = act.slice('nearSyncWalletSession:'.length);
+        const parts = rest.split(':');
+        const syncedWalletId = (parts[0] || '').trim();
+        const ownsHouseFlag = parts[1] === '1' || parts[1] === 'true';
+        const syncedTokenId = (parts.slice(2).join(':') || '').trim() || null;
+        if (!ownsHouseFlag && nearSessionState.claimedPlotIndex !== null) {
+          releaseActiveNearSessionBaseAndHarvesters();
+        }
+        nearSessionState = syncNearWalletSessionOwnership(
+          nearSessionState,
+          syncedWalletId || undefined,
+          ownsHouseFlag,
+          syncedTokenId,
+        );
+        emitHudImmediately();
       } else if (act === 'nearConnectAndMint' || act.startsWith('nearConnectAndMint:')) {
         soundEngine.playPickup();
         const customWalletId = act.startsWith('nearConnectAndMint:')
           ? act.slice('nearConnectAndMint:'.length).trim()
           : (typeof window !== 'undefined'
-              ? window.localStorage.getItem('bb_last_connected_wallet_id')
+              ? window.localStorage.getItem('bb_last_connected_wallet_id_v2')
               : null) || undefined;
         nearSessionState = connectNearWalletAndMintGamepass(
           nearSessionState,
@@ -10440,7 +10530,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (nearSessionState.walletConnected && nearSessionState.walletId && playerUnit && playerUnit.alive) {
           playerUnit.saluteTimer = 2.5;
           playerUnit.saluteSign.updateText(
-            'NEP-171 GAMEPASS MINTED!',
+            'HOUSE DEED VERIFIED!',
             `${nearSessionState.walletId} · ${nearSessionState.tokenId}`,
             '#38bdf8',
             1,
@@ -10453,15 +10543,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
         const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
         const isSafezone = cityArenaMode === 'safezone';
-        if (!nearSessionState.walletConnected || !nearSessionState.hasGamepassNft) {
-          const savedWallet =
-            typeof window !== 'undefined'
-              ? window.localStorage.getItem('bb_last_connected_wallet_id') || undefined
-              : undefined;
-          if (savedWallet) {
-            nearSessionState = connectNearWalletAndMintGamepass(nearSessionState, savedWallet);
-          }
-        }
         const targetTeam = nearestKiosk.team;
         const targetPlotIdx =
           !isSafezone && nearestKiosk.team === 'blue' && nearestKiosk.plotIndex === 0
@@ -17458,9 +17539,82 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         beachHouseNpc.exclamationGroup.position.y = 3.25 + excBob;
         lobbyCafeNpc.exclamationGroup.rotation.y = excRot;
         beachHouseNpc.exclamationGroup.rotation.y = excRot;
-        const hasActiveEvent = false;
-        lobbyCafeNpc.exclamationGroup.visible = hasActiveEvent && worldModeRef.current === 'lobby';
-        beachHouseNpc.exclamationGroup.visible = hasActiveEvent && worldModeRef.current !== 'lobby';
+        const hasActiveEvent = activeTutorialWaypointTarget === 'hana';
+        lobbyCafeNpc.exclamationGroup.visible =
+          hasActiveEvent && worldModeRef.current !== 'warzone';
+        beachHouseNpc.exclamationGroup.visible = false;
+
+        // Update 3D Guided Tutorial Waypoint Chevron Path (`hana` or `kiosk`)
+        if (
+          activeTutorialWaypointTarget !== 'none' &&
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          playerUnit &&
+          playerUnit.alive
+        ) {
+          let targetX = lobbyCafeNpc.npcGrp.position.x;
+          let targetZ = lobbyCafeNpc.npcGrp.position.z;
+          if (activeTutorialWaypointTarget === 'hana') {
+            lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+            targetX = scratchLiveObjPos.x;
+            targetZ = scratchLiveObjPos.z;
+          } else {
+            const centralKiosk = getCityTransitKioskMeshById('central_plaza');
+            if (centralKiosk) {
+              centralKiosk.getWorldPosition(scratchLiveObjPos);
+              targetX = scratchLiveObjPos.x;
+              targetZ = scratchLiveObjPos.z;
+            } else {
+              targetX = -61.95;
+              targetZ = 0.0;
+            }
+          }
+
+          const dx = targetX - playerUnit.x;
+          const dz = targetZ - playerUnit.z;
+          const dist = Math.hypot(dx, dz);
+          const yaw = Math.atan2(dx, dz);
+
+          tutorialWaypointGroup.visible = true;
+          const ringScale = 1.0 + Math.sin(timeSec * 4.5) * 0.12;
+          tutorialDestRingMesh.position.set(
+            targetX,
+            getTerrainElevation(targetX, targetZ) + 0.12,
+            targetZ,
+          );
+          tutorialDestRingMesh.scale.setScalar(ringScale);
+          tutorialDestRingMat.opacity = 0.65 + Math.sin(timeSec * 4.5) * 0.25;
+
+          const startOffset = 1.4;
+          const endOffset = 1.6;
+          const span = Math.max(0, dist - startOffset - endOffset);
+          const spacing = 2.1;
+          const neededCount = Math.min(
+            TUTORIAL_CHEVRON_COUNT,
+            span > 0.4 ? Math.max(1, Math.floor(span / spacing) + 1) : 0,
+          );
+
+          for (let ci = 0; ci < TUTORIAL_CHEVRON_COUNT; ci++) {
+            const item = tutorialChevronMeshes[ci];
+            if (ci >= neededCount) {
+              item.mesh.visible = false;
+              continue;
+            }
+            const frac = neededCount === 1 ? 0.5 : ci / neededCount;
+            const animatedFrac = (frac + ((timeSec * 0.42) % (1 / Math.max(1, neededCount)))) % 1;
+            const dAlong = startOffset + animatedFrac * span;
+            const cx = playerUnit.x + (dx / Math.max(0.01, dist)) * dAlong;
+            const cz = playerUnit.z + (dz / Math.max(0.01, dist)) * dAlong;
+            item.mesh.visible = true;
+            item.mesh.position.set(cx, getTerrainElevation(cx, cz) + 0.15, cz);
+            item.mesh.rotation.y = yaw;
+            const pulse = 0.5 + 0.5 * Math.sin(timeSec * 6.5 - ci * 0.75);
+            item.mat.opacity = 0.38 + pulse * 0.56;
+            item.mesh.scale.setScalar(0.88 + pulse * 0.2);
+          }
+        } else {
+          tutorialWaypointGroup.visible = false;
+        }
         const inLobbyForCamera = worldModeRef.current === 'lobby';
         if (activeTramRideCutscene && activeTramRideCutscene.active) {
           resetAllPlayerMovementInputs();
@@ -17642,7 +17796,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             selectedCharacterTarget &&
               (selectedCharacterTarget.id === 'npc_cafe' || selectedCharacterTarget.id === 'npc_hana'),
           );
-          lobbyCafeNpc.npcNameplate.sprite.visible = isSelected || distCafe <= 8.5;
+          lobbyCafeNpc.npcNameplate.sprite.visible =
+            isSelected || distCafe <= 8.5 || activeTutorialWaypointTarget === 'hana';
         } else {
           lobbyCafeNpc.npcNameplate.sprite.visible = false;
         }
@@ -20329,6 +20484,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('select-character-by-id', onSelectCharacterById);
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
       window.removeEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
+      window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
+      scene.remove(tutorialWaypointGroup);
+      tutorialChevronGeo.dispose();
+      tutorialDestRingGeo.dispose();
+      tutorialDestRingMat.dispose();
+      for (const item of tutorialChevronMeshes) {
+        item.mat.dispose();
+      }
       scene.remove(tidewaterFishing3DGroup);
       catenaryLineGeo.dispose();
       catenaryLineMat.dispose();

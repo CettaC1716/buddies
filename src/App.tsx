@@ -8,8 +8,6 @@ import {
   ChevronRight,
   Wallet,
   History,
-  Pencil,
-  Check,
   ArrowLeft,
   Backpack,
   Package,
@@ -80,14 +78,18 @@ import {
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   NEAR_CONFIG,
+  checkCitizenSubAccountAvailability,
+  claimHanaWelcomeNearOnChain,
   disconnectNearWallet,
   executeMarketContractCallOnChain,
   executeNearTestnetAndRespiteSwap,
   fetchBuddiesMarketEstate,
   fetchBuddiesMarketFishListings,
+  fetchHanaTreasuryStatus,
   fetchNearAccountView,
   fetchNearNetworkStatus,
   fetchNep141Balance,
+  getNearBlocksTxUrl,
   isActiveWalletReadOnlyObserver,
   onNearSigningWalletConnected,
   restoreConnectedNearSigningWallet,
@@ -280,9 +282,25 @@ export default function App() {
   const [playMode, setPlayMode] = useState<PlayMode>('sandbox');
   const [characterGender, setCharacterGender] = useState<'female' | 'male'>('male');
   const [onboardingStep, setOnboardingStep] = useState<
-    'auth_choice' | 'guest_character_select' | 'entering_lobby' | 'completed'
+    | 'auth_choice'
+    | 'guest_character_select'
+    | 'subwallet_naming'
+    | 'provisioning_subwallet'
+    | 'entering_lobby'
+    | 'completed'
   >(() => {
     if (typeof window !== 'undefined') {
+      try {
+        if (window.localStorage.getItem('bb_storage_reset_nov2026_v2') !== '1') {
+          window.localStorage.removeItem('bb_last_connected_wallet_id');
+          window.localStorage.removeItem('bb_saved_wallet_profiles_v1');
+          window.localStorage.removeItem('bb_wallet_by_google_email_v1');
+          window.localStorage.removeItem('bb_connected_google_email');
+          window.localStorage.setItem('bb_storage_reset_nov2026_v2', '1');
+        }
+      } catch {
+        // ignore storage errors
+      }
       const params = new URLSearchParams(window.location.search);
       if (
         params.get('skipOnboarding') === '1' ||
@@ -293,7 +311,7 @@ export default function App() {
         return 'completed';
       }
       try {
-        const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+        const lastId = window.localStorage.getItem('bb_last_connected_wallet_id_v2');
         const explicitlyLoggedOut =
           window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
         if (
@@ -314,7 +332,7 @@ export default function App() {
   const [playerDisplayName, setPlayerDisplayName] = useState<string>('Buddy Male');
   const [playerUid, setPlayerUid] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      const savedWallet = window.localStorage.getItem('bb_last_connected_wallet_id');
+      const savedWallet = window.localStorage.getItem('bb_last_connected_wallet_id_v2');
       if (
         savedWallet &&
         !savedWallet.toLowerCase().startsWith('player1.') &&
@@ -324,15 +342,37 @@ export default function App() {
         return savedWallet.toLowerCase();
       }
       if (savedWallet) {
-        window.localStorage.removeItem('bb_last_connected_wallet_id');
+        window.localStorage.removeItem('bb_last_connected_wallet_id_v2');
       }
     }
     return '';
   });
   const [isCustomGuestNameEdited, setIsCustomGuestNameEdited] = useState<boolean>(false);
-  const [isEditingGuestName, setIsEditingGuestName] = useState<boolean>(false);
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
   const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
+  const [subWalletHandleDraft, setSubWalletHandleDraft] = useState<string>('');
+  const [subWalletAvailability, setSubWalletAvailability] = useState<{
+    checking: boolean;
+    validFormat: boolean;
+    available: boolean;
+    ownedByCurrentDevice: boolean;
+    subAccountId: string;
+    reason?: string;
+  }>({
+    checking: false,
+    validFormat: false,
+    available: false,
+    ownedByCurrentDevice: false,
+    subAccountId: '',
+  });
+  const [subWalletProvisionStageLabel, setSubWalletProvisionStageLabel] = useState<string>(
+    'Menyiapkan kunci kriptografi Ed25519 di browser...',
+  );
+  const [provisionedSubWalletTxHash, setProvisionedSubWalletTxHash] = useState<string>('');
+  const [tutorialStage, setTutorialStage] = useState<
+    'none' | 'welcome_modal' | 'go_to_hana' | 'go_to_kiosk'
+  >('none');
+  const [hanaWelcomeNearClaimed, setHanaWelcomeNearClaimed] = useState<boolean>(false);
   const [preloadProgress, setPreloadProgress] = useState<number>(0);
   const [isPreloadComplete, setIsPreloadComplete] = useState<boolean>(false);
   const preloadTrackerRef = useRef<PreloadProgressInput>({
@@ -395,13 +435,13 @@ export default function App() {
   }, [syncPreloadProgressState]);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('bb_connected_google_email') || '';
+      return window.localStorage.getItem('bb_connected_google_email_v2') || '';
     }
     return '';
   });
   const [connectedGoogleEmail, setConnectedGoogleEmail] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('bb_connected_google_email') || '';
+      return window.localStorage.getItem('bb_connected_google_email_v2') || '';
     }
     return '';
   });
@@ -425,8 +465,8 @@ export default function App() {
   } | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
-      const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
+      const lastId = window.localStorage.getItem('bb_last_connected_wallet_id_v2');
+      const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v2');
       if (
         !lastId ||
         !rawMap ||
@@ -1297,6 +1337,64 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const target: 'none' | 'hana' | 'kiosk' =
+      tutorialStage === 'go_to_hana'
+        ? 'hana'
+        : tutorialStage === 'go_to_kiosk'
+          ? 'kiosk'
+          : 'none';
+    window.dispatchEvent(
+      new CustomEvent('set-tutorial-waypoint', {
+        detail: { target },
+      }),
+    );
+  }, [tutorialStage]);
+
+  useEffect(() => {
+    if (onboardingStep !== 'subwallet_naming') return;
+    let cancelled = false;
+    const clean = subWalletHandleDraft
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 32);
+    const fullSubId = clean ? `${clean}.${NEAR_CONFIG.masterAccountId}` : '';
+    if (clean.length < 2) {
+      setSubWalletAvailability({
+        checking: false,
+        validFormat: false,
+        available: false,
+        ownedByCurrentDevice: false,
+        subAccountId: fullSubId,
+        reason: 'Minimal 2 karakter huruf kecil / angka (contoh: xyz).',
+      });
+      return;
+    }
+    setSubWalletAvailability((prev) => ({
+      ...prev,
+      checking: true,
+      subAccountId: fullSubId,
+    }));
+    const timer = window.setTimeout(() => {
+      void checkCitizenSubAccountAvailability(clean).then((res) => {
+        if (cancelled) return;
+        setSubWalletAvailability({
+          checking: false,
+          validFormat: res.validFormat,
+          available: res.available,
+          ownedByCurrentDevice: res.ownedByCurrentDevice,
+          subAccountId: res.subAccountId,
+          reason: res.reason,
+        });
+      });
+    }, 260);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [onboardingStep, subWalletHandleDraft]);
+
+  useEffect(() => {
     const effectiveMode =
       onboardingStep === 'guest_character_select'
         ? 'character_select'
@@ -1349,27 +1447,27 @@ export default function App() {
       const cleanWallet = walletId.trim().toLowerCase();
       if (!cleanWallet) return;
       try {
-        window.localStorage.setItem('bb_last_connected_wallet_id', cleanWallet);
+        window.localStorage.setItem('bb_last_connected_wallet_id_v2', cleanWallet);
         window.localStorage.setItem('bb_explicit_logged_out_v1', '0');
-        const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
+        const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v2');
         const map: Record<string, { displayName: string; gender: 'male' | 'female' }> = rawMap
           ? JSON.parse(rawMap)
           : {};
         map[cleanWallet] = { displayName, gender };
-        window.localStorage.setItem('bb_saved_wallet_profiles_v1', JSON.stringify(map));
+        window.localStorage.setItem('bb_saved_wallet_profiles_v2', JSON.stringify(map));
 
         const activeEmail = (
           googleEmailOverride ||
-          window.localStorage.getItem('bb_connected_google_email') ||
+          window.localStorage.getItem('bb_connected_google_email_v2') ||
           ''
         )
           .trim()
           .toLowerCase();
         if (activeEmail && activeEmail.includes('@')) {
-          const rawEmailMap = window.localStorage.getItem('bb_wallet_by_google_email_v1');
+          const rawEmailMap = window.localStorage.getItem('bb_wallet_by_google_email_v2');
           const emailMap: Record<string, string> = rawEmailMap ? JSON.parse(rawEmailMap) : {};
           emailMap[activeEmail] = cleanWallet;
-          window.localStorage.setItem('bb_wallet_by_google_email_v1', JSON.stringify(emailMap));
+          window.localStorage.setItem('bb_wallet_by_google_email_v2', JSON.stringify(emailMap));
         }
         setSavedWalletSummary({ walletId: cleanWallet, displayName, gender });
       } catch {
@@ -1432,11 +1530,11 @@ export default function App() {
           : cleanInput.includes('@')
             ? cleanInput
             : typeof window !== 'undefined'
-              ? window.localStorage.getItem('bb_connected_google_email') || ''
+              ? window.localStorage.getItem('bb_connected_google_email_v2') || ''
               : '';
       if (resolvedEmail && typeof window !== 'undefined') {
         try {
-          window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
+          window.localStorage.setItem('bb_connected_google_email_v2', resolvedEmail);
         } catch {
           // ignore
         }
@@ -1470,11 +1568,13 @@ export default function App() {
         Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0,
       );
 
-      const [onChainRespiteRaw, onChainEstate, gamepassVerify] = await Promise.all([
+      const [onChainRespiteRaw, onChainEstate, gamepassVerify, hanaStatus] = await Promise.all([
         fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet),
         fetchBuddiesMarketEstate(normalizedWallet),
         verifyNep171GamepassOwnership(normalizedWallet),
+        fetchHanaTreasuryStatus(normalizedWallet),
       ]);
+      setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
       const estateRespite = Number(onChainEstate?.respite_balance || '0') || 0;
       const onChainRespite = Math.max(Number(onChainRespiteRaw || '0') || 0, estateRespite);
       if (onChainRespite > 0) {
@@ -1511,7 +1611,7 @@ export default function App() {
       let restoredName = normalizedWallet.split('.')[0].toUpperCase();
       if (typeof window !== 'undefined') {
         try {
-          const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
+          const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v2');
           if (rawMap) {
             const parsed = JSON.parse(rawMap) as Record<
               string,
@@ -1538,7 +1638,9 @@ export default function App() {
       setGameState('playing');
       setHasHouseOwnership(ownsHouseVerified);
 
-      dispatchBuddyAction(`nearConnectAndMint:${normalizedWallet}`);
+      dispatchBuddyAction(
+        `nearSyncWalletSession:${normalizedWallet}:${ownsHouseVerified ? '1' : '0'}:${verifiedTokenId || ''}`,
+      );
       dispatchBuddyAction(`setCharacterGender:${restoredGender}`);
       dispatchBuddyAction(`setPlayerDisplayName:${restoredName}`);
       setHud((prev) => ({
@@ -1630,7 +1732,8 @@ export default function App() {
       const cleanEmail = (rawEmail ?? '').trim().toLowerCase();
       if (cleanEmail && cleanEmail.includes('@') && typeof window !== 'undefined') {
         try {
-          window.localStorage.setItem('bb_connected_google_email', cleanEmail);
+          window.localStorage.setItem('bb_connected_google_email_v2', cleanEmail);
+          window.sessionStorage.removeItem('bb_pending_privy_google_login');
         } catch {
           // ignore
         }
@@ -1653,8 +1756,17 @@ export default function App() {
           setPlayerDisplayName(suggestedCitizenName);
           setWalletUsernameDraft(suggestedCitizenName);
         }
+        if (suggestedCitizenName) {
+          setSubWalletHandleDraft(
+            suggestedCitizenName
+              .toLowerCase()
+              .replace(/[^a-z0-9_-]/g, '')
+              .slice(0, 24),
+          );
+        }
       }
 
+      setOnboardingAuthMode('wallet');
       setOnboardingStep('guest_character_select');
       return false;
     },
@@ -1680,7 +1792,7 @@ export default function App() {
         setConnectedGoogleEmail(googleEmail);
         if (typeof window !== 'undefined') {
           try {
-            window.localStorage.setItem('bb_connected_google_email', googleEmail);
+            window.localStorage.setItem('bb_connected_google_email_v2', googleEmail);
           } catch {
             // ignore
           }
@@ -1816,10 +1928,10 @@ export default function App() {
           }
 
           // 2. Fallback to saved Citizen / Wallet handle, strictly excluding root faucet 'testnet' / 'testnet.near'
-          const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+          const lastId = window.localStorage.getItem('bb_last_connected_wallet_id_v2');
           const lowerLast = (lastId || '').trim().toLowerCase();
           if (lowerLast === 'testnet' || lowerLast === 'testnet.near') {
-            window.localStorage.removeItem('bb_last_connected_wallet_id');
+            window.localStorage.removeItem('bb_last_connected_wallet_id_v2');
             return;
           }
           if (
@@ -1921,54 +2033,33 @@ export default function App() {
 
   const handleConfirmGuestCharacterAndEnterLobby = useCallback(() => {
     soundEngine.playUiClick();
+    setWalletConnectError(null);
     const cleanGuestName =
       playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
-    const activeEmail = connectedGoogleEmail.trim().toLowerCase();
     setPlayerDisplayName(cleanGuestName);
     setWalletUsernameDraft(cleanGuestName);
-    setIsEditingGuestName(false);
 
-    if (activeEmail && activeEmail.includes('@')) {
-      const candidateHandle = cleanGuestName
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, '')
-        .slice(0, 24);
-      const safeHandle = candidateHandle.length >= 2 ? candidateHandle : 'citizen';
-      setOnboardingAuthMode('wallet');
-      setOnboardingLoadingProgress(15);
-      setOnboardingStep('entering_lobby');
-      void spawnSubAccountOnChainViaMaster({
-        handle: safeHandle,
-        email: activeEmail,
-      }).then((provisioned) => {
-        if (!provisioned.ok || !provisioned.subAccountId) return;
-        const walletId = provisioned.subAccountId.toLowerCase();
-        setPlayerUid(walletId);
-        setWalletConnectInput(walletId);
-        persistWalletProfileLocally(walletId, cleanGuestName, characterGender, activeEmail);
-        dispatchBuddyAction(`nearConnectAndMint:${walletId}`);
-        dispatchBuddyAction(`setCharacterGender:${characterGender}`);
-        dispatchBuddyAction(`setPlayerDisplayName:${cleanGuestName}`);
-        setHud((prev) => ({
-          ...prev,
-          nearWalletConnected: true,
-          nearWalletId: walletId,
-        }));
-        void fetchOrCreatePlayerProfile({
-          nearAccountId: walletId,
-          displayName: cleanGuestName,
-          authMode: 'social_invisible',
-          email: activeEmail,
-        });
-      });
+    // Linear Google Login Flow: Step 1 (Character + Name) -> Step 2 (Sub-Wallet Handle `xyz.buddiesblitz.testnet`)
+    if (onboardingAuthMode === 'wallet') {
+      if (!subWalletHandleDraft.trim()) {
+        const candidateHandle = cleanGuestName
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, '')
+          .slice(0, 24);
+        setSubWalletHandleDraft(candidateHandle.length >= 2 ? candidateHandle : '');
+      }
+      setOnboardingStep('subwallet_naming');
       return;
     }
 
+    // Play as Guest Flow: Enter Central Plaza without registration (Exchange / Purchases / Mint gated)
     setPlayerUid('');
     setRespiteBalance(0);
     setCyonBalance(0);
     setNearTestnetBalance(0);
     setHasHouseOwnership(false);
+    setHanaWelcomeNearClaimed(false);
+    setTutorialStage('none');
     setOnboardingAuthMode('guest');
     setOnboardingLoadingProgress(10);
     setOnboardingStep('entering_lobby');
@@ -1986,11 +2077,162 @@ export default function App() {
     }));
   }, [
     characterGender,
+    dispatchBuddyAction,
+    onboardingAuthMode,
+    playerDisplayName,
+    subWalletHandleDraft,
+  ]);
+
+  const handleProvisionSubWalletAndShowWelcome = useCallback(async () => {
+    soundEngine.playUiClick();
+    setWalletConnectError(null);
+    const cleanHandle = subWalletHandleDraft
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 32);
+    if (cleanHandle.length < 2) {
+      setWalletConnectError('Nama depan alamat wallet minimal 2 karakter (contoh: xyz).');
+      return;
+    }
+
+    const cleanCitizenName =
+      playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
+    const activeEmail = connectedGoogleEmail.trim().toLowerCase();
+
+    setOnboardingStep('provisioning_subwallet');
+    setOnboardingLoadingProgress(22);
+    setSubWalletProvisionStageLabel('1/3 Membuat kunci Ed25519 self-custody di browser...');
+
+    const stageTimer1 = window.setTimeout(() => {
+      setOnboardingLoadingProgress(56);
+      setSubWalletProvisionStageLabel(
+        `2/3 Mendaftarkan ${cleanHandle}.${NEAR_CONFIG.masterAccountId} dari Master Wallet...`,
+      );
+    }, 380);
+
+    const provisioned = await spawnSubAccountOnChainViaMaster({
+      handle: cleanHandle,
+      email: activeEmail || undefined,
+      strictUniqueHandle: true,
+    });
+    window.clearTimeout(stageTimer1);
+
+    if (!provisioned.ok || !provisioned.subAccountId) {
+      soundEngine.playHit();
+      setOnboardingStep('subwallet_naming');
+      setWalletConnectError(
+        provisioned.error ||
+          `Gagal mendaftarkan ${cleanHandle}.${NEAR_CONFIG.masterAccountId}. Silakan coba nama depan lain.`,
+      );
+      return;
+    }
+
+    const walletId = provisioned.subAccountId.toLowerCase();
+    setOnboardingLoadingProgress(85);
+    setSubWalletProvisionStageLabel('3/3 Menyimpan profil warga & menyinkronkan NEAR Testnet...');
+    setProvisionedSubWalletTxHash(provisioned.txHash || '');
+
+    const [accountView, hanaStatus] = await Promise.all([
+      fetchNearAccountView(walletId),
+      fetchHanaTreasuryStatus(walletId),
+    ]);
+    const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0.06;
+    setNearTestnetBalance(Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0.06);
+    setRespiteBalance(0);
+    setCyonBalance(0);
+    setHasHouseOwnership(false);
+    setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
+
+    setPlayerUid(walletId);
+    setWalletConnectInput(walletId);
+    persistWalletProfileLocally(walletId, cleanCitizenName, characterGender, activeEmail);
+    dispatchBuddyAction(`nearSyncWalletSession:${walletId}:0:`);
+    dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+    dispatchBuddyAction(`setPlayerDisplayName:${cleanCitizenName}`);
+    setHud((prev) => ({
+      ...prev,
+      nearWalletConnected: true,
+      nearWalletId: walletId,
+      nearHasGamepassNft: false,
+      nearGamepassTokenId: null,
+    }));
+
+    void fetchOrCreatePlayerProfile({
+      nearAccountId: walletId,
+      displayName: cleanCitizenName,
+      authMode: 'social_invisible',
+      email: activeEmail || undefined,
+    }).then((profile) => {
+      if (profile) {
+        setSupabaseConnected(true);
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: walletId,
+          displayName: cleanCitizenName,
+          lulBalance: 0,
+          cyonBalance: 0,
+          respiteBalance: 0,
+          unlockedSkins: ['default', `gender:${characterGender}`],
+        });
+      }
+    });
+
+    setOnboardingLoadingProgress(100);
+    soundEngine.playPickup();
+    setOnboardingStep('completed');
+    setGameState('playing');
+    setTutorialStage('welcome_modal');
+  }, [
+    characterGender,
     connectedGoogleEmail,
     dispatchBuddyAction,
     persistWalletProfileLocally,
     playerDisplayName,
+    subWalletHandleDraft,
   ]);
+
+  const handleClaimHanaWelcomeNear = useCallback(async () => {
+    const actorAccount = (hudRef.current.nearWalletId || playerUid || '').trim().toLowerCase();
+    if (!actorAccount) {
+      return {
+        ok: false,
+        txHash: '',
+        explorerUrl: '',
+        amountNear: 0,
+        error: 'Wallet belum terhubung. Silakan registrasi terlebih dahulu.',
+      };
+    }
+
+    const claimRes = await claimHanaWelcomeNearOnChain(actorAccount);
+    if (!claimRes.ok) {
+      return claimRes;
+    }
+
+    setHanaWelcomeNearClaimed(true);
+    const updatedView = await fetchNearAccountView(actorAccount);
+    if (updatedView) {
+      const nearTokens = Number(updatedView.amount) / 1e24;
+      if (Number.isFinite(nearTokens)) {
+        setNearTestnetBalance(Number(nearTokens.toFixed(4)));
+      }
+    } else {
+      setNearTestnetBalance((prev) => Number((prev + claimRes.amountNear).toFixed(4)));
+    }
+
+    void logMarketTransactionToSupabase({
+      merchant_id: 'lobby_cafe',
+      actor_near_account: actorAccount,
+      action_type: 'claim_starter_near',
+      item_id: 'hana_welcome_near_0_30',
+      currency: 'RESPITE',
+      amount: 1,
+      unit_price: 0,
+      reasoning_summary: `Claimed +0.30 NEAR starter grant from Hana Smart Contract Treasury (${NEAR_CONFIG.marketContractId}).`,
+      near_tx_hash: claimRes.txHash,
+    });
+
+    return claimRes;
+  }, [playerUid]);
 
   useEffect(() => {
     if (onboardingStep !== 'entering_lobby') return;
@@ -2961,9 +3203,21 @@ export default function App() {
                     {walletConnectError && (
                       <div
                         data-wallet-connect-error="true"
-                        className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
+                        className="p-2.5 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold space-y-2"
                       >
-                        {walletConnectError}
+                        <div>{walletConnectError}</div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setWalletConnectError(null);
+                            setOnboardingAuthMode('wallet');
+                            setOnboardingStep('guest_character_select');
+                          }}
+                          className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
+                        >
+                          LANJUT REGISTRASI SUB-WALLET TANPA POPUP &rarr;
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2977,13 +3231,15 @@ export default function App() {
                     <div className="flex-1 h-px bg-white/15" />
                   </div>
 
-                  {/* 2. Secondary Action: Play as Guest / Choose 3D Character inside the same START GAME card */}
+                  {/* 2. Secondary Action: Play as Guest (Walk around freely; Exchange & Purchases locked until registered) */}
                   <button
                     type="button"
                     data-login-guest-btn="true"
                     onClick={() => {
                       soundEngine.playUiClick();
                       setWalletConnectError(null);
+                      setOnboardingAuthMode('guest');
+                      setConnectedGoogleEmail('');
                       setCharacterGender('male');
                       if (!isCustomGuestNameEdited) {
                         setPlayerDisplayName('Buddy Male');
@@ -2993,82 +3249,48 @@ export default function App() {
                     }}
                     className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                   >
-                    <span className="skew-x-6 inline-block">PLAY AS GUEST / SELECT CHARACTER</span>
+                    <span className="skew-x-6 inline-block">PLAY AS GUEST (WALK &amp; EXPLORE)</span>
                   </button>
                 </>
               )}
 
               {onboardingStep === 'guest_character_select' && (
                 <div className="space-y-3.5">
-                  <div className="text-center text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                    CHARACTER &amp; CITIZEN USERNAME
+                  <div className="text-center space-y-0.5">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
+                      {onboardingAuthMode === 'wallet'
+                        ? 'STEP 1/3 · PILIH KARAKTER & ISI NAMA'
+                        : 'MODE GUEST · PILIH KARAKTER & NAMA'}
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-300">
+                      {onboardingAuthMode === 'wallet'
+                        ? 'Pilih karakter 3D dan ketik nama panggilanmu sebelum membuat sub-wallet.'
+                        : 'Masuk tanpa login untuk jalan-jalan (tab Exchange dikunci sebelum registrasi).'}
+                    </div>
                   </div>
 
-                  {/* Row 1: Editable Citizen / Guest Username + Pencil Icon */}
-                  <div className="relative flex items-center justify-center border-b border-white/15 pb-2.5">
-                    {isEditingGuestName ? (
-                      <div className="flex items-center gap-2 w-full">
-                        <input
-                          ref={guestNameInputRef}
-                          type="text"
-                          maxLength={20}
-                          data-guest-username-input="true"
-                          value={playerDisplayName}
-                          onChange={(e) => {
-                            setIsCustomGuestNameEdited(true);
-                            setPlayerDisplayName(e.target.value);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              setIsEditingGuestName(false);
-                            }
-                          }}
-                          placeholder="Enter citizen username..."
-                          className="flex-1 px-2.5 py-1 bg-white text-black font-black text-base text-center border-2 border-[#b8ff3c] focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setIsEditingGuestName(false);
-                          }}
-                          aria-label="Save Username"
-                          className="w-8 h-8 bg-[#b8ff3c] text-black border-2 border-black flex items-center justify-center cursor-pointer"
-                        >
-                          <Check className="w-4 h-4 stroke-[3]" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        data-edit-guest-username-trigger="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setIsEditingGuestName(true);
-                          window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setIsEditingGuestName(true);
-                            window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
-                          }
-                        }}
-                        className="flex items-center justify-center gap-3 cursor-pointer group px-4 py-0.5"
-                        title="Click to edit citizen username"
-                      >
-                        <span className="text-xl sm:text-2xl font-bold tracking-wide text-white group-hover:text-[#b8ff3c] transition-colors">
-                          {playerDisplayName ||
-                            (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female')}
-                        </span>
-                        <Pencil className="w-4 h-4 text-white/80 group-hover:text-[#b8ff3c] transition-colors" />
-                      </div>
-                    )}
+                  {/* Row 1: Direct Citizen / Guest Name Input */}
+                  <div className="space-y-1">
+                    <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
+                      NAMA KARAKTER / DISPLAY NAME
+                    </label>
+                    <input
+                      ref={guestNameInputRef}
+                      type="text"
+                      maxLength={20}
+                      data-guest-username-input="true"
+                      value={playerDisplayName}
+                      onChange={(e) => {
+                        setIsCustomGuestNameEdited(true);
+                        setPlayerDisplayName(e.target.value);
+                      }}
+                      placeholder="Ketik nama karaktermu..."
+                      className="w-full px-3 py-2 bg-white text-black font-black text-sm border-2 border-[#b8ff3c] shadow-[2px_2px_0_#000] focus:outline-none"
+                    />
                   </div>
 
-                  {/* Row 2: Back Button, < 1/2 > Gender Switcher, and Confirm / Enter Lobby Button */}
-                  <div className="flex items-center justify-between gap-2">
+                  {/* Row 2: Back Button, < 1/2 > Gender Switcher, and Next / Enter Button */}
+                  <div className="flex items-center justify-between gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -3077,12 +3299,12 @@ export default function App() {
                       }}
                       title="Back to Login Options"
                       aria-label="Back"
-                      className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                      className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
                     >
                       <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
                     </button>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         data-char-select-prev="true"
@@ -3099,13 +3321,13 @@ export default function App() {
                           }
                         }}
                         aria-label="Previous Character"
-                        className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
+                        className="w-8 h-8 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
                       >
-                        <ChevronLeft className="w-7 h-7 stroke-[2.8]" />
+                        <ChevronLeft className="w-6 h-6 stroke-[2.8]" />
                       </button>
 
-                      <div className="text-center min-w-[84px]">
-                        <div className="text-base font-bold tracking-wider text-white">
+                      <div className="text-center min-w-[72px]">
+                        <div className="text-sm font-bold tracking-wider text-white">
                           {characterGender === 'male' ? '1/2' : '2/2'}
                         </div>
                         <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
@@ -3129,9 +3351,9 @@ export default function App() {
                           }
                         }}
                         aria-label="Next Character"
-                        className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
+                        className="w-8 h-8 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
                       >
-                        <ChevronRight className="w-7 h-7 stroke-[2.8]" />
+                        <ChevronRight className="w-6 h-6 stroke-[2.8]" />
                       </button>
                     </div>
 
@@ -3139,10 +3361,162 @@ export default function App() {
                       type="button"
                       data-confirm-guest-character-btn="true"
                       onClick={handleConfirmGuestCharacterAndEnterLobby}
-                      className="-skew-x-6 px-3.5 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                      className="-skew-x-6 px-3.5 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                     >
-                      <span className="skew-x-6 inline-block">ENTER CENTRAL PLAZA</span>
+                      <span className="skew-x-6 inline-block">
+                        {onboardingAuthMode === 'wallet' ? 'LANJUT WALLET >' : 'MASUK GUEST >'}
+                      </span>
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {onboardingStep === 'subwallet_naming' && (
+                <div className="space-y-3.5">
+                  <div className="text-center space-y-0.5">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-[#38bdf8]">
+                      STEP 2/3 · BUAT ALAMAT SUB-WALLET NEAR
+                    </div>
+                    <div className="text-[10.5px] font-bold text-slate-300">
+                      Isi nama depan sub-wallet dari master wallet{' '}
+                      <span className="font-mono text-[#b8ff3c]">{NEAR_CONFIG.masterAccountId}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
+                      NAMA DEPAN ALAMAT WALLET (CONTOH: XYZ)
+                    </label>
+                    <div className="flex items-stretch border-2 border-black shadow-[3px_3px_0_#000] bg-white overflow-hidden">
+                      <input
+                        type="text"
+                        maxLength={24}
+                        data-subwallet-prefix-input="true"
+                        value={subWalletHandleDraft}
+                        onChange={(e) => {
+                          const sanitized = e.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_-]/g, '');
+                          setSubWalletHandleDraft(sanitized);
+                          setWalletConnectError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === 'Enter' &&
+                            subWalletAvailability.validFormat &&
+                            subWalletAvailability.available &&
+                            !subWalletAvailability.checking
+                          ) {
+                            void handleProvisionSubWalletAndShowWelcome();
+                          }
+                        }}
+                        placeholder="xyz"
+                        className="w-full min-w-0 px-2.5 py-2 bg-white text-black font-mono font-black text-sm focus:outline-none"
+                      />
+                      <div className="px-2 py-2 bg-[#e2e8f0] text-slate-800 border-l-2 border-black font-mono font-black text-[10.5px] flex items-center shrink-0">
+                        .{NEAR_CONFIG.masterAccountId}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
+                      <div className="text-[9.5px] font-black uppercase text-slate-400">
+                        ALAMAT SUB-WALLET KAMU:
+                      </div>
+                      <div
+                        data-subwallet-full-preview="true"
+                        className="font-mono text-xs font-black text-[#38bdf8] break-all"
+                      >
+                        {(subWalletHandleDraft.trim() || 'xyz') + `.${NEAR_CONFIG.masterAccountId}`}
+                      </div>
+                      <div className="text-[10px] font-bold pt-0.5">
+                        {subWalletAvailability.checking ? (
+                          <span className="text-[#facc15]">
+                            Memeriksa ketersediaan di NEAR Testnet...
+                          </span>
+                        ) : subWalletAvailability.validFormat && subWalletAvailability.available ? (
+                          <span className="text-[#b8ff3c]">
+                            {subWalletAvailability.ownedByCurrentDevice
+                              ? '✅ Sub-wallet milik perangkat ini siap dipulihkan!'
+                              : '✅ Alamat tersedia di NEAR Testnet!'}
+                          </span>
+                        ) : (
+                          <span className="text-[#fca5a5]">
+                            {subWalletAvailability.reason || 'Ketik minimal 2 karakter (a-z, 0-9).'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {walletConnectError && (
+                      <div className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold">
+                        {walletConnectError}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setWalletConnectError(null);
+                        setOnboardingStep('guest_character_select');
+                      }}
+                      className="px-3 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 text-[11px] font-black uppercase cursor-pointer"
+                    >
+                      &lt; KEMBALI
+                    </button>
+
+                    <button
+                      type="button"
+                      data-create-subwallet-btn="true"
+                      disabled={
+                        subWalletAvailability.checking ||
+                        !subWalletAvailability.validFormat ||
+                        !subWalletAvailability.available
+                      }
+                      onClick={() => void handleProvisionSubWalletAndShowWelcome()}
+                      className="-skew-x-6 flex-1 py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:opacity-50 disabled:cursor-not-allowed text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer transition-all"
+                    >
+                      <span className="skew-x-6 inline-block">DAPATKAN SUB-WALLET &rarr;</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {onboardingStep === 'provisioning_subwallet' && (
+                <div
+                  data-provisioning-subwallet-state="true"
+                  className="flex flex-col items-center gap-3 text-center py-3"
+                >
+                  <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase animate-pulse">
+                    <span className="skew-x-12 inline-block">
+                      STEP 3/3 · MENDAPATKAN SUB-WALLET...
+                    </span>
+                  </div>
+
+                  <div className="w-full p-3 bg-[#0f172a] border-2 border-white/20 space-y-1.5 text-left">
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">MASTER WALLET:</span>
+                      <span className="text-[#facc15] font-bold">{NEAR_CONFIG.masterAccountId}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">SUB-WALLET BARU:</span>
+                      <span className="text-[#b8ff3c] font-bold">
+                        {subWalletHandleDraft}.{NEAR_CONFIG.masterAccountId}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] font-bold text-slate-200">
+                    {subWalletProvisionStageLabel}
+                  </div>
+
+                  <div className="w-full h-3 bg-[#0b0e16] border-2 border-white/50 overflow-hidden">
+                    <div
+                      className="h-full bg-[#b8ff3c] transition-all duration-200"
+                      style={{ width: `${onboardingLoadingProgress}%` }}
+                    />
                   </div>
                 </div>
               )}
@@ -3156,7 +3530,7 @@ export default function App() {
                   <div className="text-[11px] font-black tracking-widest uppercase text-[#38bdf8]">
                     {onboardingAuthMode === 'wallet'
                       ? `SESSION · ${connectedGoogleEmail || hud.nearWalletId || walletConnectInput}`
-                      : `CITIZEN · ${playerDisplayName.toUpperCase()}`}
+                      : `GUEST · ${playerDisplayName.toUpperCase()}`}
                   </div>
 
                   <div className="w-full h-2.5 bg-[#0b0e16] border border-white/50 overflow-hidden">
@@ -3169,6 +3543,131 @@ export default function App() {
               )}
             </div>
           </section>
+        )}
+
+      {/* =====================================================================
+          2B. WELCOME MODAL & GUIDED TUTORIAL OBJECTIVE HUD BANNER
+         ===================================================================== */}
+      {isPreloadComplete &&
+        onboardingStep === 'completed' &&
+        tutorialStage === 'welcome_modal' && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Welcome to Buddies Blitz"
+            data-citizen-welcome-modal="true"
+            className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs pointer-events-auto select-none"
+          >
+            <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-[#b8ff3c] shadow-[10px_10px_0_#000] p-6 space-y-4">
+              <div className="flex items-center justify-between gap-2 border-b-2 border-white/15 pb-3">
+                <span className="-skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black font-black text-[10.5px] uppercase tracking-widest">
+                  <span className="skew-x-12 inline-block">WELCOME CITIZEN!</span>
+                </span>
+                <span className="text-[10px] font-mono font-bold text-[#38bdf8]">
+                  NEAR TESTNET VERIFIED
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
+                  Selamat Datang, {playerDisplayName}!
+                </h2>
+                <p className="text-xs font-bold text-slate-300 leading-relaxed">
+                  Sub-wallet pribadimu dari master wallet{' '}
+                  <span className="font-mono text-[#facc15]">{NEAR_CONFIG.masterAccountId}</span>{' '}
+                  telah berhasil dibuat dengan kunci self-custody di browsermu:
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#0f172a] border-2 border-[#38bdf8] space-y-1.5">
+                <div className="text-[9.5px] font-black uppercase text-slate-400">
+                  ALAMAT WALLET WARGA
+                </div>
+                <div className="font-mono text-sm font-black text-[#b8ff3c] break-all">
+                  {hud.nearWalletId || playerUid}
+                </div>
+                {provisionedSubWalletTxHash && (
+                  <a
+                    href={getNearBlocksTxUrl(provisionedSubWalletTxHash, 'testnet')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-[10.5px] font-mono font-bold text-[#38bdf8] underline"
+                  >
+                    Lihat Tx Pembuatan Sub-Wallet di NearBlocks ↗
+                  </a>
+                )}
+              </div>
+
+              <div className="p-3 bg-[#1e293b] border-2 border-black text-xs font-bold text-slate-200 leading-relaxed">
+                🎯 <span className="text-[#facc15] font-black">Misi Pertama:</span> Ikuti jalur
+                panah bercahaya menuju <span className="text-[#b8ff3c]">Merchant Hana</span> di
+                Central Plaza Cafe untuk mengikuti tutorial singkat &amp; mengklaim modal awal{' '}
+                <span className="text-[#b8ff3c]">0.30 NEAR</span> dari Smart Contract Treasury Hana!
+              </div>
+
+              <button
+                type="button"
+                data-welcome-go-to-hana-btn="true"
+                onClick={() => {
+                  soundEngine.playPickup();
+                  setTutorialStage('go_to_hana');
+                }}
+                className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+              >
+                <span className="skew-x-6 inline-block">
+                  MENUJU HANA &amp; MULAI TUTORIAL &rarr;
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+      {isPreloadComplete &&
+        onboardingStep === 'completed' &&
+        (tutorialStage === 'go_to_hana' || tutorialStage === 'go_to_kiosk') &&
+        activeSpecialModal === 'none' &&
+        activeTeleportKioskModal === 'none' &&
+        !tramRideCutsceneUi?.active && (
+          <div
+            data-tutorial-objective-hud="true"
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-lg pointer-events-auto select-none"
+          >
+            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-4 py-2.5 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 border border-black text-[9.5px] font-black uppercase ${
+                      tutorialStage === 'go_to_hana'
+                        ? 'bg-[#b8ff3c] text-black'
+                        : 'bg-[#38bdf8] text-black'
+                    }`}
+                  >
+                    {tutorialStage === 'go_to_hana' ? 'TUTORIAL 1/2 · HANA' : 'TUTORIAL 2/2 · KIOSK'}
+                  </span>
+                  <span className="text-[10.5px] font-black uppercase text-[#facc15] truncate">
+                    {tutorialStage === 'go_to_hana'
+                      ? 'Temui Merchant Hana di Cafe'
+                      : 'Ikuti Jalur ke Kiosk Teleport'}
+                  </span>
+                </div>
+                <div className="text-[11px] font-bold text-slate-200 mt-1 leading-snug">
+                  {tutorialStage === 'go_to_hana'
+                    ? 'Ikuti jalur panah hijau di lantai menuju Hana (klik Hana) untuk tutorial & klaim 0.30 NEAR gratis!'
+                    : 'Silakan explore! Ikuti jalur panah biru menuju Kiosk Teleport hitam di halte untuk penjelasan semua portal.'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setTutorialStage('none');
+                }}
+                className="px-2 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-[9.5px] font-black uppercase text-slate-300 cursor-pointer shrink-0"
+              >
+                SKIP
+              </button>
+            </div>
+          </div>
         )}
 
       {/* =====================================================================
@@ -4187,6 +4686,12 @@ export default function App() {
               isHoldingReel={isHoldingReel}
               caughtFishBucketCount={caughtFishBucket.length}
               lastCaughtFishToast={lastCaughtFishToast}
+              walletConnected={Boolean(hud.nearWalletConnected)}
+              onRequestRegisterWallet={() => {
+                soundEngine.playUiClick();
+                setLastCaughtFishToast(null);
+                setOnboardingStep('auth_choice');
+              }}
               onStartChargeCast={() => {
                 if (fishingPhase === 'idle' && caughtFishBucket.length < 20) {
                   ensureFishingRodEquipped();
@@ -4489,6 +4994,14 @@ export default function App() {
         nearTestnetBalance={nearTestnetBalance}
         walletConnected={Boolean(hud.nearWalletConnected)}
         hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
+        citizenDisplayName={playerDisplayName}
+        isTutorialHanaActive={tutorialStage === 'go_to_hana'}
+        hanaWelcomeNearClaimed={hanaWelcomeNearClaimed}
+        onClaimHanaWelcomeNear={handleClaimHanaWelcomeNear}
+        onFinishHanaTutorialAndGuideKiosk={() => {
+          setActiveSpecialModal('none');
+          setTutorialStage('go_to_kiosk');
+        }}
         isFastForwardRunning={isFastForwardRunning}
         onToggleFastForward={() => {
           soundEngine.playUiClick();
@@ -4525,6 +5038,9 @@ export default function App() {
           }
           setRespiteBalance(nextRespite);
           setHasHouseOwnership(true);
+          if (resolvedActor) {
+            dispatchBuddyAction(`nearSyncWalletSession:${resolvedActor}:1:${deedTokenId}`);
+          }
           setHud((prev) => ({
             ...prev,
             nearHasGamepassNft: true,
@@ -4956,7 +5472,12 @@ export default function App() {
         }}
         onConnectWallet={() => {
           soundEngine.playUiClick();
-          setIsNearWalletSelectorOpen(true);
+          if (!hud.nearWalletConnected) {
+            setActiveSpecialModal('none');
+            setOnboardingStep('auth_choice');
+          } else {
+            setIsNearWalletSelectorOpen(true);
+          }
         }}
         onSwapNearAndRespite={async (direction, inputAmount) => {
           const actorAccount = hud.nearWalletId || playerUid;
@@ -5425,6 +5946,10 @@ export default function App() {
         hasOwnedHouse={Boolean(hasHouseOwnership || hud.nearHasGamepassNft)}
         blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
+        isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
+        onCompleteTutorialTour={() => {
+          setTutorialStage('none');
+        }}
         onClose={() => {
           soundEngine.playUiClick();
           setActiveTeleportKioskModal('none');
@@ -5632,12 +6157,14 @@ export default function App() {
                     if (typeof window !== 'undefined') {
                       try {
                         window.localStorage.setItem('bb_explicit_logged_out_v1', '1');
-                        window.localStorage.removeItem('bb_connected_google_email');
-                        window.localStorage.removeItem('bb_last_connected_wallet_id');
+                        window.localStorage.removeItem('bb_connected_google_email_v2');
+                        window.localStorage.removeItem('bb_last_connected_wallet_id_v2');
                       } catch {
                         // ignore
                       }
                     }
+                    dispatchBuddyAction('nearDisconnectSession');
+                    setTutorialStage('none');
                     setIsPersonalWalletModalOpen(false);
                     setOnboardingStep('auth_choice');
                   }}
@@ -6510,16 +7037,31 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {!fish.isMintedNft ? (
-                          <button
-                            type="button"
-                            data-bag-mint-fish-btn={fish.id}
-                            onClick={() => {
-                              void handleMintCaughtFishNft(fish);
-                            }}
-                            className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
-                          >
-                            Mint NFT
-                          </button>
+                          hud.nearWalletConnected ? (
+                            <button
+                              type="button"
+                              data-bag-mint-fish-btn={fish.id}
+                              onClick={() => {
+                                void handleMintCaughtFishNft(fish);
+                              }}
+                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                            >
+                              Mint NFT
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              data-bag-guest-register-btn={fish.id}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                setIsPersonalBagModalOpen(false);
+                                setOnboardingStep('auth_choice');
+                              }}
+                              className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                            >
+                              🔒 Register
+                            </button>
+                          )
                         ) : (
                           <span className="text-[9.5px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 border border-purple-400 font-mono">
                             NFT ACTIVE
@@ -6932,9 +7474,10 @@ export default function App() {
             nearHasGamepassNft: false,
             nearGamepassTokenId: null,
           }));
+          dispatchBuddyAction('nearDisconnectSession');
           if (typeof window !== 'undefined') {
             try {
-              window.localStorage.removeItem('bb_last_connected_wallet_id');
+              window.localStorage.removeItem('bb_last_connected_wallet_id_v2');
             } catch {
               // ignore
             }

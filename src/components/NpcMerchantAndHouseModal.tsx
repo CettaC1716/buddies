@@ -90,6 +90,17 @@ interface NpcMerchantAndHouseModalProps {
     listing: FishNftMarketplaceListing,
   ) => Promise<boolean> | boolean | void;
   isSampleHouseView?: boolean;
+  citizenDisplayName?: string;
+  isTutorialHanaActive?: boolean;
+  hanaWelcomeNearClaimed?: boolean;
+  onClaimHanaWelcomeNear?: () => Promise<{
+    ok: boolean;
+    txHash: string;
+    explorerUrl: string;
+    amountNear: number;
+    error?: string;
+  }>;
+  onFinishHanaTutorialAndGuideKiosk?: () => void;
 }
 
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
@@ -134,10 +145,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onMintFishAsNft,
   onListFishNftOnMarket,
   onBuyFishNftFromMarket,
+  citizenDisplayName = '',
+  isTutorialHanaActive = false,
+  hanaWelcomeNearClaimed = false,
+  onClaimHanaWelcomeNear,
+  onFinishHanaTutorialAndGuideKiosk,
 }) => {
   const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market'>(
     'sesi_chat',
   );
+  const [hanaTutorialStep, setHanaTutorialStep] = useState<1 | 2 | 3>(1);
+  const [isClaimingHanaNear, setIsClaimingHanaNear] = useState<boolean>(false);
+  const [hanaClaimResult, setHanaClaimResult] = useState<{
+    ok: boolean;
+    txHash: string;
+    explorerUrl: string;
+    amountNear: number;
+    error?: string;
+  } | null>(null);
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [lastPlayerMessage, setLastPlayerMessage] = useState<string>('');
@@ -236,16 +261,33 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
       const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza Cafe' : 'East Beach House';
-      const greeting = !walletConnected
-        ? `Hello and welcome, Buddy. It looks like you have not registered yet. Please register to access the Exchange and the full Catalog. Feel free to walk around or ask me any questions about this game.`
-        : merchantLocation === 'beach_house'
-          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish in the FISH MARKET tab, or open the CATALOG tab to buy Fishing Rods, Reels, Lures, and Tackle!`
-          : `Hello Buddy! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
-      setNpcFullText(greeting);
+      const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
+      if (merchantLocation === 'lobby_cafe' && walletConnected && (isTutorialHanaActive || !hanaWelcomeNearClaimed)) {
+        setActiveTab('sesi_chat');
+        setHanaTutorialStep(1);
+        setNpcFullText(
+          `Halo ${displayCitizen}! Selamat datang di ${locLabel}! Senang sekali sub-wallet ${playerNearAccount || 'kamu'} sudah aktif. Yuk ikuti panduan singkatku (3 langkah) lalu klaim 0.30 NEAR pertamamu langsung dari Smart Contract Treasury Hana!`,
+        );
+      } else {
+        const greeting = !walletConnected
+          ? `Halo Buddy! Kamu sedang berada dalam Mode Guest (Tamu). Kamu bebas jalan-jalan dan melihat katalog kota, namun tab Exchange & pembelian terkunci sebelum kamu registrasi.`
+          : merchantLocation === 'beach_house'
+            ? `Hello ${displayCitizen}! Welcome to ${locLabel}. You can sell caught fish in the FISH MARKET tab, or open the CATALOG tab to buy Fishing Rods, Reels, Lures, and Tackle!`
+            : `Hello ${displayCitizen}! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
+        setNpcFullText(greeting);
+      }
       setNpcTypedText('');
       setLastPlayerMessage('');
     }
-  }, [activeModalMode, merchantLocation, walletConnected]);
+  }, [
+    activeModalMode,
+    merchantLocation,
+    walletConnected,
+    isTutorialHanaActive,
+    hanaWelcomeNearClaimed,
+    citizenDisplayName,
+    playerNearAccount,
+  ]);
 
   // Typewriter effect for NPC dialogue
   useEffect(() => {
@@ -920,7 +962,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 data-npc-chat-bubble="true"
                 className="p-3.5 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000]"
               >
-                <div className="flex items-center justify-end mb-2">
+                <div className="flex items-center justify-between mb-2">
+                  {merchantLocation === 'lobby_cafe' &&
+                  walletConnected &&
+                  (isTutorialHanaActive || !hanaWelcomeNearClaimed) ? (
+                    <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[9.5px] font-black uppercase">
+                      TUTORIAL WARGA BARU · STEP {hanaTutorialStep}/3
+                    </span>
+                  ) : (
+                    <span />
+                  )}
                   <span className="px-2.5 py-0.5 bg-[#2bb3b1] text-black border border-black text-[10.5px] font-black uppercase">
                     {npcShortName}
                   </span>
@@ -932,6 +983,232 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   )}
                 </p>
               </div>
+
+              {/* Guest Registration Callout inside Chat Session */}
+              {!walletConnected && onConnectWallet && (
+                <div className="p-3.5 bg-[#1e293b] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000] space-y-2.5">
+                  <div className="text-[11px] font-black uppercase text-[#b8ff3c]">
+                    🔒 MODE GUEST AKTIF — AKSES TERBATAS
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-200 leading-relaxed">
+                    Daftar dengan Google (otomatis mendapat sub-wallet{' '}
+                    <span className="text-[#38bdf8] font-mono">*.buddiesblitz.testnet</span> + klaim{' '}
+                    <span className="text-[#b8ff3c]">0.30 NEAR</span> gratis dari Hana) atau hubungkan
+                    NEAR Wallet eksternal untuk membuka tab Exchange &amp; pembelian item.
+                  </p>
+                  <button
+                    type="button"
+                    data-chat-guest-register-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onConnectWallet();
+                    }}
+                    className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer active:translate-y-0.5"
+                  >
+                    REGISTRASI / CONNECT WALLET SEKARANG &rarr;
+                  </button>
+                </div>
+              )}
+
+              {/* Hana Interactive Onboarding Tutorial + Smart Contract Treasury Claim */}
+              {merchantLocation === 'lobby_cafe' &&
+                walletConnected &&
+                (isTutorialHanaActive || !hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
+                  <div
+                    data-hana-onboarding-tutorial-box="true"
+                    className="p-3.5 bg-[#141c2e] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] space-y-3"
+                  >
+                    {/* Step Indicator Pills */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { step: 1 as const, label: '1. Kota & Zona' },
+                        { step: 2 as const, label: '2. Ekonomi' },
+                        { step: 3 as const, label: '3. Klaim NEAR' },
+                      ].map((item) => (
+                        <button
+                          key={item.step}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setHanaTutorialStep(item.step);
+                            if (item.step === 1) {
+                              triggerNpcSpeech(
+                                `Langkah 1/3: Central Plaza ini adalah Safezone damai untuk bersosialisasi, naik trem keliling kota, dan memamerkan rumah di kavling. Pertempuran hanya terjadi di dalam arena Mini-Game Warzone melalui Kiosk Teleport!`,
+                              );
+                            } else if (item.step === 2) {
+                              triggerNpcSpeech(
+                                `Langkah 2/3: Ekonomi kita bebas bot! Kumpulkan LUL dari Warzone atau jual ikan biasa ke Kai -> tukar jadi CYON untuk belanja item reguler. Untuk beli Sertifikat Rumah (25 RESPITE), Family Member AI, & NFT eksklusif, gunakan RESPITE dari swap NEAR atau jual Ikan NFT P2P!`,
+                              );
+                            } else {
+                              triggerNpcSpeech(
+                                `Langkah 3/3: Sebagai warga baru (${playerNearAccount}), aku menyiapkan modal awal 0.30 NEAR langsung dari Smart Contract Treasury Hana (market.buddiesblitz.testnet). Klik tombol CLAIM NEAR di bawah sekarang!`,
+                              );
+                            }
+                          }}
+                          className={`py-1.5 px-2 border-2 border-black text-[9.5px] font-black uppercase cursor-pointer transition-all ${
+                            hanaTutorialStep === item.step
+                              ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000]'
+                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {hanaTutorialStep === 1 && (
+                      <div className="space-y-2.5">
+                        <div className="p-2.5 bg-black/40 border border-white/15 text-[11px] font-bold text-slate-200 leading-relaxed">
+                          🏙️ <span className="text-[#38bdf8]">Main World (Central Plaza)</span> bebas
+                          tembak-menembak. Kamu bisa naik trem kota, memancing, mendekorasi{' '}
+                          <span className="text-[#b8ff3c]">Private House</span>, dan masuk ke{' '}
+                          <span className="text-[#facc15]">Warzone Arena</span> lewat Kiosk Teleport.
+                        </div>
+                        <button
+                          type="button"
+                          data-hana-tutorial-next-1="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setHanaTutorialStep(2);
+                            triggerNpcSpeech(
+                              `Langkah 2/3: Ekonomi kita bebas bot! Kumpulkan LUL dari Warzone atau jual ikan biasa ke Kai -> tukar jadi CYON untuk belanja item reguler. Untuk beli Sertifikat Rumah (25 RESPITE), Family Member AI, & NFT eksklusif, gunakan RESPITE dari swap NEAR atau jual Ikan NFT P2P!`,
+                            );
+                          }}
+                          className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer"
+                        >
+                          LANJUT: PAHAMI EKONOMI KOTA (1/3) &rarr;
+                        </button>
+                      </div>
+                    )}
+
+                    {hanaTutorialStep === 2 && (
+                      <div className="space-y-2.5">
+                        <div className="p-2.5 bg-black/40 border border-white/15 text-[11px] font-bold text-slate-200 space-y-1 leading-relaxed">
+                          <div>
+                            🟡 <span className="text-[#facc15]">LUL &rarr; CYON</span>: Mata uang in-game
+                            untuk furnitur dasar &amp; perlengkapan reguler.
+                          </div>
+                          <div>
+                            🟣 <span className="text-[#d8b4fe]">NEAR &rarr; RESPITE</span>: Token on-chain
+                            (`1 NEAR = 100 RESPITE`) untuk beli Rumah (`25 RESPITE`), Family Member AI, &amp;
+                            perdagangan Ikan NFT P2P!
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-hana-tutorial-next-2="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setHanaTutorialStep(3);
+                            triggerNpcSpeech(
+                              `Langkah 3/3: Sebagai warga baru (${playerNearAccount}), aku menyiapkan modal awal 0.30 NEAR langsung dari Smart Contract Treasury Hana (market.buddiesblitz.testnet). Klik tombol CLAIM NEAR di bawah sekarang!`,
+                            );
+                          }}
+                          className="w-full py-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer"
+                        >
+                          LANJUT: AMBIL MODAL NEAR DARI HANA (2/3) &rarr;
+                        </button>
+                      </div>
+                    )}
+
+                    {hanaTutorialStep === 3 && (
+                      <div className="space-y-2.5">
+                        <div className="p-2.5 bg-[#0f172a] border-2 border-[#b8ff3c]/70 text-[11px] font-bold text-slate-100 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[#b8ff3c] font-black uppercase text-[10px]">
+                              HANA SMART CONTRACT TREASURY
+                            </span>
+                            <span className="font-mono text-[10px] text-[#38bdf8]">
+                              market.buddiesblitz.testnet
+                            </span>
+                          </div>
+                          <div className="text-slate-300 text-[10.5px]">
+                            Hadiah Warga Baru: <strong className="text-white">+0.30 NEAR</strong> (cukup
+                            untuk swap <strong className="text-[#d8b4fe]">25 RESPITE</strong> beli Rumah +
+                            biaya gas transaksi!).
+                          </div>
+                        </div>
+
+                        {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
+                          <>
+                            {hanaClaimResult?.error && (
+                              <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold">
+                                {hanaClaimResult.error}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              data-hana-claim-near-btn="true"
+                              disabled={isClaimingHanaNear || !onClaimHanaWelcomeNear}
+                              onClick={async () => {
+                                if (!onClaimHanaWelcomeNear || isClaimingHanaNear) return;
+                                soundEngine.playUiClick();
+                                setIsClaimingHanaNear(true);
+                                setHanaClaimResult(null);
+                                try {
+                                  const res = await onClaimHanaWelcomeNear();
+                                  setHanaClaimResult(res);
+                                  if (res.ok) {
+                                    soundEngine.playPickup();
+                                    triggerNpcSpeech(
+                                      `Berhasil! +${res.amountNear.toFixed(2)} NEAR dari Treasury Smart Contract Hana sudah masuk ke wallet ${playerNearAccount}! Silakan eksplorasi kota — ikuti jalur panah biru bercahaya menuju Kiosk Teleport untuk mengenal semua portal!`,
+                                    );
+                                  } else {
+                                    soundEngine.playHit();
+                                  }
+                                } finally {
+                                  setIsClaimingHanaNear(false);
+                                }
+                              }}
+                              className={`w-full py-3 border-2 border-black shadow-[4px_4px_0px_#000] font-black text-xs uppercase tracking-wider transition-all ${
+                                isClaimingHanaNear
+                                  ? 'bg-slate-600 text-slate-200 cursor-wait'
+                                  : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer active:translate-y-0.5'
+                              }`}
+                            >
+                              {isClaimingHanaNear
+                                ? 'MENGIRIM 0.30 NEAR DARI TREASURY HANA...'
+                                : '🎁 CLAIM 0.30 NEAR (TREASURY HANA)'}
+                            </button>
+                          </>
+                        ) : (
+                          <div className="space-y-2.5">
+                            <div className="p-2.5 bg-emerald-950/80 border-2 border-emerald-400 text-[11px] font-bold text-emerald-200 flex items-center justify-between gap-2 flex-wrap">
+                              <span>✅ +0.30 NEAR Starter Grant Terklaim!</span>
+                              {hanaClaimResult?.txHash && (
+                                <a
+                                  href={
+                                    hanaClaimResult.explorerUrl ||
+                                    getNearBlocksTxUrl(hanaClaimResult.txHash, 'testnet')
+                                  }
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#38bdf8] underline font-mono text-[10px]"
+                                >
+                                  NearBlocks Tx ↗
+                                </a>
+                              )}
+                            </div>
+
+                            {onFinishHanaTutorialAndGuideKiosk && (
+                              <button
+                                type="button"
+                                data-hana-go-to-kiosk-btn="true"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  onFinishHanaTutorialAndGuideKiosk();
+                                }}
+                                className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                              >
+                                SELESAI &amp; IKUTI JALUR KE KIOSK TELEPORT &rarr;
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
           )}
 
@@ -964,6 +1241,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               parsedCryptoInput > nearTestnetBalance;
 
             const canPerformCryptoSwap =
+              walletConnected &&
               !isSwappingNear &&
               parsedCryptoInput >= 0.01 &&
               calculatedCryptoOutput >= 1 &&
@@ -1117,7 +1395,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
-                  className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
+                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
                 >
                   {/* Header Banner */}
                   <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">

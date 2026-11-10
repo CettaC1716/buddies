@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 /**
  * Vercel Serverless Function: `/api/near-relayer`
@@ -129,7 +132,18 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
   const rpcUrl = process.env.VITE_NEAR_RPC_URL || 'https://rpc.testnet.fastnear.com';
   const masterAccountId = process.env.NEAR_MASTER_ACCOUNT_ID || 'buddiesblitz.testnet';
   const marketContractId = process.env.VITE_NEAR_MARKET_CONTRACT_ID || 'market.buddiesblitz.testnet';
-  const masterSecret = process.env.NEAR_MASTER_PRIVATE_KEY || '';
+  let masterSecret = process.env.NEAR_MASTER_PRIVATE_KEY ?? '';
+  if (process.env.NEAR_MASTER_PRIVATE_KEY === undefined && process.env.VERCEL !== '1') {
+    try {
+      const credPath = path.join(os.homedir(), '.near-credentials', 'testnet', `${masterAccountId}.json`);
+      if (fs.existsSync(credPath)) {
+        const parsed = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+        masterSecret = String(parsed.private_key || parsed.secret_key || '').trim();
+      }
+    } catch {
+      // ignore local keychain read failure
+    }
+  }
 
   const action = String(body.action || '').trim();
 
@@ -139,6 +153,7 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, '');
     const sessionPublicKey = String(body.sessionPublicKey || '').trim();
+    const strictUniqueHandle = Boolean(body.strictUniqueHandle);
 
     if (rawHandle.length < 2 || rawHandle.length > 32) {
       return {
@@ -174,22 +189,8 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
       // Account does not exist yet — proceed to provision if master key is configured
     }
 
-    if (accountAlreadyExists && !masterSecret) {
-      return {
-        status: 200,
-        payload: {
-          ok: true,
-          subAccountId,
-          alreadyExisted: true,
-          custodyMode: 'onchain_existing',
-          sessionPublicKey,
-          marketContractId,
-        },
-      };
-    }
-
-    if (accountAlreadyExists && masterSecret) {
-      // Verify whether this browser's FunctionCall session key is already authorized on subAccountId
+    if (accountAlreadyExists) {
+      // Verify whether this browser's Ed25519 self-custody key is already FullAccess on subAccountId
       try {
         const existingKey = await nearRpcCall(rpcUrl, 'query', {
           request_type: 'view_access_key',
@@ -197,7 +198,7 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
           account_id: subAccountId,
           public_key: sessionPublicKey,
         });
-        if (existingKey && existingKey.permission) {
+        if (existingKey && existingKey.permission === 'FullAccess') {
           return {
             status: 200,
             payload: {
@@ -211,7 +212,33 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
           };
         }
       } catch {
-        // Session key not yet added to existing sub-account — authorize via master recovery key below
+        // Session key not yet added to existing sub-account
+      }
+
+      if (strictUniqueHandle) {
+        return {
+          status: 409,
+          payload: {
+            ok: false,
+            code: 'HANDLE_TAKEN',
+            subAccountId,
+            error: `Alamat ${subAccountId} sudah terdaftar oleh warga lain. Silakan pilih nama depan wallet lain.`,
+          },
+        };
+      }
+
+      if (!masterSecret) {
+        return {
+          status: 200,
+          payload: {
+            ok: true,
+            subAccountId,
+            alreadyExisted: true,
+            custodyMode: 'onchain_existing',
+            sessionPublicKey,
+            marketContractId,
+          },
+        };
       }
 
       try {
@@ -226,15 +253,11 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
         const blockHashBytes = base58Decode(String(masterOnSubView.block_hash));
         const sessionPubBytes = base58Decode(sessionPublicKey.replace(/^ed25519:/i, ''));
 
-        const addPlayerFcKeyAction = Buffer.concat([
+        const addPlayerFullKeyAction = Buffer.concat([
           Buffer.from([4]),
           borshPubKeyEd25519(sessionPubBytes.slice(0, 32)),
           borshU64(0n),
-          Buffer.from([1]), // AccessKeyPermission::FunctionCall
-          Buffer.from([1]), // Some(allowance)
-          borshU128(250_000_000_000_000_000_000_000n), // 0.25 NEAR gas allowance
-          borshString(marketContractId),
-          borshU32(0), // all methods allowed on marketContractId
+          Buffer.from([0]), // AccessKeyPermission::FullAccess (isolated strictly to <handle>.buddiesblitz.testnet)
         ]);
 
         const txBytes = Buffer.concat([
@@ -244,7 +267,7 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
           borshString(subAccountId),
           Buffer.from(blockHashBytes),
           borshU32(1),
-          addPlayerFcKeyAction,
+          addPlayerFullKeyAction,
         ]);
 
         const txHash = crypto.createHash('sha256').update(txBytes).digest();
@@ -316,13 +339,13 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
 
       // Actions:
       // 0: CreateAccount
-      // 2: Transfer (0.05 NEAR initial storage/gas allowance)
+      // 2: Transfer (0.06 NEAR initial storage + gas seed)
       // 4: AddKey (Master FullAccess recovery key)
-      // 4: AddKey (Player FunctionCall key scoped to marketContractId, 0.25 NEAR allowance)
+      // 4: AddKey (Player Browser Ed25519 FullAccess key isolated strictly to <handle>.buddiesblitz.testnet)
       const createAccountAction = Buffer.from([0]);
       const transferAction = Buffer.concat([
         Buffer.from([2]),
-        borshU128(50_000_000_000_000_000_000_000n), // 0.05 NEAR
+        borshU128(60_000_000_000_000_000_000_000n), // 0.06 NEAR
       ]);
       const addMasterFullKeyAction = Buffer.concat([
         Buffer.from([4]),
@@ -330,23 +353,18 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
         borshU64(0n),
         Buffer.from([0]), // AccessKeyPermission::FullAccess
       ]);
-      const addPlayerFcKeyAction = Buffer.concat([
-        Buffer.from([4]),
-        borshPubKeyEd25519(sessionPubBytes.slice(0, 32)),
-        borshU64(0n),
-        Buffer.from([1]), // AccessKeyPermission::FunctionCall
-        Buffer.from([1]), // Some(allowance)
-        borshU128(250_000_000_000_000_000_000_000n), // 0.25 NEAR gas allowance
-        borshString(marketContractId),
-        borshU32(0), // all methods allowed on marketContractId
-      ]);
-
-      const actions = [
-        createAccountAction,
-        transferAction,
-        addMasterFullKeyAction,
-        addPlayerFcKeyAction,
-      ];
+      const playerKeySlice = sessionPubBytes.slice(0, 32);
+      const actions = [createAccountAction, transferAction, addMasterFullKeyAction];
+      if (Buffer.compare(playerKeySlice, pubKeyBytes) !== 0) {
+        actions.push(
+          Buffer.concat([
+            Buffer.from([4]),
+            borshPubKeyEd25519(playerKeySlice),
+            borshU64(0n),
+            Buffer.from([0]), // AccessKeyPermission::FullAccess on <handle>.buddiesblitz.testnet
+          ]),
+        );
+      }
 
       const txBytes = Buffer.concat([
         borshString(masterAccountId),

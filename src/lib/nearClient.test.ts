@@ -20,6 +20,10 @@ import {
   createInitialPlacedHouseFurniture,
   generateNpcMerchantReply,
 } from '../game/buddiesMerchantPricing';
+import {
+  createInitialNearGamepassSessionState,
+  syncNearWalletSessionOwnership,
+} from '../game/buddiesBlitzRules';
 
 test('resolveNearRpcUrl routes .testnet and .near accounts to matching NEAR JSON-RPC endpoints', () => {
   assert.deepEqual(resolveNearRpcUrl('testnet'), {
@@ -240,5 +244,58 @@ test('verifyNep171GamepassOwnership strictly distinguishes House Deeds from Fish
     assert.equal(deedCheck.token?.tokenId, 'house-deed-0001');
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('strictUniqueHandle blocks hijacking taken <handle>.buddiesblitz.testnet & syncNearWalletSessionOwnership never grants dummy House ownership', async () => {
+  const validSessionKey = await getOrCreateCitizenSessionPublicKey();
+  const originalFetch = globalThis.fetch;
+  const savedMasterSecret = process.env.NEAR_MASTER_PRIVATE_KEY;
+  process.env.NEAR_MASTER_PRIVATE_KEY = '';
+
+  try {
+    // Mock RPC where `taken.buddiesblitz.testnet` already exists AND does NOT have caller's sessionPublicKey
+    globalThis.fetch = (async (_url, init) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      const reqType = body?.params?.request_type;
+      if (reqType === 'view_account') {
+        return {
+          ok: true,
+          json: async () => ({ result: { amount: '100000000000000000000000' } }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({ error: { message: 'Access key does not exist' } }),
+      } as Response;
+    }) as typeof fetch;
+
+    const takenRes = await handleNearRelayerRequest({
+      action: 'create_subaccount',
+      handle: 'taken',
+      sessionPublicKey: validSessionKey,
+      strictUniqueHandle: true,
+    });
+    assert.equal(takenRes.status, 409);
+    assert.equal(takenRes.payload.code, 'HANDLE_TAKEN');
+
+    // Fresh citizen wallet without a verified House Deed must NEVER receive ownsHouse=true
+    const initialRegistry = createInitialNearGamepassSessionState();
+    const syncedFresh = syncNearWalletSessionOwnership(
+      initialRegistry,
+      'citizen01.buddiesblitz.testnet',
+      false,
+    );
+    assert.equal(syncedFresh.walletConnected, true);
+    assert.equal(syncedFresh.accountId, 'citizen01.buddiesblitz.testnet');
+    assert.equal(syncedFresh.hasGamepassNft, false);
+    assert.equal(syncedFresh.claimedPlotIndex, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (savedMasterSecret === undefined) {
+      delete process.env.NEAR_MASTER_PRIVATE_KEY;
+    } else {
+      process.env.NEAR_MASTER_PRIVATE_KEY = savedMasterSecret;
+    }
   }
 });

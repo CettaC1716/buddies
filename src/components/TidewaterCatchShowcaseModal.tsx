@@ -534,6 +534,8 @@ interface TidewaterFishingHudAndModalProps {
   isHoldingReel: boolean;
   caughtFishBucketCount: number;
   lastCaughtFishToast: CaughtFishItem | null;
+  walletConnected?: boolean;
+  onRequestRegisterWallet?: () => void;
   onStartChargeCast: () => void;
   onReleaseChargeCast: () => void;
   onTriggerFishingAction: () => void;
@@ -554,6 +556,8 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
   isHoldingReel,
   caughtFishBucketCount,
   lastCaughtFishToast,
+  walletConnected = false,
+  onRequestRegisterWallet,
   onStartChargeCast,
   onReleaseChargeCast,
   onTriggerFishingAction,
@@ -1140,34 +1144,58 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
               )}
 
               {!lastCaughtFishToast.isMintedNft ? (
-                <button
-                  type="button"
-                  data-showcase-mint-fish-btn="true"
-                  disabled={isMintingShowcaseNft}
-                  onClick={async () => {
-                    setShowcaseMintError(null);
-                    setIsMintingShowcaseNft(true);
-                    try {
-                      const ok = await onMintCaughtFishAsNft(lastCaughtFishToast);
-                      if (ok === false) {
+                walletConnected ? (
+                  <button
+                    type="button"
+                    data-showcase-mint-fish-btn="true"
+                    disabled={isMintingShowcaseNft}
+                    onClick={async () => {
+                      setShowcaseMintError(null);
+                      setIsMintingShowcaseNft(true);
+                      try {
+                        const ok = await onMintCaughtFishAsNft(lastCaughtFishToast);
+                        if (ok === false) {
+                          setShowcaseMintError(
+                            'Connect a NEAR Testnet signing wallet (Sub-Wallet / Meteor) to mint this catch on-chain.',
+                          );
+                        }
+                      } finally {
+                        setIsMintingShowcaseNft(false);
+                      }
+                    }}
+                    style={{
+                      background:
+                        'linear-gradient(135deg, rgba(216, 180, 254, 0.3), rgba(168, 85, 247, 0.2))',
+                      border: '1px solid rgba(216, 180, 254, 0.6)',
+                      color: '#f3e8ff',
+                    }}
+                    className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 disabled:opacity-60 transition-all"
+                  >
+                    {isMintingShowcaseNft ? 'Minting on NEAR...' : 'Mint NFT'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-showcase-guest-register-btn="true"
+                    onClick={() => {
+                      if (onRequestRegisterWallet) {
+                        onRequestRegisterWallet();
+                      } else {
                         setShowcaseMintError(
-                          'Connect a NEAR Testnet signing wallet (Meteor / MyNearWallet) to mint this catch on-chain.',
+                          'Mode Guest: Silakan registrasi akun / sub-wallet terlebih dahulu untuk Mint NFT.',
                         );
                       }
-                    } finally {
-                      setIsMintingShowcaseNft(false);
-                    }
-                  }}
-                  style={{
-                    background:
-                      'linear-gradient(135deg, rgba(216, 180, 254, 0.3), rgba(168, 85, 247, 0.2))',
-                    border: '1px solid rgba(216, 180, 254, 0.6)',
-                    color: '#f3e8ff',
-                  }}
-                  className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 disabled:opacity-60 transition-all"
-                >
-                  {isMintingShowcaseNft ? 'Minting on NEAR...' : 'Mint NFT'}
-                </button>
+                    }}
+                    style={{
+                      background: 'rgba(184, 255, 60, 0.2)',
+                      border: '1px solid rgba(184, 255, 60, 0.65)',
+                      color: '#d9f99d',
+                    }}
+                    className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-lime-400/30 transition-all"
+                  >
+                    🔒 Register to Mint NFT
+                  </button>
+                )
               ) : (
                 <span className="px-4 py-2 rounded-full text-[12px] font-mono font-bold bg-emerald-500/25 border border-emerald-400/70 text-emerald-200">
                   Minted NEP-171 ✓{' '}
