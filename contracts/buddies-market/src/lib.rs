@@ -1025,7 +1025,7 @@ impl BuddiesMarketContract {
         let fish_nft_count = self
             .nft_tokens_by_id
             .values()
-            .filter(|t| t.owner_id == account_id && t.token_id.starts_with("fish-"))
+            .filter(|t| t.owner_id == account_id && self.fish_nfts.contains_key(&t.token_id))
             .count() as u32;
 
         CitizenEstateSummary {

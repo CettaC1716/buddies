@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type {
   CaughtFishItem,
@@ -542,7 +542,7 @@ interface TidewaterFishingHudAndModalProps {
   onKeepCaughtFish: () => void;
   onReleaseCaughtFish: (fish: CaughtFishItem) => void;
   onSellCaughtFishToKai: (fish: CaughtFishItem) => void;
-  onMintCaughtFishAsNft: (fish: CaughtFishItem) => void;
+  onMintCaughtFishAsNft: (fish: CaughtFishItem) => void | Promise<boolean>;
 }
 
 export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModalProps> = ({
@@ -565,6 +565,13 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
   onMintCaughtFishAsNft,
 }) => {
   const studioCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isMintingShowcaseNft, setIsMintingShowcaseNft] = useState<boolean>(false);
+  const [showcaseMintError, setShowcaseMintError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsMintingShowcaseNft(false);
+    setShowcaseMintError(null);
+  }, [lastCaughtFishToast?.id]);
 
   // Global mouse hold-to-reel during 'fighting' and click-to-strike during 'bite' so the player
   // never has to hunt for a UI button while watching the 3D water & bobber!
@@ -1132,20 +1139,49 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 </button>
               )}
 
-              {!lastCaughtFishToast.isMintedNft && (
+              {!lastCaughtFishToast.isMintedNft ? (
                 <button
                   type="button"
                   data-showcase-mint-fish-btn="true"
-                  onClick={() => onMintCaughtFishAsNft(lastCaughtFishToast)}
+                  disabled={isMintingShowcaseNft}
+                  onClick={async () => {
+                    setShowcaseMintError(null);
+                    setIsMintingShowcaseNft(true);
+                    try {
+                      const ok = await onMintCaughtFishAsNft(lastCaughtFishToast);
+                      if (ok === false) {
+                        setShowcaseMintError(
+                          'Connect a NEAR Testnet signing wallet (Meteor / MyNearWallet) to mint this catch on-chain.',
+                        );
+                      }
+                    } finally {
+                      setIsMintingShowcaseNft(false);
+                    }
+                  }}
                   style={{
-                    background: 'linear-gradient(135deg, rgba(216, 180, 254, 0.3), rgba(168, 85, 247, 0.2))',
+                    background:
+                      'linear-gradient(135deg, rgba(216, 180, 254, 0.3), rgba(168, 85, 247, 0.2))',
                     border: '1px solid rgba(216, 180, 254, 0.6)',
                     color: '#f3e8ff',
                   }}
-                  className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 transition-all"
+                  className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 disabled:opacity-60 transition-all"
                 >
-                  Mint NFT
+                  {isMintingShowcaseNft ? 'Minting on NEAR...' : 'Mint NFT'}
                 </button>
+              ) : (
+                <span className="px-4 py-2 rounded-full text-[12px] font-mono font-bold bg-emerald-500/25 border border-emerald-400/70 text-emerald-200">
+                  Minted NEP-171 ✓{' '}
+                  {lastCaughtFishToast.nearTxHash && (
+                    <a
+                      href={`https://testnet.nearblocks.io/txns/${lastCaughtFishToast.nearTxHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline ml-1 text-[#5fe3d4]"
+                    >
+                      Tx ↗
+                    </a>
+                  )}
+                </span>
               )}
 
               <button
@@ -1162,6 +1198,11 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 Release
               </button>
             </div>
+            {showcaseMintError && (
+              <div className="mt-2.5 text-center text-xs font-mono text-rose-300">
+                {showcaseMintError}
+              </div>
+            )}
           </div>
         </div>
       )}

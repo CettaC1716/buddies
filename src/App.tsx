@@ -80,7 +80,7 @@ import {
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   NEAR_CONFIG,
-  connectNearWalletSelector,
+  disconnectNearWallet,
   executeMarketContractCallOnChain,
   executeNearTestnetAndRespiteSwap,
   fetchBuddiesMarketEstate,
@@ -88,6 +88,9 @@ import {
   fetchNearAccountView,
   fetchNearNetworkStatus,
   fetchNep141Balance,
+  isActiveWalletReadOnlyObserver,
+  onNearSigningWalletConnected,
+  restoreConnectedNearSigningWallet,
   spawnSubAccountOnChainViaMaster,
   verifyNep171GamepassOwnership,
   type NearAccountView,
@@ -572,50 +575,53 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [isFastForwardRunning, activeSpecialModal, merchantLocation]);
 
+  const refreshFishMarketplaceFromChainAndDb = useCallback(async () => {
+    const [dbListings, onChainListings] = await Promise.all([
+      fetchFishMarketplaceListingsFromSupabase(),
+      fetchBuddiesMarketFishListings(),
+    ]);
+    const mappedOnChain: FishNftMarketplaceListing[] = onChainListings.map((row) => {
+      const spec = FISH_SPECIES_CATALOG.find((s) => s.speciesId === row.species_id);
+      const waterZone =
+        row.water_zone === 'central_oasis' ? 'central_oasis' : spec?.waterZone || 'east_beach';
+      const weightKg = Math.max(0.05, Number(((row.weight_kg_x100 || 100) / 100).toFixed(2)));
+      const priceRespite = Math.max(1, Math.round(Number(row.price_respite) || 1));
+      return {
+        listingId: row.listing_id,
+        nftTokenId: row.token_id,
+        speciesId: row.species_id,
+        speciesName: row.species_name || spec?.speciesName || 'Coral Sardine',
+        waterZone,
+        waterZoneLabel:
+          waterZone === 'central_oasis' ? 'Central Oasis Lake' : 'East Beach Shoreline',
+        rarity: (row.rarity as FishNftMarketplaceListing['rarity']) || spec?.rarity || 'Common',
+        weightKg,
+        isTrophy: spec ? weightKg >= spec.maxWeightKg * 0.7 : false,
+        colorHex: spec?.colorHex || '#38bdf8',
+        caughtByAccount: row.seller_id,
+        sellerNearAccount: row.seller_id,
+        priceRespite,
+        priceLul: priceRespite,
+        nearTxHash: '',
+        listedAtIso: new Date(row.listed_at_ms || Date.now()).toISOString(),
+      };
+    });
+    const onChainIds = new Set(mappedOnChain.map((item) => item.listingId));
+    // Prioritize live smart contract listings on market.buddiesblitz.testnet
+    const merged = [
+      ...mappedOnChain,
+      ...dbListings.filter((item) => !onChainIds.has(item.listingId) && !item.listingId.startsWith('listing-')),
+    ];
+    setFishMarketListings(merged);
+  }, []);
+
   // Hydrate initial state from NEAR RPC & Supabase PostgreSQL + Realtime
   useEffect(() => {
     let mounted = true;
     void fetchNearNetworkStatus().then((status) => {
       if (mounted) setNearRpcStatus(status);
     });
-    void Promise.all([
-      fetchFishMarketplaceListingsFromSupabase(),
-      fetchBuddiesMarketFishListings(),
-    ]).then(([dbListings, onChainListings]) => {
-      if (!mounted) return;
-      const mappedOnChain: FishNftMarketplaceListing[] = onChainListings.map((row) => {
-        const spec = FISH_SPECIES_CATALOG.find((s) => s.speciesId === row.species_id);
-        const waterZone =
-          row.water_zone === 'central_oasis' ? 'central_oasis' : spec?.waterZone || 'east_beach';
-        const weightKg = Math.max(0.05, Number(((row.weight_kg_x100 || 100) / 100).toFixed(2)));
-        const priceRespite = Math.max(1, Math.round(Number(row.price_respite) || 1));
-        return {
-          listingId: row.listing_id,
-          nftTokenId: row.token_id,
-          speciesId: row.species_id,
-          speciesName: row.species_name || spec?.speciesName || 'Coral Sardine',
-          waterZone,
-          waterZoneLabel:
-            waterZone === 'central_oasis' ? 'Central Oasis Lake' : 'East Beach Shoreline',
-          rarity: (row.rarity as FishNftMarketplaceListing['rarity']) || spec?.rarity || 'Common',
-          weightKg,
-          isTrophy: spec ? weightKg >= spec.maxWeightKg * 0.7 : false,
-          colorHex: spec?.colorHex || '#38bdf8',
-          caughtByAccount: row.seller_id,
-          sellerNearAccount: row.seller_id,
-          priceRespite,
-          priceLul: priceRespite,
-          nearTxHash: '',
-          listedAtIso: new Date(row.listed_at_ms || Date.now()).toISOString(),
-        };
-      });
-      const seenIds = new Set(mappedOnChain.map((item) => item.listingId));
-      const merged = [
-        ...mappedOnChain,
-        ...dbListings.filter((item) => !seenIds.has(item.listingId)),
-      ];
-      setFishMarketListings(merged);
-    });
+    void refreshFishMarketplaceFromChainAndDb();
     void fetchBasePlotsFromSupabase().then((plots) => {
       if (!mounted || plots.length === 0) return;
       const activeWallet = (hudRef.current.nearWalletId || '').toLowerCase();
@@ -1770,29 +1776,65 @@ export default function App() {
   );
 
   useEffect(() => {
+    const unsubSigningWallet = onNearSigningWalletConnected((walletRes) => {
+      if (walletRes?.accountId) {
+        void handleConnectWalletAndEnterLobby(walletRes.accountId, {
+          silentRestore: true,
+          preverifiedResult: walletRes,
+        });
+      }
+    });
+    return () => {
+      unsubSigningWallet();
+    };
+  }, [handleConnectWalletAndEnterLobby]);
+
+  useEffect(() => {
+    let cancelled = false;
     if (typeof window !== 'undefined') {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const callbackAccountId = params.get('account_id');
-        if (callbackAccountId) {
-          void handleConnectWalletAndEnterLobby(callbackAccountId, { silentRestore: true });
-        } else {
-          const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+      void (async () => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const callbackAccountId = params.get('account_id');
+          if (callbackAccountId) {
+            await handleConnectWalletAndEnterLobby(callbackAccountId, { silentRestore: true });
+            return;
+          }
+
           const explicitlyLoggedOut =
             window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
-          if (
-            lastId &&
-            !explicitlyLoggedOut &&
-            !lastId.toLowerCase().startsWith('player1.') &&
-            !lastId.toLowerCase().startsWith('guest') &&
-            !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
-          ) {
-            void handleConnectWalletAndEnterLobby(lastId, { silentRestore: true });
+          if (explicitlyLoggedOut) return;
+
+          // 1. Prefer restoring an active @hot-labs/near-connect signing wallet session first
+          const restoredSigner = await restoreConnectedNearSigningWallet('testnet');
+          if (!cancelled && restoredSigner?.accountId) {
+            await handleConnectWalletAndEnterLobby(restoredSigner.accountId, {
+              silentRestore: true,
+              preverifiedResult: restoredSigner,
+            });
+            return;
           }
+
+          // 2. Fallback to saved Citizen / Wallet handle, strictly excluding root faucet 'testnet' / 'testnet.near'
+          const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+          const lowerLast = (lastId || '').trim().toLowerCase();
+          if (lowerLast === 'testnet' || lowerLast === 'testnet.near') {
+            window.localStorage.removeItem('bb_last_connected_wallet_id');
+            return;
+          }
+          if (
+            !cancelled &&
+            lastId &&
+            !lowerLast.startsWith('player1.') &&
+            !lowerLast.startsWith('guest') &&
+            !lowerLast.endsWith('.buddiesblitz-master.testnet')
+          ) {
+            await handleConnectWalletAndEnterLobby(lastId, { silentRestore: true });
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
-      }
+      })();
     }
     const unsubGoogle = subscribeToSupabaseAuthUser((user) => {
       if (user?.email) {
@@ -1800,6 +1842,7 @@ export default function App() {
       }
     });
     return () => {
+      cancelled = true;
       unsubGoogle();
     };
   }, [handleConnectWalletAndEnterLobby, resolveAndRestoreExistingGoogleWallet]);
@@ -2362,40 +2405,41 @@ export default function App() {
     (fish: CaughtFishItem) => {
       soundEngine.playPickup();
       const actorAccount = hudRef.current.nearWalletId || playerUid;
-      if (!actorAccount) return;
       const earnedLul = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
       setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
       setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
       const nextLul = Math.max(0, (hudRef.current.gold ?? 0) + earnedLul);
       dispatchBuddyAction(`adjustPlayerLul:${earnedLul}`);
-      void syncPlayerBalancesToSupabase({
-        nearAccountId: actorAccount,
-        lulBalance: nextLul,
-        cyonBalance,
-        respiteBalance,
-      });
-      void logMarketTransactionToSupabase({
-        merchant_id: 'beach_house',
-        actor_near_account: actorAccount,
-        action_type: 'sell_fish',
-        item_id: fish.speciesId,
-        currency: 'LUL',
-        amount: earnedLul,
-        unit_price: earnedLul,
-        reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedLul} LUL (convertible to CYON at Exchange).`,
-      });
+      if (actorAccount) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: actorAccount,
+          lulBalance: nextLul,
+          cyonBalance,
+          respiteBalance,
+        });
+        void logMarketTransactionToSupabase({
+          merchant_id: 'beach_house',
+          actor_near_account: actorAccount,
+          action_type: 'sell_fish',
+          item_id: fish.speciesId,
+          currency: 'LUL',
+          amount: earnedLul,
+          unit_price: earnedLul,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedLul} LUL (convertible to CYON at Exchange).`,
+        });
+      }
     },
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
   );
 
   const handleMintCaughtFishNft = useCallback(
-    async (fish: CaughtFishItem) => {
+    async (fish: CaughtFishItem): Promise<boolean> => {
       soundEngine.playPickup();
       const actorAccount = hudRef.current.nearWalletId || playerUid;
-      if (!actorAccount) return;
       const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
       const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
       const res = await executeMarketContractCallOnChain({
+        signerAccountId: actorAccount || undefined,
         methodName: 'mint_fish_nft',
         args: {
           token_id: nftTokenId,
@@ -2406,7 +2450,8 @@ export default function App() {
           weight_kg_x100: Math.max(1, Math.round(fish.weightKg * 100)),
         },
       });
-      if (!res.ok || !res.txHash) return;
+      if (!res.ok || !res.txHash) return false;
+      const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
       setCaughtFishBucket((prev) =>
         prev.map((f) =>
           f.id === fish.id
@@ -2426,25 +2471,28 @@ export default function App() {
       );
       const nextOwned = [...ownedMerchantItemIds, nftTokenId];
       setOwnedMerchantItemIds(nextOwned);
-      void syncPlayerBalancesToSupabase({
-        nearAccountId: actorAccount,
-        lulBalance: hudRef.current.gold ?? 0,
-        cyonBalance,
-        respiteBalance,
-        ownedTokenIds: nextOwned,
-      });
-      void logMarketTransactionToSupabase({
-        merchant_id: 'beach_house',
-        actor_near_account: actorAccount,
-        action_type: 'mint_fish_nft',
-        item_id: fish.speciesId,
-        nep245_token_id: nftTokenId,
-        currency: 'RESPITE',
-        amount: 0,
-        unit_price: 0,
-        reasoning_summary: `Minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NEP-171 Fish NFT ${nftTokenId}.`,
-        near_tx_hash: res.txHash,
-      });
+      if (resolvedActor) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: resolvedActor,
+          lulBalance: hudRef.current.gold ?? 0,
+          cyonBalance,
+          respiteBalance,
+          ownedTokenIds: nextOwned,
+        });
+        void logMarketTransactionToSupabase({
+          merchant_id: 'beach_house',
+          actor_near_account: resolvedActor,
+          action_type: 'mint_fish_nft',
+          item_id: fish.speciesId,
+          nep245_token_id: nftTokenId,
+          currency: 'RESPITE',
+          amount: 0,
+          unit_price: 0,
+          reasoning_summary: `Minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NEP-171 Fish NFT ${nftTokenId}.`,
+          near_tx_hash: res.txHash,
+        });
+      }
+      return true;
     },
     [cyonBalance, ownedMerchantItemIds, playerUid, respiteBalance],
   );
@@ -2830,7 +2878,9 @@ export default function App() {
                   {/* 1. Headless Google OAuth Login */}
                   <div className="space-y-2.5">
                     {savedWalletSummary &&
-                      savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' && (
+                      savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' &&
+                      savedWalletSummary.walletId !== 'testnet' &&
+                      savedWalletSummary.walletId !== 'testnet.near' && (
                         <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
                           <div className="min-w-0">
                             <div className="truncate font-black text-[#facc15]">
@@ -2887,6 +2937,23 @@ export default function App() {
                               ? 'AUTHENTICATING WITH GOOGLE...'
                               : 'CONTINUE WITH GOOGLE'}
                           </span>
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        data-open-near-wallet-selector-start-btn="true"
+                        disabled={isVerifyingNearWallet || privyOAuthLoading}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setWalletConnectError(null);
+                          setIsNearWalletSelectorOpen(true);
+                        }}
+                        className="-skew-x-6 w-full py-2.5 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                      >
+                        <span className="skew-x-6 flex items-center justify-center gap-2">
+                          <Wallet className="w-3.5 h-3.5 stroke-[2.5] shrink-0" aria-hidden="true" />
+                          <span>CONNECT NEAR WALLET (METEOR / TESTNET)</span>
                         </span>
                       </button>
                     </div>
@@ -4431,8 +4498,8 @@ export default function App() {
           const priceRespite = HOUSE_OWNERSHIP_PRICE_RESPITE;
           if (respiteBalance < priceRespite) return false;
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return false;
           const res = await executeMarketContractCallOnChain({
+            signerAccountId: actorAccount || undefined,
             methodName: 'purchase_citizen_asset',
             args: {
               asset_id: 'house_ownership',
@@ -4441,32 +4508,49 @@ export default function App() {
             },
           });
           if (!res.ok || !res.txHash) return false;
-          const nextRespite = Math.max(0, respiteBalance - priceRespite);
+          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
+          let nextRespite = Math.max(0, respiteBalance - priceRespite);
+          let deedTokenId = 'nep171:house:ownership';
+          if (resolvedActor) {
+            const [liveRespiteStr, liveEstate] = await Promise.all([
+              fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor),
+              fetchBuddiesMarketEstate(resolvedActor),
+            ]);
+            if (liveRespiteStr !== null) {
+              nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+            }
+            if (liveEstate?.house_deed?.deed_token_id) {
+              deedTokenId = liveEstate.house_deed.deed_token_id;
+            }
+          }
           setRespiteBalance(nextRespite);
           setHasHouseOwnership(true);
           setHud((prev) => ({
             ...prev,
             nearHasGamepassNft: true,
+            nearGamepassTokenId: deedTokenId,
           }));
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: actorAccount,
-            lulBalance: hud.gold,
-            cyonBalance,
-            respiteBalance: nextRespite,
-            ownedTokenIds: [...ownedMerchantItemIds, 'nep171:house:ownership'],
-          });
-          void logMarketTransactionToSupabase({
-            merchant_id: merchantLocation,
-            actor_near_account: actorAccount,
-            action_type: 'buy_item',
-            item_id: 'house_ownership',
-            nep245_token_id: 'nep171:house:ownership',
-            currency: 'RESPITE',
-            amount: 1,
-            unit_price: priceRespite,
-            reasoning_summary: `Purchased Private House Sub-Account Deed for ${priceRespite} RESPITE.`,
-            near_tx_hash: res.txHash,
-          });
+          if (resolvedActor) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: resolvedActor,
+              lulBalance: hud.gold,
+              cyonBalance,
+              respiteBalance: nextRespite,
+              ownedTokenIds: [...ownedMerchantItemIds, deedTokenId],
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: resolvedActor,
+              action_type: 'buy_item',
+              item_id: 'house_ownership',
+              nep245_token_id: deedTokenId,
+              currency: 'RESPITE',
+              amount: 1,
+              unit_price: priceRespite,
+              reasoning_summary: `Purchased Private House Sub-Account Deed (${deedTokenId}) for ${priceRespite} RESPITE.`,
+              near_tx_hash: res.txHash,
+            });
+          }
           return true;
         }}
         recruitedFamilyMembers={recruitedFamilyMembers}
@@ -4476,7 +4560,6 @@ export default function App() {
             FAMILY_MEMBER_CONTRACT_PLANS[0];
           if (respiteBalance < plan.priceRespite) return null;
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return null;
 
           const memberNumber = recruitedFamilyMembers.length + 1;
           const now = new Date();
@@ -4485,6 +4568,7 @@ export default function App() {
           const contractAddress = `family-${memberNumber}.buddiesblitz.testnet`;
 
           const res = await executeMarketContractCallOnChain({
+            signerAccountId: actorAccount || undefined,
             methodName: 'purchase_citizen_asset',
             args: {
               asset_id: 'family_member',
@@ -4493,8 +4577,18 @@ export default function App() {
             },
           });
           if (!res.ok || !res.txHash) return null;
+          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
 
-          const nextRespite = Math.max(0, respiteBalance - plan.priceRespite);
+          let nextRespite = Math.max(0, respiteBalance - plan.priceRespite);
+          if (resolvedActor) {
+            const liveRespiteStr = await fetchNep141Balance(
+              NEAR_CONFIG.nep141RespiteContractId,
+              resolvedActor,
+            );
+            if (liveRespiteStr !== null) {
+              nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+            }
+          }
           setRespiteBalance(nextRespite);
 
           const newMember: RecruitedFamilyMemberAgent = {
@@ -4511,24 +4605,26 @@ export default function App() {
           };
           setRecruitedFamilyMembers((prev) => [newMember, ...prev]);
 
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: actorAccount,
-            lulBalance: hud.gold,
-            cyonBalance,
-            respiteBalance: nextRespite,
-          });
-          void logMarketTransactionToSupabase({
-            merchant_id: merchantLocation,
-            actor_near_account: actorAccount,
-            action_type: 'buy_item',
-            item_id: `family_member_${plan.id}`,
-            nep245_token_id: newMember.contractAddress,
-            currency: 'RESPITE',
-            amount: 1,
-            unit_price: plan.priceRespite,
-            reasoning_summary: `Recruited ${newMember.name} (${plan.label}) for ${plan.priceRespite} RESPITE.`,
-            near_tx_hash: newMember.nearTxHash,
-          });
+          if (resolvedActor) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: resolvedActor,
+              lulBalance: hud.gold,
+              cyonBalance,
+              respiteBalance: nextRespite,
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: resolvedActor,
+              action_type: 'buy_item',
+              item_id: `family_member_${plan.id}`,
+              nep245_token_id: newMember.contractAddress,
+              currency: 'RESPITE',
+              amount: 1,
+              unit_price: plan.priceRespite,
+              reasoning_summary: `Recruited ${newMember.name} (${plan.label}) for ${plan.priceRespite} RESPITE.`,
+              near_tx_hash: newMember.nearTxHash,
+            });
+          }
           return newMember;
         }}
         onCommandFamilyMember={(agentId, orderId) => {
@@ -4567,7 +4663,6 @@ export default function App() {
         onExchangeLulToCyon={(customLulSpent?: number, customCyonGranted?: number) => {
           soundEngine.playUiClick();
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return;
           if (
             typeof customLulSpent === 'number' &&
             typeof customCyonGranted === 'number' &&
@@ -4578,25 +4673,27 @@ export default function App() {
             dispatchBuddyAction(`adjustPlayerLul:${-customLulSpent}`);
             const nextCyon = cyonBalance + customCyonGranted;
             setCyonBalance(nextCyon);
-            void syncNpcMerchantToSupabase({
-              merchant_id: merchantLocation,
-              cyon_treasury: Math.max(0, marketState.treasuryCyon - customCyonGranted),
-            });
-            void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
-              actor_near_account: actorAccount,
-              action_type: 'exchange_lul_cyon',
-              currency: 'CYON',
-              amount: customCyonGranted,
-              unit_price: Number((customLulSpent / customCyonGranted).toFixed(2)),
-              reasoning_summary: `Exchanged ${customLulSpent} LUL for ${customCyonGranted} CYON at ${merchantLocation}`,
-            });
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: actorAccount,
-              lulBalance: Math.max(0, hud.gold - customLulSpent),
-              cyonBalance: nextCyon,
-              respiteBalance,
-            });
+            if (actorAccount) {
+              void syncNpcMerchantToSupabase({
+                merchant_id: merchantLocation,
+                cyon_treasury: Math.max(0, marketState.treasuryCyon - customCyonGranted),
+              });
+              void logMarketTransactionToSupabase({
+                merchant_id: merchantLocation,
+                actor_near_account: actorAccount,
+                action_type: 'exchange_lul_cyon',
+                currency: 'CYON',
+                amount: customCyonGranted,
+                unit_price: Number((customLulSpent / customCyonGranted).toFixed(2)),
+                reasoning_summary: `Exchanged ${customLulSpent} LUL for ${customCyonGranted} CYON at ${merchantLocation}`,
+              });
+              void syncPlayerBalancesToSupabase({
+                nearAccountId: actorAccount,
+                lulBalance: Math.max(0, hud.gold - customLulSpent),
+                cyonBalance: nextCyon,
+                respiteBalance,
+              });
+            }
             return;
           }
           const res = executeLulToCyonExchange(marketState, hud.gold, cyonBalance);
@@ -4605,55 +4702,61 @@ export default function App() {
             dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
             setCyonBalance(res.updatedCyon);
             setMarketState(res.updatedState);
-            void syncNpcMerchantToSupabase({
-              merchant_id: merchantLocation,
-              cyon_treasury: res.updatedState.treasuryCyon,
-              is_bankrupt: res.updatedState.isShopBroke,
-              last_headline: res.updatedState.lastMarketHeadline,
-            });
-            void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
-              actor_near_account: actorAccount,
-              action_type: 'exchange_lul_cyon',
-              currency: 'CYON',
-              amount: res.updatedCyon - cyonBalance,
-              unit_price: lulSpent,
-              reasoning_summary: res.updatedState.lastMarketHeadline,
-            });
+            if (actorAccount) {
+              void syncNpcMerchantToSupabase({
+                merchant_id: merchantLocation,
+                cyon_treasury: res.updatedState.treasuryCyon,
+                is_bankrupt: res.updatedState.isShopBroke,
+                last_headline: res.updatedState.lastMarketHeadline,
+              });
+              void logMarketTransactionToSupabase({
+                merchant_id: merchantLocation,
+                actor_near_account: actorAccount,
+                action_type: 'exchange_lul_cyon',
+                currency: 'CYON',
+                amount: res.updatedCyon - cyonBalance,
+                unit_price: lulSpent,
+                reasoning_summary: res.updatedState.lastMarketHeadline,
+              });
+            }
           }
         }}
         onInvestInMerchant={() => {
           soundEngine.playUiClick();
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return;
           const res = investInMerchantShop(marketState, hud.gold, cyonBalance);
           if (res.ok) {
             const lulSpent = Math.max(0, hud.gold - res.updatedLul);
             dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
             setCyonBalance(res.updatedCyon);
             setMarketState(res.updatedState);
-            void syncNpcMerchantToSupabase({
-              merchant_id: merchantLocation,
-              cyon_treasury: res.updatedState.treasuryCyon,
-              is_bankrupt: res.updatedState.isShopBroke,
-              last_headline: res.updatedState.lastMarketHeadline,
-            });
-            void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
-              actor_near_account: actorAccount,
-              action_type: 'invest_shop',
-              currency: 'LUL',
-              amount: lulSpent,
-              unit_price: 1,
-              reasoning_summary: res.updatedState.lastMarketHeadline,
-            });
+            if (actorAccount) {
+              void syncNpcMerchantToSupabase({
+                merchant_id: merchantLocation,
+                cyon_treasury: res.updatedState.treasuryCyon,
+                is_bankrupt: res.updatedState.isShopBroke,
+                last_headline: res.updatedState.lastMarketHeadline,
+              });
+              void logMarketTransactionToSupabase({
+                merchant_id: merchantLocation,
+                actor_near_account: actorAccount,
+                action_type: 'invest_shop',
+                currency: 'LUL',
+                amount: lulSpent,
+                unit_price: 1,
+                reasoning_summary: res.updatedState.lastMarketHeadline,
+              });
+            }
           }
         }}
         onBuyMerchantItem={(item: MerchantCatalogItem, finalPrice: number) => {
           soundEngine.playUiClick();
           if (ownedMerchantItemIds.includes(item.id)) return;
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return;
+          if (item.currency === 'RESPITE' && !actorAccount) {
+            setIsNearWalletSelectorOpen(true);
+            return;
+          }
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
           if (item.currency === 'CYON') {
@@ -4693,24 +4796,26 @@ export default function App() {
               prev.treasuryCyon + (item.currency === 'CYON' ? finalPrice : finalPrice * 12);
             const headline = `You purchased ${item.name} (${finalPrice} ${item.currency}). Stock decreased, demand trend rising!`;
 
-            void syncNpcMerchantToSupabase({
-              merchant_id: merchantLocation,
-              cyon_treasury: nextTreasury,
-              stock_by_item: nextStock,
-              recent_demand_by_item: nextDemand,
-              last_headline: headline,
-            });
-            void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
-              actor_near_account: actorAccount,
-              action_type: 'buy_item',
-              item_id: item.id,
-              nep245_token_id: item.tokenId,
-              currency: item.currency,
-              amount: 1,
-              unit_price: finalPrice,
-              reasoning_summary: headline,
-            });
+            if (actorAccount) {
+              void syncNpcMerchantToSupabase({
+                merchant_id: merchantLocation,
+                cyon_treasury: nextTreasury,
+                stock_by_item: nextStock,
+                recent_demand_by_item: nextDemand,
+                last_headline: headline,
+              });
+              void logMarketTransactionToSupabase({
+                merchant_id: merchantLocation,
+                actor_near_account: actorAccount,
+                action_type: 'buy_item',
+                item_id: item.id,
+                nep245_token_id: item.tokenId,
+                currency: item.currency,
+                amount: 1,
+                unit_price: finalPrice,
+                reasoning_summary: headline,
+              });
+            }
 
             return {
               ...prev,
@@ -4720,13 +4825,15 @@ export default function App() {
               lastMarketHeadline: headline,
             };
           });
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: actorAccount,
-            lulBalance: hud.gold,
-            cyonBalance: nextCyon,
-            respiteBalance: nextRespite,
-            ownedTokenIds: nextOwned,
-          });
+          if (actorAccount) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: actorAccount,
+              lulBalance: hud.gold,
+              cyonBalance: nextCyon,
+              respiteBalance: nextRespite,
+              ownedTokenIds: nextOwned,
+            });
+          }
         }}
         onSellMerchantItem={(item: MerchantCatalogItem, refund: number) => {
           soundEngine.playUiClick();
@@ -4849,50 +4956,72 @@ export default function App() {
         }}
         onConnectWallet={() => {
           soundEngine.playUiClick();
-          void handleStartGoogleLoginAndOpenWalletNaming();
+          setIsNearWalletSelectorOpen(true);
         }}
         onSwapNearAndRespite={async (direction, inputAmount) => {
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return null;
           const receipt = await executeNearTestnetAndRespiteSwap({
             direction,
-            signerAccountId: actorAccount,
+            signerAccountId: actorAccount || undefined,
             inputAmount,
             networkId: walletNetworkChoice,
           });
           if (!receipt || !receipt.txHash) return null;
-          const nextNear =
+          const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
+
+          let nextNear =
             direction === 'near_to_respite'
               ? Math.max(0, Number((nearTestnetBalance - receipt.nearAmount).toFixed(4)))
               : Number((nearTestnetBalance + receipt.nearAmount).toFixed(4));
-          const nextRespite =
+          let nextRespite =
             direction === 'near_to_respite'
               ? respiteBalance + receipt.respiteAmount
               : Math.max(0, respiteBalance - receipt.respiteAmount);
 
+          if (resolvedActor) {
+            const [liveAccountView, liveRespiteStr] = await Promise.all([
+              fetchNearAccountView(resolvedActor),
+              fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor),
+            ]);
+            if (liveAccountView) {
+              const liveNear = Number(liveAccountView.amount) / 1e24;
+              if (Number.isFinite(liveNear)) {
+                nextNear = Number(liveNear.toFixed(4));
+              }
+            }
+            if (liveRespiteStr !== null) {
+              const parsedRespite = Number(liveRespiteStr);
+              if (Number.isFinite(parsedRespite)) {
+                nextRespite = parsedRespite;
+              }
+            }
+          }
+
           setNearTestnetBalance(nextNear);
           setRespiteBalance(nextRespite);
 
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: actorAccount,
-            lulBalance: hud.gold,
-            cyonBalance,
-            respiteBalance: nextRespite,
-          });
-          void logMarketTransactionToSupabase({
-            merchant_id: merchantLocation,
-            actor_near_account: actorAccount,
-            action_type: 'exchange_lul_cyon',
-            nep245_token_id: receipt.tokenContractId,
-            currency: 'RESPITE',
-            amount: receipt.respiteAmount,
-            unit_price: receipt.nearAmount,
-            reasoning_summary:
-              direction === 'near_to_respite'
-                ? `Swapped ${receipt.nearAmount} NEAR Testnet -> +${receipt.respiteAmount} RESPITE (${receipt.tokenContractId})`
-                : `Swapped ${receipt.respiteAmount} RESPITE -> +${receipt.nearAmount} NEAR Testnet (${receipt.tokenContractId})`,
-            near_tx_hash: receipt.txHash,
-          });
+          if (resolvedActor) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: resolvedActor,
+              lulBalance: hud.gold,
+              cyonBalance,
+              respiteBalance: nextRespite,
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: resolvedActor,
+              action_type: 'exchange_lul_cyon',
+              nep245_token_id: receipt.tokenContractId,
+              currency: 'RESPITE',
+              amount: receipt.respiteAmount,
+              unit_price: receipt.nearAmount,
+              reasoning_summary:
+                direction === 'near_to_respite'
+                  ? `Swapped ${receipt.nearAmount} NEAR Testnet -> +${receipt.respiteAmount} RESPITE (${receipt.tokenContractId})`
+                  : `Swapped ${receipt.respiteAmount} RESPITE -> +${receipt.nearAmount} NEAR Testnet (${receipt.tokenContractId})`,
+              near_tx_hash: receipt.txHash,
+            });
+          }
           return receipt;
         }}
         caughtFishBucket={caughtFishBucket}
@@ -4912,13 +5041,16 @@ export default function App() {
           }
         }}
         onMintFishAsNft={handleMintCaughtFishNft}
-        onListFishNftOnMarket={async (fish: CaughtFishItem, priceRespiteInput: number) => {
-          if (!fish.isMintedNft || !fish.nftTokenId) return;
+        onListFishNftOnMarket={async (
+          fish: CaughtFishItem,
+          priceRespiteInput: number,
+        ): Promise<boolean> => {
+          if (!fish.isMintedNft || !fish.nftTokenId) return false;
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return;
           const cleanRespitePrice = Math.max(1, Math.round(priceRespiteInput));
           const listingId = `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
           const res = await executeMarketContractCallOnChain({
+            signerAccountId: actorAccount || undefined,
             methodName: 'list_fish_nft',
             args: {
               listing_id: listingId,
@@ -4926,7 +5058,8 @@ export default function App() {
               price_respite: String(cleanRespitePrice),
             },
           });
-          if (!res.ok || !res.txHash) return;
+          if (!res.ok || !res.txHash) return false;
+          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
           const newListing: FishNftMarketplaceListing = {
             listingId,
             nftTokenId: fish.nftTokenId,
@@ -4940,7 +5073,7 @@ export default function App() {
             isTrophy: fish.isTrophy,
             colorHex: fish.colorHex,
             caughtByAccount: fish.caughtByAccount,
-            sellerNearAccount: actorAccount,
+            sellerNearAccount: resolvedActor || fish.caughtByAccount,
             priceRespite: cleanRespitePrice,
             priceLul: cleanRespitePrice,
             nearTxHash: res.txHash,
@@ -4949,28 +5082,32 @@ export default function App() {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           setFishMarketListings((prev) => {
             const next = [newListing, ...prev];
-            void syncFishMarketplaceListingsToSupabase({
-              listings: next,
-              transaction: {
-                merchant_id: 'beach_house',
-                actor_near_account: actorAccount,
-                action_type: 'list_fish_nft',
-                item_id: fish.speciesId,
-                nep245_token_id: newListing.nftTokenId,
-                currency: 'RESPITE',
-                amount: newListing.priceRespite,
-                unit_price: newListing.priceRespite,
-                reasoning_summary: `${actorAccount} listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) on Kai's Marketplace for ${newListing.priceRespite} RESPITE.`,
-                near_tx_hash: newListing.nearTxHash,
-              },
-            });
+            if (resolvedActor) {
+              void syncFishMarketplaceListingsToSupabase({
+                listings: next,
+                transaction: {
+                  merchant_id: 'beach_house',
+                  actor_near_account: resolvedActor,
+                  action_type: 'list_fish_nft',
+                  item_id: fish.speciesId,
+                  nep245_token_id: newListing.nftTokenId,
+                  currency: 'RESPITE',
+                  amount: newListing.priceRespite,
+                  unit_price: newListing.priceRespite,
+                  reasoning_summary: `${resolvedActor} listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) on Kai's Marketplace for ${newListing.priceRespite} RESPITE.`,
+                  near_tx_hash: newListing.nearTxHash,
+                },
+              });
+            }
             return next;
           });
+          void refreshFishMarketplaceFromChainAndDb();
+          return true;
         }}
-        onBuyFishNftFromMarket={async (listing: FishNftMarketplaceListing) => {
+        onBuyFishNftFromMarket={async (listing: FishNftMarketplaceListing): Promise<boolean> => {
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return;
           const isOwnListing =
+            Boolean(actorAccount) &&
             listing.sellerNearAccount.toLowerCase() === actorAccount.toLowerCase();
           const listingPriceRespite = Math.max(
             1,
@@ -4979,27 +5116,47 @@ export default function App() {
                 ? Math.round(listing.priceLul / 50)
                 : listing.priceLul),
           );
-          if (!isOwnListing && respiteBalance < listingPriceRespite) return;
+          if (
+            !isOwnListing &&
+            actorAccount &&
+            !isActiveWalletReadOnlyObserver() &&
+            respiteBalance < listingPriceRespite
+          ) {
+            return false;
+          }
 
           const res = await executeMarketContractCallOnChain({
+            signerAccountId: actorAccount || undefined,
             methodName: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
             args: {
               listing_id: listing.listingId,
             },
           });
-          if (!res.ok || !res.txHash) return;
+          if (!res.ok || !res.txHash) return false;
+          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
 
           if (!isOwnListing) {
-            const nextRespite = Math.max(0, respiteBalance - listingPriceRespite);
+            let nextRespite = Math.max(0, respiteBalance - listingPriceRespite);
+            if (resolvedActor) {
+              const liveRespiteStr = await fetchNep141Balance(
+                NEAR_CONFIG.nep141RespiteContractId,
+                resolvedActor,
+              );
+              if (liveRespiteStr !== null) {
+                nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+              }
+            }
             setRespiteBalance(nextRespite);
             void creditRecipientRespiteInSupabase(listing.sellerNearAccount, listingPriceRespite);
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: actorAccount,
-              lulBalance: hud.gold,
-              cyonBalance,
-              respiteBalance: nextRespite,
-              ownedTokenIds: [...ownedMerchantItemIds, listing.nftTokenId],
-            });
+            if (resolvedActor) {
+              void syncPlayerBalancesToSupabase({
+                nearAccountId: resolvedActor,
+                lulBalance: hud.gold,
+                cyonBalance,
+                respiteBalance: nextRespite,
+                ownedTokenIds: [...ownedMerchantItemIds, listing.nftTokenId],
+              });
+            }
           }
 
           const sellCyonFallback = Math.max(15, Math.round(listingPriceRespite * 2));
@@ -5027,26 +5184,30 @@ export default function App() {
           setCaughtFishBucket((prev) => [reclaimedFish, ...prev]);
           setFishMarketListings((prev) => {
             const next = prev.filter((l) => l.listingId !== listing.listingId);
-            void syncFishMarketplaceListingsToSupabase({
-              listings: next,
-              removedListingId: listing.listingId,
-              transaction: {
-                merchant_id: 'beach_house',
-                actor_near_account: actorAccount,
-                action_type: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
-                item_id: listing.speciesId,
-                nep245_token_id: listing.nftTokenId,
-                currency: 'RESPITE',
-                amount: isOwnListing ? 0 : listingPriceRespite,
-                unit_price: listingPriceRespite,
-                reasoning_summary: isOwnListing
-                  ? `${actorAccount} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Kai's Marketplace.`
-                  : `${actorAccount} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`,
-                near_tx_hash: res.txHash,
-              },
-            });
+            if (resolvedActor) {
+              void syncFishMarketplaceListingsToSupabase({
+                listings: next,
+                removedListingId: listing.listingId,
+                transaction: {
+                  merchant_id: 'beach_house',
+                  actor_near_account: resolvedActor,
+                  action_type: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
+                  item_id: listing.speciesId,
+                  nep245_token_id: listing.nftTokenId,
+                  currency: 'RESPITE',
+                  amount: isOwnListing ? 0 : listingPriceRespite,
+                  unit_price: listingPriceRespite,
+                  reasoning_summary: isOwnListing
+                    ? `${resolvedActor} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Kai's Marketplace.`
+                    : `${resolvedActor} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`,
+                  near_tx_hash: res.txHash,
+                },
+              });
+            }
             return next;
           });
+          void refreshFishMarketplaceFromChainAndDb();
+          return true;
         }}
       />
 
@@ -5079,17 +5240,9 @@ export default function App() {
         onBuyCrateAirdrop={(crateKind) => {
           dispatchBuddyAction(`kioskBuyCrate:${crateKind}`);
         }}
-        onNearConnectAndMint={async () => {
-          try {
-            const res = await connectNearWalletSelector('testnet');
-            if (res.accountId) {
-              await handleConnectWalletAndEnterLobby(res.accountId, { preverifiedResult: res });
-            } else {
-              setIsNearWalletSelectorOpen(true);
-            }
-          } catch {
-            setIsNearWalletSelectorOpen(true);
-          }
+        onNearConnectAndMint={() => {
+          soundEngine.playUiClick();
+          setIsNearWalletSelectorOpen(true);
         }}
         onNearClaimBasePlot={() => {
           const account = hud.nearWalletId || playerUid;
@@ -5459,15 +5612,21 @@ export default function App() {
                   data-switch-or-disconnect-wallet-btn="true"
                   onClick={() => {
                     soundEngine.playUiClick();
+                    void disconnectNearWallet();
                     void signOutSupabaseAuth();
                     if (privyAuthenticated) {
                       void privyLogout();
                     }
                     setConnectedGoogleEmail('');
+                    setNearTestnetBalance(0);
+                    setRespiteBalance(0);
+                    setHasHouseOwnership(false);
                     setHud((prev) => ({
                       ...prev,
                       nearWalletConnected: false,
                       nearWalletId: '',
+                      nearHasGamepassNft: false,
+                      nearGamepassTokenId: null,
                     }));
                     setPlayerUid('');
                     if (typeof window !== 'undefined') {
@@ -5489,34 +5648,67 @@ export default function App() {
               </div>
 
               {/* CREATED SUB-ACCOUNT WALLET ADDRESS OR GUEST REGISTER PROMPT */}
-              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1.5">
-                <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                  WALLET ADDRESS
+              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                    WALLET ADDRESS
+                  </div>
+                  {hud.nearWalletConnected && hud.nearWalletId && (
+                    <span
+                      className={`px-1.5 py-0.5 border border-black text-[8.5px] font-black uppercase ${
+                        isActiveWalletReadOnlyObserver()
+                          ? 'bg-[#fec83e] text-black'
+                          : 'bg-[#b8ff3c] text-black'
+                      }`}
+                    >
+                      {isActiveWalletReadOnlyObserver()
+                        ? 'VIEW-ONLY · CONNECT SIGNER'
+                        : 'SIGNER READY'}
+                    </span>
+                  )}
                 </div>
                 {hud.nearWalletConnected && hud.nearWalletId ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <div
-                      data-wallet-active-uid="true"
-                      className="text-xs font-mono font-black text-[#38bdf8] break-all"
-                    >
-                      {hud.nearWalletId}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        data-wallet-active-uid="true"
+                        className="text-xs font-mono font-black text-[#38bdf8] break-all"
+                      >
+                        {hud.nearWalletId}
+                      </div>
+                      <button
+                        type="button"
+                        data-copy-wallet-address-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const addr = hud.nearWalletId || playerUid;
+                          if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                            void navigator.clipboard.writeText(addr);
+                          }
+                          setWalletAddressCopiedToast(true);
+                          window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
+                        }}
+                        className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
+                        </span>
+                      </button>
                     </div>
                     <button
                       type="button"
-                      data-copy-wallet-address-btn="true"
+                      data-personal-wallet-switch-signer-btn="true"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        const addr = hud.nearWalletId || playerUid;
-                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                          void navigator.clipboard.writeText(addr);
-                        }
-                        setWalletAddressCopiedToast(true);
-                        window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
+                        setIsPersonalWalletModalOpen(false);
+                        setIsNearWalletSelectorOpen(true);
                       }}
-                      className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
+                      className="w-full -skew-x-6 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border border-black cursor-pointer"
                     >
                       <span className="skew-x-6 inline-block">
-                        {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
+                        {isActiveWalletReadOnlyObserver()
+                          ? 'CONNECT SIGNING WALLET (METEOR / TESTNET)'
+                          : 'SWITCH / MANAGE NEAR WALLET'}
                       </span>
                     </button>
                   </div>
@@ -5526,18 +5718,19 @@ export default function App() {
                       data-wallet-active-uid="true"
                       className="text-[11px] font-bold text-slate-300"
                     >
-                      Not registered yet. Register to get your wallet address and coins.
+                      Connect Meteor / NEAR Testnet Wallet or create a Citizen Sub-Account.
                     </div>
                     <button
                       type="button"
                       data-personal-wallet-open-selector-btn="true"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        void handleStartGoogleLoginAndOpenWalletNaming();
+                        setIsPersonalWalletModalOpen(false);
+                        setIsNearWalletSelectorOpen(true);
                       }}
                       className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
                     >
-                      <span className="skew-x-6 inline-block">REGISTER</span>
+                      <span className="skew-x-6 inline-block">CONNECT WALLET</span>
                     </button>
                   </div>
                 )}
@@ -5673,6 +5866,7 @@ export default function App() {
                       return;
                     }
                     const res = await executeMarketContractCallOnChain({
+                      signerAccountId: senderId,
                       methodName: 'ft_transfer',
                       args: {
                         receiver_id: targetWallet,
@@ -6720,11 +6914,31 @@ export default function App() {
           12. NEAR WALLET SELECTOR MODAL (@near-wallet-selector/modal-ui Adaptation)
          ===================================================================== */}
       <NearWalletSelectorModal
-        isOpen={isNearWalletSelectorOpen && onboardingStep === 'completed'}
+        isOpen={isNearWalletSelectorOpen}
         onClose={() => setIsNearWalletSelectorOpen(false)}
         currentWalletId={hud.nearWalletId || playerUid || null}
         onConnectAccount={(accountId, mode) => {
           void handleConnectWalletAndEnterLobby(accountId, { onboardingMode: mode });
+        }}
+        onDisconnectAccount={() => {
+          setNearTestnetBalance(0);
+          setRespiteBalance(0);
+          setHasHouseOwnership(false);
+          setPlayerUid('');
+          setHud((prev) => ({
+            ...prev,
+            nearWalletConnected: false,
+            nearWalletId: '',
+            nearHasGamepassNft: false,
+            nearGamepassTokenId: null,
+          }));
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.removeItem('bb_last_connected_wallet_id');
+            } catch {
+              // ignore
+            }
+          }
         }}
         onSelectGoogleAutoRegister={() => {
           setIsNearWalletSelectorOpen(false);

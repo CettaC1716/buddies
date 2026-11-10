@@ -20,6 +20,9 @@ import {
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   RESPITE_NEP141_METADATA,
+  getLastNearTransactionError,
+  getNearBlocksTxUrl,
+  isActiveWalletReadOnlyObserver,
   type FamilyMemberContractPlanId,
   type FamilyMemberOrderId,
   type NearRespiteSwapReceipt,
@@ -78,9 +81,14 @@ interface NpcMerchantAndHouseModalProps {
   onSellCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseAllCommonFish?: () => void;
-  onMintFishAsNft?: (fish: CaughtFishItem) => void;
-  onListFishNftOnMarket?: (fish: CaughtFishItem, priceLul: number) => void;
-  onBuyFishNftFromMarket?: (listing: FishNftMarketplaceListing) => void;
+  onMintFishAsNft?: (fish: CaughtFishItem) => Promise<boolean> | boolean | void;
+  onListFishNftOnMarket?: (
+    fish: CaughtFishItem,
+    priceRespite: number,
+  ) => Promise<boolean> | boolean | void;
+  onBuyFishNftFromMarket?: (
+    listing: FishNftMarketplaceListing,
+  ) => Promise<boolean> | boolean | void;
   isSampleHouseView?: boolean;
 }
 
@@ -134,9 +142,21 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [lastPlayerMessage, setLastPlayerMessage] = useState<string>('');
   const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('0');
-  const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('1');
+  const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('0.25');
   const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
     useState<NearRespiteSwapReceipt | null>(null);
+  const [isSwappingNear, setIsSwappingNear] = useState<boolean>(false);
+  const [swapErrorText, setSwapErrorText] = useState<string | null>(null);
+  const [isBuyingCatalogAsset, setIsBuyingCatalogAsset] = useState<boolean>(false);
+  const [catalogActionFeedback, setCatalogActionFeedback] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  const [busyFishActionId, setBusyFishActionId] = useState<string | null>(null);
+  const [fishMarketFeedback, setFishMarketFeedback] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
   const [selectedFamilyPlanId, setSelectedFamilyPlanId] =
     useState<FamilyMemberContractPlanId>('1_week');
   const [hanaCatalogSlide, setHanaCatalogSlide] = useState<'house' | 'family'>('house');
@@ -936,12 +956,18 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const parsedCryptoInput = Math.max(0, Number(cryptoSwapInputStr) || 0);
             const isNearToRespite = true;
             const calculatedCryptoOutput = Math.floor(parsedCryptoInput * respitePerNearRate);
+            const isReadOnlyWallet = walletConnected && isActiveWalletReadOnlyObserver();
+            const exceedsKnownSignerBalance =
+              walletConnected &&
+              !isReadOnlyWallet &&
+              nearTestnetBalance > 0 &&
+              parsedCryptoInput > nearTestnetBalance;
 
             const canPerformCryptoSwap =
-              walletConnected &&
+              !isSwappingNear &&
               parsedCryptoInput >= 0.01 &&
-              parsedCryptoInput <= nearTestnetBalance &&
-              calculatedCryptoOutput >= 1;
+              calculatedCryptoOutput >= 1 &&
+              !exceedsKnownSignerBalance;
 
             return (
               <div className="space-y-3.5">
@@ -1091,9 +1117,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
-                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
-                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                  }`}
+                  className="bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden"
                 >
                   {/* Header Banner */}
                   <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
@@ -1101,7 +1125,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       <span className="skew-x-6 inline-block">NEAR AND RESPITE</span>
                     </span>
                     <span className="text-[9.5px] font-bold text-slate-300">
-                      Swap NEAR and RESPITE
+                      Swap NEAR Testnet &rarr; RESPITE (`market.buddiesblitz.testnet`)
                     </span>
                   </div>
 
@@ -1129,6 +1153,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     </div>
 
+                    {/* Quick Amount Presets */}
+                    <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                      {[
+                        { near: '0.25', label: '0.25 NEAR (25 = House)' },
+                        { near: '0.5', label: '0.5 NEAR (50)' },
+                        { near: '1', label: '1 NEAR (100)' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.near}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setCryptoSwapInputStr(preset.near);
+                            setSwapErrorText(null);
+                          }}
+                          className="px-2 py-0.5 bg-[#1e293b] hover:bg-[#334155] border border-white/40 text-[9.5px] font-black uppercase text-[#d8b4fe] cursor-pointer"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
                     {/* Input Row */}
                     <div className="flex items-center gap-3 max-w-xs mx-auto">
                       <div
@@ -1142,12 +1188,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                       <input
                         type="number"
-                        min={isNearToRespite ? 0.1 : 10}
-                        step={isNearToRespite ? 0.5 : 10}
-                        max={isNearToRespite ? nearTestnetBalance : respiteBalance}
+                        min={0.01}
+                        step={0.05}
                         data-near-respite-swap-input="true"
                         value={cryptoSwapInputStr}
-                        onChange={(e) => setCryptoSwapInputStr(e.target.value)}
+                        onChange={(e) => {
+                          setCryptoSwapInputStr(e.target.value);
+                          setSwapErrorText(null);
+                        }}
                         className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#d8b4fe]"
                       />
                     </div>
@@ -1176,13 +1224,45 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     </div>
 
+                    {isReadOnlyWallet && (
+                      <div className="p-2 bg-[#fef3c7] text-[#78350f] border border-black text-[10px] font-black text-center">
+                        View-only observer active ({playerNearAccount}). Clicking SWAP below will
+                        open the NEAR Wallet Selector so you can connect your signing wallet!
+                      </div>
+                    )}
+
+                    {exceedsKnownSignerBalance && (
+                      <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold text-center">
+                        Amount exceeds wallet balance ({nearTestnetBalance.toFixed(2)} NEAR). Lower
+                        amount or switch to a funded Testnet wallet.
+                      </div>
+                    )}
+
+                    {swapErrorText && (
+                      <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold text-center">
+                        {swapErrorText}
+                      </div>
+                    )}
+
                     {lastCryptoSwapReceipt && (
                       <div
                         data-near-respite-swap-receipt="true"
-                        className="p-2 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 text-center"
+                        className="p-2 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 text-center space-y-0.5"
                       >
-                        Swapped {lastCryptoSwapReceipt.nearAmount} NEAR and{' '}
-                        {lastCryptoSwapReceipt.respiteAmount} RESPITE
+                        <div>
+                          Swapped {lastCryptoSwapReceipt.nearAmount} NEAR &rarr; +
+                          {lastCryptoSwapReceipt.respiteAmount} RESPITE
+                        </div>
+                        {lastCryptoSwapReceipt.txHash && (
+                          <a
+                            href={getNearBlocksTxUrl(lastCryptoSwapReceipt.txHash, 'testnet')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block text-[#38bdf8] underline font-mono"
+                          >
+                            View Tx on NearBlocks ↗
+                          </a>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1196,19 +1276,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       onClick={async () => {
                         if (!canPerformCryptoSwap) return;
                         soundEngine.playUiClick();
-                        const receipt = await onSwapNearAndRespite?.(
-                          'near_to_respite',
-                          parsedCryptoInput,
-                        );
-                        if (receipt) {
-                          setLastCryptoSwapReceipt(receipt);
-                          triggerNpcSpeech(
-                            `Swap complete! Swapped ${parsedCryptoInput} NEAR for +${calculatedCryptoOutput} RESPITE.`,
+                        setSwapErrorText(null);
+                        setIsSwappingNear(true);
+                        try {
+                          const receipt = await onSwapNearAndRespite?.(
+                            'near_to_respite',
+                            parsedCryptoInput,
                           );
-                        } else {
-                          triggerNpcSpeech(
-                            'Swap failed or was rejected by your NEAR wallet signer.',
-                          );
+                          if (receipt) {
+                            setLastCryptoSwapReceipt(receipt);
+                            setSwapErrorText(null);
+                            triggerNpcSpeech(
+                              `Swap complete! Swapped ${parsedCryptoInput} NEAR for +${calculatedCryptoOutput} RESPITE.`,
+                            );
+                          } else {
+                            const detail =
+                              getLastNearTransactionError() ||
+                              'Swap failed or was rejected by your NEAR wallet signer.';
+                            setSwapErrorText(detail);
+                            triggerNpcSpeech(detail);
+                          }
+                        } finally {
+                          setIsSwappingNear(false);
                         }
                       }}
                       className={`-skew-x-6 min-w-[210px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
@@ -1218,7 +1307,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       }`}
                     >
                       <span className="skew-x-6 inline-block">
-                        {isNearToRespite ? 'SWAP NEAR TO RESPITE' : 'SWAP RESPITE TO NEAR'}
+                        {isSwappingNear ? 'SIGNING ON NEAR...' : 'SWAP NEAR TO RESPITE'}
                       </span>
                     </button>
                   </div>
@@ -1859,7 +1948,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     <button
                       type="button"
                       data-buy-house-btn="true"
-                      disabled={!isHouseOwned && !canAffordHouse}
+                      disabled={isBuyingCatalogAsset || (!isHouseOwned && !canAffordHouse)}
                       onClick={async () => {
                         soundEngine.playUiClick();
                         if (isHouseOwned) {
@@ -1868,63 +1957,94 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           );
                           return;
                         }
-                        const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
-                        if (ok) {
-                          triggerNpcSpeech(
-                            `House purchased on-chain for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE!`,
-                          );
-                        } else {
-                          triggerNpcSpeech(
-                            'House purchase requires a confirmed NEAR wallet transaction.',
-                          );
+                        setCatalogActionFeedback(null);
+                        setIsBuyingCatalogAsset(true);
+                        try {
+                          const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
+                          if (ok) {
+                            const msg = `House Deed minted on NEAR Testnet for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE!`;
+                            setCatalogActionFeedback({ ok: true, text: msg });
+                            triggerNpcSpeech(msg);
+                          } else {
+                            const detail =
+                              getLastNearTransactionError() ||
+                              'House purchase requires a confirmed NEAR wallet transaction.';
+                            setCatalogActionFeedback({ ok: false, text: detail });
+                            triggerNpcSpeech(detail);
+                          }
+                        } finally {
+                          setIsBuyingCatalogAsset(false);
                         }
                       }}
                       className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] font-black text-[11px] uppercase tracking-wider shadow-[0_3px_0_#0d0f12] transition-all ${
                         isHouseOwned
                           ? 'bg-[#b8ff3c] text-[#0d0f12] cursor-pointer'
-                          : canAffordHouse
+                          : canAffordHouse && !isBuyingCatalogAsset
                             ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
                             : 'bg-slate-400 text-slate-700 cursor-not-allowed'
                       }`}
                     >
                       <span className="inline-block skew-x-12">
-                        {isHouseOwned
-                          ? 'HOUSE OWNED'
-                          : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
+                        {isBuyingCatalogAsset
+                          ? 'SIGNING ON NEAR...'
+                          : isHouseOwned
+                            ? 'HOUSE OWNED'
+                            : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
                       </span>
                     </button>
                   ) : (
                     <button
                       type="button"
                       data-recruit-family-member-btn="true"
-                      disabled={!canAffordFamilyMember}
+                      disabled={isBuyingCatalogAsset || !canAffordFamilyMember}
                       onClick={async () => {
                         if (!canAffordFamilyMember) return;
                         soundEngine.playUiClick();
-                        const recruited = await onRecruitFamilyMember?.(selectedFamilyPlan.id);
-                        if (recruited) {
-                          triggerNpcSpeech(
-                            `Recruited ${recruited.name} (${selectedFamilyPlan.shortLabel}) on-chain for ${selectedFamilyPlan.priceRespite} RESPITE!`,
-                          );
-                        } else {
-                          triggerNpcSpeech(
-                            'Family Member recruitment requires a confirmed NEAR wallet transaction.',
-                          );
+                        setCatalogActionFeedback(null);
+                        setIsBuyingCatalogAsset(true);
+                        try {
+                          const recruited = await onRecruitFamilyMember?.(selectedFamilyPlan.id);
+                          if (recruited) {
+                            const msg = `Recruited ${recruited.name} (${selectedFamilyPlan.shortLabel}) on NEAR for ${selectedFamilyPlan.priceRespite} RESPITE!`;
+                            setCatalogActionFeedback({ ok: true, text: msg });
+                            triggerNpcSpeech(msg);
+                          } else {
+                            const detail =
+                              getLastNearTransactionError() ||
+                              'Family Member recruitment requires a confirmed NEAR wallet transaction.';
+                            setCatalogActionFeedback({ ok: false, text: detail });
+                            triggerNpcSpeech(detail);
+                          }
+                        } finally {
+                          setIsBuyingCatalogAsset(false);
                         }
                       }}
                       className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] font-black text-[11px] uppercase tracking-wider shadow-[0_3px_0_#0d0f12] transition-all ${
-                        canAffordFamilyMember
+                        canAffordFamilyMember && !isBuyingCatalogAsset
                           ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
                           : 'bg-slate-400 text-slate-700 cursor-not-allowed'
                       }`}
                     >
                       <span className="inline-block skew-x-12">
-                        RECRUIT ({selectedFamilyPlan.shortLabel} ·{' '}
-                        {selectedFamilyPlan.priceRespite} RESPITE)
+                        {isBuyingCatalogAsset
+                          ? 'SIGNING ON NEAR...'
+                          : `RECRUIT (${selectedFamilyPlan.shortLabel} · ${selectedFamilyPlan.priceRespite} RESPITE)`}
                       </span>
                     </button>
                   )}
                 </div>
+
+                {catalogActionFeedback && (
+                  <div
+                    className={`p-2 border-2 border-black text-[10px] font-bold ${
+                      catalogActionFeedback.ok
+                        ? 'bg-[#ecfdf5] text-[#065f46]'
+                        : 'bg-[#fef2f2] text-[#991b1b]'
+                    }`}
+                  >
+                    {catalogActionFeedback.text}
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -2097,16 +2217,33 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               <button
                                 type="button"
                                 data-mint-fish-btn={fish.id}
-                                onClick={() => {
+                                disabled={busyFishActionId !== null}
+                                onClick={async () => {
                                   soundEngine.playUiClick();
-                                  onMintFishAsNft?.(fish);
-                                  triggerNpcSpeech(
-                                    `Minted on NEAR (market.buddiesblitz.testnet)! Your ${fish.weightKg} kg ${fish.speciesName} is now a NEP-171 Fish NFT. Set a RESPITE price below to sell it to other players!`,
-                                  );
+                                  setFishMarketFeedback(null);
+                                  setBusyFishActionId(fish.id);
+                                  try {
+                                    const ok = await onMintFishAsNft?.(fish);
+                                    if (ok) {
+                                      const msg = `Minted on NEAR (market.buddiesblitz.testnet)! Your ${fish.weightKg} kg ${fish.speciesName} is now a NEP-171 Fish NFT. Set a RESPITE price below to sell it!`;
+                                      setFishMarketFeedback({ ok: true, text: msg });
+                                      triggerNpcSpeech(msg);
+                                    } else {
+                                      const detail =
+                                        getLastNearTransactionError() ||
+                                        'Fish NFT minting requires a confirmed NEAR wallet signature.';
+                                      setFishMarketFeedback({ ok: false, text: detail });
+                                      triggerNpcSpeech(detail);
+                                    }
+                                  } finally {
+                                    setBusyFishActionId(null);
+                                  }
                                 }}
-                                className="flex-1 py-1.5 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] disabled:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                MINT FISH AS NFT
+                                {busyFishActionId === fish.id
+                                  ? 'MINTING ON NEAR...'
+                                  : 'MINT FISH AS NFT'}
                               </button>
 
                               <button
@@ -2147,16 +2284,36 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               <button
                                 type="button"
                                 data-list-fish-nft-btn={fish.id}
-                                onClick={() => {
+                                disabled={busyFishActionId !== null}
+                                onClick={async () => {
                                   soundEngine.playUiClick();
-                                  onListFishNftOnMarket?.(fish, parsedListPriceRespite);
-                                  triggerNpcSpeech(
-                                    `Listed! Your ${fish.speciesName} NFT (${fish.weightKg} kg) is now on the Marketplace for ${parsedListPriceRespite} RESPITE.`,
-                                  );
+                                  setFishMarketFeedback(null);
+                                  setBusyFishActionId(fish.id);
+                                  try {
+                                    const ok = await onListFishNftOnMarket?.(
+                                      fish,
+                                      parsedListPriceRespite,
+                                    );
+                                    if (ok) {
+                                      const msg = `Listed on NEAR! Your ${fish.speciesName} NFT (${fish.weightKg} kg) is live on the P2P Marketplace for ${parsedListPriceRespite} RESPITE.`;
+                                      setFishMarketFeedback({ ok: true, text: msg });
+                                      triggerNpcSpeech(msg);
+                                    } else {
+                                      const detail =
+                                        getLastNearTransactionError() ||
+                                        'Listing requires a confirmed NEAR wallet transaction.';
+                                      setFishMarketFeedback({ ok: false, text: detail });
+                                      triggerNpcSpeech(detail);
+                                    }
+                                  } finally {
+                                    setBusyFishActionId(null);
+                                  }
                                 }}
-                                className="flex-1 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                LIST ON MARKETPLACE ({parsedListPriceRespite} RESPITE)
+                                {busyFishActionId === fish.id
+                                  ? 'LISTING ON NEAR...'
+                                  : `LIST ON MARKETPLACE (${parsedListPriceRespite} RESPITE)`}
                               </button>
                             </div>
                           )}
@@ -2166,6 +2323,18 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
                 )}
               </div>
+
+              {fishMarketFeedback && (
+                <div
+                  className={`p-2 border-2 border-black text-[10px] font-bold ${
+                    fishMarketFeedback.ok
+                      ? 'bg-[#ecfdf5] text-[#065f46]'
+                      : 'bg-[#fef2f2] text-[#991b1b]'
+                  }`}
+                >
+                  {fishMarketFeedback.text}
+                </div>
+              )}
 
               {/* SECTION 2: KAI'S P2P FISH NFT MARKETPLACE (BOUGHT & SOLD USING RESPITE) */}
               <div
@@ -2201,6 +2370,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       );
                       const canBuy =
                         walletConnected &&
+                        busyFishActionId === null &&
                         (isOwnListing || respiteBalance >= listingPriceRespite);
                       const rarityBadgeStyle =
                         listing.rarity === 'Mythic'
@@ -2248,19 +2418,33 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           <button
                             type="button"
                             disabled={!canBuy}
-                            onClick={() => {
+                            onClick={async () => {
                               if (!canBuy) return;
                               soundEngine.playUiClick();
-                              onBuyFishNftFromMarket?.({
-                                ...listing,
-                                priceRespite: listingPriceRespite,
-                                priceLul: listingPriceRespite,
-                              });
-                              triggerNpcSpeech(
-                                isOwnListing
-                                  ? `Listing cancelled! ${listing.speciesName} (${listing.weightKg} kg) returned to your Fish Bucket.`
-                                  : `Purchased ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE!`,
-                              );
+                              setFishMarketFeedback(null);
+                              setBusyFishActionId(listing.listingId);
+                              try {
+                                const ok = await onBuyFishNftFromMarket?.({
+                                  ...listing,
+                                  priceRespite: listingPriceRespite,
+                                  priceLul: listingPriceRespite,
+                                });
+                                if (ok) {
+                                  const msg = isOwnListing
+                                    ? `Listing cancelled! ${listing.speciesName} (${listing.weightKg} kg) returned to your Fish Bucket.`
+                                    : `Purchased ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE!`;
+                                  setFishMarketFeedback({ ok: true, text: msg });
+                                  triggerNpcSpeech(msg);
+                                } else {
+                                  const detail =
+                                    getLastNearTransactionError() ||
+                                    'Transaction failed or was rejected by your NEAR wallet signer.';
+                                  setFishMarketFeedback({ ok: false, text: detail });
+                                  triggerNpcSpeech(detail);
+                                }
+                              } finally {
+                                setBusyFishActionId(null);
+                              }
                             }}
                             className={`px-3 py-2 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase shrink-0 ${
                               isOwnListing
@@ -2270,9 +2454,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                             }`}
                           >
-                            {isOwnListing
-                              ? 'UNLIST NFT'
-                              : `BUY (${listingPriceRespite.toLocaleString()} RESPITE)`}
+                            {busyFishActionId === listing.listingId
+                              ? 'SIGNING...'
+                              : isOwnListing
+                                ? 'UNLIST NFT'
+                                : `BUY (${listingPriceRespite.toLocaleString()} RESPITE)`}
                           </button>
                         </div>
                       );

@@ -160,6 +160,7 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
     const subAccountId = `${rawHandle}.${masterAccountId}`;
 
     // 1. Check if sub-account already exists on NEAR Testnet
+    let accountAlreadyExists = false;
     try {
       const existing = await nearRpcCall(rpcUrl, 'query', {
         request_type: 'view_account',
@@ -167,6 +168,107 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
         account_id: subAccountId,
       });
       if (existing && existing.amount) {
+        accountAlreadyExists = true;
+      }
+    } catch {
+      // Account does not exist yet — proceed to provision if master key is configured
+    }
+
+    if (accountAlreadyExists && !masterSecret) {
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          subAccountId,
+          alreadyExisted: true,
+          custodyMode: 'onchain_existing',
+          sessionPublicKey,
+          marketContractId,
+        },
+      };
+    }
+
+    if (accountAlreadyExists && masterSecret) {
+      // Verify whether this browser's FunctionCall session key is already authorized on subAccountId
+      try {
+        const existingKey = await nearRpcCall(rpcUrl, 'query', {
+          request_type: 'view_access_key',
+          finality: 'final',
+          account_id: subAccountId,
+          public_key: sessionPublicKey,
+        });
+        if (existingKey && existingKey.permission) {
+          return {
+            status: 200,
+            payload: {
+              ok: true,
+              subAccountId,
+              alreadyExisted: true,
+              custodyMode: 'onchain_existing',
+              sessionPublicKey,
+              marketContractId,
+            },
+          };
+        }
+      } catch {
+        // Session key not yet added to existing sub-account — authorize via master recovery key below
+      }
+
+      try {
+        const { keyObject, pubKeyBytes, pubKeyFormatted } = parseMasterEd25519KeyPair(masterSecret);
+        const masterOnSubView = await nearRpcCall(rpcUrl, 'query', {
+          request_type: 'view_access_key',
+          finality: 'final',
+          account_id: subAccountId,
+          public_key: pubKeyFormatted,
+        });
+        const nextNonce = BigInt(masterOnSubView.nonce) + 1n;
+        const blockHashBytes = base58Decode(String(masterOnSubView.block_hash));
+        const sessionPubBytes = base58Decode(sessionPublicKey.replace(/^ed25519:/i, ''));
+
+        const addPlayerFcKeyAction = Buffer.concat([
+          Buffer.from([4]),
+          borshPubKeyEd25519(sessionPubBytes.slice(0, 32)),
+          borshU64(0n),
+          Buffer.from([1]), // AccessKeyPermission::FunctionCall
+          Buffer.from([1]), // Some(allowance)
+          borshU128(250_000_000_000_000_000_000_000n), // 0.25 NEAR gas allowance
+          borshString(marketContractId),
+          borshU32(0), // all methods allowed on marketContractId
+        ]);
+
+        const txBytes = Buffer.concat([
+          borshString(subAccountId),
+          borshPubKeyEd25519(pubKeyBytes),
+          borshU64(nextNonce),
+          borshString(subAccountId),
+          Buffer.from(blockHashBytes),
+          borshU32(1),
+          addPlayerFcKeyAction,
+        ]);
+
+        const txHash = crypto.createHash('sha256').update(txBytes).digest();
+        const signature = crypto.sign(null, txHash, keyObject);
+        const signedTxBytes = Buffer.concat([txBytes, Buffer.from([0]), signature]);
+
+        const broadcast = await nearRpcCall(rpcUrl, 'broadcast_tx_commit', [
+          signedTxBytes.toString('base64'),
+        ]);
+        const confirmedHash = String(broadcast?.transaction?.hash || base58Encode(txHash));
+
+        return {
+          status: 200,
+          payload: {
+            ok: true,
+            subAccountId,
+            txHash: confirmedHash,
+            alreadyExisted: true,
+            custodyMode: 'onchain_provisioned',
+            sessionPublicKey,
+            marketContractId,
+          },
+        };
+      } catch {
         return {
           status: 200,
           payload: {
@@ -179,8 +281,6 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
           },
         };
       }
-    } catch {
-      // Account does not exist yet — proceed to provision if master key is configured
     }
 
     if (!masterSecret) {

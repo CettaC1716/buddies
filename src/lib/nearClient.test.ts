@@ -11,6 +11,7 @@ import {
   getNearBlocksTxUrl,
   getOrCreateCitizenSessionPublicKey,
   resolveNearRpcUrl,
+  verifyNep171GamepassOwnership,
 } from './nearClient';
 import { handleNearRelayerRequest } from '../../api/near-relayer';
 import {
@@ -181,4 +182,63 @@ test('3-currency anti-bot P2P economy and empty-start Modern Japanese Wooden Pav
   assert.match(currencyReply, /CYON/i);
   assert.match(currencyReply, /RESPITE/i);
   assert.match(currencyReply, /Kai/i);
+});
+
+test('verifyNep171GamepassOwnership strictly distinguishes House Deeds from Fish NFTs on market.buddiesblitz.testnet', async () => {
+  const originalFetch = globalThis.fetch;
+
+  try {
+    // Case A: Citizen owns only a minted Fish NFT -> must NOT unlock House Ownership
+    const fishOnlyTokens = [
+      {
+        token_id: 'nep171-fish-golden_harbor_tuna-1001',
+        metadata: {
+          title: 'Golden Harbor Tuna (9.45 kg)',
+          description: 'Caught at East Beach',
+          extra: JSON.stringify({ kind: 'fish_nft', rarity: 'Rare' }),
+        },
+      },
+    ];
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          result: {
+            result: Array.from(new TextEncoder().encode(JSON.stringify(fishOnlyTokens))),
+          },
+        }),
+      }) as Response) as typeof fetch;
+
+    const fishCheck = await verifyNep171GamepassOwnership('angler.testnet');
+    assert.equal(fishCheck.verified, false);
+    assert.equal(fishCheck.token, null);
+
+    // Case B: Citizen owns a House Deed NFT -> unlocks House Ownership
+    const houseAndFishTokens = [
+      ...fishOnlyTokens,
+      {
+        token_id: 'house-deed-0001',
+        metadata: {
+          title: 'Modern Japanese Wooden Pavilion Deed #1',
+          description: 'Private House Sub-Account Deed',
+          extra: JSON.stringify({ kind: 'house_deed', sub_account_id: 'estate-0001.buddiesblitz.testnet' }),
+        },
+      },
+    ];
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          result: {
+            result: Array.from(new TextEncoder().encode(JSON.stringify(houseAndFishTokens))),
+          },
+        }),
+      }) as Response) as typeof fetch;
+
+    const deedCheck = await verifyNep171GamepassOwnership('buddiesblitz.testnet');
+    assert.equal(deedCheck.verified, true);
+    assert.equal(deedCheck.token?.tokenId, 'house-deed-0001');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

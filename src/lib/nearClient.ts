@@ -120,25 +120,83 @@ function encodeBase58(bytes: Uint8Array): string {
   return encoded || '1';
 }
 
-const SESSION_KEY_STORAGE_ID = 'bb_citizen_fc_session_pubkey_v1';
+function decodeBase58(input: string): Uint8Array {
+  let num = 0n;
+  for (const ch of input.trim()) {
+    const idx = BASE58_CHARS.indexOf(ch);
+    if (idx < 0) throw new Error('Invalid Base58 character');
+    num = num * 58n + BigInt(idx);
+  }
+  const bytes: number[] = [];
+  while (num > 0n) {
+    bytes.push(Number(num & 0xffn));
+    num >>= 8n;
+  }
+  bytes.reverse();
+  let leadingZeros = 0;
+  for (const ch of input.trim()) {
+    if (ch === '1') leadingZeros += 1;
+    else break;
+  }
+  const out = new Uint8Array(leadingZeros + bytes.length);
+  out.set(bytes, leadingZeros);
+  return out;
+}
 
-/**
- * Generates or retrieves a browser-scoped Ed25519 `FunctionCall` public key (`ed25519:...`)
- * used for Dual-Key citizen sub-account custody (`<handle>.buddiesblitz.testnet`).
- */
-export async function getOrCreateCitizenSessionPublicKey(): Promise<string> {
-  if (typeof window !== 'undefined') {
+const SESSION_KEY_STORAGE_ID = 'bb_citizen_fc_session_pubkey_v1';
+const SESSION_KEYPAIR_STORAGE_ID = 'bb_citizen_fc_keypair_v2';
+
+interface StoredCitizenSessionKeyPair {
+  publicKey: string;
+  privateJwk: JsonWebKey;
+}
+
+let inMemorySessionKeyPair: {
+  publicKey: string;
+  privateKey: CryptoKey | null;
+} | null = null;
+
+async function getOrCreateCitizenSessionKeyPair(): Promise<{
+  publicKey: string;
+  privateKey: CryptoKey | null;
+}> {
+  if (inMemorySessionKeyPair?.publicKey) {
+    return inMemorySessionKeyPair;
+  }
+
+  if (typeof window !== 'undefined' && typeof crypto !== 'undefined' && crypto.subtle?.importKey) {
     try {
-      const cached = window.localStorage.getItem(SESSION_KEY_STORAGE_ID);
-      if (cached && cached.startsWith('ed25519:') && cached.length > 20) {
-        return cached;
+      const rawStored = window.localStorage.getItem(SESSION_KEYPAIR_STORAGE_ID);
+      if (rawStored) {
+        const parsed = JSON.parse(rawStored) as StoredCitizenSessionKeyPair;
+        if (
+          parsed?.publicKey?.startsWith('ed25519:') &&
+          parsed.publicKey.length > 30 &&
+          parsed?.privateJwk
+        ) {
+          const importedPriv = await crypto.subtle.importKey(
+            'jwk',
+            parsed.privateJwk,
+            { name: 'Ed25519' },
+            false,
+            ['sign'],
+          );
+          inMemorySessionKeyPair = {
+            publicKey: parsed.publicKey,
+            privateKey: importedPriv,
+          };
+          return inMemorySessionKeyPair;
+        }
       }
     } catch {
-      // ignore storage failure
+      // Regenerate below if corrupted or unsupported
     }
   }
 
   let pubKeyBytes = new Uint8Array(32);
+  let privateKey: CryptoKey | null = null;
+  let privateJwk: JsonWebKey | null = null;
+
   try {
     if (typeof crypto !== 'undefined' && crypto.subtle?.generateKey) {
       const kp = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
@@ -147,6 +205,8 @@ export async function getOrCreateCitizenSessionPublicKey(): Promise<string> {
       ])) as CryptoKeyPair;
       const raw = await crypto.subtle.exportKey('raw', kp.publicKey);
       pubKeyBytes = new Uint8Array(raw);
+      privateJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+      privateKey = kp.privateKey;
     } else if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
       crypto.getRandomValues(pubKeyBytes);
     }
@@ -157,14 +217,34 @@ export async function getOrCreateCitizenSessionPublicKey(): Promise<string> {
   }
 
   const formatted = `ed25519:${encodeBase58(pubKeyBytes)}`;
+  inMemorySessionKeyPair = { publicKey: formatted, privateKey };
+
   if (typeof window !== 'undefined') {
     try {
       window.localStorage.setItem(SESSION_KEY_STORAGE_ID, formatted);
+      if (privateJwk) {
+        const payload: StoredCitizenSessionKeyPair = {
+          publicKey: formatted,
+          privateJwk,
+        };
+        window.localStorage.setItem(SESSION_KEYPAIR_STORAGE_ID, JSON.stringify(payload));
+      }
     } catch {
-      // ignore
+      // ignore storage quota errors
     }
   }
-  return formatted;
+
+  return inMemorySessionKeyPair;
+}
+
+/**
+ * Generates or retrieves a browser-scoped Ed25519 `FunctionCall` public key (`ed25519:...`)
+ * used for Dual-Key citizen sub-account custody (`<handle>.buddiesblitz.testnet`),
+ * persisting the matching WebCrypto signing key in `localStorage`.
+ */
+export async function getOrCreateCitizenSessionPublicKey(): Promise<string> {
+  const kp = await getOrCreateCitizenSessionKeyPair();
+  return kp.publicKey;
 }
 
 /**
@@ -484,7 +564,9 @@ export async function fetchNep141Balance(
 }
 
 /**
- * Queries NEP-171 `nft_tokens_for_owner` on `market.buddiesblitz.testnet` via NEAR RPC.
+ * Queries NEP-171 `nft_tokens_for_owner` on `market.buddiesblitz.testnet` via NEAR RPC
+ * and strictly filters for House Ownership Deeds (`house-deed-*` / `house_deed`),
+ * never falsely unlocking the house when a citizen owns a Fish NFT (`nep171-fish-*`).
  */
 export async function verifyNep171GamepassOwnership(accountId: string): Promise<{
   verified: boolean;
@@ -499,36 +581,51 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
   const parsed = await callNearContractViewMethod<
     Array<{
       token_id?: string;
-      metadata?: { title?: string; description?: string };
+      metadata?: { title?: string; description?: string; extra?: string };
     }>
   >({
     contractId: NEAR_CONFIG.gamepassContractId,
     methodName: 'nft_tokens_for_owner',
-    args: { account_id: cleanId, from_index: '0', limit: 10 },
+    args: { account_id: cleanId, from_index: '0', limit: 50 },
     networkOrAccount: cleanId,
   });
 
   if (Array.isArray(parsed) && parsed.length > 0) {
-    const first = parsed[0];
-    return {
-      verified: true,
-      source: 'near-rpc',
-      token: {
-        tokenId: String(first.token_id || 'nep171-pass-1'),
-        ownerId: cleanId,
-        title: String(first?.metadata?.title || 'Buddies Blitz Citizen Deed'),
-        description: String(
-          first?.metadata?.description || 'NEP-171 Base Commander Ownership & Safezone Plot Pass',
-        ),
-        tier: 'Commander Genesis Pass',
-        issuedAt: new Date().toISOString(),
-        perks: [
-          'Claim & Customize Safezone / Warzone Plot',
-          '3D Private House Interior & Sub-Account Control',
-          'Autonomous Buddy Harvester Privileges',
-        ],
-      },
-    };
+    const deedToken = parsed.find((t) => {
+      const tid = String(t?.token_id || '').toLowerCase();
+      const extra = String(t?.metadata?.extra || '').toLowerCase();
+      const title = String(t?.metadata?.title || '').toLowerCase();
+      return (
+        tid.startsWith('house-deed-') ||
+        tid.startsWith('nep171-pass-') ||
+        tid.startsWith('nep171-gamepass-') ||
+        extra.includes('"house_deed"') ||
+        title.includes('house deed')
+      );
+    });
+
+    if (deedToken) {
+      return {
+        verified: true,
+        source: 'near-rpc',
+        token: {
+          tokenId: String(deedToken.token_id || 'house-deed-0001'),
+          ownerId: cleanId,
+          title: String(deedToken?.metadata?.title || 'Buddies Blitz Citizen Deed'),
+          description: String(
+            deedToken?.metadata?.description ||
+              'NEP-171 Base Commander Ownership & Safezone Plot Pass',
+          ),
+          tier: 'Commander Genesis Pass',
+          issuedAt: new Date().toISOString(),
+          perks: [
+            'Claim & Customize Safezone / Warzone Plot',
+            '3D Private House Interior & Sub-Account Control',
+            'Autonomous Buddy Harvester Privileges',
+          ],
+        },
+      };
+    }
   }
 
   return {
@@ -538,18 +635,205 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
   };
 }
 
+export type NearWalletAuthKind =
+  | 'near-connect'
+  | 'injected'
+  | 'citizen-subaccount'
+  | 'rpc-observer';
+
+const WALLET_AUTH_KIND_STORAGE_ID = 'bb_wallet_auth_kind_v1';
+
+export function setActiveWalletAuthKind(kind: NearWalletAuthKind): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(WALLET_AUTH_KIND_STORAGE_ID, kind);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getActiveWalletAuthKind(): NearWalletAuthKind | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(WALLET_AUTH_KIND_STORAGE_ID);
+    if (
+      raw === 'near-connect' ||
+      raw === 'injected' ||
+      raw === 'citizen-subaccount' ||
+      raw === 'rpc-observer'
+    ) {
+      return raw;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function isActiveWalletReadOnlyObserver(): boolean {
+  return getActiveWalletAuthKind() === 'rpc-observer';
+}
+
 export interface NearWalletConnectionResult {
   accountId: string;
   walletProvider:
+    | 'near-connect'
     | 'meteor-extension'
     | 'sender-extension'
     | 'near-extension'
+    | 'citizen-subaccount'
     | 'rpc-observer';
+  walletName?: string;
   isSignatureVerified: boolean;
   nep413Signature?: string;
   isLiveRpc: boolean;
   blockHeight: number;
   amountYoctoNear: string;
+}
+
+type SigningWalletListener = (result: NearWalletConnectionResult) => void;
+const signingWalletListeners = new Set<SigningWalletListener>();
+
+export function onNearSigningWalletConnected(listener: SigningWalletListener): () => void {
+  signingWalletListeners.add(listener);
+  return () => {
+    signingWalletListeners.delete(listener);
+  };
+}
+
+function notifySigningWalletConnected(result: NearWalletConnectionResult): void {
+  for (const listener of signingWalletListeners) {
+    try {
+      listener(result);
+    } catch {
+      // ignore listener errors
+    }
+  }
+}
+
+let nearConnectorInstance: import('@hot-labs/near-connect').NearConnector | null = null;
+let nearConnectorNetwork: NearNetworkId | null = null;
+
+async function getNearConnector(
+  network: NearNetworkId = NEAR_CONFIG.network,
+): Promise<import('@hot-labs/near-connect').NearConnector | null> {
+  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
+    return null;
+  }
+  if (nearConnectorInstance && nearConnectorNetwork === network) {
+    return nearConnectorInstance;
+  }
+  const mod = await import('@hot-labs/near-connect');
+  const NearConnectorCtor =
+    mod.NearConnector ||
+    (mod as unknown as { default?: { NearConnector?: typeof mod.NearConnector } }).default
+      ?.NearConnector;
+  if (!NearConnectorCtor) return null;
+
+  const instance = new NearConnectorCtor({
+    network,
+    autoConnect: true,
+    providers: {
+      testnet: [NEAR_CONFIG.testnetRpcUrl],
+      mainnet: [NEAR_CONFIG.mainnetRpcUrl],
+    },
+    footerBranding: null,
+  });
+  nearConnectorInstance = instance;
+  nearConnectorNetwork = network;
+  return instance;
+}
+
+/**
+ * Opens the interactive `@hot-labs/near-connect` Wallet Selector modal (Meteor Web Popup & Extension,
+ * MyNearWallet, Intear, HOT, Nightly, Sender, etc.) in any browser — no extension required.
+ */
+export async function connectWithNearConnectorModal(
+  network: NearNetworkId = NEAR_CONFIG.network,
+): Promise<NearWalletConnectionResult> {
+  const connector = await getNearConnector(network);
+  if (!connector) {
+    throw new Error('NEAR browser wallet connector is unavailable in this environment.');
+  }
+
+  const wallet = await connector.connect();
+  const accounts = await wallet.getAccounts({ network });
+  const rawAccountId = accounts?.[0]?.accountId?.trim().toLowerCase() || '';
+  if (!rawAccountId) {
+    throw new Error('Selected NEAR wallet did not return an active account ID.');
+  }
+
+  const [status, view] = await Promise.all([
+    fetchNearNetworkStatus(),
+    fetchNearAccountView(rawAccountId),
+  ]);
+
+  setActiveWalletAuthKind('near-connect');
+  const result: NearWalletConnectionResult = {
+    accountId: rawAccountId,
+    walletProvider: 'near-connect',
+    walletName: wallet.manifest?.name || 'NEAR Wallet',
+    isSignatureVerified: true,
+    isLiveRpc: status.isLiveRpc,
+    blockHeight: view?.blockHeight || status.blockHeight,
+    amountYoctoNear: view?.amount || '0',
+  };
+  notifySigningWalletConnected(result);
+  return result;
+}
+
+/**
+ * Restores a previously connected `@hot-labs/near-connect` signing wallet session on page reload.
+ */
+export async function restoreConnectedNearSigningWallet(
+  network: NearNetworkId = NEAR_CONFIG.network,
+): Promise<NearWalletConnectionResult | null> {
+  try {
+    const connector = await getNearConnector(network);
+    if (!connector) return null;
+    const { wallet, accounts } = await connector.getConnectedWallet();
+    const rawAccountId = accounts?.[0]?.accountId?.trim().toLowerCase() || '';
+    if (!rawAccountId) return null;
+
+    const [status, view] = await Promise.all([
+      fetchNearNetworkStatus(),
+      fetchNearAccountView(rawAccountId),
+    ]);
+    setActiveWalletAuthKind('near-connect');
+    return {
+      accountId: rawAccountId,
+      walletProvider: 'near-connect',
+      walletName: wallet.manifest?.name || 'NEAR Wallet',
+      isSignatureVerified: true,
+      isLiveRpc: status.isLiveRpc,
+      blockHeight: view?.blockHeight || status.blockHeight,
+      amountYoctoNear: view?.amount || '0',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Disconnects any active `@hot-labs/near-connect` wallet session and clears persisted auth kind.
+ */
+export async function disconnectNearWallet(): Promise<void> {
+  try {
+    const connector = await getNearConnector(NEAR_CONFIG.network);
+    if (connector) {
+      await connector.disconnect();
+    }
+  } catch {
+    // ignore if already disconnected
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(WALLET_AUTH_KIND_STORAGE_ID);
+      window.localStorage.removeItem('buddies_near_wallet_v2');
+    } catch {
+      // ignore
+    }
+  }
 }
 
 interface InjectedNearWalletProvider {
@@ -596,14 +880,21 @@ function getInjectedNearWallet(): {
 }
 
 /**
- * Connects to a NEAR wallet (`Meteor`, `Sender`, `NEAR`) with NEP-413 `signMessage` verification
- * when supported, or performs a read-only RPC lookup (`rpc-observer`) if an explicit account ID
+ * Connects to a NEAR wallet via `@hot-labs/near-connect` or injected wallet when no explicit
+ * account is provided, or performs a read-only RPC lookup (`rpc-observer`) if an explicit account ID
  * is inspected without a wallet signer.
  */
 export async function connectNearWalletSelector(
   preferredAccountId?: string,
   options?: { requireWalletSignature?: boolean },
 ): Promise<NearWalletConnectionResult> {
+  if (!preferredAccountId?.trim()) {
+    // 1. Prefer interactive @hot-labs/near-connect modal (supports Meteor Web Popup, Extension, MyNearWallet, Intear, etc.)
+    if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+      return connectWithNearConnectorModal(NEAR_CONFIG.network);
+    }
+  }
+
   const status = await fetchNearNetworkStatus();
   const { provider, providerName } = getInjectedNearWallet();
 
@@ -629,7 +920,6 @@ export async function connectNearWalletSelector(
         const cleanExtId = extAccountId.trim().toLowerCase();
         let nep413Signature: string | undefined;
 
-        // Attempt NEP-413 off-chain cryptographic challenge if wallet implements `signMessage`
         if (typeof provider.signMessage === 'function' && typeof crypto !== 'undefined') {
           try {
             const nonce = new Uint8Array(32);
@@ -643,12 +933,13 @@ export async function connectNearWalletSelector(
               nep413Signature = signed.signature;
             }
           } catch {
-            // Legacy extension may not support NEP-413 yet; active session sign-in still verified
+            // Legacy extension may not support NEP-413 yet
           }
         }
 
         const view = await fetchNearAccountView(cleanExtId);
-        return {
+        setActiveWalletAuthKind('injected');
+        const res: NearWalletConnectionResult = {
           accountId: cleanExtId,
           walletProvider: providerName,
           isSignatureVerified: true,
@@ -657,6 +948,8 @@ export async function connectNearWalletSelector(
           blockHeight: view?.blockHeight || status.blockHeight,
           amountYoctoNear: view?.amount || '0',
         };
+        notifySigningWalletConnected(res);
+        return res;
       }
     } catch {
       // Wallet extension declined
@@ -665,14 +958,14 @@ export async function connectNearWalletSelector(
 
   if (options?.requireWalletSignature) {
     throw new Error(
-      'Cryptographic NEAR wallet signature required. Install Meteor Wallet or sign in with Google OAuth to create a Citizen Sub-Account.',
+      'Cryptographic NEAR wallet signature required. Click CONNECT NEAR WALLET to sign in with Meteor Wallet or MyNearWallet.',
     );
   }
 
   const candidateId = (preferredAccountId || '').trim().toLowerCase();
   if (!candidateId) {
     throw new Error(
-      'No NEAR browser wallet detected. Sign in with Google OAuth to create a seedless <name>.buddiesblitz.testnet wallet, or open MyNearWallet.',
+      'No NEAR browser wallet connected. Click CONNECT NEAR WALLET to sign in with Meteor Wallet (Web or Extension).',
     );
   }
 
@@ -681,6 +974,7 @@ export async function connectNearWalletSelector(
     throw new Error(`Account "${candidateId}" was not found on the NEAR blockchain.`);
   }
 
+  setActiveWalletAuthKind('rpc-observer');
   return {
     accountId: view.accountId,
     walletProvider: 'rpc-observer',
@@ -805,22 +1099,328 @@ export interface NearRespiteSwapReceipt {
 interface WalletSignTransactionOutcome {
   transaction?: { hash?: string };
   transaction_outcome?: { id?: string };
+  status?: Record<string, unknown> | string;
+  receipts_outcome?: Array<{ outcome?: { status?: Record<string, unknown> | string } }>;
   hash?: string;
 }
 
-async function signAndSendWithInjectedWallet(params: {
+let lastNearTransactionError: string | null = null;
+
+export function getLastNearTransactionError(): string | null {
+  return lastNearTransactionError;
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}
+
+function borshU32LE(val: number): Uint8Array {
+  const buf = new ArrayBuffer(4);
+  new DataView(buf).setUint32(0, val >>> 0, true);
+  return new Uint8Array(buf);
+}
+
+function borshU64LE(val: bigint): Uint8Array {
+  const buf = new ArrayBuffer(8);
+  new DataView(buf).setBigUint64(0, val, true);
+  return new Uint8Array(buf);
+}
+
+function borshU128LE(val: bigint): Uint8Array {
+  const lo = val & 0xffffffffffffffffn;
+  const hi = val >> 64n;
+  return concatBytes([borshU64LE(lo), borshU64LE(hi)]);
+}
+
+function borshStringBytes(str: string): Uint8Array {
+  const encoded = new TextEncoder().encode(str);
+  return concatBytes([borshU32LE(encoded.length), encoded]);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof btoa === 'function') {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+  return Buffer.from(bytes).toString('base64');
+}
+
+function extractExecutionFailureMessage(outcome: unknown): string | null {
+  if (!outcome || typeof outcome !== 'object') return null;
+  const rec = outcome as WalletSignTransactionOutcome;
+  const topStatus = rec.status;
+  if (topStatus && typeof topStatus === 'object' && 'Failure' in topStatus) {
+    return JSON.stringify((topStatus as { Failure?: unknown }).Failure);
+  }
+  if (Array.isArray(rec.receipts_outcome)) {
+    for (const r of rec.receipts_outcome) {
+      const st = r?.outcome?.status;
+      if (st && typeof st === 'object' && 'Failure' in st) {
+        return JSON.stringify((st as { Failure?: unknown }).Failure);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Signs and broadcasts a zero-deposit FunctionCall directly via FastNEAR RPC when the browser's
+ * persistent Ed25519 session key (`bb_citizen_fc_keypair_v2`) is authorized on `signerAccountId`.
+ */
+async function trySignAndBroadcastWithLocalSessionKey(params: {
+  signerAccountId: string;
   receiverId: string;
   methodName: string;
   args: Record<string, unknown>;
   gas: string;
   depositYocto: string;
-}): Promise<{ ok: boolean; txHash: string; error?: string }> {
+}): Promise<{ ok: boolean; txHash: string; error?: string } | null> {
+  if (params.depositYocto !== '0') return null;
+  const cleanSigner = params.signerAccountId.trim().toLowerCase();
+  if (!cleanSigner || isActiveWalletReadOnlyObserver()) return null;
+
+  const { publicKey, privateKey } = await getOrCreateCitizenSessionKeyPair();
+  if (!privateKey || !publicKey.startsWith('ed25519:') || typeof crypto === 'undefined') {
+    return null;
+  }
+
+  const { rpcUrl } = resolveNearRpcUrl(cleanSigner);
+  try {
+    const akResp = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'check-fc-key',
+        method: 'query',
+        params: {
+          request_type: 'view_access_key',
+          finality: 'final',
+          account_id: cleanSigner,
+          public_key: publicKey,
+        },
+      }),
+    });
+    if (!akResp.ok) return null;
+    const akJson = await akResp.json();
+    if (akJson?.error || !akJson?.result?.block_hash) {
+      return null;
+    }
+
+    const nextNonce = BigInt(akJson.result.nonce) + 1n;
+    const blockHashBytes = decodeBase58(String(akJson.result.block_hash));
+    const pubKeyBytes = decodeBase58(publicKey.replace(/^ed25519:/i, ''));
+    if (pubKeyBytes.length !== 32 || blockHashBytes.length !== 32) {
+      return null;
+    }
+
+    const argsBytes = new TextEncoder().encode(JSON.stringify(params.args ?? {}));
+    const functionCallAction = concatBytes([
+      new Uint8Array([2]), // Action::FunctionCall
+      borshStringBytes(params.methodName),
+      borshU32LE(argsBytes.length),
+      argsBytes,
+      borshU64LE(BigInt(params.gas)),
+      borshU128LE(0n),
+    ]);
+
+    const txBytes = concatBytes([
+      borshStringBytes(cleanSigner),
+      new Uint8Array([0]), // PublicKey::ED25519
+      pubKeyBytes,
+      borshU64LE(nextNonce),
+      borshStringBytes(params.receiverId),
+      blockHashBytes,
+      borshU32LE(1),
+      functionCallAction,
+    ]);
+
+    const txDigest = await crypto.subtle.digest(
+      'SHA-256',
+      txBytes.buffer.slice(txBytes.byteOffset, txBytes.byteOffset + txBytes.byteLength) as ArrayBuffer,
+    );
+    const sigBuffer = await crypto.subtle.sign({ name: 'Ed25519' }, privateKey, txDigest);
+    const signedTxBytes = concatBytes([
+      txBytes,
+      new Uint8Array([0]), // Signature::ED25519
+      new Uint8Array(sigBuffer),
+    ]);
+
+    const bcastResp = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'bcast-fc-tx',
+        method: 'broadcast_tx_commit',
+        params: [bytesToBase64(signedTxBytes)],
+      }),
+    });
+    const bcastJson = await bcastResp.json();
+    if (bcastJson?.error) {
+      return {
+        ok: false,
+        txHash: '',
+        error: String(bcastJson.error?.data || bcastJson.error?.message || 'RPC broadcast failed'),
+      };
+    }
+
+    const failure = extractExecutionFailureMessage(bcastJson?.result);
+    if (failure) {
+      return {
+        ok: false,
+        txHash: '',
+        error: `Smart contract execution failed: ${failure}`,
+      };
+    }
+
+    const confirmedHash = String(
+      bcastJson?.result?.transaction?.hash ||
+        bcastJson?.result?.transaction_outcome?.id ||
+        encodeBase58(new Uint8Array(txDigest)),
+    );
+    return { ok: true, txHash: confirmedHash };
+  } catch {
+    return null;
+  }
+}
+
+async function signAndSendNearTransaction(params: {
+  signerAccountId?: string;
+  receiverId: string;
+  methodName: string;
+  args: Record<string, unknown>;
+  gas: string;
+  depositYocto: string;
+}): Promise<{ ok: boolean; txHash: string; signerAccountId?: string; error?: string }> {
+  lastNearTransactionError = null;
+  const network = resolveNearRpcUrl(params.receiverId).network;
+
+  // 1. Zero-deposit Citizen FunctionCall session key (instant popup-free signing when authorized on-chain)
+  if (params.signerAccountId && params.depositYocto === '0') {
+    const sessionResult = await trySignAndBroadcastWithLocalSessionKey({
+      signerAccountId: params.signerAccountId,
+      receiverId: params.receiverId,
+      methodName: params.methodName,
+      args: params.args,
+      gas: params.gas,
+      depositYocto: params.depositYocto,
+    });
+    if (sessionResult) {
+      if (!sessionResult.ok) {
+        lastNearTransactionError = sessionResult.error || 'Session key execution failed.';
+      }
+      return {
+        ...sessionResult,
+        signerAccountId: params.signerAccountId,
+      };
+    }
+  }
+
+  // 2. Connected @hot-labs/near-connect wallet (Meteor Web Popup / Extension, MyNearWallet, Intear, HOT, etc.)
+  const connector = await getNearConnector(network);
+  if (connector) {
+    let activeWallet: import('@hot-labs/near-connect').NearWalletBase | null = null;
+    let activeAccountId = '';
+
+    try {
+      const connected = await connector.getConnectedWallet();
+      activeWallet = connected.wallet;
+      activeAccountId = connected.accounts?.[0]?.accountId?.trim().toLowerCase() || '';
+    } catch {
+      activeWallet = null;
+    }
+
+    // If no signing wallet is connected yet (e.g. user was in Read-Only Inspect mode), prompt wallet selector modal!
+    if (!activeWallet) {
+      try {
+        const connectedRes = await connectWithNearConnectorModal(network);
+        activeAccountId = connectedRes.accountId;
+        activeWallet = await connector.wallet();
+      } catch (connectErr) {
+        const msg =
+          connectErr instanceof Error
+            ? connectErr.message
+            : 'Connect a NEAR signing wallet (Meteor Wallet or MyNearWallet) to authorize this transaction.';
+        lastNearTransactionError = msg;
+        return { ok: false, txHash: '', error: msg };
+      }
+    }
+
+    if (activeWallet) {
+      try {
+        const outcome = await activeWallet.signAndSendTransaction({
+          network,
+          signerId: activeAccountId || undefined,
+          receiverId: params.receiverId,
+          actions: [
+            {
+              type: 'FunctionCall',
+              params: {
+                methodName: params.methodName,
+                args: params.args,
+                gas: params.gas,
+                deposit: params.depositYocto,
+              },
+            },
+          ],
+        });
+
+        const failure = extractExecutionFailureMessage(outcome);
+        if (failure) {
+          const errMsg = `Contract rejected transaction: ${failure}`;
+          lastNearTransactionError = errMsg;
+          return { ok: false, txHash: '', error: errMsg };
+        }
+
+        const anyOutcome = outcome as unknown as WalletSignTransactionOutcome;
+        const txHash =
+          anyOutcome?.transaction?.hash ||
+          anyOutcome?.transaction_outcome?.id ||
+          anyOutcome?.hash ||
+          '';
+
+        if (!txHash) {
+          const errMsg = 'Wallet did not return a confirmed NEAR transaction hash.';
+          lastNearTransactionError = errMsg;
+          return { ok: false, txHash: '', error: errMsg };
+        }
+
+        return {
+          ok: true,
+          txHash,
+          signerAccountId: activeAccountId || params.signerAccountId,
+        };
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Transaction signing was cancelled or failed.';
+        lastNearTransactionError = msg;
+        return { ok: false, txHash: '', error: msg };
+      }
+    }
+  }
+
+  // 3. Fallback: Legacy injected window.meteorWallet / window.sender / window.near
   const { provider } = getInjectedNearWallet();
   if (!provider || typeof provider.requestSignTransactions !== 'function') {
+    const errMsg =
+      'Active NEAR wallet signer is required. Click WALLET and connect Meteor Wallet (Web or Extension) to sign transactions.';
+    lastNearTransactionError = errMsg;
     return {
       ok: false,
       txHash: '',
-      error: 'Active NEAR wallet signer is required to sign and broadcast this transaction.',
+      error: errMsg,
     };
   }
 
@@ -845,24 +1445,28 @@ async function signAndSendWithInjectedWallet(params: {
     });
 
     const first = Array.isArray(result) ? result[0] : result;
+    const failure = extractExecutionFailureMessage(first);
+    if (failure) {
+      const errMsg = `Contract rejected transaction: ${failure}`;
+      lastNearTransactionError = errMsg;
+      return { ok: false, txHash: '', error: errMsg };
+    }
+
     const txHash =
       first?.transaction?.hash || first?.transaction_outcome?.id || first?.hash || '';
 
     if (!txHash) {
-      return {
-        ok: false,
-        txHash: '',
-        error: 'Wallet did not return a confirmed NEAR transaction hash.',
-      };
+      const errMsg = 'Wallet did not return a confirmed NEAR transaction hash.';
+      lastNearTransactionError = errMsg;
+      return { ok: false, txHash: '', error: errMsg };
     }
 
-    return { ok: true, txHash };
+    return { ok: true, txHash, signerAccountId: params.signerAccountId };
   } catch (err) {
-    return {
-      ok: false,
-      txHash: '',
-      error: err instanceof Error ? err.message : 'Transaction signing was rejected.',
-    };
+    const errMsg =
+      err instanceof Error ? err.message : 'Transaction signing was rejected.';
+    lastNearTransactionError = errMsg;
+    return { ok: false, txHash: '', error: errMsg };
   }
 }
 
@@ -879,22 +1483,27 @@ export async function executeNearTestnetAndRespiteSwap(params: {
 }): Promise<NearRespiteSwapReceipt | null> {
   if (params.direction !== 'near_to_respite') {
     // RESPITE is a one-way utility token (no reverse NEAR drain path per anti-bot firewall)
+    lastNearTransactionError = 'RESPITE is a non-convertible utility token (one-way NEAR -> RESPITE).';
     return null;
   }
 
   const rate = RESPITE_NEP141_METADATA.rateRespitePerNear;
   const cleanNearAmount = Math.max(0, Number(params.inputAmount) || 0);
-  const resolvedAccount = (params.accountId || params.signerAccountId || '').trim();
-  if (cleanNearAmount < 0.01 || !resolvedAccount) return null;
+  if (cleanNearAmount < 0.01) {
+    lastNearTransactionError = 'Minimum swap deposit is 0.01 NEAR (= 1 RESPITE).';
+    return null;
+  }
 
+  const requestedAccount = (params.accountId || params.signerAccountId || '').trim();
   const respiteAmount = Math.floor(cleanNearAmount * rate);
   const depositYocto = `${BigInt(Math.max(1, Math.round(cleanNearAmount * 100))) * 10n ** 22n}`;
 
-  const txResult = await signAndSendWithInjectedWallet({
+  const txResult = await signAndSendNearTransaction({
+    signerAccountId: requestedAccount || undefined,
     receiverId: RESPITE_NEP141_METADATA.contractId,
     methodName: 'swap_near_for_respite',
     args: {},
-    gas: '30000000000000',
+    gas: '50000000000000',
     depositYocto,
   });
 
@@ -902,9 +1511,10 @@ export async function executeNearTestnetAndRespiteSwap(params: {
     return null;
   }
 
+  const confirmedAccount = (txResult.signerAccountId || requestedAccount || '').trim();
   return {
     direction: 'near_to_respite',
-    accountId: resolvedAccount,
+    accountId: confirmedAccount,
     contractId: RESPITE_NEP141_METADATA.contractId,
     tokenContractId: RESPITE_NEP141_METADATA.contractId,
     methodName: 'swap_near_for_respite',
@@ -942,9 +1552,11 @@ export async function executeMarketContractCallOnChain(params: {
   methodName: BuddiesMarketMethodName;
   args: Record<string, unknown>;
   depositNear?: string;
+  signerAccountId?: string;
 }): Promise<{
   ok: boolean;
   txHash: string;
+  signerAccountId?: string;
   explorerUrl: string;
   contractId: string;
   methodName: BuddiesMarketMethodName;
@@ -958,17 +1570,19 @@ export async function executeMarketContractCallOnChain(params: {
         ? '1'
         : '0';
 
-  const res = await signAndSendWithInjectedWallet({
+  const res = await signAndSendNearTransaction({
+    signerAccountId: params.signerAccountId,
     receiverId: NEAR_CONFIG.marketContractId,
     methodName: params.methodName,
     args: params.args,
-    gas: '50000000000000',
+    gas: '60000000000000',
     depositYocto,
   });
 
   return {
     ok: res.ok,
     txHash: res.txHash,
+    signerAccountId: res.signerAccountId,
     explorerUrl: res.txHash ? getNearBlocksTxUrl(res.txHash, NEAR_CONFIG.network) : '',
     contractId: NEAR_CONFIG.marketContractId,
     methodName: params.methodName,

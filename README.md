@@ -36,9 +36,9 @@ Requires **Node.js 18+** and **npm** (plus **Rust `stable` + `cargo-near`** if r
 npm install
 npm run dev
 
-# 2. Run TypeScript static verification, 105 unit tests, and production WebGL bundle build
+# 2. Run TypeScript static verification, 106 unit tests, and production WebGL bundle build
 npm run lint     # tsc --noEmit (0 errors)
-npm test         # 105 unit tests (3-currency P2P invariants, 2x2x2 pad, interior studio, NEAR client & relayer)
+npm test         # 106 unit tests (3-currency P2P invariants, House Deed vs Fish NFT filter, NEAR client & relayer)
 npm run build    # Production Vite 8 build into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM binary (near-sdk 5.30.1)
@@ -184,17 +184,20 @@ Compiled with `near-sdk 5.30.1` + `cargo-near` into [`contracts/buddies-market/t
 | On-Chain Entity / Action | NEAR Testnet Identifier | Explorer |
 |---|---|---|
 | **Master Sub-Account Factory** | `buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/buddiesblitz.testnet) |
-| **Unified Market, FT, NFT & MT Contract** | `market.buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
-| **Sample Citizen Sub-Account** | `kxvqmr.buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/kxvqmr.buddiesblitz.testnet) |
+| **Unified Market, FT, NFT & MT Contract** | `market.buddiesblitz.testnet` (`SHA-256: 5oyJPQv9vEmRKudutyeZ4fciJWJKgzixaFJiuTtpYm4F`) | [NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
+| **Deploy WASM + `init` Transaction** | `2ZPfGcyGe6pnivJE6RcM88EnLXQwG8o6Fv7hcQnaKDiL` | [Tx Receipt](https://testnet.nearblocks.io/txns/2ZPfGcyGe6pnivJE6RcM88EnLXQwG8o6Fv7hcQnaKDiL) |
+| **Live `swap_near_for_respite` (`0.35 NEAR -> 35 RESPITE`)** | `3VWiVeHMpQgDDk2ULJ748XcviLgC7qVrgkWA8G9YsWwG` | [Tx Receipt](https://testnet.nearblocks.io/txns/3VWiVeHMpQgDDk2ULJ748XcviLgC7qVrgkWA8G9YsWwG) |
+| **Live `purchase_citizen_asset` (`house-deed-0001`, `25 RESPITE`)** | `H2E2mwmaBajYsF5TAtBp6CmX6p7PCa7PcesfNDiHgSjw` | [Tx Receipt](https://testnet.nearblocks.io/txns/H2E2mwmaBajYsF5TAtBp6CmX6p7PCa7PcesfNDiHgSjw) |
+| **Live `mint_fish_nft` (`nep171-fish-golden_harbor_tuna-1001`)** | `8Ez5r9dq1ky6wRgutqot2MbPJLCWNP5Ryj9HV3FZuEy` | [Tx Receipt](https://testnet.nearblocks.io/txns/8Ez5r9dq1ky6wRgutqot2MbPJLCWNP5Ryj9HV3FZuEy) |
+| **Live `list_fish_nft` (`listing-genesis-golden-tuna-1001`, `15 RESPITE`)** | `CpyXwmWFFBVR9rJLFM5c336nAWpgCeZkmmETL3nZxwSd` | [Tx Receipt](https://testnet.nearblocks.io/txns/CpyXwmWFFBVR9rJLFM5c336nAWpgCeZkmmETL3nZxwSd) |
 
 ```bash
-# Query NEP-141 ft_metadata() on market.buddiesblitz.testnet via FastNEAR RPC
+# Query get_contract_overview() & get_fish_listings() on market.buddiesblitz.testnet via FastNEAR RPC
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"ft_metadata","args_base64":"e30="}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"get_contract_overview","args_base64":"e30="}}'
 
-# Query NEP-181 nft_tokens_for_owner() for buddiesblitz.testnet
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"nft_tokens_for_owner","args_base64":"eyJhY2NvdW50X2lkIjoiYnVkZGllc2JsaXR6LnRlc3RuZXQifQ=="}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"get_fish_listings","args_base64":"e30="}}'
 ```
 
 ---
