@@ -233,7 +233,11 @@ import {
   evaluateChunkSynced3DFogOfWar,
 } from './buddiesBlitzRules';
 import { applyGrassChunkSyncedFogOfWar3D } from './buddiesBlitzMinimap';
-import { buildStaticWorldStructuresList } from './buddiesBlitzWorldBuilder';
+import {
+  buildStaticWorldStructuresList,
+  getPropBaseHeight,
+  HALTE_GOLDEN_SCALE_CONFIG,
+} from './buddiesBlitzWorldBuilder';
 import {
   evaluateRoadNetworkSdf,
   evaluateBlitzGrassMask,
@@ -5307,6 +5311,39 @@ test('NEAR Hackathon Tracks (games & nfts): Social Invisible Login, NEP-171 Sub-
     });
   }, /UNAUTHORIZED_NFT_TRANSFER/);
 });
+
+test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB colliders for Kiosks, Halte, Lobby, Beachfront, and Street Props', () => {
+  const bluePlots = createIndividualCommanderBasesState('blue');
+  const redPlots = createIndividualCommanderBasesState('red');
+  const structures = buildStaticWorldStructuresList({
+    blueBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: 74 },
+    redBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: -74 },
+    blueCommanderBases: bluePlots,
+    redCommanderBases: redPlots,
+  });
+  const byId = new Map(structures.map((s) => [s.id, s]));
+
+  // 1. All Kiosk colliders (Lobby, Halte, and Base Plots) match the compact Halte-calibrated Kiosk height (~2.55m)
+  for (const kioskId of ['west_plaza_near_terminal', 'west_plaza_gold_exchange', 'halte_teleport_kiosk', 'blue_plot_0_kiosk']) {
+    const k = byId.get(kioskId);
+    assert.ok(k, `Missing calibrated collider for ${kioskId}`);
+    assert.equal(k.heightY, HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY);
+    assert.ok(k.halfX <= 0.66 && k.halfZ <= 0.90, `${kioskId} footprint must match compact 1.40x scale`);
+  }
+
+  // 2. Halte canopy windbreak, ticket machine, and passenger bench colliders are present and calibrated
+  assert.equal(byId.get('lobby_tram_shelter_windbreak')?.heightY, HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM);
+  assert.ok(byId.get('halte_ticket_machine'), 'Halte ticket machine collider must be registered');
+  assert.ok(byId.get('halte_passenger_bench'), 'Halte passenger bench collider must be registered');
+
+  // 3. Street & industrial props are calibrated to Halte-ratio heights and footprints
+  assert.equal(getPropBaseHeight('bench'), 1.08);
+  assert.equal(getPropBaseHeight('recycle_bin'), 1.22);
+  assert.equal(getPropBaseHeight('hydrant'), 1.18);
+  assert.equal(getPropBaseHeight('traffic_cone'), 0.86);
+  assert.ok((getPropCollisionSpec('bench', 1.0).halfX ?? 99) < 0.85);
+});
+
 
 
 

@@ -151,6 +151,9 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       smoothstep(-76.0, -104.0, p.x) * (1.0 - smoothstep(36.0, 44.0, abs(p.y))) * 9.5;
     float eastCoastalOpen = smoothstep(96.5, 102.0, p.x) * 92.0;
     float d0 = dBox + westCornerBulge - westPlantClear - eastCoastalOpen;
+    if (d0 < -6.5) {
+      return vec4(d0, d0 - 6.0, d0 - 12.0, d0 - 18.0);
+    }
 
     float w1 =
       sin(p.x * 0.075 + cos(p.y * 0.068) * 1.55) * 2.05 +
@@ -244,6 +247,9 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 
   float evaluateNwLakeSdf(vec2 p) {
     vec2 q = vec2(p.x, abs(p.y));
+    if (p.x < -48.0 || p.x > -14.0 || q.y > 18.5) {
+      return 20.0;
+    }
     float d1 = length(q - vec2(-31.0, 0.0)) - 8.4;
     float d2 = length(q - vec2(-26.5, 4.2)) - 6.8;
     float d3 = length(q - vec2(-35.0, 4.5)) - 6.8;
@@ -266,7 +272,14 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     return min(dPlot0, dSpur0);
   }
 
-  float evaluateBlitzGrassMask(vec2 p) {
+  float evaluateBlitzGrassMaskFromSdfs(
+    vec2 p,
+    float roadSdf,
+    float lakeSdf,
+    vec2 harborSdf,
+    float westPlantSdf,
+    float embSdf
+  ) {
     float pz = p.y;
     vec2 q = (pz < 0.0) ? -p : p;
 
@@ -280,25 +293,27 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float minDirtSdf = min(dModelEstateDirt, dConstructionYardDirt) + wobble;
     float grassMask = smoothstep(-0.35, 1.35, minDirtSdf);
 
-    float roadSdf = evaluateRoadNetworkSdf(p);
     float roadSafe = smoothstep(-0.15, 0.85, roadSdf);
-
-    float lakeSdf = evaluateNwLakeSdf(p);
     float lakeSafe = smoothstep(0.2, 1.65, lakeSdf);
-
-    vec2 harborSdf = evaluateSeHarborSdf(p);
     float harborSafe = smoothstep(-0.2, 1.25, min(harborSdf.x, harborSdf.y));
-
-    float westPlantSdf = evaluateWestPowerPlantSdf(p);
     float westPlantSafe = smoothstep(-0.2, 1.15, westPlantSdf);
 
     float hardPadSdf = min(dModelEstateDirt, dConstructionYardDirt);
     float padSafe = smoothstep(-0.3, 0.5, hardPadSdf);
-
-    float embSdf = evaluateOuterEmbankmentSdf(p);
     float embSafe = 1.0 - smoothstep(-0.6, 0.8, embSdf);
 
     return clamp(grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe, 0.0, 1.0);
+  }
+
+  float evaluateBlitzGrassMask(vec2 p) {
+    return evaluateBlitzGrassMaskFromSdfs(
+      p,
+      evaluateRoadNetworkSdf(p),
+      evaluateNwLakeSdf(p),
+      evaluateSeHarborSdf(p),
+      evaluateWestPowerPlantSdf(p),
+      evaluateOuterEmbankmentSdf(p)
+    );
   }
 
   float getRawGroundElevation(vec2 rawP) {
@@ -377,17 +392,13 @@ const BLITZ_CAST_SHADOW_GLSL_SNIPPET = /* glsl */ `
       return 1.0;
     }
     float zRef = shadowCoord.z - 0.0012;
-    vec2 texel = vec2(1.0 / 1536.0);
+    vec2 texel = vec2(1.0 / 1024.0);
     float s0 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy).r);
-    float s1 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(texel.x, 0.0)).r);
-    float s2 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy - vec2(texel.x, 0.0)).r);
-    float s3 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(0.0, texel.y)).r);
-    float s4 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy - vec2(0.0, texel.y)).r);
-    float s5 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + texel * 0.9).r);
-    float s6 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy - texel * 0.9).r);
-    float s7 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(texel.x, -texel.y) * 0.9).r);
-    float s8 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(-texel.x, texel.y) * 0.9).r);
-    return (s0 * 2.0 + s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8) / 10.0;
+    float s1 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(texel.x, texel.y) * 0.75).r);
+    float s2 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(-texel.x, -texel.y) * 0.75).r);
+    float s3 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(texel.x, -texel.y) * 0.75).r);
+    float s4 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(-texel.x, texel.y) * 0.75).r);
+    return (s0 * 2.0 + s1 + s2 + s3 + s4) / 6.0;
   }
 `;
 
@@ -1013,15 +1024,15 @@ export function createBlitzInfiniteGrassSystem(
   const isCompact = isSoftwareGl;
   const poolRadiusChunks = 3;
   const poolDiameterChunks = poolRadiusChunks * 2 + 1;
-  const chunkColumns = isCompact ? 32 : 38;
-  const chunkRows = isCompact ? 28 : 34;
+  const chunkColumns = isCompact ? 24 : 28;
+  const chunkRows = isCompact ? 22 : 26;
   const fieldSize = 42.0;
   const wrappedJitterFactor = 0.78;
   const fullCircle = Math.PI * 2;
-  const nearScaleMin = 0.56;
-  const nearScaleMax = 1.52;
-  const bladeWidth = 0.38;
-  const bladeHeight = 1.24;
+  const nearScaleMin = 0.45;
+  const nearScaleMax = 1.05;
+  const bladeWidth = 0.22;
+  const bladeHeight = 0.64;
   const bladeFold = 0.5;
   const bladeKeepRatio = isCompact ? 0.85 : 0.92;
 
@@ -1154,6 +1165,7 @@ export function createBlitzInfiniteGrassSystem(
   trailTex.needsUpdate = true;
 
   const uPlayerPos = { value: new THREE.Vector3(0, 0, 12.5) };
+  const uPlayerTrailPos = { value: new THREE.Vector3(0, 0, 12.5) };
   const uViewPos = { value: new THREE.Vector3(0, 0, 12.5) };
   const uBlastWave = { value: new THREE.Vector4(0, 0, 0.01, 0) };
   const MAX_GRASS_EXCLUSIONS = 64;
@@ -1187,6 +1199,7 @@ export function createBlitzInfiniteGrassSystem(
   const grassMaterial = new THREE.ShaderMaterial({
     uniforms: {
       uPlayerPos,
+      uPlayerTrailPos,
       uViewPos,
       uBlastWave,
       uExclusionCount,
@@ -1204,8 +1217,8 @@ export function createBlitzInfiniteGrassSystem(
       uBladeHeight: { value: bladeHeight },
       uBladeFold: { value: bladeFold },
       uBladeTipWidth: { value: 1.0 },
-      uRobotRadius: { value: 2.35 },
-      uBendStrength: { value: 1.15 },
+      uRobotRadius: { value: 0.46 },
+      uBendStrength: { value: 0.35 },
       uWindNoiseTex: { value: windNoiseTex },
       uTrailTex: { value: trailTex },
       uWindPhase: windUniforms.uWindPhase,
@@ -1228,6 +1241,7 @@ export function createBlitzInfiniteGrassSystem(
       attribute vec4 aBladeShape;
 
       uniform vec3 uPlayerPos;
+      uniform vec3 uPlayerTrailPos;
       uniform vec3 uViewPos;
       uniform vec4 uBlastWave;
       uniform int uExclusionCount;
@@ -1298,7 +1312,9 @@ export function createBlitzInfiniteGrassSystem(
           return;
         }
 
-        anchor.y = getRawGroundElevation(wp);
+        // Surviving grass blades are already outside lake/harbor/embankment/power-plant, so only sculpt offset applies
+        vec2 sculptUv = clamp((wrapPlanetVec2(wp) + 130.0) / 260.0, 0.0, 1.0);
+        anchor.y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
 
         // Suppress grass blades underneath static Park Benches, Containers, and grounded Crates
         for (int i = 0; i < 64; i++) {
@@ -1323,7 +1339,7 @@ export function createBlitzInfiniteGrassSystem(
         vec2 trailUv = vec2((wp.x + 130.0) / 260.0, 1.0 - (wp.y + 130.0) / 260.0);
         float trackCrush = texture2D(uTrailTex, clamp(trailUv, 0.0, 1.0)).r;
 
-        float hScale = aBladeShape.x * density * mix(1.0, 0.16, trackCrush);
+        float hScale = aBladeShape.x * density * mix(1.0, 0.45, trackCrush);
         float wScale = aBladeShape.y * density;
         float cosA = aBladeShape.z;
         float sinA = aBladeShape.w;
@@ -1331,34 +1347,42 @@ export function createBlitzInfiniteGrassSystem(
         float g = clamp(position.y, 0.0, 1.0);
         float g2 = g * g;
 
-        // Primary player/focus unit radial push & trample crush
+        // Subtle shoe-width radial grass parting directly under feet (no giant flattened circle)
         vec2 toBlade = anchor.xz - uPlayerPos.xz;
         float distToPlayer = length(toBlade);
         vec2 pushDir = toBlade / (distToPlayer + 0.001);
-        float innerCrush = 1.0 - smoothstep(uRobotRadius * 0.2, uRobotRadius * 1.25, distToPlayer);
-        float outerPush = (1.0 - smoothstep(uRobotRadius * 0.5, uRobotRadius * 3.0, distToPlayer)) * (1.0 - innerCrush * 0.5);
-        vec2 tramplePush = pushDir * (outerPush * uBendStrength * 0.65 + innerCrush * uBendStrength * 0.85);
+        float innerCrush = 1.0 - smoothstep(uRobotRadius * 0.15, uRobotRadius * 0.85, distToPlayer);
+        float outerPush = (1.0 - smoothstep(uRobotRadius * 0.35, uRobotRadius * 1.35, distToPlayer)) * (1.0 - innerCrush * 0.5);
+        vec2 tramplePush = pushDir * (outerPush * uBendStrength * 0.45 + innerCrush * uBendStrength * 0.55);
 
-        // Multi-Unit Trampling: All active Vehicles (Tanks, Dump Trucks, Planes) & Characters (Player & AI Buddies)
-        // radially part and flatten the grass blades when stepping or driving over them!
+        // Short lagged step behind player via lightweight uniform (zero 2D Canvas or GPU texture upload cost!)
+        vec2 toTrail = anchor.xz - uPlayerTrailPos.xz;
+        float distToTrail = length(toTrail);
+        if (distToTrail < uRobotRadius * 1.15) {
+          float trailCrush = (1.0 - smoothstep(uRobotRadius * 0.12, uRobotRadius * 0.80, distToTrail)) * 0.55;
+          innerCrush = max(innerCrush, trailCrush);
+          tramplePush += (toTrail / (distToTrail + 0.001)) * (trailCrush * uBendStrength * 0.40);
+        }
+
+        // Multi-Unit Trampling: Active Vehicles & Characters gently part grass blades directly under their footprint
         for (int i = 0; i < 24; i++) {
           if (i >= uTramplerCount) break;
           vec4 tr = uTramplers[i];
           vec2 dTr = anchor.xz - tr.xy;
           float distTr = length(dTr);
-          float rTr = max(0.35, tr.z);
-          if (distTr < rTr * 3.0) {
+          float rTr = max(0.30, tr.z);
+          if (distTr < rTr * 1.45) {
             vec2 dirTr = dTr / (distTr + 0.001);
-            float cIn = (1.0 - smoothstep(rTr * 0.22, rTr * 1.22, distTr)) * tr.w;
-            float pOut = (1.0 - smoothstep(rTr * 0.45, rTr * 2.85, distTr)) * (1.0 - cIn * 0.55) * tr.w;
+            float cIn = (1.0 - smoothstep(rTr * 0.15, rTr * 0.85, distTr)) * tr.w;
+            float pOut = (1.0 - smoothstep(rTr * 0.35, rTr * 1.35, distTr)) * (1.0 - cIn * 0.55) * tr.w;
             innerCrush = max(innerCrush, cIn);
-            tramplePush += dirTr * (pOut * uBendStrength * 0.72 + cIn * uBendStrength * 0.92);
+            tramplePush += dirTr * (pOut * uBendStrength * 0.48 + cIn * uBendStrength * 0.58);
           }
         }
 
         vec2 windOffset = getWindOffset(anchor, aRandom.x);
         windOffset += tramplePush;
-        windOffset += vec2(cosA, sinA) * (trackCrush * 0.82);
+        windOffset += vec2(cosA, sinA) * (trackCrush * 0.36);
 
         // Radial Explosion Shockwave Bend (pushes grass blades outward around blast center)
         if (uBlastWave.w > 0.01) {
@@ -1373,7 +1397,7 @@ export function createBlitzInfiniteGrassSystem(
         float tipWidth = mix(1.0, uBladeTipWidth, g);
         float centerFold = 1.0 - smoothstep(0.0, 0.01, abs(position.x));
         float localX = (position.x * (uBladeHalfW * 2.0) * tipWidth + g2 * (aRandom.y - 0.5) * 0.4) * wScale;
-        float localY = position.y * uBladeHeight * hScale * mix(1.0, 0.16, innerCrush);
+        float localY = position.y * uBladeHeight * hScale * mix(1.0, 0.65, innerCrush);
         float localZ = (centerFold * (uBladeHalfW * 2.0) * uBladeFold * tipWidth + g2 * (aRandom.x - 0.5) * 0.8) * wScale;
 
         float fade = (1.0 - smoothstep(uFieldSize * 0.36, uFieldSize * 0.495, distToView)) * density;
@@ -1393,7 +1417,7 @@ export function createBlitzInfiniteGrassSystem(
         );
 
         vHeightFrac = g;
-        vTrailIntensity = clamp(max(innerCrush * 0.82, trackCrush), 0.0, 1.0);
+        vTrailIntensity = clamp(trackCrush * 0.55, 0.0, 1.0);
         vBladeUV = vec2(position.x + 0.5, position.y);
         vec2 nUv = wp * 0.018;
         vNoise = texture2D(uWindNoiseTex, nUv).r * 2.0 - 1.0;
@@ -1424,8 +1448,15 @@ export function createBlitzInfiniteGrassSystem(
 
       void main() {
         float patchFactor = smoothstep(0.18, 0.78, clamp(vNoise * 0.5 + 0.5, 0.0, 1.0));
-        // Real-time directional shadow from trees, Blitz Tank, buildings & spinning turbine.glb blades!
-        float castShadow = sampleBlitzCastShadow(vWorldPos);
+        // Fast single-tap directional shadow lookup per grass blade (naturally anti-aliased across dense blades)
+        float castShadow = 1.0;
+        if (uHasDirShadow > 0.5) {
+          vec4 sc = uDirShadowMatrix * vec4(vWorldPos, 1.0);
+          sc.xyz /= sc.w;
+          if (sc.x > 0.002 && sc.x < 0.998 && sc.y > 0.002 && sc.y < 0.998 && sc.z > 0.0 && sc.z < 1.0) {
+            castShadow = step(sc.z - 0.0014, texture2D(uDirShadowMap, sc.xy).r);
+          }
+        }
         float litFactor = patchFactor * mix(0.12, 1.0, castShadow);
 
         vec3 bottomCol = mix(uShadowBottom, uSunBottom, litFactor);
@@ -1491,6 +1522,7 @@ export function createBlitzInfiniteGrassSystem(
   const petalMat = new THREE.ShaderMaterial({
     uniforms: {
       uPlayerPos,
+      uPlayerTrailPos,
       uViewPos,
       uExclusionCount,
       uExclusionBoxes,
@@ -1516,6 +1548,7 @@ export function createBlitzInfiniteGrassSystem(
       attribute vec4 aPetalRandom;
       attribute float aPetalColor;
       uniform vec3 uPlayerPos;
+      uniform vec3 uPlayerTrailPos;
       uniform vec3 uViewPos;
       uniform int uExclusionCount;
       uniform vec4 uExclusionBoxes[64];
@@ -1653,8 +1686,6 @@ export function createBlitzInfiniteGrassSystem(
   let trailFadeCounter = 0;
   let trailDirty = false;
   let activeTrailFramesRemaining = 0;
-  let prevPlayerX = 0;
-  let prevPlayerZ = 12.5;
 
   return {
     grassMesh,
@@ -1662,24 +1693,14 @@ export function createBlitzInfiniteGrassSystem(
     update(playerX: number, playerZ: number, viewX = playerX, viewZ = playerZ) {
       uPlayerPos.value.set(playerX, 0, playerZ);
       uViewPos.value.set(viewX, 0, viewZ);
-
-      // Stamp soft footstep/plane-propwash trail as player moves across the grass
-      const moveDist = Math.hypot(playerX - prevPlayerX, playerZ - prevPlayerZ);
-      if (moveDist > 0.18) {
-        const cx = ((playerX + trailHalfSpan) / trailSpan) * 512;
-        const cy = ((playerZ + trailHalfSpan) / trailSpan) * 512;
-        const grad = trailCtx.createRadialGradient(cx, cy, 0.5, cx, cy, 4.8);
-        grad.addColorStop(0, 'rgba(255, 255, 255, 0.68)');
-        grad.addColorStop(0.65, 'rgba(255, 255, 255, 0.35)');
-        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        trailCtx.fillStyle = grad;
-        trailCtx.beginPath();
-        trailCtx.arc(cx, cy, 4.8, 0, Math.PI * 2);
-        trailCtx.fill();
-        trailDirty = true;
-        activeTrailFramesRemaining = 720;
-        prevPlayerX = playerX;
-        prevPlayerZ = playerZ;
+      // Smooth short trailed step uniform (zero 2D canvas drawing & zero GPU texture upload when walking)
+      const dxTrail = playerX - uPlayerTrailPos.value.x;
+      const dzTrail = playerZ - uPlayerTrailPos.value.z;
+      if (dxTrail * dxTrail + dzTrail * dzTrail > 9.0) {
+        uPlayerTrailPos.value.set(playerX, 0, playerZ);
+      } else {
+        uPlayerTrailPos.value.x += dxTrail * 0.14;
+        uPlayerTrailPos.value.z += dzTrail * 0.14;
       }
 
       trailFadeCounter++;
@@ -1754,20 +1775,8 @@ export function createBlitzInfiniteGrassSystem(
         uTramplers.value[i].set(it.x, it.z, Math.max(0.4, it.radius), it.weight ?? 1.0);
       }
     },
-    stampFootstep(worldX: number, worldZ: number, radiusMeters = 0.85) {
-      const cx = ((worldX + trailHalfSpan) / trailSpan) * 512;
-      const cy = ((worldZ + trailHalfSpan) / trailSpan) * 512;
-      const pxRadius = Math.max(3.2, (radiusMeters / trailSpan) * 512);
-      const grad = trailCtx.createRadialGradient(cx, cy, pxRadius * 0.15, cx, cy, pxRadius);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.72)');
-      grad.addColorStop(0.65, 'rgba(255, 255, 255, 0.38)');
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      trailCtx.fillStyle = grad;
-      trailCtx.beginPath();
-      trailCtx.arc(cx, cy, pxRadius, 0, Math.PI * 2);
-      trailCtx.fill();
-      trailDirty = true;
-      activeTrailFramesRemaining = 720;
+    stampFootstep(_worldX: number, _worldZ: number, _radiusMeters = 0.34) {
+      // Handled via lightweight GPU uniform (uTramplers & uPlayerTrailPos) to avoid 512x512 Canvas2D redraw & GPU texture upload stalls
     },
     setDynamicExclusions(
       items: ReadonlyArray<{
@@ -3804,6 +3813,7 @@ export interface LoadedBlitzAssets {
   charBuddiesGltf: GLTF | null;
   manCharacterBuddiesGltf: GLTF | null;
   ar99AssaultGltf: GLTF | null;
+  fishingRodGltf: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -3817,13 +3827,21 @@ export function getCachedLoadedBlitzAssets(): LoadedBlitzAssets | null {
  */
 export async function loadAllRealBlitzAssets(
   renderer: THREE.WebGLRenderer,
-  onCharacterGltfReady?: (charBuddiesGltf: GLTF | null, manCharacterBuddiesGltf: GLTF | null) => void,
+  onCharacterGltfReady?: (
+    charBuddiesGltf: GLTF | null,
+    manCharacterBuddiesGltf: GLTF | null,
+    fishingRodGltf?: GLTF | null,
+  ) => void,
 ): Promise<LoadedBlitzAssets> {
   if (cachedLoadedBlitzAssets) {
     if (onCharacterGltfReady) {
       const cached = cachedLoadedBlitzAssets;
       Promise.resolve().then(() => {
-        onCharacterGltfReady(cached.charBuddiesGltf, cached.manCharacterBuddiesGltf);
+        onCharacterGltfReady(
+          cached.charBuddiesGltf,
+          cached.manCharacterBuddiesGltf,
+          cached.fishingRodGltf,
+        );
       });
     }
     return cachedLoadedBlitzAssets;
@@ -3832,7 +3850,11 @@ export async function loadAllRealBlitzAssets(
     if (onCharacterGltfReady) {
       inFlightLoadedBlitzAssetsPromise
         .then((loaded) => {
-          onCharacterGltfReady(loaded.charBuddiesGltf, loaded.manCharacterBuddiesGltf);
+          onCharacterGltfReady(
+            loaded.charBuddiesGltf,
+            loaded.manCharacterBuddiesGltf,
+            loaded.fishingRodGltf,
+          );
         })
         .catch(() => {});
     }
@@ -3886,10 +3908,11 @@ export async function loadAllRealBlitzAssets(
 
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
+  const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise])
-      .then(([charGltf, manGltf]) => {
-        onCharacterGltfReady(charGltf, manGltf);
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise])
+      .then(([charGltf, manGltf, rodGltf]) => {
+        onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
       .catch(() => {});
   }
@@ -3932,6 +3955,7 @@ export async function loadAllRealBlitzAssets(
     charBuddiesPromise,
     manCharacterBuddiesPromise,
     loadOptionalGltf('/assets/ar99-assault.glb'),
+    fishingRodPromise,
     fetch('/assets/buddies/models/buddy-track.json')
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null),
@@ -3975,6 +3999,7 @@ export async function loadAllRealBlitzAssets(
       charBuddiesGltf,
       manCharacterBuddiesGltf,
       ar99AssaultGltf,
+      fishingRodGltf,
       playerTrackPoints,
       treeFoliageTex,
     ]) => {
@@ -4018,6 +4043,7 @@ export async function loadAllRealBlitzAssets(
         charBuddiesGltf,
         manCharacterBuddiesGltf,
         ar99AssaultGltf,
+        fishingRodGltf,
         playerTrackPoints,
         treeFoliageTex,
       };
@@ -4536,11 +4562,16 @@ export function spawnRealBlitzPropFromGlb(
   const benchPlinthLift = isBenchProp ? 0.07 : 0.0;
   propGroup.position.set(-center.x * scale, -box.min.y * scale + benchPlinthLift, -center.z * scale);
   propGroup.scale.setScalar(scale);
+  wrapper.userData.calibratedHalfX = Math.max(0.22, size.x * scale * 0.46);
+  wrapper.userData.calibratedHalfZ = Math.max(0.22, size.z * scale * 0.46);
+  wrapper.userData.calibratedHeightY = Math.max(0.4, size.y * scale + benchPlinthLift);
   wrapper.add(propGroup);
 
   if (isBenchProp) {
-    // Low stone paving plinth underneath each Park Bench so grass never covers or obscures the bench
-    const plinthGeo = new THREE.BoxGeometry(2.58, 0.08, 1.26);
+    // Low stone paving plinth underneath each Park Bench sized automatically to the calibrated bench footprint
+    const plinthW = Math.max(1.42, size.x * scale + 0.28);
+    const plinthD = Math.max(0.74, size.z * scale + 0.24);
+    const plinthGeo = new THREE.BoxGeometry(plinthW, 0.08, plinthD);
     const plinthMesh = new THREE.Mesh(
       plinthGeo,
       new THREE.MeshStandardMaterial({ color: '#c4bca6', roughness: 0.88 }),
@@ -6942,6 +6973,7 @@ export interface CharBuddiesGlbRigController {
   standingSoleOffsetY: number;
   rightHandLocalPos: THREE.Vector3;
   leftHandLocalPos: THREE.Vector3;
+  rightHandGripAxisLocal: THREE.Vector3;
   hasHandBonePositions: boolean;
   prevJumpOffset: number;
   landRecoveryTimer: number;
@@ -6998,37 +7030,80 @@ type AddWeaponPartFn = (
  */
 export function buildProceduralFishingRod(addPart: AddWeaponPartFn): THREE.Group {
   const g = new THREE.Group();
-  // Cork & EVA Handle Grip (along +Z / upward pitch)
-  addPart(g, new THREE.CylinderGeometry(0.032, 0.036, 0.48, 10), '#c89b6e', [0, 0, -0.08], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
-  addPart(g, new THREE.CylinderGeometry(0.038, 0.038, 0.12, 10), '#1e293b', [0, 0, -0.34], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
-  addPart(g, new THREE.CylinderGeometry(0.036, 0.036, 0.08, 10), '#f59e0b', [0, 0, 0.18], [Math.PI / 2, 0, 0], [1, 1, 1], 0.01);
+  // Cork & EVA Handle Grip centered so Right Palm grips [0, 0, 0] above reel foot and Left Palm grips [0, 0, -0.20]
+  addPart(g, new THREE.CylinderGeometry(0.030, 0.034, 0.48, 10), '#c89b6e', [0, 0, -0.06], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
+  addPart(g, new THREE.CylinderGeometry(0.036, 0.036, 0.12, 10), '#1e293b', [0, 0, -0.32], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
+  addPart(g, new THREE.CylinderGeometry(0.034, 0.034, 0.08, 10), '#f59e0b', [0, 0, 0.20], [Math.PI / 2, 0, 0], [1, 1, 1], 0.01);
 
-  // Spinning Reel Assembly underneath grip
-  addPart(g, new THREE.BoxGeometry(0.035, 0.10, 0.08), '#334155', [0, -0.06, 0.08], [0, 0, 0], [1, 1, 1], 0.01);
-  addPart(g, new THREE.CylinderGeometry(0.058, 0.058, 0.09, 12), '#fbbf24', [0, -0.12, 0.10], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
-  addPart(g, new THREE.CylinderGeometry(0.042, 0.048, 0.06, 12), '#1e293b', [0, -0.12, 0.04], [Math.PI / 2, 0, 0], [1, 1, 1], 0.01);
-  addPart(g, new THREE.BoxGeometry(0.12, 0.022, 0.022), '#94a3b8', [0.06, -0.12, 0.08], [0, 0, -0.35], [1, 1, 1], 0.008);
+  // Spinning Reel Assembly underneath grip (Tidewater 3000-size spinning reel)
+  addPart(g, new THREE.BoxGeometry(0.032, 0.09, 0.075), '#334155', [0, -0.055, 0.04], [0, 0, 0], [1, 1, 1], 0.01);
+  addPart(g, new THREE.CylinderGeometry(0.054, 0.054, 0.085, 12), '#fbbf24', [0, -0.11, 0.06], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
+  addPart(g, new THREE.CylinderGeometry(0.040, 0.046, 0.055, 12), '#1e293b', [0, -0.11, 0.00], [Math.PI / 2, 0, 0], [1, 1, 1], 0.01);
+  const reelCrankMesh = addPart(
+    g,
+    new THREE.BoxGeometry(0.11, 0.020, 0.020),
+    '#94a3b8',
+    [0.055, -0.11, 0.04],
+    [0, 0, -0.35],
+    [1, 1, 1],
+    0.008,
+  );
 
-  // Tapered Carbon-Fiber Rod Blank (2.25m extending forward along +Z)
-  addPart(g, new THREE.CylinderGeometry(0.010, 0.026, 1.15, 10), '#1e293b', [0, 0, 0.78], [Math.PI / 2, 0, 0], [1, 1, 1], 0.009);
-  addPart(g, new THREE.CylinderGeometry(0.004, 0.010, 1.15, 8), '#0f172a', [0, 0, 1.92], [Math.PI / 2, 0, 0], [1, 1, 1], 0.007);
-  addPart(g, new THREE.CylinderGeometry(0.013, 0.015, 0.14, 8), '#38bdf8', [0, 0, 1.34], [Math.PI / 2, 0, 0], [1, 1, 1], 0.006);
-
-  // 5 Line Guide Eyelets along underside of rod blank
+  // Lower Carbon-Fiber Rod Blank (z = 0.20 to 1.16) + Lower 2 Line Guides
+  addPart(g, new THREE.CylinderGeometry(0.012, 0.025, 0.98, 10), '#1e293b', [0, 0, 0.69], [Math.PI / 2, 0, 0], [1, 1, 1], 0.009);
   for (const [gz, rGuide] of [
     [0.52, 0.028],
     [0.95, 0.022],
-    [1.42, 0.018],
-    [1.92, 0.014],
-    [2.46, 0.011],
   ] as const) {
     addPart(g, new THREE.TorusGeometry(rGuide, 0.004, 6, 12), '#cbd5e1', [0, -0.024, gz], [0, 0, 0], [1, 1, 1], 0);
   }
 
-  // Hanging Fishing Line & Classic Red/White Bobber Float at Tip (`z = 2.48`)
-  addPart(g, new THREE.CylinderGeometry(0.0025, 0.0025, 0.78, 6), '#e2e8f0', [0, -0.40, 2.48], [0, 0, 0], [1, 1, 1], 0);
-  addPart(g, new THREE.SphereGeometry(0.048, 10, 10), '#ef4444', [0, -0.76, 2.48], [0, 0, 0], [1, 1.15, 1], 0.008);
-  addPart(g, new THREE.SphereGeometry(0.046, 10, 10), '#ffffff', [0, -0.81, 2.48], [0, 0, 0], [1, 1, 1], 0.008);
+  // Hinged Upper Rod Blank Flex Group (`rodFlexPivot` at z = 1.16) so fighting tension curves the upper blank
+  // toward the water without tilting the cork handle out of the character's hands!
+  const rodFlexPivot = new THREE.Group();
+  rodFlexPivot.name = 'FishingRodFlexPivot';
+  rodFlexPivot.position.set(0, 0, 1.16);
+  g.add(rodFlexPivot);
+
+  addPart(rodFlexPivot, new THREE.CylinderGeometry(0.013, 0.015, 0.14, 8), '#38bdf8', [0, 0, 0.18], [Math.PI / 2, 0, 0], [1, 1, 1], 0.006);
+  addPart(rodFlexPivot, new THREE.CylinderGeometry(0.004, 0.012, 1.32, 8), '#0f172a', [0, 0, 0.66], [Math.PI / 2, 0, 0], [1, 1, 1], 0.007);
+  for (const [gzLocal, rGuide] of [
+    [0.26, 0.018],
+    [0.76, 0.014],
+    [1.30, 0.011],
+  ] as const) {
+    addPart(rodFlexPivot, new THREE.TorusGeometry(rGuide, 0.004, 6, 12), '#cbd5e1', [0, -0.020, gzLocal], [0, 0, 0], [1, 1, 1], 0);
+  }
+
+  // Hanging Fishing Line & Classic Red/White Bobber Float at Tip (`z = 1.32` inside `rodFlexPivot` = `2.48` total)
+  const hangingLineMesh = addPart(rodFlexPivot, new THREE.CylinderGeometry(0.0025, 0.0025, 0.78, 6), '#e2e8f0', [0, -0.40, 1.32], [0, 0, 0], [1, 1, 1], 0);
+  const hangingBobberRedMesh = addPart(rodFlexPivot, new THREE.SphereGeometry(0.048, 10, 10), '#ef4444', [0, -0.76, 1.32], [0, 0, 0], [1, 1, 1.15], 0.008);
+  const hangingBobberWhiteMesh = addPart(rodFlexPivot, new THREE.SphereGeometry(0.046, 10, 10), '#ffffff', [0, -0.81, 1.32], [0, 0, 0], [1, 1, 1], 0.008);
+
+  const rodTipAnchor = new THREE.Object3D();
+  rodTipAnchor.position.set(0, -0.02, 1.32);
+  rodFlexPivot.add(rodTipAnchor);
+
+  rodFlexPivot.userData.dynamicParts = [
+    hangingLineMesh,
+    hangingBobberRedMesh,
+    hangingBobberWhiteMesh,
+    rodTipAnchor,
+  ];
+  g.userData.rodFlexPivot = rodFlexPivot;
+  g.userData.reelCrankMesh = reelCrankMesh;
+  g.userData.hangingLineMesh = hangingLineMesh;
+  g.userData.hangingBobberRedMesh = hangingBobberRedMesh;
+  g.userData.hangingBobberWhiteMesh = hangingBobberWhiteMesh;
+  g.userData.rodTipAnchor = rodTipAnchor;
+  g.userData.dynamicParts = [
+    reelCrankMesh,
+    rodFlexPivot,
+    hangingLineMesh,
+    hangingBobberRedMesh,
+    hangingBobberWhiteMesh,
+    rodTipAnchor,
+  ];
   return g;
 }
 
@@ -7376,6 +7451,114 @@ export function populateAr99AssaultFromGlb(
   }
   targetRifleGroup.add(ar99Root);
   targetRifleGroup.userData.hasAr99AssaultGlb = true;
+  return true;
+}
+
+/**
+ * Replaces the procedural fishing rod meshes inside `targetFishingRodGroup` with the custom
+ * rigged & skinned 3D Fishing Rod model (`/assets/fishing-rod.glb`), aligning the cork grip
+ * right above the spinning reel stem (`Object001`) to `[0, 0, 0]` (Right-Hand Curled Finger Tunnel)
+ * and the rod shaft to `+Z` (`Bone001_00` -> `Bone010_09`).
+ */
+export function populateFishingRodFromGlb(
+  targetFishingRodGroup: THREE.Group | null | undefined,
+  gltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.fishingRodGltf,
+  _isSoftwareGl = false,
+): boolean {
+  if (!targetFishingRodGroup || !gltf || !gltf.scene) {
+    return false;
+  }
+  if (targetFishingRodGroup.userData.hasFishingRodGlb) {
+    return true;
+  }
+
+  const rodGlbRoot = SkeletonUtils.clone(gltf.scene) as THREE.Group;
+  rodGlbRoot.name = 'FishingRodGlbRoot';
+
+  rodGlbRoot.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      mesh.frustumCulled = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const nextMats = mats.map((m) => {
+        if (!m) return m;
+        const std = (m as THREE.MeshStandardMaterial).clone();
+        if (std.map) {
+          std.map.colorSpace = THREE.SRGBColorSpace;
+          std.map.needsUpdate = true;
+        }
+        std.roughness = 0.46;
+        std.metalness = 0.18;
+        std.needsUpdate = true;
+        return std;
+      });
+      mesh.material = Array.isArray(mesh.material) ? nextMats : nextMats[0];
+    }
+  });
+
+  // Set Bone001_00 to its straight bind-pose orientation (from inverseBindMatrices) so the cork handle
+  // and rod blank point straight along +Z in `targetFishingRodGroup` space.
+  const bone01 = rodGlbRoot.getObjectByName('Bone001_00');
+  if (bone01) {
+    bone01.quaternion.set(0.0091006, 0.9999586, 0, 0).normalize();
+  }
+
+  const flexBoneNames = [
+    'Bone002_01',
+    'Bone003_02',
+    'Bone004_03',
+    'Bone005_04',
+    'Bone006_05',
+    'Bone007_06',
+    'Bone008_07',
+    'Bone009_08',
+    'Bone010_09',
+  ];
+  const flexBones: THREE.Object3D[] = [];
+  for (const bName of flexBoneNames) {
+    const bObj = rodGlbRoot.getObjectByName(bName);
+    if (bObj) {
+      bObj.userData.baseRotZ = bObj.rotation.z;
+      flexBones.push(bObj);
+    }
+  }
+
+  // Align the cork grip above the spinning reel stem (`Object001`) to `[0, 0, 0]` and the shaft to `+Z`
+  const ROD_GLB_SCALE = 0.36;
+  rodGlbRoot.scale.setScalar(ROD_GLB_SCALE);
+  rodGlbRoot.rotation.set(0, Math.PI / 2, 0);
+  rodGlbRoot.position.set(0, -0.265 * ROD_GLB_SCALE, 0.12 * ROD_GLB_SCALE);
+
+  // Attach only an invisible `rodTipAnchor` Object3D to `Bone010_09` (do NOT attach procedural rod parts!)
+  const tipAnchor = new THREE.Object3D();
+  tipAnchor.name = 'FishingRodGlbTipAnchor';
+  const rodFlexPivot = new THREE.Group();
+
+  const bone10 = rodGlbRoot.getObjectByName('Bone010_09');
+  if (bone10) {
+    bone10.add(tipAnchor);
+  } else {
+    rodGlbRoot.add(tipAnchor);
+  }
+
+  const reelCrankNode = rodGlbRoot.getObjectByName('rod03');
+  if (reelCrankNode) {
+    targetFishingRodGroup.userData.reelCrankMesh = reelCrankNode;
+  }
+
+  while (targetFishingRodGroup.children.length > 0) {
+    targetFishingRodGroup.remove(targetFishingRodGroup.children[0]);
+  }
+  targetFishingRodGroup.add(rodGlbRoot);
+  targetFishingRodGroup.userData.rodFlexPivot = rodFlexPivot;
+  targetFishingRodGroup.userData.flexBones = flexBones;
+  targetFishingRodGroup.userData.hangingLineMesh = undefined;
+  targetFishingRodGroup.userData.hangingBobberRedMesh = undefined;
+  targetFishingRodGroup.userData.hangingBobberWhiteMesh = undefined;
+  targetFishingRodGroup.userData.rodTipAnchor = tipAnchor;
+  targetFishingRodGroup.userData.hasFishingRodGlb = true;
   return true;
 }
 
@@ -8771,7 +8954,14 @@ export function buildProceduralNuclearLauncherTurret(
  * - `'health'`: White Medkit case with red cross emblem (dropped ONLY from destroyed white medical crates)
  */
 export function buildTeamBuddiesDropPickupMesh(
-  kind: 'coin_gold' | 'coin_silver' | 'secondary' | 'mission_item' | 'health',
+  kind:
+    | 'coin_gold'
+    | 'coin_silver'
+    | 'coin_green'
+    | 'coin_blue'
+    | 'secondary'
+    | 'mission_item'
+    | 'health',
   subId: string | undefined,
   windUniforms: BlitzWindUniforms,
   isSoftwareGl: boolean,
@@ -8806,11 +8996,36 @@ export function buildTeamBuddiesDropPickupMesh(
     g.add(m);
   };
 
-  if (kind === 'coin_gold' || kind === 'coin_silver') {
-    const isGold = kind === 'coin_gold';
-    const rimHex = isGold ? '#f59e0b' : '#94a3b8';
-    const faceHex = isGold ? '#fde047' : '#e2e8f0';
-    const emblemHex = isGold ? '#b45309' : '#475569';
+  if (
+    kind === 'coin_gold' ||
+    kind === 'coin_silver' ||
+    kind === 'coin_green' ||
+    kind === 'coin_blue'
+  ) {
+    const rimHex =
+      kind === 'coin_gold'
+        ? '#f59e0b'
+        : kind === 'coin_green'
+        ? '#16a34a'
+        : kind === 'coin_blue'
+        ? '#0284c7'
+        : '#94a3b8';
+    const faceHex =
+      kind === 'coin_gold'
+        ? '#fde047'
+        : kind === 'coin_green'
+        ? '#4ade80'
+        : kind === 'coin_blue'
+        ? '#38bdf8'
+        : '#e2e8f0';
+    const emblemHex =
+      kind === 'coin_gold'
+        ? '#b45309'
+        : kind === 'coin_green'
+        ? '#15803d'
+        : kind === 'coin_blue'
+        ? '#0369a1'
+        : '#475569';
     // Vertical standing coin disc (rotates around Y in world)
     addBoxOrCyl(
       new THREE.CylinderGeometry(0.36, 0.36, 0.10, 18),
@@ -9046,6 +9261,28 @@ const _invGlbMat = new THREE.Matrix4();
 const _postureDeltaQuat = new THREE.Quaternion();
 const _postureClampedQuat = new THREE.Quaternion();
 const _postureEulerYXZ = new THREE.Euler(0, 0, 0, 'YXZ');
+const _palmWristLocal = new THREE.Vector3();
+const _palmMidLocal = new THREE.Vector3();
+const _palmIndexLocal = new THREE.Vector3();
+const _palmIndex3Local = new THREE.Vector3();
+const _palmPinkyLocal = new THREE.Vector3();
+const _palmPinky3Local = new THREE.Vector3();
+const _palmFwdVec = new THREE.Vector3();
+const _palmAcrossVec = new THREE.Vector3();
+const _palmNormalVec = new THREE.Vector3();
+const _rodLocalForwardZ = new THREE.Vector3(0, 0, 1);
+const _rodTargetDir = new THREE.Vector3();
+const _ikJointWorldPos = new THREE.Vector3();
+const _ikPalmWorldPos = new THREE.Vector3();
+const _ikWristWorldPos = new THREE.Vector3();
+const _ikMidWorldPos = new THREE.Vector3();
+const _ikTargetWorldPos = new THREE.Vector3();
+const _ikCurDir = new THREE.Vector3();
+const _ikDesDir = new THREE.Vector3();
+const _ikWorldDeltaQuat = new THREE.Quaternion();
+const _ikIdentityQuat = new THREE.Quaternion();
+const _ikParentWorldQuat = new THREE.Quaternion();
+const _ikLocalDeltaQuat = new THREE.Quaternion();
 
 const FOOT_GROUNDING_BONE_NAMES = [
   'LeftToeBase',
@@ -9303,6 +9540,29 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       }
     }
   }
+  const fishingIdleClip = clips.get('fishing_idle.001');
+  if (fishingIdleClip) {
+    for (const track of fishingIdleClip.tracks) {
+      const dotIdx = track.name.lastIndexOf('.quaternion');
+      if (dotIdx > 0 && track.values.length >= 4) {
+        const shortName = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const isFinger =
+          (shortName.startsWith('RightHand') && shortName !== 'RightHand') ||
+          (shortName.startsWith('LeftHand') && shortName !== 'LeftHand');
+        if (isFinger && !fireUpperQuats.has(shortName)) {
+          fireUpperQuats.set(
+            shortName,
+            new THREE.Quaternion(
+              track.values[0],
+              track.values[1],
+              track.values[2],
+              track.values[3],
+            ),
+          );
+        }
+      }
+    }
+  }
 
   const template: SanitizedCharBuddiesTemplate = {
     clips,
@@ -9409,6 +9669,172 @@ function aimMixamoArmBoneWorld(
 }
 
 /**
+ * Samples the anatomical Palm Grip Center (inside the closed fist between wrist `RightHand`/`LeftHand`
+ * and middle knuckle `RightHandMiddle1`/`LeftHandMiddle1`, shifted inward along the palm normal)
+ * and the natural Grip Cylinder Axis (`Index1 - Pinky1`, pointing out of the thumb/index side of the fist)
+ * in `bodyGroup` local space.
+ */
+function sampleMixamoHandPalmLocal(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  isRightHand: boolean,
+  outPalmLocal: THREE.Vector3,
+  outGripAxisLocal?: THREE.Vector3,
+): boolean {
+  const prefix = isRightHand ? 'RightHand' : 'LeftHand';
+  const wristBone = ctrl.bones.get(prefix);
+  if (!wristBone) return false;
+
+  wristBone.getWorldPosition(_palmWristLocal);
+  bodyGroup.worldToLocal(_palmWristLocal);
+
+  const midBone = ctrl.bones.get(`${prefix}Middle1`);
+  const indexBone = ctrl.bones.get(`${prefix}Index1`);
+  const index3Bone = ctrl.bones.get(`${prefix}Index3`);
+  const pinkyBone = ctrl.bones.get(`${prefix}Pinky1`);
+  const pinky3Bone = ctrl.bones.get(`${prefix}Pinky3`);
+
+  if (indexBone && index3Bone && pinkyBone && pinky3Bone) {
+    indexBone.getWorldPosition(_palmIndexLocal);
+    bodyGroup.worldToLocal(_palmIndexLocal);
+    index3Bone.getWorldPosition(_palmIndex3Local);
+    bodyGroup.worldToLocal(_palmIndex3Local);
+    _palmIndexLocal.add(_palmIndex3Local).multiplyScalar(0.5);
+
+    pinkyBone.getWorldPosition(_palmPinkyLocal);
+    bodyGroup.worldToLocal(_palmPinkyLocal);
+    pinky3Bone.getWorldPosition(_palmPinky3Local);
+    bodyGroup.worldToLocal(_palmPinky3Local);
+    _palmPinkyLocal.add(_palmPinky3Local).multiplyScalar(0.5);
+
+    // Exact geometric center of the hollow grip cylinder inside the 4 curled fingers
+    outPalmLocal.lerpVectors(_palmIndexLocal, _palmPinkyLocal, 0.5);
+
+    // Exact cylinder axis from pinky ring center through index ring center
+    _palmAcrossVec.subVectors(_palmIndexLocal, _palmPinkyLocal);
+    if (_palmAcrossVec.lengthSq() > 1e-6) {
+      _palmAcrossVec.normalize();
+      if (outGripAxisLocal) {
+        outGripAxisLocal.copy(_palmAcrossVec);
+      }
+    } else if (outGripAxisLocal) {
+      outGripAxisLocal.set(0, 0.72, 0.69);
+    }
+    return true;
+  }
+
+  if (midBone) {
+    midBone.getWorldPosition(_palmMidLocal);
+    bodyGroup.worldToLocal(_palmMidLocal);
+    outPalmLocal.lerpVectors(_palmWristLocal, _palmMidLocal, 0.78);
+  } else {
+    outPalmLocal.copy(_palmWristLocal);
+  }
+
+  if (indexBone && pinkyBone && midBone) {
+    indexBone.getWorldPosition(_palmIndexLocal);
+    bodyGroup.worldToLocal(_palmIndexLocal);
+    pinkyBone.getWorldPosition(_palmPinkyLocal);
+    bodyGroup.worldToLocal(_palmPinkyLocal);
+
+    _palmFwdVec.subVectors(_palmMidLocal, _palmWristLocal);
+    _palmAcrossVec.subVectors(_palmIndexLocal, _palmPinkyLocal);
+    if (_palmAcrossVec.lengthSq() > 1e-6) {
+      _palmAcrossVec.normalize();
+      if (outGripAxisLocal) {
+        outGripAxisLocal.copy(_palmAcrossVec);
+      }
+    } else if (outGripAxisLocal) {
+      outGripAxisLocal.set(0, 0.72, 0.69);
+    }
+
+    if (_palmFwdVec.lengthSq() > 1e-6) {
+      _palmFwdVec.normalize();
+      if (isRightHand) {
+        _palmNormalVec.crossVectors(_palmAcrossVec, _palmFwdVec);
+      } else {
+        _palmNormalVec.crossVectors(_palmFwdVec, _palmAcrossVec);
+      }
+      if (_palmNormalVec.lengthSq() > 1e-6) {
+        _palmNormalVec.normalize();
+        outPalmLocal.addScaledVector(_palmNormalVec, 0.034);
+      }
+    }
+  } else if (outGripAxisLocal) {
+    outGripAxisLocal.set(0, 0.72, 0.69);
+  }
+  return true;
+}
+
+/**
+ * Zero-allocation 2-iteration Cyclic Coordinate Descent (CCD) Two-Bone Arm IK solver that swings
+ * `ForeArm` (elbow) and `Arm` (shoulder) from their current animated pose so the hand's Palm Grip Center
+ * lands directly on `(targetLocalX, targetLocalY, targetLocalZ)` in `bodyGroup` local space while
+ * preserving the animation's natural elbow bend plane.
+ */
+function solveTwoBoneArmPalmIkLocal(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  isRightHand: boolean,
+  targetLocalX: number,
+  targetLocalY: number,
+  targetLocalZ: number,
+  blendWeight = 1.0,
+) {
+  const armBone = ctrl.bones.get(isRightHand ? 'RightArm' : 'LeftArm');
+  const foreArmBone = ctrl.bones.get(isRightHand ? 'RightForeArm' : 'LeftForeArm');
+  const wristBone = ctrl.bones.get(isRightHand ? 'RightHand' : 'LeftHand');
+  const midBone = ctrl.bones.get(isRightHand ? 'RightHandMiddle1' : 'LeftHandMiddle1');
+  if (!armBone || !foreArmBone || !wristBone || !armBone.parent || !foreArmBone.parent) {
+    return;
+  }
+
+  _ikTargetWorldPos.set(targetLocalX, targetLocalY, targetLocalZ);
+  bodyGroup.localToWorld(_ikTargetWorldPos);
+
+  const samplePalmWorld = () => {
+    wristBone.getWorldPosition(_ikWristWorldPos);
+    if (midBone) {
+      midBone.getWorldPosition(_ikMidWorldPos);
+      _ikPalmWorldPos.lerpVectors(_ikWristWorldPos, _ikMidWorldPos, 0.78);
+    } else {
+      _ikPalmWorldPos.copy(_ikWristWorldPos);
+    }
+  };
+
+  const swingBoneTowardTarget = (bone: THREE.Bone, stepWeight: number) => {
+    if (!bone.parent) return;
+    bone.parent.updateWorldMatrix(true, false);
+    bone.updateWorldMatrix(false, true);
+    bone.getWorldPosition(_ikJointWorldPos);
+    samplePalmWorld();
+    _ikCurDir.subVectors(_ikPalmWorldPos, _ikJointWorldPos);
+    _ikDesDir.subVectors(_ikTargetWorldPos, _ikJointWorldPos);
+    if (_ikCurDir.lengthSq() < 1e-6 || _ikDesDir.lengthSq() < 1e-6) return;
+    _ikCurDir.normalize();
+    _ikDesDir.normalize();
+    _ikWorldDeltaQuat.setFromUnitVectors(_ikCurDir, _ikDesDir);
+    if (stepWeight < 0.999) {
+      _ikWorldDeltaQuat.slerp(_ikIdentityQuat, 1 - stepWeight);
+    }
+    bone.parent.getWorldQuaternion(_ikParentWorldQuat);
+    _ikLocalDeltaQuat
+      .copy(_ikParentWorldQuat)
+      .invert()
+      .multiply(_ikWorldDeltaQuat)
+      .multiply(_ikParentWorldQuat);
+    bone.quaternion.premultiply(_ikLocalDeltaQuat);
+    bone.updateWorldMatrix(false, true);
+  };
+
+  const w = Math.max(0, Math.min(1, blendWeight));
+  swingBoneTowardTarget(foreArmBone, 0.55 * w);
+  swingBoneTowardTarget(armBone, 0.90 * w);
+  swingBoneTowardTarget(foreArmBone, 0.65 * w);
+  swingBoneTowardTarget(armBone, 1.0 * w);
+}
+
+/**
  * Upgrades a RobloxBuddyRig with the custom humanoid `.glb` model (`/assets/charbuddies.glb` or
  * `/assets/mancharacterbuddies.glb`), wiring all 72 baked Mixamo skeletal animations while keeping
  * the 3D weapon rig & overhead crate.
@@ -9417,9 +9843,13 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   rig: RobloxBuddyRig,
   gltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.charBuddiesGltf,
   ar99AssaultGltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.ar99AssaultGltf,
+  fishingRodGltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.fishingRodGltf,
 ): void {
   if (ar99AssaultGltf && rig.rifleGroup && !rig.rifleGroup.userData.hasAr99AssaultGlb) {
     populateAr99AssaultFromGlb(rig.rifleGroup, ar99AssaultGltf, Boolean(rig.isSoftwareGlRef));
+  }
+  if (fishingRodGltf && rig.fishingRodGroup && !rig.fishingRodGroup.userData.hasFishingRodGlb) {
+    populateFishingRodFromGlb(rig.fishingRodGroup, fishingRodGltf, Boolean(rig.isSoftwareGlRef));
   }
   // Fast early return when this rig is already upgraded with the same character GLTF
   if (rig.customGlbController && rig.customGlbController.sourceGltf === gltf) {
@@ -9587,6 +10017,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     standingSoleOffsetY,
     rightHandLocalPos: new THREE.Vector3(-0.15, 1.24, 0.22),
     leftHandLocalPos: new THREE.Vector3(-0.11, 1.28, 0.49),
+    rightHandGripAxisLocal: new THREE.Vector3(0, 0.72, 0.69),
     hasHandBonePositions: false,
     prevJumpOffset: 0,
     landRecoveryTimer: 0,
@@ -10123,46 +10554,64 @@ function stepCharBuddiesGlbRigController(
       aimMixamoArmBoneWorld(ctrl, 'LeftArm', 'LeftForeArm', -0.18, 1.0, 0.14);
       aimMixamoArmBoneWorld(ctrl, 'RightArm', 'RightForeArm', 0.18, 1.0, 0.14);
     }
-  } else if (punchTimer <= 0 && weaponId !== 'unarmed' && weaponId !== 'fishing_rod') {
-    // Fallback upper-body layering when running if `run_rifle.001` (`Run Forward.fbx`) has not loaded yet
-    if (isMoving && !hasRunRifleClip) {
-      if (ctrl.fireFrameCount > 0 && ctrl.fireUpperFrames.size > 0) {
-        const cycleProgress = ((nowMs * 0.001) % ctrl.fireDuration) / ctrl.fireDuration;
-        const frameIdx =
-          Math.min(ctrl.fireFrameCount - 1, Math.max(0, Math.floor(cycleProgress * ctrl.fireFrameCount))) * 4;
-        for (const [shortName, frameBuf] of ctrl.fireUpperFrames.entries()) {
-          const bone = ctrl.bones.get(shortName);
-          if (bone) {
-            bone.quaternion.set(
-              frameBuf[frameIdx],
-              frameBuf[frameIdx + 1],
-              frameBuf[frameIdx + 2],
-              frameBuf[frameIdx + 3],
-            );
-          }
-        }
-      } else {
-        for (const [shortName, fireQuat] of ctrl.fireUpperQuats.entries()) {
-          const bone = ctrl.bones.get(shortName);
-          if (bone) {
-            bone.quaternion.copy(fireQuat);
+  } else if (punchTimer <= 0 && weaponId !== 'unarmed') {
+    // 3A. Curl finger bones into a closed fist grip around the weapon handle when the active clip
+    // does not already contain native Mixamo finger tracks (`fishing_idle.001` & `fishing_cast.001` have 30 native finger tracks)
+    if (targetClip !== 'fishing_idle.001' && targetClip !== 'fishing_cast.001') {
+      for (const [shortName, fireQuat] of ctrl.fireUpperQuats.entries()) {
+        const isRightFinger = shortName.startsWith('RightHand') && shortName !== 'RightHand';
+        const isLeftFinger =
+          weaponId !== 'bazooka' && shortName.startsWith('LeftHand') && shortName !== 'LeftHand';
+        if (isRightFinger || isLeftFinger) {
+          const fingerBone = ctrl.bones.get(shortName);
+          if (fingerBone) {
+            fingerBone.quaternion.copy(fireQuat);
           }
         }
       }
     }
-    if (weaponId === 'bazooka') {
-      // Shoulder-mounted rocket launcher: right arm grips forward handle, left arm balances at side
-      aimMixamoArmBoneWorld(ctrl, 'RightArm', 'RightForeArm', -0.12, 0.28, 0.94);
-      aimMixamoArmBoneWorld(ctrl, 'LeftArm', 'LeftForeArm', 0.42, -0.55, 0.35);
-    }
-    if (recoilAmount > 0.01) {
-      const r = Math.min(1, recoilAmount);
-      _recoilEuler.set(-r * 0.22, 0, 0);
-      _recoilDeltaQuat.setFromEuler(_recoilEuler);
-      const rArm = ctrl.bones.get('RightArm');
-      const lArm = ctrl.bones.get('LeftArm');
-      if (rArm) rArm.quaternion.multiply(_recoilDeltaQuat);
-      if (lArm && weaponId !== 'bazooka') lArm.quaternion.multiply(_recoilDeltaQuat);
+
+    if (weaponId !== 'fishing_rod') {
+      // Fallback upper-body layering when running if `run_rifle.001` (`Run Forward.fbx`) has not loaded yet
+      if (isMoving && !hasRunRifleClip) {
+        if (ctrl.fireFrameCount > 0 && ctrl.fireUpperFrames.size > 0) {
+          const cycleProgress = ((nowMs * 0.001) % ctrl.fireDuration) / ctrl.fireDuration;
+          const frameIdx =
+            Math.min(ctrl.fireFrameCount - 1, Math.max(0, Math.floor(cycleProgress * ctrl.fireFrameCount))) * 4;
+          for (const [shortName, frameBuf] of ctrl.fireUpperFrames.entries()) {
+            const bone = ctrl.bones.get(shortName);
+            if (bone) {
+              bone.quaternion.set(
+                frameBuf[frameIdx],
+                frameBuf[frameIdx + 1],
+                frameBuf[frameIdx + 2],
+                frameBuf[frameIdx + 3],
+              );
+            }
+          }
+        } else {
+          for (const [shortName, fireQuat] of ctrl.fireUpperQuats.entries()) {
+            const bone = ctrl.bones.get(shortName);
+            if (bone) {
+              bone.quaternion.copy(fireQuat);
+            }
+          }
+        }
+      }
+      if (weaponId === 'bazooka') {
+        // Shoulder-mounted rocket launcher: right arm grips forward handle, left arm balances at side
+        aimMixamoArmBoneWorld(ctrl, 'RightArm', 'RightForeArm', -0.12, 0.28, 0.94);
+        aimMixamoArmBoneWorld(ctrl, 'LeftArm', 'LeftForeArm', 0.42, -0.55, 0.35);
+      }
+      if (recoilAmount > 0.01) {
+        const r = Math.min(1, recoilAmount);
+        _recoilEuler.set(-r * 0.22, 0, 0);
+        _recoilDeltaQuat.setFromEuler(_recoilEuler);
+        const rArm = ctrl.bones.get('RightArm');
+        const lArm = ctrl.bones.get('LeftArm');
+        if (rArm) rArm.quaternion.multiply(_recoilDeltaQuat);
+        if (lArm && weaponId !== 'bazooka') lArm.quaternion.multiply(_recoilDeltaQuat);
+      }
     }
   }
 
@@ -10183,7 +10632,7 @@ function stepCharBuddiesGlbRigController(
   }
 
   // 5. Zero-allocation Dynamic Foot Grounding (lowest stance foot always touches local Y = 0 on the ground ring)
-  //    + live RightHand & LeftHand position sampling in a single world-matrix pass
+  //    + live Right/Left Palm Grip Center sampling & Two-Bone Arm IK alignment
   const bodyGroup = rig.bodyGroupRef;
   ctrl.glbRoot.position.y = ctrl.baseRootY;
   let footGroundShiftY = 0;
@@ -10196,19 +10645,24 @@ function stepCharBuddiesGlbRigController(
       if (Number.isFinite(minFootY)) {
         footGroundShiftY = minFootY - ctrl.standingSoleOffsetY;
         ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
+        ctrl.glbRoot.updateWorldMatrix(true, true);
       }
     }
     if (needHandSampling) {
-      const rHand = ctrl.bones.get('RightHand');
-      const lHand = ctrl.bones.get('LeftHand');
-      if (rHand && lHand) {
-        rHand.getWorldPosition(ctrl.rightHandLocalPos);
-        bodyGroup.worldToLocal(ctrl.rightHandLocalPos);
-        ctrl.rightHandLocalPos.y -= footGroundShiftY;
-        lHand.getWorldPosition(ctrl.leftHandLocalPos);
-        bodyGroup.worldToLocal(ctrl.leftHandLocalPos);
-        ctrl.leftHandLocalPos.y -= footGroundShiftY;
-        ctrl.hasHandBonePositions = true;
+      const hasRight = sampleMixamoHandPalmLocal(
+        ctrl,
+        bodyGroup,
+        true,
+        ctrl.rightHandLocalPos,
+        ctrl.rightHandGripAxisLocal,
+      );
+      const hasLeft = sampleMixamoHandPalmLocal(
+        ctrl,
+        bodyGroup,
+        false,
+        ctrl.leftHandLocalPos,
+      );
+      if (hasRight && hasLeft) {
         if (carryingCrate) {
           for (let ci = 0; ci < bodyGroup.children.length; ci++) {
             const ch = bodyGroup.children[ci];
@@ -10221,7 +10675,54 @@ function stepCharBuddiesGlbRigController(
               break;
             }
           }
+        } else if (weaponId === 'fishing_rod') {
+          // 5A. PURE MIXAMO FISHING ANIMATION (`fishing_idle.001` & `fishing_cast.001` WITH 30 NATIVE FINGER TRACKS):
+          // Do not force any arm/elbow IK — let the Mixamo animation drive shoulders, elbows, wrists, and all 30 finger
+          // joints natively while `sampleMixamoHandPalmLocal` reads the exact tunnel center and axis inside the curled right hand!
+        } else if (weaponId === 'pistol') {
+          // 5B. TWO-HANDED TACTICAL PISTOL CUP GRIP:
+          // Bring Left Palm directly against/underneath Right Palm on the pistol grip
+          solveTwoBoneArmPalmIkLocal(
+            ctrl,
+            bodyGroup,
+            false,
+            ctrl.rightHandLocalPos.x + 0.032,
+            ctrl.rightHandLocalPos.y - 0.018,
+            ctrl.rightHandLocalPos.z + 0.015,
+            0.92,
+          );
+          sampleMixamoHandPalmLocal(ctrl, bodyGroup, false, ctrl.leftHandLocalPos);
+        } else if (weaponId === 'rifle' || weaponId === 'laser' || weaponId === 'gatling') {
+          // 5C. TWO-HANDED RIFLE / LASER / GATLING BARREL & FOREGRIP LOCK:
+          // Compute barrel pitch & yaw from Right Palm -> Left Palm during locomotion/idle,
+          // or lock straight forward along +Z when aiming/firing (`laser` or `firingAnimTimer > 0`),
+          // and snap Left Palm onto the weapon's exact front handguard!
+          const isAimLocked =
+            weaponId === 'laser' || ctrl.firingAnimTimer > 0.01 || ctrl.combatAimTimer > 0.01;
+          const dx = ctrl.leftHandLocalPos.x - ctrl.rightHandLocalPos.x;
+          const dy = ctrl.leftHandLocalPos.y - ctrl.rightHandLocalPos.y - 0.08;
+          const dz = Math.max(0.18, ctrl.leftHandLocalPos.z - ctrl.rightHandLocalPos.z);
+          const barrelYaw = isAimLocked
+            ? 0.0
+            : THREE.MathUtils.clamp(Math.atan2(dx, dz), -0.05, 0.36);
+          const barrelPitch = isAimLocked
+            ? 0.0
+            : THREE.MathUtils.clamp(Math.atan2(dy, Math.hypot(dx, dz)), -0.24, 0.18);
+          const cosP = Math.cos(barrelPitch);
+          ctrl.rightHandGripAxisLocal
+            .set(Math.sin(barrelYaw) * cosP, Math.sin(barrelPitch), Math.cos(barrelYaw) * cosP)
+            .normalize();
+
+          const foregripDist = weaponId === 'laser' ? 0.42 : 0.45;
+          const foregripRiseY = weaponId === 'gatling' ? 0.10 : 0.08;
+          const fgX = ctrl.rightHandLocalPos.x + ctrl.rightHandGripAxisLocal.x * foregripDist;
+          const fgY =
+            ctrl.rightHandLocalPos.y + ctrl.rightHandGripAxisLocal.y * foregripDist + foregripRiseY;
+          const fgZ = ctrl.rightHandLocalPos.z + ctrl.rightHandGripAxisLocal.z * foregripDist;
+          solveTwoBoneArmPalmIkLocal(ctrl, bodyGroup, false, fgX, fgY, fgZ, 0.94);
+          sampleMixamoHandPalmLocal(ctrl, bodyGroup, false, ctrl.leftHandLocalPos);
         }
+        ctrl.hasHandBonePositions = true;
       } else {
         ctrl.hasHandBonePositions = false;
       }
@@ -10390,20 +10891,28 @@ export function updateCharacterWeaponStance(
   const hasHandBones = Boolean(glbCtrl?.hasHandBonePositions);
   const handMidX =
     hasHandBones && glbCtrl ? (glbCtrl.rightHandLocalPos.x + glbCtrl.leftHandLocalPos.x) * 0.5 : -0.12;
-  const handMidY =
-    hasHandBones && glbCtrl ? (glbCtrl.rightHandLocalPos.y + glbCtrl.leftHandLocalPos.y) * 0.5 + 0.05 : 1.34;
-  const handMidZ =
-    hasHandBones && glbCtrl ? (glbCtrl.rightHandLocalPos.z + glbCtrl.leftHandLocalPos.z) * 0.5 : 0.38;
 
   if (weaponId === 'fishing_rod') {
     // 0C. 3D JORAN PANCING / FISHING ROD STANCE (`fishing_idle.001` & `fishing_cast.001`)
+    // Origin [0, 0, 0] of `fishingRodGroup` sits directly inside the Right-Hand Curled Finger Tunnel (`rightHandLocalPos`),
+    // and its +Z shaft axis aligns 100% with the animated finger cylinder axis (`rightHandGripAxisLocal`).
     const castPitch = r * 0.55;
     rig.weaponRigGroup.position.set(
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x + 0.02 : -0.10,
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.02 : 1.34 + walkBob,
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z + 0.06 : 0.36,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : -0.06,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y : 1.34 + walkBob,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z : 0.40,
     );
-    rig.weaponRigGroup.rotation.set(-0.32 - castPitch, 0, 0);
+    if (hasHandBones && glbCtrl) {
+      _rodTargetDir.copy(glbCtrl.rightHandGripAxisLocal);
+      if (_rodTargetDir.lengthSq() > 1e-6) {
+        _rodTargetDir.normalize();
+      } else {
+        _rodTargetDir.set(0, 0.72, 0.69);
+      }
+      rig.weaponRigGroup.quaternion.setFromUnitVectors(_rodLocalForwardZ, _rodTargetDir);
+    } else {
+      rig.weaponRigGroup.rotation.set(-0.82 - castPitch, 0, 0);
+    }
 
     charRightArm.position.set(-0.52, 1.36, 0.14);
     charRightArm.rotation.set(-1.28 - castPitch * 0.85, 0.44, 0);
@@ -10415,12 +10924,14 @@ export function updateCharacterWeaponStance(
     rig.bazookaBackblastGroup.visible = false;
   } else if (weaponId === 'pistol') {
     // 1. TWO-HANDED PISTOL AIMING STANCE (Reference Image 1):
-    // Both arms raised forward & angled INWARD so both hands clasp the pistol grip in front of upper chest
+    // Pistol grip center inside `pistolGroup` (scaled 0.88) is at `[0, -0.105, -0.123]`.
+    // Offset `weaponRigGroup` from `rightHandLocalPos` (Right Palm Center) by `(0, +0.105, +0.123)`
+    // so the tactical olive grip sits 100% inside the character's right & left palms!
     const kickZ = r * 0.15;
     const kickPitch = r * 0.30;
     rig.weaponRigGroup.position.set(
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x + 0.03 : hasCustomGlb ? -0.10 : -0.04,
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.04 : (hasCustomGlb ? 1.38 : 1.34) + walkBob,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x + 0.01 : hasCustomGlb ? -0.10 : -0.04,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.10 : (hasCustomGlb ? 1.38 : 1.34) + walkBob,
       (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z + 0.12 : hasCustomGlb ? 0.48 : 0.68) - kickZ,
     );
     rig.weaponRigGroup.rotation.set(-kickPitch, 0, 0);
@@ -10435,14 +10946,14 @@ export function updateCharacterWeaponStance(
     rig.bazookaBackblastGroup.visible = false;
   } else if (weaponId === 'laser') {
     // 2A. LG-88 CONTINUOUS RAYCAST LASER RIFLE STANCE:
-    // Barrel points straight along character's forward aim (0 yaw skew) with stabilized low-recoil emitter lock
-    // so the continuous raycast laser beam stays 100% glued to the muzzle and sweeps in lockstep with the barrel!
+    // Rear thumbhole grip center in `laserGroup` (scaled 0.84) is at `[0, -0.075, -0.20]`.
+    // Anchor rear grip directly in Right Palm (`rightHandLocalPos`) while Left Palm grips the front battery (`+0.42m` ahead).
     const kickZ = r * 0.06;
     const kickPitch = r * 0.04;
     rig.weaponRigGroup.position.set(
-      hasHandBones ? handMidX : -0.12,
-      hasHandBones ? handMidY : (hasCustomGlb ? 1.34 : 1.26) + walkBob,
-      (hasHandBones ? handMidZ : hasCustomGlb ? 0.38 : 0.50) - kickZ,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : -0.12,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.075 : (hasCustomGlb ? 1.34 : 1.26) + walkBob,
+      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z + 0.20 : hasCustomGlb ? 0.38 : 0.50) - kickZ,
     );
     rig.weaponRigGroup.rotation.set(-kickPitch, 0, 0);
 
@@ -10456,14 +10967,33 @@ export function updateCharacterWeaponStance(
     rig.bazookaBackblastGroup.visible = false;
   } else if (weaponId === 'rifle' || weaponId === 'gatling') {
     // 2B. ASSAULT RIFLE / TITAN-6 ROTARY GATLING STANCE:
+    // Rear pistol grip in `rifleGroup` (scaled 0.92) / `gatlingGroup` (scaled 0.84) is at `[0, -0.14, -0.16]`.
+    // Anchor the rear grip in Right Palm (`rightHandLocalPos`) and orient barrel along `rightHandGripAxisLocal`
+    // toward Left Palm (`+0.45m` ahead on the front handguard) so both hands grip the weapon naturally!
     const kickZ = r * 0.16;
     const kickPitch = r * 0.24;
-    rig.weaponRigGroup.position.set(
-      hasHandBones ? handMidX : -0.12,
-      hasHandBones ? handMidY : (hasCustomGlb ? 1.34 : 1.26) + walkBob,
-      (hasHandBones ? handMidZ : hasCustomGlb ? 0.38 : 0.50) - kickZ,
-    );
-    rig.weaponRigGroup.rotation.set(-kickPitch, hasCustomGlb ? 0.14 : 0.22, 0);
+    if (hasHandBones && glbCtrl) {
+      const ax = glbCtrl.rightHandGripAxisLocal.x;
+      const ay = glbCtrl.rightHandGripAxisLocal.y;
+      const az = Math.max(0.25, glbCtrl.rightHandGripAxisLocal.z);
+      const barrelYaw = Math.atan2(ax, az);
+      const barrelPitch = -Math.atan2(ay, Math.hypot(ax, az)) - kickPitch;
+      const rearGripZ = weaponId === 'gatling' ? 0.18 : 0.15;
+      const rearGripY = weaponId === 'gatling' ? 0.13 : 0.14;
+      rig.weaponRigGroup.position.set(
+        glbCtrl.rightHandLocalPos.x + Math.sin(barrelYaw) * rearGripZ,
+        glbCtrl.rightHandLocalPos.y + rearGripY,
+        glbCtrl.rightHandLocalPos.z + Math.cos(barrelYaw) * rearGripZ - kickZ,
+      );
+      rig.weaponRigGroup.rotation.set(barrelPitch, barrelYaw, 0, 'YXZ');
+    } else {
+      rig.weaponRigGroup.position.set(
+        handMidX,
+        (hasCustomGlb ? 1.34 : 1.26) + walkBob,
+        (hasCustomGlb ? 0.38 : 0.50) - kickZ,
+      );
+      rig.weaponRigGroup.rotation.set(-kickPitch, hasCustomGlb ? 0.14 : 0.22, 0);
+    }
 
     charRightArm.position.set(-0.56, 1.36, 0.10);
     charRightArm.rotation.set(-1.18 - kickPitch * 0.75, 0.46, 0);
@@ -10475,14 +11005,15 @@ export function updateCharacterWeaponStance(
     rig.bazookaBackblastGroup.visible = false;
   } else {
     // 3. SHOULDER-MOUNTED ROCKET LAUNCHER / BAZOOKA STANCE (Reference Image 3):
-    // Tube rests atop right shoulder (x = -0.48, y = 1.62), right arm raised holding front grip,
-    // left arm slightly open to the side for balance
+    // Front grip inside `bazookaGroup` (scaled 0.86) is at `[0, -0.20, 0.24]`.
+    // Offset `weaponRigGroup` from `rightHandLocalPos` (Right Palm Center) by `(0, +0.20, -0.24)`
+    // so the front grip sits inside the right palm while the launch tube rests atop the right shoulder!
     const kickZ = r * 0.24;
     const kickPitch = r * 0.30;
     rig.weaponRigGroup.position.set(
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x - 0.12 : hasCustomGlb ? -0.44 : -0.46,
-      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.16 : hasCustomGlb ? 2.12 : 1.62) + walkBob,
-      0.14 - kickZ,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : hasCustomGlb ? -0.44 : -0.46,
+      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.20 : hasCustomGlb ? 2.12 : 1.62) + walkBob,
+      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z - 0.24 : 0.14) - kickZ,
     );
     rig.weaponRigGroup.rotation.set(-kickPitch, 0, 0);
 
@@ -10503,6 +11034,27 @@ export function updateCharacterWeaponStance(
       rig.bazookaBackblastGroup.scale.setScalar(blastScale);
       rig.bazookaBackblastGroup.rotation.z -= 0.45;
     }
+  }
+
+  // Apply optional live Inspector 3D Offset Tweak (from InGameElementAndBonePicker)
+  const tweak = rig.weaponRigGroup.userData.inspectorTweak as
+    | {
+        dx?: number;
+        dy?: number;
+        dz?: number;
+        dpitchDeg?: number;
+        dyawDeg?: number;
+        drollDeg?: number;
+      }
+    | undefined;
+  if (tweak) {
+    const deg2rad = Math.PI / 180;
+    rig.weaponRigGroup.position.x += tweak.dx ?? 0;
+    rig.weaponRigGroup.position.y += tweak.dy ?? 0;
+    rig.weaponRigGroup.position.z += tweak.dz ?? 0;
+    rig.weaponRigGroup.rotation.x += (tweak.dpitchDeg ?? 0) * deg2rad;
+    rig.weaponRigGroup.rotation.y += (tweak.dyawDeg ?? 0) * deg2rad;
+    rig.weaponRigGroup.rotation.z += (tweak.drollDeg ?? 0) * deg2rad;
   }
 }
 
@@ -10578,6 +11130,7 @@ export function buildProceduralRobloxBuddyAvatar(
   // TACTICAL WEAPONS MOUNTED IN WEAPON RIG GROUP
   // ==========================================================================
   const weaponRigGroup = new THREE.Group();
+  weaponRigGroup.name = 'weaponRigGroup';
   weaponRigGroup.position.set(-0.14, 2.24, 0.46);
   bodyGroup.add(weaponRigGroup);
 
@@ -10602,11 +11155,13 @@ export function buildProceduralRobloxBuddyAvatar(
     weaponRigGroup.visible = false;
   } else {
     pistolGroup = buildProceduralBlitzPistol(addPart);
+    pistolGroup.name = 'pistolGroup';
     pistolGroup.scale.setScalar(0.88);
     bakeStaticGroupMeshes(pistolGroup, { minShadowCasterSpan: 0.35 });
     weaponRigGroup.add(pistolGroup);
 
     rifleGroup = buildProceduralBlitzAssaultRifle(addPart);
+    rifleGroup.name = 'rifleGroup';
     rifleGroup.scale.setScalar(0.92);
     if (!populateAr99AssaultFromGlb(rifleGroup, cachedLoadedBlitzAssets?.ar99AssaultGltf, isSoftwareGl)) {
       bakeStaticGroupMeshes(rifleGroup, { minShadowCasterSpan: 0.35 });
@@ -10614,6 +11169,7 @@ export function buildProceduralRobloxBuddyAvatar(
     weaponRigGroup.add(rifleGroup);
 
     laserGroup = buildProceduralLg88LaserRifle(addPart);
+    laserGroup.name = 'laserGroup';
     laserGroup.scale.setScalar(0.84);
     laserGroup.visible = false;
     bakeStaticGroupMeshes(laserGroup, {
@@ -10625,15 +11181,17 @@ export function buildProceduralRobloxBuddyAvatar(
     weaponRigGroup.add(laserGroup);
 
     gatlingGroup = buildProceduralTitan6GatlingGun(addPart);
+    gatlingGroup.name = 'gatlingGroup';
     gatlingGroup.scale.setScalar(0.84);
     gatlingGroup.visible = false;
     bakeStaticGroupMeshes(gatlingGroup, { minShadowCasterSpan: 0.35 });
     weaponRigGroup.add(gatlingGroup);
 
-    fishingRodGroup = buildProceduralFishingRod(addPart);
+    fishingRodGroup = new THREE.Group();
+    fishingRodGroup.name = 'fishingRodGroup';
     fishingRodGroup.scale.setScalar(0.95);
     fishingRodGroup.visible = false;
-    bakeStaticGroupMeshes(fishingRodGroup, { minShadowCasterSpan: 0.35 });
+    populateFishingRodFromGlb(fishingRodGroup, cachedLoadedBlitzAssets?.fishingRodGltf, isSoftwareGl);
     weaponRigGroup.add(fishingRodGroup);
 
     const bz = buildProceduralBlitzRocketLauncher(addPart);
@@ -10729,7 +11287,7 @@ export function createTolanCurvedPlanetEnvironment(
   windUniforms.uDirShadowMatrix = uDirShadowMatrix;
   windUniforms.uHasDirShadow = uHasDirShadow;
 
-  const segs = isSoftwareGl ? 136 : 240;
+  const segs = isSoftwareGl ? 128 : 168;
   const groundGeo = new THREE.PlaneGeometry(360, 360, segs, segs);
   groundGeo.rotateX(-Math.PI / 2);
 
@@ -10764,10 +11322,14 @@ export function createTolanCurvedPlanetEnvironment(
         worldPos.y = rawElev;
         vFlatWorldPos = worldPos.xyz;
 
-        float eps = 0.85;
-        float hX = getRawGroundElevation(worldPos.xz + vec2(eps, 0.0));
-        float hZ = getRawGroundElevation(worldPos.xz + vec2(0.0, eps));
-        vNormalW = normalize(vec3(-(hX - rawElev) / eps, 1.0, -(hZ - rawElev) / eps));
+        if (abs(rawElev) > 0.002) {
+          float eps = 0.85;
+          float hX = getRawGroundElevation(worldPos.xz + vec2(eps, 0.0));
+          float hZ = getRawGroundElevation(worldPos.xz + vec2(0.0, eps));
+          vNormalW = normalize(vec3(-(hX - rawElev) / eps, 1.0, -(hZ - rawElev) / eps));
+        } else {
+          vNormalW = vec3(0.0, 1.0, 0.0);
+        }
 
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
@@ -10798,6 +11360,9 @@ export function createTolanCurvedPlanetEnvironment(
       }
 
       float evalSegmentCenterDash(vec2 p, vec2 a, vec2 b, float trimStart, float trimEnd) {
+        vec2 minAB = min(a, b) - vec2(0.30);
+        vec2 maxAB = max(a, b) + vec2(0.30);
+        if (p.x < minAB.x || p.x > maxAB.x || p.y < minAB.y || p.y > maxAB.y) return 0.0;
         vec2 pa = p - a;
         vec2 ba = b - a;
         float len = length(ba);
@@ -10837,40 +11402,43 @@ export function createTolanCurvedPlanetEnvironment(
         // 2. Single Dashed Center Line for ALL Other Roads in the Arena:
         float singleDash = 0.0;
         if (abs(dTramSigned) > 3.4) {
-          // A. Central Warzone Mirrored S-Curve Roads (s1..s14 with true Euclidean arc-length dashes)
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-70.0, 15.0), vec2(-52.0, 15.0), 3.8, 0.3));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-52.0, 15.0), vec2(-41.0, 26.0), 0.3, 0.3));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-41.0, 26.0), vec2(-25.0, 26.0), 0.3, 0.6));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-13.0, 14.0), 0.6, 0.6));
-          singleDash = max(singleDash, evalSegmentCenterDash(p, vec2(-13.0, -14.0), vec2(-13.0, 14.0), 0.6, 0.6));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-13.0, 14.0), vec2(9.0, 14.0), 0.8, 0.3));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(9.0, 14.0), vec2(19.0, 24.0), 0.3, 0.6));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 24.0), vec2(42.0, 24.0), 0.8, 0.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-18.0, 33.0), 0.8, 0.3));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-18.0, 33.0), vec2(-18.0, 52.0), 0.3, 3.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 24.0), vec2(19.0, 52.0), 0.8, 3.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 24.0), vec2(52.0, 15.0), 0.8, 0.3));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(52.0, 15.0), vec2(70.0, 15.0), 0.3, 3.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 24.0), vec2(42.0, 52.0), 0.8, 3.8));
+          if (mp.y <= 52.5) {
+            // A. Central Warzone Mirrored S-Curve Roads (s1..s14 with true Euclidean arc-length dashes)
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-70.0, 15.0), vec2(-52.0, 15.0), 3.8, 0.3));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-52.0, 15.0), vec2(-41.0, 26.0), 0.3, 0.3));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-41.0, 26.0), vec2(-25.0, 26.0), 0.3, 0.6));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-13.0, 14.0), 0.6, 0.6));
+            singleDash = max(singleDash, evalSegmentCenterDash(p, vec2(-13.0, -14.0), vec2(-13.0, 14.0), 0.6, 0.6));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-13.0, 14.0), vec2(9.0, 14.0), 0.8, 0.3));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(9.0, 14.0), vec2(19.0, 24.0), 0.3, 0.6));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 24.0), vec2(42.0, 24.0), 0.8, 0.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-18.0, 33.0), 0.8, 0.3));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-18.0, 33.0), vec2(-18.0, 52.0), 0.3, 3.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 24.0), vec2(19.0, 52.0), 0.8, 3.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 24.0), vec2(52.0, 15.0), 0.8, 0.3));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(52.0, 15.0), vec2(70.0, 15.0), 0.3, 3.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 24.0), vec2(42.0, 52.0), 0.8, 3.8));
+          }
+          if (mp.y >= 51.5) {
+            // B. Base Complex Dividing Roads & Outer Base Ring Roads (North & South, az in [52..108])
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 52.0), vec2(-60.0, 108.0), 3.8, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 52.0), vec2(-30.0, 108.0), 3.8, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 52.0), vec2(0.0, 108.0), 3.8, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 52.0), vec2(30.0, 108.0), 3.8, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 52.0), vec2(60.0, 108.0), 3.8, 2.4));
 
-          // B. Base Complex Dividing Roads & Outer Base Ring Roads (North & South, az in [52..108])
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 52.0), vec2(-60.0, 108.0), 3.8, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 52.0), vec2(-30.0, 108.0), 3.8, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 52.0), vec2(0.0, 108.0), 3.8, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 52.0), vec2(30.0, 108.0), 3.8, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 52.0), vec2(60.0, 108.0), 3.8, 2.4));
+            // Rear Base Collector Road at |z| = 108.0 (4 spans between the 5 vertical complex roads)
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 108.0), vec2(-30.0, 108.0), 2.4, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 108.0), vec2(0.0, 108.0), 2.4, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 108.0), vec2(30.0, 108.0), 2.4, 2.4));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 108.0), vec2(60.0, 108.0), 2.4, 2.4));
 
-          // Rear Base Collector Road at |z| = 108.0 (4 spans between the 5 vertical complex roads)
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 108.0), vec2(-30.0, 108.0), 2.4, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 108.0), vec2(0.0, 108.0), 2.4, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 108.0), vec2(30.0, 108.0), 2.4, 2.4));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 108.0), vec2(60.0, 108.0), 2.4, 2.4));
-
-          // 4 Base Gate Driveway Spurs (x = ±45, ±15, |z| in [52.0..64.2])
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 3.8, 0.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-15.0, 52.0), vec2(-15.0, 64.2), 3.8, 0.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(15.0, 52.0), vec2(15.0, 64.2), 3.8, 0.8));
-          singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(45.0, 52.0), vec2(45.0, 64.2), 3.8, 0.8));
+            // 4 Base Gate Driveway Spurs (x = ±45, ±15, |z| in [52.0..64.2])
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 3.8, 0.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-15.0, 52.0), vec2(-15.0, 64.2), 3.8, 0.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(15.0, 52.0), vec2(15.0, 64.2), 3.8, 0.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(45.0, 52.0), vec2(45.0, 64.2), 3.8, 0.8));
+          }
         }
 
         return max(tramDash, singleDash);
@@ -10941,7 +11509,13 @@ export function createTolanCurvedPlanetEnvironment(
 
       void main() {
         vec2 p = vFlatWorldPos.xz;
-        float grassMask = evaluateBlitzGrassMask(p);
+        float roadSdf = evaluateRoadNetworkSdf(p);
+        float lakeSdf = evaluateNwLakeSdf(p);
+        vec2 harborSdf = evaluateSeHarborSdf(p);
+        float westPlantSdf = evaluateWestPowerPlantSdf(p);
+        vec4 embT = evalEmbankmentTierOffsets(p);
+        float embSdf = max(embT.x, p.x - 109.2);
+        float grassMask = evaluateBlitzGrassMaskFromSdfs(p, roadSdf, lakeSdf, harborSdf, westPlantSdf, embSdf);
 
         // Multi-scale organic soil & meadow noise (like Blitz's uNoiseTexture on the floor)
         float n1 = planetValueNoise(p * 0.22);
@@ -10966,7 +11540,6 @@ export function createTolanCurvedPlanetEnvironment(
         float seBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * (1.0 - smoothstep(109.2, 111.5, p.x))
                           * smoothstep(44.2, 47.5, p.y + beachFeather) * (1.0 - smoothstep(102.5, 105.2, p.y + beachFeather));
         float seBeachShoreline = smoothstep(45.2, 47.5, p.y) * (1.0 - smoothstep(102.5, 104.8, p.y));
-        vec2 harborSdf = evaluateSeHarborSdf(p);
         float concreteMask = (1.0 - smoothstep(-0.35, 0.35, harborSdf.x)) * (1.0 - smoothstep(0.05, 0.45, seBeachZone));
         float seaMask = 1.0 - smoothstep(-0.35, 0.25, harborSdf.y);
         float seaShoreMask = (1.0 - smoothstep(0.0, 1.8, harborSdf.y)) * (1.0 - concreteMask);
@@ -10992,11 +11565,23 @@ export function createTolanCurvedPlanetEnvironment(
           surfaceCol = mix(surfaceCol, dockCol, concreteMask);
         }
         if (seaMask > 0.001) {
-          float ripple = sin(p.x * 0.85 + uTime * 1.8) * cos(p.y * 0.85 - uTime * 1.4) * 0.5 + 0.5;
+          // Tidewater 60 FPS 4-Cascade Non-Integer Wavelengths ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Whitecap Foam
+          float k0 = 6.2831853 / 73.3;
+          float k1 = 6.2831853 / 15.7;
+          float k2 = 6.2831853 / 3.33;
+          float k3 = 6.2831853 / 0.71;
+          float c0 = sin(p.x * k0 * 0.88 + p.y * k0 * 0.47 + uTime * 1.45);
+          float c1 = sin(p.x * k1 * 0.76 - p.y * k1 * 0.65 + uTime * 2.15);
+          float c2 = cos(-p.x * k2 * 0.54 + p.y * k2 * 0.84 + uTime * 3.10);
+          float c3 = sin(p.x * k3 * 0.62 + p.y * k3 * 0.78 - uTime * 4.20);
+          float ripple = (c0 * 0.35 + c1 * 0.35 + c2 * 0.20 + c3 * 0.10) * 0.5 + 0.5;
+          float jacobianWhitecap = smoothstep(0.54, 0.86, c1 * 0.55 + c2 * 0.45);
+
           vec3 deepHarborCol = vec3(0.04, 0.22, 0.33);
           vec3 midHarborCol = mix(vec3(0.11, 0.45, 0.60), vec3(0.14, 0.62, 0.74), seBeachShoreline);
           vec3 seaCol = mix(deepHarborCol, midHarborCol, smoothstep(-18.0, -1.2, harborSdf.y));
-          seaCol = mix(seaCol, vec3(0.65, 0.88, 0.96), smoothstep(0.76, 0.94, ripple) * 0.24);
+          seaCol = mix(seaCol, vec3(0.65, 0.88, 0.96), smoothstep(0.68, 0.92, ripple) * 0.26);
+          seaCol = mix(seaCol, vec3(0.92, 0.98, 1.0), jacobianWhitecap * 0.28);
 
           // Submerged vertical concrete quay/seawall face & cast drop-shadow band along the East Seawall edge (x = 110.0)
           // (Suppressed along the South-East sandy beach shoreline where gentle surf meets golden sand)
@@ -11008,16 +11593,18 @@ export function createTolanCurvedPlanetEnvironment(
           float wallDropShadow = smoothstep(0.15, 0.85, quayDist) * (1.0 - smoothstep(0.85, 3.6, quayDist)) * (1.0 - seBeachShoreline);
           seaCol *= mix(1.0, 0.46, wallDropShadow);
 
-          // Crisp white wave foam lapping against the shoreline
-          float foam = smoothstep(-2.25, -0.85, harborSdf.y) * (1.0 - smoothstep(-0.85, -0.15, harborSdf.y));
-          float beachSurfWave = sin(p.x * 1.65 + uTime * 2.4 + sin(p.y * 0.28) * 1.8) * 0.5 + 0.5;
-          float extraBeachFoam = seBeachShoreline * smoothstep(-3.8, -0.2, harborSdf.y) * smoothstep(0.58, 0.88, beachSurfWave);
-          seaCol = mix(seaCol, vec3(0.93, 0.98, 1.0), clamp(foam * (0.72 + 0.22 * ripple) + extraBeachFoam * 0.85, 0.0, 1.0));
+          // Tidewater Depth-Gated Shore Swash & Stranded Voronoi Lace Foam (only evaluated within WATER_SHORE_DEEP < 26m)
+          if (harborSdf.y > -26.0) {
+            float foam = smoothstep(-2.25, -0.85, harborSdf.y) * (1.0 - smoothstep(-0.85, -0.15, harborSdf.y));
+            float beachSurfWave = sin(p.x * 1.65 + uTime * 2.4 + sin(p.y * 0.28) * 1.8) * 0.5 + 0.5;
+            float lacePattern = smoothstep(0.32, 0.78, n3 * 0.65 + c2 * 0.35);
+            float extraBeachFoam = seBeachShoreline * smoothstep(-4.2, -0.15, harborSdf.y) * smoothstep(0.52, 0.86, beachSurfWave) * (0.65 + 0.35 * lacePattern);
+            seaCol = mix(seaCol, vec3(0.93, 0.98, 1.0), clamp(foam * (0.72 + 0.22 * ripple) + extraBeachFoam * 0.88, 0.0, 1.0));
+          }
           surfaceCol = mix(surfaceCol, seaCol, seaMask);
         }
 
         // 2B. West Elevated Concrete Power Plant Platform ("Lantai Beton Gardu Pembangkit Listrik & 4 Cerobong Asap", y = +1.40m)
-        float westPlantSdf = evaluateWestPowerPlantSdf(p);
         float westPlantShadow = smoothstep(0.15, 0.65, westPlantSdf) * (1.0 - smoothstep(0.65, 2.25, westPlantSdf));
         surfaceCol *= mix(1.0, 0.58, westPlantShadow);
         float westPlantMask = 1.0 - smoothstep(-0.25, 0.45, westPlantSdf);
@@ -11083,7 +11670,6 @@ export function createTolanCurvedPlanetEnvironment(
         }
 
         // 3. Central-West Turquoise Oasis Lake & 3-Level Concave Basin Depression ("Level Cekungan Danau")
-        float lakeSdf = evaluateNwLakeSdf(p);
         float shoreMask = 1.0 - smoothstep(0.0, 2.2, lakeSdf);
         if (shoreMask > 0.001) {
           vec3 pebbleBankCol = mix(vec3(0.76, 0.67, 0.50), vec3(0.58, 0.50, 0.36), soilNoise);
@@ -11120,7 +11706,6 @@ export function createTolanCurvedPlanetEnvironment(
         }
 
         // 4. Asphalt Road Network (Outer Ring Road + Widened Base Outer Ring Road + Mirrored S-Curve Roads + Dashed Center Lines + Zebra Crosswalks)
-        float roadSdf = evaluateRoadNetworkSdf(p);
         float roadMask = (1.0 - smoothstep(-0.25, 0.25, roadSdf)) * (1.0 - concreteMask);
         if (roadMask > 0.001) {
           vec3 asphaltCol = mix(vec3(0.17, 0.19, 0.23), vec3(0.21, 0.24, 0.28), soilNoise);
@@ -11156,12 +11741,10 @@ export function createTolanCurvedPlanetEnvironment(
         // 5. Outer Perimeter Hill Embankment ("Tanggul Bukit dengan Lekukan Level"):
         //    4-Level Stepped Contour Hillside with Gray-Buff Limestone Cliff Risers,
         //    Lush Green Grass Terrace Ledges, Sunlit Rim Highlights & Cast Cliff Drop Shadows
-        vec4 embT = evalEmbankmentTierOffsets(p);
-        float embSdf = embT.x;
-        float embMask = smoothstep(-2.6, 0.25, embSdf);
+        float embMask = smoothstep(-2.6, 0.25, embT.x);
         if (embMask > 0.001) {
           // Lush green grass fringe along the foot of Level 1 cliff (outside roads & sea)
-          float footGrassMask = smoothstep(-2.55, -0.15, embSdf) * (1.0 - roadMask) * (1.0 - seaMask) * (1.0 - concreteMask);
+          float footGrassMask = smoothstep(-2.55, -0.15, embT.x) * (1.0 - roadMask) * (1.0 - seaMask) * (1.0 - concreteMask);
           vec3 footGrassCol = mix(uGrassFloor * 0.90, uGrassBright * 0.88, soilNoise);
           surfaceCol = mix(surfaceCol, footGrassCol, footGrassMask * 0.92);
 
@@ -11193,9 +11776,9 @@ export function createTolanCurvedPlanetEnvironment(
         float castShadow = sampleBlitzCastShadow(vFlatWorldPos);
         float shadowStrength = 1.0 - castShadow;
         if (shadowStrength > 0.005) {
-          float halftone = blitzHalftoneGrid(gl_FragCoord.xy, 0.13);
-          float edgeMask = smoothstep(0.05, 0.55, shadowStrength) * (1.0 - smoothstep(0.55, 0.95, shadowStrength));
-          float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * 0.45, 0.0, 1.0);
+          float halftone = blitzHalftoneGrid(p, 2.4);
+          float edgeMask = smoothstep(0.08, 0.52, shadowStrength) * (1.0 - smoothstep(0.52, 0.92, shadowStrength));
+          float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * 0.16, 0.0, 1.0);
           vec3 naturalShadowTarget = mix(uDirtShadowTint, uGrassShadowTint, smoothstep(0.15, 0.75, grassMask));
           float pavedMask = clamp(roadMask + concreteMask + westPlantMask, 0.0, 1.0);
           vec3 shadowTarget = mix(naturalShadowTarget, surfaceCol * vec3(0.48, 0.50, 0.58), pavedMask);
@@ -12344,7 +12927,7 @@ export function createTolanCurvedPlanetEnvironment(
   const outdoorCafeZoneGrp = new THREE.Group();
   outdoorCafeZoneGrp.name = 'LobbyOutdoorParasolCafeTables';
   outdoorCafeZoneGrp.position.set(-7.2, 1.42, -1.0);
-  outdoorCafeZoneGrp.scale.setScalar(1.38);
+  outdoorCafeZoneGrp.scale.setScalar(1.62);
   westPlantGroup.add(outdoorCafeZoneGrp);
   buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, -2.0, true);
   buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, 2.0, true);
@@ -12462,6 +13045,7 @@ export function createTolanCurvedPlanetEnvironment(
     const lGrp = new THREE.Group();
     lGrp.position.set(lx, 1.42, lz);
     lGrp.rotation.y = rotY;
+    lGrp.scale.setScalar(1.06);
     westPlantGroup.add(lGrp);
     addLobbyPart(lGrp, new THREE.CylinderGeometry(0.14, 0.17, 0.22, 10), '#2b3036', [0, 0.11, 0], [0, 0, 0], 0.008);
     addLobbyPart(lGrp, new THREE.CylinderGeometry(0.075, 0.095, 4.45, 10), '#2b3036', [0, 2.34, 0], [0, 0, 0], 0.010, lobbySteelRoofTex);
@@ -12760,15 +13344,14 @@ export function createTolanCurvedPlanetEnvironment(
     }
 
     // 4. 3 STRUCTURAL STEEL COLUMNS, GLASS WINDBREAK, & ROOF CANOPY ON THE RIGHT / EAST SIDE OF PLATFORM (NEAR GRASS, x ≈ -60.45)
-    //    localZ = -3.35 corresponds to worldX = -63.8 - (-3.35) = -60.45!
-    //    Canopy spans localZ in [-4.64, -2.06] -> worldX in [-61.74, -59.16], 100% on the concrete platform [-64.97, -58.37]!
+    //    Raised to y = 5.05m with 3.85m canopy depth so it is generously proportional above the player character!
     for (const colX of [-6.8, 0.0, 6.8]) {
       // Support column on the East shelter spine (local Z = -4.20 -> worldX = -59.60)
       addLobbyPart(
         shelterRoot,
-        new THREE.BoxGeometry(0.24, 3.05, 0.26),
+        new THREE.BoxGeometry(0.28, 4.65, 0.30),
         COL_SH_STEEL,
-        [colX, 1.76, -4.20],
+        [colX, 2.56, -4.20],
         [0, 0, 0],
         0.014,
         lobbySteelRoofTex,
@@ -12776,19 +13359,19 @@ export function createTolanCurvedPlanetEnvironment(
       // Curved shoulder gusset transitioning column into cantilevered roof rib
       addLobbyPart(
         shelterRoot,
-        new THREE.CylinderGeometry(0.26, 0.26, 0.24, 12),
+        new THREE.CylinderGeometry(0.30, 0.30, 0.28, 12),
         COL_SH_STEEL,
-        [colX, 3.22, -4.06],
+        [colX, 4.82, -4.04],
         [0, 0, Math.PI / 2],
         0.010,
       );
-      // Cantilevered forward roof support arm reaching Westward (+Z) across local Z = -3.35 (worldX = -60.45)
+      // Cantilevered forward roof support arm reaching Westward (+Z) across the platform
       addLobbyPart(
         shelterRoot,
-        new THREE.BoxGeometry(0.22, 0.18, 2.28),
+        new THREE.BoxGeometry(0.24, 0.22, 3.60),
         COL_SH_STEEL,
-        [colX, 3.34, -3.35],
-        [-0.06, 0, 0],
+        [colX, 4.94, -2.80],
+        [-0.045, 0, 0],
         0.012,
         lobbySteelRoofTex,
       );
@@ -12797,33 +13380,33 @@ export function createTolanCurvedPlanetEnvironment(
     for (const mulX of [-3.4, 3.4]) {
       addLobbyPart(
         shelterRoot,
-        new THREE.BoxGeometry(0.10, 2.86, 0.12),
+        new THREE.BoxGeometry(0.12, 4.42, 0.14),
         COL_SH_STEEL,
-        [mulX, 1.69, -4.20],
+        [mulX, 2.46, -4.20],
         [0, 0, 0],
         0.008,
       );
     }
 
-    // Cantilever Roof Canopy Slab on the Right / East Side (15.4m x 2.58m at local Z = -3.35 -> worldX = -60.45)
+    // Cantilever Roof Canopy Slab on the Right / East Side (15.4m x 3.85m at y = 5.05m, local Z = -2.80)
     const roofCanopyGrp = new THREE.Group();
     roofCanopyGrp.name = 'HalteRoofCanopyGroup3D';
-    roofCanopyGrp.position.set(0, 3.44, -3.35);
-    roofCanopyGrp.rotation.x = -0.055;
+    roofCanopyGrp.position.set(0, 5.05, -2.80);
+    roofCanopyGrp.rotation.x = -0.045;
     shelterRoot.add(roofCanopyGrp);
 
-    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.2, 0.14, 2.48), COL_SH_ROOF_TOP, [0, 0.06, 0], [0, 0, 0], 0.018, lobbySteelRoofTex);
-    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.4, 0.18, 2.58), COL_SH_ROOF_FASCIA, [0, -0.02, 0], [0, 0, 0], 0.018, lobbyConcreteTex);
-    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(14.8, 0.04, 2.22), '#f1f5f9', [0, -0.12, 0], [0, 0, 0], 0);
+    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.2, 0.16, 3.72), COL_SH_ROOF_TOP, [0, 0.07, 0], [0, 0, 0], 0.018, lobbySteelRoofTex);
+    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.4, 0.22, 3.85), COL_SH_ROOF_FASCIA, [0, -0.02, 0], [0, 0, 0], 0.018, lobbyConcreteTex);
+    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(14.8, 0.05, 3.42), '#f1f5f9', [0, -0.13, 0], [0, 0, 0], 0);
     // Warm recessed LED soffit light strips under canopy
     for (const lx of [-4.6, 0.0, 4.6]) {
-      addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(3.2, 0.03, 0.18), '#fef08a', [lx, -0.14, 0.25], [0, 0, 0], 0);
+      addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(3.4, 0.04, 0.24), '#fef08a', [lx, -0.15, 0.35], [0, 0, 0], 0);
     }
 
     // 5. REAR ROOF DRAINAGE GUTTER & VERTICAL DOWNSPOUT PIPE (East edge under canopy)
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(15.1, 0.10, 0.12), '#64748b', [0, 3.28, -4.40], [0, 0, 0], 0.008);
-    addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.055, 0.055, 3.12, 10), '#64748b', [6.52, 1.72, -4.40], [0, 0, 0], 0.008);
-    addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.075, 0.075, 0.18, 10), '#334155', [6.52, 0.22, -4.40], [0, 0, 0], 0.006);
+    addLobbyPart(shelterRoot, new THREE.BoxGeometry(15.1, 0.12, 0.14), '#64748b', [0, 4.86, -4.44], [0, 0, 0], 0.008);
+    addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.06, 0.06, 4.68, 10), '#64748b', [6.52, 2.52, -4.44], [0, 0, 0], 0.008);
+    addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.08, 0.08, 0.20, 10), '#334155', [6.52, 0.24, -4.44], [0, 0, 0], 0.006);
 
     // 6. 4-BAY TEMPERED GLASS WINDBREAK WITH ROUTE INFORMATION GLASS (local Z = -4.18 -> worldX = -59.62)
     const windbreakMat = new THREE.MeshBasicMaterial({
@@ -12832,21 +13415,21 @@ export function createTolanCurvedPlanetEnvironment(
       opacity: 0.88,
       side: THREE.DoubleSide,
     });
-    const windbreakGlass = new THREE.Mesh(new THREE.PlaneGeometry(13.3, 2.52), windbreakMat);
-    windbreakGlass.position.set(0, 1.68, -4.18);
+    const windbreakGlass = new THREE.Mesh(new THREE.PlaneGeometry(13.3, 3.65), windbreakMat);
+    windbreakGlass.position.set(0, 2.28, -4.18);
     shelterRoot.add(windbreakGlass);
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(13.4, 0.08, 0.10), COL_SH_STEEL, [0, 0.38, -4.18], [0, 0, 0], 0.008);
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(13.4, 0.08, 0.10), COL_SH_STEEL, [0, 2.96, -4.18], [0, 0, 0], 0.008);
+    addLobbyPart(shelterRoot, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 0.42, -4.18], [0, 0, 0], 0.008);
+    addLobbyPart(shelterRoot, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 4.14, -4.18], [0, 0, 0], 0.008);
 
-    // 7. SUSPENDED DIGITAL ARRIVAL DISPLAY & TWIN BRACKETS UNDER CANOPY (local Z = -3.15 -> worldX = -60.65)
+    // 7. SUSPENDED DIGITAL ARRIVAL DISPLAY & TWIN BRACKETS UNDER CANOPY (Raised to y = 4.30m)
     for (const brkX of [-4.15, -2.65]) {
-      addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.028, 0.028, 0.42, 8), COL_SH_STEEL, [brkX, 3.14, -3.15], [0, 0, 0], 0.005);
+      addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.03, 0.03, 0.46, 8), COL_SH_STEEL, [brkX, 4.68, -2.85], [0, 0, 0], 0.005);
     }
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(2.18, 0.48, 0.18), COL_SH_STEEL, [-3.4, 2.78, -3.15], [0, 0, 0], 0.012);
+    addLobbyPart(shelterRoot, new THREE.BoxGeometry(2.28, 0.52, 0.18), COL_SH_STEEL, [-3.4, 4.30, -2.85], [0, 0, 0], 0.012);
     const arrivalScreenMat = new THREE.MeshBasicMaterial({ map: digitalDisplayTex });
     for (const zFace of [-0.095, 0.095]) {
-      const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.04, 0.38), arrivalScreenMat);
-      scr.position.set(-3.4, 2.78, -3.15 + zFace);
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.12, 0.40), arrivalScreenMat);
+      scr.position.set(-3.4, 4.30, -2.85 + zFace);
       if (zFace < 0) scr.rotation.y = Math.PI;
       shelterRoot.add(scr);
     }
@@ -12883,7 +13466,7 @@ export function createTolanCurvedPlanetEnvironment(
     addLobbyPart(ticketGrp, new THREE.BoxGeometry(0.42, 0.08, 0.04), '#0f172a', [-0.08, 1.04, 0.36], [0, 0, 0], 0);
     addLobbyPart(ticketGrp, new THREE.BoxGeometry(0.36, 0.16, 0.05), '#1e293b', [0, 0.82, 0.36], [0, 0, 0], 0);
 
-    // 10. HALTE LOBBY TELEPORT KIOSK (REPLACES GLOWING RETURN PADS WITH 1 DEDICATED TELEPORT KIOSK)
+    // 10. HALTE LOBBY TELEPORT KIOSK (Proportional human-scale height ~2.54m instead of 4.11m)
     const lobbyReturnPadsGroup = new THREE.Group();
     lobbyReturnPadsGroup.name = 'HalteLobbyReturnPadsGroup3D';
     shelterRoot.add(lobbyReturnPadsGroup);
@@ -13440,12 +14023,12 @@ export function createTolanCurvedPlanetEnvironment(
     addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.74, 0.10, pzLen - 0.24), '#4a3525', [78.55, BOARDWALK_Y + 0.42, pzStart], [0, 0, 0], 0.010);
   }
 
-  // Sleek Urban Promenade Streetlamps along the West walkway (Sheet 3 & Sheet 5 left side — scaled proportionally to character)
+  // Sleek Urban Promenade Streetlamps along the West walkway (Sheet 3 & Sheet 5 left side — calibrated to 5.05m Halte ratio)
   for (const lz of [49.5, 63.0, 76.5, 91.5]) {
-    addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.20, 0.25, 0.58, 8), '#383e47', [75.85, 0.52, lz], [0, 0, 0], 0.014);
-    addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.10, 0.13, 6.2, 8), '#474f5c', [75.85, 3.62, lz], [0, 0, 0], 0.016);
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(1.35, 0.14, 0.22), '#474f5c', [76.42, 6.68, lz], [0, 0, 0], 0.014);
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.64, 0.10, 0.30), '#fff1b8', [76.72, 6.58, lz], [0, 0, 0], 0.010);
+    addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.14, 0.18, 0.42, 8), '#383e47', [75.85, 0.44, lz], [0, 0, 0], 0.012);
+    addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.075, 0.098, 4.65, 8), '#474f5c', [75.85, 2.75, lz], [0, 0, 0], 0.012);
+    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.98, 0.11, 0.16), '#474f5c', [76.26, 5.04, lz], [0, 0, 0], 0.010);
+    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.48, 0.07, 0.22), '#fff1b8', [76.48, 4.96, lz], [0, 0, 0], 0.008);
   }
 
   // 1B. Elevated Weathered Timber Boardwalk Deck (x in [78.0..92.2], z in [46.0..102.5], width = 14.2m, length = 56.5m, top at y = +0.82m)
@@ -13711,7 +14294,7 @@ export function createTolanCurvedPlanetEnvironment(
   showerStationGrp.position.set(83.6, BOARDWALK_Y, 72.8);
   // Rotate +90° around Y so local +Z faces East (+X)
   showerStationGrp.rotation.y = Math.PI / 2;
-  showerStationGrp.scale.setScalar(1.55);
+  showerStationGrp.scale.setScalar(1.72);
   seBeachGroup.add(showerStationGrp);
 
   const COL_STAINLESS = '#d8e0e8';
@@ -13793,8 +14376,8 @@ export function createTolanCurvedPlanetEnvironment(
       depthWrite: false,
     });
     const mistMesh = new THREE.Mesh(mistGeo, mistMat);
-    // Shower station is at (83.6, BOARDWALK_Y, 72.8) scaled 1.55x rotated +90° around Y
-    mistMesh.position.set(83.6 + 0.60 * 1.55, BOARDWALK_Y + 1.38 * 1.55, 72.8 - wzOffset * 1.55);
+    // Shower station is at (83.6, BOARDWALK_Y, 72.8) scaled 1.72x rotated +90° around Y
+    mistMesh.position.set(83.6 + 0.60 * 1.72, BOARDWALK_Y + 1.38 * 1.72, 72.8 - wzOffset * 1.72);
     roadsGroup.add(mistMesh);
   }
 
@@ -14030,7 +14613,7 @@ export function createTolanCurvedPlanetEnvironment(
   surfRackGrp.name = 'SurfboardRentalRackDisplay';
   surfRackGrp.position.set(83.8, BOARDWALK_Y, 49.5);
   surfRackGrp.rotation.y = Math.PI / 2 - 0.18;
-  surfRackGrp.scale.setScalar(1.48);
+  surfRackGrp.scale.setScalar(1.18);
   seBeachGroup.add(surfRackGrp);
 
   // Ground Base Skids & Slotted Base Deck ("Ground base skids" & "Side Profile Elevation View")
@@ -15555,8 +16138,8 @@ export function createTolanCurvedPlanetEnvironment(
   };
 
   // 1B. Translucent 3D Oasis Lake Water Surface Plane (y = -0.16m) over the 3-Level Concave Lake Basin (-1.55m depth)
-  //     Allows seeing the 3 underwater basin terrace steps underneath while Tanks/Characters physically descend into the lakebed!
-  const lakeSurfaceGeo = new THREE.PlaneGeometry(28.0, 30.0, 1, 1);
+  //     Upgraded with Tidewater 60 FPS 4-Cascade Non-Integer Wave Synthesis ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Foam!
+  const lakeSurfaceGeo = new THREE.PlaneGeometry(28.0, 30.0, 24, 24);
   lakeSurfaceGeo.rotateX(-Math.PI / 2);
   const lakeSurfaceMat = new THREE.ShaderMaterial({
     transparent: true,
@@ -15565,27 +16148,40 @@ export function createTolanCurvedPlanetEnvironment(
       uTime: windUniforms.uTime,
     },
     vertexShader: /* glsl */ `
+      uniform float uTime;
       varying vec2 vWorldXZ;
+      varying float vWaveCrest;
       void main() {
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorldXZ = wp.xz;
+        float k1 = 6.2831853 / 15.7;
+        float k2 = 6.2831853 / 3.33;
+        float w1 = sin(wp.x * k1 * 0.76 - wp.z * k1 * 0.65 + uTime * 2.15) * 0.025;
+        float w2 = cos(-wp.x * k2 * 0.54 + wp.z * k2 * 0.84 + uTime * 3.10) * 0.012;
+        wp.y += w1 + w2;
+        vWaveCrest = clamp((w1 + w2) * 18.0 + 0.5, 0.0, 1.0);
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
       varying vec2 vWorldXZ;
+      varying float vWaveCrest;
       ${PLANET_TERRAIN_GLSL_SNIPPET}
       void main() {
         float lakeSdf = evaluateNwLakeSdf(vWorldXZ);
         if (lakeSdf > 0.05) discard;
         float edgeAlpha = 1.0 - smoothstep(-0.35, 0.05, lakeSdf);
-        float ripple1 = sin(vWorldXZ.x * 0.85 - uTime * 1.9) * cos(vWorldXZ.y * 0.82 + uTime * 1.5);
-        float ripple2 = cos((vWorldXZ.x + vWorldXZ.y) * 1.15 - uTime * 2.3);
-        float caustic = smoothstep(0.45, 0.85, ripple1 * 0.55 + ripple2 * 0.45);
-        float shoreRing = smoothstep(-0.95, -0.12, lakeSdf) * (1.0 - smoothstep(-0.12, 0.05, lakeSdf));
-        vec3 waterCol = mix(vec3(0.14, 0.62, 0.74), vec3(0.75, 0.96, 1.0), max(caustic * 0.42, shoreRing * 0.78));
-        float alpha = edgeAlpha * mix(0.36, 0.68, max(caustic * 0.5, shoreRing));
+        float k1 = 6.2831853 / 15.7;
+        float k2 = 6.2831853 / 3.33;
+        float k3 = 6.2831853 / 0.71;
+        float ripple1 = sin(vWorldXZ.x * k1 * 0.76 - vWorldXZ.y * k1 * 0.65 + uTime * 2.15);
+        float ripple2 = cos(-vWorldXZ.x * k2 * 0.54 + vWorldXZ.y * k2 * 0.84 + uTime * 3.10);
+        float capillary = sin(vWorldXZ.x * k3 * 0.62 + vWorldXZ.y * k3 * 0.78 - uTime * 4.20);
+        float caustic = smoothstep(0.42, 0.84, ripple1 * 0.45 + ripple2 * 0.40 + capillary * 0.15);
+        float shoreRing = smoothstep(-1.05, -0.14, lakeSdf) * (1.0 - smoothstep(-0.14, 0.05, lakeSdf));
+        vec3 waterCol = mix(vec3(0.14, 0.62, 0.74), vec3(0.78, 0.97, 1.0), max(caustic * 0.46 + vWaveCrest * 0.14, shoreRing * 0.82));
+        float alpha = edgeAlpha * mix(0.38, 0.70, max(caustic * 0.5, shoreRing));
         gl_FragColor = vec4(waterCol, alpha);
       }
     `,
@@ -24624,8 +25220,8 @@ export function buildSelfServiceTacticalKioskMesh(
     side: THREE.BackSide,
   });
 
-  // Scale up 2.25x so the Kiosk (~4.05m tall, ~2.54m total width with Scale Platform) matches the 4.2m x 4.2m Crate Pad & 2.4m Buddy units!
-  const S = 2.25;
+  // Golden Scale Standard: S = 1.40 (2.25 * 0.62 -> ~2.54m tall, proportional to player character)
+  const S = 1.40;
 
   const addKioskPart = (
     geom: THREE.BufferGeometry,
@@ -24812,9 +25408,9 @@ export function buildSelfServiceTacticalKioskMesh(
   // Immediately merge all static parts of the Kiosk + Digital Luggage Scale Platform into a single mesh!
   bakeStaticGroupMeshes(staticPartsGroup, { minShadowCasterSpan: 0.35 });
 
-  // Green selection ring on floor for Teleport Kiosks (#22c55e)
+  // Green selection ring on floor for Teleport Kiosks (#22c55e), scaled proportionally (0.62x)
   const kioskGreenFootRing = new THREE.Mesh(
-    new THREE.RingGeometry(1.35, 1.65, 36),
+    new THREE.RingGeometry(0.84, 1.02, 36),
     new THREE.MeshBasicMaterial({
       color: 0x22c55e,
       side: THREE.DoubleSide,
@@ -24841,6 +25437,7 @@ export function buildSelfServiceTacticalKioskMesh(
   // -------------------------------------------------------------------------
   const holoRoot = new THREE.Group();
   holoRoot.position.set(sx * S, 0.116 * S, 0);
+  holoRoot.scale.setScalar(0.62);
   kioskRoot.add(holoRoot);
 
   const holoSolidMat = new THREE.MeshBasicMaterial({

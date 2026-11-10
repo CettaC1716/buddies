@@ -204,6 +204,12 @@ import {
   evaluateBlitzGrassMask,
 } from './buddiesPlanetCurvature';
 import {
+  evaluateTidewaterWaveHeight,
+  type FishingPhaseState,
+  type FishingWaterZoneId,
+} from './buddiesFishingMarket';
+import { buildTidewaterProceduralFishGroup } from '../components/TidewaterCatchShowcaseModal';
+import {
   soundEngine,
   computeSpatialAudioGain,
   computeBuildBoxAudioGain,
@@ -447,7 +453,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       powerPreference: 'high-performance',
     });
 
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -621,6 +627,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       nameplate?: { sprite: THREE.Sprite } | null;
       isSelf?: boolean;
     } | null = null;
+    let selectedCharacterOriginPlayerPos = { x: 0, z: 0 };
 
     const clearCharacterSelection = () => {
       if (selectedCharacterTarget?.nameplate?.sprite) {
@@ -730,17 +737,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     }
 
     const LOBBY_SEAT_SPOTS: readonly LobbySeatSpot[] = [
-      // 6 Integrated Concrete Planter Benches around the Lobby Plaza
-      { id: 'lobby_bench_en', x: -82.54, z: -24.5, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_es', x: -82.54, z: 24.8, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_wn', x: -98.26, z: -24.5, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_ws', x: -98.26, z: 24.8, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_n', x: -90.5, z: -31.24, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_s', x: -90.5, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      // 3 Café Counter Bar Stools
-      { id: 'lobby_stool_1', x: -95.16, z: -11.25, yaw: 0, seatLiftY: 0.12, indicatorHeightY: 1.32 },
-      { id: 'lobby_stool_2', x: -95.16, z: -12.38, yaw: 0, seatLiftY: 0.12, indicatorHeightY: 1.32 },
-      { id: 'lobby_stool_3', x: -95.16, z: -13.50, yaw: 0, seatLiftY: 0.12, indicatorHeightY: 1.32 },
+      // 6 Integrated Concrete Planter Benches under the Trees around the Lobby Plaza (2 seat indicators per long bench; Cafe Hana stools removed)
+      { id: 'lobby_bench_en_1', x: -82.54, z: -25.45, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_en_2', x: -82.54, z: -23.55, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_es_1', x: -82.54, z: 23.85, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_es_2', x: -82.54, z: 25.75, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_wn_1', x: -98.26, z: -25.45, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_wn_2', x: -98.26, z: -23.55, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_ws_1', x: -98.26, z: 23.85, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_ws_2', x: -98.26, z: 25.75, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_n_1', x: -91.52, z: -31.24, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_n_2', x: -89.48, z: -31.24, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_s_1', x: -91.52, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_s_2', x: -89.48, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       // Pergola Bench
       { id: 'lobby_pergola_seat', x: -100.1, z: 12.1, yaw: 0, seatLiftY: -0.04, indicatorHeightY: 1.08 },
     ];
@@ -753,8 +762,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let isOrbitingSeatedCamera = false;
     let seatedOrbitDragStart = { x: 0, y: 0, yaw: 0, pitch: 0.22 };
 
-    const SEAT_DISC_GREEN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; background:linear-gradient(145deg, #4ade80 0%, #16a34a 100%); border:3.5px solid #ffffff; box-shadow:3px 2px 0 #dcfce7, 0 5px 14px rgba(0,0,0,0.45); transform:perspective(110px) rotateY(-18deg) rotateX(8deg); pointer-events:none; user-select:none;"><span style="width:16px; height:16px; border-radius:50%; border:2.5px solid rgba(255,255,255,0.92); background:#15803d;"></span></span>`;
-    const SEAT_DISC_BLUE_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:linear-gradient(145deg, #38bdf8 0%, #0284c7 100%); border:3px solid #ffffff; box-shadow:2.5px 2px 0 #e0f2fe, 0 4px 10px rgba(0,0,0,0.38); transform:perspective(110px) rotateY(-14deg) rotateX(6deg); pointer-events:none; user-select:none;"><span style="width:13px; height:13px; border-radius:50%; border:2px solid rgba(255,255,255,0.9); background:#0369a1;"></span></span>`;
+    // Transparent 44x44px click hit-target over the real 3D spinning coin mesh in the Three.js scene
+    const SEAT_DISC_GREEN_HTML = `<span style="display:block; width:44px; height:44px; pointer-events:none; user-select:none;"></span>`;
+    const SEAT_DISC_BLUE_HTML = `<span style="display:block; width:40px; height:40px; pointer-events:none; user-select:none;"></span>`;
 
     const CHAIR_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M7 4v9h10"/><path d="M7 13v7"/><path d="M17 13v7"/><path d="M7 16h10"/></svg>`;
     const getSitBarHtml = (label: string) =>
@@ -925,6 +935,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (found) {
         clearCharacterSelection();
         selectedCharacterTarget = found;
+        selectedCharacterOriginPlayerPos = {
+          x: playerUnit?.x ?? 0,
+          z: playerUnit?.z ?? 0,
+        };
         if (found.nameplate?.sprite) {
           found.nameplate.sprite.visible = true;
         }
@@ -1018,7 +1032,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     dirLight.castShadow = true;
     const shadowMapRes = 1024;
     dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
-    const d = 54;
+    const d = 45;
+    const shadowTexelWorldSize = (d * 2) / shadowMapRes;
+    const shadowLightBack = blitzSunOffset.clone().normalize();
+    const shadowLightRight = new THREE.Vector3()
+      .crossVectors(new THREE.Vector3(0, 1, 0), shadowLightBack)
+      .normalize();
+    const shadowLightUp = new THREE.Vector3()
+      .crossVectors(shadowLightBack, shadowLightRight)
+      .normalize();
     dirLight.shadow.camera.near = 2;
     dirLight.shadow.camera.far = 160;
     dirLight.shadow.camera.left = -d;
@@ -1177,6 +1199,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const cityTram = createProceduralCityTramConsist(scene, windUniforms, isSoftwareGl);
     let cityTramDistance = 328.0; // Starts entering the South Collector Road curve right in front of Blue Base!
     cityTram.update(cityTramDistance, 0, 0, 0, 0);
+
+    // 4A-2. Real 3D Spinning & Floating Coin Indicators (`coin_blue` & `coin_green`) above Lobby Benches
+    const lobbySeatCoinMeshes = LOBBY_SEAT_SPOTS.map((spot) => {
+      const coinRoot = new THREE.Group();
+      const blueCoin = buildTeamBuddiesDropPickupMesh('coin_blue', undefined, windUniforms, isSoftwareGl);
+      const greenCoin = buildTeamBuddiesDropPickupMesh('coin_green', undefined, windUniforms, isSoftwareGl);
+      greenCoin.scale.setScalar(1.12);
+      greenCoin.visible = false;
+      coinRoot.add(blueCoin, greenCoin);
+      coinRoot.traverse((child) => {
+        child.castShadow = false;
+        child.receiveShadow = false;
+      });
+      coinRoot.position.set(spot.x, 2.0, spot.z);
+      coinRoot.visible = false;
+      scene.add(coinRoot);
+      return { coinRoot, blueCoin, greenCoin };
+    });
 
     // Drop Zone Circles removed ("oh ya drop box itu random di area warzone hapus saja lingkaran dropzone itu")
     const buildDropZonePad = (x: number, z: number, _colorMat: THREE.Material) => {
@@ -1627,6 +1667,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const registerMapPropPhysics = (prop: PlacedMapProp, wrapper: THREE.Group) => {
       const spec = getPropCollisionSpec(prop.kind, prop.scale);
       if (spec.category === 'none') return;
+      const calibratedHeightY =
+        typeof wrapper.userData.calibratedHeightY === 'number'
+          ? wrapper.userData.calibratedHeightY
+          : getPropBaseHeight(prop.kind) * prop.scale;
+      wrapper.userData.baseColliderSpec = {
+        radius: spec.radius,
+        halfX: spec.halfX,
+        halfZ: spec.halfZ,
+        heightY: calibratedHeightY,
+      };
       activeMapProps.push({
         id: prop.id,
         kind: prop.kind,
@@ -1643,7 +1693,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         radius: spec.radius,
         halfX: spec.halfX,
         halfZ: spec.halfZ,
-        heightY: getPropBaseHeight(prop.kind) * prop.scale,
+        heightY: calibratedHeightY,
         mass: spec.mass,
         restitution: spec.restitution,
         destructible: spec.destructible,
@@ -5313,14 +5363,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     });
     const projectiles = projectilePool.slots;
 
-    loadAllRealBlitzAssets(renderer, (charGltf, manGltf) => {
+    loadAllRealBlitzAssets(renderer, (charGltf, manGltf, rodGltf) => {
       if (isDisposed) return;
       earlyLoadedCharGltf = charGltf;
       earlyLoadedManGltf = manGltf;
       const earlyCharGltf =
         getDefaultCharacterGender() === 'male' ? manGltf ?? charGltf : charGltf;
       if (earlyCharGltf && playerUnit) {
-        upgradeBuddyRigWithCharBuddiesGlb(playerUnit.rig, earlyCharGltf);
+        upgradeBuddyRigWithCharBuddiesGlb(
+          playerUnit.rig,
+          earlyCharGltf,
+          undefined,
+          rodGltf,
+        );
         updateCharacterWeaponStance(
           playerUnit.rig,
           playerUnit.weaponId,
@@ -5466,6 +5521,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             b.rig,
             activeCharGltf,
             assets.ar99AssaultGltf,
+            assets.fishingRodGltf,
           );
           updateCharacterWeaponStance(
             b.rig,
@@ -9673,44 +9729,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } | null = null;
         let bestCharDist = 2.4;
 
-        // 1. Check AI Buddy Units
+        // 1. Check AI Buddy Units / Other Players (Never select self by clicking 3D character)
         for (let bi = 0; bi < buddyUnits.length; bi++) {
           const u = buddyUnits[bi];
-          if (!u.alive) continue;
+          if (!u.alive || u.isPlayer || (playerUnit && u.id === playerUnit.id)) continue;
           u.root.getWorldPosition(scratchCharHitPos);
           scratchCharHitPos.y += 1.4; // Center of torso
           const rayDist = raycaster.ray.distanceToPoint(scratchCharHitPos);
           if (rayDist < bestCharDist) {
             bestCharDist = rayDist;
             clickedCharacter = {
-              id: u.isPlayer ? 0 : u.id,
-              name: u.isPlayer ? playerCustomDisplayName : `BUDDY #${u.id} (${u.classId.toUpperCase()})`,
+              id: u.id,
+              name: `BUDDY #${u.id} (${u.classId.toUpperCase()})`,
               isNpc: false,
               team: u.team,
               status: u.carryingCrate !== 'none' ? 'Carrying Crate' : u.weaponName || 'Chilling',
               root: u.root,
               nameplate: u.nameplate,
-              isSelf: Boolean(u.isPlayer),
-            };
-          }
-        }
-
-        // 2. Also check Player Unit directly
-        if (playerUnit && playerUnit.alive) {
-          playerUnit.root.getWorldPosition(scratchCharHitPos);
-          scratchCharHitPos.y += 1.4;
-          const rayDist = raycaster.ray.distanceToPoint(scratchCharHitPos);
-          if (rayDist < bestCharDist) {
-            bestCharDist = rayDist;
-            clickedCharacter = {
-              id: 0,
-              name: playerCustomDisplayName,
-              isNpc: false,
-              team: playerUnit.team,
-              status: playerUnit.carryingCrate !== 'none' ? 'Carrying Crate' : playerUnit.weaponName || 'Chilling',
-              root: playerUnit.root,
-              nameplate: playerUnit.nameplate,
-              isSelf: true,
+              isSelf: false,
             };
           }
         }
@@ -9762,6 +9798,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             clearCharacterSelection();
           }
           selectedCharacterTarget = clickedCharacter;
+          selectedCharacterOriginPlayerPos = {
+            x: playerUnit?.x ?? 0,
+            z: playerUnit?.z ?? 0,
+          };
           if (playerUnit) syncUnitFootRingTeamColor(playerUnit);
           buddyUnits.forEach((b) => syncUnitFootRingTeamColor(b));
 
@@ -10714,9 +10754,668 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       else if (act === 'editorResetMap') handleEditorResetLayout();
     };
 
+    // =========================================================================
+    // 11B. TIDEWATER 3D BOBBER, 48-SEGMENT CATENARY LINE & WATER RIPPLE RING
+    // =========================================================================
+    const TIDEWATER_LINE_SEGS = 48;
+    const tidewaterFishing3DGroup = new THREE.Group();
+    tidewaterFishing3DGroup.name = 'TidewaterFishing3DAssembly';
+    tidewaterFishing3DGroup.visible = false;
+    scene.add(tidewaterFishing3DGroup);
+
+    const castBobberGroup = new THREE.Group();
+    const castBobberTopMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.11, 12, 12),
+      new THREE.MeshBasicMaterial({ color: '#ef4444' }),
+    );
+    castBobberTopMesh.position.y = 0.05;
+    castBobberGroup.add(castBobberTopMesh);
+    const castBobberBottomMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.105, 12, 12),
+      new THREE.MeshBasicMaterial({ color: '#ffffff' }),
+    );
+    castBobberBottomMesh.position.y = -0.04;
+    castBobberGroup.add(castBobberBottomMesh);
+
+    const bobberRippleRingMesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.16, 0.36, 24),
+      new THREE.MeshBasicMaterial({
+        color: '#e0f2fe',
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    bobberRippleRingMesh.rotation.x = -Math.PI / 2;
+    bobberRippleRingMesh.position.y = 0.02;
+    castBobberGroup.add(bobberRippleRingMesh);
+    tidewaterFishing3DGroup.add(castBobberGroup);
+
+    const waterFightingFish = buildTidewaterProceduralFishGroup('golden_harbor_tuna', '#38bdf8');
+    waterFightingFish.group.scale.setScalar(0.75);
+    waterFightingFish.group.visible = false;
+    tidewaterFishing3DGroup.add(waterFightingFish.group);
+
+    const catenaryLinePositions = new Float32Array((TIDEWATER_LINE_SEGS + 1) * 3);
+    const catenaryLineGeo = new THREE.BufferGeometry();
+    catenaryLineGeo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(catenaryLinePositions, 3),
+    );
+    const catenaryLineMat = new THREE.LineBasicMaterial({
+      color: '#e2e8f0',
+      transparent: true,
+      opacity: 0.92,
+    });
+    const catenaryLineMesh = new THREE.Line(catenaryLineGeo, catenaryLineMat);
+    catenaryLineMesh.frustumCulled = false;
+    tidewaterFishing3DGroup.add(catenaryLineMesh);
+
+    const tidewaterFishingSync: {
+      phase: FishingPhaseState;
+      castPower: number;
+      tension: number;
+      isSurging: boolean;
+      rodBend: number;
+      reelAngle: number;
+      zoneId: FishingWaterZoneId;
+      distanceM: number;
+      nibblePulse: number;
+      castOriginYaw: number;
+      hasLockedCastYaw: boolean;
+      lastSplashTime: number;
+      castStartWallMs: number;
+      hasSplashedDown: boolean;
+    } = {
+      phase: 'idle',
+      castPower: 0.7,
+      tension: 0.2,
+      isSurging: false,
+      rodBend: 0,
+      reelAngle: 0,
+      zoneId: 'east_beach',
+      distanceM: 12,
+      nibblePulse: 0,
+      castOriginYaw: 0,
+      hasLockedCastYaw: false,
+      lastSplashTime: 0,
+      castStartWallMs: 0,
+      hasSplashedDown: false,
+    };
+
+    const onTidewaterFishingSync = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<typeof tidewaterFishingSync>>).detail;
+      if (!detail) return;
+      const prevPhase = tidewaterFishingSync.phase;
+      if (detail.phase !== undefined) tidewaterFishingSync.phase = detail.phase;
+      if (detail.castPower !== undefined) tidewaterFishingSync.castPower = detail.castPower;
+      if (detail.tension !== undefined) tidewaterFishingSync.tension = detail.tension;
+      if (detail.isSurging !== undefined) tidewaterFishingSync.isSurging = detail.isSurging;
+      if (detail.rodBend !== undefined) tidewaterFishingSync.rodBend = detail.rodBend;
+      if (detail.reelAngle !== undefined) tidewaterFishingSync.reelAngle = detail.reelAngle;
+      if (detail.zoneId !== undefined && detail.zoneId) tidewaterFishingSync.zoneId = detail.zoneId;
+      if (detail.distanceM !== undefined) tidewaterFishingSync.distanceM = detail.distanceM;
+      if (detail.nibblePulse !== undefined) tidewaterFishingSync.nibblePulse = detail.nibblePulse;
+
+      if (tidewaterFishingSync.phase === 'casting' && prevPhase !== 'casting') {
+        tidewaterFishingSync.castStartWallMs = performance.now();
+        tidewaterFishingSync.hasSplashedDown = false;
+      }
+
+      if (
+        tidewaterFishingSync.phase !== 'idle' &&
+        (prevPhase === 'idle' || prevPhase === 'charging') &&
+        playerUnit
+      ) {
+        handleQcEquipWeapon('fishing_rod');
+        // Aim toward nearest water when casting
+        if (tidewaterFishingSync.zoneId === 'central_oasis') {
+          const dx = -31.0 - playerUnit.x;
+          const dz = 0.0 - playerUnit.z;
+          if (Math.hypot(dx, dz) > 0.2) {
+            playerUnit.yaw = Math.atan2(-dz, dx);
+          }
+        } else {
+          playerUnit.yaw = 0; // Face East Beach Ocean (+X)
+        }
+        tidewaterFishingSync.castOriginYaw = playerUnit.yaw;
+        tidewaterFishingSync.hasLockedCastYaw = true;
+        playerUnit.weaponRecoil = 0.85;
+      } else if (tidewaterFishingSync.phase === 'idle') {
+        tidewaterFishingSync.hasLockedCastYaw = false;
+        waterFightingFish.group.visible = false;
+      }
+    };
+
+    const inspectRaycaster = new THREE.Raycaster();
+    const inspectNdc = new THREE.Vector2();
+    const inspectTmpWorldPos = new THREE.Vector3();
+    const inspectTmpProjected = new THREE.Vector3();
+    const inspectTmpBox3 = new THREE.Box3();
+    const inspectBoxCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
+    let lastInspectedWorldObject3D: THREE.Object3D | null = null;
+    const inspectorOrigStaticObbMap = new Map<
+      string,
+      { halfX: number; halfZ: number; heightY: number }
+    >();
+
+    const syncInspectedWorldObjectColliderScale = (targetObj: THREE.Object3D, scaleFactor: number) => {
+      let matchedProp = false;
+      let cur: THREE.Object3D | null = targetObj;
+      while (cur && cur !== scene) {
+        const node = cur;
+        const foundProp = activeMapProps.find(
+          (p) => p.wrapper === node || (node.userData?.propId !== undefined && p.id === node.userData.propId),
+        );
+        if (foundProp) {
+          const baseSpec = foundProp.wrapper.userData.baseColliderSpec as
+            | { radius: number; halfX?: number; halfZ?: number; heightY: number }
+            | undefined;
+          if (baseSpec) {
+            foundProp.radius = Number((baseSpec.radius * scaleFactor).toFixed(3));
+            if (baseSpec.halfX !== undefined) {
+              foundProp.halfX = Number((baseSpec.halfX * scaleFactor).toFixed(3));
+            }
+            if (baseSpec.halfZ !== undefined) {
+              foundProp.halfZ = Number((baseSpec.halfZ * scaleFactor).toFixed(3));
+            }
+            foundProp.heightY = Number((baseSpec.heightY * scaleFactor).toFixed(3));
+          }
+          matchedProp = true;
+          break;
+        }
+        cur = cur.parent;
+      }
+
+      if (!matchedProp) {
+        targetObj.getWorldPosition(inspectTmpWorldPos);
+        const structures = getStaticWorldStructures();
+        for (const s of structures) {
+          if (s.isRetainingWall) continue;
+          const dist = Math.hypot(s.x - inspectTmpWorldPos.x, s.z - inspectTmpWorldPos.z);
+          if (dist <= 3.8) {
+            let orig = inspectorOrigStaticObbMap.get(s.id);
+            if (!orig) {
+              orig = { halfX: s.halfX, halfZ: s.halfZ, heightY: s.heightY ?? 3.0 };
+              inspectorOrigStaticObbMap.set(s.id, orig);
+            }
+            s.halfX = Number((orig.halfX * scaleFactor).toFixed(3));
+            s.halfZ = Number((orig.halfZ * scaleFactor).toFixed(3));
+            s.heightY = Number((orig.heightY * scaleFactor).toFixed(3));
+          }
+        }
+      }
+      navGridDirty = true;
+    };
+
+    const onInspect3DTweak = (ev: Event) => {
+      const customEv = ev as CustomEvent<{
+        dx?: number;
+        dy?: number;
+        dz?: number;
+        dpitchDeg?: number;
+        dyawDeg?: number;
+        drollDeg?: number;
+        worldObjectScale?: number;
+        reset?: boolean;
+      }>;
+      const d = customEv.detail;
+      if (!d) return;
+      if (d.reset) {
+        if (playerUnit?.rig?.weaponRigGroup) {
+          delete playerUnit.rig.weaponRigGroup.userData.inspectorTweak;
+        }
+        if (lastInspectedWorldObject3D && lastInspectedWorldObject3D.userData.origInspectorScale) {
+          const orig = lastInspectedWorldObject3D.userData.origInspectorScale as THREE.Vector3;
+          lastInspectedWorldObject3D.scale.copy(orig);
+          syncInspectedWorldObjectColliderScale(lastInspectedWorldObject3D, 1.0);
+        }
+        return;
+      }
+      if (typeof d.worldObjectScale === 'number' && lastInspectedWorldObject3D) {
+        if (!lastInspectedWorldObject3D.userData.origInspectorScale) {
+          lastInspectedWorldObject3D.userData.origInspectorScale =
+            lastInspectedWorldObject3D.scale.clone();
+        }
+        const orig = lastInspectedWorldObject3D.userData.origInspectorScale as THREE.Vector3;
+        lastInspectedWorldObject3D.scale.set(
+          orig.x * d.worldObjectScale,
+          orig.y * d.worldObjectScale,
+          orig.z * d.worldObjectScale,
+        );
+        syncInspectedWorldObjectColliderScale(lastInspectedWorldObject3D, d.worldObjectScale);
+      }
+      if (playerUnit?.rig?.weaponRigGroup) {
+        playerUnit.rig.weaponRigGroup.userData.inspectorTweak = {
+          dx: d.dx ?? 0,
+          dy: d.dy ?? 0,
+          dz: d.dz ?? 0,
+          dpitchDeg: d.dpitchDeg ?? 0,
+          dyawDeg: d.dyawDeg ?? 0,
+          drollDeg: d.drollDeg ?? 0,
+        };
+      }
+    };
+
+    const onInspect3DPick = (ev: Event) => {
+      const customEv = ev as CustomEvent<{
+        clientX: number;
+        clientY: number;
+        onResult?: (res: Record<string, unknown>) => void;
+      }>;
+      const detail = customEv.detail;
+      if (!detail || typeof detail.onResult !== 'function') return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      inspectNdc.x = ((detail.clientX - rect.left) / rect.width) * 2 - 1;
+      inspectNdc.y = -((detail.clientY - rect.top) / rect.height) * 2 + 1;
+      camera.updateMatrixWorld(true);
+      scene.updateMatrixWorld(true);
+      inspectRaycaster.setFromCamera(inspectNdc, camera);
+
+      const rad2deg = 180 / Math.PI;
+      const projectWorldPointToScreen = (wp: THREE.Vector3) => {
+        inspectTmpProjected.copy(wp).project(camera);
+        const visible = inspectTmpProjected.z >= -1 && inspectTmpProjected.z <= 1;
+        return {
+          x: Math.round(((inspectTmpProjected.x + 1) * 0.5) * rect.width + rect.left),
+          y: Math.round(((-inspectTmpProjected.y + 1) * 0.5) * rect.height + rect.top),
+          visible,
+        };
+      };
+
+      const projectObjectBoundsToScreenRect = (obj: THREE.Object3D) => {
+        inspectTmpBox3.setFromObject(obj);
+        if (inspectTmpBox3.isEmpty()) {
+          obj.getWorldPosition(inspectTmpWorldPos);
+          const p = projectWorldPointToScreen(inspectTmpWorldPos);
+          return {
+            x: p.x - 22,
+            y: p.y - 22,
+            w: 44,
+            h: 44,
+            sizeMeters: { w: 0.2, h: 0.2, d: 0.2 },
+            centerWorld: {
+              x: Number(inspectTmpWorldPos.x.toFixed(2)),
+              y: Number(inspectTmpWorldPos.y.toFixed(2)),
+              z: Number(inspectTmpWorldPos.z.toFixed(2)),
+            },
+          };
+        }
+        const min = inspectTmpBox3.min;
+        const max = inspectTmpBox3.max;
+        const sizeVec = new THREE.Vector3();
+        const centerVec = new THREE.Vector3();
+        inspectTmpBox3.getSize(sizeVec);
+        inspectTmpBox3.getCenter(centerVec);
+
+        inspectBoxCorners[0].set(min.x, min.y, min.z);
+        inspectBoxCorners[1].set(min.x, min.y, max.z);
+        inspectBoxCorners[2].set(min.x, max.y, min.z);
+        inspectBoxCorners[3].set(min.x, max.y, max.z);
+        inspectBoxCorners[4].set(max.x, min.y, min.z);
+        inspectBoxCorners[5].set(max.x, min.y, max.z);
+        inspectBoxCorners[6].set(max.x, max.y, min.z);
+        inspectBoxCorners[7].set(max.x, max.y, max.z);
+
+        let minSx = Infinity;
+        let minSy = Infinity;
+        let maxSx = -Infinity;
+        let maxSy = -Infinity;
+        for (let ci = 0; ci < 8; ci++) {
+          const sp = projectWorldPointToScreen(inspectBoxCorners[ci]);
+          if (sp.visible) {
+            if (sp.x < minSx) minSx = sp.x;
+            if (sp.y < minSy) minSy = sp.y;
+            if (sp.x > maxSx) maxSx = sp.x;
+            if (sp.y > maxSy) maxSy = sp.y;
+          }
+        }
+        if (!Number.isFinite(minSx)) {
+          const cp = projectWorldPointToScreen(centerVec);
+          minSx = cp.x - 24;
+          maxSx = cp.x + 24;
+          minSy = cp.y - 24;
+          maxSy = cp.y + 24;
+        }
+        const wPx = Math.min(rect.width * 0.85, Math.max(28, maxSx - minSx));
+        const hPx = Math.min(rect.height * 0.85, Math.max(28, maxSy - minSy));
+        return {
+          x: Math.round(minSx),
+          y: Math.round(minSy),
+          w: Math.round(wPx),
+          h: Math.round(hPx),
+          sizeMeters: {
+            w: Number(sizeVec.x.toFixed(2)),
+            h: Number(sizeVec.y.toFixed(2)),
+            d: Number(sizeVec.z.toFixed(2)),
+          },
+          centerWorld: {
+            x: Number(centerVec.x.toFixed(2)),
+            y: Number(centerVec.y.toFixed(2)),
+            z: Number(centerVec.z.toFixed(2)),
+          },
+        };
+      };
+
+      // 1. Collect all screen-space 3D Rig Hotspots (Weapon Grip, Rod Parts, Hand & Body Bones)
+      const hotspots: Array<{
+        id: string;
+        label: string;
+        category: 'WEAPON_PART' | 'BONE' | 'WORLD_ENTITY';
+        screenX: number;
+        screenY: number;
+        distPx: number;
+        worldPos: { x: number; y: number; z: number };
+        localRotDeg?: { x: number; y: number; z: number };
+        sourceFile: string;
+        targetObj: THREE.Object3D;
+      }> = [];
+
+      const pushHotspot = (
+        id: string,
+        label: string,
+        category: 'WEAPON_PART' | 'BONE' | 'WORLD_ENTITY',
+        obj: THREE.Object3D | null | undefined,
+        sourceFile: string,
+      ) => {
+        if (!obj) return;
+        obj.getWorldPosition(inspectTmpWorldPos);
+        const sp = projectWorldPointToScreen(inspectTmpWorldPos);
+        if (!sp.visible) return;
+        const distPx = Number(Math.hypot(sp.x - detail.clientX, sp.y - detail.clientY).toFixed(1));
+        hotspots.push({
+          id,
+          label,
+          category,
+          screenX: sp.x,
+          screenY: sp.y,
+          distPx,
+          worldPos: {
+            x: Number(inspectTmpWorldPos.x.toFixed(3)),
+            y: Number(inspectTmpWorldPos.y.toFixed(3)),
+            z: Number(inspectTmpWorldPos.z.toFixed(3)),
+          },
+          localRotDeg: {
+            x: Number((obj.rotation.x * rad2deg).toFixed(1)),
+            y: Number((obj.rotation.y * rad2deg).toFixed(1)),
+            z: Number((obj.rotation.z * rad2deg).toFixed(1)),
+          },
+          sourceFile,
+          targetObj: obj,
+        });
+      };
+
+      const activeWeaponId = playerUnit?.weaponId ?? 'unarmed';
+      const weaponGroup = playerUnit?.rig?.weaponRigGroup ?? null;
+      const rodGrp = playerUnit?.rig?.fishingRodGroup ?? null;
+      const rodFlexPivot = rodGrp?.userData?.rodFlexPivot as THREE.Object3D | undefined;
+      const rodTipAnchor = rodGrp?.userData?.rodTipAnchor as THREE.Object3D | undefined;
+
+      if (weaponGroup && activeWeaponId !== 'unarmed') {
+        pushHotspot(
+          `weaponRigGroup:${activeWeaponId}`,
+          `Weapon Grip (${activeWeaponId})`,
+          'WEAPON_PART',
+          weaponGroup,
+          'src/game/buddiesBlitzShadersAndAssets.ts -> updateCharacterWeaponStance',
+        );
+      }
+      if (activeWeaponId === 'fishing_rod' && rodGrp) {
+        pushHotspot(
+          'fishingRod:rodFlexPivot',
+          'Rod Blank Flex Hinge (rodFlexPivot)',
+          'WEAPON_PART',
+          rodFlexPivot,
+          'src/game/buddiesBlitzShadersAndAssets.ts -> buildProceduralFishingRod & BuddiesBlitzArena.tsx',
+        );
+        pushHotspot(
+          'fishingRod:rodTipAnchor',
+          'Rod Tip Anchor (rodTipAnchor)',
+          'WEAPON_PART',
+          rodTipAnchor,
+          'src/game/buddiesBlitzShadersAndAssets.ts -> buildProceduralFishingRod',
+        );
+      }
+
+      if (playerUnit?.root) {
+        playerUnit.root.traverse((node) => {
+          if ((node as THREE.Bone).isBone) {
+            const bName = node.name || 'Bone';
+            const lower = bName.toLowerCase();
+            if (
+              lower.includes('righthand') ||
+              lower.includes('lefthand') ||
+              lower.includes('forearm') ||
+              lower.includes('rightarm') ||
+              lower.includes('leftarm') ||
+              lower.includes('head') ||
+              lower.includes('spine2')
+            ) {
+              // Skip individual finger phalanges in main hotspot badges so hand palms are clean
+              if (
+                lower.includes('index') ||
+                lower.includes('middle') ||
+                lower.includes('ring') ||
+                lower.includes('pinky') ||
+                lower.includes('thumb')
+              ) {
+                return;
+              }
+              pushHotspot(
+                `bone:${bName}`,
+                `Bone: ${bName}`,
+                'BONE',
+                node,
+                'src/game/buddiesBlitzShadersAndAssets.ts -> solveTwoBoneArmPalmIkLocal / updateCharacterWeaponStance',
+              );
+            }
+          }
+        });
+      }
+
+      // Sort hotspots by screen distance to cursor
+      const sortedHotspots = [...hotspots].sort((a, b) => a.distPx - b.distPx);
+      const nearestHotspot = sortedHotspots[0] ?? null;
+
+      // Find nearest bone overall (including fingers if very close)
+      let nearestBoneName = nearestHotspot?.category === 'BONE' ? nearestHotspot.label.replace(/^Bone:\s*/, '') : 'none';
+      let nearestBoneDistPx = nearestHotspot?.category === 'BONE' ? nearestHotspot.distPx : Infinity;
+      let nearestBoneWorld = nearestHotspot?.worldPos ?? { x: 0, y: 0, z: 0 };
+      let nearestBoneLocalRotDeg = nearestHotspot?.localRotDeg ?? { x: 0, y: 0, z: 0 };
+      for (const h of sortedHotspots) {
+        if (h.category === 'BONE' && h.distPx < nearestBoneDistPx) {
+          nearestBoneName = h.label.replace(/^Bone:\s*/, '');
+          nearestBoneDistPx = h.distPx;
+          nearestBoneWorld = h.worldPos;
+          nearestBoneLocalRotDeg = h.localRotDeg ?? { x: 0, y: 0, z: 0 };
+        }
+      }
+
+      // 2. Raycast 3D Scene Objects (filtering out invisible helpers, selection rings, sky domes)
+      const isDescendantOf = (child: THREE.Object3D | null, parent: THREE.Object3D | null | undefined): boolean => {
+        if (!child || !parent) return false;
+        let cur: THREE.Object3D | null = child;
+        while (cur) {
+          if (cur === parent) return true;
+          cur = cur.parent;
+        }
+        return false;
+      };
+
+      const validHits = inspectRaycaster.intersectObjects(scene.children, true).filter((h) => {
+        const obj = h.object;
+        if (!obj.visible) return false;
+        if (obj === characterSelectionRing) return false;
+        if ((obj as THREE.Sprite).isSprite) return false;
+        // Walk up parents to verify all ancestors are visible
+        let p: THREE.Object3D | null = obj.parent;
+        while (p && p !== scene) {
+          if (!p.visible) return false;
+          p = p.parent;
+        }
+        return true;
+      });
+
+      const primaryHit = validHits[0] ?? null;
+
+      // Semantic classification of the target (Hotspot within 44px wins over background terrain!)
+      let semanticName = 'Scene Object';
+      let hierarchyPath = 'Scene';
+      let suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx';
+      let targetForBounds: THREE.Object3D | null = primaryHit?.object ?? null;
+
+      if (nearestHotspot && nearestHotspot.distPx <= 44) {
+        semanticName = nearestHotspot.label;
+        hierarchyPath = `PlayerUnit > ${nearestHotspot.id}`;
+        suggestedSourceFile = nearestHotspot.sourceFile;
+        targetForBounds = nearestHotspot.targetObj;
+      } else if (primaryHit) {
+        const hitObj = primaryHit.object;
+        if (isDescendantOf(hitObj, weaponGroup)) {
+          semanticName = `WeaponMesh (${activeWeaponId})`;
+          hierarchyPath = `PlayerUnit > weaponRigGroup > ${activeWeaponId}`;
+          suggestedSourceFile =
+            'src/game/buddiesBlitzShadersAndAssets.ts -> updateCharacterWeaponStance / buildProceduralFishingRod';
+          targetForBounds = weaponGroup;
+        } else if (isDescendantOf(hitObj, playerUnit?.root)) {
+          semanticName = `PlayerCharacter (${nearestBoneName !== 'none' ? `near ${nearestBoneName}` : 'AvatarMesh'})`;
+          hierarchyPath = `PlayerUnit > CharacterMesh (${nearestBoneName})`;
+          suggestedSourceFile =
+            'src/game/buddiesBlitzShadersAndAssets.ts -> updateCharacterWeaponStance';
+          targetForBounds = playerUnit?.root ?? hitObj;
+        } else if (isDescendantOf(hitObj, tidewaterFishing3DGroup)) {
+          semanticName = `Fishing3D (Bobber / Catenary Line / Water Fish)`;
+          hierarchyPath = `tidewaterFishing3DGroup > ${hitObj.name || hitObj.type}`;
+          suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Tidewater 3D Fishing Loop)';
+        } else if (isDescendantOf(hitObj, lobbyCafeNpc?.npcGrp)) {
+          semanticName = 'NPC Hana (Lobby Cafe Merchant)';
+          hierarchyPath = 'Scene > lobbyCafeNpc.npcGrp';
+          suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Lobby Cafe NPC Hana)';
+          targetForBounds = lobbyCafeNpc.npcGrp;
+        } else if (isDescendantOf(hitObj, beachHouseNpc?.npcGrp)) {
+          semanticName = 'NPC Kai (Beach House Merchant)';
+          hierarchyPath = 'Scene > beachHouseNpc.npcGrp';
+          suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Beach House NPC Kai)';
+          targetForBounds = beachHouseNpc.npcGrp;
+        } else {
+          // Check AI Buddy Units
+          const matchedBuddy = buddyUnits.find((bu) => isDescendantOf(hitObj, bu.root));
+          if (matchedBuddy) {
+            semanticName = `AI Buddy #${matchedBuddy.id} (${matchedBuddy.classId.toUpperCase()})`;
+            hierarchyPath = `Scene > buddyUnits[${matchedBuddy.id}].root`;
+            suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (AI Buddy Unit)';
+            targetForBounds = matchedBuddy.root;
+          } else {
+            // World Prop / Building / Water / Terrain classification
+            let topGroup: THREE.Object3D = hitObj;
+            while (topGroup.parent && topGroup.parent !== scene) {
+              topGroup = topGroup.parent;
+            }
+            const meshMat = (hitObj as THREE.Mesh).material as THREE.Material & {
+              color?: THREE.Color;
+            };
+            const matColorHex = meshMat?.color ? `#${meshMat.color.getHexString()}` : '';
+            const geoType = (hitObj as THREE.Mesh).geometry?.type || hitObj.type;
+            const bInfo = projectObjectBoundsToScreenRect(hitObj);
+            const isWaterLike =
+              Math.abs(primaryHit.point.y) < 1.2 &&
+              bInfo.sizeMeters.w > 18 &&
+              bInfo.sizeMeters.d > 18 &&
+              bInfo.sizeMeters.h < 2.5;
+            const isTerrainGround =
+              bInfo.sizeMeters.w > 80 && bInfo.sizeMeters.d > 80;
+
+            if (isWaterLike) {
+              semanticName = `Water / Lake Surface @ [${primaryHit.point.x.toFixed(1)}, ${primaryHit.point.z.toFixed(1)}]`;
+              hierarchyPath = `Scene > WaterSurface (${geoType})`;
+              suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Water Shader & Lake Surface)';
+            } else if (isTerrainGround) {
+              semanticName = `Terrain Ground @ [${primaryHit.point.x.toFixed(1)}, ${primaryHit.point.y.toFixed(1)}, ${primaryHit.point.z.toFixed(1)}]`;
+              hierarchyPath = `Scene > TerrainMesh (${geoType})`;
+              suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Terrain & World Layout)';
+            } else {
+              semanticName = `${topGroup.name || hitObj.name || 'WorldObject_3D'} (${geoType}${matColorHex ? ` ${matColorHex}` : ''} · ${bInfo.sizeMeters.w}x${bInfo.sizeMeters.h}x${bInfo.sizeMeters.d}m)`;
+              hierarchyPath = `Scene > ${topGroup.name || topGroup.type} > ${hitObj.name || geoType}`;
+              suggestedSourceFile = `src/game/BuddiesBlitzArena.tsx (World Object @ x=${bInfo.centerWorld.x}, z=${bInfo.centerWorld.z})`;
+            }
+          }
+        }
+      }
+
+      const screenBounds = targetForBounds
+        ? projectObjectBoundsToScreenRect(targetForBounds)
+        : {
+            x: detail.clientX - 24,
+            y: detail.clientY - 24,
+            w: 48,
+            h: 48,
+            sizeMeters: { w: 0, h: 0, d: 0 },
+            centerWorld: { x: 0, y: 0, z: 0 },
+          };
+      if (targetForBounds) {
+        lastInspectedWorldObject3D = targetForBounds;
+      }
+
+      const weaponLocalPos = weaponGroup
+        ? {
+            x: Number(weaponGroup.position.x.toFixed(3)),
+            y: Number(weaponGroup.position.y.toFixed(3)),
+            z: Number(weaponGroup.position.z.toFixed(3)),
+          }
+        : null;
+      const weaponLocalRotDeg = weaponGroup
+        ? {
+            x: Number((weaponGroup.rotation.x * rad2deg).toFixed(1)),
+            y: Number((weaponGroup.rotation.y * rad2deg).toFixed(1)),
+            z: Number((weaponGroup.rotation.z * rad2deg).toFixed(1)),
+          }
+        : null;
+
+      detail.onResult({
+        meshName: semanticName,
+        hierarchyPath,
+        hitPointWorld: primaryHit
+          ? {
+              x: Number(primaryHit.point.x.toFixed(2)),
+              y: Number(primaryHit.point.y.toFixed(2)),
+              z: Number(primaryHit.point.z.toFixed(2)),
+            }
+          : nearestHotspot?.worldPos ?? null,
+        screenBounds,
+        nearestBoneName,
+        nearestBoneDistPx: Number.isFinite(nearestBoneDistPx) ? Number(nearestBoneDistPx.toFixed(1)) : 999,
+        nearestBoneWorld,
+        nearestBoneLocalRotDeg,
+        activeWeaponId,
+        fishingPhase: tidewaterFishingSync.phase,
+        weaponLocalPos,
+        weaponLocalRotDeg,
+        rodFlexPivotRotXDeg: rodFlexPivot
+          ? Number((rodFlexPivot.rotation.x * rad2deg).toFixed(1))
+          : null,
+        suggestedSourceFile,
+        hotspots: sortedHotspots.map((h) => ({
+          id: h.id,
+          label: h.label,
+          category: h.category,
+          screenX: h.screenX,
+          screenY: h.screenY,
+          distPx: h.distPx,
+          worldPos: h.worldPos,
+          sourceFile: h.sourceFile,
+        })),
+      });
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
+    window.addEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
+    window.addEventListener('bb-inspect-3d-pick', onInspect3DPick);
+    window.addEventListener('bb-inspect-3d-tweak', onInspect3DTweak);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
@@ -12112,8 +12811,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         reusableGrassTramplers.push({
           x: b.x,
           z: b.z,
-          radius: 1.05,
-          weight: 0.92,
+          radius: 0.42,
+          weight: 0.38,
         });
       }
       blitzGrassSystem.setTramplers(reusableGrassTramplers);
@@ -14814,7 +15513,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             b.walkCycle = walkSync.nextWalkCycle;
             const isMoving = walkSync.isMoving;
             if (isMoving && b.jumpOffset < 0.25 && Math.random() < 0.35) {
-              blitzGrassSystem.stampFootstep(b.x, b.z, 0.78);
+              blitzGrassSystem.stampFootstep(b.x, b.z, 0.32);
             }
             const unitRoadState = evaluateRoadSurfaceSpeedBoost(b.x, b.z);
             spawnRoadBoostDustWindParticles(
@@ -14909,6 +15608,243 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 if (b.rig.gatlingGroup) b.rig.gatlingGroup.visible = false;
                 if (b.rig.fishingRodGroup) b.rig.fishingRodGroup.visible = false;
                 b.weaponMesh.visible = false;
+              }
+              // TIDEWATER 3D FISHING ROD BEND, SPINNING REEL CRANK, FLOATING BOBBER & 48-SEG CATENARY LINE
+              const rodGrp = b.rig.fishingRodGroup;
+              const isCastInWater =
+                tidewaterFishingSync.phase === 'casting' ||
+                tidewaterFishingSync.phase === 'nibble' ||
+                tidewaterFishingSync.phase === 'bite' ||
+                tidewaterFishingSync.phase === 'fighting';
+              if (rodGrp && b.weaponId === 'fishing_rod') {
+                const crankMesh = rodGrp.userData.reelCrankMesh as THREE.Mesh | undefined;
+                const rodFlexPivot = rodGrp.userData.rodFlexPivot as THREE.Group | undefined;
+                const hLine = rodGrp.userData.hangingLineMesh as THREE.Mesh | undefined;
+                const hRed = rodGrp.userData.hangingBobberRedMesh as THREE.Mesh | undefined;
+                const hWhite = rodGrp.userData.hangingBobberWhiteMesh as THREE.Mesh | undefined;
+                const tipAnchor = rodGrp.userData.rodTipAnchor as THREE.Object3D | undefined;
+                if (crankMesh) {
+                  if (rodGrp.userData.hasFishingRodGlb) {
+                    crankMesh.rotation.z = tidewaterFishingSync.reelAngle;
+                  } else {
+                    crankMesh.rotation.x = tidewaterFishingSync.reelAngle;
+                  }
+                }
+                if (hLine) hLine.visible = !isCastInWater;
+                if (hRed) hRed.visible = !isCastInWater;
+                if (hWhite) hWhite.visible = !isCastInWater;
+
+                // Apply Tidewater progressive rod blank bend (`rodFlexPivot.rotation.x`) without tilting the handle out of the hands
+                if (tidewaterFishingSync.phase === 'charging') {
+                  b.rig.weaponRigGroup.rotation.x -= tidewaterFishingSync.castPower * 0.45;
+                  if (rodFlexPivot) {
+                    rodFlexPivot.rotation.x = -tidewaterFishingSync.castPower * 0.16;
+                  }
+                } else if (isCastInWater) {
+                  const bend =
+                    tidewaterFishingSync.phase === 'fighting'
+                      ? tidewaterFishingSync.rodBend
+                      : tidewaterFishingSync.phase === 'bite'
+                        ? 0.62
+                        : tidewaterFishingSync.phase === 'nibble'
+                          ? 0.22 * Math.abs(Math.sin(timeSec * 8.5))
+                          : 0.08;
+                  b.rig.weaponRigGroup.rotation.x += bend * 0.12;
+                  if (rodFlexPivot) {
+                    rodFlexPivot.rotation.x = bend * 0.54;
+                  }
+                } else if (rodFlexPivot) {
+                  rodFlexPivot.rotation.x = 0;
+                }
+
+                // Drive the 9 skeletal flex joints (`Bone002_01`..`Bone010_09`) of `/assets/fishing-rod.glb`
+                const flexBones = rodGrp.userData.flexBones as THREE.Object3D[] | undefined;
+                if (flexBones && flexBones.length > 0 && rodFlexPivot) {
+                  const flexAngle = rodFlexPivot.rotation.x;
+                  const nBones = flexBones.length;
+                  for (let bi = 0; bi < nBones; bi++) {
+                    const bone = flexBones[bi];
+                    const baseRotZ = (bone.userData.baseRotZ as number | undefined) ?? 0;
+                    const weight = (bi + 1) / nBones;
+                    bone.rotation.z = baseRotZ - flexAngle * 0.40 * weight;
+                  }
+                }
+
+                if (isCastInWater && tipAnchor) {
+                  tidewaterFishing3DGroup.visible = true;
+                  const tipWorld = new THREE.Vector3();
+                  tipAnchor.getWorldPosition(tipWorld);
+
+                  const castYaw = tidewaterFishingSync.hasLockedCastYaw
+                    ? tidewaterFishingSync.castOriginYaw
+                    : b.yaw;
+                  const fwdX = Math.cos(castYaw);
+                  const fwdZ = -Math.sin(castYaw);
+                  const rightX = Math.sin(castYaw);
+                  const rightZ = Math.cos(castYaw);
+
+                  const castReach =
+                    tidewaterFishingSync.phase === 'fighting'
+                      ? Math.max(2.4, Math.min(14.5, tidewaterFishingSync.distanceM * 0.55))
+                      : 4.5 + tidewaterFishingSync.castPower * 6.5;
+                  const fishSway =
+                    tidewaterFishingSync.phase === 'fighting'
+                      ? Math.sin(timeSec * (tidewaterFishingSync.isSurging ? 9.5 : 3.4)) *
+                        (tidewaterFishingSync.isSurging ? 1.85 : 0.65)
+                      : 0;
+
+                  const targetBobberX = wrapPlanetCoord(b.x + fwdX * castReach + rightX * fishSway);
+                  const targetBobberZ = wrapPlanetCoord(b.z + fwdZ * castReach + rightZ * fishSway);
+                  const waveSample = evaluateTidewaterWaveHeight(
+                    targetBobberX,
+                    targetBobberZ,
+                    timeSec,
+                    tidewaterFishingSync.zoneId,
+                  );
+                  const baseWaterY =
+                    tidewaterFishingSync.zoneId === 'central_oasis'
+                      ? -0.14
+                      : Math.min(0.05, getTerrainElevation(targetBobberX, targetBobberZ) + 0.08);
+                  const dipOffset =
+                    tidewaterFishingSync.phase === 'bite'
+                      ? -0.22 - Math.abs(Math.sin(timeSec * 12.0)) * 0.14
+                      : tidewaterFishingSync.phase === 'nibble'
+                        ? -0.12 * Math.abs(Math.sin(timeSec * 7.5))
+                        : tidewaterFishingSync.phase === 'fighting'
+                          ? -0.08
+                          : 0;
+                  const targetBobberY =
+                    baseWaterY +
+                    waveSample.heightY +
+                    dipOffset +
+                    computePlanetYOffset(
+                      targetBobberX,
+                      targetBobberZ,
+                      camera.position.x,
+                      camera.position.z,
+                    );
+
+                  // Parabolic Ballistic Cast Flight (Tidewater FishingRod.js: flying -> splash -> floating)
+                  const flyElapsedSec = Math.max(
+                    0,
+                    (performance.now() - tidewaterFishingSync.castStartWallMs) / 1000,
+                  );
+                  const flyDurationSec = 0.44 + tidewaterFishingSync.castPower * 0.22;
+                  const flyProgress =
+                    tidewaterFishingSync.phase === 'casting'
+                      ? Math.min(1, flyElapsedSec / flyDurationSec)
+                      : 1;
+                  const isFlyingInAir = flyProgress < 1;
+
+                  const bobberX = isFlyingInAir
+                    ? tipWorld.x + (targetBobberX - tipWorld.x) * flyProgress
+                    : targetBobberX;
+                  const bobberZ = isFlyingInAir
+                    ? tipWorld.z + (targetBobberZ - tipWorld.z) * flyProgress
+                    : targetBobberZ;
+                  const arcLiftY = isFlyingInAir
+                    ? Math.sin(flyProgress * Math.PI) * (1.85 + tidewaterFishingSync.castPower * 2.4)
+                    : 0;
+                  const bobberY = isFlyingInAir
+                    ? tipWorld.y + (targetBobberY - tipWorld.y) * flyProgress + arcLiftY
+                    : targetBobberY;
+
+                  if (!isFlyingInAir && !tidewaterFishingSync.hasSplashedDown) {
+                    tidewaterFishingSync.hasSplashedDown = true;
+                    spawnBurstParticles(bobberX, bobberY + 0.18, bobberZ, 8);
+                  }
+
+                  castBobberGroup.position.set(bobberX, bobberY, bobberZ);
+                  // Scale bobber slightly with camera distance so it stays readable at all cast ranges (Tidewater FishingRod.js line 536)
+                  const camDistToBobber = Math.hypot(
+                    camera.position.x - bobberX,
+                    camera.position.y - bobberY,
+                    camera.position.z - bobberZ,
+                  );
+                  const readableBobberScale = Math.max(1.25, Math.min(2.6, camDistToBobber / 6.5));
+                  castBobberGroup.scale.setScalar(readableBobberScale);
+                  castBobberGroup.rotation.x = dipOffset * -1.2;
+
+                  bobberRippleRingMesh.visible = !isFlyingInAir;
+                  const ringPulse =
+                    tidewaterFishingSync.phase === 'bite' || tidewaterFishingSync.isSurging
+                      ? 1.0 + (timeSec * 3.2 - Math.floor(timeSec * 3.2)) * 2.2
+                      : tidewaterFishingSync.phase === 'nibble'
+                        ? 1.0 + (timeSec * 1.8 - Math.floor(timeSec * 1.8)) * 1.4
+                        : 1.0 + 0.25 * Math.sin(timeSec * 2.5);
+                  bobberRippleRingMesh.scale.setScalar(ringPulse);
+
+                  // Show 3D struggling fish thrashing in the water during 'fighting' (Tidewater FishingRod.js _waterFish)
+                  if (tidewaterFishingSync.phase === 'fighting') {
+                    waterFightingFish.group.visible = true;
+                    waterFightingFish.group.position.set(bobberX, bobberY - 0.06, bobberZ);
+                    const swimYaw =
+                      castYaw +
+                      Math.PI * 0.5 +
+                      Math.cos(timeSec * (tidewaterFishingSync.isSurging ? 9.5 : 3.4)) * 0.55;
+                    waterFightingFish.group.rotation.set(
+                      Math.sin(timeSec * 11.0) * 0.14,
+                      swimYaw,
+                      Math.cos(timeSec * 9.0) * 0.18,
+                    );
+                    waterFightingFish.updateSwimAnimation(
+                      timeSec * (tidewaterFishingSync.isSurging ? 2.6 : 1.35),
+                    );
+                  } else {
+                    waterFightingFish.group.visible = false;
+                  }
+
+                  if (
+                    (tidewaterFishingSync.phase === 'bite' || tidewaterFishingSync.isSurging) &&
+                    timeSec - tidewaterFishingSync.lastSplashTime > 0.36
+                  ) {
+                    tidewaterFishingSync.lastSplashTime = timeSec;
+                    spawnBurstParticles(bobberX, bobberY + 0.15, bobberZ, 6);
+                  }
+
+                  // Tidewater 48-Segment Catenary Fishing Line (`sag = (1 - tension) * min(dist * 0.08, 1.2) * 4 * s * (1 - s)`)
+                  const lineTension =
+                    tidewaterFishingSync.phase === 'fighting'
+                      ? Math.max(0, Math.min(1, tidewaterFishingSync.tension))
+                      : tidewaterFishingSync.phase === 'bite'
+                        ? 0.85
+                        : 0.18;
+                  const lineDist = Math.hypot(
+                    bobberX - tipWorld.x,
+                    bobberY - tipWorld.y,
+                    bobberZ - tipWorld.z,
+                  );
+                  const maxSag = (1.0 - lineTension) * Math.min(lineDist * 0.08, 1.2);
+                  for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
+                    const s = seg / TIDEWATER_LINE_SEGS;
+                    const sag = maxSag * 4.0 * s * (1.0 - s);
+                    const idx3 = seg * 3;
+                    catenaryLinePositions[idx3] = tipWorld.x + (bobberX - tipWorld.x) * s;
+                    catenaryLinePositions[idx3 + 1] =
+                      tipWorld.y + (bobberY - tipWorld.y) * s - sag;
+                    catenaryLinePositions[idx3 + 2] = tipWorld.z + (bobberZ - tipWorld.z) * s;
+                  }
+                  catenaryLineGeo.attributes.position.needsUpdate = true;
+
+                  if (tidewaterFishingSync.phase === 'fighting') {
+                    if (tidewaterFishingSync.tension > 0.85) {
+                      catenaryLineMat.color.setHex(0xef4444); // Danger Overload Red
+                    } else if (
+                      tidewaterFishingSync.tension >= 0.3 &&
+                      tidewaterFishingSync.tension <= 0.85
+                    ) {
+                      catenaryLineMat.color.setHex(0x4ade80); // Green Sweet-Spot Band (3.3x Stamina Drain!)
+                    } else {
+                      catenaryLineMat.color.setHex(0xfacc15); // Low-tension Yellow
+                    }
+                  } else {
+                    catenaryLineMat.color.setHex(0xe2e8f0);
+                  }
+                } else {
+                  tidewaterFishing3DGroup.visible = false;
+                }
+              } else {
+                tidewaterFishing3DGroup.visible = false;
               }
               if (promptOverlay) {
                 promptOverlay.setAttribute(
@@ -18077,13 +19013,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         p.padSign.sprite.visible = false;
       }
 
-      dirLight.position.set(
-        finalLookX + blitzSunOffset.x,
-        blitzSunOffset.y,
-        finalLookZ + blitzSunOffset.z,
-      );
-      dirLight.target.position.set(finalLookX, 0, finalLookZ);
-      dirLight.target.updateMatrixWorld();
+      const shouldUpdateShadowMap = !isSoftwareGl && frameTickCount % 3 === 0;
+      if (shouldUpdateShadowMap || frameTickCount <= 2) {
+        // Snap directional light target in light-space texel increments so stationary tree/building
+        // shadows stay 100% locked to the world grid without sub-texel swimming or 1-frame matrix lag.
+        const projU = finalLookX * shadowLightRight.x + finalLookZ * shadowLightRight.z;
+        const projV = finalLookX * shadowLightUp.x + finalLookZ * shadowLightUp.z;
+        const projW = finalLookX * shadowLightBack.x + finalLookZ * shadowLightBack.z;
+        const snapU = Math.round(projU / shadowTexelWorldSize) * shadowTexelWorldSize;
+        const snapV = Math.round(projV / shadowTexelWorldSize) * shadowTexelWorldSize;
+        const snapW = Math.round(projW / shadowTexelWorldSize) * shadowTexelWorldSize;
+        const snappedLookX =
+          shadowLightRight.x * snapU + shadowLightUp.x * snapV + shadowLightBack.x * snapW;
+        const snappedLookY =
+          shadowLightRight.y * snapU + shadowLightUp.y * snapV + shadowLightBack.y * snapW;
+        const snappedLookZ =
+          shadowLightRight.z * snapU + shadowLightUp.z * snapV + shadowLightBack.z * snapW;
+
+        dirLight.position.set(
+          snappedLookX + blitzSunOffset.x,
+          snappedLookY + blitzSunOffset.y,
+          snappedLookZ + blitzSunOffset.z,
+        );
+        dirLight.target.position.set(snappedLookX, snappedLookY, snappedLookZ);
+        dirLight.updateMatrixWorld();
+        dirLight.target.updateMatrixWorld();
+        dirLight.shadow.updateMatrices(dirLight);
+        renderer.shadowMap.needsUpdate = true;
+      }
 
       if (
         dirLight.shadow.map &&
@@ -18374,9 +19331,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, w, h);
       } else {
-        if (frameTickCount % 3 === 0) {
-          renderer.shadowMap.needsUpdate = true;
-        }
         renderer.render(scene, camera);
       }
 
@@ -18392,12 +19346,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // Update selected character 3D flat ground targeting ring (#22c55e)
+      // Update selected character 3D flat ground targeting ring (#22c55e) & auto-dismiss when player walks away
       if (selectedCharacterTarget && selectedCharacterTarget.root) {
         const rootPos = selectedCharacterTarget.root.position;
-        const groundY = getTerrainElevation(rootPos.x, rootPos.z);
-        characterSelectionRing.position.set(rootPos.x, groundY + 0.04, rootPos.z);
-        characterSelectionRing.rotation.z += dt * 1.5;
+        const px = playerUnit?.x ?? 0;
+        const pz = playerUnit?.z ?? 0;
+        const distToTarget = getPlanetShortestDistance(px, pz, rootPos.x, rootPos.z);
+        const distPlayerMoved = getPlanetShortestDistance(
+          px,
+          pz,
+          selectedCharacterOriginPlayerPos.x,
+          selectedCharacterOriginPlayerPos.z,
+        );
+        const isSelfSelected =
+          Boolean(selectedCharacterTarget.isSelf) ||
+          selectedCharacterTarget.root === playerUnit?.root;
+
+        if (
+          (isSelfSelected && distPlayerMoved > 2.0) ||
+          (!isSelfSelected && (distToTarget > 9.5 || (distPlayerMoved > 4.5 && distToTarget > 5.0)))
+        ) {
+          clearCharacterSelection();
+          window.dispatchEvent(new CustomEvent('character-deselected'));
+          window.dispatchEvent(new CustomEvent('close-character-profile-modal'));
+        } else {
+          const groundY = getTerrainElevation(rootPos.x, rootPos.z);
+          characterSelectionRing.position.set(rootPos.x, groundY + 0.04, rootPos.z);
+          characterSelectionRing.rotation.z += dt * 1.5;
+        }
       }
 
       // Update 2D DOM floating prompt buttons with pixel-perfect Math.round() & Hysteresis at 60 FPS
@@ -18505,6 +19481,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
           seatIndicatorBtns[si].btn.style.display = 'none';
+          if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
         }
         return;
       }
@@ -18614,7 +19591,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // Tampilkan ikon SVG Segi Enam pada mesin Kiosk ketika didekati
       if (nearProximityKiosk !== 'none') {
-        const ky = getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 2.5;
+        const ky = getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 1.85;
         const proj = projectWorldToScreenPixels(nearKioskWorldX, ky, nearKioskWorldZ);
         if (proj.visible) {
           teleportKioskHexBtn.style.display = 'block';
@@ -18665,11 +19642,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         for (let si = 0; si < LOBBY_SEAT_SPOTS.length; si++) {
           const spot = LOBBY_SEAT_SPOTS[si];
           const entry = seatIndicatorBtns[si];
+          const coin3D = lobbySeatCoinMeshes[si];
           const isCurrentlySeatedHere =
             Boolean(playerUnit.isSitting) && activeSeatedSpot?.id === spot.id;
           const dist = getPlanetShortestDistance(actorX, actorZ, spot.x, spot.z);
-          if (isCurrentlySeatedHere || dist > 18.0) {
+          if (isCurrentlySeatedHere || dist > 20.0) {
             entry.btn.style.display = 'none';
+            if (coin3D) coin3D.coinRoot.visible = false;
             continue;
           }
           const isNearestActive = si === bestSeatIdx;
@@ -18678,8 +19657,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             entry.state = desiredState;
             entry.btn.innerHTML = isNearestActive ? SEAT_DISC_GREEN_HTML : SEAT_DISC_BLUE_HTML;
           }
-          const bobOffset = Math.sin(performance.now() * 0.0032 + si * 0.85) * 0.07;
+          const nowMs = performance.now();
+          const bobOffset = Math.sin(nowMs * 0.0036 + si * 0.85) * 0.09;
           const syWorld = getTerrainElevation(spot.x, spot.z) + spot.indicatorHeightY + bobOffset;
+          if (coin3D) {
+            coin3D.coinRoot.visible = true;
+            coin3D.coinRoot.position.set(spot.x, syWorld - 0.36, spot.z);
+            coin3D.coinRoot.rotation.y = nowMs * 0.0028 + si * 0.7;
+            coin3D.greenCoin.visible = isNearestActive;
+            coin3D.blueCoin.visible = !isNearestActive;
+          }
           const proj = projectWorldToScreenPixels(spot.x, syWorld, spot.z);
           if (proj.visible && proj.x >= 24 && proj.x <= w - 24 && proj.y >= 24 && proj.y <= h - 24) {
             entry.btn.style.display = 'block';
@@ -18704,6 +19691,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
           seatIndicatorBtns[si].btn.style.display = 'none';
+          if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
         }
       }
 
@@ -19336,6 +20324,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);
       window.removeEventListener('select-character-by-id', onSelectCharacterById);
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
+      window.removeEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
+      window.removeEventListener('bb-inspect-3d-pick', onInspect3DPick);
+      window.removeEventListener('bb-inspect-3d-tweak', onInspect3DTweak);
+      scene.remove(tidewaterFishing3DGroup);
+      catenaryLineGeo.dispose();
+      catenaryLineMat.dispose();
       if (promptOverlay.parentElement) {
         promptOverlay.parentElement.removeChild(promptOverlay);
       }

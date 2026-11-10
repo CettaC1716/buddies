@@ -217,6 +217,45 @@ export interface DbBasePlotRow {
 }
 
 /**
+ * Finds an existing player profile row in `public.bb_profiles` by Google email address (`email` column).
+ */
+export async function findPlayerProfileByGoogleEmail(
+  rawEmail: string,
+): Promise<DbPlayerProfileRow | null> {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    const cleanEmail = rawEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) return null;
+
+    const { data: existing } = await supabase
+      .from('bb_profiles')
+      .select('*')
+      .eq('email', cleanEmail)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!existing) return null;
+    return {
+      ...existing,
+      lul_balance: Number(existing.lul_balance ?? 0),
+      cyon_balance: Number(existing.cyon_balance ?? 0),
+      respite_balance: Number(existing.respite_balance ?? 0),
+      warzone_gold: Number(existing.warzone_gold ?? 0),
+      owned_token_ids: Array.isArray(existing.owned_token_ids)
+        ? existing.owned_token_ids
+        : ['nep245:theme:japanese_zen'],
+      unlocked_skins: Array.isArray(existing.unlocked_skins)
+        ? existing.unlocked_skins
+        : ['default'],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetches or creates a player profile row in `public.bb_profiles`.
  */
 export async function fetchOrCreatePlayerProfile(params: {
@@ -229,6 +268,10 @@ export async function fetchOrCreatePlayerProfile(params: {
     const supabase = getSupabaseClient();
     if (!supabase) return null;
     const cleanAccount = params.nearAccountId.trim().toLowerCase().slice(0, 64);
+    const cleanEmail =
+      params.email && params.email.trim().includes('@')
+        ? params.email.trim().toLowerCase().slice(0, 120)
+        : null;
 
     const { data: existing } = await supabase
       .from('bb_profiles')
@@ -237,8 +280,15 @@ export async function fetchOrCreatePlayerProfile(params: {
       .maybeSingle();
 
     if (existing) {
+      if (cleanEmail && existing.email !== cleanEmail) {
+        void supabase
+          .from('bb_profiles')
+          .update({ email: cleanEmail, updated_at: new Date().toISOString() })
+          .eq('near_account_id', cleanAccount);
+      }
       return {
         ...existing,
+        email: cleanEmail || existing.email || null,
         lul_balance: Number(existing.lul_balance ?? 0),
         cyon_balance: Number(existing.cyon_balance ?? 0),
         respite_balance: Number(existing.respite_balance ?? 0),
@@ -256,7 +306,7 @@ export async function fetchOrCreatePlayerProfile(params: {
       near_account_id: cleanAccount,
       auth_mode: params.authMode || 'social_invisible',
       display_name: (params.displayName || cleanAccount.split('.')[0].toUpperCase()).slice(0, 48),
-      email: null, // Never store raw PII email in public table
+      email: cleanEmail,
       lul_balance: 0,
       cyon_balance: 0,
       respite_balance: 0,

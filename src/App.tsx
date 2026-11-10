@@ -49,6 +49,7 @@ import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
 } from './components/NpcMerchantAndHouseModal';
+import { TidewaterFishingHudAndShowcase } from './components/TidewaterCatchShowcaseModal';
 import {
   MERCHANT_CATALOG_ITEMS,
   createInitialMerchantMarketState,
@@ -105,6 +106,7 @@ import {
   fetchGamepassNftLedgerFromSupabase,
   fetchNpcMerchantsFromSupabase,
   fetchOrCreatePlayerProfile,
+  findPlayerProfileByGoogleEmail,
   insertMarketTransactionReceipt,
   insertSocialChatMessageToSupabase,
   signInWithGoogleOAuth,
@@ -121,10 +123,17 @@ import {
 import {
   detectNearbyFishingWaterZone,
   rollRandomCaughtFish,
+  createTidewaterBiteSchedule,
+  createTidewaterMinigameState,
+  stepTidewaterMinigame,
   INITIAL_DEMO_FISH_MARKET_LISTINGS,
   type CaughtFishItem,
   type FishNftMarketplaceListing,
+  type FishingPhaseState,
+  type TidewaterBiteSchedule,
+  type TidewaterMinigameState,
 } from './game/buddiesFishingMarket';
+import { InGameElementAndBonePicker } from './components/InGameElementAndBonePicker';
 
 const INITIAL_HUD: HudSnapshot = {
   hp: PLAYER_WARZONE_MAX_HP,
@@ -281,6 +290,22 @@ export default function App() {
         (params.get('world') && params.get('world') !== 'lobby')
       ) {
         return 'completed';
+      }
+      try {
+        const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+        const explicitlyLoggedOut =
+          window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
+        if (
+          lastId &&
+          !explicitlyLoggedOut &&
+          !lastId.toLowerCase().startsWith('player1.') &&
+          !lastId.toLowerCase().startsWith('guest-') &&
+          !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
+        ) {
+          return 'completed';
+        }
+      } catch {
+        // ignore storage errors
       }
     }
     return 'auth_choice';
@@ -486,7 +511,15 @@ export default function App() {
   const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>(
     INITIAL_DEMO_FISH_MARKET_LISTINGS,
   );
-  const [fishingPhase, setFishingPhase] = useState<'idle' | 'casting' | 'bite'>('idle');
+  const [fishingPhase, setFishingPhase] = useState<FishingPhaseState>('idle');
+  const [fishingCastPower, setFishingCastPower] = useState<number>(0.72);
+  const [isChargingCast, setIsChargingCast] = useState<boolean>(false);
+  const [fishingBiteSchedule, setFishingBiteSchedule] = useState<TidewaterBiteSchedule | null>(
+    null,
+  );
+  const [fishingHintMessage, setFishingHintMessage] = useState<string | null>(null);
+  const [fishingMinigame, setFishingMinigame] = useState<TidewaterMinigameState | null>(null);
+  const [isHoldingReel, setIsHoldingReel] = useState<boolean>(false);
   const [lastCaughtFishToast, setLastCaughtFishToast] = useState<CaughtFishItem | null>(null);
 
   // Hydrate initial state from NEAR Testnet RPC & Supabase PostgreSQL + Realtime
@@ -1055,18 +1088,38 @@ export default function App() {
   }, [characterGender, playerDisplayName, worldMode, worldTransitionCount, dispatchBuddyAction]);
 
   const persistWalletProfileLocally = useCallback(
-    (walletId: string, displayName: string, gender: 'male' | 'female') => {
+    (
+      walletId: string,
+      displayName: string,
+      gender: 'male' | 'female',
+      googleEmailOverride?: string,
+    ) => {
       if (typeof window === 'undefined') return;
       const cleanWallet = walletId.trim().toLowerCase();
       if (!cleanWallet) return;
       try {
         window.localStorage.setItem('bb_last_connected_wallet_id', cleanWallet);
+        window.localStorage.setItem('bb_explicit_logged_out_v1', '0');
         const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
         const map: Record<string, { displayName: string; gender: 'male' | 'female' }> = rawMap
           ? JSON.parse(rawMap)
           : {};
         map[cleanWallet] = { displayName, gender };
         window.localStorage.setItem('bb_saved_wallet_profiles_v1', JSON.stringify(map));
+
+        const activeEmail = (
+          googleEmailOverride ||
+          window.localStorage.getItem('bb_connected_google_email') ||
+          ''
+        )
+          .trim()
+          .toLowerCase();
+        if (activeEmail && activeEmail.includes('@')) {
+          const rawEmailMap = window.localStorage.getItem('bb_wallet_by_google_email_v1');
+          const emailMap: Record<string, string> = rawEmailMap ? JSON.parse(rawEmailMap) : {};
+          emailMap[activeEmail] = cleanWallet;
+          window.localStorage.setItem('bb_wallet_by_google_email_v1', JSON.stringify(emailMap));
+        }
         setSavedWalletSummary({ walletId: cleanWallet, displayName, gender });
       } catch {
         // ignore storage errors
@@ -1076,8 +1129,17 @@ export default function App() {
   );
 
   const handleConnectWalletAndEnterLobby = useCallback(
-    async (rawWalletInput: string) => {
-      soundEngine.playUiClick();
+    async (
+      rawWalletInput: string,
+      options?: {
+        silentRestore?: boolean;
+        isNewWalletCreation?: boolean;
+        googleEmail?: string;
+      },
+    ) => {
+      if (!options?.silentRestore) {
+        soundEngine.playUiClick();
+      }
       setWalletConnectError(null);
       const cleanInput = rawWalletInput.trim().toLowerCase();
       if (!cleanInput) {
@@ -1090,11 +1152,15 @@ export default function App() {
         setWalletConnectError('Please enter your Google email address to continue.');
         return;
       }
-      const resolvedEmail = cleanInput.includes('@')
-        ? cleanInput
-        : !cleanInput.endsWith('.testnet') && !cleanInput.endsWith('.near')
-          ? `${cleanInput}@gmail.com`
-          : '';
+      const explicitGoogleEmail = (options?.googleEmail ?? '').trim().toLowerCase();
+      const resolvedEmail =
+        explicitGoogleEmail && explicitGoogleEmail.includes('@')
+          ? explicitGoogleEmail
+          : cleanInput.includes('@')
+            ? cleanInput
+            : typeof window !== 'undefined'
+              ? window.localStorage.getItem('bb_connected_google_email') || ''
+              : '';
       if (resolvedEmail && typeof window !== 'undefined') {
         try {
           window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
@@ -1136,6 +1202,7 @@ export default function App() {
       // 1. Check local saved wallet profile first for instant restoration
       let restoredGender: 'male' | 'female' = characterGender;
       let restoredName = normalizedWallet.split('.')[0].toUpperCase();
+      let hadExistingLocalProfile = false;
       if (typeof window !== 'undefined') {
         try {
           const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
@@ -1146,6 +1213,7 @@ export default function App() {
             >;
             const saved = parsed[normalizedWallet];
             if (saved) {
+              hadExistingLocalProfile = true;
               restoredGender = saved.gender;
               restoredName = saved.displayName;
             }
@@ -1155,7 +1223,7 @@ export default function App() {
         }
       }
 
-      // Bind Wallet Address as Player UID & Launch "Preparing Your Wallet -> Citizen Wallet Active" Modal
+      // Bind Wallet Address as Player UID; only show "Preparing Your Wallet" modal when creating a brand-new wallet!
       setPlayerUid(normalizedWallet);
       setWalletConnectInput(normalizedWallet);
       setCharacterGender(restoredGender);
@@ -1163,8 +1231,13 @@ export default function App() {
       setWalletUsernameDraft(restoredName);
       setOnboardingAuthMode('wallet');
       setOnboardingStep('completed');
-      setCitizenWalletSetupProgress(15);
-      setCitizenWalletModalPhase('preparing');
+      setGameState('playing');
+      if (options?.silentRestore || (hadExistingLocalProfile && !options?.isNewWalletCreation)) {
+        setCitizenWalletModalPhase('idle');
+      } else {
+        setCitizenWalletSetupProgress(15);
+        setCitizenWalletModalPhase('preparing');
+      }
 
       // Unlock QA & Treasury Management Menu only if Master UID is cryptographically verified
       if (isMasterAdminWallet(normalizedWallet) && Boolean(loadSavedAdminCryptographicProof()?.verified)) {
@@ -1183,13 +1256,14 @@ export default function App() {
         nearHasGamepassNft: true,
         nearGamepassTokenId: nextLedger.tokenId,
       }));
-      persistWalletProfileLocally(normalizedWallet, restoredName, restoredGender);
+      persistWalletProfileLocally(normalizedWallet, restoredName, restoredGender, resolvedEmail);
 
       // 2. Fetch or restore existing profile from Supabase `bb_profiles` keyed by Wallet UID (`near_account_id`)
       void fetchOrCreatePlayerProfile({
         nearAccountId: normalizedWallet,
         displayName: restoredName,
         authMode: 'near_wallet',
+        email: resolvedEmail || null,
       }).then((profile) => {
         if (profile) {
           setSupabaseConnected(true);
@@ -1210,7 +1284,7 @@ export default function App() {
           setWalletUsernameDraft(finalName);
           dispatchBuddyAction(`setCharacterGender:${finalGender}`);
           dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
-          persistWalletProfileLocally(normalizedWallet, finalName, finalGender);
+          persistWalletProfileLocally(normalizedWallet, finalName, finalGender, resolvedEmail);
           void syncPlayerBalancesToSupabase({
             nearAccountId: normalizedWallet,
             displayName: finalName,
@@ -1262,6 +1336,73 @@ export default function App() {
     setCitizenWalletModalPhase('choose_name');
   }, []);
 
+  /**
+   * Checks if a Google email already has an existing Citizen Wallet in `localStorage` or Supabase `bb_profiles`.
+   * If found, automatically restores that existing wallet instead of asking the user to create a new wallet!
+   */
+  const resolveAndRestoreExistingGoogleWallet = useCallback(
+    async (rawEmail?: string): Promise<boolean> => {
+      const cleanEmail = (rawEmail ?? '').trim().toLowerCase();
+      if (cleanEmail && typeof window !== 'undefined') {
+        try {
+          const rawEmailMap = window.localStorage.getItem('bb_wallet_by_google_email_v1');
+          const emailMap: Record<string, string> = rawEmailMap ? JSON.parse(rawEmailMap) : {};
+          const mappedWallet = emailMap[cleanEmail];
+          if (
+            mappedWallet &&
+            !mappedWallet.startsWith('player1.') &&
+            !mappedWallet.startsWith('guest-')
+          ) {
+            await handleConnectWalletAndEnterLobby(mappedWallet, {
+              silentRestore: true,
+              googleEmail: cleanEmail,
+            });
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+
+        const remoteProfile = await findPlayerProfileByGoogleEmail(cleanEmail);
+        if (remoteProfile && remoteProfile.near_account_id) {
+          await handleConnectWalletAndEnterLobby(remoteProfile.near_account_id, {
+            silentRestore: true,
+            googleEmail: cleanEmail,
+          });
+          return true;
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          const lastWallet = (
+            window.localStorage.getItem('bb_last_connected_wallet_id') || ''
+          )
+            .trim()
+            .toLowerCase();
+          if (
+            lastWallet &&
+            !lastWallet.startsWith('player1.') &&
+            !lastWallet.startsWith('guest-') &&
+            !lastWallet.endsWith('.buddiesblitz-master.testnet')
+          ) {
+            await handleConnectWalletAndEnterLobby(lastWallet, {
+              silentRestore: true,
+              googleEmail: cleanEmail || undefined,
+            });
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      openCitizenWalletNamingModal(cleanEmail);
+      return false;
+    },
+    [handleConnectWalletAndEnterLobby, openCitizenWalletNamingModal],
+  );
+
   const { login: privyLogin } = useLogin({
     onComplete: ({ user, wasAlreadyAuthenticated }) => {
       const googleEmail = user?.google?.email || user?.email?.address || '';
@@ -1273,7 +1414,7 @@ export default function App() {
       if (pendingPrivyGoogleFlowRef.current || hasPendingRedirect || !wasAlreadyAuthenticated) {
         pendingPrivyGoogleFlowRef.current = false;
         setIsVerifyingNearWallet(false);
-        openCitizenWalletNamingModal(googleEmail);
+        void resolveAndRestoreExistingGoogleWallet(googleEmail);
       } else if (googleEmail) {
         setConnectedGoogleEmail(googleEmail);
         if (typeof window !== 'undefined') {
@@ -1296,15 +1437,14 @@ export default function App() {
         }
       }
       if (String(err) !== 'exited_auth_flow') {
-        openCitizenWalletNamingModal();
+        void resolveAndRestoreExistingGoogleWallet();
       }
     },
   });
 
   /**
-   * Step 1 of Google Login (via Privy.io): Initiates Privy Google Sign-In and opens the
-   * "Choose Your Wallet Name" modal so the player can type their custom wallet name
-   * before provisioning `<name>.buddiesblitz.testnet`.
+   * Step 1 of Google Login (via Privy.io): Initiates Privy Google Sign-In and either
+   * restores the player's existing wallet or opens "Choose Your Wallet Name" for new players.
    */
   const handleStartGoogleLoginAndOpenWalletNaming = useCallback(
     async (rawEmailInput?: string) => {
@@ -1314,14 +1454,14 @@ export default function App() {
       const cleanEmail = (rawEmailInput ?? '').trim().toLowerCase();
 
       if (cleanEmail) {
-        openCitizenWalletNamingModal(cleanEmail);
+        await resolveAndRestoreExistingGoogleWallet(cleanEmail);
         return;
       }
 
       if (privyReady && privyAuthenticated) {
         const activePrivyEmail =
           privyUser?.google?.email || privyUser?.email?.address || connectedGoogleEmail;
-        openCitizenWalletNamingModal(activePrivyEmail);
+        await resolveAndRestoreExistingGoogleWallet(activePrivyEmail);
         return;
       }
 
@@ -1345,35 +1485,53 @@ export default function App() {
       if (oauthRes.redirected) {
         return;
       }
-      openCitizenWalletNamingModal();
+      await resolveAndRestoreExistingGoogleWallet();
     },
     [
       connectedGoogleEmail,
-      openCitizenWalletNamingModal,
       privyAuthenticated,
       privyLogin,
       privyReady,
       privyUser,
+      resolveAndRestoreExistingGoogleWallet,
     ],
   );
 
-  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`), Privy OAuth redirect, or Supabase Google OAuth session on mount
+  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`),
+  // auto-restore saved active wallet session on web reload / server restart, or consume Supabase Google OAuth session on mount
   useEffect(() => {
     const callback = consumeNearWalletCallbackFromUrl();
     if (callback && callback.accountId) {
-      void handleConnectWalletAndEnterLobby(callback.accountId);
+      void handleConnectWalletAndEnterLobby(callback.accountId, { silentRestore: true });
+    } else if (typeof window !== 'undefined') {
+      try {
+        const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+        const explicitlyLoggedOut =
+          window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
+        if (
+          lastId &&
+          !explicitlyLoggedOut &&
+          !lastId.toLowerCase().startsWith('player1.') &&
+          !lastId.toLowerCase().startsWith('guest-') &&
+          !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
+        ) {
+          void handleConnectWalletAndEnterLobby(lastId, { silentRestore: true });
+        }
+      } catch {
+        // ignore
+      }
     }
     const unsubGoogle = subscribeToSupabaseGoogleAuth((email) => {
       if (email) {
-        openCitizenWalletNamingModal(email);
+        void resolveAndRestoreExistingGoogleWallet(email);
       }
     });
     return () => {
       unsubGoogle();
     };
-  }, [handleConnectWalletAndEnterLobby, openCitizenWalletNamingModal]);
+  }, [handleConnectWalletAndEnterLobby, resolveAndRestoreExistingGoogleWallet]);
 
-  // If returning from a full-page Privy Google OAuth redirect, automatically enter game and open Wallet Naming modal
+  // If returning from a full-page Privy Google OAuth redirect, automatically restore existing wallet or open Wallet Naming modal
   useEffect(() => {
     if (!privyReady || !privyAuthenticated) return;
     const hasPendingRedirect =
@@ -1382,9 +1540,9 @@ export default function App() {
         window.location.search.includes('privy_oauth_'));
     if (hasPendingRedirect) {
       const googleEmail = privyUser?.google?.email || privyUser?.email?.address || '';
-      openCitizenWalletNamingModal(googleEmail);
+      void resolveAndRestoreExistingGoogleWallet(googleEmail);
     }
-  }, [openCitizenWalletNamingModal, privyAuthenticated, privyReady, privyUser]);
+  }, [privyAuthenticated, privyReady, privyUser, resolveAndRestoreExistingGoogleWallet]);
 
   useEffect(() => {
     if (citizenWalletModalPhase !== 'preparing') return;
@@ -1661,38 +1819,249 @@ export default function App() {
     playerRadarDot?.z ?? 0,
   );
 
-  const handleTriggerFishingAction = useCallback(() => {
+  // Sync Tidewater 3D Bobber, 48-Seg Catenary Line, Progressive Rod Bend & Spinning Reel with BuddiesBlitzArena
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('tidewater-fishing-sync', {
+        detail: {
+          phase: fishingPhase,
+          castPower: fishingCastPower,
+          tension: fishingMinigame?.tension ?? (fishingPhase === 'bite' ? 0.82 : 0.2),
+          isSurging: fishingMinigame?.isSurging ?? false,
+          rodBend: fishingMinigame?.rodBend ?? (fishingPhase === 'bite' ? 0.62 : 0),
+          reelAngle: fishingMinigame?.reelAngle ?? 0,
+          zoneId: nearbyWaterZone.zoneId ?? 'east_beach',
+          distanceM: fishingMinigame?.distanceM ?? 8.0 + fishingCastPower * 16.0,
+        },
+      }),
+    );
+  }, [
+    fishingPhase,
+    fishingCastPower,
+    fishingMinigame,
+    nearbyWaterZone.zoneId,
+  ]);
+
+  // Tidewater Hold-to-Charge Cast Power Loop (0..100% over 1.1s)
+  useEffect(() => {
+    if (!isChargingCast || fishingPhase !== 'charging') return;
+    let power = 0.18;
+    setFishingCastPower(power);
+    const id = window.setInterval(() => {
+      power = Math.min(1.0, Number((power + 0.045).toFixed(2)));
+      setFishingCastPower(power);
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [isChargingCast, fishingPhase]);
+
+  // Tidewater Line-Tension + Stamina + Periodic Surge 60FPS Minigame Loop
+  useEffect(() => {
+    if (fishingPhase !== 'fighting') return;
+    const id = window.setInterval(() => {
+      setFishingMinigame((prev) => {
+        if (!prev || prev.status !== 'active') return prev;
+        return stepTidewaterMinigame(prev, 0.05, isHoldingReel);
+      });
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [fishingPhase, isHoldingReel]);
+
+  // Resolve Tidewater Minigame Outcome ('caught' | 'snapped' | 'escaped')
+  useEffect(() => {
+    if (fishingPhase !== 'fighting' || !fishingMinigame || fishingMinigame.status === 'active') {
+      return;
+    }
     const pDot = hudRef.current.radarDots.find((d) => d.kind === 'player');
     const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
     const activeZone = waterCheck.zoneId ?? 'east_beach';
     const actorAccount =
       hudRef.current.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
 
-    soundEngine.playUiClick();
-    dispatchBuddyAction('qcEquipWeapon:fishing_rod');
-
-    if (fishingPhase === 'bite') {
+    if (fishingMinigame.status === 'caught') {
+      soundEngine.playPowerCore();
       const caught = rollRandomCaughtFish({
         waterZone: activeZone,
         caughtByAccount: actorAccount,
+        lightingPreset,
+        castPower: fishingMinigame.castPower,
+        specificSpecies: fishingMinigame.species,
       });
       setCaughtFishBucket((prev) => [caught, ...prev].slice(0, 20));
       setLastCaughtFishToast(caught);
-      setFishingPhase('idle');
+      setFishingHintMessage(null);
+    } else {
+      soundEngine.playHit();
+      setFishingHintMessage(
+        fishingMinigame.statusReason ||
+          'The fish broke free! Keep tension inside the Green Band (30%-85%).',
+      );
+    }
+    setIsHoldingReel(false);
+    setFishingMinigame(null);
+    setFishingPhase('idle');
+  }, [fishingPhase, fishingMinigame, lightingPreset, nep171Ledger.ownerNearAccount]);
+
+  const launchTidewaterCast = useCallback(
+    (powerToUse: number) => {
+      if (caughtFishBucket.length >= 20) return;
+      const pDot = hudRef.current.radarDots.find((d) => d.kind === 'player');
+      const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
+      const activeZone = waterCheck.zoneId ?? 'east_beach';
+
+      soundEngine.playPickup();
+      dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+      const clampedPower = Math.max(0.2, Math.min(1.0, powerToUse));
+      setFishingCastPower(clampedPower);
+      const schedule = createTidewaterBiteSchedule({
+        waterZone: activeZone,
+        lightingPreset,
+        castPower: clampedPower,
+      });
+      setFishingBiteSchedule(schedule);
+      setFishingHintMessage(null);
+      setLastCaughtFishToast(null);
+      setIsChargingCast(false);
+      setFishingPhase('casting');
+
+      // Stage 1: Preliminary Nibble (0.65s after splashdown)
+      window.setTimeout(() => {
+        setFishingPhase((curr) => {
+          if (curr !== 'casting') return curr;
+          soundEngine.playUiClick();
+          return 'nibble';
+        });
+      }, 650);
+
+      // Stage 2: Deep Bobber Plunge ('bite' / Take) after nibble(s)
+      window.setTimeout(() => {
+        setFishingPhase((curr) => {
+          if (curr !== 'casting' && curr !== 'nibble') return curr;
+          soundEngine.playPickup();
+          setFishingHintMessage(null);
+          return 'bite';
+        });
+      }, 1550);
+    },
+    [caughtFishBucket.length, dispatchBuddyAction, lightingPreset],
+  );
+
+  const handleTriggerFishingAction = useCallback(() => {
+    const pDot = hudRef.current.radarDots.find((d) => d.kind === 'player');
+    const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
+    const activeZone = waterCheck.zoneId ?? 'east_beach';
+
+    soundEngine.playUiClick();
+    dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+
+    // Non-punishing Tidewater Nibble Cue: clicking early warns the player without losing the cast!
+    if (fishingPhase === 'nibble') {
+      setFishingHintMessage('Not yet · wait for the bobber to plunge under!');
       return;
     }
 
-    if (fishingPhase === 'idle') {
-      if (caughtFishBucket.length >= 20) {
+    // Active Fight Minigame: clicking/tapping gives a crisp reel-in impulse inside the Green Band!
+    if (fishingPhase === 'fighting' && fishingMinigame) {
+      setFishingMinigame((prev) => {
+        if (!prev || prev.status !== 'active') return prev;
+        const nextDist = Math.max(0, prev.distanceM - 2.6);
+        const nextStamina = Math.max(0, prev.stamina - 0.18);
+        const nextTension = prev.isSurging
+          ? Math.min(0.92, prev.tension + 0.08)
+          : Math.max(0.38, Math.min(0.76, prev.tension + 0.04));
+        return {
+          ...prev,
+          distanceM: Number(nextDist.toFixed(2)),
+          stamina: Number(nextStamina.toFixed(3)),
+          tension: Number(nextTension.toFixed(3)),
+          reelAngle: prev.reelAngle + 1.8,
+          status: nextDist <= 0.05 || nextStamina <= 0.02 ? 'caught' : 'active',
+        };
+      });
+      return;
+    }
+
+    // Hook Set on 'bite' ('take' window) -> Every catch enters the Tidewater Line-Tension + Stamina + Surge Fight Minigame!
+    if (fishingPhase === 'bite') {
+      const targetSpecies =
+        fishingBiteSchedule?.species ??
+        createTidewaterBiteSchedule({
+          waterZone: activeZone,
+          lightingPreset,
+          castPower: fishingCastPower,
+        }).species;
+
+      setFishingMinigame(createTidewaterMinigameState(targetSpecies, fishingCastPower));
+      setFishingPhase('fighting');
+      setIsHoldingReel(false);
+      setFishingHintMessage(null);
+      return;
+    }
+
+    if (fishingPhase === 'idle' || fishingPhase === 'charging') {
+      launchTidewaterCast(fishingCastPower);
+    }
+  }, [
+    dispatchBuddyAction,
+    fishingBiteSchedule,
+    fishingCastPower,
+    fishingMinigame,
+    fishingPhase,
+    launchTidewaterCast,
+    lightingPreset,
+    nep171Ledger.ownerNearAccount,
+  ]);
+
+  // Keyboard support (KeyF or Space while fishing) for Tidewater Hold-to-Charge, Strike & Hold-to-Reel
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (lastCaughtFishToast && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyF')) {
+        e.preventDefault();
+        soundEngine.playUiClick();
+        setLastCaughtFishToast(null);
         return;
       }
-      setFishingPhase('casting');
-      setLastCaughtFishToast(null);
-      window.setTimeout(() => {
-        setFishingPhase((curr) => (curr === 'casting' ? 'bite' : curr));
-      }, 1600);
-    }
-  }, [caughtFishBucket.length, dispatchBuddyAction, fishingPhase, nep171Ledger.ownerNearAccount]);
+      if (!nearbyWaterZone.canFish) return;
+      if (e.code === 'KeyF' || (fishingPhase !== 'idle' && e.code === 'Space')) {
+        if (e.repeat) return;
+        if (fishingPhase === 'fighting') {
+          e.preventDefault();
+          setIsHoldingReel(true);
+        } else if (fishingPhase === 'bite' || fishingPhase === 'nibble') {
+          e.preventDefault();
+          handleTriggerFishingAction();
+        } else if (fishingPhase === 'idle' && e.code === 'KeyF' && caughtFishBucket.length < 20) {
+          e.preventDefault();
+          setIsChargingCast(true);
+          setFishingPhase('charging');
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'KeyF' || e.code === 'Space') {
+        if (fishingPhase === 'fighting') {
+          setIsHoldingReel(false);
+        } else if (fishingPhase === 'charging') {
+          launchTidewaterCast(fishingCastPower);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [
+    caughtFishBucket.length,
+    fishingCastPower,
+    fishingPhase,
+    handleTriggerFishingAction,
+    lastCaughtFishToast,
+    launchTidewaterCast,
+    nearbyWaterZone.canFish,
+  ]);
 
   const currentPresetConfig = LIGHTING_PRESETS[lightingPreset];
   const scaleX = hexRect.width / 500;
@@ -2054,7 +2423,9 @@ export default function App() {
                       type="button"
                       data-reconnect-saved-wallet-btn="true"
                       onClick={() =>
-                        void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId)
+                        void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId, {
+                          silentRestore: true,
+                        })
                       }
                       className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
                     >
@@ -2406,7 +2777,10 @@ export default function App() {
                           );
                           return;
                         }
-                        void handleConnectWalletAndEnterLobby(cleanName);
+                        void handleConnectWalletAndEnterLobby(cleanName, {
+                          isNewWalletCreation: true,
+                          googleEmail: connectedGoogleEmail,
+                        });
                       }
                     }}
                     placeholder="Enter wallet name (e.g. charvi, rakyan)"
@@ -2440,7 +2814,10 @@ export default function App() {
                       );
                       return;
                     }
-                    void handleConnectWalletAndEnterLobby(cleanName);
+                    void handleConnectWalletAndEnterLobby(cleanName, {
+                      isNewWalletCreation: true,
+                      googleEmail: connectedGoogleEmail,
+                    });
                   }}
                   className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                 >
@@ -3039,6 +3416,58 @@ export default function App() {
                   </div>
                 );
               })()}
+
+              {/* Top-Right Dedicated Self Profile & Wallet Buttons (Replaces clicking own 3D character) */}
+              <button
+                type="button"
+                data-top-self-profile-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setIsTargetMenuExpanded(false);
+                  setSelectedTargetUser(null);
+                  setProfileTargetUser({
+                    id: 0,
+                    name: playerDisplayName || 'BUDDY',
+                    isNpc: false,
+                    isSelf: true,
+                    distance: 0,
+                    team: hud.playerTeam ?? 'blue',
+                    status: 'Online',
+                  });
+                  setIsProfileModalOpen(true);
+                }}
+                className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                title="View Your Profile"
+              >
+                <span className="skew-x-12 flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                  <span>PROFILE</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                data-top-self-wallet-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setIsTargetMenuExpanded(false);
+                  setSelectedTargetUser(null);
+                  setIsKioskModalOpen(false);
+                  setIsSocialChatModalOpen(false);
+                  setActiveSpecialModal('none');
+                  setActiveTeleportKioskModal('none');
+                  window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                  window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                  setIsPersonalWalletModalOpen(true);
+                }}
+                className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                title="Open Your Personal Citizen Wallet"
+              >
+                <span className="skew-x-12 flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                  <span>WALLET</span>
+                </span>
+              </button>
 
               {/* Skewed Polygonal QA & Treasury Menu Button (Only shown when Cryptographic Master Proof is active) */}
               {((isQcMenuUnlocked && Boolean(loadSavedAdminCryptographicProof()?.verified)) ||
@@ -4161,88 +4590,119 @@ export default function App() {
           )}
 
           {/* =================================================================
-              3E-2. BOTTOM-CENTER: SHORELINE FISHING BAR (Active Near Any Water: Central Oasis Lake or East Beach)
+              3E-2. BOTTOM-CENTER: TIDEWATER FISHING HUD, NEEDLE GAUGE & 3D CATCH SHOWCASE MODAL
              ================================================================= */}
           {playMode !== 'editor' && (nearbyWaterZone.canFish || lastCaughtFishToast) && (
-            <div
-              data-fishing-hud-bar="true"
-              className="fixed bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2"
-            >
-              {lastCaughtFishToast && (
-                <div
-                  data-caught-fish-toast="true"
-                  className="bg-[#0f172a] text-white border-3 border-black ring-2 ring-[#b8ff3c] shadow-[4px_4px_0_#000] px-3.5 py-2 flex items-center gap-3"
-                >
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black text-[9px] font-black uppercase">
-                        CAUGHT ({lastCaughtFishToast.rarity})
-                      </span>
-                      <span className="text-xs font-black uppercase text-[#fec83e]">
-                        {lastCaughtFishToast.speciesName} ({lastCaughtFishToast.weightKg.toFixed(2)} kg)
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-300">
-                      Sell to NPC Kai for +{lastCaughtFishToast.sellValueCyon || lastCaughtFishToast.sellValueLul} CYON (Off-Chain), Mint as NFT for RESPITE, or Release if unwanted
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    data-toast-release-fish-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      const targetId = lastCaughtFishToast.id;
-                      setCaughtFishBucket((prev) => prev.filter((f) => f.id !== targetId));
-                      setLastCaughtFishToast(null);
-                    }}
-                    className="-skew-x-6 px-2.5 py-1 bg-slate-200 hover:bg-white text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 inline-block">RELEASE</span>
-                  </button>
-                </div>
-              )}
-
-              {nearbyWaterZone.canFish && (
-                <div className="bg-[#14161d]/95 text-white border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-3.5 py-2 flex items-center gap-3">
-                  <div className="flex flex-col">
-                    <span className="text-[9.5px] font-black uppercase tracking-wider text-[#38bdf8]">
-                      WATER DETECTED: {nearbyWaterZone.zoneLabel}
-                    </span>
-                    <span className="text-[10.5px] font-bold text-white/90">
-                      {fishingPhase === 'casting'
-                        ? 'Bobber in water... Waiting for fish bite...'
-                        : fishingPhase === 'bite'
-                          ? 'STRIKE! Fish on the hook — Reel in now!'
-                          : caughtFishBucket.length >= 20
-                            ? 'Fish Bucket Full (20/20) — Release or Sell fish at NPC Kai first!'
-                            : `Fish Bucket: ${caughtFishBucket.length}/20 (Sell for CYON, Mint for RESPITE, or Release)`}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    data-cast-fishing-rod-btn="true"
-                    disabled={fishingPhase === 'casting' || (fishingPhase === 'idle' && caughtFishBucket.length >= 20)}
-                    onClick={handleTriggerFishingAction}
-                    className={`-skew-x-12 px-3.5 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase transition-transform ${
-                      fishingPhase === 'bite'
-                        ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black animate-bounce cursor-pointer'
-                        : fishingPhase === 'casting'
-                          ? 'bg-slate-600 text-slate-300 cursor-wait'
-                          : 'bg-[#fec83e] hover:bg-[#fde047] text-black cursor-pointer active:scale-95'
-                    }`}
-                  >
-                    <span className="skew-x-12 inline-block">
-                      {fishingPhase === 'bite'
-                        ? 'REEL IN CATCH!'
-                        : fishingPhase === 'casting'
-                          ? 'WAITING FOR BITE...'
-                          : 'CAST FISHING ROD'}
-                    </span>
-                  </button>
-                </div>
-              )}
-            </div>
+            <TidewaterFishingHudAndShowcase
+              nearbyWaterZone={nearbyWaterZone}
+              fishingPhase={fishingPhase}
+              fishingCastPower={fishingCastPower}
+              fishingHintMessage={fishingHintMessage}
+              fishingMinigame={fishingMinigame}
+              isHoldingReel={isHoldingReel}
+              caughtFishBucketCount={caughtFishBucket.length}
+              lastCaughtFishToast={lastCaughtFishToast}
+              onStartChargeCast={() => {
+                if (fishingPhase === 'idle' && caughtFishBucket.length < 20) {
+                  setIsChargingCast(true);
+                  setFishingPhase('charging');
+                }
+              }}
+              onReleaseChargeCast={() => {
+                if (fishingPhase === 'charging') {
+                  launchTidewaterCast(fishingCastPower);
+                }
+              }}
+              onSetHoldingReel={(holding) => {
+                setIsHoldingReel(holding);
+              }}
+              onCancelCast={() => {
+                soundEngine.playUiClick();
+                setIsChargingCast(false);
+                setIsHoldingReel(false);
+                setFishingMinigame(null);
+                setFishingHintMessage(null);
+                setFishingPhase('idle');
+              }}
+              onTriggerFishingAction={handleTriggerFishingAction}
+              onKeepCaughtFish={() => {
+                soundEngine.playUiClick();
+                setLastCaughtFishToast(null);
+              }}
+              onReleaseCaughtFish={(fish) => {
+                soundEngine.playUiClick();
+                setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+                setLastCaughtFishToast(null);
+              }}
+              onSellCaughtFishToKai={(fish) => {
+                soundEngine.playPickup();
+                const actorAccount =
+                  hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+                const earnedCyon = fish.sellValueCyon || fish.sellValueLul || 15;
+                setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+                setLastCaughtFishToast(null);
+                const nextCyon = cyonBalance + earnedCyon;
+                setCyonBalance(nextCyon);
+                if (isManagedSubAccountOfMaster(actorAccount)) {
+                  setManagedSubAccounts(updateSubAccountBalances(actorAccount, 0, earnedCyon));
+                }
+                void syncPlayerBalancesToSupabase({
+                  nearAccountId: actorAccount,
+                  lulBalance: hud.gold,
+                  cyonBalance: nextCyon,
+                  respiteBalance,
+                });
+                void insertMarketTransactionReceipt({
+                  merchant_id: 'beach_house',
+                  actor_near_account: actorAccount,
+                  action_type: 'sell_fish',
+                  item_id: fish.speciesId,
+                  currency: 'CYON',
+                  amount: earnedCyon,
+                  unit_price: earnedCyon,
+                  reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly from Catch Showcase to Merchant Kai for +${earnedCyon} CYON (Off-Chain).`,
+                });
+              }}
+              onMintCaughtFishAsNft={(fish) => {
+                soundEngine.playPickup();
+                const actorAccount =
+                  hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+                const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
+                const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
+                const nearTxHash = `near-fish-mint-${Date.now().toString(36)}`;
+                setCaughtFishBucket((prev) =>
+                  prev.map((f) =>
+                    f.id === fish.id
+                      ? {
+                          ...f,
+                          isMintedNft: true,
+                          nftTokenId,
+                          nearTxHash,
+                        }
+                      : f,
+                  ),
+                );
+                setLastCaughtFishToast((prev) =>
+                  prev && prev.id === fish.id
+                    ? { ...prev, isMintedNft: true, nftTokenId, nearTxHash }
+                    : prev,
+                );
+                void executeMarketContractCallOnChain({
+                  methodName: 'mint_fish_nft',
+                  ownerId: actorAccount,
+                  tokenIds: [nftTokenId],
+                  memoData: {
+                    species_id: fish.speciesId,
+                    species_name: fish.speciesName,
+                    water_zone: fish.waterZone,
+                    rarity: fish.rarity,
+                    weight_kg: fish.weightKg,
+                    length_cm: fish.lengthCm ?? null,
+                    is_trophy: Boolean(fish.isTrophy),
+                  },
+                });
+              }}
+            />
           )}
 
           {/* =================================================================
@@ -5185,6 +5645,8 @@ export default function App() {
               water_zone: fish.waterZone,
               rarity: fish.rarity,
               weight_kg: fish.weightKg,
+              length_cm: fish.lengthCm ?? null,
+              is_trophy: Boolean(fish.isTrophy),
             },
           }).then((res) => {
             if (res.txHash) {
@@ -5227,6 +5689,8 @@ export default function App() {
             waterZoneLabel: fish.waterZoneLabel,
             rarity: fish.rarity,
             weightKg: fish.weightKg,
+            lengthCm: fish.lengthCm,
+            isTrophy: fish.isTrophy,
             colorHex: fish.colorHex,
             caughtByAccount: fish.caughtByAccount,
             sellerNearAccount: actorAccount,
@@ -5770,6 +6234,7 @@ export default function App() {
                     setConnectedGoogleEmail('');
                     if (typeof window !== 'undefined') {
                       try {
+                        window.localStorage.setItem('bb_explicit_logged_out_v1', '1');
                         window.localStorage.removeItem('bb_connected_google_email');
                       } catch {
                         // ignore
@@ -6077,7 +6542,17 @@ export default function App() {
                 - If Self (YOU): 2 Buttons (WALLET, PROFILE)
                 - If Other Player / NPC: 3 Buttons (TALK, PROFILE, WHISPER)
          ===================================================================== */}
-      {selectedTargetUser && !isProfileModalOpen && !isSocialChatModalOpen && activeSpecialModal === 'none' && (
+      {selectedTargetUser &&
+        !selectedTargetUser.isSelf &&
+        String(selectedTargetUser.id) !== '0' &&
+        !isProfileModalOpen &&
+        !isSocialChatModalOpen &&
+        !isKioskModalOpen &&
+        !isPersonalWalletModalOpen &&
+        !isNearWalletSelectorOpen &&
+        activeSpecialModal === 'none' &&
+        activeTeleportKioskModal === 'none' &&
+        fishingPhase === 'idle' && (
         <aside
           aria-label={`Target: ${selectedTargetUser.name}`}
           className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1.5 pointer-events-auto select-none"
@@ -6390,6 +6865,11 @@ export default function App() {
           await handleConnectWalletAndEnterLobby(accountId);
         }}
       />
+
+      {/* =====================================================================
+          13. IN-GAME ELEMENT & 3D BONE PICKER (Alt + Click / Alt + Shift + I)
+         ===================================================================== */}
+      <InGameElementAndBonePicker />
     </main>
   );
 }

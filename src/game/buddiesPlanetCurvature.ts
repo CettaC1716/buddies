@@ -604,6 +604,17 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
     }
   }
 
+  // Halte Lobby Safezone Raised Boarding Platform Deck (+0.26m) & North/South Sloped Access Ramps
+  // Platform deck spans worldX in [-64.97, -58.37], worldZ in [-7.70, +7.70], with 1.50m ramps at |worldZ| in [7.70, 9.20]
+  let haltePlatformElev = 0.0;
+  const absHalteZ = Math.abs(worldZ);
+  if (worldX >= -65.15 && worldX <= -58.15 && absHalteZ <= 9.25) {
+    const xMask =
+      smoothstep(-65.15, -64.85, worldX) * (1.0 - smoothstep(-58.48, -58.15, worldX));
+    const zRampMask = 1.0 - smoothstep(7.68, 9.20, absHalteZ);
+    haltePlatformElev = 0.26 * xMask * zRampMask;
+  }
+
   // 3-Level Concave Basin Depression ("level cekungan danau") for the Central-West Oasis Lake
   const lakeSdf = evaluateNwLakeSdf(worldX, worldZ);
   let lakeBasinDepression = 0.0;
@@ -614,7 +625,8 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
     lakeBasinDepression = lakeStep1 + lakeStep2 + lakeStep3;
   }
 
-  const baseArenaElev = Math.max(westPlantElev, seBoardwalkElev) - lakeBasinDepression;
+  const baseArenaElev =
+    Math.max(westPlantElev, seBoardwalkElev, haltePlatformElev) - lakeBasinDepression;
   const { t1, t2, t3, t4 } = evaluateEmbankmentTierOffsets(worldX, worldZ);
   if (t1 <= -0.1) return baseArenaElev;
   const step1 = smoothstep(0.0, 1.45, t1) * 3.2;

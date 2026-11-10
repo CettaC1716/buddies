@@ -1649,7 +1649,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'solid',
         materialTag: 'metal',
-        radius: 0.56 * s,
+        radius: 0.34 * s,
         mass: 9999,
         restitution: 0.3,
         destructible: false,
@@ -1662,7 +1662,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'solid',
         materialTag: 'metal',
-        radius: 0.58 * s,
+        radius: 0.42 * s,
         mass: 9999,
         restitution: 0.32,
         destructible: false,
@@ -1675,9 +1675,9 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'solid',
         materialTag: 'wood',
-        radius: 1.05 * s,
-        halfX: 1.22 * s,
-        halfZ: 0.56 * s,
+        radius: 0.68 * s,
+        halfX: 0.76 * s,
+        halfZ: 0.36 * s,
         mass: 9999,
         restitution: 0.25,
         destructible: false,
@@ -1734,7 +1734,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'pushable',
         materialTag: 'metal',
-        radius: 0.85 * s,
+        radius: 0.68 * s,
         mass: 2.2,
         restitution: 0.48,
         destructible: false,
@@ -1747,7 +1747,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'pushable',
         materialTag: 'plastic',
-        radius: 0.48 * s,
+        radius: 0.38 * s,
         mass: 0.8,
         restitution: 0.58,
         destructible: false,
@@ -1760,7 +1760,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'pushable',
         materialTag: 'plastic',
-        radius: 0.64 * s,
+        radius: 0.5 * s,
         mass: 1.4,
         restitution: 0.5,
         destructible: false,
@@ -1775,7 +1775,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'pushable',
         materialTag: 'metal',
-        radius: 0.62 * s,
+        radius: 0.5 * s,
         mass: 1.6,
         restitution: 0.45,
         destructible: false,
@@ -1801,7 +1801,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'pushable',
         materialTag: 'wood',
-        radius: 0.95 * s,
+        radius: 0.74 * s,
         mass: 2.6,
         restitution: 0.42,
         destructible: true,
@@ -1872,7 +1872,7 @@ export function getPropCollisionSpec(kind: string, scale = 1.0): PropCollisionSp
       return {
         category: 'breakable',
         materialTag: 'metal',
-        radius: 0.78 * s,
+        radius: 0.62 * s,
         mass: 2.5,
         restitution: 0.35,
         destructible: true,

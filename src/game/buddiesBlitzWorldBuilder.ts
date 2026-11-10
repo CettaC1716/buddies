@@ -227,6 +227,24 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
   return cloneDefaultLayout();
 }
 
+/**
+ * Golden Scale Calibration Benchmark anchored to the East Halte Trem (`ModernUrbanTramStopShelter3D`)
+ * relative to the 3.85m Buddy character (`3.45x` Mixamo rig).
+ * Shared between 3D procedural builders and `buildStaticWorldStructuresList` so 3D meshes and
+ * OBB colliders remain 100% synchronized.
+ */
+export const HALTE_GOLDEN_SCALE_CONFIG = {
+  characterHeightM: 3.85,
+  halteCanopyClearanceM: 5.05,
+  kioskScaleS: 1.4, // 0.62x of legacy 2.25 -> ~2.54m height (0.66x character height)
+  kioskColliderHeightY: 2.55,
+  lobbyParasolScale: 1.62, // raised from 1.38 so umbrella canopy clears 3.85m character head (~3.95m)
+  lobbyLampPoleScale: 1.06, // sleek ~4.81m promenade lamp pole matching the 5.05m Halte canopy
+  streetLamppostBaseHeightM: 4.35, // at 1.15x layout scale -> 5.00m (down from 8.51m giant lamppost)
+  beachShowerScale: 1.72, // raised from 1.55 so rain showerhead sits at ~4.44m (above 3.85m character head)
+  beachSurfRackScale: 1.18, // calibrated from 1.48 so surfboards stand ~3.71m instead of 4.66m
+} as const;
+
 export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
   switch (kind) {
     case 'turbine':
@@ -239,7 +257,7 @@ export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
       return 9.2;
     case 'lamppost_1a':
     case 'lamppost_1b':
-      return 7.4;
+      return HALTE_GOLDEN_SCALE_CONFIG.streetLamppostBaseHeightM;
     case 'dump_truck':
       return 3.8;
     case 'forklift':
@@ -265,18 +283,18 @@ export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
     case 'h_beam':
       return 2.45;
     case 'barricade':
-      return 1.85;
+      return 1.42;
     case 'explosive_barrel':
     case 'barrel_1c':
-      return 1.75;
+      return 1.38;
     case 'hydrant':
-      return 1.65;
+      return 1.18;
     case 'recycle_bin':
-      return 1.6;
+      return 1.22;
     case 'bench':
-      return 1.75;
+      return 1.08;
     case 'wheelbarrow':
-      return 1.45;
+      return 1.14;
     case 'pallet_1a':
       return 1.35;
     case 'fuel_cell':
@@ -284,7 +302,7 @@ export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
     case 'circuit_module':
       return 1.15;
     case 'traffic_cone':
-      return 1.08;
+      return 0.86;
     default:
       return 2.2;
   }
@@ -516,6 +534,9 @@ export function buildStaticWorldStructuresList(params: {
   const excBoomOffset = 4.55;
   const plotOffsetsX = [-45.0, -15.0, 15.0, 45.0] as const;
   const bastionLocalZ = [-51.4, -21.4, 8.6, 38.6] as const;
+  const parasolRatio = HALTE_GOLDEN_SCALE_CONFIG.lobbyParasolScale / 1.38;
+  const showerRatio = HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale / 1.55;
+  const surfRackRatio = HALTE_GOLDEN_SCALE_CONFIG.beachSurfRackScale / 1.48;
   const structures: StaticWorldStructureObb[] = [
     // Sealed Lobby Safezone Perimeter Colliders (continuous parapet around the flat plaza; portals sit on the flat upper deck at (-84.0, ±15.0))
     { id: 'west_wall_north', x: -90.5, z: -38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
@@ -526,8 +547,8 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'west_wall_east_s', x: -76.45, z: 26.5, halfX: 0.28, halfZ: 11.6, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
 
     // Lobby Safezone Self-Service Tactical Kiosks (without crate pad), Contemporary Pergola, Modern Coffee & Gelato Kiosk, Parasol Tables & 6 Integrated Concrete Planter Benches
-    { id: 'west_plaza_near_terminal', x: -81.8, z: -8.2, halfX: 1.05, halfZ: 1.45, rotY: 0, heightY: 5.5, mat: 'metal' },
-    { id: 'west_plaza_gold_exchange', x: -81.8, z: -14.8, halfX: 1.05, halfZ: 1.45, rotY: 0, heightY: 5.5, mat: 'metal' },
+    { id: 'west_plaza_near_terminal', x: -81.8, z: -8.2, halfX: 0.65, halfZ: 0.88, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'west_plaza_gold_exchange', x: -81.8, z: -14.8, halfX: 0.65, halfZ: 0.88, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'lobby_pergola_rear_screen', x: -101.04, z: 12.2, halfX: 0.38, halfZ: 3.32, rotY: 0, heightY: 5.8, mat: 'wood' },
     { id: 'lobby_pergola_left_screen', x: -99.34, z: 15.43, halfX: 1.75, halfZ: 0.38, rotY: 0, heightY: 5.8, mat: 'wood' },
     { id: 'lobby_pergola_post_rf', x: -97.63, z: 8.97, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 5.8, mat: 'metal' },
@@ -537,8 +558,8 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'lobby_pergola_table_n', x: -96.94, z: 10.50, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 2.6, mat: 'wood' },
     { id: 'lobby_gelato_kiosk_body', x: -98.15, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 5.8, mat: 'metal' },
     { id: 'lobby_gelato_kiosk_stools', x: -95.16, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_parasol_table_n', x: -97.7, z: -3.76, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 4.8, mat: 'wood' },
-    { id: 'lobby_parasol_table_s', x: -97.7, z: 1.76, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 4.8, mat: 'wood' },
+    { id: 'lobby_parasol_table_n', x: -97.7, z: -3.76, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(4.8 * parasolRatio).toFixed(2), mat: 'wood' },
+    { id: 'lobby_parasol_table_s', x: -97.7, z: 1.76, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(4.8 * parasolRatio).toFixed(2), mat: 'wood' },
     { id: 'lobby_planter_bench_n', x: -90.5, z: -32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 4.5, mat: 'concrete' },
     { id: 'lobby_planter_bench_s', x: -90.5, z: 32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 4.5, mat: 'concrete' },
     { id: 'lobby_planter_bench_wn', x: -99.7, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 4.5, mat: 'concrete' },
@@ -550,17 +571,21 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'lobby_amphitheater_rail_s', x: -78.45, z: 11.42, halfX: 1.82, halfZ: 0.24, rotY: 0, heightY: 2.6, mat: 'concrete' },
     { id: 'lobby_amphitheater_bleacher_n', x: -79.15, z: -3.28, halfX: 1.12, halfZ: 3.12, rotY: 0, heightY: 2.6, mat: 'wood' },
     { id: 'lobby_amphitheater_bleacher_s', x: -79.15, z: 8.28, halfX: 1.12, halfZ: 3.12, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_tram_shelter_windbreak', x: -59.6, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: 3.2, mat: 'concrete' },
+    // East Halte Trem Shelter Colliders (Windbreak Wall, Self-Service Teleport Kiosk, Ticket Machine & Slatted Passenger Bench)
+    { id: 'lobby_tram_shelter_windbreak', x: -59.6, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'halte_teleport_kiosk', x: -61.95, z: 0.0, halfX: 0.56, halfZ: 0.72, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'halte_ticket_machine', x: -59.96, z: -5.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
+    { id: 'halte_passenger_bench', x: -60.14, z: 2.60, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
 
     // South-East Coastal Beachfront & Park Structures (Pergola Pavilion, Tables, Pots, Planters, Shower Station, Juice Kiosk, Surfboard Rack, Lifeguard Watchtower, Loungers, Chairs, Palms & Railings)
     { id: 'beach_planter_w1', x: 78.55, z: 51.0, halfX: 0.52, halfZ: 3.78, rotY: 0, heightY: 2.2, mat: 'concrete' },
     { id: 'beach_planter_w2', x: 78.55, z: 66.2, halfX: 0.52, halfZ: 3.28, rotY: 0, heightY: 2.2, mat: 'concrete' },
     { id: 'beach_planter_w3', x: 78.55, z: 80.5, halfX: 0.52, halfZ: 3.28, rotY: 0, heightY: 2.2, mat: 'concrete' },
     { id: 'beach_planter_w4', x: 78.55, z: 96.0, halfX: 0.52, halfZ: 3.28, rotY: 0, heightY: 2.2, mat: 'concrete' },
-    { id: 'beach_lamp_1', x: 75.85, z: 49.5, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'beach_lamp_2', x: 75.85, z: 63.0, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'beach_lamp_3', x: 75.85, z: 76.5, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'beach_lamp_4', x: 75.85, z: 91.5, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'beach_lamp_1', x: 75.85, z: 49.5, halfX: 0.24, halfZ: 0.24, rotY: 0, heightY: 5.05, mat: 'metal' },
+    { id: 'beach_lamp_2', x: 75.85, z: 63.0, halfX: 0.24, halfZ: 0.24, rotY: 0, heightY: 5.05, mat: 'metal' },
+    { id: 'beach_lamp_3', x: 75.85, z: 76.5, halfX: 0.24, halfZ: 0.24, rotY: 0, heightY: 5.05, mat: 'metal' },
+    { id: 'beach_lamp_4', x: 75.85, z: 91.5, halfX: 0.24, halfZ: 0.24, rotY: 0, heightY: 5.05, mat: 'metal' },
 
     // Pergola Pavilion: Rear Trellis & 3 Rear Columns, 3 Front Columns, Lounger Bench, 2 Café Table+Chair Sets & 5 Ceramic Flower Pots
     { id: 'beach_pergola_pavilion', x: 80.22, z: 88.5, halfX: 0.44, halfZ: 7.25, rotY: 0, heightY: 5.8, mat: 'wood' },
@@ -577,9 +602,9 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'beach_pergola_pot_5', x: 81.08, z: 82.39, halfX: 0.56, halfZ: 0.56, rotY: 0, heightY: 2.2, mat: 'concrete' },
 
     // Shower Station Pillars & 2 Flanking Ceramic Flower Pots
-    { id: 'beach_shower_station', x: 83.02, z: 72.8, halfX: 0.48, halfZ: 1.68, rotY: 0, heightY: 5.5, mat: 'wood' },
-    { id: 'beach_shower_pot_s', x: 83.21, z: 75.87, halfX: 0.56, halfZ: 0.56, rotY: 0, heightY: 2.2, mat: 'concrete' },
-    { id: 'beach_shower_pot_n', x: 83.21, z: 69.73, halfX: 0.56, halfZ: 0.56, rotY: 0, heightY: 2.2, mat: 'concrete' },
+    { id: 'beach_shower_station', x: 83.02, z: 72.8, halfX: +(0.48 * showerRatio).toFixed(2), halfZ: +(1.68 * showerRatio).toFixed(2), rotY: 0, heightY: +(5.5 * showerRatio).toFixed(2), mat: 'wood' },
+    { id: 'beach_shower_pot_s', x: +(83.6 - 0.25 * HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale).toFixed(2), z: +(72.8 + 1.98 * HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale).toFixed(2), halfX: +(0.56 * showerRatio).toFixed(2), halfZ: +(0.56 * showerRatio).toFixed(2), rotY: 0, heightY: 2.2, mat: 'concrete' },
+    { id: 'beach_shower_pot_n', x: +(83.6 - 0.25 * HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale).toFixed(2), z: +(72.8 - 1.98 * HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale).toFixed(2), halfX: +(0.56 * showerRatio).toFixed(2), halfZ: +(0.56 * showerRatio).toFixed(2), rotY: 0, heightY: 2.2, mat: 'concrete' },
 
     // Beachside Juice & Coconut Kiosk, Bar Stools, Overflowing Coconut Crates & Corner Ceramic Pots
     { id: 'beach_juice_kiosk', x: 82.22, z: 60.0, halfX: 3.05, halfZ: 4.05, rotY: 0, heightY: 6.2, mat: 'wood' },
@@ -589,7 +614,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'beach_kiosk_pot_r', x: 79.84, z: 63.92, halfX: 0.56, halfZ: 0.56, rotY: 0, heightY: 2.2, mat: 'concrete' },
 
     // Surfboard Rental Rack & Coastal Lifeguard Watchtower
-    { id: 'beach_surfboard_rack', x: 83.8, z: 49.5, halfX: 1.28, halfZ: 3.98, rotY: -0.18, heightY: 5.5, mat: 'wood' },
+    { id: 'beach_surfboard_rack', x: 83.8, z: 49.5, halfX: +(1.28 * surfRackRatio).toFixed(2), halfZ: +(3.98 * surfRackRatio).toFixed(2), rotY: -0.18, heightY: +(5.5 * surfRackRatio).toFixed(2), mat: 'wood' },
     { id: 'beach_lifeguard_tower', x: 101.6, z: 67.5, halfX: 3.45, halfZ: 2.35, rotY: 0, heightY: 7.5, mat: 'wood' },
 
     // Nautical Rope Railings & Staircase Side Handrails
@@ -689,10 +714,10 @@ export function buildStaticWorldStructuresList(params: {
         id: `${team}_plot_${pIdx}_kiosk`,
         x: pwx + sign * 8.52,
         z: baseHqZ - sign * 14.68,
-        halfX: 0.85,
-        halfZ: 0.78,
+        halfX: 0.56,
+        halfZ: 0.52,
         rotY: 0,
-        heightY: 4.1,
+        heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY,
         mat: 'metal',
       });
 

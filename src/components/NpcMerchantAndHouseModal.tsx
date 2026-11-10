@@ -1703,7 +1703,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 </span>
                                 <span className="px-1.5 py-0.5 bg-[#0f172a] text-[#38bdf8] text-[9px] font-black">
                                   {fish.weightKg.toFixed(2)} kg
+                                  {fish.lengthCm ? ` · ${fish.lengthCm} cm` : ''}
                                 </span>
+                                {fish.isTrophy && (
+                                  <span className="px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[8.5px] font-black uppercase">
+                                    TROPHY +25%
+                                  </span>
+                                )}
                                 {fish.isMintedNft && (
                                   <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
                                     MINTED NFT
@@ -1873,7 +1879,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               </span>
                               <span className="px-1.5 py-0.5 bg-black/50 text-[#b8ff3c] text-[9px] font-black">
                                 {listing.weightKg.toFixed(2)} kg
+                                {listing.lengthCm ? ` · ${listing.lengthCm} cm` : ''}
                               </span>
+                              {listing.isTrophy && (
+                                <span className="px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[8px] font-black uppercase">
+                                  TROPHY
+                                </span>
+                              )}
                             </div>
                             <div className="text-[9.5px] font-bold text-slate-300 mt-0.5 truncate">
                               Zone: {listing.waterZoneLabel} · Angler: {listing.caughtByAccount}
