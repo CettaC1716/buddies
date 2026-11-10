@@ -196,8 +196,11 @@ class SoundEngine {
   private masterLowPassFilter: BiquadFilterNode | null = null;
   private masterCompressor: DynamicsCompressorNode | null = null;
   private buffers = new Map<BlitzSampleKey, AudioBuffer>();
+  private rawAudioBuffers = new Map<BlitzSampleKey, ArrayBuffer>();
   private loadingKeys = new Set<BlitzSampleKey>();
   private preloadStarted = false;
+  private audioPreloadPromise: Promise<void> | null = null;
+  private audioPreloadComplete = false;
   private activeLoops = new Map<BlitzSampleKey, ActiveLoopVoice>();
   private lastKeyPlayMs = new Map<string, number>();
   private recentExplosionTimestamps: number[] = [];
@@ -501,15 +504,114 @@ class SoundEngine {
     }
   }
 
+  /**
+   * Preloads all 22 SFX `.mp3` files and the tactical BGM `.mp3` concurrently via `Promise.all`,
+   * reporting progress `(loaded, total)` and logging a warning on any missing optional file
+   * without blocking the preload gate.
+   */
+  public preloadAllAudioAssets(
+    onProgress?: (loaded: number, total: number) => void,
+  ): Promise<void> {
+    const sampleKeys = Object.keys(BLITZ_AUDIO_PATHS) as BlitzSampleKey[];
+    const bgmUrl = '/assets/buddies/audio/tactical-bgm.mp3';
+    const total = sampleKeys.length + 1;
+
+    if (this.audioPreloadComplete || typeof fetch === 'undefined') {
+      onProgress?.(total, total);
+      return Promise.resolve();
+    }
+
+    let loaded = 0;
+    onProgress?.(0, total);
+
+    const advance = () => {
+      loaded += 1;
+      onProgress?.(loaded, total);
+    };
+
+    const samplePromises = sampleKeys.map(async (key) => {
+      if (this.rawAudioBuffers.has(key) || this.buffers.has(key)) {
+        advance();
+        return;
+      }
+      const url = BLITZ_AUDIO_PATHS[key];
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const arr = await res.arrayBuffer();
+        this.rawAudioBuffers.set(key, arr);
+        if (this.ctx) {
+          try {
+            const decoded = await this.ctx.decodeAudioData(arr.slice(0));
+            if (decoded) {
+              this.buffers.set(key, decoded);
+            }
+          } catch {
+            // Will decode on demand or use procedural synth fallback
+          }
+        }
+      } catch (err) {
+        console.warn(`[PreloadGate] Non-critical audio sample failed to preload (${url}):`, err);
+      } finally {
+        advance();
+      }
+    });
+
+    const bgmPromise = (async () => {
+      try {
+        const res = await fetch(bgmUrl);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        await res.arrayBuffer();
+      } catch (err) {
+        console.warn(`[PreloadGate] Non-critical BGM audio failed to preload (${bgmUrl}):`, err);
+      } finally {
+        advance();
+      }
+    })();
+
+    const allPromise = Promise.all([...samplePromises, bgmPromise]).then(() => {
+      this.audioPreloadComplete = true;
+    });
+
+    if (!this.audioPreloadPromise) {
+      this.audioPreloadPromise = allPromise;
+    }
+    return allPromise;
+  }
+
   private loadSample(key: BlitzSampleKey): void {
     if (this.buffers.has(key) || this.loadingKeys.has(key) || typeof fetch === 'undefined') return;
     this.loadingKeys.add(key);
+
+    const cachedRaw = this.rawAudioBuffers.get(key);
+    if (cachedRaw && this.ctx) {
+      this.ctx
+        .decodeAudioData(cachedRaw.slice(0))
+        .then((decoded) => {
+          if (decoded) {
+            this.buffers.set(key, decoded);
+          }
+        })
+        .catch(() => {
+          // Fallback synthesis handles undecodable audio seamlessly
+        })
+        .finally(() => {
+          this.loadingKeys.delete(key);
+        });
+      return;
+    }
+
     const url = BLITZ_AUDIO_PATHS[key];
     fetch(url)
       .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error('HTTP ' + res.status))))
       .then((arr) => {
+        this.rawAudioBuffers.set(key, arr);
         if (!this.ctx) return null;
-        return this.ctx.decodeAudioData(arr);
+        return this.ctx.decodeAudioData(arr.slice(0));
       })
       .then((decoded) => {
         if (decoded) {

@@ -16,7 +16,7 @@ import {
   StaticWorldStructureObb,
 } from './buddiesBlitzTypes';
 
-export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v40';
+export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v41';
 
 /**
  * Single 180°-Rotationally Symmetric Base Section Generator (`buildTeamBaseQuadrant`):
@@ -82,9 +82,9 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 551, kind: 'tree_purple', x: -2.5, z: -24.5, rotY: -0.45, scale: 1.12 },
     { id: 552, kind: 'tree_gold', x: 6.5, z: -25.5, rotY: 0.75, scale: 1.15 },
     { id: 553, kind: 'tree_purple', x: 11.0, z: -32.5, rotY: -0.65, scale: 1.1 },
-    { id: 554, kind: 'tree_gold', x: 2.5, z: -41.5, rotY: 0.35, scale: 1.12 },
+    { id: 554, kind: 'tree_gold', x: 2.5, z: -38.5, rotY: 0.35, scale: 1.12 },
     { id: 555, kind: 'tree_purple', x: -8.5, z: -38.5, rotY: 0.95, scale: 1.08 },
-    { id: 556, kind: 'tree_gold', x: 9.5, z: -42.0, rotY: -0.25, scale: 1.12 },
+    { id: 556, kind: 'tree_gold', x: 9.5, z: -39.0, rotY: -0.25, scale: 1.12 },
     { id: 557, kind: 'flower_cluster', x: 0.0, z: -35.0, rotY: 0.4, scale: 1.35 },
     { id: 558, kind: 'river_rock', x: 2.0, z: -32.0, rotY: 0.8, scale: 1.4 },
 
@@ -192,7 +192,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 536, kind: 'lamppost_1b', x: 61.2, z: -43.2, rotY: -Math.PI / 2, scale: 1.15 },
     { id: 537, kind: 'lamppost_1b', x: 61.2, z: 43.2, rotY: Math.PI, scale: 1.15 },
 
-    { id: 538, kind: 'lamppost_1a', x: 0.0, z: -45.2, rotY: 0.0, scale: 1.15 },
+    { id: 538, kind: 'lamppost_1a', x: -3.5, z: -45.2, rotY: 0.0, scale: 1.15 },
     { id: 539, kind: 'lamppost_1a', x: 0.0, z: 45.2, rotY: Math.PI, scale: 1.15 },
     { id: 540, kind: 'lamppost_1a', x: -64.8, z: -78.0, rotY: -Math.PI / 2, scale: 1.15 },
     { id: 541, kind: 'lamppost_1a', x: -64.8, z: 78.0, rotY: -Math.PI / 2, scale: 1.15 },
@@ -494,17 +494,17 @@ export function createGlassmorphicNameplate(
     }
     ctx.restore();
 
-    // 5. Player / NPC Name Text (Bold, modern typography with shadow, vertically centered)
+    // 5. Player / NPC Name Text (Bold, modern typography with shadow, centered in nameplate tag)
     ctx.save();
     ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
     ctx.shadowBlur = 6;
     ctx.shadowOffsetX = 1.5;
     ctx.shadowOffsetY = 1.5;
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 32px "Barlow", sans-serif';
-    ctx.fillText(name.toUpperCase(), 106, 56);
+    ctx.fillText(name.toUpperCase(), 294, 56);
     ctx.restore();
 
     tex.needsUpdate = true;
@@ -538,44 +538,52 @@ export function buildStaticWorldStructuresList(params: {
   const showerRatio = HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale / 1.55;
   const surfRackRatio = HALTE_GOLDEN_SCALE_CONFIG.beachSurfRackScale / 1.48;
   const structures: StaticWorldStructureObb[] = [
-    // Sealed Lobby Safezone Perimeter Colliders (continuous parapet around the flat plaza; portals sit on the flat upper deck at (-84.0, ±15.0))
-    { id: 'west_wall_north', x: -90.5, z: -38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_south', x: -90.5, z: 38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_west', x: -104.5, z: 0.0, halfX: 0.35, halfZ: 38.2, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_east_n', x: -76.45, z: -26.5, halfX: 0.28, halfZ: 11.6, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_east_mid', x: -76.45, z: 0.0, halfX: 0.28, halfZ: 15.2, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_east_s', x: -76.45, z: 26.5, halfX: 0.28, halfZ: 11.6, rotY: 0, heightY: 2.2, mat: 'concrete', isRetainingWall: true },
+    // Open Central Plaza Perimeter Colliders (+2.50m Plaza Level: North, South, West parapets + East outer wing parapets, leaving the 20m-wide Urban Plaza Staircase z in [-10.0, +10.0] open to The City)
+    { id: 'west_wall_north', x: -90.5, z: -38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_south', x: -90.5, z: 38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_west', x: -104.5, z: 0.0, halfX: 0.35, halfZ: 38.2, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_east_n', x: -76.45, z: -24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_east_s', x: -76.45, z: 24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
 
-    // Lobby Safezone Self-Service Tactical Kiosks (without crate pad), Contemporary Pergola, Modern Coffee & Gelato Kiosk, Parasol Tables & 6 Integrated Concrete Planter Benches
-    { id: 'west_plaza_near_terminal', x: -81.8, z: -8.2, halfX: 0.65, halfZ: 0.88, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
-    { id: 'west_plaza_gold_exchange', x: -81.8, z: -14.8, halfX: 0.65, halfZ: 0.88, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
-    { id: 'lobby_pergola_rear_screen', x: -101.04, z: 12.2, halfX: 0.38, halfZ: 3.32, rotY: 0, heightY: 5.8, mat: 'wood' },
-    { id: 'lobby_pergola_left_screen', x: -99.34, z: 15.43, halfX: 1.75, halfZ: 0.38, rotY: 0, heightY: 5.8, mat: 'wood' },
-    { id: 'lobby_pergola_post_rf', x: -97.63, z: 8.97, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 5.8, mat: 'metal' },
-    { id: 'lobby_pergola_bench_rear', x: -100.52, z: 12.11, halfX: 0.48, halfZ: 3.02, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_pergola_bench_left', x: -98.83, z: 14.89, halfX: 1.28, halfZ: 0.48, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_pergola_table_s', x: -96.94, z: 13.16, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_pergola_table_n', x: -96.94, z: 10.50, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_gelato_kiosk_body', x: -98.15, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 5.8, mat: 'metal' },
-    { id: 'lobby_gelato_kiosk_stools', x: -95.16, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_parasol_table_n', x: -97.7, z: -3.76, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(4.8 * parasolRatio).toFixed(2), mat: 'wood' },
-    { id: 'lobby_parasol_table_s', x: -97.7, z: 1.76, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(4.8 * parasolRatio).toFixed(2), mat: 'wood' },
-    { id: 'lobby_planter_bench_n', x: -90.5, z: -32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_planter_bench_s', x: -90.5, z: 32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_planter_bench_wn', x: -99.7, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_planter_bench_ws', x: -99.7, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_planter_bench_en', x: -81.1, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_planter_bench_es', x: -81.1, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    // Sunken Stepped Amphitheater Seating Bleachers & Sloped Side Glass-Timber Balustrades (Sheet 5)
-    { id: 'lobby_amphitheater_rail_n', x: -78.45, z: -6.42, halfX: 1.82, halfZ: 0.24, rotY: 0, heightY: 2.6, mat: 'concrete' },
-    { id: 'lobby_amphitheater_rail_s', x: -78.45, z: 11.42, halfX: 1.82, halfZ: 0.24, rotY: 0, heightY: 2.6, mat: 'concrete' },
-    { id: 'lobby_amphitheater_bleacher_n', x: -79.15, z: -3.28, halfX: 1.12, halfZ: 3.12, rotY: 0, heightY: 2.6, mat: 'wood' },
-    { id: 'lobby_amphitheater_bleacher_s', x: -79.15, z: 8.28, halfX: 1.12, halfZ: 3.12, rotY: 0, heightY: 2.6, mat: 'wood' },
-    // East Halte Trem Shelter Colliders (Windbreak Wall, Self-Service Teleport Kiosk, Ticket Machine & Slatted Passenger Bench)
+    // Central Plaza Contemporary Pergola, Modern Coffee & Gelato Kiosk, Parasol Tables & 6 Integrated Concrete Planter Benches (+2.50m Plaza Level)
+    { id: 'lobby_pergola_rear_screen', x: -101.04, z: 12.2, halfX: 0.38, halfZ: 3.32, rotY: 0, heightY: 6.9, mat: 'wood' },
+    { id: 'lobby_pergola_left_screen', x: -99.34, z: 15.43, halfX: 1.75, halfZ: 0.38, rotY: 0, heightY: 6.9, mat: 'wood' },
+    { id: 'lobby_pergola_post_rf', x: -97.63, z: 8.97, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 6.9, mat: 'metal' },
+    { id: 'lobby_pergola_bench_rear', x: -100.52, z: 12.11, halfX: 0.48, halfZ: 3.02, rotY: 0, heightY: 3.7, mat: 'wood' },
+    { id: 'lobby_pergola_bench_left', x: -98.83, z: 14.89, halfX: 1.28, halfZ: 0.48, rotY: 0, heightY: 3.7, mat: 'wood' },
+    { id: 'lobby_pergola_table_s', x: -96.94, z: 13.16, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 3.7, mat: 'wood' },
+    { id: 'lobby_pergola_table_n', x: -96.94, z: 10.50, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 3.7, mat: 'wood' },
+    { id: 'lobby_gelato_kiosk_body', x: -98.15, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
+    { id: 'lobby_gelato_kiosk_stools', x: -95.16, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 3.7, mat: 'wood' },
+    { id: 'npc_merchant_hana', x: -94.0, z: -13.8, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
+    { id: 'npc_merchant_kai', x: 85.8, z: 60.0, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
+    { id: 'lobby_civic_fountain_basin', x: -97.3, z: -0.8, halfX: 2.95, halfZ: 5.45, rotY: 0, heightY: 3.1, mat: 'concrete' },
+    { id: 'lobby_parasol_table_n', x: -81.7, z: 13.61, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(5.8 * parasolRatio).toFixed(2), mat: 'wood' },
+    { id: 'lobby_parasol_table_s', x: -81.7, z: 18.79, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(5.8 * parasolRatio).toFixed(2), mat: 'wood' },
+    { id: 'lobby_planter_bench_n', x: -90.5, z: -32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    { id: 'lobby_planter_bench_s', x: -90.5, z: 32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    { id: 'lobby_planter_bench_wn', x: -99.7, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    { id: 'lobby_planter_bench_ws', x: -99.7, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    { id: 'lobby_planter_bench_en', x: -81.1, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    { id: 'lobby_planter_bench_es', x: -81.1, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    // Urban Plaza to Street Staircase — North & South 4-Tier Stepped Side Concrete Planters & Glass-Steel Balustrades (z in [-8.36 .. +8.36] wide open for granite steps)
+    { id: 'lobby_stair_planter_n', x: -81.1, z: -9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
+    { id: 'lobby_stair_planter_s', x: -81.1, z: 9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
+    // Central Plaza Halte Trem Shelter Colliders (Windbreak Wall, Black Transit Kiosk, Ticket Machine & Slatted Passenger Bench)
     { id: 'lobby_tram_shelter_windbreak', x: -59.6, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
-    { id: 'halte_teleport_kiosk', x: -61.95, z: 0.0, halfX: 0.56, halfZ: 0.72, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'halte_teleport_kiosk', x: -61.95, z: 0.0, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'halte_ticket_machine', x: -59.96, z: -5.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
     { id: 'halte_passenger_bench', x: -60.14, z: 2.60, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
+    // North Residence & South Residence Rail Halte Colliders + Standalone Black Transit Kiosks at Beachfront Harbor & NW Fishing Lake
+    { id: 'north_residence_shelter_windbreak', x: 6.5, z: -42.6, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'north_residence_transit_kiosk', x: 6.5, z: -44.95, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'north_residence_passenger_bench', x: 9.1, z: -43.14, halfX: 1.72, halfZ: 0.34, rotY: 0, heightY: 1.25, mat: 'wood' },
+    { id: 'south_residence_shelter_windbreak', x: -36.5, z: 42.6, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'south_residence_transit_kiosk', x: -36.5, z: 44.95, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'beachfront_harbor_shelter_windbreak', x: 81.68, z: 29.5, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'beachfront_harbor_transit_kiosk', x: 79.35, z: 29.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'beachfront_harbor_passenger_bench', x: 81.16, z: 26.9, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
+    { id: 'nw_fishing_lake_transit_kiosk', x: -44.5, z: -6.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
 
     // South-East Coastal Beachfront & Park Structures (Pergola Pavilion, Tables, Pots, Planters, Shower Station, Juice Kiosk, Surfboard Rack, Lifeguard Watchtower, Loungers, Chairs, Palms & Railings)
     { id: 'beach_planter_w1', x: 78.55, z: 51.0, halfX: 0.52, halfZ: 3.78, rotY: 0, heightY: 2.2, mat: 'concrete' },
@@ -674,9 +682,9 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'const_pallets_n2', x: 92.5, z: -89.0, halfX: 2.85, halfZ: 2.65, rotY: 0.0, heightY: 1.95, mat: 'concrete' },
 
     { id: 'cont_stack_harbor_nw', x: 80.15, z: -34.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 6.72, mat: 'metal' },
-    { id: 'cont_stack_harbor_sw', x: 80.15, z: 34.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 6.72, mat: 'metal' },
+    { id: 'cont_stack_harbor_sw', x: 94.15, z: 34.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 6.72, mat: 'metal' },
     { id: 'cont_stack_harbor_nc', x: 80.15, z: -24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
-    { id: 'cont_stack_harbor_sc', x: 80.15, z: 24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
+    { id: 'cont_stack_harbor_sc', x: 94.15, z: 24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
     { id: 'cont_stack_harbor_ne', x: 101.5, z: -33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
     { id: 'cont_stack_harbor_se', x: 101.5, z: 33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
   ];

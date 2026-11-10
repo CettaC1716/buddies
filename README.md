@@ -1,294 +1,267 @@
 # Buddies Blitz
 
-A 60 FPS WebGL 3D social city, shoreline fishing ground, and crate-stacking tactical arena built in Three.js and React 19, paired with seedless NEAR Protocol sub-accounts (`<name>.buddiesblitz.testnet`) and an on-chain P2P Fish NFT marketplace (`market.buddiesblitz.testnet`).
+**A 60 FPS WebGL 3D peaceful social city, Kiosk Portal Hub, interactive Tension-Gauge shoreline fishing system, Modern Japanese Wooden Pavilion interior studio, and separated Red vs. Blue Warzone mini-game built in Three.js & React 19 — powered by seedless NEAR Protocol citizen sub-accounts (`<handle>.buddiesblitz.testnet`), autonomous NPC merchant treasuries, a non-ponzi P2P `RESPITE` (NEP-141) economy, NEP-245 furnishings, and NEP-171 Sub-Account House Deeds & P2P Fish NFTs (`market.buddiesblitz.testnet`).**
 
-Live deployment: **[https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)** · Video walkthrough (66s 1080p MP4 with voiceover): **[`docs/buddies-blitz-demo.mp4`](docs/buddies-blitz-demo.mp4)**
+- **Live Playable App**: [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)
+- **Primary NEAR Hackathon Track**: **`games` — Games With Real Economies (`09-games`)**
+- **Secondary NEAR Hackathon Track**: **`nfts` — NFTs That Do Something (`10-nfts`)**
+- **On-Chain Smart Contract (NEAR Testnet)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) · Master Factory: [`buddiesblitz.testnet`](https://testnet.nearblocks.io/address/buddiesblitz.testnet)
 
-![East Beach shoreline boardwalk and Merchant Kai's fishing pier](docs/hero-1-beach-pier.jpg)
+![East Beach House boardwalk, outdoor showers, and Merchant Kai's coastal pier in Main World](docs/hero-1-beach-pier.jpg)
 
-| | |
+| Main World & Portal Hub | Merchants & 3-Currency ATM |
 |---|---|
-| ![Safezone City articulated tram and transit shelter](docs/hero-2-tram-station.jpg) | ![Private citizen cutaway house interior](docs/hero-3-house-interior.jpg) |
-| ![Hana's Lobby Cafe and off-chain LUL to CYON exchange](docs/hero-4-hana-exchange.jpg) | ![Merchant Kai's coastal fish bucket and P2P Fish NFT marketplace](docs/hero-5-kai-fish-market.jpg) |
+| ![Main World articulated street tram with RIDE prompt and transit halte shelter](docs/hero-2-tram-station.jpg) | ![City Transit & Services Kiosk Portal Hub: Travel & Districts, Warzone Arena, My House, and Shop & Exchange](docs/hero-10-transit-kiosk-hub.jpg) |
+| ![Hana Merchant & ATM Chat Session at Central Plaza Cafe](docs/hero-4b-hana-chat.jpg) | ![Hana Merchant & ATM Exchange counter: LUL to CYON and NEAR to RESPITE](docs/hero-4-hana-exchange.jpg) |
+| ![Kai Merchant & ATM at East Beach House: Chat, Exchange, Catalog, and P2P Fish Market](docs/hero-5-kai-fish-market.jpg) | ![Warzone Arena Faction Selection via Transit Kiosk: Blue Team vs Red Team](docs/hero-11-warzone-team-select.jpg) |
 
 ---
 
-It opens on a hexagonal comic-cutout title frame and steps into a three-zone world that shares one continuous character rig, lighting pipeline, and spatial chat layer:
+## Why NEAR Protocol Powers Buddies Blitz
 
-1. **Mini Cafe Lobby (`worldMode = 'lobby'`)** — A peaceful arrival plaza centered around Nadia's cafe kiosk (`(0, -14)`), flanked by two transit portals: the **Safezone City** gate to the west and the **Red / Blue Warzone** deployment terminal to the east.
-2. **Safezone City (`worldMode = 'safezone'`)** — A non-combat coastal town where weapons are holstered (`combatHudVisible = false`). A central boulevard runs past Commander residential plots, the **Central Oasis Lake** (`radius = 19 m`), private cutaway houses you can step inside and furnish, and the **East Beach Shoreline** (`x > 52 m`), where Merchant Kai runs the tackle dock and the player-to-player Fish NFT marketplace.
-3. **Warzone Arena (`worldMode = 'warzone'`)** — A full *Team Buddies*-inspired Red vs Blue battlefield. Supply crates parachute onto neutral drop pads; carrying and stacking crates onto your base's 8-slot `2x2x2` crafting grid (`1x1x1`, `1x1x2`, `2x1x1`, `2x2x1`, `2x2x2`) fabricates weapons, infantry buddies, tanks, and super vehicles to breach the opposing headquarters.
+Traditional Web3 games break both immersion and tokenomics: they interrupt 60 FPS gameplay with wallet popups, and they mint P2E tokens out of thin air whenever bots grind repetitive tasks. **Buddies Blitz** solves both using native NEAR primitives and a strict player-to-player (`P2P`) real economy:
 
-Requires Node 18+ and npm.
+1. **Seedless Dual-Key Citizen Sub-Accounts (`<handle>.buddiesblitz.testnet`)** — Citizens sign in with Google OAuth (via Privy) and pick a handle, provisioning a browser-scoped Ed25519 `FunctionCall` session key (`0.25 NEAR` gas allowance scoped strictly to `market.buddiesblitz.testnet`) via [`api/near-relayer.ts`](api/near-relayer.ts) while `buddiesblitz.testnet` retains recovery custody. External NEAR wallets (**Meteor Wallet** and **MyNearWallet Testnet**) are also supported with **NEP-413 `signMessage`** cryptographic ownership verification.
+2. **Non-Ponzi P2P Real Economy (`Track 09-games`)** — Grinding Mini-Games (**Warzone**) or selling unminted fish to **Merchant Kai** yields off-chain **`LUL`**, whose **sole function** is converting into off-chain **`CYON`** to buy standard non-NFT items. On-chain **`RESPITE` (NEP-141)** is **never printed from gameplay grinding**: it enters circulation only when a player swaps `NEAR -> RESPITE` at **Merchant Hana's** ATM (`1 NEAR = 100 RESPITE`) and circulates **player-to-player** when citizens mint caught fish or rare items as **NEP-171 NFTs** and another player buys them on **Kai's P2P Marketplace** (inspired by *Roblox Fish It* / *Fisch*). If no player buys a listed NFT, zero `RESPITE` is created.
+3. **Functional Sub-Account Deeds & Autonomous NPC Merchants (`Track 10-nfts` & `09-games`)** — Purchasing the **Modern Japanese Wooden Pavilion House Certificate (`25 RESPITE`)** mints a **NEP-171 Sub-Account Deed** with atomic `key_epoch` session-key rotation on transfer, while NPC Merchants **Hana** (Central Plaza Cafe) and **Kai** (East Beach House) manage live `CYON` treasuries, dynamic supply/demand pricing, and bankruptcy bailouts.
+
+---
+
+## Quick Start & Reproducible Verification
+
+Requires **Node.js 18+** and **npm** (plus **Rust `stable` + `cargo-near`** if recompiling the smart contract from source).
 
 ```bash
+# 1. Install dependencies & start local dev server (http://localhost:3000 + /api/near-relayer middleware)
 npm install
-npm run dev      # Vite dev server on http://localhost:3000 (includes local NEAR sub-account middleware)
-npm test         # Run the 81-test gameplay, economy, and NEAR sub-account verification suite
-npm run build    # TypeScript check + production bundle into dist/
+npm run dev
+
+# 2. Run TypeScript static verification, 105 unit tests, and production WebGL bundle build
+npm run lint     # tsc --noEmit (0 errors)
+npm test         # 105 unit tests (3-currency P2P invariants, 2x2x2 pad, interior studio, NEAR client & relayer)
+npm run build    # Production Vite 8 build into dist/
+
+# 3. Run Rust smart contract unit tests & compile WASM binary (near-sdk 5.30.1)
+cd contracts/buddies-market
+cargo test                                  # 6/6 unit tests (NEP-141, P2P market, Mid-Payout Deed transfer, NEP-245)
+cargo near build non-reproducible-wasm      # Outputs target/near/buddies_market.wasm + buddies_market_abi.json
 ```
 
-| key | action |
+---
+
+## Core World Architecture & Game Systems
+
+Buddies Blitz runs inside a unified 60 FPS Three.js WebGL engine ([`src/game/BuddiesBlitzArena.tsx`](src/game/BuddiesBlitzArena.tsx)) with strict separation between the peaceful **Main World**, the **City Transit Kiosk Portal Hub**, **Separated Mini-Games**, and **Private House Interiors**:
+
+### 1. Main World (Central Plaza, East Beach & Residential Plots) vs. Kiosk Portal Hub
+- **Peaceful Social Main World (`lobby` & `safezone`)**: Non-combat coastal city for exploring, chatting, shopping at **Merchant Hana** (Central Plaza Cafe) and **Merchant Kai** (East Beach House), riding the articulated **Street Tram** (`RIDE / [G]`), and claiming physical residential plots to flex your house exterior. **Combat weapons, shooting, crates, and Family Member AI companions are strictly disabled in Main World** so the city remains clean and peaceful.
+- **City Transit & Services Kiosk (`[E]` Portal Hub — [`src/components/CityTransitKioskModal.tsx`](src/components/CityTransitKioskModal.tsx))**: Acts as the central portal hub across districts with four instant modules:
+  1. **`TRAVEL & DISTRICTS`** — Fast-travel by 3D Tram cutscene across Central Plaza, Beachfront Harbor, NW Fishing Lake, and North/South Residential Plots.
+  2. **`WARZONE ARENA`** — Opens **`SELECT FACTION` (`BLUE TEAM` vs `RED TEAM`)**, plays the Transit Tram deployment cutscene, and spawns your character **randomly on a glowing Cratepad ring** with a tactical sidearm and `5/5` lives. *(Dedicated Fishing Arena portal slot ready for upcoming expansion.)*
+  3. **`MY HOUSE`** — Teleports directly into your 3D Private House interior studio; pressing **`EXIT ROOM`** returns your character to the **exact Kiosk Teleport or Plot Door coordinates** you entered from.
+  4. **`SHOP & EXCHANGE`** — Direct citizen shortcut to Hana/Kai's `EXCHANGE` and `CATALOG` counters.
+
+### 2. Separated Warzone Mini-Game & Anti-Oversupply Despawn Rules
+- **Pure Combat Separation (`worldMode = 'warzone'`)**: Dedicated Red vs. Blue tactical arena where players compete for **`LUL`** drops and stack crates on `2x2x2` base pads (`1x1x1` firearms up to `2x2x2` heavy vehicles) via the **Tactical Base Kiosk (`[B]`)**. **Merchant NPCs (`Hana` & `Kai`) and City Transit Kiosk interactions are completely disabled and hidden inside Warzone**, while the circulating **Street Tram** remains rideable (`[G]`) for mobile cover and rotation, paired with a top-HUD **`EXIT WARZONE`** button to return to Main World anytime.
+- **Anti-Oversupply Despawn Timers & Central Combat Airdrops**:
+  - Every **`LUL` coin drop (`40s` TTL)**, standard crate (`75s` TTL), and **indestructible Iron/Metallic Box (`silver_metallic` / `gold_metallic`, `90s` TTL)** enforces an automatic despawn timer (blinking rapidly in its final `10s`) so uncollected drops never accumulate in memory or inflate the economy.
+  - Scheduled exclusive supply drops and **random combat vehicle airdrops (`Tank`, `Fighter Plane`, and `Dump Truck`)** are strictly clamped to the **central combat arena (`|x| <= 46`, `|z| <= 28`)**, never straying into North/South residential plot rows.
+
+| Separated Warzone Mini-Game | Central Arena Airdrops & Tactical Armory |
 |---|---|
-| `W A S D` / `Arrow Keys` | walk / drive vehicle |
-| `Space` | jump |
-| `E` | grab or throw crate (Warzone) / talk to nearest NPC merchant (`Hiro`, `Hana`, `Kai`) |
-| `F` | cast fishing rod & reel in catch (near East Beach or Central Oasis Lake) / craft stacked pad recipe (Warzone) |
-| `Q` | cycle active `2x2x2` ghost hologram recipe on base pad |
-| `B` | open self-service Tactical Base Kiosk when standing near your base terminal |
-| `T` | open 3-column MMORPG Social & Whisper Chat modal |
-| `V` | toggle AI Binoculars / tactical overview |
-| `M` | mute / unmute procedural Web Audio engine |
-| `L` | cycle atmospheric lighting preset (`day`, `sunset`, `night`) |
-| `C` | toggle camera FOV preset |
-| `Esc` | close active modal or pause |
+| ![Carrying supply crates onto the Blue Team 2x2 pad inside Warzone](docs/hero-7-crate-stacking-pad.jpg) | ![Central Oasis Lake combat zone with Fighter Vehicle airdrop, crate, and LUL gold coin drops](docs/hero-6-oasis-lake.jpg) |
+| ![Tactical Base Kiosk Weapon Armory selector inside Warzone](docs/hero-8-weapon-armory.jpg) | ![Private House 3D interior studio preview](docs/hero-3-house-interior.jpg) |
 
-**Where to walk:** From the Lobby spawn, walk toward the **Safezone City** terminal on the left to enter the coastal city. Walk east (`x > 52`) until the tarmac gives way to sand and timber piers — the shoreline detector (`detectNearbyFishingWaterZone` in [`src/game/buddiesFishingMarket.ts`](src/game/buddiesFishingMarket.ts)) lights up the fishing bar as soon as you reach the water's edge or the Central Oasis Lake (`(0, 0)`). Press `F` to cast your bobber, wait for the strike, and press `F` again to land the fish. Unwanted common catches can be released immediately back into the water from the catch banner (`RELEASE`) so your 20-slot fish bucket never clogs; valuable catches can be carried to **Merchant Kai** on the beach pier to sell for off-chain `CYON` or minted on-chain as a **NEP-171 Fish NFT** to trade with other citizens for `RESPITE`.
+### 3. Family Member (Companion AI)
+- Recruited on-chain with `RESPITE` (`15 / 45 / 180 RESPITE` for `1 Week / 1 Month / 1 Year`).
+- **Mini-Game Exclusive**: Family Member AI companions deploy **only inside Mini-Games (Warzone)** to harvest crates or engage hostile squads — they **never spawn or wander in Main World**.
+- **Smooth A\* Pathfinding**: Equipped with binary-heap Octile A\* navigation, wall-collision anti-stuck repathing, and clean arrival velocity zeroing so companions never clip obstacles or slide in place. *(Roadmap: interactive AI dialogue and daily life routines inside your Private House.)*
 
-### Step-by-step verification for judges (`Do X -> See Y`)
+### 4. Interactive Fishing System (Tension Gauge Minigame)
+- **Gameplay Loop**: Open **`BAG`** to equip your **Fishing Rod** (or press **`F`** near the East Beach shoreline or Central Oasis Lake) &rarr; charge & cast hook &rarr; wait for water ripples and the **`!`** bite indicator &rarr; reel in using the **Timing & Line-Tension Gauge Minigame** without snapping the line or letting tension go slack.
+- **Personal Bag (`BAG`) Catch Management** *(no aquarium system)*:
+  1. **`Release`** — Release the fish back into the water.
+  2. **`Sell for LUL`** — Sell non-NFT caught fish directly to **Merchant Kai** to earn **`LUL`** (then swap `LUL -> CYON` at the Exchange).
+  3. **`Mint NFT`** — Mint the fish on-chain (`mint_fish_nft`, NEP-171) with verifiable species, weight (`kg`), and rarity metadata, then list it on **Kai's P2P Fish Market** to earn **`RESPITE`** from other players.
 
-1. **Seedless Social Login & Sub-Account Creation (`SOCIAL LOGIN` + `SUB-ACCOUNTS`)**
-   - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000/?title=1`), click **`CONTINUE WITH GOOGLE`** (or play as Guest and click **`REGISTER`** inside any NPC modal), then type a handle in **`Choose your wallet name`** and click **`CREATE WALLET`**.
-   - **See:** The onboarding flow transitions through `Please wait, preparing your wallet...`, provisions `<name>.buddiesblitz.testnet` under `buddiesblitz.testnet` with Dual-Key custody (`FUNCTION CALL KEYS` + master recovery), and opens the city with `Welcome Citizen, your wallet is now active.`
-2. **Shoreline Fishing, Bucket Release, and P2P Fish NFT Trading (`NEP-171` + `AGENT NPCS`)**
-   - **Do:** In Safezone City, walk to the **Central Oasis Lake** (`(0, 0)`) or **East Beach Shoreline** (`x > 52`). Press `F` when the `WATER DETECTED — CAST FISHING ROD` bar appears, wait for a bite, and press `F` to reel in.
-   - **See:** A catch banner appears with the fish's exact weight (`kg`) and rarity. Click **`RELEASE`** to throw unwanted common fish back into the water (`0/20` bucket capacity), or walk to **Merchant Kai** (`kai-beach.buddiesblitz.testnet`) and press `E` to either **`SELL TO MERCHANT`** for off-chain `CYON` or **`MINT FISH AS NFT`** (`NEP-171`) and list it on the P2P Fish Marketplace for on-chain `RESPITE`.
-3. **NPC Autonomous Pricing, House Cutaway Interior & Family Member AI (`AGENT NPCS` + `NEP-245` + `DYNAMIC NFTS`)**
-   - **Do:** Talk to **Hana** (`hana-cafe.buddiesblitz.testnet`), **Kai** (`kai-beach.buddiesblitz.testnet`), or **Hiro** (`hiro-warzone.buddiesblitz.testnet`) by pressing `E`. Open the **`EXCHANGE`** or **`CATALOG`** tab, or walk to your Private House plot to step inside the 3D cutaway interior.
-   - **See:** Each NPC operates its own NEAR sub-account treasury, quotes dynamic `LUL -> CYON` exchange rates based on treasury reserves, sells `NEP-245` furniture/themes, and lets registered citizens unlock a **Private House Deed** (`25 RESPITE`) or hire autonomous **Family Member AI** contracts (`15 / 45 / 180 RESPITE`) that harvest and stack crates on your base pad.
-4. **Warzone `2x2x2` Crate Stacking & Tactical Base Kiosk**
-   - **Do:** Enter the **Warzone** portal, stand near your base's **Tactical Kiosk** (`B`) to select a Weapon Armory or Vehicle Hangar contract, pick up a supply crate (`E`), and throw it onto the glowing hologram slots on your 8-slot `2x2x2` pad (`F` to craft).
-   - **See:** The 3D occupancy bitmask validates the crate formation (`1x1x1`, `1x1x2`, `2x1x1`, `2x2x1`, `2x2x2`) and spawns the corresponding firearm, AI squad buddy, mini-tank, or VTOL aircraft.
-5. **P2P Wallet-to-Wallet `RESPITE` Transfer (`NEP-141` `ft_transfer`)**
-   - **Do:** Click your character in the 3D viewport -> click **`WALLET`** on the bottom target bar -> enter any `.testnet` wallet (or short citizen handle like `kxvqmr`) and an amount in the **`SEND RESPITE TO WALLET (NEP-141)`** card, then click **`SEND RESPITE`**.
-   - **See:** The contract executes `ft_transfer` on **`market.buddiesblitz.testnet`**, emits a standard `EVENT_JSON` (`nep141` `ft_transfer`), updates both wallets' `RESPITE` balances, and prints a direct NearBlocks Testnet transaction link.
+### 5. Private House (`Paviliun Kayu Jepang Modern` — Plot Flexing & Interior Studio)
+- **Empty-Start Ownership Certificate (`25 RESPITE`)**: Purchasing House Ownership mints the **Modern Japanese Wooden Pavilion (`theme_japanese_zen`)** certificate. Newly purchased houses start **100% empty (zero pre-placed furniture)** so citizens customize every square meter from scratch by purchasing regular non-NFT furniture with **`CYON`** or exclusive collector NFT furniture/themes with **`RESPITE`** (`10 cm` grid snap, `25 cm` magnetic wall snap, SAT OBB collision, and solar daylight arc).
+- **Dual Access & Friend Invites**:
+  - **Physical Plot in Main World**: Claim a residential city plot to erect your pavilion exterior and flex it to everyone in the city.
+  - **Kiosk Instant Teleport**: Enter `MY HOUSE` from any City Transit Kiosk and return to your **exact Kiosk origin** upon clicking **`EXIT ROOM`**.
+  - **Social `INVITE FRIEND`**: Use the **`INVITE FRIEND`** button on the Private House top HUD bar to grant plot/room access to friends on your friendlist and send an instant private house invitation.
 
----
+### Controls Summary
 
-## How the 3D arena and dual-mode world are built
-
-The 3D viewport is driven by a single imperative Three.js loop in [`src/game/BuddiesBlitzArena.tsx`](src/game/BuddiesBlitzArena.tsx), decoupled from React's render cycle so HUD updates never stall frame pacing.
-
-**Clean scene remount per world mode** — `src/App.tsx` & `src/game/BuddiesBlitzArena.tsx`
-Switching between `lobby`, `safezone`, and `warzone` keys the `<BuddiesBlitzArena />` mount (`key={`${worldMode}-${worldTransitionCount}`}`) behind a deterministic transition barrier. Every geometry buffer, shadow map, and skeletal mixer from the previous zone is disposed before the next zone's procedural builders run.
-
-**Peaceful state invariant** — `src/game/buddiesBlitzRules.ts`
-`evaluateLobbyAndSafezonePeacefulState()` enforces a strict separation between social zones and combat zones. When `worldMode` is `'lobby'` or `'safezone'`, enemy AI spawners, projectile hitboxes, crate drop timers, and the 5-lives Warzone health bar are disabled at the rule-engine level rather than merely hidden in CSS.
-
-**Two-stage character targeting** — `src/App.tsx`
-Clicking any 3D character (yourself, a nearby player, or an NPC merchant) raycasts against the character capsule and opens a compact black name bar at the bottom-center of the screen. Clicking the name bar expands context-specific actions:
-- **Self (`YOU`)**: `PROFILE` and `WALLET`
-- **Other Citizen / NPC**: `TALK`, `PROFILE`, and `WHISPER`
-
-**Fixed-pool particle emitter** — `src/components/ParticleEmitterPanel.ts`
-Muzzle flashes, crate merge bursts, water splashes, and portal rings draw from a pre-allocated 128-particle ring buffer. No `THREE.Mesh` or `Vector3` allocations occur during active combat or fishing.
+| Key | Action |
+|---|---|
+| `W A S D` / `Arrow Keys` | Walk / swim / steer vehicle |
+| `Space` | Jump |
+| `E` | Talk to `Hana` or `Kai` (Main World), open City Transit Kiosk (Main World), or grab/throw crate (Warzone) |
+| `G` | Board / disembark the circulating **City Street Tram** (Main World & Warzone cover/mobility) |
+| `F` | Cast / reel interactive **Tension Gauge Fishing** (near water) or craft `2x2x2` pad recipe (Warzone) |
+| `Q` | Cycle active `2x2x2` recipe hologram on your Warzone base pad |
+| `B` | Open **Tactical Base Kiosk** (`WEAPON ARMORY` / `VEHICLE HANGAR`) or Plot Claim terminal |
+| `T` | Open 3-column MMORPG **Social & Private Whisper Chat** modal |
+| `Esc` | Close active modal / cancel fishing cast |
 
 ---
 
-## The 8-slot `2x2x2` crate stacking pad
+## Economy Firewall & Sub-Account Deed Threat Model
 
-In the Warzone (`worldMode = 'warzone'`), each base owns an 8-slot (`2x2x2`) stacking pad governed by [`src/game/buddiesBlitzRules.ts`](src/game/buddiesBlitzRules.ts):
+### 1. Three-Currency Anti-Bot & Non-Ponzi P2P Economy (`Track 09-games`)
 
 ```text
-Bottom Layer (y = 0)     Top Layer (y = 1)
-  [0]  [1]                 [4]  [5]
-  [2]  [3]                 [6]  [7]
+OFF-CHAIN GAMEPLAY LAYER (Zero Gas · Zero On-Chain Token Printing from Grinding)
+  Warzone Combat & Drops ───► LUL ──┐
+                                    ├──► Swap LUL -> CYON Only (Dynamic NPC Exchange) ──► CYON
+  Raw Non-NFT Caught Fish ──► LUL ──┘                                                      │
+  (Sold to Merchant Kai)                                                                   ▼
+                                                           Standard Non-NFT Catalog (Outfits, Tackle, Basic Decor)
+
+ON-CHAIN P2P OWNERSHIP LAYER (NEAR Testnet: market.buddiesblitz.testnet)
+  NEAR Testnet ──► swap_near_for_respite() [One-Way ATM Deposit: 1 NEAR = 100 RESPITE] ──► RESPITE (NEP-141)
+  Minted Fish / Item NFTs (NEP-171) ──► Kai P2P Market (list_fish_nft / buy_fish_nft) ◄──► Player-to-Player RESPITE
+  RESPITE ───────► purchase_citizen_asset() ──► House Certificate (25), Family AI (15/45/180) & Exclusive NFTs
 ```
 
-Instead of buying units from a flat shop menu during battle, players select a priority recipe at their Tactical Kiosk (`Q` or `B`). The pad projects colour-coded ghost holograms over the exact slots required by that shape:
-- **`1x1x1` (1 crate)** — Light firearms (`uzi`, `shotgun`, `grenade`)
-- **`1x1x2` (vertical column, 2 crates)** — Autonomous squad buddies (`Infantry`, `Bazooka`, `Commando`)
-- **`2x1x1` (horizontal bar, 2 crates)** — Heavy weapons & support gear
-- **`2x2x1` (flat 4-crate base)** — Light combat vehicles
-- **`2x2x2` (full 8-crate cube)** — Heavy tanks and super air support
+| Currency | Layer | How Earned / Acquired | Sole / Primary Usage | Anti-Bot & Anti-Ponzi Guarantee |
+|---|---|---|---|---|
+| **`LUL`** | Off-chain | **Warzone** mini-game performance/drops & selling **raw non-NFT fish** to Merchant Kai | **Single role**: Swap `LUL -> CYON` at the Exchange (cannot directly buy catalog items) | Never exists on-chain; ground drops despawn automatically (`40s`); subject to NPC treasury slippage |
+| **`CYON`** | Off-chain | Converted from `LUL` (`LUL -> CYON` Exchange) | Buys all regular non-NFT catalog items (standard outfits, basic furniture, fishing tackle) | Strictly isolated from `RESPITE` and `NEAR` — zero cash-out drain path |
+| **`RESPITE`** | On-chain **NEP-141** | `NEAR -> RESPITE` swap at Hana's ATM (`1 NEAR = 100 RESPITE`) **or** selling minted **NEP-171 NFTs** to other players on Kai's P2P Market | Buys **House Ownership Certificate (`25 RESPITE`)**, **Family Member Contracts (`15 / 45 / 180 RESPITE`)**, exclusive NFT furniture/outfits, and P2P NFT listings | **Zero P2E inflation**: if no player buys a listed NFT, no `RESPITE` is minted; one-way `NEAR -> RESPITE` utility firewall |
 
-When a crate is thrown onto a glowing hologram slot, the pad validates the 3D occupancy bitmask and resolves the recipe in place.
+### 2. Sub-Account Deed Security Invariant: Mid-Payout NFT Transfer (`Track 10-nfts`)
 
-| | |
-|---|---|
-| ![Stacking supply crates on the 2x2x2 base pad with Family Member AI buddies](docs/hero-7-crate-stacking-pad.jpg) | ![Central Oasis Lake shoreline fishing and supply crate drop](docs/hero-6-oasis-lake.jpg) |
-| ![Tactical Base Kiosk Weapon Armory contract selector](docs/hero-8-weapon-armory.jpg) | ![Tactical Base Kiosk Vehicle Hangar contract selector](docs/hero-9-vehicle-hangar.jpg) |
+Track `10-nfts` asks a critical security question: **What happens if an NFT that controls a sub-account and accrues revenue is transferred in the middle of an unclaimed payout?**
+
+In [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs), every House Ownership Deed NFT (`deed-house-*`) owns a dedicated `NftSubAccountLedger` tracking `sub_account_id`, `treasury_respite`, `pending_payout_respite`, `key_epoch`, `active_session_key`, and `ownership_history`:
+
+1. **Epoch-Bound Authorization** — When an owner binds a `FunctionCall` session key via `authorize_deed_session_key(token_id, session_public_key)`, it is valid **only** for the current `(owner_id, key_epoch)`.
+2. **Atomic Rotation on `nft_transfer`** — Inside `internal_transfer_nft_ownership`, transferring the Deed NFT **atomically in the same block**:
+   - Increments `ledger.key_epoch = key_epoch.saturating_add(1)`
+   - Clears `ledger.active_session_key` (`""`), immediately revoking the seller's delegated session key
+   - Moves `pending_payout_respite` and `treasury_respite` intact with the Deed to `new_owner`
+   - Appends an immutable `SubAccountTransferRecord` (`from_owner`, `to_owner`, `transferred_treasury_respite`, `new_key_epoch`, `timestamp_ms`)
+   - Moves `house_deeds` mapping from `old_owner` to `new_owner`
+3. **Zero Seller Front-Running / Post-Sale Drain** — `claim_deed_payout(token_id, expected_key_epoch)` requires **both** `env::predecessor_account_id() == ledger.owner_id` **and** `expected_key_epoch == ledger.key_epoch`. Any stale claim or replay from the previous owner panics deterministically.
+   - Verified by Rust unit tests: `test_estate_nft_transfer_mid_payout_revokes_seller_access` and `test_seller_cannot_claim_payout_after_deed_transfer` in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs).
 
 ---
 
-## Economy architecture: anti-bot separation & Roblox *Fisch*-style trading
+## Step-by-Step Verification for Judges (`Do X -> See Y`)
 
-A common failure mode of Web3 games is putting every grindable activity loop on-chain, which invites automated bots to farm combat or fishing loops and drain token liquidity. Buddies Blitz prevents this by splitting the economy into **strictly off-chain social currencies** and **on-chain collectibles** (`contracts/buddies-market/src/lib.rs`).
+### 1. Seedless Citizen Onboarding (`<handle>.buddiesblitz.testnet`) or External NEAR Wallet
+- **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000`). Sign in with Google (or enter as Guest, talk to **Hana** at Central Plaza Cafe with `E`, and click **`REGISTER`**), pick a citizen handle (e.g. `judge01`), or connect **Meteor Wallet** / **MyNearWallet Testnet**.
+- **See:** `/api/near-relayer` provisions or resolves `judge01.buddiesblitz.testnet` with an `ed25519:` `FunctionCall` session key scoped to `market.buddiesblitz.testnet`, hydrating your `0 LUL | 0 CYON | 0 RESPITE` balances and `PROFILE | BAG | WALLET` top bar.
 
-```text
-OFF-CHAIN (Supabase PostgreSQL — Zero On-Chain Liquidity Risk)
-  Warzone Crates & Combat ──► LUL ──► Exchange at NPC ──► CYON (Outfits & Casual Decor)
-  Common / Unminted Fish  ──────────► Sell to NPC Kai ──► CYON (or RELEASE to free bag space)
+### 2. Portal Hub -> Warzone Team Deployment (`BLUE` vs `RED`), Despawn Timers & Return
+- **Do:** Walk to the black **City Transit & Services Kiosk** (`[E]`), click **`WARZONE ARENA`**, choose **`BLUE TEAM`** or **`RED TEAM`** in **`SELECT FACTION`**, and watch the 3D Tram deployment cutscene.
+- **See:** Your character spawns randomly on a glowing **Cratepad ring** inside Warzone with `5/5` hearts, pistol loadout, central arena `LUL`/crate/vehicle airdrops (`Tank`, `Plane`, `Dump Truck`) with anti-oversupply despawn timers, rideable street Tram (`[G]`), and zero Merchant/Transit Kiosk distractions. Click **`EXIT WARZONE`** on the top HUD bar to ride the Tram back to Central Plaza.
 
-ON-CHAIN (NEAR Testnet: market.buddiesblitz.testnet)
-  NEAR Testnet ──► swap_near_for_respite() ──► RESPITE (NEP-141 Fungible Token)
-  RESPITE ──► ft_transfer() ──► Peer-to-Peer Wallet Transfer (<friend>.buddiesblitz.testnet)
-  Rare Caught Fish ──► mint_fish_nft() ──► list_fish_nft() ◄──► buy_fish_nft() (Paid in RESPITE)
-  RESPITE ──► purchase_citizen_asset() ──► Private House Deed & Family Member AI Contracts
-```
+### 3. Interactive Tension-Gauge Fishing -> `LUL` -> `CYON` vs. P2P `RESPITE` NFT Market (`Track 09-games`)
+- **Do:** Walk to East Beach House or Central Oasis Lake, equip your Fishing Rod via **`BAG`** (or press **`F`** by the water), wait for the **`!`** bite callout, and complete the **Line-Tension Gauge** minigame.
+- **See:** In the 3D Catch Showcase, keep the fish in **`BAG`** (where you can **`Release`** or **`Mint NFT`**), or visit **Merchant Kai (`[E]`) -> `FISH MARKET`** to click **`SELL FOR LUL (+X LUL)`**, then open **`EXCHANGE`** to convert **`LUL -> CYON`** (`LUL 20 = CYON 10`, with live autonomous NPC treasury & **`FAST-FORWARD 7D`** simulation) — **or** click **`MINT FISH AS NFT`** (`mint_fish_nft`) and list it for **`RESPITE`** on the player-to-player order book!
 
-### 1. Off-chain currencies (`LUL` and `CYON`)
-- **`LUL` (Lulling)** is earned exclusively inside the **Warzone** from combat objectives and crate harvesting. New accounts start at `0 LUL`.
-- **`CYON` (Halcyon)** is obtained either by exchanging `LUL -> CYON` at the Merchant (`20 LUL = 10 CYON`) or by selling unminted fish directly to Merchant Kai at the beach (`SELL TO MERCHANT`).
-- **One-way firewall:** Neither `LUL` nor `CYON` exists in the NEAR smart contract, and neither can ever be converted into `RESPITE` or `NEAR`. Bot farming in the Warzone has zero path to extract on-chain value.
+### 4. Modern Japanese Wooden Pavilion House (`25 RESPITE`), Empty Studio & Friend Invite (`Track 10-nfts`)
+- **Do:** Swap `NEAR -> RESPITE` (`1 NEAR = 100 RESPITE`) in **Hana's `EXCHANGE`** tab, purchase **House Ownership (`25 RESPITE`)** in **`CATALOG`**, then open the **City Transit Kiosk -> `MY HOUSE`**.
+- **See:** On-chain NEP-171 House Deed verification grants entry into your **empty-start Modern Japanese Wooden Pavilion**. Click **`DECORATE STUDIO`** to place `CYON` or `RESPITE` furniture, click **`INVITE FRIEND`** on the top HUD to invite citizens from your friendlist, and click **`EXIT ROOM`** to return to the exact Kiosk coordinates you teleported from.
 
-### 2. Shoreline fishing, bag management (`20/20`), and `RELEASE`
-Fishing works at two water bodies in Safezone City (`src/game/buddiesFishingMarket.ts`):
-- **East Beach Shoreline (`x > 52`)** — Saltwater table (*Silver Sardine*, *Coral Clownfish*, * Reef Barracuda*, *Golden Hammerhead*, *Abyssal Leviathan*).
-- **Central Oasis Lake (`radius <= 19 m`)** — Freshwater table (*Oasis Koi*, *Emerald Bass*, *Electric Catfish*, *Sakura Sturgeon*, *Celestial Arowana*).
+---
 
-Each player carries a **20-fish bucket (`caughtFishBucket.length / 20`)**. When a fish is landed:
-- If it is a low-weight `Common` catch that would only clutter the bucket, the player can click **`RELEASE`** directly on the shoreline catch toast (or **`RELEASE` / `RELEASE COMMON`** inside Kai's bucket panel) to throw it back into the water.
-- If the player wants casual currency for clothes or furniture, they click **`SELL TO MERCHANT (+X CYON)`** (off-chain).
-- If the player lands a heavy `Rare` or `Mythic` specimen, they click **`MINT FISH AS NFT`**, minting a **NEP-171 Fish NFT** with its exact `species_id`, `weight_kg`, and `rarity`, and list it on the **Player Fish NFT Marketplace** for **`RESPITE`**.
+## Smart Contract Architecture (`contracts/buddies-market/src/lib.rs`)
 
-### 3. On-chain smart contract (`market.buddiesblitz.testnet`)
-The smart contract in [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs) (compiled to [`contracts/buddies-market/target/near/buddies_market.wasm`](contracts/buddies-market/target/near/buddies_market.wasm)) is deployed live on NEAR Testnet at **`market.buddiesblitz.testnet`** under the master account **`buddiesblitz.testnet`**:
+Compiled with `near-sdk 5.30.1` + `cargo-near` into [`contracts/buddies-market/target/near/buddies_market.wasm`](contracts/buddies-market/target/near/buddies_market.wasm) (`268 KB`, accompanied by [`buddies_market_abi.json`](contracts/buddies-market/target/near/buddies_market_abi.json)):
 
-- `ft_metadata()`, `ft_total_supply()`, `ft_balance_of(account_id)` & `storage_balance_of(account_id)` — Exposes **`RESPITE`** as a standard **NEP-141 / NEP-145 Fungible Token** (`symbol: "RESPITE"`, `decimals: 0`) discoverable in NEAR wallets and NearBlocks Explorer.
-- `ft_transfer(receiver_id, amount, memo)` — Transfers `RESPITE` directly between any two `.testnet` wallets (either from inside the in-game `WALLET` modal or via external wallets like Meteor Wallet / MyNearWallet) and emits `EVENT_JSON` (`nep141` `ft_transfer`).
-- `swap_near_for_respite()` (`#[payable]`) — Accepts native Testnet `NEAR`, credits on-chain `RESPITE` (`1 NEAR = 100 RESPITE`), and emits `EVENT_JSON` (`nep141` `ft_mint`).
-- `nft_metadata()` & `mint_fish_nft(token_id, species_id, species_name, water_zone, rarity, weight_kg_x100)` — Mints a **NEP-171 Fish NFT** (`symbol: "BBFISH"`) to the angler's wallet and emits a standard `EVENT_JSON` (`nep171` `nft_mint`).
-- `list_fish_nft(listing_id, token_id, price_respite)` — Places the caller's Fish NFT on the P2P order book for `RESPITE`.
-- `buy_fish_nft(listing_id)` — Atomically transfers `price_respite` from buyer to seller, transfers `owner_id` of the Fish NFT to the buyer, and emits `EVENT_JSON` (`nep171` `nft_transfer`).
-- `purchase_citizen_asset(asset_id, price_respite)` — Deducts `RESPITE` and mints on-chain NEP-171 deeds for **Private House ownership** (`25 RESPITE`) or autonomous **Family Member AI** contracts (`15 / 45 / 180 RESPITE` for `1 Week / 1 Month / 1 Year`).
+- **NEP-141 & NEP-145 (`RESPITE`)**: `ft_metadata`, `ft_total_supply`, `ft_balance_of`, `ft_transfer` (`assert_one_yocto`), `storage_deposit`, `storage_balance_of`, `swap_near_for_respite` (`#[payable]`, refunds sub-respite yoctoNEAR dust automatically), and `withdraw_treasury_near` (`master_account` guard).
+- **NEP-171 / NEP-177 / NEP-181 (`BBFISH` & Citizen Deeds)**: `nft_metadata`, `nft_token`, `nft_total_supply`, `nft_tokens`, `nft_supply_for_owner`, `nft_tokens_for_owner`, and `nft_transfer` (`assert_one_yocto` + anti-listed-transfer guard).
+- **Sub-Account Deed Ledgers (`Track 10-nfts`)**: `purchase_citizen_asset` (contract-enforced fixed prices: `25 RESPITE` for `house_ownership`, `15 / 45 / 180 RESPITE` for `family_member`), `authorize_deed_session_key`, `fund_deed_royalty`, `claim_deed_payout`, `get_nft_ledger_history`, and `get_player_estate`.
+- **P2P Fish NFT Order Book**: `mint_fish_nft`, `list_fish_nft` (protected by `active_listing_by_token` anti-double-listing map), `unlist_fish_nft`, `buy_fish_nft` (atomic P2P `RESPITE` transfer from buyer to seller + NFT ownership transfer), and `get_fish_listings`.
+- **NEP-245 Multi-Token Furnishings (`Track 09-games`)**: `mint_merchant_item`, `mt_balance_of`, `mt_batch_balance_of`, and `mt_transfer` (`assert_one_yocto`).
 
-### 4. Live on-chain verification (NearBlocks Explorer & JSON-RPC)
+### Live Testnet Verification (`curl` & NearBlocks)
 
-All on-chain accounts, deployed WebAssembly bytecode, NEP-141 `RESPITE` balances, and NEP-171/181 NFTs can be verified directly on NEAR Testnet without running the client:
-
-| On-Chain Entity / Action | NEAR Testnet Identifier / Transaction | Explorer Link |
+| On-Chain Entity / Action | NEAR Testnet Identifier | Explorer |
 |---|---|---|
-| **Master Treasury & Sub-Account Factory** | `buddiesblitz.testnet` | [View on NearBlocks](https://testnet.nearblocks.io/address/buddiesblitz.testnet) |
-| **NEP-141 (`RESPITE`) + NEP-171/181 (`BBFISH`) Smart Contract** | `market.buddiesblitz.testnet` | [View on NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
-| **Sample Provisioned Citizen Sub-Account** | `kxvqmr.buddiesblitz.testnet` | [View on NearBlocks](https://testnet.nearblocks.io/address/kxvqmr.buddiesblitz.testnet) |
-| **Contract Deploy + NEP-181 Enumeration (`buddies_market.wasm`)** | `88SbE7m1VQKh8GXqYwy9uvxkAFkaLFZ6vtAd5wsowLB4` | [View Transaction](https://testnet.nearblocks.io/txns/88SbE7m1VQKh8GXqYwy9uvxkAFkaLFZ6vtAd5wsowLB4) |
-| **NEP-141 `RESPITE` Mint & Liquidity (`swap_near_for_respite`)** | `9sgTn5qEJ5j18ezn2ERwZvbCRByD3Y7dhmRwWt8ZrAdy` | [View Transaction](https://testnet.nearblocks.io/txns/9sgTn5qEJ5j18ezn2ERwZvbCRByD3Y7dhmRwWt8ZrAdy) |
-| **NEP-141 P2P Wallet Transfer (`ft_transfer` `100 RESPITE`)** | `9J1P1afc8i9zp9kPqJazwFDP1tWeH4HgCyZjPpyL7ywK` | [View Transaction](https://testnet.nearblocks.io/txns/9J1P1afc8i9zp9kPqJazwFDP1tWeH4HgCyZjPpyL7ywK) |
-| **NEP-171 Mythic Fish NFT Mint (`mint_fish_nft`)** | `WyPMk1AvfKxhyGAiS3pBCLZWiHKvSR2aCeN2hWjmX41` | [View Transaction](https://testnet.nearblocks.io/txns/WyPMk1AvfKxhyGAiS3pBCLZWiHKvSR2aCeN2hWjmX41) |
-| **NEP-171 Private House Deed & Family Member AI Mint (`purchase_citizen_asset`)** | `CJRDR26vjD6j9bJL8ZezWSSaNbdZVqK3HQ8JqZUpyUif` | [View Transaction](https://testnet.nearblocks.io/txns/CJRDR26vjD6j9bJL8ZezWSSaNbdZVqK3HQ8JqZUpyUif) |
-
-**One-command terminal verification (`curl` against `rpc.testnet.near.org` & `test.api.fastnear.com`):**
+| **Master Sub-Account Factory** | `buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/buddiesblitz.testnet) |
+| **Unified Market, FT, NFT & MT Contract** | `market.buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
+| **Sample Citizen Sub-Account** | `kxvqmr.buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/kxvqmr.buddiesblitz.testnet) |
 
 ```bash
-# 1. Verify NEP-141 RESPITE token & NEP-171 NFT indexer state for buddiesblitz.testnet
-curl -s https://test.api.fastnear.com/v1/account/buddiesblitz.testnet/ft
-curl -s https://test.api.fastnear.com/v1/account/buddiesblitz.testnet/nft
-
-# 2. Query NEP-141 ft_metadata() on market.buddiesblitz.testnet
-curl -s -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" \
+# Query NEP-141 ft_metadata() on market.buddiesblitz.testnet via FastNEAR RPC
+curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"ft_metadata","args_base64":"e30="}}'
 
-# 3. Query NEP-181 nft_tokens_for_owner() on market.buddiesblitz.testnet
-curl -s -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" \
+# Query NEP-181 nft_tokens_for_owner() for buddiesblitz.testnet
+curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"nft_tokens_for_owner","args_base64":"eyJhY2NvdW50X2lkIjoiYnVkZGllc2JsaXR6LnRlc3RuZXQifQ=="}}'
 ```
 
 ---
 
-## Seedless citizen onboarding (`Privy Google OAuth -> <name>.buddiesblitz.testnet`)
-
-Players never deal with seed phrases or browser extension popups during normal gameplay:
-
-1. **Google authentication via Privy (`@privy-io/react-auth`)** — Clicking **`CONTINUE WITH GOOGLE`** on the start screen (or **`REGISTER`** inside any Merchant modal while playing as a Guest) opens Privy's Google OAuth flow (`src/main.tsx`, `src/App.tsx`).
-2. **Custom wallet naming** — Once Google returns the player's verified email, the in-game **`Choose your wallet name`** modal opens with an empty input field so the player types their own handle (or clicks `RANDOM LETTERS` for a 6-letter code), previewing `<name>.buddiesblitz.testnet` in real time.
-3. **Hierarchical sub-account provisioning** — `spawnSubAccountOnChainViaMaster()` in [`src/lib/nearClient.ts`](src/lib/nearClient.ts) provisions `<name>.buddiesblitz.testnet` under the parent master account `buddiesblitz.testnet` with Dual-Key custody (`masterFullAccessKey` + `playerSessionKey`), transitions through `Please wait, preparing your wallet...`, and unlocks the city with `Welcome Citizen, your wallet is now active.`
-
----
-
-## Project structure
+## Repository Structure
 
 ```text
+api/
+  near-relayer.ts                       Serverless Dual-Key sub-account provisioner (<handle>.buddiesblitz.testnet)
+
+contracts/buddies-market/
+  Cargo.toml                            near-sdk 5.30.1 Rust manifest
+  src/lib.rs                            NEP-141/145, NEP-171/177/181, Sub-Account Deeds, P2P Fish Market & NEP-245
+  target/near/buddies_market.wasm       Compiled WebAssembly smart contract binary + ABI JSON
+
 src/
-  main.tsx                              PrivyProvider (Google OAuth) & React 19 root mount
-  App.tsx                               HUD, onboarding state machine, fishing bar, modals & sync
-  game/
-    BuddiesBlitzArena.tsx               Three.js WebGL renderer, 3 zones, physics & 60 FPS loop
-    buddiesBlitzRules.ts                2x2x2 pad recipes, peaceful-zone rules, radar & constants
-    buddiesMerchantPricing.ts           NPC catalog items, dynamic LUL->CYON quotes & stock ticks
-    buddiesFishingMarket.ts             Water-zone detector, fish rarity tables & P2P listings
-    audio.ts                            Procedural Web Audio synthesizer for UI & combat SFX
+  main.tsx                              React 19 root & Privy Google OAuth bridge mount
+  App.tsx                               HUD, Personal Bag, Private House invite bar, fishing loop & NEAR sync
   components/
-    NpcMerchantAndHouseModal.tsx        NPC dialogue, Exchange, Catalog, Fish Bucket & Cutaway House
-    TacticalKioskModal.tsx              Warzone recipe queue, base upgrades & plot access control
-    SocialChatModal.tsx                 3-column nearby players list, public chat & whisper UI
-    CharacterProfileModal.tsx           Citizen profile card, balances & username editor
-    NearWalletSelectorModal.tsx         External NEAR wallet selector & RPC account verifier
-    AdminCommandDashboard.tsx           Master treasury & sub-account custody dashboard
-    ParticleEmitterPanel.tsx            Fixed-pool 128-particle studio tuner
-    MobileResponsiveControls.tsx        Touch virtual joystick & landscape orientation guard
+    CityTransitKioskModal.tsx           Portal Hub: Travel & Districts, Warzone Team Select, My House & Shop
+    NpcMerchantAndHouseModal.tsx        Hana & Kai Chat, LUL->CYON / NEAR->RESPITE Exchange, Catalog & House Studio
+    TidewaterCatchShowcaseModal.tsx     Tension-Gauge fishing HUD, 3D fish portrait, Bag/LUL-sell/NFT-mint/Release
+    TacticalKioskModal.tsx              Warzone Weapon Armory, Vehicle Hangar & residential plot access
+    NearWalletSelectorModal.tsx         Meteor / MyNearWallet Testnet connector & NEP-413 verifier
+    SocialChatModal.tsx                 3-column MMORPG public & private whisper chat modal
+    CharacterProfileModal.tsx           Citizen profile card, balances & handle inspector
+    MobileResponsiveControls.tsx        Multi-touch virtual joysticks & orientation guard
+  game/
+    BuddiesBlitzArena.tsx               60 FPS Three.js world, Warzone separation, despawn timers & central airdrops
+    buddiesBlitzRules.ts                2x2x2 crate bitmask recipes, peaceful-zone invariant & Kiosk transit rules
+    buddiesMerchantPricing.ts           Autonomous NPC treasuries, CYON/RESPITE catalog & empty-start house state
+    buddiesFishingMarket.ts             Shoreline water-zone detector, 10 fish species tables & P2P listings
+    buddiesInteriorAssets.ts            Modern Japanese Wooden Pavilion 3D builders & SAT OBB placement
+    buddiesBlitzWorldBuilder.ts         Procedural coastal city, articulated street tram & Warzone island builders
+    buddiesBlitzSquadAi.ts              Octile A* pathfinding & Warzone-only Family Member companion AI
+    buddiesBlitzCombat.ts               Raycast ballistics, melee knockback & vehicle turret physics
+    buddiesBlitzMinimap.ts              2D radar & dynamic chunk culling (20.8m)
+    buddiesAssetPreloader.ts            Deduplicated GLB & UI texture preloader
+    audio.ts                            Procedural Web Audio API synthesizer
   lib/
-    nearClient.ts                       NEAR JSON-RPC client, sub-account engine & swap receipts
-    supabaseClient.ts                   Supabase PostgreSQL persistence & Realtime broadcast channel
+    nearClient.ts                       FastNEAR JSON-RPC client, Ed25519 session keys, NEP-413 & typed calls
+    supabaseClient.ts                   Supabase PostgreSQL persistence, P2P listing sync & Realtime presence
+    privyAuthBridge.tsx                 Headless Google OAuth bridge & injected wallet recursion guards
 
-contracts/
-  buddies-market/
-    Cargo.toml                          near-sdk 5.5 Rust manifest for market.buddiesblitz.testnet
-    src/lib.rs                          On-chain RESPITE, NEP-171 Fish NFT & P2P Marketplace contract
-
-docs/
-  hero-1-beach-pier.jpg                 East Beach shoreline boardwalk & fishing prompt
-  hero-2-tram-station.jpg               Safezone City articulated tram & transit shelter
-  hero-3-house-interior.jpg             Private citizen house cutaway interior
-  hero-4-hana-exchange.jpg              Hana's Lobby Cafe & off-chain LUL -> CYON exchange
-  hero-5-kai-fish-market.jpg            Merchant Kai's fish bucket & P2P Fish NFT marketplace
-  hero-6-oasis-lake.jpg                 Central Oasis Lake fishing & Warzone HUD
-  hero-7-crate-stacking-pad.jpg         2x2x2 base crate pad & Family Member AI buddies
-  hero-8-weapon-armory.jpg              Tactical Base Kiosk Weapon Armory modal
-  hero-9-vehicle-hangar.jpg             Tactical Base Kiosk Vehicle Hangar modal
+supabase_mvp_schema.sql                 Normalized PostgreSQL tables, RLS policies, public view & atomic RPC
 ```
 
 ---
 
-## Environment variables
+## Environment Configuration
 
-Create a `.env` file in the project root (or configure in Vercel Project Settings):
+Copy [`.env.example`](.env.example) to `.env` for local development or Vercel deployment:
 
-| variable | description |
+| Variable | Description |
 |---|---|
-| `VITE_PRIVY_APP_ID` | Privy App ID configured with Google OAuth enabled (`<your-privy-app-id>`). |
-| `VITE_SUPABASE_URL` | Supabase project URL (`https://<project-ref>.supabase.co`). |
-| `VITE_SUPABASE_ANON_KEY` | Supabase public `anon` API key. |
-| `VITE_NEAR_NETWORK` | NEAR network target (`testnet` by default). |
-| `VITE_NEAR_RPC_URL` | NEAR JSON-RPC endpoint (`https://rpc.testnet.near.org`). |
-
-To initialize a fresh Supabase database for off-chain profiles, house interiors, and realtime chat, run [`supabase_mvp_schema.sql`](supabase_mvp_schema.sql) in the Supabase SQL Editor.
-
-## Building and deploying the NEAR smart contract
-
-With [`near-cli-rs`](https://docs.near.org/) and [`cargo-near`](https://github.com/near/cargo-near) installed:
-
-```bash
-cd contracts/buddies-market
-cargo near build non-reproducible-wasm
-
-near contract deploy market.buddiesblitz.testnet \
-  use-file target/near/buddies_market.wasm \
-  with-init-call init \
-  json-args '{"master_account":"buddiesblitz.testnet"}' \
-  prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  network-config testnet \
-  sign-with-legacy-keychain \
-  send
-```
+| `VITE_NEAR_NETWORK` | `testnet` (default) or `mainnet` |
+| `VITE_NEAR_RPC_URL` | `https://rpc.testnet.fastnear.com` |
+| `VITE_NEAR_MARKET_CONTRACT_ID` | `market.buddiesblitz.testnet` |
+| `NEAR_MASTER_ACCOUNT_ID` | `buddiesblitz.testnet` (used by `/api/near-relayer`) |
+| `NEAR_MASTER_PRIVATE_KEY` | Optional server-side `ed25519:` key on Vercel to broadcast live `CreateAccount` transactions |
+| `VITE_PRIVY_APP_ID` | Privy App ID for headless Google OAuth onboarding |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Supabase project URL and public `anon` key (initialize with [`supabase_mvp_schema.sql`](supabase_mvp_schema.sql)) |
 
 ---
 
-## Prototype status & production roadmap
+## NEAR Hackathon Disclosures (`HACKATHON.md`)
 
-This repository is an active **NEAR Testnet playable prototype** built for the **NEAR Hackathon**. While the core 3-zone loop (`Lobby`, `Safezone City`, `Warzone`), Privy Google OAuth sub-account onboarding (`<name>.buddiesblitz.testnet`), and on-chain NEP-141 (`RESPITE`) + NEP-171/181 (`BBFISH`) marketplace contract (`market.buddiesblitz.testnet`) are live and playable end-to-end, several areas are under active development prior to a production Mainnet release:
-
-- **Security & Mainnet custody hardening** — Moving the Testnet sub-account relayer (`buddiesblitz.testnet`) to an isolated KMS / MPC signing service with per-account `FunctionCall` gas allowances, server-authoritative catch weight/rarity verification before `mint_fish_nft` signatures, and a third-party smart contract audit.
-- **3D graphics, shaders & asset pipeline** — Expanding custom `.glb` character and vehicle animations, real-time coastal water shaders, richer interior furniture models, and GPU instanced Level-of-Detail (LOD) rendering for higher concurrent city density.
-- **Gameplay depth & social progression** — Adding multi-player fishing boats, seasonal on-chain angler leaderboards, additional `2x2x2` co-op vehicle and air-support recipes, and persistent citizen neighborhood customization.
-
----
-
-## NEAR Hackathon track alignment & disclosures
-
-- **Tracks**:
-  - **`games` (Games With Real Economies)** — Built around **AGENT NPCS** (`hana-cafe.buddiesblitz.testnet`, `kai-beach.buddiesblitz.testnet`, `hiro-warzone.buddiesblitz.testnet`), **SOCIAL LOGIN** (Privy Google OAuth into `<name>.buddiesblitz.testnet`), **NEP-245** multi-token furnishings, and a player-owned fish marketplace where players never touch seed phrases or gas popups.
-  - **`nfts` (NFTs That Do Something)** — **DYNAMIC NFTS**, **NEP-171** Fish NFTs with on-chain species/weight/rarity metadata traded peer-to-peer for `RESPITE`, Commander Gamepass estates with **SUB-ACCOUNTS** (`estate-01.buddiesblitz.testnet`), and **FUNCTION CALL KEYS** rotation on transfer.
-- **Libraries & baseline disclosure (`Q-005`)**: Built during the NEAR Hackathon window using `Three.js` (`v0.183`), `React 19`, `Vite 8`, `@privy-io/react-auth`, `@supabase/supabase-js`, `near-sdk` (`v5.5`, Rust), `lucide-react`, and `Tailwind CSS v4`.
-- **License (`Q-014`)**: Released under the [MIT License](LICENSE).
+- **Tracks**: Primary **`games`** (*Games With Real Economies*, `09-games`) · Secondary **`nfts`** (*NFTs That Do Something*, `10-nfts`).
+- **Baseline & Open-Source Stack Disclosure (`Q-005`)**: Built with `Three.js` (`v0.183`), `React 19`, `Vite 8`, `Tailwind CSS v4`, `@privy-io/react-auth`, `@supabase/supabase-js`, and `near-sdk` (`v5.30.1`, Rust). All NEAR smart contract standards (`NEP-141`, `NEP-145`, `NEP-171/177/181`, `NEP-245`, Sub-Account Deed `key_epoch` rotation), `/api/near-relayer` Dual-Key sub-account provisioning, non-ponzi P2P `RESPITE` marketplace synchronization, and autonomous NPC merchant simulation were engineered specifically for this NEAR Hackathon entry.
+- **License (`Q-014`)**: Open source under the [MIT License](LICENSE).

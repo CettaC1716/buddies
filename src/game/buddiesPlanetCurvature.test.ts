@@ -100,11 +100,15 @@ test('getRawGroundElevation and getTerrainElevation are flat (0.0m) in playable 
   assert.ok(getTerrainElevation(-124, 0) > 5.0);
   assert.ok(getTerrainElevation(-112, 55) > 5.0);
 
-  // Widened West Elevated Concrete Lobby & Shopping Plaza Platform is raised (+1.40m) across x ∈ [-104.5, -76.5], z ∈ [-38, +38]
+  // Widened West Elevated Concrete Lobby & Shopping Plaza Platform is raised (+2.50m) across x ∈ [-104.5, -76.5], z ∈ [-38, +38]
   assert.ok(evaluateWestPowerPlantSdf(-88.5, 0.0) < -5.0);
   assert.ok(evaluateWestPowerPlantSdf(-96.0, 25.0) < -5.0);
-  assert.ok(getRawGroundElevation(-96.0, 0.0) > 1.35);
-  assert.ok(getTerrainElevation(-96.0, 0.0) > 1.35);
+  assert.ok(Math.abs(getRawGroundElevation(-96.0, 0.0) - 2.50) < 0.05);
+  assert.ok(Math.abs(getTerrainElevation(-96.0, 0.0) - 2.50) < 0.05);
+  // Urban Plaza to Street Staircase (20m wide: z in [-10, +10]) descends from +2.50m Plaza through +1.32m Mid-Landing to 0.0m Street
+  assert.ok(Math.abs(getTerrainElevation(-81.1, 0.0) - 1.32) < 0.05);
+  assert.ok(getTerrainElevation(-78.5, 0.0) > 0.40 && getTerrainElevation(-78.5, 0.0) < 1.10);
+  assert.equal(getTerrainElevation(-74.0, 0.0), 0.0);
 
   // Central-West Oasis Lake has a real 3-Level Concave Basin Depression ("level cekungan danau", down to -1.55m at center)
   assert.ok(getRawGroundElevation(-31.0, 0.0) < -1.45);

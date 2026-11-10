@@ -27,13 +27,16 @@ export interface MerchantCatalogItem {
   id: string;
   tokenId: string; // NEP-245 multi-token ID (for NFT items) or catalog SKU
   name: string;
-  category: 'non_nft_furniture' | 'nft_house_theme' | 'nft_collector_furniture';
+  category: 'non_nft_furniture' | 'nft_house_theme' | 'nft_collector_furniture' | 'fishing_gear';
   currency: 'CYON' | 'RESPITE';
   basePrice: number;
   targetStock: number;
   initialStock: number;
   isNft: boolean;
   description: string;
+  merchantId?: MerchantLocationId;
+  isEquippableRod?: boolean;
+  iconEmoji?: string;
   interiorSlot?: HouseInteriorSlotId;
   skinThemeId?: BaseSkinThemeId;
   gardenPresetId?: BaseGardenPresetId;
@@ -205,6 +208,94 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     footprints: [[0, 0, 1.35, 1.35]],
     height: 1.45,
     defaultPose: { x: 3.2, z: 2.0, ry: 0 },
+  },
+
+  // --- MERCHANT KAI EXCLUSIVE FISHING GEAR & TACKLE CATALOG (East Beach House) ---
+  {
+    id: 'fishing_rod_carbon_pro',
+    tokenId: 'item:fishing_rod_carbon_pro',
+    name: 'Tidewater Carbon Pro Rod',
+    category: 'fishing_gear',
+    merchantId: 'beach_house',
+    isEquippableRod: true,
+    iconEmoji: '🎣',
+    currency: 'CYON',
+    basePrice: 45,
+    targetStock: 10,
+    initialStock: 10,
+    isNft: false,
+    description: 'High-modulus carbon spinning rod with reinforced line tension control. Stored in your Personal Bag.',
+  },
+  {
+    id: 'fishing_reel_twinpower',
+    tokenId: 'item:fishing_reel_twinpower',
+    name: 'Twin-Drag Saltwater Reel',
+    category: 'fishing_gear',
+    merchantId: 'beach_house',
+    iconEmoji: '⚙️',
+    currency: 'CYON',
+    basePrice: 60,
+    targetStock: 8,
+    initialStock: 8,
+    isNft: false,
+    description: 'Precision twin-drag spinning reel that reduces line snap risk during strong fish surges.',
+  },
+  {
+    id: 'fishing_lure_luminous_minnow',
+    tokenId: 'item:fishing_lure_luminous_minnow',
+    name: 'Luminous Minnow Lure Box',
+    category: 'fishing_gear',
+    merchantId: 'beach_house',
+    iconEmoji: '🐟',
+    currency: 'CYON',
+    basePrice: 30,
+    targetStock: 12,
+    initialStock: 12,
+    isNft: false,
+    description: 'UV-glow crankbait & popper lure set designed to attract Rare coastal and oasis fish.',
+  },
+  {
+    id: 'fishing_cooler_icebox',
+    tokenId: 'item:fishing_cooler_icebox',
+    name: 'Tidewater Marine Ice Cooler',
+    category: 'fishing_gear',
+    merchantId: 'beach_house',
+    iconEmoji: '🧊',
+    currency: 'CYON',
+    basePrice: 55,
+    targetStock: 8,
+    initialStock: 8,
+    isNft: false,
+    description: 'Insulated marine cooler box to keep fresh catches in top condition inside your Personal Bag.',
+  },
+  {
+    id: 'nft_golden_poseidon_rod',
+    tokenId: 'nep245:fishing:golden_poseidon_rod',
+    name: 'Poseidon Golden Kraken Rod NFT',
+    category: 'fishing_gear',
+    merchantId: 'beach_house',
+    isEquippableRod: true,
+    iconEmoji: '🔱',
+    currency: 'RESPITE',
+    basePrice: 15,
+    targetStock: 4,
+    initialStock: 4,
+    isNft: true,
+    description: 'NEP-245 Collector Rod NFT: Gold-anodized deep-sea rod & titanium leader for Mythic catches.',
+  },
+  {
+    id: 'nft_sonar_fishfinder_pro',
+    tokenId: 'nep245:fishing:sonar_fishfinder_pro',
+    name: 'Tidewater Sonar Fishfinder NFT',
+    category: 'fishing_gear',
+    merchantId: 'beach_house',
+    iconEmoji: '📡',
+    currency: 'RESPITE',
+    basePrice: 12,
+    targetStock: 5,
+    initialStock: 5,
+    isNft: true,
+    description: 'NEP-245 Collector Tackle NFT: Portable acoustic sonar for scanning trophy fish pockets.',
   },
 ];
 
@@ -589,7 +680,7 @@ export function generateNpcMerchantReply(
     q.includes('petunjuk') ||
     q.includes('cara main')
   ) {
-    return `Here is how to play Buddies Blitz: First, register with Google to create your personal citizen wallet. Second, enter the Warzone to earn LUL, or catch fish at East Beach and Central Oasis Lake. You can sell caught fish directly to Merchant Kai for CYON, or mint your fish as an NFT to sell on the Marketplace for RESPITE. You can also swap NEAR for RESPITE in the Exchange tab.${guestNotice}`;
+    return `Here is how to play Buddies Blitz: First, register with Google to create your personal citizen wallet. Second, enter the Warzone via the City Transit Kiosk or catch fish with the interactive Tension Gauge minigame to earn LUL. Swap LUL into CYON at the Exchange to buy regular catalog items, or mint caught fish into NEP-171 NFTs to sell P2P on Kai's Fish Market for RESPITE (or swap NEAR -> RESPITE at Hana's ATM).${guestNotice}`;
   }
 
   // 4. Registration / Account / Wallet questions
@@ -628,7 +719,7 @@ export function generateNpcMerchantReply(
     q.includes('uang') ||
     q.includes('koin')
   ) {
-    return `Buddies Blitz uses three currencies: LUL can only be earned in the Warzone, CYON is obtained by exchanging LUL or selling caught fish directly to Merchant Kai, and RESPITE is obtained by swapping NEAR in the Exchange tab or by minting caught fish into NFTs and selling them to other players on the Fish Marketplace. Your current balance is ${balances.lul} LUL, ${balances.cyon} CYON, and ${balances.respite} RESPITE.${guestNotice}`;
+    return `Buddies Blitz uses a 3-currency anti-bot P2P economy: LUL is earned only from Mini-Games (Warzone) or selling raw non-NFT fish to Merchant Kai, and its sole function is swapping into CYON at the Exchange. CYON buys regular non-NFT catalog items (tackle, outfits, basic furniture). RESPITE is pure on-chain NEAR crypto obtained via NEAR -> RESPITE ATM swap or P2P NFT sales on Kai's Fish Market, used for House Ownership (25 RESPITE), Family Member contracts, and exclusive NFTs. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
   }
 
   // 6. House, Family Members & Catalog
@@ -645,7 +736,7 @@ export function generateNpcMerchantReply(
     q.includes('rumah') ||
     q.includes('katalog')
   ) {
-    return `In the Catalog tab, registered players can buy a Private House for 25 RESPITE and recruit a Family Member helper for 1 Week (15 RESPITE), 1 Month (45 RESPITE), or 1 Year (180 RESPITE). Family Members can be ordered to collect boxes, go fishing, or join Warzone combat.${guestNotice}`;
+    return `In the Catalog tab, registered players can buy the Modern Japanese Wooden Pavilion House Certificate for 25 RESPITE (starts empty so you can furnish it with CYON or NFT RESPITE furniture, flex on a Main World plot, teleport via Kiosk, and invite friends) and recruit a Family Member AI companion for 15/45/180 RESPITE (active exclusively inside Mini-Games like Warzone).${guestNotice}`;
   }
 
   // 7. Fishing & East Beach
@@ -660,7 +751,7 @@ export function generateNpcMerchantReply(
     q.includes('ikan') ||
     q.includes('pantai')
   ) {
-    return `You can fish at the Central Oasis Lake or along the East Beach shoreline by pressing F near the water. Bring your caught fish to Kai at the East Beach House: if you do not want to mint the fish as an NFT, sell it directly to the merchant for CYON, or mint it as an NFT and list it on the Marketplace where other players buy it with RESPITE.${guestNotice}`;
+    return `Open your Personal Bag to equip a Fishing Rod, cast into the water, wait for the bite indicator (!), and reel in using the Tension Gauge minigame. Caught fish go to your Personal Bag where you can Release them, sell non-NFT fish to Kai for LUL (then swap LUL -> CYON), or Mint them as NEP-171 NFTs to list on Kai's P2P Market for RESPITE.${guestNotice}`;
   }
 
   // 8. Warzone / Combat / Crates
@@ -1111,13 +1202,12 @@ export function createPlacedHouseFurnitureItem(
 }
 
 /**
- * Creates the initial default cutaway room furniture layout.
+ * Creates the initial cutaway room furniture layout.
+ * Newly purchased Modern Japanese Wooden Pavilion houses start 100% empty
+ * so citizens furnish them with their own CYON (regular) or RESPITE (NFT) items.
  */
 export function createInitialPlacedHouseFurniture(): PlacedHouseFurnitureItem[] {
-  return [
-    createPlacedHouseFurnitureItem('inst_tatami_tea_table', 'tatami_tea_table', -2.6, -0.9, 0, true),
-    createPlacedHouseFurnitureItem('inst_sakura_bonsai_pot', 'sakura_bonsai_pot', 0.6, -3.0, 0, true),
-  ];
+  return [];
 }
 
 /**

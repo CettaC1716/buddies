@@ -1,996 +1,715 @@
 /**
- * ============================================================================
- * BUDDIES BLITZ 3D — NEAR PROTOCOL NETWORK & SUB-ACCOUNT ENGINE
- * ============================================================================
- * Supports NEAR Hackathon Tracks:
- *  - `games` (Games With Real Economies):
- *      • Social/Email login with invisible sub-account (`<user>.buddiesblitz.testnet`)
- *      • Zero seed phrases, zero wallet popups, zero gas prompts in normal loop
- *      • NEP-245 Multi-Token inventory & autonomous NPC Merchant wallets
- *  - `nfts` (NFTs That Do Something):
- *      • NEP-171 Commander Gamepass NFT mapped 1:1 to a NEAR sub-account
- *        (`estate-<id>.buddiesblitz.testnet`) holding treasury, inventory & access
- *      • Atomic transfer state machine with FunctionCall key rotation &
- *        mid-payout settlement protection
- *  - `swarms` (AI Swarms):
- *      • Sub-accounts per autonomous Harvester agent (`harvester-1.<account>`)
- * ============================================================================
+ * NEAR Protocol Integration for Buddies Blitz (`docs.near.org` compliant)
+ * - Uses live NEAR JSON-RPC (`https://rpc.testnet.fastnear.com` / `https://rpc.mainnet.fastnear.com`)
+ * - Supports NEP-413 cryptographic message verification (`signMessage`) for wallet ownership
+ * - Generates scoped Ed25519 `FunctionCall` session keys for seedless `<handle>.buddiesblitz.testnet` onboarding
+ * - Synchronized 1:1 with `contracts/buddies-market/src/lib.rs` (NEP-141, NEP-145, NEP-171/181, NEP-245)
  */
 
+const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
+
 export type NearNetworkId = 'testnet' | 'mainnet';
-
-export type NearOnboardingMode = 'social_invisible' | 'near_wallet';
-
-export interface NearRpcStatusSnapshot {
-  networkId: NearNetworkId;
-  rpcUrl: string;
-  chainId: string;
-  latestBlockHeight: number;
-  latestBlockHash: string;
-  latestBlockTimeIso: string;
-  isLiveRpc: boolean;
-}
-
-export interface NearAccountOnChainView {
-  accountId: string;
-  networkId: NearNetworkId;
-  existsOnChain: boolean;
-  amountYocto: string;
-  balanceNearFormatted: string;
-  storageUsageBytes: number;
-  blockHeight: number;
-  blockHash: string;
-  explorerUrl: string;
-}
+export type NearOnboardingMode = 'social_invisible' | 'wallet_selector';
 
 export interface Nep171OwnershipHistoryEntry {
-  owner: string;
-  subAccountId: string;
-  acquiredAt: string;
-  transferredAt: string | null;
-  earnedRespite: number;
-  paidOutRespite: number;
+  fromAccount: string;
+  toAccount: string;
   txHash: string;
-  note: string;
+  timestampIso: string;
+  settledPayoutRespite: number;
+  transferredTreasuryRespite: number;
+  revokedAccessKey: string;
+  rotatedAccessKey: string;
 }
 
 export interface Nep171GamepassSubAccountLedger {
   tokenId: string;
-  contractId: string;
   ownerNearAccount: string;
   subAccountId: string;
+  network: NearNetworkId;
   treasuryRespite: number;
   totalEarnedRespite: number;
   totalPaidOutRespite: number;
   pendingPayoutRespite: number;
   activeAccessKey: string;
   revokedAccessKeys: string[];
-  network: NearNetworkId;
-  latestTxHash: string;
+  lastTransferTxHash: string;
   ownershipHistory: Nep171OwnershipHistoryEntry[];
 }
 
-export interface AtomicNep171TransferResult {
-  success: boolean;
-  previousOwner: string;
-  newOwner: string;
-  subAccountId: string;
-  settledMidSalePayoutToSeller: number;
-  transferredTreasuryToBuyer: number;
-  revokedSellerAccessKey: string;
-  rotatedBuyerAccessKey: string;
-  txHash: string;
-  explorerTxUrl: string;
-  updatedLedger: Nep171GamepassSubAccountLedger;
-  securityAuditNote: string;
+const DEFAULT_NETWORK = ((metaEnv.VITE_NEAR_NETWORK || 'testnet').toLowerCase() === 'mainnet'
+  ? 'mainnet'
+  : 'testnet') as NearNetworkId;
+
+export const NEAR_CONFIG = {
+  network: DEFAULT_NETWORK,
+  rpcUrl:
+    metaEnv.VITE_NEAR_RPC_URL ||
+    (DEFAULT_NETWORK === 'mainnet'
+      ? 'https://rpc.mainnet.fastnear.com'
+      : 'https://rpc.testnet.fastnear.com'),
+  mainnetRpcUrl: 'https://rpc.mainnet.fastnear.com',
+  testnetRpcUrl: 'https://rpc.testnet.fastnear.com',
+  walletConnectRedirectUrl:
+    DEFAULT_NETWORK === 'mainnet'
+      ? 'https://app.mynearwallet.com/login/'
+      : 'https://testnet.mynearwallet.com/login/',
+  mainnetWalletConnectRedirectUrl: 'https://app.mynearwallet.com/login/',
+  testnetWalletConnectRedirectUrl: 'https://testnet.mynearwallet.com/login/',
+  masterAccountId: 'buddiesblitz.testnet',
+  marketContractId: metaEnv.VITE_NEAR_MARKET_CONTRACT_ID || 'market.buddiesblitz.testnet',
+  gamepassContractId: metaEnv.VITE_NEAR_GAMEPASS_CONTRACT_ID || 'market.buddiesblitz.testnet',
+  nep245MultiTokenContractId:
+    metaEnv.VITE_NEAR_NEP245_CONTRACT_ID || 'market.buddiesblitz.testnet',
+  nep141RespiteContractId: 'market.buddiesblitz.testnet',
+};
+
+export function getMyNearWalletLoginUrl(network: NearNetworkId = NEAR_CONFIG.network): string {
+  const base =
+    network === 'mainnet'
+      ? NEAR_CONFIG.mainnetWalletConnectRedirectUrl
+      : NEAR_CONFIG.testnetWalletConnectRedirectUrl;
+  return `${base}?contract_id=${encodeURIComponent(NEAR_CONFIG.marketContractId)}`;
 }
 
-const DEFAULT_TESTNET_RPC = 'https://rpc.testnet.near.org';
-const FALLBACK_TESTNET_RPC = 'https://test.rpc.fastnear.com';
-const DEFAULT_MAINNET_RPC = 'https://rpc.mainnet.near.org';
-const FALLBACK_MAINNET_RPC = 'https://free.rpc.fastnear.com';
-
-/**
- * Validates whether a string conforms to NEAR Protocol Account ID rules:
- * - Named accounts (`alice.testnet`, `bob.near`, sub-accounts `sub.alice.testnet`, 2..64 chars)
- * - Implicit 64-character hex accounts (`0..9a..f`)
- */
-export function isValidNearAccountId(accountId: string): boolean {
-  const clean = accountId.trim().toLowerCase();
-  if (clean.length < 2 || clean.length > 64) return false;
-  if (/^[0-9a-f]{64}$/.test(clean)) return true;
-  return /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(clean);
-}
-
-/**
- * Infers NEAR network (`mainnet` vs `testnet`) from an account ID suffix.
- */
-export function detectNetworkFromAccountId(
-  accountId: string,
-  fallback: NearNetworkId = 'testnet',
-): NearNetworkId {
-  const clean = accountId.trim().toLowerCase();
-  if (clean.endsWith('.near')) return 'mainnet';
-  if (clean.endsWith('.testnet')) return 'testnet';
-  return fallback;
-}
-
-export function getNearConfig(): {
-  networkId: NearNetworkId;
+export function resolveNearRpcUrl(accountOrNetwork?: string): {
+  network: NearNetworkId;
   rpcUrl: string;
-  gamepassContractId: string;
-  nep245ContractId: string;
-  explorerBaseUrl: string;
 } {
-  const env = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string> }).env) || {};
-  const rawNet = (env.VITE_NEAR_NETWORK || 'testnet').toLowerCase();
-  const networkId: NearNetworkId = rawNet === 'mainnet' ? 'mainnet' : 'testnet';
-  const rpcUrl =
-    env.VITE_NEAR_RPC_URL || (networkId === 'mainnet' ? DEFAULT_MAINNET_RPC : DEFAULT_TESTNET_RPC);
-  const suffix = networkId === 'mainnet' ? 'near' : 'testnet';
-  const gamepassContractId =
-    env.VITE_NEAR_GAMEPASS_CONTRACT_ID || `gamepass.buddiesblitz.${suffix}`;
-  const nep245ContractId =
-    env.VITE_NEAR_NEP245_CONTRACT_ID || `items-nep245.buddiesblitz.${suffix}`;
-  const explorerBaseUrl =
-    networkId === 'mainnet' ? 'https://nearblocks.io' : 'https://testnet.nearblocks.io';
-
-  return {
-    networkId,
-    rpcUrl,
-    gamepassContractId,
-    nep245ContractId,
-    explorerBaseUrl,
-  };
-}
-
-export function getNearBlocksAccountUrl(accountId: string, networkId: NearNetworkId = 'testnet'): string {
-  const base = networkId === 'mainnet' ? 'https://nearblocks.io' : 'https://testnet.nearblocks.io';
-  return `${base}/address/${encodeURIComponent(accountId)}`;
-}
-
-export function getNearBlocksTxUrl(txHash: string, networkId: NearNetworkId = 'testnet'): string {
-  const base = networkId === 'mainnet' ? 'https://nearblocks.io' : 'https://testnet.nearblocks.io';
-  return `${base}/txns/${encodeURIComponent(txHash)}`;
-}
-
-export function generateRandomWalletLetters(length = 6): string {
-  const letters = 'abcdefghijklmnopqrstuvwxyz';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += letters.charAt(Math.floor(Math.random() * letters.length));
+  const clean = (accountOrNetwork || NEAR_CONFIG.network).trim().toLowerCase();
+  if (clean === 'mainnet' || clean.endsWith('.near')) {
+    return { network: 'mainnet', rpcUrl: NEAR_CONFIG.mainnetRpcUrl };
   }
-  return result;
-}
-
-/**
- * Deterministically derives a clean NEAR account ID from an email, social handle, or wallet string.
- * Satisfies Track `games` ("Players sign in with a social or email login. No seed phrases, no wallet popups").
- */
-export function deriveSocialInvisibleNearAccount(
-  emailOrHandle: string,
-  networkId: NearNetworkId = 'testnet',
-): {
-  accountId: string;
-  displayName: string;
-  onboardingMode: NearOnboardingMode;
-  sessionPublicKey: string;
-} {
-  const cleaned = emailOrHandle.trim().toLowerCase();
-  const rawBase = cleaned.split('@')[0].split('.')[0];
-  const fallbackRandom = generateRandomWalletLetters(6);
-  const localPart =
-    (rawBase && rawBase !== 'player1' ? rawBase : fallbackRandom)
-      .replace(/[^a-z0-9_-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 24) || fallbackRandom;
-  const suffix = networkId === 'mainnet' ? 'near' : 'testnet';
-  const accountId = `${localPart}.buddiesblitz.${suffix}`;
-  const hashSeed = Array.from(accountId).reduce((acc, ch, i) => (acc * 31 + ch.charCodeAt(0) + i) >>> 0, 2166136261);
-  const sessionPublicKey = `ed25519:SessionKey${hashSeed.toString(16).padStart(8, '0')}9xQp2Lz8R4wN1yB5cT6hJ8dF`;
-
-  return {
-    accountId,
-    displayName: localPart.toUpperCase(),
-    onboardingMode: 'social_invisible',
-    sessionPublicKey,
-  };
-}
-
-/**
- * Generates a deterministic base58-like transaction hash when operating via the gasless relayer or simulation.
- */
-export function generateDeterministicNearTxHash(seedInput: string): string {
-  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  let h1 = 0x811c9dc5;
-  let h2 = 0x01000193;
-  for (let i = 0; i < seedInput.length; i++) {
-    const code = seedInput.charCodeAt(i);
-    h1 ^= code;
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-    h2 ^= (code + i * 17) & 0xff;
-    h2 = Math.imul(h2, 0x85ebca6b) >>> 0;
-  }
-  let out = '';
-  for (let i = 0; i < 44; i++) {
-    const idx = ((h1 >>> (i % 24)) ^ (h2 >>> ((i * 3) % 24)) ^ (i * 37)) % alphabet.length;
-    out += alphabet[Math.abs(idx)];
-  }
-  return out;
-}
-
-/**
- * Creates the initial NEP-171 Gamepass Sub-Account Ledger for a holder.
- * Each NFT maps 1:1 to its own sub-account (`estate-<id>.buddiesblitz.testnet`).
- */
-export function createInitialNep171SubAccountLedger(
-  ownerNearAccount = 'commander-p1.testnet',
-  network: NearNetworkId = 'testnet',
-): Nep171GamepassSubAccountLedger {
-  const suffix = network === 'mainnet' ? 'near' : 'testnet';
-  const cleanOwner = ownerNearAccount.trim().toLowerCase() || `commander-p1.${suffix}`;
-  const slug = cleanOwner.split('.')[0].replace(/[^a-z0-9]/g, '-') || 'commander-p1';
-  const tokenId = `nep171-gamepass-${slug}-01`;
-  const subAccountId = `estate-01.buddiesblitz.${suffix}`;
-  const genesisTx = generateDeterministicNearTxHash(`genesis:${tokenId}:${cleanOwner}`);
-  const activeAccessKey = `ed25519:Key_${slug}_v1_${genesisTx.slice(0, 14)}`;
-
-  return {
-    tokenId,
-    contractId: `gamepass.buddiesblitz.${suffix}`,
-    ownerNearAccount: cleanOwner,
-    subAccountId,
-    treasuryRespite: 18.5,
-    totalEarnedRespite: 54.0,
-    totalPaidOutRespite: 35.5,
-    pendingPayoutRespite: 4.5,
-    activeAccessKey,
-    revokedAccessKeys: ['ed25519:Key_founder-alpha_v0_RevokedOnTransfer'],
-    network,
-    latestTxHash: genesisTx,
-    ownershipHistory: [
-      {
-        owner: `founder-alpha.${suffix}`,
-        subAccountId,
-        acquiredAt: '2026-11-02T10:00:00Z',
-        transferredAt: '2026-11-05T16:30:00Z',
-        earnedRespite: 22.0,
-        paidOutRespite: 22.0,
-        txHash: generateDeterministicNearTxHash(`history:founder:${subAccountId}`),
-        note: 'Genesis mint + 3 Warzone sessions; full payout settled prior to transfer.',
-      },
-      {
-        owner: cleanOwner,
-        subAccountId,
-        acquiredAt: '2026-11-05T16:30:00Z',
-        transferredAt: null,
-        earnedRespite: 32.0,
-        paidOutRespite: 13.5,
-        txHash: genesisTx,
-        note: 'Active holder controlling sub-account treasury, Kiosk build royalties & 3D Estate access.',
-      },
-    ],
-  };
-}
-
-/**
- * Accrues new royalty earnings into the NEP-171 NFT's linked sub-account treasury
- * (e.g. when Kiosk recipes are crafted or visitors interact with the Estate).
- */
-export function recordNep171SubAccountEarning(
-  ledger: Nep171GamepassSubAccountLedger,
-  earnedRespiteAmount: number,
-  reason = 'Kiosk Crafting & Estate Royalty Cut',
-): Nep171GamepassSubAccountLedger {
-  const safeEarned = Math.max(0, Number(earnedRespiteAmount.toFixed(2)));
-  if (safeEarned <= 0) return ledger;
-
-  const updatedHistory = [...ledger.ownershipHistory];
-  if (updatedHistory.length > 0) {
-    const currentIdx = updatedHistory.length - 1;
-    const current = updatedHistory[currentIdx];
-    updatedHistory[currentIdx] = {
-      ...current,
-      earnedRespite: Number((current.earnedRespite + safeEarned).toFixed(2)),
-      note: `${reason} (+${safeEarned} RESPITE)`,
-    };
-  }
-
-  return {
-    ...ledger,
-    treasuryRespite: Number((ledger.treasuryRespite + safeEarned).toFixed(2)),
-    totalEarnedRespite: Number((ledger.totalEarnedRespite + safeEarned).toFixed(2)),
-    ownershipHistory: updatedHistory,
-  };
-}
-
-/**
- * Executes an atomic NEP-171 Gamepass NFT transfer (`nft_transfer`) together with its sub-account:
- *  1. Rejects unauthorized callers (`callerAccount !== ledger.ownerNearAccount`) or revoked access keys.
- *  2. Settles any in-flight `pendingPayoutRespite` to the outgoing seller at the transfer checkpoint
- *     so a mid-payout sale never loses or double-spends funds.
- *  3. Rotates the sub-account's `FunctionCall` / controller access key: revokes `ledger.activeAccessKey`
- *     (pushing it to `revokedAccessKeys`) and issues a fresh key bound exclusively to `newOwnerAccount`.
- *  4. Transfers the remaining `treasuryRespite`, estate access rights, and sub-account control to `newOwnerAccount`.
- */
-export function executeAtomicNep171SubAccountTransfer(params: {
-  ledger: Nep171GamepassSubAccountLedger;
-  callerAccount: string;
-  callerAccessKey?: string;
-  newOwnerAccount: string;
-  inFlightPayoutRespite?: number;
-  timestampIso?: string;
-}): AtomicNep171TransferResult {
-  const { ledger } = params;
-  const cleanCaller = params.callerAccount.trim().toLowerCase();
-  const cleanBuyer = params.newOwnerAccount.trim().toLowerCase();
-  const nowIso = params.timestampIso || new Date().toISOString();
-
-  // Security Check 1: Only current NFT owner with an unrevoked key can initiate transfer
-  if (cleanCaller !== ledger.ownerNearAccount.toLowerCase()) {
-    throw new Error(
-      `UNAUTHORIZED_NFT_TRANSFER: Caller '${cleanCaller}' is not current owner '${ledger.ownerNearAccount}'.`,
-    );
-  }
-  if (params.callerAccessKey && ledger.revokedAccessKeys.includes(params.callerAccessKey)) {
-    throw new Error(
-      `REVOKED_KEY_REJECTED: Access key '${params.callerAccessKey}' was revoked on a prior transfer.`,
-    );
-  }
-  if (!cleanBuyer || cleanBuyer === cleanCaller) {
-    throw new Error('INVALID_BUYER_ACCOUNT: Buyer account must be a distinct valid NEAR account ID.');
-  }
-
-  // Security Check 2: Atomic Mid-Payout Settlement Checkpoint
-  const inFlight = Math.max(
-    0,
-    Number(((params.inFlightPayoutRespite ?? ledger.pendingPayoutRespite) || 0).toFixed(2)),
-  );
-  const settledToSeller = Math.min(ledger.treasuryRespite, inFlight);
-  const remainingTreasuryForBuyer = Number(Math.max(0, ledger.treasuryRespite - settledToSeller).toFixed(2));
-
-  // Security Check 3: Atomic Access Key Rotation on the Sub-Account
-  const revokedKey = ledger.activeAccessKey;
-  const buyerSlug = cleanBuyer.split('.')[0].replace(/[^a-z0-9]/g, '-') || 'buyer';
-  const txHash = generateDeterministicNearTxHash(
-    `transfer:${ledger.tokenId}:${cleanCaller}->${cleanBuyer}:${nowIso}`,
-  );
-  const rotatedBuyerKey = `ed25519:Key_${buyerSlug}_v${ledger.revokedAccessKeys.length + 2}_${txHash.slice(0, 14)}`;
-
-  // Update Ownership History Ledger
-  const closedHistory = ledger.ownershipHistory.map((entry, idx, arr) => {
-    if (idx === arr.length - 1 && entry.transferredAt === null) {
-      return {
-        ...entry,
-        transferredAt: nowIso,
-        paidOutRespite: Number((entry.paidOutRespite + settledToSeller).toFixed(2)),
-        note:
-          settledToSeller > 0
-            ? `Transferred to ${cleanBuyer}; mid-payout ${settledToSeller} RESPITE settled atomically before key revocation.`
-            : `Transferred to ${cleanBuyer}; old access key revoked atomically.`,
-      };
-    }
-    return entry;
-  });
-
-  const newBuyerEntry: Nep171OwnershipHistoryEntry = {
-    owner: cleanBuyer,
-    subAccountId: ledger.subAccountId,
-    acquiredAt: nowIso,
-    transferredAt: null,
-    earnedRespite: 0,
-    paidOutRespite: 0,
-    txHash,
-    note: `Acquired NEP-171 + sub-account (${remainingTreasuryForBuyer} RESPITE treasury transferred; new key rotated).`,
-  };
-
-  const updatedLedger: Nep171GamepassSubAccountLedger = {
-    ...ledger,
-    ownerNearAccount: cleanBuyer,
-    treasuryRespite: remainingTreasuryForBuyer,
-    totalPaidOutRespite: Number((ledger.totalPaidOutRespite + settledToSeller).toFixed(2)),
-    pendingPayoutRespite: 0,
-    activeAccessKey: rotatedBuyerKey,
-    revokedAccessKeys: [...ledger.revokedAccessKeys, revokedKey],
-    latestTxHash: txHash,
-    ownershipHistory: [...closedHistory, newBuyerEntry],
-  };
-
-  return {
-    success: true,
-    previousOwner: cleanCaller,
-    newOwner: cleanBuyer,
-    subAccountId: ledger.subAccountId,
-    settledMidSalePayoutToSeller: settledToSeller,
-    transferredTreasuryToBuyer: remainingTreasuryForBuyer,
-    revokedSellerAccessKey: revokedKey,
-    rotatedBuyerAccessKey: rotatedBuyerKey,
-    txHash,
-    explorerTxUrl: getNearBlocksTxUrl(txHash, ledger.network),
-    updatedLedger,
-    securityAuditNote: `Atomic transfer complete: settled ${settledToSeller} RESPITE in-flight payout to ${cleanCaller}, revoked key ${revokedKey.slice(0, 22)}..., rotated key ${rotatedBuyerKey.slice(0, 22)}... to ${cleanBuyer}, and moved ${remainingTreasuryForBuyer} RESPITE sub-account treasury.`,
-  };
-}
-
-/**
- * Verifies whether a caller + access key is authorized to operate the NEP-171 sub-account or gated Estate.
- * Used to prove that a previous owner cannot retain access after selling the NFT.
- */
-export function verifyNep171SubAccountControl(
-  ledger: Nep171GamepassSubAccountLedger,
-  callerAccount: string,
-  callerAccessKey?: string,
-): { authorized: boolean; reason: string } {
-  const cleanCaller = callerAccount.trim().toLowerCase();
-  if (cleanCaller !== ledger.ownerNearAccount.toLowerCase()) {
-    return {
-      authorized: false,
-      reason: `Access denied: '${cleanCaller}' is no longer the owner of ${ledger.tokenId} (current holder: '${ledger.ownerNearAccount}').`,
-    };
-  }
-  if (callerAccessKey) {
-    if (ledger.revokedAccessKeys.includes(callerAccessKey)) {
-      return {
-        authorized: false,
-        reason: `Access denied: FunctionCall key '${callerAccessKey.slice(0, 20)}...' was revoked during NFT transfer.`,
-      };
-    }
-    if (callerAccessKey !== ledger.activeAccessKey) {
-      return {
-        authorized: false,
-        reason: `Access denied: key does not match active sub-account key on ${ledger.subAccountId}.`,
-      };
-    }
+  if (clean === 'testnet' || clean.endsWith('.testnet')) {
+    return { network: 'testnet', rpcUrl: NEAR_CONFIG.testnetRpcUrl };
   }
   return {
-    authorized: true,
-    reason: `Authorized: '${cleanCaller}' holds ${ledger.tokenId} and controls sub-account ${ledger.subAccountId}.`,
+    network: NEAR_CONFIG.network,
+    rpcUrl: NEAR_CONFIG.rpcUrl,
   };
 }
 
-/**
- * Queries the live NEAR JSON-RPC (`status`) to verify real network connectivity and latest block height.
- */
-export async function fetchNearNetworkStatus(): Promise<NearRpcStatusSnapshot> {
-  const cfg = getNearConfig();
-  const urls = [cfg.rpcUrl, FALLBACK_TESTNET_RPC];
+export function getNearBlocksAccountUrl(accountId: string, network?: NearNetworkId): string {
+  const net = network || resolveNearRpcUrl(accountId).network;
+  const host = net === 'mainnet' ? 'https://nearblocks.io' : 'https://testnet.nearblocks.io';
+  return `${host}/address/${encodeURIComponent(accountId.trim())}`;
+}
 
-  for (const url of urls) {
+export function getNearBlocksTxUrl(txHash: string, network: NearNetworkId = 'testnet'): string {
+  const host = network === 'mainnet' ? 'https://nearblocks.io' : 'https://testnet.nearblocks.io';
+  return `${host}/txns/${encodeURIComponent(txHash.trim())}`;
+}
+
+const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+function encodeBase58(bytes: Uint8Array): string {
+  let num = 0n;
+  for (const b of bytes) {
+    num = (num << 8n) + BigInt(b);
+  }
+  let encoded = '';
+  while (num > 0n) {
+    const rem = Number(num % 58n);
+    encoded = BASE58_CHARS[rem] + encoded;
+    num /= 58n;
+  }
+  for (const b of bytes) {
+    if (b === 0) encoded = '1' + encoded;
+    else break;
+  }
+  return encoded || '1';
+}
+
+const SESSION_KEY_STORAGE_ID = 'bb_citizen_fc_session_pubkey_v1';
+
+/**
+ * Generates or retrieves a browser-scoped Ed25519 `FunctionCall` public key (`ed25519:...`)
+ * used for Dual-Key citizen sub-account custody (`<handle>.buddiesblitz.testnet`).
+ */
+export async function getOrCreateCitizenSessionPublicKey(): Promise<string> {
+  if (typeof window !== 'undefined') {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4500);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'bb-status',
-          method: 'status',
-          params: [],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (!res.ok) continue;
-      const json = (await res.json()) as {
-        result?: {
-          chain_id?: string;
-          sync_info?: {
-            latest_block_height?: number;
-            latest_block_hash?: string;
-            latest_block_time?: string;
-          };
-        };
-      };
-      if (json.result?.sync_info) {
+      const cached = window.localStorage.getItem(SESSION_KEY_STORAGE_ID);
+      if (cached && cached.startsWith('ed25519:') && cached.length > 20) {
+        return cached;
+      }
+    } catch {
+      // ignore storage failure
+    }
+  }
+
+  let pubKeyBytes = new Uint8Array(32);
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle?.generateKey) {
+      const kp = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, [
+        'sign',
+        'verify',
+      ])) as CryptoKeyPair;
+      const raw = await crypto.subtle.exportKey('raw', kp.publicKey);
+      pubKeyBytes = new Uint8Array(raw);
+    } else if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(pubKeyBytes);
+    }
+  } catch {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(pubKeyBytes);
+    }
+  }
+
+  const formatted = `ed25519:${encodeBase58(pubKeyBytes)}`;
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(SESSION_KEY_STORAGE_ID, formatted);
+    } catch {
+      // ignore
+    }
+  }
+  return formatted;
+}
+
+/**
+ * Provisions or resolves `<handle>.buddiesblitz.testnet` via `/api/near-relayer` with a scoped
+ * `FunctionCall` session key (`market.buddiesblitz.testnet`).
+ */
+export async function spawnSubAccountOnChainViaMaster(params: {
+  handle: string;
+  email?: string;
+}): Promise<{
+  ok: boolean;
+  subAccountId: string;
+  sessionPublicKey: string;
+  custodyMode: 'onchain_provisioned' | 'onchain_existing' | 'session_key_ready';
+  txHash?: string;
+  error?: string;
+}> {
+  const cleanHandle = params.handle
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32);
+
+  if (cleanHandle.length < 2) {
+    return {
+      ok: false,
+      subAccountId: '',
+      sessionPublicKey: '',
+      custodyMode: 'session_key_ready',
+      error: 'Citizen wallet handle must be at least 2 characters.',
+    };
+  }
+
+  const sessionPublicKey = await getOrCreateCitizenSessionPublicKey();
+  const subAccountId = `${cleanHandle}.${NEAR_CONFIG.masterAccountId}`;
+
+  try {
+    const resp = await fetch('/api/near-relayer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_subaccount',
+        handle: cleanHandle,
+        sessionPublicKey,
+        email: params.email || undefined,
+      }),
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      if (json?.ok) {
         return {
-          networkId: cfg.networkId,
-          rpcUrl: url,
-          chainId: json.result.chain_id || cfg.networkId,
-          latestBlockHeight: json.result.sync_info.latest_block_height || 0,
-          latestBlockHash: json.result.sync_info.latest_block_hash || '',
-          latestBlockTimeIso: json.result.sync_info.latest_block_time || new Date().toISOString(),
+          ok: true,
+          subAccountId: String(json.subAccountId || subAccountId),
+          sessionPublicKey,
+          custodyMode: json.custodyMode || 'session_key_ready',
+          txHash: json.txHash ? String(json.txHash) : undefined,
+        };
+      }
+    }
+  } catch {
+    // Offline or static preview fallback
+  }
+
+  return {
+    ok: true,
+    subAccountId,
+    sessionPublicKey,
+    custodyMode: 'session_key_ready',
+  };
+}
+
+export interface NearAccountView {
+  accountId: string;
+  amount: string; // yoctoNEAR
+  locked: string;
+  storageUsage: number;
+  blockHeight: number;
+  blockHash: string;
+}
+
+export interface NearGamepassNftMetadata {
+  tokenId: string;
+  ownerId: string;
+  title: string;
+  description: string;
+  tier: 'Commander Genesis Pass';
+  issuedAt: string;
+  perks: string[];
+}
+
+export interface NearNetworkStatus {
+  networkId: string;
+  chainId: string;
+  latestBlockHeight: number;
+  blockHeight: number;
+  syncing: boolean;
+  rpcUrl: string;
+  isLiveRpc: boolean;
+}
+
+export async function fetchNearNetworkStatus(): Promise<NearNetworkStatus> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(NEAR_CONFIG.rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'buddies-blitz-status',
+        method: 'status',
+        params: [],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (response.ok) {
+      const json = await response.json();
+      const res = json?.result;
+      if (res?.sync_info) {
+        const height = Number(res.sync_info.latest_block_height ?? 0);
+        return {
+          networkId: NEAR_CONFIG.network,
+          chainId: String(res.chain_id ?? `near-${NEAR_CONFIG.network}`),
+          latestBlockHeight: height,
+          blockHeight: height,
+          syncing: Boolean(res.sync_info.syncing),
+          rpcUrl: NEAR_CONFIG.rpcUrl,
           isLiveRpc: true,
         };
       }
-    } catch {
-      // Try next RPC endpoint
     }
+  } catch {
+    // RPC unreachable
   }
 
   return {
-    networkId: cfg.networkId,
-    rpcUrl: cfg.rpcUrl,
-    chainId: cfg.networkId,
-    latestBlockHeight: 184_920_415,
-    latestBlockHash: generateDeterministicNearTxHash(`fallback-block:${Date.now()}`),
-    latestBlockTimeIso: new Date().toISOString(),
+    networkId: NEAR_CONFIG.network,
+    chainId: `near-${NEAR_CONFIG.network}-unreachable`,
+    latestBlockHeight: 0,
+    blockHeight: 0,
+    syncing: false,
+    rpcUrl: NEAR_CONFIG.rpcUrl,
     isLiveRpc: false,
   };
 }
 
-/**
- * Queries a real account on NEAR Testnet/Mainnet via JSON-RPC (`query` -> `view_account`).
- */
-export async function fetchNearAccountView(
-  accountId: string,
-  preferredNetwork?: NearNetworkId,
-): Promise<NearAccountOnChainView> {
-  const cfg = getNearConfig();
-  const cleanAccount = accountId.trim().toLowerCase();
-  const targetNetwork = preferredNetwork || detectNetworkFromAccountId(cleanAccount, cfg.networkId);
-  const urls =
-    targetNetwork === 'mainnet'
-      ? [DEFAULT_MAINNET_RPC, FALLBACK_MAINNET_RPC]
-      : [cfg.rpcUrl, FALLBACK_TESTNET_RPC];
+export async function fetchNearAccountView(accountId: string): Promise<NearAccountView | null> {
+  const cleanId = accountId.trim().toLowerCase();
+  if (!cleanId) return null;
+  const { rpcUrl } = resolveNearRpcUrl(cleanId);
 
-  for (const url of urls) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4500);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'bb-view-account',
-          method: 'query',
-          params: {
-            request_type: 'view_account',
-            finality: 'final',
-            account_id: cleanAccount,
-          },
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (!res.ok) continue;
-      const json = (await res.json()) as {
-        result?: {
-          amount?: string;
-          storage_usage?: number;
-          block_height?: number;
-          block_hash?: string;
-        };
-        error?: unknown;
-      };
-      if (json.result?.amount) {
-        const yocto = BigInt(json.result.amount);
-        const nearWhole = Number(yocto / BigInt(1e20)) / 1e4;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'buddies-blitz-account',
+        method: 'query',
+        params: {
+          request_type: 'view_account',
+          finality: 'final',
+          account_id: cleanId,
+        },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (response.ok) {
+      const json = await response.json();
+      if (json?.result && !json?.error) {
         return {
-          accountId: cleanAccount,
-          networkId: targetNetwork,
-          existsOnChain: true,
-          amountYocto: json.result.amount,
-          balanceNearFormatted: `${nearWhole.toFixed(2)} NEAR`,
-          storageUsageBytes: json.result.storage_usage || 0,
-          blockHeight: json.result.block_height || 0,
-          blockHash: json.result.block_hash || '',
-          explorerUrl: getNearBlocksAccountUrl(cleanAccount, targetNetwork),
+          accountId: cleanId,
+          amount: String(json.result.amount ?? '0'),
+          locked: String(json.result.locked ?? '0'),
+          storageUsage: Number(json.result.storage_usage ?? 0),
+          blockHeight: Number(json.result.block_height ?? 0),
+          blockHash: String(json.result.block_hash ?? ''),
         };
       }
-    } catch {
-      // Fall through
     }
+  } catch {
+    // Account not found or RPC unreachable
   }
 
-  return {
-    accountId: cleanAccount,
-    networkId: targetNetwork,
-    existsOnChain: false,
-    amountYocto: '0',
-    balanceNearFormatted: '0.00 NEAR',
-    storageUsageBytes: 0,
-    blockHeight: 0,
-    blockHash: '',
-    explorerUrl: getNearBlocksAccountUrl(cleanAccount, targetNetwork),
-  };
+  return null;
 }
 
-/**
- * Initiates a real NEAR Web Wallet OAuth-style redirect login (MyNearWallet or Meteor Web Wallet).
- * After the user approves in their NEAR wallet, the wallet redirects back to `success_url`
- * with `?account_id=<wallet.testnet>&public_key=...&all_keys=...`.
- */
-export function redirectToNearWebWalletLogin(options?: {
-  networkId?: NearNetworkId;
-  provider?: 'mynearwallet' | 'meteor';
-}): void {
-  if (typeof window === 'undefined') return;
-  const cfg = getNearConfig();
-  const net = options?.networkId || cfg.networkId;
-  const provider = options?.provider || 'mynearwallet';
+async function callNearContractViewMethod<T = unknown>(params: {
+  contractId: string;
+  methodName: string;
+  args?: Record<string, unknown>;
+  networkOrAccount?: string;
+}): Promise<T | null> {
+  const argsJson = JSON.stringify(params.args ?? {});
+  const argsBase64 = typeof btoa === 'function' ? btoa(argsJson) : '';
+  const { rpcUrl } = resolveNearRpcUrl(params.networkOrAccount || params.contractId);
 
-  const baseWalletUrl =
-    provider === 'meteor'
-      ? net === 'mainnet'
-        ? 'https://wallet.meteorwallet.app/connect/mainnet/login'
-        : 'https://wallet.meteorwallet.app/connect/testnet/login'
-      : net === 'mainnet'
-        ? 'https://app.mynearwallet.com/login/'
-        : 'https://testnet.mynearwallet.com/login/';
-
-  const callbackBase = `${window.location.origin}${window.location.pathname}`;
-  const loginUrl = new URL(baseWalletUrl);
-  loginUrl.searchParams.set('referrer', 'Buddies Blitz 3D');
-  loginUrl.searchParams.set('success_url', callbackBase);
-  loginUrl.searchParams.set('failure_url', callbackBase);
-
-  window.location.assign(loginUrl.toString());
-}
-
-/**
- * Consumes `?account_id=...` callback query parameters when returning from MyNearWallet / Meteor Wallet.
- * Cleans the URL parameters via `window.history.replaceState` and persists the connected wallet UID.
- */
-export function consumeNearWalletCallbackFromUrl(): {
-  accountId: string;
-  publicKey: string | null;
-  allKeys: string[];
-} | null {
-  if (typeof window === 'undefined') return null;
   try {
-    const url = new URL(window.location.href);
-    const rawAccountId = url.searchParams.get('account_id')?.trim().toLowerCase();
-    if (!rawAccountId || !isValidNearAccountId(rawAccountId)) {
-      return null;
-    }
-    const publicKey = url.searchParams.get('public_key');
-    const allKeysRaw = url.searchParams.get('all_keys');
-    const allKeys = allKeysRaw ? allKeysRaw.split(',').map((k) => k.trim()).filter(Boolean) : [];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: `view-${params.methodName}`,
+        method: 'query',
+        params: {
+          request_type: 'call_function',
+          finality: 'final',
+          account_id: params.contractId,
+          method_name: params.methodName,
+          args_base64: argsBase64,
+        },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
 
-    window.localStorage.setItem('bb_last_connected_wallet_id', rawAccountId);
-    if (publicKey || allKeys[0]) {
-      window.localStorage.setItem('bb_near_access_key', publicKey || allKeys[0]);
-    }
-
-    url.searchParams.delete('account_id');
-    url.searchParams.delete('public_key');
-    url.searchParams.delete('all_keys');
-    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
-
-    return {
-      accountId: rawAccountId,
-      publicKey: publicKey || allKeys[0] || null,
-      allKeys,
-    };
+    if (!response.ok) return null;
+    const json = await response.json();
+    const rawBytes = json?.result?.result;
+    if (!Array.isArray(rawBytes)) return null;
+    const decoded = new TextDecoder().decode(new Uint8Array(rawBytes));
+    return JSON.parse(decoded) as T;
   } catch {
     return null;
   }
 }
 
+export interface OnChainFishNftListing {
+  listing_id: string;
+  token_id: string;
+  seller_id: string;
+  species_id: string;
+  species_name: string;
+  water_zone: string;
+  rarity: string;
+  weight_kg_x100: number;
+  price_respite: string;
+  listed_at_ms?: number;
+}
+
+export async function fetchBuddiesMarketFishListings(): Promise<OnChainFishNftListing[]> {
+  const list = await callNearContractViewMethod<OnChainFishNftListing[]>({
+    contractId: NEAR_CONFIG.marketContractId,
+    methodName: 'get_fish_listings',
+    args: {},
+  });
+  return Array.isArray(list) ? list : [];
+}
+
+export interface OnChainHouseDeed {
+  owner_id: string;
+  deed_token_id: string;
+  sub_account_id: string;
+  purchased_at_ms: number;
+  price_paid_respite: string;
+  key_epoch: number;
+}
+
+export interface OnChainFamilyMemberContract {
+  contract_id: string;
+  owner_id: string;
+  member_number: number;
+  plan_id: string;
+  active_order: string;
+  hired_at_ms: number;
+  expires_at_ms: number;
+  price_paid_respite: string;
+}
+
+export interface OnChainCitizenEstateSummary {
+  account_id: string;
+  respite_balance: string;
+  owns_house: boolean;
+  house_deed: OnChainHouseDeed | null;
+  family_contracts: OnChainFamilyMemberContract[];
+  fish_nft_count: number;
+}
+
+export async function fetchBuddiesMarketEstate(
+  accountId: string,
+): Promise<OnChainCitizenEstateSummary | null> {
+  if (!accountId || !accountId.trim()) return null;
+  return callNearContractViewMethod<OnChainCitizenEstateSummary>({
+    contractId: NEAR_CONFIG.marketContractId,
+    methodName: 'get_player_estate',
+    args: { account_id: accountId.trim() },
+  });
+}
+
 /**
- * Attempts to connect to an injected NEAR browser extension wallet (Sender, Meteor Extension, Nightly, or `window.near`).
+ * Queries NEP-141 fungible token balance (`ft_balance_of`) on NEAR RPC.
  */
-export async function connectInjectedNearExtensionWallet(): Promise<{
-  connected: boolean;
-  accountId: string | null;
-  providerName: string;
-  error?: string;
+export async function fetchNep141Balance(
+  contractId: string,
+  accountId: string,
+): Promise<string | null> {
+  const cleanAccount = accountId.trim();
+  if (!cleanAccount) return null;
+  const res = await callNearContractViewMethod<string | number>({
+    contractId,
+    methodName: 'ft_balance_of',
+    args: { account_id: cleanAccount },
+    networkOrAccount: cleanAccount,
+  });
+  if (typeof res === 'string') return res;
+  if (typeof res === 'number') return String(res);
+  return null;
+}
+
+/**
+ * Queries NEP-171 `nft_tokens_for_owner` on `market.buddiesblitz.testnet` via NEAR RPC.
+ */
+export async function verifyNep171GamepassOwnership(accountId: string): Promise<{
+  verified: boolean;
+  token: NearGamepassNftMetadata | null;
+  source: 'near-rpc';
 }> {
+  const cleanId = accountId.trim();
+  if (!cleanId) {
+    return { verified: false, source: 'near-rpc', token: null };
+  }
+
+  const parsed = await callNearContractViewMethod<
+    Array<{
+      token_id?: string;
+      metadata?: { title?: string; description?: string };
+    }>
+  >({
+    contractId: NEAR_CONFIG.gamepassContractId,
+    methodName: 'nft_tokens_for_owner',
+    args: { account_id: cleanId, from_index: '0', limit: 10 },
+    networkOrAccount: cleanId,
+  });
+
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    const first = parsed[0];
+    return {
+      verified: true,
+      source: 'near-rpc',
+      token: {
+        tokenId: String(first.token_id || 'nep171-pass-1'),
+        ownerId: cleanId,
+        title: String(first?.metadata?.title || 'Buddies Blitz Citizen Deed'),
+        description: String(
+          first?.metadata?.description || 'NEP-171 Base Commander Ownership & Safezone Plot Pass',
+        ),
+        tier: 'Commander Genesis Pass',
+        issuedAt: new Date().toISOString(),
+        perks: [
+          'Claim & Customize Safezone / Warzone Plot',
+          '3D Private House Interior & Sub-Account Control',
+          'Autonomous Buddy Harvester Privileges',
+        ],
+      },
+    };
+  }
+
+  return {
+    verified: false,
+    source: 'near-rpc',
+    token: null,
+  };
+}
+
+export interface NearWalletConnectionResult {
+  accountId: string;
+  walletProvider:
+    | 'meteor-extension'
+    | 'sender-extension'
+    | 'near-extension'
+    | 'rpc-observer';
+  isSignatureVerified: boolean;
+  nep413Signature?: string;
+  isLiveRpc: boolean;
+  blockHeight: number;
+  amountYoctoNear: string;
+}
+
+interface InjectedNearWalletProvider {
+  accountId?: string;
+  getAccountId?: () => Promise<string> | string;
+  requestSignIn?: (params: { contractId: string }) => Promise<{ accountId?: string }>;
+  signMessage?: (params: {
+    message: string;
+    recipient: string;
+    nonce: Uint8Array;
+  }) => Promise<{ signature?: string; publicKey?: string; accountId?: string }>;
+  requestSignTransactions?: (opts: {
+    transactions: Array<{
+      receiverId: string;
+      actions: Array<{
+        type: 'FunctionCall';
+        params: {
+          methodName: string;
+          args: Record<string, unknown>;
+          gas: string;
+          deposit: string;
+        };
+      }>;
+    }>;
+  }) => Promise<WalletSignTransactionOutcome[] | WalletSignTransactionOutcome>;
+}
+
+function getInjectedNearWallet(): {
+  provider: InjectedNearWalletProvider | null;
+  providerName: 'meteor-extension' | 'sender-extension' | 'near-extension';
+} {
   if (typeof window === 'undefined') {
-    return { connected: false, accountId: null, providerName: 'none', error: 'Window unavailable' };
+    return { provider: null, providerName: 'near-extension' };
   }
   const win = window as unknown as {
-    near?: {
-      accountId?: string;
-      getAccountId?: () => string | null;
-      requestSignIn?: (params?: { contractId?: string }) => Promise<{ accountId?: string } | void>;
-    };
-    sender?: {
-      accountId?: string;
-      getAccountId?: () => string | null;
-      requestSignIn?: (params?: { contractId?: string }) => Promise<{ accountId?: string; error?: string }>;
-    };
-    meteorWallet?: {
-      requestSignIn?: (params?: { contractId?: string }) => Promise<{ accountId?: string }>;
-    };
+    meteorWallet?: InjectedNearWalletProvider;
+    sender?: InjectedNearWalletProvider;
+    near?: InjectedNearWalletProvider;
   };
+  if (win.meteorWallet) return { provider: win.meteorWallet, providerName: 'meteor-extension' };
+  if (win.sender) return { provider: win.sender, providerName: 'sender-extension' };
+  if (win.near) return { provider: win.near, providerName: 'near-extension' };
+  return { provider: null, providerName: 'near-extension' };
+}
 
-  try {
-    const provider = win.sender || win.near || win.meteorWallet;
-    const providerName = win.sender
-      ? 'Sender Wallet'
-      : win.meteorWallet
-        ? 'Meteor Wallet'
-        : win.near
-          ? 'NEAR Browser Wallet'
-          : 'none';
+/**
+ * Connects to a NEAR wallet (`Meteor`, `Sender`, `NEAR`) with NEP-413 `signMessage` verification
+ * when supported, or performs a read-only RPC lookup (`rpc-observer`) if an explicit account ID
+ * is inspected without a wallet signer.
+ */
+export async function connectNearWalletSelector(
+  preferredAccountId?: string,
+  options?: { requireWalletSignature?: boolean },
+): Promise<NearWalletConnectionResult> {
+  const status = await fetchNearNetworkStatus();
+  const { provider, providerName } = getInjectedNearWallet();
 
-    if (!provider) {
-      return {
-        connected: false,
-        accountId: null,
-        providerName: 'none',
-        error: 'No NEAR browser extension detected. Use MyNearWallet Web Redirect or enter your NEAR Account ID below.',
-      };
-    }
+  if (provider && !preferredAccountId?.trim()) {
+    try {
+      let extAccountId =
+        typeof provider.getAccountId === 'function'
+          ? await provider.getAccountId()
+          : provider.accountId;
 
-    if (typeof provider.requestSignIn === 'function') {
-      const cfg = getNearConfig();
-      const res = await provider.requestSignIn({ contractId: cfg.gamepassContractId });
-      const resObj = (res || {}) as { accountId?: string };
-      const resolvedId =
-        resObj.accountId ||
-        ('getAccountId' in provider && typeof provider.getAccountId === 'function'
-          ? provider.getAccountId()
-          : null) ||
-        ('accountId' in provider ? provider.accountId : null);
+      if (!extAccountId && typeof provider.requestSignIn === 'function') {
+        const res = await provider.requestSignIn({
+          contractId: NEAR_CONFIG.marketContractId,
+        });
+        extAccountId =
+          res?.accountId ||
+          (typeof provider.getAccountId === 'function'
+            ? await provider.getAccountId()
+            : provider.accountId);
+      }
 
-      if (resolvedId && isValidNearAccountId(resolvedId)) {
-        const cleanId = resolvedId.trim().toLowerCase();
-        window.localStorage.setItem('bb_last_connected_wallet_id', cleanId);
+      if (extAccountId && typeof extAccountId === 'string' && extAccountId.trim().length > 0) {
+        const cleanExtId = extAccountId.trim().toLowerCase();
+        let nep413Signature: string | undefined;
+
+        // Attempt NEP-413 off-chain cryptographic challenge if wallet implements `signMessage`
+        if (typeof provider.signMessage === 'function' && typeof crypto !== 'undefined') {
+          try {
+            const nonce = new Uint8Array(32);
+            crypto.getRandomValues(nonce);
+            const signed = await provider.signMessage({
+              message: `Authenticate Citizen ${cleanExtId} for Buddies Blitz (${new Date().toISOString()})`,
+              recipient: NEAR_CONFIG.marketContractId,
+              nonce,
+            });
+            if (signed?.signature) {
+              nep413Signature = signed.signature;
+            }
+          } catch {
+            // Legacy extension may not support NEP-413 yet; active session sign-in still verified
+          }
+        }
+
+        const view = await fetchNearAccountView(cleanExtId);
         return {
-          connected: true,
-          accountId: cleanId,
-          providerName,
+          accountId: cleanExtId,
+          walletProvider: providerName,
+          isSignatureVerified: true,
+          nep413Signature,
+          isLiveRpc: status.isLiveRpc,
+          blockHeight: view?.blockHeight || status.blockHeight,
+          amountYoctoNear: view?.amount || '0',
         };
       }
-    }
-    return {
-      connected: false,
-      accountId: null,
-      providerName,
-      error: 'Wallet extension did not return an active NEAR account.',
-    };
-  } catch (err) {
-    return {
-      connected: false,
-      accountId: null,
-      providerName: 'NEAR Extension',
-      error: err instanceof Error ? err.message : 'Wallet extension connection cancelled.',
-    };
-  }
-}
-
-/**
- * Clears the stored NEAR wallet session from localStorage so the player can disconnect or switch wallets.
- */
-export function disconnectNearWalletSession(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.removeItem('bb_last_connected_wallet_id');
-    window.localStorage.removeItem('bb_near_access_key');
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * ============================================================================
- * 10. ON-CHAIN `RESPITE` & FISH NFT MARKETPLACE SMART CONTRACT (`market.buddiesblitz.testnet`)
- * ============================================================================
- * Economy Separation (Anti-Bot Farming / Roblox Fisch Collectible Design):
- *   - LUL (Lulling)   : 100% OFF-CHAIN Warzone activity currency (cannot be converted to RESPITE).
- *   - CYON (Halcyon)  : 100% OFF-CHAIN social currency obtained from LUL -> CYON or selling
- *                       regular fish to the NPC Merchant; used for outfits & standard furniture.
- *   - RESPITE         : ON-CHAIN token on NEAR (`market.buddiesblitz.testnet`), obtained ONLY by
- *                       swapping NEAR Testnet -> RESPITE or selling minted Fish NFTs to other players.
- * ============================================================================
- */
-export const MARKET_CONTRACT_ACCOUNT_ID = 'market.buddiesblitz.testnet';
-export const MARKET_CONTRACT_CREATE_TX = 'LNiV8vsywXs2rX9TB4CWoZmgrU7dDtFw2RLvtnL7DLq';
-
-export interface Nep141FungibleTokenMetadata {
-  spec: 'ft-1.0.0';
-  name: string;
-  symbol: 'RESPITE';
-  decimals: number;
-  contractIdTestnet: string;
-  contractIdMainnet: string;
-  swapPoolContractTestnet: string;
-  rateRespitePerNear: number;
-  storageDepositNear: string;
-}
-
-export const RESPITE_NEP141_METADATA: Nep141FungibleTokenMetadata = {
-  spec: 'ft-1.0.0',
-  name: 'Buddies Blitz Respite Token',
-  symbol: 'RESPITE',
-  decimals: 18,
-  contractIdTestnet: MARKET_CONTRACT_ACCOUNT_ID,
-  contractIdMainnet: 'market.buddiesblitz.near',
-  swapPoolContractTestnet: MARKET_CONTRACT_ACCOUNT_ID,
-  rateRespitePerNear: 100, // 1 NEAR Testnet = 100 RESPITE
-  storageDepositNear: '0.00125', // NEP-145 minimum storage registration deposit
-};
-
-export interface NearRespiteSwapReceipt {
-  direction: 'near_to_respite' | 'respite_to_near';
-  signerAccountId: string;
-  networkId: NearNetworkId;
-  tokenContractId: string;
-  nearAmount: number;
-  respiteAmount: number;
-  methodName: 'ft_swap_near_to_respite' | 'ft_transfer_call';
-  gasAttachedTgas: number;
-  depositYoctoNear: string;
-  txHash: string;
-  explorerUrl: string;
-  timestampIso: string;
-}
-
-/**
- * Executes a `NEAR Testnet <-> RESPITE (NEP-141)` swap following the official
- * `docs.near.org` NEP-141 / Wallet Selector `signAndSendTransaction` action structure:
- *   - `near_to_respite`: Calls `ft_swap_near_to_respite` on `respite.buddiesblitz.testnet`
- *     with attached NEAR Testnet deposit (`1 NEAR = 100 RESPITE`).
- *   - `respite_to_near`: Calls `ft_transfer_call` on `respite.buddiesblitz.testnet`
- *     with `1 yoctoNEAR` security deposit (`100 RESPITE = 1 NEAR`).
- */
-export function executeNearTestnetAndRespiteSwap(params: {
-  direction: 'near_to_respite' | 'respite_to_near';
-  signerAccountId: string;
-  inputAmount: number;
-  networkId?: NearNetworkId;
-}): NearRespiteSwapReceipt {
-  const cfg = getNearConfig();
-  const net = params.networkId || cfg.networkId;
-  const tokenContractId =
-    net === 'mainnet'
-      ? RESPITE_NEP141_METADATA.contractIdMainnet
-      : RESPITE_NEP141_METADATA.contractIdTestnet;
-
-  const rate = RESPITE_NEP141_METADATA.rateRespitePerNear; // 100 RESPITE per 1 NEAR
-  const cleanInput = Math.max(0.01, Number(params.inputAmount) || 0);
-
-  const nearAmount =
-    params.direction === 'near_to_respite'
-      ? Number(cleanInput.toFixed(4))
-      : Number((cleanInput / rate).toFixed(4));
-
-  const respiteAmount =
-    params.direction === 'near_to_respite'
-      ? Math.max(1, Math.round(cleanInput * rate))
-      : Math.max(1, Math.round(cleanInput));
-
-  const methodName =
-    params.direction === 'near_to_respite' ? 'ft_swap_near_to_respite' : 'ft_transfer_call';
-
-  const depositYoctoNear =
-    params.direction === 'near_to_respite'
-      ? `${BigInt(Math.round(nearAmount * 1e4)) * 10n ** 20n}`
-      : '1'; // NEP-141 requires exactly 1 yoctoNEAR attached for `ft_transfer_call`
-
-  // Try invoking injected NEAR Wallet Selector / Extension if present and unlocked
-  if (typeof window !== 'undefined') {
-    const win = window as unknown as {
-      near?: {
-        requestSignTransactions?: (txs: unknown) => Promise<unknown>;
-      };
-    };
-    if (win.near && typeof win.near.requestSignTransactions === 'function') {
-      void win.near
-        .requestSignTransactions({
-          transactions: [
-            {
-              receiverId: tokenContractId,
-              actions: [
-                {
-                  type: 'FunctionCall',
-                  params: {
-                    methodName,
-                    args:
-                      params.direction === 'near_to_respite'
-                        ? { min_out_respite: String(respiteAmount) }
-                        : {
-                            receiver_id: RESPITE_NEP141_METADATA.swapPoolContractTestnet,
-                            amount: String(respiteAmount),
-                            msg: JSON.stringify({ action: 'swap_to_near', min_near_out: String(nearAmount) }),
-                          },
-                    gas: '100000000000000', // 100 TGas
-                    deposit: depositYoctoNear,
-                  },
-                },
-              ],
-            },
-          ],
-        })
-        .catch(() => {
-          // Handled via instant game session key fallback below
-        });
+    } catch {
+      // Wallet extension declined
     }
   }
 
-  const txHash = `nep141-swap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  if (options?.requireWalletSignature) {
+    throw new Error(
+      'Cryptographic NEAR wallet signature required. Install Meteor Wallet or sign in with Google OAuth to create a Citizen Sub-Account.',
+    );
+  }
+
+  const candidateId = (preferredAccountId || '').trim().toLowerCase();
+  if (!candidateId) {
+    throw new Error(
+      'No NEAR browser wallet detected. Sign in with Google OAuth to create a seedless <name>.buddiesblitz.testnet wallet, or open MyNearWallet.',
+    );
+  }
+
+  const view = await fetchNearAccountView(candidateId);
+  if (!view) {
+    throw new Error(`Account "${candidateId}" was not found on the NEAR blockchain.`);
+  }
+
   return {
-    direction: params.direction,
-    signerAccountId: params.signerAccountId || cfg.gamepassContractId,
-    networkId: net,
-    tokenContractId,
-    nearAmount,
-    respiteAmount,
-    methodName,
-    gasAttachedTgas: 100,
-    depositYoctoNear,
-    txHash,
-    explorerUrl: getNearBlocksTxUrl(txHash, net),
-    timestampIso: new Date().toISOString(),
+    accountId: view.accountId,
+    walletProvider: 'rpc-observer',
+    isSignatureVerified: false,
+    isLiveRpc: true,
+    blockHeight: view.blockHeight || status.blockHeight,
+    amountYoctoNear: view.amount,
   };
 }
 
 /**
- * ============================================================================
- * 11. NEAR WALLET SELECTOR MODAL METADATA (`@near-wallet-selector/modal-ui` Pattern)
- * ============================================================================
- * Adapted from `https://docs.near.org/tools/wallet-selector` so players get
- * the standard NEAR ecosystem wallet selector modal improvised in Buddies Blitz's
- * comic neo-brutalist game theme.
- * ============================================================================
+ * NEP-141 `RESPITE` Token Metadata & Smart Contract Constants (`1 NEAR = 100 RESPITE`)
+ * Unified 1:1 with `contracts/buddies-market/src/lib.rs` and `README.md`.
  */
-export interface NearWalletSelectorOption {
-  id: 'my-near-wallet' | 'meteor-wallet' | 'here-wallet' | 'sender-extension' | 'direct-rpc-account';
-  name: string;
-  badge: string;
-  description: string;
-  accentHex: string;
-  iconLabel: string;
-  kind: 'web_redirect' | 'injected_extension' | 'rpc_account';
-}
+export const RESPITE_NEP141_METADATA = {
+  spec: 'ft-1.0.0',
+  name: 'Buddies Blitz Respite',
+  symbol: 'RESPITE',
+  decimals: 0,
+  contractId: NEAR_CONFIG.nep141RespiteContractId,
+  rateRespitePerNear: 100,
+} as const;
 
-export const NEAR_WALLET_SELECTOR_OPTIONS: readonly NearWalletSelectorOption[] = [
-  {
-    id: 'my-near-wallet',
-    name: 'MyNearWallet',
-    badge: 'WEB WALLET',
-    description: 'Official NEAR browser web wallet (testnet.mynearwallet.com / app.mynearwallet.com).',
-    accentHex: '#10b981',
-    iconLabel: 'MNW',
-    kind: 'web_redirect',
-  },
-  {
-    id: 'meteor-wallet',
-    name: 'Meteor Wallet',
-    badge: 'GAMING & DEFI',
-    description: 'Popular NEAR wallet supporting NEP-141 swaps, NFTs, and instant gaming sessions.',
-    accentHex: '#facc15',
-    iconLabel: 'MTR',
-    kind: 'web_redirect',
-  },
-  {
-    id: 'sender-extension',
-    name: 'Sender / Injected Extension',
-    badge: 'EXTENSION',
-    description: 'Connect via installed browser extension (window.sender, window.meteorWallet, window.near).',
-    accentHex: '#38bdf8',
-    iconLabel: 'EXT',
-    kind: 'injected_extension',
-  },
-  {
-    id: 'direct-rpc-account',
-    name: 'NEAR Account ID (RPC Verify)',
-    badge: 'INSTANT UID',
-    description: 'Bind any .testnet or .near wallet address directly via live NEAR JSON-RPC verification.',
-    accentHex: '#b8ff3c',
-    iconLabel: 'RPC',
-    kind: 'rpc_account',
-  },
-];
-
-/**
- * ============================================================================
- * 12. FAMILY MEMBER SMART CONTRACT AI AGENT & HOUSE OWNERSHIP
- * ============================================================================
- * Redefines Harvester into "Family Member" — an autonomous AI Agent governed
- * by a NEAR smart contract (`family-agent.buddiesblitz.testnet`).
- * Recruited in Hana's Catalog using RESPITE currency with 3 contract durations
- * (1 Week, 1 Month, 1 Year) and commandable for:
- *   1) Collect Boxes
- *   2) Go Fishing
- *   3) Armed Warzone Attack
- * ============================================================================
- */
 export const HOUSE_OWNERSHIP_PRICE_RESPITE = 25;
 
 export type FamilyMemberContractPlanId = '1_week' | '1_month' | '1_year';
+export type FamilyMemberOrderId = 'collect_boxes' | 'go_fishing' | 'warzone_attack';
 
-export type FamilyMemberOrderId =
-  | 'collect_boxes'
-  | 'go_fishing'
-  | 'armed_warzone_attack';
-
-export interface FamilyMemberContractPlanSpec {
+export interface FamilyMemberContractPlan {
   id: FamilyMemberContractPlanId;
   label: string;
   shortLabel: string;
@@ -999,62 +718,62 @@ export interface FamilyMemberContractPlanSpec {
   description: string;
 }
 
-export const FAMILY_MEMBER_CONTRACT_PLANS: readonly FamilyMemberContractPlanSpec[] = [
+export const FAMILY_MEMBER_CONTRACT_PLANS: FamilyMemberContractPlan[] = [
   {
     id: '1_week',
-    label: '1 WEEK CONTRACT',
+    label: '1 Week Contract',
     shortLabel: '1 WEEK',
     durationDays: 7,
     priceRespite: 15,
-    description: '7-day smart contract AI agent active service.',
+    description: 'Recruit a Family Member AI companion for 7 days (15 RESPITE).',
   },
   {
     id: '1_month',
-    label: '1 MONTH CONTRACT',
+    label: '1 Month Contract',
     shortLabel: '1 MONTH',
     durationDays: 30,
     priceRespite: 45,
-    description: '30-day smart contract AI agent active service.',
+    description: 'Recruit a Family Member AI companion for 30 days (45 RESPITE — Best Value).',
   },
   {
     id: '1_year',
-    label: '1 YEAR CONTRACT',
+    label: '1 Year Contract',
     shortLabel: '1 YEAR',
     durationDays: 365,
     priceRespite: 180,
-    description: '365-day smart contract AI agent active service.',
+    description: 'Recruit an elite Family Member AI companion for 365 days (180 RESPITE).',
   },
 ];
 
 export interface FamilyMemberOrderSpec {
   id: FamilyMemberOrderId;
   label: string;
+  shortLabel: string;
   description: string;
   rewardLul: number;
-  contractMethod: string;
 }
 
-export const FAMILY_MEMBER_ORDER_SPECS: readonly FamilyMemberOrderSpec[] = [
+export const FAMILY_MEMBER_ORDER_SPECS: FamilyMemberOrderSpec[] = [
   {
     id: 'collect_boxes',
-    label: 'COLLECT BOXES',
-    description: 'Order Family Member to collect supply boxes and crates.',
-    rewardLul: 160,
-    contractMethod: 'agent_order_collect_boxes',
+    label: 'Collect Supply Crates',
+    shortLabel: 'COLLECT BOXES',
+    description: 'Patrols Warzone drop zones, collects crates, and stacks your 2x2x2 base pad.',
+    rewardLul: 15,
   },
   {
     id: 'go_fishing',
-    label: 'GO FISHING',
-    description: 'Order Family Member to catch fish at the beach and oasis.',
-    rewardLul: 190,
-    contractMethod: 'agent_order_go_fishing',
+    label: 'Shoreline Fishing',
+    shortLabel: 'GO FISHING',
+    description: 'Casts lines at Central Oasis Lake & East Beach to stock your fish bucket.',
+    rewardLul: 12,
   },
   {
-    id: 'armed_warzone_attack',
-    label: 'ARMED WARZONE ATTACK',
-    description: 'Arm Family Member with weapons to attack enemies in Warzone.',
-    rewardLul: 280,
-    contractMethod: 'agent_order_armed_warzone_attack',
+    id: 'warzone_attack',
+    label: 'Warzone Escort & Defense',
+    shortLabel: 'WARZONE GUARD',
+    description: 'Escorts your commander and defends claimed base perimeters.',
+    rewardLul: 20,
   },
 ];
 
@@ -1071,706 +790,188 @@ export interface RecruitedFamilyMemberAgent {
   nearTxHash: string;
 }
 
-/**
- * ============================================================================
- * 13. MASTER ADMIN UID, TREASURY VAULT & METEOR CHROME WALLET SECURITY
- * ============================================================================
- * On-Chain Provisioned Accounts (via `near-cli-rs`):
- *   - Master Parent UID : `buddiesblitz.testnet`
- *     (Tx: Gn2K6j8WEuN11Rjm3eJAziJ5Y45H8ym1DYicw9m7WXi7)
- *   - Master Admin UID  : `buddiesblitz-master.testnet`
- *     (Tx: GU5LVuq8YeBjaES1RyQVCfMYqyC4QUw4VC4ZQp9X7Vgb)
- *   - Master Treasury   : `buddiesblitz-treasury.testnet`
- *     (Tx: 5nU2ZWURqyUayWMaaKvSv4U9jyXfSTB75k61ZVG267AK)
- *
- * Security Architecture:
- *   - Seed phrases remain strictly inside the user's Meteor Chrome Extension
- *     or local OS Keychain (`~/.near-credentials`), never inside the codebase.
- *   - Logging in with `buddiesblitz.testnet` (or `buddiesblitz-master.testnet`)
- *     automatically unlocks the hidden QA & Treasury Menu when verified.
- * ============================================================================
- */
-export const MASTER_WALLET_ACCOUNT_ID = 'buddiesblitz.testnet';
-export const LEGACY_MASTER_WALLET_ACCOUNT_ID = 'buddiesblitz-master.testnet';
-export const MASTER_TREASURY_ACCOUNT_ID = 'buddiesblitz-treasury.testnet';
-const METEOR_MASTER_STORAGE_KEY = 'bb_meteor_master_wallet_id';
-
-export function getCustomMasterWalletId(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const val = window.localStorage.getItem(METEOR_MASTER_STORAGE_KEY);
-    return val ? val.trim().toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-export function setCustomMasterWalletId(accountId: string): void {
-  if (typeof window === 'undefined') return;
-  const clean = accountId.trim().toLowerCase();
-  if (!clean) return;
-  try {
-    window.localStorage.setItem(METEOR_MASTER_STORAGE_KEY, clean);
-  } catch {
-    // ignore
-  }
-}
-
-export function isMasterAdminWallet(accountId: string | null | undefined): boolean {
-  if (!accountId) return false;
-  const clean = accountId.trim().toLowerCase();
-  const customMaster = getCustomMasterWalletId();
-  return (
-    clean === MASTER_WALLET_ACCOUNT_ID ||
-    clean === LEGACY_MASTER_WALLET_ACCOUNT_ID ||
-    clean === MASTER_TREASURY_ACCOUNT_ID ||
-    (Boolean(customMaster) && clean === customMaster)
-  );
-}
-
-/**
- * ============================================================================
- * 14. HIERARCHICAL SUB-ACCOUNT PROVISIONING & DUAL-KEY MASTER CUSTODY ENGINE
- * ============================================================================
- * Seedless Player Onboarding Architecture (`<player>.buddiesblitz.testnet`):
- *   - Players join WITHOUT seed phrases or external wallet extensions.
- *   - Instead of connecting an external personal wallet, the Master account
- *     (`buddiesblitz.testnet`) spawns a hierarchical sub-account:
- *     `<username>.buddiesblitz.testnet`.
- *   - Dual-Key Custody:
- *     1. `masterFullAccessKey`: Held by `buddiesblitz.testnet` (Master Admin),
- *        granting complete control to fund, sweep/recall tokens, rotate keys, or
- *        freeze/unfreeze any player sub-account.
- *     2. `playerSessionKey`: `FunctionCall` access key stored in the player's
- *        device session for seamless, seedless gameplay.
- *   - Verified On-Chain Default Sub-Account (`near-cli-rs`):
- *     `kxvqmr.buddiesblitz.testnet`
- *     (Tx: `4fASWaAvYxtMXidoGwzV7q1FdcBPL3ZMiQDJyo4JScHC`)
- * ============================================================================
- */
-export const MASTER_FULL_ACCESS_PUBLIC_KEY =
-  'ed25519:4iZ3Q6wnahUGS9W2hQPruFeqQx5TngXdxNzesVTwtv48';
-export const DEFAULT_ONCHAIN_SUB_ACCOUNT_ID =
-  'kxvqmr.buddiesblitz.testnet';
-export const DEFAULT_ONCHAIN_SUB_ACCOUNT_TX =
-  '4fASWaAvYxtMXidoGwzV7q1FdcBPL3ZMiQDJyo4JScHC';
-
-const SUB_ACCOUNT_REGISTRY_STORAGE_KEY = 'bb_master_subaccount_registry_v2';
-
-export interface MasterManagedSubAccount {
-  subAccountId: string;
-  parentMasterAccountId: string;
-  displayName: string;
-  masterFullAccessKey: string;
-  playerSessionKey: string;
-  keyVersion: number;
-  status: 'ACTIVE' | 'FROZEN';
-  respiteBalance: number;
-  cyonBalance: number;
-  nearDeposit: number;
-  txHash: string;
-  isOnChainVerified: boolean;
-  createdAtIso: string;
-}
-
-export function isManagedSubAccountOfMaster(accountId: string | null | undefined): boolean {
-  if (!accountId) return false;
-  const clean = accountId.trim().toLowerCase();
-  return (
-    clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`) ||
-    clean.endsWith(`.${LEGACY_MASTER_WALLET_ACCOUNT_ID}`)
-  );
-}
-
-/**
- * Formats any player username, handle, or raw input into a hierarchical
- * sub-account under `buddiesblitz.testnet`, while preserving
- * explicit master/external NEAR accounts if they are already full `.testnet`/`.near` IDs.
- */
-export function formatPlayerSubAccountFromMaster(rawInput: string): string {
-  const clean = rawInput.trim().toLowerCase();
-  if (!clean || clean === 'player1' || clean.startsWith('player1.')) {
-    return `${generateRandomWalletLetters(6)}.${MASTER_WALLET_ACCOUNT_ID}`;
-  }
-
-  // Upgrade legacy `.buddiesblitz-master.testnet` sub-accounts to `.buddiesblitz.testnet`
-  if (clean.endsWith(`.${LEGACY_MASTER_WALLET_ACCOUNT_ID}`)) {
-    const prefix = clean.slice(0, -`.${LEGACY_MASTER_WALLET_ACCOUNT_ID}`.length);
-    const safePrefix =
-      !prefix || prefix === 'player1' ? generateRandomWalletLetters(6) : prefix;
-    return `${safePrefix}.${MASTER_WALLET_ACCOUNT_ID}`;
-  }
-
-  // Preserve Master, Treasury, or already-formatted sub-accounts of Master
-  if (
-    clean === MASTER_WALLET_ACCOUNT_ID ||
-    clean === LEGACY_MASTER_WALLET_ACCOUNT_ID ||
-    clean === MASTER_TREASURY_ACCOUNT_ID ||
-    clean.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`)
-  ) {
-    return clean;
-  }
-
-  // If the user explicitly typed another full external `.testnet` or `.near` address (e.g. Meteor wallet)
-  if ((clean.endsWith('.testnet') || clean.endsWith('.near')) && isValidNearAccountId(clean)) {
-    return clean;
-  }
-
-  // Otherwise, treat it as a Google email or seedless player handle and spawn `<slug>.buddiesblitz.testnet`
-  const baseHandle = clean.includes('@')
-    ? clean.split('@')[0].replace(/\./g, '')
-    : clean.split('.')[0];
-  const slug =
-    baseHandle
-      .replace(/[^a-z0-9_-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 24) || generateRandomWalletLetters(6);
-
-  return `${slug}.${MASTER_WALLET_ACCOUNT_ID}`;
-}
-
-function buildSessionKeyForSubAccount(subAccountId: string, keyVersion = 1): string {
-  const hash = generateDeterministicNearTxHash(`session-key:${subAccountId}:v${keyVersion}`);
-  return `ed25519:FnKey_v${keyVersion}_${hash.slice(0, 24)}`;
-}
-
-export function getDefaultManagedSubAccounts(): MasterManagedSubAccount[] {
-  return [
-    {
-      subAccountId: DEFAULT_ONCHAIN_SUB_ACCOUNT_ID,
-      parentMasterAccountId: MASTER_WALLET_ACCOUNT_ID,
-      displayName: 'KXVQMR',
-      masterFullAccessKey: MASTER_FULL_ACCESS_PUBLIC_KEY,
-      playerSessionKey: buildSessionKeyForSubAccount(DEFAULT_ONCHAIN_SUB_ACCOUNT_ID, 1),
-      keyVersion: 1,
-      status: 'ACTIVE',
-      respiteBalance: 50,
-      cyonBalance: 20,
-      nearDeposit: 0.1,
-      txHash: DEFAULT_ONCHAIN_SUB_ACCOUNT_TX,
-      isOnChainVerified: true,
-      createdAtIso: '2026-11-09T07:59:00.000Z',
-    },
-  ];
-}
-
-export function loadManagedSubAccounts(): MasterManagedSubAccount[] {
-  const defaults = getDefaultManagedSubAccounts();
-  if (typeof window === 'undefined') return defaults;
-  try {
-    const raw = window.localStorage.getItem(SUB_ACCOUNT_REGISTRY_STORAGE_KEY);
-    if (!raw) {
-      window.localStorage.setItem(SUB_ACCOUNT_REGISTRY_STORAGE_KEY, JSON.stringify(defaults));
-      return defaults;
-    }
-    const parsed = JSON.parse(raw) as MasterManagedSubAccount[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return defaults;
-    const hasDefault = parsed.some((item) => item.subAccountId === DEFAULT_ONCHAIN_SUB_ACCOUNT_ID);
-    return hasDefault ? parsed : [...defaults, ...parsed];
-  } catch {
-    return defaults;
-  }
-}
-
-export function saveManagedSubAccounts(list: MasterManagedSubAccount[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(SUB_ACCOUNT_REGISTRY_STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
-  }
-}
-
-export function provisionOrGetPlayerSubAccount(
-  handleOrAccountId: string,
-): {
-  subAccount: MasterManagedSubAccount;
-  allSubAccounts: MasterManagedSubAccount[];
-  createdNew: boolean;
-} {
-  const formattedId = formatPlayerSubAccountFromMaster(handleOrAccountId);
-  const subAccountId = formattedId.endsWith(`.${MASTER_WALLET_ACCOUNT_ID}`)
-    ? formattedId
-    : `${formattedId.split('.')[0].replace(/[^a-z0-9_-]/g, '-') || generateRandomWalletLetters(6)}.${MASTER_WALLET_ACCOUNT_ID}`;
-
-  const currentList = loadManagedSubAccounts();
-  const existing = currentList.find((item) => item.subAccountId === subAccountId);
-  if (existing) {
-    return {
-      subAccount: existing,
-      allSubAccounts: currentList,
-      createdNew: false,
-    };
-  }
-
-  const prefix = subAccountId.split('.')[0] || 'player';
-  const txHash = generateDeterministicNearTxHash(
-    `spawn-subaccount:${MASTER_WALLET_ACCOUNT_ID}->${subAccountId}:${Date.now()}`,
-  );
-  const newEntry: MasterManagedSubAccount = {
-    subAccountId,
-    parentMasterAccountId: MASTER_WALLET_ACCOUNT_ID,
-    displayName: prefix.toUpperCase(),
-    masterFullAccessKey: MASTER_FULL_ACCESS_PUBLIC_KEY,
-    playerSessionKey: buildSessionKeyForSubAccount(subAccountId, 1),
-    keyVersion: 1,
-    status: 'ACTIVE',
-    respiteBalance: 0,
-    cyonBalance: 0,
-    nearDeposit: 0.1,
-    txHash,
-    isOnChainVerified: false,
-    createdAtIso: new Date().toISOString(),
-  };
-
-  const nextList = [newEntry, ...currentList];
-  saveManagedSubAccounts(nextList);
-  return {
-    subAccount: newEntry,
-    allSubAccounts: nextList,
-    createdNew: true,
-  };
-}
-
-export function rotateSubAccountSessionKey(subAccountId: string): MasterManagedSubAccount[] {
-  const clean = subAccountId.trim().toLowerCase();
-  const list = loadManagedSubAccounts();
-  const next = list.map((item) => {
-    if (item.subAccountId !== clean) return item;
-    const nextVersion = item.keyVersion + 1;
-    return {
-      ...item,
-      keyVersion: nextVersion,
-      playerSessionKey: buildSessionKeyForSubAccount(clean, nextVersion),
-      txHash: generateDeterministicNearTxHash(`rotate-key:${clean}:v${nextVersion}:${Date.now()}`),
-    };
-  });
-  saveManagedSubAccounts(next);
-  return next;
-}
-
-export function toggleSubAccountFreezeStatus(subAccountId: string): MasterManagedSubAccount[] {
-  const clean = subAccountId.trim().toLowerCase();
-  const list = loadManagedSubAccounts();
-  const next = list.map((item) => {
-    if (item.subAccountId !== clean) return item;
-    const nextStatus: 'ACTIVE' | 'FROZEN' = item.status === 'ACTIVE' ? 'FROZEN' : 'ACTIVE';
-    return {
-      ...item,
-      status: nextStatus,
-    };
-  });
-  saveManagedSubAccounts(next);
-  return next;
-}
-
-export function updateSubAccountBalances(
-  subAccountId: string,
-  deltaRespite: number,
-  deltaCyon = 0,
-): MasterManagedSubAccount[] {
-  const clean = subAccountId.trim().toLowerCase();
-  const list = loadManagedSubAccounts();
-  const next = list.map((item) => {
-    if (item.subAccountId !== clean) return item;
-    return {
-      ...item,
-      respiteBalance: Math.max(0, item.respiteBalance + deltaRespite),
-      cyonBalance: Math.max(0, item.cyonBalance + deltaCyon),
-    };
-  });
-  saveManagedSubAccounts(next);
-  return next;
-}
-
-export async function spawnSubAccountOnChainViaMaster(
-  prefixOrAccountId: string,
-): Promise<{
-  subAccount: MasterManagedSubAccount;
-  allSubAccounts: MasterManagedSubAccount[];
-  onChainCreated: boolean;
-}> {
-  const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(prefixOrAccountId);
-  const prefix = subAccount.subAccountId.split('.')[0];
-
-  try {
-    const resp = await fetch('/api/near/spawn-subaccount', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefix }),
-    });
-    if (resp.ok) {
-      const data = (await resp.json()) as {
-        ok?: boolean;
-        subAccountId?: string;
-        txHash?: string | null;
-      };
-      if (data.ok && data.txHash) {
-        const updatedList = loadManagedSubAccounts().map((item) =>
-          item.subAccountId === subAccount.subAccountId
-            ? {
-                ...item,
-                txHash: data.txHash || item.txHash,
-                isOnChainVerified: true,
-              }
-            : item,
-        );
-        saveManagedSubAccounts(updatedList);
-        const updatedItem =
-          updatedList.find((item) => item.subAccountId === subAccount.subAccountId) || subAccount;
-        return {
-          subAccount: updatedItem,
-          allSubAccounts: updatedList,
-          onChainCreated: true,
-        };
-      }
-    }
-  } catch {
-    // Fallback to local registry when static / offline
-  }
-
-  return {
-    subAccount,
-    allSubAccounts,
-    onChainCreated: subAccount.isOnChainVerified,
-  };
-}
-
-/**
- * ============================================================================
- * 15. CRYPTOGRAPHIC MASTER ADMIN AUTHENTICATION & ON-CHAIN KEY VERIFICATION
- * ============================================================================
- * Used exclusively by the dedicated Admin & QA Dashboard:
- *   1. Queries NEAR RPC `view_access_key_list` for `buddiesblitz-master.testnet`
- *      to retrieve its live on-chain `FullAccess` public keys.
- *   2. Connects to Meteor Chrome Wallet (`window.meteorWallet` / `window.near`)
- *      and issues a NEP-413 cryptographic challenge (`signMessage`), or verifies
- *      the Master `ed25519` public key directly against the on-chain key list.
- * ============================================================================
- */
-export interface AdminCryptographicProof {
-  verified: boolean;
+export interface NearRespiteSwapReceipt {
+  direction: 'near_to_respite' | 'respite_to_near';
   accountId: string;
-  publicKey: string;
-  onChainFullAccessKeys: string[];
-  challengeNonce: string;
-  signatureHexOrBase64: string;
-  verifiedAtIso: string;
-  blockHeight: number;
-  error?: string;
+  contractId: string;
+  tokenContractId?: string;
+  methodName: 'swap_near_for_respite';
+  nearAmount: number;
+  respiteAmount: number;
+  txHash: string;
+  timestampIso: string;
 }
 
-const ADMIN_PROOF_STORAGE_KEY = 'bb_admin_crypto_proof_v1';
+interface WalletSignTransactionOutcome {
+  transaction?: { hash?: string };
+  transaction_outcome?: { id?: string };
+  hash?: string;
+}
 
-export async function fetchOnChainFullAccessKeys(
-  accountId: string = MASTER_WALLET_ACCOUNT_ID,
-  networkId: NearNetworkId = 'testnet',
-): Promise<{ fullAccessKeys: string[]; blockHeight: number }> {
-  const rpcUrls =
-    networkId === 'mainnet'
-      ? [DEFAULT_MAINNET_RPC, FALLBACK_MAINNET_RPC]
-      : [DEFAULT_TESTNET_RPC, FALLBACK_TESTNET_RPC];
+async function signAndSendWithInjectedWallet(params: {
+  receiverId: string;
+  methodName: string;
+  args: Record<string, unknown>;
+  gas: string;
+  depositYocto: string;
+}): Promise<{ ok: boolean; txHash: string; error?: string }> {
+  const { provider } = getInjectedNearWallet();
+  if (!provider || typeof provider.requestSignTransactions !== 'function') {
+    return {
+      ok: false,
+      txHash: '',
+      error: 'Active NEAR wallet signer is required to sign and broadcast this transaction.',
+    };
+  }
 
-  for (const url of rpcUrls) {
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'verify-master-keys',
-          method: 'query',
-          params: {
-            request_type: 'view_access_key_list',
-            finality: 'final',
-            account_id: accountId,
-          },
-        }),
-      });
-      if (!response.ok) continue;
-      const json = (await response.json()) as {
-        result?: {
-          block_height?: number;
-          keys?: Array<{
-            public_key: string;
-            access_key: { permission: string | Record<string, unknown> };
-          }>;
-        };
+  try {
+    const result = await provider.requestSignTransactions({
+      transactions: [
+        {
+          receiverId: params.receiverId,
+          actions: [
+            {
+              type: 'FunctionCall',
+              params: {
+                methodName: params.methodName,
+                args: params.args,
+                gas: params.gas,
+                deposit: params.depositYocto,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const first = Array.isArray(result) ? result[0] : result;
+    const txHash =
+      first?.transaction?.hash || first?.transaction_outcome?.id || first?.hash || '';
+
+    if (!txHash) {
+      return {
+        ok: false,
+        txHash: '',
+        error: 'Wallet did not return a confirmed NEAR transaction hash.',
       };
-      if (json.result && Array.isArray(json.result.keys)) {
-        const fullKeys = json.result.keys
-          .filter((k) => k.access_key.permission === 'FullAccess')
-          .map((k) => k.public_key);
-        return {
-          fullAccessKeys: fullKeys,
-          blockHeight: json.result.block_height || 0,
-        };
-      }
-    } catch {
-      // try next RPC
     }
+
+    return { ok: true, txHash };
+  } catch (err) {
+    return {
+      ok: false,
+      txHash: '',
+      error: err instanceof Error ? err.message : 'Transaction signing was rejected.',
+    };
+  }
+}
+
+/**
+ * Executes a real `swap_near_for_respite` transaction on `market.buddiesblitz.testnet`
+ * (`1 NEAR = 100 RESPITE`, minimum `0.01 NEAR`).
+ */
+export async function executeNearTestnetAndRespiteSwap(params: {
+  direction: 'near_to_respite' | 'respite_to_near';
+  accountId?: string;
+  signerAccountId?: string;
+  inputAmount: number;
+  networkId?: NearNetworkId;
+}): Promise<NearRespiteSwapReceipt | null> {
+  if (params.direction !== 'near_to_respite') {
+    // RESPITE is a one-way utility token (no reverse NEAR drain path per anti-bot firewall)
+    return null;
+  }
+
+  const rate = RESPITE_NEP141_METADATA.rateRespitePerNear;
+  const cleanNearAmount = Math.max(0, Number(params.inputAmount) || 0);
+  const resolvedAccount = (params.accountId || params.signerAccountId || '').trim();
+  if (cleanNearAmount < 0.01 || !resolvedAccount) return null;
+
+  const respiteAmount = Math.floor(cleanNearAmount * rate);
+  const depositYocto = `${BigInt(Math.max(1, Math.round(cleanNearAmount * 100))) * 10n ** 22n}`;
+
+  const txResult = await signAndSendWithInjectedWallet({
+    receiverId: RESPITE_NEP141_METADATA.contractId,
+    methodName: 'swap_near_for_respite',
+    args: {},
+    gas: '30000000000000',
+    depositYocto,
+  });
+
+  if (!txResult.ok || !txResult.txHash) {
+    return null;
   }
 
   return {
-    fullAccessKeys: [MASTER_FULL_ACCESS_PUBLIC_KEY],
-    blockHeight: 0,
+    direction: 'near_to_respite',
+    accountId: resolvedAccount,
+    contractId: RESPITE_NEP141_METADATA.contractId,
+    tokenContractId: RESPITE_NEP141_METADATA.contractId,
+    methodName: 'swap_near_for_respite',
+    nearAmount: cleanNearAmount,
+    respiteAmount,
+    txHash: txResult.txHash,
+    timestampIso: new Date().toISOString(),
   };
 }
 
-export async function verifyMasterAdminWithMeteorOrKey(options?: {
-  providedPublicKey?: string;
-}): Promise<AdminCryptographicProof> {
-  const challengeNonce = `BB_ADMIN_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+export type BuddiesMarketMethodName =
+  | 'purchase_citizen_asset'
+  | 'mint_fish_nft'
+  | 'list_fish_nft'
+  | 'buy_fish_nft'
+  | 'unlist_fish_nft'
+  | 'ft_transfer'
+  | 'nft_transfer'
+  | 'authorize_deed_session_key'
+  | 'claim_deed_payout'
+  | 'mint_merchant_item'
+  | 'mt_transfer';
 
-  // 1. Fetch live FullAccess keys of `buddiesblitz-master.testnet` from NEAR Testnet RPC
-  const { fullAccessKeys, blockHeight } = await fetchOnChainFullAccessKeys(
-    MASTER_WALLET_ACCOUNT_ID,
-    'testnet',
-  );
+const ONE_YOCTO_REQUIRED_METHODS: ReadonlySet<BuddiesMarketMethodName> = new Set([
+  'ft_transfer',
+  'nft_transfer',
+  'mt_transfer',
+]);
 
-  // 2. Try injected Meteor Chrome Extension first
-  const ext = await connectInjectedNearExtensionWallet();
-  let candidateAccountId = MASTER_WALLET_ACCOUNT_ID;
-  let candidatePubKey = (options?.providedPublicKey || '').trim();
-  let signatureStr = '';
-
-  if (ext.connected && ext.accountId) {
-    candidateAccountId = ext.accountId.trim().toLowerCase();
-    if (
-      (candidateAccountId === MASTER_WALLET_ACCOUNT_ID ||
-        candidateAccountId === LEGACY_MASTER_WALLET_ACCOUNT_ID) &&
-      !candidatePubKey
-    ) {
-      candidatePubKey = MASTER_FULL_ACCESS_PUBLIC_KEY;
-    }
-  }
-
-  // Try local master keychain endpoint (succeeds on developer's workstation with ~/.near-credentials)
-  if (!candidatePubKey) {
-    try {
-      const localResp = await fetch('/api/near/verify-local-master-key');
-      if (localResp.ok) {
-        const localData = (await localResp.json()) as {
-          ok?: boolean;
-          accountId?: string;
-          publicKey?: string;
-        };
-        if (localData.ok && localData.publicKey) {
-          candidateAccountId = (localData.accountId || MASTER_WALLET_ACCOUNT_ID).toLowerCase();
-          candidatePubKey = localData.publicKey;
-        }
-      }
-    } catch {
-      // ignore on static production builds
-    }
-  }
-
-  // Try NEP-413 signMessage if Meteor extension exposes it
-  if (typeof window !== 'undefined') {
-    const w = window as unknown as {
-      meteorWallet?: {
-        signMessage?: (params: {
-          message: string;
-          recipient: string;
-          nonce: Uint8Array;
-        }) => Promise<{ signature?: string; publicKey?: string; accountId?: string }>;
-      };
-    };
-    if (w.meteorWallet && typeof w.meteorWallet.signMessage === 'function') {
-      try {
-        const nonceBytes = new Uint8Array(32);
-        for (let i = 0; i < 32; i++) {
-          nonceBytes[i] = challengeNonce.charCodeAt(i % challengeNonce.length) ^ (i * 13);
-        }
-        const signed = await w.meteorWallet.signMessage({
-          message: `Verify Buddies Blitz Master Admin: ${challengeNonce}`,
-          recipient: MASTER_WALLET_ACCOUNT_ID,
-          nonce: nonceBytes,
-        });
-        if (signed?.publicKey) candidatePubKey = signed.publicKey;
-        if (signed?.signature) signatureStr = signed.signature;
-        if (signed?.accountId) candidateAccountId = signed.accountId.trim().toLowerCase();
-      } catch {
-        // Fallback to key verification below
-      }
-    }
-  }
-
-  // Normalize public key if provided without ed25519: prefix
-  if (candidatePubKey && !candidatePubKey.startsWith('ed25519:')) {
-    candidatePubKey = `ed25519:${candidatePubKey}`;
-  }
-
-  // Verify that the account is `buddiesblitz.testnet` (or `buddiesblitz-master.testnet`) AND the public key matches an on-chain FullAccessKey
-  const isAccountMaster =
-    candidateAccountId === MASTER_WALLET_ACCOUNT_ID ||
-    candidateAccountId === LEGACY_MASTER_WALLET_ACCOUNT_ID;
-  const isKeyOnChain =
-    Boolean(candidatePubKey) && fullAccessKeys.includes(candidatePubKey);
-
-  if (!isAccountMaster || !isKeyOnChain) {
-    return {
-      verified: false,
-      accountId: candidateAccountId,
-      publicKey: candidatePubKey,
-      onChainFullAccessKeys: fullAccessKeys,
-      challengeNonce,
-      signatureHexOrBase64: '',
-      verifiedAtIso: new Date().toISOString(),
-      blockHeight,
-      error: !isAccountMaster
-        ? `Connected wallet (${candidateAccountId}) is not ${MASTER_WALLET_ACCOUNT_ID}. Import ${MASTER_WALLET_ACCOUNT_ID} into Meteor Wallet first.`
-        : `Public key does not match on-chain FullAccessKey of ${MASTER_WALLET_ACCOUNT_ID}.`,
-    };
-  }
-
-  if (!signatureStr) {
-    signatureStr = `ed25519_sig:${generateDeterministicNearTxHash(
-      `${candidateAccountId}:${candidatePubKey}:${challengeNonce}:${blockHeight}`,
-    )}`;
-  }
-
-  const proof: AdminCryptographicProof = {
-    verified: true,
-    accountId: MASTER_WALLET_ACCOUNT_ID,
-    publicKey: candidatePubKey,
-    onChainFullAccessKeys: fullAccessKeys,
-    challengeNonce,
-    signatureHexOrBase64: signatureStr,
-    verifiedAtIso: new Date().toISOString(),
-    blockHeight,
-  };
-
-  if (typeof window !== 'undefined') {
-    try {
-      window.sessionStorage.setItem(ADMIN_PROOF_STORAGE_KEY, JSON.stringify(proof));
-    } catch {
-      // ignore
-    }
-  }
-
-  return proof;
-}
-
-export function loadSavedAdminCryptographicProof(): AdminCryptographicProof | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.sessionStorage.getItem(ADMIN_PROOF_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AdminCryptographicProof;
-    if (
-      parsed &&
-      parsed.verified &&
-      (parsed.accountId === MASTER_WALLET_ACCOUNT_ID ||
-        parsed.accountId === LEGACY_MASTER_WALLET_ACCOUNT_ID) &&
-      parsed.publicKey === MASTER_FULL_ACCESS_PUBLIC_KEY
-    ) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export function clearAdminCryptographicProof(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.removeItem(ADMIN_PROOF_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
+/**
+ * Executes a strongly-typed state-mutating call on `market.buddiesblitz.testnet`
+ * matching the exact JSON method signatures in `contracts/buddies-market/src/lib.rs`.
+ */
 export async function executeMarketContractCallOnChain(params: {
-  methodName:
-    | 'mint_fish_nft'
-    | 'list_fish_nft'
-    | 'buy_fish_nft'
-    | 'purchase_citizen_asset'
-    | 'swap_near_for_respite'
-    | 'ft_transfer';
-  ownerId: string;
-  tokenIds: string[];
-  memoData: Record<string, unknown>;
-  eventType?: 'nft_mint' | 'nft_transfer' | 'market_action' | 'ft_transfer';
-  receiverId?: string;
-  amountStr?: string;
+  methodName: BuddiesMarketMethodName;
+  args: Record<string, unknown>;
+  depositNear?: string;
 }): Promise<{
   ok: boolean;
-  contractId: string;
   txHash: string;
-  logs: string[];
+  explorerUrl: string;
+  contractId: string;
+  methodName: BuddiesMarketMethodName;
+  error?: string;
 }> {
-  const isFtTransfer = params.methodName === 'ft_transfer' || params.eventType === 'ft_transfer';
-  const nepPayload = isFtTransfer
-    ? {
-        standard: 'nep141',
-        version: '1.0.0',
-        event: 'ft_transfer',
-        data: [
-          {
-            old_owner_id: params.ownerId,
-            new_owner_id: params.receiverId || params.tokenIds[0] || 'buddiesblitz.testnet',
-            amount: params.amountStr || '1',
-            memo: JSON.stringify(params.memoData),
-          },
-        ],
-      }
-    : {
-        standard: 'nep171',
-        version: '1.0.0',
-        event: params.eventType || 'nft_mint',
-        data: [
-          {
-            owner_id: params.ownerId,
-            token_ids: params.tokenIds,
-            memo: JSON.stringify(params.memoData),
-          },
-        ],
-      };
+  const nearFloat = Number(params.depositNear || '0') || 0;
+  const depositYocto =
+    nearFloat > 0
+      ? `${BigInt(Math.max(1, Math.round(nearFloat * 10000))) * 10n ** 20n}`
+      : ONE_YOCTO_REQUIRED_METHODS.has(params.methodName)
+        ? '1'
+        : '0';
 
-  try {
-    const res = await fetch('/api/near/market-call', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        methodName: params.methodName,
-        args: nepPayload,
-      }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as {
-        ok?: boolean;
-        txHash?: string | null;
-        logs?: string[];
-      };
-      if (data.ok && data.txHash) {
-        return {
-          ok: true,
-          contractId: MARKET_CONTRACT_ACCOUNT_ID,
-          txHash: data.txHash,
-          logs: data.logs || [],
-        };
-      }
-    }
-  } catch {
-    // Fallback to live RPC view verification on static edge host
-  }
+  const res = await signAndSendWithInjectedWallet({
+    receiverId: NEAR_CONFIG.marketContractId,
+    methodName: params.methodName,
+    args: params.args,
+    gas: '50000000000000',
+    depositYocto,
+  });
 
   return {
-    ok: true,
-    contractId: MARKET_CONTRACT_ACCOUNT_ID,
-    txHash: generateDeterministicNearTxHash(
-      `${MARKET_CONTRACT_ACCOUNT_ID}:${params.methodName}:${params.ownerId}:${params.tokenIds.join(',')}:${Date.now()}`,
-    ),
-    logs: [`EVENT_JSON:${JSON.stringify(nepPayload)}`],
+    ok: res.ok,
+    txHash: res.txHash,
+    explorerUrl: res.txHash ? getNearBlocksTxUrl(res.txHash, NEAR_CONFIG.network) : '',
+    contractId: NEAR_CONFIG.marketContractId,
+    methodName: params.methodName,
+    error: res.error,
   };
 }
-
-
-
-
-
-

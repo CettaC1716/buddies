@@ -484,9 +484,21 @@ function evalModelEstateBaseDirtSdf(px: number, pz: number): number {
   return Math.min(dPlot0, dSpur0);
 }
 
+export function evaluateHaltePlatformSdf(px: number, pz: number): number {
+  // Central Halte: center (-61.66, 0.0), halfExtents (3.6, 9.4)
+  const dCentral = sdRoundedBox2D(px, pz, -61.66, 0.0, 3.6, 9.4, 0.4);
+  // North Residence Halte: center (6.5, -44.67), halfExtents (9.4, 3.6)
+  const dNorth = sdRoundedBox2D(px, pz, 6.5, -44.67, 9.4, 3.6, 0.4);
+  // South Residence Halte: center (-36.5, 44.67), halfExtents (9.4, 3.6)
+  const dSouth = sdRoundedBox2D(px, pz, -36.5, 44.67, 9.4, 3.6, 0.4);
+  // Beachfront Harbor Halte: center (79.63, 29.5), halfExtents (3.6, 9.4)
+  const dBeach = sdRoundedBox2D(px, pz, 79.63, 29.5, 3.6, 9.4, 0.4);
+  return Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)));
+}
+
 /**
  * Evaluates the authentic Buddies Blitz Splatmap Grass Mask in [0.0, 1.0] at (worldX, worldZ):
- * - 0.0 = Warm golden-tan Blitz dirt (#eab664), Asphalt Road, Oasis Lake, Concrete Harbor/Seawall, West Power Plant, Drop Zones, Model Estate Base Plot, or Embankment Cliff Slope
+ * - 0.0 = Warm golden-tan Blitz dirt (#eab664), Asphalt Road, Oasis Lake, Concrete Harbor/Seawall, West Power Plant, Drop Zones, Halte Platforms, Model Estate Base Plot, or Embankment Cliff Slope
  * - 1.0 = Lush green grass meadow (#4ea832 -> #9be15d) where InfiniteGrass & flower petals grow (including all emptied base lots)
  * Matches the GLSL shader function evaluateBlitzGrassMask(vec2 p) 1:1.
  */
@@ -511,7 +523,7 @@ export function evaluateBlitzGrassMask(worldX: number, worldZ: number): number {
   const minDirtSdf = Math.min(dModelEstateDirt, dConstructionYardDirt) + wobble;
   const grassMask = smoothstep(-0.35, 1.35, minDirtSdf);
 
-  // 2. Hard exclusions: zero grass on Asphalt Roads, Oasis Lake, Harbor/Coastal Concrete, Open Sea, West Power Plant, East Construction Yards, Intact Model Estate & Embankment
+  // 2. Hard exclusions: zero grass on Asphalt Roads, Oasis Lake, Harbor/Coastal Concrete, Open Sea, West Power Plant, Halte Platforms, East Construction Yards, Intact Model Estate & Embankment
   const roadSdf = evaluateRoadNetworkSdf(px, pz);
   const roadSafe = smoothstep(-0.15, 0.85, roadSdf);
 
@@ -530,9 +542,15 @@ export function evaluateBlitzGrassMask(worldX: number, worldZ: number): number {
   const embSdf = evaluateOuterEmbankmentSdf(px, pz);
   const embSafe = 1.0 - smoothstep(-0.6, 0.8, embSdf);
 
+  const halteSdf = evaluateHaltePlatformSdf(px, pz);
+  const halteSafe = smoothstep(-0.2, 0.6, halteSdf);
+
   return Math.max(
     0.0,
-    Math.min(1.0, grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe),
+    Math.min(
+      1.0,
+      grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe * halteSafe,
+    ),
   );
 }
 
@@ -560,20 +578,25 @@ export function evaluateTolanWaterField(worldX: number, worldZ: number): number 
  */
 export function getBaseProceduralGroundElevation(worldX: number, worldZ: number): number {
   const westPlantSdf = evaluateWestPowerPlantSdf(worldX, worldZ);
-  let westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 1.4;
-  // Sunken Stepped Amphitheater Central Staircase & Lower Wooden Seaside Boardwalk (Sheet 5)
-  // Spans worldX in [-80.25 .. -76.50] (local lx in [+10.25 .. +14.0]), worldZ in [-6.50 .. +11.50]
-  if (worldX >= -80.25 && worldX <= -76.45 && worldZ >= -6.50 && worldZ <= 11.50) {
-    // Smoothly step down from +1.40m at the top of the stairs (worldX = -80.25) to +0.54m on the lower wooden boardwalk (worldX >= -78.05)
-    const stairT = smoothstep(-80.25, -78.05, worldX);
-    westPlantElev = 1.40 - stairT * (1.40 - 0.54);
-  }
-  // Smooth elevation along the 2 East Sloped Concrete Access Ramps (at z = -15.0 & +15.0, x in [-78.8, -75.2])
-  const rampDistZ = Math.min(Math.abs(worldZ - -15.0), Math.abs(worldZ - 15.0));
-  if (rampDistZ <= 2.65 && worldX >= -79.0 && worldX <= -75.0) {
-    const rampT = 1.0 - smoothstep(-78.6, -75.3, worldX);
-    const sideMask = 1.0 - smoothstep(2.15, 2.65, rampDistZ);
-    westPlantElev = Math.max(westPlantElev, rampT * sideMask * 1.4);
+  let westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 2.5;
+  // Urban Plaza to Street Staircase (20m wide: worldZ in [-10.00 .. +10.00], worldX in [-85.30 .. -75.20]):
+  // - Upper Flight (worldX in [-85.30 .. -81.80]): descends from +2.50m Plaza Level to +1.32m Mid-Landing
+  // - Mid-Landing (worldX in [-81.80 .. -80.40]): flat granite landing at +1.32m
+  // - Lower Flight (worldX in [-80.40 .. -76.90]): descends from +1.32m to +0.08m Urban Sidewalk
+  // - Bottom Urban Sidewalk (worldX in [-76.90 .. -75.20]): +0.08m concrete sidewalk stepping down to 0.00m street level
+  if (worldX >= -85.35 && worldX <= -75.20 && worldZ >= -10.00 && worldZ <= 10.00) {
+    if (worldX <= -81.80) {
+      const upperT = smoothstep(-85.30, -81.80, worldX);
+      westPlantElev = 2.50 - upperT * (2.50 - 1.32);
+    } else if (worldX <= -80.40) {
+      westPlantElev = 1.32;
+    } else if (worldX <= -76.90) {
+      const lowerT = smoothstep(-80.40, -76.90, worldX);
+      westPlantElev = 1.32 - lowerT * (1.32 - 0.08);
+    } else {
+      const curbT = smoothstep(-76.90, -75.25, worldX);
+      westPlantElev = 0.08 * (1.0 - curbT);
+    }
   }
 
   // South-East Coastal Beachfront Elevated Weathered Timber Boardwalk (+0.82m),
@@ -604,14 +627,35 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
     }
   }
 
-  // Halte Lobby Safezone Raised Boarding Platform Deck (+0.26m) & North/South Sloped Access Ramps
-  // Platform deck spans worldX in [-64.97, -58.37], worldZ in [-7.70, +7.70], with 1.50m ramps at |worldZ| in [7.70, 9.20]
+  // Halte Raised Boarding Platform Decks (+0.26m) & Sloped Access Ramps:
+  // 1) Central Plaza Halte: worldX in [-64.97, -58.37], worldZ in [-7.70, +7.70], ramps at |worldZ| in [7.70, 9.20]
+  // 2) North Residence Halte: worldX in [-1.20, 14.20] (ramps to [-2.70, 15.70]), worldZ in [-47.97, -41.37]
+  // 3) South Residence Halte: worldX in [-44.20, -28.80] (ramps to [-45.70, -27.30]), worldZ in [41.37, 47.97]
+  // 4) Beachfront Harbor Halte: worldX in [76.31, 82.95], worldZ in [21.80, 37.20] (ramps to [20.30, 38.70])
   let haltePlatformElev = 0.0;
   const absHalteZ = Math.abs(worldZ);
   if (worldX >= -65.15 && worldX <= -58.15 && absHalteZ <= 9.25) {
     const xMask =
       smoothstep(-65.15, -64.85, worldX) * (1.0 - smoothstep(-58.48, -58.15, worldX));
     const zRampMask = 1.0 - smoothstep(7.68, 9.20, absHalteZ);
+    haltePlatformElev = 0.26 * xMask * zRampMask;
+  } else if (worldZ <= -41.15 && worldZ >= -48.15 && worldX >= -2.75 && worldX <= 15.75) {
+    const zMask =
+      smoothstep(41.15, 41.45, absHalteZ) * (1.0 - smoothstep(47.85, 48.15, absHalteZ));
+    const dxFromCenter = Math.abs(worldX - 6.5);
+    const xRampMask = 1.0 - smoothstep(7.68, 9.20, dxFromCenter);
+    haltePlatformElev = 0.26 * zMask * xRampMask;
+  } else if (worldZ >= 41.15 && worldZ <= 48.15 && worldX >= -45.75 && worldX <= -27.25) {
+    const zMask =
+      smoothstep(41.15, 41.45, absHalteZ) * (1.0 - smoothstep(47.85, 48.15, absHalteZ));
+    const dxFromCenter = Math.abs(worldX - -36.5);
+    const xRampMask = 1.0 - smoothstep(7.68, 9.20, dxFromCenter);
+    haltePlatformElev = 0.26 * zMask * xRampMask;
+  } else if (worldX >= 76.15 && worldX <= 83.15 && worldZ >= 20.25 && worldZ <= 38.75) {
+    const xMask =
+      smoothstep(76.15, 76.45, worldX) * (1.0 - smoothstep(82.82, 83.15, worldX));
+    const dzFromCenter = Math.abs(worldZ - 29.5);
+    const zRampMask = 1.0 - smoothstep(7.68, 9.20, dzFromCenter);
     haltePlatformElev = 0.26 * xMask * zRampMask;
   }
 

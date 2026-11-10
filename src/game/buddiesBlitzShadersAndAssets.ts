@@ -272,6 +272,14 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     return min(dPlot0, dSpur0);
   }
 
+  float evalHaltePlatformSdf(vec2 p) {
+    float dCentral = sdRoundedBox2D(p, vec2(-61.66, 0.0), vec2(3.6, 9.4), 0.4);
+    float dNorth = sdRoundedBox2D(p, vec2(6.5, -44.67), vec2(9.4, 3.6), 0.4);
+    float dSouth = sdRoundedBox2D(p, vec2(-36.5, 44.67), vec2(9.4, 3.6), 0.4);
+    float dBeach = sdRoundedBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4), 0.4);
+    return min(dCentral, min(dNorth, min(dSouth, dBeach)));
+  }
+
   float evaluateBlitzGrassMaskFromSdfs(
     vec2 p,
     float roadSdf,
@@ -302,7 +310,10 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float padSafe = smoothstep(-0.3, 0.5, hardPadSdf);
     float embSafe = 1.0 - smoothstep(-0.6, 0.8, embSdf);
 
-    return clamp(grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe, 0.0, 1.0);
+    float halteSdf = evalHaltePlatformSdf(p);
+    float halteSafe = smoothstep(-0.2, 0.6, halteSdf);
+
+    return clamp(grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe * halteSafe, 0.0, 1.0);
   }
 
   float evaluateBlitzGrassMask(vec2 p) {
@@ -324,7 +335,14 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float harborDrop = -1.65 * smoothstep(0.15, -0.85, harborSdf.y);
 
     float westPlantSdf = evaluateWestPowerPlantSdf(p);
-    float westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 1.40;
+    // Keep underlying procedural terrain mesh tucked inside the 0.48m basalt plinth (2.10m below the +2.50m granite Plaza deck)
+    // so TolanCurvedPlanetGround never z-fights with the +2.50m Plaza floor or the Urban Staircase steps
+    float westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 0.40;
+    if (p.x > -85.45 && p.x < -75.40 && abs(p.y) < 10.05) {
+      float stairCarveX = smoothstep(-85.45, -84.50, p.x);
+      float stairCarveZ = 1.0 - smoothstep(9.60, 10.05, abs(p.y));
+      westPlantElev = mix(westPlantElev, 0.0, stairCarveX * stairCarveZ);
+    }
 
     float lakeSdf = evaluateNwLakeSdf(p);
     float lakeBasinDepression = 0.0;
@@ -578,6 +596,9 @@ export function upgradeMeshToBlitzWorldMaterial(
     return;
   }
   const srcMat = rawMat as THREE.MeshStandardMaterial;
+  if (srcMat && srcMat.transparent) {
+    return;
+  }
   const mapTex = srcMat && srcMat.map ? srcMat.map : null;
   if (mapTex) {
     mapTex.colorSpace = THREE.SRGBColorSpace;
@@ -3818,6 +3839,35 @@ export interface LoadedBlitzAssets {
   treeFoliageTex: THREE.Texture;
 }
 
+const BLITZ_3D_TOTAL_ASSET_TASKS = 40;
+let blitz3dCompletedAssetTasks = 0;
+const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
+
+function notifyBlitz3dAssetProgress(loaded: number, total: number = BLITZ_3D_TOTAL_ASSET_TASKS) {
+  blitz3dCompletedAssetTasks = Math.max(blitz3dCompletedAssetTasks, loaded);
+  blitz3dProgressListeners.forEach((listener) => {
+    try {
+      listener(blitz3dCompletedAssetTasks, total);
+    } catch {
+      // Ignore listener errors
+    }
+  });
+}
+
+export function subscribeBlitz3dAssetProgress(
+  listener: (loaded: number, total: number) => void,
+): () => void {
+  blitz3dProgressListeners.add(listener);
+  if (cachedLoadedBlitzAssets) {
+    listener(BLITZ_3D_TOTAL_ASSET_TASKS, BLITZ_3D_TOTAL_ASSET_TASKS);
+  } else {
+    listener(blitz3dCompletedAssetTasks, BLITZ_3D_TOTAL_ASSET_TASKS);
+  }
+  return () => {
+    blitz3dProgressListeners.delete(listener);
+  };
+}
+
 export function getCachedLoadedBlitzAssets(): LoadedBlitzAssets | null {
   return cachedLoadedBlitzAssets;
 }
@@ -3834,6 +3884,7 @@ export async function loadAllRealBlitzAssets(
   ) => void,
 ): Promise<LoadedBlitzAssets> {
   if (cachedLoadedBlitzAssets) {
+    notifyBlitz3dAssetProgress(BLITZ_3D_TOTAL_ASSET_TASKS, BLITZ_3D_TOTAL_ASSET_TASKS);
     if (onCharacterGltfReady) {
       const cached = cachedLoadedBlitzAssets;
       Promise.resolve().then(() => {
@@ -3860,7 +3911,38 @@ export async function loadAllRealBlitzAssets(
     }
     return inFlightLoadedBlitzAssetsPromise;
   }
+
+  blitz3dCompletedAssetTasks = 0;
+  let explicitTasksSettled = 0;
+  let managerFraction = 0;
+
+  const emitCombinedProgress = () => {
+    const blended = Math.min(
+      BLITZ_3D_TOTAL_ASSET_TASKS,
+      Math.max(
+        explicitTasksSettled,
+        Math.floor(managerFraction * (BLITZ_3D_TOTAL_ASSET_TASKS - 1)),
+      ),
+    );
+    notifyBlitz3dAssetProgress(blended, BLITZ_3D_TOTAL_ASSET_TASKS);
+  };
+
+  const trackAssetTask = <T>(promise: Promise<T>): Promise<T> =>
+    promise.finally(() => {
+      explicitTasksSettled += 1;
+      emitCombinedProgress();
+    });
+
   const manager = new THREE.LoadingManager();
+  manager.onProgress = (_url, itemsLoaded, itemsTotal) => {
+    if (itemsTotal > 0) {
+      managerFraction = Math.min(1, itemsLoaded / itemsTotal);
+      emitCombinedProgress();
+    }
+  };
+  manager.onError = (url) => {
+    console.warn(`[PreloadGate] THREE.LoadingManager non-critical resource warning: ${url}`);
+  };
   manager.setURLModifier((url) => {
     if (url.endsWith('.ktx2') && !url.endsWith('tree-foliage.ktx2')) {
       return '/assets/buddies/textures/buddies-palette.ktx2';
@@ -3886,25 +3968,35 @@ export async function loadAllRealBlitzAssets(
     });
 
   const loadOptionalGltf = (url: string): Promise<GLTF | null> =>
-    loadGltf(url).catch(() => null);
+    trackAssetTask(
+      loadGltf(url).catch((err) => {
+        console.warn(`[PreloadGate] Non-critical 3D model failed to load (${url}):`, err);
+        return null;
+      }),
+    );
 
   const loadFoliageTex = (): Promise<THREE.Texture> =>
-    new Promise((resolve) => {
-      ktx2Loader.load(
-        '/assets/buddies/textures/tree-foliage.ktx2',
-        (tex) => {
-          tex.wrapS = THREE.ClampToEdgeWrapping;
-          tex.wrapT = THREE.ClampToEdgeWrapping;
-          tex.minFilter = THREE.LinearFilter;
-          tex.magFilter = THREE.LinearFilter;
-          tex.generateMipmaps = false;
-          tex.needsUpdate = true;
-          resolve(tex);
-        },
-        undefined,
-        () => resolve(createFallbackFoliageMaskTexture()),
-      );
-    });
+    trackAssetTask(
+      new Promise((resolve) => {
+        ktx2Loader.load(
+          '/assets/buddies/textures/tree-foliage.ktx2',
+          (tex) => {
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.generateMipmaps = false;
+            tex.needsUpdate = true;
+            resolve(tex);
+          },
+          undefined,
+          (err) => {
+            console.warn('[PreloadGate] Non-critical foliage KTX2 fallback used:', err);
+            resolve(createFallbackFoliageMaskTexture());
+          },
+        );
+      }),
+    );
 
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
@@ -3956,9 +4048,14 @@ export async function loadAllRealBlitzAssets(
     manCharacterBuddiesPromise,
     loadOptionalGltf('/assets/ar99-assault.glb'),
     fishingRodPromise,
-    fetch('/assets/buddies/models/buddy-track.json')
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
+    trackAssetTask(
+      fetch('/assets/buddies/models/buddy-track.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch((err) => {
+          console.warn('[PreloadGate] Non-critical buddy-track.json failed to load:', err);
+          return null;
+        }),
+    ),
     loadFoliageTex(),
   ]).then(
     ([
@@ -4049,6 +4146,7 @@ export async function loadAllRealBlitzAssets(
       };
       cachedLoadedBlitzAssets = loaded;
       inFlightLoadedBlitzAssetsPromise = null;
+      notifyBlitz3dAssetProgress(BLITZ_3D_TOTAL_ASSET_TASKS, BLITZ_3D_TOTAL_ASSET_TASKS);
       return loaded;
     },
   );
@@ -9914,9 +10012,12 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     bodyGroup.parent.rotation.order = 'YXZ';
   }
   bodyGroup.visible = true;
-  // Enlarge human character (`mancharacterbuddies.glb`: 0.979m bind-pose * 3.45 -> 3.38m in bodyGroup space, ~3.92m world height)
-  // so the human soldier has a commanding, clearly visible silhouette proportional to handheld weapons and vehicles
-  glbRoot.scale.setScalar(3.45);
+  // Calculate raw unscaled height of the GLTF model scene to normalize height across all character models (Male & Female)
+  const rawBox = new THREE.Box3().setFromObject(gltf.scene);
+  const rawHeight = rawBox.max.y - rawBox.min.y;
+  // Unified target height = 3.38m in bodyGroup space (~3.92m world height) so Merchant Hana & Kai and player characters stand at the exact same height
+  const unifiedModelScale = rawHeight > 0.5 ? 3.38 / rawHeight : 3.45;
+  glbRoot.scale.setScalar(unifiedModelScale);
   glbRoot.position.set(0, 0, 0);
 
   const bones = new Map<string, THREE.Bone>();
@@ -9993,7 +10094,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
       glbRoot.updateWorldMatrix(true, true);
       const initMinFootY = measureLowestFootBoneLocalY(bones, glbRoot);
       if (Number.isFinite(initMinFootY)) {
-        glbRoot.position.y = baseRootY - (initMinFootY - standingSoleOffsetY);
+        glbRoot.position.y = baseRootY - (initMinFootY - standingSoleOffsetY) * glbRoot.scale.y;
       }
     }
   }
@@ -10643,7 +10744,7 @@ function stepCharBuddiesGlbRigController(
     if (!isSeatedOrPiloting) {
       const minFootY = measureLowestFootBoneLocalY(ctrl.bones, ctrl.glbRoot);
       if (Number.isFinite(minFootY)) {
-        footGroundShiftY = minFootY - ctrl.standingSoleOffsetY;
+        footGroundShiftY = (minFootY - ctrl.standingSoleOffsetY) * ctrl.glbRoot.scale.y;
         ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
         ctrl.glbRoot.updateWorldMatrix(true, true);
       }
@@ -11034,27 +11135,6 @@ export function updateCharacterWeaponStance(
       rig.bazookaBackblastGroup.scale.setScalar(blastScale);
       rig.bazookaBackblastGroup.rotation.z -= 0.45;
     }
-  }
-
-  // Apply optional live Inspector 3D Offset Tweak (from InGameElementAndBonePicker)
-  const tweak = rig.weaponRigGroup.userData.inspectorTweak as
-    | {
-        dx?: number;
-        dy?: number;
-        dz?: number;
-        dpitchDeg?: number;
-        dyawDeg?: number;
-        drollDeg?: number;
-      }
-    | undefined;
-  if (tweak) {
-    const deg2rad = Math.PI / 180;
-    rig.weaponRigGroup.position.x += tweak.dx ?? 0;
-    rig.weaponRigGroup.position.y += tweak.dy ?? 0;
-    rig.weaponRigGroup.position.z += tweak.dz ?? 0;
-    rig.weaponRigGroup.rotation.x += (tweak.dpitchDeg ?? 0) * deg2rad;
-    rig.weaponRigGroup.rotation.y += (tweak.dyawDeg ?? 0) * deg2rad;
-    rig.weaponRigGroup.rotation.z += (tweak.drollDeg ?? 0) * deg2rad;
   }
 }
 
@@ -12029,8 +12109,6 @@ export function createTolanCurvedPlanetEnvironment(
   const lobbySteelRoofTex = getLv1SlateZincRoofTexture();
   const lobbyWindowTex = getMilitaryWindowPaneTexture(1, 1, false);
   const lobbyLouverTex = getMilitaryLouverTexture();
-  const lobbyCascadeTex = getWaterCascadeSheetTexture();
-  const lobbyBasinTex = getWaterBasinRippleTexture();
 
   // Procedural Warm Coastal Travertine & Flamed Sandstone-Granite Ashlar Paver Texture (Sheet 1, 2, 3, 4, 5)
   // Blends naturally with the surrounding warm green grass and coastal limestone roads (no harsh white contrast)
@@ -12296,18 +12374,30 @@ export function createTolanCurvedPlanetEnvironment(
     if (mapTex && (mapTex.wrapS === THREE.RepeatWrapping || mapTex.wrapT === THREE.RepeatWrapping)) {
       tileLobbyBoxGeometryUVs(geo, worldTileMeters);
     }
-    const mesh = new THREE.Mesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        color: colorHex,
-        map: mapTex || null,
-        roughness: 0.78,
-      }),
-    );
+    const isGlassMat =
+      colorHex === '#88cce6' ||
+      colorHex === '#7bc6e2' ||
+      colorHex.toLowerCase() === '#88cce6' ||
+      colorHex.toLowerCase() === '#7bc6e2';
+    const meshMat = isGlassMat
+      ? new THREE.MeshStandardMaterial({
+          color: '#d6f4ff',
+          transparent: true,
+          opacity: 0.35,
+          roughness: 0.08,
+          metalness: 0.1,
+          side: THREE.DoubleSide,
+        })
+      : new THREE.MeshStandardMaterial({
+          color: colorHex,
+          map: mapTex || null,
+          roughness: 0.78,
+        });
+    const mesh = new THREE.Mesh(geo, meshMat);
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rot[0], rot[1], rot[2]);
-    mesh.castShadow = !isSoftwareGl;
-    mesh.receiveShadow = !isSoftwareGl;
+    mesh.castShadow = !isSoftwareGl && !isGlassMat;
+    mesh.receiveShadow = !isSoftwareGl && !isGlassMat;
     upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, colorHex);
     if (strokeW > 0) {
       const st = createBlitzStrokeMesh(geo, Math.min(strokeW, 0.016));
@@ -12318,295 +12408,956 @@ export function createTolanCurvedPlanetEnvironment(
   };
 
   // -------------------------------------------------------------------------
-  // 1. STEPPED PLAZA SUB-BASE, FLAMED GRANITE PLAZA PAVING, SUNKEN STEPPED
-  //    AMPHITHEATER SEATING & STAIRS, WOODEN BOARDWALK & GLASS-TIMBER BALUSTRADE (SHEET 5)
+  // 1. STEPPED PLAZA SUB-BASE (+2.50M ELEVATED PLAZA LEVEL), FLAMED GRANITE
+  //    PLAZA PAVING, AND 1:1 URBAN PLAZA TO STREET STAIRCASE (ARCHITECTURAL MODEL SHEET)
   //    Preserves exact 28m x 76m footprint (x in [-104.5, -76.5], z in [-38.0, +38.0])
   // -------------------------------------------------------------------------
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(28.4, 0.48, 76.4), '#8a8d88', [0, 0.24, 0], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
-  // Main West & Central Upper Plaza Deck (lx in [-13.90 .. +10.25], full 75.8m length, top at y = +1.42m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(24.15, 0.94, 75.8), '#e5e2da', [-1.825, 0.95, 0], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
-  // East-North Upper Plaza Wing (lx in [+10.25 .. +13.90], lz in [-37.90 .. -6.50], top at y = +1.42m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(3.65, 0.94, 31.4), '#e5e2da', [12.075, 0.95, -22.2], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
-  // East-South Upper Plaza Wing (lx in [+10.25 .. +13.90], lz in [+11.50 .. +37.90], top at y = +1.42m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(3.65, 0.94, 26.4), '#e5e2da', [12.075, 0.95, 24.7], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  // Lower Basalt Sub-Base Plinth (recessed around the East Urban Staircase bay lx in [+5.20 .. +14.10], lz in [-10.00 .. +10.00])
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(24.20, 0.48, 76.4), '#8a8d88', [-2.00, 0.24, 0], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.10, 0.48, 28.2), '#8a8d88', [12.05, 0.24, -24.1], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.10, 0.48, 28.2), '#8a8d88', [12.05, 0.24, 24.1], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
 
-  // Polished Flamed Granite Walkway Border Curbs & Architectural Expansion Joint Grid (Sheet 5)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 31.2), '#c4c1b8', [13.65, 1.46, -22.2], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 26.2), '#c4c1b8', [13.65, 1.46, 24.7], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 75.6), '#c4c1b8', [-13.65, 1.46, 0], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.14, 0.48), '#c4c1b8', [0, 1.46, -37.65], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.14, 0.48), '#c4c1b8', [0, 1.46, 37.65], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
+  // Main West & Central Upper Plaza Deck (lx in [-13.90 .. +5.20], full 75.8m length, top at y = +2.50m)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(19.10, 2.02, 75.8), '#e5e2da', [-4.35, 1.49, 0], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  // East-North Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [-37.90 .. -10.00], top at y = +2.50m)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.02, 27.9), '#e5e2da', [9.55, 1.49, -23.95], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  // East-South Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [+10.00 .. +37.90], top at y = +2.50m)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.02, 27.9), '#e5e2da', [9.55, 1.49, 23.95], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
 
-  for (let gz = -30.0; gz <= 30.0; gz += 6.0) {
-    const lineW = gz >= -6.0 && gz <= 11.0 ? 23.2 : 26.6;
-    const lineX = gz >= -6.0 && gz <= 11.0 ? -1.7 : 0.0;
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(lineW, 0.025, 0.10), '#b8b5ad', [lineX, 1.422, gz], [0, 0, 0], 0);
-  }
-  for (let gx = -9.0; gx <= 9.0; gx += 6.0) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.025, 74.2), '#b8b5ad', [gx, 1.422, 0], [0, 0, 0], 0);
-  }
+  // Polished Flamed Granite Walkway Border Curbs & Architectural Expansion Joint Grid (+2.50m Plaza Level)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 27.9), '#c4c1b8', [13.65, 2.54, -23.95], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 27.9), '#c4c1b8', [13.65, 2.54, 23.95], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 75.6), '#c4c1b8', [-13.65, 2.54, 0], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.14, 0.48), '#c4c1b8', [0, 2.54, -37.65], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.14, 0.48), '#c4c1b8', [0, 2.54, 37.65], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
 
   // -------------------------------------------------------------------------
-  // 1B. SHEET 5: SUNKEN STEPPED AMPHITHEATER SEATING, CENTRAL STAIRS, SLOPED
-  //     GLASS-AND-TIMBER BALUSTRADE & LOWER WOODEN SEASIDE BOARDWALK
-  //     Recessed into East terrace (lx in [+10.25 .. +13.90], lz in [-6.50 .. +11.50])
+  // 1B. 1:1 URBAN PLAZA TO STREET STAIRCASE — ARCHITECTURAL MODEL SHEET
+  //     (Tangga Plaza Perkotaan Turun Menuju Jalan Raya)
+  //     - Spans 20.0m width (lz in [-10.00 .. +10.00]) x 10.0m run (lx in [+5.20 .. +15.20])
+  //     - Descends from Elevated Plaza Level (+2.50M) through Mid-Landing (+1.32M)
+  //       to Street / Urban Concrete Sidewalk Level (+0.08M / +0.00M)
+  //     - 2 Flights of 7 Wide Granite Paver Steps with Recessed Warm LED Step Lighting
+  //     - 4-Tier Stepped Side Concrete Planters with Lush Green Shrubs on North & South
+  //     - Brushed Steel & Tempered Glass Outer Balustrades + Top Plaza Return Wings
+  //     - Inner Planter Handrails + Twin Central Brushed Steel Handrail Divider
   // -------------------------------------------------------------------------
-  const amphitheaterGrp = new THREE.Group();
-  amphitheaterGrp.name = 'LobbySunkenSteppedAmphitheaterAndStairs';
-  westPlantGroup.add(amphitheaterGrp);
+  const urbanStaircaseGrp = new THREE.Group();
+  urbanStaircaseGrp.name = 'LobbyUrbanPlazaToStreetStaircase';
+  westPlantGroup.add(urbanStaircaseGrp);
 
-  // Lower Continuous Wooden Seaside Boardwalk Deck at foot of Amphitheater (lx in [+12.35 .. +13.90], y = +0.52m)
-  addLobbyPart(amphitheaterGrp, new THREE.BoxGeometry(1.62, 0.12, 18.0), '#c48a52', [13.12, 0.48, 2.50], [0, 0, 0], 0.014, lobbyTimberTex, 1.8);
-  for (let bz = -6.0; bz <= 11.0; bz += 1.0) {
-    addLobbyPart(amphitheaterGrp, new THREE.BoxGeometry(1.60, 0.02, 0.03), '#6e4720', [13.12, 0.545, bz], [0, 0, 0], 0);
-  }
+  const COL_STAIR_GRANITE = '#dcdad2';
+  const COL_STAIR_NOSING = '#e8e6de';
+  const COL_STAIR_CONC = '#cac7bf';
+  const COL_STAIR_SUB = '#b5b2aa';
+  const COL_STAIR_STEEL = '#98a2ad';
+  const COL_STAIR_POST = '#323840';
+  const COL_STAIR_GLASS = '#88cce6';
+  const COL_STAIR_LED = '#ffe4a8';
+  const COL_STAIR_SOIL = '#4a3525';
 
-  // Central 5-Step Flamed Granite Staircase (lz in [-0.20 .. +5.20], width 5.40m, descending lx = 10.25 -> 12.45)
-  for (let s = 0; s < 5; s++) {
-    const stepX = 10.47 + s * 0.44;
-    const stepTopY = 1.42 - (s + 1) * 0.15;
-    const stepH = stepTopY - 0.44;
+  // A. Flush Granite Stair Threshold Nosing at Upper Plaza Lip (lx = +5.20, non-overlapping with the [-13.90..+5.20] Plaza Deck)
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(0.12, 0.06, 16.84),
+    COL_STAIR_NOSING,
+    [5.20, 2.475, 0.0],
+    [0, 0, 0],
+    0.008,
+    lobbyGranitePaverTex,
+    2.4,
+  );
+
+  // B. Monolithic Concrete Substructure ("Concrete Substructure" under Upper Flight, Mid-Landing & Lower Flight)
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(3.52, 1.28, 16.84),
+    COL_STAIR_SUB,
+    [6.95, 0.64, 0.0],
+    [0, 0, 0],
+    0.012,
+    lobbyConcreteTex,
+    2.4,
+  );
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(1.44, 1.32, 16.84),
+    COL_STAIR_CONC,
+    [9.40, 0.66, 0.0],
+    [0, 0, 0],
+    0.014,
+    lobbyConcreteTex,
+    2.4,
+  );
+
+  // C. Upper Flight: 7 Wide Granite Paver Steps (lx = 5.20 -> 8.70, descending +2.50m -> +1.32m)
+  const upperStepCount = 7;
+  const upperStepRun = 0.50;
+  const upperStepDrop = (2.50 - 1.32) / upperStepCount;
+  for (let s = 0; s < upperStepCount; s++) {
+    const stepCenterX = 5.20 + (s + 0.5) * upperStepRun;
+    const stepTopY = 2.50 - (s + 1) * upperStepDrop;
+    const stepBaseY = 1.24;
+    const stepH = Math.max(0.10, stepTopY - stepBaseY);
     addLobbyPart(
-      amphitheaterGrp,
-      new THREE.BoxGeometry(0.46, stepH, 5.40),
-      '#dfdcd3',
-      [stepX, 0.44 + stepH * 0.5, 2.50],
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(upperStepRun + 0.02, stepH, 16.80),
+      COL_STAIR_GRANITE,
+      [stepCenterX, stepBaseY + stepH * 0.5, 0.0],
       [0, 0, 0],
       0.010,
       lobbyGranitePaverTex,
-      2.0,
+      2.6,
     );
-    // Warm Under-Step LED Strip Lighting
+    // Granite Step Nosing Overhang
+    const riserX = 5.20 + s * upperStepRun;
+    const prevTopY = 2.50 - s * upperStepDrop;
     addLobbyPart(
-      amphitheaterGrp,
-      new THREE.BoxGeometry(0.03, 0.03, 5.24),
-      '#ffe4a8',
-      [stepX + 0.23, stepTopY - 0.03, 2.50],
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(0.06, 0.04, 16.80),
+      COL_STAIR_NOSING,
+      [riserX + 0.02, prevTopY - 0.02, 0.0],
       [0, 0, 0],
-      0,
+      0.006,
     );
-  }
-
-  // North (lz in [-6.35 .. -0.20]) & South (lz in [+5.20 .. +11.35]) 3-Tier Amphitheater Seating Bleachers ("Tiered Amphitheater Seating")
-  for (const [zCenter, zSpan] of [
-    [-3.28, 6.12],
-    [8.28, 6.12],
-  ] as [number, number][]) {
-    for (let t = 0; t < 3; t++) {
-      const tierX = 10.62 + t * 0.72;
-      const tierTopY = 1.24 - t * 0.24;
-      const tierH = tierTopY - 0.44;
-      // Architectural Concrete Bleacher Tier Base
+    // Recessed Warm LED Step Lighting under nosing ("LED Step Lighting (Recessed)")
+    for (const channelZ of [-4.25, 4.25]) {
       addLobbyPart(
-        amphitheaterGrp,
-        new THREE.BoxGeometry(0.74, tierH, zSpan),
-        '#d6d3cb',
-        [tierX, 0.44 + tierH * 0.5, zCenter],
-        [0, 0, 0],
-        0.012,
-        lobbyConcreteTex,
-        2.2,
-      );
-      // Warm Slatted Teak Timber Amphitheater Seat Cushion on Top of Concrete Tier
-      addLobbyPart(
-        amphitheaterGrp,
-        new THREE.BoxGeometry(0.64, 0.07, zSpan - 0.28),
-        '#c48a52',
-        [tierX + 0.02, tierTopY + 0.035, zCenter],
-        [0, 0, 0],
-        0.010,
-        lobbyTimberTex,
-        1.6,
-      );
-      // Warm Recessed Under-Bench LED Strip
-      addLobbyPart(
-        amphitheaterGrp,
-        new THREE.BoxGeometry(0.04, 0.04, zSpan - 0.36),
-        '#ffe4a8',
-        [tierX + 0.36, tierTopY - 0.04, zCenter],
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.032, 0.030, 7.70),
+        COL_STAIR_LED,
+        [riserX + 0.035, prevTopY - 0.055, channelZ],
         [0, 0, 0],
         0,
       );
     }
   }
 
-  // Sloped Glass-and-Timber Balustrades flanking the Amphitheater & Central Staircase (Sheet 5 Transverse Cross-Section)
-  for (const railZ of [-6.42, -0.22, 5.22, 11.42]) {
-    // Sloped Tempered Glass Panel & Teak Timber Handrail (descending from lx=10.25, y=1.42 to lx=12.45, y=0.52)
+  // D. Intermediate Granite Mid-Landing (lx in [8.70 .. 10.10], y = +1.32m)
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(1.42, 0.08, 16.80),
+    COL_STAIR_NOSING,
+    [9.40, 1.28, 0.0],
+    [0, 0, 0],
+    0.010,
+    lobbyGranitePaverTex,
+    2.4,
+  );
+  addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.04, 0.015, 16.76), '#aca9a0', [9.40, 1.325, 0.0], [0, 0, 0], 0);
+
+  // E. Lower Flight: 7 Wide Granite Paver Steps (lx = 10.10 -> 13.60, descending +1.32m -> +0.08m)
+  const lowerStepCount = 7;
+  const lowerStepRun = 0.50;
+  const lowerStepDrop = (1.32 - 0.08) / lowerStepCount;
+  for (let s = 0; s < lowerStepCount; s++) {
+    const stepCenterX = 10.10 + (s + 0.5) * lowerStepRun;
+    const stepTopY = 1.32 - (s + 1) * lowerStepDrop;
+    const stepBaseY = 0.04;
+    const stepH = Math.max(0.06, stepTopY - stepBaseY);
     addLobbyPart(
-      amphitheaterGrp,
-      new THREE.BoxGeometry(2.38, 0.74, 0.08),
-      '#88cce6',
-      [11.35, 1.42, railZ],
-      [0, 0, -0.38],
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(lowerStepRun + 0.02, stepH, 16.80),
+      COL_STAIR_GRANITE,
+      [stepCenterX, stepBaseY + stepH * 0.5, 0.0],
+      [0, 0, 0],
+      0.010,
+      lobbyGranitePaverTex,
+      2.6,
+    );
+    // Granite Step Nosing Overhang
+    const riserX = 10.10 + s * lowerStepRun;
+    const prevTopY = 1.32 - s * lowerStepDrop;
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(0.06, 0.04, 16.80),
+      COL_STAIR_NOSING,
+      [riserX + 0.02, prevTopY - 0.02, 0.0],
+      [0, 0, 0],
+      0.006,
+    );
+    // Recessed Warm LED Step Lighting under nosing
+    for (const channelZ of [-4.25, 4.25]) {
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.032, 0.030, 7.70),
+        COL_STAIR_LED,
+        [riserX + 0.035, prevTopY - 0.055, channelZ],
+        [0, 0, 0],
+        0,
+      );
+    }
+  }
+
+  // Longitudinal Paver Joint Grooves across Upper Flight, Mid-Landing & Lower Flight
+  for (const jz of [-6.3, -4.2, -2.1, 2.1, 4.2, 6.3]) {
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.38, 0.015, 0.035), '#a8a59c', [9.40, 1.325, jz], [0, 0, 0], 0);
+  }
+
+  // F. Bottom Urban Concrete Sidewalk & Street Curb ("Concrete Sidewalk / Trotoar & Aspal Raya", lx in [13.60 .. 15.25], y = +0.08m)
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(1.66, 0.10, 20.40),
+    '#d6d8dc',
+    [14.42, 0.04, 0.0],
+    [0, 0, 0],
+    0.012,
+    lobbyConcreteTex,
+    2.8,
+  );
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(0.18, 0.11, 20.44),
+    '#9ea3aa',
+    [15.18, 0.045, 0.0],
+    [0, 0, 0],
+    0.010,
+    lobbyConcreteTex,
+    2.2,
+  );
+  for (let sz = -10.0; sz <= 10.0; sz += 2.5) {
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.60, 0.015, 0.04), '#94989e', [14.40, 0.092, sz], [0, 0, 0], 0);
+  }
+  // Recessed Cast-Iron Street Storm Drain Grate at South-East Curb (matching Top Plan View)
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(0.46, 0.03, 0.92),
+    '#383e45',
+    [15.48, 0.015, 7.20],
+    [0, 0, 0],
+    0.008,
+    lobbyDrainGrilleTex,
+    1.0,
+  );
+
+  // G. 4-Tier Stepped Side Concrete Planters with Lush Green Shrubs ("Stepped Side Planters / Integrated Planters with Shrubs")
+  //    Placed along North (lz = -9.20, spanning [-10.00 .. -8.40]) and South (lz = +9.20, spanning [+8.40 .. +10.00])
+  const steppedPlanterTiers: [number, number, number][] = [
+    [6.12, 1.86, 2.58],  // Tier 1 (Upper Plaza Edge)
+    [8.05, 2.02, 1.96],  // Tier 2 (Upper Mid-Flight)
+    [10.00, 1.92, 1.38], // Tier 3 (Mid-Landing / Lower Top)
+    [12.30, 2.70, 0.78], // Tier 4 (Lower Street Foot)
+  ];
+  const shrubColors = ['#3b7a38', '#4d9244', '#5fa650', '#326b30'];
+  for (const sideSign of [-1, 1]) {
+    const planterZ = sideSign * 9.20;
+    for (let tIdx = 0; tIdx < steppedPlanterTiers.length; tIdx++) {
+      const [tierX, tierLenX, tierTopY] = steppedPlanterTiers[tIdx];
+      // Monolithic Architectural Concrete Planter Box
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(tierLenX, tierTopY, 1.60),
+        COL_STAIR_CONC,
+        [tierX, tierTopY * 0.5, planterZ],
+        [0, 0, 0],
+        0.014,
+        lobbyConcreteTex,
+        2.2,
+      );
+      // Chamfered Concrete Planter Coping Rim
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(tierLenX + 0.08, 0.09, 1.66),
+        '#dedbd3',
+        [tierX, tierTopY - 0.03, planterZ],
+        [0, 0, 0],
+        0.010,
+        lobbyConcreteTex,
+        2.0,
+      );
+      // Dark Soil & Mulch Bed inside Planter
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(tierLenX - 0.24, 0.06, 1.24),
+        COL_STAIR_SOIL,
+        [tierX, tierTopY + 0.02, planterZ],
+        [0, 0, 0],
+        0.006,
+        lobbyBasaltTex,
+        1.4,
+      );
+      // Lush Sculpted Green Coastal Shrub Mounds inside each Stepped Planter
+      const shrubCount = tIdx === 3 ? 4 : 3;
+      for (let sh = 0; sh < shrubCount; sh++) {
+        const shFrac = sh / (shrubCount - 1) - 0.5;
+        const shX = tierX + shFrac * (tierLenX - 0.62);
+        const shZ = planterZ + ((sh % 2 === 0 ? -1 : 1) * 0.12);
+        const shR = 0.34 + (sh % 2) * 0.06;
+        const shCol = shrubColors[(tIdx + sh) % shrubColors.length];
+        addLobbyPart(
+          urbanStaircaseGrp,
+          new THREE.SphereGeometry(shR, 9, 7),
+          shCol,
+          [shX, tierTopY + shR * 0.62, shZ],
+          [0, (sh * 1.1) % Math.PI, 0],
+          0.010,
+        );
+        addLobbyPart(
+          urbanStaircaseGrp,
+          new THREE.SphereGeometry(shR * 0.76, 8, 6),
+          shrubColors[(tIdx + sh + 1) % shrubColors.length],
+          [shX + 0.14, tierTopY + shR * 0.48, shZ - sideSign * 0.12],
+          [0, 0, 0],
+          0.008,
+        );
+      }
+    }
+
+    // H. Outer Brushed Steel & Tempered Glass Balustrade ("Brush Steel & Glass Handrails / Glass & Steel Balustrade")
+    //    Mounted along the outer edge of the stepped planters (lz = ±9.90) + Top Plaza Landing Return Wing
+    const outerRailZ = sideSign * 9.90;
+    const innerPlanterZ = sideSign * 8.46;
+
+    // Transverse glass return framing the top of the stepped planter at Plaza Level (lx = 5.20, lz in [8.46 .. 9.90])
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(0.08, 0.84, 1.48),
+      COL_STAIR_GLASS,
+      [5.20, 2.98, sideSign * 9.18],
+      [0, 0, 0],
       0.008,
       lobbyWindowTex,
     );
     addLobbyPart(
-      amphitheaterGrp,
-      new THREE.BoxGeometry(2.44, 0.09, 0.18),
-      '#c48a52',
-      [11.35, 1.82, railZ],
-      [0, 0, -0.38],
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(0.14, 0.07, 1.54),
+      COL_STAIR_STEEL,
+      [5.20, 3.43, sideSign * 9.18],
+      [0, 0, 0],
       0.008,
-      lobbyTimberTex,
     );
-    for (const [postX, postY] of [
-      [10.30, 1.82],
-      [11.35, 1.40],
-      [12.40, 0.98],
+
+    // Sloped Upper-Flight Glass & Steel Balustrade (lx = 5.20 -> 8.70, pitch = -0.325 rad)
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(3.68, 0.78, 0.08),
+      COL_STAIR_GLASS,
+      [6.95, 2.52, outerRailZ],
+      [0, 0, -0.325],
+      0.008,
+      lobbyWindowTex,
+    );
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(3.74, 0.07, 0.14),
+      COL_STAIR_STEEL,
+      [6.95, 2.94, outerRailZ],
+      [0, 0, -0.325],
+      0.008,
+    );
+
+    // Horizontal Mid-Landing Glass & Steel Balustrade (lx = 8.70 -> 10.10)
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(1.44, 0.78, 0.08),
+      COL_STAIR_GLASS,
+      [9.40, 1.88, outerRailZ],
+      [0, 0, 0],
+      0.008,
+      lobbyWindowTex,
+    );
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(1.50, 0.07, 0.14),
+      COL_STAIR_STEEL,
+      [9.40, 2.30, outerRailZ],
+      [0, 0, 0],
+      0.008,
+    );
+
+    // Sloped Lower-Flight Glass & Steel Balustrade (lx = 10.10 -> 13.65, pitch = -0.340 rad)
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(3.74, 0.78, 0.08),
+      COL_STAIR_GLASS,
+      [11.88, 1.24, outerRailZ],
+      [0, 0, -0.340],
+      0.008,
+      lobbyWindowTex,
+    );
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(3.80, 0.07, 0.14),
+      COL_STAIR_STEEL,
+      [11.88, 1.66, outerRailZ],
+      [0, 0, -0.340],
+      0.008,
+    );
+
+    // Vertical Brushed Steel Stanchion Posts along Outer Glass Balustrade
+    for (const [postX, postBaseY, postH] of [
+      [5.20, 2.50, 0.96],
+      [7.00, 1.96, 0.96],
+      [8.70, 1.38, 0.96],
+      [10.10, 1.38, 0.96],
+      [11.85, 0.78, 0.94],
+      [13.64, 0.78, 0.42],
+    ] as [number, number, number][]) {
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.11, postH, 0.11),
+        COL_STAIR_POST,
+        [postX, postBaseY + postH * 0.5, outerRailZ],
+        [0, 0, 0],
+        0.006,
+      );
+    }
+
+    // I. Inner Planter Edge Brushed Steel Handrail (along inner wall of stepped planters at lz = ±8.46)
+    //    Follows Upper Flight slope -> Mid-Landing horizontal -> Lower Flight slope
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(3.72, 0.055, 0.07),
+      COL_STAIR_STEEL,
+      [6.95, 2.84, innerPlanterZ],
+      [0, 0, -0.325],
+      0.006,
+    );
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(1.44, 0.055, 0.07),
+      COL_STAIR_STEEL,
+      [9.40, 2.24, innerPlanterZ],
+      [0, 0, 0],
+      0.006,
+    );
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(3.76, 0.055, 0.07),
+      COL_STAIR_STEEL,
+      [11.88, 1.60, innerPlanterZ],
+      [0, 0, -0.340],
+      0.006,
+    );
+    for (const [ipX, ipBaseY] of [
+      [5.24, 2.50],
+      [7.00, 1.92],
+      [8.70, 1.32],
+      [10.10, 1.32],
+      [11.85, 0.72],
+      [13.60, 0.08],
     ] as [number, number][]) {
-      addLobbyPart(amphitheaterGrp, new THREE.BoxGeometry(0.12, 0.90, 0.12), '#2d3238', [postX, postY, railZ], [0, 0, 0], 0.006);
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.06, 0.92, 0.06),
+        COL_STAIR_POST,
+        [ipX, ipBaseY + 0.46, innerPlanterZ],
+        [0, 0, 0],
+        0.005,
+      );
     }
   }
 
-  // Glass-and-Timber Waterfront Balustrade around the Plaza Perimeter (Sheet 5: "Glass-and-Timber Waterfront Balustrade")
-  // 1) East-North Upper Promenade Edge (lx = +13.65, lz in [-37.65 .. -6.50])
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 31.2), '#cbc8c0', [13.65, 1.62, -22.1], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 30.8), '#88cce6', [13.65, 2.22, -22.1], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 31.1), '#c48a52', [13.65, 2.68, -22.1], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-  for (let pz = -36.0; pz <= -6.5; pz += 4.2) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 2.20, pz], [0, 0, 0], 0.008);
+  // J. Twin Central Brushed-Steel Handrail Divider ("Central Handrail Divider" at lz = 0.0)
+  //    Stepped Granite Spine Curb + Twin Parallel Brushed Steel Railings with Top & Mid Bars
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(3.72, 0.18, 0.34),
+    '#cfccc4',
+    [6.95, 1.96, 0.0],
+    [0, 0, -0.325],
+    0.008,
+    lobbyConcreteTex,
+  );
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(1.48, 0.16, 0.34),
+    '#cfccc4',
+    [9.40, 1.36, 0.0],
+    [0, 0, 0],
+    0.008,
+    lobbyConcreteTex,
+  );
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(3.76, 0.18, 0.34),
+    '#cfccc4',
+    [11.88, 0.74, 0.0],
+    [0, 0, -0.340],
+    0.008,
+    lobbyConcreteTex,
+  );
+  for (const railSide of [-0.10, 0.10]) {
+    // Upper Flight Top Rail & Mid Rail
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.74, 0.055, 0.055), COL_STAIR_STEEL, [6.95, 2.86, railSide], [0, 0, -0.325], 0.006);
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.74, 0.035, 0.045), COL_STAIR_STEEL, [6.95, 2.50, railSide], [0, 0, -0.325], 0.005);
+    // Mid-Landing Horizontal Top Rail & Mid Rail
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.46, 0.055, 0.055), COL_STAIR_STEEL, [9.40, 2.26, railSide], [0, 0, 0], 0.006);
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.46, 0.035, 0.045), COL_STAIR_STEEL, [9.40, 1.90, railSide], [0, 0, 0], 0.005);
+    // Lower Flight Top Rail & Mid Rail
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.78, 0.055, 0.055), COL_STAIR_STEEL, [11.88, 1.62, railSide], [0, 0, -0.340], 0.006);
+    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.78, 0.035, 0.045), COL_STAIR_STEEL, [11.88, 1.26, railSide], [0, 0, -0.340], 0.005);
+
+    for (const [cpX, cpBaseY] of [
+      [5.18, 2.50],
+      [6.95, 1.92],
+      [8.70, 1.32],
+      [10.10, 1.32],
+      [11.88, 0.72],
+      [13.65, 0.08],
+    ] as [number, number][]) {
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.055, 0.94, 0.055),
+        COL_STAIR_POST,
+        [cpX, cpBaseY + 0.47, railSide],
+        [0, 0, 0],
+        0.005,
+      );
+    }
   }
-  // 2) East-Middle Lower Wooden Boardwalk Waterfront Balustrade (lx = +13.65, lz in [-6.50 .. +11.50], sealing the bottom of the stairs!)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.42, 0.24, 18.0), '#cbc8c0', [13.65, 0.66, 2.50], [0, 0, 0], 0.012, lobbyConcreteTex, 2.4);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 17.8), '#88cce6', [13.65, 1.20, 2.50], [0, 0, 0], 0.008, lobbyWindowTex, 3.6);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 18.0), '#c48a52', [13.65, 1.66, 2.50], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-  for (let pz = -6.4; pz <= 11.5; pz += 3.58) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 1.18, pz], [0, 0, 0], 0.008);
+  // Top & Bottom Looped End Returns of Central Handrail Divider
+  addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.18, 0.055, 0.26), COL_STAIR_STEEL, [5.14, 3.44, 0.0], [0, 0, 0], 0.006);
+  addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.18, 0.055, 0.26), COL_STAIR_STEEL, [13.70, 1.02, 0.0], [0, 0, 0], 0.006);
+
+  // Glass-and-Timber Waterfront Balustrade around the Plaza Perimeter (+2.50m Plaza Level)
+  // 1) East-North Upper Promenade Edge (lx = +13.65, lz in [-37.65 .. -10.00])
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 27.7), '#cbc8c0', [13.65, 2.70, -23.85], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 27.3), '#88cce6', [13.65, 3.30, -23.85], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 27.6), '#c48a52', [13.65, 3.76, -23.85], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
+  for (let pz = -36.5; pz <= -10.1; pz += 4.4) {
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 3.28, pz], [0, 0, 0], 0.008);
   }
-  // 3) East-South Upper Promenade Edge (lx = +13.65, lz in [+11.50 .. +37.65])
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 26.2), '#cbc8c0', [13.65, 1.62, 24.6], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 25.8), '#88cce6', [13.65, 2.22, 24.6], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 26.1), '#c48a52', [13.65, 2.68, 24.6], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-  for (let pz = 11.5; pz <= 36.5; pz += 4.15) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 2.20, pz], [0, 0, 0], 0.008);
+  // 2) East-South Upper Promenade Edge (lx = +13.65, lz in [+10.00 .. +37.65])
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 27.7), '#cbc8c0', [13.65, 2.70, 23.85], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 27.3), '#88cce6', [13.65, 3.30, 23.85], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 27.6), '#c48a52', [13.65, 3.76, 23.85], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
+  for (let pz = 10.1; pz <= 36.5; pz += 4.4) {
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 3.28, pz], [0, 0, 0], 0.008);
   }
-  // 4) West Promenade Edge (lx = -13.65)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 75.6), '#cbc8c0', [-13.65, 1.62, 0.0], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 74.8), '#88cce6', [-13.65, 2.22, 0.0], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 75.4), '#c48a52', [-13.65, 2.68, 0.0], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
+  // 2B) Return Balustrades framing the North (lz = -10.00) and South (lz = +10.00) Upper Plaza Wings along lx in [+5.25 .. +13.65]
+  for (const wingZ of [-10.00, 10.00]) {
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.40, 0.34, 0.46), '#cbc8c0', [9.45, 2.70, wingZ], [0, 0, 0], 0.012, lobbyConcreteTex, 2.4);
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.20, 0.84, 0.10), '#88cce6', [9.45, 3.30, wingZ], [0, 0, 0], 0.008, lobbyWindowTex, 3.2);
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.40, 0.10, 0.22), '#c48a52', [9.45, 3.76, wingZ], [0, 0, 0], 0.010, lobbyTimberTex, 2.2);
+    for (const px of [5.35, 9.45, 13.55]) {
+      addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [px, 3.28, wingZ], [0, 0, 0], 0.008);
+    }
+  }
+  // 3) West Promenade Edge (lx = -13.65)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 75.6), '#cbc8c0', [-13.65, 2.70, 0.0], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 74.8), '#88cce6', [-13.65, 3.30, 0.0], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 75.4), '#c48a52', [-13.65, 3.76, 0.0], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
   for (let pz = -36.0; pz <= 36.0; pz += 4.5) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [-13.65, 2.20, pz], [0, 0, 0], 0.008);
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [-13.65, 3.28, pz], [0, 0, 0], 0.008);
   }
-  // 5) North & South Promenade Edges (lz = ±37.65)
+  // 4) North & South Promenade Edges (lz = ±37.65)
   for (const zEdge of [-37.65, 37.65]) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.34, 0.54), '#cbc8c0', [0.0, 1.62, zEdge], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(26.8, 0.84, 0.10), '#88cce6', [0.0, 2.22, zEdge], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.4, 0.10, 0.24), '#c48a52', [0.0, 2.68, zEdge], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.34, 0.54), '#cbc8c0', [0.0, 2.70, zEdge], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(26.8, 0.84, 0.10), '#88cce6', [0.0, 3.30, zEdge], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
+    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.4, 0.10, 0.24), '#c48a52', [0.0, 3.76, zEdge], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
     for (let px = -12.0; px <= 12.0; px += 4.8) {
-      addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [px, 2.20, zEdge], [0, 0, 0], 0.008);
+      addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [px, 3.28, zEdge], [0, 0, 0], 0.008);
     }
   }
 
   // -------------------------------------------------------------------------
   // 2. SHEET 1: ARCHITECTURAL MODEL SHEET — SUNKEN MIRROR POOL & WATER JETS
   //    Reference: media_1794077939908_b51ef4a0.jpg
-  //    - Placed as the shimmering centerpiece of the open Plaza at local (0.0, 1.42, 1.5)
+  //    - Placed as the shimmering centerpiece of the open Plaza at local (-0.8, 2.50, 0.0)
   //    - Wide Flamed Granite Coping Stone Rim (7.6m x 13.8m)
-  //    - Recessed Overflow Drainage Channel Grille around all 4 inner edges
-  //    - Charcoal Slate Stone Tile Lining inside the sunken pool basin
-  //    - Crystalline Mirror Water Surface + 10 Frothy Water Jet Plumes (2x4 + 2 staggered layout)
+  // -------------------------------------------------------------------------
+  // 2. ARCHITECTURAL MODEL SHEET: CIVIC PLAZA MULTI-TIER CASCADE & DYNAMIC FOUNTAIN
+  //    - Moved to the West/Left Plaza bay at local (-6.8, 2.50, -0.8) (world x = -97.3, z = -0.8)
+  //    - Perimeter Linear Overflow Drain / Gutter Grate + Granite Paver Apron
+  //    - Dark Charcoal-Basalt Granite Coping / Seating Ledger with 4 Cantilevered Slatted Teak Benches
+  //    - Lower Reflecting Pool with 6 Submerged LED Luminaires & Real-Time Expanding Concentric Water Ripples
+  //    - Raised Central Tier Dark Basalt Pedestal Basin with 4 Cascade Weir Spillways & Flowing Waterfalls
+  //    - 6 Parabolic Arching Laminar Water Jets + Central Grand Multi-Plume Frothy Water Geyser
   // -------------------------------------------------------------------------
   const mirrorPoolGrp = new THREE.Group();
   mirrorPoolGrp.name = 'LobbySunkenMirrorPoolAndJets';
-  mirrorPoolGrp.position.set(0.0, 1.42, 1.5);
+  mirrorPoolGrp.position.set(-6.8, 2.50, -0.8);
   westPlantGroup.add(mirrorPoolGrp);
 
-  const COL_POOL_GRANITE = '#dcd9d0';
-  const COL_POOL_SLATE = '#33444f';
-  const COL_POOL_WATER = '#78d2e8';
-  const COL_JET_FOAM = '#f2fcff';
-  const COL_JET_MIST = '#d6f5ff';
+  const COL_FOUNTAIN_APRON = '#dcd9d0';
+  const COL_FOUNTAIN_BASALT = '#32383f';
+  const COL_FOUNTAIN_COPING = '#3f464f';
+  const COL_FOUNTAIN_SLATE = '#163c46';
+  const COL_FOUNTAIN_TEAK = '#c88746';
+  const COL_FOUNTAIN_TEAK_DARK = '#5c3816';
+  const COL_FOUNTAIN_LED = '#ffefc2';
 
-  // 2A. Outer Wide Flamed Granite Coping Stone Rim (7.6m wide x 13.8m long, slightly raised +0.06m above plaza pavers)
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(7.6, 0.08, 0.72), COL_POOL_GRANITE, [0, 0.04, -6.54], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.2);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(7.6, 0.08, 0.72), COL_POOL_GRANITE, [0, 0.04, 6.54], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.2);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.72, 0.08, 12.36), COL_POOL_GRANITE, [-3.44, 0.04, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.2);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.72, 0.08, 12.36), COL_POOL_GRANITE, [3.44, 0.04, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.2);
+  // 2A. Outer Granite Paver Apron (7.40m W x 12.40m L) & Inset Perimeter Linear Overflow Drain / Gutter Grate (non-overlapping corners & +0.01m above Plaza deck)
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(7.44, 0.04, 0.42), COL_FOUNTAIN_APRON, [0, 0.03, -6.00], [0, 0, 0], 0.008, lobbyGranitePaverTex, 2.2);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(7.44, 0.04, 0.42), COL_FOUNTAIN_APRON, [0, 0.03, 6.00], [0, 0, 0], 0.008, lobbyGranitePaverTex, 2.2);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.42, 0.04, 11.54), COL_FOUNTAIN_APRON, [-3.51, 0.03, 0], [0, 0, 0], 0.008, lobbyGranitePaverTex, 2.2);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.42, 0.04, 11.54), COL_FOUNTAIN_APRON, [3.51, 0.03, 0], [0, 0, 0], 0.008, lobbyGranitePaverTex, 2.2);
 
-  // 2B. Recessed Overflow Drainage Channel Grille (slotted stainless steel grate inset around all 4 sides)
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(6.16, 0.05, 0.28), '#8a929a', [0, 0.025, -6.04], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.2);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(6.16, 0.05, 0.28), '#8a929a', [0, 0.025, 6.04], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.2);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.28, 0.05, 11.80), '#8a929a', [-2.94, 0.025, 0], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.2);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.28, 0.05, 11.80), '#8a929a', [2.94, 0.025, 0], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.2);
+  // Perimeter Linear Drain / Gutter Grate ("Perimeter Linear Drain / Gutter" & "Linear Overflow Gutter & Grate")
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(6.62, 0.05, 0.36), '#252a30', [0, 0.035, -5.62], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.8);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(6.62, 0.05, 0.36), '#252a30', [0, 0.035, 5.62], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.8);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.36, 0.05, 10.86), '#252a30', [-3.13, 0.035, 0], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.8);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.36, 0.05, 10.86), '#252a30', [3.13, 0.035, 0], [0, 0, 0], 0.008, lobbyDrainGrilleTex, 1.8);
 
-  // 2C. Inner Flamed Granite Pool Rim Lip & Charcoal Slate Stone Tile Lining
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.60, 0.07, 0.22), COL_POOL_GRANITE, [0, 0.035, -5.79], [0, 0, 0], 0.010, lobbyGranitePaverTex, 2.0);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.60, 0.07, 0.22), COL_POOL_GRANITE, [0, 0.035, 5.79], [0, 0, 0], 0.010, lobbyGranitePaverTex, 2.0);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.22, 0.07, 11.36), COL_POOL_GRANITE, [-2.69, 0.035, 0], [0, 0, 0], 0.010, lobbyGranitePaverTex, 2.0);
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.22, 0.07, 11.36), COL_POOL_GRANITE, [2.69, 0.035, 0], [0, 0, 0], 0.010, lobbyGranitePaverTex, 2.0);
+  // 2B. Raised Dark Charcoal-Basalt Pool Wall & Wide Granite Coping / Seating Ledger (5.90m W x 10.90m L, 0.48m H)
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.90, 0.41, 0.50), COL_FOUNTAIN_BASALT, [0, 0.215, -5.20], [0, 0, 0], 0.014, lobbyBasaltTex, 2.2);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.90, 0.41, 0.50), COL_FOUNTAIN_BASALT, [0, 0.215, 5.20], [0, 0, 0], 0.014, lobbyBasaltTex, 2.2);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.50, 0.41, 9.88), COL_FOUNTAIN_BASALT, [-2.70, 0.215, 0], [0, 0, 0], 0.014, lobbyBasaltTex, 2.2);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.50, 0.41, 9.88), COL_FOUNTAIN_BASALT, [2.70, 0.215, 0], [0, 0, 0], 0.014, lobbyBasaltTex, 2.2);
 
-  // Charcoal Slate Stone Tile Basin Floor & Inner Walls ("Charcoal Slate Stone Tile lining")
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.16, 0.04, 11.36), COL_POOL_SLATE, [0, 0.01, 0], [0, 0, 0], 0, lobbySlateTileTex, 1.8);
-  // Crystalline Mirror Water Surface ("Mirror Pool & Water Jets")
-  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.12, 0.03, 11.32), COL_POOL_WATER, [0, 0.042, 0], [0, 0, 0], 0, lobbyBasinTex, 2.8);
+  // Honed Dark Granite Coping Ledger Top Rim (y = 0.42m .. 0.49m)
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.98, 0.07, 0.56), COL_FOUNTAIN_COPING, [0, 0.455, -5.20], [0, 0, 0], 0.012, lobbyBasaltTex, 2.4);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(5.98, 0.07, 0.56), COL_FOUNTAIN_COPING, [0, 0.455, 5.20], [0, 0, 0], 0.012, lobbyBasaltTex, 2.4);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.56, 0.07, 9.82), COL_FOUNTAIN_COPING, [-2.70, 0.455, 0], [0, 0, 0], 0.012, lobbyBasaltTex, 2.4);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.56, 0.07, 9.82), COL_FOUNTAIN_COPING, [2.70, 0.455, 0], [0, 0, 0], 0.012, lobbyBasaltTex, 2.4);
 
-  // 2D. 10 Vertical Frothy Water Jet Plumes & Concentric Water Ripples (matching Top Orthogonal Plan View in Sheet 1)
-  const mirrorJetCoords: [number, number, number][] = [
-    // Outer 8 jets (4 left, 4 right)
-    [-1.42, -4.15, 1.18],
-    [1.42, -4.15, 1.18],
-    [-1.32, -1.45, 1.05],
-    [1.32, -1.45, 1.05],
-    [-1.32, 1.45, 1.05],
-    [1.32, 1.45, 1.05],
-    [-1.42, 4.15, 1.18],
-    [1.42, 4.15, 1.18],
-    // Inner 2 staggered central jets
-    [0.0, -2.75, 1.34],
-    [0.0, 2.75, 1.34],
+  // 2C. 4 Cantilevered Slatted Teak Timber Benches ("Cantilevered Teak/Stone Bench & Coping Detail" / "Water Seating Alcove / Benches")
+  //     Mounted on all 4 outer sides of the dark basalt coping rim (West, East, North, South)
+  for (const sideX of [-1, 1]) {
+    const bx = sideX * 2.96;
+    addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.54, 0.075, 5.20), COL_FOUNTAIN_TEAK, [bx, 0.465, 0], [0, 0, 0], 0.012, lobbyTimberTex, 1.8);
+    for (const slatOff of [-0.18, -0.06, 0.06, 0.18]) {
+      addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.02, 0.018, 5.16), COL_FOUNTAIN_TEAK_DARK, [bx + slatOff, 0.506, 0], [0, 0, 0], 0);
+    }
+    for (const brZ of [-2.1, -0.7, 0.7, 2.1]) {
+      addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.42, 0.09, 0.08), '#23282e', [bx, 0.38, brZ], [0, 0, 0], 0.005);
+    }
+  }
+  for (const sideZ of [-1, 1]) {
+    const bz = sideZ * 5.46;
+    addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(3.16, 0.075, 0.54), COL_FOUNTAIN_TEAK, [0, 0.465, bz], [0, 0, 0], 0.012, lobbyTimberTex, 1.8);
+    for (const slatOff of [-0.18, -0.06, 0.06, 0.18]) {
+      addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(3.12, 0.018, 0.02), COL_FOUNTAIN_TEAK_DARK, [0, 0.506, bz + slatOff], [0, 0, 0], 0);
+    }
+    for (const brX of [-1.2, 0.0, 1.2]) {
+      addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.08, 0.09, 0.42), '#23282e', [brX, 0.38, bz], [0, 0, 0], 0.005);
+    }
+  }
+
+  // 2D. Lower Reflecting Pool Floor & 6 Submerged Warm LED Luminaires ("Submerged LED Luminaires / LED Illuminators")
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(4.88, 0.04, 9.88), COL_FOUNTAIN_SLATE, [0, 0.03, 0], [0, 0, 0], 0, lobbySlateTileTex, 2.2);
+  const submergedLedCoords: [number, number][] = [
+    [-1.65, -3.65],
+    [1.65, -3.65],
+    [-1.82, 0.0],
+    [1.82, 0.0],
+    [-1.65, 3.65],
+    [1.65, 3.65],
   ];
-  for (const [jx, jz, jScale] of mirrorJetCoords) {
-    // Submerged stainless steel jet nozzle & base collar
-    addLobbyPart(mirrorPoolGrp, new THREE.CylinderGeometry(0.08, 0.11, 0.05, 10), '#4a525d', [jx, 0.05, jz], [0, 0, 0], 0.006);
-    // Outer concentric ripple ring on mirror water surface
-    addLobbyPart(
-      mirrorPoolGrp,
-      new THREE.CylinderGeometry(0.68 * jScale, 0.68 * jScale, 0.012, 18),
-      '#baeef9',
-      [jx, 0.056, jz],
-      [0, 0, 0],
-      0,
-      lobbyBasinTex,
+  for (const [lx, lz] of submergedLedCoords) {
+    addLobbyPart(mirrorPoolGrp, new THREE.CylinderGeometry(0.15, 0.17, 0.05, 12), '#3b424c', [lx, 0.06, lz], [0, 0, 0], 0.005);
+    addLobbyPart(mirrorPoolGrp, new THREE.CylinderGeometry(0.11, 0.11, 0.06, 12), COL_FOUNTAIN_LED, [lx, 0.065, lz], [0, 0, 0], 0);
+  }
+
+  // 2E. Raised Central Tier Dark Basalt Pedestal & Upper Cascade Weir Basin ("Raised Central Tier" & "Cascade Weir & Spillway")
+  //     Outer Lower Pedestal Block (2.56m W x 5.36m L, height 0.78m)
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(2.56, 0.78, 5.36), COL_FOUNTAIN_BASALT, [0, 0.39, 0], [0, 0, 0], 0.014, lobbyBasaltTex, 2.0);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(2.62, 0.06, 5.42), COL_FOUNTAIN_COPING, [0, 0.78, 0], [0, 0, 0], 0.010, lobbyBasaltTex, 2.0);
+  //     Upper Inner Weir Basin Walls (1.96m W x 4.76m L, height 1.04m)
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(1.96, 0.28, 4.76), '#2a3036', [0, 0.90, 0], [0, 0, 0], 0.012, lobbyBasaltTex, 1.8);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(2.02, 0.05, 4.82), COL_FOUNTAIN_COPING, [0, 1.03, 0], [0, 0, 0], 0.010, lobbyBasaltTex, 1.8);
+  //     4 Recessed Spillway Weir Channels & Slotted Spillway Grids ("Raised Central Tier Spillway Grid")
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.32, 0.06, 2.16), '#525b66', [-0.98, 0.98, 0], [0, 0, 0], 0.006, lobbyDrainGrilleTex, 1.4);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(0.32, 0.06, 2.16), '#525b66', [0.98, 0.98, 0], [0, 0, 0], 0.006, lobbyDrainGrilleTex, 1.4);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(1.14, 0.06, 0.32), '#525b66', [0, 0.98, -2.38], [0, 0, 0], 0.006, lobbyDrainGrilleTex, 1.4);
+  addLobbyPart(mirrorPoolGrp, new THREE.BoxGeometry(1.14, 0.06, 0.32), '#525b66', [0, 0.98, 2.38], [0, 0, 0], 0.006, lobbyDrainGrilleTex, 1.4);
+
+  // 2F. Real-Time 60 FPS Animated Lower & Upper Reflecting Pool Water Surfaces (Concentric Ripples + Caustics + LED Glow)
+  const fountainPoolWaterMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      uTime: windUniforms.uTime,
+    },
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vLocalXZ;
+      void main() {
+        vLocalXZ = position.xz;
+        vec3 pos = position;
+        float rWave = sin(length(pos.xz) * 5.0 - uTime * 3.8) * 0.008;
+        pos.y += rWave;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vLocalXZ;
+
+      float rippleRing(vec2 p, vec2 center, float maxR, float freq, float speed) {
+        float d = length(p - center);
+        float mask = 1.0 - smoothstep(0.15, maxR, d);
+        float wave = sin(d * freq - uTime * speed);
+        float ring = smoothstep(0.45, 0.95, wave) * mask;
+        float coreBoil = (1.0 - smoothstep(0.0, 0.36, d)) * 0.85;
+        return clamp(ring * 0.65 + coreBoil, 0.0, 1.0);
+      }
+
+      void main() {
+        vec2 p = vLocalXZ;
+        vec3 deepWater = vec3(0.12, 0.68, 0.78);
+        vec3 brightAqua = vec3(0.32, 0.86, 0.94);
+        vec3 foamWhite = vec3(0.93, 0.99, 1.0);
+
+        // Base flowing aquatic caustics
+        float caustic = sin(p.x * 3.4 + uTime * 1.9) * cos(p.y * 2.8 - uTime * 1.6) * 0.5 + 0.5;
+        vec3 col = mix(deepWater, brightAqua, caustic * 0.48);
+
+        // Expanding concentric ripples from the 6 Parabolic Jet Nozzles & 4 Waterfall Plunge Zones
+        float rip = 0.0;
+        rip = max(rip, rippleRing(p, vec2(-1.82, -2.35), 1.45, 15.0, 5.2));
+        rip = max(rip, rippleRing(p, vec2(-1.82,  0.00), 1.45, 15.0, 5.5));
+        rip = max(rip, rippleRing(p, vec2(-1.82,  2.35), 1.45, 15.0, 5.0));
+        rip = max(rip, rippleRing(p, vec2( 1.82, -2.35), 1.45, 15.0, 5.1));
+        rip = max(rip, rippleRing(p, vec2( 1.82,  0.00), 1.45, 15.0, 5.4));
+        rip = max(rip, rippleRing(p, vec2( 1.82,  2.35), 1.45, 15.0, 5.3));
+
+        // Large concentric waves from North, South, West, East Waterfall Spillways
+        rip = max(rip, rippleRing(p, vec2( 0.00, -3.05), 2.10, 11.5, 4.6));
+        rip = max(rip, rippleRing(p, vec2( 0.00,  3.05), 2.10, 11.5, 4.6));
+        rip = max(rip, rippleRing(p, vec2(-1.52,  0.00), 1.85, 12.5, 4.8));
+        rip = max(rip, rippleRing(p, vec2( 1.52,  0.00), 1.85, 12.5, 4.8));
+        // Central geyser ripple for upper basin
+        rip = max(rip, rippleRing(p, vec2( 0.00,  0.00), 1.65, 16.0, 6.2));
+
+        // Subtle warm golden glow over the 6 submerged LED luminaires
+        float ledGlow = 0.0;
+        ledGlow += 1.0 - smoothstep(0.0, 0.65, length(p - vec2(-1.65, -3.65)));
+        ledGlow += 1.0 - smoothstep(0.0, 0.65, length(p - vec2( 1.65, -3.65)));
+        ledGlow += 1.0 - smoothstep(0.0, 0.65, length(p - vec2(-1.82,  0.00)));
+        ledGlow += 1.0 - smoothstep(0.0, 0.65, length(p - vec2( 1.82,  0.00)));
+        ledGlow += 1.0 - smoothstep(0.0, 0.65, length(p - vec2(-1.65,  3.65)));
+        ledGlow += 1.0 - smoothstep(0.0, 0.65, length(p - vec2( 1.65,  3.65)));
+
+        col = mix(col, vec3(0.85, 0.96, 0.92), clamp(ledGlow * 0.35, 0.0, 0.45));
+        col = mix(col, foamWhite, rip);
+
+        gl_FragColor = vec4(col, 0.90);
+      }
+    `,
+  });
+
+  // Lower Reflecting Pool Water Mesh (y = 0.36m)
+  const lowerPoolWaterGeo = new THREE.PlaneGeometry(4.86, 9.86, 20, 32);
+  lowerPoolWaterGeo.rotateX(-Math.PI / 2);
+  const lowerPoolWaterMesh = new THREE.Mesh(lowerPoolWaterGeo, fountainPoolWaterMat);
+  lowerPoolWaterMesh.position.set(0, 0.36, 0);
+  mirrorPoolGrp.add(lowerPoolWaterMesh);
+
+  // Upper Central Weir Basin Water Mesh (y = 0.99m)
+  const upperPoolWaterGeo = new THREE.PlaneGeometry(1.66, 4.46, 12, 20);
+  upperPoolWaterGeo.rotateX(-Math.PI / 2);
+  const upperPoolWaterMesh = new THREE.Mesh(upperPoolWaterGeo, fountainPoolWaterMat);
+  upperPoolWaterMesh.position.set(0, 0.99, 0);
+  mirrorPoolGrp.add(upperPoolWaterMesh);
+
+  // 2G. Real-Time 60 FPS Animated Flowing Waterfall Curtains & Arching Jets Shader ("Waterfall Descents" & "Arching Jets")
+  const fountainFlowingWaterMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: windUniforms.uTime,
+    },
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
+        float ripple = sin(uv.y * 18.0 - uTime * 9.5 + uv.x * 12.0) * 0.014 * sin(uv.y * 3.14159);
+        pos.z += ripple;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        vec3 aquaCore = vec3(0.42, 0.89, 0.97);
+        vec3 pureFoam = vec3(0.96, 0.995, 1.0);
+
+        // Downward scrolling waterfall striations (two harmonic speeds for realistic falling water)
+        float stream1 = sin(vUv.x * 38.0 + sin(vUv.y * 10.0 - uTime * 4.5) * 1.5) * 0.5 + 0.5;
+        float fall1 = sin(vUv.y * 22.0 + uTime * 7.8 + stream1 * 3.0) * 0.5 + 0.5;
+        float fall2 = cos(vUv.y * 34.0 + uTime * 11.2 - vUv.x * 18.0) * 0.5 + 0.5;
+
+        // Top weir crest foam + bottom plunge boil foam
+        float topCrest = 1.0 - smoothstep(0.0, 0.22, 1.0 - vUv.y);
+        float bottomPlunge = 1.0 - smoothstep(0.0, 0.28, vUv.y);
+        float foamFactor = clamp(fall1 * 0.55 + fall2 * 0.35 + topCrest * 0.65 + bottomPlunge * 0.85, 0.0, 1.0);
+
+        vec3 col = mix(aquaCore, pureFoam, foamFactor);
+        float alpha = clamp(0.76 + foamFactor * 0.22, 0.0, 0.98);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+  });
+
+  // 4 Flowing Waterfall Spillway Curtains + Frothy Plunge Boils (West, East, North, South)
+  const buildWaterfallSpillway = (
+    wx: number,
+    wz: number,
+    width: number,
+    rotY: number,
+  ) => {
+    const wfGrp = new THREE.Group();
+    wfGrp.position.set(wx, 0.67, wz);
+    wfGrp.rotation.y = rotY;
+    mirrorPoolGrp.add(wfGrp);
+
+    // Curved / Sloped Falling Water Curtain Sheet (height 0.64m from y=0.99m to y=0.35m)
+    const curtainGeo = new THREE.PlaneGeometry(width, 0.66, 16, 12);
+    const curtainMesh = new THREE.Mesh(curtainGeo, fountainFlowingWaterMat);
+    curtainMesh.rotation.x = -0.22;
+    curtainMesh.position.set(0, 0, 0.08);
+    wfGrp.add(curtainMesh);
+
+    // Upper Weir Spillway Water Lip
+    const lipGeo = new THREE.BoxGeometry(width, 0.05, 0.24);
+    const lipMesh = new THREE.Mesh(lipGeo, fountainFlowingWaterMat);
+    lipMesh.position.set(0, 0.31, -0.06);
+    wfGrp.add(lipMesh);
+
+    // Churning White Plunge Foam Boil Roller at Waterfall Base in Lower Pool
+    const boilGeo = new THREE.CylinderGeometry(0.14, 0.20, width * 0.96, 10);
+    boilGeo.rotateZ(Math.PI / 2);
+    const boilMesh = new THREE.Mesh(boilGeo, fountainFlowingWaterMat);
+    boilMesh.position.set(0, -0.28, 0.20);
+    wfGrp.add(boilMesh);
+  };
+
+  buildWaterfallSpillway(-1.26, 0.0, 2.08, -Math.PI / 2); // West Long Waterfall
+  buildWaterfallSpillway(1.26, 0.0, 2.08, Math.PI / 2);   // East Long Waterfall
+  buildWaterfallSpillway(0.0, -2.66, 1.08, Math.PI);      // North Short Waterfall
+  buildWaterfallSpillway(0.0, 2.66, 1.08, 0.0);           // South Short Waterfall
+
+  // 2H. 6 Parabolic Arching Laminar Water Jets (3 West + 3 East, arcing from Lower Pool into Raised Central Tier)
+  const archJetStreamMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      uTime: windUniforms.uTime,
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        float pulse1 = sin(vUv.x * 24.0 - uTime * 9.0) * 0.5 + 0.5;
+        float pulse2 = cos(vUv.x * 40.0 - uTime * 13.5 + vUv.y * 6.28) * 0.5 + 0.5;
+        float foam = clamp(0.45 + pulse1 * 0.38 + pulse2 * 0.25, 0.0, 1.0);
+        vec3 col = mix(vec3(0.55, 0.93, 0.99), vec3(0.98, 1.0, 1.0), foam);
+        gl_FragColor = vec4(col, 0.92);
+      }
+    `,
+  });
+
+  for (const sideSign of [-1, 1]) {
+    for (const jetZ of [-2.35, 0.0, 2.35]) {
+      const startX = sideSign * 1.82;
+      const startZ = jetZ;
+      const endX = sideSign * 0.58;
+      const endZ = jetZ * 0.66;
+      const midX = sideSign * 1.24;
+      const midZ = jetZ * 0.84;
+
+      // Submerged Stainless Nozzle & Aerated Base Boil Ring
+      addLobbyPart(mirrorPoolGrp, new THREE.CylinderGeometry(0.07, 0.10, 0.08, 10), '#475569', [startX, 0.36, startZ], [0, 0, 0], 0.005);
+      const baseBoil = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.30, 0.05, 14), fountainFlowingWaterMat);
+      baseBoil.position.set(startX, 0.38, startZ);
+      mirrorPoolGrp.add(baseBoil);
+
+      // Parabolic 3D Water Jet Arc Tube
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(startX, 0.38, startZ),
+        new THREE.Vector3(midX, 1.82, midZ),
+        new THREE.Vector3(endX, 1.00, endZ),
+      );
+      const tubeGeo = new THREE.TubeGeometry(curve, 22, 0.048, 8, false);
+      const tubeMesh = new THREE.Mesh(tubeGeo, archJetStreamMat);
+      mirrorPoolGrp.add(tubeMesh);
+    }
+  }
+
+  // 2I. Central Grand Multi-Plume Dynamic Water Geyser ("Central Grand Water Jet / Geyser")
+  const geyserPlumeMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      uTime: windUniforms.uTime,
+    },
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
+        float hFrac = clamp(uv.y, 0.0, 1.0);
+        // Dynamic vertical surge & organic radial water plume billow
+        float surge = 1.0 + sin(uTime * 5.2 + pos.x * 4.0) * 0.08 * hFrac;
+        float billow = sin(hFrac * 14.0 - uTime * 8.5 + atan(pos.z, pos.x) * 3.0) * 0.045 * hFrac;
+        pos.x = pos.x * surge + normalize(pos.xz + vec2(0.0001)).x * billow;
+        pos.z = pos.z * surge + normalize(pos.xz + vec2(0.0001)).y * billow;
+        pos.y *= 1.0 + sin(uTime * 4.4) * 0.06 * hFrac;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        float spray1 = sin(vUv.y * 28.0 - uTime * 10.5 + sin(vUv.x * 18.8) * 2.0) * 0.5 + 0.5;
+        float spray2 = cos(vUv.y * 42.0 - uTime * 14.0 - vUv.x * 25.1) * 0.5 + 0.5;
+        float froth = clamp(0.52 + spray1 * 0.32 + spray2 * 0.24, 0.0, 1.0);
+        vec3 col = mix(vec3(0.62, 0.94, 1.0), vec3(0.98, 1.0, 1.0), froth);
+        float alpha = clamp(0.88 + froth * 0.12, 0.0, 0.98);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+  });
+
+  const geyserGrp = new THREE.Group();
+  geyserGrp.position.set(0, 1.00, 0);
+  mirrorPoolGrp.add(geyserGrp);
+
+  // Frothy Aerated Base Boil Mound in Center of Upper Basin
+  const geyserBaseBoil = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.68, 0.22, 16), geyserPlumeMat);
+  geyserBaseBoil.position.set(0, 0.08, 0);
+  geyserGrp.add(geyserBaseBoil);
+
+  // Main Tall Central Geyser Core Column & Inverse Splash Plume (~2.25m above upper basin -> 3.25m total height)
+  const mainGeyserCol = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.34, 2.15, 14, 12), geyserPlumeMat);
+  mainGeyserCol.position.set(0, 1.08, 0);
+  geyserGrp.add(mainGeyserCol);
+
+  const mainGeyserCrown = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.95, 14, 8), geyserPlumeMat);
+  mainGeyserCrown.position.set(0, 1.62, 0);
+  mainGeyserCrown.rotation.x = Math.PI;
+  geyserGrp.add(mainGeyserCrown);
+
+  const mainGeyserApex = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), geyserPlumeMat);
+  mainGeyserApex.position.set(0, 2.16, 0);
+  geyserGrp.add(mainGeyserApex);
+
+  // 8 Secondary Surrounding Frothy Vertical Geyser Plumes (matching the multi-plume geyser cluster in Image 3 & Image 4)
+  for (let gp = 0; gp < 8; gp++) {
+    const ang = (gp / 8) * Math.PI * 2 + 0.25;
+    const isMajor = gp % 2 === 0;
+    const rad = isMajor ? 0.34 : 0.44;
+    const plumeH = isMajor ? 1.48 : 1.06;
+    const px = Math.cos(ang) * rad;
+    const pz = Math.sin(ang) * rad;
+
+    const subCol = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.16, plumeH, 10, 8),
+      geyserPlumeMat,
     );
-    // Aerated white frothy base boil
-    addLobbyPart(
-      mirrorPoolGrp,
-      new THREE.CylinderGeometry(0.24 * jScale, 0.34 * jScale, 0.08, 12),
-      COL_JET_FOAM,
-      [jx, 0.08, jz],
-      [0, 0, 0],
-      0,
-    );
-    // Main vertical frothy water jet column ("Wirror jet Jett")
-    const jetH = 0.92 * jScale;
-    addLobbyPart(
-      mirrorPoolGrp,
-      new THREE.CylinderGeometry(0.055 * jScale, 0.15 * jScale, jetH, 10),
-      COL_JET_FOAM,
-      [jx, 0.08 + jetH * 0.5, jz],
-      [0, 0, 0],
-      0.006,
-      lobbyCascadeTex,
-    );
-    // Upper conical splash plume & falling droplet skirt
-    addLobbyPart(
-      mirrorPoolGrp,
-      new THREE.ConeGeometry(0.22 * jScale, 0.42 * jScale, 10),
-      COL_JET_MIST,
-      [jx, 0.08 + jetH * 0.72, jz],
-      [Math.PI, 0, 0],
-      0,
-    );
-    addLobbyPart(
-      mirrorPoolGrp,
-      new THREE.SphereGeometry(0.085 * jScale, 8, 8),
-      COL_JET_FOAM,
-      [jx, 0.08 + jetH, jz],
-      [0, 0, 0],
-      0,
-    );
+    subCol.position.set(px, plumeH * 0.5, pz);
+    subCol.rotation.z = -Math.cos(ang) * 0.09;
+    subCol.rotation.x = Math.sin(ang) * 0.09;
+    geyserGrp.add(subCol);
+
+    const subTip = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), geyserPlumeMat);
+    subTip.position.set(px * 1.12, plumeH, pz * 1.12);
+    geyserGrp.add(subTip);
   }
 
   // -------------------------------------------------------------------------
@@ -12618,7 +13369,7 @@ export function createTolanCurvedPlanetEnvironment(
   // -------------------------------------------------------------------------
   const pergolaGroup = new THREE.Group();
   pergolaGroup.name = 'LobbyPergolaWaterCascadePavilion';
-  pergolaGroup.position.set(-7.8, 1.42, 12.2);
+  pergolaGroup.position.set(-7.8, 2.50, 12.2);
   pergolaGroup.rotation.y = Math.PI / 2;
   pergolaGroup.scale.setScalar(1.48);
   westPlantGroup.add(pergolaGroup);
@@ -12629,8 +13380,8 @@ export function createTolanCurvedPlanetEnvironment(
   const COL_PERG_TIMBER_DARK = '#8c5d30';
   const COL_PERG_LANTERN = '#ffefc2';
 
-  // 3A. Granite Paver Patio Plinth ("Granite Paver Patio" — 4.8m W x 4.2m D in local pergola space)
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.86, 0.10, 4.26), '#dcd9d0', [0, 0.05, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.0);
+  // 3A. Granite Paver Patio Plinth ("Granite Paver Patio" — 4.8m W x 4.2m D in local pergola space, +0.01m above Plaza deck)
+  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.86, 0.09, 4.26), '#dcd9d0', [0, 0.055, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.0);
 
   // 3B. Sleek Dark Charcoal Steel Posts & Foundation Base Plates with Anchor Bolts
   //     Rear posts at z = -1.85 (x = -2.18, 0.0, +2.18), Left-front post at (-2.18, +0.45), Right-mid post at (+2.18, +0.45)
@@ -12782,7 +13533,7 @@ export function createTolanCurvedPlanetEnvironment(
   // -------------------------------------------------------------------------
   const gelatoKioskGrp = new THREE.Group();
   gelatoKioskGrp.name = 'LobbyModernCoffeeAndGelatoKiosk';
-  gelatoKioskGrp.position.set(-7.8, 1.42, -13.8);
+  gelatoKioskGrp.position.set(-7.8, 2.50, -13.8);
   gelatoKioskGrp.rotation.y = Math.PI / 2;
   gelatoKioskGrp.scale.setScalar(1.48);
   westPlantGroup.add(gelatoKioskGrp);
@@ -12792,8 +13543,8 @@ export function createTolanCurvedPlanetEnvironment(
   const COL_KIOSK_GLASS = '#7bc6e2';
   const COL_KIOSK_LED = '#ffefc2';
 
-  // 4A. Granite Plaza Paver Base (5.2m W x 4.0m D) & Dark Charcoal Steel Structural Frame
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(5.24, 0.10, 4.04), '#dcd9d0', [0, 0.05, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.0);
+  // 4A. Granite Plaza Paver Base (5.2m W x 4.0m D, +0.01m above Plaza deck) & Dark Charcoal Steel Structural Frame
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(5.24, 0.09, 4.04), '#dcd9d0', [0, 0.055, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.0);
   addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.48, 0.12, 3.28), COL_KIOSK_STEEL, [0, 0.14, 0], [0, 0, 0], 0.012, lobbySteelRoofTex);
 
   for (const cx of [-2.14, 2.14]) {
@@ -12923,14 +13674,14 @@ export function createTolanCurvedPlanetEnvironment(
     }
   }
 
-  // 4G. 2 Outdoor Café Tables with Cream Octagonal Parasol Umbrellas between Kiosk & Pergola (Sheet 5: "Outdoor Cafe Seating / Parasols")
+  // 4G. 2 Outdoor Café Tables with Cream Octagonal Parasol Umbrellas moved near the Flowering Pink Tree on the East-South Plaza Wing (pindah kursi payung.png)
   const outdoorCafeZoneGrp = new THREE.Group();
   outdoorCafeZoneGrp.name = 'LobbyOutdoorParasolCafeTables';
-  outdoorCafeZoneGrp.position.set(-7.2, 1.42, -1.0);
-  outdoorCafeZoneGrp.scale.setScalar(1.62);
+  outdoorCafeZoneGrp.position.set(8.8, 2.50, 16.2);
+  outdoorCafeZoneGrp.scale.setScalar(1.48);
   westPlantGroup.add(outdoorCafeZoneGrp);
-  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, -2.0, true);
-  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, 2.0, true);
+  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, -1.75, true);
+  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, 1.75, true);
 
   // -------------------------------------------------------------------------
   // 5. SHEET 4: ARCHITECTURAL MODEL SHEET — INTEGRATED CONCRETE PLANTER BENCH
@@ -12958,7 +13709,7 @@ export function createTolanCurvedPlanetEnvironment(
     scale = 1.18,
   ) => {
     const pGrp = new THREE.Group();
-    pGrp.position.set(lx, 1.42, lz);
+    pGrp.position.set(lx, 2.50, lz);
     pGrp.rotation.y = rotY;
     pGrp.scale.setScalar(scale);
     westPlantGroup.add(pGrp);
@@ -13022,7 +13773,7 @@ export function createTolanCurvedPlanetEnvironment(
     // Record world-space coordinates so Section 6D spawns the Palm/Flower-Shader Canopy & Coastal Grasses!
     lobbyPlanterTreeSpots.push({
       wx: westPlantGroup.position.x + lx,
-      wy: 1.42,
+      wy: 2.50,
       wz: westPlantGroup.position.z + lz,
       isPink: isPinkTree,
       rotY,
@@ -13043,7 +13794,7 @@ export function createTolanCurvedPlanetEnvironment(
   // -------------------------------------------------------------------------
   const buildUrbanPromenadeLampPole = (lx: number, lz: number, rotY: number) => {
     const lGrp = new THREE.Group();
-    lGrp.position.set(lx, 1.42, lz);
+    lGrp.position.set(lx, 2.50, lz);
     lGrp.rotation.y = rotY;
     lGrp.scale.setScalar(1.06);
     westPlantGroup.add(lGrp);
@@ -13052,239 +13803,220 @@ export function createTolanCurvedPlanetEnvironment(
     addLobbyPart(lGrp, new THREE.BoxGeometry(0.14, 0.10, 0.92), '#2b3036', [0, 4.54, 0.38], [0, 0, 0], 0.008, lobbySteelRoofTex);
     addLobbyPart(lGrp, new THREE.BoxGeometry(0.24, 0.05, 0.64), '#ffefc2', [0, 4.48, 0.48], [0, 0, 0], 0.006);
   };
-  for (const lz of [-28.5, -6.5, 6.5, 28.5]) {
+  for (const lz of [-28.5, -9.5, 9.5, 28.5]) {
     buildUrbanPromenadeLampPole(-12.2, lz, Math.PI / 2);
+  }
+  for (const lz of [-28.5, -12.4, 12.4, 28.5]) {
     buildUrbanPromenadeLampPole(12.2, lz, -Math.PI / 2);
   }
 
 
 
   // -------------------------------------------------------------------------
-  // 4F. TWO DEDICATED TELEPORT KIOSKS IN LOBBY (EAST PLAZA WALKWAY BELOW TREE PLANTER)
-  //     - Kiosk #1: Warzone Arena Teleport (Red vs Blue deployment) at (lx = +8.7, y = 1.42, lz = -8.2)
-  //     - Kiosk #2: Safezone City Teleport (Halte & Tram) at (lx = +8.7, y = 1.42, lz = -14.8)
-  //     Spaced 6.6m apart in the open tiled area south of the East-North Tree Planter (lz = -24.5)
+  // 4F. LEGACY LOBBY PORTAL GROUP (KEPT EMPTY — ONLY ONE BLACK TRANSIT KIOSK AT CENTRAL PLAZA HALTE)
   // -------------------------------------------------------------------------
   const lobbyPortalsGrp = new THREE.Group();
   lobbyPortalsGrp.name = 'LobbyGapuraPortalsGroup3D';
+  lobbyPortalsGrp.visible = false;
   westPlantGroup.add(lobbyPortalsGrp);
 
-  const nearTerminalGrp = new THREE.Group();
-  nearTerminalGrp.name = 'LobbyNearGamepassTerminal3D';
-  nearTerminalGrp.position.set(8.7, 1.42, -8.2);
-  nearTerminalGrp.rotation.y = -Math.PI / 2;
-  westPlantGroup.add(nearTerminalGrp);
-
-  const nearSelfServiceKiosk = buildSelfServiceTacticalKioskMesh(windUniforms, isSoftwareGl, true);
-  nearSelfServiceKiosk.name = 'LobbyWarzoneTeleportKiosk3D';
-  nearSelfServiceKiosk.userData.isTeleportKiosk = true;
-  nearSelfServiceKiosk.userData.teleportKind = 'lobby_warzone';
-  if (nearSelfServiceKiosk.children[0]) {
-    bakeStaticGroupMeshes(nearSelfServiceKiosk.children[0], { minShadowCasterSpan: 0.45 });
-  }
-  nearTerminalGrp.add(nearSelfServiceKiosk);
-  lobbyPortalsGrp.add(nearTerminalGrp);
-
-  const goldExchangeGrp = new THREE.Group();
-  goldExchangeGrp.name = 'LobbyGoldExchangeBooth3D';
-  goldExchangeGrp.position.set(8.7, 1.42, -14.8);
-  goldExchangeGrp.rotation.y = -Math.PI / 2;
-  westPlantGroup.add(goldExchangeGrp);
-
-  const goldSelfServiceKiosk = buildSelfServiceTacticalKioskMesh(windUniforms, isSoftwareGl, true);
-  goldSelfServiceKiosk.name = 'LobbySafezoneTeleportKiosk3D';
-  goldSelfServiceKiosk.userData.isTeleportKiosk = true;
-  goldSelfServiceKiosk.userData.teleportKind = 'lobby_safezone';
-  if (goldSelfServiceKiosk.children[0]) {
-    bakeStaticGroupMeshes(goldSelfServiceKiosk.children[0], { minShadowCasterSpan: 0.45 });
-  }
-  goldExchangeGrp.add(goldSelfServiceKiosk);
-  lobbyPortalsGrp.add(goldExchangeGrp);
-
-
   // =========================================================================
-  // 4H. 1:1 MODERN URBAN TRAM STOP – PASSENGER PLATFORM SHELTER (HALTE TREM KOTA MODERN)
-  //     Concrete Platform remains strictly at worldX in [-64.97, -58.37] (NOT shifted onto the road):
-  //     - RIGHT / EAST SIDE of Concrete Platform (near grass, x = -60.45): Roof Canopy, Columns, & Glass Windbreak
-  //     - LEFT / WEST SIDE of Concrete Platform (near tram track, x = -63.4, z = -4.6 & +4.6): 2 LOBBY Return Rings
+  // 4H. 1:1 MODERN URBAN TRAM STOP SHELTERS (STRICTLY ALONG ACTIVE TRAM RAIL TRACK)
+  //     + STANDALONE 1:1 BLACK CITY TRANSIT KIOSKS AT RAIL-LESS ENDPOINTS
+  //     - Rail Stops WITH Halte Shelter + 1 Black Transit Kiosk:
+  //       1) CENTRAL PLAZA Halte (`central_plaza`) at (-63.8, 0.0, rotY = -Math.PI/2) -> Kiosk at (-61.95, 0.26, 0.0)
+  //       2) NORTH RESIDENCE Halte (`north_residence`) at (-36.5, -46.8, rotY = Math.PI) -> Kiosk at (-36.5, 0.26, -44.95)
+  //       3) SOUTH RESIDENCE Halte (`south_residence`) at (-36.5, +46.8, rotY = 0) -> Kiosk at (-36.5, 0.26, +44.95)
+  //     - Rail-less Endpoints with ONLY Standalone Black Transit Kiosk (NO Halte Shelter Roof):
+  //       4) BEACHFRONT HARBOR (`beachfront_harbor`) at (76.8, 0.24, 58.0, rotY = -Math.PI/2)
+  //       5) NW FISHING LAKE (`nw_fishing_lake`) at (-44.5, 0.0, -6.5, rotY = -Math.PI/2)
   // =========================================================================
-  const buildModernUrbanTramStopShelter = () => {
+  const cityTransitNetworkGroup = new THREE.Group();
+  cityTransitNetworkGroup.name = 'CityTransitNetworkGroup3D';
+  roadsGroup.add(cityTransitNetworkGroup);
+
+  const COL_SH_STEEL = '#2b3038';
+  const COL_SH_ROOF_FASCIA = '#d8dce2';
+  const COL_SH_ROOF_TOP = '#abb2bc';
+  const COL_SH_PLATFORM = '#9a9d9e';
+  const COL_SH_CURB = '#5c6066';
+  const COL_SH_TACTILE = '#eab308';
+  const COL_SH_BOLLARD = '#d9a426';
+  const COL_SH_BENCH_WOOD = '#a66e38';
+
+  const makeTransitRouteGlassTexture = (stationTitle: string): THREE.CanvasTexture => {
+    const c = document.createElement('canvas');
+    c.width = 1024;
+    c.height = 512;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = 'rgba(205, 222, 230, 0.72)';
+      ctx.fillRect(0, 0, 1024, 512);
+      ctx.strokeStyle = '#38404a';
+      ctx.lineWidth = 6;
+      for (const bx of [8, 256, 512, 768, 1016]) {
+        ctx.beginPath();
+        ctx.moveTo(bx, 0);
+        ctx.lineTo(bx, 512);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#252a32';
+      for (const bx of [24, 238, 274, 494, 530, 750, 786, 1000]) {
+        for (const by of [28, 484]) {
+          ctx.beginPath();
+          ctx.arc(bx, by, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(58, 92, 140, 210);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(58, 92, 140, 210);
+      ctx.fillStyle = '#1e3a8a';
+      ctx.fillRect(64, 98, 128, 32);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('TRAM SCHEDULE', 72, 119);
+      ctx.fillStyle = '#475569';
+      for (let r = 0; r < 7; r++) {
+        ctx.fillRect(72, 142 + r * 20, 112, 8);
+      }
+
+      const routes: Array<{ color: string; pts: [number, number][] }> = [
+        {
+          color: '#ef4444',
+          pts: [
+            [310, 110],
+            [390, 180],
+            [520, 180],
+            [610, 120],
+            [720, 120],
+          ],
+        },
+        {
+          color: '#2563eb',
+          pts: [
+            [300, 360],
+            [410, 290],
+            [520, 290],
+            [630, 350],
+            [730, 380],
+          ],
+        },
+        {
+          color: '#10b981',
+          pts: [
+            [360, 420],
+            [440, 320],
+            [440, 150],
+            [540, 90],
+          ],
+        },
+        {
+          color: '#f59e0b',
+          pts: [
+            [290, 240],
+            [480, 240],
+            [580, 240],
+            [680, 190],
+            [740, 250],
+          ],
+        },
+      ];
+      for (const rt of routes) {
+        ctx.strokeStyle = rt.color;
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        rt.pts.forEach(([px, py], i) => {
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        for (const [px, py] of rt.pts) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(px, py, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#1e293b';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(`METRO & CITY TRAM NETWORK // ${stationTitle}`, 310, 64);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+
+  const makeDigitalArrivalDisplayTexture = (stationTitle: string, routeSub: string): THREE.CanvasTexture => {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 128;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#181b20';
+      ctx.fillRect(0, 0, 512, 128);
+      ctx.strokeStyle = '#4b5563';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, 504, 120);
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 26px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(stationTitle, 256, 54);
+      ctx.fillStyle = '#34d399';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText(routeSub, 256, 94);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+
+  const buildModernUrbanTramStopShelter = (
+    stationId: string,
+    stationTitle: string,
+    routeSub: string,
+    wx: number,
+    wz: number,
+    rotY: number,
+  ) => {
     const shelterRoot = new THREE.Group();
-    shelterRoot.name = 'ModernUrbanTramStopShelter3D';
-    // Positioned on the west edge of the grass island (x = -63.8, z = 0.0)
-    // Rotate -90° around Y so local +Z (Front Elevation / Boarding Edge) faces West (-X, toward x = -70.0 Tram Road & Lobby)
-    // and local -Z (Rear Elevation / Glass Windbreak) faces East (+X, toward the Oasis Lake).
-    shelterRoot.position.set(-63.8, 0.0, 0.0);
-    shelterRoot.rotation.y = -Math.PI / 2;
+    shelterRoot.name = stationId === 'central_plaza' ? 'ModernUrbanTramStopShelter3D' : `ModernUrbanTramStopShelter_${stationId}`;
+    shelterRoot.userData.stationId = stationId;
+    shelterRoot.position.set(wx, 0.0, wz);
+    shelterRoot.rotation.y = rotY;
     roadsGroup.add(shelterRoot);
 
-    const COL_SH_STEEL = '#2b3038';
-    const COL_SH_ROOF_FASCIA = '#d8dce2';
-    const COL_SH_ROOF_TOP = '#abb2bc';
-    const COL_SH_PLATFORM = '#9a9d9e';
-    const COL_SH_CURB = '#5c6066';
-    const COL_SH_TACTILE = '#eab308';
-    const COL_SH_BOLLARD = '#d9a426';
-    const COL_SH_BENCH_WOOD = '#a66e38';
-    const COL_SH_KIOSK = '#8c929c';
-    const COL_SH_KIOSK_DARK = '#323740';
+    const shelterStructureGrp = new THREE.Group();
+    shelterStructureGrp.name = `HalteShelterStructure_${stationId}`;
+    shelterStructureGrp.userData.isHalteShelterStructure = true;
+    shelterStructureGrp.userData.stationId = stationId;
+    shelterRoot.add(shelterStructureGrp);
 
-    // Procedural Transit Route Map Canvas Texture for the 4-Bay Tempered Glass Windbreak ("ROUTE INFORMATION GLASS")
-    const makeTransitRouteGlassTexture = (): THREE.CanvasTexture => {
-      const c = document.createElement('canvas');
-      c.width = 1024;
-      c.height = 512;
-      const ctx = c.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = 'rgba(205, 222, 230, 0.72)';
-        ctx.fillRect(0, 0, 1024, 512);
-        ctx.strokeStyle = '#38404a';
-        ctx.lineWidth = 6;
-        for (const bx of [8, 256, 512, 768, 1016]) {
-          ctx.beginPath();
-          ctx.moveTo(bx, 0);
-          ctx.lineTo(bx, 512);
-          ctx.stroke();
-        }
-        ctx.fillStyle = '#252a32';
-        for (const bx of [24, 238, 274, 494, 530, 750, 786, 1000]) {
-          for (const by of [28, 484]) {
-            ctx.beginPath();
-            ctx.arc(bx, by, 7, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(58, 92, 140, 210);
-        ctx.strokeStyle = '#334155';
-        ctx.lineWidth = 8;
-        ctx.strokeRect(58, 92, 140, 210);
-        ctx.fillStyle = '#1e3a8a';
-        ctx.fillRect(64, 98, 128, 32);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.fillText('TRAM SCHEDULE', 72, 119);
-        ctx.fillStyle = '#475569';
-        for (let r = 0; r < 7; r++) {
-          ctx.fillRect(72, 142 + r * 20, 112, 8);
-        }
+    const routeGlassTex = makeTransitRouteGlassTexture(stationTitle);
+    const digitalDisplayTex = makeDigitalArrivalDisplayTexture(stationTitle, routeSub);
 
-        const routes: Array<{ color: string; pts: [number, number][] }> = [
-          {
-            color: '#ef4444',
-            pts: [
-              [310, 110],
-              [390, 180],
-              [520, 180],
-              [610, 120],
-              [720, 120],
-            ],
-          },
-          {
-            color: '#2563eb',
-            pts: [
-              [300, 360],
-              [410, 290],
-              [520, 290],
-              [630, 350],
-              [730, 380],
-            ],
-          },
-          {
-            color: '#10b981',
-            pts: [
-              [360, 420],
-              [440, 320],
-              [440, 150],
-              [540, 90],
-            ],
-          },
-          {
-            color: '#f59e0b',
-            pts: [
-              [290, 240],
-              [480, 240],
-              [580, 240],
-              [680, 190],
-              [740, 250],
-            ],
-          },
-        ];
-        for (const rt of routes) {
-          ctx.strokeStyle = rt.color;
-          ctx.lineWidth = 7;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.beginPath();
-          rt.pts.forEach(([px, py], i) => {
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          });
-          ctx.stroke();
-          for (const [px, py] of rt.pts) {
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(px, py, 7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#1e293b';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-          }
-        }
-        ctx.fillStyle = '#1e293b';
-        ctx.font = 'bold 18px sans-serif';
-        ctx.fillText('METRO & CITY TRAM NETWORK // HALTE LOBBY SAFEZOONE', 310, 64);
-      }
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-      return tex;
-    };
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.4, 0.16, 6.64), COL_SH_CURB, [0, 0.08, -2.13], [0, 0, 0], 0.016, lobbyBasaltTex);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.4, 0.10, 6.60), COL_SH_PLATFORM, [0, 0.21, -2.13], [0, 0, 0], 0.016, lobbyConcreteTex);
 
-    const makeDigitalArrivalDisplayTexture = (): THREE.CanvasTexture => {
-      const c = document.createElement('canvas');
-      c.width = 512;
-      c.height = 128;
-      const ctx = c.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#181b20';
-        ctx.fillRect(0, 0, 512, 128);
-        ctx.strokeStyle = '#4b5563';
-        ctx.lineWidth = 8;
-        ctx.strokeRect(4, 4, 504, 120);
-        ctx.fillStyle = '#fbbf24';
-        ctx.font = 'bold 26px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('HALTE LOBBY SAFEZOONE', 256, 54);
-        ctx.fillStyle = '#34d399';
-        ctx.font = 'bold 22px monospace';
-        ctx.fillText('TRAM T1 -> NORTH RED / SOUTH BLUE', 256, 94);
-      }
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-      return tex;
-    };
-
-    const routeGlassTex = makeTransitRouteGlassTexture();
-    const digitalDisplayTex = makeDigitalArrivalDisplayTexture();
-
-    // 1. RAISED BOARDING PLATFORM DECK (UNCHANGED: worldX in [-64.97, -58.37], length 15.4m, width 6.60m, centered at local Z = -2.13)
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(15.4, 0.16, 6.64), COL_SH_CURB, [0, 0.08, -2.13], [0, 0, 0], 0.016, lobbyBasaltTex);
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(15.4, 0.10, 6.60), COL_SH_PLATFORM, [0, 0.21, -2.13], [0, 0, 0], 0.016, lobbyConcreteTex);
-
-    // 2. TACTILE EDGE TILES along the 15.4m West front boarding edge (+Z)
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(15.32, 0.03, 0.28), COL_SH_TACTILE, [0, 0.268, 0.96], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.32, 0.03, 0.28), COL_SH_TACTILE, [0, 0.268, 0.96], [0, 0, 0], 0.008);
     for (let tx = -7.2; tx <= 7.2; tx += 0.6) {
-      addLobbyPart(shelterRoot, new THREE.BoxGeometry(0.03, 0.035, 0.28), '#a16207', [tx, 0.27, 0.96], [0, 0, 0], 0);
+      addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(0.03, 0.035, 0.28), '#a16207', [tx, 0.27, 0.96], [0, 0, 0], 0);
     }
 
-    // 3. COMPACT NORTH & SOUTH SLOPED ACCESS RAMPS (Total span 18.40m: 1.50m ramp on each end)
     for (const sideSign of [-1, 1] as const) {
       const rampCenterX = sideSign * 8.44;
       const rampSlopeZ = sideSign * 0.125;
       addLobbyPart(
-        shelterRoot,
+        shelterStructureGrp,
         new THREE.BoxGeometry(1.50, 0.14, 6.54),
         COL_SH_PLATFORM,
         [rampCenterX, 0.13, -2.13],
@@ -13297,7 +14029,7 @@ export function createTolanCurvedPlanetEnvironment(
           const postH = 0.86;
           const postY = 0.14 + (1 - (postOffX * sideSign + 0.58) / 1.16) * 0.10 + postH * 0.5;
           addLobbyPart(
-            shelterRoot,
+            shelterStructureGrp,
             new THREE.CylinderGeometry(0.032, 0.032, postH, 8),
             '#64748b',
             [rampCenterX + postOffX, postY, railZ],
@@ -13306,7 +14038,7 @@ export function createTolanCurvedPlanetEnvironment(
           );
         }
         addLobbyPart(
-          shelterRoot,
+          shelterStructureGrp,
           new THREE.BoxGeometry(1.36, 0.045, 0.045),
           '#94a3b8',
           [rampCenterX, 0.98, railZ],
@@ -13314,7 +14046,7 @@ export function createTolanCurvedPlanetEnvironment(
           0.006,
         );
         addLobbyPart(
-          shelterRoot,
+          shelterStructureGrp,
           new THREE.BoxGeometry(1.36, 0.035, 0.035),
           '#94a3b8',
           [rampCenterX, 0.62, railZ],
@@ -13325,7 +14057,7 @@ export function createTolanCurvedPlanetEnvironment(
       for (const bolX of [sideSign * 7.58, sideSign * 9.12]) {
         const bolBaseY = Math.abs(bolX) < 7.8 ? 0.26 : 0.04;
         addLobbyPart(
-          shelterRoot,
+          shelterStructureGrp,
           new THREE.CylinderGeometry(0.075, 0.085, 0.88, 10),
           COL_SH_BOLLARD,
           [bolX, bolBaseY + 0.44, 0.98],
@@ -13333,7 +14065,7 @@ export function createTolanCurvedPlanetEnvironment(
           0.008,
         );
         addLobbyPart(
-          shelterRoot,
+          shelterStructureGrp,
           new THREE.SphereGeometry(0.08, 10, 8),
           '#fbbf24',
           [bolX, bolBaseY + 0.89, 0.98],
@@ -13343,12 +14075,9 @@ export function createTolanCurvedPlanetEnvironment(
       }
     }
 
-    // 4. 3 STRUCTURAL STEEL COLUMNS, GLASS WINDBREAK, & ROOF CANOPY ON THE RIGHT / EAST SIDE OF PLATFORM (NEAR GRASS, x ≈ -60.45)
-    //    Raised to y = 5.05m with 3.85m canopy depth so it is generously proportional above the player character!
     for (const colX of [-6.8, 0.0, 6.8]) {
-      // Support column on the East shelter spine (local Z = -4.20 -> worldX = -59.60)
       addLobbyPart(
-        shelterRoot,
+        shelterStructureGrp,
         new THREE.BoxGeometry(0.28, 4.65, 0.30),
         COL_SH_STEEL,
         [colX, 2.56, -4.20],
@@ -13356,18 +14085,16 @@ export function createTolanCurvedPlanetEnvironment(
         0.014,
         lobbySteelRoofTex,
       );
-      // Curved shoulder gusset transitioning column into cantilevered roof rib
       addLobbyPart(
-        shelterRoot,
+        shelterStructureGrp,
         new THREE.CylinderGeometry(0.30, 0.30, 0.28, 12),
         COL_SH_STEEL,
         [colX, 4.82, -4.04],
         [0, 0, Math.PI / 2],
         0.010,
       );
-      // Cantilevered forward roof support arm reaching Westward (+Z) across the platform
       addLobbyPart(
-        shelterRoot,
+        shelterStructureGrp,
         new THREE.BoxGeometry(0.24, 0.22, 3.60),
         COL_SH_STEEL,
         [colX, 4.94, -2.80],
@@ -13376,10 +14103,9 @@ export function createTolanCurvedPlanetEnvironment(
         lobbySteelRoofTex,
       );
     }
-    // Intermediate thin vertical glass mullions for the 4-Bay Tempered Glass Windbreak
     for (const mulX of [-3.4, 3.4]) {
       addLobbyPart(
-        shelterRoot,
+        shelterStructureGrp,
         new THREE.BoxGeometry(0.12, 4.42, 0.14),
         COL_SH_STEEL,
         [mulX, 2.46, -4.20],
@@ -13388,27 +14114,23 @@ export function createTolanCurvedPlanetEnvironment(
       );
     }
 
-    // Cantilever Roof Canopy Slab on the Right / East Side (15.4m x 3.85m at y = 5.05m, local Z = -2.80)
     const roofCanopyGrp = new THREE.Group();
-    roofCanopyGrp.name = 'HalteRoofCanopyGroup3D';
+    roofCanopyGrp.name = `HalteRoofCanopyGroup_${stationId}`;
     roofCanopyGrp.position.set(0, 5.05, -2.80);
     roofCanopyGrp.rotation.x = -0.045;
-    shelterRoot.add(roofCanopyGrp);
+    shelterStructureGrp.add(roofCanopyGrp);
 
     addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.2, 0.16, 3.72), COL_SH_ROOF_TOP, [0, 0.07, 0], [0, 0, 0], 0.018, lobbySteelRoofTex);
     addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.4, 0.22, 3.85), COL_SH_ROOF_FASCIA, [0, -0.02, 0], [0, 0, 0], 0.018, lobbyConcreteTex);
     addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(14.8, 0.05, 3.42), '#f1f5f9', [0, -0.13, 0], [0, 0, 0], 0);
-    // Warm recessed LED soffit light strips under canopy
     for (const lx of [-4.6, 0.0, 4.6]) {
       addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(3.4, 0.04, 0.24), '#fef08a', [lx, -0.15, 0.35], [0, 0, 0], 0);
     }
 
-    // 5. REAR ROOF DRAINAGE GUTTER & VERTICAL DOWNSPOUT PIPE (East edge under canopy)
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(15.1, 0.12, 0.14), '#64748b', [0, 4.86, -4.44], [0, 0, 0], 0.008);
-    addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.06, 0.06, 4.68, 10), '#64748b', [6.52, 2.52, -4.44], [0, 0, 0], 0.008);
-    addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.08, 0.08, 0.20, 10), '#334155', [6.52, 0.24, -4.44], [0, 0, 0], 0.006);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.1, 0.12, 0.14), '#64748b', [0, 4.86, -4.44], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.06, 0.06, 4.68, 10), '#64748b', [6.52, 2.52, -4.44], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.20, 10), '#334155', [6.52, 0.24, -4.44], [0, 0, 0], 0.006);
 
-    // 6. 4-BAY TEMPERED GLASS WINDBREAK WITH ROUTE INFORMATION GLASS (local Z = -4.18 -> worldX = -59.62)
     const windbreakMat = new THREE.MeshBasicMaterial({
       map: routeGlassTex,
       transparent: true,
@@ -13417,73 +14139,125 @@ export function createTolanCurvedPlanetEnvironment(
     });
     const windbreakGlass = new THREE.Mesh(new THREE.PlaneGeometry(13.3, 3.65), windbreakMat);
     windbreakGlass.position.set(0, 2.28, -4.18);
-    shelterRoot.add(windbreakGlass);
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 0.42, -4.18], [0, 0, 0], 0.008);
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 4.14, -4.18], [0, 0, 0], 0.008);
+    shelterStructureGrp.add(windbreakGlass);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 0.42, -4.18], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 4.14, -4.18], [0, 0, 0], 0.008);
 
-    // 7. SUSPENDED DIGITAL ARRIVAL DISPLAY & TWIN BRACKETS UNDER CANOPY (Raised to y = 4.30m)
     for (const brkX of [-4.15, -2.65]) {
-      addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.03, 0.03, 0.46, 8), COL_SH_STEEL, [brkX, 4.68, -2.85], [0, 0, 0], 0.005);
+      addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.03, 0.03, 0.46, 8), COL_SH_STEEL, [brkX, 4.68, -2.85], [0, 0, 0], 0.005);
     }
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(2.28, 0.52, 0.18), COL_SH_STEEL, [-3.4, 4.30, -2.85], [0, 0, 0], 0.012);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(2.28, 0.52, 0.18), COL_SH_STEEL, [-3.4, 4.30, -2.85], [0, 0, 0], 0.012);
     const arrivalScreenMat = new THREE.MeshBasicMaterial({ map: digitalDisplayTex });
     for (const zFace of [-0.095, 0.095]) {
       const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.12, 0.40), arrivalScreenMat);
       scr.position.set(-3.4, 4.30, -2.85 + zFace);
       if (zFace < 0) scr.rotation.y = Math.PI;
-      shelterRoot.add(scr);
+      shelterStructureGrp.add(scr);
     }
 
-    // 8. WOODEN PASSENGER BENCH & LEANING RAIL UNDER CANOPY (local Z = -3.66 -> worldX = -60.14)
     const benchGrp = new THREE.Group();
     benchGrp.position.set(-2.6, 0.26, -3.66);
-    shelterRoot.add(benchGrp);
+    shelterStructureGrp.add(benchGrp);
     for (const legX of [-1.45, 0.0, 1.45]) {
       addLobbyPart(benchGrp, new THREE.BoxGeometry(0.10, 0.42, 0.48), COL_SH_STEEL, [legX, 0.21, 0], [0, 0, 0], 0.008);
       addLobbyPart(benchGrp, new THREE.BoxGeometry(0.08, 0.46, 0.08), COL_SH_STEEL, [legX, 0.62, -0.22], [-0.14, 0, 0], 0.008);
     }
     addLobbyPart(benchGrp, new THREE.BoxGeometry(3.45, 0.07, 0.52), COL_SH_BENCH_WOOD, [0, 0.44, 0.02], [0, 0, 0], 0.012, lobbyTimberTex);
     addLobbyPart(benchGrp, new THREE.BoxGeometry(3.45, 0.38, 0.07), COL_SH_BENCH_WOOD, [0, 0.72, -0.24], [-0.14, 0, 0], 0.012, lobbyTimberTex);
-    addLobbyPart(shelterRoot, new THREE.BoxGeometry(1.65, 0.06, 0.10), COL_SH_STEEL, [-5.6, 0.96, -3.96], [0.22, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(1.65, 0.06, 0.10), COL_SH_STEEL, [-5.6, 0.96, -3.96], [0.22, 0, 0], 0.008);
     for (const lrX of [-6.3, -4.9]) {
-      addLobbyPart(shelterRoot, new THREE.CylinderGeometry(0.032, 0.032, 0.72, 8), COL_SH_STEEL, [lrX, 0.62, -4.00], [0, 0, 0], 0.006);
+      addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.032, 0.032, 0.72, 8), COL_SH_STEEL, [lrX, 0.62, -4.00], [0, 0, 0], 0.006);
     }
 
-    // 9. INTEGRATED TICKET MACHINE / KIOSK UNDER CANOPY (local Z = -3.84 -> worldX = -59.96)
-    const ticketGrp = new THREE.Group();
-    ticketGrp.position.set(5.15, 0.26, -3.84);
-    shelterRoot.add(ticketGrp);
-    addLobbyPart(ticketGrp, new THREE.BoxGeometry(1.12, 1.98, 0.68), COL_SH_KIOSK, [0, 0.99, 0], [0, 0, 0], 0.014, lobbySteelRoofTex);
-    addLobbyPart(ticketGrp, new THREE.BoxGeometry(1.16, 0.14, 0.74), COL_SH_KIOSK_DARK, [0, 2.02, 0], [0, 0, 0], 0.010);
-    addLobbyPart(ticketGrp, new THREE.BoxGeometry(0.86, 1.18, 0.06), COL_SH_KIOSK_DARK, [0, 1.24, 0.33], [0, 0, 0], 0.008);
-    const ticketScreen = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.56, 0.44),
-      new THREE.MeshBasicMaterial({ color: '#38bdf8' }),
-    );
-    ticketScreen.position.set(-0.08, 1.44, 0.365);
-    ticketGrp.add(ticketScreen);
-    addLobbyPart(ticketGrp, new THREE.BoxGeometry(0.16, 0.22, 0.04), '#10b981', [0.28, 1.42, 0.36], [0, 0, 0], 0);
-    addLobbyPart(ticketGrp, new THREE.BoxGeometry(0.42, 0.08, 0.04), '#0f172a', [-0.08, 1.04, 0.36], [0, 0, 0], 0);
-    addLobbyPart(ticketGrp, new THREE.BoxGeometry(0.36, 0.16, 0.05), '#1e293b', [0, 0.82, 0.36], [0, 0, 0], 0);
+    bakeStaticGroupMeshes(shelterStructureGrp, { minShadowCasterSpan: 0.45 });
 
-    // 10. HALTE LOBBY TELEPORT KIOSK (Proportional human-scale height ~2.54m instead of 4.11m)
-    const lobbyReturnPadsGroup = new THREE.Group();
-    lobbyReturnPadsGroup.name = 'HalteLobbyReturnPadsGroup3D';
-    shelterRoot.add(lobbyReturnPadsGroup);
+    // SINGLE 1:1 BLACK CITY TRANSIT KIOSK ON THE PLATFORM (NO DUPLICATE WHITE KIOSKS)
+    const kioskContainerGrp = new THREE.Group();
+    kioskContainerGrp.name = stationId === 'central_plaza' ? 'HalteLobbyReturnPadsGroup3D' : `HalteTransitKioskGroup_${stationId}`;
+    shelterRoot.add(kioskContainerGrp);
 
-    const halteTeleportKiosk = buildSelfServiceTacticalKioskMesh(windUniforms, isSoftwareGl, true);
-    halteTeleportKiosk.name = 'HalteLobbyTeleportKiosk3D';
-    halteTeleportKiosk.position.set(0.0, 0.26, -1.85);
-    halteTeleportKiosk.rotation.y = 0; // facing +Z towards tram boarding edge
-    halteTeleportKiosk.userData.isTeleportKiosk = true;
-    halteTeleportKiosk.userData.teleportKind = 'halte_to_lobby';
-
-    if (halteTeleportKiosk.children[0]) {
-      bakeStaticGroupMeshes(halteTeleportKiosk.children[0], { minShadowCasterSpan: 0.45 });
-    }
-    lobbyReturnPadsGroup.add(halteTeleportKiosk);
+    const blackTransitKiosk = buildBlackCityTransitKioskMesh(windUniforms, isSoftwareGl);
+    blackTransitKiosk.name = stationId === 'central_plaza' ? 'HalteLobbyTeleportKiosk3D' : `CityTransitKiosk3D_${stationId}`;
+    blackTransitKiosk.position.set(0.0, 0.26, -1.85);
+    blackTransitKiosk.rotation.y = 0; // facing +Z towards tram boarding edge
+    blackTransitKiosk.userData.isTeleportKiosk = true;
+    blackTransitKiosk.userData.isCityTransitKiosk = true;
+    blackTransitKiosk.userData.stationId = stationId;
+    blackTransitKiosk.userData.teleportKind = stationId === 'central_plaza' ? 'halte_to_lobby' : `city_transit_${stationId}`;
+    kioskContainerGrp.add(blackTransitKiosk);
   };
-  buildModernUrbanTramStopShelter();
+
+  // Spawn the 3 Rail-Aligned Halte Tram Shelters (each with 1 Black Transit Kiosk):
+  buildModernUrbanTramStopShelter(
+    'central_plaza',
+    'HALTE CENTRAL PLAZA',
+    'TRAM T1 -> NORTH / SOUTH RESIDENCE',
+    -63.8,
+    0.0,
+    -Math.PI / 2,
+  );
+  buildModernUrbanTramStopShelter(
+    'north_residence',
+    'HALTE NORTH RESIDENCE',
+    'TRAM T1 -> CENTRAL PLAZA / SOUTH',
+    6.5,
+    -46.8,
+    Math.PI,
+  );
+  buildModernUrbanTramStopShelter(
+    'south_residence',
+    'HALTE SOUTH RESIDENCE',
+    'TRAM T1 -> CENTRAL PLAZA / NORTH',
+    -36.5,
+    46.8,
+    0,
+  );
+
+  // Spawn Standalone 1:1 Black City Transit Kiosks at Rail-less Endpoints (NO Halte Shelter Roof):
+  const buildStandaloneCityTransitKioskEndpoint = (
+    stationId: string,
+    wx: number,
+    wy: number,
+    wz: number,
+    rotY: number,
+  ) => {
+    const endpointGrp = new THREE.Group();
+    endpointGrp.name = `StandaloneCityTransitKioskEndpoint_${stationId}`;
+    endpointGrp.userData.isCityTransitEndpoint = true;
+    endpointGrp.userData.stationId = stationId;
+    endpointGrp.position.set(wx, wy, wz);
+    endpointGrp.rotation.y = rotY;
+    cityTransitNetworkGroup.add(endpointGrp);
+
+    addLobbyPart(
+      endpointGrp,
+      new THREE.CylinderGeometry(0.92, 0.98, 0.06, 20),
+      '#272c35',
+      [0, 0.03, 0],
+      [0, 0, 0],
+      0.008,
+    );
+
+    const blackKiosk = buildBlackCityTransitKioskMesh(windUniforms, isSoftwareGl);
+    blackKiosk.name = `CityTransitKiosk3D_${stationId}`;
+    blackKiosk.position.set(0, 0.05, 0);
+    blackKiosk.userData.isTeleportKiosk = true;
+    blackKiosk.userData.isCityTransitKiosk = true;
+    blackKiosk.userData.stationId = stationId;
+    blackKiosk.userData.teleportKind = `city_transit_${stationId}`;
+    endpointGrp.add(blackKiosk);
+  };
+
+  buildModernUrbanTramStopShelter(
+    'beachfront_harbor',
+    'HALTE BEACHFRONT HARBOR',
+    'TRAM T1 -> CENTRAL PLAZA / PIER',
+    77.5,
+    29.5,
+    -Math.PI / 2,
+  );
+  // 5) NW FISHING LAKE Standalone Black Transit Kiosk (-44.5, 0.0, -6.5, facing West -X toward lake boardwalk spawn pad)
+  buildStandaloneCityTransitKioskEndpoint('nw_fishing_lake', -44.5, 0.0, -6.5, -Math.PI / 2);
 
   // =========================================================================
   // 2A-EAST. 3D CONSTRUCTION EQUIPMENT & MATERIAL YARDS ("AREA TANAH ALAT-ALAT KONSTRUKSI")
@@ -14398,8 +15172,8 @@ export function createTolanCurvedPlanetEnvironment(
   const KIOSK_D = 3.6;
   const KIOSK_WALL_H = 3.15;
 
-  // Raised Kiosk Timber Sub-Deck Platform
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W + 1.2, 0.12, KIOSK_D + 1.8), '#c89d6c', [0, 0.06, 0.35], [0, 0, 0], 0.018, coastalTimberTex);
+  // Raised Kiosk Timber Sub-Deck Platform (kept strictly under the kiosk body x <= 84.74m so Kai at x = 85.8m stands flush on the +0.82m boardwalk)
+  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W + 0.4, 0.09, KIOSK_D + 0.2), '#c89d6c', [0, 0.055, -0.10], [0, 0, 0], 0.018, coastalTimberTex);
 
   // 4 Timber Corner Posts
   for (const cx of [-2.42, 2.42]) {
@@ -16206,12 +16980,12 @@ export function createTolanCurvedPlanetEnvironment(
   addShippingContainer(101.5, 0, -31.5, Math.PI / 2, '#e11d48');
   addShippingContainer(101.5, 2.58, -33.45, Math.PI / 2, '#eab308');
 
-  // South Container Yard Rows (z = +24.5 & z = +34.5, 100% North-South mirrored!)
-  addShippingContainer(78.2, 0, 24.5, 0, '#16a34a');
-  addShippingContainer(82.1, 0, 24.5, 0, '#475569');
-  addShippingContainer(80.15, 2.58, 24.5, 0, '#ea580c');
-  addShippingContainer(78.2, 0, 34.5, 0, '#2563eb');
-  addShippingContainer(82.1, 0, 34.5, 0, '#e11d48');
+  // South Container Yard Rows shifted East to x = 92.2..96.1 (near the South-East Quay containers) so Halte Beachfront Harbor sits at x = 77.5, z = 29.5
+  addShippingContainer(92.2, 0, 24.5, 0, '#16a34a');
+  addShippingContainer(96.1, 0, 24.5, 0, '#475569');
+  addShippingContainer(94.15, 2.58, 24.5, 0, '#ea580c');
+  addShippingContainer(92.2, 0, 34.5, 0, '#2563eb');
+  addShippingContainer(96.1, 0, 34.5, 0, '#e11d48');
 
   // South-East Quay Container Stack (near x = 100..104, z = +31..+35)
   addShippingContainer(101.5, 0, 31.5, Math.PI / 2, '#2563eb');
@@ -16432,7 +17206,7 @@ export function createTolanCurvedPlanetEnvironment(
   bakeStaticGroupMeshes(quayGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(westPlantGroup, {
     minShadowCasterSpan: 0.55,
-    excludeObjects: new Set([lobbyPortalsGrp, nearTerminalGrp, goldExchangeGrp]),
+    excludeObjects: new Set([lobbyPortalsGrp]),
   });
   bakeStaticGroupMeshes(constructionYardGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(seBeachGroup, { minShadowCasterSpan: 0.65 });
@@ -20802,7 +21576,7 @@ function getFenceWovenFriezeTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function getWaterCascadeSheetTexture(): THREE.CanvasTexture {
+export function getWaterCascadeSheetTexture(): THREE.CanvasTexture {
   const key = 'lobby_water_cascade_sheet';
   const cached = milTexCache.get(key);
   if (cached) return cached;
@@ -20845,7 +21619,7 @@ function getWaterCascadeSheetTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function getWaterBasinRippleTexture(): THREE.CanvasTexture {
+export function getWaterBasinRippleTexture(): THREE.CanvasTexture {
   const key = 'lobby_water_basin_ripple';
   const cached = milTexCache.get(key);
   if (cached) return cached;
@@ -25693,6 +26467,468 @@ export function buildSelfServiceTacticalKioskMesh(
 
   return kioskRoot;
 }
+
+/**
+ * Builds the 1:1 Procedural 3D Black City Transit Kiosk ("Standalone Self-Service Ticketing Kiosk - Curved Monolith Series")
+ * matching the 4-view industrial model sheet (`screen.png`):
+ * - Integrated sturdy oval/chamfered trapezoidal floor baseplate (0.70m wide x 1.20m deep footprint ratio)
+ * - Matte-black/charcoal S-curved monolith body with ergonomic side sweep (~2.0m human-relative height)
+ * - Dual top circular speaker grilles (NO corporate/KAI logos)
+ * - Recessed portrait touchscreen with City Transit UI texture & glass reflection
+ * - Protruding angled reader shelf with horizontal ticket dispenser slot (left) + square Card & Tap / QR reader (right)
+ * - Glowing cyan horizontal LED strip recessed beneath the angled reader lip
+ * - Rear service access door with keyhole lock, upper/middle/lower louver vents & bottom conduit port
+ * - Baked into minimal draw calls via `bakeStaticGroupMeshes`.
+ */
+export function buildBlackCityTransitKioskMesh(
+  windUniforms: BlitzWindUniforms,
+  isSoftwareGl = false,
+): THREE.Group {
+  const kioskRoot = new THREE.Group();
+  kioskRoot.name = 'BlackCityTransitKiosk';
+
+  const staticPartsGroup = new THREE.Group();
+  kioskRoot.add(staticPartsGroup);
+
+  const outlineMat = new THREE.MeshBasicMaterial({
+    color: 0x090a0f,
+    side: THREE.BackSide,
+  });
+
+  // Human-relative scale so total monolith height is ~2.02m (matching 1980mm model sheet)
+  const S = 1.02;
+
+  const addPart = (
+    geom: THREE.BufferGeometry,
+    hexColor: string,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+    scale: [number, number, number] = [1, 1, 1],
+    outlineThickness = 0.010,
+    roughness = 0.38,
+    metalness = 0.28,
+  ) => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: hexColor,
+      roughness,
+      metalness,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(pos[0] * S, pos[1] * S, pos[2] * S);
+    mesh.rotation.set(rot[0], rot[1], rot[2]);
+    mesh.scale.set(scale[0] * S, scale[1] * S, scale[2] * S);
+    mesh.castShadow = !isSoftwareGl;
+    mesh.receiveShadow = !isSoftwareGl;
+    upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, hexColor);
+    staticPartsGroup.add(mesh);
+
+    if (outlineThickness > 0) {
+      const outMesh = new THREE.Mesh(geom, outlineMat);
+      outMesh.position.copy(mesh.position);
+      outMesh.rotation.copy(mesh.rotation);
+      outMesh.scale.set(
+        (scale[0] + outlineThickness) * S,
+        (scale[1] + outlineThickness) * S,
+        (scale[2] + outlineThickness) * S,
+      );
+      staticPartsGroup.add(outMesh);
+    }
+  };
+
+  const COL_MONOLITH_BLACK = '#1a1d24';
+  const COL_MONOLITH_CHARCOAL = '#242933';
+  const COL_SWEEP_METALLIC = '#2f3542';
+  const COL_DEEP_RECESS = '#0e1015';
+  const COL_READER_GOLD = '#d97706';
+  const COL_TRIM_SILVER = '#94a3b8';
+
+  // -------------------------------------------------------------------------
+  // 1. INTEGRATED OVAL / CHAMFERED TRAPEZOIDAL FLOOR BASEPLATE (700mm x 1200mm)
+  // -------------------------------------------------------------------------
+  addPart(
+    new THREE.CylinderGeometry(0.32, 0.35, 0.044, 24),
+    COL_DEEP_RECESS,
+    [0, 0.022, -0.14],
+    [0, 0, 0],
+    [1.0, 1.0, 1.70],
+    0.008,
+    0.55,
+    0.22,
+  );
+  addPart(
+    new THREE.CylinderGeometry(0.26, 0.315, 0.040, 24),
+    COL_MONOLITH_CHARCOAL,
+    [0, 0.058, -0.11],
+    [0, 0, 0],
+    [1.0, 1.0, 1.54],
+    0.008,
+    0.42,
+    0.30,
+  );
+
+  // -------------------------------------------------------------------------
+  // 2. LOWER S-CURVED PEDESTAL SWEEP (Floor to 800mm Reader Lip)
+  // -------------------------------------------------------------------------
+  // Lower forward-leaning column core
+  addPart(
+    new THREE.BoxGeometry(0.64, 0.78, 0.28),
+    COL_MONOLITH_BLACK,
+    [0, 0.43, 0.02],
+    [0.22, 0, 0],
+    [1, 1, 1],
+    0.012,
+  );
+  // Sculpted side ergonomic sweep cheeks on lower pedestal
+  for (const sxSign of [-1, 1] as const) {
+    addPart(
+      new THREE.BoxGeometry(0.05, 0.76, 0.31),
+      COL_SWEEP_METALLIC,
+      [sxSign * 0.325, 0.44, 0.02],
+      [0.22, 0, 0],
+      [1, 1, 1],
+      0,
+      0.32,
+      0.42,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. PROTRUDING ANGLED READER SHELF & TICKET / TAP READER (780mm - 940mm)
+  // -------------------------------------------------------------------------
+  // Main forward-projecting reader knee block
+  addPart(
+    new THREE.BoxGeometry(0.76, 0.18, 0.36),
+    COL_MONOLITH_CHARCOAL,
+    [0, 0.85, 0.13],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0.010,
+  );
+  // Chamfered underside lip housing the cyan LED bar
+  addPart(
+    new THREE.BoxGeometry(0.72, 0.06, 0.28),
+    COL_MONOLITH_BLACK,
+    [0, 0.76, 0.14],
+    [0.28, 0, 0],
+    [1, 1, 1],
+    0.008,
+  );
+  // Left Thermal Ticket Dispenser Slot + Silver Label Strip
+  addPart(
+    new THREE.BoxGeometry(0.16, 0.012, 0.018),
+    COL_TRIM_SILVER,
+    [-0.16, 0.905, 0.305],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  addPart(
+    new THREE.BoxGeometry(0.19, 0.036, 0.025),
+    COL_DEEP_RECESS,
+    [-0.16, 0.865, 0.312],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  addPart(
+    new THREE.BoxGeometry(0.15, 0.010, 0.032),
+    COL_SWEEP_METALLIC,
+    [-0.16, 0.855, 0.316],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  // Right Square Card & Tap Reader / QR Module
+  addPart(
+    new THREE.BoxGeometry(0.11, 0.010, 0.018),
+    COL_TRIM_SILVER,
+    [0.16, 0.915, 0.303],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  addPart(
+    new THREE.BoxGeometry(0.115, 0.095, 0.026),
+    COL_DEEP_RECESS,
+    [0.16, 0.855, 0.312],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  addPart(
+    new THREE.BoxGeometry(0.076, 0.064, 0.030),
+    COL_READER_GOLD,
+    [0.16, 0.855, 0.316],
+    [-0.18, 0, 0],
+    [1, 1, 1],
+    0,
+    0.28,
+    0.45,
+  );
+
+  // -------------------------------------------------------------------------
+  // 4. UPPER ERGONOMIC SWEPT MONOLITH HEAD (900mm Touchscreen + 210mm Top Header)
+  // -------------------------------------------------------------------------
+  // Main upper monolith cabinet tilted slightly back (-0.09 rad)
+  addPart(
+    new THREE.BoxGeometry(0.76, 1.06, 0.23),
+    COL_MONOLITH_BLACK,
+    [0, 1.44, 0.03],
+    [-0.09, 0, 0],
+    [1, 1, 1],
+    0.012,
+  );
+  // Brushed metallic ergonomic side sweep cheek ribs along upper cabinet
+  for (const sxSign of [-1, 1] as const) {
+    addPart(
+      new THREE.BoxGeometry(0.048, 1.04, 0.25),
+      COL_SWEEP_METALLIC,
+      [sxSign * 0.382, 1.44, 0.03],
+      [-0.09, 0, 0],
+      [1, 1, 1],
+      0,
+      0.32,
+      0.42,
+    );
+  }
+  // Tapered Top Crown Hood (120mm top profile)
+  addPart(
+    new THREE.BoxGeometry(0.74, 0.08, 0.18),
+    COL_MONOLITH_CHARCOAL,
+    [0, 1.98, -0.01],
+    [-0.09, 0, 0],
+    [1, 1, 1],
+    0.008,
+  );
+  // Dual Top Circular Speaker Grilles (Left & Right, ZERO corporate/KAI logos)
+  for (const spkX of [-0.21, 0.21]) {
+    addPart(
+      new THREE.CylinderGeometry(0.038, 0.038, 0.024, 14),
+      COL_DEEP_RECESS,
+      [spkX, 1.88, 0.105],
+      [Math.PI / 2 - 0.09, 0, 0],
+      [1, 1, 1],
+      0,
+    );
+    addPart(
+      new THREE.CylinderGeometry(0.024, 0.024, 0.028, 12),
+      COL_SWEEP_METALLIC,
+      [spkX, 1.88, 0.107],
+      [Math.PI / 2 - 0.09, 0, 0],
+      [1, 1, 1],
+      0,
+    );
+  }
+
+  // Deep Recessed Portrait Touchscreen Bezel Frame
+  addPart(
+    new THREE.BoxGeometry(0.64, 0.84, 0.028),
+    COL_DEEP_RECESS,
+    [0, 1.39, 0.142],
+    [-0.09, 0, 0],
+    [1, 1, 1],
+    0.006,
+  );
+
+  // -------------------------------------------------------------------------
+  // 5. REAR ELEVATION: SERVICE ACCESS PANEL, LOUVER VENTS & CONDUIT PORT
+  // -------------------------------------------------------------------------
+  // Rear Service Access Door (820mm section)
+  addPart(
+    new THREE.BoxGeometry(0.50, 0.72, 0.022),
+    COL_MONOLITH_CHARCOAL,
+    [0, 1.38, -0.085],
+    [-0.09, 0, 0],
+    [1, 1, 1],
+    0.005,
+  );
+  // Keyhole Lock on right edge of Rear Service Access Door
+  addPart(
+    new THREE.CylinderGeometry(0.018, 0.018, 0.026, 10),
+    COL_TRIM_SILVER,
+    [0.19, 1.44, -0.095],
+    [Math.PI / 2 - 0.09, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  // Upper & Middle Dual Louver Vent Grilles on Rear Cabinet
+  for (const ventY of [1.82, 0.98]) {
+    const ventZ = ventY > 1.4 ? -0.118 : -0.052;
+    for (const vxOff of [-0.13, 0.13]) {
+      for (let slot = 0; slot < 4; slot++) {
+        addPart(
+          new THREE.BoxGeometry(0.14, 0.012, 0.020),
+          COL_DEEP_RECESS,
+          [vxOff, ventY + slot * 0.022, ventZ],
+          [-0.09, 0, 0],
+          [1, 1, 1],
+          0,
+        );
+      }
+    }
+  }
+  // Lower Pedestal Rear Conduit Panel, Vent & Conduit Connection Port
+  addPart(
+    new THREE.BoxGeometry(0.34, 0.54, 0.022),
+    COL_MONOLITH_CHARCOAL,
+    [0, 0.42, -0.11],
+    [0.22, 0, 0],
+    [1, 1, 1],
+    0.004,
+  );
+  for (let slot = 0; slot < 4; slot++) {
+    addPart(
+      new THREE.BoxGeometry(0.16, 0.012, 0.024),
+      COL_DEEP_RECESS,
+      [0, 0.26 + slot * 0.022, -0.145],
+      [0.22, 0, 0],
+      [1, 1, 1],
+      0,
+    );
+  }
+  // Bottom Conduit Connection Port & Cable Gland
+  addPart(
+    new THREE.BoxGeometry(0.075, 0.075, 0.028),
+    COL_DEEP_RECESS,
+    [-0.06, 0.12, -0.18],
+    [0, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+  addPart(
+    new THREE.CylinderGeometry(0.022, 0.022, 0.032, 10),
+    COL_TRIM_SILVER,
+    [0.06, 0.12, -0.18],
+    [Math.PI / 2, 0, 0],
+    [1, 1, 1],
+    0,
+  );
+
+  // Merge all static opaque geometry into a single draw call!
+  bakeStaticGroupMeshes(staticPartsGroup, { minShadowCasterSpan: 0.35 });
+
+  // -------------------------------------------------------------------------
+  // 6. PORTRAIT TOUCHSCREEN UI CANVAS TEXTURE & GLOWING CYAN LED STRIP
+  // -------------------------------------------------------------------------
+  const makeTransitScreenTexture = (): THREE.CanvasTexture => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 384;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      const grad = ctx.createLinearGradient(0, 0, 256, 384);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(0.5, '#1e293b');
+      grad.addColorStop(1, '#090d16');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 384);
+
+      // Top Cyan Status Bar
+      ctx.fillStyle = '#00f2ff';
+      ctx.fillRect(14, 14, 228, 28);
+      ctx.fillStyle = '#090d16';
+      ctx.font = '900 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('THE CITY TRANSIT TERMINAL', 128, 33);
+
+      // 2x2 Category Grid Preview on Kiosk Screen
+      const cards: Array<{ label: string; sub: string; col: string; x: number; y: number }> = [
+        { label: 'DISTRICTS', sub: 'FAST TRAVEL', col: '#38bdf8', x: 16, y: 58 },
+        { label: 'WARZONE', sub: 'RED VS BLUE', col: '#ff3b30', x: 132, y: 58 },
+        { label: 'MY HOUSE', sub: '3D INTERIOR', col: '#b8ff3c', x: 16, y: 168 },
+        { label: 'EXCHANGE', sub: 'LUL / CYON', col: '#facc15', x: 132, y: 168 },
+      ];
+      for (const card of cards) {
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(card.x, card.y, 108, 96);
+        ctx.strokeStyle = card.col;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(card.x, card.y, 108, 96);
+        ctx.fillStyle = card.col;
+        ctx.fillRect(card.x + 8, card.y + 10, 92, 8);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '900 13px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(card.label, card.x + 10, card.y + 52);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '700 10px monospace';
+        ctx.fillText(card.sub, card.x + 10, card.y + 72);
+      }
+
+      // Bottom Transit Network Route Line Diagram
+      ctx.fillStyle = '#0b1120';
+      ctx.fillRect(16, 282, 224, 84);
+      ctx.strokeStyle = '#00f2ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(34, 324);
+      ctx.lineTo(92, 304);
+      ctx.lineTo(164, 336);
+      ctx.lineTo(220, 312);
+      ctx.stroke();
+      for (const [nx, ny] of [
+        [34, 324],
+        [92, 304],
+        [164, 336],
+        [220, 312],
+      ]) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(nx, ny, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Subtle diagonal glass reflection streak matching Front Elevation
+      ctx.save();
+      ctx.translate(128, 192);
+      ctx.rotate(-0.55);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.fillRect(-36, -220, 44, 440);
+      ctx.restore();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+
+  const screenMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.58 * S, 0.78 * S),
+    new THREE.MeshBasicMaterial({ map: makeTransitScreenTexture() }),
+  );
+  screenMesh.position.set(0, 1.39 * S, 0.158 * S);
+  screenMesh.rotation.x = -0.09;
+  kioskRoot.add(screenMesh);
+
+  // Glowing Cyan Horizontal LED Strip beneath the angled reader lip
+  const cyanLedStrip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.62 * S, 0.022 * S, 0.024 * S),
+    new THREE.MeshBasicMaterial({ color: 0x00f2ff }),
+  );
+  cyanLedStrip.position.set(0, 0.755 * S, 0.285 * S);
+  kioskRoot.add(cyanLedStrip);
+
+  // Cyan selection foot ring on the floor (#00f2ff) when approached or clicked
+  const kioskGreenFootRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.76, 0.94, 36),
+    new THREE.MeshBasicMaterial({
+      color: 0x00f2ff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+    }),
+  );
+  kioskGreenFootRing.rotation.x = -Math.PI / 2;
+  kioskGreenFootRing.position.set(0, 0.025, -0.08);
+  kioskGreenFootRing.name = 'KioskGreenFootRing';
+  kioskGreenFootRing.visible = false;
+  kioskRoot.add(kioskGreenFootRing);
+  kioskRoot.userData.greenFootRing = kioskGreenFootRing;
+
+  return kioskRoot;
+}
+
 
 
 

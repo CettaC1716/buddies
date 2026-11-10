@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { usePrivy, useLogin } from '@privy-io/react-auth';
+import { useSafePrivy, useSafePrivyLogin } from './lib/privyAuthBridge';
 import {
   MessageSquare,
   User,
   MessageCircle,
   ChevronLeft,
   ChevronRight,
-  Settings,
   Wallet,
+  History,
   Pencil,
   Check,
   ArrowLeft,
+  Backpack,
+  Package,
 } from 'lucide-react';
 import {
   BuddiesBlitzArena,
@@ -32,26 +34,38 @@ import {
   PLAYER_WARZONE_MAX_LIVES,
   WorldMode,
   evaluateLobbyAndSafezonePeacefulState,
+  type CityTransitStationId,
+  type CityTransitDestinationSpec,
+  getCityTransitDestinationById,
 } from './game/buddiesBlitzRules';
 import { soundEngine } from './game/audio';
-import { BuddiesBlueprintModal } from './components/BuddiesBlueprintModal';
+import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
+import {
+  CRITICAL_3D_ASSET_COUNT,
+  CRITICAL_AUDIO_ASSET_COUNT,
+  CRITICAL_UI_IMAGE_URLS,
+  computeUnifiedPreloadProgress,
+  preloadAllUiAndKioskImages,
+  type PreloadProgressInput,
+} from './game/buddiesAssetPreloader';
 import { TacticalKioskModal } from './components/TacticalKioskModal';
+import { CityTransitKioskModal } from './components/CityTransitKioskModal';
 import {
   SocialChatModal,
   NearbyEntityUser,
   ChatMessage,
+  shouldTriggerIncomingPrivateChatNotification,
+  simplifyDisplayName,
 } from './components/SocialChatModal';
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
 import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
-import { AdminCommandDashboard } from './components/AdminCommandDashboard';
 import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
 } from './components/NpcMerchantAndHouseModal';
 import { TidewaterFishingHudAndShowcase } from './components/TidewaterCatchShowcaseModal';
 import {
-  MERCHANT_CATALOG_ITEMS,
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
   investInMerchantShop,
@@ -59,81 +73,68 @@ import {
   MerchantLocationId,
   MerchantCatalogItem,
   HouseInteriorSlotId,
+  MERCHANT_CATALOG_ITEMS,
 } from './game/buddiesMerchantPricing';
-import {
-  ParticleEmitterPanel,
-  ParticleEmitterUiState,
-  INITIAL_PARTICLE_UI_STATE,
-  uiStateToEmitterConfigPatch,
-} from './components/ParticleEmitterPanel';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
-  MASTER_FULL_ACCESS_PUBLIC_KEY,
-  MASTER_TREASURY_ACCOUNT_ID,
-  MASTER_WALLET_ACCOUNT_ID,
-  connectInjectedNearExtensionWallet,
-  consumeNearWalletCallbackFromUrl,
-  createInitialNep171SubAccountLedger,
-  detectNetworkFromAccountId,
-  disconnectNearWalletSession,
+  HOUSE_OWNERSHIP_PRICE_RESPITE,
+  NEAR_CONFIG,
+  connectNearWalletSelector,
   executeMarketContractCallOnChain,
   executeNearTestnetAndRespiteSwap,
+  fetchBuddiesMarketEstate,
+  fetchBuddiesMarketFishListings,
   fetchNearAccountView,
   fetchNearNetworkStatus,
-  formatPlayerSubAccountFromMaster,
-  generateRandomWalletLetters,
-  isManagedSubAccountOfMaster,
-  isMasterAdminWallet,
-  isValidNearAccountId,
-  loadManagedSubAccounts,
-  loadSavedAdminCryptographicProof,
-  provisionOrGetPlayerSubAccount,
-  recordNep171SubAccountEarning,
-  rotateSubAccountSessionKey,
-  setCustomMasterWalletId,
+  fetchNep141Balance,
   spawnSubAccountOnChainViaMaster,
-  toggleSubAccountFreezeStatus,
-  updateSubAccountBalances,
-  type MasterManagedSubAccount,
-  type NearAccountOnChainView,
-  type NearRpcStatusSnapshot,
+  verifyNep171GamepassOwnership,
+  type NearAccountView,
+  type NearNetworkId,
+  type NearNetworkStatus,
+  type NearWalletConnectionResult,
   type Nep171GamepassSubAccountLedger,
   type RecruitedFamilyMemberAgent,
 } from './lib/nearClient';
 import {
+  creditRecipientRespiteInSupabase,
+  fetchBasePlotsFromSupabase,
   fetchFishMarketplaceListingsFromSupabase,
   fetchGamepassNftLedgerFromSupabase,
+  fetchHouseInteriorFromSupabase,
+  fetchMarketTransactionsFromSupabase,
   fetchNpcMerchantsFromSupabase,
   fetchOrCreatePlayerProfile,
-  findPlayerProfileByGoogleEmail,
-  insertMarketTransactionReceipt,
-  insertSocialChatMessageToSupabase,
-  signInWithGoogleOAuth,
-  subscribeToBuddiesBlitzRealtime,
-  subscribeToSupabaseGoogleAuth,
+  fetchPlayerProfileByEmail,
+  fetchRecentSocialMessages,
+  insertSocialMessageToSupabase,
+  logMarketTransactionToSupabase,
+  signInWithSupabaseGoogle,
+  signOutSupabaseAuth,
+  subscribeToMarketTransactions,
+  subscribeToSocialMessagesRealtime,
+  subscribeToSupabaseAuthUser,
   syncBasePlotToSupabase,
   syncFishMarketplaceListingsToSupabase,
-  syncGamepassNftLedgerToSupabase,
   syncHouseInteriorToSupabase,
-  syncNpcMerchantAndLogTransaction,
+  syncNpcMerchantToSupabase,
   syncPlayerBalancesToSupabase,
-  updatePlayerDisplayNameInSupabase,
+  type DbMarketTransactionRow,
 } from './lib/supabaseClient';
 import {
+  FISH_SPECIES_CATALOG,
   detectNearbyFishingWaterZone,
   rollRandomCaughtFish,
   createTidewaterBiteSchedule,
   createTidewaterMinigameState,
   stepTidewaterMinigame,
-  INITIAL_DEMO_FISH_MARKET_LISTINGS,
   type CaughtFishItem,
   type FishNftMarketplaceListing,
   type FishingPhaseState,
   type TidewaterBiteSchedule,
   type TidewaterMinigameState,
 } from './game/buddiesFishingMarket';
-import { InGameElementAndBonePicker } from './components/InGameElementAndBonePicker';
 
 const INITIAL_HUD: HudSnapshot = {
   hp: PLAYER_WARZONE_MAX_HP,
@@ -189,10 +190,10 @@ const INITIAL_HUD: HudSnapshot = {
   personalSquadMax: 4,
   personalSquadClasses: ['Infuntry'],
   activePersonalBuddyIndex: 0,
-  blueHumanCount: 2,
-  blueAiCommanderCount: 2,
-  redHumanCount: 2,
-  redAiCommanderCount: 2,
+  blueHumanCount: 1,
+  blueAiCommanderCount: 0,
+  redHumanCount: 0,
+  redAiCommanderCount: 0,
   skyshieldBuiltCount: 0,
   blueBaseHp: 2000,
   redBaseHp: 2000,
@@ -234,11 +235,11 @@ const INITIAL_HUD: HudSnapshot = {
   hasActiveBuildContract: false,
   isNearLobbyGoldExchange: false,
   lobbyGoldExchangeOwnedItems: [],
-  blueOnlinePopulation: 6,
-  redOnlinePopulation: 6,
+  blueOnlinePopulation: 1,
+  redOnlinePopulation: 0,
   maxOnlinePerTeam: 10,
-  blueOnlineLabel: 'BLUE 6/10 ONLINE',
-  redOnlineLabel: 'RED 6/10 ONLINE',
+  blueOnlineLabel: 'BLUE 1/10 ONLINE',
+  redOnlineLabel: 'RED 0/10 ONLINE',
   worldMode: 'lobby',
   cityArenaMode: 'safezone',
   safezonePlotAccessMode: 'PUBLIC',
@@ -247,7 +248,20 @@ const INITIAL_HUD: HudSnapshot = {
 };
 
 const PRESET_ORDER: LightingPresetKey[] = ['day', 'dusk', 'night', 'dawn'];
-const ENABLE_QC_MENU_DEFAULT = import.meta.env.VITE_ENABLE_QC === 'true';
+const EMPTY_NEP171_LEDGER: Nep171GamepassSubAccountLedger = {
+  tokenId: '',
+  ownerNearAccount: '',
+  subAccountId: '',
+  network: 'testnet',
+  treasuryRespite: 0,
+  totalEarnedRespite: 0,
+  totalPaidOutRespite: 0,
+  pendingPayoutRespite: 0,
+  activeAccessKey: '',
+  revokedAccessKeys: [],
+  lastTransferTxHash: '',
+  ownershipHistory: [],
+};
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState>(() => {
@@ -261,22 +275,6 @@ export default function App() {
   });
 
   const [playMode, setPlayMode] = useState<PlayMode>('sandbox');
-  const [isAdminPortalOpen, setIsAdminPortalOpen] = useState<boolean>(() => {
-    if (import.meta.env.VITE_APP_MODE === 'admin') {
-      return true;
-    }
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('admin') === '1' || params.get('admin_portal') === '1') {
-        return true;
-      }
-    }
-    return false;
-  });
-  const [isQcMenuUnlocked, setIsQcMenuUnlocked] = useState<boolean>(() =>
-    ENABLE_QC_MENU_DEFAULT || Boolean(loadSavedAdminCryptographicProof()?.verified),
-  );
-  const [isSpawnDrawerOpen, setIsSpawnDrawerOpen] = useState<boolean>(false);
   const [characterGender, setCharacterGender] = useState<'female' | 'male'>('male');
   const [onboardingStep, setOnboardingStep] = useState<
     'auth_choice' | 'guest_character_select' | 'entering_lobby' | 'completed'
@@ -299,7 +297,7 @@ export default function App() {
           lastId &&
           !explicitlyLoggedOut &&
           !lastId.toLowerCase().startsWith('player1.') &&
-          !lastId.toLowerCase().startsWith('guest-') &&
+          !lastId.toLowerCase().startsWith('guest') &&
           !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
         ) {
           return 'completed';
@@ -317,6 +315,7 @@ export default function App() {
       if (
         savedWallet &&
         !savedWallet.toLowerCase().startsWith('player1.') &&
+        !savedWallet.toLowerCase().startsWith('guest') &&
         !savedWallet.toLowerCase().endsWith('.buddiesblitz-master.testnet')
       ) {
         return savedWallet.toLowerCase();
@@ -324,26 +323,73 @@ export default function App() {
       if (savedWallet) {
         window.localStorage.removeItem('bb_last_connected_wallet_id');
       }
-      let guestUid = window.localStorage.getItem('bb_guest_uid');
-      if (!guestUid) {
-        const randLetters = generateRandomWalletLetters(6);
-        guestUid = `guest-${randLetters}.testnet`;
-        window.localStorage.setItem('bb_guest_uid', guestUid);
-      }
-      return guestUid;
     }
-    return 'guest.testnet';
+    return '';
   });
   const [isCustomGuestNameEdited, setIsCustomGuestNameEdited] = useState<boolean>(false);
   const [isEditingGuestName, setIsEditingGuestName] = useState<boolean>(false);
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<'guest' | 'wallet'>('guest');
   const [onboardingLoadingProgress, setOnboardingLoadingProgress] = useState<number>(0);
-  const [citizenWalletModalPhase, setCitizenWalletModalPhase] = useState<
-    'idle' | 'choose_name' | 'preparing' | 'ready'
-  >('idle');
-  const [citizenWalletSetupProgress, setCitizenWalletSetupProgress] = useState<number>(0);
-  const [citizenWalletNameDraft, setCitizenWalletNameDraft] = useState<string>('');
-  const [citizenWalletNameError, setCitizenWalletNameError] = useState<string | null>(null);
+  const [preloadProgress, setPreloadProgress] = useState<number>(0);
+  const [isPreloadComplete, setIsPreloadComplete] = useState<boolean>(false);
+  const preloadTrackerRef = useRef<PreloadProgressInput>({
+    modelsLoaded: 0,
+    modelsTotal: CRITICAL_3D_ASSET_COUNT,
+    imagesLoaded: 0,
+    imagesTotal: CRITICAL_UI_IMAGE_URLS.length,
+    audioLoaded: 0,
+    audioTotal: CRITICAL_AUDIO_ASSET_COUNT,
+    sceneWarmupComplete: false,
+  });
+
+  const syncPreloadProgressState = useCallback(() => {
+    const { percent, isComplete } = computeUnifiedPreloadProgress(preloadTrackerRef.current);
+    setPreloadProgress((prev) => Math.max(prev, percent));
+    if (isComplete) {
+      setIsPreloadComplete(true);
+      if (typeof document !== 'undefined') {
+        document.body.dataset.preloadComplete = 'true';
+      }
+    }
+  }, []);
+
+  const handlePreloadSceneReady = useCallback(() => {
+    preloadTrackerRef.current.sceneWarmupComplete = true;
+    syncPreloadProgressState();
+  }, [syncPreloadProgressState]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (typeof document !== 'undefined') {
+      document.body.dataset.preloadComplete = 'false';
+    }
+
+    const unsubscribe3d = subscribeBlitz3dAssetProgress((loaded, total) => {
+      if (!mounted) return;
+      preloadTrackerRef.current.modelsLoaded = loaded;
+      preloadTrackerRef.current.modelsTotal = total;
+      syncPreloadProgressState();
+    });
+
+    void preloadAllUiAndKioskImages((loaded, total) => {
+      if (!mounted) return;
+      preloadTrackerRef.current.imagesLoaded = loaded;
+      preloadTrackerRef.current.imagesTotal = total;
+      syncPreloadProgressState();
+    });
+
+    void soundEngine.preloadAllAudioAssets((loaded, total) => {
+      if (!mounted) return;
+      preloadTrackerRef.current.audioLoaded = loaded;
+      preloadTrackerRef.current.audioTotal = total;
+      syncPreloadProgressState();
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe3d();
+    };
+  }, [syncPreloadProgressState]);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       return window.localStorage.getItem('bb_connected_google_email') || '';
@@ -357,13 +403,11 @@ export default function App() {
     return '';
   });
   const [walletAddressCopiedToast, setWalletAddressCopiedToast] = useState<boolean>(false);
-  const [walletNetworkChoice, setWalletNetworkChoice] = useState<'testnet' | 'mainnet'>('testnet');
+  const [walletNetworkChoice] = useState<NearNetworkId>('testnet');
   const [isVerifyingNearWallet, setIsVerifyingNearWallet] = useState<boolean>(false);
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
-  const [nearOnChainAccountView, setNearOnChainAccountView] =
-    useState<NearAccountOnChainView | null>(null);
-  const [walletUsernameDraft, setWalletUsernameDraft] = useState<string>('Buddy Male');
-  const [walletUsernameSavedToast, setWalletUsernameSavedToast] = useState<boolean>(false);
+  const [, setNearOnChainAccountView] = useState<NearAccountView | null>(null);
+  const [, setWalletUsernameDraft] = useState<string>('Buddy Male');
   const [respiteTransferRecipient, setRespiteTransferRecipient] = useState<string>('');
   const [respiteTransferAmount, setRespiteTransferAmount] = useState<string>('10');
   const [respiteTransferStatus, setRespiteTransferStatus] = useState<{
@@ -384,6 +428,7 @@ export default function App() {
         !lastId ||
         !rawMap ||
         lastId.toLowerCase().startsWith('player1.') ||
+        lastId.toLowerCase().startsWith('guest') ||
         lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
       ) {
         return null;
@@ -405,26 +450,6 @@ export default function App() {
   });
   const guestNameInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'q') {
-        if (!loadSavedAdminCryptographicProof()?.verified && !ENABLE_QC_MENU_DEFAULT) {
-          return;
-        }
-        event.preventDefault();
-        setIsQcMenuUnlocked((prev) => {
-          const next = !prev;
-          if (!next) {
-            setIsSpawnDrawerOpen(false);
-          }
-          return next;
-        });
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
   const [hud, setHud] = useState<HudSnapshot>(INITIAL_HUD);
   const hudRef = useRef<HudSnapshot>(INITIAL_HUD);
   useEffect(() => {
@@ -434,7 +459,6 @@ export default function App() {
   const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'roblox18'>('webgl35');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [audioVolumePct, setAudioVolumePct] = useState<number>(100);
-  const [isBlueprintModalOpen, setIsBlueprintModalOpen] = useState<boolean>(false);
   const [isKioskModalOpen, setIsKioskModalOpen] = useState<boolean>(false);
   const [activeSpecialModal, setActiveSpecialModal] = useState<
     'none' | 'npc_merchant' | 'house_interior'
@@ -442,34 +466,35 @@ export default function App() {
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
+  const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
   const [cyonBalance, setCyonBalance] = useState<number>(0);
   const [respiteBalance, setRespiteBalance] = useState<number>(0);
-  const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(12.5);
+  const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(0);
+  const [personalWalletTab, setPersonalWalletTab] = useState<'wallet' | 'assets' | 'history'>('wallet');
+  const [isSampleHouseView, setIsSampleHouseView] = useState<boolean>(false);
+  const [isHouseFriendInviteOpen, setIsHouseFriendInviteOpen] = useState<boolean>(false);
+  const [houseInviteFriendInput, setHouseInviteFriendInput] = useState<string>('');
+  const [houseInviteFeedback, setHouseInviteFeedback] = useState<string | null>(null);
+  const [walletHistoryFilter, setWalletHistoryFilter] = useState<
+    'ALL' | 'LUL' | 'CYON' | 'RESPITE'
+  >('ALL');
+  const [walletTransactions, setWalletTransactions] = useState<DbMarketTransactionRow[]>([]);
+  const [isLoadingWalletTransactions, setIsLoadingWalletTransactions] = useState<boolean>(false);
   const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
   const [hasHouseOwnership, setHasHouseOwnership] = useState<boolean>(false);
+  const [houseEntryScanState, setHouseEntryScanState] = useState<'idle' | 'scanning' | 'verified'>(
+    'idle',
+  );
   const [recruitedFamilyMembers, setRecruitedFamilyMembers] = useState<
     RecruitedFamilyMemberAgent[]
   >([]);
-  const [masterTreasuryNear, setMasterTreasuryNear] = useState<number>(100);
-  const [masterTreasuryRespite, setMasterTreasuryRespite] = useState<number>(50000);
-  const [masterTreasuryCyon, setMasterTreasuryCyon] = useState<number>(10000);
-  const [masterTreasuryNote, setMasterTreasuryNote] = useState<string>('');
-  const [managedSubAccounts, setManagedSubAccounts] = useState<MasterManagedSubAccount[]>(() =>
-    loadManagedSubAccounts(),
-  );
-  const [newSubAccountPrefixInput, setNewSubAccountPrefixInput] = useState<string>('');
-  const [isSpawningSubAccount, setIsSpawningSubAccount] = useState<boolean>(false);
-  const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([
-    'tatami_tea_table',
-    'sakura_bonsai_pot',
-    'theme_japanese_zen',
-  ]);
+  const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([]);
   const [activeHouseThemeId, setActiveHouseThemeId] = useState<string>('theme_japanese_zen');
   const [interiorPlacement, setInteriorPlacement] = useState<HouseInteriorPlacementState>({
-    center_table: 'tatami_tea_table',
+    center_table: null,
     left_wall: null,
     right_wall: null,
-    corner_plant: 'sakura_bonsai_pot',
+    corner_plant: null,
     trophy_pedestal: null,
     rotationStepBySlot: {
       center_table: 0,
@@ -479,38 +504,42 @@ export default function App() {
       trophy_pedestal: 0,
     },
   });
-  const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
-  const [isParticlePanelOpen, setIsParticlePanelOpen] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('particles') === '1';
-    }
-    return false;
-  });
-  const [particleUiState, setParticleUiState] = useState<ParticleEmitterUiState>(
-    INITIAL_PARTICLE_UI_STATE,
-  );
   const [resetTrigger, setResetTrigger] = useState<number>(0);
   const [socialChatText, setSocialChatText] = useState<string>('');
-  const [isChatBubbleStyleOpen, setIsChatBubbleStyleOpen] = useState<boolean>(false);
   const [chatBubbleBgColor, setChatBubbleBgColor] = useState<string>('#ffffff');
   const [chatBubbleTextColor, setChatBubbleTextColor] = useState<string>('#0f172a');
   const [isSocialChatModalOpen, setIsSocialChatModalOpen] = useState<boolean>(false);
   const [isPersonalWalletModalOpen, setIsPersonalWalletModalOpen] = useState<boolean>(false);
+  const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
+  const [personalBagTab, setPersonalBagTab] = useState<'equipment' | 'fish' | 'items'>('equipment');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
+  const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
+  const [lastUnreadPrivateSender, setLastUnreadPrivateSender] = useState<NearbyEntityUser | null>(
+    null,
+  );
+  const [activePrivateNotificationToast, setActivePrivateNotificationToast] = useState<{
+    id: string;
+    senderName: string;
+    senderId?: string;
+    text: string;
+    user: NearbyEntityUser;
+  } | null>(null);
   const [isTargetMenuExpanded, setIsTargetMenuExpanded] = useState<boolean>(false);
   const [activeTeleportKioskModal, setActiveTeleportKioskModal] = useState<
-    'none' | 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby'
+    'none' | CityTransitStationId
   >('none');
-  const [nearRpcStatus, setNearRpcStatus] = useState<NearRpcStatusSnapshot | null>(null);
-  const [supabaseConnected, setSupabaseConnected] = useState<boolean>(false);
-  const [nep171Ledger, setNep171Ledger] = useState<Nep171GamepassSubAccountLedger>(() =>
-    createInitialNep171SubAccountLedger('commander-p1.testnet', 'testnet'),
-  );
+  const [tramRideCutsceneUi, setTramRideCutsceneUi] = useState<{
+    active: boolean;
+    originStationId: CityTransitStationId;
+    destinationStationId: CityTransitStationId;
+    progress01: number;
+  } | null>(null);
+  const [, setNearRpcStatus] = useState<NearNetworkStatus | null>(null);
+  const [, setSupabaseConnected] = useState<boolean>(false);
+  const [nep171Ledger, setNep171Ledger] =
+    useState<Nep171GamepassSubAccountLedger>(EMPTY_NEP171_LEDGER);
   const [caughtFishBucket, setCaughtFishBucket] = useState<CaughtFishItem[]>([]);
-  const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>(
-    INITIAL_DEMO_FISH_MARKET_LISTINGS,
-  );
+  const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>([]);
   const [fishingPhase, setFishingPhase] = useState<FishingPhaseState>('idle');
   const [fishingCastPower, setFishingCastPower] = useState<number>(0.72);
   const [isChargingCast, setIsChargingCast] = useState<boolean>(false);
@@ -522,16 +551,106 @@ export default function App() {
   const [isHoldingReel, setIsHoldingReel] = useState<boolean>(false);
   const [lastCaughtFishToast, setLastCaughtFishToast] = useState<CaughtFishItem | null>(null);
 
-  // Hydrate initial state from NEAR Testnet RPC & Supabase PostgreSQL + Realtime
+  // Fast-Forward Economy Simulation (`09-games` Track: 1.1s per simulated day so judges watch dynamic pricing & bankruptcy live)
+  useEffect(() => {
+    if (!isFastForwardRunning || activeSpecialModal !== 'npc_merchant') return;
+    const timer = window.setInterval(() => {
+      setMarketState((prev) => {
+        const next = stepFastForwardEconomyTick(prev, prev.dayCounter);
+        void syncNpcMerchantToSupabase({
+          merchant_id: merchantLocation,
+          cyon_treasury: next.treasuryCyon,
+          is_bankrupt: next.isShopBroke,
+          simulated_day: next.dayCounter,
+          stock_by_item: next.stockByItemId,
+          recent_demand_by_item: next.demandByItemId,
+          last_headline: next.lastMarketHeadline,
+        });
+        return next;
+      });
+    }, 1100);
+    return () => window.clearInterval(timer);
+  }, [isFastForwardRunning, activeSpecialModal, merchantLocation]);
+
+  // Hydrate initial state from NEAR RPC & Supabase PostgreSQL + Realtime
   useEffect(() => {
     let mounted = true;
     void fetchNearNetworkStatus().then((status) => {
       if (mounted) setNearRpcStatus(status);
     });
-    void fetchFishMarketplaceListingsFromSupabase().then((listings) => {
-      if (mounted && listings.length > 0) {
-        setFishMarketListings(listings);
+    void Promise.all([
+      fetchFishMarketplaceListingsFromSupabase(),
+      fetchBuddiesMarketFishListings(),
+    ]).then(([dbListings, onChainListings]) => {
+      if (!mounted) return;
+      const mappedOnChain: FishNftMarketplaceListing[] = onChainListings.map((row) => {
+        const spec = FISH_SPECIES_CATALOG.find((s) => s.speciesId === row.species_id);
+        const waterZone =
+          row.water_zone === 'central_oasis' ? 'central_oasis' : spec?.waterZone || 'east_beach';
+        const weightKg = Math.max(0.05, Number(((row.weight_kg_x100 || 100) / 100).toFixed(2)));
+        const priceRespite = Math.max(1, Math.round(Number(row.price_respite) || 1));
+        return {
+          listingId: row.listing_id,
+          nftTokenId: row.token_id,
+          speciesId: row.species_id,
+          speciesName: row.species_name || spec?.speciesName || 'Coral Sardine',
+          waterZone,
+          waterZoneLabel:
+            waterZone === 'central_oasis' ? 'Central Oasis Lake' : 'East Beach Shoreline',
+          rarity: (row.rarity as FishNftMarketplaceListing['rarity']) || spec?.rarity || 'Common',
+          weightKg,
+          isTrophy: spec ? weightKg >= spec.maxWeightKg * 0.7 : false,
+          colorHex: spec?.colorHex || '#38bdf8',
+          caughtByAccount: row.seller_id,
+          sellerNearAccount: row.seller_id,
+          priceRespite,
+          priceLul: priceRespite,
+          nearTxHash: '',
+          listedAtIso: new Date(row.listed_at_ms || Date.now()).toISOString(),
+        };
+      });
+      const seenIds = new Set(mappedOnChain.map((item) => item.listingId));
+      const merged = [
+        ...mappedOnChain,
+        ...dbListings.filter((item) => !seenIds.has(item.listingId)),
+      ];
+      setFishMarketListings(merged);
+    });
+    void fetchBasePlotsFromSupabase().then((plots) => {
+      if (!mounted || plots.length === 0) return;
+      const activeWallet = (hudRef.current.nearWalletId || '').toLowerCase();
+      if (!activeWallet) return;
+      const ownedPlot = plots.find(
+        (p) => p.is_claimed && (p.claimed_by_near_account || '').toLowerCase() === activeWallet,
+      );
+      if (ownedPlot) {
+        setHud((prev) => ({
+          ...prev,
+          nearClaimedTeam: ownedPlot.team,
+          nearClaimedPlotIndex: ownedPlot.plot_index,
+          safezonePlotAccessMode: ownedPlot.access_mode,
+          safezoneAllowedFriends: Array.isArray(ownedPlot.allowed_friends)
+            ? ownedPlot.allowed_friends
+            : prev.safezoneAllowedFriends,
+        }));
       }
+    });
+    void fetchRecentSocialMessages(30).then((rows) => {
+      if (!mounted || rows.length === 0) return;
+      setChatMessages(
+        rows.map((msg) => ({
+          id: msg.id,
+          senderId: msg.sender_near_account || undefined,
+          senderName: msg.sender_name,
+          recipientName: msg.recipient_name || undefined,
+          text: msg.message,
+          timestamp: new Date(msg.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          type: msg.recipient_name ? 'private' : 'public',
+        })),
+      );
     });
     void fetchNpcMerchantsFromSupabase().then((rows) => {
       if (!mounted || rows.length === 0) return;
@@ -555,122 +674,184 @@ export default function App() {
         }));
       }
     });
-    void fetchGamepassNftLedgerFromSupabase().then((remoteLedger) => {
-      if (mounted && remoteLedger) {
-        setNep171Ledger(remoteLedger);
-      }
+
+    const realtimeChannel = subscribeToSocialMessagesRealtime((msg) => {
+      if (!mounted) return;
+      setChatMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        const msgType: 'public' | 'private' = msg.recipient_name ? 'private' : 'public';
+        const cleanMsgText = msg.message.trim();
+        const cleanMsgRecipient = (msg.recipient_name || '').trim().toLowerCase();
+
+        // If this realtime INSERT is the echo of our own optimistic message, upgrade its id in place
+        const optimisticIdx = prev.findIndex(
+          (m) =>
+            m.isSelf &&
+            (m.id.startsWith('pub-') || m.id.startsWith('priv-')) &&
+            m.type === msgType &&
+            m.text.trim() === cleanMsgText &&
+            (m.recipientName || '').trim().toLowerCase() === cleanMsgRecipient,
+        );
+        if (optimisticIdx >= 0) {
+          const next = [...prev];
+          next[optimisticIdx] = {
+            ...next[optimisticIdx],
+            id: msg.id,
+            senderId: msg.sender_near_account || next[optimisticIdx].senderId,
+          };
+          return next;
+        }
+
+        const incomingMsg: ChatMessage = {
+          id: msg.id,
+          senderId: msg.sender_near_account || undefined,
+          senderName: msg.sender_name,
+          recipientName: msg.recipient_name || undefined,
+          text: msg.message,
+          timestamp: new Date(msg.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          type: msgType,
+        };
+
+        const st = socialChatStateRef.current;
+        if (
+          shouldTriggerIncomingPrivateChatNotification({
+            message: incomingMsg,
+            localPlayerName: st.playerDisplayName,
+            localPlayerUid: st.playerUid,
+            isSocialChatModalOpen: st.isSocialChatModalOpen,
+            activeTab: st.selectedPrivateUser ? 'private' : 'public',
+            selectedPrivateUser: st.selectedPrivateUser,
+          })
+        ) {
+          const senderUser: NearbyEntityUser = {
+            id: incomingMsg.senderId || `peer-${incomingMsg.senderName}`,
+            nearAccountId: incomingMsg.senderId,
+            name: simplifyDisplayName(incomingMsg.senderName),
+            isNpc: false,
+            distance: 0,
+          };
+          window.setTimeout(() => {
+            soundEngine.playUiClick();
+            setUnreadPrivateCount((c) => c + 1);
+            setLastUnreadPrivateSender(senderUser);
+            setActivePrivateNotificationToast({
+              id: incomingMsg.id,
+              senderName: simplifyDisplayName(incomingMsg.senderName),
+              senderId: incomingMsg.senderId,
+              text: incomingMsg.text,
+              user: senderUser,
+            });
+          }, 0);
+        }
+
+        return [...prev, incomingMsg];
+      });
     });
 
-    const unsubscribe = subscribeToBuddiesBlitzRealtime({
-      onMerchantUpdated: (row) => {
-        if (!mounted) return;
-        setSupabaseConnected(true);
-        void fetchFishMarketplaceListingsFromSupabase().then((listings) => {
-          if (mounted) setFishMarketListings(listings);
+    const onCustomIncomingSocialMessage = (ev: Event) => {
+      if (!mounted) return;
+      const detail = (ev as CustomEvent<ChatMessage>).detail;
+      if (!detail || !detail.id || !detail.text) return;
+      setChatMessages((prev) => {
+        if (prev.some((m) => m.id === detail.id)) return prev;
+        return [...prev, detail];
+      });
+      const st = socialChatStateRef.current;
+      if (
+        shouldTriggerIncomingPrivateChatNotification({
+          message: detail,
+          localPlayerName: st.playerDisplayName,
+          localPlayerUid: st.playerUid,
+          isSocialChatModalOpen: st.isSocialChatModalOpen,
+          activeTab: st.selectedPrivateUser ? 'private' : 'public',
+          selectedPrivateUser: st.selectedPrivateUser,
+        })
+      ) {
+        const senderUser: NearbyEntityUser = {
+          id: detail.senderId || `peer-${detail.senderName}`,
+          nearAccountId: detail.senderId,
+          name: simplifyDisplayName(detail.senderName),
+          isNpc: false,
+          distance: 0,
+        };
+        soundEngine.playUiClick();
+        setUnreadPrivateCount((c) => c + 1);
+        setLastUnreadPrivateSender(senderUser);
+        setActivePrivateNotificationToast({
+          id: detail.id,
+          senderName: simplifyDisplayName(detail.senderName),
+          senderId: detail.senderId,
+          text: detail.text,
+          user: senderUser,
         });
-        setMarketState((prev) => ({
-          ...prev,
-          treasuryCyon: row.cyon_treasury,
-          isShopBroke: row.is_bankrupt,
-          dayCounter: row.simulated_day,
-          lastMarketHeadline: row.last_headline || prev.lastMarketHeadline,
-          stockByItemId: {
-            ...prev.stockByItemId,
-            ...row.stock_by_item,
-          },
-          demandByItemId: {
-            ...prev.demandByItemId,
-            ...row.recent_demand_by_item,
-          },
-        }));
-      },
-      onSocialMessageInserted: (msg) => {
-        if (!mounted) return;
-        setChatMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [
-            ...prev,
-            {
-              id: msg.id,
-              senderName: msg.sender_name,
-              recipientName: msg.recipient_name || undefined,
-              text: msg.message,
-              timestamp: new Date(msg.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-              type: msg.recipient_name ? 'private' : 'public',
-            },
-          ];
-        });
-      },
-    });
+      }
+    };
+    window.addEventListener('incoming-social-chat-message', onCustomIncomingSocialMessage);
 
     return () => {
       mounted = false;
-      unsubscribe();
+      window.removeEventListener('incoming-social-chat-message', onCustomIncomingSocialMessage);
+      if (realtimeChannel) {
+        void realtimeChannel.unsubscribe();
+      }
     };
   }, [merchantLocation]);
+
+  const [selectedTargetUser, setSelectedTargetUser] = useState<NearbyEntityUser | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [profileTargetUser, setProfileTargetUser] = useState<NearbyEntityUser | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  const socialChatStateRef = useRef({
+    playerDisplayName,
+    playerUid: hud.nearWalletId || playerUid,
+    isSocialChatModalOpen,
+    selectedPrivateUser,
+  });
+  useEffect(() => {
+    socialChatStateRef.current = {
+      playerDisplayName,
+      playerUid: hud.nearWalletId || playerUid,
+      isSocialChatModalOpen,
+      selectedPrivateUser,
+    };
+  }, [playerDisplayName, hud.nearWalletId, playerUid, isSocialChatModalOpen, selectedPrivateUser]);
+
+  useEffect(() => {
+    if (!activePrivateNotificationToast) return;
+    const timer = window.setTimeout(() => {
+      setActivePrivateNotificationToast((prev) =>
+        prev?.id === activePrivateNotificationToast.id ? null : prev,
+      );
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [activePrivateNotificationToast]);
+
+  useEffect(() => {
+    if (isKioskModalOpen && hud.worldMode === 'warzone') {
+      setIsKioskModalOpen(false);
+    }
+  }, [isKioskModalOpen, hud.worldMode]);
 
   useEffect(() => {
     if (
       activeSpecialModal !== 'none' ||
       isKioskModalOpen ||
       isSocialChatModalOpen ||
+      isProfileModalOpen ||
       activeTeleportKioskModal !== 'none'
     ) {
       setIsPersonalWalletModalOpen(false);
     }
-  }, [activeSpecialModal, isKioskModalOpen, isSocialChatModalOpen, activeTeleportKioskModal]);
-  const [selectedTargetUser, setSelectedTargetUser] = useState<NearbyEntityUser | null>(() => {
-    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('target') === '1') {
-      return {
-        id: 'npc_cafe',
-        name: 'HANA (BARISTA)',
-        isNpc: true,
-        distance: 2.4,
-        team: 'blue',
-        status: 'NPC Merchant',
-      };
-    }
-    return null;
-  });
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('profile') === '1';
-    }
-    return false;
-  });
-  const [profileTargetUser, setProfileTargetUser] = useState<NearbyEntityUser | null>(() => {
-    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('profile') === '1') {
-      return {
-        id: 'npc_cafe',
-        name: 'HANA (BARISTA)',
-        isNpc: true,
-        distance: 2.4,
-        team: 'blue',
-        status: 'NPC Merchant',
-      };
-    }
-    return null;
-  });
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome-1',
-      senderName: 'SYSTEM',
-      isNpc: true,
-      text: 'Welcome to the Warzone & Safezone Hub. Press [T] or the CHAT button to open local radius chat!',
-      timestamp: '12:00',
-      type: 'public',
-    },
-    {
-      id: 'hana-greet',
-      senderName: 'HANA',
-      isNpc: true,
-      text: 'Hello Buddy! Stop by the café if you want to exchange LUL for CYON or browse new furniture.',
-      timestamp: '12:01',
-      type: 'public',
-    },
+  }, [
+    activeSpecialModal,
+    isKioskModalOpen,
+    isSocialChatModalOpen,
+    isProfileModalOpen,
+    activeTeleportKioskModal,
   ]);
   const [worldMode, setWorldMode] = useState<WorldMode>(() => {
     if (typeof window !== 'undefined') {
@@ -835,12 +1016,6 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('buddy-action', { detail: actionName }));
   }, []);
 
-  const handleChangeParticleUiState = useCallback((nextUi: ParticleEmitterUiState) => {
-    setParticleUiState(nextUi);
-    const patch = uiStateToEmitterConfigPatch(nextUi);
-    window.dispatchEvent(new CustomEvent('particle-emitter-config', { detail: patch }));
-  }, []);
-
   const handleStartGame = useCallback((shouldReset = false) => {
     soundEngine.playUiClick();
     if (document.activeElement instanceof HTMLElement) {
@@ -859,9 +1034,6 @@ export default function App() {
       document.activeElement.blur();
     }
     setPlayMode(nextMode);
-    if (nextMode === 'editor') {
-      setIsSpawnDrawerOpen(false);
-    }
     if (gameState !== 'playing') {
       setGameState('playing');
     }
@@ -944,9 +1116,9 @@ export default function App() {
     };
     const onCloseKiosk = () => {
       setIsKioskModalOpen(false);
-      setIsSpawnDrawerOpen(false);
     };
     const onOpenNpcMerchant = (ev: Event) => {
+      if (hudRef.current.worldMode === 'warzone') return;
       const detail = (
         ev as CustomEvent<{ location?: MerchantLocationId; locationId?: MerchantLocationId }>
       ).detail;
@@ -964,16 +1136,32 @@ export default function App() {
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-      setIsInsidePrivateHouse(true);
-      setActiveSpecialModal('none');
+      setHouseEntryScanState('scanning');
+      window.setTimeout(() => {
+        soundEngine.playPickup();
+        setHouseEntryScanState('verified');
+        window.setTimeout(() => {
+          setHouseEntryScanState('idle');
+          setIsInsidePrivateHouse(true);
+          setIsSampleHouseView(false);
+          setActiveSpecialModal('none');
+        }, 600);
+      }, 700);
     };
     const onExitHouseInterior = () => {
       setIsInsidePrivateHouse(false);
+      setIsHouseFriendInviteOpen(false);
       setActiveSpecialModal('none');
     };
     const onOpenCharacterProfile = (e: Event) => {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
       if (customEv.detail?.user) {
+        setIsKioskModalOpen(false);
+        setIsSocialChatModalOpen(false);
+        setIsPersonalWalletModalOpen(false);
+        setActiveSpecialModal('none');
+        setActiveTeleportKioskModal('none');
+        window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
         setProfileTargetUser(customEv.detail.user);
         setIsProfileModalOpen(true);
       }
@@ -984,8 +1172,10 @@ export default function App() {
     };
     const onOpenSocialChatWhisper = (e: Event) => {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
-      if (customEv.detail?.user) {
+      if (customEv.detail?.user && !customEv.detail.user.isNpc) {
         setIsKioskModalOpen(false);
+        setIsProfileModalOpen(false);
+        setIsPersonalWalletModalOpen(false);
         setActiveSpecialModal('none');
         setActiveTeleportKioskModal('none');
         window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -1005,19 +1195,68 @@ export default function App() {
       setIsTargetMenuExpanded(false);
     };
     const onOpenTeleportKioskModal = (e: Event) => {
+      if (hudRef.current.worldMode === 'warzone') return;
       const customEv = e as CustomEvent<{
-        kind: 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby';
+        kind:
+          | CityTransitStationId
+          | 'lobby_warzone'
+          | 'lobby_safezone'
+          | 'halte_to_lobby';
       }>;
       const k = customEv.detail?.kind;
       if (k) {
+        const resolvedStationId: CityTransitStationId =
+          k === 'lobby_warzone' || k === 'lobby_safezone' || k === 'halte_to_lobby'
+            ? 'central_plaza'
+            : k;
         setIsKioskModalOpen(false);
         setActiveSpecialModal('none');
         setIsSocialChatModalOpen(false);
-        setActiveTeleportKioskModal(k);
+        setActiveTeleportKioskModal(resolvedStationId);
       }
     };
     const onCloseTeleportKioskModal = () => {
       setActiveTeleportKioskModal('none');
+    };
+    const onCityTramRideProgress = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          originStationId: CityTransitStationId;
+          destinationStationId: CityTransitStationId;
+          progress01: number;
+        }>
+      ).detail;
+      if (detail) {
+        setTramRideCutsceneUi({
+          active: true,
+          originStationId: detail.originStationId,
+          destinationStationId: detail.destinationStationId,
+          progress01: detail.progress01,
+        });
+      }
+    };
+    const onCityTramRideComplete = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          destinationStationId: CityTransitStationId;
+          worldMode: WorldMode;
+          team?: 'blue' | 'red';
+        }>
+      ).detail;
+      setTramRideCutsceneUi(null);
+      if (detail) {
+        setWorldMode(detail.worldMode);
+        if (detail.team) {
+          setWorldInitialTeam(detail.team);
+        }
+        setHud((prev) => ({
+          ...prev,
+          worldMode: detail.worldMode,
+          isInsideLobbySafezone: detail.destinationStationId === 'central_plaza',
+          cityArenaMode: detail.worldMode === 'warzone' ? 'warzone' : 'safezone',
+          playerTeam: detail.team ?? prev.playerTeam,
+        }));
+      }
     };
     window.addEventListener('toggle-kiosk-ui', onToggleKiosk);
     window.addEventListener('close-kiosk-ui', onCloseKiosk);
@@ -1031,6 +1270,8 @@ export default function App() {
     window.addEventListener('character-deselected', onCharacterDeselected);
     window.addEventListener('open-teleport-kiosk-modal', onOpenTeleportKioskModal);
     window.addEventListener('close-teleport-kiosk-modal', onCloseTeleportKioskModal);
+    window.addEventListener('city-tram-ride-progress', onCityTramRideProgress);
+    window.addEventListener('city-tram-ride-complete', onCityTramRideComplete);
     return () => {
       window.removeEventListener('toggle-kiosk-ui', onToggleKiosk);
       window.removeEventListener('close-kiosk-ui', onCloseKiosk);
@@ -1044,6 +1285,8 @@ export default function App() {
       window.removeEventListener('character-deselected', onCharacterDeselected);
       window.removeEventListener('open-teleport-kiosk-modal', onOpenTeleportKioskModal);
       window.removeEventListener('close-teleport-kiosk-modal', onCloseTeleportKioskModal);
+      window.removeEventListener('city-tram-ride-progress', onCityTramRideProgress);
+      window.removeEventListener('city-tram-ride-complete', onCityTramRideComplete);
     };
   }, []);
 
@@ -1060,6 +1303,7 @@ export default function App() {
           mode: effectiveMode,
           location: merchantLocation,
           themeId: activeHouseThemeId,
+          isSampleHouse: isSampleHouseView,
           placement: interiorPlacement,
         },
       }),
@@ -1068,6 +1312,7 @@ export default function App() {
     onboardingStep,
     activeSpecialModal,
     isInsidePrivateHouse,
+    isSampleHouseView,
     merchantLocation,
     activeHouseThemeId,
     interiorPlacement,
@@ -1128,13 +1373,40 @@ export default function App() {
     [],
   );
 
+  const refreshWalletTransactions = useCallback(async () => {
+    setIsLoadingWalletTransactions(true);
+    try {
+      const activeAccount = hudRef.current.nearWalletId || playerUid || null;
+      const rows = await fetchMarketTransactionsFromSupabase(activeAccount, 50);
+      setWalletTransactions(rows);
+    } finally {
+      setIsLoadingWalletTransactions(false);
+    }
+  }, [playerUid]);
+
+  useEffect(() => {
+    const unsub = subscribeToMarketTransactions(() => {
+      void refreshWalletTransactions();
+    });
+    return () => {
+      unsub();
+    };
+  }, [refreshWalletTransactions]);
+
+  useEffect(() => {
+    if (isPersonalWalletModalOpen) {
+      void refreshWalletTransactions();
+    }
+  }, [isPersonalWalletModalOpen, personalWalletTab, refreshWalletTransactions]);
+
   const handleConnectWalletAndEnterLobby = useCallback(
     async (
       rawWalletInput: string,
       options?: {
         silentRestore?: boolean;
-        isNewWalletCreation?: boolean;
         googleEmail?: string;
+        onboardingMode?: 'social_invisible' | 'wallet_selector';
+        preverifiedResult?: NearWalletConnectionResult;
       },
     ) => {
       if (!options?.silentRestore) {
@@ -1143,15 +1415,10 @@ export default function App() {
       setWalletConnectError(null);
       const cleanInput = rawWalletInput.trim().toLowerCase();
       if (!cleanInput) {
-        setIsVerifyingNearWallet(true);
-        const oauthRes = await signInWithGoogleOAuth();
-        setIsVerifyingNearWallet(false);
-        if (oauthRes.redirected) {
-          return;
-        }
-        setWalletConnectError('Please enter your Google email address to continue.');
+        setIsNearWalletSelectorOpen(true);
         return;
       }
+
       const explicitGoogleEmail = (options?.googleEmail ?? '').trim().toLowerCase();
       const resolvedEmail =
         explicitGoogleEmail && explicitGoogleEmail.includes('@')
@@ -1169,40 +1436,73 @@ export default function App() {
         }
         setConnectedGoogleEmail(resolvedEmail);
       }
-      const normalizedWallet = formatPlayerSubAccountFromMaster(cleanInput);
 
-      if (!isValidNearAccountId(normalizedWallet)) {
-        setWalletConnectError(
-          `Invalid NEAR account format "${normalizedWallet}". Enter a username or a valid .testnet/.near address.`,
-        );
+      const normalizedWallet = options?.preverifiedResult?.accountId
+        ? options.preverifiedResult.accountId.trim().toLowerCase()
+        : cleanInput;
+
+      setIsVerifyingNearWallet(true);
+      const detectedNet: NearNetworkId = normalizedWallet.endsWith('.near')
+        ? 'mainnet'
+        : walletNetworkChoice;
+      const isCitizenInvisible = options?.onboardingMode === 'social_invisible';
+      const accountView = await fetchNearAccountView(normalizedWallet);
+      setNearOnChainAccountView(accountView);
+
+      if (!accountView && !isCitizenInvisible) {
+        setIsVerifyingNearWallet(false);
+        if (!options?.silentRestore) {
+          setWalletConnectError(
+            `Account "${normalizedWallet}" was not found on NEAR ${detectedNet} RPC.`,
+          );
+        }
         return;
       }
 
-      // If this is a player sub-account under buddiesblitz.testnet, register/verify it in Master Registry
-      if (isManagedSubAccountOfMaster(normalizedWallet)) {
-        const { subAccount, allSubAccounts } = provisionOrGetPlayerSubAccount(normalizedWallet);
-        setManagedSubAccounts(allSubAccounts);
-        if (subAccount.status === 'FROZEN') {
-          setWalletConnectError(
-            `Sub-account ${normalizedWallet} is currently FROZEN by Master Admin (${MASTER_WALLET_ACCOUNT_ID}). Unfreeze it in the Master QA / Treasury menu.`,
-          );
-          return;
-        }
-        setRespiteBalance(subAccount.respiteBalance);
-        setCyonBalance(subAccount.cyonBalance);
-        setNearTestnetBalance(12.5);
+      const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0;
+      setNearTestnetBalance(
+        Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0,
+      );
+
+      const [onChainRespiteRaw, onChainEstate, gamepassVerify] = await Promise.all([
+        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet),
+        fetchBuddiesMarketEstate(normalizedWallet),
+        verifyNep171GamepassOwnership(normalizedWallet),
+      ]);
+      const estateRespite = Number(onChainEstate?.respite_balance || '0') || 0;
+      const onChainRespite = Math.max(Number(onChainRespiteRaw || '0') || 0, estateRespite);
+      if (onChainRespite > 0) {
+        setRespiteBalance(onChainRespite);
+      }
+      if (onChainEstate && Array.isArray(onChainEstate.family_contracts) && onChainEstate.family_contracts.length > 0) {
+        setRecruitedFamilyMembers(
+          onChainEstate.family_contracts.map((fc, idx) => {
+            const plan =
+              FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === fc.plan_id) ||
+              FAMILY_MEMBER_CONTRACT_PLANS[0];
+            return {
+              agentId: fc.contract_id,
+              name: `FAMILY MEMBER #${fc.member_number || idx + 1}`,
+              contractAddress: `family-${fc.member_number || idx + 1}.${NEAR_CONFIG.masterAccountId}`,
+              planId: plan.id,
+              planLabel: plan.shortLabel,
+              pricePaidRespite: Number(fc.price_paid_respite || plan.priceRespite) || plan.priceRespite,
+              recruitedAtIso: new Date(fc.hired_at_ms || Date.now()).toISOString(),
+              expiresAtIso: new Date(fc.expires_at_ms || Date.now() + 7 * 86400_000).toISOString(),
+              activeOrder: (fc.active_order as RecruitedFamilyMemberAgent['activeOrder']) || 'collect_boxes',
+              nearTxHash: '',
+            };
+          }),
+        );
       }
 
-      setIsVerifyingNearWallet(true);
-      const detectedNet = detectNetworkFromAccountId(normalizedWallet, walletNetworkChoice);
-      const accountView = await fetchNearAccountView(normalizedWallet, detectedNet);
-      setNearOnChainAccountView(accountView);
+      const ownsHouseVerified = Boolean(gamepassVerify.verified || onChainEstate?.owns_house);
+      const verifiedTokenId =
+        gamepassVerify.token?.tokenId ?? onChainEstate?.house_deed?.deed_token_id ?? null;
       setIsVerifyingNearWallet(false);
 
-      // 1. Check local saved wallet profile first for instant restoration
       let restoredGender: 'male' | 'female' = characterGender;
       let restoredName = normalizedWallet.split('.')[0].toUpperCase();
-      let hadExistingLocalProfile = false;
       if (typeof window !== 'undefined') {
         try {
           const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v1');
@@ -1213,7 +1513,6 @@ export default function App() {
             >;
             const saved = parsed[normalizedWallet];
             if (saved) {
-              hadExistingLocalProfile = true;
               restoredGender = saved.gender;
               restoredName = saved.displayName;
             }
@@ -1223,7 +1522,6 @@ export default function App() {
         }
       }
 
-      // Bind Wallet Address as Player UID; only show "Preparing Your Wallet" modal when creating a brand-new wallet!
       setPlayerUid(normalizedWallet);
       setWalletConnectInput(normalizedWallet);
       setCharacterGender(restoredGender);
@@ -1232,20 +1530,8 @@ export default function App() {
       setOnboardingAuthMode('wallet');
       setOnboardingStep('completed');
       setGameState('playing');
-      if (options?.silentRestore || (hadExistingLocalProfile && !options?.isNewWalletCreation)) {
-        setCitizenWalletModalPhase('idle');
-      } else {
-        setCitizenWalletSetupProgress(15);
-        setCitizenWalletModalPhase('preparing');
-      }
+      setHasHouseOwnership(ownsHouseVerified);
 
-      // Unlock QA & Treasury Management Menu only if Master UID is cryptographically verified
-      if (isMasterAdminWallet(normalizedWallet) && Boolean(loadSavedAdminCryptographicProof()?.verified)) {
-        setIsQcMenuUnlocked(true);
-      }
-
-      const nextLedger = createInitialNep171SubAccountLedger(normalizedWallet, detectedNet);
-      setNep171Ledger(nextLedger);
       dispatchBuddyAction(`nearConnectAndMint:${normalizedWallet}`);
       dispatchBuddyAction(`setCharacterGender:${restoredGender}`);
       dispatchBuddyAction(`setPlayerDisplayName:${restoredName}`);
@@ -1253,22 +1539,56 @@ export default function App() {
         ...prev,
         nearWalletConnected: true,
         nearWalletId: normalizedWallet,
-        nearHasGamepassNft: true,
-        nearGamepassTokenId: nextLedger.tokenId,
+        nearHasGamepassNft: ownsHouseVerified,
+        nearGamepassTokenId: verifiedTokenId,
       }));
       persistWalletProfileLocally(normalizedWallet, restoredName, restoredGender, resolvedEmail);
 
-      // 2. Fetch or restore existing profile from Supabase `bb_profiles` keyed by Wallet UID (`near_account_id`)
+      void fetchGamepassNftLedgerFromSupabase(verifiedTokenId || undefined).then(
+        (remoteLedger) => {
+          if (remoteLedger) {
+            setNep171Ledger(remoteLedger);
+          } else {
+            setNep171Ledger((prev) => ({
+              ...prev,
+              tokenId: verifiedTokenId || prev.tokenId,
+              ownerNearAccount: normalizedWallet,
+            }));
+          }
+        },
+      );
+
+      void fetchHouseInteriorFromSupabase(normalizedWallet).then((interior) => {
+        if (!interior) return;
+        if (interior.active_theme_id) {
+          setActiveHouseThemeId(interior.active_theme_id);
+        }
+        const firstPlacement = interior.placed_furniture?.[0] as
+          | HouseInteriorPlacementState
+          | undefined;
+        if (firstPlacement && typeof firstPlacement === 'object') {
+          setInteriorPlacement((prev) => ({
+            ...prev,
+            ...firstPlacement,
+          }));
+        }
+      });
+
       void fetchOrCreatePlayerProfile({
         nearAccountId: normalizedWallet,
         displayName: restoredName,
-        authMode: 'near_wallet',
-        email: resolvedEmail || null,
+        authMode: isCitizenInvisible ? 'social_invisible' : 'wallet_selector',
+        email: resolvedEmail || undefined,
       }).then((profile) => {
         if (profile) {
           setSupabaseConnected(true);
           setCyonBalance(profile.cyon_balance);
-          setRespiteBalance(profile.respite_balance);
+          if (onChainRespite <= 0) {
+            setRespiteBalance(profile.respite_balance);
+          }
+          if (Array.isArray(profile.owned_token_ids)) {
+            setOwnedMerchantItemIds(profile.owned_token_ids);
+          }
           const dbGenderTag = profile.unlocked_skins?.find(
             (s) => s === 'gender:male' || s === 'gender:female',
           );
@@ -1285,17 +1605,8 @@ export default function App() {
           dispatchBuddyAction(`setCharacterGender:${finalGender}`);
           dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
           persistWalletProfileLocally(normalizedWallet, finalName, finalGender, resolvedEmail);
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: normalizedWallet,
-            displayName: finalName,
-            lulBalance: hudRef.current.gold,
-            cyonBalance: profile.cyon_balance,
-            respiteBalance: profile.respite_balance,
-            unlockedSkins: ['default', `gender:${finalGender}`],
-          });
         }
       });
-      void syncGamepassNftLedgerToSupabase(nextLedger);
     },
     [characterGender, dispatchBuddyAction, persistWalletProfileLocally, walletNetworkChoice],
   );
@@ -1305,65 +1616,21 @@ export default function App() {
     authenticated: privyAuthenticated,
     user: privyUser,
     logout: privyLogout,
-  } = usePrivy();
+  } = useSafePrivy();
   const pendingPrivyGoogleFlowRef = useRef<boolean>(false);
 
-  const openCitizenWalletNamingModal = useCallback((rawEmail?: string) => {
-    setWalletConnectError(null);
-    setCitizenWalletNameError(null);
-    const cleanEmail = (rawEmail ?? '').trim().toLowerCase();
-    if (cleanEmail) {
-      const resolvedEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@gmail.com`;
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem('bb_connected_google_email', resolvedEmail);
-        } catch {
-          // ignore
-        }
-      }
-      setConnectedGoogleEmail(resolvedEmail);
-    }
-    if (typeof window !== 'undefined') {
-      try {
-        window.sessionStorage.removeItem('bb_pending_privy_google_login');
-      } catch {
-        // ignore
-      }
-    }
-    setGameState('playing');
-    setCitizenWalletNameDraft('');
-    setOnboardingStep('completed');
-    setCitizenWalletModalPhase('choose_name');
-  }, []);
-
-  /**
-   * Checks if a Google email already has an existing Citizen Wallet in `localStorage` or Supabase `bb_profiles`.
-   * If found, automatically restores that existing wallet instead of asking the user to create a new wallet!
-   */
   const resolveAndRestoreExistingGoogleWallet = useCallback(
     async (rawEmail?: string): Promise<boolean> => {
       const cleanEmail = (rawEmail ?? '').trim().toLowerCase();
-      if (cleanEmail && typeof window !== 'undefined') {
+      if (cleanEmail && cleanEmail.includes('@') && typeof window !== 'undefined') {
         try {
-          const rawEmailMap = window.localStorage.getItem('bb_wallet_by_google_email_v1');
-          const emailMap: Record<string, string> = rawEmailMap ? JSON.parse(rawEmailMap) : {};
-          const mappedWallet = emailMap[cleanEmail];
-          if (
-            mappedWallet &&
-            !mappedWallet.startsWith('player1.') &&
-            !mappedWallet.startsWith('guest-')
-          ) {
-            await handleConnectWalletAndEnterLobby(mappedWallet, {
-              silentRestore: true,
-              googleEmail: cleanEmail,
-            });
-            return true;
-          }
+          window.localStorage.setItem('bb_connected_google_email', cleanEmail);
         } catch {
           // ignore
         }
+        setConnectedGoogleEmail(cleanEmail);
 
-        const remoteProfile = await findPlayerProfileByGoogleEmail(cleanEmail);
+        const remoteProfile = await fetchPlayerProfileByEmail(cleanEmail);
         if (remoteProfile && remoteProfile.near_account_id) {
           await handleConnectWalletAndEnterLobby(remoteProfile.near_account_id, {
             silentRestore: true,
@@ -1371,39 +1638,27 @@ export default function App() {
           });
           return true;
         }
-      }
 
-      if (typeof window !== 'undefined') {
-        try {
-          const lastWallet = (
-            window.localStorage.getItem('bb_last_connected_wallet_id') || ''
-          )
-            .trim()
-            .toLowerCase();
-          if (
-            lastWallet &&
-            !lastWallet.startsWith('player1.') &&
-            !lastWallet.startsWith('guest-') &&
-            !lastWallet.endsWith('.buddiesblitz-master.testnet')
-          ) {
-            await handleConnectWalletAndEnterLobby(lastWallet, {
-              silentRestore: true,
-              googleEmail: cleanEmail || undefined,
-            });
-            return true;
-          }
-        } catch {
-          // ignore
+        const suggestedCitizenName = cleanEmail
+          .split('@')[0]
+          .replace(/[^a-zA-Z0-9_-]/g, '')
+          .slice(0, 20);
+        if (suggestedCitizenName && !isCustomGuestNameEdited) {
+          setPlayerDisplayName(suggestedCitizenName);
+          setWalletUsernameDraft(suggestedCitizenName);
         }
       }
 
-      openCitizenWalletNamingModal(cleanEmail);
+      setOnboardingStep('guest_character_select');
       return false;
     },
-    [handleConnectWalletAndEnterLobby, openCitizenWalletNamingModal],
+    [handleConnectWalletAndEnterLobby, isCustomGuestNameEdited],
   );
 
-  const { login: privyLogin } = useLogin({
+  const {
+    initGoogleOAuth,
+    loading: privyOAuthLoading,
+  } = useSafePrivyLogin({
     onComplete: ({ user, wasAlreadyAuthenticated }) => {
       const googleEmail = user?.google?.email || user?.email?.address || '';
       const hasPendingRedirect =
@@ -1436,24 +1691,23 @@ export default function App() {
           // ignore
         }
       }
-      if (String(err) !== 'exited_auth_flow') {
-        void resolveAndRestoreExistingGoogleWallet();
-      }
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err.trim()
+            ? err
+            : 'Google OAuth could not be completed. Please try again or continue with Character Selection below.';
+      setWalletConnectError(errMsg);
     },
   });
 
-  /**
-   * Step 1 of Google Login (via Privy.io): Initiates Privy Google Sign-In and either
-   * restores the player's existing wallet or opens "Choose Your Wallet Name" for new players.
-   */
   const handleStartGoogleLoginAndOpenWalletNaming = useCallback(
     async (rawEmailInput?: string) => {
       soundEngine.playUiClick();
       setWalletConnectError(null);
-      setCitizenWalletNameError(null);
       const cleanEmail = (rawEmailInput ?? '').trim().toLowerCase();
 
-      if (cleanEmail) {
+      if (cleanEmail && cleanEmail.includes('@')) {
         await resolveAndRestoreExistingGoogleWallet(cleanEmail);
         return;
       }
@@ -1467,6 +1721,7 @@ export default function App() {
 
       if (privyReady && !privyAuthenticated) {
         pendingPrivyGoogleFlowRef.current = true;
+        setIsVerifyingNearWallet(true);
         if (typeof window !== 'undefined') {
           try {
             window.sessionStorage.setItem('bb_pending_privy_google_login', '1');
@@ -1474,56 +1729,74 @@ export default function App() {
             // ignore
           }
         }
-        privyLogin({ loginMethods: ['google'] });
-        return;
+        try {
+          await initGoogleOAuth();
+          return;
+        } catch (err) {
+          pendingPrivyGoogleFlowRef.current = false;
+          setIsVerifyingNearWallet(false);
+          const oauthRes = await signInWithSupabaseGoogle();
+          if (oauthRes.started) {
+            return;
+          }
+          setWalletConnectError(
+            err instanceof Error
+              ? err.message
+              : oauthRes.error || 'Unable to start Google OAuth right now.',
+          );
+          return;
+        }
       }
 
-      // Fallback when Privy iframe is still initializing or running in offline test mode
       setIsVerifyingNearWallet(true);
-      const oauthRes = await signInWithGoogleOAuth();
+      const oauthRes = await signInWithSupabaseGoogle();
       setIsVerifyingNearWallet(false);
-      if (oauthRes.redirected) {
+      if (oauthRes.started) {
         return;
       }
-      await resolveAndRestoreExistingGoogleWallet();
+      setWalletConnectError(
+        oauthRes.error ||
+          'Google OAuth is not available in this session. Select your character and Citizen Username below.',
+      );
     },
     [
       connectedGoogleEmail,
+      initGoogleOAuth,
       privyAuthenticated,
-      privyLogin,
       privyReady,
       privyUser,
       resolveAndRestoreExistingGoogleWallet,
     ],
   );
 
-  // Automatically consume MyNearWallet / Meteor OAuth redirect callback (`?account_id=...`),
-  // auto-restore saved active wallet session on web reload / server restart, or consume Supabase Google OAuth session on mount
   useEffect(() => {
-    const callback = consumeNearWalletCallbackFromUrl();
-    if (callback && callback.accountId) {
-      void handleConnectWalletAndEnterLobby(callback.accountId, { silentRestore: true });
-    } else if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       try {
-        const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
-        const explicitlyLoggedOut =
-          window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
-        if (
-          lastId &&
-          !explicitlyLoggedOut &&
-          !lastId.toLowerCase().startsWith('player1.') &&
-          !lastId.toLowerCase().startsWith('guest-') &&
-          !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
-        ) {
-          void handleConnectWalletAndEnterLobby(lastId, { silentRestore: true });
+        const params = new URLSearchParams(window.location.search);
+        const callbackAccountId = params.get('account_id');
+        if (callbackAccountId) {
+          void handleConnectWalletAndEnterLobby(callbackAccountId, { silentRestore: true });
+        } else {
+          const lastId = window.localStorage.getItem('bb_last_connected_wallet_id');
+          const explicitlyLoggedOut =
+            window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
+          if (
+            lastId &&
+            !explicitlyLoggedOut &&
+            !lastId.toLowerCase().startsWith('player1.') &&
+            !lastId.toLowerCase().startsWith('guest') &&
+            !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
+          ) {
+            void handleConnectWalletAndEnterLobby(lastId, { silentRestore: true });
+          }
         }
       } catch {
         // ignore
       }
     }
-    const unsubGoogle = subscribeToSupabaseGoogleAuth((email) => {
-      if (email) {
-        void resolveAndRestoreExistingGoogleWallet(email);
+    const unsubGoogle = subscribeToSupabaseAuthUser((user) => {
+      if (user?.email) {
+        void resolveAndRestoreExistingGoogleWallet(user.email);
       }
     });
     return () => {
@@ -1531,7 +1804,6 @@ export default function App() {
     };
   }, [handleConnectWalletAndEnterLobby, resolveAndRestoreExistingGoogleWallet]);
 
-  // If returning from a full-page Privy Google OAuth redirect, automatically restore existing wallet or open Wallet Naming modal
   useEffect(() => {
     if (!privyReady || !privyAuthenticated) return;
     const hasPendingRedirect =
@@ -1544,25 +1816,6 @@ export default function App() {
     }
   }, [privyAuthenticated, privyReady, privyUser, resolveAndRestoreExistingGoogleWallet]);
 
-  useEffect(() => {
-    if (citizenWalletModalPhase !== 'preparing') return;
-    const interval = window.setInterval(() => {
-      setCitizenWalletSetupProgress((prev) => Math.min(100, prev + 22));
-    }, 180);
-    const doneTimer = window.setTimeout(() => {
-      setCitizenWalletSetupProgress(100);
-      setCitizenWalletModalPhase('ready');
-    }, 1100);
-    return () => {
-      window.clearInterval(interval);
-      window.clearTimeout(doneTimer);
-    };
-  }, [citizenWalletModalPhase]);
-
-  /**
-   * Allows the player to change their username at any time (in Chat Settings, Personal Wallet, or Citizen Profile),
-   * while keeping their Wallet Address (`playerUid`) as their permanent UID.
-   */
   const handleUpdatePlayerUsername = useCallback(
     (rawNewName: string) => {
       const cleanName = rawNewName.trim().slice(0, 24);
@@ -1601,29 +1854,78 @@ export default function App() {
         hudRef.current.nearWalletId || playerUid || nep171Ledger.ownerNearAccount;
       if (activeUid) {
         persistWalletProfileLocally(activeUid, cleanName, characterGender);
-        void updatePlayerDisplayNameInSupabase({
+        void syncPlayerBalancesToSupabase({
           nearAccountId: activeUid,
           displayName: cleanName,
-          gender: characterGender,
+          lulBalance: hudRef.current.gold,
+          cyonBalance,
+          respiteBalance,
+          unlockedSkins: ['default', `gender:${characterGender}`],
         });
       }
     },
-    [characterGender, dispatchBuddyAction, nep171Ledger.ownerNearAccount, persistWalletProfileLocally, playerUid],
+    [
+      characterGender,
+      cyonBalance,
+      dispatchBuddyAction,
+      nep171Ledger.ownerNearAccount,
+      persistWalletProfileLocally,
+      playerDisplayName,
+      playerUid,
+      respiteBalance,
+    ],
   );
 
   const handleConfirmGuestCharacterAndEnterLobby = useCallback(() => {
     soundEngine.playUiClick();
     const cleanGuestName =
       playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
-    setConnectedGoogleEmail('');
-    setPlayerUid('guest');
+    const activeEmail = connectedGoogleEmail.trim().toLowerCase();
+    setPlayerDisplayName(cleanGuestName);
+    setWalletUsernameDraft(cleanGuestName);
+    setIsEditingGuestName(false);
+
+    if (activeEmail && activeEmail.includes('@')) {
+      const candidateHandle = cleanGuestName
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '')
+        .slice(0, 24);
+      const safeHandle = candidateHandle.length >= 2 ? candidateHandle : 'citizen';
+      setOnboardingAuthMode('wallet');
+      setOnboardingLoadingProgress(15);
+      setOnboardingStep('entering_lobby');
+      void spawnSubAccountOnChainViaMaster({
+        handle: safeHandle,
+        email: activeEmail,
+      }).then((provisioned) => {
+        if (!provisioned.ok || !provisioned.subAccountId) return;
+        const walletId = provisioned.subAccountId.toLowerCase();
+        setPlayerUid(walletId);
+        setWalletConnectInput(walletId);
+        persistWalletProfileLocally(walletId, cleanGuestName, characterGender, activeEmail);
+        dispatchBuddyAction(`nearConnectAndMint:${walletId}`);
+        dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+        dispatchBuddyAction(`setPlayerDisplayName:${cleanGuestName}`);
+        setHud((prev) => ({
+          ...prev,
+          nearWalletConnected: true,
+          nearWalletId: walletId,
+        }));
+        void fetchOrCreatePlayerProfile({
+          nearAccountId: walletId,
+          displayName: cleanGuestName,
+          authMode: 'social_invisible',
+          email: activeEmail,
+        });
+      });
+      return;
+    }
+
+    setPlayerUid('');
     setRespiteBalance(0);
     setCyonBalance(0);
     setNearTestnetBalance(0);
     setHasHouseOwnership(false);
-    setPlayerDisplayName(cleanGuestName);
-    setWalletUsernameDraft(cleanGuestName);
-    setIsEditingGuestName(false);
     setOnboardingAuthMode('guest');
     setOnboardingLoadingProgress(10);
     setOnboardingStep('entering_lobby');
@@ -1639,7 +1941,13 @@ export default function App() {
       nearHasGamepassNft: false,
       nearGamepassTokenId: null,
     }));
-  }, [characterGender, dispatchBuddyAction, playerDisplayName]);
+  }, [
+    characterGender,
+    connectedGoogleEmail,
+    dispatchBuddyAction,
+    persistWalletProfileLocally,
+    playerDisplayName,
+  ]);
 
   useEffect(() => {
     if (onboardingStep !== 'entering_lobby') return;
@@ -1658,14 +1966,6 @@ export default function App() {
       window.clearTimeout(doneTimer);
     };
   }, [onboardingStep]);
-
-  useEffect(() => {
-    if (!isFastForwardRunning) return;
-    const id = window.setInterval(() => {
-      setMarketState((prev) => stepFastForwardEconomyTick(prev, prev.dayCounter + 1));
-    }, 900);
-    return () => window.clearInterval(id);
-  }, [isFastForwardRunning]);
 
   useEffect(() => {
     window.dispatchEvent(
@@ -1687,6 +1987,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!isPreloadComplete) return;
       const targetEl = e.target as HTMLElement | null;
       if (
         targetEl &&
@@ -1752,22 +2053,9 @@ export default function App() {
         }
       }
 
-      if (isBlueprintModalOpen) {
-        if (e.code === 'Escape') {
-          setIsBlueprintModalOpen(false);
-        }
-        return;
-      }
-
       if (gameState === 'title' && (e.code === 'Enter' || e.code === 'Space')) {
         e.preventDefault();
         handleStartGame(false);
-        return;
-      }
-
-      if (e.code === 'KeyE' && hudRef.current.isNearLobbyGoldExchange) {
-        e.preventDefault();
-        dispatchBuddyAction('talkToNearestNpcMerchant');
         return;
       }
 
@@ -1800,12 +2088,12 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [
+    isPreloadComplete,
     gameState,
     activeSpecialModal,
     isProfileModalOpen,
     isSocialChatModalOpen,
     isKioskModalOpen,
-    isBlueprintModalOpen,
     dispatchBuddyAction,
     handleStartGame,
     handleToggleAudio,
@@ -1814,10 +2102,41 @@ export default function App() {
   ]);
 
   const playerRadarDot = hud.radarDots.find((d) => d.kind === 'player');
-  const nearbyWaterZone = detectNearbyFishingWaterZone(
-    playerRadarDot?.x ?? 0,
-    playerRadarDot?.z ?? 0,
+  const rawWaterZone = detectNearbyFishingWaterZone(
+    playerRadarDot?.x ?? -999,
+    playerRadarDot?.z ?? -999,
   );
+  const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
+  const nearbyWaterZone =
+    hud.worldMode === 'warzone' || !playerRadarDot
+      ? { ...rawWaterZone, canFish: false, zoneId: null, zoneLabel: null }
+      : rawWaterZone;
+
+  const fishingCastTimersRef = useRef<number[]>([]);
+  const clearFishingCastTimers = useCallback(() => {
+    for (const tid of fishingCastTimersRef.current) {
+      window.clearTimeout(tid);
+    }
+    fishingCastTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearFishingCastTimers();
+    };
+  }, [clearFishingCastTimers]);
+
+  // Auto-reset fishing minigame if entering warzone or explicitly unequipping fishing rod mid-cast
+  useEffect(() => {
+    if ((hud.worldMode === 'warzone' || !isJoranEquipped) && fishingPhase !== 'idle') {
+      clearFishingCastTimers();
+      setIsChargingCast(false);
+      setIsHoldingReel(false);
+      setFishingMinigame(null);
+      setFishingHintMessage(null);
+      setFishingPhase('idle');
+    }
+  }, [hud.worldMode, isJoranEquipped, fishingPhase, clearFishingCastTimers]);
 
   // Sync Tidewater 3D Bobber, 48-Seg Catenary Line, Progressive Rod Bend & Spinning Reel with BuddiesBlitzArena
   useEffect(() => {
@@ -1875,7 +2194,7 @@ export default function App() {
     const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
     const activeZone = waterCheck.zoneId ?? 'east_beach';
     const actorAccount =
-      hudRef.current.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+      hudRef.current.nearWalletId || nep171Ledger.ownerNearAccount || playerDisplayName || 'guest';
 
     if (fishingMinigame.status === 'caught') {
       soundEngine.playPowerCore();
@@ -1901,15 +2220,26 @@ export default function App() {
     setFishingPhase('idle');
   }, [fishingPhase, fishingMinigame, lightingPreset, nep171Ledger.ownerNearAccount]);
 
+  const ensureFishingRodEquipped = useCallback(() => {
+    if (hudRef.current.equippedWeapon !== 'Joran Fishing') {
+      dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+      hudRef.current = { ...hudRef.current, equippedWeapon: 'Joran Fishing' };
+      setHud((prev) => ({ ...prev, equippedWeapon: 'Joran Fishing' }));
+    }
+  }, [dispatchBuddyAction]);
+
   const launchTidewaterCast = useCallback(
     (powerToUse: number) => {
+      if (hudRef.current.worldMode === 'warzone') return;
       if (caughtFishBucket.length >= 20) return;
+      ensureFishingRodEquipped();
+      clearFishingCastTimers();
+
       const pDot = hudRef.current.radarDots.find((d) => d.kind === 'player');
       const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
       const activeZone = waterCheck.zoneId ?? 'east_beach';
 
       soundEngine.playPickup();
-      dispatchBuddyAction('qcEquipWeapon:fishing_rod');
       const clampedPower = Math.max(0.2, Math.min(1.0, powerToUse));
       setFishingCastPower(clampedPower);
       const schedule = createTidewaterBiteSchedule({
@@ -1923,35 +2253,51 @@ export default function App() {
       setIsChargingCast(false);
       setFishingPhase('casting');
 
-      // Stage 1: Preliminary Nibble (0.65s after splashdown)
-      window.setTimeout(() => {
+      const nibbleDelayMs = 650;
+      const plungeDelayMs = 650 + schedule.nibblesTotal * 650;
+      const expireDelayMs = plungeDelayMs + Math.round(schedule.strikeWindowSec * 1000);
+
+      // Stage 1: Preliminary Nibble
+      const t1 = window.setTimeout(() => {
         setFishingPhase((curr) => {
           if (curr !== 'casting') return curr;
           soundEngine.playUiClick();
           return 'nibble';
         });
-      }, 650);
+      }, nibbleDelayMs);
 
-      // Stage 2: Deep Bobber Plunge ('bite' / Take) after nibble(s)
-      window.setTimeout(() => {
+      // Stage 2: Deep Bobber Plunge ('bite' / Take) after scheduled nibble(s)
+      const t2 = window.setTimeout(() => {
         setFishingPhase((curr) => {
           if (curr !== 'casting' && curr !== 'nibble') return curr;
           soundEngine.playPickup();
           setFishingHintMessage(null);
           return 'bite';
         });
-      }, 1550);
+      }, plungeDelayMs);
+
+      // Stage 3: Missed strike window auto-reset
+      const t3 = window.setTimeout(() => {
+        setFishingPhase((curr) => {
+          if (curr !== 'bite') return curr;
+          setFishingHintMessage('Missed the strike window! Press [F] to cast again.');
+          return 'idle';
+        });
+      }, expireDelayMs);
+
+      fishingCastTimersRef.current = [t1, t2, t3];
     },
-    [caughtFishBucket.length, dispatchBuddyAction, lightingPreset],
+    [caughtFishBucket.length, clearFishingCastTimers, ensureFishingRodEquipped, lightingPreset],
   );
 
   const handleTriggerFishingAction = useCallback(() => {
+    if (hudRef.current.worldMode === 'warzone') return;
+    ensureFishingRodEquipped();
     const pDot = hudRef.current.radarDots.find((d) => d.kind === 'player');
     const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
     const activeZone = waterCheck.zoneId ?? 'east_beach';
 
     soundEngine.playUiClick();
-    dispatchBuddyAction('qcEquipWeapon:fishing_rod');
 
     // Non-punishing Tidewater Nibble Cue: clicking early warns the player without losing the cast!
     if (fishingPhase === 'nibble') {
@@ -1982,6 +2328,7 @@ export default function App() {
 
     // Hook Set on 'bite' ('take' window) -> Every catch enters the Tidewater Line-Tension + Stamina + Surge Fight Minigame!
     if (fishingPhase === 'bite') {
+      clearFishingCastTimers();
       const targetSpecies =
         fishingBiteSchedule?.species ??
         createTidewaterBiteSchedule({
@@ -2001,19 +2348,111 @@ export default function App() {
       launchTidewaterCast(fishingCastPower);
     }
   }, [
-    dispatchBuddyAction,
+    clearFishingCastTimers,
+    ensureFishingRodEquipped,
     fishingBiteSchedule,
     fishingCastPower,
     fishingMinigame,
     fishingPhase,
     launchTidewaterCast,
     lightingPreset,
-    nep171Ledger.ownerNearAccount,
   ]);
+
+  const handleSellRawFishForLul = useCallback(
+    (fish: CaughtFishItem) => {
+      soundEngine.playPickup();
+      const actorAccount = hudRef.current.nearWalletId || playerUid;
+      if (!actorAccount) return;
+      const earnedLul = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
+      setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+      setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
+      const nextLul = Math.max(0, (hudRef.current.gold ?? 0) + earnedLul);
+      dispatchBuddyAction(`adjustPlayerLul:${earnedLul}`);
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: actorAccount,
+        lulBalance: nextLul,
+        cyonBalance,
+        respiteBalance,
+      });
+      void logMarketTransactionToSupabase({
+        merchant_id: 'beach_house',
+        actor_near_account: actorAccount,
+        action_type: 'sell_fish',
+        item_id: fish.speciesId,
+        currency: 'LUL',
+        amount: earnedLul,
+        unit_price: earnedLul,
+        reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedLul} LUL (convertible to CYON at Exchange).`,
+      });
+    },
+    [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
+  );
+
+  const handleMintCaughtFishNft = useCallback(
+    async (fish: CaughtFishItem) => {
+      soundEngine.playPickup();
+      const actorAccount = hudRef.current.nearWalletId || playerUid;
+      if (!actorAccount) return;
+      const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
+      const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
+      const res = await executeMarketContractCallOnChain({
+        methodName: 'mint_fish_nft',
+        args: {
+          token_id: nftTokenId,
+          species_id: fish.speciesId,
+          species_name: fish.speciesName,
+          water_zone: fish.waterZone,
+          rarity: fish.rarity,
+          weight_kg_x100: Math.max(1, Math.round(fish.weightKg * 100)),
+        },
+      });
+      if (!res.ok || !res.txHash) return;
+      setCaughtFishBucket((prev) =>
+        prev.map((f) =>
+          f.id === fish.id
+            ? {
+                ...f,
+                isMintedNft: true,
+                nftTokenId,
+                nearTxHash: res.txHash,
+              }
+            : f,
+        ),
+      );
+      setLastCaughtFishToast((prev) =>
+        prev && prev.id === fish.id
+          ? { ...prev, isMintedNft: true, nftTokenId, nearTxHash: res.txHash }
+          : prev,
+      );
+      const nextOwned = [...ownedMerchantItemIds, nftTokenId];
+      setOwnedMerchantItemIds(nextOwned);
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: actorAccount,
+        lulBalance: hudRef.current.gold ?? 0,
+        cyonBalance,
+        respiteBalance,
+        ownedTokenIds: nextOwned,
+      });
+      void logMarketTransactionToSupabase({
+        merchant_id: 'beach_house',
+        actor_near_account: actorAccount,
+        action_type: 'mint_fish_nft',
+        item_id: fish.speciesId,
+        nep245_token_id: nftTokenId,
+        currency: 'RESPITE',
+        amount: 0,
+        unit_price: 0,
+        reasoning_summary: `Minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NEP-171 Fish NFT ${nftTokenId}.`,
+        near_tx_hash: res.txHash,
+      });
+    },
+    [cyonBalance, ownedMerchantItemIds, playerUid, respiteBalance],
+  );
 
   // Keyboard support (KeyF or Space while fishing) for Tidewater Hold-to-Charge, Strike & Hold-to-Reel
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!isPreloadComplete) return;
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (lastCaughtFishToast && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyF')) {
@@ -2033,6 +2472,7 @@ export default function App() {
           handleTriggerFishingAction();
         } else if (fishingPhase === 'idle' && e.code === 'KeyF' && caughtFishBucket.length < 20) {
           e.preventDefault();
+          ensureFishingRodEquipped();
           setIsChargingCast(true);
           setFishingPhase('charging');
         }
@@ -2054,7 +2494,9 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [
+    isPreloadComplete,
     caughtFishBucket.length,
+    ensureFishingRodEquipped,
     fishingCastPower,
     fishingPhase,
     handleTriggerFishingAction,
@@ -2078,70 +2520,11 @@ export default function App() {
     cityArenaMode: hud.cityArenaMode,
   });
 
-  if (isAdminPortalOpen) {
-    return (
-      <AdminCommandDashboard
-        nearRpcStatus={nearRpcStatus}
-        supabaseConnected={supabaseConnected}
-        masterTreasuryNear={masterTreasuryNear}
-        setMasterTreasuryNear={setMasterTreasuryNear}
-        masterTreasuryRespite={masterTreasuryRespite}
-        setMasterTreasuryRespite={setMasterTreasuryRespite}
-        masterTreasuryCyon={masterTreasuryCyon}
-        setMasterTreasuryCyon={setMasterTreasuryCyon}
-        marketState={marketState}
-        setMarketState={setMarketState}
-        managedSubAccounts={managedSubAccounts}
-        setManagedSubAccounts={setManagedSubAccounts}
-        nep171Ledger={nep171Ledger}
-        setNep171Ledger={setNep171Ledger}
-        onGrantActivePlayerRespite={(amount) => {
-          setRespiteBalance((prev) => prev + amount);
-        }}
-        onLaunch3dQaTeleport={(target) => {
-          setIsAdminPortalOpen(false);
-          setIsQcMenuUnlocked(true);
-          setGameState('playing');
-          setOnboardingStep('completed');
-          if (target.impersonateAccountId) {
-            setPlayerUid(target.impersonateAccountId);
-            setWalletConnectInput(target.impersonateAccountId);
-            dispatchBuddyAction(`nearConnectAndMint:${target.impersonateAccountId}`);
-            setHud((prev) => ({
-              ...prev,
-              nearWalletConnected: true,
-              nearWalletId: target.impersonateAccountId ?? prev.nearWalletId,
-              nearHasGamepassNft: true,
-            }));
-          } else if (!hud.nearWalletConnected) {
-            setPlayerUid(MASTER_WALLET_ACCOUNT_ID);
-            dispatchBuddyAction(`nearConnectAndMint:${MASTER_WALLET_ACCOUNT_ID}`);
-            setHud((prev) => ({
-              ...prev,
-              nearWalletConnected: true,
-              nearWalletId: MASTER_WALLET_ACCOUNT_ID,
-              nearHasGamepassNft: true,
-            }));
-          }
-          if (target.openHouseInterior) {
-            setWorldMode('safezone');
-            setIsInsidePrivateHouse(true);
-            setActiveSpecialModal('none');
-            setWorldTransitionCount((c) => c + 1);
-          } else {
-            setIsInsidePrivateHouse(false);
-            handleRequestWorldModeChange(target.worldMode, target.team);
-          }
-        }}
-      />
-    );
-  }
-
   return (
     <main className="relative w-screen h-screen overflow-hidden select-none">
-      {/* 1. 60FPS 3D Team Buddies x Blitz Grassland Arena (Clean Scene Remount per WorldMode) */}
+      {/* 1. 60FPS 3D Team Buddies x Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
       <BuddiesBlitzArena
-        key={`${worldMode}-${worldTransitionCount}`}
+        key={`arena-${worldTransitionCount}`}
         gameState={gameState}
         playMode={playMode}
         lightingPreset={lightingPreset}
@@ -2154,10 +2537,43 @@ export default function App() {
         onHudUpdate={setHud}
         onGameOver={handleGameOver}
         onTogglePause={handleTogglePause}
+        onPreloadSceneReady={handlePreloadSceneReady}
       />
 
+      {/* Unified Blocking Preload Gate (0% to 100%) */}
+      {!isPreloadComplete && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label="Loading Game Assets"
+          data-preload-gate="true"
+          data-preload-progress={preloadProgress}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          className="fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-[#0b0e16] text-white pointer-events-auto select-none px-6"
+        >
+          <div className="w-full max-w-sm flex flex-col items-center gap-4">
+            <div className="text-xs font-black uppercase tracking-[0.24em] text-white/80">
+              BUDDIES BLITZ
+            </div>
+            <div className="w-full h-2 bg-[#181b26] border border-white/20 overflow-hidden">
+              <div
+                className="h-full bg-[#b8ff3c] transition-[width] duration-150 ease-out"
+                style={{ width: `${preloadProgress}%` }}
+              />
+            </div>
+            <div className="w-full flex items-center justify-between text-[11px] font-bold tracking-wider uppercase text-white/60 font-mono">
+              <span>LOADING ASSETS</span>
+              <span data-preload-percent="true" className="text-white">
+                {preloadProgress}%
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Solid Full Scene Transition Loading Overlay */}
-      {isWorldLoading && (
+      {isPreloadComplete && isWorldLoading && (
         <div
           data-world-loading="true"
           data-target-world-mode={loadingTargetMode ?? worldMode}
@@ -2170,9 +2586,9 @@ export default function App() {
             </div>
             <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#00d2ff]">
               {(loadingTargetMode ?? worldMode) === 'safezone'
-                ? 'ENTERING SAFEZONE CITY (PEACEFUL CITY)'
+                ? 'ENTERING THE CITY'
                 : (loadingTargetMode ?? worldMode) === 'lobby'
-                ? 'ENTERING SAFEZONE LOBBY'
+                ? 'ENTERING CENTRAL PLAZA'
                 : `ENTERING WARZONE (${worldInitialTeam.toUpperCase()} TEAM)`}
             </div>
             {/* Animated Loading Bar */}
@@ -2199,7 +2615,7 @@ export default function App() {
       {/* =====================================================================
           2. TITLE SCREEN: HEXAGON CUTOUT & COMIC STICKER LOCKUP (CJn-Xu8f.js)
          ===================================================================== */}
-      {gameState === 'title' && (
+      {isPreloadComplete && gameState === 'title' && (
         <section
           aria-label="BLITZ Portfolio Title Screen"
           className="fixed inset-0 z-20 flex flex-col justify-between pointer-events-none"
@@ -2246,13 +2662,13 @@ export default function App() {
                 viewBox="0 0 560 225"
                 className="w-full max-w-[510px] drop-shadow-[6px_8px_0px_#11121a]"
                 role="img"
-                aria-label="BLITZ PORTFOLIO"
+                aria-label="BUDDIES BLITZ"
               >
                 <g transform="rotate(-3 260 85)">
                   <rect
                     x="10"
                     y="12"
-                    width="455"
+                    width="485"
                     height="108"
                     rx="18"
                     fill="#ffffff"
@@ -2260,19 +2676,19 @@ export default function App() {
                     strokeWidth="8"
                   />
                   <text
-                    x="32"
+                    x="28"
                     y="94"
                     fontFamily="'Barlow', sans-serif"
                     fontWeight="900"
                     fontStyle="italic"
-                    fontSize="94"
+                    fontSize="88"
                     letterSpacing="2"
                     fill="#ffffff"
                     stroke="#11121a"
                     strokeWidth="16"
                     paintOrder="stroke fill"
                   >
-                    BLITZ
+                    BUDDIES
                   </text>
                 </g>
 
@@ -2298,31 +2714,18 @@ export default function App() {
                     strokeWidth="6"
                   />
                   <text
-                    x="26"
+                    x="32"
                     y="61"
                     fontFamily="'Barlow', sans-serif"
                     fontWeight="900"
                     fontSize="58"
-                    letterSpacing="4"
+                    letterSpacing="5"
                     fill="#11121a"
                   >
-                    PORTFOLIO
+                    BLITZ 3D
                   </text>
                 </g>
               </svg>
-
-              <div className="flex flex-wrap items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsBlueprintModalOpen(true);
-                  }}
-                  className="px-4 py-2.5 bg-[#272935] hover:bg-[#393b49] text-[#b8ff3c] font-black text-xs sm:text-sm rounded-xl border-3 border-[#11121a] ring-2 ring-white/80 comic-sticker-shadow transition-transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap"
-                >
-                  Luau Code
-                </button>
-              </div>
             </div>
 
             <div className="lg:col-span-6 flex items-center justify-center">
@@ -2384,524 +2787,322 @@ export default function App() {
       )}
 
       {/* =====================================================================
-          2B. ONBOARDING & AUTH FLOW:
-              1) 'auth_choice': Login as a Guest OR Continue with Connect Wallet (Restores Old Account)
-              2) 'guest_character_select': Avakin-Style 3D Full-Body Character & Temporary Username Selector
-              3) 'entering_lobby': Loading State before entering Mini Café Lobby
+          2B. UNIFIED SINGLE 'START GAME' MODAL CARD:
+              All onboarding states (Headless Google OAuth, Loading/Authenticating,
+              OAuth Error Messages, 3D Character Selection, Citizen Username Setup,
+              and Entering Lobby progress) stay inside this single START GAME card
+              without ever stacking a second modal overlay.
          ===================================================================== */}
-      {gameState === 'playing' && !isFullMapOverview && onboardingStep === 'auth_choice' && (
-        <section
-          aria-label="Buddies Blitz Login & Onboarding"
-          data-onboarding-step="auth_choice"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[3px] pointer-events-auto select-none"
-        >
-          <div className="w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-5 space-y-4">
-            {/* Compact Game Title Header */}
-            <div className="text-center space-y-1 border-b-2 border-white/15 pb-3">
-              <div className="inline-block -skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
-                <span className="skew-x-12 inline-block">BUDDIES BLITZ</span>
-              </div>
-              <h1 className="text-2xl font-black uppercase tracking-wide text-white pt-0.5">
-                START GAME
-              </h1>
-            </div>
-
-            {/* 1. Google Login -> Opens Wallet Name Setup Modal */}
-            <div className="space-y-2.5">
-              {savedWalletSummary &&
-                savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' && (
-                  <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-black text-[#facc15]">
-                        {savedWalletSummary.displayName}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-[#38bdf8]">
-                        {savedWalletSummary.walletId}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      data-reconnect-saved-wallet-btn="true"
-                      onClick={() =>
-                        void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId, {
-                          silentRestore: true,
-                        })
-                      }
-                      className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
-                    >
-                      CONTINUE
-                    </button>
+      {isPreloadComplete &&
+        gameState === 'playing' &&
+        !isFullMapOverview &&
+        onboardingStep !== 'completed' && (
+          <section
+            aria-label="Buddies Blitz Login & Onboarding"
+            data-onboarding-step={onboardingStep}
+            className={`fixed inset-0 z-50 flex flex-col ${
+              onboardingStep === 'guest_character_select'
+                ? 'justify-end items-center py-6 px-4 pointer-events-none'
+                : 'items-center justify-center p-4 bg-black/60 backdrop-blur-[3px] pointer-events-auto'
+            } select-none`}
+          >
+            <div
+              data-start-game-card="true"
+              className="pointer-events-auto w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-5 space-y-4"
+            >
+              {/* Compact Game Title Header (Always in the Single START GAME Card) */}
+              <div className="text-center space-y-1 border-b-2 border-white/15 pb-3">
+                <div className="inline-block -skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
+                  <span className="skew-x-12 inline-block">BUDDIES BLITZ</span>
+                </div>
+                <h1 className="text-2xl font-black uppercase tracking-wide text-white pt-0.5">
+                  START GAME
+                </h1>
+                {connectedGoogleEmail && (
+                  <div className="text-[10.5px] font-mono font-bold text-[#38bdf8] truncate">
+                    {connectedGoogleEmail}
                   </div>
                 )}
-
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  data-connect-wallet-enter-btn="true"
-                  disabled={isVerifyingNearWallet}
-                  onClick={() => void handleStartGoogleLoginAndOpenWalletNaming()}
-                  className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                >
-                  <span className="skew-x-6 flex items-center justify-center gap-2">
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
-                      <path
-                        fill="#4285F4"
-                        d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-                      />
-                    </svg>
-                    <span>
-                      {isVerifyingNearWallet ? 'CREATING WALLET...' : 'CONTINUE WITH GOOGLE'}
-                    </span>
-                  </span>
-                </button>
               </div>
 
-              {walletConnectError && (
-                <div
-                  data-wallet-connect-error="true"
-                  className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
-                >
-                  {walletConnectError}
+              {onboardingStep === 'auth_choice' && (
+                <>
+                  {/* 1. Headless Google OAuth Login */}
+                  <div className="space-y-2.5">
+                    {savedWalletSummary &&
+                      savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' && (
+                        <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-black text-[#facc15]">
+                              {savedWalletSummary.displayName}
+                            </div>
+                            <div className="truncate font-mono text-[10px] text-[#38bdf8]">
+                              {savedWalletSummary.walletId}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            data-reconnect-saved-wallet-btn="true"
+                            onClick={() =>
+                              void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId, {
+                                silentRestore: true,
+                              })
+                            }
+                            className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
+                          >
+                            CONTINUE
+                          </button>
+                        </div>
+                      )}
+
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        data-connect-wallet-enter-btn="true"
+                        disabled={isVerifyingNearWallet || privyOAuthLoading}
+                        onClick={() => void handleStartGoogleLoginAndOpenWalletNaming()}
+                        className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                      >
+                        <span className="skew-x-6 flex items-center justify-center gap-2">
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+                            <path
+                              fill="#4285F4"
+                              d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                            />
+                            <path
+                              fill="#34A853"
+                              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+                            />
+                            <path
+                              fill="#FBBC05"
+                              d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+                            />
+                            <path
+                              fill="#EA4335"
+                              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                            />
+                          </svg>
+                          <span>
+                            {isVerifyingNearWallet || privyOAuthLoading
+                              ? 'AUTHENTICATING WITH GOOGLE...'
+                              : 'CONTINUE WITH GOOGLE'}
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+
+                    {walletConnectError && (
+                      <div
+                        data-wallet-connect-error="true"
+                        className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
+                      >
+                        {walletConnectError}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-white/15" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      OR
+                    </span>
+                    <div className="flex-1 h-px bg-white/15" />
+                  </div>
+
+                  {/* 2. Secondary Action: Play as Guest / Choose 3D Character inside the same START GAME card */}
+                  <button
+                    type="button"
+                    data-login-guest-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setWalletConnectError(null);
+                      setCharacterGender('male');
+                      if (!isCustomGuestNameEdited) {
+                        setPlayerDisplayName('Buddy Male');
+                      }
+                      dispatchBuddyAction('setCharacterGender:male');
+                      setOnboardingStep('guest_character_select');
+                    }}
+                    className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                  >
+                    <span className="skew-x-6 inline-block">PLAY AS GUEST / SELECT CHARACTER</span>
+                  </button>
+                </>
+              )}
+
+              {onboardingStep === 'guest_character_select' && (
+                <div className="space-y-3.5">
+                  <div className="text-center text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
+                    CHARACTER &amp; CITIZEN USERNAME
+                  </div>
+
+                  {/* Row 1: Editable Citizen / Guest Username + Pencil Icon */}
+                  <div className="relative flex items-center justify-center border-b border-white/15 pb-2.5">
+                    {isEditingGuestName ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <input
+                          ref={guestNameInputRef}
+                          type="text"
+                          maxLength={20}
+                          data-guest-username-input="true"
+                          value={playerDisplayName}
+                          onChange={(e) => {
+                            setIsCustomGuestNameEdited(true);
+                            setPlayerDisplayName(e.target.value);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setIsEditingGuestName(false);
+                            }
+                          }}
+                          placeholder="Enter citizen username..."
+                          className="flex-1 px-2.5 py-1 bg-white text-black font-black text-base text-center border-2 border-[#b8ff3c] focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setIsEditingGuestName(false);
+                          }}
+                          aria-label="Save Username"
+                          className="w-8 h-8 bg-[#b8ff3c] text-black border-2 border-black flex items-center justify-center cursor-pointer"
+                        >
+                          <Check className="w-4 h-4 stroke-[3]" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        data-edit-guest-username-trigger="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setIsEditingGuestName(true);
+                          window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setIsEditingGuestName(true);
+                            window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
+                          }
+                        }}
+                        className="flex items-center justify-center gap-3 cursor-pointer group px-4 py-0.5"
+                        title="Click to edit citizen username"
+                      >
+                        <span className="text-xl sm:text-2xl font-bold tracking-wide text-white group-hover:text-[#b8ff3c] transition-colors">
+                          {playerDisplayName ||
+                            (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female')}
+                        </span>
+                        <Pencil className="w-4 h-4 text-white/80 group-hover:text-[#b8ff3c] transition-colors" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Row 2: Back Button, < 1/2 > Gender Switcher, and Confirm / Enter Lobby Button */}
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setOnboardingStep('auth_choice');
+                      }}
+                      title="Back to Login Options"
+                      aria-label="Back"
+                      className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                    >
+                      <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+                    </button>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        data-char-select-prev="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const nextGender: 'male' | 'female' =
+                            characterGender === 'male' ? 'female' : 'male';
+                          setCharacterGender(nextGender);
+                          dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+                          if (!isCustomGuestNameEdited) {
+                            setPlayerDisplayName(
+                              nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
+                            );
+                          }
+                        }}
+                        aria-label="Previous Character"
+                        className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
+                      >
+                        <ChevronLeft className="w-7 h-7 stroke-[2.8]" />
+                      </button>
+
+                      <div className="text-center min-w-[84px]">
+                        <div className="text-base font-bold tracking-wider text-white">
+                          {characterGender === 'male' ? '1/2' : '2/2'}
+                        </div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
+                          {characterGender === 'male' ? 'MALE' : 'FEMALE'}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        data-char-select-next="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const nextGender: 'male' | 'female' =
+                            characterGender === 'male' ? 'female' : 'male';
+                          setCharacterGender(nextGender);
+                          dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+                          if (!isCustomGuestNameEdited) {
+                            setPlayerDisplayName(
+                              nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
+                            );
+                          }
+                        }}
+                        aria-label="Next Character"
+                        className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
+                      >
+                        <ChevronRight className="w-7 h-7 stroke-[2.8]" />
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-confirm-guest-character-btn="true"
+                      onClick={handleConfirmGuestCharacterAndEnterLobby}
+                      className="-skew-x-6 px-3.5 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                    >
+                      <span className="skew-x-6 inline-block">ENTER CENTRAL PLAZA</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {onboardingStep === 'entering_lobby' && (
+                <div className="flex flex-col items-center gap-3 text-center py-2">
+                  <div className="-skew-x-12 px-5 py-2 bg-[#b8ff3c] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[3px_3px_0_#000] font-black text-base tracking-widest uppercase">
+                    <span className="skew-x-12 inline-block">ENTERING CENTRAL PLAZA...</span>
+                  </div>
+
+                  <div className="text-[11px] font-black tracking-widest uppercase text-[#38bdf8]">
+                    {onboardingAuthMode === 'wallet'
+                      ? `SESSION · ${connectedGoogleEmail || hud.nearWalletId || walletConnectInput}`
+                      : `CITIZEN · ${playerDisplayName.toUpperCase()}`}
+                  </div>
+
+                  <div className="w-full h-2.5 bg-[#0b0e16] border border-white/50 overflow-hidden">
+                    <div
+                      className="h-full bg-[#b8ff3c] transition-all duration-150"
+                      style={{ width: `${onboardingLoadingProgress}%` }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-white/15" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                OR
-              </span>
-              <div className="flex-1 h-px bg-white/15" />
-            </div>
-
-            {/* 2. Secondary Action: Play as Guest / Choose 3D Character */}
-            <button
-              type="button"
-              data-login-guest-btn="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setCharacterGender('male');
-                if (!isCustomGuestNameEdited) {
-                  setPlayerDisplayName('Buddy Male');
-                }
-                dispatchBuddyAction('setCharacterGender:male');
-                setOnboardingStep('guest_character_select');
-              }}
-              className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-            >
-              <span className="skew-x-6 inline-block">PLAY AS GUEST / SELECT CHARACTER</span>
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* STEP 2: Avakin-Style 3D Character Selection Studio */}
-      {gameState === 'playing' &&
-        !isFullMapOverview &&
-        onboardingStep === 'guest_character_select' && (
-          <section
-            aria-label="Select Character & Temporary Username"
-            data-onboarding-step="guest_character_select"
-            className="fixed inset-0 z-50 flex flex-col justify-between items-center py-6 px-4 pointer-events-none select-none"
-          >
-            {/* Top Header Pill */}
-            <div className="pointer-events-auto bg-[#121318]/90 text-white border-2 border-black px-5 py-2 shadow-[4px_4px_0_#000] text-center">
-              <div className="text-xs font-black uppercase tracking-widest text-[#b8ff3c]">
-                SELECT CHARACTER
-              </div>
-            </div>
-
-            {/* Bottom Avakin-Style Dark Translucent Character Bar */}
-            <div className="pointer-events-auto w-full max-w-md bg-[#121318]/92 text-white border-2 border-black/90 shadow-[0_10px_30px_rgba(0,0,0,0.75)] px-5 py-4 space-y-3.5">
-              {/* Row 1: Editable Temporary Username + Pencil Icon */}
-              <div className="relative flex items-center justify-center border-b border-white/15 pb-2.5">
-                {isEditingGuestName ? (
-                  <div className="flex items-center gap-2 w-full max-w-xs">
-                    <input
-                      ref={guestNameInputRef}
-                      type="text"
-                      maxLength={20}
-                      data-guest-username-input="true"
-                      value={playerDisplayName}
-                      onChange={(e) => {
-                        setIsCustomGuestNameEdited(true);
-                        setPlayerDisplayName(e.target.value);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          setIsEditingGuestName(false);
-                        }
-                      }}
-                      placeholder="Enter temporary username..."
-                      className="flex-1 px-2.5 py-1 bg-white text-black font-black text-base text-center border-2 border-[#b8ff3c] focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setIsEditingGuestName(false);
-                      }}
-                      aria-label="Save Username"
-                      className="w-8 h-8 bg-[#b8ff3c] text-black border-2 border-black flex items-center justify-center cursor-pointer"
-                    >
-                      <Check className="w-4 h-4 stroke-[3]" />
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    data-edit-guest-username-trigger="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsEditingGuestName(true);
-                      window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setIsEditingGuestName(true);
-                        window.setTimeout(() => guestNameInputRef.current?.focus(), 20);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-3 cursor-pointer group px-4 py-0.5"
-                    title="Click to edit temporary username"
-                  >
-                    <span className="text-xl sm:text-2xl font-bold tracking-wide text-white group-hover:text-[#b8ff3c] transition-colors">
-                      {playerDisplayName || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female')}
-                    </span>
-                    <Pencil className="w-4 h-4 text-white/80 group-hover:text-[#b8ff3c] transition-colors" />
-                  </div>
-                )}
-              </div>
-
-              {/* Row 2: Back Button, < 1/2 > Gender Switcher, and Confirm / Enter Lobby Button */}
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setOnboardingStep('auth_choice');
-                  }}
-                  title="Back to Login Options"
-                  aria-label="Back"
-                  className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                >
-                  <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
-                </button>
-
-                <div className="flex items-center gap-5">
-                  <button
-                    type="button"
-                    data-char-select-prev="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      const nextGender: 'male' | 'female' =
-                        characterGender === 'male' ? 'female' : 'male';
-                      setCharacterGender(nextGender);
-                      dispatchBuddyAction(`setCharacterGender:${nextGender}`);
-                      if (!isCustomGuestNameEdited) {
-                        setPlayerDisplayName(
-                          nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
-                        );
-                      }
-                    }}
-                    aria-label="Previous Character"
-                    className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
-                  >
-                    <ChevronLeft className="w-8 h-8 stroke-[2.8]" />
-                  </button>
-
-                  <div className="text-center min-w-[100px]">
-                    <div className="text-lg font-bold tracking-wider text-white">
-                      {characterGender === 'male' ? '1/2' : '2/2'}
-                    </div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                      {characterGender === 'male' ? 'MALE' : 'FEMALE'}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    data-char-select-next="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      const nextGender: 'male' | 'female' =
-                        characterGender === 'male' ? 'female' : 'male';
-                      setCharacterGender(nextGender);
-                      dispatchBuddyAction(`setCharacterGender:${nextGender}`);
-                      if (!isCustomGuestNameEdited) {
-                        setPlayerDisplayName(
-                          nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
-                        );
-                      }
-                    }}
-                    aria-label="Next Character"
-                    className="w-9 h-9 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
-                  >
-                    <ChevronRight className="w-8 h-8 stroke-[2.8]" />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  data-confirm-guest-character-btn="true"
-                  onClick={handleConfirmGuestCharacterAndEnterLobby}
-                  className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                >
-                  <span className="skew-x-6 inline-block">ENTER LOBBY</span>
-                </button>
-              </div>
-            </div>
           </section>
         )}
-
-      {/* STEP 3: Loading State Before Entering Mini Café Lobby */}
-      {gameState === 'playing' &&
-        !isFullMapOverview &&
-        onboardingStep === 'entering_lobby' && (
-          <div
-            data-onboarding-step="entering_lobby"
-            style={{ backgroundColor: '#0b0e16', opacity: 1 }}
-            className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-[#0b0e16] text-white pointer-events-auto select-none px-4"
-          >
-            <div className="flex flex-col items-center gap-3.5 max-w-md w-full text-center">
-              <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase animate-pulse">
-                <span className="skew-x-12 inline-block">LOADING LOBBY...</span>
-              </div>
-
-              <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#38bdf8]">
-                {onboardingAuthMode === 'wallet'
-                  ? `RESTORING WALLET ACCOUNT (${hud.nearWalletId || walletConnectInput})`
-                  : `PREPARING GUEST SESSION · ${playerDisplayName.toUpperCase()}`}
-              </div>
-
-              <div className="px-3 py-1 bg-[#1e293b] border border-white/25 text-[11px] font-black uppercase text-[#facc15]">
-                CHARACTER: {characterGender === 'male' ? 'MALE' : 'FEMALE'} · USERNAME: {playerDisplayName}
-              </div>
-
-              {/* Animated Progress Bar */}
-              <div className="w-64 sm:w-72 h-3 bg-[#14161d] border-2 border-white/80 rounded-full overflow-hidden mt-1 shadow-[2px_2px_0_#000]">
-                <div
-                  className="h-full bg-[#b8ff3c] transition-all duration-150"
-                  style={{ width: `${onboardingLoadingProgress}%` }}
-                />
-              </div>
-
-              <div className="text-[10.5px] font-bold text-white/65 tracking-wider">
-                Preparing 3D avatar &amp; entering Mini Café Lobby ({onboardingLoadingProgress}%)...
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* STEP 4: Post-Login Citizen Wallet Naming, Provisioning & Welcome Modal (Simple English, No Emoji) */}
-      {citizenWalletModalPhase !== 'idle' && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Citizen Wallet Activation Modal"
-          data-citizen-wallet-modal={citizenWalletModalPhase}
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-[3px] pointer-events-auto select-none"
-        >
-          <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-4 text-center">
-            {citizenWalletModalPhase === 'choose_name' ? (
-              <>
-                <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#facc15] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
-                  <span className="skew-x-12 inline-block">CREATE WALLET</span>
-                </div>
-                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
-                  Choose your wallet name
-                </h2>
-                <p className="text-xs font-bold text-slate-300">
-                  Enter a name to create your personal citizen wallet.
-                </p>
-                {connectedGoogleEmail && (
-                  <div className="px-3 py-1.5 bg-[#0f172a] border border-[#38bdf8]/40 text-[10.5px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                    <span className="font-black uppercase text-slate-400">GOOGLE ACCOUNT</span>
-                    <span className="font-mono text-[#38bdf8] truncate">
-                      {connectedGoogleEmail}
-                    </span>
-                  </div>
-                )}
-
-                <div className="text-left space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                      WALLET NAME
-                    </label>
-                    <button
-                      type="button"
-                      data-randomize-wallet-name-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setCitizenWalletNameDraft(generateRandomWalletLetters(6));
-                        if (citizenWalletNameError) setCitizenWalletNameError(null);
-                      }}
-                      className="px-2 py-0.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                    >
-                      RANDOM LETTERS
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    maxLength={24}
-                    data-citizen-wallet-name-input="true"
-                    value={citizenWalletNameDraft}
-                    onChange={(e) => {
-                      const cleaned = e.target.value
-                        .toLowerCase()
-                        .replace(/[^a-z0-9_-]/g, '');
-                      setCitizenWalletNameDraft(cleaned);
-                      if (citizenWalletNameError) setCitizenWalletNameError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const cleanName = citizenWalletNameDraft.trim();
-                        if (!cleanName || cleanName.length < 2) {
-                          setCitizenWalletNameError(
-                            'Please enter a wallet name with at least 2 characters.',
-                          );
-                          return;
-                        }
-                        void handleConnectWalletAndEnterLobby(cleanName, {
-                          isNewWalletCreation: true,
-                          googleEmail: connectedGoogleEmail,
-                        });
-                      }
-                    }}
-                    placeholder="Enter wallet name (e.g. charvi, rakyan)"
-                    className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
-                  />
-
-                  <div className="p-2.5 bg-[#0f172a] border border-white/20 flex items-center justify-between gap-2 text-[10.5px]">
-                    <span className="font-black uppercase text-slate-400">WALLET ADDRESS</span>
-                    <span className="font-mono font-bold text-[#38bdf8] truncate">
-                      {citizenWalletNameDraft.trim()
-                        ? `${citizenWalletNameDraft.trim()}.${MASTER_WALLET_ACCOUNT_ID}`
-                        : `<name>.${MASTER_WALLET_ACCOUNT_ID}`}
-                    </span>
-                  </div>
-
-                  {citizenWalletNameError && (
-                    <div className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold">
-                      {citizenWalletNameError}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  data-citizen-create-wallet-submit-btn="true"
-                  onClick={() => {
-                    const cleanName = citizenWalletNameDraft.trim();
-                    if (!cleanName || cleanName.length < 2) {
-                      setCitizenWalletNameError(
-                        'Please enter a wallet name with at least 2 characters.',
-                      );
-                      return;
-                    }
-                    void handleConnectWalletAndEnterLobby(cleanName, {
-                      isNewWalletCreation: true,
-                      googleEmail: connectedGoogleEmail,
-                    });
-                  }}
-                  className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                >
-                  <span className="skew-x-6 inline-block">CREATE WALLET</span>
-                </button>
-              </>
-            ) : citizenWalletModalPhase === 'preparing' ? (
-              <>
-                <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
-                  <span className="skew-x-12 inline-block">PREPARING WALLET</span>
-                </div>
-                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
-                  Please wait, preparing your wallet...
-                </h2>
-                <div className="w-full h-3 bg-[#0b0e16] border-2 border-white/80 overflow-hidden shadow-[2px_2px_0_#000]">
-                  <div
-                    className="h-full bg-[#b8ff3c] transition-all duration-150"
-                    style={{ width: `${citizenWalletSetupProgress}%` }}
-                  />
-                </div>
-                <p className="text-xs font-bold text-slate-300">
-                  Creating your personal citizen wallet ({citizenWalletSetupProgress}%)...
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="inline-block -skew-x-12 px-3.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase tracking-widest">
-                  <span className="skew-x-12 inline-block">WALLET ACTIVE</span>
-                </div>
-                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
-                  Welcome Citizen, your wallet is now active.
-                </h2>
-
-                <div className="p-3 bg-[#0f172a] border-2 border-black shadow-[3px_3px_0_#000] text-left space-y-1.5">
-                  <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                    WALLET ADDRESS
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <div
-                      data-citizen-active-wallet-address="true"
-                      className="text-xs font-mono font-black text-[#38bdf8] break-all"
-                    >
-                      {hud.nearWalletId || playerUid}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        const addr = hud.nearWalletId || playerUid;
-                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                          void navigator.clipboard.writeText(addr);
-                        }
-                        setWalletAddressCopiedToast(true);
-                        window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
-                      }}
-                      className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
-                    >
-                      <span className="skew-x-6 inline-block">
-                        {walletAddressCopiedToast ? 'COPIED' : 'COPY'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                  Please explore the city. Your Currency Exchange and full Catalog access are now unlocked.
-                </p>
-
-                <button
-                  type="button"
-                  data-citizen-explore-city-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setCitizenWalletModalPhase('idle');
-                  }}
-                  className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                >
-                  <span className="skew-x-6 inline-block">EXPLORE THE CITY</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* =====================================================================
           3. PLAYING HUD: STYLIZED TACTICAL ARCADE OVERHAUL
@@ -2911,7 +3112,52 @@ export default function App() {
              - Viewport: 3D-to-2D Contextual Hexagonal Floating Prompts ([E] AMBIL, [F] RAKIT, [G] NAIK, [B] KIOSK)
              - Bottom-Right: Compact 3 Weapon Slots ([1] Pistol, [2] Rifle, [3] Bazooka)
          ===================================================================== */}
-      {gameState === 'playing' && !isFullMapOverview && onboardingStep === 'completed' && (
+      {isPreloadComplete && tramRideCutsceneUi?.active && (
+        <div
+          data-tram-ride-cutscene-banner="true"
+          className="fixed inset-x-0 top-6 z-[90] flex flex-col items-center pointer-events-none select-none px-4"
+        >
+          <div className="w-full max-w-xl bg-white text-black border-[3.5px] border-black shadow-[6px_6px_0_#000] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="-skew-x-6 px-2.5 py-0.5 bg-[#00d2ff] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase tracking-widest">
+                <span className="skew-x-6 inline-block">CITY TRAM TRANSIT</span>
+              </span>
+              <span className="font-mono text-xs font-black uppercase tracking-wider text-black/70">
+                {Math.round(tramRideCutsceneUi.progress01 * 100)}%
+              </span>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-black uppercase tracking-wider">
+              <span>
+                DEPARTING:{' '}
+                <span className="text-[#0284c7]">
+                  {getCityTransitDestinationById(tramRideCutsceneUi.originStationId).title}
+                </span>
+              </span>
+              <span className="text-black/50">-&gt;</span>
+              <span>
+                ARRIVING:{' '}
+                <span className="text-[#16a34a]">
+                  {getCityTransitDestinationById(tramRideCutsceneUi.destinationStationId).title}
+                </span>
+              </span>
+            </div>
+            <div className="mt-3 w-full h-3 bg-[#e2e8f0] border-2 border-black overflow-hidden">
+              <div
+                className="h-full bg-[#b8ff3c] transition-[width] duration-75 ease-out"
+                style={{
+                  width: `${Math.max(4, Math.round(tramRideCutsceneUi.progress01 * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPreloadComplete &&
+        gameState === 'playing' &&
+        !isFullMapOverview &&
+        onboardingStep === 'completed' &&
+        !tramRideCutsceneUi?.active && (
         <div className="fixed inset-0 z-20 pointer-events-none">
           {/* =================================================================
               3A. MINIMALIST CONTEXTUAL 3D-TO-2D FLOATING ICONS
@@ -3188,27 +3434,15 @@ export default function App() {
                 isKioskModalOpen ||
                 isPersonalWalletModalOpen) && (
               <div className="pointer-events-auto flex items-center gap-1.5">
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-kiosk-open-btn="top-pad"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    soundEngine.playUiClick();
-                    setActiveSpecialModal('none');
-                    setIsSocialChatModalOpen(false);
-                    setIsPersonalWalletModalOpen(false);
-                    setActiveTeleportKioskModal('none');
-                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                    setIsKioskModalOpen(true);
-                  }}
+                <div
+                  data-top-lul-badge="true"
                   title="LUL (Lulling) Session Currency"
-                  className="-skew-x-12 px-2.5 py-1 bg-[#fec83e] hover:bg-[#ffe066] text-[#1a1a1a] border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-black text-[11px] cursor-pointer transition-transform active:scale-95"
+                  className="-skew-x-12 px-2.5 py-1 bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-black text-[11px]"
                 >
                   <span className="skew-x-12 inline-block">
                     {hud.gold} LUL
                   </span>
-                </button>
+                </div>
 
                 <div
                   data-top-cyon-badge="true"
@@ -3307,10 +3541,10 @@ export default function App() {
                   <div
                     style={{
                       width: `${Math.max(
-                        10,
+                        0,
                         Math.min(
                           100,
-                          ((hud.blueOnlinePopulation ?? 6) / (hud.maxOnlinePerTeam ?? 10)) * 100,
+                          ((hud.blueOnlinePopulation ?? 1) / (hud.maxOnlinePerTeam ?? 10)) * 100,
                         ),
                       )}%`,
                     }}
@@ -3320,7 +3554,7 @@ export default function App() {
                     data-blue-online-label="true"
                     className="skew-x-12 relative z-10 font-black font-mono-tabular text-[11px] sm:text-xs text-white drop-shadow-[0_1px_2px_#1a1a1a] tracking-wider whitespace-nowrap"
                   >
-                    {hud.blueOnlineLabel ?? 'BLUE 6/10 ONLINE'}
+                    {hud.blueOnlineLabel ?? 'BLUE 1/10 ONLINE'}
                   </span>
                 </div>
               </div>
@@ -3336,10 +3570,10 @@ export default function App() {
                   <div
                     style={{
                       width: `${Math.max(
-                        10,
+                        0,
                         Math.min(
                           100,
-                          ((hud.redOnlinePopulation ?? 6) / (hud.maxOnlinePerTeam ?? 10)) * 100,
+                          ((hud.redOnlinePopulation ?? 0) / (hud.maxOnlinePerTeam ?? 10)) * 100,
                         ),
                       )}%`,
                     }}
@@ -3349,10 +3583,218 @@ export default function App() {
                     data-red-online-label="true"
                     className="skew-x-12 relative z-10 font-black font-mono-tabular text-[11px] sm:text-xs text-white drop-shadow-[0_1px_2px_#1a1a1a] tracking-wider whitespace-nowrap"
                   >
-                    {hud.redOnlineLabel ?? 'RED 6/10 ONLINE'}
+                    {hud.redOnlineLabel ?? 'RED 0/10 ONLINE'}
                   </span>
                 </div>
               </div>
+
+              {/* Clean HUD Return Button to Main World (since Kiosk Teleport is strictly disabled inside Warzone) */}
+              {hud.worldMode === 'warzone' && (
+                <button
+                  type="button"
+                  data-exit-warzone-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setTramRideCutsceneUi({
+                      active: true,
+                      originStationId: 'warzone_arena',
+                      destinationStationId: 'central_plaza',
+                      progress01: 0,
+                    });
+                    window.dispatchEvent(
+                      new CustomEvent('start-city-tram-ride-transition', {
+                        detail: {
+                          originStationId: 'warzone_arena',
+                          destinationStationId: 'central_plaza',
+                          targetWorldMode: 'lobby',
+                        },
+                      }),
+                    );
+                  }}
+                  title="Return to Main World (Central Plaza)"
+                  className="ml-2 -skew-x-12 px-2.5 py-1.5 bg-white hover:bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] font-black text-[10.5px] uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  <span className="skew-x-12 inline-block">EXIT WARZONE</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================
+              3C-2. PRIVATE HOUSE WALK-IN TOP HUD BAR (DECORATE, INVITE FRIEND, EXIT ROOM)
+             ================================================================= */}
+          {isInsidePrivateHouse && activeSpecialModal === 'none' && (
+            <div
+              data-private-house-walkin-hud="true"
+              className="fixed top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none"
+            >
+              <div className="flex flex-wrap items-center gap-2 bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[4px_4px_0_#000] px-3.5 py-2">
+                <span className="px-2 py-0.5 bg-[#b8ff3c] text-black border border-black text-[10px] font-black uppercase tracking-wider">
+                  {isSampleHouseView ? 'MODEL PAVILION' : 'MY PRIVATE HOUSE'}
+                </span>
+                <span className="text-[11px] font-black uppercase tracking-wide text-slate-200 hidden sm:inline">
+                  MODERN JAPANESE WOODEN PAVILION
+                </span>
+
+                {!isSampleHouseView && (
+                  <>
+                    <button
+                      type="button"
+                      data-house-open-studio-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setIsHouseFriendInviteOpen(false);
+                        setActiveSpecialModal('house_interior');
+                      }}
+                      className="px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                    >
+                      DECORATE STUDIO
+                    </button>
+
+                    <button
+                      type="button"
+                      data-house-invite-friend-toggle-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setHouseInviteFeedback(null);
+                        setIsHouseFriendInviteOpen((prev) => !prev);
+                      }}
+                      className="px-2.5 py-1 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                    >
+                      INVITE FRIEND ({(hud.safezoneAllowedFriends ?? []).length})
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  data-house-walkin-exit-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    dispatchBuddyAction('exitPrivateHouseInterior');
+                  }}
+                  className="px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                >
+                  EXIT ROOM
+                </button>
+              </div>
+
+              {isHouseFriendInviteOpen && !isSampleHouseView && (
+                <div
+                  data-house-friend-invite-popover="true"
+                  className="w-80 sm:w-96 bg-white text-black border-[3px] border-black shadow-[5px_5px_0_#000] p-3 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between border-b-2 border-black pb-1.5">
+                    <span className="text-[11px] font-black uppercase tracking-wider">
+                      INVITE FRIEND TO PRIVATE HOUSE
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsHouseFriendInviteOpen(false)}
+                      className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 border border-black text-[9.5px] font-black cursor-pointer"
+                    >
+                      X
+                    </button>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={houseInviteFriendInput}
+                      onChange={(e) => setHouseInviteFriendInput(e.target.value)}
+                      placeholder="Friend wallet or username..."
+                      className="flex-1 px-2 py-1 bg-slate-50 border-2 border-black text-xs font-bold"
+                    />
+                    <button
+                      type="button"
+                      data-house-send-invite-btn="true"
+                      onClick={() => {
+                        const rawFriend = houseInviteFriendInput.trim().toLowerCase();
+                        if (!rawFriend) return;
+                        soundEngine.playPickup();
+                        dispatchBuddyAction(`addSafezoneFriend:${rawFriend}`);
+                        const senderLabel = playerDisplayName || 'YOU';
+                        const senderAccount = hud.nearWalletId || playerUid || undefined;
+                        const inviteText = `Invited you to visit my Modern Japanese Wooden Pavilion Private House!`;
+                        const nowStr = new Date().toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+                        setChatMessages((prev) => [
+                          ...prev,
+                          {
+                            id: `inv-${Date.now()}`,
+                            senderId: senderAccount,
+                            senderName: senderLabel,
+                            recipientId: rawFriend,
+                            recipientName: rawFriend,
+                            isSelf: true,
+                            text: inviteText,
+                            timestamp: nowStr,
+                            type: 'private',
+                          },
+                        ]);
+                        void insertSocialMessageToSupabase({
+                          sender_name: senderLabel,
+                          sender_near_account: senderAccount,
+                          recipient_name: rawFriend,
+                          message: inviteText,
+                          bubble_color: chatBubbleBgColor,
+                          room_id: 'house_interior',
+                        });
+                        setHouseInviteFriendInput('');
+                        setHouseInviteFeedback(`Invitation sent to ${rawFriend}!`);
+                      }}
+                      className="px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer shrink-0"
+                    >
+                      INVITE
+                    </button>
+                  </div>
+
+                  {(hud.safezoneAllowedFriends ?? []).length > 0 && (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      <div className="text-[9.5px] font-black uppercase text-slate-500">
+                        FRIENDLIST ({(hud.safezoneAllowedFriends ?? []).length})
+                      </div>
+                      {(hud.safezoneAllowedFriends ?? []).map((friendId) => (
+                        <div
+                          key={friendId}
+                          className="flex items-center justify-between px-2 py-1 bg-slate-100 border border-black text-[10.5px] font-mono font-bold"
+                        >
+                          <span className="truncate">{friendId}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playPickup();
+                              const senderLabel = playerDisplayName || 'YOU';
+                              const senderAccount = hud.nearWalletId || playerUid || undefined;
+                              const inviteText = `Come hang out inside my Private House!`;
+                              void insertSocialMessageToSupabase({
+                                sender_name: senderLabel,
+                                sender_near_account: senderAccount,
+                                recipient_name: friendId,
+                                message: inviteText,
+                                bubble_color: chatBubbleBgColor,
+                                room_id: 'house_interior',
+                              });
+                              setHouseInviteFeedback(`Invited ${friendId}!`);
+                            }}
+                            className="px-2 py-0.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border border-black text-[9px] font-black uppercase cursor-pointer"
+                          >
+                            PING INVITE
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {houseInviteFeedback && (
+                    <div className="px-2 py-1 bg-[#dcfce7] border border-emerald-700 text-[10px] font-black text-emerald-950">
+                      {houseInviteFeedback}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -3417,1029 +3859,105 @@ export default function App() {
                 );
               })()}
 
-              {/* Top-Right Dedicated Self Profile & Wallet Buttons (Replaces clicking own 3D character) */}
-              <button
-                type="button"
-                data-top-self-profile-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setIsTargetMenuExpanded(false);
-                  setSelectedTargetUser(null);
-                  setProfileTargetUser({
-                    id: 0,
-                    name: playerDisplayName || 'BUDDY',
-                    isNpc: false,
-                    isSelf: true,
-                    distance: 0,
-                    team: hud.playerTeam ?? 'blue',
-                    status: 'Online',
-                  });
-                  setIsProfileModalOpen(true);
-                }}
-                className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-                title="View Your Profile"
-              >
-                <span className="skew-x-12 flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                  <span>PROFILE</span>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                data-top-self-wallet-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setIsTargetMenuExpanded(false);
-                  setSelectedTargetUser(null);
-                  setIsKioskModalOpen(false);
-                  setIsSocialChatModalOpen(false);
-                  setActiveSpecialModal('none');
-                  setActiveTeleportKioskModal('none');
-                  window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                  window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-                  setIsPersonalWalletModalOpen(true);
-                }}
-                className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-                title="Open Your Personal Citizen Wallet"
-              >
-                <span className="skew-x-12 flex items-center gap-1">
-                  <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                  <span>WALLET</span>
-                </span>
-              </button>
-
-              {/* Skewed Polygonal QA & Treasury Menu Button (Only shown when Cryptographic Master Proof is active) */}
-              {((isQcMenuUnlocked && Boolean(loadSavedAdminCryptographicProof()?.verified)) ||
-                ENABLE_QC_MENU_DEFAULT) && (
+              {/* Top-Right Dedicated Self Profile, Bag & Wallet Buttons (Replaces clicking own 3D character) - Hidden in Warzone */}
+              {hud.worldMode !== 'warzone' && (
                 <>
                   <button
                     type="button"
-                    data-open-admin-portal-btn="true"
+                    data-top-self-profile-btn="true"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      setIsAdminPortalOpen(true);
+                      setIsTargetMenuExpanded(false);
+                      setSelectedTargetUser(null);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setIsPersonalBagModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setProfileTargetUser({
+                        id: 0,
+                        name: playerDisplayName || 'BUDDY',
+                        isNpc: false,
+                        isSelf: true,
+                        distance: 0,
+                        team: hud.playerTeam ?? 'blue',
+                        status: 'Online',
+                      });
+                      setIsProfileModalOpen(true);
                     }}
-                    className="-skew-x-12 px-2.5 h-10 flex items-center justify-center font-black text-xs bg-[#0f172a] hover:bg-[#1e293b] text-[#b8ff3c] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    title="View Your Profile"
                   >
-                    <span className="skew-x-12 inline-block">ADMIN PANEL</span>
+                    <span className="skew-x-12 flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                      <span>PROFILE</span>
+                    </span>
                   </button>
+
                   <button
                     type="button"
-                    aria-label="QA and Treasury Management Menu"
-                    aria-expanded={isSpawnDrawerOpen}
-                    data-sandbox-toggle="true"
-                    data-master-qa-menu-btn="true"
+                    data-top-self-bag-btn="true"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      setIsQcMenuUnlocked(true);
-                      setIsSpawnDrawerOpen((prev) => !prev);
-                      if (!isSpawnDrawerOpen) {
-                        setIsParticlePanelOpen(false);
-                      }
+                      setIsTargetMenuExpanded(false);
+                      setSelectedTargetUser(null);
+                      setIsProfileModalOpen(false);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsPersonalBagModalOpen((prev) => !prev);
                     }}
-                    className={`-skew-x-12 px-2.5 h-10 flex items-center justify-center font-black text-xs border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
-                      isSpawnDrawerOpen
-                        ? 'bg-[#fec83e] text-[#1a1a1a]'
-                        : 'bg-white hover:bg-[#fec83e] text-[#1a1a1a]'
-                    }`}
+                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs ${
+                      hud.equippedWeapon === 'Joran Fishing'
+                        ? 'bg-[#4ade80] hover:bg-[#86efac]'
+                        : 'bg-[#b8ff3c] hover:bg-[#d9f99d]'
+                    } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
+                    title="Open Personal Bag (Joran & Items)"
                   >
-                    <span className="skew-x-12 inline-block">QA / TREASURY</span>
+                    <span className="skew-x-12 flex items-center gap-1">
+                      <Backpack className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                      <span>BAG</span>
+                      {hud.equippedWeapon === 'Joran Fishing' && (
+                        <span className="w-2 h-2 rounded-full bg-[#166534] border border-black" />
+                      )}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-top-self-wallet-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setSelectedTargetUser(null);
+                      setIsProfileModalOpen(false);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalBagModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsPersonalWalletModalOpen(true);
+                    }}
+                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    title="Open Your Personal Citizen Wallet"
+                  >
+                    <span className="skew-x-12 flex items-center gap-1">
+                      <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                      <span>WALLET</span>
+                    </span>
                   </button>
                 </>
               )}
             </div>
-
-            {/* Pop-up QA & Treasury Management Drawer (Opened via [QA / TREASURY]) */}
-            {((isQcMenuUnlocked && Boolean(loadSavedAdminCryptographicProof()?.verified)) ||
-              ENABLE_QC_MENU_DEFAULT) &&
-              isSpawnDrawerOpen && (
-              <div
-                aria-label="Developer & Settings Drawer"
-                data-master-qa-treasury-drawer="true"
-                className="w-80 sm:w-88 max-h-[82vh] overflow-y-auto bg-white border-3 border-[#1a1a1a] ring-2 ring-white shadow-[6px_6px_0_#1a1a1a] p-3 flex flex-col gap-2.5 text-[#1a1a1a]"
-              >
-                {/* =========================================================
-                    MASTER TREASURY & MERCHANT TREASURY MANAGEMENT PANEL
-                    (Simple English Text - No Emojis)
-                   ========================================================= */}
-                <div
-                  data-treasury-management-panel="true"
-                  className="p-2.5 bg-[#0f172a] text-white border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] space-y-2.5"
-                >
-                  <div className="border-b border-white/15 pb-1.5">
-                    <div className="text-[10.5px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                      MASTER &amp; MERCHANT TREASURY CONTROL
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-300 mt-0.5 break-all">
-                      Master UID: {MASTER_WALLET_ACCOUNT_ID}
-                    </div>
-                    <div className="text-[9px] font-mono text-[#38bdf8] break-all">
-                      Treasury Vault: {MASTER_TREASURY_ACCOUNT_ID}
-                    </div>
-                    <div className="text-[8.5px] font-mono text-slate-400 mt-0.5">
-                      RPC Block #{nearRpcStatus?.latestBlockHeight || 0} | DB:{' '}
-                      {supabaseConnected ? 'ONLINE' : 'LOCAL'} | On-Chain:{' '}
-                      {nearOnChainAccountView?.existsOnChain ? 'VERIFIED' : 'SESSION'}
-                    </div>
-                  </div>
-
-                  {/* 1. MASTER TREASURY */}
-                  <div
-                    data-master-treasury-box="true"
-                    className="p-2 bg-[#1e293b] border border-white/20 space-y-1.5"
-                  >
-                    <div className="text-[10px] font-black uppercase text-[#facc15]">
-                      1. MASTER TREASURY RESERVES
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 text-center">
-                      <div className="p-1 bg-black/40 border border-white/10">
-                        <div className="text-[8px] font-bold text-slate-400">NEAR</div>
-                        <div className="text-[10px] font-black text-[#38bdf8]">
-                          {masterTreasuryNear.toFixed(1)}
-                        </div>
-                      </div>
-                      <div className="p-1 bg-black/40 border border-white/10">
-                        <div className="text-[8px] font-bold text-slate-400">RESPITE</div>
-                        <div className="text-[10px] font-black text-[#d8b4fe]">
-                          {masterTreasuryRespite.toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="p-1 bg-black/40 border border-white/10">
-                        <div className="text-[8px] font-bold text-slate-400">CYON</div>
-                        <div className="text-[10px] font-black text-[#10b981]">
-                          {masterTreasuryCyon.toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1 pt-0.5">
-                      <button
-                        type="button"
-                        data-master-mint-respite-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setMasterTreasuryRespite((prev) => prev + 1000);
-                          setMasterTreasuryNote(
-                            'Minted +1000 RESPITE into Master Treasury (buddiesblitz-treasury.testnet).',
-                          );
-                        }}
-                        className="py-1 px-1.5 bg-[#d8b4fe] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        MINT +1000 RESPITE
-                      </button>
-                      <button
-                        type="button"
-                        data-master-add-cyon-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setMasterTreasuryCyon((prev) => prev + 500);
-                          setMasterTreasuryNote(
-                            'Added +500 CYON to Master Treasury reserves.',
-                          );
-                        }}
-                        className="py-1 px-1.5 bg-[#38bdf8] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        ADD +500 MASTER CYON
-                      </button>
-                      <button
-                        type="button"
-                        data-master-grant-player-respite-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          if (masterTreasuryRespite < 100) return;
-                          setMasterTreasuryRespite((prev) => Math.max(0, prev - 100));
-                          setRespiteBalance((prev) => prev + 100);
-                          setMasterTreasuryNote(
-                            'Transferred 100 RESPITE from Master Treasury to active wallet.',
-                          );
-                        }}
-                        className="py-1 px-1.5 bg-[#b8ff3c] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        GRANT +100 RESPITE
-                      </button>
-                      <button
-                        type="button"
-                        data-bind-meteor-master-btn="true"
-                        onClick={async () => {
-                          soundEngine.playUiClick();
-                          const ext = await connectInjectedNearExtensionWallet();
-                          if (ext.connected && ext.accountId) {
-                            setCustomMasterWalletId(ext.accountId);
-                            setMasterTreasuryNote(
-                              `Bound Meteor Chrome Wallet (${ext.accountId}) as Master Admin UID.`,
-                            );
-                          } else {
-                            setCustomMasterWalletId(hud.nearWalletId || playerUid);
-                            setMasterTreasuryNote(
-                              `Bound active wallet (${hud.nearWalletId || playerUid}) as Master Admin UID.`,
-                            );
-                          }
-                        }}
-                        className="py-1 px-1.5 bg-[#facc15] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        BIND METEOR WALLET
-                      </button>
-                      <button
-                        type="button"
-                        data-master-add-near-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setMasterTreasuryNear((prev) => prev + 10);
-                          setMasterTreasuryNote(
-                            'Added +10 NEAR to Master Treasury gas and swap reserve.',
-                          );
-                        }}
-                        className="col-span-2 py-1 px-1.5 bg-[#10b981] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        TOP UP +10 MASTER NEAR
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 2. MERCHANT TREASURY */}
-                  <div
-                    data-merchant-treasury-box="true"
-                    className="p-2 bg-[#1e293b] border border-white/20 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase text-[#38bdf8]">
-                        2. MERCHANT TREASURY
-                      </span>
-                      <span
-                        className={`px-1.5 py-0.2 text-[8.5px] font-black uppercase border border-black ${
-                          marketState.isShopBroke
-                            ? 'bg-[#ff3b30] text-white'
-                            : 'bg-[#10b981] text-black'
-                        }`}
-                      >
-                        {marketState.isShopBroke ? 'SHOP BANKRUPT' : 'SHOP ACTIVE'}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1 text-center">
-                      <div className="p-1 bg-black/40 border border-white/10">
-                        <div className="text-[8px] font-bold text-slate-400">MERCHANT CYON</div>
-                        <div className="text-[10px] font-black text-[#38bdf8]">
-                          {marketState.treasuryCyon.toLocaleString()} CYON
-                        </div>
-                      </div>
-                      <div className="p-1 bg-black/40 border border-white/10">
-                        <div className="text-[8px] font-bold text-slate-400">MERCHANT LUL POOL</div>
-                        <div className="text-[10px] font-black text-[#fec83e]">
-                          {marketState.treasuryLulPool.toLocaleString()} LUL
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1 pt-0.5">
-                      <button
-                        type="button"
-                        data-transfer-master-to-merchant-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          const transferCyon = Math.min(200, masterTreasuryCyon);
-                          if (transferCyon <= 0) return;
-                          setMasterTreasuryCyon((prev) => Math.max(0, prev - transferCyon));
-                          setMarketState((prev) => {
-                            const nextCyon = prev.treasuryCyon + transferCyon;
-                            return {
-                              ...prev,
-                              treasuryCyon: nextCyon,
-                              isShopBroke: nextCyon < 20,
-                              lastMarketHeadline: `Master Treasury injected +${transferCyon} CYON into Merchant Treasury.`,
-                            };
-                          });
-                          setMasterTreasuryNote(
-                            `Transferred ${transferCyon} CYON from Master Treasury to Merchant Treasury.`,
-                          );
-                        }}
-                        className="py-1 px-1.5 bg-[#10b981] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        FUND +200 CYON
-                      </button>
-                      <button
-                        type="button"
-                        data-withdraw-merchant-to-master-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          const withdrawCyon = Math.min(100, marketState.treasuryCyon);
-                          if (withdrawCyon <= 0) return;
-                          setMasterTreasuryCyon((prev) => prev + withdrawCyon);
-                          setMarketState((prev) => {
-                            const nextCyon = Math.max(0, prev.treasuryCyon - withdrawCyon);
-                            return {
-                              ...prev,
-                              treasuryCyon: nextCyon,
-                              isShopBroke: nextCyon < 20,
-                              lastMarketHeadline: `Master Treasury withdrew ${withdrawCyon} CYON from Merchant Treasury.`,
-                            };
-                          });
-                          setMasterTreasuryNote(
-                            `Withdrew ${withdrawCyon} CYON from Merchant Treasury to Master Treasury.`,
-                          );
-                        }}
-                        className="py-1 px-1.5 bg-[#facc15] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        WITHDRAW 100 CYON
-                      </button>
-                      <button
-                        type="button"
-                        data-merchant-add-lul-pool-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setMarketState((prev) => ({
-                            ...prev,
-                            treasuryLulPool: prev.treasuryLulPool + 1000,
-                          }));
-                          setMasterTreasuryNote('Added +1000 LUL to Merchant LUL Pool.');
-                        }}
-                        className="py-1 px-1.5 bg-[#38bdf8] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        +1000 MERCHANT LUL
-                      </button>
-                      <button
-                        type="button"
-                        data-merchant-restock-all-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          const fullStock: Record<string, number> = {};
-                          const zeroDemand: Record<string, number> = {};
-                          for (const it of MERCHANT_CATALOG_ITEMS) {
-                            fullStock[it.id] = it.targetStock;
-                            zeroDemand[it.id] = 0;
-                          }
-                          setMarketState((prev) => ({
-                            ...prev,
-                            stockByItemId: fullStock,
-                            demandByItemId: zeroDemand,
-                            isShopBroke: false,
-                            lastMarketHeadline:
-                              'Master Treasury restocked all Merchant catalog items to full capacity.',
-                          }));
-                          setMasterTreasuryNote(
-                            'Restocked all Merchant catalog items and reset demand.',
-                          );
-                        }}
-                        className="py-1 px-1.5 bg-[#b8ff3c] text-black font-black text-[9px] uppercase border border-black cursor-pointer"
-                      >
-                        RESTOCK ALL ITEMS
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 3. PLAYER SUB-ACCOUNT CONTROL (*.buddiesblitz-master.testnet) */}
-                  <div
-                    data-master-subaccount-control-box="true"
-                    className="p-2 bg-[#1e293b] border border-white/20 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between text-[9.5px] font-black uppercase">
-                      <span className="text-[#38bdf8]">3. PLAYER SUB-ACCOUNTS (MASTER CUSTODY)</span>
-                      <span className="px-1.5 py-0.5 text-[8px] font-black bg-[#b8ff3c] text-black">
-                        {managedSubAccounts.length} SUB-ACCOUNTS
-                      </span>
-                    </div>
-                    <div className="text-[8.5px] font-mono text-slate-300 truncate">
-                      Master FullAccessKey: {MASTER_FULL_ACCESS_PUBLIC_KEY.slice(0, 28)}...
-                    </div>
-
-                    {/* Spawn New Sub-Account Input */}
-                    <div className="flex gap-1 pt-0.5">
-                      <input
-                        type="text"
-                        data-spawn-subaccount-input="true"
-                        value={newSubAccountPrefixInput}
-                        onChange={(e) => setNewSubAccountPrefixInput(e.target.value)}
-                        placeholder="New player prefix (e.g. player2)"
-                        className="flex-1 min-w-0 px-2 py-1 bg-white text-black font-bold text-[9.5px] border border-black"
-                      />
-                      <button
-                        type="button"
-                        data-spawn-subaccount-btn="true"
-                        disabled={isSpawningSubAccount}
-                        onClick={async () => {
-                          soundEngine.playUiClick();
-                          const prefix = newSubAccountPrefixInput.trim();
-                          if (!prefix) return;
-                          setIsSpawningSubAccount(true);
-                          const res = await spawnSubAccountOnChainViaMaster(prefix);
-                          setIsSpawningSubAccount(false);
-                          setManagedSubAccounts(res.allSubAccounts);
-                          setNewSubAccountPrefixInput('');
-                          setMasterTreasuryNote(
-                            res.onChainCreated
-                              ? `Spawned on-chain sub-account ${res.subAccount.subAccountId} (Tx: ${res.subAccount.txHash.slice(0, 12)}...).`
-                              : `Provisioned sub-account ${res.subAccount.subAccountId} under Master control.`,
-                          );
-                        }}
-                        className="px-2 py-1 bg-[#b8ff3c] text-black font-black text-[9px] uppercase border border-black cursor-pointer shrink-0"
-                      >
-                        {isSpawningSubAccount ? 'SPAWNING...' : 'SPAWN SUB'}
-                      </button>
-                    </div>
-
-                    {/* Managed Sub-Accounts List */}
-                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5 pt-1">
-                      {managedSubAccounts.map((sub) => (
-                        <div
-                          key={sub.subAccountId}
-                          data-managed-subaccount-row={sub.subAccountId}
-                          className="p-1.5 bg-black/45 border border-white/15 space-y-1"
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[9px] font-mono font-black text-[#38bdf8] truncate">
-                              {sub.subAccountId}
-                            </span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span
-                                className={`px-1 py-0.2 text-[7.5px] font-black uppercase ${
-                                  sub.isOnChainVerified
-                                    ? 'bg-[#38bdf8] text-black'
-                                    : 'bg-white/20 text-white'
-                                }`}
-                              >
-                                {sub.isOnChainVerified ? 'ON-CHAIN' : 'MANAGED'}
-                              </span>
-                              <span
-                                className={`px-1 py-0.2 text-[7.5px] font-black uppercase ${
-                                  sub.status === 'ACTIVE'
-                                    ? 'bg-[#10b981] text-black'
-                                    : 'bg-[#ff3b30] text-white'
-                                }`}
-                              >
-                                {sub.status}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between text-[8.5px] font-bold text-slate-300">
-                            <span>
-                              RESPITE: <strong className="text-[#d8b4fe]">{sub.respiteBalance}</strong> | CYON:{' '}
-                              <strong className="text-[#10b981]">{sub.cyonBalance}</strong>
-                            </span>
-                            <span className="font-mono text-[8px] text-slate-400">
-                              Session Key v{sub.keyVersion}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-5 gap-1 pt-0.5">
-                            <button
-                              type="button"
-                              data-sub-grant-respite-btn={sub.subAccountId}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                if (masterTreasuryRespite < 50) return;
-                                setMasterTreasuryRespite((prev) => Math.max(0, prev - 50));
-                                const next = updateSubAccountBalances(sub.subAccountId, 50, 0);
-                                setManagedSubAccounts(next);
-                                if (
-                                  (hud.nearWalletId || playerUid).toLowerCase() ===
-                                  sub.subAccountId
-                                ) {
-                                  setRespiteBalance((prev) => prev + 50);
-                                }
-                                setMasterTreasuryNote(
-                                  `Granted +50 RESPITE from Master Treasury to ${sub.subAccountId}.`,
-                                );
-                              }}
-                              className="py-0.5 px-1 bg-[#d8b4fe] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
-                            >
-                              +50 RSP
-                            </button>
-                            <button
-                              type="button"
-                              data-sub-sweep-respite-btn={sub.subAccountId}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                const recallAmt = sub.respiteBalance;
-                                if (recallAmt <= 0) return;
-                                setMasterTreasuryRespite((prev) => prev + recallAmt);
-                                const next = updateSubAccountBalances(
-                                  sub.subAccountId,
-                                  -recallAmt,
-                                  0,
-                                );
-                                setManagedSubAccounts(next);
-                                if (
-                                  (hud.nearWalletId || playerUid).toLowerCase() ===
-                                  sub.subAccountId
-                                ) {
-                                  setRespiteBalance(0);
-                                }
-                                setMasterTreasuryNote(
-                                  `Recalled ${recallAmt} RESPITE from ${sub.subAccountId} to Master Treasury.`,
-                                );
-                              }}
-                              className="py-0.5 px-1 bg-[#facc15] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
-                            >
-                              SWEEP
-                            </button>
-                            <button
-                              type="button"
-                              data-sub-rotate-key-btn={sub.subAccountId}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                const next = rotateSubAccountSessionKey(sub.subAccountId);
-                                setManagedSubAccounts(next);
-                                setMasterTreasuryNote(
-                                  `Rotated FunctionCall session key for ${sub.subAccountId} (Master FullAccessKey preserved).`,
-                                );
-                              }}
-                              className="py-0.5 px-1 bg-[#38bdf8] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
-                            >
-                              KEY ROT
-                            </button>
-                            <button
-                              type="button"
-                              data-sub-freeze-btn={sub.subAccountId}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                const next = toggleSubAccountFreezeStatus(sub.subAccountId);
-                                setManagedSubAccounts(next);
-                                const updated = next.find(
-                                  (item) => item.subAccountId === sub.subAccountId,
-                                );
-                                setMasterTreasuryNote(
-                                  `Updated ${sub.subAccountId} status to ${updated?.status || 'FROZEN'}.`,
-                                );
-                              }}
-                              className={`py-0.5 px-1 font-black text-[7.5px] uppercase border border-black cursor-pointer ${
-                                sub.status === 'ACTIVE'
-                                  ? 'bg-[#ff3b30] text-white'
-                                  : 'bg-[#10b981] text-black'
-                              }`}
-                            >
-                              {sub.status === 'ACTIVE' ? 'FREEZE' : 'UNFREEZE'}
-                            </button>
-                            <button
-                              type="button"
-                              data-sub-use-btn={sub.subAccountId}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                void handleConnectWalletAndEnterLobby(sub.subAccountId);
-                                setMasterTreasuryNote(
-                                  `Switched active session to sub-account ${sub.subAccountId}.`,
-                                );
-                              }}
-                              className="py-0.5 px-1 bg-[#b8ff3c] text-black font-black text-[7.5px] uppercase border border-black cursor-pointer"
-                            >
-                              USE SUB
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {masterTreasuryNote && (
-                    <div
-                      data-master-treasury-status-note="true"
-                      className="p-1.5 bg-black/50 border border-[#b8ff3c] text-[9px] font-bold text-[#b8ff3c]"
-                    >
-                      {masterTreasuryNote}
-                    </div>
-                  )}
-                </div>
-
-                {/* Section 0: Character Gender Toggle (FEMALE / MALE) for Quality Control */}
-                <div className="p-2 bg-[#14161d] text-white border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
-                    <span className="text-[#ffd700]">CHARACTER TOGGLE (QC)</span>
-                    <span
-                      data-active-character-gender={characterGender}
-                      className="px-1.5 py-0.5 bg-[#1f2433] text-[#b8ff3c] border border-white/25 text-[9px]"
-                    >
-                      ACTIVE: {characterGender === 'female' ? 'FEMALE' : 'MALE'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      data-gender-toggle="female"
-                      data-sandbox-btn="gender-female"
-                      onClick={() => {
-                        setCharacterGender('female');
-                        dispatchBuddyAction('setCharacterGender:female');
-                      }}
-                      className={`-skew-x-6 py-1.5 px-2 font-black text-[10px] border-2 border-[#1a1a1a] cursor-pointer transition-colors ${
-                        characterGender === 'female'
-                          ? 'bg-[#b8ff3c] text-[#1a1a1a] shadow-[2px_2px_0_#ffffff]'
-                          : 'bg-[#25293a] text-white hover:bg-[#343848]'
-                      }`}
-                    >
-                      <span className="skew-x-6 inline-block">FEMALE</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-gender-toggle="male"
-                      data-sandbox-btn="gender-male"
-                      onClick={() => {
-                        setCharacterGender('male');
-                        dispatchBuddyAction('setCharacterGender:male');
-                      }}
-                      className={`-skew-x-6 py-1.5 px-2 font-black text-[10px] border-2 border-[#1a1a1a] cursor-pointer transition-colors ${
-                        characterGender === 'male'
-                          ? 'bg-[#00d2ff] text-[#1a1a1a] shadow-[2px_2px_0_#ffffff]'
-                          : 'bg-[#25293a] text-white hover:bg-[#343848]'
-                      }`}
-                    >
-                      <span className="skew-x-6 inline-block">MALE</span>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      data-qc-sitting="female"
-                      data-sandbox-btn="qc-sitting-female"
-                      onClick={() => {
-                        setCharacterGender('female');
-                        dispatchBuddyAction('qcToggleSitting');
-                      }}
-                      className="-skew-x-6 py-1.5 px-2 bg-[#f472b6] hover:bg-[#fb7185] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#ffffff] cursor-pointer transition-colors"
-                    >
-                      <span className="skew-x-6 inline-block">SITTING FEMALE [C]</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-qc-sitting="male"
-                      data-sandbox-btn="qc-sitting-male"
-                      onClick={() => {
-                        setCharacterGender('male');
-                        dispatchBuddyAction('qcToggleSittingMale');
-                      }}
-                      className="-skew-x-6 py-1.5 px-2 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#ffffff] cursor-pointer transition-colors"
-                    >
-                      <span className="skew-x-6 inline-block">SITTING MALE [C]</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-qc-driving="female"
-                      data-sandbox-btn="qc-driving-female"
-                      onClick={() => {
-                        setCharacterGender('female');
-                        dispatchBuddyAction('qcToggleDrivingFemale');
-                      }}
-                      className="-skew-x-6 py-1.5 px-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#ffffff] cursor-pointer transition-colors"
-                    >
-                      <span className="skew-x-6 inline-block">DRIVING FEMALE</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-qc-driving="male"
-                      data-sandbox-btn="qc-driving-male"
-                      onClick={() => {
-                        setCharacterGender('male');
-                        dispatchBuddyAction('qcToggleDrivingMale');
-                      }}
-                      className="-skew-x-6 py-1.5 px-2 bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#ffffff] cursor-pointer transition-colors"
-                    >
-                      <span className="skew-x-6 inline-block">DRIVING MALE</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Section 1: Always-On Open Warzone & Live Map Preview */}
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-[#1a1a1a]/70 mb-1">
-                    ARENA MODE (24/7 OPEN WARZONE)
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      data-mode-btn="sandbox"
-                      onClick={() => handleSwitchPlayMode('sandbox')}
-                      className={`-skew-x-6 py-1.5 font-black text-[10px] border-2 border-[#1a1a1a] cursor-pointer ${
-                        playMode !== 'editor'
-                          ? 'bg-[#b8ff3c] text-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a]'
-                          : 'bg-[#1a1a1a] text-white hover:bg-[#343848]'
-                      }`}
-                    >
-                      <span className="skew-x-6 inline-block">OPEN WARZONE 24/7</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-mode-btn="editor"
-                      data-map-preview-btn="true"
-                      onClick={() => handleSwitchPlayMode('editor')}
-                      className={`-skew-x-6 py-1.5 font-black text-[10px] border-2 border-[#1a1a1a] cursor-pointer ${
-                        playMode === 'editor'
-                          ? 'bg-[#00d2ff] text-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a]'
-                          : 'bg-[#1a1a1a] text-white hover:bg-[#343848]'
-                      }`}
-                    >
-                      <span className="skew-x-6 inline-block">MAP PREVIEW</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Section 2: System Controls ([Luau Code], [SOUND/MUTE + Volume Slider], [PAUSE]) */}
-                <div className="pt-2 border-t-2 border-[#1a1a1a]/15 space-y-2">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-[#1a1a1a]/70 mb-1">
-                    SYSTEM &amp; CODE
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setIsBlueprintModalOpen(true);
-                      }}
-                      className="-skew-x-6 py-1.5 bg-[#fec83e] hover:bg-[#ffe066] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      <span className="skew-x-6 inline-block">Luau Code</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-menu-audio-btn="true"
-                      onClick={() => {
-                        handleToggleAudio();
-                      }}
-                      className={`-skew-x-6 py-1.5 font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer ${
-                        isMuted
-                          ? 'bg-[#ff3b30] text-white'
-                          : 'bg-[#1a1a1a] hover:bg-[#343848] text-white'
-                      }`}
-                    >
-                      <span className="skew-x-6 inline-block">
-                        {isMuted ? 'MUTE' : `SOUND ${audioVolumePct}%`}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleTogglePause}
-                      className="-skew-x-6 py-1.5 bg-[#1a1a1a] hover:bg-[#343848] text-white font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      <span className="skew-x-6 inline-block">PAUSE</span>
-                    </button>
-                  </div>
-
-                  {/* Volume Control Slider Always Accessible Under SOUND / MUTE Button */}
-                  <div
-                    data-menu-volume-panel="true"
-                    className="p-2 bg-[#14161d] text-white border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between text-[10px] font-black">
-                      <span className="text-[#00d2ff] uppercase tracking-wider">
-                        SOUND VOLUME
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          data-menu-volume-label="true"
-                          className="font-mono-tabular text-[#b8ff3c]"
-                        >
-                          {isMuted ? '0% (MUTE)' : `${audioVolumePct}%`}
-                        </span>
-                        <button
-                          type="button"
-                          data-menu-mute-toggle="true"
-                          onClick={handleToggleAudio}
-                          className="px-1.5 py-0.5 bg-[#ff3b30] hover:bg-[#ff554a] text-white text-[9px] font-black uppercase border border-white cursor-pointer"
-                        >
-                          {isMuted ? 'UNMUTE' : 'MUTE'}
-                        </button>
-                      </div>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={1}
-                      data-menu-volume-slider="true"
-                      value={isMuted ? 0 : audioVolumePct}
-                      onChange={(e) => handleChangeVolumePct(Number(e.target.value))}
-                      className="w-full accent-[#b8ff3c] cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                {/* Section 3: Quality Control (QC) - All Weapons & Ordnance */}
-                <div className="pt-2 border-t-2 border-[#1a1a1a]/15 space-y-1.5">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-[#1a1a1a]/70">
-                    QUALITY CONTROL: ALL WEAPONS
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-unarmed"
-                      onClick={() => dispatchBuddyAction('qcEquipWeapon:unarmed')}
-                      className="py-1.5 px-1.5 bg-[#e2e8f0] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Fists (Unarmed)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-pistol"
-                      onClick={() => dispatchBuddyAction('qcEquipWeapon:pistol')}
-                      className="py-1.5 px-1.5 bg-[#fde047] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Pistol (BlitzPistol)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-rifle"
-                      onClick={() => dispatchBuddyAction('qcEquipWeapon:rifle')}
-                      className="py-1.5 px-1.5 bg-[#a3e635] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +AR-99 Assault Rifle
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-bazooka"
-                      onClick={() => dispatchBuddyAction('qcEquipWeapon:bazooka')}
-                      className="py-1.5 px-1.5 bg-[#fb923c] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Bazooka (RPG)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-laser"
-                      onClick={() => dispatchBuddyAction('sandboxEquipLaserGun')}
-                      className="py-1.5 px-1.5 bg-[#00f0ff] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Laser Gun (LG-88)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-gatling"
-                      onClick={() => dispatchBuddyAction('sandboxEquipGatlingGun')}
-                      className="py-1.5 px-1.5 bg-[#b8ff3c] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Gatling (TITAN-6)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="give-grenade"
-                      onClick={() => dispatchBuddyAction('sandboxGiveHandGrenade')}
-                      className="py-1.5 px-1.5 bg-[#78825b] text-white font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Hand Grenade
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="give-mine"
-                      onClick={() => dispatchBuddyAction('sandboxGiveLandMine')}
-                      className="py-1.5 px-1.5 bg-[#f59e0b] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Land Mine (TM-89)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="spawn-cluster-plane"
-                      onClick={() => dispatchBuddyAction('sandboxSpawnPlaneWithClusterBomb')}
-                      className="py-1.5 px-1.5 bg-[#38bdf8] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Cluster + Plane
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="deploy-nuke"
-                      onClick={() => {
-                        setIsSpawnDrawerOpen(false);
-                        dispatchBuddyAction('sandboxDeployNuclearLauncher');
-                      }}
-                      className="py-1.5 px-1.5 bg-[#ff3b30] text-white font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Nuclear Launcher
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="equip-fishing-rod"
-                      onClick={() => dispatchBuddyAction('qcEquipWeapon:fishing_rod')}
-                      className="col-span-2 py-1.5 px-1.5 bg-[#0ea5e9] hover:bg-[#38bdf8] text-white font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Fishing Rod (Fishing Cast &amp; Idle)
-                    </button>
-                  </div>
-                </div>
-
-                {/* Section 4: Quality Control (QC) - All Vehicles & Crates */}
-                <div className="pt-2 border-t-2 border-[#1a1a1a]/15 space-y-1.5">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-[#1a1a1a]/70">
-                    QUALITY CONTROL: ALL VEHICLES
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      data-sandbox-btn="spawn-tank"
-                      onClick={() => dispatchBuddyAction('sandboxSpawnTank')}
-                      className="py-1.5 px-1 bg-[#b8ff3c] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Blitz Tank (ST-01)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="spawn-super-tank"
-                      onClick={() => dispatchBuddyAction('sandboxSpawnSuperTank')}
-                      className="py-1.5 px-1 bg-[#00d2ff] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Super Tank (Heavy)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="spawn-plane"
-                      onClick={() => dispatchBuddyAction('sandboxSpawnPlane')}
-                      className="py-1.5 px-1 bg-[#fec83e] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Blitz Plane (LF-01)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="spawn-truck"
-                      onClick={() => dispatchBuddyAction('sandboxSpawnTruck')}
-                      className="py-1.5 px-1 bg-[#ffa822] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Dump Truck (HT-88)
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="board-tank"
-                      onClick={() => dispatchBuddyAction('qcBoardVehicle:tank')}
-                      className="py-1.5 px-1 bg-[#14161d] text-[#b8ff3c] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Board Blitz Tank
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="board-super-tank"
-                      onClick={() => dispatchBuddyAction('qcBoardVehicle:super_tank')}
-                      className="py-1.5 px-1 bg-[#14161d] text-[#00d2ff] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Board Super Tank
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="board-plane"
-                      onClick={() => dispatchBuddyAction('qcBoardVehicle:plane')}
-                      className="py-1.5 px-1 bg-[#14161d] text-[#fec83e] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Board Blitz Plane
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="board-truck"
-                      onClick={() => dispatchBuddyAction('qcBoardVehicle:truck')}
-                      className="py-1.5 px-1 bg-[#14161d] text-[#ffa822] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Board Dump Truck
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="board-tram"
-                      onClick={() => dispatchBuddyAction('qcBoardVehicle:tram')}
-                      className="py-1.5 px-1 bg-[#14161d] text-[#38bdf8] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Board City Tram
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="dismount-vehicle"
-                      onClick={() => dispatchBuddyAction('qcBoardVehicle:dismount')}
-                      className="py-1.5 px-1 bg-[#e2e8f0] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      Exit Vehicle
-                    </button>
-                  </div>
-
-                  <div className="pt-1 text-[10px] font-black uppercase tracking-widest text-[#1a1a1a]/70">
-                    DROP CRATES &amp; UNLOCK BASE (TESTING)
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      data-sandbox-btn="drop-red"
-                      onClick={() => dispatchBuddyAction('sandboxDropRedCrate')}
-                      className="py-1.5 px-1 bg-[#ff3b30] text-white font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Red Crate
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="drop-blue"
-                      onClick={() => dispatchBuddyAction('sandboxDropSuperCrate')}
-                      className="py-1.5 px-1 bg-[#00d2ff] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Blue Crate
-                    </button>
-                    <button
-                      type="button"
-                      data-sandbox-btn="drop-legend"
-                      onClick={() => dispatchBuddyAction('sandboxDropLegendCrate')}
-                      className="py-1.5 px-1 bg-[#ffd700] text-[#1a1a1a] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer"
-                    >
-                      +Gold Crate
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    data-sandbox-btn="unlock-base-lv3"
-                    onClick={() => dispatchBuddyAction('sandboxUnlockBaseLv3')}
-                    className="w-full py-1.5 px-2 bg-[#1a1a1a] hover:bg-[#2bb3b1] hover:text-[#1a1a1a] text-[#ffd700] font-black text-[10px] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] cursor-pointer transition-colors"
-                  >
-                    UNLOCK COMMAND CENTER LV.3 (REVEAL ALL)
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* =================================================================
@@ -4604,6 +4122,7 @@ export default function App() {
               lastCaughtFishToast={lastCaughtFishToast}
               onStartChargeCast={() => {
                 if (fishingPhase === 'idle' && caughtFishBucket.length < 20) {
+                  ensureFishingRodEquipped();
                   setIsChargingCast(true);
                   setFishingPhase('charging');
                 }
@@ -4618,6 +4137,7 @@ export default function App() {
               }}
               onCancelCast={() => {
                 soundEngine.playUiClick();
+                clearFishingCastTimers();
                 setIsChargingCast(false);
                 setIsHoldingReel(false);
                 setFishingMinigame(null);
@@ -4634,262 +4154,50 @@ export default function App() {
                 setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
                 setLastCaughtFishToast(null);
               }}
-              onSellCaughtFishToKai={(fish) => {
-                soundEngine.playPickup();
-                const actorAccount =
-                  hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-                const earnedCyon = fish.sellValueCyon || fish.sellValueLul || 15;
-                setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
-                setLastCaughtFishToast(null);
-                const nextCyon = cyonBalance + earnedCyon;
-                setCyonBalance(nextCyon);
-                if (isManagedSubAccountOfMaster(actorAccount)) {
-                  setManagedSubAccounts(updateSubAccountBalances(actorAccount, 0, earnedCyon));
-                }
-                void syncPlayerBalancesToSupabase({
-                  nearAccountId: actorAccount,
-                  lulBalance: hud.gold,
-                  cyonBalance: nextCyon,
-                  respiteBalance,
-                });
-                void insertMarketTransactionReceipt({
-                  merchant_id: 'beach_house',
-                  actor_near_account: actorAccount,
-                  action_type: 'sell_fish',
-                  item_id: fish.speciesId,
-                  currency: 'CYON',
-                  amount: earnedCyon,
-                  unit_price: earnedCyon,
-                  reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly from Catch Showcase to Merchant Kai for +${earnedCyon} CYON (Off-Chain).`,
-                });
-              }}
-              onMintCaughtFishAsNft={(fish) => {
-                soundEngine.playPickup();
-                const actorAccount =
-                  hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-                const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
-                const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
-                const nearTxHash = `near-fish-mint-${Date.now().toString(36)}`;
-                setCaughtFishBucket((prev) =>
-                  prev.map((f) =>
-                    f.id === fish.id
-                      ? {
-                          ...f,
-                          isMintedNft: true,
-                          nftTokenId,
-                          nearTxHash,
-                        }
-                      : f,
-                  ),
-                );
-                setLastCaughtFishToast((prev) =>
-                  prev && prev.id === fish.id
-                    ? { ...prev, isMintedNft: true, nftTokenId, nearTxHash }
-                    : prev,
-                );
-                void executeMarketContractCallOnChain({
-                  methodName: 'mint_fish_nft',
-                  ownerId: actorAccount,
-                  tokenIds: [nftTokenId],
-                  memoData: {
-                    species_id: fish.speciesId,
-                    species_name: fish.speciesName,
-                    water_zone: fish.waterZone,
-                    rarity: fish.rarity,
-                    weight_kg: fish.weightKg,
-                    length_cm: fish.lengthCm ?? null,
-                    is_trophy: Boolean(fish.isTrophy),
-                  },
-                });
-              }}
+              onSellCaughtFishToKai={handleSellRawFishForLul}
+              onMintCaughtFishAsNft={handleMintCaughtFishNft}
             />
           )}
 
           {/* =================================================================
-              3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR (Speech Bubble Above Character Head)
+              3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR + PRIVATE NOTIFICATION TOAST
              ================================================================= */}
           {playMode !== 'editor' && (
-            <div className="fixed bottom-3 left-3 z-30 pointer-events-auto">
-              {/* Chat, Sound & House Decoration Settings Popover */}
-              {isChatBubbleStyleOpen && (
-                <div
-                  data-chat-bubble-style-popover="true"
-                  className="mb-2 w-80 bg-white border-3 border-black shadow-[4px_4px_0px_#000] p-3 text-black select-none space-y-3"
+            <div className="fixed bottom-3 left-3 z-30 pointer-events-auto flex flex-col items-end">
+              {/* Incoming Private Chat Notification Popup (Anchored Above Yellow CHAT Button) */}
+              {activePrivateNotificationToast && (
+                <button
+                  type="button"
+                  data-private-chat-toast="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    const senderUser = activePrivateNotificationToast.user;
+                    setIsKioskModalOpen(false);
+                    setIsProfileModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setActiveSpecialModal('none');
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                    window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                    setSelectedPrivateUser(senderUser);
+                    setIsSocialChatModalOpen(true);
+                    setUnreadPrivateCount(0);
+                    setActivePrivateNotificationToast(null);
+                  }}
+                  className="mb-2 max-w-[270px] bg-white hover:bg-[#fef08a] text-black border-[3px] border-black shadow-[4px_4px_0px_#000] px-3 py-2 text-left cursor-pointer transition-transform active:translate-x-[1px] active:translate-y-[1px] select-none"
                 >
-                  <div className="flex items-center justify-between border-b-2 border-black pb-1.5">
-                    <span className="text-[10.5px] font-black uppercase tracking-wider">
-                      CHAT &amp; GAME SETTINGS
+                  <div className="flex items-center justify-between gap-2 border-b-2 border-black pb-1 mb-1">
+                    <span className="px-1.5 py-0.5 bg-[#facc15] border border-black text-[9px] font-black uppercase tracking-wider text-black">
+                      PRIVATE MESSAGE
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setIsChatBubbleStyleOpen(false);
-                      }}
-                      className="px-1.5 py-0.5 bg-[#ff3b30] text-white border border-black text-[9.5px] font-black uppercase cursor-pointer"
-                    >
-                      X
-                    </button>
+                    <span className="text-[10px] font-black uppercase text-slate-900 truncate max-w-[120px]">
+                      {activePrivateNotificationToast.senderName}
+                    </span>
                   </div>
-
-                  {/* Sound Toggle & Volume Control */}
-                  <div className="p-2 bg-slate-50 border-2 border-black shadow-[2px_2px_0_#000] space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] font-black uppercase text-slate-800">
-                        GAME SOUND &amp; AUDIO
-                      </span>
-                      <button
-                        type="button"
-                        data-chat-settings-sound-toggle="true"
-                        onClick={handleToggleAudio}
-                        className={`-skew-x-6 px-2.5 py-0.5 border-2 border-black shadow-[2px_2px_0_#000] text-[9.5px] font-black uppercase cursor-pointer ${
-                          isMuted ? 'bg-[#ff3b30] text-white' : 'bg-[#10b981] text-black'
-                        }`}
-                      >
-                        <span className="skew-x-6 inline-block">
-                          {isMuted ? 'SOUND: MUTE' : 'SOUND: ON'}
-                        </span>
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-black uppercase text-slate-600">
-                        VOL {isMuted ? 0 : audioVolumePct}%
-                      </span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={5}
-                        value={isMuted ? 0 : audioVolumePct}
-                        onChange={(e) => handleChangeVolumePct(Number(e.target.value))}
-                        aria-label="Master Volume"
-                        className="flex-1 h-2 accent-[#10b981] cursor-pointer"
-                      />
-                    </div>
+                  <div className="text-[11px] font-bold text-slate-800 truncate">
+                    {activePrivateNotificationToast.text}
                   </div>
-
-                  {/* House Decoration Option — ONLY visible when player is inside their house */}
-                  {isInsidePrivateHouse && (
-                    <div
-                      data-chat-settings-house-decor="true"
-                      className="p-2.5 bg-[#fef08a] border-2 border-black shadow-[2px_2px_0_#000] space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9.5px] font-black uppercase text-black">
-                          HOUSE DECORATION (INSIDE HOUSE)
-                        </span>
-                        <span className="px-1.5 py-0.5 bg-black text-[#b8ff3c] text-[8.5px] font-black uppercase">
-                          ROOM STUDIO
-                        </span>
-                      </div>
-                      <p className="text-[9.5px] font-bold text-slate-800 leading-tight">
-                        Customize your room furniture, wall paintings, trophy slots, and architectural themes.
-                      </p>
-                      <button
-                        type="button"
-                        data-open-house-decor-from-settings="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setIsChatBubbleStyleOpen(false);
-                          setIsSocialChatModalOpen(false);
-                          setActiveSpecialModal('house_interior');
-                        }}
-                        className="-skew-x-6 w-full py-1.5 px-3 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase tracking-wider cursor-pointer active:scale-95"
-                      >
-                        <span className="skew-x-6 inline-block">
-                          DECORATE HOUSE / EDIT ROOM
-                        </span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Bubble Color Options */}
-                  <div>
-                    <div className="text-[9.5px] font-black uppercase text-slate-700 mb-1">
-                      CHAT BUBBLE COLOR
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {[
-                        { label: 'White', hex: '#ffffff' },
-                        { label: 'Dark', hex: '#0f172a' },
-                        { label: 'Yellow', hex: '#facc15' },
-                        { label: 'Cyan', hex: '#38bdf8' },
-                        { label: 'Green', hex: '#10b981' },
-                        { label: 'Purple', hex: '#d8b4fe' },
-                      ].map((sw) => (
-                        <button
-                          key={sw.hex}
-                          type="button"
-                          title={`Bubble ${sw.label}`}
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setChatBubbleBgColor(sw.hex);
-                            window.dispatchEvent(
-                              new CustomEvent('update-social-bubble-style', {
-                                detail: { bgColor: sw.hex, textColor: chatBubbleTextColor },
-                              }),
-                            );
-                          }}
-                          style={{ backgroundColor: sw.hex }}
-                          className={`w-6 h-6 border-2 border-black cursor-pointer transition-transform ${
-                            chatBubbleBgColor === sw.hex
-                              ? 'scale-110 ring-2 ring-black shadow-[2px_2px_0_#000]'
-                              : 'opacity-85 hover:opacity-100'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Text Color Options */}
-                  <div>
-                    <div className="text-[9.5px] font-black uppercase text-slate-700 mb-1">
-                      CHAT TEXT COLOR
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {[
-                        { label: 'Black', hex: '#0f172a' },
-                        { label: 'White', hex: '#ffffff' },
-                        { label: 'Yellow', hex: '#fde047' },
-                        { label: 'Cyan', hex: '#38bdf8' },
-                        { label: 'Green', hex: '#4ade80' },
-                        { label: 'Red', hex: '#ff3b30' },
-                      ].map((sw) => (
-                        <button
-                          key={sw.hex}
-                          type="button"
-                          title={`Text ${sw.label}`}
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setChatBubbleTextColor(sw.hex);
-                            window.dispatchEvent(
-                              new CustomEvent('update-social-bubble-style', {
-                                detail: { bgColor: chatBubbleBgColor, textColor: sw.hex },
-                              }),
-                            );
-                          }}
-                          style={{ backgroundColor: sw.hex }}
-                          className={`w-6 h-6 border-2 border-black cursor-pointer transition-transform ${
-                            chatBubbleTextColor === sw.hex
-                              ? 'scale-110 ring-2 ring-black shadow-[2px_2px_0_#000]'
-                              : 'opacity-85 hover:opacity-100'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Bubble Preview */}
-                  <div
-                    style={{
-                      backgroundColor: chatBubbleBgColor,
-                      color: chatBubbleTextColor,
-                    }}
-                    className="px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black"
-                  >
-                    Hello Buddy! This is your chat color preview.
-                  </div>
-                </div>
+                </button>
               )}
 
               <form
@@ -4906,20 +4214,40 @@ export default function App() {
                         }),
                       );
                     }
-                    if (isSocialChatModalOpen) {
-                      window.dispatchEvent(
-                        new CustomEvent('social-chat-bar-submit', {
-                          detail: { text: trimmed },
-                        }),
-                      );
-                    } else {
-                      const nowStr = new Date().toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
+
+                    const nowStr = new Date().toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    });
+
+                    const senderLabel = playerDisplayName || 'YOU';
+                    const senderAccount = hud.nearWalletId || playerUid || undefined;
+                    if (isSocialChatModalOpen && selectedPrivateUser) {
+                      const newPrivateMsg: ChatMessage = {
+                        id: `priv-${Date.now()}`,
+                        senderId: senderAccount,
+                        senderName: senderLabel,
+                        recipientName: selectedPrivateUser.name,
+                        recipientId: String(selectedPrivateUser.id),
+                        isSelf: true,
+                        text: trimmed,
+                        timestamp: nowStr,
+                        type: 'private',
+                      };
+                      setChatMessages((prev) => [...prev, newPrivateMsg]);
+                      void insertSocialMessageToSupabase({
+                        sender_name: senderLabel,
+                        sender_near_account: senderAccount,
+                        recipient_name: selectedPrivateUser.name,
+                        message: trimmed,
+                        bubble_color: chatBubbleBgColor,
+                        room_id: worldMode,
                       });
+                    } else {
                       const newMsg: ChatMessage = {
                         id: `pub-${Date.now()}`,
-                        senderName: 'YOU',
+                        senderId: senderAccount,
+                        senderName: senderLabel,
                         isSelf: true,
                         text: trimmed,
                         timestamp: nowStr,
@@ -4927,31 +4255,26 @@ export default function App() {
                       };
                       setChatMessages((prev) => [...prev, newMsg]);
                       dispatchBuddyAction(`socialTalk:${trimmed}`);
+                      void insertSocialMessageToSupabase({
+                        sender_name: senderLabel,
+                        sender_near_account: senderAccount,
+                        message: trimmed,
+                        bubble_color: chatBubbleBgColor,
+                        room_id: worldMode,
+                      });
                     }
                     setSocialChatText('');
                   }
                 }}
                 className="flex items-center gap-1.5 bg-[#14161d]/95 border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-2.5 py-1.5 rounded-lg"
               >
-                <button
-                  type="button"
-                  data-chat-style-settings-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsChatBubbleStyleOpen((prev) => !prev);
-                  }}
-                  title="Chat Bubble & Text Color Settings"
-                  aria-label="Chat Bubble and Text Color Settings"
-                  className="-skew-x-12 w-7 h-7 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-[#14161d] shadow-[2px_2px_0_#14161d] flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
-                >
-                  <Settings className="skew-x-12 w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                </button>
                 <input
                   type="text"
                   data-social-chat-input="true"
                   maxLength={64}
                   value={socialChatText}
                   onChange={(e) => setSocialChatText(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
                   placeholder="Type a short message..."
                   className="w-40 sm:w-56 px-2 py-1 bg-white text-[#14161d] font-bold text-xs rounded border-2 border-[#14161d] focus:outline-none focus:ring-2 focus:ring-[#10b981]"
                 />
@@ -4964,8 +4287,23 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-open-social-chat-btn="true"
                   onClick={() => {
                     soundEngine.playUiClick();
+                    if (unreadPrivateCount > 0 && lastUnreadPrivateSender) {
+                      setIsKioskModalOpen(false);
+                      setIsProfileModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setSelectedPrivateUser(lastUnreadPrivateSender);
+                      setIsSocialChatModalOpen(true);
+                      setUnreadPrivateCount(0);
+                      setActivePrivateNotificationToast(null);
+                      return;
+                    }
                     setIsSocialChatModalOpen((prev) => {
                       const next = !prev;
                       if (next) {
@@ -4978,10 +4316,20 @@ export default function App() {
                       return next;
                     });
                   }}
-                  className="-skew-x-12 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] font-black text-xs uppercase border-2 border-[#14161d] shadow-[2px_2px_0_#14161d] cursor-pointer active:scale-95 ml-1"
-                  title="Open MMORPG Chat Modal [T]"
+                  className="-skew-x-12 relative px-3 py-1 bg-[#facc15] hover:bg-[#fde047] text-black font-black text-xs uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer active:scale-95 ml-1"
+                  title="Open Social Chat"
                 >
-                  <span className="skew-x-12 inline-block">CHAT [T]</span>
+                  <span className="skew-x-12 inline-flex items-center gap-1">
+                    <span>WORLD</span>
+                    {unreadPrivateCount > 0 && (
+                      <span
+                        data-chat-unread-private-badge="true"
+                        className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
+                      >
+                        {unreadPrivateCount}
+                      </span>
+                    )}
+                  </span>
                 </button>
               </form>
             </div>
@@ -5035,16 +4383,6 @@ export default function App() {
               >
                 Resume Game
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setIsBlueprintModalOpen(true);
-                }}
-                className="w-full py-3 bg-[#fec83e] hover:bg-[#fee763] text-[#11121a] font-black text-sm rounded-xl border-3 border-[#11121a] comic-sticker-shadow cursor-pointer"
-              >
-                Luau Code
-              </button>
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
@@ -5076,6 +4414,7 @@ export default function App() {
       <NpcMerchantAndHouseModal
         activeModalMode={activeSpecialModal}
         merchantLocation={merchantLocation}
+        isSampleHouseView={isSampleHouseView}
         marketState={marketState}
         lulBalance={hud.gold}
         cyonBalance={cyonBalance}
@@ -5083,14 +4422,28 @@ export default function App() {
         nearTestnetBalance={nearTestnetBalance}
         walletConnected={Boolean(hud.nearWalletConnected)}
         hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
-        onBuyHouseWithRespite={(priceRespite) => {
+        isFastForwardRunning={isFastForwardRunning}
+        onToggleFastForward={() => {
+          soundEngine.playUiClick();
+          setIsFastForwardRunning((prev) => !prev);
+        }}
+        onBuyHouseWithRespite={async () => {
+          const priceRespite = HOUSE_OWNERSHIP_PRICE_RESPITE;
           if (respiteBalance < priceRespite) return false;
-          const actorAccount =
-            hud.nearWalletId || playerUid || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return false;
+          const res = await executeMarketContractCallOnChain({
+            methodName: 'purchase_citizen_asset',
+            args: {
+              asset_id: 'house_ownership',
+              plan_id: null,
+              order_id: null,
+            },
+          });
+          if (!res.ok || !res.txHash) return false;
           const nextRespite = Math.max(0, respiteBalance - priceRespite);
           setRespiteBalance(nextRespite);
           setHasHouseOwnership(true);
-          dispatchBuddyAction('nearConnectAndMint');
           setHud((prev) => ({
             ...prev,
             nearHasGamepassNft: true,
@@ -5102,7 +4455,7 @@ export default function App() {
             respiteBalance: nextRespite,
             ownedTokenIds: [...ownedMerchantItemIds, 'nep171:house:ownership'],
           });
-          void insertMarketTransactionReceipt({
+          void logMarketTransactionToSupabase({
             merchant_id: merchantLocation,
             actor_near_account: actorAccount,
             action_type: 'buy_item',
@@ -5111,67 +4464,52 @@ export default function App() {
             currency: 'RESPITE',
             amount: 1,
             unit_price: priceRespite,
-            reasoning_summary: `Purchased Private House ownership for ${priceRespite} RESPITE.`,
-          });
-          void executeMarketContractCallOnChain({
-            methodName: 'purchase_citizen_asset',
-            ownerId: actorAccount,
-            tokenIds: [`house-deed-${actorAccount.replace(/[^a-z0-9]/gi, '-')}`],
-            memoData: {
-              asset_type: 'private_house_deed',
-              price_respite: priceRespite,
-            },
+            reasoning_summary: `Purchased Private House Sub-Account Deed for ${priceRespite} RESPITE.`,
+            near_tx_hash: res.txHash,
           });
           return true;
         }}
         recruitedFamilyMembers={recruitedFamilyMembers}
-        onRecruitFamilyMember={(planId) => {
+        onRecruitFamilyMember={async (planId) => {
           const plan =
             FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === planId) ||
             FAMILY_MEMBER_CONTRACT_PLANS[0];
           if (respiteBalance < plan.priceRespite) return null;
-          const actorAccount =
-            hud.nearWalletId || playerUid || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-          const nextRespite = Math.max(0, respiteBalance - plan.priceRespite);
-          setRespiteBalance(nextRespite);
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return null;
 
           const memberNumber = recruitedFamilyMembers.length + 1;
           const now = new Date();
           const expires = new Date(now.getTime() + plan.durationDays * 86400 * 1000);
+          const agentId = `family-member-${Date.now().toString(36)}`;
+          const contractAddress = `family-${memberNumber}.buddiesblitz.testnet`;
+
+          const res = await executeMarketContractCallOnChain({
+            methodName: 'purchase_citizen_asset',
+            args: {
+              asset_id: 'family_member',
+              plan_id: plan.id,
+              order_id: 'collect_boxes',
+            },
+          });
+          if (!res.ok || !res.txHash) return null;
+
+          const nextRespite = Math.max(0, respiteBalance - plan.priceRespite);
+          setRespiteBalance(nextRespite);
+
           const newMember: RecruitedFamilyMemberAgent = {
-            agentId: `family-member-${Date.now().toString(36)}`,
+            agentId,
             name: `FAMILY MEMBER #${memberNumber}`,
-            contractAddress: `family-${memberNumber}.buddiesblitz.testnet`,
+            contractAddress,
             planId: plan.id,
             planLabel: plan.shortLabel,
             pricePaidRespite: plan.priceRespite,
             recruitedAtIso: now.toISOString(),
             expiresAtIso: expires.toISOString(),
             activeOrder: 'collect_boxes',
-            nearTxHash: `near-family-${Date.now().toString(36)}`,
+            nearTxHash: res.txHash,
           };
           setRecruitedFamilyMembers((prev) => [newMember, ...prev]);
-
-          void executeMarketContractCallOnChain({
-            methodName: 'purchase_citizen_asset',
-            ownerId: actorAccount,
-            tokenIds: [newMember.agentId],
-            memoData: {
-              asset_type: 'family_member_contract',
-              plan_id: plan.id,
-              duration_days: plan.durationDays,
-              price_respite: plan.priceRespite,
-              contract_address: newMember.contractAddress,
-            },
-          }).then((res) => {
-            if (res.txHash) {
-              setRecruitedFamilyMembers((prev) =>
-                prev.map((m) =>
-                  m.agentId === newMember.agentId ? { ...m, nearTxHash: res.txHash } : m,
-                ),
-              );
-            }
-          });
 
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
@@ -5179,7 +4517,7 @@ export default function App() {
             cyonBalance,
             respiteBalance: nextRespite,
           });
-          void insertMarketTransactionReceipt({
+          void logMarketTransactionToSupabase({
             merchant_id: merchantLocation,
             actor_near_account: actorAccount,
             action_type: 'buy_item',
@@ -5203,12 +4541,12 @@ export default function App() {
           if (orderId === 'go_fishing') {
             const caught = rollRandomCaughtFish({
               waterZone: 'east_beach',
-              caughtByAccount: hud.nearWalletId || playerUid || 'commander-p1.testnet',
+              caughtByAccount: hud.nearWalletId || playerUid || '',
             });
             setCaughtFishBucket((prev) => [caught, ...prev]);
           } else {
             dispatchBuddyAction(`adjustPlayerLul:${orderSpec.rewardLul}`);
-            if (orderId === 'armed_warzone_attack') {
+            if (orderId === 'warzone_attack') {
               dispatchBuddyAction('kioskSelectRecipe:buddy_infantry');
             }
           }
@@ -5216,12 +4554,10 @@ export default function App() {
         ownedItemIds={ownedMerchantItemIds}
         activeHouseThemeId={activeHouseThemeId}
         interiorPlacement={interiorPlacement}
-        isFastForwardRunning={isFastForwardRunning}
         playerBubbleBgColor={chatBubbleBgColor}
         playerBubbleTextColor={chatBubbleTextColor}
         onClose={() => {
           soundEngine.playUiClick();
-          setIsFastForwardRunning(false);
           setActiveSpecialModal('none');
         }}
         onEarnSafezoneLul={(amount: number) => {
@@ -5230,7 +4566,8 @@ export default function App() {
         }}
         onExchangeLulToCyon={(customLulSpent?: number, customCyonGranted?: number) => {
           soundEngine.playUiClick();
-          const actorAccount = hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           if (
             typeof customLulSpent === 'number' &&
             typeof customCyonGranted === 'number' &&
@@ -5241,20 +4578,18 @@ export default function App() {
             dispatchBuddyAction(`adjustPlayerLul:${-customLulSpent}`);
             const nextCyon = cyonBalance + customCyonGranted;
             setCyonBalance(nextCyon);
-            void syncNpcMerchantAndLogTransaction({
-              merchant: {
-                merchant_id: merchantLocation,
-                cyon_treasury: Math.max(0, marketState.treasuryCyon - customCyonGranted),
-              },
-              transaction: {
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'exchange_lul_cyon',
-                currency: 'CYON',
-                amount: customCyonGranted,
-                unit_price: Number((customLulSpent / customCyonGranted).toFixed(2)),
-                reasoning_summary: `Exchanged ${customLulSpent} LUL for ${customCyonGranted} CYON at ${merchantLocation}`,
-              },
+            void syncNpcMerchantToSupabase({
+              merchant_id: merchantLocation,
+              cyon_treasury: Math.max(0, marketState.treasuryCyon - customCyonGranted),
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: actorAccount,
+              action_type: 'exchange_lul_cyon',
+              currency: 'CYON',
+              amount: customCyonGranted,
+              unit_price: Number((customLulSpent / customCyonGranted).toFixed(2)),
+              reasoning_summary: `Exchanged ${customLulSpent} LUL for ${customCyonGranted} CYON at ${merchantLocation}`,
             });
             void syncPlayerBalancesToSupabase({
               nearAccountId: actorAccount,
@@ -5270,57 +4605,55 @@ export default function App() {
             dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
             setCyonBalance(res.updatedCyon);
             setMarketState(res.updatedState);
-            void syncNpcMerchantAndLogTransaction({
-              merchant: {
-                merchant_id: merchantLocation,
-                cyon_treasury: res.updatedState.treasuryCyon,
-                is_bankrupt: res.updatedState.isShopBroke,
-                last_headline: res.updatedState.lastMarketHeadline,
-              },
-              transaction: {
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'exchange_lul_cyon',
-                currency: 'CYON',
-                amount: res.updatedCyon - cyonBalance,
-                unit_price: lulSpent,
-                reasoning_summary: res.updatedState.lastMarketHeadline,
-              },
+            void syncNpcMerchantToSupabase({
+              merchant_id: merchantLocation,
+              cyon_treasury: res.updatedState.treasuryCyon,
+              is_bankrupt: res.updatedState.isShopBroke,
+              last_headline: res.updatedState.lastMarketHeadline,
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: actorAccount,
+              action_type: 'exchange_lul_cyon',
+              currency: 'CYON',
+              amount: res.updatedCyon - cyonBalance,
+              unit_price: lulSpent,
+              reasoning_summary: res.updatedState.lastMarketHeadline,
             });
           }
         }}
         onInvestInMerchant={() => {
           soundEngine.playUiClick();
-          const actorAccount = hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           const res = investInMerchantShop(marketState, hud.gold, cyonBalance);
           if (res.ok) {
             const lulSpent = Math.max(0, hud.gold - res.updatedLul);
             dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
             setCyonBalance(res.updatedCyon);
             setMarketState(res.updatedState);
-            void syncNpcMerchantAndLogTransaction({
-              merchant: {
-                merchant_id: merchantLocation,
-                cyon_treasury: res.updatedState.treasuryCyon,
-                is_bankrupt: res.updatedState.isShopBroke,
-                last_headline: res.updatedState.lastMarketHeadline,
-              },
-              transaction: {
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'invest_shop',
-                currency: 'LUL',
-                amount: lulSpent,
-                unit_price: 1,
-                reasoning_summary: res.updatedState.lastMarketHeadline,
-              },
+            void syncNpcMerchantToSupabase({
+              merchant_id: merchantLocation,
+              cyon_treasury: res.updatedState.treasuryCyon,
+              is_bankrupt: res.updatedState.isShopBroke,
+              last_headline: res.updatedState.lastMarketHeadline,
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: actorAccount,
+              action_type: 'invest_shop',
+              currency: 'LUL',
+              amount: lulSpent,
+              unit_price: 1,
+              reasoning_summary: res.updatedState.lastMarketHeadline,
             });
           }
         }}
         onBuyMerchantItem={(item: MerchantCatalogItem, finalPrice: number) => {
           soundEngine.playUiClick();
           if (ownedMerchantItemIds.includes(item.id)) return;
-          const actorAccount = hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
           if (item.currency === 'CYON') {
@@ -5360,25 +4693,23 @@ export default function App() {
               prev.treasuryCyon + (item.currency === 'CYON' ? finalPrice : finalPrice * 12);
             const headline = `You purchased ${item.name} (${finalPrice} ${item.currency}). Stock decreased, demand trend rising!`;
 
-            void syncNpcMerchantAndLogTransaction({
-              merchant: {
-                merchant_id: merchantLocation,
-                cyon_treasury: nextTreasury,
-                stock_by_item: nextStock,
-                recent_demand_by_item: nextDemand,
-                last_headline: headline,
-              },
-              transaction: {
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'buy_item',
-                item_id: item.id,
-                nep245_token_id: item.tokenId,
-                currency: item.currency,
-                amount: 1,
-                unit_price: finalPrice,
-                reasoning_summary: headline,
-              },
+            void syncNpcMerchantToSupabase({
+              merchant_id: merchantLocation,
+              cyon_treasury: nextTreasury,
+              stock_by_item: nextStock,
+              recent_demand_by_item: nextDemand,
+              last_headline: headline,
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: actorAccount,
+              action_type: 'buy_item',
+              item_id: item.id,
+              nep245_token_id: item.tokenId,
+              currency: item.currency,
+              amount: 1,
+              unit_price: finalPrice,
+              reasoning_summary: headline,
             });
 
             return {
@@ -5400,7 +4731,8 @@ export default function App() {
         onSellMerchantItem={(item: MerchantCatalogItem, refund: number) => {
           soundEngine.playUiClick();
           if (!ownedMerchantItemIds.includes(item.id)) return;
-          const actorAccount = hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
           if (item.currency === 'CYON') {
@@ -5435,25 +4767,23 @@ export default function App() {
             );
             const headline = `You sold back ${item.name} (+${refund} ${item.currency}). Shop stock increased!`;
 
-            void syncNpcMerchantAndLogTransaction({
-              merchant: {
-                merchant_id: merchantLocation,
-                cyon_treasury: nextTreasury,
-                stock_by_item: nextStock,
-                recent_demand_by_item: nextDemand,
-                last_headline: headline,
-              },
-              transaction: {
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'sell_item',
-                item_id: item.id,
-                nep245_token_id: item.tokenId,
-                currency: item.currency,
-                amount: 1,
-                unit_price: refund,
-                reasoning_summary: headline,
-              },
+            void syncNpcMerchantToSupabase({
+              merchant_id: merchantLocation,
+              cyon_treasury: nextTreasury,
+              stock_by_item: nextStock,
+              recent_demand_by_item: nextDemand,
+              last_headline: headline,
+            });
+            void logMarketTransactionToSupabase({
+              merchant_id: merchantLocation,
+              actor_near_account: actorAccount,
+              action_type: 'sell_item',
+              item_id: item.id,
+              nep245_token_id: item.tokenId,
+              currency: item.currency,
+              amount: 1,
+              unit_price: refund,
+              reasoning_summary: headline,
             });
 
             return {
@@ -5472,16 +4802,17 @@ export default function App() {
             ownedTokenIds: nextOwned,
           });
         }}
-        onToggleFastForward={() => setIsFastForwardRunning((prev) => !prev)}
         onSelectHouseTheme={(themeItem: MerchantCatalogItem) => {
           soundEngine.playUiClick();
           if (!ownedMerchantItemIds.includes(themeItem.id)) return;
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           setActiveHouseThemeId(themeItem.id);
           dispatchBuddyAction(
             `applyHouseTheme:${themeItem.skinThemeId ?? 'military_standard'}:${themeItem.gardenPresetId ?? 'sakura_grove'}`,
           );
           void syncHouseInteriorToSupabase({
-            ownerNearAccount: hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet',
+            ownerNearAccount: actorAccount,
             activeThemeId: themeItem.id,
             daylightHour: 14.5,
             placedFurniture: [interiorPlacement],
@@ -5489,17 +4820,20 @@ export default function App() {
         }}
         onAssignInteriorSlot={(slotId: HouseInteriorSlotId, itemId: string | null) => {
           soundEngine.playUiClick();
+          const actorAccount = hud.nearWalletId || playerUid;
           setInteriorPlacement((prev) => {
             const next = {
               ...prev,
               [slotId]: itemId,
             };
-            void syncHouseInteriorToSupabase({
-              ownerNearAccount: hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet',
-              activeThemeId: activeHouseThemeId,
-              daylightHour: 14.5,
-              placedFurniture: [next],
-            });
+            if (actorAccount) {
+              void syncHouseInteriorToSupabase({
+                ownerNearAccount: actorAccount,
+                activeThemeId: activeHouseThemeId,
+                daylightHour: 14.5,
+                placedFurniture: [next],
+              });
+            }
             return next;
           });
         }}
@@ -5517,15 +4851,16 @@ export default function App() {
           soundEngine.playUiClick();
           void handleStartGoogleLoginAndOpenWalletNaming();
         }}
-        onSwapNearAndRespite={(direction, inputAmount) => {
-          const actorAccount =
-            hud.nearWalletId || playerUid || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-          const receipt = executeNearTestnetAndRespiteSwap({
+        onSwapNearAndRespite={async (direction, inputAmount) => {
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return null;
+          const receipt = await executeNearTestnetAndRespiteSwap({
             direction,
             signerAccountId: actorAccount,
             inputAmount,
             networkId: walletNetworkChoice,
           });
+          if (!receipt || !receipt.txHash) return null;
           const nextNear =
             direction === 'near_to_respite'
               ? Math.max(0, Number((nearTestnetBalance - receipt.nearAmount).toFixed(4)))
@@ -5538,25 +4873,13 @@ export default function App() {
           setNearTestnetBalance(nextNear);
           setRespiteBalance(nextRespite);
 
-          void executeMarketContractCallOnChain({
-            methodName: 'swap_near_for_respite',
-            ownerId: actorAccount,
-            tokenIds: ['respite-ft'],
-            memoData: {
-              direction,
-              near_amount: receipt.nearAmount,
-              respite_amount: receipt.respiteAmount,
-            },
-            eventType: 'market_action',
-          });
-
           void syncPlayerBalancesToSupabase({
             nearAccountId: actorAccount,
             lulBalance: hud.gold,
             cyonBalance,
             respiteBalance: nextRespite,
           });
-          void insertMarketTransactionReceipt({
+          void logMarketTransactionToSupabase({
             merchant_id: merchantLocation,
             actor_near_account: actorAccount,
             action_type: 'exchange_lul_cyon',
@@ -5574,37 +4897,8 @@ export default function App() {
         }}
         caughtFishBucket={caughtFishBucket}
         fishMarketListings={fishMarketListings}
-        playerNearAccount={
-          hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet'
-        }
-        onSellCaughtFish={(fish: CaughtFishItem) => {
-          const actorAccount =
-            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-          const earnedCyon = fish.sellValueCyon || fish.sellValueLul || 15;
-          setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
-          if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);
-          const nextCyon = cyonBalance + earnedCyon;
-          setCyonBalance(nextCyon);
-          if (isManagedSubAccountOfMaster(actorAccount)) {
-            setManagedSubAccounts(updateSubAccountBalances(actorAccount, 0, earnedCyon));
-          }
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: actorAccount,
-            lulBalance: hud.gold,
-            cyonBalance: nextCyon,
-            respiteBalance,
-          });
-          void insertMarketTransactionReceipt({
-            merchant_id: 'beach_house',
-            actor_near_account: actorAccount,
-            action_type: 'sell_fish',
-            item_id: fish.speciesId,
-            currency: 'CYON',
-            amount: earnedCyon,
-            unit_price: earnedCyon,
-            reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedCyon} CYON (Off-Chain).`,
-          });
-        }}
+        playerNearAccount={hud.nearWalletId || playerUid || ''}
+        onSellCaughtFish={handleSellRawFishForLul}
         onReleaseCaughtFish={(fish: CaughtFishItem) => {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);
@@ -5617,71 +4911,24 @@ export default function App() {
             setLastCaughtFishToast(null);
           }
         }}
-        onMintFishAsNft={(fish: CaughtFishItem) => {
-          const actorAccount =
-            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-          const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
-          const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
-          const nearTxHash = `near-fish-mint-${Date.now().toString(36)}`;
-          setCaughtFishBucket((prev) =>
-            prev.map((f) =>
-              f.id === fish.id
-                ? {
-                    ...f,
-                    isMintedNft: true,
-                    nftTokenId,
-                    nearTxHash,
-                  }
-                : f,
-            ),
-          );
-          void executeMarketContractCallOnChain({
-            methodName: 'mint_fish_nft',
-            ownerId: actorAccount,
-            tokenIds: [nftTokenId],
-            memoData: {
-              species_id: fish.speciesId,
-              species_name: fish.speciesName,
-              water_zone: fish.waterZone,
-              rarity: fish.rarity,
-              weight_kg: fish.weightKg,
-              length_cm: fish.lengthCm ?? null,
-              is_trophy: Boolean(fish.isTrophy),
-            },
-          }).then((res) => {
-            if (res.txHash) {
-              setCaughtFishBucket((prev) =>
-                prev.map((f) => (f.id === fish.id ? { ...f, nearTxHash: res.txHash } : f)),
-              );
-            }
-          });
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: actorAccount,
-            lulBalance: hud.gold,
-            cyonBalance,
-            respiteBalance,
-            ownedTokenIds: [...ownedMerchantItemIds, nftTokenId],
-          });
-          void insertMarketTransactionReceipt({
-            merchant_id: 'beach_house',
-            actor_near_account: actorAccount,
-            action_type: 'mint_fish_nft',
-            item_id: fish.speciesId,
-            nep245_token_id: nftTokenId,
-            currency: 'RESPITE',
-            amount: 0,
-            unit_price: 0,
-            reasoning_summary: `Minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NEP-171 Fish NFT ${nftTokenId}.`,
-            near_tx_hash: nearTxHash,
-          });
-        }}
-        onListFishNftOnMarket={(fish: CaughtFishItem, priceRespiteInput: number) => {
+        onMintFishAsNft={handleMintCaughtFishNft}
+        onListFishNftOnMarket={async (fish: CaughtFishItem, priceRespiteInput: number) => {
           if (!fish.isMintedNft || !fish.nftTokenId) return;
-          const actorAccount =
-            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           const cleanRespitePrice = Math.max(1, Math.round(priceRespiteInput));
+          const listingId = `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+          const res = await executeMarketContractCallOnChain({
+            methodName: 'list_fish_nft',
+            args: {
+              listing_id: listingId,
+              token_id: fish.nftTokenId,
+              price_respite: String(cleanRespitePrice),
+            },
+          });
+          if (!res.ok || !res.txHash) return;
           const newListing: FishNftMarketplaceListing = {
-            listingId: `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+            listingId,
             nftTokenId: fish.nftTokenId,
             speciesId: fish.speciesId,
             speciesName: fish.speciesName,
@@ -5696,31 +4943,10 @@ export default function App() {
             sellerNearAccount: actorAccount,
             priceRespite: cleanRespitePrice,
             priceLul: cleanRespitePrice,
-            nearTxHash: fish.nearTxHash || `near-list-${Date.now().toString(36)}`,
+            nearTxHash: res.txHash,
             listedAtIso: new Date().toISOString(),
           };
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
-          void executeMarketContractCallOnChain({
-            methodName: 'list_fish_nft',
-            ownerId: actorAccount,
-            tokenIds: [newListing.nftTokenId],
-            memoData: {
-              listing_id: newListing.listingId,
-              species_name: fish.speciesName,
-              weight_kg: fish.weightKg,
-              rarity: fish.rarity,
-              price_respite: newListing.priceRespite,
-            },
-            eventType: 'market_action',
-          }).then((res) => {
-            if (res.txHash) {
-              setFishMarketListings((prev) =>
-                prev.map((l) =>
-                  l.listingId === newListing.listingId ? { ...l, nearTxHash: res.txHash } : l,
-                ),
-              );
-            }
-          });
           setFishMarketListings((prev) => {
             const next = [newListing, ...prev];
             void syncFishMarketplaceListingsToSupabase({
@@ -5741,9 +4967,9 @@ export default function App() {
             return next;
           });
         }}
-        onBuyFishNftFromMarket={(listing: FishNftMarketplaceListing) => {
-          const actorAccount =
-            hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
+        onBuyFishNftFromMarket={async (listing: FishNftMarketplaceListing) => {
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) return;
           const isOwnListing =
             listing.sellerNearAccount.toLowerCase() === actorAccount.toLowerCase();
           const listingPriceRespite = Math.max(
@@ -5755,19 +4981,18 @@ export default function App() {
           );
           if (!isOwnListing && respiteBalance < listingPriceRespite) return;
 
+          const res = await executeMarketContractCallOnChain({
+            methodName: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
+            args: {
+              listing_id: listing.listingId,
+            },
+          });
+          if (!res.ok || !res.txHash) return;
+
           if (!isOwnListing) {
             const nextRespite = Math.max(0, respiteBalance - listingPriceRespite);
             setRespiteBalance(nextRespite);
-            if (isManagedSubAccountOfMaster(actorAccount)) {
-              setManagedSubAccounts(
-                updateSubAccountBalances(actorAccount, -listingPriceRespite, 0),
-              );
-            }
-            if (isManagedSubAccountOfMaster(listing.sellerNearAccount)) {
-              setManagedSubAccounts(
-                updateSubAccountBalances(listing.sellerNearAccount, listingPriceRespite, 0),
-              );
-            }
+            void creditRecipientRespiteInSupabase(listing.sellerNearAccount, listingPriceRespite);
             void syncPlayerBalancesToSupabase({
               nearAccountId: actorAccount,
               lulBalance: hud.gold,
@@ -5796,38 +5021,19 @@ export default function App() {
             caughtAtIso: listing.listedAtIso,
             isMintedNft: true,
             nftTokenId: listing.nftTokenId,
-            nearTxHash: listing.nearTxHash,
+            nearTxHash: res.txHash,
           };
 
           setCaughtFishBucket((prev) => [reclaimedFish, ...prev]);
-          void executeMarketContractCallOnChain({
-            methodName: 'buy_fish_nft',
-            ownerId: actorAccount,
-            tokenIds: [listing.nftTokenId],
-            memoData: {
-              listing_id: listing.listingId,
-              seller_account: listing.sellerNearAccount,
-              buyer_account: actorAccount,
-              price_respite: listingPriceRespite,
-            },
-            eventType: 'nft_transfer',
-          }).then((res) => {
-            if (res.txHash) {
-              setCaughtFishBucket((prev) =>
-                prev.map((f) =>
-                  f.id === reclaimedFish.id ? { ...f, nearTxHash: res.txHash } : f,
-                ),
-              );
-            }
-          });
           setFishMarketListings((prev) => {
             const next = prev.filter((l) => l.listingId !== listing.listingId);
             void syncFishMarketplaceListingsToSupabase({
               listings: next,
+              removedListingId: listing.listingId,
               transaction: {
                 merchant_id: 'beach_house',
                 actor_near_account: actorAccount,
-                action_type: 'buy_fish_nft',
+                action_type: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
                 item_id: listing.speciesId,
                 nep245_token_id: listing.nftTokenId,
                 currency: 'RESPITE',
@@ -5836,20 +5042,12 @@ export default function App() {
                 reasoning_summary: isOwnListing
                   ? `${actorAccount} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Kai's Marketplace.`
                   : `${actorAccount} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`,
-                near_tx_hash: `near-trade-${Date.now().toString(36)}`,
+                near_tx_hash: res.txHash,
               },
             });
             return next;
           });
         }}
-      />
-
-      {/* =====================================================================
-          6. BUDDIES BLUEPRINT REPORT & ROBLOX STUDIO (LUAU) CODE MODAL
-         ===================================================================== */}
-      <BuddiesBlueprintModal
-        isOpen={isBlueprintModalOpen}
-        onClose={() => setIsBlueprintModalOpen(false)}
       />
 
       {/* =====================================================================
@@ -5868,16 +5066,6 @@ export default function App() {
         }}
         onSelectRecipe={(recipeId) => {
           dispatchBuddyAction(`kioskSelectRecipe:${recipeId}`);
-          // Accrue a 1.5 RESPITE royalty into the NEP-171 sub-account treasury on each build contract
-          setNep171Ledger((prev) => {
-            const updated = recordNep171SubAccountEarning(
-              prev,
-              1.5,
-              `Kiosk Contract Royalty (${recipeId})`,
-            );
-            void syncGamepassNftLedgerToSupabase(updated);
-            return updated;
-          });
         }}
         onRemoveQueueIndex={(index) => {
           dispatchBuddyAction(`kioskRemoveQueueIndex:${index}`);
@@ -5891,16 +5079,22 @@ export default function App() {
         onBuyCrateAirdrop={(crateKind) => {
           dispatchBuddyAction(`kioskBuyCrate:${crateKind}`);
         }}
-        onNearConnectAndMint={() => {
-          dispatchBuddyAction('nearConnectAndMint');
-          const account = hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
-          const mintedLedger = createInitialNep171SubAccountLedger(account, 'testnet');
-          setNep171Ledger(mintedLedger);
-          void syncGamepassNftLedgerToSupabase(mintedLedger);
+        onNearConnectAndMint={async () => {
+          try {
+            const res = await connectNearWalletSelector('testnet');
+            if (res.accountId) {
+              await handleConnectWalletAndEnterLobby(res.accountId, { preverifiedResult: res });
+            } else {
+              setIsNearWalletSelectorOpen(true);
+            }
+          } catch {
+            setIsNearWalletSelectorOpen(true);
+          }
         }}
         onNearClaimBasePlot={() => {
+          const account = hud.nearWalletId || playerUid;
+          if (!account) return;
           dispatchBuddyAction('nearClaimBasePlot');
-          const account = hud.nearWalletId || nep171Ledger.ownerNearAccount || 'commander-p1.testnet';
           const team = hud.nearKioskPlotTeam || hud.playerTeam || 'blue';
           const plotIdx = hud.nearKioskPlotIndex ?? 1;
           void syncBasePlotToSupabase({
@@ -5908,7 +5102,7 @@ export default function App() {
             plotIndex: plotIdx,
             isClaimed: true,
             claimedByNearAccount: account,
-            claimedByTokenId: nep171Ledger.tokenId,
+            claimedByTokenId: nep171Ledger.tokenId || null,
             activeHarvesters: [`harvester-1.${account}`, `harvester-2.${account}`],
             accessMode: hud.safezonePlotAccessMode || 'PUBLIC',
           });
@@ -5939,24 +5133,27 @@ export default function App() {
           soundEngine.playUiClick();
           setIsKioskModalOpen(false);
           window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+          const isSample =
+            hud.nearKioskPlotTeam === 'blue' &&
+            (hud.nearKioskPlotIndex === 0 || hud.nearKioskPlotIndex === null);
+          setIsSampleHouseView(isSample);
           setIsInsidePrivateHouse(true);
           setActiveSpecialModal('none');
         }}
-      />
-
-      {/* =====================================================================
-          8. FIXED-POOL TUNABLE PARTICLE EMITTER STUDIO PANEL
-         ===================================================================== */}
-      <ParticleEmitterPanel
-        isOpen={isParticlePanelOpen}
-        onClose={() => setIsParticlePanelOpen(false)}
-        uiState={particleUiState}
-        onChangeUiState={handleChangeParticleUiState}
-        onTriggerBurst={(count) => dispatchBuddyAction(`particleEmitterBurst:${count}`)}
-        onResetPool={() => dispatchBuddyAction('particleEmitterReset')}
-        activeCount={hud.particlePoolActive ?? 0}
-        poolCapacity={hud.particlePoolCapacity ?? 128}
-        totalSpawns={hud.particleTotalSpawns ?? 0}
+        onOpenHouseCatalog={() => {
+          soundEngine.playUiClick();
+          setIsKioskModalOpen(false);
+          window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+          setMerchantLocation('lobby_cafe');
+          setActiveSpecialModal('npc_merchant');
+          window.dispatchEvent(new CustomEvent('open-npc-catalog-house'));
+        }}
+        onOpenPersonalWallet={() => {
+          soundEngine.playUiClick();
+          setIsKioskModalOpen(false);
+          window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+          setIsPersonalWalletModalOpen(true);
+        }}
       />
 
       {/* =====================================================================
@@ -5972,6 +5169,11 @@ export default function App() {
         selectedPrivateUser={selectedPrivateUser}
         onSelectPrivateUser={setSelectedPrivateUser}
         chatMessages={chatMessages}
+        unreadPrivateCount={unreadPrivateCount}
+        onClearUnreadPrivate={() => {
+          setUnreadPrivateCount(0);
+          setActivePrivateNotificationToast(null);
+        }}
         playerBubbleBgColor={chatBubbleBgColor}
         playerBubbleTextColor={chatBubbleTextColor}
         isInsidePrivateHouse={isInsidePrivateHouse}
@@ -6005,8 +5207,10 @@ export default function App() {
         onSendPublicChat={(text) => {
           const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const senderLabel = playerDisplayName || 'YOU';
+          const senderAccount = hud.nearWalletId || playerUid || undefined;
           const newMsg: ChatMessage = {
-            id: `pub-${Date.now()}`,
+            id: `pub-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            senderId: senderAccount,
             senderName: senderLabel,
             isSelf: true,
             text,
@@ -6015,19 +5219,24 @@ export default function App() {
           };
           setChatMessages((prev) => [...prev, newMsg]);
           dispatchBuddyAction(`socialTalk:${text}`);
-          void insertSocialChatMessageToSupabase({
-            senderName: senderLabel,
-            senderNearAccount: hud.nearWalletId || nep171Ledger.ownerNearAccount,
+          void insertSocialMessageToSupabase({
+            sender_name: senderLabel,
+            sender_near_account: senderAccount,
             message: text,
-            bubbleColor: chatBubbleBgColor,
+            bubble_color: chatBubbleBgColor,
+            room_id: worldMode,
           });
         }}
         onSendPrivateChat={(recipient, text) => {
+          if (recipient.isNpc) return;
           const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const senderLabel = playerDisplayName || 'YOU';
+          const senderAccount = hud.nearWalletId || playerUid || undefined;
           const newMsg: ChatMessage = {
-            id: `priv-${Date.now()}`,
+            id: `priv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            senderId: senderAccount,
             senderName: senderLabel,
+            recipientId: String(recipient.id),
             recipientName: recipient.name,
             isSelf: true,
             text,
@@ -6036,140 +5245,109 @@ export default function App() {
           };
           setChatMessages((prev) => [...prev, newMsg]);
           dispatchBuddyAction(`socialTalk:[Whisper @${recipient.name}] ${text}`);
-          void insertSocialChatMessageToSupabase({
-            senderName: senderLabel,
-            senderNearAccount: hud.nearWalletId || nep171Ledger.ownerNearAccount,
-            recipientName: recipient.name,
+          void insertSocialMessageToSupabase({
+            sender_name: senderLabel,
+            sender_near_account: senderAccount,
+            recipient_name: recipient.name,
             message: text,
-            bubbleColor: chatBubbleBgColor,
+            bubble_color: chatBubbleBgColor,
+            room_id: worldMode,
           });
-
-          // If whispering an NPC, simulate interactive NPC response
-          if (recipient.isNpc) {
-            window.setTimeout(() => {
-              const replies = [
-                `Hello Buddy! So glad to chat with you!`,
-                `Our kiosk is always ready for currency exchanges and home decor!`,
-                `Have a great time and enjoy your day in the city!`,
-              ];
-              const replyText = replies[Math.floor(Math.random() * replies.length)];
-              const replyMsg: ChatMessage = {
-                id: `npc-reply-${Date.now()}`,
-                senderName: recipient.name,
-                recipientName: 'YOU',
-                isNpc: true,
-                text: replyText,
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                type: 'private',
-              };
-              setChatMessages((prev) => [...prev, replyMsg]);
-            }, 600);
-          }
         }}
       />
 
       {/* =====================================================================
-          9B. LEFT-SLIDE TELEPORT KIOSK MODAL
+          9B. UNIFIED CITY TRANSIT KIOSK MODAL (Black Self-Service Monolith Series)
          ===================================================================== */}
-      <aside
-        role="dialog"
-        aria-modal="false"
-        aria-hidden={activeTeleportKioskModal === 'none'}
-        aria-label="Teleport Kiosk"
-        data-teleport-kiosk-modal={activeTeleportKioskModal}
-        className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
+      <CityTransitKioskModal
+        isOpen={activeTeleportKioskModal !== 'none'}
+        originStationId={
           activeTeleportKioskModal !== 'none'
-            ? 'translate-x-0 opacity-100 pointer-events-auto'
-            : '-translate-x-[120%] opacity-0 pointer-events-none'
-        }`}
-      >
-        <div className="relative bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-5 text-black">
-          <div className="flex items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black">
-            <div>
-              <div className="-skew-x-6 inline-block px-2.5 py-0.5 bg-[#facc15] border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase">
-                <span className="skew-x-6 inline-block">TELEPORT TERMINAL</span>
-              </div>
-              <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight mt-1.5 text-black">
-                {activeTeleportKioskModal === 'lobby_warzone'
-                  ? 'WARZONE ARENA'
-                  : activeTeleportKioskModal === 'lobby_safezone'
-                  ? 'SAFEZONE CITY'
-                  : 'LOBBY PLAZA'}
-              </h2>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTeleportKioskModal('none');
-                window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-              }}
-              aria-label="Close Teleport Kiosk"
-              className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95"
-            >
-              <span className="skew-x-6 inline-block">X</span>
-            </button>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {activeTeleportKioskModal === 'lobby_warzone' && (
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  data-lobby-portal-floating-btn="red"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    handleRequestWorldModeChange('warzone', 'red');
-                  }}
-                  className="-skew-x-6 py-3 px-4 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                >
-                  <span className="skew-x-6 inline-block">RED TEAM</span>
-                </button>
-                <button
-                  type="button"
-                  data-lobby-portal-floating-btn="blue"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    handleRequestWorldModeChange('warzone', 'blue');
-                  }}
-                  className="-skew-x-6 py-3 px-4 bg-[#00a8ff] hover:bg-[#38bdf8] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                >
-                  <span className="skew-x-6 inline-block">BLUE TEAM</span>
-                </button>
-              </div>
-            )}
-
-            {activeTeleportKioskModal === 'lobby_safezone' && (
-              <button
-                type="button"
-                data-lobby-portal-floating-btn="enter-city"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  handleRequestWorldModeChange('safezone');
-                }}
-                className="-skew-x-6 w-full py-3 px-4 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-              >
-                <span className="skew-x-6 inline-block">ENTER CITY (SAFEZONE CITY)</span>
-              </button>
-            )}
-
-            {activeTeleportKioskModal === 'halte_to_lobby' && (
-              <button
-                type="button"
-                data-lobby-tram-floating-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  handleRequestWorldModeChange('lobby');
-                }}
-                className="-skew-x-6 w-full py-3 px-4 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-              >
-                <span className="skew-x-6 inline-block">TO LOBBY</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </aside>
+            ? activeTeleportKioskModal
+            : hud.worldMode === 'warzone'
+              ? 'warzone_arena'
+              : 'central_plaza'
+        }
+        worldMode={hud.worldMode ?? 'lobby'}
+        hasOwnedHouse={Boolean(hasHouseOwnership || hud.nearHasGamepassNft)}
+        blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
+        redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
+        onClose={() => {
+          soundEngine.playUiClick();
+          setActiveTeleportKioskModal('none');
+          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+        }}
+        onConfirmEnterDestination={(
+          destination: CityTransitDestinationSpec,
+          team?: 'blue' | 'red',
+        ) => {
+          soundEngine.playUiClick();
+          const originStationId: CityTransitStationId =
+            activeTeleportKioskModal !== 'none'
+              ? activeTeleportKioskModal
+              : hud.worldMode === 'warzone'
+                ? 'warzone_arena'
+                : 'central_plaza';
+          setActiveTeleportKioskModal('none');
+          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+          setTramRideCutsceneUi({
+            active: true,
+            originStationId,
+            destinationStationId: destination.id,
+            progress01: 0,
+          });
+          window.dispatchEvent(
+            new CustomEvent('start-city-tram-ride-transition', {
+              detail: {
+                originStationId,
+                destinationStationId: destination.id,
+                team,
+              },
+            }),
+          );
+        }}
+        onEnterMyHouseStudio={() => {
+          soundEngine.playUiClick();
+          setActiveTeleportKioskModal('none');
+          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+          setIsKioskModalOpen(false);
+          setIsSocialChatModalOpen(false);
+          setHouseEntryScanState('scanning');
+          window.setTimeout(() => {
+            soundEngine.playPickup();
+            setHouseEntryScanState('verified');
+            window.setTimeout(() => {
+              setHouseEntryScanState('idle');
+              setIsInsidePrivateHouse(true);
+              setIsSampleHouseView(false);
+              setActiveSpecialModal('none');
+            }, 600);
+          }, 700);
+        }}
+        onOpenHouseCatalog={() => {
+          soundEngine.playUiClick();
+          setActiveTeleportKioskModal('none');
+          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+          setIsKioskModalOpen(false);
+          setIsSocialChatModalOpen(false);
+          setMerchantLocation('lobby_cafe');
+          setActiveSpecialModal('npc_merchant');
+          window.dispatchEvent(new CustomEvent('open-npc-catalog-house'));
+        }}
+        onOpenShopAndExchange={() => {
+          soundEngine.playUiClick();
+          const originStation =
+            activeTeleportKioskModal !== 'none' ? activeTeleportKioskModal : 'central_plaza';
+          setActiveTeleportKioskModal('none');
+          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+          setIsKioskModalOpen(false);
+          setIsSocialChatModalOpen(false);
+          setMerchantLocation(
+            originStation === 'beachfront_harbor' ? 'beach_house' : 'lobby_cafe',
+          );
+          setActiveSpecialModal('npc_merchant');
+        }}
+      />
 
       {/* =====================================================================
           9B-2. LEFT-SLIDE PERSONAL WALLET MODAL (Opened When Clicking WALLET on Self)
@@ -6188,11 +5366,63 @@ export default function App() {
       >
         <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
           <div className="flex items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
-            <div className="-skew-x-6 px-3.5 py-1 bg-[#facc15] border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase flex items-center gap-2">
-              <div className="skew-x-6 flex items-center gap-1.5">
-                <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                <span>WALLET</span>
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-wallet-tab="wallet"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setPersonalWalletTab('wallet');
+                }}
+                className={`-skew-x-6 px-3.5 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase flex items-center gap-2 cursor-pointer transition-colors ${
+                  personalWalletTab === 'wallet'
+                    ? 'bg-[#facc15] text-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="skew-x-6 flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                  <span>WALLET</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                data-wallet-tab="assets"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setPersonalWalletTab('assets');
+                }}
+                className={`-skew-x-6 px-3.5 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase flex items-center gap-2 cursor-pointer transition-colors ${
+                  personalWalletTab === 'assets'
+                    ? 'bg-[#facc15] text-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="skew-x-6 flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                  <span>ASSET</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                data-wallet-tab="history"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setPersonalWalletTab('history');
+                }}
+                className={`-skew-x-6 px-3.5 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-xs font-black uppercase flex items-center gap-2 cursor-pointer transition-colors ${
+                  personalWalletTab === 'history'
+                    ? 'bg-[#facc15] text-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="skew-x-6 flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                  <span>HISTORY</span>
+                </div>
+              </button>
             </div>
             <button
               type="button"
@@ -6208,11 +5438,13 @@ export default function App() {
           </div>
 
           <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
-            {/* ACCOUNT, WALLET ADDRESS & USERNAME CARD */}
-            <div
-              data-wallet-uid-and-username-card="true"
-              className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
-            >
+            {personalWalletTab === 'wallet' ? (
+              <>
+                {/* ACCOUNT, WALLET ADDRESS & USERNAME CARD */}
+                <div
+                  data-wallet-uid-and-username-card="true"
+                  className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
+                >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -6227,15 +5459,22 @@ export default function App() {
                   data-switch-or-disconnect-wallet-btn="true"
                   onClick={() => {
                     soundEngine.playUiClick();
-                    disconnectNearWalletSession();
+                    void signOutSupabaseAuth();
                     if (privyAuthenticated) {
                       void privyLogout();
                     }
                     setConnectedGoogleEmail('');
+                    setHud((prev) => ({
+                      ...prev,
+                      nearWalletConnected: false,
+                      nearWalletId: '',
+                    }));
+                    setPlayerUid('');
                     if (typeof window !== 'undefined') {
                       try {
                         window.localStorage.setItem('bb_explicit_logged_out_v1', '1');
                         window.localStorage.removeItem('bb_connected_google_email');
+                        window.localStorage.removeItem('bb_last_connected_wallet_id');
                       } catch {
                         // ignore
                       }
@@ -6302,48 +5541,6 @@ export default function App() {
                     </button>
                   </div>
                 )}
-              </div>
-
-              <div className="pt-2 border-t border-white/15 space-y-1">
-                <div className="text-[10px] font-black uppercase text-white/90">
-                  USERNAME
-                </div>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    maxLength={24}
-                    data-wallet-change-username-input="true"
-                    value={walletUsernameDraft}
-                    onChange={(e) => setWalletUsernameDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && walletUsernameDraft.trim()) {
-                        soundEngine.playUiClick();
-                        handleUpdatePlayerUsername(walletUsernameDraft);
-                        setWalletUsernameSavedToast(true);
-                        window.setTimeout(() => setWalletUsernameSavedToast(false), 1800);
-                      }
-                    }}
-                    placeholder="Enter username..."
-                    aria-label="Change Display Username"
-                    className="flex-1 min-w-0 px-2.5 py-1.5 bg-white text-black font-bold text-xs border-2 border-black"
-                  />
-                  <button
-                    type="button"
-                    data-wallet-save-username-btn="true"
-                    onClick={() => {
-                      if (!walletUsernameDraft.trim()) return;
-                      soundEngine.playUiClick();
-                      handleUpdatePlayerUsername(walletUsernameDraft);
-                      setWalletUsernameSavedToast(true);
-                      window.setTimeout(() => setWalletUsernameSavedToast(false), 1800);
-                    }}
-                    className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 inline-block">
-                      {walletUsernameSavedToast ? 'SAVED' : 'SAVE'}
-                    </span>
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -6440,10 +5637,16 @@ export default function App() {
                 />
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     soundEngine.playUiClick();
-                    const senderId =
-                      hud.nearWalletId || nep171Ledger.ownerNearAccount || 'buddiesblitz.testnet';
+                    const senderId = hud.nearWalletId || playerUid;
+                    if (!senderId) {
+                      setRespiteTransferStatus({
+                        type: 'error',
+                        text: 'Connect a verified NEAR wallet before sending RESPITE.',
+                      });
+                      return;
+                    }
                     const rawTarget = respiteTransferRecipient.trim().toLowerCase();
                     if (!rawTarget) {
                       setRespiteTransferStatus({
@@ -6469,40 +5672,46 @@ export default function App() {
                       });
                       return;
                     }
+                    const res = await executeMarketContractCallOnChain({
+                      methodName: 'ft_transfer',
+                      args: {
+                        receiver_id: targetWallet,
+                        amount: String(amt),
+                        memo: 'Buddies Blitz P2P RESPITE Transfer',
+                      },
+                    });
+                    if (!res.ok || !res.txHash) {
+                      setRespiteTransferStatus({
+                        type: 'error',
+                        text: res.error || 'On-chain NEP-141 transfer requires a connected NEAR wallet signer.',
+                      });
+                      return;
+                    }
                     const nextRespite = Math.max(0, respiteBalance - amt);
                     setRespiteBalance(nextRespite);
-                    if (isManagedSubAccountOfMaster(senderId)) {
-                      setManagedSubAccounts(updateSubAccountBalances(senderId, -amt, 0));
-                    }
-                    if (isManagedSubAccountOfMaster(targetWallet)) {
-                      setManagedSubAccounts(updateSubAccountBalances(targetWallet, amt, 0));
-                    }
+                    void creditRecipientRespiteInSupabase(targetWallet, amt);
                     void syncPlayerBalancesToSupabase({
                       nearAccountId: senderId,
                       lulBalance: hud.gold,
                       cyonBalance,
                       respiteBalance: nextRespite,
                     });
-                    void executeMarketContractCallOnChain({
-                      methodName: 'ft_transfer',
-                      eventType: 'ft_transfer',
-                      ownerId: senderId,
-                      receiverId: targetWallet,
-                      amountStr: String(amt),
-                      tokenIds: [targetWallet],
-                      memoData: {
-                        from: senderId,
-                        to: targetWallet,
-                        amount_respite: amt,
-                      },
-                    }).then((res) => {
-                      setRespiteTransferStatus({
-                        type: 'success',
-                        text: `Sent ${amt} RESPITE to ${targetWallet}`,
-                        txHash: res.txHash,
-                      });
-                      setRespiteTransferRecipient('');
+                    void logMarketTransactionToSupabase({
+                      actorNearAccount: senderId,
+                      actionType: 'SEND_RESPITE',
+                      itemId: targetWallet,
+                      currency: 'RESPITE',
+                      amount: amt,
+                      unitPrice: 1,
+                      reasoningSummary: `Sent ${amt} RESPITE to ${targetWallet}`,
+                      nearTxHash: res.txHash,
                     });
+                    setRespiteTransferStatus({
+                      type: 'success',
+                      text: `Sent ${amt} RESPITE to ${targetWallet}`,
+                      txHash: res.txHash,
+                    });
+                    setRespiteTransferRecipient('');
                   }}
                   className="flex-1 -skew-x-6 px-3 py-1.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
                 >
@@ -6531,6 +5740,662 @@ export default function App() {
                 </div>
               )}
             </div>
+              </>
+            ) : personalWalletTab === 'assets' ? (
+              <div data-wallet-assets-panel="true" className="space-y-3">
+                <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-[#38bdf8]">
+                      MY DIGITAL ASSETS &amp; NFTS
+                    </div>
+                    <div className="text-xs font-bold text-slate-200">
+                      Koleksi NFT NEP-171 &amp; NEP-245 milik {hud.nearWalletId || playerUid || 'Commander'}
+                    </div>
+                  </div>
+                  <div className="px-2.5 py-1 bg-[#0f172a] border border-white/20 text-[10px] font-mono font-bold text-[#b8ff3c]">
+                    {(hasHouseOwnership ? 1 : 0) + caughtFishBucket.filter((f) => f.isMintedNft).length + recruitedFamilyMembers.length} ASSETS
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* 1. HOUSE DEED NFT CARD */}
+                  {hasHouseOwnership && (
+                    <div className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
+                      <div className="relative w-full h-28 bg-slate-900 border-2 border-black overflow-hidden flex items-center justify-center">
+                        <img
+                          src="/assets/kiosk/private_house_isometric.jpg"
+                          alt="Japanese Pavilion House NFT"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#b8ff3c] text-black border border-black font-black text-[9px] uppercase">
+                          NEP-171 NFT
+                        </div>
+                        <div className="absolute bottom-1.5 right-1.5 px-2 py-0.5 bg-black/80 text-[#38bdf8] font-mono text-[9px]">
+                          DEED #001
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black uppercase text-black">
+                          JAPANESE PAVILION HOUSE DEED
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-600">
+                          Sertifikat Rumah Pribadi Tema Kayu Jepang. Memberikan hak milik plot dan studio dekorasi 3D.
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                        <span className="text-emerald-600 font-bold">VERIFIED ON-CHAIN</span>
+                        <span className="text-slate-500">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. RECRUITED FAMILY MEMBERS */}
+                  {recruitedFamilyMembers.map((m) => (
+                    <div key={m.agentId} className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
+                      <div className="relative w-full h-28 bg-[#0f172a] border-2 border-black flex flex-col items-center justify-center text-center p-2">
+                        <div className="text-xl font-black text-[#facc15] tracking-widest uppercase">
+                          AI CITIZEN
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-300">
+                          {m.contractAddress}
+                        </div>
+                        <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#facc15] text-black border border-black font-black text-[9px] uppercase">
+                          NEP-245 AGENT
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black uppercase text-black">
+                          {m.name}
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-600">
+                          Perintah: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · Kontrak: {m.planLabel}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                        <span className="text-emerald-600 font-bold">ACTIVE CONTRACT</span>
+                        <span className="text-slate-500">{m.pricePaidRespite} RESPITE</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* 3. MINTED FISH NFTS */}
+                  {caughtFishBucket.filter((f) => f.isMintedNft).map((fish) => (
+                    <div key={fish.id} className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
+                      <div
+                        className="relative w-full h-28 border-2 border-black flex flex-col items-center justify-center p-2"
+                        style={{ backgroundColor: fish.colorHex || '#1e293b' }}
+                      >
+                        <div className="text-lg font-black text-white drop-shadow-[0_2px_2px_#000] uppercase text-center">
+                          {fish.speciesName}
+                        </div>
+                        <div className="text-[10px] font-bold text-yellow-300 drop-shadow-[0_1px_1px_#000]">
+                          {fish.weightKg} KG · {fish.rarity}
+                        </div>
+                        <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#38bdf8] text-black border border-black font-black text-[9px] uppercase">
+                          NEP-245 NFT
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black uppercase text-black">
+                          {fish.speciesName} NFT
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-600 truncate">
+                          {fish.nftTokenId || fish.id}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                        <span className="text-emerald-600 font-bold">MINTED NFT</span>
+                        <span className="text-slate-500">{fish.suggestedRespitePrice || 12} RESPITE</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {!hasHouseOwnership && recruitedFamilyMembers.length === 0 && caughtFishBucket.filter((f) => f.isMintedNft).length === 0 && (
+                    <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold space-y-1">
+                      <div>BELUM MEMILIKI NFT DI WALLET INI</div>
+                      <div className="text-[10.5px] text-slate-400">
+                        Dapatkan Sertifikat Rumah (150 RESPITE), Rekrut Family Member, atau Mint Ikan Tangkapan menjadi NFT di Merchant Kai/Hana.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div data-wallet-history-panel="true" className="space-y-3">
+                {/* HEADER & CURRENCY FILTER PILLS */}
+                <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                        TRANSACTION LEDGER
+                      </div>
+                      <div className="text-xs font-bold text-slate-200 truncate">
+                        {hud.nearWalletId || playerUid || connectedGoogleEmail || 'Current Session'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      data-wallet-refresh-history-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        void refreshWalletTransactions();
+                      }}
+                      className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer shrink-0"
+                    >
+                      <span className="skew-x-6 inline-block">
+                        {isLoadingWalletTransactions ? 'LOADING...' : 'REFRESH'}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-white/15">
+                    {(['ALL', 'LUL', 'CYON', 'RESPITE'] as const).map((filterKey) => (
+                      <button
+                        key={filterKey}
+                        type="button"
+                        data-wallet-history-filter={filterKey.toLowerCase()}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setWalletHistoryFilter(filterKey);
+                        }}
+                        className={`-skew-x-6 px-2.5 py-0.5 text-[10px] font-black uppercase border border-black cursor-pointer transition-colors ${
+                          walletHistoryFilter === filterKey
+                            ? 'bg-[#facc15] text-black'
+                            : 'bg-[#0f172a] text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <span className="skew-x-6 inline-block">{filterKey}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* TRANSACTION LIST */}
+                {(() => {
+                  const filteredTxs = walletTransactions.filter((tx) => {
+                    if (walletHistoryFilter === 'ALL') return true;
+                    if (walletHistoryFilter === 'LUL') {
+                      return tx.currency === 'LUL' || tx.currency === 'GOLD';
+                    }
+                    return tx.currency === walletHistoryFilter;
+                  });
+
+                  if (isLoadingWalletTransactions && filteredTxs.length === 0) {
+                    return (
+                      <div className="p-4 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] text-center text-xs font-black uppercase text-slate-600">
+                        Loading transaction history...
+                      </div>
+                    );
+                  }
+
+                  if (filteredTxs.length === 0) {
+                    return (
+                      <div
+                        data-wallet-history-empty="true"
+                        className="p-4 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] text-center space-y-1"
+                      >
+                        <div className="text-xs font-black uppercase text-black">
+                          NO TRANSACTIONS YET
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-600">
+                          Currency exchanges, merchant purchases, fish NFT trades, and RESPITE transfers will appear here.
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      {filteredTxs.map((tx) => {
+                        const badgeBg =
+                          tx.currency === 'CYON'
+                            ? 'bg-[#38bdf8]'
+                            : tx.currency === 'RESPITE'
+                              ? 'bg-[#d8b4fe]'
+                              : 'bg-[#fec83e]';
+                        const formattedDate = (() => {
+                          try {
+                            const d = new Date(tx.created_at);
+                            return Number.isNaN(d.getTime())
+                              ? tx.created_at
+                              : d.toLocaleString([], {
+                                  month: 'short',
+                                  day: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                });
+                          } catch {
+                            return tx.created_at;
+                          }
+                        })();
+                        return (
+                          <div
+                            key={tx.id}
+                            data-wallet-tx-item="true"
+                            className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] space-y-1.5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 space-y-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="px-1.5 py-0.5 bg-[#1e293b] text-[#b8ff3c] border border-black text-[9px] font-black uppercase tracking-wider">
+                                    {tx.action_type.replace(/_/g, ' ')}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-slate-500">
+                                    {formattedDate}
+                                  </span>
+                                </div>
+                                <div className="text-xs font-black text-black break-words">
+                                  {tx.reasoning_summary || tx.item_id || tx.action_type}
+                                </div>
+                              </div>
+
+                              <div
+                                className={`-skew-x-6 px-2.5 py-1 ${badgeBg} text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs shrink-0`}
+                              >
+                                <span className="skew-x-6 inline-block">
+                                  {tx.amount} {tx.currency === 'GOLD' ? 'LUL' : tx.currency}
+                                </span>
+                              </div>
+                            </div>
+
+                            {tx.near_tx_hash && (
+                              <div className="pt-1 border-t border-slate-200 flex items-center justify-between gap-2 text-[10px] font-mono">
+                                <span className="text-slate-600 truncate">
+                                  Tx: {tx.near_tx_hash}
+                                </span>
+                                <a
+                                  href={`https://testnet.nearblocks.io/txns/${tx.near_tx_hash}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-black uppercase text-[#0284c7] hover:underline shrink-0"
+                                >
+                                  VIEW ON NEARBLOCKS ↗
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* =====================================================================
+          9B-3. LEFT-SLIDE PERSONAL BAG / TAS MODAL (Opened When Clicking BAG)
+         ===================================================================== */}
+      <aside
+        role="dialog"
+        aria-modal="false"
+        aria-hidden={!isPersonalBagModalOpen}
+        aria-label="Personal Bag"
+        data-personal-bag-modal="true"
+        className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-md flex flex-col select-none transition-all duration-300 ease-out transform ${
+          isPersonalBagModalOpen
+            ? 'translate-x-0 opacity-100 pointer-events-auto'
+            : '-translate-x-[120%] opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
+          {/* Header & Tabs */}
+          <div className="flex items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                data-bag-tab="equipment"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setPersonalBagTab('equipment');
+                }}
+                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0px_#000] text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  personalBagTab === 'equipment'
+                    ? 'bg-[#b8ff3c] text-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="skew-x-6 flex items-center gap-1">
+                  <Backpack className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                  <span>GEAR</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                data-bag-tab="fish"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setPersonalBagTab('fish');
+                }}
+                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0px_#000] text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  personalBagTab === 'fish'
+                    ? 'bg-[#38bdf8] text-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="skew-x-6 flex items-center gap-1">
+                  <span>FISH ({caughtFishBucket.length}/20)</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                data-bag-tab="items"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setPersonalBagTab('items');
+                }}
+                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0px_#000] text-[11px] font-black uppercase flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  personalBagTab === 'items'
+                    ? 'bg-[#facc15] text-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="skew-x-6 flex items-center gap-1">
+                  <span>ITEMS ({ownedMerchantItemIds.length})</span>
+                </div>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              data-close-personal-bag-btn="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setIsPersonalBagModalOpen(false);
+              }}
+              className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
+              aria-label="Close Personal Bag"
+            >
+              <span className="skew-x-6 inline-block">X</span>
+            </button>
+          </div>
+
+          {/* Bag Body */}
+          <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+            {personalBagTab === 'equipment' && (() => {
+              const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
+              const ownedFishingGear = MERCHANT_CATALOG_ITEMS.filter(
+                (item) => item.category === 'fishing_gear' && ownedMerchantItemIds.includes(item.id),
+              );
+              return (
+                <div className="space-y-3">
+                  {/* Personal Joran (Fishing Rod) Card */}
+                  <div
+                    data-bag-item-card="fishing_rod"
+                    className={`p-3.5 border-[2.5px] border-black shadow-[3px_3px_0px_#000] transition-colors ${
+                      isJoranEquipped ? 'bg-[#ecfccb]' : 'bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-12 h-12 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-center text-2xl shrink-0">
+                          🎣
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-black uppercase tracking-wide text-black">
+                              JORAN FISHING ROD
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 text-[9.5px] font-black uppercase border border-black ${
+                                isJoranEquipped
+                                  ? 'bg-[#b8ff3c] text-black'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {isJoranEquipped ? 'EQUIPPED' : 'IN BAG'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-bold text-slate-600 mt-0.5">
+                            Tidewater Carbon Spin Rod · Gunakan di tepi pantai atau danau.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-black/15 flex items-center justify-between gap-2">
+                      <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
+                        STATUS: {isJoranEquipped ? 'DIPEGANG KARAKTER' : 'TERSIMPAN DI TAS'}
+                      </span>
+
+                      <button
+                        type="button"
+                        data-bag-toggle-fishing-rod="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          if (isJoranEquipped) {
+                            setIsChargingCast(false);
+                            setIsHoldingReel(false);
+                            setFishingMinigame(null);
+                            setFishingHintMessage(null);
+                            setFishingPhase('idle');
+                            dispatchBuddyAction('qcEquipWeapon:unarmed');
+                          } else {
+                            dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+                          }
+                        }}
+                        className={`-skew-x-6 px-4 py-1.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all ${
+                          isJoranEquipped
+                            ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
+                            : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                        }`}
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {isJoranEquipped ? 'UNEQUIP' : 'EQUIP JORAN'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Owned Fishing Gear & Tackle Purchased from Merchant Kai */}
+                  {ownedFishingGear.map((gear) => (
+                    <div
+                      key={gear.id}
+                      data-bag-item-card={gear.id}
+                      className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-10 h-10 bg-[#0f172a] border-2 border-black flex items-center justify-center text-lg shrink-0">
+                          {gear.iconEmoji || '🎣'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black uppercase text-black">
+                              {gear.name}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 text-[9px] font-black uppercase border border-black ${
+                                gear.isNft ? 'bg-[#d8b4fe] text-black' : 'bg-[#38bdf8] text-black'
+                              }`}
+                            >
+                              {gear.isNft ? 'NFT' : 'TACKLE'}
+                            </span>
+                          </div>
+                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
+                            {gear.description}
+                          </div>
+                        </div>
+                      </div>
+
+                      {gear.isEquippableRod && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            if (isJoranEquipped) {
+                              setIsChargingCast(false);
+                              setIsHoldingReel(false);
+                              setFishingMinigame(null);
+                              setFishingHintMessage(null);
+                              setFishingPhase('idle');
+                              dispatchBuddyAction('qcEquipWeapon:unarmed');
+                            } else {
+                              dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+                            }
+                          }}
+                          className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10px] uppercase cursor-pointer shrink-0 ${
+                            isJoranEquipped
+                              ? 'bg-[#ff3b30] text-white'
+                              : 'bg-[#b8ff3c] text-black'
+                          }`}
+                        >
+                          <span className="skew-x-6 inline-block">
+                            {isJoranEquipped ? 'UNEQUIP' : 'EQUIP'}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Quick Summary of Bag Capacity */}
+                  <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                        FISH BUCKET CAPACITY
+                      </div>
+                      <div className="text-xs font-bold text-slate-200 mt-0.5">
+                        {caughtFishBucket.length} / 20 Ikan Tersimpan
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setPersonalBagTab('fish');
+                      }}
+                      className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
+                    >
+                      <span className="skew-x-6 inline-block">LIHAT IKAN</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {personalBagTab === 'fish' && (
+              <div className="space-y-2">
+                {caughtFishBucket.length === 0 ? (
+                  <div className="p-6 bg-slate-50 border-2 border-dashed border-slate-300 text-center space-y-1.5">
+                    <div className="text-xs font-black uppercase text-slate-600">
+                      BELUM ADA IKAN DI TAS
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500">
+                      Equip Joran di tab GEAR lalu memancing di tepi pantai atau danau.
+                    </p>
+                  </div>
+                ) : (
+                  caughtFishBucket.map((fish) => (
+                    <div
+                      key={fish.id}
+                      className="p-2.5 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-black uppercase text-black">
+                            {fish.speciesName}
+                          </span>
+                          <span className="px-1.5 py-0.5 bg-[#1e293b] text-[#38bdf8] text-[9.5px] font-black uppercase">
+                            {fish.rarity}
+                          </span>
+                          {fish.isMintedNft && (
+                            <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#1e1b4b] border border-black text-[9px] font-black uppercase">
+                              NFT
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10.5px] font-bold text-slate-600 mt-0.5">
+                          {fish.weightKg} kg · Nilai Jual: {fish.sellValueLul || fish.sellValueCyon || 15} LUL (Kunjungi Merchant Kai)
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {!fish.isMintedNft ? (
+                          <button
+                            type="button"
+                            data-bag-mint-fish-btn={fish.id}
+                            onClick={() => {
+                              void handleMintCaughtFishNft(fish);
+                            }}
+                            className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                          >
+                            Mint NFT
+                          </button>
+                        ) : (
+                          <span className="text-[9.5px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 border border-purple-400 font-mono">
+                            NFT ACTIVE
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          data-bag-release-fish-btn={fish.id}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+                            setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
+                          }}
+                          className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-900 font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                        >
+                          Release
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {personalBagTab === 'items' && (() => {
+              const ownedPersonalItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
+                ownedMerchantItemIds.includes(item.id),
+              );
+              return (
+                <div className="space-y-2">
+                  {ownedPersonalItems.length === 0 ? (
+                    <div className="p-6 bg-slate-50 border-2 border-dashed border-slate-300 text-center space-y-1.5">
+                      <div className="text-xs font-black uppercase text-slate-600">
+                        BELUM ADA KOLEKSI ITEM
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-500">
+                        Beli furnitur & koleksi pribadi dari Merchant Hana (Plaza) atau Kai (Beachfront).
+                      </p>
+                    </div>
+                  ) : (
+                    ownedPersonalItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-2.5 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black uppercase text-black">
+                              {item.name}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 text-[9px] font-black uppercase border border-black ${
+                                item.isNft
+                                  ? 'bg-[#d8b4fe] text-[#1e1b4b]'
+                                  : 'bg-[#38bdf8] text-black'
+                              }`}
+                            >
+                              {item.isNft ? 'NFT' : 'ITEM'}
+                            </span>
+                          </div>
+                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
+                            {item.description}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </aside>
@@ -6549,15 +6414,17 @@ export default function App() {
         !isSocialChatModalOpen &&
         !isKioskModalOpen &&
         !isPersonalWalletModalOpen &&
+        !isPersonalBagModalOpen &&
         !isNearWalletSelectorOpen &&
         activeSpecialModal === 'none' &&
         activeTeleportKioskModal === 'none' &&
-        fishingPhase === 'idle' && (
+        fishingPhase === 'idle' &&
+        !nearbyWaterZone.canFish && (
         <aside
           aria-label={`Target: ${selectedTargetUser.name}`}
           className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1.5 pointer-events-auto select-none"
         >
-          {/* Top Section: Compact Action Buttons (Only Shown When Black Name Bar is Clicked / Expanded) */}
+          {/* Top Section: Quick Action Buttons (Only Shown When Bar is Expanded) */}
           {isTargetMenuExpanded && (() => {
             const isSelfTarget =
               Boolean(selectedTargetUser.isSelf) ||
@@ -6571,7 +6438,7 @@ export default function App() {
 
             if (isSelfTarget) {
               return (
-                <div className="flex flex-col gap-1.5 mb-0.5">
+                <div className="flex flex-col gap-1.5 mb-1">
                   <button
                     type="button"
                     data-self-profile-btn="true"
@@ -6585,7 +6452,7 @@ export default function App() {
                       });
                       setIsProfileModalOpen(true);
                     }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
+                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
                   >
                     <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
                       <User className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
@@ -6607,7 +6474,7 @@ export default function App() {
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
                       setIsPersonalWalletModalOpen(true);
                     }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
+                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
                   >
                     <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
                       <Wallet className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
@@ -6619,7 +6486,7 @@ export default function App() {
             }
 
             return (
-              <div className="flex flex-col gap-1.5 mb-0.5">
+              <div className="flex flex-col gap-1.5 mb-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -6649,7 +6516,7 @@ export default function App() {
                       );
                     }
                   }}
-                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
+                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
                 >
                   <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
                     <MessageSquare className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
@@ -6662,10 +6529,16 @@ export default function App() {
                   onClick={() => {
                     soundEngine.playUiClick();
                     setIsTargetMenuExpanded(false);
+                    setIsKioskModalOpen(false);
+                    setIsSocialChatModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setActiveSpecialModal('none');
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                     setProfileTargetUser(selectedTargetUser);
                     setIsProfileModalOpen(true);
                   }}
-                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
+                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
                 >
                   <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
                     <User className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
@@ -6673,31 +6546,34 @@ export default function App() {
                   </div>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsTargetMenuExpanded(false);
-                    setIsKioskModalOpen(false);
-                    setIsPersonalWalletModalOpen(false);
-                    setActiveSpecialModal('none');
-                    setActiveTeleportKioskModal('none');
-                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                    setSelectedPrivateUser(selectedTargetUser);
-                    setIsSocialChatModalOpen(true);
-                  }}
-                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#10b981] hover:bg-[#34d399] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider transition-all cursor-pointer"
-                >
-                  <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                    <MessageCircle className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                    <span>Whisper</span>
-                  </div>
-                </button>
+                {!selectedTargetUser.isNpc && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setIsKioskModalOpen(false);
+                      setIsProfileModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      setSelectedPrivateUser(selectedTargetUser);
+                      setIsSocialChatModalOpen(true);
+                    }}
+                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#10b981] hover:bg-[#34d399] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
+                  >
+                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
+                      <MessageCircle className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
+                      <span>Whisper</span>
+                    </div>
+                  </button>
+                )}
               </div>
             );
           })()}
 
-          {/* Bottom Section: Black Character Selector Bar (Click to Toggle Action Menu) */}
+          {/* Unified Rounded Pill Bar (Aligned at bottom-3 level with chat input) */}
           <div
             role="button"
             tabIndex={0}
@@ -6713,85 +6589,63 @@ export default function App() {
                 setIsTargetMenuExpanded((prev) => !prev);
               }
             }}
-            title="Click this name bar to show action buttons"
-            className="-skew-x-6 w-56 h-10 bg-[#12151c] hover:bg-[#1e2330] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between px-2 text-white cursor-pointer transition-colors"
+            style={{
+              background: 'rgba(38, 32, 28, 0.88)',
+              backdropFilter: 'blur(8px)',
+              border: '1.5px solid rgba(255, 255, 255, 0.75)',
+              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.45)',
+            }}
+            className="inline-flex items-center h-[42px] min-w-[210px] rounded-full px-1.5 text-white cursor-pointer hover:brightness-110 transition-all select-none"
           >
-            <div className="skew-x-6 flex items-center justify-between w-full">
-              {/* Circular framed avatar on the left */}
-              <div className="w-7 h-7 rounded-full border-2 border-black overflow-hidden flex items-center justify-center bg-slate-800 shrink-0 text-[10px] font-black shadow-[1px_1px_0_#000]">
-                {selectedTargetUser.name.toLowerCase().includes('hana') ||
-                selectedTargetUser.name.toLowerCase().includes('nadia') ? (
-                  <img src="/assets/avatar_nadia.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
-                ) : selectedTargetUser.isNpc ? (
-                  <img src="/assets/avatar_hiro.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span>{selectedTargetUser.name.slice(0, 1).toUpperCase()}</span>
-                )}
-              </div>
-
-              {/* Character Name in the center */}
-              <span className="text-xs font-black uppercase tracking-wider text-center px-1.5 text-white">
-                {selectedTargetUser.name.replace(/\s*\((ANDA|YOU)\)/i, '')}
-              </span>
-
-              {/* ChevronRight (>) button on the right to cycle nearest player target */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  soundEngine.playUiClick();
-                  const list =
-                    hud.nearbyRadiusUsers && hud.nearbyRadiusUsers.length > 0
-                      ? hud.nearbyRadiusUsers
-                      : [selectedTargetUser];
-                  const currentIdx = list.findIndex(
-                    (u) => String(u.id) === String(selectedTargetUser.id),
-                  );
-                  const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % list.length : 0;
-                  const nextUser = list[nextIdx];
-                  if (nextUser) {
-                    setSelectedTargetUser(nextUser);
-                    setIsTargetMenuExpanded(false);
-                    window.dispatchEvent(
-                      new CustomEvent('select-character-by-id', {
-                        detail: { id: nextUser.id },
-                      }),
-                    );
-                  }
-                }}
-                title="Switch Nearest Player Target"
-                aria-label="Next Target"
-                className="w-6 h-6 flex items-center justify-center bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[1px_1px_0_#000] cursor-pointer transition-transform active:scale-95 text-black shrink-0"
-              >
-                <ChevronRight className="w-3.5 h-3.5 stroke-[3]" aria-hidden="true" />
-              </button>
+            {/* Avatar Icon */}
+            <div className="w-[34px] h-[34px] rounded-full bg-white/14 border-[1.5px] border-white/85 flex items-center justify-center overflow-hidden shrink-0 text-xs font-black text-white">
+              {selectedTargetUser.name.toLowerCase().includes('hana') ||
+              selectedTargetUser.name.toLowerCase().includes('nadia') ? (
+                <img src="/assets/avatar_nadia.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
+              ) : selectedTargetUser.isNpc ? (
+                <img src="/assets/avatar_hiro.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
+              ) : (
+                <span>{selectedTargetUser.name.slice(0, 1).toUpperCase()}</span>
+              )}
             </div>
-          </div>
 
-          {/* Titik Indikator (Pagination Dots) Kecil di Bawahnya */}
-          {(() => {
-            const list =
-              hud.nearbyRadiusUsers && hud.nearbyRadiusUsers.length > 0
-                ? hud.nearbyRadiusUsers
-                : [selectedTargetUser];
-            const currentIdx = Math.max(
-              0,
-              list.findIndex((u) => String(u.id) === String(selectedTargetUser.id)),
-            );
-            const displayDots = list.slice(0, 5);
-            return (
-              <div className="flex items-center gap-1.5 mt-0.5">
-                {displayDots.map((u, idx) => (
-                  <span
-                    key={String(u.id)}
-                    className={`transition-all ${
-                      currentIdx === idx ? 'w-3 h-1.5 bg-[#facc15] border border-black shadow-[1px_1px_0_#000]' : 'w-1.5 h-1.5 bg-white/40'
-                    }`}
-                  />
-                ))}
-              </div>
-            );
-          })()}
+            {/* Target Name */}
+            <span className="flex-1 text-center font-mono font-bold text-[15px] text-white tracking-wide px-3 uppercase truncate">
+              {selectedTargetUser.name.replace(/\s*\((ANDA|YOU)\)/i, '')}
+            </span>
+
+            {/* Cycle Target Chevron Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                soundEngine.playUiClick();
+                const list =
+                  hud.nearbyRadiusUsers && hud.nearbyRadiusUsers.length > 0
+                    ? hud.nearbyRadiusUsers
+                    : [selectedTargetUser];
+                const currentIdx = list.findIndex(
+                  (u) => String(u.id) === String(selectedTargetUser.id),
+                );
+                const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % list.length : 0;
+                const nextUser = list[nextIdx];
+                if (nextUser) {
+                  setSelectedTargetUser(nextUser);
+                  setIsTargetMenuExpanded(false);
+                  window.dispatchEvent(
+                    new CustomEvent('select-character-by-id', {
+                      detail: { id: nextUser.id },
+                    }),
+                  );
+                }
+              }}
+              title="Switch Target"
+              aria-label="Next Target"
+              className="w-6 h-6 flex items-center justify-center text-white/90 hover:text-white font-black text-base shrink-0"
+            >
+              &gt;
+            </button>
+          </div>
         </aside>
       )}
 
@@ -6806,12 +6660,22 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('clear-character-selection'));
         }}
         targetUser={profileTargetUser}
-        lulBalance={hud.gold}
-        cyonBalance={cyonBalance}
-        respiteBalance={respiteBalance}
         playerUid={hud.nearWalletId || playerUid}
+        connectedAccountEmail={connectedGoogleEmail}
+        characterGender={characterGender}
+        playerTeam={hud.playerTeam ?? 'blue'}
+        claimedPlotIndex={hud.nearClaimedPlotIndex}
+        hasHouseOwnership={hasHouseOwnership}
+        caughtFishCount={caughtFishBucket.length}
+        mintedFishNftCount={caughtFishBucket.filter((f) => f.isMintedNft).length}
+        recruitedFamilyCount={recruitedFamilyMembers.length}
+        activeHarvesterCount={
+          hud.nearActiveHarvesterSubAccounts?.length ||
+          (hud.harvesterContractStage === 'CONTRACT_ACTIVE' ? 2 : 0)
+        }
         onChangePlayerName={handleUpdatePlayerUsername}
         onStartWhisper={(user) => {
+          if (user.isNpc) return;
           setIsProfileModalOpen(false);
           setSelectedPrivateUser(user);
           setIsSocialChatModalOpen(true);
@@ -6826,6 +6690,7 @@ export default function App() {
          ===================================================================== */}
       <MobileResponsiveControls
         isGameplayActive={
+          isPreloadComplete &&
           gameState === 'playing' &&
           !isFullMapOverview &&
           onboardingStep === 'completed' &&
@@ -6835,6 +6700,7 @@ export default function App() {
           isKioskModalOpen ||
           isProfileModalOpen ||
           isPersonalWalletModalOpen ||
+          isPersonalBagModalOpen ||
           isNearWalletSelectorOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
@@ -6854,22 +6720,104 @@ export default function App() {
           12. NEAR WALLET SELECTOR MODAL (@near-wallet-selector/modal-ui Adaptation)
          ===================================================================== */}
       <NearWalletSelectorModal
-        isOpen={isNearWalletSelectorOpen}
+        isOpen={isNearWalletSelectorOpen && onboardingStep === 'completed'}
         onClose={() => setIsNearWalletSelectorOpen(false)}
-        networkId={walletNetworkChoice}
-        onChangeNetworkId={setWalletNetworkChoice}
-        currentWalletId={hud.nearWalletId || playerUid}
-        nearTestnetBalance={nearTestnetBalance}
-        respiteBalance={respiteBalance}
-        onConnectAccountId={async (accountId) => {
-          await handleConnectWalletAndEnterLobby(accountId);
+        currentWalletId={hud.nearWalletId || playerUid || null}
+        onConnectAccount={(accountId, mode) => {
+          void handleConnectWalletAndEnterLobby(accountId, { onboardingMode: mode });
+        }}
+        onSelectGoogleAutoRegister={() => {
+          setIsNearWalletSelectorOpen(false);
+          void handleStartGoogleLoginAndOpenWalletNaming();
         }}
       />
 
       {/* =====================================================================
-          13. IN-GAME ELEMENT & 3D BONE PICKER (Alt + Click / Alt + Shift + I)
+          13. ON-SCREEN NEP-171 HOUSE NFT SCANNING VERIFICATION MODAL
          ===================================================================== */}
-      <InGameElementAndBonePicker />
+      {houseEntryScanState !== 'idle' && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="House NFT Verification Scan"
+          data-house-entry-scan-modal="true"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs pointer-events-auto select-none"
+        >
+          <div className="relative w-full max-w-md bg-[#0f172a] border-[3.5px] border-black shadow-[8px_8px_0px_#000] p-6 text-white space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-white/20 pb-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-3 h-3 rounded-full ${
+                    houseEntryScanState === 'verified'
+                      ? 'bg-[#b8ff3c]'
+                      : 'bg-[#00f0ff] animate-ping'
+                  }`}
+                />
+                <span className="text-xs font-black uppercase tracking-wider text-slate-300">
+                  NEP-171 SMART CONTRACT VERIFICATION
+                </span>
+              </div>
+              <span
+                className={`px-2 py-0.5 text-[10px] font-black uppercase border border-black ${
+                  houseEntryScanState === 'verified'
+                    ? 'bg-[#b8ff3c] text-black'
+                    : 'bg-[#facc15] text-black'
+                }`}
+              >
+                {houseEntryScanState === 'verified' ? 'ACCESS GRANTED' : 'SCANNING ON-CHAIN'}
+              </span>
+            </div>
+
+            <div className="space-y-3 py-1">
+              <div className="p-3 bg-black/40 border border-white/10 space-y-2 text-[11px] font-mono">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">TARGET CONTRACT:</span>
+                  <span className="text-[#38bdf8] font-bold">{NEAR_CONFIG.marketContractId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">ACCOUNT:</span>
+                  <span className="text-white font-bold">
+                    {hud.nearWalletId || playerUid || 'commander-p1.near'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">DEED STANDARD:</span>
+                  <span className="text-[#facc15] font-bold">NEP-171 NON-FUNGIBLE TOKEN</span>
+                </div>
+              </div>
+
+              {houseEntryScanState === 'scanning' ? (
+                <div className="p-3 bg-[#1e293b] border border-[#00f0ff]/50 text-center space-y-2">
+                  <div className="text-xs font-black uppercase text-[#00f0ff] tracking-wider animate-pulse">
+                    MEMINDAI KEPEMILIKAN NFT RUMAH PADA NEAR BLOCKCHAIN...
+                  </div>
+                  <div className="w-full h-1.5 bg-black/50 overflow-hidden">
+                    <div
+                      className="h-full bg-[#00f0ff] animate-[pulse_1s_infinite]"
+                      style={{ width: '85%' }}
+                    />
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400">
+                    Querying nft_tokens_for_owner RPC node...
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-[#14532d]/50 border border-[#b8ff3c] text-center space-y-1.5">
+                  <div className="text-xs font-black uppercase text-[#b8ff3c] tracking-wider">
+                    KEPEMILIKAN NFT TERVERIFIKASI!
+                  </div>
+                  <div className="text-[11px] font-black uppercase text-white">
+                    JAPANESE PAVILION RESIDENCE [DEED #101]
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-300">
+                    Membuka Private 3D Decorative Studio...
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

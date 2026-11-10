@@ -1,195 +1,287 @@
 import React, { useState } from 'react';
 import {
-  NearNetworkId,
-  formatPlayerSubAccountFromMaster,
-  isValidNearAccountId,
+  NEAR_CONFIG,
+  connectNearWalletSelector,
+  getMyNearWalletLoginUrl,
+  spawnSubAccountOnChainViaMaster,
+  type NearNetworkId,
+  type NearOnboardingMode,
 } from '../lib/nearClient';
-import { signInWithGoogleOAuth } from '../lib/supabaseClient';
 import { soundEngine } from '../game/audio';
 
 interface NearWalletSelectorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  networkId: NearNetworkId;
-  onChangeNetworkId: (networkId: NearNetworkId) => void;
   currentWalletId: string | null;
-  nearTestnetBalance: number;
-  respiteBalance: number;
-  onConnectAccountId: (accountId: string) => Promise<void> | void;
+  onConnectAccount: (
+    accountId: string,
+    mode?: NearOnboardingMode,
+    network?: NearNetworkId,
+  ) => void;
+  onSelectGoogleAutoRegister?: () => void;
 }
 
 export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = ({
   isOpen,
   onClose,
   currentWalletId,
-  nearTestnetBalance,
-  respiteBalance,
-  onConnectAccountId,
+  onConnectAccount,
+  onSelectGoogleAutoRegister,
 }) => {
-  const [emailInput, setEmailInput] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('bb_connected_google_email') || '';
-    }
-    return '';
-  });
-  const [statusError, setStatusError] = useState<string | null>(null);
+  const [citizenHandleInput, setCitizenHandleInput] = useState<string>('');
+  const [accountInput, setAccountInput] = useState<string>(currentWalletId ?? '');
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const isRegistered = Boolean(currentWalletId && currentWalletId !== 'guest');
-
-  const handleRegisterWithGoogle = async () => {
-    const raw = emailInput.trim().toLowerCase();
-    if (!raw) {
-      setIsConnecting(true);
-      const oauthRes = await signInWithGoogleOAuth();
-      setIsConnecting(false);
-      if (oauthRes.redirected) {
-        return;
-      }
-      setStatusError('Please enter your Google email address below to continue.');
-      return;
-    }
-    const cleanWallet = formatPlayerSubAccountFromMaster(raw);
-    if (!cleanWallet || !isValidNearAccountId(cleanWallet)) {
-      setStatusError('Please enter a valid Google email address.');
-      return;
-    }
-    setStatusError(null);
+  const handleProvisionCitizenSubAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    soundEngine.playUiClick();
+    setErrorMessage(null);
+    setStatusBanner('Preparing your <handle>.buddiesblitz.testnet wallet & FunctionCall key...');
     setIsConnecting(true);
     try {
-      await onConnectAccountId(raw);
+      const res = await spawnSubAccountOnChainViaMaster({ handle: citizenHandleInput });
+      if (!res.ok || !res.subAccountId) {
+        setErrorMessage(res.error || 'Could not create Citizen Sub-Account.');
+        setStatusBanner(null);
+        return;
+      }
+      onConnectAccount(res.subAccountId, 'social_invisible', 'testnet');
+      setStatusBanner(null);
       onClose();
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : 'Failed to register account.');
+      setStatusBanner(null);
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Unable to provision Citizen Sub-Account right now.',
+      );
     } finally {
       setIsConnecting(false);
     }
   };
 
+  const handleConnectExtensionOrVerifyAccount = async (
+    explicitAccount?: string,
+    requireSignature = false,
+  ) => {
+    soundEngine.playUiClick();
+    setErrorMessage(null);
+    setStatusBanner(null);
+    setIsConnecting(true);
+    try {
+      const result = await connectNearWalletSelector(explicitAccount ?? accountInput, {
+        requireWalletSignature: requireSignature,
+      });
+      const net: NearNetworkId = result.accountId.endsWith('.near') ? 'mainnet' : 'testnet';
+      onConnectAccount(result.accountId, 'wallet_selector', net);
+      onClose();
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Failed to connect NEAR wallet. Use Google OAuth / Citizen Handle above or install Meteor Wallet.',
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const cleanedHandlePreview = citizenHandleInput
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32);
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Register Account Modal"
+      aria-label="Account Registration & Wallet Connection"
       data-near-wallet-selector-modal="true"
-      className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-[3px] pointer-events-auto select-none"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4 select-none"
     >
-      <div className="w-full max-w-md bg-[#12151f] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] overflow-hidden flex flex-col">
-        {/* Top Header Bar */}
-        <div className="px-4 py-3 bg-[#0f172a] border-b-[3px] border-black flex items-center justify-between gap-2">
-          <h2 className="text-sm sm:text-base font-black uppercase tracking-wider text-white">
-            {isRegistered ? 'WALLET ACCOUNT' : 'REGISTER ACCOUNT'}
-          </h2>
+      <div className="relative w-full max-w-md bg-white border-[4px] border-[#0d0f12] shadow-[8px_8px_0px_#0d0f12] p-5 text-[#0d0f12] max-h-[92vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3 border-b-[3px] border-[#0d0f12] pb-3">
+          <div>
+            <div className="inline-block px-2 py-0.5 bg-[#b8ff3c] border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-wider">
+              SEEDLESS CITIZEN ONBOARDING &amp; NEP-413 WALLET
+            </div>
+            <h2
+              className="mt-1.5 text-xl sm:text-2xl font-black uppercase tracking-tight leading-none"
+              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
+            >
+              REGISTER OR CONNECT NEAR
+            </h2>
+          </div>
+
           <button
             type="button"
-            data-close-near-selector-btn="true"
+            data-wallet-selector-close="true"
             onClick={() => {
               soundEngine.playUiClick();
               onClose();
             }}
-            aria-label="Close Register Modal"
-            className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs flex items-center justify-center cursor-pointer"
+            className="w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-sm flex items-center justify-center cursor-pointer"
+            aria-label="Close Wallet Selector"
           >
-            <span className="skew-x-6 inline-block">X</span>
+            X
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-4 sm:p-5 space-y-4">
-          {isRegistered ? (
-            <div className="p-3 bg-[#1e293b] border-2 border-black space-y-2">
-              <div className="text-[10px] font-black uppercase text-[#b8ff3c]">
-                ACTIVE WALLET ADDRESS
-              </div>
-              <div className="text-xs font-mono font-black text-[#38bdf8] break-all">
-                {currentWalletId}
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="p-1.5 bg-black/40 border border-white/15">
-                  <div className="text-[9px] font-black uppercase text-slate-400">NEAR</div>
-                  <div className="text-xs font-black text-[#38bdf8]">
-                    {nearTestnetBalance.toFixed(2)} NEAR
-                  </div>
-                </div>
-                <div className="p-1.5 bg-black/40 border border-white/15">
-                  <div className="text-[9px] font-black uppercase text-slate-400">RESPITE</div>
-                  <div className="text-xs font-black text-[#d8b4fe]">
-                    {respiteBalance.toLocaleString()} RESPITE
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 bg-[#1e293b] border-2 border-black text-xs font-bold text-slate-200 leading-relaxed">
-              Sign in with your Google account to automatically create your personal wallet and unlock the Currency Exchange and full Catalog.
+        <div className="mt-4 space-y-3">
+          {statusBanner && (
+            <div className="p-2.5 bg-[#ecfeff] border-2 border-[#0891b2] text-[11px] font-bold text-[#0e7490]">
+              {statusBanner}
             </div>
           )}
 
-          <div className="space-y-2.5">
-            <div className="text-[10px] font-black uppercase text-[#b8ff3c]">
-              GOOGLE EMAIL ADDRESS
+          {errorMessage && (
+            <div
+              role="alert"
+              className="p-2.5 bg-[#fef2f2] border-2 border-[#ff3b30] text-[11px] font-bold text-[#991b1b]"
+            >
+              {errorMessage}
             </div>
-            <input
-              type="email"
-              data-selector-account-input="true"
-              value={emailInput}
-              onChange={(e) => {
-                setEmailInput(e.target.value);
-                if (statusError) setStatusError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  void handleRegisterWithGoogle();
-                }
-              }}
-              placeholder="name@gmail.com"
-              className="w-full px-3 py-2.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none"
-            />
+          )}
+
+          {/* Option 1: Seedless Google OAuth + Sub-Account Naming */}
+          <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
+                1. SEEDLESS CITIZEN SUB-ACCOUNT
+              </span>
+              <span className="px-1.5 py-0.5 bg-[#b8ff3c] border border-[#0d0f12] text-[9px] font-black uppercase">
+                FUNCTION CALL KEY
+              </span>
+            </div>
+            <p className="text-[11px] font-bold text-[#334155] leading-snug">
+              No seed phrases or gas popups. Choose a citizen handle under{' '}
+              <code className="font-mono text-[10px] bg-white px-1 border border-slate-300">
+                .{NEAR_CONFIG.masterAccountId}
+              </code>{' '}
+              or sign in with Google.
+            </p>
+
+            {onSelectGoogleAutoRegister && (
+              <button
+                type="button"
+                data-wallet-option="google-auto-register"
+                disabled={isConnecting}
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onClose();
+                  onSelectGoogleAutoRegister();
+                }}
+                className="w-full py-2 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>CONTINUE WITH GOOGLE OAUTH</span>
+              </button>
+            )}
+
+            <form onSubmit={handleProvisionCitizenSubAccount} className="space-y-1.5 pt-1">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-[#0d0f12]">
+                CHOOSE YOUR WALLET NAME
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={citizenHandleInput}
+                  onChange={(e) => setCitizenHandleInput(e.target.value)}
+                  placeholder="e.g. sakura01"
+                  className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+                    let rnd = '';
+                    for (let i = 0; i < 6; i++) {
+                      rnd += alphabet[Math.floor(Math.random() * alphabet.length)];
+                    }
+                    setCitizenHandleInput(rnd);
+                  }}
+                  className="px-2 py-1.5 bg-slate-200 hover:bg-slate-300 border-2 border-[#0d0f12] text-[10px] font-black uppercase cursor-pointer"
+                >
+                  RANDOM
+                </button>
+                <button
+                  type="submit"
+                  disabled={isConnecting || cleanedHandlePreview.length < 2}
+                  className="px-3 py-1.5 bg-[#0f172a] hover:bg-[#1e293b] disabled:bg-slate-400 text-[#b8ff3c] border-2 border-[#0d0f12] text-[11px] font-black uppercase cursor-pointer"
+                >
+                  CREATE WALLET
+                </button>
+              </div>
+              {cleanedHandlePreview.length >= 2 && (
+                <div className="text-[10px] font-mono font-bold text-emerald-800">
+                  Preview: {cleanedHandlePreview}.{NEAR_CONFIG.masterAccountId}
+                </div>
+              )}
+            </form>
+          </div>
+
+          {/* Option 2: External NEAR Wallet Signer (NEP-413) */}
+          <div className="p-3 bg-[#f8fafc] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
+                2. EXTERNAL NEAR WALLET (NEP-413)
+              </span>
+              <span className="px-1.5 py-0.5 bg-[#38bdf8] border border-[#0d0f12] text-[9px] font-black uppercase">
+                SIGNED
+              </span>
+            </div>
 
             <button
               type="button"
-              data-selector-bind-account-btn="true"
+              data-wallet-option="browser-extension"
               disabled={isConnecting}
-              onClick={() => void handleRegisterWithGoogle()}
-              className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 text-black font-black text-xs uppercase border-2 border-black shadow-[3px_3px_0_#000] cursor-pointer"
+              onClick={() => void handleConnectExtensionOrVerifyAccount('', true)}
+              className="w-full py-2 px-3 bg-[#0f172a] hover:bg-[#1e293b] text-white border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
             >
-              <span className="skew-x-6 flex items-center justify-center gap-2">
-                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
-                  <path
-                    fill="#4285F4"
-                    d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-                  />
-                </svg>
-                <span>
-                  {isConnecting
-                    ? 'REGISTERING...'
-                    : isRegistered
-                      ? 'SWITCH GOOGLE ACCOUNT'
-                      : 'REGISTER WITH GOOGLE'}
-                </span>
-              </span>
+              {isConnecting ? 'SIGNING CHALLENGE...' : 'SIGN IN WITH METEOR / SENDER EXTENSION'}
             </button>
-          </div>
 
-          {statusError && (
-            <div className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold">
-              {statusError}
-            </div>
-          )}
+            <a
+              href={getMyNearWalletLoginUrl('testnet')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full py-1.5 px-3 bg-white hover:bg-slate-100 text-center border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-wider text-[#0d0f12]"
+            >
+              OPEN MYNEARWALLET TESTNET SIGNER ↗
+            </a>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleConnectExtensionOrVerifyAccount(accountInput, false);
+              }}
+              className="space-y-1.5 pt-1.5 border-t border-slate-300"
+            >
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600">
+                INSPECT EXISTING TESTNET ACCOUNT (READ-ONLY RPC LOOKUP)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  data-wallet-account-input="true"
+                  value={accountInput}
+                  onChange={(e) => setAccountInput(e.target.value)}
+                  placeholder="kxvqmr.buddiesblitz.testnet"
+                  className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={isConnecting || !accountInput.trim()}
+                  data-wallet-connect-submit="true"
+                  className="px-3 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:bg-slate-300 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-xs uppercase cursor-pointer"
+                >
+                  {isConnecting ? '...' : 'INSPECT'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>

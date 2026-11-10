@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import pureAnimeSkyUrl from '../assets/images/pure_anime_sky_1794337544452.jpg';
 import {
   BUDDIES_CONSTANTS,
   LIGHTING_PRESETS,
@@ -62,8 +63,6 @@ import {
   CITY_TRAM_SPEC,
   BaseSkinThemeId,
   BaseGardenPresetId,
-  BASE_SKIN_THEMES,
-  BASE_GARDEN_PRESETS,
   IndividualCommanderBaseState,
   createIndividualCommanderBasesState,
   applyCommanderBaseUpgrade,
@@ -152,14 +151,19 @@ import {
   LASER_AMMO_CONSUME_INTERVAL_SEC,
   computeContinuousLaserMuzzleTransform,
   evaluateContinuousLaserBeamStep,
-  LOBBY_NEAR_TERMINAL_SPEC,
   LOBBY_TRAM_SHELTER_SPEC,
   LOBBY_SAFEZONE_BOUNDS,
   PUBLIC_WARZONE_CRATE_PADS,
   isCommanderBasePlotActive,
+  evaluateBasePlotProximityTriggers,
   isPointInsideLobbySafezone,
   getUnitFootRingTeamColor,
   pickRandomTeamShieldedCratePadSpawn,
+  CityTransitStationId,
+  CITY_TRANSIT_DESTINATIONS,
+  getCityTransitDestinationById,
+  evaluateNearestCityTransitKioskProximity,
+  evaluateTramRideTransitionStep,
   evaluateLobbyFactionPortalStep,
   isUnitNearLobbyTramReturnPad,
   canApplyCombatDamage,
@@ -176,7 +180,6 @@ import {
   evaluatePlayerWarzoneDeathStep,
   evaluateContractHarvesterLifecycle,
   computeHarvesterBaseStandbyPosition,
-  LOBBY_GOLD_EXCHANGE_SPEC,
   LobbyGoldExchangeItemId,
   redeemLobbyGoldExchangeItem,
   evaluateOpenWarzonePopulationBar,
@@ -316,7 +319,12 @@ import {
   evaluatePlayerCommandCenterRadarAndMinimapDots,
   applyGrassChunkSyncedFogOfWar3D,
   evaluateChunkSynced3DFogOfWar,
+  isPositionInsideDynamicCullingRadius,
 } from './buddiesBlitzMinimap';
+import {
+  subscribeToWarzoneRealtimePresence,
+  type WarzoneRealtimePeer,
+} from '../lib/supabaseClient';
 import {
   buildArenaNavGrids,
   computeUnitAStarSteeringDirection,
@@ -331,8 +339,6 @@ import {
 } from './buddiesBlitzCombat';
 import {
   MAP_STORAGE_KEY,
-  buildTeamBaseQuadrant,
-  DEFAULT_ARENA_MAP_LAYOUT,
   cloneDefaultLayout,
   loadSavedArenaLayout,
   getPropBaseHeight,
@@ -351,11 +357,6 @@ export type {
   HudSnapshot,
   BuddiesBlitzArenaProps,
 };
-export {
-  MAP_STORAGE_KEY,
-  buildTeamBaseQuadrant,
-  DEFAULT_ARENA_MAP_LAYOUT,
-};
 
 export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
   gameState,
@@ -370,6 +371,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
   onHudUpdate,
   onGameOver,
   onTogglePause,
+  onPreloadSceneReady,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const gameStateRef = useRef<GameState>(gameState);
@@ -378,8 +380,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
   const initialTeamRef = useRef<'blue' | 'red'>(initialTeam);
   const deployedFromLobbyRef = useRef<boolean>(deployedFromLobby);
   const onRequestWorldModeChangeRef = useRef(onRequestWorldModeChange);
+  const onPreloadSceneReadyRef = useRef(onPreloadSceneReady);
   const lightingPresetRef = useRef<LightingPresetKey>(lightingPreset);
   const cameraFovModeRef = useRef<'webgl35' | 'roblox18'>(cameraFovMode);
+
+  useEffect(() => {
+    onPreloadSceneReadyRef.current = onPreloadSceneReady;
+  }, [onPreloadSceneReady]);
 
   useEffect(() => {
     worldModeRef.current = worldMode;
@@ -519,7 +526,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
     const HAND_ICON_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; background:#facc15; color:#14161d; font-family:'Barlow',sans-serif; font-weight:900; font-size:10px; border:2px solid #14161d; box-shadow:2px 2px 0 #14161d; user-select:none; pointer-events:none;">E</span>`;
 
-    const kioskPromptBtn = createPromptButton(POLYGON_ICON_HTML, 'KIOSK [B]');
+    const kioskPromptBtn = createPromptButton(POLYGON_ICON_HTML, 'HOUSE PLOT [B / E]');
     kioskPromptBtn.onpointerdown = (e) => {
       e.stopPropagation();
       resetAllPlayerMovementInputs();
@@ -534,8 +541,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const cratePromptBtn = createPromptButton(HAND_ICON_HTML, 'GRAB [E]', 'pickupOrThrow');
     const padCraftPromptBtn = createPromptButton(POLYGON_ICON_HTML, 'KICK CANCEL [F]', 'kickOrCraft');
     const padDepositPromptBtn = createPromptButton(HAND_ICON_HTML, 'LOAD PAD [E]', 'pickupOrThrow');
-    const LOBBY_TRAM_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:7px 18px; background:#facc15; color:#000000; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:2px solid #000000; box-shadow:3px 3px 0 #000000; transform:skewX(-6deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(6deg);">TO LOBBY</span></span>`;
-    const lobbyTramPromptBtn = createPromptButton(LOBBY_TRAM_BTN_HTML, 'TO LOBBY', 'teleportToLobby');
+    const LOBBY_TRAM_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:7px 18px; background:#facc15; color:#000000; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:2px solid #000000; box-shadow:3px 3px 0 #000000; transform:skewX(-6deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(6deg);">TO CENTRAL PLAZA</span></span>`;
+    const lobbyTramPromptBtn = createPromptButton(LOBBY_TRAM_BTN_HTML, 'TO CENTRAL PLAZA', 'teleportToLobby');
     lobbyTramPromptBtn.setAttribute('data-lobby-tram-floating-btn', 'true');
 
     const LOBBY_RED_PORTAL_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:7px 18px; background:#ff3b30; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:2px solid #000000; box-shadow:3px 3px 0 #000000; transform:skewX(-6deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(6deg);">RED TEAM</span></span>`;
@@ -655,10 +662,50 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       buddyUnits.forEach((b) => syncUnitFootRingTeamColor(b));
     };
 
-    let activeClickedTeleportKiosk: 'none' | 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby' = 'none';
-    let currentNearTeleportKiosk: 'none' | 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby' = 'none';
+    type ActiveTransitKioskKey =
+      | 'none'
+      | CityTransitStationId
+      | 'lobby_warzone'
+      | 'lobby_safezone'
+      | 'halte_to_lobby';
 
-    const teleportKioskHexBtn = createPromptButton(POLYGON_ICON_HTML, 'KIOSK TELEPORT');
+    let activeClickedTeleportKiosk: ActiveTransitKioskKey = 'none';
+    let currentNearTeleportKiosk: ActiveTransitKioskKey = 'none';
+
+    let activeTramRideCutscene: {
+      active: boolean;
+      startedAtMs: number;
+      elapsedSec: number;
+      durationSec: number;
+      originStationId: CityTransitStationId;
+      destinationStationId: CityTransitStationId;
+      targetWorldMode: 'lobby' | 'safezone' | 'warzone';
+      team?: 'blue' | 'red';
+    } | null = null;
+    let lastArrivedTransitStationId: CityTransitStationId | null = null;
+
+    const resolveStationIdFromKioskKey = (key: ActiveTransitKioskKey): CityTransitStationId => {
+      if (
+        key === 'central_plaza' ||
+        key === 'beachfront_harbor' ||
+        key === 'nw_fishing_lake' ||
+        key === 'north_residence' ||
+        key === 'south_residence' ||
+        key === 'warzone_arena'
+      ) {
+        return key;
+      }
+      return worldModeRef.current === 'warzone' ? 'warzone_arena' : 'central_plaza';
+    };
+
+    const getCityTransitKioskMeshById = (stationId: CityTransitStationId): THREE.Object3D | null => {
+      if (stationId === 'central_plaza' || stationId === 'warzone_arena') {
+        return scene.getObjectByName('HalteLobbyTeleportKiosk3D') ?? null;
+      }
+      return scene.getObjectByName(`CityTransitKiosk3D_${stationId}`) ?? null;
+    };
+
+    const teleportKioskHexBtn = createPromptButton(POLYGON_ICON_HTML, 'CITY TRANSIT KIOSK [E]');
     teleportKioskHexBtn.setAttribute('data-teleport-kiosk-hex-btn', 'true');
     teleportKioskHexBtn.onpointerdown = (e) => {
       e.stopPropagation();
@@ -667,34 +714,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     teleportKioskHexBtn.onclick = (e) => {
       e.stopPropagation();
       resetAllPlayerMovementInputs();
+      if (worldModeRef.current === 'warzone') return;
       const targetKind =
         currentNearTeleportKiosk !== 'none' ? currentNearTeleportKiosk : activeClickedTeleportKiosk;
       if (targetKind !== 'none') {
+        const stationId = resolveStationIdFromKioskKey(targetKind);
         soundEngine.playUiClick();
-        activeClickedTeleportKiosk = targetKind;
-        syncTeleportKiosksGreenFootRing(targetKind);
+        activeClickedTeleportKiosk = stationId;
+        syncTeleportKiosksGreenFootRing(stationId);
         clearCharacterSelection();
         window.dispatchEvent(
-          new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: targetKind } }),
+          new CustomEvent('open-teleport-kiosk-modal', {
+            detail: { kind: stationId, stationId },
+          }),
         );
       }
     };
 
-    const syncTeleportKiosksGreenFootRing = (
-      activeKind: 'none' | 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby',
-    ) => {
-      const wzKiosk = scene.getObjectByName('LobbyWarzoneTeleportKiosk3D');
-      const szKiosk = scene.getObjectByName('LobbySafezoneTeleportKiosk3D');
-      const halteKiosk = scene.getObjectByName('HalteLobbyTeleportKiosk3D');
-
-      if (wzKiosk?.userData?.greenFootRing) {
-        (wzKiosk.userData.greenFootRing as THREE.Mesh).visible = activeKind === 'lobby_warzone';
-      }
-      if (szKiosk?.userData?.greenFootRing) {
-        (szKiosk.userData.greenFootRing as THREE.Mesh).visible = activeKind === 'lobby_safezone';
-      }
-      if (halteKiosk?.userData?.greenFootRing) {
-        (halteKiosk.userData.greenFootRing as THREE.Mesh).visible = activeKind === 'halte_to_lobby';
+    const syncTeleportKiosksGreenFootRing = (activeKind: ActiveTransitKioskKey) => {
+      const resolvedId = activeKind === 'none' ? null : resolveStationIdFromKioskKey(activeKind);
+      for (const spec of CITY_TRANSIT_DESTINATIONS) {
+        const mesh = getCityTransitKioskMeshById(spec.id);
+        if (mesh?.userData?.greenFootRing) {
+          (mesh.userData.greenFootRing as THREE.Mesh).visible =
+            resolvedId !== null &&
+            (spec.id === resolvedId ||
+              (resolvedId === 'warzone_arena' && spec.id === 'central_plaza'));
+        }
       }
     };
 
@@ -737,7 +783,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     }
 
     const LOBBY_SEAT_SPOTS: readonly LobbySeatSpot[] = [
-      // 6 Integrated Concrete Planter Benches under the Trees around the Lobby Plaza (2 seat indicators per long bench; Cafe Hana stools removed)
+      // 6 Integrated Concrete Planter Benches under the Trees around the Lobby Plaza
       { id: 'lobby_bench_en_1', x: -82.54, z: -25.45, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_en_2', x: -82.54, z: -23.55, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_es_1', x: -82.54, z: 23.85, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
@@ -752,6 +798,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       { id: 'lobby_bench_s_2', x: -89.48, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       // Pergola Bench
       { id: 'lobby_pergola_seat', x: -100.1, z: 12.1, yaw: 0, seatLiftY: -0.04, indicatorHeightY: 1.08 },
+      // City Park Benches
+      { id: 'park_bench_520', x: 2.0, z: -34.5, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_521', x: 2.0, z: -29.5, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_522', x: -1.0, z: 29.8, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_523', x: -1.0, z: 34.2, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_524', x: 23.8, z: 0.0, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_525', x: 25.2, z: 0.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_526', x: -44.2, z: -2.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      // Beachfront Harbor Pergola Bench
+      { id: 'beach_pergola_bench_1', x: 83.92, z: 93.61, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
     ];
 
     let activeSeatedSpot: LobbySeatSpot | null = null;
@@ -772,6 +831,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const sitOnLobbySeat = (spot: LobbySeatSpot) => {
       if (!playerUnit || !playerUnit.alive) return;
+      const isOccupiedByBuddy = buddyUnits.some(
+        (b) => b.alive && !b.isPlayer && Math.hypot(b.x - spot.x, b.z - spot.z) < 0.85,
+      );
+      if (isOccupiedByBuddy) return;
       if (mountedTank) handleToggleMountTank();
       if (ridingTramCarIdx !== null) disembarkFromCityTram();
       soundEngine.playUiClick();
@@ -858,17 +921,62 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onSelectTeleportKioskEvent = (e: Event) => {
-      const customEv = e as CustomEvent<{ kind: 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby' }>;
-      const k = customEv.detail?.kind;
-      if (k) {
+      const customEv = e as CustomEvent<{
+        kind?: ActiveTransitKioskKey;
+        stationId?: CityTransitStationId;
+      }>;
+      const rawKey = customEv.detail?.stationId ?? customEv.detail?.kind;
+      if (rawKey && rawKey !== 'none') {
+        const stationId = resolveStationIdFromKioskKey(rawKey);
         soundEngine.playUiClick();
-        activeClickedTeleportKiosk = k;
-        syncTeleportKiosksGreenFootRing(k);
+        activeClickedTeleportKiosk = stationId;
+        syncTeleportKiosksGreenFootRing(stationId);
         clearCharacterSelection();
-        window.dispatchEvent(new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: k } }));
+        window.dispatchEvent(
+          new CustomEvent('open-teleport-kiosk-modal', {
+            detail: { kind: stationId, stationId },
+          }),
+        );
       }
     };
     window.addEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);
+
+    const onStartCityTramRideTransition = (e: Event) => {
+      const customEv = e as CustomEvent<{
+        originStationId?: CityTransitStationId;
+        destinationStationId: CityTransitStationId;
+        targetWorldMode?: 'lobby' | 'safezone' | 'warzone';
+        team?: 'blue' | 'red';
+      }>;
+      const destId = customEv.detail?.destinationStationId;
+      if (!destId) return;
+      const destSpec = getCityTransitDestinationById(destId);
+      const origId =
+        customEv.detail?.originStationId ??
+        (worldModeRef.current === 'warzone' ? 'warzone_arena' : 'central_plaza');
+      const origSpec = getCityTransitDestinationById(origId);
+      const targetMode = customEv.detail?.targetWorldMode ?? destSpec.targetWorldMode;
+      const chosenTeam = customEv.detail?.team;
+      lastArrivedTransitStationId = destId;
+      resetAllPlayerMovementInputs();
+      clearTeleportKioskSelection();
+      if (mountedTank) handleToggleMountTank();
+      if (ridingTramCarIdx !== null) disembarkFromCityTram();
+      if (playerUnit?.isSitting && activeSeatedSpot) standUpFromLobbySeat();
+      cityTramDistance = origSpec.tramTrackDistance;
+      soundEngine.playPickup();
+      activeTramRideCutscene = {
+        active: true,
+        startedAtMs: performance.now(),
+        elapsedSec: 0,
+        durationSec: 2.5,
+        originStationId: origId,
+        destinationStationId: destId,
+        targetWorldMode: targetMode,
+        team: chosenTeam,
+      };
+    };
+    window.addEventListener('start-city-tram-ride-transition', onStartCityTramRideTransition);
 
     let playerCustomDisplayName =
       (typeof window !== 'undefined' && window.localStorage.getItem('bb_active_display_name')) ||
@@ -1010,10 +1118,55 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('sync-kiosk-ui', onKioskUiSynced);
     let updateDirectDomPrompts: () => void = () => {};
 
+    // Load generated high-resolution pure anime skybox image
+    const textureLoader = new THREE.TextureLoader();
+    const animeSkyImageTex = textureLoader.load(pureAnimeSkyUrl);
+    animeSkyImageTex.colorSpace = THREE.SRGBColorSpace;
+    animeSkyImageTex.mapping = THREE.EquirectangularReflectionMapping;
+
     // 2. Scene, Camera & Authentic Buddies Blitz Warm Afternoon Sun Lighting
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#8cdcf0');
+    scene.background = animeSkyImageTex;
+    scene.fog = new THREE.FogExp2('#95e1ff', 0.0005);
     scene.add(characterSelectionRing);
+
+    // Inverted 3D Anime Skybox Dome Mesh (Luminous backdrop layer)
+    const animeSkyGeo = new THREE.SphereGeometry(480, 48, 32);
+    animeSkyGeo.scale(-1, 1, 1);
+    const animeSkyMat = new THREE.MeshBasicMaterial({
+      map: animeSkyImageTex,
+      side: THREE.BackSide,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const animeSkyDomeMesh = new THREE.Mesh(animeSkyGeo, animeSkyMat);
+    animeSkyDomeMesh.renderOrder = -1000;
+    scene.add(animeSkyDomeMesh);
+
+    // Floating Anime Sky Sparkles Particle System
+    const sparkleCount = 110;
+    const sparkleGeo = new THREE.BufferGeometry();
+    const sparklePositions = new Float32Array(sparkleCount * 3);
+    for (let s = 0; s < sparkleCount; s++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(Math.random() * 0.75 + 0.15); // upper hemisphere
+      const rad = 380 + Math.random() * 60;
+      sparklePositions[s * 3] = rad * Math.sin(phi) * Math.cos(theta);
+      sparklePositions[s * 3 + 1] = rad * Math.cos(phi);
+      sparklePositions[s * 3 + 2] = rad * Math.sin(phi) * Math.sin(theta);
+    }
+    sparkleGeo.setAttribute('position', new THREE.BufferAttribute(sparklePositions, 3));
+    const animeSparkleMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 4.5,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const animeSparklePoints = new THREE.Points(sparkleGeo, animeSparkleMat);
+    animeSparklePoints.renderOrder = -999;
+    scene.add(animeSparklePoints);
 
     const camera = new THREE.PerspectiveCamera(
       BUDDIES_CONSTANTS.camera.fov,
@@ -1057,10 +1210,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         dirLight.intensity = 2.05;
         hemiLight.color.set('#fffdf0');
         hemiLight.groundColor.set('#3d7068');
-        scene.background = new THREE.Color('#8cdcf0');
+        scene.background = animeSkyImageTex;
         if (scene.fog instanceof THREE.FogExp2) {
-          scene.fog.color.set('#8cdcf0');
-          scene.fog.density = 0.0011;
+          scene.fog.color.set('#95e1ff');
+          scene.fog.density = 0.0005;
         }
         return;
       }
@@ -1069,10 +1222,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       dirLight.intensity = p.lightIntensity;
       hemiLight.groundColor.set(p.shadowColor);
       hemiLight.color.set(p.revealColor);
-      const bgCol = new THREE.Color(p.shadowColor).lerp(new THREE.Color(p.fogColorA), 0.35);
-      scene.background = bgCol;
+      scene.background = animeSkyImageTex;
       if (scene.fog instanceof THREE.FogExp2) {
-        scene.fog.color.copy(bgCol);
+        scene.fog.color.set(p.fogColorA);
+        scene.fog.density = 0.0005;
       }
     };
     applyLightingRef.current = applyLightingPreset;
@@ -2222,7 +2375,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // =========================================================================
     const buildStandingNpcMerchant3D = (
       wx: number,
-      wy: number,
+      _wy: number,
       wz: number,
       rotY: number,
       teamStyle: 'blue' | 'red',
@@ -2232,7 +2385,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     ) => {
       const npcGrp = new THREE.Group();
       npcGrp.rotation.order = 'YXZ';
-      const actualGroundY = wy !== undefined && wy !== 0 ? wy : getTerrainElevation(wx, wz);
+      const actualGroundY = getTerrainElevation(wx, wz);
       npcGrp.position.set(wx, actualGroundY, wz);
       npcGrp.rotation.y = rotY;
       scene.add(npcGrp);
@@ -2252,7 +2405,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const bodyGrp = new THREE.Group();
       bodyGrp.rotation.order = 'YXZ';
-      bodyGrp.scale.setScalar(1.18);
+      // 1:1 identical scale (1.16) with playerUnit.bodyGroup so Hana & Kai stand at the exact same height as the player character
+      bodyGrp.scale.setScalar(1.16);
       npcGrp.add(bodyGrp);
 
       const npcRig = buildProceduralRobloxBuddyAvatar(
@@ -2340,7 +2494,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const lobbyCafeNpc = buildStandingNpcMerchant3D(
       -94.0,
-      1.42,
+      getTerrainElevation(-94.0, -13.8),
       -13.8,
       Math.PI / 2,
       'blue',
@@ -2350,7 +2504,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     const beachHouseNpc = buildStandingNpcMerchant3D(
       85.8,
-      0.82,
+      getTerrainElevation(85.8, 60.0),
       60.0,
       Math.PI / 2,
       'red',
@@ -3000,10 +3154,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
     };
 
+    let sampleHouseZonesGrp: THREE.Group | null = null;
     const syncHousePlacedFurnitureMeshes = () => {
       if (!buddiesBackgroundZonesPopulated) {
         buddiesBackgroundZonesPopulated = true;
-        houseInteriorRoomGrp.add(buildBuddiesInteriorBackgroundZones());
+        sampleHouseZonesGrp = buildBuddiesInteriorBackgroundZones();
+        sampleHouseZonesGrp.visible = false;
+        houseInteriorRoomGrp.add(sampleHouseZonesGrp);
       }
       const activeIds = new Set(housePlacedItems.map((it) => it.instanceId));
       for (const [id, meshGrp] of houseFurnitureMeshMap.entries()) {
@@ -3101,6 +3258,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             | 'character_select';
           location?: 'lobby_cafe' | 'beach_house';
           themeId?: string;
+          isSampleHouse?: boolean;
           daylightHour?: number;
           floorSwatchId?: string;
           wallSwatchId?: string;
@@ -3129,6 +3287,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         houseInteriorRoomGrp.visible = isHouseMode;
         if (isHouseMode) {
           syncHousePlacedFurnitureMeshes();
+          if (sampleHouseZonesGrp && typeof detail.isSampleHouse === 'boolean') {
+            sampleHouseZonesGrp.visible = detail.isSampleHouse;
+          }
           if (!wasHouseMode && playerUnit) {
             savedOutdoorHousePos = {
               x: playerUnit.x,
@@ -3702,20 +3863,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let superCrateSpawnTimer = 0;
     let legendCrateSpawnTimer = 0;
     let medicalCrateSpawnTimer = 0;
-    let redCraftTimer = 0;
 
-    // Pick a random open Warzone coordinate (outside Oasis Lake & roads) for random Warzone Drop Boxes
+    // Pick a random central Warzone arena coordinate (outside Oasis Lake, roads, and North/South residential plot rows)
     const pickRandomWarzoneDropCoord = (): { x: number; z: number } => {
-      for (let attempt = 0; attempt < 16; attempt++) {
-        const rx = -62.0 + Math.random() * 126.0; // x in [-62.0, +64.0] across the expanded Warzone
-        const rz = -42.0 + Math.random() * 84.0; // z in [-42.0, +42.0]
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const rx = -46.0 + Math.random() * 92.0; // x in [-46.0, +46.0] central combat plaza
+        const rz = -28.0 + Math.random() * 56.0; // z in [-28.0, +28.0] strictly outside residential rows (|z| > 45)
         if (evaluateNwLakeSdf(rx, rz) > 2.5 && evaluateRoadNetworkSdf(rx, rz) > 1.2) {
           return { x: Number(rx.toFixed(2)), z: Number(rz.toFixed(2)) };
         }
       }
       return {
-        x: Number(((Math.random() - 0.5) * 32.0).toFixed(2)),
-        z: Number(((Math.random() - 0.5) * 32.0).toFixed(2)),
+        x: Number(((Math.random() - 0.5) * 28.0).toFixed(2)),
+        z: Number(((Math.random() - 0.5) * 24.0).toFixed(2)),
       };
     };
 
@@ -3732,17 +3892,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let socialTalkMessage: string | null = null;
     let socialTalkTimer = 0;
 
+    let currentNearHouseDoorWorldPos: { x: number; z: number } | null = null;
+    const scratchLiveObjPos = new THREE.Vector3();
+
     const findNearestBaseKiosk = (actorX: number, actorZ: number) => {
       let bestTeam: 'blue' | 'red' = 'blue';
       let bestPlotIdx = 0;
       let bestDist = 9999;
       let bestWorldX = 0;
       let bestWorldZ = 0;
-      let isLobbyTerminal = false;
+      const isLobbyTerminal = false;
+
+      if (worldModeRef.current === 'warzone') {
+        return {
+          team: bestTeam,
+          plotIdx: bestPlotIdx,
+          plotIndex: bestPlotIdx,
+          dist: 9999,
+          distance: 9999,
+          worldX: 0,
+          worldZ: 0,
+          x: 0,
+          z: 0,
+          plotState: undefined,
+          isLobbyTerminal: false,
+        };
+      }
 
       for (const team of ['blue', 'red'] as const) {
         const baseObj = team === 'blue' ? blueBase : redBase;
         for (let idx = 0; idx < baseObj.commanderPads.length; idx++) {
+          const pad = baseObj.commanderPads[idx];
+          if (!pad || !pad.kioskMesh || !pad.kioskMesh.visible) continue;
           const kPos = getKioskWorldCenterForPlot(team, idx);
           const d = getPlanetShortestDistance(actorX, actorZ, kPos.x, kPos.z);
           if (d < bestDist) {
@@ -3751,25 +3932,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             bestPlotIdx = idx;
             bestWorldX = kPos.x;
             bestWorldZ = kPos.z;
-            isLobbyTerminal = false;
           }
-        }
-      }
-
-      if (worldModeRef.current !== 'lobby') {
-        const dLobbyTerm = getPlanetShortestDistance(
-          actorX,
-          actorZ,
-          LOBBY_NEAR_TERMINAL_SPEC.x,
-          LOBBY_NEAR_TERMINAL_SPEC.z,
-        );
-        if (dLobbyTerm < bestDist) {
-          bestDist = dLobbyTerm;
-          bestTeam = playerUnit ? playerUnit.team : 'blue';
-          bestPlotIdx = 1;
-          bestWorldX = LOBBY_NEAR_TERMINAL_SPEC.x;
-          bestWorldZ = LOBBY_NEAR_TERMINAL_SPEC.z;
-          isLobbyTerminal = true;
         }
       }
 
@@ -4116,6 +4279,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         state: startGrounded ? 'grounded' : 'falling',
         carrierId: null,
         squashTimer: 0,
+        decayTimerSec: isSpecialMetallic ? 90.0 : 75.0,
+        totalDecaySec: isSpecialMetallic ? 90.0 : 75.0,
       };
       worldCrates.push(createdCrate);
       return createdCrate;
@@ -4179,6 +4344,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ? TEAM_BUDDIES_WEAPON_DESPAWN_SEC
           : kind === 'weapon'
           ? TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC
+          : kind === 'coin_gold' || kind === 'coin_silver'
+          ? 40.0
+          : kind === 'ammo'
+          ? 45.0
           : 0);
 
       worldPickups.push({
@@ -4505,31 +4674,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const ensureMatchAiSquadsSpawned = () => {
-      // Emptied base plots have no static spawn points; in Match mode, spawn enemy combatants in the open Warzone
-      const redClasses: BuddyClassId[] = ['Infuntry', 'Commando', 'Ninja', 'Medic'];
-      for (let cmdId = 0; cmdId < COMMANDERS_PER_TEAM; cmdId++) {
-        const hasRedCmdUnit = buddyUnits.some(
-          (b) => b.team === 'red' && b.ownerCommanderId === cmdId && b.alive,
-        );
-        if (!hasRedCmdUnit) {
-          const dropSpot = pickRandomWarzoneDropCoord();
-          buddyUnits.push(
-            createBuddyCharacterUnit(
-              'red',
-              false,
-              redClasses[cmdId % redClasses.length],
-              dropSpot.x,
-              dropSpot.z,
-              cmdId,
-              false,
-            ),
-          );
-        }
-      }
+      // Do not spawn simulated or dummy AI combatant bots in the Warzone.
     };
 
     const activeLaserBeams: ActiveLaserBeam3D[] = [];
     const activeOrdnanceDevices: ActiveOrdnanceDevice3D[] = [];
+    let remoteWarzonePeers: WarzoneRealtimePeer[] = [];
+    let warzonePresenceSyncTimer = 0;
+    const warzonePresenceController = subscribeToWarzoneRealtimePresence((peers) => {
+      remoteWarzonePeers = peers;
+    });
     let cachedStaticWorldStructures: StaticWorldStructureObb[] | null = null;
     let cachedStaticWorldStructuresKey = '';
     let snapCameraAndStartSpawnBlink: (unit: BuddyUnit) => void = (unit) => {
@@ -4622,7 +4776,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       let startX = blueBase.commanderPads[0].padX - 3.6;
       let startZ = blueBase.commanderPads[0].padZ - 2.8;
       let startYaw = 0;
-      if (initWorldMode === 'lobby') {
+      if (lastArrivedTransitStationId && initWorldMode !== 'warzone') {
+        const arrivedSpec = getCityTransitDestinationById(lastArrivedTransitStationId);
+        startX = arrivedSpec.spawnX;
+        startZ = arrivedSpec.spawnZ;
+        startYaw = arrivedSpec.spawnYaw;
+      } else if (initWorldMode === 'lobby') {
         startX = LOBBY_SAFEZONE_BOUNDS.spawnX;
         startZ = LOBBY_SAFEZONE_BOUNDS.spawnZ;
         startYaw = Math.PI;
@@ -4630,7 +4789,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         startX = SAFEZONE_CITY_HALTE_SPAWN.x;
         startZ = SAFEZONE_CITY_HALTE_SPAWN.z;
         startYaw = SAFEZONE_CITY_HALTE_SPAWN.yaw;
-      } else if (deployedFromLobbyRef.current || startTeam === 'red') {
+      } else if (initWorldMode === 'warzone' || deployedFromLobbyRef.current || startTeam === 'red') {
         const padSpawn = pickRandomTeamShieldedCratePadSpawn(startTeam);
         startX = padSpawn.spawnX;
         startZ = padSpawn.spawnZ;
@@ -4791,6 +4950,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       plotIdx: number,
       desiredTotal = MAX_HARVESTERS_PER_BASE,
     ) => {
+      // Family Member / Contract Harvester AI is active strictly inside Mini-Game Warzone (never in Main World)
+      if (worldModeRef.current !== 'warzone' && cityArenaMode !== 'warzone') return;
       const targetBaseObj = team === 'blue' ? blueBase : redBase;
       const padInfo = targetBaseObj.commanderPads[plotIdx] ?? targetBaseObj.commanderPads[0];
       const existingHarvesters = buddyUnits.filter(
@@ -5029,7 +5190,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       playerUnit.carryingCrate = 'none';
       playerUnit.overheadCrateGroup.visible = false;
       releaseActiveNearSessionBaseAndHarvesters(
-        'SAFEZONE LOBBY ACTIVE (100% Damage-Free). Session Base Plot automatically reverted to an empty grass lot.',
+        'CENTRAL PLAZA ACTIVE (100% Damage-Free). Session Base Plot automatically reverted to an empty grass lot.',
       );
       playerUnit.x = -85.5;
       playerUnit.z = 0.0;
@@ -5053,17 +5214,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       spawnBurstParticles(playerUnit.x, 1.5, playerUnit.z, 16);
       playerUnit.saluteTimer = 2.6;
       playerUnit.saluteSign.updateText(
-        'SAFEZONE LOBBY',
+        'CENTRAL PLAZA',
         'STEP ON THE NORTH (RED) OR SOUTH (BLUE) PORTAL & CLICK TEAM BUTTON!',
         '#38bdf8',
         1,
       );
       playerUnit.saluteSign.sprite.visible = true;
       kioskStatusTimer = 5.5;
+      worldModeRef.current = 'lobby';
       emitHudImmediately();
-      if (onRequestWorldModeChangeRef.current && worldModeRef.current !== 'lobby') {
-        onRequestWorldModeChangeRef.current('lobby', playerUnit.team);
-      }
+      window.dispatchEvent(
+        new CustomEvent('city-tram-ride-complete', {
+          detail: {
+            destinationStationId: 'central_plaza',
+            worldMode: 'lobby',
+            targetWorldMode: 'lobby',
+          },
+        }),
+      );
     };
 
     const syncCityArenaModeWorldVisibility = (mode: CityArenaMode) => {
@@ -5123,19 +5291,53 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (!rules.supplyDropsEnabled) {
         supplyDropBeaconGroup.visible = false;
       }
-      // 6. Disable & Hide Hand Weapons in Lobby and Safezone Mode
+      // 5b. Warzone Pure Separation: Hide Merchant NPCs & City Transit Kiosk Teleport Hubs inside Warzone
+      const isWarzoneMode = mode === 'warzone';
+      if (lobbyCafeNpc?.npcGrp) {
+        lobbyCafeNpc.npcGrp.visible = !isWarzoneMode;
+        if (isWarzoneMode && lobbyCafeNpc.npcNameplate?.sprite) {
+          lobbyCafeNpc.npcNameplate.sprite.visible = false;
+        }
+        if (isWarzoneMode && lobbyCafeNpc.exclamationGroup) {
+          lobbyCafeNpc.exclamationGroup.visible = false;
+        }
+      }
+      if (beachHouseNpc?.npcGrp) {
+        beachHouseNpc.npcGrp.visible = !isWarzoneMode;
+        if (isWarzoneMode && beachHouseNpc.npcNameplate?.sprite) {
+          beachHouseNpc.npcNameplate.sprite.visible = false;
+        }
+        if (isWarzoneMode && beachHouseNpc.exclamationGroup) {
+          beachHouseNpc.exclamationGroup.visible = false;
+        }
+      }
+      for (const spec of CITY_TRANSIT_DESTINATIONS) {
+        const kioskMesh = getCityTransitKioskMeshById(spec.id);
+        if (kioskMesh) {
+          kioskMesh.visible = !isWarzoneMode;
+        }
+      }
+      if (isWarzoneMode) {
+        clearTeleportKioskSelection();
+      }
+      // 6. Disable & Hide Hand Weapons in Lobby and Safezone Mode (except Fishing Rod)
       if (!rules.weaponsEnabled && playerUnit) {
         playerUnit.isFiringLaser = false;
         playerUnit.carryingCrate = 'none';
         playerUnit.overheadCrateGroup.visible = false;
-        playerUnit.weaponId = 'unarmed';
-        playerUnit.rig.weaponRigGroup.visible = false;
-        playerUnit.rig.pistolGroup.visible = false;
-        playerUnit.rig.rifleGroup.visible = false;
-        playerUnit.rig.bazookaGroup.visible = false;
-        if (playerUnit.rig.laserGroup) playerUnit.rig.laserGroup.visible = false;
-        if (playerUnit.rig.gatlingGroup) playerUnit.rig.gatlingGroup.visible = false;
-        playerUnit.weaponMesh.visible = false;
+        if (playerUnit.weaponId !== 'fishing_rod') {
+          playerUnit.weaponId = 'unarmed';
+          playerUnit.rig.weaponRigGroup.visible = false;
+          playerUnit.rig.pistolGroup.visible = false;
+          playerUnit.rig.rifleGroup.visible = false;
+          playerUnit.rig.bazookaGroup.visible = false;
+          if (playerUnit.rig.laserGroup) playerUnit.rig.laserGroup.visible = false;
+          if (playerUnit.rig.gatlingGroup) playerUnit.rig.gatlingGroup.visible = false;
+          playerUnit.weaponMesh.visible = false;
+        } else {
+          playerUnit.rig.weaponRigGroup.visible = true;
+          if (playerUnit.rig.fishingRodGroup) playerUnit.rig.fishingRodGroup.visible = true;
+        }
       }
       cachedStaticWorldStructures = null;
       navGridDirty = true;
@@ -5183,10 +5385,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       kioskStatusMessage =
         'SAFEZONE CITY ACTIVE: Peaceful city with no weapons or combat AI. Board the Tram at the Stop [RIDE TRAM / F] or claim a garden plot at a Kiosk [B]!';
       kioskStatusTimer = 5.5;
+      worldModeRef.current = 'safezone';
       emitHudImmediately();
-      if (onRequestWorldModeChangeRef.current) {
-        onRequestWorldModeChangeRef.current('safezone', playerUnit.team);
-      }
+      window.dispatchEvent(
+        new CustomEvent('city-tram-ride-complete', {
+          detail: {
+            destinationStationId: lastArrivedTransitStationId ?? 'central_plaza',
+            worldMode: 'safezone',
+            targetWorldMode: 'safezone',
+          },
+        }),
+      );
     };
 
     const confirmLobbyFactionPortalDeploy = (requestedTeam?: 'red' | 'blue') => {
@@ -5198,7 +5407,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       const targetTeam: 'red' | 'blue' | null = requestedTeam ?? steppedPortal?.team ?? null;
       if (!targetTeam) return;
+      worldModeRef.current = 'warzone';
       syncCityArenaModeWorldVisibility('warzone');
+      if (worldCrates.length === 0) {
+        for (const initKind of ['red', 'red', 'super', 'super', 'legend', 'medical'] as const) {
+          const dropSpot = pickRandomWarzoneDropCoord();
+          spawnWorldCrate(initKind, dropSpot.x, dropSpot.z, false);
+        }
+        for (let gi = 0; gi < 6; gi++) {
+          const goldSpot = pickRandomWarzoneDropCoord();
+          const isGold = gi % 3 !== 2;
+          spawnWorldPickup(
+            isGold ? 'coin_gold' : 'coin_silver',
+            isGold ? 'EMAS WARZONE (+250G)' : 'PERAK WARZONE (+100G)',
+            goldSpot.x,
+            goldSpot.z,
+            { scoreValue: isGold ? 250 : 100, vy: 3.5 },
+          );
+        }
+      }
+      if (nearSessionState.hasGamepassNft || hasActiveBuildContract) {
+        spawnContractHarvestersForPlot(targetTeam, nearSessionState.claimedPlotIndex ?? 0);
+      }
       const randomPadSpawn = (() => {
         const p = pickRandomTeamShieldedCratePadSpawn(targetTeam);
         return {
@@ -5247,10 +5477,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       playerUnit.saluteSign.sprite.visible = true;
       kioskStatusMessage = `${randomPadSpawn.label} AKTIF! Tim: ${targetTeam.toUpperCase()} (${formatWarzoneLivesHudLabel(playerWarzoneLives, PLAYER_WARZONE_MAX_LIVES)}).`;
       kioskStatusTimer = 5.5;
+      worldModeRef.current = 'warzone';
       emitHudImmediately();
-      if (onRequestWorldModeChangeRef.current) {
-        onRequestWorldModeChangeRef.current('warzone', targetTeam);
-      }
+      window.dispatchEvent(
+        new CustomEvent('city-tram-ride-complete', {
+          detail: {
+            destinationStationId: 'warzone_arena',
+            worldMode: 'warzone',
+            targetWorldMode: 'warzone',
+            team: targetTeam,
+          },
+        }),
+      );
     };
 
     const handlePlayerWarzoneDeath = (unit: BuddyUnit) => {
@@ -5362,6 +5600,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       },
     });
     const projectiles = projectilePool.slots;
+    let staggeredUpgradeRafId = 0;
 
     loadAllRealBlitzAssets(renderer, (charGltf, manGltf, rodGltf) => {
       if (isDisposed) return;
@@ -5423,7 +5662,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               b.weaponRecoil,
             );
           }
-          requestAnimationFrame(stepStaggeredUpgrades);
+          staggeredUpgradeRafId = requestAnimationFrame(stepStaggeredUpgrades);
         } else if (earlyLoadedCharGltf || earlyLoadedManGltf) {
           if (earlyLoadedCharGltf) {
             upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, earlyLoadedCharGltf);
@@ -5599,9 +5838,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (window.location.search.includes('tank=1') && tanks.length === 0) {
           tanks.push(createBlitzTankVehicle(3.8, 12.2, false, 'blue'));
         }
+
+        // 5. Compile all shaders and render 1 hidden warm-up frame before releasing the preload gate
+        try {
+          scene.updateMatrixWorld(true);
+          renderer.compile(scene, camera);
+          renderer.render(scene, camera);
+        } catch (compileErr) {
+          console.warn('[BuddiesBlitzArena] Shader compilation warm-up warning:', compileErr);
+        }
+        document.body.dataset.scenePreloadReady = 'true';
+        onPreloadSceneReadyRef.current?.();
       })
       .catch((err) => {
         console.error('[BuddiesBlitzArena] Failed to populate Blitz 3D assets:', err);
+        try {
+          scene.updateMatrixWorld(true);
+          renderer.compile(scene, camera);
+          renderer.render(scene, camera);
+        } catch {
+          // Ignore warm-up error on fallback
+        }
+        document.body.dataset.scenePreloadReady = 'true';
+        onPreloadSceneReadyRef.current?.();
       });
 
     const activeNuclearLaunchers: NuclearLauncherTurretRig[] = [];
@@ -6801,11 +7060,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         return;
       }
 
-      // Case B: Not carrying -> Find nearest grounded crate within 2.9m and lift it overhead!
+      if (worldModeRef.current === 'lobby' || isPointInsideLobbySafezone(playerUnit.x, playerUnit.z)) {
+        return;
+      }
+
+      // Case B: Not carrying -> Find nearest visible grounded crate within 2.9m and lift it overhead!
       let nearestCrate: WorldCrate | null = null;
       let bestDist = INTERACT_EXIT_RADIUS;
       for (const c of worldCrates) {
-        if (c.state === 'grounded' || c.state === 'falling') {
+        if ((c.state === 'grounded' || c.state === 'falling') && c.mesh.visible) {
           const d = getPlanetShortestDistance(c.x, c.z, playerUnit.x, playerUnit.z);
           if (d <= bestDist) {
             bestDist = d;
@@ -6836,50 +7099,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         return;
       }
 
-      // Case B.2: Standing beside the Self-Service Tactical Kiosk (icon active or dist <= 2.9m) -> Open Tactical Kiosk UI!
-      const kioskWorldPos = getBlueKioskWorldCenter(0);
-      const distToKiosk = getPlanetShortestDistance(
-        playerUnit.x,
-        playerUnit.z,
-        kioskWorldPos.x,
-        kioskWorldPos.z,
-      );
-      if (isKioskPromptActive || distToKiosk <= INTERACT_EXIT_RADIUS) {
+      // Case B.2: Standing beside a visible Base Plot Self-Service Tactical Kiosk (dist <= 3.5m) -> Open Tactical Kiosk UI!
+      const nearestKioskInfo = findNearestBaseKiosk(playerUnit.x, playerUnit.z);
+      if (isKioskPromptActive || nearestKioskInfo.distance <= INTERACT_EXIT_RADIUS) {
         soundEngine.playUiClick();
         emitHudImmediately();
         window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
         return;
-      }
-
-      // Case C: Standing in the West Lobby Safe Zone Plaza (x in [-104.5, -75.0], |z| <= 38) -> Interact with the 2 Artisanal Kiosks & Pergola Pavilion!
-      if (playerUnit.x <= -75.0 && playerUnit.x >= -104.5 && Math.abs(playerUnit.z) <= 38.0) {
-        const skinCycle: BaseSkinThemeId[] = ['military_standard', 'cyber_neon', 'desert_ops', 'royal_gold'];
-        const gardenCycle: BaseGardenPresetId[] = ['sakura_grove', 'zen_rock', 'golden_park', 'tactical_plaza'];
-        const myBase = blueCommanderBases[0];
-        if (playerUnit.z < -13.8) {
-          const nextSkin = skinCycle[(skinCycle.indexOf(myBase.skinTheme) + 1) % skinCycle.length];
-          myBase.skinTheme = nextSkin;
-          playerUnit.saluteTimer = 2.0;
-          playerUnit.saluteSign.updateText('KIOSK 1: HOUSE SKIN', BASE_SKIN_THEMES[nextSkin].name.toUpperCase(), '#38bdf8', 1);
-          playerUnit.saluteSign.sprite.visible = true;
-        } else if (playerUnit.z > 2.0) {
-          const nextGarden = gardenCycle[(gardenCycle.indexOf(myBase.gardenPreset) + 1) % gardenCycle.length];
-          myBase.gardenPreset = nextGarden;
-          const gardenSpec = BASE_GARDEN_PRESETS.find((g) => g.id === nextGarden) || BASE_GARDEN_PRESETS[0];
-          playerUnit.saluteTimer = 2.0;
-          playerUnit.saluteSign.updateText('PAVILION: BASE GARDEN', gardenSpec.name.toUpperCase(), '#4ade80', 1);
-          playerUnit.saluteSign.sprite.visible = true;
-        } else {
-          const nextSkin = skinCycle[(skinCycle.indexOf(myBase.skinTheme) + 1) % skinCycle.length];
-          myBase.skinTheme = nextSkin;
-          myBase.fenceHp = myBase.fenceMaxHp;
-          playerUnit.saluteTimer = 2.0;
-          playerUnit.saluteSign.updateText('KIOSK 2: FENCE SKIN', `${BASE_SKIN_THEMES[nextSkin].name.toUpperCase()} + FULL HP`, '#facc15', 1);
-          playerUnit.saluteSign.sprite.visible = true;
-        }
-        soundEngine.playPowerCore();
-        spawnBurstParticles(playerUnit.x, 2.2, playerUnit.z, 16);
-        syncPadVisuals(blueBase, bluePadSlots, 'BLUE', blueBaseHp);
       }
     };
 
@@ -7833,21 +8059,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           return;
         }
       }
-      if (cityArenaMode === 'safezone') {
+      if (cityArenaMode === 'safezone' || worldModeRef.current === 'lobby') {
         return;
       }
       const actorX = mountedTank ? mountedTank.x : playerUnit.x;
       const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
       const distToPad = getPlanetShortestDistance(actorX, actorZ, blueBase.padX, blueBase.padZ);
       const padEval = evaluateStackingPadRecipe(bluePadSlots);
-      const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
-      const distToKiosk = nearestKiosk.distance;
 
       // Check if kicking a Public Warzone Crate Pad with stacked boxes -> craft weapon directly!
       for (let pwi = 0; pwi < publicWarzonePads.length; pwi++) {
         const pubPad = publicWarzonePads[pwi];
         const pubSlots = publicWarzonePadSlotsList[pwi];
         if (
+          pubPad.padGroup.visible &&
           getPlanetShortestDistance(actorX, actorZ, pubPad.worldX, pubPad.worldZ) <=
             INTERACT_EXIT_RADIUS + 0.8 &&
           pubSlots.some((s) => s !== 'empty')
@@ -7860,26 +8085,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (mountedTank) {
         if ((isPadCraftPromptActive || distToPad <= INTERACT_EXIT_RADIUS) && padEval.totalCrates > 0) {
           cancelAndShatterBluePadBuild();
-        } else if (isKioskPromptActive || distToKiosk <= INTERACT_EXIT_RADIUS) {
-          soundEngine.playUiClick();
-          emitHudImmediately();
-          window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
         }
         return;
       }
 
       if (!playerUnit || !playerUnit.alive) return;
-
-      // If Kiosk icon is active / within 2.9m and not kicking stacked boxes on the Pad, [F] opens Tactical Kiosk modal!
-      if (
-        (isKioskPromptActive || distToKiosk <= INTERACT_EXIT_RADIUS) &&
-        !((isPadCraftPromptActive || distToPad <= INTERACT_EXIT_RADIUS) && padEval.totalCrates > 0)
-      ) {
-        soundEngine.playUiClick();
-        emitHudImmediately();
-        window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
-        return;
-      }
 
       // Always execute the Team Buddies Front Leg Kick on foot!
       const hitTarget = performBuddyMeleeAttack(playerUnit, 'kick');
@@ -7891,6 +8101,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const handleToggleMountTank = () => {
+      if (worldModeRef.current === 'lobby') return;
       // Disembark anywhere if currently riding the City Tram!
       if (ridingTramCarIdx !== null) {
         disembarkFromCityTram();
@@ -7920,9 +8131,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         3.2,
       );
       let nearestTank: TankVehicle | null = null;
-      let bestDist = 7.8;
+      let bestDist = 3.8;
       for (const t of tanks) {
-        if (!t.occupiedByPlayer && t.hp > 0) {
+        if (!t.occupiedByPlayer && t.hp > 0 && t.root.visible) {
           const d = getPlanetShortestDistance(t.x, t.z, playerUnit.x, playerUnit.z);
           if (d < bestDist) {
             bestDist = d;
@@ -8415,8 +8626,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         disembarkFromCityTram();
       }
       if (slotId === 'unarmed') {
+        const wasFishingRod = playerUnit.weaponId === 'fishing_rod';
         qcForceWeaponVisible = false;
         handleSelectTacticalWeapon('unarmed');
+        if (playerUnit.rig.fishingRodGroup) {
+          playerUnit.rig.fishingRodGroup.visible = false;
+        }
+        if (wasFishingRod) {
+          playerUnit.saluteTimer = 1.6;
+          playerUnit.saluteSign.updateText('JORAN DISIMPAN', 'MASUK KE DALAM TAS', '#94a3b8', 1);
+          playerUnit.saluteSign.sprite.visible = true;
+          emitHudImmediately();
+        }
         return;
       }
       if (slotId === 'fishing_rod') {
@@ -9108,6 +9329,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (document.body.dataset.preloadComplete !== 'true') {
+        resetAllPlayerMovementInputs();
+        return;
+      }
       const targetEl = e.target as HTMLElement | null;
       if (
         targetEl &&
@@ -9202,6 +9427,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (e.code === 'KeyE') {
         e.preventDefault();
+        if (activeTramRideCutscene?.active) return;
         if (npcCameraMode === 'house_visit' && playerUnit) {
           const distToExitDoor = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
           if (distToExitDoor <= 1.85) {
@@ -9213,49 +9439,89 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const actorX = mountedTank ? mountedTank.x : playerUnit.x;
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
 
-        // Teleport Kiosk triggers on KeyE
-        if (worldModeRef.current !== 'lobby') {
-          const distToHalteKiosk = getPlanetShortestDistance(actorX, actorZ, -61.95, 0.0);
-          if (distToHalteKiosk <= 4.8 || isUnitNearLobbyTramReturnPad(actorX, actorZ)) {
-            enterLobbySafezone();
-            return;
-          }
-        } else {
-          const dWarzoneKiosk = getPlanetShortestDistance(actorX, actorZ, -81.8, -8.2);
-          if (dWarzoneKiosk <= 4.8) {
-            confirmLobbyFactionPortalDeploy('red');
-            return;
-          }
-          const dSafezoneKiosk = getPlanetShortestDistance(actorX, actorZ, -81.8, -14.8);
-          if (dSafezoneKiosk <= 4.8) {
-            enterSafezoneCityFromLobby();
-            return;
-          }
-        }
-        if (
-          getPlanetShortestDistance(
+        // 1. Black City Transit Kiosk & Merchant NPCs (Strictly disabled inside Warzone!)
+        if (worldModeRef.current !== 'warzone') {
+          const nearTransitStation = evaluateNearestCityTransitKioskProximity(
             actorX,
             actorZ,
-            LOBBY_NEAR_TERMINAL_SPEC.x,
-            LOBBY_NEAR_TERMINAL_SPEC.z,
-          ) <= LOBBY_NEAR_TERMINAL_SPEC.interactRadius
+            worldModeRef.current,
+            3.5,
+          );
+          if (nearTransitStation.isNear) {
+            const kioskMesh = getCityTransitKioskMeshById(nearTransitStation.id);
+            if (kioskMesh && kioskMesh.visible) {
+              soundEngine.playUiClick();
+              activeClickedTeleportKiosk = nearTransitStation.id;
+              syncTeleportKiosksGreenFootRing(nearTransitStation.id);
+              clearCharacterSelection();
+              window.dispatchEvent(
+                new CustomEvent('open-teleport-kiosk-modal', {
+                  detail: { kind: nearTransitStation.id, stationId: nearTransitStation.id },
+                }),
+              );
+              return;
+            }
+          }
+
+          // 2. Hana Cafe Barista NPC (Central Plaza)
+          if (lobbyCafeNpc?.npcGrp?.visible) {
+            lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+            if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
+              soundEngine.playUiClick();
+              window.dispatchEvent(
+                new CustomEvent('open-npc-merchant-ui', { detail: { location: 'lobby_cafe' } }),
+              );
+              return;
+            }
+          }
+
+          // 3. East Beach House Merchant NPC (Kai)
+          if (beachHouseNpc?.npcGrp?.visible) {
+            beachHouseNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+            if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
+              soundEngine.playUiClick();
+              window.dispatchEvent(
+                new CustomEvent('open-npc-merchant-ui', { detail: { location: 'beach_house' } }),
+              );
+              return;
+            }
+          }
+        }
+
+        // 4. House Interior Entrance Door in The City (ONLY on active plots with a visible 3D House, <= 3.5m)
+        if (
+          worldModeRef.current !== 'warzone' &&
+          currentNearHouseDoorWorldPos !== null
         ) {
           soundEngine.playUiClick();
-          nearSessionState = connectNearWalletAndMintGamepass(nearSessionState);
-          kioskStatusMessage = nearSessionState.sessionStatusBanner;
-          kioskStatusTimer = 5.5;
-          emitHudImmediately();
-          window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
+          window.dispatchEvent(new CustomEvent('open-house-interior-ui'));
           return;
         }
+
+        // 5. Nuclear Launcher (Warzone)
         const blueNl = activeNuclearLaunchers.find((n) => n.team === 'blue');
         if (
           blueNl &&
-          getPlanetShortestDistance(playerUnit.x, playerUnit.z, blueNl.root.position.x, blueNl.root.position.z) < 6.8
+          blueNl.root.visible &&
+          getPlanetShortestDistance(playerUnit.x, playerUnit.z, blueNl.root.position.x, blueNl.root.position.z) <= 3.5
         ) {
           startNuclearStrikeTargetingMode();
           return;
         }
+
+        // 5b. House Plot Claim Kiosk in The City (<= 4.0m)
+        const nearestPlotKiosk = findNearestBaseKiosk(actorX, actorZ);
+        if (
+          worldModeRef.current !== 'warzone' &&
+          (isKioskPromptActive || nearestPlotKiosk.distance <= 4.0)
+        ) {
+          soundEngine.playUiClick();
+          emitHudImmediately();
+          window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
+          return;
+        }
+
+        // 6. Plane altitude or Crate Pickup
         if (mountedTank && mountedTank.vehicleKind === 'plane') {
           mountedTank.targetAltitude = Math.min(14.5, Math.max(12.2, (mountedTank.targetAltitude ?? 0) + 4.5));
           mountedTank.forwardSpeed = Math.max(mountedTank.forwardSpeed ?? 0, 8.5);
@@ -9280,21 +9546,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         handleCycleBuildOrder();
       } else if (e.code === 'KeyB') {
         e.preventDefault();
+        if (activeTramRideCutscene?.active || worldModeRef.current === 'warzone') return;
         const actorX = mountedTank ? mountedTank.x : playerUnit.x;
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
-        if (isUnitNearLobbyTramReturnPad(actorX, actorZ)) {
-          enterLobbySafezone();
-          return;
-        }
         const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
-        const nearNearTerminal =
-          getPlanetShortestDistance(
-            actorX,
-            actorZ,
-            LOBBY_NEAR_TERMINAL_SPEC.x,
-            LOBBY_NEAR_TERMINAL_SPEC.z,
-          ) <= LOBBY_NEAR_TERMINAL_SPEC.interactRadius;
-        if (isKioskPromptActive || nearestKiosk.distance <= INTERACT_EXIT_RADIUS || nearNearTerminal) {
+        if (isKioskPromptActive || nearestKiosk.distance <= 4.0) {
           soundEngine.playUiClick();
           emitHudImmediately();
           window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
@@ -9578,18 +9834,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (e.button === 0) {
         raycaster.setFromCamera(mouseNdc, camera);
 
-        // 1. Raycast Check for Teleport Kiosks (Lobby Warzone, Lobby Safezone, and Halte Lobby)
-        // Strictly separated from Base Command Plot Kiosks — clicking Teleport Kiosks NEVER opens Base Claim / Kiosk UI!
-        const teleKiosks: { mesh: THREE.Object3D; kind: 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby' }[] = [];
-        const wzKiosk = scene.getObjectByName('LobbyWarzoneTeleportKiosk3D');
-        if (wzKiosk && wzKiosk.visible) teleKiosks.push({ mesh: wzKiosk, kind: 'lobby_warzone' });
-        const szKiosk = scene.getObjectByName('LobbySafezoneTeleportKiosk3D');
-        if (szKiosk && szKiosk.visible) teleKiosks.push({ mesh: szKiosk, kind: 'lobby_safezone' });
-        const halteKiosk = scene.getObjectByName('HalteLobbyTeleportKiosk3D');
-        if (halteKiosk && halteKiosk.visible) teleKiosks.push({ mesh: halteKiosk, kind: 'halte_to_lobby' });
+        // 1. Raycast Check for Black City Transit Kiosks (Strictly disabled in Warzone)
+        const teleKiosks: { mesh: THREE.Object3D; stationId: CityTransitStationId }[] = [];
+        if (worldModeRef.current !== 'warzone') {
+          for (const spec of CITY_TRANSIT_DESTINATIONS) {
+            if (spec.id === 'warzone_arena') continue;
+            const mesh = getCityTransitKioskMeshById(spec.id);
+            if (mesh && mesh.visible) {
+              teleKiosks.push({ mesh, stationId: spec.id });
+            }
+          }
+        }
 
         const teleHitBox = new THREE.Box3();
-        let hitTeleKind: 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby' | null = null;
+        let hitTeleStationId: CityTransitStationId | null = null;
         for (const tk of teleKiosks) {
           tk.mesh.updateWorldMatrix(true, false);
           tk.mesh.getWorldPosition(scratchKioskWorldPos);
@@ -9597,28 +9855,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const ky = scratchKioskWorldPos.y;
           const kz = scratchKioskWorldPos.z;
           teleHitBox.min.set(kx - 1.85, ky - 0.25, kz - 1.85);
-          teleHitBox.max.set(kx + 1.85, ky + 4.5, kz + 1.85);
+          teleHitBox.max.set(kx + 1.85, ky + 3.2, kz + 1.85);
           if (raycaster.ray.intersectsBox(teleHitBox)) {
             const actorX = mountedTank ? mountedTank.x : playerUnit.x;
             const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
             const distToKiosk = getPlanetShortestDistance(actorX, actorZ, kx, kz);
             if (distToKiosk <= 16.0) {
-              hitTeleKind = tk.kind;
+              hitTeleStationId = tk.stationId;
               break;
             }
           }
         }
-        if (hitTeleKind) {
+        if (hitTeleStationId) {
           soundEngine.playUiClick();
-          activeClickedTeleportKiosk = hitTeleKind;
-          syncTeleportKiosksGreenFootRing(hitTeleKind);
+          activeClickedTeleportKiosk = hitTeleStationId;
+          syncTeleportKiosksGreenFootRing(hitTeleStationId);
           if (selectedCharacterTarget) {
             clearCharacterSelection();
             window.dispatchEvent(new CustomEvent('character-deselected'));
             window.dispatchEvent(new CustomEvent('close-character-profile-modal'));
           }
           window.dispatchEvent(
-            new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: hitTeleKind } }),
+            new CustomEvent('open-teleport-kiosk-modal', {
+              detail: { kind: hitTeleStationId, stationId: hitTeleStationId },
+            }),
           );
           return;
         } else if (activeClickedTeleportKiosk !== 'none') {
@@ -9640,7 +9900,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               const actorX = mountedTank ? mountedTank.x : playerUnit.x;
               const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
               const distToKiosk = getPlanetShortestDistance(actorX, actorZ, kx, kz);
-              if (isKioskPromptActive || distToKiosk <= INTERACT_EXIT_RADIUS + 0.6) {
+              if (isKioskPromptActive || distToKiosk <= 4.5) {
                 soundEngine.playUiClick();
                 emitHudImmediately();
                 window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
@@ -9751,7 +10011,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
-        // 3. Check Standing NPCs (Hana Cafe & Kai Beach House)
+        // 3. Check Standing NPCs (Hana Cafe & Kai Beach House — disabled inside Warzone)
         for (const npc of [
           {
             id: 'npc_cafe',
@@ -9760,7 +10020,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             status: 'Official Merchant',
             grp: lobbyCafeNpc.npcGrp,
             nameplate: lobbyCafeNpc.npcNameplate,
-            active: worldModeRef.current === 'lobby',
+            active: worldModeRef.current !== 'warzone' && lobbyCafeNpc.npcGrp.visible,
           },
           {
             id: 'npc_beach',
@@ -9769,7 +10029,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             status: 'Beach Merchant',
             grp: beachHouseNpc.npcGrp,
             nameplate: beachHouseNpc.npcNameplate,
-            active: worldModeRef.current !== 'lobby',
+            active: worldModeRef.current !== 'warzone' && beachHouseNpc.npcGrp.visible,
           },
         ]) {
           if (!npc.active) continue;
@@ -10159,14 +10419,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const actorX = mountedTank ? mountedTank.x : playerUnit.x;
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
         const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
-        const nearNearTerminal =
-          getPlanetShortestDistance(
-            actorX,
-            actorZ,
-            LOBBY_NEAR_TERMINAL_SPEC.x,
-            LOBBY_NEAR_TERMINAL_SPEC.z,
-          ) <= LOBBY_NEAR_TERMINAL_SPEC.interactRadius;
-        if (isKioskPromptActive || nearestKiosk.distance <= INTERACT_EXIT_RADIUS || nearNearTerminal) {
+        if (worldModeRef.current !== 'lobby' && (isKioskPromptActive || nearestKiosk.distance <= 3.5)) {
           soundEngine.playUiClick();
           emitHudImmediately();
           window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
@@ -10184,7 +10437,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         );
         kioskStatusMessage = nearSessionState.sessionStatusBanner;
         kioskStatusTimer = 5.5;
-        if (playerUnit && playerUnit.alive) {
+        if (nearSessionState.walletConnected && nearSessionState.walletId && playerUnit && playerUnit.alive) {
           playerUnit.saluteTimer = 2.5;
           playerUnit.saluteSign.updateText(
             'NEP-171 GAMEPASS MINTED!',
@@ -10205,7 +10458,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             typeof window !== 'undefined'
               ? window.localStorage.getItem('bb_last_connected_wallet_id') || undefined
               : undefined;
-          nearSessionState = connectNearWalletAndMintGamepass(nearSessionState, savedWallet);
+          if (savedWallet) {
+            nearSessionState = connectNearWalletAndMintGamepass(nearSessionState, savedWallet);
+          }
         }
         const targetTeam = nearestKiosk.team;
         const targetPlotIdx =
@@ -10666,7 +10921,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (playerUnit && playerUnit.alive) {
           playerUnit.saluteTimer = 3.0;
           playerUnit.saluteSign.updateText(
-            'LOBBY GOLD EXCHANGE',
+            'CENTRAL PLAZA EXCHANGE',
             `${spec.name.toUpperCase()} EQUIPPED!`,
             '#facc15',
             1,
@@ -10678,6 +10933,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         kioskStatusTimer = 5.5;
         emitHudImmediately();
       } else if (act === 'talkToNearestNpcMerchant') {
+        if (worldModeRef.current === 'warzone') return;
         soundEngine.playUiClick();
         const dBeach = getPlanetShortestDistance(playerUnit.x, playerUnit.z, 85.8, 60.0);
         const loc = dBeach <= 18.0 && worldModeRef.current !== 'lobby' ? 'beach_house' : 'lobby_cafe';
@@ -10888,534 +11144,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
 
-    const inspectRaycaster = new THREE.Raycaster();
-    const inspectNdc = new THREE.Vector2();
-    const inspectTmpWorldPos = new THREE.Vector3();
-    const inspectTmpProjected = new THREE.Vector3();
-    const inspectTmpBox3 = new THREE.Box3();
-    const inspectBoxCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
-    let lastInspectedWorldObject3D: THREE.Object3D | null = null;
-    const inspectorOrigStaticObbMap = new Map<
-      string,
-      { halfX: number; halfZ: number; heightY: number }
-    >();
-
-    const syncInspectedWorldObjectColliderScale = (targetObj: THREE.Object3D, scaleFactor: number) => {
-      let matchedProp = false;
-      let cur: THREE.Object3D | null = targetObj;
-      while (cur && cur !== scene) {
-        const node = cur;
-        const foundProp = activeMapProps.find(
-          (p) => p.wrapper === node || (node.userData?.propId !== undefined && p.id === node.userData.propId),
-        );
-        if (foundProp) {
-          const baseSpec = foundProp.wrapper.userData.baseColliderSpec as
-            | { radius: number; halfX?: number; halfZ?: number; heightY: number }
-            | undefined;
-          if (baseSpec) {
-            foundProp.radius = Number((baseSpec.radius * scaleFactor).toFixed(3));
-            if (baseSpec.halfX !== undefined) {
-              foundProp.halfX = Number((baseSpec.halfX * scaleFactor).toFixed(3));
-            }
-            if (baseSpec.halfZ !== undefined) {
-              foundProp.halfZ = Number((baseSpec.halfZ * scaleFactor).toFixed(3));
-            }
-            foundProp.heightY = Number((baseSpec.heightY * scaleFactor).toFixed(3));
-          }
-          matchedProp = true;
-          break;
-        }
-        cur = cur.parent;
-      }
-
-      if (!matchedProp) {
-        targetObj.getWorldPosition(inspectTmpWorldPos);
-        const structures = getStaticWorldStructures();
-        for (const s of structures) {
-          if (s.isRetainingWall) continue;
-          const dist = Math.hypot(s.x - inspectTmpWorldPos.x, s.z - inspectTmpWorldPos.z);
-          if (dist <= 3.8) {
-            let orig = inspectorOrigStaticObbMap.get(s.id);
-            if (!orig) {
-              orig = { halfX: s.halfX, halfZ: s.halfZ, heightY: s.heightY ?? 3.0 };
-              inspectorOrigStaticObbMap.set(s.id, orig);
-            }
-            s.halfX = Number((orig.halfX * scaleFactor).toFixed(3));
-            s.halfZ = Number((orig.halfZ * scaleFactor).toFixed(3));
-            s.heightY = Number((orig.heightY * scaleFactor).toFixed(3));
-          }
-        }
-      }
-      navGridDirty = true;
-    };
-
-    const onInspect3DTweak = (ev: Event) => {
-      const customEv = ev as CustomEvent<{
-        dx?: number;
-        dy?: number;
-        dz?: number;
-        dpitchDeg?: number;
-        dyawDeg?: number;
-        drollDeg?: number;
-        worldObjectScale?: number;
-        reset?: boolean;
-      }>;
-      const d = customEv.detail;
-      if (!d) return;
-      if (d.reset) {
-        if (playerUnit?.rig?.weaponRigGroup) {
-          delete playerUnit.rig.weaponRigGroup.userData.inspectorTweak;
-        }
-        if (lastInspectedWorldObject3D && lastInspectedWorldObject3D.userData.origInspectorScale) {
-          const orig = lastInspectedWorldObject3D.userData.origInspectorScale as THREE.Vector3;
-          lastInspectedWorldObject3D.scale.copy(orig);
-          syncInspectedWorldObjectColliderScale(lastInspectedWorldObject3D, 1.0);
-        }
-        return;
-      }
-      if (typeof d.worldObjectScale === 'number' && lastInspectedWorldObject3D) {
-        if (!lastInspectedWorldObject3D.userData.origInspectorScale) {
-          lastInspectedWorldObject3D.userData.origInspectorScale =
-            lastInspectedWorldObject3D.scale.clone();
-        }
-        const orig = lastInspectedWorldObject3D.userData.origInspectorScale as THREE.Vector3;
-        lastInspectedWorldObject3D.scale.set(
-          orig.x * d.worldObjectScale,
-          orig.y * d.worldObjectScale,
-          orig.z * d.worldObjectScale,
-        );
-        syncInspectedWorldObjectColliderScale(lastInspectedWorldObject3D, d.worldObjectScale);
-      }
-      if (playerUnit?.rig?.weaponRigGroup) {
-        playerUnit.rig.weaponRigGroup.userData.inspectorTweak = {
-          dx: d.dx ?? 0,
-          dy: d.dy ?? 0,
-          dz: d.dz ?? 0,
-          dpitchDeg: d.dpitchDeg ?? 0,
-          dyawDeg: d.dyawDeg ?? 0,
-          drollDeg: d.drollDeg ?? 0,
-        };
-      }
-    };
-
-    const onInspect3DPick = (ev: Event) => {
-      const customEv = ev as CustomEvent<{
-        clientX: number;
-        clientY: number;
-        onResult?: (res: Record<string, unknown>) => void;
-      }>;
-      const detail = customEv.detail;
-      if (!detail || typeof detail.onResult !== 'function') return;
-
-      const rect = renderer.domElement.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      inspectNdc.x = ((detail.clientX - rect.left) / rect.width) * 2 - 1;
-      inspectNdc.y = -((detail.clientY - rect.top) / rect.height) * 2 + 1;
-      camera.updateMatrixWorld(true);
-      scene.updateMatrixWorld(true);
-      inspectRaycaster.setFromCamera(inspectNdc, camera);
-
-      const rad2deg = 180 / Math.PI;
-      const projectWorldPointToScreen = (wp: THREE.Vector3) => {
-        inspectTmpProjected.copy(wp).project(camera);
-        const visible = inspectTmpProjected.z >= -1 && inspectTmpProjected.z <= 1;
-        return {
-          x: Math.round(((inspectTmpProjected.x + 1) * 0.5) * rect.width + rect.left),
-          y: Math.round(((-inspectTmpProjected.y + 1) * 0.5) * rect.height + rect.top),
-          visible,
-        };
-      };
-
-      const projectObjectBoundsToScreenRect = (obj: THREE.Object3D) => {
-        inspectTmpBox3.setFromObject(obj);
-        if (inspectTmpBox3.isEmpty()) {
-          obj.getWorldPosition(inspectTmpWorldPos);
-          const p = projectWorldPointToScreen(inspectTmpWorldPos);
-          return {
-            x: p.x - 22,
-            y: p.y - 22,
-            w: 44,
-            h: 44,
-            sizeMeters: { w: 0.2, h: 0.2, d: 0.2 },
-            centerWorld: {
-              x: Number(inspectTmpWorldPos.x.toFixed(2)),
-              y: Number(inspectTmpWorldPos.y.toFixed(2)),
-              z: Number(inspectTmpWorldPos.z.toFixed(2)),
-            },
-          };
-        }
-        const min = inspectTmpBox3.min;
-        const max = inspectTmpBox3.max;
-        const sizeVec = new THREE.Vector3();
-        const centerVec = new THREE.Vector3();
-        inspectTmpBox3.getSize(sizeVec);
-        inspectTmpBox3.getCenter(centerVec);
-
-        inspectBoxCorners[0].set(min.x, min.y, min.z);
-        inspectBoxCorners[1].set(min.x, min.y, max.z);
-        inspectBoxCorners[2].set(min.x, max.y, min.z);
-        inspectBoxCorners[3].set(min.x, max.y, max.z);
-        inspectBoxCorners[4].set(max.x, min.y, min.z);
-        inspectBoxCorners[5].set(max.x, min.y, max.z);
-        inspectBoxCorners[6].set(max.x, max.y, min.z);
-        inspectBoxCorners[7].set(max.x, max.y, max.z);
-
-        let minSx = Infinity;
-        let minSy = Infinity;
-        let maxSx = -Infinity;
-        let maxSy = -Infinity;
-        for (let ci = 0; ci < 8; ci++) {
-          const sp = projectWorldPointToScreen(inspectBoxCorners[ci]);
-          if (sp.visible) {
-            if (sp.x < minSx) minSx = sp.x;
-            if (sp.y < minSy) minSy = sp.y;
-            if (sp.x > maxSx) maxSx = sp.x;
-            if (sp.y > maxSy) maxSy = sp.y;
-          }
-        }
-        if (!Number.isFinite(minSx)) {
-          const cp = projectWorldPointToScreen(centerVec);
-          minSx = cp.x - 24;
-          maxSx = cp.x + 24;
-          minSy = cp.y - 24;
-          maxSy = cp.y + 24;
-        }
-        const wPx = Math.min(rect.width * 0.85, Math.max(28, maxSx - minSx));
-        const hPx = Math.min(rect.height * 0.85, Math.max(28, maxSy - minSy));
-        return {
-          x: Math.round(minSx),
-          y: Math.round(minSy),
-          w: Math.round(wPx),
-          h: Math.round(hPx),
-          sizeMeters: {
-            w: Number(sizeVec.x.toFixed(2)),
-            h: Number(sizeVec.y.toFixed(2)),
-            d: Number(sizeVec.z.toFixed(2)),
-          },
-          centerWorld: {
-            x: Number(centerVec.x.toFixed(2)),
-            y: Number(centerVec.y.toFixed(2)),
-            z: Number(centerVec.z.toFixed(2)),
-          },
-        };
-      };
-
-      // 1. Collect all screen-space 3D Rig Hotspots (Weapon Grip, Rod Parts, Hand & Body Bones)
-      const hotspots: Array<{
-        id: string;
-        label: string;
-        category: 'WEAPON_PART' | 'BONE' | 'WORLD_ENTITY';
-        screenX: number;
-        screenY: number;
-        distPx: number;
-        worldPos: { x: number; y: number; z: number };
-        localRotDeg?: { x: number; y: number; z: number };
-        sourceFile: string;
-        targetObj: THREE.Object3D;
-      }> = [];
-
-      const pushHotspot = (
-        id: string,
-        label: string,
-        category: 'WEAPON_PART' | 'BONE' | 'WORLD_ENTITY',
-        obj: THREE.Object3D | null | undefined,
-        sourceFile: string,
-      ) => {
-        if (!obj) return;
-        obj.getWorldPosition(inspectTmpWorldPos);
-        const sp = projectWorldPointToScreen(inspectTmpWorldPos);
-        if (!sp.visible) return;
-        const distPx = Number(Math.hypot(sp.x - detail.clientX, sp.y - detail.clientY).toFixed(1));
-        hotspots.push({
-          id,
-          label,
-          category,
-          screenX: sp.x,
-          screenY: sp.y,
-          distPx,
-          worldPos: {
-            x: Number(inspectTmpWorldPos.x.toFixed(3)),
-            y: Number(inspectTmpWorldPos.y.toFixed(3)),
-            z: Number(inspectTmpWorldPos.z.toFixed(3)),
-          },
-          localRotDeg: {
-            x: Number((obj.rotation.x * rad2deg).toFixed(1)),
-            y: Number((obj.rotation.y * rad2deg).toFixed(1)),
-            z: Number((obj.rotation.z * rad2deg).toFixed(1)),
-          },
-          sourceFile,
-          targetObj: obj,
-        });
-      };
-
-      const activeWeaponId = playerUnit?.weaponId ?? 'unarmed';
-      const weaponGroup = playerUnit?.rig?.weaponRigGroup ?? null;
-      const rodGrp = playerUnit?.rig?.fishingRodGroup ?? null;
-      const rodFlexPivot = rodGrp?.userData?.rodFlexPivot as THREE.Object3D | undefined;
-      const rodTipAnchor = rodGrp?.userData?.rodTipAnchor as THREE.Object3D | undefined;
-
-      if (weaponGroup && activeWeaponId !== 'unarmed') {
-        pushHotspot(
-          `weaponRigGroup:${activeWeaponId}`,
-          `Weapon Grip (${activeWeaponId})`,
-          'WEAPON_PART',
-          weaponGroup,
-          'src/game/buddiesBlitzShadersAndAssets.ts -> updateCharacterWeaponStance',
-        );
-      }
-      if (activeWeaponId === 'fishing_rod' && rodGrp) {
-        pushHotspot(
-          'fishingRod:rodFlexPivot',
-          'Rod Blank Flex Hinge (rodFlexPivot)',
-          'WEAPON_PART',
-          rodFlexPivot,
-          'src/game/buddiesBlitzShadersAndAssets.ts -> buildProceduralFishingRod & BuddiesBlitzArena.tsx',
-        );
-        pushHotspot(
-          'fishingRod:rodTipAnchor',
-          'Rod Tip Anchor (rodTipAnchor)',
-          'WEAPON_PART',
-          rodTipAnchor,
-          'src/game/buddiesBlitzShadersAndAssets.ts -> buildProceduralFishingRod',
-        );
-      }
-
-      if (playerUnit?.root) {
-        playerUnit.root.traverse((node) => {
-          if ((node as THREE.Bone).isBone) {
-            const bName = node.name || 'Bone';
-            const lower = bName.toLowerCase();
-            if (
-              lower.includes('righthand') ||
-              lower.includes('lefthand') ||
-              lower.includes('forearm') ||
-              lower.includes('rightarm') ||
-              lower.includes('leftarm') ||
-              lower.includes('head') ||
-              lower.includes('spine2')
-            ) {
-              // Skip individual finger phalanges in main hotspot badges so hand palms are clean
-              if (
-                lower.includes('index') ||
-                lower.includes('middle') ||
-                lower.includes('ring') ||
-                lower.includes('pinky') ||
-                lower.includes('thumb')
-              ) {
-                return;
-              }
-              pushHotspot(
-                `bone:${bName}`,
-                `Bone: ${bName}`,
-                'BONE',
-                node,
-                'src/game/buddiesBlitzShadersAndAssets.ts -> solveTwoBoneArmPalmIkLocal / updateCharacterWeaponStance',
-              );
-            }
-          }
-        });
-      }
-
-      // Sort hotspots by screen distance to cursor
-      const sortedHotspots = [...hotspots].sort((a, b) => a.distPx - b.distPx);
-      const nearestHotspot = sortedHotspots[0] ?? null;
-
-      // Find nearest bone overall (including fingers if very close)
-      let nearestBoneName = nearestHotspot?.category === 'BONE' ? nearestHotspot.label.replace(/^Bone:\s*/, '') : 'none';
-      let nearestBoneDistPx = nearestHotspot?.category === 'BONE' ? nearestHotspot.distPx : Infinity;
-      let nearestBoneWorld = nearestHotspot?.worldPos ?? { x: 0, y: 0, z: 0 };
-      let nearestBoneLocalRotDeg = nearestHotspot?.localRotDeg ?? { x: 0, y: 0, z: 0 };
-      for (const h of sortedHotspots) {
-        if (h.category === 'BONE' && h.distPx < nearestBoneDistPx) {
-          nearestBoneName = h.label.replace(/^Bone:\s*/, '');
-          nearestBoneDistPx = h.distPx;
-          nearestBoneWorld = h.worldPos;
-          nearestBoneLocalRotDeg = h.localRotDeg ?? { x: 0, y: 0, z: 0 };
-        }
-      }
-
-      // 2. Raycast 3D Scene Objects (filtering out invisible helpers, selection rings, sky domes)
-      const isDescendantOf = (child: THREE.Object3D | null, parent: THREE.Object3D | null | undefined): boolean => {
-        if (!child || !parent) return false;
-        let cur: THREE.Object3D | null = child;
-        while (cur) {
-          if (cur === parent) return true;
-          cur = cur.parent;
-        }
-        return false;
-      };
-
-      const validHits = inspectRaycaster.intersectObjects(scene.children, true).filter((h) => {
-        const obj = h.object;
-        if (!obj.visible) return false;
-        if (obj === characterSelectionRing) return false;
-        if ((obj as THREE.Sprite).isSprite) return false;
-        // Walk up parents to verify all ancestors are visible
-        let p: THREE.Object3D | null = obj.parent;
-        while (p && p !== scene) {
-          if (!p.visible) return false;
-          p = p.parent;
-        }
-        return true;
-      });
-
-      const primaryHit = validHits[0] ?? null;
-
-      // Semantic classification of the target (Hotspot within 44px wins over background terrain!)
-      let semanticName = 'Scene Object';
-      let hierarchyPath = 'Scene';
-      let suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx';
-      let targetForBounds: THREE.Object3D | null = primaryHit?.object ?? null;
-
-      if (nearestHotspot && nearestHotspot.distPx <= 44) {
-        semanticName = nearestHotspot.label;
-        hierarchyPath = `PlayerUnit > ${nearestHotspot.id}`;
-        suggestedSourceFile = nearestHotspot.sourceFile;
-        targetForBounds = nearestHotspot.targetObj;
-      } else if (primaryHit) {
-        const hitObj = primaryHit.object;
-        if (isDescendantOf(hitObj, weaponGroup)) {
-          semanticName = `WeaponMesh (${activeWeaponId})`;
-          hierarchyPath = `PlayerUnit > weaponRigGroup > ${activeWeaponId}`;
-          suggestedSourceFile =
-            'src/game/buddiesBlitzShadersAndAssets.ts -> updateCharacterWeaponStance / buildProceduralFishingRod';
-          targetForBounds = weaponGroup;
-        } else if (isDescendantOf(hitObj, playerUnit?.root)) {
-          semanticName = `PlayerCharacter (${nearestBoneName !== 'none' ? `near ${nearestBoneName}` : 'AvatarMesh'})`;
-          hierarchyPath = `PlayerUnit > CharacterMesh (${nearestBoneName})`;
-          suggestedSourceFile =
-            'src/game/buddiesBlitzShadersAndAssets.ts -> updateCharacterWeaponStance';
-          targetForBounds = playerUnit?.root ?? hitObj;
-        } else if (isDescendantOf(hitObj, tidewaterFishing3DGroup)) {
-          semanticName = `Fishing3D (Bobber / Catenary Line / Water Fish)`;
-          hierarchyPath = `tidewaterFishing3DGroup > ${hitObj.name || hitObj.type}`;
-          suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Tidewater 3D Fishing Loop)';
-        } else if (isDescendantOf(hitObj, lobbyCafeNpc?.npcGrp)) {
-          semanticName = 'NPC Hana (Lobby Cafe Merchant)';
-          hierarchyPath = 'Scene > lobbyCafeNpc.npcGrp';
-          suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Lobby Cafe NPC Hana)';
-          targetForBounds = lobbyCafeNpc.npcGrp;
-        } else if (isDescendantOf(hitObj, beachHouseNpc?.npcGrp)) {
-          semanticName = 'NPC Kai (Beach House Merchant)';
-          hierarchyPath = 'Scene > beachHouseNpc.npcGrp';
-          suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Beach House NPC Kai)';
-          targetForBounds = beachHouseNpc.npcGrp;
-        } else {
-          // Check AI Buddy Units
-          const matchedBuddy = buddyUnits.find((bu) => isDescendantOf(hitObj, bu.root));
-          if (matchedBuddy) {
-            semanticName = `AI Buddy #${matchedBuddy.id} (${matchedBuddy.classId.toUpperCase()})`;
-            hierarchyPath = `Scene > buddyUnits[${matchedBuddy.id}].root`;
-            suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (AI Buddy Unit)';
-            targetForBounds = matchedBuddy.root;
-          } else {
-            // World Prop / Building / Water / Terrain classification
-            let topGroup: THREE.Object3D = hitObj;
-            while (topGroup.parent && topGroup.parent !== scene) {
-              topGroup = topGroup.parent;
-            }
-            const meshMat = (hitObj as THREE.Mesh).material as THREE.Material & {
-              color?: THREE.Color;
-            };
-            const matColorHex = meshMat?.color ? `#${meshMat.color.getHexString()}` : '';
-            const geoType = (hitObj as THREE.Mesh).geometry?.type || hitObj.type;
-            const bInfo = projectObjectBoundsToScreenRect(hitObj);
-            const isWaterLike =
-              Math.abs(primaryHit.point.y) < 1.2 &&
-              bInfo.sizeMeters.w > 18 &&
-              bInfo.sizeMeters.d > 18 &&
-              bInfo.sizeMeters.h < 2.5;
-            const isTerrainGround =
-              bInfo.sizeMeters.w > 80 && bInfo.sizeMeters.d > 80;
-
-            if (isWaterLike) {
-              semanticName = `Water / Lake Surface @ [${primaryHit.point.x.toFixed(1)}, ${primaryHit.point.z.toFixed(1)}]`;
-              hierarchyPath = `Scene > WaterSurface (${geoType})`;
-              suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Water Shader & Lake Surface)';
-            } else if (isTerrainGround) {
-              semanticName = `Terrain Ground @ [${primaryHit.point.x.toFixed(1)}, ${primaryHit.point.y.toFixed(1)}, ${primaryHit.point.z.toFixed(1)}]`;
-              hierarchyPath = `Scene > TerrainMesh (${geoType})`;
-              suggestedSourceFile = 'src/game/BuddiesBlitzArena.tsx (Terrain & World Layout)';
-            } else {
-              semanticName = `${topGroup.name || hitObj.name || 'WorldObject_3D'} (${geoType}${matColorHex ? ` ${matColorHex}` : ''} · ${bInfo.sizeMeters.w}x${bInfo.sizeMeters.h}x${bInfo.sizeMeters.d}m)`;
-              hierarchyPath = `Scene > ${topGroup.name || topGroup.type} > ${hitObj.name || geoType}`;
-              suggestedSourceFile = `src/game/BuddiesBlitzArena.tsx (World Object @ x=${bInfo.centerWorld.x}, z=${bInfo.centerWorld.z})`;
-            }
-          }
-        }
-      }
-
-      const screenBounds = targetForBounds
-        ? projectObjectBoundsToScreenRect(targetForBounds)
-        : {
-            x: detail.clientX - 24,
-            y: detail.clientY - 24,
-            w: 48,
-            h: 48,
-            sizeMeters: { w: 0, h: 0, d: 0 },
-            centerWorld: { x: 0, y: 0, z: 0 },
-          };
-      if (targetForBounds) {
-        lastInspectedWorldObject3D = targetForBounds;
-      }
-
-      const weaponLocalPos = weaponGroup
-        ? {
-            x: Number(weaponGroup.position.x.toFixed(3)),
-            y: Number(weaponGroup.position.y.toFixed(3)),
-            z: Number(weaponGroup.position.z.toFixed(3)),
-          }
-        : null;
-      const weaponLocalRotDeg = weaponGroup
-        ? {
-            x: Number((weaponGroup.rotation.x * rad2deg).toFixed(1)),
-            y: Number((weaponGroup.rotation.y * rad2deg).toFixed(1)),
-            z: Number((weaponGroup.rotation.z * rad2deg).toFixed(1)),
-          }
-        : null;
-
-      detail.onResult({
-        meshName: semanticName,
-        hierarchyPath,
-        hitPointWorld: primaryHit
-          ? {
-              x: Number(primaryHit.point.x.toFixed(2)),
-              y: Number(primaryHit.point.y.toFixed(2)),
-              z: Number(primaryHit.point.z.toFixed(2)),
-            }
-          : nearestHotspot?.worldPos ?? null,
-        screenBounds,
-        nearestBoneName,
-        nearestBoneDistPx: Number.isFinite(nearestBoneDistPx) ? Number(nearestBoneDistPx.toFixed(1)) : 999,
-        nearestBoneWorld,
-        nearestBoneLocalRotDeg,
-        activeWeaponId,
-        fishingPhase: tidewaterFishingSync.phase,
-        weaponLocalPos,
-        weaponLocalRotDeg,
-        rodFlexPivotRotXDeg: rodFlexPivot
-          ? Number((rodFlexPivot.rotation.x * rad2deg).toFixed(1))
-          : null,
-        suggestedSourceFile,
-        hotspots: sortedHotspots.map((h) => ({
-          id: h.id,
-          label: h.label,
-          category: h.category,
-          screenX: h.screenX,
-          screenY: h.screenY,
-          distPx: h.distPx,
-          worldPos: h.worldPos,
-          sourceFile: h.sourceFile,
-        })),
-      });
-    };
-
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
     window.addEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
-    window.addEventListener('bb-inspect-3d-pick', onInspect3DPick);
-    window.addEventListener('bb-inspect-3d-tweak', onInspect3DTweak);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
@@ -12100,7 +11832,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isSafezoneMode: cityArenaMode === 'safezone',
                 plot: gatePlot,
                 unitWalletOrId: isPlayerControlled
-                  ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'commander-p1.near'
+                  ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'unverified-guest'
                   : `visitor-${moverKey}`,
                 isPlotOwnerOverride:
                   cityArenaMode === 'safezone'
@@ -12150,6 +11882,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 res.impactSpeed,
               );
               shakeTrauma = Math.min(1, shakeTrauma + Math.min(0.34, res.impactSpeed * 0.024));
+            }
+          }
+        }
+      }
+
+      // 1B. Solid Standing NPC Merchant Body Colliders (Merchant Hana at Central Plaza & Merchant Kai at Beachfront Harbor)
+      if (worldModeRef.current !== 'warzone' && moverAltitude < 3.85) {
+        for (const standingNpc of [lobbyCafeNpc, beachHouseNpc]) {
+          if (!standingNpc?.npcGrp?.visible) continue;
+          const npcX = standingNpc.npcGrp.position.x;
+          const npcZ = standingNpc.npcGrp.position.z;
+          if (Math.abs(mover.x - npcX) > 4.5 || Math.abs(mover.z - npcZ) > 4.5) continue;
+          for (const hs of hullSpheres) {
+            const sx = mover.x + hs.ox;
+            const sz = mover.z + hs.oz;
+            const res = resolveSolidCollision2D(
+              sx,
+              sz,
+              mover.vx,
+              mover.vz,
+              hs.r,
+              npcX,
+              npcZ,
+              0.56,
+              0.22,
+            );
+            if (res.collided) {
+              mover.x = wrapPlanetCoord(res.x - hs.ox);
+              mover.z = wrapPlanetCoord(res.z - hs.oz);
+              mover.vx = res.vx;
+              mover.vz = res.vz;
             }
           }
         }
@@ -12655,9 +12418,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       halfLen: number;
       halfWidth: number;
     }[] = [
-      // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Widened East Tram Shelter Platform at (-61.67, 0.0) + 4 Public Warzone Crate Pads exclude grass
+      // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + All 4 Halte Tram Platforms + 4 Public Warzone Crate Pads exclude grass
       { x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 },
       { x: -61.67, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
+      { x: 6.5, z: -44.67, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
+      { x: -36.5, z: 44.67, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
+      { x: 79.63, z: 29.5, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
       ...PUBLIC_WARZONE_CRATE_PADS.map((p) => ({
         x: p.worldX,
         z: p.worldZ,
@@ -12686,15 +12452,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const initialSearchParams =
       typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const isFullMapOverview = initialSearchParams?.get('fullmap') === '1';
-    const planeViewMode = initialSearchParams?.get('planeview') ?? null;
-    const skyshieldViewMode = initialSearchParams?.get('skyshieldview') ?? null;
-    const buildingViewMode = initialSearchParams?.get('buildingview') ?? null;
+    const isDevBuild = Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+    const isFullMapOverview = isDevBuild && initialSearchParams?.get('fullmap') === '1';
+    const planeViewMode = isDevBuild ? (initialSearchParams?.get('planeview') ?? null) : null;
+    const skyshieldViewMode = isDevBuild
+      ? (initialSearchParams?.get('skyshieldview') ?? null)
+      : null;
+    const buildingViewMode = isDevBuild
+      ? (initialSearchParams?.get('buildingview') ?? null)
+      : null;
+    const debugShowcaseBgColor = new THREE.Color('#dfd7c8');
+    const debugOrthoCam = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
 
     const cachedLobbyPortalsObj = scene.getObjectByName('LobbyGapuraPortalsGroup3D');
-    const cachedLobbyNearTermObj = scene.getObjectByName('LobbyNearGamepassTerminal3D');
-    const cachedLobbyGoldExchObj = scene.getObjectByName('LobbyGoldExchangeBooth3D');
     const cachedHalteReturnPadsObj = scene.getObjectByName('HalteLobbyReturnPadsGroup3D');
+    const cachedCentralHalteShelterStructure = scene.getObjectByName('HalteShelterStructure_central_plaza');
+    const cachedNorthResidenceHalte = scene.getObjectByName('ModernUrbanTramStopShelter_north_residence');
+    const cachedSouthResidenceHalte = scene.getObjectByName('ModernUrbanTramStopShelter_south_residence');
+    const cachedBeachfrontHarborHalte = scene.getObjectByName('ModernUrbanTramStopShelter_beachfront_harbor');
+    const cachedCityTransitNetworkGroup = scene.getObjectByName('CityTransitNetworkGroup3D');
 
     const getCachedVehicleContactShadow = (v: TankVehicle): THREE.Object3D | null => {
       if (v.root.userData.__contactShadowDisc === undefined) {
@@ -12740,6 +12516,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       windUniforms.uTime.value = timeSec;
       windUniforms.uWindPhase.value = timeSec * 4.8;
       windUniforms.uWindGust.value = 0.25 + 0.25 * Math.sin(timeSec * 1.7);
+
+      // Anime Skybox & Sparkles Parallax Tracking
+      if (animeSkyDomeMesh) {
+        animeSkyDomeMesh.position.copy(camera.position);
+        animeSkyDomeMesh.rotation.y += dt * 0.003;
+      }
+      if (animeSparklePoints) {
+        animeSparklePoints.position.copy(camera.position);
+        animeSparklePoints.rotation.y += dt * 0.006;
+      }
+
       const activeFocusUnit = mountedTank ? mountedTank : playerUnit;
       const nukePrePose =
         nukeStrikeState.phase !== 'idle'
@@ -13079,9 +12866,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           if (supplyStep.landedPayload) {
             const payload = supplyStep.landedPayload;
+            const centralFallback = pickRandomWarzoneDropCoord();
+            let dropX = clamp(payload.x + (Math.random() - 0.5) * 10.0, -44.0, 44.0);
+            let dropZ = clamp(payload.z + (Math.random() - 0.5) * 10.0, -26.0, 26.0);
+            if (
+              Math.abs(payload.x) > 46.0 ||
+              Math.abs(payload.z) > 28.0 ||
+              evaluateNwLakeSdf(dropX, dropZ) <= 2.5 ||
+              evaluateRoadNetworkSdf(dropX, dropZ) <= 1.2
+            ) {
+              dropX = centralFallback.x;
+              dropZ = centralFallback.z;
+            }
             supplyDropBeaconLingeringTimer = 10.0;
-            // 1. Spawn 1 Indestructible Special Metallic Crate (65% Silver Metallic / 35% Shiny Gold Metallic)
-            spawnWorldCrate(payload.metallicCrateKind, payload.x, payload.z, false);
+            // 1. Spawn 1 Indestructible Special Metallic Crate (65% Silver Metallic / 35% Shiny Gold Metallic) in Central Combat Arena
+            spawnWorldCrate(payload.metallicCrateKind, dropX, dropZ, false);
 
             // 1b. Refill Player Ammo on Supply Drop Event + Spawn 3 Supply Ammo Packs & Tactical Grenade/Land Mine Packs!
             if (playerUnit && playerUnit.alive) {
@@ -13094,8 +12893,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             for (let ai = 0; ai < 3; ai++) {
               const angle = (ai / 3) * Math.PI * 2 + 0.35;
               const rad = 1.7 + Math.random() * 1.3;
-              const ax = wrapPlanetCoord(payload.x + Math.cos(angle) * rad);
-              const az = wrapPlanetCoord(payload.z + Math.sin(angle) * rad);
+              const ax = wrapPlanetCoord(dropX + Math.cos(angle) * rad);
+              const az = wrapPlanetCoord(dropZ + Math.sin(angle) * rad);
               spawnWorldPickup('ammo', 'SUPPLY AMMO (+60 ROUNDS)', ax, az, {
                 remainingAmmo: 60,
                 vx: Math.cos(angle) * 2.4,
@@ -13106,8 +12905,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             for (const secKind of ['hand_grenade', 'land_mine'] as const) {
               const angle = secKind === 'hand_grenade' ? 0.95 : 2.55;
               const rad = 2.0;
-              const sx = wrapPlanetCoord(payload.x + Math.cos(angle) * rad);
-              const sz = wrapPlanetCoord(payload.z + Math.sin(angle) * rad);
+              const sx = wrapPlanetCoord(dropX + Math.cos(angle) * rad);
+              const sz = wrapPlanetCoord(dropZ + Math.sin(angle) * rad);
               spawnWorldPickup(
                 'secondary',
                 secKind === 'hand_grenade' ? 'HG-04 Frag Grenade' : 'TM-89 Land Mine',
@@ -13127,8 +12926,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             for (let gi = 0; gi < payload.goldCoinCount; gi++) {
               const angle = (gi / Math.max(1, payload.goldCoinCount)) * Math.PI * 2 + Math.random() * 0.35;
               const rad = 1.6 + Math.random() * 2.1;
-              const gx = wrapPlanetCoord(payload.x + Math.cos(angle) * rad);
-              const gz = wrapPlanetCoord(payload.z + Math.sin(angle) * rad);
+              const gx = wrapPlanetCoord(dropX + Math.cos(angle) * rad);
+              const gz = wrapPlanetCoord(dropZ + Math.sin(angle) * rad);
               spawnWorldPickup(
                 'coin_gold',
                 `SUPPLY DROP GOLD (+${payload.goldCoinValue}G)`,
@@ -13147,8 +12946,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             for (let mi = 0; mi < payload.medkitCount; mi++) {
               const angle = (mi / Math.max(1, payload.medkitCount)) * Math.PI * 2 + 0.65;
               const rad = 1.9 + Math.random() * 1.4;
-              const mx = wrapPlanetCoord(payload.x + Math.cos(angle) * rad);
-              const mz = wrapPlanetCoord(payload.z + Math.sin(angle) * rad);
+              const mx = wrapPlanetCoord(dropX + Math.cos(angle) * rad);
+              const mz = wrapPlanetCoord(dropZ + Math.sin(angle) * rad);
               spawnWorldPickup(
                 'health',
                 'SUPPLY MEDKIT (+65 HP)',
@@ -13163,10 +12962,39 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               );
             }
 
-            playSpatialSoundAt(payload.x, payload.z, 65.0, 12.0, () => {
+            // 4. Random Warzone Vehicle Airdrop (Tank, Fighter Plane, or Dump Truck) strictly in Central Arena
+            const vehRoll = Math.random();
+            const vehSpawnAngle = Math.random() * Math.PI * 2;
+            const vehSpawnDist = 3.6 + Math.random() * 2.4;
+            const vx = clamp(dropX + Math.cos(vehSpawnAngle) * vehSpawnDist, -46.0, 46.0);
+            const vz = clamp(dropZ + Math.sin(vehSpawnAngle) * vehSpawnDist, -28.0, 28.0);
+            const vehYaw = Math.random() * Math.PI * 2;
+
+            if (vehRoll < 0.42) {
+              // Airdrop Tank
+              const airdropTank = createBlitzTankVehicle(vx, vz, Math.random() < 0.35, 'blue');
+              airdropTank.hullYaw = vehYaw;
+              airdropTank.bodyGroup.rotation.y = vehYaw;
+              tanks.push(airdropTank);
+              spawnBurstParticles(vx, 2.0, vz, 22);
+            } else if (vehRoll < 0.72) {
+              // Airdrop Fighter Plane
+              const airdropPlane = createBlitzPlaneVehicle(vx, vz, 'blue');
+              airdropPlane.hullYaw = vehYaw;
+              airdropPlane.bodyGroup.rotation.y = vehYaw;
+              tanks.push(airdropPlane);
+              spawnBurstParticles(vx, 2.2, vz, 24);
+            } else {
+              // Airdrop Dump Truck
+              const airdropTruck = createBlitzDumpTruckVehicle(vx, vz, 'blue', vehYaw);
+              tanks.push(airdropTruck);
+              spawnBurstParticles(vx, 2.0, vz, 20);
+            }
+
+            playSpatialSoundAt(dropX, dropZ, 65.0, 12.0, () => {
               soundEngine.playPowerCore();
             });
-            spawnBurstParticles(payload.x, getTerrainElevation(payload.x, payload.z) + 1.5, payload.z, 24);
+            spawnBurstParticles(dropX, getTerrainElevation(dropX, dropZ) + 1.5, dropZ, 24);
             kioskStatusMessage =
               payload.metallicCrateKind === 'gold_metallic'
                 ? `SUPPLY DROP MENDARAT DI ${payload.locationName}! (SHINY GOLD METALLIC BOX + ${payload.goldCoinCount} KOIN + ${payload.medkitCount} MEDKIT)`
@@ -13422,6 +13250,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                     }
                   }
                   if (loadedIntoTruck) continue;
+                }
+              }
+            }
+
+            // Despawn ALL uncollected crates (including metallic Iron/Gold boxes) over time to prevent oversupply & lag
+            if (c.state === 'grounded' && c.carrierId === null) {
+              if (c.decayTimerSec !== undefined && c.totalDecaySec !== undefined && c.totalDecaySec > 0) {
+                c.decayTimerSec -= dt;
+                // Rapidly blink during the final 10 seconds of lifetime
+                if (c.decayTimerSec <= 10.0) {
+                  const blinkPeriod = c.decayTimerSec <= 4.0 ? 0.12 : 0.28;
+                  const isVisible = Math.floor(c.decayTimerSec / blinkPeriod) % 2 === 0;
+                  c.mesh.visible = isVisible;
+                }
+                if (c.decayTimerSec <= 0) {
+                  spawnBurstParticles(c.x, c.y + 0.5, c.z, 8);
+                  scene.remove(c.mesh);
+                  worldCrates.splice(ci, 1);
+                  continue;
                 }
               }
             }
@@ -14190,8 +14037,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   });
 
             const inputLen = Math.hypot(moveX, moveZ);
-            // Ghost Movement Fix: Player unit is NEVER moved by AI pathfinding and immediately halts (vx = 0, vz = 0) when no WASD/Arrow keys are pressed!
-            if (inputLen > 0.01) {
+            const isFishingActive = tidewaterFishingSync.phase !== 'idle';
+            if (isFishingActive) {
+              playerUnit.vx = 0;
+              playerUnit.vz = 0;
+              if (tidewaterFishingSync.hasLockedCastYaw) {
+                playerUnit.yaw = tidewaterFishingSync.castOriginYaw;
+              }
+            } else if (inputLen > 0.01) {
               if (playerUnit.isSitting && activeSeatedSpot) {
                 playerUnit.x = wrapPlanetCoord(
                   activeSeatedSpot.x + Math.cos(activeSeatedSpot.yaw) * 0.88,
@@ -14233,14 +14086,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               if (!(playerUnit.isSitting && activeSeatedSpot)) {
                 resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);
               }
-              // Enforce Concrete Wall Boundary (x = -76.2) between Lobby and City:
-              // - In Lobby scene (worldModeRef.current === 'lobby'), clamp player inside Lobby (x <= -76.55)
-              // - In City scene (warzone/safezone), prevent walking through the concrete wall into Lobby (x >= -75.85)
-              if (worldModeRef.current === 'lobby') {
-                if (playerUnit.x > LOBBY_SAFEZONE_BOUNDS.maxX - 0.35) {
-                  playerUnit.x = LOBBY_SAFEZONE_BOUNDS.maxX - 0.35;
-                }
-              } else if (
+              // Open The City flow: in 'lobby' or 'safezone' (The City), players can walk freely between Central Plaza and the city streets!
+              // Only in 'warzone' do we prevent walking into the peaceful Central Plaza terrace (x < -75.85).
+              if (
+                worldModeRef.current === 'warzone' &&
                 playerUnit.x < LOBBY_SAFEZONE_BOUNDS.maxX + 0.35 &&
                 Math.abs(playerUnit.z) < LOBBY_SAFEZONE_BOUNDS.maxZ
               ) {
@@ -14321,10 +14170,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               playerUnit.carryingCrate === 'none' &&
               playerUnit.weaponId !== 'unarmed' &&
               playerUnit.weaponId !== 'fishing_rod';
-            if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+            if (isFishingActive) {
+              if (tidewaterFishingSync.hasLockedCastYaw) {
+                playerUnit.yaw = tidewaterFishingSync.castOriginYaw;
+              }
+            } else if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
               if (inputLen > 0.01) {
                 playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
               }
+            } else if (playerUnit.isSitting && activeSeatedSpot) {
+              playerUnit.yaw = activeSeatedSpot.yaw;
             } else if ((isPointerDown || isArmedAimStance) && Math.hypot(aimDx, aimDz) > 0.2) {
               playerUnit.yaw = Math.atan2(-aimDz, aimDx);
             } else if (inputLen > 0.01) {
@@ -14354,24 +14209,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               playerUnit.shootCooldown = Math.max(0, playerUnit.shootCooldown - dt);
             }
             if (
-              isPointerDown &&
-              playerUnit.carryingCrate === 'none' &&
-              playerUnit.weaponId === 'fishing_rod' &&
-              playerUnit.shootCooldown <= 0
-            ) {
-              if (Math.hypot(aimDx, aimDz) > 0.2) {
-                playerUnit.yaw = Math.atan2(-aimDz, aimDx);
-              }
-              playerUnit.shootCooldown = 1.25;
-              playerUnit.weaponRecoil = 0.85;
-              soundEngine.playPickup();
-              const fwdX = Math.cos(playerUnit.yaw);
-              const fwdZ = -Math.sin(playerUnit.yaw);
-              const castX = wrapPlanetCoord(playerUnit.x + fwdX * 3.4);
-              const castZ = wrapPlanetCoord(playerUnit.z + fwdZ * 3.4);
-              const castY = getTerrainElevation(castX, castZ) + 0.3;
-              spawnBurstParticles(castX, castY, castZ, 12);
-            } else if (
               isPointerDown &&
               !playerWeaponTriggerLocked &&
               playerUnit.carryingCrate === 'none' &&
@@ -15189,9 +15026,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
                   const moveSpd = Math.hypot(b.vx, b.vz);
                   if (moveSpd > 0.05 && b.saluteTimer <= 1.1) {
+                    const prevBx = b.x;
+                    const prevBz = b.z;
                     b.x = wrapPlanetCoord(b.x + b.vx * dt);
                     b.z = wrapPlanetCoord(b.z + b.vz * dt);
                     resolveMoverWorldCollisions(b, `ai_buddy_${b.id}`, false, 0.70, 2.0, timeSec, false);
+                    const actualStep = getPlanetShortestDistance(prevBx, prevBz, b.x, b.z);
+                    if (actualStep < moveSpd * dt * 0.25) {
+                      b.navRepathTimer = 0;
+                      b.vx = (b.x - prevBx) / Math.max(dt, 0.008);
+                      b.vz = (b.z - prevBz) / Math.max(dt, 0.008);
+                    }
+                  } else {
+                    b.vx = 0;
+                    b.vz = 0;
                   }
                 }
               }
@@ -15268,15 +15116,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   stopRadius: 0.48,
                 });
                 if (!aiStep.arrived && b.saluteTimer <= 1.1) {
+                  const prevBx = b.x;
+                  const prevBz = b.z;
                   b.vx = aiStep.vx;
                   b.vz = aiStep.vz;
                   b.x = wrapPlanetCoord(b.x + aiStep.stepDx);
                   b.z = wrapPlanetCoord(b.z + aiStep.stepDz);
                   resolveMoverWorldCollisions(b, `ai_buddy_${b.id}`, false, 0.70, 2.0, timeSec, false);
-                  b.yaw =
+                  const expectedStep = Math.hypot(aiStep.stepDx, aiStep.stepDz);
+                  const actualStep = getPlanetShortestDistance(prevBx, prevBz, b.x, b.z);
+                  if (expectedStep > 0.01 && actualStep < expectedStep * 0.25) {
+                    b.navRepathTimer = 0;
+                    b.vx = (b.x - prevBx) / Math.max(dt, 0.008);
+                    b.vz = (b.z - prevBz) / Math.max(dt, 0.008);
+                  }
+                  const targetYaw =
                     activeRangedStandoff && activeRangedStandoff.canShootNow
                       ? activeRangedStandoff.aimYaw
-                      : Math.atan2(-b.vz, b.vx);
+                      : Math.hypot(b.vx, b.vz) > 0.08
+                        ? Math.atan2(-b.vz, b.vx)
+                        : b.yaw;
+                  const yawDiff = Math.atan2(Math.sin(targetYaw - b.yaw), Math.cos(targetYaw - b.yaw));
+                  b.yaw += yawDiff * Math.min(1.0, dt * 14.0);
 
                   // Post-step target arrival check so high-speed Harvesters immediately collect/stack crates on arrival without overshooting!
                   if (
@@ -15870,34 +15731,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               b.bodyGroup.visible = b.isPlayer ? iFrameState.spriteVisible : true;
             } else if (!b.bodyGroup.visible) {
               b.bodyGroup.visible = true;
-            }
-          }
-
-          // Red Team Stacking Pad Auto-Crafter ONLY in 'match' mode
-          if (currentPlayMode === 'match') {
-            const redEval = evaluateStackingPadRecipe(redPadSlots);
-            if (redEval.totalCrates >= 2) {
-              redCraftTimer += dt;
-              if (redCraftTimer >= 3.0) {
-                redCraftTimer = 0;
-                const activeRed = buddyUnits.filter((u) => u.team === 'red' && u.alive).length;
-                if (activeRed < 5) {
-                  buddyUnits.push(
-                    createBuddyCharacterUnit(
-                      'red',
-                      false,
-                      redEval.isSuper ? 'Cyborg' : 'Commando',
-                      redBase.padX - 2.5,
-                      redBase.padZ + 2.0,
-                      0,
-                      false,
-                      false,
-                    ),
-                  );
-                }
-                redPadSlots = ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'];
-                syncPadVisuals(redBase, redPadSlots, 'RED', redBaseHp);
-              }
             }
           }
 
@@ -16742,7 +16575,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             if (isBaseWeaponStock) {
               pk.lifeRemainingSec = pk.totalLifeSec;
               pk.mesh.visible = true;
-            } else if (pk.isFromDeathDrop && pk.totalLifeSec > 0) {
+            } else if (pk.totalLifeSec > 0) {
               pk.lifeRemainingSec -= dt;
               const despawnState = evaluateDroppedItemDespawnState(pk.lifeRemainingSec, pk.totalLifeSec);
               pk.mesh.visible = despawnState.visible;
@@ -17321,7 +17154,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (buildingViewMode) {
         scene.fog = null;
-        scene.background = new THREE.Color('#dfd7c8');
+        scene.background = debugShowcaseBgColor;
         let showcaseBase = scene.getObjectByName('ShowcaseBaseMasterplanRoot') as THREE.Group | null;
         if (!showcaseBase) {
           showcaseBase = new THREE.Group();
@@ -17603,6 +17436,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.fov = desiredPlayFov;
           camera.updateProjectionMatrix();
         }
+        lobbyCafeNpc.npcGrp.position.y = getTerrainElevation(
+          lobbyCafeNpc.npcGrp.position.x,
+          lobbyCafeNpc.npcGrp.position.z,
+        );
+        beachHouseNpc.npcGrp.position.y = getTerrainElevation(
+          beachHouseNpc.npcGrp.position.x,
+          beachHouseNpc.npcGrp.position.z,
+        );
         lobbyCafeNpc.npcGrp.rotation.y = Math.PI / 2;
         beachHouseNpc.npcGrp.rotation.y = Math.PI / 2;
         lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
@@ -17621,7 +17462,95 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         lobbyCafeNpc.exclamationGroup.visible = hasActiveEvent && worldModeRef.current === 'lobby';
         beachHouseNpc.exclamationGroup.visible = hasActiveEvent && worldModeRef.current !== 'lobby';
         const inLobbyForCamera = worldModeRef.current === 'lobby';
-        if (playerUnit && playerUnit.isSitting && activeSeatedSpot && state === 'playing') {
+        if (activeTramRideCutscene && activeTramRideCutscene.active) {
+          resetAllPlayerMovementInputs();
+          const wallElapsedSec = Math.max(
+            0,
+            (performance.now() - activeTramRideCutscene.startedAtMs) / 1000,
+          );
+          activeTramRideCutscene.elapsedSec = Math.max(
+            activeTramRideCutscene.elapsedSec + Math.min(rawDt, 0.08),
+            wallElapsedSec,
+          );
+          cityTramDistance += Math.min(rawDt, 0.08) * 18.5;
+          cityTram.update(cityTramDistance, Math.min(rawDt, 0.08), playerUnit?.x ?? 0, playerUnit?.z ?? 0, 0);
+          const tramCutsceneState = cityTram.getState();
+          const cutStep = evaluateTramRideTransitionStep({
+            elapsedSec: activeTramRideCutscene.elapsedSec,
+            durationSec: activeTramRideCutscene.durationSec,
+            originStationId: activeTramRideCutscene.originStationId,
+            destinationStationId: activeTramRideCutscene.destinationStationId,
+            tramLeadX: tramCutsceneState.car1.x,
+            tramLeadZ: tramCutsceneState.car1.z,
+            tramLeadYaw: tramCutsceneState.car1.yaw,
+            destinationId: activeTramRideCutscene.destinationStationId,
+          });
+          camera.up.set(0, 1, 0);
+          camera.position.set(cutStep.cameraX, cutStep.cameraY, cutStep.cameraZ);
+          camera.lookAt(cutStep.lookAtX, cutStep.lookAtY, cutStep.lookAtZ);
+          camera.updateMatrixWorld();
+          window.dispatchEvent(
+            new CustomEvent('city-tram-ride-progress', {
+              detail: {
+                progress01: cutStep.eased01,
+                originStationId: activeTramRideCutscene.originStationId,
+                destinationStationId: activeTramRideCutscene.destinationStationId,
+              },
+            }),
+          );
+
+          if (cutStep.isComplete && playerUnit) {
+            const finishedCutscene = activeTramRideCutscene;
+            activeTramRideCutscene = null;
+            const destSpec = getCityTransitDestinationById(finishedCutscene.destinationStationId);
+            lastArrivedTransitStationId = destSpec.id;
+            const nextWorldMode: WorldMode =
+              finishedCutscene.targetWorldMode === 'warzone'
+                ? 'warzone'
+                : finishedCutscene.destinationStationId === 'central_plaza'
+                  ? 'lobby'
+                  : 'safezone';
+            if (finishedCutscene.targetWorldMode === 'warzone') {
+              confirmLobbyFactionPortalDeploy(finishedCutscene.team ?? playerUnit.team);
+            } else {
+              worldModeRef.current = nextWorldMode;
+              releaseActiveNearSessionBaseAndHarvesters();
+              syncCityArenaModeWorldVisibility('safezone');
+              cityTramDistance = destSpec.tramTrackDistance;
+              cityTram.update(cityTramDistance, 0, destSpec.spawnX, destSpec.spawnZ, 0);
+              playerUnit.alive = true;
+              playerUnit.maxHp = PLAYER_WARZONE_MAX_HP;
+              playerUnit.hp = playerUnit.maxHp;
+              playerUnit.x = destSpec.spawnX;
+              playerUnit.z = destSpec.spawnZ;
+              playerUnit.vx = 0;
+              playerUnit.vz = 0;
+              playerUnit.vy = 0;
+              playerUnit.yaw = destSpec.spawnYaw;
+              playerUnit.root.visible = true;
+              playerUnit.weaponId = 'unarmed';
+              playerUnit.rig.weaponRigGroup.visible = false;
+              playerUnit.rig.pistolGroup.visible = false;
+              syncUnitFootRingTeamColor(playerUnit);
+              snapCameraAndStartSpawnBlink(playerUnit);
+              tolanPlanetEnv.update(playerUnit.x, playerUnit.z, camera.position, timeSec);
+              renderer.render(scene, camera);
+              soundEngine.playPickup();
+              spawnBurstParticles(playerUnit.x, 1.5, playerUnit.z, 18);
+              worldModeRef.current = nextWorldMode;
+              emitHudImmediately();
+            }
+            window.dispatchEvent(
+              new CustomEvent('city-tram-ride-complete', {
+                detail: {
+                  destinationStationId: finishedCutscene.destinationStationId,
+                  worldMode: nextWorldMode,
+                  targetWorldMode: finishedCutscene.targetWorldMode,
+                },
+              }),
+            );
+          }
+        } else if (playerUnit && playerUnit.isSitting && activeSeatedSpot && state === 'playing') {
           // 3rd-Person Perspective Camera When Sitting on a Bench/Chair (matching Reference Image)
           const seatedFov = 50;
           if (camera.fov !== seatedFov) {
@@ -17675,13 +17604,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // =======================================================================
-      // 4B-0. STRICT SCENE VISUAL ISOLATION (LOBBY vs KOTA WARZONE/SAFEZONE)
+      // 4B-0. OPEN "THE CITY" vs "WARZONE ARENA" SCENE VISIBILITY
       // =======================================================================
-      const isLobbySceneActive = worldModeRef.current === 'lobby';
-      if (cachedLobbyPortalsObj) cachedLobbyPortalsObj.visible = isLobbySceneActive;
-      if (cachedLobbyNearTermObj) cachedLobbyNearTermObj.visible = isLobbySceneActive;
-      if (cachedLobbyGoldExchObj) cachedLobbyGoldExchObj.visible = isLobbySceneActive;
-      if (cachedHalteReturnPadsObj) cachedHalteReturnPadsObj.visible = !isLobbySceneActive;
+      const isWarzoneActive = worldModeRef.current === 'warzone';
+      if (cachedLobbyPortalsObj) cachedLobbyPortalsObj.visible = false;
+      if (cachedHalteReturnPadsObj) cachedHalteReturnPadsObj.visible = true;
+      // Keep Halte shelter buildings, platforms, and canopies visible in both City and Warzone so visual geometry matches physical colliders
+      if (cachedCentralHalteShelterStructure) {
+        cachedCentralHalteShelterStructure.visible = true;
+      }
+      if (cachedNorthResidenceHalte) {
+        cachedNorthResidenceHalte.visible = true;
+      }
+      if (cachedSouthResidenceHalte) {
+        cachedSouthResidenceHalte.visible = true;
+      }
+      if (cachedBeachfrontHarborHalte) {
+        cachedBeachfrontHarborHalte.visible = true;
+      }
+      if (cachedCityTransitNetworkGroup) {
+        cachedCityTransitNetworkGroup.visible = true;
+      }
 
       // Update Glassmorphic Nametag Proximity Visibility (Show when player approaches within 8.5m or when selected)
       if (playerUnit?.nameplate?.sprite) {
@@ -17690,7 +17633,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         );
       }
       if (lobbyCafeNpc?.npcNameplate?.sprite) {
-        if (isLobbySceneActive && playerUnit && npcCameraMode === 'none') {
+        if (!isWarzoneActive && playerUnit && npcCameraMode === 'none') {
           const distCafe = Math.hypot(
             playerUnit.x - lobbyCafeNpc.npcGrp.position.x,
             playerUnit.z - lobbyCafeNpc.npcGrp.position.z,
@@ -17705,7 +17648,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
       if (beachHouseNpc?.npcNameplate?.sprite) {
-        if (!isLobbySceneActive && playerUnit && npcCameraMode === 'none') {
+        if (playerUnit && npcCameraMode === 'none') {
           const distBeach = Math.hypot(
             playerUnit.x - beachHouseNpc.npcGrp.position.x,
             playerUnit.z - beachHouseNpc.npcGrp.position.z,
@@ -17722,7 +17665,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       for (let i = 0; i < buddyUnits.length; i++) {
         const bu = buddyUnits[i];
         if (!bu.isPlayer && bu.nameplate?.sprite) {
-          if (!isLobbySceneActive && bu.alive && playerUnit) {
+          if (isWarzoneActive && bu.alive && playerUnit) {
             const distBu = Math.hypot(playerUnit.x - bu.x, playerUnit.z - bu.z);
             const isSelected = Boolean(
               selectedCharacterTarget && String(selectedCharacterTarget.id) === String(bu.id),
@@ -17734,7 +17677,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      if (isLobbySceneActive) {
+      if (!isWarzoneActive) {
         for (let i = 0; i < buddyUnits.length; i++) {
           const bu = buddyUnits[i];
           if (!bu.isPlayer) bu.root.visible = false;
@@ -17748,9 +17691,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         for (let i = 0; i < worldPickups.length; i++) {
           worldPickups[i].mesh.visible = false;
         }
+        // Keep all 8 White Tactical Kiosks visible on the 8 Residential House Plots across The City!
         for (const cp of [...blueBase.commanderPads, ...redBase.commanderPads]) {
           cp.padGroup.visible = false;
-          cp.kioskMesh.visible = false;
+          cp.kioskMesh.visible = true;
         }
         for (const pubPad of publicWarzonePads) {
           pubPad.padGroup.visible = false;
@@ -17763,11 +17707,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           cp.kioskMesh.visible = true;
         }
         for (const pubPad of publicWarzonePads) {
-          pubPad.padGroup.visible = worldModeRef.current === 'warzone';
+          pubPad.padGroup.visible = true;
         }
-        centerDropZoneGroup.visible = worldModeRef.current === 'warzone';
-        westSuperDropZoneGroup.visible = worldModeRef.current === 'warzone';
-        eastSuperDropZoneGroup.visible = worldModeRef.current === 'warzone';
+        centerDropZoneGroup.visible = true;
+        westSuperDropZoneGroup.visible = true;
+        eastSuperDropZoneGroup.visible = true;
       }
 
       // Update Flat Ground Map, Splatmap, Wildflowers, Stones, Dandelions & Sunbeams
@@ -17984,7 +17928,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isSafezoneMode: cityArenaMode === 'safezone',
                 plot: plotObj,
                 unitWalletOrId: b.isPlayer
-                  ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'commander-p1.near'
+                  ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'unverified-guest'
                   : `visitor-unit-${b.id}`,
                 isPlotOwnerOverride:
                   cityArenaMode === 'safezone'
@@ -18021,7 +17965,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 plot: plotObj,
                 unitWalletOrId:
                   v === mountedTank
-                    ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'commander-p1.near'
+                    ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'unverified-guest'
                     : `visitor-veh-${v.id}`,
                 isPlotOwnerOverride:
                   cityArenaMode === 'safezone'
@@ -19114,14 +19058,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 lookRight: [0.4, 4.45, 0],
               };
 
-        const orthoCam = new THREE.OrthographicCamera(
-          -cfg.orthoSize * aspect,
-          cfg.orthoSize * aspect,
-          cfg.orthoSize,
-          -cfg.orthoSize,
-          0.1,
-          100,
-        );
+        const orthoCam = debugOrthoCam;
+        orthoCam.left = -cfg.orthoSize * aspect;
+        orthoCam.right = cfg.orthoSize * aspect;
+        orthoCam.top = cfg.orthoSize;
+        orthoCam.bottom = -cfg.orthoSize;
+        orthoCam.updateProjectionMatrix();
         renderer.setScissorTest(true);
 
         const renderQuad = (
@@ -19159,14 +19101,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const halfH = Math.floor(h / 2);
         const aspect = halfW / Math.max(1, halfH);
         const orthoIsoSize = 1.62;
-        const orthoCam = new THREE.OrthographicCamera(
-          -orthoIsoSize * aspect,
-          orthoIsoSize * aspect,
-          orthoIsoSize,
-          -orthoIsoSize,
-          0.1,
-          100,
-        );
+        const orthoCam = debugOrthoCam;
+        orthoCam.left = -orthoIsoSize * aspect;
+        orthoCam.right = orthoIsoSize * aspect;
+        orthoCam.top = orthoIsoSize;
+        orthoCam.bottom = -orthoIsoSize;
+        orthoCam.updateProjectionMatrix();
         renderer.setScissorTest(true);
         windUniforms.uLightDirection.value.set(0.35, 0.88, 0.32).normalize();
 
@@ -19209,14 +19149,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const aspect = halfW / Math.max(1, halfH);
         const orthoFrontSize = 1.48;
         const orthoSideSize = 1.72;
-        const orthoCam = new THREE.OrthographicCamera(
-          -orthoFrontSize * aspect,
-          orthoFrontSize * aspect,
-          orthoFrontSize,
-          -orthoFrontSize,
-          0.1,
-          100,
-        );
+        const orthoCam = debugOrthoCam;
         const centerY = 0.98;
         renderer.setScissorTest(true);
 
@@ -19506,16 +19439,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         exitHouseRoomPromptBtn.style.display = 'none';
       }
 
-      // 0A-0. Floating "TALK" at Lobby Mini Café (-94.0, -13.8) or East Beach House (85.8, 60.0)
-      const dCafeNpc = getPlanetShortestDistance(actorX, actorZ, -94.0, -13.8);
-      const dBeachNpc = getPlanetShortestDistance(actorX, actorZ, 85.8, 60.0);
-      const nearCafeNow = worldModeRef.current === 'lobby' && dCafeNpc <= 6.2;
-      const nearBeachNow = worldModeRef.current !== 'lobby' && dBeachNpc <= 6.8;
+      // 0A-0. Floating "TALK" at Central Plaza Cafe (-94.0, -13.8) or East Beach House (85.8, 60.0)
+      // Bound strictly to live visible NPC mesh world position and tight <= 3.5m radius
+      let nearCafeNow = false;
+      let nearBeachNow = false;
+      let npcPromptWorldX = 0;
+      let npcPromptWorldZ = 0;
+      if (worldModeRef.current !== 'warzone' && lobbyCafeNpc?.npcGrp?.visible) {
+        lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+        if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
+          nearCafeNow = true;
+          npcPromptWorldX = scratchLiveObjPos.x;
+          npcPromptWorldZ = scratchLiveObjPos.z;
+        }
+      }
+      if (!nearCafeNow && beachHouseNpc?.npcGrp?.visible) {
+        beachHouseNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+        if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
+          nearBeachNow = true;
+          npcPromptWorldX = scratchLiveObjPos.x;
+          npcPromptWorldZ = scratchLiveObjPos.z;
+        }
+      }
       if ((nearCafeNow || nearBeachNow) && npcCameraMode === 'none' && !isKioskModalOpenCanvas) {
-        const mx = nearBeachNow ? 85.8 : -94.0;
-        const mz = nearBeachNow ? 60.0 : -13.8;
-        const my = getTerrainElevation(mx, mz) + 2.65;
-        const proj = projectWorldToScreenPixels(mx, my, mz);
+        const my = getTerrainElevation(npcPromptWorldX, npcPromptWorldZ) + 2.65;
+        const proj = projectWorldToScreenPixels(npcPromptWorldX, my, npcPromptWorldZ);
         const sx = proj.visible ? proj.x : clamp(proj.x, 96, Math.max(96, w - 96));
         const sy = proj.visible ? proj.y : clamp(proj.y, 64, Math.max(64, h - 64));
         npcMerchantPromptBtn.style.display = 'block';
@@ -19524,28 +19472,50 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcMerchantPromptBtn.style.display = 'none';
       }
 
-      // 0A-1. Floating "MASUK RUMAH [E]" at claimed plot doorway in Safezone City Mode
+      // 0A-1. Floating "ENTER HOUSE [E]" at active, visible House doorway in The City (<= 3.5m)
       let nearClaimedHouseDoorPos: { x: number; z: number } | null = null;
-      if (cityArenaMode === 'safezone' && worldModeRef.current === 'safezone' && npcCameraMode === 'none') {
-        for (let pi = 0; pi < 4; pi++) {
-          const bPlot = blueCommanderBases[pi];
-          if (isCommanderBasePlotActive(bPlot)) {
-            const pPad = blueBase.commanderPads[pi];
-            if (pPad && getPlanetShortestDistance(actorX, actorZ, pPad.worldX, pPad.worldZ) <= 10.5) {
-              nearClaimedHouseDoorPos = { x: pPad.worldX, z: pPad.worldZ };
-              break;
+      if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
+        const getPlotHouseVisList = (baseGroup: THREE.Group): boolean[] => {
+          const pcs = (
+            baseGroup as unknown as {
+              __plotControllers?: Array<{
+                plotRoot: THREE.Group;
+                lv1Building: THREE.Group;
+                lv2Building: THREE.Group;
+                lv3Building: THREE.Group;
+              }>;
             }
-          }
-          const rPlot = redCommanderBases[pi];
-          if (isCommanderBasePlotActive(rPlot)) {
-            const pPad = redBase.commanderPads[pi];
-            if (pPad && getPlanetShortestDistance(actorX, actorZ, pPad.worldX, pPad.worldZ) <= 10.5) {
-              nearClaimedHouseDoorPos = { x: pPad.worldX, z: pPad.worldZ };
-              break;
-            }
-          }
+          ).__plotControllers;
+          if (!pcs) return [true, false, false, false];
+          return pcs.map(
+            (pc) =>
+              Boolean(
+                pc.plotRoot.visible &&
+                  (pc.lv1Building.visible || pc.lv2Building.visible || pc.lv3Building.visible),
+              ),
+          );
+        };
+        const proxEval = evaluateBasePlotProximityTriggers({
+          actorX,
+          actorZ,
+          worldMode: worldModeRef.current,
+          blueCommanderBases,
+          redCommanderBases,
+          blueHqX: blueBase.hqX,
+          blueHqZ: blueBase.hqZ,
+          redHqX: redBase.hqX,
+          redHqZ: redBase.hqZ,
+          houseVisibilityByPlot: {
+            blue: getPlotHouseVisList(blueBase.baseGroup),
+            red: getPlotHouseVisList(redBase.baseGroup),
+          },
+          maxHouseDoorRadius: 3.5,
+        });
+        if (proxEval.canTriggerEnterHouseDoor && proxEval.nearestHouseDoorWorldPos) {
+          nearClaimedHouseDoorPos = proxEval.nearestHouseDoorWorldPos;
         }
       }
+      currentNearHouseDoorWorldPos = nearClaimedHouseDoorPos;
       if (nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
         const hy = getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z) + 3.2;
         const proj = projectWorldToScreenPixels(
@@ -19561,35 +19531,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         enterHousePromptBtn.style.display = 'none';
       }
 
-      // 0A & 0B. Teleport Kiosk Proximity Trigger (Mendekati -> Munculkan SVG Segi Enam di Mesin Kiosk)
-      let nearProximityKiosk: 'none' | 'lobby_warzone' | 'lobby_safezone' | 'halte_to_lobby' = 'none';
+      // 0A & 0B. Black City Transit Kiosk Proximity Trigger (Strictly disabled inside Warzone!)
+      let nearProximityKiosk: ActiveTransitKioskKey = 'none';
       let nearKioskWorldX = 0;
       let nearKioskWorldZ = 0;
-      if (npcCameraMode === 'none' && !isKioskModalOpenCanvas) {
-        if (worldModeRef.current === 'lobby') {
-          const dWz = getPlanetShortestDistance(actorX, actorZ, -81.8, -8.2);
-          const dSz = getPlanetShortestDistance(actorX, actorZ, -81.8, -14.8);
-          if (dWz <= 3.2 && dWz <= dSz) {
-            nearProximityKiosk = 'lobby_warzone';
-            nearKioskWorldX = -81.8;
-            nearKioskWorldZ = -8.2;
-          } else if (dSz <= 3.2) {
-            nearProximityKiosk = 'lobby_safezone';
-            nearKioskWorldX = -81.8;
-            nearKioskWorldZ = -14.8;
-          }
-        } else {
-          const dHalte = getPlanetShortestDistance(actorX, actorZ, -61.95, 0.0);
-          if (dHalte <= 3.2) {
-            nearProximityKiosk = 'halte_to_lobby';
-            nearKioskWorldX = -61.95;
-            nearKioskWorldZ = 0.0;
+      if (
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        !isKioskModalOpenCanvas &&
+        !activeTramRideCutscene?.active
+      ) {
+        const nearTransit = evaluateNearestCityTransitKioskProximity(
+          actorX,
+          actorZ,
+          worldModeRef.current,
+          3.5,
+        );
+        if (nearTransit.isNear) {
+          const kioskMesh = getCityTransitKioskMeshById(nearTransit.id);
+          if (kioskMesh && kioskMesh.visible) {
+            kioskMesh.getWorldPosition(scratchLiveObjPos);
+            nearProximityKiosk = nearTransit.id;
+            nearKioskWorldX = scratchLiveObjPos.x;
+            nearKioskWorldZ = scratchLiveObjPos.z;
           }
         }
       }
       currentNearTeleportKiosk = nearProximityKiosk;
 
-      // Tampilkan ikon SVG Segi Enam pada mesin Kiosk ketika didekati
       if (nearProximityKiosk !== 'none') {
         const ky = getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 1.85;
         const proj = projectWorldToScreenPixels(nearKioskWorldX, ky, nearKioskWorldZ);
@@ -19603,16 +19572,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         teleportKioskHexBtn.style.display = 'none';
       }
 
-      // Jika pemain menjauh lebih dari 12m dari Kiosk yang sedang aktif/terbuka, tutup seleksi Kiosk
       if (activeClickedTeleportKiosk !== 'none') {
-        const activeKx = activeClickedTeleportKiosk === 'halte_to_lobby' ? -61.95 : -81.8;
-        const activeKz =
-          activeClickedTeleportKiosk === 'halte_to_lobby'
-            ? 0.0
-            : activeClickedTeleportKiosk === 'lobby_warzone'
-            ? -8.2
-            : -14.8;
-        if (getPlanetShortestDistance(actorX, actorZ, activeKx, activeKz) > 12.0) {
+        const activeStationSpec = getCityTransitDestinationById(
+          resolveStationIdFromKioskKey(activeClickedTeleportKiosk),
+        );
+        if (
+          getPlanetShortestDistance(
+            actorX,
+            actorZ,
+            activeStationSpec.kioskX,
+            activeStationSpec.kioskZ,
+          ) > 12.0
+        ) {
           clearTeleportKioskSelection();
         }
       }
@@ -19622,9 +19593,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       lobbyBluePortalPromptBtn.style.display = 'none';
       lobbyEnterCityPromptBtn.style.display = 'none';
 
-      // 0B-2. Floating 3D Circular Seat Indicators (Blue & Green Discs) + Bottom "Duduk" Bar
+      // 0B-2. Floating 3D Circular Seat Indicators (Blue & Green Discs) + Bottom "Sit" Bar
       currentNearestLobbySeat = null;
-      if (worldModeRef.current === 'lobby' && npcCameraMode === 'none' && !isKioskModalOpenCanvas && !mountedTank) {
+      if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none' && !isKioskModalOpenCanvas && !mountedTank) {
         let bestSeatIdx = -1;
         let bestSeatDist = 4.8;
         for (let si = 0; si < LOBBY_SEAT_SPOTS.length; si++) {
@@ -19676,14 +19647,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
-        if (playerUnit.isSitting && activeSeatedSpot) {
+        if (!selectedCharacterTarget && playerUnit.isSitting && activeSeatedSpot) {
           bottomSitActionBtn.innerHTML = getSitBarHtml('Stand Up');
           bottomSitActionBtn.style.display = 'block';
-          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 68}px, 0) translate(-50%, -50%)`;
-        } else if (currentNearestLobbySeat) {
+          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+        } else if (!selectedCharacterTarget && currentNearestLobbySeat) {
           bottomSitActionBtn.innerHTML = getSitBarHtml('Sit');
           bottomSitActionBtn.style.display = 'block';
-          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 68}px, 0) translate(-50%, -50%)`;
+          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
         } else {
           bottomSitActionBtn.style.display = 'none';
         }
@@ -19711,7 +19682,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const tramBoardCheck =
           !mountedTank &&
           playerUnit.alive &&
-          worldModeRef.current !== 'lobby'
+          !isPointInsideLobbySafezone(actorX, actorZ)
             ? canUnitBoardCityTramAtAnyPoint(
                 actorX,
                 actorZ,
@@ -19753,23 +19724,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         socialSpeechBubbleEl.style.display = 'none';
       }
 
-      // Character click action menu is handled by the bottom-center fixed React HUD, not floating above 3D head
-
-      if (cityArenaMode === 'safezone' && worldModeRef.current !== 'lobby') {
-        kioskPromptBtn.style.display = 'none';
-        cratePromptBtn.style.display = 'none';
-        padCraftPromptBtn.style.display = 'none';
-        padDepositPromptBtn.style.display = 'none';
-        return;
-      }
-
-      // 1. Kiosk Prompt: [B] KIOSK on ALL 8 Base Kiosks + Lobby NEAR Terminal (True world position via getWorldPosition, Math.round pixel transform, 2.6m -> 2.9m Hysteresis)
+      // 1. Kiosk Prompt: [B] / [E] KIOSK on ALL 8 White House Plot Kiosks across The City & Warzone (<= 2.9m)
       const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
       const kx = nearestKiosk.x;
       const kz = nearestKiosk.z;
       const distToKiosk = nearestKiosk.distance;
-      const kioskThreshold = isKioskPromptActive ? INTERACT_EXIT_RADIUS : INTERACT_ENTER_RADIUS;
-      const nearKioskNow = distToKiosk <= kioskThreshold;
+      const kioskThreshold = isKioskPromptActive ? 4.2 : 3.6;
+      const nearKioskNow = worldModeRef.current !== 'warzone' && distToKiosk <= kioskThreshold;
       isKioskPromptActive = nearKioskNow;
 
       if (nearKioskNow && !isKioskModalOpenCanvas) {
@@ -19783,6 +19744,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       } else {
         kioskPromptBtn.style.display = 'none';
+      }
+
+      if (cityArenaMode === 'safezone') {
+        cratePromptBtn.style.display = 'none';
+        padCraftPromptBtn.style.display = 'none';
+        padDepositPromptBtn.style.display = 'none';
+        return;
       }
 
       // 2. On-Foot Crate Pickup: [E] AMBIL (Static terrain anchor, Math.round pixel transform, 2.6m -> 2.9m Hysteresis)
@@ -19982,7 +19950,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             )) ||
           nukeStrikeState.phase !== 'idle',
       });
-      const radarDots: RadarDot[] = radarEvaluation.radarDots;
+      const radarDots: RadarDot[] = [...radarEvaluation.radarDots];
+      for (const peer of remoteWarzonePeers) {
+        const isFriendlyPeer = peer.team === playerUnit.team;
+        if (
+          isFriendlyPeer ||
+          playModeRef.current === 'editor' ||
+          isPositionInsideDynamicCullingRadius(peer.x, peer.z, actorX, actorZ)
+        ) {
+          radarDots.push({
+            id: `peer-${peer.sessionId}`,
+            kind: isFriendlyPeer ? 'ally' : 'enemy',
+            x: peer.x,
+            z: peer.z,
+          });
+        }
+      }
 
       const personalSquad = buddyUnits.filter(
         (b) => b.team === 'blue' && b.alive && b.ownerCommanderId === 0,
@@ -19995,17 +19978,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         ? KIOSK_BUILD_PRIORITY_RECIPES[activePriorityRecipe]
         : null;
       const nearestKioskHud = findNearestBaseKiosk(actorX, actorZ);
-      const nearNearTerminalHud =
-        getPlanetShortestDistance(
-          actorX,
-          actorZ,
-          LOBBY_NEAR_TERMINAL_SPEC.x,
-          LOBBY_NEAR_TERMINAL_SPEC.z,
-        ) <= LOBBY_NEAR_TERMINAL_SPEC.interactRadius;
-      const isNearKiosk =
-        isKioskPromptActive ||
-        nearestKioskHud.distance <= INTERACT_EXIT_RADIUS ||
-        nearNearTerminalHud;
+      const inLobbySafezoneNow = isPointInsideLobbySafezone(actorX, actorZ);
+      const isNearKiosk = isKioskPromptActive || nearestKioskHud.distance <= 4.0;
       const nearPlotObj =
         nearestKioskHud.team === 'blue'
           ? blueCommanderBases[nearestKioskHud.plotIndex]
@@ -20017,18 +19991,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const activeRedPlotIndices = redCommanderBases
         .filter((p) => isCommanderBasePlotActive(p))
         .map((p) => p.commanderIndex);
-      const inLobbySafezoneNow = worldModeRef.current === 'lobby';
       const nearLobbyReturnPadNow =
         worldModeRef.current !== 'lobby' && isUnitNearLobbyTramReturnPad(actorX, actorZ);
       const nearLobbyGoldExchangeNow =
-        getPlanetShortestDistance(
-          actorX,
-          actorZ,
-          LOBBY_GOLD_EXCHANGE_SPEC.x,
-          LOBBY_GOLD_EXCHANGE_SPEC.z,
-        ) <= LOBBY_GOLD_EXCHANGE_SPEC.interactRadius ||
-        getPlanetShortestDistance(actorX, actorZ, -94.0, -13.8) <= 6.2 ||
-        getPlanetShortestDistance(actorX, actorZ, 85.8, 60.0) <= 6.8;
+        worldModeRef.current !== 'warzone' &&
+        ((lobbyCafeNpc.npcGrp.visible &&
+          Math.hypot(
+            actorX - lobbyCafeNpc.npcGrp.position.x,
+            actorZ - lobbyCafeNpc.npcGrp.position.z,
+          ) <= 3.5) ||
+          (beachHouseNpc.npcGrp.visible &&
+            Math.hypot(
+              actorX - beachHouseNpc.npcGrp.position.x,
+              actorZ - beachHouseNpc.npcGrp.position.z,
+            ) <= 3.5));
       const hudTargetCrates = activeRecipeSpec
         ? activeRecipeSpec.targetCrates
         : orderSpec.targetCrates;
@@ -20037,29 +20013,53 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         currentPadCrates: padEval.totalCrates,
         targetContractCrates: hudTargetCrates,
       });
-      const blueWarzoneRoamersCount = buddyUnits.filter(
-        (u) => u.alive && u.team === 'blue' && (u.isPlayer || !sessionHarvesterUnitIds.includes(u.id)),
+      const localPlayerHasClaimedBase =
+        nearSessionState.claimedTeam === playerUnit.team &&
+        nearSessionState.claimedPlotIndex !== null;
+      const nowPresenceMs = Date.now();
+      if (nowPresenceMs - warzonePresenceSyncTimer >= 1500) {
+        warzonePresenceSyncTimer = nowPresenceMs;
+        warzonePresenceController.updateLocalPresence({
+          nearAccountId: nearSessionState.walletConnected ? nearSessionState.walletId : null,
+          team: playerUnit.team,
+          x: actorX,
+          z: actorZ,
+          hasClaimedBase: localPlayerHasClaimedBase,
+          inWarzone: !inLobbySafezoneNow && worldModeRef.current === 'warzone',
+        });
+      }
+      const realBlueClaimedBasesCount =
+        blueCommanderBases.filter((p) => p.commanderIndex !== 0 && isCommanderBasePlotActive(p))
+          .length +
+        (nearSessionState.claimedTeam === 'blue' && nearSessionState.claimedPlotIndex === 0 ? 1 : 0) +
+        remoteWarzonePeers.filter((p) => p.team === 'blue' && p.hasClaimedBase).length;
+      const realRedClaimedBasesCount =
+        redCommanderBases.filter((p) => isCommanderBasePlotActive(p)).length +
+        remoteWarzonePeers.filter((p) => p.team === 'red' && p.hasClaimedBase).length;
+      const remoteBlueRoamersCount = remoteWarzonePeers.filter(
+        (p) => p.team === 'blue' && !p.hasClaimedBase,
       ).length;
-      const redWarzoneRoamersCount = buddyUnits.filter(
-        (u) => u.alive && u.team === 'red' && !sessionHarvesterUnitIds.includes(u.id),
+      const remoteRedRoamersCount = remoteWarzonePeers.filter(
+        (p) => p.team === 'red' && !p.hasClaimedBase,
       ).length;
       const popBar = evaluateOpenWarzonePopulationBar({
-        blueClaimedBasesCount: activeBluePlotIndices.length,
-        redClaimedBasesCount: activeRedPlotIndices.length,
-        blueExtraRoamers: Math.max(4, blueWarzoneRoamersCount + 4),
-        redExtraRoamers: Math.max(5, redWarzoneRoamersCount + 2),
+        blueClaimedBasesCount: realBlueClaimedBasesCount,
+        redClaimedBasesCount: realRedClaimedBasesCount,
+        blueExtraRoamers: remoteBlueRoamersCount,
+        redExtraRoamers: remoteRedRoamersCount,
         playerTeam: playerUnit.team,
         isPlayerInLobby: inLobbySafezoneNow,
+        localPlayerHasClaimedBase,
       });
 
       if (inLobbySafezoneNow) {
         contextHint =
-          'SAFEZONE LOBBY · Exchange Gold at LOBBY GOLD EXCHANGE, NEAR NFT Terminal [B/E], or Step on a Portal (WARZONE / SAFEZONE)';
+          'CENTRAL PLAZA · Visit Hana Cafe Counter [E] or Step on a Portal (WARZONE / SAFEZONE)';
       } else if (nearLobbyReturnPadNow) {
         contextHint =
-          'Modern Lobby Tram Stop · Click [TO LOBBY] above the Glowing Circle to Return to Safezone Lobby';
-      } else if (nearestKioskHud.distance <= 6.8 && nearKioskIsEmptyPlot) {
-        contextHint = `Near Empty Plot Kiosk Terminal (${nearestKioskHud.team.toUpperCase()} Plot #${nearestKioskHud.plotIndex + 1}) · Press [B] to Claim Plot`;
+          'Modern Tram Stop · Click [TO CENTRAL PLAZA] above the Glowing Circle to Return to Central Plaza';
+      } else if (nearestKioskHud.distance <= 3.5 && nearKioskIsEmptyPlot) {
+        contextHint = `Near Empty Plot Kiosk Terminal (${nearestKioskHud.team.toUpperCase()} Plot #${nearestKioskHud.plotIndex + 1}) · Press [B / E] to Claim Plot`;
       }
 
       // Floating prompts are rendered via direct 60 FPS DOM overlay with Math.round & hysteresis (zero React re-render)
@@ -20158,10 +20158,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         personalSquadMax: MAX_CHARACTERS_PER_COMMANDER,
         personalSquadClasses: personalSquad.map((b) => b.classId),
         activePersonalBuddyIndex: activePersonalIdx,
-        blueHumanCount: matchmakingState.blueCommanders.filter((s) => s.controller === 'human').length,
-        blueAiCommanderCount: matchmakingState.blueCommanders.filter((s) => s.controller === 'ai').length,
-        redHumanCount: matchmakingState.redCommanders.filter((s) => s.controller === 'human').length,
-        redAiCommanderCount: matchmakingState.redCommanders.filter((s) => s.controller === 'ai').length,
+        blueHumanCount: popBar.blueOnline,
+        blueAiCommanderCount: 0,
+        redHumanCount: popBar.redOnline,
+        redAiCommanderCount: 0,
         skyshieldBuiltCount: blueSkyshieldsBuilt,
         blueBaseHp,
         redBaseHp,
@@ -20301,7 +20301,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     return () => {
       isDisposed = true;
       cancelAnimationFrame(rafId);
+      cancelAnimationFrame(staggeredUpgradeRafId);
       window.clearTimeout(softwareGlTimerId);
+      warzonePresenceController.unsubscribe();
       soundEngine.stopAllLoops();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
@@ -20315,6 +20317,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('wheel', onWheel);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('toggle-kiosk-ui', onKioskUiToggled);
       window.removeEventListener('close-kiosk-ui', onKioskUiClosed);
       window.removeEventListener('sync-kiosk-ui', onKioskUiSynced);
@@ -20322,11 +20325,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('clear-character-selection', onWindowClearCharacterSelection);
       window.removeEventListener('close-teleport-kiosk-ui', onCloseTeleportKioskUi);
       window.removeEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);
+      window.removeEventListener('start-city-tram-ride-transition', onStartCityTramRideTransition);
       window.removeEventListener('select-character-by-id', onSelectCharacterById);
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
       window.removeEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
-      window.removeEventListener('bb-inspect-3d-pick', onInspect3DPick);
-      window.removeEventListener('bb-inspect-3d-tweak', onInspect3DTweak);
       scene.remove(tidewaterFishing3DGroup);
       catenaryLineGeo.dispose();
       catenaryLineMat.dispose();
@@ -20350,10 +20352,49 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       laserHitGlowSphereGeo.dispose();
       laserHitRingGeo.dispose();
       laserSparkConeGeo.dispose();
+      animeSkyGeo.dispose();
+      animeSkyMat.dispose();
+      animeSkyImageTex.dispose();
+      sparkleGeo.dispose();
+      animeSparkleMat.dispose();
       tolanPlanetEnv.dispose();
       cityTram.dispose();
       blitzGrassSystem.dispose();
       blitzExplosionSystem.dispose();
+
+      // Dispose per-mount procedural geometries & materials while preserving cached GLTF prototypes
+      const sharedCachedResources = new Set<unknown>();
+      const cachedBlitzAssets = getCachedLoadedBlitzAssets();
+      if (cachedBlitzAssets) {
+        for (const val of Object.values(cachedBlitzAssets)) {
+          if (val && typeof val === 'object' && 'traverse' in val && typeof (val as THREE.Object3D).traverse === 'function') {
+            (val as THREE.Object3D).traverse((node) => {
+              const m = node as THREE.Mesh;
+              if (m.geometry) sharedCachedResources.add(m.geometry);
+              if (m.material) {
+                const mats = Array.isArray(m.material) ? m.material : [m.material];
+                for (const mat of mats) sharedCachedResources.add(mat);
+              }
+            });
+          }
+        }
+      }
+      scene.traverse((node) => {
+        const m = node as THREE.Mesh;
+        if (m.geometry && !sharedCachedResources.has(m.geometry)) {
+          m.geometry.dispose();
+        }
+        if (m.material) {
+          const mats = Array.isArray(m.material) ? m.material : [m.material];
+          for (const mat of mats) {
+            if (!sharedCachedResources.has(mat)) {
+              mat.dispose();
+            }
+          }
+        }
+      });
+
+      renderer.forceContextLoss();
       renderer.dispose();
     };
   }, [onGameOver, onHudUpdate, onTogglePause]);

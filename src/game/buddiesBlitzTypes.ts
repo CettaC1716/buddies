@@ -258,6 +258,7 @@ export interface BuddiesBlitzArenaProps {
   onHudUpdate: (snapshot: HudSnapshot) => void;
   onGameOver: (outcome: 'victory' | 'defeat', finalSnapshot: HudSnapshot) => void;
   onTogglePause: () => void;
+  onPreloadSceneReady?: () => void;
 }
 
 export interface WorldCrate {
@@ -279,6 +280,8 @@ export interface WorldCrate {
   state: 'falling' | 'grounded' | 'carried' | 'thrown' | 'stacked';
   carrierId: number | null;
   squashTimer: number;
+  decayTimerSec?: number;
+  totalDecaySec?: number;
 }
 
 export interface WorldPickup {

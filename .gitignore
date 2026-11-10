@@ -10,3 +10,8 @@ coverage/
 .aistudio/
 .vercel/
 .vercel
+contracts/**/target/*
+!contracts/**/target/near/
+contracts/**/target/near/*
+!contracts/**/target/near/*.wasm
+!contracts/**/target/near/*.json

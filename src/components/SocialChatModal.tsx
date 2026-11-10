@@ -1,146 +1,359 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { soundEngine } from '../game/audio';
 
 export interface NearbyEntityUser {
-  id: string | number;
+  id: number | string;
+  nearAccountId?: string;
   name: string;
-  isNpc: boolean;
-  isSelf?: boolean;
   distance: number;
-  team: 'blue' | 'red';
-  status: string;
+  isNpc?: boolean;
+  isSelf?: boolean;
+  team?: 'red' | 'blue';
+  status?: string;
 }
 
 export interface ChatMessage {
   id: string;
+  senderId?: string;
   senderName: string;
-  senderId?: string | number;
-  isNpc?: boolean;
+  recipientId?: string;
+  recipientName?: string;
   isSelf?: boolean;
   text: string;
   timestamp: string;
   type: 'public' | 'private';
-  recipientName?: string;
 }
 
 interface SocialChatModalProps {
   isOpen: boolean;
   onClose: () => void;
-  playerName?: string;
-  playerUid?: string;
+  playerName: string;
+  playerUid?: string | null;
   onChangePlayerName?: (newName: string) => void;
   nearbyUsers: NearbyEntityUser[];
-  onSendPublicChat: (text: string) => void;
-  onSendPrivateChat: (recipient: NearbyEntityUser, text: string) => void;
-  chatMessages: ChatMessage[];
   selectedPrivateUser: NearbyEntityUser | null;
   onSelectPrivateUser: (user: NearbyEntityUser | null) => void;
+  chatMessages: ChatMessage[];
+  onSendPublicChat: (text: string) => void;
+  onSendPrivateChat: (recipient: NearbyEntityUser, text: string) => void;
   playerBubbleBgColor?: string;
   playerBubbleTextColor?: string;
+  onChangeBubbleBgColor?: (hex: string) => void;
+  onChangeBubbleTextColor?: (hex: string) => void;
   isInsidePrivateHouse?: boolean;
+  onOpenHouseDecoration?: () => void;
   isMuted?: boolean;
   audioVolumePct?: number;
   onToggleAudio?: () => void;
   onChangeVolumePct?: (pct: number) => void;
-  onOpenHouseDecoration?: () => void;
-  onChangeBubbleBgColor?: (hex: string) => void;
-  onChangeBubbleTextColor?: (hex: string) => void;
+  unreadPrivateCount?: number;
+  onClearUnreadPrivate?: () => void;
 }
 
-const simplifyDisplayName = (rawName: string): string => {
-  return rawName.replace(/\s*\([^)]*\)/g, '').trim() || rawName;
-};
+type SocialChatSubTab = 'online' | 'public' | 'private' | 'settings';
+
+const BUBBLE_COLOR_SWATCHES: { bg: string; text: string; label: string }[] = [
+  { bg: '#ffffff', text: '#0f172a', label: 'Pure White' },
+  { bg: '#fef08a', text: '#0f172a', label: 'Sunny Yellow' },
+  { bg: '#bae6fd', text: '#0f172a', label: 'Sky Blue' },
+  { bg: '#bbf7d0', text: '#0f172a', label: 'Mint Green' },
+  { bg: '#fbcfe8', text: '#0f172a', label: 'Candy Pink' },
+  { bg: '#0f172a', text: '#f8fafc', label: 'Midnight Dark' },
+];
+
+const KNOWN_NPC_NAMES = new Set(['hana', 'kai', 'merchant hana', 'merchant kai']);
+
+export function simplifyDisplayName(rawName: string): string {
+  const cleaned = (rawName || '').replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim();
+  const parts = cleaned.split(/\s*[—–-]\s*/);
+  return (parts[0] || cleaned).trim();
+}
+
+export function isRealHumanWhisperTarget(
+  user: NearbyEntityUser | null | undefined,
+  localPlayerName?: string,
+  localPlayerUid?: string | null,
+): user is NearbyEntityUser {
+  if (!user) return false;
+  if (user.isNpc || user.isSelf) return false;
+  const idStr = String(user.id || '').trim().toLowerCase();
+  if (!idStr || idStr === '0' || idStr.startsWith('npc')) return false;
+
+  const cleanName = simplifyDisplayName(user.name).toLowerCase();
+  if (!cleanName || KNOWN_NPC_NAMES.has(cleanName)) return false;
+  if (cleanName === 'you' || cleanName === 'anda' || cleanName === 'kamu') return false;
+
+  if (localPlayerUid && idStr === localPlayerUid.trim().toLowerCase()) {
+    return false;
+  }
+  if (localPlayerName) {
+    const cleanLocal = simplifyDisplayName(localPlayerName).toLowerCase();
+    if (cleanLocal && cleanName === cleanLocal) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function filterRealHumanOnlinePlayers(
+  nearbyUsers: NearbyEntityUser[],
+  localPlayerName?: string,
+  localPlayerUid?: string | null,
+): NearbyEntityUser[] {
+  const seenIds = new Set<string>();
+  const result: NearbyEntityUser[] = [];
+  for (const user of nearbyUsers) {
+    if (!isRealHumanWhisperTarget(user, localPlayerName, localPlayerUid)) continue;
+    const key = String(user.id).toLowerCase();
+    if (seenIds.has(key)) continue;
+    seenIds.add(key);
+    result.push(user);
+  }
+  return result;
+}
+
+export function isOwnChatMessage(
+  msg: ChatMessage,
+  playerName: string,
+  playerUid?: string | null,
+): boolean {
+  if (msg.isSelf) return true;
+  if (
+    playerUid &&
+    msg.senderId &&
+    msg.senderId.trim().toLowerCase() === playerUid.trim().toLowerCase()
+  ) {
+    return true;
+  }
+  const cleanSender = simplifyDisplayName(msg.senderName).toLowerCase();
+  if (cleanSender === 'you' || cleanSender === 'anda' || cleanSender === 'kamu') {
+    return true;
+  }
+  const cleanPlayer = simplifyDisplayName(playerName).toLowerCase();
+  if (cleanPlayer && cleanSender === cleanPlayer) {
+    return true;
+  }
+  return false;
+}
+
+export function deduplicateChatMessages(
+  messages: ChatMessage[],
+  playerName: string,
+  playerUid?: string | null,
+): ChatMessage[] {
+  const seenIds = new Set<string>();
+  const result: ChatMessage[] = [];
+
+  for (const rawMsg of messages) {
+    if (!rawMsg || !rawMsg.id) continue;
+    if (seenIds.has(rawMsg.id)) continue;
+    seenIds.add(rawMsg.id);
+
+    const resolvedIsSelf = isOwnChatMessage(rawMsg, playerName, playerUid);
+    const normalizedMsg: ChatMessage = {
+      ...rawMsg,
+      isSelf: resolvedIsSelf,
+    };
+
+    // Deduplicate optimistic local send ("pub-..." or "priv-...") against echoed DB realtime row
+    if (resolvedIsSelf) {
+      const cleanText = normalizedMsg.text.trim();
+      const cleanRecipient = simplifyDisplayName(normalizedMsg.recipientName || '').toLowerCase();
+      const duplicateIdx = result.findIndex((existing) => {
+        if (!existing.isSelf) return false;
+        if (existing.type !== normalizedMsg.type) return false;
+        if (existing.text.trim() !== cleanText) return false;
+        const existingRecipient = simplifyDisplayName(existing.recipientName || '').toLowerCase();
+        if (existingRecipient !== cleanRecipient) return false;
+        const isOneOptimisticAndOneDb =
+          (existing.id.startsWith('pub-') || existing.id.startsWith('priv-')) !==
+          (normalizedMsg.id.startsWith('pub-') || normalizedMsg.id.startsWith('priv-'));
+        return isOneOptimisticAndOneDb || existing.timestamp === normalizedMsg.timestamp;
+      });
+      if (duplicateIdx >= 0) {
+        result[duplicateIdx] = normalizedMsg;
+        continue;
+      }
+    }
+
+    result.push(normalizedMsg);
+  }
+
+  return result;
+}
+
+/**
+ * Evaluates whether an incoming chat message should trigger a notification popup/badge:
+ * - Strictly returns `true` ONLY for genuine incoming `private` (whisper) messages from another
+ *   real human player addressed to the local player while that sender's private conversation
+ *   is not actively open on screen.
+ * - NEVER triggers for `public` chat messages, NPC/system messages, or the local player's own outgoing messages.
+ */
+export function shouldTriggerIncomingPrivateChatNotification(params: {
+  msg?: ChatMessage;
+  message?: ChatMessage;
+  localPlayerName: string;
+  localPlayerUid?: string | null;
+  isSocialChatModalOpen: boolean;
+  activeChatTab?: SocialChatSubTab;
+  activeTab?: SocialChatSubTab;
+  activePrivateUser?: NearbyEntityUser | null;
+  selectedPrivateUser?: NearbyEntityUser | null;
+}): boolean {
+  const msg = params.msg ?? params.message;
+  const { localPlayerName, localPlayerUid, isSocialChatModalOpen } = params;
+  const activeChatTab = params.activeChatTab ?? params.activeTab;
+  const activePrivateUser = params.activePrivateUser ?? params.selectedPrivateUser;
+  if (!msg || msg.type !== 'private') return false;
+  if (!msg.text || !msg.text.trim()) return false;
+  if (isOwnChatMessage(msg, localPlayerName, localPlayerUid)) return false;
+
+  const cleanSender = simplifyDisplayName(msg.senderName).toLowerCase();
+  if (!cleanSender || KNOWN_NPC_NAMES.has(cleanSender) || cleanSender === 'system') {
+    return false;
+  }
+  const senderIdStr = String(msg.senderId || '').trim().toLowerCase();
+  if (senderIdStr.startsWith('npc')) return false;
+
+  // Verify the whisper is addressed to the local player if recipient metadata is present
+  const cleanRecipientName = simplifyDisplayName(msg.recipientName || '').toLowerCase();
+  const recipientIdStr = String(msg.recipientId || '').trim().toLowerCase();
+  const cleanLocalName = simplifyDisplayName(localPlayerName).toLowerCase();
+  const cleanLocalUid = String(localPlayerUid || '').trim().toLowerCase();
+
+  if (recipientIdStr || cleanRecipientName) {
+    const matchesUid = Boolean(cleanLocalUid && recipientIdStr && recipientIdStr === cleanLocalUid);
+    const matchesName = Boolean(
+      cleanRecipientName &&
+        (cleanRecipientName === cleanLocalName ||
+          cleanRecipientName === 'you' ||
+          cleanRecipientName === 'anda' ||
+          cleanRecipientName === 'kamu'),
+    );
+    if (!matchesUid && !matchesName) {
+      return false;
+    }
+  }
+
+  // Suppress notification if the user already has SocialChatModal open to this sender's PRIVATE thread
+  if (isSocialChatModalOpen && (activeChatTab === 'private' || !activeChatTab) && activePrivateUser) {
+    const openPeerName = simplifyDisplayName(activePrivateUser.name).toLowerCase();
+    const openPeerId = String(activePrivateUser.id || '').trim().toLowerCase();
+    if (
+      (senderIdStr && openPeerId && senderIdStr === openPeerId) ||
+      (cleanSender && openPeerName && cleanSender === openPeerName)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   isOpen,
   onClose,
-  playerName = 'YOU',
-  playerUid = '',
-  onChangePlayerName,
+  playerName,
+  playerUid,
   nearbyUsers,
-  onSendPublicChat,
-  onSendPrivateChat,
-  chatMessages,
   selectedPrivateUser,
   onSelectPrivateUser,
-  playerBubbleBgColor = '#38bdf8',
+  chatMessages,
+  onSendPublicChat: _onSendPublicChat,
+  onSendPrivateChat: _onSendPrivateChat,
+  playerBubbleBgColor = '#ffffff',
   playerBubbleTextColor = '#0f172a',
-  isInsidePrivateHouse = false,
-  isMuted = false,
-  audioVolumePct = 100,
-  onToggleAudio,
-  onChangeVolumePct,
-  onOpenHouseDecoration,
   onChangeBubbleBgColor,
   onChangeBubbleTextColor,
+  isInsidePrivateHouse = false,
+  onOpenHouseDecoration,
+  isMuted = false,
+  audioVolumePct = 80,
+  onToggleAudio,
+  onChangeVolumePct,
+  unreadPrivateCount = 0,
+  onClearUnreadPrivate,
 }) => {
-  const [activeTab, setActiveTab] = useState<'publik' | 'private' | 'daftar_online' | 'settings'>('publik');
-  const [usernameDraft, setUsernameDraft] = useState<string>(playerName);
-  const [usernameSavedFlash, setUsernameSavedFlash] = useState<boolean>(false);
-  const publicScrollRef = useRef<HTMLDivElement>(null);
-  const privateScrollRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<SocialChatSubTab>('public');
 
-  useEffect(() => {
-    setUsernameDraft(playerName);
-  }, [playerName]);
+  const publicEndRef = useRef<HTMLDivElement | null>(null);
+  const privateEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Switch to PRIVATE tab automatically when a private user is chosen externally (e.g. BISIKAN button)
-  useEffect(() => {
-    if (selectedPrivateUser && isOpen) {
-      setActiveTab('private');
-    }
-  }, [selectedPrivateUser, isOpen]);
-
-  // Auto scroll messages to bottom
-  useEffect(() => {
-    if (publicScrollRef.current) {
-      publicScrollRef.current.scrollTop = publicScrollRef.current.scrollHeight;
-    }
-  }, [chatMessages, isOpen, activeTab]);
-
-  useEffect(() => {
-    if (privateScrollRef.current) {
-      privateScrollRef.current.scrollTop = privateScrollRef.current.scrollHeight;
-    }
-  }, [chatMessages, selectedPrivateUser, isOpen, activeTab]);
-
-  // Receive chat submissions from the persistent bottom-left chat input bar when SocialChatModal is open
-  useEffect(() => {
-    if (!isOpen) return;
-    const onBottomBarSubmit = (ev: Event) => {
-      const text = (ev as CustomEvent<{ text?: string }>).detail?.text?.trim();
-      if (!text) return;
-      if (activeTab === 'private' && selectedPrivateUser) {
-        onSendPrivateChat(selectedPrivateUser, text);
-      } else {
-        setActiveTab('publik');
-        onSendPublicChat(text);
-      }
-    };
-    window.addEventListener('social-chat-bar-submit', onBottomBarSubmit);
-    return () => window.removeEventListener('social-chat-bar-submit', onBottomBarSubmit);
-  }, [isOpen, activeTab, selectedPrivateUser, onSendPrivateChat, onSendPublicChat]);
-
-  const publicMessages = chatMessages.filter((m) => m.type === 'public');
-  const selectedShortName = selectedPrivateUser
-    ? simplifyDisplayName(selectedPrivateUser.name)
-    : '';
-  const privateMessages = chatMessages.filter(
-    (m) =>
-      m.type === 'private' &&
-      selectedPrivateUser &&
-      (simplifyDisplayName(m.senderName) === selectedShortName ||
-        simplifyDisplayName(m.recipientName || '') === selectedShortName ||
-        m.senderName === selectedPrivateUser.name ||
-        m.recipientName === selectedPrivateUser.name),
+  const realHumanOnlinePeers = useMemo(
+    () => filterRealHumanOnlinePlayers(nearbyUsers, playerName, playerUid),
+    [nearbyUsers, playerName, playerUid],
   );
+
+  const validSelectedPrivateUser = useMemo(
+    () =>
+      isRealHumanWhisperTarget(selectedPrivateUser, playerName, playerUid)
+        ? selectedPrivateUser
+        : null,
+    [selectedPrivateUser, playerName, playerUid],
+  );
+
+  const normalizedMessages = useMemo(
+    () => deduplicateChatMessages(chatMessages, playerName, playerUid),
+    [chatMessages, playerName, playerUid],
+  );
+
+  useEffect(() => {
+    if (selectedPrivateUser && !isRealHumanWhisperTarget(selectedPrivateUser, playerName, playerUid)) {
+      onSelectPrivateUser(null);
+    } else if (validSelectedPrivateUser && isOpen) {
+      setActiveTab('private');
+      onClearUnreadPrivate?.();
+    }
+  }, [
+    selectedPrivateUser,
+    validSelectedPrivateUser,
+    isOpen,
+    playerName,
+    playerUid,
+    onSelectPrivateUser,
+    onClearUnreadPrivate,
+  ]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'private') {
+      onClearUnreadPrivate?.();
+    }
+  }, [isOpen, activeTab, onClearUnreadPrivate]);
+
+  useEffect(() => {
+    if (isOpen) {
+      publicEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      privateEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [normalizedMessages.length, isOpen, activeTab]);
+
+  const publicMessages = useMemo(
+    () => normalizedMessages.filter((m) => m.type === 'public'),
+    [normalizedMessages],
+  );
+
+  const privateMessages = useMemo(() => {
+    if (!validSelectedPrivateUser) return [];
+    const targetCleanName = simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase();
+    const targetIdStr = String(validSelectedPrivateUser.id).toLowerCase();
+
+    return normalizedMessages.filter((m) => {
+      if (m.type !== 'private') return false;
+      if (m.isSelf) {
+        if (m.recipientId && String(m.recipientId).toLowerCase() === targetIdStr) return true;
+        return simplifyDisplayName(m.recipientName || '').toLowerCase() === targetCleanName;
+      }
+      if (m.senderId && String(m.senderId).toLowerCase() === targetIdStr) return true;
+      return simplifyDisplayName(m.senderName).toLowerCase() === targetCleanName;
+    });
+  }, [normalizedMessages, validSelectedPrivateUser]);
 
   return (
     <aside
       role="dialog"
       aria-modal="false"
       aria-hidden={!isOpen}
-      aria-label="Social Communication & Radius Chat"
+      aria-label="Social Chat Room"
       data-social-chat-modal="true"
       className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
         isOpen
@@ -148,73 +361,52 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           : '-translate-x-[120%] opacity-0 pointer-events-none'
       }`}
     >
-      <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
-        {/* Top Bar: 3 Navigation Tab Buttons (PUBLIC, PRIVATE, ONLINE LIST) + X Close */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              data-social-tab="publik"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('publik');
-              }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
-                activeTab === 'publik'
-                  ? 'bg-[#facc15] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#fef08a] text-black'
-              }`}
-            >
-              <span className="skew-x-6 inline-block">PUBLIC</span>
-            </button>
-
-            <button
-              type="button"
-              data-social-tab="private"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('private');
-              }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
-                activeTab === 'private'
-                  ? 'bg-[#10b981] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#a7f3d0] text-black'
-              }`}
-            >
-              <span className="skew-x-6 inline-block">PRIVATE</span>
-            </button>
-
-            <button
-              type="button"
-              data-social-tab="daftar_online"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('daftar_online');
-              }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
-                activeTab === 'daftar_online'
-                  ? 'bg-[#38bdf8] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#bae6fd] text-black'
-              }`}
-            >
-              <span className="skew-x-6 inline-block">ONLINE LIST</span>
-            </button>
-
-            <button
-              type="button"
-              data-social-tab="settings"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('settings');
-              }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
-                activeTab === 'settings'
-                  ? 'bg-[#d8b4fe] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#f3e8ff] text-black'
-              }`}
-            >
-              <span className="skew-x-6 inline-block">SETTINGS</span>
-            </button>
+      <div className="relative bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black flex flex-col h-full overflow-hidden">
+        {/* TOP HEADER & SUB-TABS */}
+        <div className="flex items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                { id: 'online', label: `ONLINE LIST (${realHumanOnlinePeers.length})` },
+                { id: 'public', label: 'PUBLIC' },
+                {
+                  id: 'private',
+                  label: unreadPrivateCount > 0 ? `PRIVATE (${unreadPrivateCount})` : 'PRIVATE',
+                },
+                { id: 'settings', label: 'SETTINGS' },
+              ] as { id: SocialChatSubTab; label: string }[]
+            ).map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  data-social-tab={tab.id}
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setActiveTab(tab.id);
+                    if (tab.id === 'private') {
+                      onClearUnreadPrivate?.();
+                    }
+                  }}
+                  className={`-skew-x-6 px-3 py-1.5 font-black text-[11px] uppercase tracking-wider border-2 border-black transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#facc15] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span className="skew-x-6 inline-flex items-center gap-1">
+                    {tab.label}
+                    {tab.id === 'private' && unreadPrivateCount > 0 && (
+                      <span
+                        data-private-tab-unread-dot="true"
+                        className="w-2 h-2 rounded-full bg-[#ff3b30] border border-black inline-block"
+                      />
+                    )}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <button
@@ -223,403 +415,346 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
               soundEngine.playUiClick();
               onClose();
             }}
-            className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95"
             aria-label="Close Social Chat"
+            className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
           >
             <span className="skew-x-6 inline-block">X</span>
           </button>
         </div>
 
-        {/* Tab 1: PUBLIC */}
-        {activeTab === 'publik' && (
-          <div
-            ref={publicScrollRef}
-            className="mt-3 flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0"
-          >
-            {publicMessages.length === 0 ? (
-              <div className="p-4 text-center text-xs font-bold text-slate-600">
-                No public messages yet. Use the chat bar below to say hello!
-              </div>
-            ) : (
-              publicMessages.map((msg) => {
-                const displaySender = simplifyDisplayName(msg.senderName);
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'}`}
-                  >
-                    <div className="flex items-center gap-1.5 mb-1 text-[10px] font-black">
-                      <span
-                        className={
-                          msg.isNpc
-                            ? 'text-[#b45309]'
-                            : msg.isSelf
-                            ? 'text-[#0284c7]'
-                            : 'text-[#334155]'
-                        }
-                      >
-                        {displaySender}
-                      </span>
-                      <span className="text-[#64748b] font-bold">{msg.timestamp}</span>
-                    </div>
-                    <div
-                      style={
-                        msg.isSelf
-                          ? {
-                              backgroundColor: playerBubbleBgColor,
-                              color: playerBubbleTextColor,
-                            }
-                          : undefined
-                      }
-                      className={`px-3 py-2 border-2 border-[#0d0f12] max-w-[92%] text-xs font-bold shadow-[3px_3px_0_#0d0f12] break-words ${
-                        msg.isSelf
-                          ? ''
-                          : msg.isNpc
-                          ? 'bg-[#fef08a] text-black'
-                          : 'bg-white text-[#0d0f12]'
-                      }`}
-                    >
-                      {msg.text}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: PRIVATE */}
-        {activeTab === 'private' && (
-          <div className="mt-3 flex-1 flex flex-col min-h-0 space-y-2.5">
-            {selectedPrivateUser && (
-              <div className="px-3 py-2 bg-slate-50 border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-between shrink-0">
-                <span className="text-xs font-black uppercase text-black">
-                  WHISPER: {simplifyDisplayName(selectedPrivateUser.name)}
+        {/* SUB-TAB BODY CONTENT */}
+        <div className="mt-3 flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* 1. ONLINE LIST SUB-TAB (Real Human Multiplayer Peers Only) */}
+          {activeTab === 'online' && (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="mb-2 flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-slate-600">
+                <span>CONNECTED PLAYERS IN ZONE</span>
+                <span className="px-2 py-0.5 bg-[#b8ff3c] text-black border border-black">
+                  {realHumanOnlinePeers.length} PEER{realHumanOnlinePeers.length === 1 ? '' : 'S'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setActiveTab('daftar_online');
-                  }}
-                  className="-skew-x-6 px-2 py-0.5 bg-white hover:bg-[#fef08a] border border-black text-[10px] font-black uppercase cursor-pointer"
-                >
-                  <span className="skew-x-6 inline-block">CHANGE</span>
-                </button>
               </div>
-            )}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                {realHumanOnlinePeers.length === 0 ? (
+                  <div
+                    data-social-online-empty="true"
+                    className="h-44 flex flex-col items-center justify-center text-center p-4 bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold"
+                  >
+                    No other real human players are currently online in this zone.
+                  </div>
+                ) : (
+                  realHumanOnlinePeers.map((u) => {
+                    const isSelected = validSelectedPrivateUser?.id === u.id;
+                    return (
+                      <div
+                        key={String(u.id)}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onSelectPrivateUser(u);
+                          setActiveTab('private');
+                        }}
+                        className={`p-2.5 border-2 border-black transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#facc15] text-black shadow-[3px_3px_0px_#000]'
+                            : 'bg-slate-50 hover:bg-slate-100 text-black shadow-[2px_2px_0px_#000]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-black bg-[#10b981]" />
+                          <div className="truncate">
+                            <div className="text-xs font-black uppercase truncate">
+                              {simplifyDisplayName(u.name)}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-600">
+                              Online Player · {u.distance}m away
+                            </div>
+                          </div>
+                        </div>
 
-            <div
-              ref={privateScrollRef}
-              className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0"
-            >
-              {!selectedPrivateUser ? (
-                <div className="p-5 text-center space-y-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000]">
-                  <p className="text-xs font-bold text-slate-700">
-                    Select a citizen or NPC in the ONLINE LIST tab to start a private chat.
-                  </p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            soundEngine.playUiClick();
+                            onSelectPrivateUser(u);
+                            setActiveTab('private');
+                          }}
+                          className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border border-black shadow-[1px_1px_0px_#000] shrink-0"
+                        >
+                          <span className="skew-x-6 inline-block">WHISPER</span>
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 2. PUBLIC CHAT SUB-TAB */}
+          {activeTab === 'public' && (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="mb-2 flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-slate-600">
+                <span>ALL CITIZENS ROOM FEED</span>
+                <span className="text-[10px] font-bold text-slate-500">Overhead Bubble Active</span>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50 border-2 border-black shadow-inner">
+                {publicMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs font-bold">
+                    No public messages yet. Say hello to everyone in the room!
+                  </div>
+                ) : (
+                  publicMessages.map((msg) => {
+                    const isSelf = Boolean(msg.isSelf);
+                    return (
+                      <div
+                        key={msg.id}
+                        data-chat-message-id={msg.id}
+                        data-chat-is-self={isSelf ? 'true' : 'false'}
+                        className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'}`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5 px-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                            {isSelf
+                              ? `${simplifyDisplayName(playerName)} (YOU)`
+                              : simplifyDisplayName(msg.senderName)}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400">
+                            {msg.timestamp}
+                          </span>
+                        </div>
+                        <div
+                          style={
+                            isSelf
+                              ? {
+                                  backgroundColor: playerBubbleBgColor,
+                                  color: playerBubbleTextColor,
+                                }
+                              : undefined
+                          }
+                          className={`max-w-[85%] px-3 py-2 text-xs font-bold leading-snug border-2 border-black shadow-[2px_2px_0px_#000] ${
+                            isSelf ? '' : 'bg-white text-black'
+                          }`}
+                        >
+                          {msg.text}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={publicEndRef} />
+              </div>
+            </div>
+          )}
+
+          {/* 3. PRIVATE / WHISPER CHAT SUB-TAB (Real Connected Human Players Only) */}
+          {activeTab === 'private' && (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-black uppercase tracking-wider text-slate-600">
+                <span className="truncate">
+                  {validSelectedPrivateUser
+                    ? `WHISPER TO: ${simplifyDisplayName(validSelectedPrivateUser.name)}`
+                    : 'SELECT A REAL ONLINE PLAYER TO WHISPER'}
+                </span>
+                {realHumanOnlinePeers.length > 0 && (
                   <button
                     type="button"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      setActiveTab('daftar_online');
+                      setActiveTab('online');
                     }}
-                    className="-skew-x-6 px-3.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0_#000] text-xs font-black uppercase cursor-pointer"
+                    className="-skew-x-6 px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-black text-[9px] font-black uppercase border border-black cursor-pointer shrink-0"
                   >
-                    <span className="skew-x-6 inline-block">OPEN ONLINE LIST</span>
+                    <span className="skew-x-6 inline-block">SWITCH TARGET</span>
                   </button>
-                </div>
-              ) : privateMessages.length === 0 ? (
-                <div className="p-4 text-center text-xs font-bold text-slate-600 bg-slate-50 border-2 border-black">
-                  Private chat with {simplifyDisplayName(selectedPrivateUser.name)}. Type a message in the bottom chat bar to whisper!
-                </div>
-              ) : (
-                privateMessages.map((msg) => {
-                  const displaySender = simplifyDisplayName(msg.senderName);
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'}`}
-                    >
-                      <div className="flex items-center gap-1.5 mb-1 text-[10px] font-black">
-                        <span className={msg.isSelf ? 'text-[#0284c7]' : 'text-[#dc2626]'}>
-                          {displaySender}
-                        </span>
-                        <span className="text-[#64748b] font-bold">{msg.timestamp}</span>
-                      </div>
-                      <div
-                        style={
-                          msg.isSelf
-                            ? {
-                                backgroundColor: playerBubbleBgColor,
-                                color: playerBubbleTextColor,
-                              }
-                            : undefined
-                        }
-                        className={`px-3 py-2 border-2 border-[#0d0f12] max-w-[92%] text-xs font-bold shadow-[3px_3px_0_#0d0f12] break-words ${
-                          msg.isSelf ? '' : 'bg-[#fef08a] text-black'
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: ONLINE LIST */}
-        {activeTab === 'daftar_online' && (
-          <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0">
-            {nearbyUsers.length === 0 ? (
-              <div className="p-4 text-center text-xs font-bold text-slate-600 bg-slate-50 border-2 border-black">
-                No other citizens are currently in this area.
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                {nearbyUsers.map((user) => {
-                  const isSelected = selectedPrivateUser?.id === user.id;
-                  const shortName = simplifyDisplayName(user.name);
-                  return (
-                    <button
-                      key={String(user.id)}
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        onSelectPrivateUser(user);
-                        setActiveTab('private');
-                      }}
-                      className={`-skew-x-6 px-3 py-1.5 border-2 border-black cursor-pointer transition-all flex items-center gap-2 ${
-                        isSelected
-                          ? 'bg-[#38bdf8] text-black shadow-[3px_3px_0_#000]'
-                          : 'bg-slate-50 hover:bg-[#fef08a] text-black shadow-[2px_2px_0_#000]'
-                      }`}
-                    >
-                      <div className="skew-x-6 flex items-center gap-2">
-                        <span
-                          className={`w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] border border-black ${
-                            user.isNpc ? 'bg-[#facc15] text-black' : 'bg-white text-black'
-                          }`}
-                        >
-                          {shortName.slice(0, 1).toUpperCase()}
-                        </span>
-                        <span className="text-xs font-black uppercase">{shortName}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 4: SETTINGS (Change Username Anytime, Sound Toggle, House Decoration when Inside House, Chat Colors) */}
-        {activeTab === 'settings' && (
-          <div
-            data-social-chat-settings-panel="true"
-            className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3.5 min-h-0"
-          >
-            {/* 0. Player UID (Wallet Address) & Change Username Anytime */}
-            <div
-              data-social-modal-change-username="true"
-              className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black uppercase tracking-wide text-black">
-                  PLAYER IDENTITY &amp; CHANGE USERNAME
-                </span>
-                {playerUid && (
-                  <span
-                    data-social-modal-player-uid="true"
-                    className="px-2 py-0.5 bg-[#0f172a] text-[#38bdf8] font-mono text-[9.5px] font-bold border border-black truncate max-w-[200px]"
-                    title={`Player UID: ${playerUid}`}
-                  >
-                    UID: {playerUid}
-                  </span>
                 )}
               </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="text"
-                  maxLength={24}
-                  data-social-modal-username-input="true"
-                  value={usernameDraft}
-                  onChange={(e) => setUsernameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && usernameDraft.trim()) {
-                      soundEngine.playUiClick();
-                      onChangePlayerName?.(usernameDraft.trim());
-                      setUsernameSavedFlash(true);
-                      window.setTimeout(() => setUsernameSavedFlash(false), 1800);
-                    }
-                  }}
-                  placeholder="Enter new username..."
-                  aria-label="Change Display Username"
-                  className="flex-1 min-w-0 px-2.5 py-1.5 bg-white text-black font-bold text-xs border-2 border-black focus:outline-none focus:ring-2 focus:ring-[#38bdf8]"
-                />
-                <button
-                  type="button"
-                  data-social-modal-save-username-btn="true"
-                  onClick={() => {
-                    if (!usernameDraft.trim()) return;
-                    soundEngine.playUiClick();
-                    onChangePlayerName?.(usernameDraft.trim());
-                    setUsernameSavedFlash(true);
-                    window.setTimeout(() => setUsernameSavedFlash(false), 1800);
-                  }}
-                  className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase cursor-pointer active:scale-95 shrink-0"
-                >
-                  <span className="skew-x-6 inline-block">
-                    {usernameSavedFlash ? 'SAVED ✓' : 'SAVE NAME'}
-                  </span>
-                </button>
+
+              {/* Quick horizontal selector for real connected players */}
+              {realHumanOnlinePeers.length > 0 && (
+                <div className="mb-2 flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0">
+                  {realHumanOnlinePeers.map((peer) => {
+                    const isTarget = validSelectedPrivateUser?.id === peer.id;
+                    return (
+                      <button
+                        key={String(peer.id)}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onSelectPrivateUser(peer);
+                        }}
+                        className={`-skew-x-6 px-2.5 py-1 border-2 border-black text-[10px] font-black uppercase shrink-0 cursor-pointer ${
+                          isTarget
+                            ? 'bg-[#facc15] text-black shadow-[2px_2px_0px_#000]'
+                            : 'bg-white hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {simplifyDisplayName(peer.name)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50 border-2 border-black shadow-inner">
+                {!validSelectedPrivateUser ? (
+                  <div
+                    data-social-private-empty="true"
+                    className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs font-bold gap-2"
+                  >
+                    <span>
+                      {realHumanOnlinePeers.length === 0
+                        ? 'No other real human players are currently online for private whisper.'
+                        : 'Select an online player above or from ONLINE LIST to start a private whisper.'}
+                    </span>
+                    {realHumanOnlinePeers.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setActiveTab('online');
+                        }}
+                        className="-skew-x-6 px-3 py-1.5 bg-[#facc15] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer"
+                      >
+                        <span className="skew-x-6 inline-block">OPEN ONLINE LIST</span>
+                      </button>
+                    )}
+                  </div>
+                ) : privateMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs font-bold">
+                    Start a private whisper with{' '}
+                    <span className="text-black font-black uppercase mt-0.5">
+                      {simplifyDisplayName(validSelectedPrivateUser.name)}
+                    </span>
+                  </div>
+                ) : (
+                  privateMessages.map((msg) => {
+                    const isSelf = Boolean(msg.isSelf);
+                    return (
+                      <div
+                        key={msg.id}
+                        data-private-message-id={msg.id}
+                        data-private-is-self={isSelf ? 'true' : 'false'}
+                        className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'}`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5 px-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                            {isSelf
+                              ? `YOU -> ${simplifyDisplayName(msg.recipientName || validSelectedPrivateUser.name)}`
+                              : simplifyDisplayName(msg.senderName)}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400">
+                            {msg.timestamp}
+                          </span>
+                        </div>
+                        <div
+                          className={`max-w-[85%] px-3 py-2 text-xs font-bold leading-snug border-2 border-black shadow-[2px_2px_0px_#000] ${
+                            isSelf ? 'bg-[#facc15] text-black' : 'bg-white text-black'
+                          }`}
+                        >
+                          {msg.text}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={privateEndRef} />
               </div>
             </div>
+          )}
 
-            {/* 1. Sound Toggle & Volume Control */}
-            <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wide text-black">
-                  SOUND &amp; AUDIO SETTINGS
-                </span>
-                <button
-                  type="button"
-                  data-social-modal-sound-toggle="true"
-                  onClick={() => onToggleAudio?.()}
-                  className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0_#000] text-[10.5px] font-black uppercase cursor-pointer transition-all ${
-                    isMuted ? 'bg-[#ff3b30] text-white' : 'bg-[#10b981] text-black'
-                  }`}
-                >
-                  <span className="skew-x-6 inline-block">
-                    {isMuted ? 'SOUND: MUTE' : 'SOUND: ON'}
-                  </span>
-                </button>
+          {/* 4. SETTINGS SUB-TAB */}
+          {activeTab === 'settings' && (
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              <div className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] space-y-2">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                  SPEECH BUBBLE COLOR
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {BUBBLE_COLOR_SWATCHES.map((swatch) => {
+                    const isSelected =
+                      playerBubbleBgColor.toLowerCase() === swatch.bg.toLowerCase();
+                    return (
+                      <button
+                        key={swatch.bg}
+                        type="button"
+                        onClick={() => {
+                          onChangeBubbleBgColor?.(swatch.bg);
+                          onChangeBubbleTextColor?.(swatch.text);
+                        }}
+                        style={{ backgroundColor: swatch.bg, color: swatch.text }}
+                        className={`px-2.5 py-2 border-2 border-black text-[10px] font-black uppercase flex items-center justify-between cursor-pointer ${
+                          isSelected
+                            ? 'ring-2 ring-black shadow-[3px_3px_0px_#000] -translate-y-0.5'
+                            : 'opacity-85 hover:opacity-100'
+                        }`}
+                      >
+                        <span className="truncate">{swatch.label}</span>
+                        {isSelected && <span>OK</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[10.5px] font-black uppercase text-slate-700 min-w-[68px]">
-                  VOLUME {isMuted ? 0 : audioVolumePct}%
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={isMuted ? 0 : audioVolumePct}
-                  onChange={(e) => onChangeVolumePct?.(Number(e.target.value))}
-                  aria-label="Master Volume"
-                  className="flex-1 h-2.5 accent-[#10b981] cursor-pointer"
-                />
-              </div>
-            </div>
 
-            {/* 2. House Decoration — ONLY visible when player is inside their private house */}
-            {isInsidePrivateHouse && (
-              <div
-                data-social-modal-house-decor="true"
-                className="p-3.5 bg-[#fef08a] border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
-              >
+              <div className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wide text-black">
-                    HOUSE DECORATION · EDIT ROOM
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                    GAME SOUND &amp; AUDIO
                   </span>
-                  <span className="px-2 py-0.5 bg-black text-[#b8ff3c] text-[9.5px] font-black uppercase">
-                    INSIDE HOUSE
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onToggleAudio?.()}
+                    className={`-skew-x-6 px-3 py-1 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer ${
+                      isMuted ? 'bg-[#ff3b30] text-white' : 'bg-[#b8ff3c] text-black'
+                    }`}
+                  >
+                    <span className="skew-x-6 inline-block">{isMuted ? 'MUTED' : 'SOUND ON'}</span>
+                  </button>
                 </div>
-                <p className="text-[11px] font-bold text-slate-800 leading-snug">
-                  You are currently inside your house. Open the Room Decoration Studio to place furniture, paintings, plants, and trophies or switch architectural themes.
-                </p>
-                <button
-                  type="button"
-                  data-social-modal-open-house-decor-btn="true"
-                  onClick={() => onOpenHouseDecoration?.()}
-                  className="-skew-x-6 w-full py-2.5 px-4 bg-[#10b981] hover:bg-[#34d399] text-black border-2 border-black shadow-[3px_3px_0_#000] text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                >
-                  <span className="skew-x-6 inline-block">
-                    DECORATE HOUSE / EDIT ROOM
-                  </span>
-                </button>
-              </div>
-            )}
 
-            {/* 3. Chat Bubble & Text Color Customization */}
-            <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0_#000] space-y-2.5">
-              <div className="text-xs font-black uppercase tracking-wide text-black">
-                CHAT BUBBLE &amp; TEXT COLOR
-              </div>
-
-              <div>
-                <div className="text-[10px] font-black uppercase text-slate-700 mb-1">
-                  CHAT BUBBLE COLOR
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {[
-                    { label: 'White', hex: '#ffffff' },
-                    { label: 'Dark', hex: '#0f172a' },
-                    { label: 'Yellow', hex: '#facc15' },
-                    { label: 'Cyan', hex: '#38bdf8' },
-                    { label: 'Green', hex: '#10b981' },
-                    { label: 'Purple', hex: '#d8b4fe' },
-                  ].map((sw) => (
-                    <button
-                      key={sw.hex}
-                      type="button"
-                      title={`Bubble ${sw.label}`}
-                      onClick={() => onChangeBubbleBgColor?.(sw.hex)}
-                      style={{ backgroundColor: sw.hex }}
-                      className={`w-6 h-6 border-2 border-black cursor-pointer transition-transform ${
-                        playerBubbleBgColor === sw.hex
-                          ? 'scale-110 ring-2 ring-black shadow-[2px_2px_0_#000]'
-                          : 'opacity-85 hover:opacity-100'
-                      }`}
-                    />
-                  ))}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
+                    <span>Master Volume</span>
+                    <span className="font-black text-black">{isMuted ? 0 : audioVolumePct}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={isMuted ? 0 : audioVolumePct}
+                    onChange={(e) => onChangeVolumePct?.(Number(e.target.value))}
+                    className="w-full accent-black cursor-pointer"
+                  />
                 </div>
               </div>
 
-              <div>
-                <div className="text-[10px] font-black uppercase text-slate-700 mb-1">
-                  CHAT TEXT COLOR
+              {isInsidePrivateHouse && onOpenHouseDecoration && (
+                <div className="p-3 bg-[#fef9c3] border-2 border-[#0d0f12] shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-black uppercase text-[#0d0f12]">
+                      PRIVATE HOUSE INTERIOR
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-700">
+                      Buka studio perabotan &amp; dekorasi tema ruangan
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-chat-setting-decorate-btn="true"
+                    onClick={onOpenHouseDecoration}
+                    className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 transition-colors"
+                  >
+                    <span className="skew-x-6 inline-block">MODE DEKORASI</span>
+                  </button>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {[
-                    { label: 'Black', hex: '#0f172a' },
-                    { label: 'White', hex: '#ffffff' },
-                    { label: 'Yellow', hex: '#fde047' },
-                    { label: 'Cyan', hex: '#38bdf8' },
-                    { label: 'Green', hex: '#4ade80' },
-                    { label: 'Red', hex: '#ff3b30' },
-                  ].map((sw) => (
-                    <button
-                      key={sw.hex}
-                      type="button"
-                      title={`Text ${sw.label}`}
-                      onClick={() => onChangeBubbleTextColor?.(sw.hex)}
-                      style={{ backgroundColor: sw.hex }}
-                      className={`w-6 h-6 border-2 border-black cursor-pointer transition-transform ${
-                        playerBubbleTextColor === sw.hex
-                          ? 'scale-110 ring-2 ring-black shadow-[2px_2px_0_#000]'
-                          : 'opacity-85 hover:opacity-100'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  backgroundColor: playerBubbleBgColor,
-                  color: playerBubbleTextColor,
-                }}
-                className="px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black"
-              >
-                Hello Buddy! This is your chat color preview.
-              </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </aside>
   );

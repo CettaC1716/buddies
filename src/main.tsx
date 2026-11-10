@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { PrivyProvider } from '@privy-io/react-auth';
+import { SafePrivyProvider } from './lib/privyAuthBridge';
 import App from './App.tsx';
 import './index.css';
 
@@ -7,16 +7,7 @@ export const PRIVY_APP_ID =
   (import.meta.env.VITE_PRIVY_APP_ID as string | undefined)?.trim() || '';
 
 createRoot(document.getElementById('root')!).render(
-  <PrivyProvider
-    appId={PRIVY_APP_ID}
-    config={{
-      loginMethods: ['google'],
-      appearance: {
-        theme: 'dark',
-        accentColor: '#b8ff3c',
-      },
-    }}
-  >
+  <SafePrivyProvider appId={PRIVY_APP_ID}>
     <App />
-  </PrivyProvider>,
+  </SafePrivyProvider>,
 );

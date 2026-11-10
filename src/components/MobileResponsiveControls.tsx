@@ -242,22 +242,20 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Please Rotate Your Device to Landscape Mode"
+          aria-label="Rotate Device to Landscape"
           data-portrait-rotate-overlay="true"
-          className="fixed inset-0 z-[100000] bg-[#0b0e16]/96 backdrop-blur-md text-white flex flex-col items-center justify-center p-6 pointer-events-auto select-none text-center"
+          className="fixed inset-0 z-[100000] bg-[#0b0e16]/95 backdrop-blur-md text-white flex flex-col items-center justify-center p-6 pointer-events-auto select-none text-center"
         >
-          <div className="w-full max-w-sm bg-[#14161d] border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 flex flex-col items-center gap-4">
-            {/* Top Badge */}
-            <div className="-skew-x-12 px-3.5 py-1 bg-[#facc15] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-widest">
-              <span className="skew-x-12 inline-block">LANDSCAPE VIEW REQUIRED</span>
-            </div>
-
+          <div className="w-full max-w-[260px] bg-[#14161d] border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] px-6 py-7 flex flex-col items-center gap-4">
             {/* Animated Rotating Device Graphic */}
-            <div className="relative w-28 h-28 flex items-center justify-center my-1">
-              <div className="absolute inset-0 rounded-full border-2 border-dashed border-[#38bdf8]/45 animate-spin" style={{ animationDuration: '10s' }} />
-              <div className="relative flex items-center justify-center w-20 h-20 bg-[#1e293b] border-3 border-black ring-2 ring-[#b8ff3c] shadow-[4px_4px_0_#000] rounded-2xl">
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <div
+                className="absolute inset-0 rounded-full border-2 border-dashed border-[#38bdf8]/45 animate-spin"
+                style={{ animationDuration: '10s' }}
+              />
+              <div className="relative flex items-center justify-center w-18 h-18 bg-[#1e293b] border-3 border-black ring-2 ring-[#b8ff3c] shadow-[4px_4px_0_#000] rounded-2xl">
                 <Smartphone
-                  className="w-11 h-11 text-[#b8ff3c] stroke-[2.2] transition-transform duration-700 -rotate-90 animate-pulse"
+                  className="w-10 h-10 text-[#b8ff3c] stroke-[2.2] transition-transform duration-700 -rotate-90 animate-pulse"
                   aria-hidden="true"
                 />
                 <RotateCcw
@@ -267,25 +265,17 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
               </div>
             </div>
 
-            {/* English Heading & Instructions */}
-            <div className="space-y-2">
-              <h2 className="text-2xl font-black uppercase tracking-wide text-white leading-tight">
-                PLEASE ROTATE YOUR SCREEN
+            {/* Minimal Heading */}
+            <div className="space-y-1">
+              <h2 className="text-lg font-black uppercase tracking-wider text-white leading-tight">
+                ROTATE YOUR SCREEN
               </h2>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-[#b8ff3c]">
-                Switch to Horizontal (Landscape) Mode
-              </p>
-              <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                Buddies Blitz is designed for Horizontal (Landscape) display on mobile and tablet devices. Please turn your device sideways for full 3D controls and visibility.
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#b8ff3c]">
+                Landscape Mode
               </p>
             </div>
 
-            {/* Viewport Status Pill */}
-            <div className="w-full py-2 px-3 bg-black/50 border border-white/20 text-[10.5px] font-mono font-bold text-[#38bdf8]">
-              CURRENT: PORTRAIT ({viewport.width}×{viewport.height}) → ROTATE 90°
-            </div>
-
-            {/* Fallback Dismiss Button (e.g. if orientation lock is active on desktop/tablet) */}
+            {/* Compact Dismiss Button */}
             <button
               type="button"
               data-dismiss-portrait-overlay-btn="true"
@@ -293,9 +283,9 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 soundEngine.playUiClick();
                 setDismissedPortraitOverlay(true);
               }}
-              className="-skew-x-6 w-full py-2 px-4 bg-[#1e293b] hover:bg-[#334155] text-white/85 font-black text-[10.5px] uppercase tracking-wider border-2 border-black shadow-[3px_3px_0_#000] cursor-pointer active:scale-95 transition-all"
+              className="-skew-x-6 w-full py-2 px-4 bg-[#1e293b] hover:bg-[#334155] text-white/90 font-black text-[11px] uppercase tracking-wider border-2 border-black shadow-[3px_3px_0_#000] cursor-pointer active:scale-95 transition-all"
             >
-              <span className="skew-x-6 inline-block">CONTINUE IN CURRENT VIEW</span>
+              <span className="skew-x-6 inline-block">SKIP</span>
             </button>
           </div>
         </div>

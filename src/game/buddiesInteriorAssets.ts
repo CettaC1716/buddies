@@ -6,7 +6,7 @@ import {
 } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /**
- * Verbatim Bundled 3D Procedural Asset & Geometry Builders from `https://buddies-blitz.com/interior/` (`app_formatted.js` #L125-L468)
+ * Procedural 3D Cutaway House Interior & Catalog Furniture Geometry Builders
  * Includes:
  * - Seeded Mulberry32 PRNG (`we`)
  * - RoundedBoxGeometry helper (`We`) & Vertex-Welded Smooth Normal helper (`Ee`)
@@ -17,7 +17,7 @@ import {
  * - All 23 Original Furniture Builders (`lc`..`Dc`) in `BUDDIES_FURNITURE_BUILDERS` (`je`)
  */
 
-export function we(e: number): () => number {
+function we(e: number): () => number {
   return () => {
     e |= 0;
     e = (e + 1831565813) | 0;
@@ -27,10 +27,10 @@ export function we(e: number): () => number {
   };
 }
 
-export const We = (e: number, t: number, o: number, a = 0.02, n = 2): i.BufferGeometry =>
+const We = (e: number, t: number, o: number, a = 0.02, n = 2): i.BufferGeometry =>
   new vs(e, t, o, n, Math.min(a, Math.min(e, t, o) / 2.02));
 
-export const Ee = (e: i.BufferGeometry): i.BufferGeometry => {
+const Ee = (e: i.BufferGeometry): i.BufferGeometry => {
   e.deleteAttribute('uv');
   e.deleteAttribute('normal');
   const merged = hl(e);
@@ -51,7 +51,7 @@ const Vs = new i.Vector3();
 const Bo = new i.Vector3();
 const Po = new i.Vector3();
 
-export function ir(e: i.BufferGeometry): i.BufferGeometry {
+function ir(e: i.BufferGeometry): i.BufferGeometry {
   const geo = e.index ? e.toNonIndexed() : e;
   const t = geo.attributes.position;
   const o = new Float32Array(t.count * 2);
@@ -116,7 +116,7 @@ interface BatchTransformOpts {
   col?: i.Color;
 }
 
-export function O() {
+function O() {
   const e = new Map<i.Material, { mat: i.Material; list: i.BufferGeometry[] }>();
   const t = (
     rawMat: MaterialOrTint,
@@ -422,7 +422,7 @@ const He = [
 ].map((e) => qs(rc, e));
 const me = ['#e9e4da', '#c9b59a', '#8e9a86', '#2f3136', '#b86f4c'].map((e) => qs(sc, e));
 const yr = j('#efe6d4', { roughness: 0.9, side: i.DoubleSide, envMapIntensity: 0.4 });
-export const Ne = {
+const Ne = {
   shade: ct('#ffd6a0', 1),
   bulb: ct('#fff0d6', 1),
   led: ct('#ffc07a', 1),
@@ -438,7 +438,7 @@ const Sc = j('#2e2a27', { roughness: 0.8 });
 const Ya = 3;
 const Za = 2.1;
 
-export function Je(e: number, t: number, o: number, a = 0.05, n = 0.018): i.BufferGeometry {
+function Je(e: number, t: number, o: number, a = 0.05, n = 0.018): i.BufferGeometry {
   const r = new vs(e, t, o, 4, Math.min(a, Math.min(e, t, o) / 2.02));
   const s = r.attributes.position;
   for (let l = 0; l < s.count; l++) {
@@ -452,7 +452,7 @@ export function Je(e: number, t: number, o: number, a = 0.05, n = 0.018): i.Buff
   return Ee(r);
 }
 
-export function io(e: number, t: number, o: number): i.BufferGeometry {
+function io(e: number, t: number, o: number): i.BufferGeometry {
   const a = new i.BoxGeometry(e, t, o, 14, 14, 2);
   const n = a.attributes.position;
   for (let r = 0; r < n.count; r++) {
@@ -466,7 +466,7 @@ export function io(e: number, t: number, o: number): i.BufferGeometry {
   return Ee(a);
 }
 
-export function Ft(e: [number, number][], t = 32): i.LatheGeometry {
+function Ft(e: [number, number][], t = 32): i.LatheGeometry {
   const o = new i.LatheGeometry(
     e.map(([s, l]) => new i.Vector2(s, l)),
     t,
@@ -480,7 +480,7 @@ export function Ft(e: [number, number][], t = 32): i.LatheGeometry {
   return o;
 }
 
-export function Ro(
+function Ro(
   e: number,
   t: number,
   {
@@ -540,7 +540,7 @@ export function Ro(
   return h.toNonIndexed();
 }
 
-export function Eo(
+function Eo(
   e: i.BufferGeometry,
   t: i.Vector3,
   o: i.Vector3,
@@ -562,7 +562,7 @@ export function Eo(
   return e;
 }
 
-export function lo(
+function lo(
   e: ReturnType<typeof O>,
   t: number,
   o: number,
@@ -596,7 +596,7 @@ export function lo(
   }
 }
 
-export function et(
+function et(
   e: ReturnType<typeof O>,
   t: MaterialOrTint,
   o: number,
@@ -650,7 +650,7 @@ export function et(
   );
 }
 
-export function Io(
+function Io(
   e: ReturnType<typeof O>,
   t: number,
   o: number,
@@ -724,7 +724,7 @@ function Mc(
 // ============================================================================
 
 /** `lc`: L-Sectional Sofa (`#L427`) */
-export function lc(): i.Group {
+function lc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 2.7;
@@ -799,7 +799,7 @@ export function lc(): i.Group {
 }
 
 /** `cc`: Timber Frame Lounge Armchair (`#L428`) */
-export function cc(): i.Group {
+function cc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 0.74;
@@ -823,7 +823,7 @@ export function cc(): i.Group {
 }
 
 /** `uc`: Round Chabudai / Coffee Table with Books, Plant & Glass Candle (`#L429`) */
-export function uc(): i.Group {
+function uc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 0.5;
@@ -889,7 +889,7 @@ export function uc(): i.Group {
 }
 
 /** `fc`: Lathe Upholstered Pouf Ottoman (`#L430`) */
-export function fc(): i.Group {
+function fc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 0.27;
@@ -922,7 +922,7 @@ export function fc(): i.Group {
 }
 
 /** `dc`: Overarching Bezier Arc Floor Lamp (`#L431`) */
-export function dc(): i.Group {
+function dc(): i.Group {
   const e = new i.Group();
   const t = O();
   t.cyl(D, 0, 0.025, 0, 0.16, 0.17, 0.05, { seg: 36 }).cyl(ro, 0, 0.056, 0, 0.03, 0.035, 0.012, {
@@ -951,7 +951,7 @@ export function dc(): i.Group {
 }
 
 /** `hc`: Pedestal Side Table with Ceramic Table Lamp & Plant (`#L432`) */
-export function hc(): i.Group {
+function hc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 0.52;
@@ -1030,7 +1030,7 @@ export function hc(): i.Group {
 }
 
 /** `pc`: Fiddle-Leaf Fig Tree in 7-Sided Ceramic Planter (`#L433`) */
-export function pc(): i.Group {
+function pc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = we(5);
@@ -1079,7 +1079,7 @@ export function pc(): i.Group {
 }
 
 /** `mc`: Bird of Paradise in Fluted Planter (`#L434`) */
-export function mc(): i.Group {
+function mc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = we(9);
@@ -1129,7 +1129,7 @@ export function mc(): i.Group {
 }
 
 /** `wc`: Sideboard / Mid-Century Credenza with Vases, Books & Plant (`#L437`) */
-export function wc(): i.Group {
+function wc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.8;
@@ -1188,7 +1188,7 @@ export function wc(): i.Group {
 }
 
 /** `xc`: Floating Wall Shelves with LED Strips, Books, Vases & Trailing Ivy (`#L438`) */
-export function xc(): i.Group {
+function xc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = we(31);
@@ -1248,7 +1248,7 @@ export function xc(): i.Group {
 }
 
 /** `bc`: Woven Area Rug (`#L445`) */
-export function bc(): i.Group {
+function bc(): i.Group {
   const e = new i.Group();
   const t = We(Ya, 0.014, Za, 0.006, 1);
   const o = t.attributes.position;
@@ -1264,7 +1264,7 @@ export function bc(): i.Group {
 }
 
 /** `Cc`: Platform Bed with Upholstered Headboard, Duvet & 4 Pillows (`#L451`) */
-export function Cc(): i.Group {
+function Cc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.8;
@@ -1297,7 +1297,7 @@ export function Cc(): i.Group {
 }
 
 /** `kc`: Bedside Nightstand with Table Lamp (`#L452`) */
-export function kc(): i.Group {
+function kc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 0.5;
@@ -1321,7 +1321,7 @@ export function kc(): i.Group {
 }
 
 /** `zc`: Two-Door Wardrobe Closet (`#L453`) */
-export function zc(): i.Group {
+function zc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.6;
@@ -1338,7 +1338,7 @@ export function zc(): i.Group {
 }
 
 /** `Tc`: Dining Table with Ceramic Vases & Botanical Centerpiece (`#L454`) */
-export function Tc(): i.Group {
+function Tc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.7;
@@ -1391,7 +1391,7 @@ export function Tc(): i.Group {
 }
 
 /** `Lc`: Dining Chair with Puffed Cushion (`#L455`) */
-export function Lc(): i.Group {
+function Lc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 0.46;
@@ -1413,7 +1413,7 @@ export function Lc(): i.Group {
 }
 
 /** `Ac`: Upholstered Foot-of-Bed Bench (`#L456`) */
-export function Ac(): i.Group {
+function Ac(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.2;
@@ -1438,7 +1438,7 @@ export function Ac(): i.Group {
 }
 
 /** `Rc`: 6-Tier Tall Bookcase with Books, Vases & Top Plant (`#L457`) */
-export function Rc(): i.Group {
+function Rc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1;
@@ -1467,7 +1467,7 @@ export function Rc(): i.Group {
 }
 
 /** `Bc`: Study Desk with Laptop, Mug, Plant & Articulated Task Lamp (`#L458`) */
-export function Bc(): i.Group {
+function Bc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.4;
@@ -1505,7 +1505,7 @@ export function Bc(): i.Group {
 }
 
 /** `Pc`: 5-Star Swivel Task Chair (`#L459`) */
-export function Pc(): i.Group {
+function Pc(): i.Group {
   const e = new i.Group();
   const t = O();
   for (let o = 0; o < 5; o++) {
@@ -1533,7 +1533,7 @@ export function Pc(): i.Group {
 }
 
 /** `Ec`: Variegated Snake Plant in Turned Ceramic Pot (`#L460`) */
-export function Ec(): i.Group {
+function Ec(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = we(33);

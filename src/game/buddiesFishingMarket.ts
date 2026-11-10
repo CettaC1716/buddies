@@ -424,14 +424,24 @@ export function detectNearbyFishingWaterZone(
   worldX: number,
   worldZ: number,
 ): FishingWaterDetection {
+  // Never allow fishing inside Central Plaza (x <= -76.2)
+  if (worldX <= -76.2) {
+    return {
+      canFish: false,
+      zoneId: null,
+      zoneLabel: null,
+      distanceToWaterM: 999,
+    };
+  }
+
   const lakeSdf = evaluateNwLakeSdf(worldX, worldZ);
   const { waterSdf } = evaluateSeHarborSdf(worldX, worldZ);
 
   const absLakeDist = Math.abs(lakeSdf);
   const absHarborDist = Math.abs(waterSdf);
 
-  // 1. Central Oasis Lake shoreline (within 11.5m of water edge)
-  if (lakeSdf <= 11.5) {
+  // 1. Central Oasis Lake shoreline (within 6.5m of water edge)
+  if (lakeSdf <= 6.5) {
     return {
       canFish: true,
       zoneId: 'central_oasis',
@@ -440,8 +450,8 @@ export function detectNearbyFishingWaterZone(
     };
   }
 
-  // 2. East Beach & Harbor shoreline (within 18m of ocean edge or along the East Beach promenade x >= 78)
-  if (waterSdf <= 18.0 || (worldX >= 78.0 && worldZ >= 42.0 && worldZ <= 106.0)) {
+  // 2. East Beach & Harbor shoreline (within 8.5m of ocean edge)
+  if (waterSdf <= 8.5) {
     return {
       canFish: true,
       zoneId: 'east_beach',
@@ -756,10 +766,10 @@ export function stepTidewaterMinigame(
     statusReason = null;
   } else if (overloadSec > 0.65) {
     status = 'snapped';
-    statusReason = 'Tali putus · kendurkan saat ikan menarik kuat';
+    statusReason = 'Line snapped · ease tension when fish surges';
   } else if (slackSec > 5.0 || distanceM > state.maxDistanceM) {
     status = 'escaped';
-    statusReason = 'Ikan lepas karena tali terlalu kendur';
+    statusReason = 'Fish escaped due to slack line';
   }
 
   return {
@@ -784,43 +794,3 @@ function randRange(rng: () => number, min: number, max: number): number {
   return min + rng() * (max - min);
 }
 
-export const INITIAL_DEMO_FISH_MARKET_LISTINGS: FishNftMarketplaceListing[] = [
-  {
-    listingId: 'listing-genesis-1',
-    nftTokenId: 'nep171-fish-golden_harbor_tuna-8841',
-    speciesId: 'golden_harbor_tuna',
-    speciesName: 'Golden Harbor Tuna',
-    waterZone: 'east_beach',
-    waterZoneLabel: 'East Beach Shoreline',
-    rarity: 'Rare',
-    weightKg: 13.45,
-    lengthCm: 91,
-    isTrophy: true,
-    colorHex: '#facc15',
-    caughtByAccount: 'kai-angler.buddiesblitz.testnet',
-    sellerNearAccount: 'kai-angler.buddiesblitz.testnet',
-    priceRespite: 25,
-    priceLul: 25,
-    nearTxHash: '9fK2vL8xM1pQ4zW7nB3cR6tY5uJ8hG2dF4sA1eN',
-    listedAtIso: new Date(Date.now() - 3600 * 1000 * 2).toISOString(),
-  },
-  {
-    listingId: 'listing-genesis-2',
-    nftTokenId: 'nep171-fish-astral_dragon_arowana-2049',
-    speciesId: 'astral_dragon_arowana',
-    speciesName: 'Astral Dragon Arowana',
-    waterZone: 'central_oasis',
-    waterZoneLabel: 'Central Oasis Lake',
-    rarity: 'Mythic',
-    weightKg: 24.8,
-    lengthCm: 126,
-    isTrophy: true,
-    colorHex: '#f59e0b',
-    caughtByAccount: 'oasis-hunter.buddiesblitz.testnet',
-    sellerNearAccount: 'oasis-hunter.buddiesblitz.testnet',
-    priceRespite: 55,
-    priceLul: 55,
-    nearTxHash: '4xP9mN2vK7qL1wZ8cR5tY3uJ6hG9dF2sA7eB4nM',
-    listedAtIso: new Date(Date.now() - 3600 * 1000 * 5).toISOString(),
-  },
-];

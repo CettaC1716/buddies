@@ -8849,8 +8849,8 @@ export const SUPPLY_DROP_LOCATIONS: Record<SupplyDropLocationId, SupplyDropLocat
   HARBOR_DOCK: {
     id: 'HARBOR_DOCK',
     name: 'HARBOR DOCK',
-    x: 84.0,
-    z: 0.0,
+    x: 0.0,
+    z: 14.5,
   },
 };
 
@@ -11172,7 +11172,7 @@ export interface LobbyTramReturnPadSpec {
   radius: number;
   colorHex: string;
   style: 'crate_pad_hologram';
-  label: 'LOBBY';
+  label: 'CENTRAL PLAZA';
 }
 
 export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
@@ -11184,7 +11184,7 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
     radius: 1.45,
     colorHex: '#38bdf8',
     style: 'crate_pad_hologram',
-    label: 'LOBBY',
+    label: 'CENTRAL PLAZA',
   },
   {
     id: 'south_lobby_pad',
@@ -11194,7 +11194,7 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
     radius: 1.45,
     colorHex: '#38bdf8',
     style: 'crate_pad_hologram',
-    label: 'LOBBY',
+    label: 'CENTRAL PLAZA',
   },
 ] as const;
 
@@ -11219,8 +11219,8 @@ export const LOBBY_TRAM_SHELTER_SPEC = {
   southReturnPadZ: 4.6,
   returnPadRadius: 1.45,
   returnPads: LOBBY_TRAM_RETURN_PADS,
-  label: 'LOBBY',
-  subtitle: 'HALTE TREM KOTA MODERN · KEMBALI KE LOBBY SAFEZONE',
+  label: 'CENTRAL PLAZA',
+  subtitle: 'HALTE TREM KOTA MODERN · KEMBALI KE CENTRAL PLAZA',
 } as const;
 
 export const PUBLIC_PAD_SHIELD_RADIUS = 3.6;
@@ -11263,10 +11263,10 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   },
   {
     id: 'public_pad_blue_cw',
-    x: -27.5,
-    z: 41.5,
-    worldX: -27.5,
-    worldZ: 41.5,
+    x: -9.5,
+    z: 33.0,
+    worldX: -9.5,
+    worldZ: 33.0,
     team: 'blue',
     teamBias: 'blue',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11325,9 +11325,9 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   {
     id: 'public_pad_red_ce',
     x: 9.5,
-    z: -41.5,
+    z: -33.0,
     worldX: 9.5,
-    worldZ: -41.5,
+    worldZ: -33.0,
     team: 'red',
     teamBias: 'red',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11548,7 +11548,7 @@ export const SAFEZONE_CITY_HALTE_SPAWN = {
   x: -63.4,
   z: 4.6,
   yaw: Math.PI,
-  label: 'HALTE TREM DEPAN LOBBY (SAFEZONE CITY)',
+  label: 'HALTE TREM DEPAN CENTRAL PLAZA (SAFEZONE CITY)',
 } as const;
 
 export interface CitySafezoneModeRules {
@@ -11640,9 +11640,9 @@ export function evaluateLobbyAndSafezonePeacefulState(params: {
     externalCombatObjectsVisible: combatVisible,
     externalCombatCollidersEnabled: combatVisible,
     cityRoadsAndTramVisible: true,
-    lobbyPortalsVisible: isInsideLobby,
-    halteReturnPadsVisible: !isInsideLobby,
-    cityKiosksAndUnitsVisible: !isInsideLobby,
+    lobbyPortalsVisible: false,
+    halteReturnPadsVisible: false,
+    cityKiosksAndUnitsVisible: true,
   };
 }
 
@@ -11759,8 +11759,8 @@ export function evaluateLobbyTramReturnPadStep(
   radius: number;
   colorHex: string;
   style: 'crate_pad_hologram';
-  label: 'LOBBY';
-  floatingButtonLabel: 'LOBBY';
+  label: 'CENTRAL PLAZA';
+  floatingButtonLabel: 'CENTRAL PLAZA';
 } | null {
   for (let i = 0; i < LOBBY_TRAM_RETURN_PADS.length; i++) {
     const pad = LOBBY_TRAM_RETURN_PADS[i];
@@ -11887,16 +11887,28 @@ export function createInitialNearGamepassSessionState(): NearGamepassSessionStat
 
 export function connectNearWalletAndMintGamepass(
   state: NearGamepassSessionState,
-  customAccountId = 'commander-p1.near',
+  customAccountId?: string,
 ): NearGamepassSessionState {
-  const trimmed = customAccountId.trim().toLowerCase();
+  const trimmed = (customAccountId ?? '').trim().toLowerCase();
+  if (!trimmed) {
+    return {
+      ...state,
+      walletConnected: false,
+      accountId: null,
+      walletId: null,
+      hasGamepassNft: false,
+      tokenId: null,
+      sessionStatusBanner:
+        'Connect or register a NEAR Wallet first to verify NEP-171 House ownership.',
+    };
+  }
   const cleanAccount =
     trimmed.endsWith('.near') ||
     trimmed.endsWith('.testnet') ||
     trimmed.includes('.') ||
     /^[0-9a-f]{64}$/.test(trimmed)
       ? trimmed
-      : `${trimmed || 'commander-p1'}.near`;
+      : `${trimmed}.near`;
   const tokenId = `nep171-gamepass-${cleanAccount.replace(/[^a-z0-9]/g, '-')}-01`;
   return {
     ...state,
@@ -11915,14 +11927,15 @@ export function generateNearHarvesterSwarmSubAccounts(
   _commanderIdx?: number,
   count = 2,
 ): string[] {
-  const trimmed = nearAccountId.trim().toLowerCase();
+  const trimmed = (nearAccountId ?? '').trim().toLowerCase();
+  if (!trimmed) return [];
   const cleanWallet =
     trimmed.endsWith('.near') ||
     trimmed.endsWith('.testnet') ||
     trimmed.includes('.') ||
     /^[0-9a-f]{64}$/.test(trimmed)
       ? trimmed
-      : `${trimmed || 'commander-p1'}.near`;
+      : `${trimmed}.near`;
   const result: string[] = [];
   for (let i = 1; i <= count; i++) {
     result.push(`harvester-${i}.${cleanWallet}`);
@@ -11951,9 +11964,14 @@ export function claimEmptyBasePlotWithNearGamepass(
   const isSafezoneMode = Boolean(options?.isSafezoneMode);
   const playerTeam: 'blue' | 'red' =
     typeof redBasesOrPlayerTeam === 'string' ? redBasesOrPlayerTeam : playerTeamOrTargetTeam;
-  let activeSession = session;
+  const activeSession = session;
   if (!activeSession.walletConnected || !activeSession.hasGamepassNft || !activeSession.accountId) {
-    activeSession = connectNearWalletAndMintGamepass(activeSession, `commander-${playerTeam}.near`);
+    return {
+      success: false,
+      claimed: false,
+      message: 'Connect a verified NEAR Wallet with a NEP-171 Gamepass before claiming a Base Plot.',
+      updatedSession: activeSession,
+    };
   }
 
   const targetBases =
@@ -12222,7 +12240,7 @@ export function evaluatePlayerWarzoneDeathStep(params: {
     respawnHp: PLAYER_WARZONE_MAX_HP,
     livesAfterRespawn: maxLives,
     statusMessage:
-      '0/5 LIVES DEPLETED! Returned to Main Safezone Lobby - Base Plot reverted to empty grass lot & Warzone slot opened.',
+      '0/5 LIVES DEPLETED! Returned to Central Plaza - Base Plot reverted to empty grass lot & Warzone slot opened.',
   };
 }
 
@@ -12301,8 +12319,8 @@ export function computeHarvesterBaseStandbyPosition(
 export const LOBBY_GOLD_EXCHANGE_SPEC = {
   x: -81.8,
   z: -8.8,
-  interactRadius: 3.8,
-  label: 'LOBBY GOLD EXCHANGE',
+  interactRadius: 3.5,
+  label: 'CENTRAL PLAZA GOLD EXCHANGE',
   subtitle: '[E / B] EXCHANGE WARZONE GOLD FOR VIP SKINS & GEAR',
 } as const;
 
@@ -12455,8 +12473,9 @@ export interface OpenWarzonePopulationSnapshot {
 }
 
 /**
- * Computes the Always-On 10v10 Open Warzone population bar (`BLUE 6/10 ONLINE VS RED 6/10 ONLINE`):
+ * Computes the Always-On 10v10 Open Warzone population bar (`BLUE X/10 ONLINE VS RED Y/10 ONLINE`):
  * - Server cap: 10 players per team (4 Base Owners + 6 Warzone Roamers).
+ * - Strictly reflects real connected players (0..10 per team) with no fake bot padding.
  */
 export function evaluateOpenWarzonePopulationBar(params: {
   blueClaimedBasesCount: number;
@@ -12465,6 +12484,7 @@ export function evaluateOpenWarzonePopulationBar(params: {
   redExtraRoamers?: number;
   playerTeam: 'blue' | 'red';
   isPlayerInLobby: boolean;
+  localPlayerHasClaimedBase?: boolean;
 }): OpenWarzonePopulationSnapshot {
   const maxPerTeam = OPEN_WARZONE_TEAM_CAPACITY.maxTotalPerTeam;
   const blueBaseOwners = clamp(
@@ -12477,24 +12497,30 @@ export function evaluateOpenWarzonePopulationBar(params: {
     0,
     OPEN_WARZONE_TEAM_CAPACITY.maxBaseOwnersPerTeam,
   );
-  const baseBlueRoamers = params.blueExtraRoamers ?? 5;
-  const baseRedRoamers = params.redExtraRoamers ?? 6;
-  const playerBlueBonus = !params.isPlayerInLobby && params.playerTeam === 'blue' ? 1 : 0;
-  const playerRedBonus = !params.isPlayerInLobby && params.playerTeam === 'red' ? 1 : 0;
+  const baseBlueRoamers = Math.max(0, Math.floor(params.blueExtraRoamers ?? 0));
+  const baseRedRoamers = Math.max(0, Math.floor(params.redExtraRoamers ?? 0));
+  const playerBlueBonus =
+    !params.isPlayerInLobby && params.playerTeam === 'blue' && !params.localPlayerHasClaimedBase
+      ? 1
+      : 0;
+  const playerRedBonus =
+    !params.isPlayerInLobby && params.playerTeam === 'red' && !params.localPlayerHasClaimedBase
+      ? 1
+      : 0;
 
   const blueWarzoneRoamers = clamp(
-    baseBlueRoamers + playerBlueBonus - Math.max(0, blueBaseOwners - 1),
+    baseBlueRoamers + playerBlueBonus,
     0,
     OPEN_WARZONE_TEAM_CAPACITY.maxWarzoneRoamersPerTeam,
   );
   const redWarzoneRoamers = clamp(
-    baseRedRoamers + playerRedBonus - redBaseOwners,
+    baseRedRoamers + playerRedBonus,
     0,
     OPEN_WARZONE_TEAM_CAPACITY.maxWarzoneRoamersPerTeam,
   );
 
-  const blueOnline = clamp(blueBaseOwners + blueWarzoneRoamers, 1, maxPerTeam);
-  const redOnline = clamp(redBaseOwners + redWarzoneRoamers, 1, maxPerTeam);
+  const blueOnline = clamp(blueBaseOwners + blueWarzoneRoamers, 0, maxPerTeam);
+  const redOnline = clamp(redBaseOwners + redWarzoneRoamers, 0, maxPerTeam);
 
   return {
     blueOnline,
@@ -12717,15 +12743,10 @@ export function evaluatePlayerGhostMovementGuard(params: {
 }
 
 // ============================================================================
-// NEP-171 SUB-ACCOUNT ATOMIC TRANSFER & SOCIAL LOGIN RE-EXPORTS (TRACK: nfts & games)
+// NEAR EXPLORER URL RE-EXPORTS
 // ============================================================================
 
 export {
-  deriveSocialInvisibleNearAccount,
-  createInitialNep171SubAccountLedger,
-  recordNep171SubAccountEarning,
-  executeAtomicNep171SubAccountTransfer,
-  verifyNep171SubAccountControl,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
 } from '../lib/nearClient';
@@ -12735,6 +12756,534 @@ export type {
   NearOnboardingMode,
   Nep171GamepassSubAccountLedger,
   Nep171OwnershipHistoryEntry,
-  AtomicNep171TransferResult,
 } from '../lib/nearClient';
+
+// ============================================================================
+// SINGLE SOURCE OF TRUTH FOR BASE PLOT KIOSK & HOUSE DOOR PROXIMITY TRIGGERS
+// ============================================================================
+
+export const BASE_PLOT_KIOSK_MAX_INTERACT_RADIUS = 3.5;
+export const HOUSE_DOOR_MAX_INTERACT_RADIUS = 3.5;
+
+export interface BasePlotProximityEvaluation {
+  canTriggerBaseKiosk: boolean;
+  nearestKioskTeam: 'blue' | 'red' | null;
+  nearestKioskPlotIndex: number | null;
+  nearestKioskDistance: number;
+  canTriggerEnterHouseDoor: boolean;
+  nearestHouseDoorTeam: 'blue' | 'red' | null;
+  nearestHouseDoorPlotIndex: number | null;
+  nearestHouseDoorWorldPos: { x: number; z: number } | null;
+  nearestHouseDoorDistance: number;
+}
+
+/**
+ * Evaluates Base Plot Tactical Kiosk and Safezone House Entrance Door proximity triggers
+ * strictly from live, visible 3D objects:
+ * 1. Inside Central Plaza (`worldMode === 'lobby'` or `isPointInsideLobbySafezone(actorX, actorZ)`),
+ *    BOTH `canTriggerBaseKiosk` and `canTriggerEnterHouseDoor` are strictly `false`.
+ * 2. Base Plot Tactical Kiosks only trigger when `worldMode !== 'lobby'` and the player is within
+ *    `<= 3.5m` of a visible plot kiosk mesh.
+ * 3. `Enter House` (`canTriggerEnterHouseDoor`) ONLY triggers in Safezone mode (`worldMode === 'safezone'`)
+ *    within `<= 3.5m` of the front door `(pwx, baseHqZ + sign * 1.85)` of a plot where a 3D House is
+ *    actually built and visible (`isCommanderBasePlotActive(plot) && isHouseVisible !== false`) —
+ *    NEVER on any of the 7 unclaimed empty grass plots.
+ */
+export function evaluateBasePlotProximityTriggers(params: {
+  actorX: number;
+  actorZ: number;
+  worldMode: 'lobby' | 'safezone' | 'warzone';
+  blueCommanderBases: ReadonlyArray<IndividualCommanderBaseState>;
+  redCommanderBases: ReadonlyArray<IndividualCommanderBaseState>;
+  blueHqX?: number;
+  blueHqZ?: number;
+  redHqX?: number;
+  redHqZ?: number;
+  kioskVisibilityByPlot?: {
+    blue?: ReadonlyArray<boolean>;
+    red?: ReadonlyArray<boolean>;
+  };
+  houseVisibilityByPlot?: {
+    blue?: ReadonlyArray<boolean>;
+    red?: ReadonlyArray<boolean>;
+  };
+  maxKioskRadius?: number;
+  maxHouseDoorRadius?: number;
+}): BasePlotProximityEvaluation {
+  const maxKioskR = params.maxKioskRadius ?? BASE_PLOT_KIOSK_MAX_INTERACT_RADIUS;
+  const maxDoorR = params.maxHouseDoorRadius ?? HOUSE_DOOR_MAX_INTERACT_RADIUS;
+
+  if (isPointInsideLobbySafezone(params.actorX, params.actorZ)) {
+    return {
+      canTriggerBaseKiosk: false,
+      nearestKioskTeam: null,
+      nearestKioskPlotIndex: null,
+      nearestKioskDistance: 9999,
+      canTriggerEnterHouseDoor: false,
+      nearestHouseDoorTeam: null,
+      nearestHouseDoorPlotIndex: null,
+      nearestHouseDoorWorldPos: null,
+      nearestHouseDoorDistance: 9999,
+    };
+  }
+
+  const isPeacefulCityMode = params.worldMode === 'safezone' || params.worldMode === 'lobby';
+  const plotOffsetsX = [-45.0, -15.0, 15.0, 45.0] as const;
+  const blueHqX = params.blueHqX ?? 0.0;
+  const blueHqZ = params.blueHqZ ?? 74.0;
+  const redHqX = params.redHqX ?? 0.0;
+  const redHqZ = params.redHqZ ?? -86.0;
+
+  let bestKioskDist = 9999;
+  let bestKioskTeam: 'blue' | 'red' | null = null;
+  let bestKioskIdx: number | null = null;
+
+  let bestDoorDist = 9999;
+  let bestDoorTeam: 'blue' | 'red' | null = null;
+  let bestDoorIdx: number | null = null;
+  let bestDoorPos: { x: number; z: number } | null = null;
+
+  const checkTeamPlots = (
+    team: 'blue' | 'red',
+    hqX: number,
+    hqZ: number,
+    plots: ReadonlyArray<IndividualCommanderBaseState>,
+    kioskVisList?: ReadonlyArray<boolean>,
+    houseVisList?: ReadonlyArray<boolean>,
+  ) => {
+    const sign = team === 'blue' ? 1 : -1;
+    for (let i = 0; i < 4 && i < plots.length; i++) {
+      const plot = plots[i];
+      const pwx = hqX + sign * plotOffsetsX[i];
+
+      // 1. Standalone Base Plot Tactical Kiosk at (pwx + sign * 8.52, hqZ - sign * 14.68)
+      const isKioskVisible = kioskVisList ? Boolean(kioskVisList[i]) : true;
+      if (isKioskVisible) {
+        const kx = pwx + sign * 8.52;
+        const kz = hqZ - sign * 14.68;
+        const kd = Math.hypot(params.actorX - kx, params.actorZ - kz);
+        if (kd < bestKioskDist) {
+          bestKioskDist = kd;
+          bestKioskTeam = team;
+          bestKioskIdx = i;
+        }
+      }
+
+      // 2. House Interior Entrance Door at (pwx, hqZ + sign * 1.85) — ONLY if 3D House is active & visible in The City
+      const isPlotActive = isCommanderBasePlotActive(plot) && !plot.destroyed && plot.buildingHp > 0;
+      const isHouseVisible = houseVisList ? Boolean(houseVisList[i]) : isPlotActive;
+      if (isPeacefulCityMode && isPlotActive && isHouseVisible) {
+        const doorX = pwx;
+        const doorZ = hqZ + sign * 1.85;
+        const dd = Math.hypot(params.actorX - doorX, params.actorZ - doorZ);
+        if (dd < bestDoorDist) {
+          bestDoorDist = dd;
+          bestDoorTeam = team;
+          bestDoorIdx = i;
+          bestDoorPos = { x: doorX, z: doorZ };
+        }
+      }
+    }
+  };
+
+  checkTeamPlots(
+    'blue',
+    blueHqX,
+    blueHqZ,
+    params.blueCommanderBases,
+    params.kioskVisibilityByPlot?.blue,
+    params.houseVisibilityByPlot?.blue,
+  );
+  checkTeamPlots(
+    'red',
+    redHqX,
+    redHqZ,
+    params.redCommanderBases,
+    params.kioskVisibilityByPlot?.red,
+    params.houseVisibilityByPlot?.red,
+  );
+
+  const canKiosk = bestKioskDist <= maxKioskR;
+  const canDoor = isPeacefulCityMode && bestDoorDist <= maxDoorR;
+
+  return {
+    canTriggerBaseKiosk: canKiosk,
+    nearestKioskTeam: canKiosk ? bestKioskTeam : null,
+    nearestKioskPlotIndex: canKiosk ? bestKioskIdx : null,
+    nearestKioskDistance: bestKioskDist,
+    canTriggerEnterHouseDoor: canDoor,
+    nearestHouseDoorTeam: canDoor ? bestDoorTeam : null,
+    nearestHouseDoorPlotIndex: canDoor ? bestDoorIdx : null,
+    nearestHouseDoorWorldPos: canDoor ? bestDoorPos : null,
+    nearestHouseDoorDistance: bestDoorDist,
+  };
+}
+
+// ============================================================================
+// CITY TRANSIT NETWORK & BLACK CURVED MONOLITH KIOSK PLACEMENT RULES
+// ============================================================================
+
+export type CityTransitStationId =
+  | 'central_plaza'
+  | 'beachfront_harbor'
+  | 'nw_fishing_lake'
+  | 'north_residence'
+  | 'south_residence'
+  | 'warzone_arena';
+
+export interface CityTransitDestinationSpec {
+  id: CityTransitStationId;
+  name: string;
+  title: string;
+  shortTitle: string;
+  shortTag: string;
+  tag: string;
+  category: 'district' | 'warzone';
+  targetWorldMode: WorldMode;
+  description: string;
+  heroImageUrl: string;
+  thumbnailUrl: string;
+  /** World coordinates of the Black Curved-Monolith Transit Kiosk */
+  kioskX: number;
+  kioskY: number;
+  kioskZ: number;
+  kioskRotY: number;
+  /** Safe player arrival coordinates & facing yaw when arriving via Tram Ride */
+  spawnX: number;
+  spawnZ: number;
+  spawnYaw: number;
+  /**
+   * True STRICTLY for stops along the active City Tram rail track (`central_plaza`, `north_residence`, `south_residence`).
+   * False for rail-less endpoints (`beachfront_harbor`, `nw_fishing_lake`, `warzone_arena`), which have ONLY the standalone black Transit Kiosk and NO Halte shelter roof.
+   */
+  hasHalteShelter: boolean;
+  /** Shelter world center & rotation when `hasHalteShelter === true` */
+  shelterX?: number;
+  shelterZ?: number;
+  shelterRotY?: number;
+  /** Reference distance along the closed-loop City Tram track for the 3D Tram Ride cutscene */
+  tramTrackDistance: number;
+}
+
+export const CITY_TRANSIT_KIOSK_MAX_INTERACT_RADIUS = 3.5;
+
+export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = [
+  {
+    id: 'central_plaza',
+    name: 'Central Plaza',
+    title: 'CENTRAL PLAZA',
+    shortTitle: 'Central Plaza',
+    shortTag: 'PLAZA HUB',
+    tag: 'PLAZA HUB',
+    category: 'district',
+    targetWorldMode: 'lobby',
+    description:
+      'Main elevated civic promenade featuring Hana Cafe, token exchange, and the central Halte tram station.',
+    heroImageUrl: '/docs/hero-2-tram-station.jpg',
+    thumbnailUrl: '/docs/hero-2-tram-station.jpg',
+    kioskX: -61.95,
+    kioskY: 0.26,
+    kioskZ: 0.0,
+    kioskRotY: -Math.PI / 2,
+    spawnX: -63.4,
+    spawnZ: 0.0,
+    spawnYaw: Math.PI,
+    hasHalteShelter: true,
+    shelterX: -63.8,
+    shelterZ: 0.0,
+    shelterRotY: -Math.PI / 2,
+    tramTrackDistance: 44.0,
+  },
+  {
+    id: 'beachfront_harbor',
+    name: 'Beachfront Harbor',
+    title: 'BEACHFRONT HARBOR',
+    shortTitle: 'Beachfront Harbor',
+    shortTag: 'COASTAL PIER',
+    tag: 'COASTAL PIER',
+    category: 'district',
+    targetWorldMode: 'safezone',
+    description:
+      'Sunlit coastal timber boardwalk, Kai Fish Market, surfboard rentals, and deep-sea fishing pier.',
+    heroImageUrl: '/docs/hero-1-beach-pier.jpg',
+    thumbnailUrl: '/docs/hero-1-beach-pier.jpg',
+    kioskX: 79.35,
+    kioskY: 0.26,
+    kioskZ: 29.5,
+    kioskRotY: -Math.PI / 2,
+    spawnX: 77.9,
+    spawnZ: 29.5,
+    spawnYaw: Math.PI,
+    hasHalteShelter: true,
+    shelterX: 77.5,
+    shelterZ: 29.5,
+    shelterRotY: -Math.PI / 2,
+    tramTrackDistance: 270.0,
+  },
+  {
+    id: 'nw_fishing_lake',
+    name: 'NW Fishing Lake',
+    title: 'NW FISHING LAKE',
+    shortTitle: 'NW Fishing Lake',
+    shortTag: 'OASIS SHORE',
+    tag: 'OASIS SHORE',
+    category: 'district',
+    targetWorldMode: 'safezone',
+    description:
+      'Tranquil turquoise oasis basin stocked with freshwater catch. Cast your fishing rod from the grassy shoreline.',
+    heroImageUrl: '/docs/hero-6-oasis-lake.jpg',
+    thumbnailUrl: '/docs/hero-6-oasis-lake.jpg',
+    kioskX: -44.5,
+    kioskY: 0.0,
+    kioskZ: -6.5,
+    kioskRotY: Math.PI / 2,
+    spawnX: -42.2,
+    spawnZ: -6.5,
+    spawnYaw: 0,
+    hasHalteShelter: false,
+    tramTrackDistance: 72.0,
+  },
+  {
+    id: 'north_residence',
+    name: 'North Residence',
+    title: 'NORTH RESIDENCE',
+    shortTitle: 'North Residence',
+    shortTag: 'NORTH PLOTS',
+    tag: 'NORTH PLOTS',
+    category: 'district',
+    targetWorldMode: 'safezone',
+    description:
+      'Northern residential boulevard along the tram rail loop with 4 claimable House Plots and gated citizen estates.',
+    heroImageUrl: '/docs/hero-3-house-interior.jpg',
+    thumbnailUrl: '/docs/hero-3-house-interior.jpg',
+    kioskX: 6.5,
+    kioskY: 0.26,
+    kioskZ: -44.95,
+    kioskRotY: Math.PI,
+    spawnX: 6.5,
+    spawnZ: -46.4,
+    spawnYaw: -Math.PI / 2,
+    hasHalteShelter: true,
+    shelterX: 6.5,
+    shelterZ: -46.8,
+    shelterRotY: Math.PI,
+    tramTrackDistance: 165.0,
+  },
+  {
+    id: 'south_residence',
+    name: 'South Residence',
+    title: 'SOUTH RESIDENCE',
+    shortTitle: 'South Residence',
+    shortTag: 'SOUTH PLOTS',
+    tag: 'SOUTH PLOTS',
+    category: 'district',
+    targetWorldMode: 'safezone',
+    description:
+      'Southern residential avenue featuring the Model Estate showcase and 4 customizable citizen House Plots.',
+    heroImageUrl: '/docs/hero-7-crate-stacking-pad.jpg',
+    thumbnailUrl: '/docs/hero-7-crate-stacking-pad.jpg',
+    kioskX: -36.5,
+    kioskY: 0.26,
+    kioskZ: 44.95,
+    kioskRotY: 0,
+    spawnX: -36.5,
+    spawnZ: 46.4,
+    spawnYaw: Math.PI / 2,
+    hasHalteShelter: true,
+    shelterX: -36.5,
+    shelterZ: 46.8,
+    shelterRotY: 0,
+    tramTrackDistance: 375.0,
+  },
+  {
+    id: 'warzone_arena',
+    name: 'Warzone Arena',
+    title: 'WARZONE ARENA',
+    shortTitle: 'Warzone Arena',
+    shortTag: 'RED VS BLUE',
+    tag: 'RED VS BLUE',
+    category: 'warzone',
+    targetWorldMode: 'warzone',
+    description:
+      'Optional Red vs Blue tactical combat mini-game with crate stacking pads, vehicles, and live multiplayer squads.',
+    heroImageUrl: '/docs/hero-8-weapon-armory.jpg',
+    thumbnailUrl: '/docs/hero-8-weapon-armory.jpg',
+    kioskX: -60.55,
+    kioskY: 0.26,
+    kioskZ: 2.8,
+    kioskRotY: -Math.PI / 2,
+    spawnX: -54.0,
+    spawnZ: 38.0,
+    spawnYaw: Math.PI / 2,
+    hasHalteShelter: false,
+    tramTrackDistance: 215.0,
+  },
+] as const;
+
+export function getCityTransitDestinationById(
+  id: CityTransitStationId | string | null | undefined,
+): CityTransitDestinationSpec {
+  const found = CITY_TRANSIT_DESTINATIONS.find((d) => d.id === id);
+  return found ?? CITY_TRANSIT_DESTINATIONS[0];
+}
+
+export interface CityTransitKioskProximityResult {
+  isNear: boolean;
+  isNearTransitKiosk: boolean;
+  id: CityTransitStationId;
+  stationId: CityTransitStationId | null;
+  station: CityTransitDestinationSpec | null;
+  distance: number;
+  kioskX: number;
+  kioskY: number;
+  kioskZ: number;
+}
+
+export function evaluateNearestCityTransitKioskProximity(
+  actorXOrParams:
+    | number
+    | {
+        actorX: number;
+        actorZ: number;
+        worldMode: 'lobby' | 'warzone' | 'safezone';
+        maxRadius?: number;
+      },
+  actorZArg?: number,
+  worldModeArg?: 'lobby' | 'warzone' | 'safezone',
+  maxRadiusArg?: number,
+): CityTransitKioskProximityResult {
+  const actorX = typeof actorXOrParams === 'number' ? actorXOrParams : actorXOrParams.actorX;
+  const actorZ = typeof actorXOrParams === 'number' ? (actorZArg ?? 0) : actorXOrParams.actorZ;
+  const worldMode =
+    typeof actorXOrParams === 'number'
+      ? (worldModeArg ?? 'safezone')
+      : actorXOrParams.worldMode;
+  const maxR =
+    (typeof actorXOrParams === 'number' ? maxRadiusArg : actorXOrParams.maxRadius) ??
+    CITY_TRANSIT_KIOSK_MAX_INTERACT_RADIUS;
+
+  const candidates =
+    worldMode === 'warzone'
+      ? CITY_TRANSIT_DESTINATIONS.filter((d) => d.id === 'warzone_arena')
+      : CITY_TRANSIT_DESTINATIONS.filter((d) => d.category === 'district');
+
+  let bestStation: CityTransitDestinationSpec | null = null;
+  let bestDist = 9999;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const st = candidates[i];
+    const d = Math.hypot(actorX - st.kioskX, actorZ - st.kioskZ);
+    if (d < bestDist) {
+      bestDist = d;
+      bestStation = st;
+    }
+  }
+
+  const isNear = Boolean(bestStation && bestDist <= maxR);
+  return {
+    isNear,
+    isNearTransitKiosk: isNear,
+    id: bestStation ? bestStation.id : 'central_plaza',
+    stationId: isNear && bestStation ? bestStation.id : null,
+    station: isNear ? bestStation : null,
+    distance: bestDist,
+    kioskX: bestStation ? bestStation.kioskX : 0,
+    kioskY: bestStation ? bestStation.kioskY : 0,
+    kioskZ: bestStation ? bestStation.kioskZ : 0,
+  };
+}
+
+export function easeInOutCubic(t: number): number {
+  const clamped = Math.max(0, Math.min(1, t));
+  return clamped < 0.5
+    ? 4 * clamped * clamped * clamped
+    : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
+}
+
+export interface TramRideTransitionFrame {
+  progress01: number;
+  eased01: number;
+  easedProgress: number;
+  progressPercent: number;
+  isComplete: boolean;
+  leadDistance: number;
+  tramState: CityTramConsistState;
+  cameraPos: Vec3;
+  cameraLookAt: Vec3;
+  cameraX: number;
+  cameraY: number;
+  cameraZ: number;
+  lookAtX: number;
+  lookAtY: number;
+  lookAtZ: number;
+}
+
+/**
+ * Evaluates a single frame of the ~2.5s 3D "Tram Ride" transition cutscene:
+ * - Smoothly glides the 2-Car City Tram along the rail loop using `easeInOutCubic`
+ * - Computes a dynamic tracking camera angle alongside and slightly ahead of Car 1
+ */
+export function evaluateTramRideTransitionStep(params: {
+  elapsedSec: number;
+  durationSec?: number;
+  startLeadDistance?: number;
+  travelSpanMeters?: number;
+  originStationId?: CityTransitStationId;
+  destinationStationId?: CityTransitStationId;
+  destinationId?: CityTransitStationId;
+  tramLeadX?: number;
+  tramLeadZ?: number;
+  tramYaw?: number;
+  tramLeadYaw?: number;
+}): TramRideTransitionFrame {
+  const duration = Math.max(0.25, params.durationSec ?? 2.5);
+  const span = params.travelSpanMeters ?? 38.0;
+  const progress01 = Math.max(0, Math.min(1, params.elapsedSec / duration));
+  const easedProgress = easeInOutCubic(progress01);
+  const originDist = params.originStationId
+    ? getCityTransitDestinationById(params.originStationId).tramTrackDistance
+    : 44.0;
+  const startLead = params.startLeadDistance ?? originDist;
+  const leadDistance = startLead + easedProgress * span;
+  const tramState = evaluateCityTramConsistState(leadDistance);
+  const car1 = tramState.car1;
+  const rightX = -car1.forwardZ;
+  const rightZ = car1.forwardX;
+
+  // Smoothly sweep camera from front-quarter boarding angle to tracking angle alongside Car 1
+  const forwardOffset = 8.5 - easedProgress * 5.2;
+  const lateralOffset = 7.8 + Math.sin(easedProgress * Math.PI) * 1.4;
+  const camY = 5.4 + Math.sin(easedProgress * Math.PI) * 0.8;
+
+  const cameraPos: Vec3 = {
+    x: car1.x + car1.forwardX * forwardOffset + rightX * lateralOffset,
+    y: camY,
+    z: car1.z + car1.forwardZ * forwardOffset + rightZ * lateralOffset,
+  };
+
+  const cameraLookAt: Vec3 = {
+    x: car1.x - car1.forwardX * 1.5,
+    y: 2.3,
+    z: car1.z - car1.forwardZ * 1.5,
+  };
+
+  return {
+    progress01,
+    eased01: easedProgress,
+    easedProgress,
+    progressPercent: Math.round(easedProgress * 100),
+    isComplete: progress01 >= 1,
+    leadDistance,
+    tramState,
+    cameraPos,
+    cameraLookAt,
+    cameraX: cameraPos.x,
+    cameraY: cameraPos.y,
+    cameraZ: cameraPos.z,
+    lookAtX: cameraLookAt.x,
+    lookAtY: cameraLookAt.y,
+    lookAtZ: cameraLookAt.z,
+  };
+}
+
 

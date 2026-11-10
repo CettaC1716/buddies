@@ -1,19 +1,18 @@
 {
-  "name": "react-example",
+  "name": "buddies-blitz",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.51.3",
-    "@solana/kit": "^8.6.0",
-    "@stripe/stripe-js": "^10.2.1",
     "@supabase/supabase-js": "^2.119.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/three": "^0.187.0",

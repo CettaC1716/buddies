@@ -1,0 +1,307 @@
+import crypto from 'node:crypto';
+
+/**
+ * Vercel Serverless Function: `/api/near-relayer`
+ * Provisions `<handle>.buddiesblitz.testnet` sub-accounts with Dual-Key custody
+ * (`FunctionCall` key scoped to `market.buddiesblitz.testnet` + master recovery)
+ * and relays authorized contract calls when `NEAR_MASTER_PRIVATE_KEY` (`ed25519:...`)
+ * is configured in environment variables.
+ */
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+function base58Decode(input: string): Uint8Array {
+  let num = 0n;
+  for (const ch of input) {
+    const idx = BASE58_ALPHABET.indexOf(ch);
+    if (idx < 0) throw new Error('Invalid base58 character');
+    num = num * 58n + BigInt(idx);
+  }
+  const bytes: number[] = [];
+  while (num > 0n) {
+    bytes.push(Number(num & 0xffn));
+    num >>= 8n;
+  }
+  bytes.reverse();
+  let leadingZeros = 0;
+  for (const ch of input) {
+    if (ch === '1') leadingZeros += 1;
+    else break;
+  }
+  return new Uint8Array([...new Array(leadingZeros).fill(0), ...bytes]);
+}
+
+function base58Encode(bytes: Uint8Array): string {
+  let num = 0n;
+  for (const b of bytes) {
+    num = (num << 8n) + BigInt(b);
+  }
+  let out = '';
+  while (num > 0n) {
+    const rem = Number(num % 58n);
+    out = BASE58_ALPHABET[rem] + out;
+    num /= 58n;
+  }
+  for (const b of bytes) {
+    if (b === 0) out = '1' + out;
+    else break;
+  }
+  return out || '1';
+}
+
+function borshU32(val: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32LE(val >>> 0, 0);
+  return b;
+}
+
+function borshU64(val: bigint): Buffer {
+  const b = Buffer.alloc(8);
+  b.writeBigUInt64LE(val, 0);
+  return b;
+}
+
+function borshU128(val: bigint): Buffer {
+  const b = Buffer.alloc(16);
+  b.writeBigUInt64LE(val & 0xffffffffffffffffn, 0);
+  b.writeBigUInt64LE(val >> 64n, 8);
+  return b;
+}
+
+function borshString(str: string): Buffer {
+  const utf8 = Buffer.from(str, 'utf8');
+  return Buffer.concat([borshU32(utf8.length), utf8]);
+}
+
+function borshPubKeyEd25519(pubKeyBytes32: Uint8Array): Buffer {
+  return Buffer.concat([Buffer.from([0]), Buffer.from(pubKeyBytes32)]);
+}
+
+function parseMasterEd25519KeyPair(rawSecret: string): {
+  keyObject: crypto.KeyObject;
+  pubKeyBytes: Uint8Array;
+  pubKeyFormatted: string;
+} {
+  const clean = rawSecret.trim().replace(/^ed25519:/i, '');
+  const decoded = base58Decode(clean);
+  if (decoded.length !== 64 && decoded.length !== 32) {
+    throw new Error('NEAR_MASTER_PRIVATE_KEY must be a 32-byte or 64-byte base58 Ed25519 key');
+  }
+  const seed32 = decoded.slice(0, 32);
+  // PKCS#8 Ed25519 ASN.1 prefix for 32-byte private seed
+  const pkcs8Prefix = Buffer.from('302e020100300506032b657004220420', 'hex');
+  const keyObject = crypto.createPrivateKey({
+    key: Buffer.concat([pkcs8Prefix, Buffer.from(seed32)]),
+    format: 'der',
+    type: 'pkcs8',
+  });
+  const spki = crypto.createPublicKey(keyObject).export({ format: 'der', type: 'spki' });
+  const pubKeyBytes = new Uint8Array(spki.subarray(spki.length - 32));
+  return {
+    keyObject,
+    pubKeyBytes,
+    pubKeyFormatted: `ed25519:${base58Encode(pubKeyBytes)}`,
+  };
+}
+
+async function nearRpcCall(rpcUrl: string, method: string, params: unknown): Promise<any> {
+  const resp = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'buddies-relayer',
+      method,
+      params,
+    }),
+  });
+  const json = await resp.json();
+  if (json.error) {
+    throw new Error(json.error?.data || json.error?.message || 'NEAR RPC error');
+  }
+  return json.result;
+}
+
+export async function handleNearRelayerRequest(body: Record<string, unknown>): Promise<{
+  status: number;
+  payload: Record<string, unknown>;
+}> {
+  const rpcUrl = process.env.VITE_NEAR_RPC_URL || 'https://rpc.testnet.fastnear.com';
+  const masterAccountId = process.env.NEAR_MASTER_ACCOUNT_ID || 'buddiesblitz.testnet';
+  const marketContractId = process.env.VITE_NEAR_MARKET_CONTRACT_ID || 'market.buddiesblitz.testnet';
+  const masterSecret = process.env.NEAR_MASTER_PRIVATE_KEY || '';
+
+  const action = String(body.action || '').trim();
+
+  if (action === 'create_subaccount') {
+    const rawHandle = String(body.handle || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '');
+    const sessionPublicKey = String(body.sessionPublicKey || '').trim();
+
+    if (rawHandle.length < 2 || rawHandle.length > 32) {
+      return {
+        status: 400,
+        payload: { ok: false, error: 'Handle must be 2 to 32 lowercase alphanumeric characters.' },
+      };
+    }
+
+    if (!sessionPublicKey.startsWith('ed25519:') || sessionPublicKey.length < 20) {
+      return {
+        status: 400,
+        payload: {
+          ok: false,
+          error: 'Valid ed25519: sessionPublicKey is required for Dual-Key FunctionCall onboarding.',
+        },
+      };
+    }
+
+    const subAccountId = `${rawHandle}.${masterAccountId}`;
+
+    // 1. Check if sub-account already exists on NEAR Testnet
+    try {
+      const existing = await nearRpcCall(rpcUrl, 'query', {
+        request_type: 'view_account',
+        finality: 'final',
+        account_id: subAccountId,
+      });
+      if (existing && existing.amount) {
+        return {
+          status: 200,
+          payload: {
+            ok: true,
+            subAccountId,
+            alreadyExisted: true,
+            custodyMode: 'onchain_existing',
+            sessionPublicKey,
+            marketContractId,
+          },
+        };
+      }
+    } catch {
+      // Account does not exist yet — proceed to provision if master key is configured
+    }
+
+    if (!masterSecret) {
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          subAccountId,
+          alreadyExisted: false,
+          custodyMode: 'session_key_ready',
+          sessionPublicKey,
+          marketContractId,
+          note: 'Session FunctionCall key generated locally. Configure NEAR_MASTER_PRIVATE_KEY on server to broadcast CreateAccount on-chain.',
+        },
+      };
+    }
+
+    try {
+      const { keyObject, pubKeyBytes, pubKeyFormatted } = parseMasterEd25519KeyPair(masterSecret);
+      const accessKeyView = await nearRpcCall(rpcUrl, 'query', {
+        request_type: 'view_access_key',
+        finality: 'final',
+        account_id: masterAccountId,
+        public_key: pubKeyFormatted,
+      });
+
+      const nextNonce = BigInt(accessKeyView.nonce) + 1n;
+      const blockHashBytes = base58Decode(String(accessKeyView.block_hash));
+
+      const sessionClean = sessionPublicKey.replace(/^ed25519:/i, '');
+      const sessionPubBytes =
+        sessionClean.length > 10 ? base58Decode(sessionClean) : pubKeyBytes;
+
+      // Actions:
+      // 0: CreateAccount
+      // 2: Transfer (0.05 NEAR initial storage/gas allowance)
+      // 4: AddKey (Master FullAccess recovery key)
+      // 4: AddKey (Player FunctionCall key scoped to marketContractId, 0.25 NEAR allowance)
+      const createAccountAction = Buffer.from([0]);
+      const transferAction = Buffer.concat([
+        Buffer.from([2]),
+        borshU128(50_000_000_000_000_000_000_000n), // 0.05 NEAR
+      ]);
+      const addMasterFullKeyAction = Buffer.concat([
+        Buffer.from([4]),
+        borshPubKeyEd25519(pubKeyBytes),
+        borshU64(0n),
+        Buffer.from([0]), // AccessKeyPermission::FullAccess
+      ]);
+      const addPlayerFcKeyAction = Buffer.concat([
+        Buffer.from([4]),
+        borshPubKeyEd25519(sessionPubBytes.slice(0, 32)),
+        borshU64(0n),
+        Buffer.from([1]), // AccessKeyPermission::FunctionCall
+        Buffer.from([1]), // Some(allowance)
+        borshU128(250_000_000_000_000_000_000_000n), // 0.25 NEAR gas allowance
+        borshString(marketContractId),
+        borshU32(0), // all methods allowed on marketContractId
+      ]);
+
+      const actions = [
+        createAccountAction,
+        transferAction,
+        addMasterFullKeyAction,
+        addPlayerFcKeyAction,
+      ];
+
+      const txBytes = Buffer.concat([
+        borshString(masterAccountId),
+        borshPubKeyEd25519(pubKeyBytes),
+        borshU64(nextNonce),
+        borshString(subAccountId),
+        Buffer.from(blockHashBytes),
+        borshU32(actions.length),
+        ...actions,
+      ]);
+
+      const txHash = crypto.createHash('sha256').update(txBytes).digest();
+      const signature = crypto.sign(null, txHash, keyObject);
+      const signedTxBytes = Buffer.concat([txBytes, Buffer.from([0]), signature]);
+
+      const broadcast = await nearRpcCall(rpcUrl, 'broadcast_tx_commit', [
+        signedTxBytes.toString('base64'),
+      ]);
+      const confirmedHash = String(broadcast?.transaction?.hash || base58Encode(txHash));
+
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          subAccountId,
+          txHash: confirmedHash,
+          alreadyExisted: false,
+          custodyMode: 'onchain_provisioned',
+          sessionPublicKey,
+          marketContractId,
+        },
+      };
+    } catch (err) {
+      return {
+        status: 500,
+        payload: {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Relayer failed to create sub-account',
+        },
+      };
+    }
+  }
+
+  return {
+    status: 400,
+    payload: { ok: false, error: `Unsupported relayer action: ${action}` },
+  };
+}
+
+export default async function handler(req: any, res: any): Promise<void> {
+  if (req.method !== 'POST') {
+    res.status(405).json({ ok: false, error: 'Method Not Allowed' });
+    return;
+  }
+  const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+  const result = await handleNearRelayerRequest(body);
+  res.status(result.status).json(result.payload);
+}

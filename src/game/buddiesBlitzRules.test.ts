@@ -3898,15 +3898,42 @@ test('5-Lives Deployment System (150 HP), 3-Stage Pure Contract Harvester (Stand
   assert.equal(buySkin.remainingGold, 250);
   assert.ok(buySkin.updatedOwnedItems.includes('vip_royal_gold_skin'));
 
-  // 4. Always-On Open Warzone Population Bar (Max 10 vs 10: 4 Base Owners + 6 Warzone Roamers)
+  // 4. Always-On Open Warzone Population Bar (Max 10 vs 10: 4 Base Owners + 6 Warzone Roamers, strictly real players)
   assert.equal(OPEN_WARZONE_TEAM_CAPACITY.maxTotalPerTeam, 10);
   assert.equal(OPEN_WARZONE_TEAM_CAPACITY.maxBaseOwnersPerTeam, 4);
   assert.equal(OPEN_WARZONE_TEAM_CAPACITY.maxWarzoneRoamersPerTeam, 6);
+  const soloPopBar = evaluateOpenWarzonePopulationBar({
+    blueClaimedBasesCount: 0,
+    redClaimedBasesCount: 0,
+    blueExtraRoamers: 0,
+    redExtraRoamers: 0,
+    playerTeam: 'blue',
+    isPlayerInLobby: false,
+  });
+  assert.equal(soloPopBar.blueOnline, 1);
+  assert.equal(soloPopBar.redOnline, 0);
+  assert.equal(soloPopBar.blueLabel, 'BLUE 1/10 ONLINE');
+  assert.equal(soloPopBar.redLabel, 'RED 0/10 ONLINE');
+
+  const soloBaseOwnerPopBar = evaluateOpenWarzonePopulationBar({
+    blueClaimedBasesCount: 1,
+    redClaimedBasesCount: 0,
+    blueExtraRoamers: 0,
+    redExtraRoamers: 0,
+    playerTeam: 'blue',
+    isPlayerInLobby: false,
+    localPlayerHasClaimedBase: true,
+  });
+  assert.equal(soloBaseOwnerPopBar.blueOnline, 1);
+  assert.equal(soloBaseOwnerPopBar.redOnline, 0);
+  assert.equal(soloBaseOwnerPopBar.blueLabel, 'BLUE 1/10 ONLINE');
+  assert.equal(soloBaseOwnerPopBar.redLabel, 'RED 0/10 ONLINE');
+
   const popBar = evaluateOpenWarzonePopulationBar({
     blueClaimedBasesCount: 2,
     redClaimedBasesCount: 1,
-    blueExtraRoamers: 5,
-    redExtraRoamers: 6,
+    blueExtraRoamers: 4,
+    redExtraRoamers: 5,
     playerTeam: 'blue',
     isPlayerInLobby: false,
   });
@@ -4072,8 +4099,8 @@ test('Claimed Base Plot Gate Authorization: sliding gate opens for plot owner, c
   assert.equal(singleContract.enqueued, true);
   assert.deepEqual(singleContract.queue, ['nuclear_launcher']);
 
-  // 4. Floating LOBBY button at Halte Trem glowing circle strictly triggers inside the circle and disappears when stepping out
-  assert.equal(LOBBY_TRAM_SHELTER_SPEC.label, 'LOBBY');
+  // 4. Floating CENTRAL PLAZA button at Halte Trem glowing circle strictly triggers inside the circle and disappears when stepping out
+  assert.equal(LOBBY_TRAM_SHELTER_SPEC.label, 'CENTRAL PLAZA');
   assert.equal(
     isUnitNearLobbyTramReturnPad(
       LOBBY_TRAM_SHELTER_SPEC.returnPadX,
@@ -4295,9 +4322,9 @@ test('Lobby & Safezone Combat HUD Cleanup, Hand Weapon Visibility, and Live City
   assert.equal(lobbyState.externalCombatCollidersEnabled, false, 'External combat colliders disabled');
   assert.equal(lobbyState.cityRoadsAndTramVisible, true, 'Asphalt roads, zebra crossings, park & moving City Tram remain visible outside Lobby');
 
-  assert.equal(lobbyState.lobbyPortalsVisible, true, '2 Lobby Gapura portals visible inside Lobby');
-  assert.equal(lobbyState.halteReturnPadsVisible, false, 'Halte return pads hidden while inside Lobby');
-  assert.equal(lobbyState.cityKiosksAndUnitsVisible, false, 'City Kiosks & units hidden while inside Lobby');
+  assert.equal(lobbyState.lobbyPortalsVisible, false, 'Legacy floor portal rings removed');
+  assert.equal(lobbyState.halteReturnPadsVisible, false, 'Legacy Halte return rings removed');
+  assert.equal(lobbyState.cityKiosksAndUnitsVisible, true, 'City Kiosks & units visible across open Central Plaza and The City');
 
   const lobbyWorldRules = evaluateCitySafezoneModeRules('lobby');
   assert.equal(lobbyWorldRules.isPeacefulSafezone, true);
@@ -4307,7 +4334,7 @@ test('Lobby & Safezone Combat HUD Cleanup, Hand Weapon Visibility, and Live City
   assert.equal(lobbyWorldRules.skyshieldTurretsEnabled, false);
   assert.equal(lobbyWorldRules.weaponsEnabled, false);
 
-  // 2. In Safezone City Mode outside Lobby (worldMode === 'safezone', isInsideLobbySafezone === false)
+  // 2. In The City Mode outside Lobby (worldMode === 'safezone', isInsideLobbySafezone === false)
   const safezoneState = evaluateLobbyAndSafezonePeacefulState({
     worldMode: 'safezone',
     isInsideLobbySafezone: false,
@@ -4321,12 +4348,12 @@ test('Lobby & Safezone Combat HUD Cleanup, Hand Weapon Visibility, and Live City
   assert.equal(safezoneState.bottomRightWeaponAndHpHudVisible, false);
   assert.equal(safezoneState.minimapRadarVisible, true);
   assert.equal(safezoneState.lobbyGoldExchangeButtonVisible, false);
-  assert.equal(safezoneState.handWeaponMeshVisible, false, 'Pistol/weapon in character hand hidden in Safezone City');
+  assert.equal(safezoneState.handWeaponMeshVisible, false, 'Pistol/weapon in character hand hidden in The City');
   assert.equal(safezoneState.externalCombatObjectsVisible, false);
   assert.equal(safezoneState.externalCombatCollidersEnabled, false);
   assert.equal(safezoneState.cityRoadsAndTramVisible, true);
-  assert.equal(safezoneState.lobbyPortalsVisible, false, '2 Lobby Gapura portals hidden when in City');
-  assert.equal(safezoneState.halteReturnPadsVisible, true, '2 Halte return pads visible when in City');
+  assert.equal(safezoneState.lobbyPortalsVisible, false);
+  assert.equal(safezoneState.halteReturnPadsVisible, false);
   assert.equal(safezoneState.cityKiosksAndUnitsVisible, true);
 
   // 3. In Warzone Mode outside Lobby (worldMode === 'warzone', isInsideLobbySafezone === false)
@@ -4343,12 +4370,12 @@ test('Lobby & Safezone Combat HUD Cleanup, Hand Weapon Visibility, and Live City
   assert.equal(warzoneState.bottomRightWeaponAndHpHudVisible, true);
   assert.equal(warzoneState.minimapRadarVisible, true);
   assert.equal(warzoneState.lobbyGoldExchangeButtonVisible, false);
-  assert.equal(warzoneState.handWeaponMeshVisible, true, 'Hand weapon mesh visible when entering city in WARZONE mode');
+  assert.equal(warzoneState.handWeaponMeshVisible, true, 'Hand weapon mesh visible when entering Warzone');
   assert.equal(warzoneState.externalCombatObjectsVisible, true);
   assert.equal(warzoneState.externalCombatCollidersEnabled, true);
   assert.equal(warzoneState.cityRoadsAndTramVisible, true);
-  assert.equal(warzoneState.lobbyPortalsVisible, false, '2 Lobby Gapura portals hidden when in Warzone City');
-  assert.equal(warzoneState.halteReturnPadsVisible, true, '2 Halte return pads visible when in Warzone City');
+  assert.equal(warzoneState.lobbyPortalsVisible, false);
+  assert.equal(warzoneState.halteReturnPadsVisible, false);
   assert.equal(warzoneState.cityKiosksAndUnitsVisible, true);
 });
 
@@ -4434,7 +4461,7 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
     const step = evaluateLobbyTramReturnPadStep(pad.x, pad.z);
     assert.ok(step);
     assert.equal(step.padId, pad.id);
-    assert.equal(step.floatingButtonLabel, 'LOBBY');
+    assert.equal(step.floatingButtonLabel, 'CENTRAL PLAZA');
     assert.equal(step.autoTeleportOnStep, false);
     assert.equal(step.requiresFloatingButtonClick, true);
     assert.equal(isUnitNearLobbyTramReturnPad(pad.x, pad.z), true);
@@ -4458,7 +4485,7 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
     'ENTER CITY / RED TEAM / BLUE TEAM portal prompt never triggers when activeScene is warzone/safezone',
   );
 
-  // 4. Both Lobby Gapura Portals (WARZONE & SAFEZONE) sit 100% on the flat upper Lobby plaza (elevation === 1.40m across full radius) with Crate Pad visual style
+  // 4. Both Lobby Gapura Portals (WARZONE & SAFEZONE) sit 100% on the flat upper Lobby plaza (elevation === 2.50m across full radius) with Crate Pad visual style
   const [warzonePortal, safezonePortal] = LOBBY_FACTION_PORTALS;
   assert.equal(warzonePortal.x, -84.0);
   assert.equal(warzonePortal.z, -15.0);
@@ -4469,15 +4496,15 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
 
   for (const portal of LOBBY_FACTION_PORTALS) {
     const centerElev = getBaseProceduralGroundElevation(portal.x, portal.z);
-    assert.equal(centerElev, 1.4, `${portal.id} center sits on flat 1.4m Lobby plaza deck`);
+    assert.equal(centerElev, 2.5, `${portal.id} center sits on flat 2.5m Lobby plaza deck`);
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
       const px = portal.x + Math.cos(angle) * portal.radius;
       const pz = portal.z + Math.sin(angle) * portal.radius;
       const edgeElev = getBaseProceduralGroundElevation(px, pz);
       assert.equal(
         edgeElev,
-        1.4,
-        `${portal.id} perimeter (${px.toFixed(2)}, ${pz.toFixed(2)}) sits on 100% flat 1.4m plaza (not on a ramp)`,
+        2.5,
+        `${portal.id} perimeter (${px.toFixed(2)}, ${pz.toFixed(2)}) sits on 100% flat 2.5m plaza (not on a ramp)`,
       );
     }
   }
@@ -5236,80 +5263,21 @@ test('Verbatim bundled buddies-blitz.com/interior 3D builders (lc..Ec) and charb
   assert.ok(zeroDtJump.vy > 9.0, 'Jump press with dt=0 must preserve positive launch velocity vy');
 });
 
-test('NEAR Hackathon Tracks (games & nfts): Social Invisible Login, NEP-171 Sub-Account Ledger, Atomic Transfer during Mid-Payout Sale, and Seller Key Revocation', async () => {
-  const {
-    deriveSocialInvisibleNearAccount,
-    createInitialNep171SubAccountLedger,
-    recordNep171SubAccountEarning,
-    executeAtomicNep171SubAccountTransfer,
-    verifyNep171SubAccountControl,
-  } = await import('./buddiesBlitzRules');
+test('NearBlocks Explorer URL builders resolve testnet and mainnet URLs accurately', async () => {
+  const { getNearBlocksAccountUrl, getNearBlocksTxUrl } = await import('./buddiesBlitzRules');
 
-  // 1. Frictionless Social / Email Login derives deterministic invisible NEAR sub-account without wallet popups
-  const socialUser = deriveSocialInvisibleNearAccount('Alice.Commander@near.org', 'testnet');
-  assert.equal(socialUser.accountId, 'alice-commander.buddiesblitz.testnet');
-  assert.equal(socialUser.onboardingMode, 'social_invisible');
-  assert.ok(socialUser.sessionPublicKey.startsWith('ed25519:SocialKey'));
-
-  // 2. Initial NEP-171 Gamepass Sub-Account Ledger & Royalty Accrual
-  const initialLedger = createInitialNep171SubAccountLedger(socialUser.accountId, 'testnet');
-  assert.equal(initialLedger.ownerNearAccount, 'alice-commander.buddiesblitz.testnet');
-  assert.equal(initialLedger.subAccountId, 'estate-01.buddiesblitz.testnet');
-  const sellerOldKey = initialLedger.activeAccessKey;
-
-  const afterRoyalty = recordNep171SubAccountEarning(initialLedger, 6.5, 'Kiosk Vehicle Build Cut');
-  assert.equal(afterRoyalty.treasuryRespite, 25.0);
-  assert.equal(afterRoyalty.totalEarnedRespite, 60.5);
-
-  // 3. Atomic NEP-171 Transfer in the middle of a 4.5 RESPITE payout
-  const transferRes = executeAtomicNep171SubAccountTransfer({
-    ledger: afterRoyalty,
-    callerAccount: 'alice-commander.buddiesblitz.testnet',
-    callerAccessKey: sellerOldKey,
-    newOwnerAccount: 'bob-collector.testnet',
-    inFlightPayoutRespite: 4.5,
-    timestampIso: '2026-11-09T12:00:00Z',
-  });
-
-  assert.equal(transferRes.success, true);
-  assert.equal(transferRes.previousOwner, 'alice-commander.buddiesblitz.testnet');
-  assert.equal(transferRes.newOwner, 'bob-collector.testnet');
-  assert.equal(transferRes.settledMidSalePayoutToSeller, 4.5);
-  assert.equal(transferRes.transferredTreasuryToBuyer, 20.5);
-  assert.equal(transferRes.revokedSellerAccessKey, sellerOldKey);
-  assert.notEqual(transferRes.rotatedBuyerAccessKey, sellerOldKey);
-  assert.ok(transferRes.updatedLedger.revokedAccessKeys.includes(sellerOldKey));
-
-  // 4. Verify old owner and revoked key are strictly blocked from controlling the sub-account after sale
-  const sellerAttemptAfterSale = verifyNep171SubAccountControl(
-    transferRes.updatedLedger,
-    'alice-commander.buddiesblitz.testnet',
-    sellerOldKey,
+  assert.equal(
+    getNearBlocksAccountUrl('market.buddiesblitz.testnet', 'testnet'),
+    'https://testnet.nearblocks.io/address/market.buddiesblitz.testnet',
   );
-  assert.equal(sellerAttemptAfterSale.authorized, false);
-
-  const buyerWithRevokedKeyAttempt = verifyNep171SubAccountControl(
-    transferRes.updatedLedger,
-    'bob-collector.testnet',
-    sellerOldKey,
+  assert.equal(
+    getNearBlocksAccountUrl('alice.near', 'mainnet'),
+    'https://nearblocks.io/address/alice.near',
   );
-  assert.equal(buyerWithRevokedKeyAttempt.authorized, false);
-
-  const buyerAuthorizedCheck = verifyNep171SubAccountControl(
-    transferRes.updatedLedger,
-    'bob-collector.testnet',
-    transferRes.rotatedBuyerAccessKey,
+  assert.equal(
+    getNearBlocksTxUrl('txHash123', 'testnet'),
+    'https://testnet.nearblocks.io/txns/txHash123',
   );
-  assert.equal(buyerAuthorizedCheck.authorized, true);
-
-  // 5. Unauthorized third-party transfer attempt must throw
-  assert.throws(() => {
-    executeAtomicNep171SubAccountTransfer({
-      ledger: transferRes.updatedLedger,
-      callerAccount: 'alice-commander.buddiesblitz.testnet',
-      newOwnerAccount: 'attacker.testnet',
-    });
-  }, /UNAUTHORIZED_NFT_TRANSFER/);
 });
 
 test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB colliders for Kiosks, Halte, Lobby, Beachfront, and Street Props', () => {
@@ -5323,13 +5291,23 @@ test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB collider
   });
   const byId = new Map(structures.map((s) => [s.id, s]));
 
-  // 1. All Kiosk colliders (Lobby, Halte, and Base Plots) match the compact Halte-calibrated Kiosk height (~2.55m)
-  for (const kioskId of ['west_plaza_near_terminal', 'west_plaza_gold_exchange', 'halte_teleport_kiosk', 'blue_plot_0_kiosk']) {
+  // 1. All Kiosk colliders (5 Black Transit Kiosks and 8 White Base Plot Kiosks) match the compact Halte-calibrated Kiosk height (~2.55m)
+  for (const kioskId of [
+    'halte_teleport_kiosk',
+    'north_residence_transit_kiosk',
+    'south_residence_transit_kiosk',
+    'beachfront_harbor_transit_kiosk',
+    'nw_fishing_lake_transit_kiosk',
+    'blue_plot_0_kiosk',
+  ]) {
     const k = byId.get(kioskId);
     assert.ok(k, `Missing calibrated collider for ${kioskId}`);
     assert.equal(k.heightY, HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY);
     assert.ok(k.halfX <= 0.66 && k.halfZ <= 0.90, `${kioskId} footprint must match compact 1.40x scale`);
   }
+  assert.equal(byId.has('west_plaza_near_terminal'), false, 'Legacy white Plaza terminal removed');
+  assert.equal(byId.has('west_plaza_gold_exchange'), false, 'Legacy white Plaza gold kiosk removed');
+  assert.equal(byId.has('west_wall_east_mid'), false, 'Central Plaza East staircase wall removed so players walk freely into The City');
 
   // 2. Halte canopy windbreak, ticket machine, and passenger bench colliders are present and calibrated
   assert.equal(byId.get('lobby_tram_shelter_windbreak')?.heightY, HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM);
@@ -5344,6 +5322,194 @@ test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB collider
   assert.ok((getPropCollisionSpec('bench', 1.0).halfX ?? 99) < 0.85);
 });
 
+test('Zero Ghost Command Plot & House Door Triggers Across Central Plaza and Unclaimed Empty Grass Plots', async () => {
+  const {
+    evaluateBasePlotProximityTriggers,
+    COMMANDER_PLOT_OFFSETS_X,
+  } = await import('./buddiesBlitzRules');
 
+  const blueBases = createIndividualCommanderBasesState('blue');
+  const redBases = createIndividualCommanderBasesState('red');
+
+  // 1. Inside Central Plaza (isPointInsideLobbySafezone === true): ZERO House Plot triggers and ZERO House Door triggers anywhere in the Plaza
+  for (const [px, pz] of [
+    [-85.5, 0],
+    [-81.8, -2.4],
+    [-81.8, -8.2],
+    [-81.8, 12.6],
+    [-93.2, -13.0],
+  ] as const) {
+    const lobbyRes = evaluateBasePlotProximityTriggers({
+      actorX: px,
+      actorZ: pz,
+      worldMode: 'lobby',
+      blueCommanderBases: blueBases,
+      redCommanderBases: redBases,
+    });
+    assert.equal(
+      lobbyRes.canTriggerBaseKiosk,
+      false,
+      `Central Plaza (${px}, ${pz}) must never trigger House Plot Kiosk`,
+    );
+    assert.equal(
+      lobbyRes.canTriggerEnterHouseDoor,
+      false,
+      `Central Plaza (${px}, ${pz}) must never trigger Enter House door`,
+    );
+  }
+
+  // 2. On the 7 unclaimed empty grass plots (Blue plots 1..3 and Red plots 0..3):
+  //    Enter House door trigger is strictly FALSE even when standing directly at the house door coordinates
+  for (let plotIdx = 1; plotIdx < 4; plotIdx++) {
+    const plotX = COMMANDER_PLOT_OFFSETS_X[plotIdx];
+    const doorZ = 74.0 + 1.85; // Blue front door Z
+    const emptyBluePlot = evaluateBasePlotProximityTriggers({
+      actorX: plotX,
+      actorZ: doorZ,
+      worldMode: 'safezone',
+      blueCommanderBases: blueBases,
+      redCommanderBases: redBases,
+    });
+    assert.equal(
+      emptyBluePlot.canTriggerEnterHouseDoor,
+      false,
+      `Unclaimed Blue Plot #${plotIdx + 1} at (${plotX}, ${doorZ}) must never trigger Enter House door`,
+    );
+  }
+  for (let plotIdx = 0; plotIdx < 4; plotIdx++) {
+    const plotX = -COMMANDER_PLOT_OFFSETS_X[plotIdx];
+    const doorZ = -86.0 - 1.85; // Red front door Z
+    const emptyRedPlot = evaluateBasePlotProximityTriggers({
+      actorX: plotX,
+      actorZ: doorZ,
+      worldMode: 'safezone',
+      blueCommanderBases: blueBases,
+      redCommanderBases: redBases,
+    });
+    assert.equal(
+      emptyRedPlot.canTriggerEnterHouseDoor,
+      false,
+      `Unclaimed Red Plot #${plotIdx + 1} at (${plotX}, ${doorZ}) must never trigger Enter House door`,
+    );
+  }
+
+  // 3. Only Blue Plot #1 (index 0, where the 3D House is actually built and visible) triggers Enter House within <= 3.5m in Safezone
+  const builtHouseDoor = evaluateBasePlotProximityTriggers({
+    actorX: COMMANDER_PLOT_OFFSETS_X[0],
+    actorZ: 74.0 + 1.85,
+    worldMode: 'safezone',
+    blueCommanderBases: blueBases,
+    redCommanderBases: redBases,
+    houseVisibilityByPlot: { blue: [true, false, false, false] },
+  });
+  assert.equal(builtHouseDoor.canTriggerEnterHouseDoor, true);
+  assert.equal(builtHouseDoor.nearestHouseDoorPlotIndex, 0);
+
+  // When houseVisibilityByPlot is false, Enter House never triggers even on Plot #1
+  const hiddenHouseDoor = evaluateBasePlotProximityTriggers({
+    actorX: COMMANDER_PLOT_OFFSETS_X[0],
+    actorZ: 74.0 + 1.85,
+    worldMode: 'safezone',
+    blueCommanderBases: blueBases,
+    redCommanderBases: redBases,
+    houseVisibilityByPlot: { blue: [false, false, false, false] },
+  });
+  assert.equal(hiddenHouseDoor.canTriggerEnterHouseDoor, false);
+
+  // 4. Guest / unverified session never fabricates commander-p1.near or auto-verifies gamepass
+  const guestSession = connectNearWalletAndMintGamepass(createInitialNearGamepassSessionState());
+  assert.equal(guestSession.walletConnected, false);
+  assert.equal(guestSession.walletId, null);
+  assert.equal(guestSession.hasGamepassNft, false);
+});
+
+test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cutscene Transition', async () => {
+  const {
+    CITY_TRANSIT_DESTINATIONS,
+    getCityTransitDestinationById,
+    evaluateNearestCityTransitKioskProximity,
+    evaluateTramRideTransitionStep,
+  } = await import('./buddiesBlitzRules');
+
+  // 1. Halte Shelters along the active tram rail loop (Central Plaza, Beachfront Harbor, North Residence, South Residence);
+  //    standalone Black Kiosks ONLY (no shelter roof) at NW Fishing Lake and Warzone Arena
+  const withShelter = CITY_TRANSIT_DESTINATIONS.filter((d) => d.hasHalteShelter).map((d) => d.id);
+  const withoutShelter = CITY_TRANSIT_DESTINATIONS.filter((d) => !d.hasHalteShelter).map(
+    (d) => d.id,
+  );
+  assert.deepEqual(withShelter, [
+    'central_plaza',
+    'beachfront_harbor',
+    'north_residence',
+    'south_residence',
+  ]);
+  assert.deepEqual(withoutShelter, ['nw_fishing_lake', 'warzone_arena']);
+
+  const beachSpec = getCityTransitDestinationById('beachfront_harbor');
+  assert.equal(beachSpec.shelterX, 77.5);
+  assert.equal(beachSpec.shelterZ, 29.5);
+  assert.equal(beachSpec.spawnX, 77.9);
+  assert.equal(beachSpec.spawnZ, 29.5);
+
+  const northSpec = getCityTransitDestinationById('north_residence');
+  assert.equal(northSpec.shelterX, 6.5);
+  assert.equal(northSpec.shelterZ, -46.8);
+  assert.equal(northSpec.spawnX, 6.5);
+  assert.equal(northSpec.spawnZ, -46.4);
+  assert.equal(northSpec.kioskX, 6.5);
+  assert.equal(northSpec.kioskZ, -44.95);
+
+  // 2. Proximity evaluation detects each of the 5 City Transit Kiosks within <= 3.5m
+  for (const stationId of [
+    'central_plaza',
+    'beachfront_harbor',
+    'nw_fishing_lake',
+    'north_residence',
+    'south_residence',
+  ] as const) {
+    const spec = getCityTransitDestinationById(stationId);
+    const prox = evaluateNearestCityTransitKioskProximity(
+      spec.kioskX + 1.1,
+      spec.kioskZ,
+      'safezone',
+      3.5,
+    );
+    assert.equal(prox.isNear, true, `Must detect ${stationId} kiosk within 3.5m`);
+    assert.equal(prox.station?.id, stationId);
+  }
+
+  // 3. In Warzone mode, only the standalone Warzone exit kiosk (-60.55, 2.8) triggers
+  const warzoneExitProx = evaluateNearestCityTransitKioskProximity(-60.55, 1.5, 'warzone', 3.5);
+  assert.equal(warzoneExitProx.isNear, true);
+  assert.equal(warzoneExitProx.station?.id, 'warzone_arena');
+
+  // 4. 3D Tram Ride cutscene smoothly interpolates over 2.5s using easeInOutCubic
+  const startStep = evaluateTramRideTransitionStep({
+    elapsedSec: 0,
+    durationSec: 2.5,
+    originStationId: 'central_plaza',
+    destinationStationId: 'beachfront_harbor',
+  });
+  assert.equal(startStep.progress01, 0);
+  assert.equal(startStep.isComplete, false);
+
+  const midStep = evaluateTramRideTransitionStep({
+    elapsedSec: 1.25,
+    durationSec: 2.5,
+    originStationId: 'central_plaza',
+    destinationStationId: 'beachfront_harbor',
+  });
+  assert.ok(midStep.progress01 > 0.45 && midStep.progress01 < 0.55);
+  assert.equal(midStep.isComplete, false);
+
+  const endStep = evaluateTramRideTransitionStep({
+    elapsedSec: 2.5,
+    durationSec: 2.5,
+    originStationId: 'central_plaza',
+    destinationStationId: 'beachfront_harbor',
+  });
+  assert.equal(endStep.progress01, 1);
+  assert.equal(endStep.isComplete, true);
+});
 
 

@@ -28,6 +28,8 @@ interface TacticalKioskModalProps {
   onAddSafezoneFriend?: (friendId: string) => void;
   onRemoveSafezoneFriend?: (friendId: string) => void;
   onEnterPrivateHouseInterior?: () => void;
+  onOpenHouseCatalog?: () => void;
+  onOpenPersonalWallet?: () => void;
 }
 
 type KioskPageIndex = 0 | 1 | 2 | 3 | 4;
@@ -243,10 +245,10 @@ const KIOSK_SPRITE_IMAGE_PATHS: Record<KioskCardIllustrationId, string> = {
   st01_minitank: '/assets/kiosk/st01_minitank.png',
   ht88_dump_truck: '/assets/kiosk/ht88_dump_truck.png',
   af9_plane: '/assets/kiosk/af9_plane.png',
-  street_rookie: '/assets/kiosk/street_rookie.png',
-  t800_cyborg: '/assets/kiosk/t800_cyborg.png',
-  shinobi_infiltrator: '/assets/kiosk/shinobi_infiltrator.png',
-  tactical_veteran: '/assets/kiosk/tactical_veteran.png',
+  street_rookie: '/assets/kiosk/family_member_male.jpg',
+  t800_cyborg: '/assets/kiosk/family_member_female.jpg',
+  shinobi_infiltrator: '/assets/kiosk/family_member_female.jpg',
+  tactical_veteran: '/assets/kiosk/family_member_male.jpg',
   hq_super_command: '/assets/kiosk/hq_super_command.png',
   hq_tactical_comms: '/assets/kiosk/hq_tactical_comms.png',
   lg88_laser_rifle: '/assets/kiosk/lg88_laser_rifle.png',
@@ -334,6 +336,8 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
   onAddSafezoneFriend,
   onRemoveSafezoneFriend,
   onEnterPrivateHouseInterior,
+  onOpenHouseCatalog,
+  onOpenPersonalWallet,
 }) => {
   const [pageIndex, setPageIndex] = useState<KioskPageIndex>(0);
   const [selectedCardIdByPage, setSelectedCardIdByPage] = useState<Record<KioskPageIndex, string>>({
@@ -362,8 +366,14 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
     };
   }, []);
 
+  const hasValidWalletId = Boolean(
+    hud.nearWalletId &&
+      hud.nearWalletId.trim().length > 0 &&
+      hud.nearWalletId.trim().toLowerCase() !== 'commander-p1.near' &&
+      hud.nearWalletId.trim().toLowerCase() !== 'commander-p1.testnet',
+  );
   const isGamepassVerified = Boolean(
-    hud.nearWalletConnected && hud.nearHasGamepassNft && !isScanningGamepass,
+    hud.nearWalletConnected && hasValidWalletId && hud.nearHasGamepassNft && !isScanningGamepass,
   );
   const isPlotClaimedAndDeployed = Boolean(
     isGamepassVerified &&
@@ -394,7 +404,10 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
     }, 420);
   };
 
-  const isSafezoneCityMode = hud.worldMode === 'safezone' || hud.cityArenaMode === 'safezone';
+  const isSafezoneCityMode =
+    hud.worldMode === 'safezone' ||
+    hud.worldMode === 'lobby' ||
+    hud.cityArenaMode === 'safezone';
   const currentAccessMode: SafezonePlotAccessMode = hud.safezonePlotAccessMode ?? 'PUBLIC';
   const allowedFriends: string[] = hud.safezoneAllowedFriends ?? [];
 
@@ -690,7 +703,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
 
           {/* Top-Right Connect/Disconnect Wallet + Gold Pill + Bold Close Button (No Emojis) */}
           <div className="absolute top-3 right-3.5 z-20 flex items-center gap-2">
-            {!hud.nearHasGamepassNft && onNearConnectAndMint ? (
+            {!isGamepassVerified && onNearConnectAndMint ? (
               <button
                 type="button"
                 data-near-btn="connect-mint"
@@ -704,7 +717,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               >
                 {isScanningGamepass ? 'SCANNING...' : 'CONNECT WALLET'}
               </button>
-            ) : (
+            ) : isGamepassVerified ? (
               <button
                 type="button"
                 data-near-wallet-badge="true"
@@ -731,11 +744,9 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                     : 'Click to show Disconnect button'
                 }
               >
-                {isConfirmingDisconnect
-                  ? 'DISCONNECT'
-                  : hud.nearWalletId ?? 'COMMANDER-P1.NEAR'}
+                {isConfirmingDisconnect ? 'DISCONNECT' : hud.nearWalletId}
               </button>
-            )}
+            ) : null}
             <div
               data-kiosk-gold="true"
               className="px-2.5 py-0.5 bg-[#f4f6f8] border-2 border-[#0d0f12] text-[11px] font-black tracking-tight text-[#0d0f12] shadow-[0_2px_0_#0d0f12]"
@@ -768,9 +779,9 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
             >
               {!isPlotClaimedAndDeployed
-                ? 'CLAIM COMMAND PLOT'
+                ? 'CLAIM HOUSE PLOT'
                 : isSafezoneCityMode
-                ? 'PLOT ACCESS CONTROL'
+                ? 'MANAGE HOUSE PLOT'
                 : currentPage.headerTitle}
             </h2>
             <p className="mt-1.5 h-[34px] sm:h-[36px] line-clamp-2 overflow-hidden text-[12px] sm:text-[13px] font-medium leading-[1.32] text-[#1c2026]">
@@ -778,41 +789,166 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 ? isScanningGamepass
                   ? 'Scanning NEAR wallet for NEP-171 House ownership verification...'
                   : isGamepassVerified
-                  ? 'House ownership verified! Click CLAIM PLOT below to deploy your Command Base, activate Family Member AI Agents, and unlock the catalog.'
-                  : 'Connect your NEAR wallet in the top-right corner or buy a House in Hana Catalog to deploy your Command Base.'
+                  ? 'House ownership verified! Click CLAIM PLOT below to materialize your 3D House showcase on this plot while online in The City.'
+                  : 'Connect your NEAR wallet in the top-right corner or buy a House in the Catalog to claim this House Plot in The City.'
                 : isSafezoneCityMode
-                ? 'Configure automatic perimeter gate permissions and trusted friend wallets for your claimed safezone plot.'
+                ? 'Configure automatic perimeter gate permissions and trusted friend wallets for your active House Plot in The City.'
                 : currentPage.headerSubtitle}
             </p>
           </div>
 
-          {/* Plot Claim Button (Shown ONLY before plot is claimed; hidden once claimed to keep modal compact) */}
-          {!isPlotClaimedAndDeployed && onNearClaimBasePlot && (
+          {/* Plot Claim & Verification Panel (Shown before plot is claimed) */}
+          {!isPlotClaimedAndDeployed && (
             <div
               data-near-gamepass-panel="true"
-              className="mt-3 p-2.5 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12]"
+              className="mt-3 p-3 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5"
             >
-              <button
-                type="button"
-                data-near-btn="claim-base"
-                data-kiosk-claim-plot="true"
-                disabled={!isGamepassVerified}
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  if (!isGamepassVerified) return;
-                  soundEngine.playUiClick();
-                  onNearClaimBasePlot();
-                }}
-                className={`w-full py-2 px-3 font-black text-[11px] uppercase tracking-tight border-2 transition-colors ${
-                  isGamepassVerified
-                    ? 'bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-white cursor-pointer'
-                    : 'bg-[#334155] text-[#94a3b8] border-[#475569] cursor-not-allowed'
-                }`}
-              >
-                {isScanningGamepass
-                  ? 'SCANNING HOUSE OWNERSHIP...'
-                  : `CLAIM PLOT${targetPlotLabel}`}
-              </button>
+              <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-[#00f0ff] animate-ping" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 truncate">
+                    CITIZEN PLOT VERIFICATION {targetPlotLabel}
+                  </span>
+                </div>
+                <span
+                  className={`px-2 py-0.5 text-[9px] font-black uppercase border border-black ${
+                    isGamepassVerified
+                      ? 'bg-[#b8ff3c] text-black'
+                      : isScanningGamepass
+                      ? 'bg-[#facc15] text-black'
+                      : hasValidWalletId
+                      ? 'bg-[#38bdf8] text-black'
+                      : 'bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {isGamepassVerified
+                    ? 'NFT VERIFIED'
+                    : isScanningGamepass
+                    ? 'SCANNING NFT...'
+                    : hasValidWalletId
+                    ? 'WALLET CONNECTED'
+                    : 'GUEST / UNREGISTERED'}
+                </span>
+              </div>
+
+              {!hasValidWalletId ? (
+                /* Unregistered / Not Connected State */
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-slate-300 leading-snug">
+                    Hubungkan dompet NEAR atau daftarkan akun citizen untuk memverifikasi kepemilikan NFT Rumah Pribadi.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {onNearConnectAndMint && (
+                      <button
+                        type="button"
+                        data-kiosk-connect-wallet="true"
+                        onClick={handleConnectAndScanGamepass}
+                        className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10.5px] uppercase tracking-tight shadow-[2px_2px_0_#000] cursor-pointer"
+                      >
+                        CONNECT NEAR WALLET
+                      </button>
+                    )}
+                    {onOpenPersonalWallet && (
+                      <button
+                        type="button"
+                        data-kiosk-register-account="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onOpenPersonalWallet();
+                        }}
+                        className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-[#0f172a] border-2 border-black font-black text-[10.5px] uppercase tracking-tight shadow-[2px_2px_0_#000] cursor-pointer"
+                      >
+                        REGISTER / CREATE SUB-ACCOUNT
+                      </button>
+                    )}
+                  </div>
+                  {onOpenHouseCatalog && (
+                    <button
+                      type="button"
+                      data-kiosk-browse-catalog="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        onOpenHouseCatalog();
+                      }}
+                      className="w-full py-1.5 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] border border-white/30 font-black text-[10px] uppercase tracking-wide cursor-pointer text-center"
+                    >
+                      BELUM MEMILIKI RUMAH? BELI DI KATALOG HANA (150 RESPITE)
+                    </button>
+                  )}
+                </div>
+              ) : isScanningGamepass ? (
+                /* Scanning NFT in Progress */
+                <div className="py-3 px-3 bg-[#1e293b] border border-[#facc15] text-center space-y-1">
+                  <div className="text-xs font-black uppercase text-[#facc15] tracking-wider animate-pulse">
+                    MEMINDAI KEPEMILIKAN NFT RUMAH PADA AKUN {hud.nearWalletId}...
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-300">
+                    Memverifikasi kontrak NEP-171 Private House Deed di NEAR Blockchain
+                  </div>
+                </div>
+              ) : isGamepassVerified ? (
+                /* Verified State -> Claim Button */
+                <div className="space-y-2">
+                  <div className="p-2 bg-[#14532d]/40 border border-[#4ade80] flex items-center justify-between gap-2">
+                    <span className="text-[10.5px] font-black uppercase text-[#4ade80]">
+                      SERTIFIKAT KEPEMILIKAN RUMAH DIVERIFIKASI
+                    </span>
+                    <span className="text-[9.5px] font-mono font-bold text-white/80">
+                      {hud.nearWalletId}
+                    </span>
+                  </div>
+                  {onNearClaimBasePlot && (
+                    <button
+                      type="button"
+                      data-near-btn="claim-base"
+                      data-kiosk-claim-plot="true"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        soundEngine.playUiClick();
+                        onNearClaimBasePlot();
+                      }}
+                      className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                    >
+                      CLAIM KAVLING PLOT INI (SESI ONLINE)
+                    </button>
+                  )}
+                </div>
+              ) : (
+                /* Connected But No House NFT */
+                <div className="space-y-2">
+                  <div className="p-2 bg-[#450a0a]/50 border border-[#f87171] space-y-1">
+                    <div className="text-[10.5px] font-black uppercase text-[#f87171]">
+                      NFT RUMAH BELUM DITEMUKAN DI AKUN {hud.nearWalletId}
+                    </div>
+                    <div className="text-[9.5px] font-bold text-slate-300">
+                      Beli sertifikat Rumah Pribadi di katalog Hana Merchant (150 RESPITE) atau scan ulang.
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      data-rescan-nft-btn="true"
+                      onClick={handleConnectAndScanGamepass}
+                      className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10px] uppercase cursor-pointer"
+                    >
+                      SCAN ULANG NFT
+                    </button>
+                    {onOpenHouseCatalog && (
+                      <button
+                        type="button"
+                        data-kiosk-buy-house="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onOpenHouseCatalog();
+                        }}
+                        className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black font-black text-[10px] uppercase cursor-pointer"
+                      >
+                        BELI RUMAH DI KATALOG
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

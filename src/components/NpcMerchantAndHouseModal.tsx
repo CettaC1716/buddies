@@ -8,6 +8,7 @@ import {
   HOUSE_SURFACE_SWATCHES,
   PlacedHouseFurnitureItem,
   evaluateLulToCyonExchangeQuote,
+  evaluateMerchantItemQuote,
   generateNpcMerchantReply,
   formatDaylightHour,
   evaluateRoomMoodScores,
@@ -44,27 +45,27 @@ interface NpcMerchantAndHouseModalProps {
   nearTestnetBalance?: number;
   walletConnected: boolean;
   hasHouseOwnership?: boolean;
-  onBuyHouseWithRespite?: (priceRespite: number) => boolean | void;
+  onBuyHouseWithRespite?: (priceRespite: number) => Promise<boolean> | boolean | void;
   recruitedFamilyMembers?: RecruitedFamilyMemberAgent[];
   onRecruitFamilyMember?: (
     planId: FamilyMemberContractPlanId,
-  ) => RecruitedFamilyMemberAgent | null | void;
+  ) => Promise<RecruitedFamilyMemberAgent | null> | RecruitedFamilyMemberAgent | null | void;
   onCommandFamilyMember?: (agentId: string, orderId: FamilyMemberOrderId) => void;
   ownedItemIds: string[];
   activeHouseThemeId: string;
   interiorPlacement: HouseInteriorPlacementState;
-  isFastForwardRunning: boolean;
+  isFastForwardRunning?: boolean;
   onClose: () => void;
   onEarnSafezoneLul: (amount: number, reason: string) => void;
   onExchangeLulToCyon: (customLulSpent?: number, customCyonGranted?: number) => void;
   onSwapNearAndRespite?: (
     direction: 'near_to_respite' | 'respite_to_near',
     inputAmount: number,
-  ) => NearRespiteSwapReceipt | null | void;
+  ) => Promise<NearRespiteSwapReceipt | null> | NearRespiteSwapReceipt | null | void;
   onInvestInMerchant: () => void;
   onBuyMerchantItem: (item: MerchantCatalogItem, price: number) => void;
   onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => void;
-  onToggleFastForward: () => void;
+  onToggleFastForward?: () => void;
   onSelectHouseTheme: (themeItem: MerchantCatalogItem) => void;
   onAssignInteriorSlot: (slot: HouseInteriorSlotId, itemId: string | null) => void;
   onRotateInteriorSlot: (slot: HouseInteriorSlotId) => void;
@@ -80,24 +81,18 @@ interface NpcMerchantAndHouseModalProps {
   onMintFishAsNft?: (fish: CaughtFishItem) => void;
   onListFishNftOnMarket?: (fish: CaughtFishItem, priceLul: number) => void;
   onBuyFishNftFromMarket?: (listing: FishNftMarketplaceListing) => void;
+  isSampleHouseView?: boolean;
 }
-
-const SLOT_LABELS: Record<HouseInteriorSlotId, string> = {
-  center_table: 'CENTER TABLE',
-  left_wall: 'LEFT WALL',
-  right_wall: 'RIGHT WALL',
-  corner_plant: 'PLANT CORNER',
-  trophy_pedestal: 'MAIN DISPLAY',
-};
 
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
   activeModalMode,
   merchantLocation,
+  isSampleHouseView = false,
   marketState,
   lulBalance,
   cyonBalance,
   respiteBalance,
-  nearTestnetBalance = 12.5,
+  nearTestnetBalance = 0,
   walletConnected,
   hasHouseOwnership = false,
   onBuyHouseWithRespite,
@@ -106,25 +101,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onCommandFamilyMember,
   ownedItemIds,
   activeHouseThemeId,
-  interiorPlacement,
-  isFastForwardRunning: _isFastForwardRunning,
+  interiorPlacement: _interiorPlacement,
+  isFastForwardRunning = false,
   onClose,
   onEarnSafezoneLul: _onEarnSafezoneLul,
   onExchangeLulToCyon,
   onSwapNearAndRespite,
-  onInvestInMerchant: _onInvestInMerchant,
-  onBuyMerchantItem: _onBuyMerchantItem,
-  onSellMerchantItem: _onSellMerchantItem,
-  onToggleFastForward: _onToggleFastForward,
+  onInvestInMerchant,
+  onBuyMerchantItem,
+  onSellMerchantItem,
+  onToggleFastForward,
   onSelectHouseTheme,
-  onAssignInteriorSlot,
-  onRotateInteriorSlot,
+  onAssignInteriorSlot: _onAssignInteriorSlot,
+  onRotateInteriorSlot: _onRotateInteriorSlot,
   onConnectWallet,
   playerBubbleBgColor = '#0f172a',
   playerBubbleTextColor = '#f8fafc',
   caughtFishBucket = [],
   fishMarketListings = [],
-  playerNearAccount = 'commander-p1.testnet',
+  playerNearAccount = '',
   onSellCaughtFish,
   onReleaseCaughtFish,
   onReleaseAllCommonFish,
@@ -138,15 +133,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [lastPlayerMessage, setLastPlayerMessage] = useState<string>('');
-  const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('2000');
-  const [cryptoSwapDirection, setCryptoSwapDirection] = useState<
-    'near_to_respite' | 'respite_to_near'
-  >('near_to_respite');
+  const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('0');
   const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('1');
   const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
     useState<NearRespiteSwapReceipt | null>(null);
   const [selectedFamilyPlanId, setSelectedFamilyPlanId] =
     useState<FamilyMemberContractPlanId>('1_week');
+  const [hanaCatalogSlide, setHanaCatalogSlide] = useState<'house' | 'family'>('house');
+  const [kaiCatalogPage, setKaiCatalogPage] = useState<number>(0);
+  const [selectedKaiFishingId, setSelectedKaiFishingId] = useState<string>(
+    'fishing_rod_carbon_pro',
+  );
   const [listingPriceByFishId, setListingPriceByFishId] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -165,14 +162,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     }
   }, [merchantLocation, activeTab]);
 
+  useEffect(() => {
+    const onOpenCatalogHouse = () => {
+      setActiveTab('katalog');
+      setHanaCatalogSlide('house');
+    };
+    window.addEventListener('open-npc-catalog-house', onOpenCatalogHouse);
+    return () => window.removeEventListener('open-npc-catalog-house', onOpenCatalogHouse);
+  }, []);
+
   // `buddies-blitz.com/interior` ("Set the Mood") Cutaway Studio State
+  const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
+    'furniture',
+  );
   const [daylightHour, setDaylightHour] = useState<number>(18.5);
   const [floorSwatchId, setFloorSwatchId] = useState<string>('floor_tatami_oak');
   const [wallSwatchId, setWallSwatchId] = useState<string>('wall_limewash');
   const [slatsSwatchId, setSlatsSwatchId] = useState<string>('slats_walnut');
   const [placed3dItems, setPlaced3dItems] = useState<PlacedHouseFurnitureItem[]>([]);
   const [selected3dInstanceId, setSelected3dInstanceId] = useState<string | null>(null);
-  const [showLegacySlots, setShowLegacySlots] = useState<boolean>(false);
 
   useEffect(() => {
     const onHouseStateUpdated = (ev: Event) => {
@@ -207,11 +215,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   // Initial greeting when NPC modal opens
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
-      const locLabel = merchantLocation === 'lobby_cafe' ? 'Mini Cafe Lobby' : 'East Beach House';
+      const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza Cafe' : 'East Beach House';
       const greeting = !walletConnected
         ? `Hello and welcome, Buddy. It looks like you have not registered yet. Please register to access the Exchange and the full Catalog. Feel free to walk around or ask me any questions about this game.`
         : merchantLocation === 'beach_house'
-          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish for LUL, or visit the CATALOG tab to buy a House and recruit a Family Member.`
+          ? `Hello Buddy! Welcome to ${locLabel}. You can sell caught fish in the FISH MARKET tab, or open the CATALOG tab to buy Fishing Rods, Reels, Lures, and Tackle!`
           : `Hello Buddy! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
       setNpcFullText(greeting);
       setNpcTypedText('');
@@ -330,398 +338,356 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     return (
       <aside
         role="dialog"
-        aria-label="Private House Interior Manager"
+        aria-label="Private House Decorative Studio"
         data-house-interior-modal="true"
         className="fixed inset-0 z-40 pointer-events-none select-none"
       >
-        {/* Top-Center Interactive Hint Pill */}
-        <div className="fixed top-3 left-1/2 -translate-x-1/2 pointer-events-auto bg-[#0f172a]/95 text-white border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] px-3.5 py-1.5 flex items-center gap-3">
-          <span className="text-[10.5px] font-black uppercase tracking-wider text-[#b8ff3c]">
-            CUTAWAY 3D STUDIO (BUDDIES.NET/INTERIOR)
-          </span>
-          <span className="text-[10px] font-bold text-white/90 hidden sm:inline">
-            Click &amp; Drag Furniture on 3D Floor (10cm Snap + 25cm Wall Magnet) · Drag Empty Space = Orbit Camera · Scroll = Zoom / Rotate 45°
-          </span>
-          <button
-            type="button"
-            data-house-exit-btn="true"
-            onClick={() => {
-              soundEngine.playUiClick();
-              onClose();
-            }}
-            className="px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-[#0d0f12] text-[10px] font-black uppercase cursor-pointer"
-          >
-            DONE EDITING [ESC]
-          </button>
-        </div>
-
-        {/* Left Panel: Set the Mood + Softmax Mood Meter + NEP-245 Theme & Surface Swatches */}
-        <div className="fixed top-16 left-3 w-[300px] sm:w-[325px] max-h-[calc(100vh-190px)] overflow-y-auto pointer-events-auto bg-white/95 border-[3px] border-[#0d0f12] shadow-[0_5px_0_#0d0f12] p-3 text-[#0d0f12] space-y-2.5">
-          <div className="flex items-center justify-between border-b-2 border-[#0d0f12] pb-1.5">
-            <div>
-              <div className="text-[9.5px] font-black uppercase tracking-wider text-[#0f7a78]">
-                SET THE MOOD · PRIVATE HOUSE
-              </div>
-              <h2 className="text-base font-black uppercase leading-tight">
-                MOOD METER &amp; MATERIALS
-              </h2>
-            </div>
-            <span className="px-2 py-0.5 bg-[#0d0f12] text-[#b8ff3c] text-[9.5px] font-black uppercase">
-              {moodEval.dominantMood.toUpperCase()}
+        {/* TOP BAR: Minimalist Architectural Studio Bar (Simple text, zero emojis) */}
+        <header className="fixed top-0 inset-x-0 h-13 bg-[#0f172a]/95 text-white border-b-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] px-3 sm:px-5 flex items-center justify-between pointer-events-auto z-50">
+          <div className="flex items-center gap-2.5">
+            <span className={`px-2 py-0.5 ${isSampleHouseView ? 'bg-[#38bdf8]' : 'bg-[#b8ff3c]'} text-[#0d0f12] text-[10px] font-black uppercase tracking-wider border border-[#0d0f12]`}>
+              {isSampleHouseView ? 'SHOWCASE' : '3D STUDIO'}
             </span>
-          </div>
-
-          {/* 3 Mood Presets (`Cozy`, `Bright`, `Moody`) */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {(
-              [
-                { id: 'cozy', label: 'COZY 18:30', color: '#f5b82e' },
-                { id: 'bright', label: 'BRIGHT 12:48', color: '#38bdf8' },
-                { id: 'moody', label: 'MOODY 22:12', color: '#a855f7' },
-              ] as const
-            ).map((mp) => (
-              <button
-                key={mp.id}
-                type="button"
-                data-mood-preset={mp.id}
-                onClick={() => handleApplyMoodPreset(mp.id)}
-                className={`py-1.5 px-1.5 border-2 border-[#0d0f12] text-[9.5px] font-black uppercase cursor-pointer ${
-                  moodEval.dominantMood === mp.id
-                    ? 'bg-[#b8ff3c] shadow-[0_2px_0_#0d0f12]'
-                    : 'bg-[#f4f6f8] hover:bg-[#e5e9ee]'
-                }`}
-              >
-                {mp.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Live Softmax Mood Meter Bars (`Cozy %`, `Bright %`, `Moody %` + Explanation) */}
-          <div
-            data-house-mood-meter="true"
-            className="p-2.5 bg-[#0f172a] text-white border-2 border-[#0d0f12] space-y-1.5"
-          >
-            {(
-              [
-                { key: 'cozy', label: 'Cozy', pct: moodEval.cozyPct, barCol: '#f5b82e' },
-                { key: 'bright', label: 'Bright', pct: moodEval.brightPct, barCol: '#38bdf8' },
-                { key: 'moody', label: 'Moody', pct: moodEval.moodyPct, barCol: '#a855f7' },
-              ] as const
-            ).map((row) => (
-              <div key={row.key} className="space-y-0.5">
-                <div className="flex justify-between text-[10px] font-black uppercase">
-                  <span>{row.label}</span>
-                  <span>{row.pct}%</span>
-                </div>
-                <div className="w-full h-2 bg-[#1e293b] border border-white/30 overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-300"
-                    style={{ width: `${row.pct}%`, backgroundColor: row.barCol }}
-                  />
-                </div>
-              </div>
-            ))}
-            <p className="text-[9.5px] font-bold text-[#cbd5e1] leading-snug pt-1 border-t border-white/15">
-              {moodEval.explanationText}
-            </p>
-          </div>
-
-          {/* NEP-245 House Theme Selector (Triggers Radial 3D Wipe Ring) */}
-          <div>
-            <div className="text-[9.5px] font-black uppercase tracking-wider mb-1">
-              HOUSE ARCHITECTURE THEME (NEP-245 NFT):
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {ownedThemes.map((th) => {
-                const isActive = activeHouseThemeId === th.id;
-                return (
-                  <button
-                    key={th.id}
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      onSelectHouseTheme(th);
-                    }}
-                    className={`p-1.5 border-2 border-[#0d0f12] flex items-center justify-between text-left cursor-pointer ${
-                      isActive ? 'bg-[#b8ff3c] shadow-[0_2px_0_#0d0f12]' : 'bg-[#f4f6f8] hover:bg-[#e5e9ee]'
-                    }`}
-                  >
-                    <span className="text-[10px] font-black uppercase truncate">{th.name}</span>
-                    <span className="text-[8.5px] font-black uppercase px-1.5 py-0.5 bg-[#0d0f12] text-white shrink-0">
-                      {isActive ? 'ACTIVE' : 'APPLY'}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-col">
+              <span className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-wide text-white leading-tight">
+                {isSampleHouseView ? 'RUMAH CONTOH // MODEL ESTATE (VIEW ONLY)' : 'PRIVATE HOUSE // DECORATIVE MODE'}
+              </span>
+              <span className="text-[9px] font-bold text-slate-300 hidden md:inline">
+                {isSampleHouseView
+                  ? 'RUMAH CONTOH DAPAT DIKUNJUNGI SIAPAPUN · DISPLAY ARSITEKTUR & PERABOTAN CONTOH (TIDAK BISA DIEDIT)'
+                  : 'DRAG FURNITURE TO PLACE (10CM SNAP) · DRAG FLOOR TO ORBIT CAMERA · SCROLL TO ZOOM'}
+              </span>
             </div>
           </div>
 
-          {/* Surface Finish Swatches (Floor & Wall Radial Wipe Trigger) */}
-          <div>
-            <div className="text-[9.5px] font-black uppercase tracking-wider mb-1">
-              FLOOR &amp; WALL MATERIALS (RADIAL 3D WIPE):
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-black/40 border border-white/20 text-[10px] font-mono">
+              <span className="text-slate-400">MOOD:</span>
+              <span className="text-[#b8ff3c] font-black uppercase">{moodEval.dominantMood}</span>
+              <span className="text-slate-500">|</span>
+              <span className="text-slate-400">SOLAR TIME:</span>
+              <span className="text-[#fde047] font-black">{formatDaylightHour(daylightHour)}</span>
             </div>
-            <div className="grid grid-cols-2 gap-1">
-              {HOUSE_SURFACE_SWATCHES.filter((s) => s.slot === 'floor' || s.slot === 'wall').map(
-                (sw) => {
-                  const isCurrent =
-                    (sw.slot === 'floor' && floorSwatchId === sw.id) ||
-                    (sw.slot === 'wall' && wallSwatchId === sw.id);
-                  return (
-                    <button
-                      key={sw.id}
-                      type="button"
-                      data-surface-swatch={sw.id}
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        if (sw.slot === 'floor') {
-                          setFloorSwatchId(sw.id);
-                          dispatchHouseStudioPatch({ floorSwatchId: sw.id });
-                        } else {
-                          setWallSwatchId(sw.id);
-                          dispatchHouseStudioPatch({ wallSwatchId: sw.id });
-                        }
-                      }}
-                      className={`p-1 border-[1.5px] border-[#0d0f12] flex items-center gap-1.5 text-left cursor-pointer ${
-                        isCurrent ? 'bg-[#2bb3b1] text-[#0d0f12]' : 'bg-[#f4f6f8] hover:bg-white'
-                      }`}
-                    >
-                      <span
-                        className="w-3.5 h-3.5 rounded-full border border-[#0d0f12] shrink-0"
-                        style={{ backgroundColor: sw.colorHex }}
-                      />
-                      <span className="text-[9px] font-black uppercase truncate">{sw.name}</span>
-                    </button>
-                  );
-                },
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Right Panel: Daylight Time Slider (05:30 - 23:30) + Solar Arc Presets + Camera Reset */}
-        <div className="fixed top-16 right-3 w-[250px] sm:w-[270px] pointer-events-auto bg-white/95 border-[3px] border-[#0d0f12] shadow-[0_5px_0_#0d0f12] p-3 text-[#0d0f12] space-y-2.5">
-          <div className="flex items-center justify-between border-b-2 border-[#0d0f12] pb-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider">
-              DAYLIGHT &amp; SOLAR ARC
-            </span>
-            <span
-              data-house-daylight-clock="true"
-              className="px-2 py-0.5 bg-[#0f172a] text-[#fde047] font-mono text-[11px] font-black"
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                dispatchHouseStudioPatch({ resetCamera: true });
+              }}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border-2 border-black text-[10px] font-black uppercase cursor-pointer"
             >
-              {formatDaylightHour(daylightHour)}
-            </span>
-          </div>
+              RESET CAMERA
+            </button>
 
-          <div>
-            <input
-              type="range"
-              aria-label="Daylight Time Slider"
-              data-house-daylight-slider="true"
-              min={5.5}
-              max={23.5}
-              step={0.1}
-              value={daylightHour}
-              onChange={(e) => handleChangeDaylightHour(parseFloat(e.target.value))}
-              className="w-full accent-[#0f7a78] cursor-pointer"
-            />
-            <div className="flex justify-between text-[8.5px] font-black text-[#475569] uppercase">
-              <span>05:30</span>
-              <span>12:00</span>
-              <span>18:30</span>
-              <span>23:30</span>
+            <button
+              type="button"
+              data-house-exit-btn="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onClose();
+              }}
+              className="px-3 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[10px] font-black uppercase tracking-wider cursor-pointer"
+            >
+              {isSampleHouseView ? 'EXIT RUMAH CONTOH [ESC]' : 'DONE EDITING [ESC]'}
+            </button>
+          </div>
+        </header>
+
+        {isSampleHouseView ? (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto bg-[#0d0f12] text-white border-[3px] border-[#38bdf8] shadow-[4px_4px_0_#000] px-5 py-3 z-50 text-center max-w-lg space-y-1">
+            <div className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
+              RUMAH CONTOH // MODEL ESTATE (VIEW ONLY)
+            </div>
+            <div className="text-[10px] font-bold text-slate-300">
+              Rumah contoh ini adalah peraga resmi untuk seluruh warga. Tidak ada opsi edit atau dekorasi di rumah contoh. Untuk memiliki dan mendekorasi rumah pribadi Anda, beli Rumah di Kiosk Claim Plot atau Katalog Hana.
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-1.5">
-            {(
-              [
-                { label: 'MORNING 07:36', h: 7.6 },
-                { label: 'NOON 12:48', h: 12.8 },
-                { label: 'EVENING 18:30', h: 18.5 },
-                { label: 'NIGHT 22:12', h: 22.2 },
-              ] as const
-            ).map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  handleChangeDaylightHour(preset.h);
-                }}
-                className={`py-1 px-2 border-2 border-[#0d0f12] text-[9.5px] font-black uppercase cursor-pointer ${
-                  Math.abs(daylightHour - preset.h) < 0.4
-                    ? 'bg-[#fde047] text-[#0d0f12]'
-                    : 'bg-[#f4f6f8] hover:bg-[#e5e9ee]'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick();
-              dispatchHouseStudioPatch({ resetCamera: true });
-            }}
-            className="w-full py-1.5 bg-[#f4f6f8] hover:bg-[#e5e9ee] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] text-[9.5px] font-black uppercase cursor-pointer"
-          >
-            RESET CUTAWAY CAMERA ANGLE
-          </button>
-        </div>
-
-        {/* Bottom Dock: Free 3D Furniture Tray + Selected 3D Furniture Toolbar + Optional Slot View */}
-        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[96vw] max-w-[820px] pointer-events-auto bg-white/95 border-[3.5px] border-[#0d0f12] shadow-[0_6px_0_#0d0f12] p-3 text-[#0d0f12]">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b-2 border-[#0d0f12]">
-            <div className="flex items-center gap-2">
-              <span className="text-[10.5px] font-black uppercase">
-                YOUR FURNITURE CATALOG ({ownedFurniture.length} ITEMS)
-              </span>
-              <span className="text-[9.5px] font-bold text-[#0f7a78]">
-                Click [+ PLACE IN 3D ROOM] then drag freely on the room floor!
-              </span>
-            </div>
-
+        ) : (
+        /* BOTTOM DOCK: Consolidated Tabbed Studio Console (Zero emojis, simple text) */
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[96vw] max-w-4xl pointer-events-auto bg-white border-[3px] border-[#0d0f12] shadow-[5px_5px_0_#0d0f12] p-3 text-[#0d0f12] z-50">
+          {/* Dock Header & Navigation Tabs */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b-2 border-[#0d0f12]">
             <div className="flex items-center gap-1.5">
-              {selectedCatalogItem && (
-                <div className="flex items-center gap-1 bg-[#0f172a] text-white px-2 py-1 border-2 border-[#0d0f12]">
-                  <span className="text-[9.5px] font-black uppercase text-[#38bdf8]">
-                    SELECTED: {selectedCatalogItem.name}
-                  </span>
-                  <button
-                    type="button"
-                    data-rotate-3d-furniture="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      dispatchHouseStudioPatch({ rotateSelectedDelta: 1 });
-                    }}
-                    className="px-2 py-0.5 bg-[#b8ff3c] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
-                  >
-                    ROTATE +45°
-                  </button>
-                  <button
-                    type="button"
-                    data-remove-3d-furniture="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      dispatchHouseStudioPatch({ removeSelected: true });
-                    }}
-                    className="px-2 py-0.5 bg-[#ff3b30] text-white text-[9px] font-black uppercase cursor-pointer"
-                  >
-                    STORE
-                  </button>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowLegacySlots((prev) => !prev)}
-                className="px-2 py-1 bg-[#f4f6f8] border-2 border-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
-              >
-                {showLegacySlots ? 'HIDE QUICK SLOTS' : 'QUICK SLOTS (5 POSITIONS)'}
-              </button>
-            </div>
-          </div>
-
-          {/* Horizontal Free-Placement Furniture Cards */}
-          <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
-            {ownedFurniture.map((item) => (
-              <div
-                key={item.id}
-                className="min-w-[175px] p-2 bg-[#f4f6f8] border-2 border-[#0d0f12] flex flex-col justify-between gap-1.5 shrink-0"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1">
-                    <span
-                      className={`px-1 py-0.2 text-[8px] font-black uppercase border border-[#0d0f12] ${
-                        item.isNft ? 'bg-[#38bdf8]' : 'bg-[#a7f3d0]'
-                      }`}
-                    >
-                      {item.isNft ? 'NEP-245 NFT' : 'CYON ITEM'}
-                    </span>
-                  </div>
-                  <div className="text-[10px] font-black uppercase truncate mt-0.5">
-                    {item.name}
-                  </div>
-                </div>
+              {(
+                [
+                  { id: 'furniture', label: `FURNITURE (${ownedFurniture.length})` },
+                  { id: 'materials', label: 'THEMES & FINISHES' },
+                  { id: 'lighting', label: 'LIGHTING & MOOD' },
+                ] as const
+              ).map((tab) => (
                 <button
+                  key={tab.id}
                   type="button"
-                  data-spawn-3d-furniture={item.id}
+                  data-studio-tab={tab.id}
                   onClick={() => {
                     soundEngine.playUiClick();
-                    dispatchHouseStudioPatch({ spawnCatalogId: item.id });
+                    setStudioDockTab(tab.id);
                   }}
-                  className="w-full py-1 bg-[#b8ff3c] hover:bg-[#d2ff7a] border-[1.5px] border-[#0d0f12] text-[9.5px] font-black uppercase cursor-pointer"
+                  className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider border-2 border-[#0d0f12] cursor-pointer transition-colors ${
+                    studioDockTab === tab.id
+                      ? 'bg-[#b8ff3c] shadow-[2px_2px_0_#0d0f12]'
+                      : 'bg-[#f4f6f8] hover:bg-[#e2e8f0] text-slate-700'
+                  }`}
                 >
-                  + PLACE IN 3D ROOM
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Selected 3D Item Controls */}
+            {selectedCatalogItem && (
+              <div className="flex items-center gap-1.5 bg-[#0f172a] text-white px-2.5 py-1 border-2 border-[#0d0f12]">
+                <span className="text-[9.5px] font-black uppercase text-[#38bdf8] truncate max-w-[150px]">
+                  SELECTED: {selectedCatalogItem.name}
+                </span>
+                <button
+                  type="button"
+                  data-rotate-3d-furniture="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    dispatchHouseStudioPatch({ rotateSelectedDelta: 1 });
+                  }}
+                  className="px-2 py-0.5 bg-[#b8ff3c] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
+                >
+                  ROTATE +45 DEG
+                </button>
+                <button
+                  type="button"
+                  data-remove-3d-furniture="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    dispatchHouseStudioPatch({ removeSelected: true });
+                  }}
+                  className="px-2 py-0.5 bg-[#ff3b30] text-white text-[9px] font-black uppercase cursor-pointer"
+                >
+                  STORE
                 </button>
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Optional Quick-Slot Selector (Preserves 100% compatibility with slot-based assignment) */}
-          {showLegacySlots && (
-            <div className="mt-2 pt-2 border-t-2 border-[#0d0f12] grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[135px] overflow-y-auto">
-              {(Object.keys(SLOT_LABELS) as HouseInteriorSlotId[]).map((slotId) => {
-                const currentItemId = interiorPlacement[slotId];
-                const slotItems = ownedFurniture.filter((f) => f.interiorSlot === slotId);
-                const rotDeg = ((interiorPlacement.rotationStepBySlot[slotId] ?? 0) * 90) % 360;
-                return (
-                  <div
-                    key={slotId}
-                    className="p-1.5 bg-[#f4f6f8] border border-[#0d0f12] flex items-center justify-between gap-1.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[9px] font-black uppercase">{SLOT_LABELS[slotId]}</div>
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            onAssignInteriorSlot(slotId, null);
-                          }}
-                          className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase cursor-pointer ${
-                            currentItemId === null ? 'bg-[#0d0f12] text-white' : 'bg-white'
+          {/* TAB 1: FURNITURE CATALOG */}
+          {studioDockTab === 'furniture' && (
+            <div className="pt-2.5">
+              {ownedFurniture.length === 0 ? (
+                <div className="py-4 text-center text-xs font-bold text-slate-600">
+                  BELUM MEMILIKI FURNITUR DI TAS. KUNJUNGI KATALOG MERCHANT HANA UNTUK MEMPEROLEH PERABOTAN RUMAH.
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {ownedFurniture.map((item) => (
+                    <div
+                      key={item.id}
+                      className="min-w-[170px] p-2 bg-[#f4f6f8] border-2 border-[#0d0f12] flex flex-col justify-between gap-1.5 shrink-0"
+                    >
+                      <div>
+                        <span
+                          className={`px-1.5 py-0.5 text-[8px] font-black uppercase border border-[#0d0f12] ${
+                            item.isNft ? 'bg-[#38bdf8] text-black' : 'bg-[#a7f3d0] text-black'
                           }`}
                         >
-                          CLEAR
-                        </button>
-                        {slotItems.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              onAssignInteriorSlot(slotId, item.id);
-                            }}
-                            className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase cursor-pointer ${
-                              currentItemId === item.id ? 'bg-[#2bb3b1]' : 'bg-white'
-                            }`}
-                          >
-                            {item.name}
-                          </button>
-                        ))}
+                          {item.isNft ? 'NEP-245 NFT' : 'CYON ITEM'}
+                        </span>
+                        <div className="text-[10px] font-black uppercase truncate mt-1">
+                          {item.name}
+                        </div>
                       </div>
-                    </div>
-                    {currentItemId && (
                       <button
+                        type="button"
+                        data-spawn-3d-furniture={item.id}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          dispatchHouseStudioPatch({ spawnCatalogId: item.id });
+                        }}
+                        className="w-full py-1 bg-[#b8ff3c] hover:bg-[#d2ff7a] border-[1.5px] border-[#0d0f12] text-[9.5px] font-black uppercase cursor-pointer"
+                      >
+                        + PLACE ON FLOOR
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: THEMES & FINISHES */}
+          {studioDockTab === 'materials' && (
+            <div className="pt-2.5 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto">
+              {/* Architecture Themes */}
+              <div className="space-y-1">
+                <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
+                  HOUSE ARCHITECTURE THEME (NEP-245):
+                </div>
+                <div className="grid grid-cols-1 gap-1">
+                  {ownedThemes.map((th) => {
+                    const isActive = activeHouseThemeId === th.id;
+                    return (
+                      <button
+                        key={th.id}
                         type="button"
                         onClick={() => {
                           soundEngine.playUiClick();
-                          onRotateInteriorSlot(slotId);
+                          onSelectHouseTheme(th);
                         }}
-                        className="px-2 py-0.5 bg-white border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0 cursor-pointer"
+                        className={`p-1.5 border-2 border-[#0d0f12] flex items-center justify-between text-left cursor-pointer ${
+                          isActive
+                            ? 'bg-[#b8ff3c] shadow-[2px_2px_0_#0d0f12]'
+                            : 'bg-[#f4f6f8] hover:bg-white'
+                        }`}
                       >
-                        ROTATE ({rotDeg}°)
+                        <span className="text-[10px] font-black uppercase truncate">{th.name}</span>
+                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 bg-[#0d0f12] text-white">
+                          {isActive ? 'ACTIVE' : 'APPLY'}
+                        </span>
                       </button>
-                    )}
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Surface Finish Swatches */}
+              <div className="space-y-1">
+                <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
+                  FLOOR &amp; WALL FINISH (RADIAL 3D WIPE):
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {HOUSE_SURFACE_SWATCHES.filter((s) => s.slot === 'floor' || s.slot === 'wall').map(
+                    (sw) => {
+                      const isCurrent =
+                        (sw.slot === 'floor' && floorSwatchId === sw.id) ||
+                        (sw.slot === 'wall' && wallSwatchId === sw.id);
+                      return (
+                        <button
+                          key={sw.id}
+                          type="button"
+                          data-surface-swatch={sw.id}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            if (sw.slot === 'floor') {
+                              setFloorSwatchId(sw.id);
+                              dispatchHouseStudioPatch({ floorSwatchId: sw.id });
+                            } else {
+                              setWallSwatchId(sw.id);
+                              dispatchHouseStudioPatch({ wallSwatchId: sw.id });
+                            }
+                          }}
+                          className={`p-1 border-[1.5px] border-[#0d0f12] flex items-center gap-1.5 text-left cursor-pointer ${
+                            isCurrent ? 'bg-[#2bb3b1] text-black font-black' : 'bg-[#f4f6f8] hover:bg-white'
+                          }`}
+                        >
+                          <span
+                            className="w-3.5 h-3.5 border border-[#0d0f12] shrink-0"
+                            style={{ backgroundColor: sw.colorHex }}
+                          />
+                          <span className="text-[9px] font-black uppercase truncate">{sw.name}</span>
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: LIGHTING & MOOD */}
+          {studioDockTab === 'lighting' && (
+            <div className="pt-2.5 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto">
+              {/* Daylight Time Slider & Solar Presets */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9.5px] font-black uppercase text-slate-600">
+                    DAYLIGHT SOLAR ARC:
+                  </span>
+                  <span className="px-2 py-0.5 bg-[#0f172a] text-[#fde047] font-mono text-[10px] font-black">
+                    {formatDaylightHour(daylightHour)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="Daylight Time Slider"
+                  data-house-daylight-slider="true"
+                  min={5.5}
+                  max={23.5}
+                  step={0.1}
+                  value={daylightHour}
+                  onChange={(e) => handleChangeDaylightHour(parseFloat(e.target.value))}
+                  className="w-full accent-[#0f7a78] cursor-pointer"
+                />
+                <div className="grid grid-cols-2 gap-1">
+                  {(
+                    [
+                      { label: 'MORNING 07:36', h: 7.6 },
+                      { label: 'NOON 12:48', h: 12.8 },
+                      { label: 'EVENING 18:30', h: 18.5 },
+                      { label: 'NIGHT 22:12', h: 22.2 },
+                    ] as const
+                  ).map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        handleChangeDaylightHour(preset.h);
+                      }}
+                      className={`py-1 px-1.5 border border-[#0d0f12] text-[9px] font-black uppercase cursor-pointer ${
+                        Math.abs(daylightHour - preset.h) < 0.4
+                          ? 'bg-[#fde047] text-black font-black'
+                          : 'bg-[#f4f6f8] hover:bg-[#e2e8f0]'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Mood Meter & Softmax bars */}
+              <div className="p-2.5 bg-[#0f172a] text-white border border-[#0d0f12] space-y-1.5">
+                <div className="flex items-center justify-between pb-1 border-b border-white/15">
+                  <span className="text-[9.5px] font-black uppercase text-[#38bdf8]">
+                    SOFTMAX ROOM MOOD SCORE:
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {(['cozy', 'bright', 'moody'] as const).map((mId) => (
+                      <button
+                        key={mId}
+                        type="button"
+                        onClick={() => handleApplyMoodPreset(mId)}
+                        className={`px-1.5 py-0.5 border border-white text-[8px] font-black uppercase cursor-pointer ${
+                          moodEval.dominantMood === mId ? 'bg-[#b8ff3c] text-black' : 'bg-black text-white'
+                        }`}
+                      >
+                        {mId}
+                      </button>
+                    ))}
                   </div>
-                );
-              })}
+                </div>
+                {(
+                  [
+                    { key: 'cozy', label: 'Cozy', pct: moodEval.cozyPct, barCol: '#f5b82e' },
+                    { key: 'bright', label: 'Bright', pct: moodEval.brightPct, barCol: '#38bdf8' },
+                    { key: 'moody', label: 'Moody', pct: moodEval.moodyPct, barCol: '#a855f7' },
+                  ] as const
+                ).map((row) => (
+                  <div key={row.key} className="space-y-0.5">
+                    <div className="flex justify-between text-[9px] font-black uppercase">
+                      <span>{row.label}</span>
+                      <span>{row.pct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-[#1e293b] border border-white/20 overflow-hidden">
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{ width: `${row.pct}%`, backgroundColor: row.barCol }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
+        )}
       </aside>
     );
   }
@@ -827,8 +793,82 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           </button>
         </div>
 
+        {/* Autonomous Agent Economy & Fast-Forward Bar (`09-games` Track) */}
+        <div
+          data-merchant-economy-sim-bar="true"
+          className="mt-2.5 p-2 bg-[#0f172a] text-white border-2 border-black shadow-[2.5px_2.5px_0px_#000] space-y-1.5 shrink-0"
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[9px] font-black uppercase">
+                DAY #{marketState.dayCounter}
+              </span>
+              <span
+                className={`px-1.5 py-0.5 border border-black text-[9px] font-black uppercase ${
+                  marketState.isShopBroke
+                    ? 'bg-[#ff3b30] text-white'
+                    : 'bg-[#38bdf8] text-black'
+                }`}
+              >
+                {marketState.isShopBroke
+                  ? 'BANKRUPT (NEEDS BAILOUT)'
+                  : `NPC TREASURY: ${marketState.treasuryCyon} CYON`}
+              </span>
+              {marketState.investorDiscountActive && (
+                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
+                  INVESTOR -15%
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {(marketState.isShopBroke || marketState.treasuryCyon < 250) && (
+                <button
+                  type="button"
+                  data-merchant-invest-btn="true"
+                  disabled={!walletConnected || lulBalance < 300}
+                  onClick={() => {
+                    onInvestInMerchant();
+                    triggerNpcSpeech(
+                      'Thank you Investor! Your 300 LUL bailout restored +450 CYON shop liquidity, granted +45 CYON dividend, and unlocked -15% catalog pricing!',
+                    );
+                  }}
+                  title="Inject 300 LUL liquidity into NPC Merchant treasury to earn +45 CYON dividend & -15% catalog discount"
+                  className={`px-2 py-0.5 border border-black text-[9px] font-black uppercase ${
+                    walletConnected && lulBalance >= 300
+                      ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
+                      : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  }`}
+                >
+                  INVEST 300 LUL (+45 CYON)
+                </button>
+              )}
+
+              {onToggleFastForward && (
+                <button
+                  type="button"
+                  data-merchant-fast-forward-btn="true"
+                  onClick={onToggleFastForward}
+                  title="Simulate multi-day supply, demand, and NPC solvency ticks in real time"
+                  className={`px-2 py-0.5 border border-black text-[9px] font-black uppercase cursor-pointer transition-colors ${
+                    isFastForwardRunning
+                      ? 'bg-[#ff3b30] text-white animate-pulse'
+                      : 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-black'
+                  }`}
+                >
+                  {isFastForwardRunning ? 'PAUSE SIM' : 'FAST-FORWARD 7D ⏩'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="text-[9.5px] font-bold text-slate-300 leading-tight truncate" title={marketState.lastMarketHeadline}>
+            {marketState.lastMarketHeadline}
+          </div>
+        </div>
+
         {/* Tab Content Viewport */}
-        <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+        <div className="mt-2.5 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
           {/* ===============================================================
               TAB 1: CHAT SESSION (NPC Chat Session — Chat Input Uses the Bottom Bar)
              =============================================================== */}
@@ -881,8 +921,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               2) Bottom Card: NEAR Protocol Crypto Smart Contract Swap (NEAR Testnet <-> RESPITE NEP-141)
              =============================================================== */}
           {activeTab === 'transaksi' && (() => {
-            const rateLul = 20;
-            const rateCyon = 10;
+            const rateLul = exchangeQuote.lulCostFor10Cyon;
+            const rateCyon = exchangeQuote.cyonGranted;
             const parsedLul = Math.max(0, Math.floor(Number(exchangeLulAmountStr) || 0));
             const calculatedCyon = Math.floor((parsedLul / rateLul) * rateCyon);
             const canPerformExchange =
@@ -894,20 +934,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             const respitePerNearRate = RESPITE_NEP141_METADATA.rateRespitePerNear; // 1 NEAR = 100 RESPITE
             const parsedCryptoInput = Math.max(0, Number(cryptoSwapInputStr) || 0);
-            const isNearToRespite = cryptoSwapDirection === 'near_to_respite';
-            const calculatedCryptoOutput = isNearToRespite
-              ? Math.floor(parsedCryptoInput * respitePerNearRate)
-              : Number((parsedCryptoInput / respitePerNearRate).toFixed(4));
+            const isNearToRespite = true;
+            const calculatedCryptoOutput = Math.floor(parsedCryptoInput * respitePerNearRate);
 
             const canPerformCryptoSwap =
               walletConnected &&
-              (isNearToRespite
-                ? parsedCryptoInput >= 0.05 &&
-                  parsedCryptoInput <= nearTestnetBalance &&
-                  calculatedCryptoOutput >= 1
-                : parsedCryptoInput >= 10 &&
-                  parsedCryptoInput <= respiteBalance &&
-                  calculatedCryptoOutput > 0);
+              parsedCryptoInput >= 0.01 &&
+              parsedCryptoInput <= nearTestnetBalance &&
+              calculatedCryptoOutput >= 1;
 
             return (
               <div className="space-y-3.5">
@@ -984,6 +1018,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           </span>
                           <span className="text-white">{rateCyon}</span>
                         </span>
+                      </div>
+                      <div className="text-[9.5px] font-bold text-slate-300 pt-0.5">
+                        {exchangeQuote.reasoningTooltip}
                       </div>
                     </div>
 
@@ -1069,41 +1106,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
 
                   <div className="p-4 sm:p-5 space-y-3.5">
-                    {/* Swap Direction Switch & Live Rate */}
+                    {/* Swap Direction Badge & Live Rate */}
                     <div className="flex flex-col items-center gap-2">
-                      <div className="flex items-center gap-1.5 bg-black/45 p-1 border border-white/20">
-                        <button
-                          type="button"
-                          data-swap-dir-near-to-respite="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setCryptoSwapDirection('near_to_respite');
-                            setCryptoSwapInputStr('1');
-                          }}
-                          className={`px-2.5 py-1 text-[10px] font-black uppercase cursor-pointer transition-colors ${
-                            isNearToRespite
-                              ? 'bg-[#38bdf8] text-black border border-black'
-                              : 'text-white/75 hover:text-white'
-                          }`}
-                        >
-                          NEAR TO RESPITE
-                        </button>
-                        <button
-                          type="button"
-                          data-swap-dir-respite-to-near="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setCryptoSwapDirection('respite_to_near');
-                            setCryptoSwapInputStr('100');
-                          }}
-                          className={`px-2.5 py-1 text-[10px] font-black uppercase cursor-pointer transition-colors ${
-                            !isNearToRespite
-                              ? 'bg-[#d8b4fe] text-black border border-black'
-                              : 'text-white/75 hover:text-white'
-                          }`}
-                        >
-                          RESPITE TO NEAR
-                        </button>
+                      <div className="px-2.5 py-1 bg-[#38bdf8] text-black border border-black text-[9.5px] font-black uppercase tracking-wide">
+                        ONE-WAY UTILITY SWAP · ANTI-BOT TREASURY FIREWALL
                       </div>
 
                       <div className="flex items-center justify-center gap-2.5 text-base sm:text-lg font-black pt-0.5">
@@ -1187,21 +1193,23 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       type="button"
                       data-near-respite-swap-submit-btn="true"
                       disabled={!canPerformCryptoSwap}
-                      onClick={() => {
+                      onClick={async () => {
                         if (!canPerformCryptoSwap) return;
                         soundEngine.playUiClick();
-                        const receipt = onSwapNearAndRespite?.(
-                          cryptoSwapDirection,
+                        const receipt = await onSwapNearAndRespite?.(
+                          'near_to_respite',
                           parsedCryptoInput,
                         );
                         if (receipt) {
                           setLastCryptoSwapReceipt(receipt);
+                          triggerNpcSpeech(
+                            `Swap complete! Swapped ${parsedCryptoInput} NEAR for +${calculatedCryptoOutput} RESPITE.`,
+                          );
+                        } else {
+                          triggerNpcSpeech(
+                            'Swap failed or was rejected by your NEAR wallet signer.',
+                          );
                         }
-                        triggerNpcSpeech(
-                          isNearToRespite
-                            ? `Swap complete! Swapped ${parsedCryptoInput} NEAR for +${calculatedCryptoOutput} RESPITE.`
-                            : `Swap complete! Swapped ${parsedCryptoInput} RESPITE for +${calculatedCryptoOutput} NEAR.`,
-                        );
                       }}
                       className={`-skew-x-6 min-w-[210px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
                         canPerformCryptoSwap
@@ -1220,9 +1228,284 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           })()}
 
           {/* ===============================================================
-              TAB 3: CATALOG (Buy House & Recruit Family Member)
+              TAB 3: CATALOG (TACTICAL KIOSK-STYLE SELECTABLE & PAGINATED MENU)
+              - Lobby Cafe (Hana): Slide 01/02 HOUSE & Slide 02/02 FAMILY MEMBER
+              - East Beach House (Kai): Paginated 2x2 Fishing Rods, Reels & Tackle Kiosk
              =============================================================== */}
           {activeTab === 'katalog' && (() => {
+            if (merchantLocation === 'beach_house') {
+              const fishingCatalogItems = MERCHANT_CATALOG_ITEMS.filter(
+                (item) => item.category === 'fishing_gear',
+              );
+              const pageSize = 4;
+              const totalPages = Math.max(1, Math.ceil(fishingCatalogItems.length / pageSize));
+              const safePage = Math.min(kaiCatalogPage, totalPages - 1);
+              const pageItems = fishingCatalogItems.slice(
+                safePage * pageSize,
+                safePage * pageSize + pageSize,
+              );
+              const selectedFishingItem =
+                fishingCatalogItems.find((i) => i.id === selectedKaiFishingId) ||
+                pageItems[0] ||
+                fishingCatalogItems[0];
+              const selectedQuote = selectedFishingItem
+                ? evaluateMerchantItemQuote(marketState, selectedFishingItem)
+                : null;
+              const isSelectedOwned = selectedFishingItem
+                ? ownedItemIds.includes(selectedFishingItem.id)
+                : false;
+              const canAffordSelected =
+                Boolean(
+                  walletConnected &&
+                    selectedFishingItem &&
+                    selectedQuote &&
+                    selectedQuote.stock > 0 &&
+                    (selectedFishingItem.currency === 'CYON'
+                      ? cyonBalance >= selectedQuote.buyPrice
+                      : respiteBalance >= selectedQuote.buyPrice),
+                );
+
+              return (
+                <div className="space-y-2.5" data-catalog-kai-fishing-panel="true">
+                  {/* Compact Balance / Registration Bar */}
+                  <div className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                        {walletConnected
+                          ? 'FISHING RODS, REELS & TACKLE'
+                          : 'REGISTRATION REQUIRED'}
+                      </div>
+                      <div className="text-[9.5px] font-bold text-slate-300">
+                        {walletConnected
+                          ? 'Select an item card below — stored in Personal Bag (BAG).'
+                          : 'Register your account to purchase fishing rods & tackle.'}
+                      </div>
+                    </div>
+                    {walletConnected ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase">
+                          {cyonBalance.toLocaleString()} CYON
+                        </span>
+                        <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
+                          {respiteBalance.toLocaleString()} RESPITE
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onConnectWallet?.();
+                        }}
+                        className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
+                      >
+                        <span className="skew-x-6 inline-block">REGISTER</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Tactical Kiosk-Style 2x2 Selectable Card Grid */}
+                  <div
+                    className={`grid grid-cols-2 gap-2.5 ${
+                      !walletConnected ? 'opacity-70 pointer-events-none select-none' : ''
+                    }`}
+                  >
+                    {pageItems.map((item) => {
+                      const quote = evaluateMerchantItemQuote(marketState, item);
+                      const isOwned = ownedItemIds.includes(item.id);
+                      const isSelected = selectedFishingItem?.id === item.id;
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          data-katalog-fishing-card={item.id}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setSelectedKaiFishingId(item.id);
+                          }}
+                          className={`group relative h-[136px] text-left select-none transition-transform duration-100 cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
+                              : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
+                          }`}
+                        >
+                          <div className="relative h-full flex flex-col justify-between bg-white border-[1.5px] border-[#0d0f12] p-2.5 overflow-hidden">
+                            {isSelected && (
+                              <div
+                                className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-10"
+                                style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
+                              >
+                                <span className="text-[9px] font-black text-[#0d0f12] leading-none">
+                                  ✓
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="flex items-start justify-between gap-1.5 pr-4">
+                              <div className="min-w-0">
+                                <div className="text-[10.5px] font-black uppercase text-[#0d0f12] leading-tight truncate">
+                                  {item.name}
+                                </div>
+                                <div className="text-[8.5px] font-extrabold uppercase text-slate-600 mt-0.5">
+                                  {item.isNft ? 'NFT TACKLE' : 'FISHING GEAR'} · Stock {quote.stock}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="my-1 flex items-center justify-center">
+                              <div className="w-11 h-11 bg-[#0f172a] border-2 border-[#0d0f12] shadow-[2px_2px_0_#0d0f12] flex items-center justify-center">
+                                <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-[#38bdf8] fill-none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="18" cy="5" r="3" />
+                                  <line x1="16" y1="7" x2="5" y2="18" />
+                                  <path d="M18 8a6 6 0 0 1-6 6H7" />
+                                </svg>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-1">
+                              <span
+                                className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase ${
+                                  item.currency === 'RESPITE'
+                                    ? 'bg-[#d8b4fe] text-[#0d0f12]'
+                                    : 'bg-[#38bdf8] text-[#0d0f12]'
+                                }`}
+                              >
+                                {quote.buyPrice} {item.currency}
+                              </span>
+                              {isOwned && (
+                                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-[#0d0f12] border border-[#0d0f12] text-[8px] font-black uppercase">
+                                  IN BAG
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Selected Item Details Strip + Dynamic Pricing Reasoning (`09-games` Track) */}
+                  {selectedFishingItem && selectedQuote && (
+                    <div className="p-2.5 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[10.5px] font-black uppercase text-[#0d0f12] truncate">
+                            {selectedFishingItem.name}
+                          </div>
+                          <div className="text-[9.5px] font-bold text-[#1c2026]/85 line-clamp-1">
+                            {selectedFishingItem.description}
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[9.5px] font-black uppercase shrink-0 ${
+                            isSelectedOwned
+                              ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                              : selectedFishingItem.currency === 'RESPITE'
+                                ? 'bg-[#d8b4fe] text-[#0d0f12]'
+                                : 'bg-[#38bdf8] text-[#0d0f12]'
+                          }`}
+                        >
+                          {isSelectedOwned
+                            ? 'OWNED IN BAG'
+                            : `${selectedQuote.buyPrice} ${selectedFishingItem.currency}`}
+                        </span>
+                      </div>
+                      <div className="text-[8.5px] font-mono font-bold text-[#0f7a78] border-t border-black/15 pt-1">
+                        Pricing Rule: {selectedQuote.reasoningTooltip}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tactical Kiosk Footer: [<] [>] Pagination + Primary Action Button */}
+                  <div className="pt-1 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const nextPage = (safePage - 1 + totalPages) % totalPages;
+                          setKaiCatalogPage(nextPage);
+                          const firstOnPage = fishingCatalogItems[nextPage * pageSize];
+                          if (firstOnPage) setSelectedKaiFishingId(firstOnPage.id);
+                        }}
+                        className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
+                        title="Previous Page"
+                      >
+                        &lt;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const nextPage = (safePage + 1) % totalPages;
+                          setKaiCatalogPage(nextPage);
+                          const firstOnPage = fishingCatalogItems[nextPage * pageSize];
+                          if (firstOnPage) setSelectedKaiFishingId(firstOnPage.id);
+                        }}
+                        className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
+                        title="Next Page"
+                      >
+                        &gt;
+                      </button>
+                      <span className="ml-1 text-[11px] font-black tracking-wider text-[#0d0f12]">
+                        {String(safePage + 1).padStart(2, '0')} /{' '}
+                        {String(totalPages).padStart(2, '0')}
+                      </span>
+                    </div>
+
+                    {selectedFishingItem && selectedQuote && (
+                      <div className="flex items-center gap-2">
+                        {isSelectedOwned ? (
+                          <button
+                            type="button"
+                            data-sell-fishing-item-btn={selectedFishingItem.id}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onSellMerchantItem(selectedFishingItem, selectedQuote.sellbackPrice);
+                              triggerNpcSpeech(
+                                `Sold back ${selectedFishingItem.name} for +${selectedQuote.sellbackPrice} ${selectedFishingItem.currency}.`,
+                              );
+                            }}
+                            className="-skew-x-12 px-4 py-2 bg-[#facc15] hover:bg-[#fde047] text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                          >
+                            <span className="skew-x-12 inline-block">
+                              SELL (+{selectedQuote.sellbackPrice} {selectedFishingItem.currency})
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            data-buy-fishing-item-btn={selectedFishingItem.id}
+                            disabled={!canAffordSelected}
+                            onClick={() => {
+                              if (!canAffordSelected) return;
+                              soundEngine.playPickup();
+                              onBuyMerchantItem(selectedFishingItem, selectedQuote.buyPrice);
+                              triggerNpcSpeech(
+                                `Purchased ${selectedFishingItem.name} for ${selectedQuote.buyPrice} ${selectedFishingItem.currency}! Stored inside your Personal Bag (BAG).`,
+                              );
+                            }}
+                            className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider transition-all ${
+                              canAffordSelected
+                                ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                                : 'bg-slate-300 text-slate-600 cursor-not-allowed'
+                            }`}
+                          >
+                            <span className="skew-x-12 inline-block">
+                              {selectedQuote.stock <= 0
+                                ? 'OUT OF STOCK'
+                                : `BUY (${selectedQuote.buyPrice} ${selectedFishingItem.currency})`}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
             const selectedFamilyPlan =
               FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === selectedFamilyPlanId) ||
               FAMILY_MEMBER_CONTRACT_PLANS[0];
@@ -1231,21 +1514,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               walletConnected && respiteBalance >= HOUSE_OWNERSHIP_PRICE_RESPITE;
             const canAffordFamilyMember =
               walletConnected && respiteBalance >= selectedFamilyPlan.priceRespite;
+            const isHouseSlide = hanaCatalogSlide === 'house';
 
             return (
-              <div className="space-y-3.5" data-catalog-house-and-family-panel="true">
-                {/* Top RESPITE Balance / Registration Required Bar */}
-                <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
+              <div className="space-y-2.5" data-catalog-house-and-family-panel="true">
+                {/* Top RESPITE Balance & Kiosk Slide Switcher Bar */}
+                <div className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
                       {walletConnected
-                        ? 'HOUSE AND FAMILY MEMBER'
-                        : 'REGISTRATION REQUIRED FOR FULL CATALOG'}
+                        ? 'HOUSE & FAMILY MEMBER KIOSK'
+                        : 'REGISTRATION REQUIRED FOR CATALOG'}
                     </div>
-                    <div className="text-[10px] font-bold text-white/85 mt-0.5">
+                    <div className="text-[9.5px] font-bold text-white/85">
                       {walletConnected
                         ? `Balance: ${respiteBalance.toLocaleString()} RESPITE`
-                        : 'You are playing as a Guest. Register your account to unlock House ownership and Family Member recruitment.'}
+                        : 'Register your account to unlock House & Family Member.'}
                     </div>
                   </div>
                   <button
@@ -1254,7 +1538,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       soundEngine.playUiClick();
                       onConnectWallet?.();
                     }}
-                    className={`-skew-x-6 px-3 py-1.5 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
+                    className={`-skew-x-6 px-3 py-1 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
                       walletConnected
                         ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
                         : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
@@ -1266,314 +1550,380 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </button>
                 </div>
 
-                {/* Product Card Grid: 1) HOUSE & 2) FAMILY MEMBER */}
+                {/* Tactical Kiosk-Style Selectable Cards: [01] HOUSE & [02] FAMILY MEMBER */}
                 <div
-                  className={`grid grid-cols-2 gap-3 ${
+                  className={`grid grid-cols-2 gap-2.5 ${
                     !walletConnected ? 'opacity-70 pointer-events-none select-none' : ''
                   }`}
                 >
-                  {/* Card 1: BUY HOUSE */}
-                  <div
+                  {/* Card 1: HOUSE (Slide 01 / 02) */}
+                  <button
+                    type="button"
                     data-katalog-card="buddies_house_ownership"
-                    className="group relative h-[162px] sm:h-[172px] text-left select-none bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setHanaCatalogSlide('house');
+                    }}
+                    className={`group relative h-[154px] sm:h-[164px] text-left select-none transition-transform duration-100 cursor-pointer ${
+                      isHouseSlide
+                        ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
+                        : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
+                    }`}
                   >
                     <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
-                      <div className="flex items-start justify-between gap-1">
+                      {isHouseSlide && (
+                        <div
+                          className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-10"
+                          style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
+                        >
+                          <span className="text-[9px] font-black text-[#0d0f12] leading-none">
+                            ✓
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-start justify-between gap-1 pr-4">
                         <div>
                           <div
-                            className="text-[11.5px] sm:text-[13px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
+                            className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
                             style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                           >
                             HOUSE
                           </div>
-                          <div className="text-[9px] sm:text-[9.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
+                          <div className="text-[8.5px] sm:text-[9px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
                             PRIVATE HOME
                           </div>
                         </div>
-                        <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[9px] font-black uppercase shrink-0">
-                          {HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE
+                        <span
+                          className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0 ${
+                            isHouseOwned
+                              ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                              : 'bg-[#d8b4fe] text-[#0d0f12]'
+                          }`}
+                        >
+                          {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
                         </span>
                       </div>
 
-                      <div className="mt-1 flex items-center justify-center h-[80px] sm:h-[86px]">
+                      <div className="my-0.5 flex items-center justify-center h-[80px] sm:h-[86px]">
                         <img
-                          src="/assets/kiosk/hq_super_command.png"
+                          src="/assets/kiosk/private_house_isometric.jpg"
                           alt="Private House Ownership"
                           draggable={false}
-                          className="w-full h-[76px] sm:h-[82px] object-contain select-none pointer-events-none"
+                          className="w-full h-[76px] sm:h-[82px] object-contain rounded-sm select-none pointer-events-none"
                         />
                       </div>
 
-                      <div className="text-[9px] font-bold text-[#1c2026] truncate">
-                        Unlocks Private House and Plot
+                      <div className="text-[8.5px] font-bold text-[#1c2026] truncate">
+                        Unlocks Private House &amp; Plot
                       </div>
                     </div>
-                  </div>
+                  </button>
 
-                  {/* Card 2: FAMILY MEMBER */}
-                  <div
+                  {/* Card 2: FAMILY MEMBER (Slide 02 / 02) */}
+                  <button
+                    type="button"
                     data-katalog-card="buddies_family_member_agent"
-                    className="group relative h-[162px] sm:h-[172px] text-left select-none bg-[#facc15] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setHanaCatalogSlide('family');
+                    }}
+                    className={`group relative h-[154px] sm:h-[164px] text-left select-none transition-transform duration-100 cursor-pointer ${
+                      !isHouseSlide
+                        ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
+                        : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
+                    }`}
                   >
                     <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
-                      <div className="flex items-start justify-between gap-1">
+                      {!isHouseSlide && (
+                        <div
+                          className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-10"
+                          style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
+                        >
+                          <span className="text-[9px] font-black text-[#0d0f12] leading-none">
+                            ✓
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-start justify-between gap-1 pr-4">
                         <div>
                           <div
-                            className="text-[11.5px] sm:text-[13px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
+                            className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
                             style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                           >
                             FAMILY MEMBER
                           </div>
-                          <div className="text-[9px] sm:text-[9.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
+                          <div className="text-[8.5px] sm:text-[9px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
                             COMPANION HELPER
                           </div>
                         </div>
-                        <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[9px] font-black uppercase shrink-0">
+                        <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0">
                           {selectedFamilyPlan.priceRespite} RESPITE
                         </span>
                       </div>
 
-                      <div className="mt-1 flex items-center justify-center h-[80px] sm:h-[86px]">
+                      <div className="my-0.5 flex items-center justify-center gap-1.5 h-[80px] sm:h-[86px]">
                         <img
-                          src="/assets/kiosk/street_rookie.png"
-                          alt="Family Member Companion"
+                          src="/assets/kiosk/family_member_female.jpg"
+                          alt="Female Family Member Companion"
                           draggable={false}
-                          className="w-full h-[76px] sm:h-[82px] object-contain select-none pointer-events-none"
+                          className="h-[74px] sm:h-[80px] w-[47%] object-cover object-top rounded-sm border border-[#0d0f12] select-none pointer-events-none"
+                        />
+                        <img
+                          src="/assets/kiosk/family_member_male.jpg"
+                          alt="Male Family Member Companion"
+                          draggable={false}
+                          className="h-[74px] sm:h-[80px] w-[47%] object-cover object-top rounded-sm border border-[#0d0f12] select-none pointer-events-none"
                         />
                       </div>
 
-                      <div className="text-[9px] font-bold text-[#1c2026] truncate">
-                        Collect Boxes, Fish, or Attack in Warzone
+                      <div className="text-[8.5px] font-bold text-[#1c2026] truncate">
+                        Collect Boxes, Fish, or Attack
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* ===========================================================
-                     SECTION 1: BUY HOUSE (WITH RESPITE)
-                    =========================================================== */}
-                <div
-                  data-buy-house-section="true"
-                  className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5 ${
-                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[11px] font-black uppercase tracking-tight text-[#0d0f12]">
-                        BUY HOUSE
-                      </div>
-                      <div className="text-[10px] font-bold text-[#1c2026]/85">
-                        Grants permanent ownership of your Private House.
-                      </div>
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[10px] font-black uppercase shadow-[0_1.5px_0_#0d0f12] shrink-0 ${
-                        isHouseOwned
-                          ? 'bg-[#b8ff3c] text-[#0d0f12]'
-                          : 'bg-[#d8b4fe] text-[#0d0f12]'
-                      }`}
-                    >
-                      {isHouseOwned ? 'HOUSE OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    data-buy-house-btn="true"
-                    disabled={!isHouseOwned && !canAffordHouse}
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      if (isHouseOwned) {
-                        triggerNpcSpeech(
-                          'You already own your House. You can enter your Private House anytime.',
-                        );
-                        return;
-                      }
-                      const ok = onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
-                      if (ok !== false) {
-                        triggerNpcSpeech(
-                          `House purchased for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE!`,
-                        );
-                      }
-                    }}
-                    className={`w-full py-2.5 px-4 border-[2.5px] border-[#0d0f12] font-black text-xs uppercase tracking-wider shadow-[2px_3px_0_#0d0f12] -skew-x-6 transition-all ${
-                      isHouseOwned
-                        ? 'bg-[#b8ff3c] text-[#0d0f12] cursor-pointer'
-                        : canAffordHouse
-                          ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
-                          : 'bg-slate-400 text-slate-700 cursor-not-allowed'
-                    }`}
-                  >
-                    <span className="inline-block skew-x-6">
-                      {isHouseOwned
-                        ? 'HOUSE OWNED'
-                        : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
-                    </span>
                   </button>
                 </div>
 
                 {/* ===========================================================
-                     SECTION 2: RECRUIT FAMILY MEMBER
-                     Contract Duration Options: 1 Week, 1 Month, 1 Year
+                     ACTIVE SLIDE CONFIGURATION PANEL (ONLY 1 SHOWN AT A TIME)
                     =========================================================== */}
-                <div
-                  data-recruit-family-member-section="true"
-                  className={`p-3 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-3 ${
-                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
-                    <div>
-                      <div className="text-[11px] font-black uppercase tracking-wider text-[#facc15]">
-                        RECRUIT FAMILY MEMBER
-                      </div>
-                      <div className="text-[10px] font-bold text-slate-300 mt-0.5">
-                        Select a duration to recruit with RESPITE:
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
-                      ACTIVE: {recruitedFamilyMembers.length}
-                    </span>
-                  </div>
-
-                  {/* Contract Duration Options: 1 Week, 1 Month, 1 Year */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {FAMILY_MEMBER_CONTRACT_PLANS.map((plan) => {
-                      const isSelected = plan.id === selectedFamilyPlan.id;
-                      return (
-                        <button
-                          key={plan.id}
-                          type="button"
-                          data-family-contract-plan={plan.id}
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setSelectedFamilyPlanId(plan.id);
-                          }}
-                          className={`p-2 text-center border-2 border-black transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-[#facc15] text-black shadow-[2px_2px_0_#000]'
-                              : 'bg-[#1e293b] hover:bg-[#334155] text-white'
-                          }`}
-                        >
-                          <div className="text-[10px] font-black uppercase">{plan.shortLabel}</div>
-                          <div
-                            className={`text-xs font-black mt-0.5 ${
-                              isSelected ? 'text-black' : 'text-[#d8b4fe]'
-                            }`}
-                          >
-                            {plan.priceRespite} RESPITE
-                          </div>
-                          <div
-                            className={`text-[8.5px] font-bold mt-0.5 ${
-                              isSelected ? 'text-black/80' : 'text-slate-300'
-                            }`}
-                          >
-                            {plan.durationDays} Days
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    type="button"
-                    data-recruit-family-member-btn="true"
-                    disabled={!canAffordFamilyMember}
-                    onClick={() => {
-                      if (!canAffordFamilyMember) return;
-                      soundEngine.playUiClick();
-                      const recruited = onRecruitFamilyMember?.(selectedFamilyPlan.id);
-                      triggerNpcSpeech(
-                        recruited
-                          ? `Recruited ${recruited.name} (${selectedFamilyPlan.shortLabel}) for ${selectedFamilyPlan.priceRespite} RESPITE!`
-                          : `Family Member recruited (${selectedFamilyPlan.shortLabel})!`,
-                      );
-                    }}
-                    className={`-skew-x-6 w-full py-2.5 px-4 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[3px_3px_0_#000] transition-all ${
-                      canAffordFamilyMember
-                        ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
-                        : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                {isHouseSlide ? (
+                  <div
+                    data-buy-house-section="true"
+                    className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-1.5 ${
+                      !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                     }`}
                   >
-                    <span className="inline-block skew-x-6">
-                      RECRUIT FAMILY MEMBER ({selectedFamilyPlan.shortLabel} -{' '}
-                      {selectedFamilyPlan.priceRespite} RESPITE)
-                    </span>
-                  </button>
-
-                  {/* =========================================================
-                      SECTION 3: COMMAND RECRUITED FAMILY MEMBERS
-                      Orders: Collect Boxes, Go Fishing, Armed Warzone Attack
-                     ========================================================= */}
-                  <div className="pt-2 border-t border-white/15 space-y-2">
-                    <div className="text-[10.5px] font-black uppercase tracking-wider text-[#38bdf8]">
-                      FAMILY MEMBER ORDERS
-                    </div>
-                    {recruitedFamilyMembers.length === 0 ? (
-                      <div className="p-2.5 bg-black/40 border border-white/15 text-[10px] font-bold text-slate-300">
-                        No Family Member recruited yet.
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black uppercase tracking-tight text-[#0d0f12]">
+                          NEP-171 SUB-ACCOUNT HOUSE DEED
+                        </div>
+                        <div className="text-[9.5px] font-bold text-[#1c2026]/85">
+                          Controls your dedicated sub-account estate &amp; 3D interior studio.
+                        </div>
                       </div>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {recruitedFamilyMembers.map((member) => {
-                          const currentOrderSpec =
-                            FAMILY_MEMBER_ORDER_SPECS.find((o) => o.id === member.activeOrder) ||
-                            FAMILY_MEMBER_ORDER_SPECS[0];
-                          return (
-                            <div
-                              key={member.agentId}
-                              data-family-member-item={member.agentId}
-                              className="p-2.5 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] space-y-2"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div>
-                                  <div className="text-[11px] font-black uppercase text-white">
-                                    {member.name} ({member.planLabel})
-                                  </div>
-                                  <div className="text-[9.5px] font-bold text-[#38bdf8]">
-                                    Order: {currentOrderSpec.label}
-                                  </div>
-                                </div>
-                                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black text-[9px] font-black uppercase border border-black shrink-0">
-                                  ACTIVE
-                                </span>
-                              </div>
+                      <span
+                        className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[9.5px] font-black uppercase shadow-[0_1.5px_0_#0d0f12] shrink-0 ${
+                          isHouseOwned
+                            ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                            : 'bg-[#d8b4fe] text-[#0d0f12]'
+                        }`}
+                      >
+                        {isHouseOwned ? 'HOUSE OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                      </span>
+                    </div>
+                    <div className="text-[8.5px] font-mono font-bold text-[#0f7a78] border-t border-black/15 pt-1">
+                      Security Invariant: Transferring this NEP-171 Deed atomically increments{' '}
+                      <span className="text-black">key_epoch</span>, revoking the seller&apos;s{' '}
+                      <span className="text-black">FunctionCall</span> key &amp; routing all unpaid royalties to the new owner.
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    data-recruit-family-member-section="true"
+                    className={`p-2.5 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2 ${
+                      !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-[#facc15]">
+                        SELECT CONTRACT DURATION
+                      </div>
+                      <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase shrink-0">
+                        ACTIVE: {recruitedFamilyMembers.length}
+                      </span>
+                    </div>
 
-                              <div className="grid grid-cols-3 gap-1.5">
-                                {FAMILY_MEMBER_ORDER_SPECS.map((orderSpec) => {
-                                  const isOrderActive = member.activeOrder === orderSpec.id;
-                                  return (
-                                    <button
-                                      key={orderSpec.id}
-                                      type="button"
-                                      data-family-order-btn={`${member.agentId}-${orderSpec.id}`}
-                                      onClick={() => {
-                                        soundEngine.playUiClick();
-                                        onCommandFamilyMember?.(member.agentId, orderSpec.id);
-                                        triggerNpcSpeech(
-                                          orderSpec.id === 'go_fishing'
-                                            ? `Order confirmed for ${member.name}: ${orderSpec.label}. ${orderSpec.description} Caught fish added to your Fish Bucket.`
-                                            : `Order confirmed for ${member.name}: ${orderSpec.label}. ${orderSpec.description} (+${orderSpec.rewardLul} LUL Warzone reward).`,
-                                        );
-                                      }}
-                                      className={`py-1.5 px-2 border border-black text-[9px] font-black uppercase cursor-pointer transition-colors ${
-                                        isOrderActive
-                                          ? 'bg-[#b8ff3c] text-black'
-                                          : 'bg-[#0f172a] hover:bg-black text-white'
-                                      }`}
-                                    >
-                                      {orderSpec.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                    {/* Contract Duration Options: 1 Week, 1 Month, 1 Year */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {FAMILY_MEMBER_CONTRACT_PLANS.map((plan) => {
+                        const isSelected = plan.id === selectedFamilyPlan.id;
+                        return (
+                          <button
+                            key={plan.id}
+                            type="button"
+                            data-family-contract-plan={plan.id}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setSelectedFamilyPlanId(plan.id);
+                            }}
+                            className={`py-1.5 px-2 text-center border-2 border-black transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#facc15] text-black shadow-[2px_2px_0_#000]'
+                                : 'bg-[#1e293b] hover:bg-[#334155] text-white'
+                            }`}
+                          >
+                            <div className="text-[9.5px] font-black uppercase">
+                              {plan.shortLabel}
                             </div>
-                          );
-                        })}
+                            <div
+                              className={`text-[10.5px] font-black ${
+                                isSelected ? 'text-black' : 'text-[#d8b4fe]'
+                              }`}
+                            >
+                              {plan.priceRespite} RESPITE
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Active Family Member Orders (Compact) */}
+                    {recruitedFamilyMembers.length > 0 && (
+                      <div className="pt-1.5 border-t border-white/15 space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                        {recruitedFamilyMembers.map((member) => (
+                          <div
+                            key={member.agentId}
+                            data-family-member-item={member.agentId}
+                            className="p-1.5 bg-[#1e293b] border border-black flex items-center justify-between gap-1.5 flex-wrap"
+                          >
+                            <span className="text-[9.5px] font-black uppercase text-white truncate">
+                              {member.name}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {FAMILY_MEMBER_ORDER_SPECS.map((orderSpec) => {
+                                const isOrderActive = member.activeOrder === orderSpec.id;
+                                return (
+                                  <button
+                                    key={orderSpec.id}
+                                    type="button"
+                                    data-family-order-btn={`${member.agentId}-${orderSpec.id}`}
+                                    onClick={() => {
+                                      soundEngine.playUiClick();
+                                      onCommandFamilyMember?.(member.agentId, orderSpec.id);
+                                      triggerNpcSpeech(
+                                        `Order confirmed for ${member.name}: ${orderSpec.label}.`,
+                                      );
+                                    }}
+                                    className={`px-1.5 py-0.5 border border-black text-[8px] font-black uppercase cursor-pointer ${
+                                      isOrderActive
+                                        ? 'bg-[#b8ff3c] text-black'
+                                        : 'bg-[#0f172a] hover:bg-black text-white'
+                                    }`}
+                                  >
+                                    {orderSpec.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* ===========================================================
+                     TACTICAL KIOSK FOOTER: [<] [>] 01 / 02 + SKEWED CTA BUTTON
+                    =========================================================== */}
+                <div
+                  className={`pt-1 flex items-center justify-between gap-2 ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
+                >
+                  {/* Bottom-Left Pagination Controls (like Tactical Kiosk) */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-catalog-prev-slide="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setHanaCatalogSlide((prev) => (prev === 'house' ? 'family' : 'house'));
+                      }}
+                      className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
+                      title="Previous Item"
+                    >
+                      &lt;
+                    </button>
+                    <button
+                      type="button"
+                      data-catalog-next-slide="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setHanaCatalogSlide((prev) => (prev === 'house' ? 'family' : 'house'));
+                      }}
+                      className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
+                      title="Next Item"
+                    >
+                      &gt;
+                    </button>
+                    <span className="ml-1 text-[11px] font-black tracking-wider text-[#0d0f12]">
+                      {isHouseSlide ? '01 / 02' : '02 / 02'}
+                    </span>
+                  </div>
+
+                  {/* Bottom-Right Skewed Kiosk Action Button */}
+                  {isHouseSlide ? (
+                    <button
+                      type="button"
+                      data-buy-house-btn="true"
+                      disabled={!isHouseOwned && !canAffordHouse}
+                      onClick={async () => {
+                        soundEngine.playUiClick();
+                        if (isHouseOwned) {
+                          triggerNpcSpeech(
+                            'You already own your House. You can enter your Private House anytime.',
+                          );
+                          return;
+                        }
+                        const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
+                        if (ok) {
+                          triggerNpcSpeech(
+                            `House purchased on-chain for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE!`,
+                          );
+                        } else {
+                          triggerNpcSpeech(
+                            'House purchase requires a confirmed NEAR wallet transaction.',
+                          );
+                        }
+                      }}
+                      className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] font-black text-[11px] uppercase tracking-wider shadow-[0_3px_0_#0d0f12] transition-all ${
+                        isHouseOwned
+                          ? 'bg-[#b8ff3c] text-[#0d0f12] cursor-pointer'
+                          : canAffordHouse
+                            ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                            : 'bg-slate-400 text-slate-700 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className="inline-block skew-x-12">
+                        {isHouseOwned
+                          ? 'HOUSE OWNED'
+                          : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-recruit-family-member-btn="true"
+                      disabled={!canAffordFamilyMember}
+                      onClick={async () => {
+                        if (!canAffordFamilyMember) return;
+                        soundEngine.playUiClick();
+                        const recruited = await onRecruitFamilyMember?.(selectedFamilyPlan.id);
+                        if (recruited) {
+                          triggerNpcSpeech(
+                            `Recruited ${recruited.name} (${selectedFamilyPlan.shortLabel}) on-chain for ${selectedFamilyPlan.priceRespite} RESPITE!`,
+                          );
+                        } else {
+                          triggerNpcSpeech(
+                            'Family Member recruitment requires a confirmed NEAR wallet transaction.',
+                          );
+                        }
+                      }}
+                      className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] font-black text-[11px] uppercase tracking-wider shadow-[0_3px_0_#0d0f12] transition-all ${
+                        canAffordFamilyMember
+                          ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                          : 'bg-slate-400 text-slate-700 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className="inline-block skew-x-12">
+                        RECRUIT ({selectedFamilyPlan.shortLabel} ·{' '}
+                        {selectedFamilyPlan.priceRespite} RESPITE)
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -1663,10 +2013,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 ) : (
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                     {caughtFishBucket.map((fish) => {
-                      const cyonValue = fish.sellValueCyon || fish.sellValueLul || 15;
+                      const lulValue = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
                       const defaultSuggestedRespite = Math.max(
                         1,
-                        fish.suggestedRespitePrice || Math.round(cyonValue / 3),
+                        fish.suggestedRespitePrice || Math.round(lulValue / 10),
                       );
                       const priceInputStr =
                         listingPriceByFishId[fish.id] ?? String(defaultSuggestedRespite);
@@ -1736,12 +2086,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onSellCaughtFish?.(fish);
                                   triggerNpcSpeech(
-                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${cyonValue} CYON (Off-Chain) for selling directly to me.`,
+                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab!`,
                                   );
                                 }}
-                                className="flex-1 py-1.5 px-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                SELL TO MERCHANT (+{cyonValue} CYON)
+                                SELL FOR LUL (+{lulValue} LUL)
                               </button>
 
                               <button

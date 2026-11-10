@@ -652,6 +652,15 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
     return () => {
       window.cancelAnimationFrame(rafId);
       fishModel.dispose();
+      scene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const mat of mats) mat.dispose();
+        }
+      });
+      renderer?.forceContextLoss();
       renderer?.dispose();
     };
   }, [lastCaughtFishToast]);
@@ -665,23 +674,23 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
   const weightLb = ((lastCaughtFishToast?.weightKg ?? 1) * 2.20462).toFixed(1);
 
   // Tidewater `.gm-fight` status callout & color (`GameHUD.js` lines 283-289)
-  let fightCallText = 'Tarik pancing';
+  let fightCallText = 'Reel line';
   let fightCallTone: 'normal' | 'good' | 'warn' = 'normal';
   if (fishingMinigame) {
     if (fishingMinigame.tension > 0.88) {
-      fightCallText = 'Kendurkan!';
+      fightCallText = 'Release tension!';
       fightCallTone = 'warn';
     } else if (fishingMinigame.isSurging) {
-      fightCallText = 'Ikan menarik kuat!';
+      fightCallText = 'Fish pulling hard!';
       fightCallTone = 'warn';
     } else if (fishingMinigame.tension < 0.15) {
-      fightCallText = 'Tali kendur!';
+      fightCallText = 'Slack line!';
       fightCallTone = 'warn';
     } else if (
       fishingMinigame.tension >= fishingMinigame.greenBand[0] &&
       fishingMinigame.tension <= fishingMinigame.greenBand[1]
     ) {
-      fightCallText = 'Tekanan pas';
+      fightCallText = 'Optimal tension';
       fightCallTone = 'good';
     }
   }
@@ -736,7 +745,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
          ===================================================================== */}
       <div
         data-fishing-hud-bar="true"
-        className="fixed bottom-14 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2.5 select-none"
+        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-1.5 select-none"
       >
         {/* Top transient toast pill (`.tw-toast`) if line snapped or early nibble */}
         {fishingHintMessage && (
@@ -777,7 +786,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
               boxShadow:
                 'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.25), 0 12px 32px -12px rgba(0, 0, 0, 0.55)',
             }}
-            className="w-[340px] sm:w-[370px] px-4 py-3 rounded-2xl text-[#eef6f8] cursor-pointer"
+            className="w-[340px] sm:w-[370px] px-4 py-3 rounded-2xl text-[#eef6f8] cursor-pointer mb-1"
           >
             {/* `.gm-fight-head`: Callout left, Distance right */}
             <div className="flex items-center justify-between mb-2 text-[13px]">
@@ -862,19 +871,23 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
           </div>
         )}
 
-        {/* Tidewater `.tw-prompt.tw-glass` Minimal Rounded Pill Prompt */}
+        {/* Unified Dark Glassmorphic Fishing Action Pill Bar */}
         {nearbyWaterZone.canFish && (
           <div
             style={{
-              background:
-                'linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 40%), rgba(12, 18, 26, 0.64)',
-              border: '1px solid rgba(170, 215, 235, 0.15)',
-              backdropFilter: 'blur(18px) saturate(1.6)',
-              boxShadow:
-                'inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.25), 0 12px 32px -12px rgba(0, 0, 0, 0.55)',
+              background: 'rgba(38, 32, 28, 0.88)',
+              backdropFilter: 'blur(8px)',
+              border: '1.5px solid rgba(255, 255, 255, 0.75)',
+              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.45)',
             }}
-            className="flex items-center gap-2.5 pl-2 pr-4 py-1.5 rounded-full text-[13.5px] font-medium text-[#eef6f8] whitespace-nowrap"
+            className="inline-flex items-center h-[42px] min-w-[210px] max-w-[340px] rounded-full px-1.5 text-white cursor-pointer hover:brightness-110 transition-all select-none gap-1"
           >
+            {/* Fishing rod icon badge */}
+            <div className="w-[34px] h-[34px] rounded-full bg-white/14 border-[1.5px] border-white/85 flex items-center justify-center overflow-hidden shrink-0 text-base">
+              🎣
+            </div>
+
+            {/* Dynamic Fishing Action Label / Button */}
             <button
               type="button"
               data-cast-fishing-rod-btn="true"
@@ -902,60 +915,40 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 }
               }}
               onClick={onTriggerFishingAction}
-              style={{
-                background:
-                  fishingPhase === 'bite'
-                    ? '#ffb86b'
-                    : fishingPhase === 'fighting' && isHoldingReel
-                      ? '#5fe3d4'
-                      : 'linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06))',
-                color:
-                  fishingPhase === 'bite' || (fishingPhase === 'fighting' && isHoldingReel)
-                    ? '#061318'
-                    : '#eef6f8',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
-                boxShadow:
-                  'inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 rgba(0, 0, 0, 0.35)',
-              }}
-              className="inline-flex items-center justify-center h-7 px-3 rounded-full font-mono text-[11.5px] font-semibold tracking-wide cursor-pointer transition-transform active:scale-95"
+              className="flex-1 text-center font-mono font-bold text-[14px] text-white tracking-wide px-2 uppercase truncate bg-transparent border-0 cursor-pointer outline-none focus:outline-none"
             >
               {fishingPhase === 'fighting'
                 ? isHoldingReel
-                  ? 'Menarik...'
-                  : 'Tahan Klik / F'
+                  ? 'REELING...'
+                  : 'HOLD CLICK / [F]'
                 : fishingPhase === 'bite'
-                  ? 'Tarik! [F]'
+                  ? 'STRIKE! [F]'
                   : fishingPhase === 'charging'
                     ? `${Math.round(fishingCastPower * 100)}%`
-                    : 'Lempar [F]'}
+                    : fishingPhase === 'casting' || fishingPhase === 'nibble'
+                      ? 'WAITING...'
+                      : caughtFishBucketCount >= 20
+                        ? 'COOLER FULL'
+                        : 'CAST [F]'}
             </button>
 
-            <span className="text-[#deecf2]/90">
-              {fishingPhase === 'charging'
-                ? 'Lepas untuk melempar kail'
-                : fishingPhase === 'casting'
-                  ? 'Menunggu umpan disambar...'
-                  : fishingPhase === 'nibble'
-                    ? 'Ikan mematuk pelan · tunggu pelampung tenggelam'
-                    : fishingPhase === 'bite'
-                      ? 'Sambar sekarang!'
-                      : fishingPhase === 'fighting'
-                        ? fishingMinigame &&
-                          fishingMinigame.tension > fishingMinigame.greenBand[1]
-                          ? 'Terlalu tegang · lepaskan sebentar!'
-                          : 'Tahan untuk menggulung · lepas saat merah'
-                        : caughtFishBucketCount >= 20
-                          ? 'Cooler penuh (20/20)'
-                          : 'Tahan untuk melempar kail'}
-            </span>
-
-            {(fishingPhase === 'casting' || fishingPhase === 'nibble') && onCancelCast && (
+            {/* Cancel or Chevron Button */}
+            {(fishingPhase === 'casting' || fishingPhase === 'nibble') && onCancelCast ? (
               <button
                 type="button"
                 onClick={onCancelCast}
-                className="ml-1 px-2.5 py-0.5 rounded-full text-[11px] text-[#deecf2]/65 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold text-white/90 hover:text-white bg-white/15 hover:bg-white/25 transition-colors cursor-pointer shrink-0 border-0 uppercase"
               >
-                Batal
+                CANCEL
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onTriggerFishingAction}
+                title="Action"
+                className="w-6 h-6 flex items-center justify-center text-white/90 hover:text-white font-black text-base shrink-0 border-0 bg-transparent cursor-pointer"
+              >
+                &gt;
               </button>
             )}
           </div>
@@ -990,7 +983,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-extrabold uppercase tracking-[0.22em] -rotate-2"
                 >
-                  ★ Rekor Trophy
+                  ★ Trophy Record
                 </span>
               ) : (
                 <span
@@ -1098,14 +1091,14 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 className="min-w-[110px] sm:min-w-[136px] px-4 py-2.5 rounded-md"
               >
                 <span className="block text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#debe7d]/90">
-                  Value
+                  Kai Sell Value
                 </span>
-                <b className="block mt-1 font-mono text-2xl sm:text-3xl font-semibold text-[#f0c46a]">
-                  +{lastCaughtFishToast.sellValueCyon || lastCaughtFishToast.sellValueLul}
-                  <small className="text-sm font-medium text-[#f4ead6]/70 ml-1">CYON</small>
+                <b className="block mt-1 font-mono text-2xl sm:text-3xl font-semibold text-[#facc15]">
+                  +{lastCaughtFishToast.sellValueLul || lastCaughtFishToast.sellValueCyon}
+                  <small className="text-sm font-medium text-[#f4ead6]/70 ml-1">LUL</small>
                 </b>
                 <i className="block not-italic font-mono text-xs text-[#f4ead6]/50 mt-0.5">
-                  in cooler ({caughtFishBucketCount}/20)
+                  Sell to Kai (Swap LUL &rarr; CYON)
                 </i>
               </div>
             </div>
@@ -1119,22 +1112,25 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 style={{ background: '#5fe3d4', color: '#0b1418' }}
                 className="px-5 py-2 rounded-full text-[13px] font-semibold cursor-pointer hover:brightness-110 transition-all"
               >
-                Simpan di Cooler
+                Keep in Bag
               </button>
 
-              <button
-                type="button"
-                data-showcase-sell-fish-btn="true"
-                onClick={() => onSellCaughtFishToKai(lastCaughtFishToast)}
-                style={{
-                  background: 'rgba(240, 196, 106, 0.2)',
-                  border: '1px solid rgba(240, 196, 106, 0.5)',
-                  color: '#f0c46a',
-                }}
-                className="px-4 py-2 rounded-full text-[13px] font-semibold cursor-pointer hover:bg-[#f0c46a]/30 transition-all"
-              >
-                Jual (+{lastCaughtFishToast.sellValueCyon || lastCaughtFishToast.sellValueLul} CYON)
-              </button>
+              {!lastCaughtFishToast.isMintedNft && (
+                <button
+                  type="button"
+                  data-showcase-sell-fish-btn="true"
+                  onClick={() => onSellCaughtFishToKai(lastCaughtFishToast)}
+                  style={{
+                    background: 'rgba(250, 204, 21, 0.22)',
+                    border: '1px solid rgba(250, 204, 21, 0.72)',
+                    color: '#fef9c3',
+                  }}
+                  className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-amber-400/35 transition-all"
+                >
+                  Sell (+{lastCaughtFishToast.sellValueLul || lastCaughtFishToast.sellValueCyon}{' '}
+                  LUL)
+                </button>
+              )}
 
               {!lastCaughtFishToast.isMintedNft && (
                 <button
@@ -1142,11 +1138,11 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                   data-showcase-mint-fish-btn="true"
                   onClick={() => onMintCaughtFishAsNft(lastCaughtFishToast)}
                   style={{
-                    background: 'rgba(170, 215, 235, 0.14)',
-                    border: '1px solid rgba(170, 215, 235, 0.25)',
-                    color: '#eef6f8',
+                    background: 'linear-gradient(135deg, rgba(216, 180, 254, 0.3), rgba(168, 85, 247, 0.2))',
+                    border: '1px solid rgba(216, 180, 254, 0.6)',
+                    color: '#f3e8ff',
                   }}
-                  className="px-4 py-2 rounded-full text-[13px] font-medium cursor-pointer hover:bg-white/20 transition-all"
+                  className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 transition-all"
                 >
                   Mint NFT
                 </button>
@@ -1163,7 +1159,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 }}
                 className="px-4 py-2 rounded-full text-[13px] font-medium cursor-pointer hover:text-white hover:bg-white/15 transition-all"
               >
-                Lepaskan
+                Release
               </button>
             </div>
           </div>
