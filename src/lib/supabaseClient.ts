@@ -1315,3 +1315,345 @@ export function subscribeToWarzoneRealtimePresence(
   }
 }
 
+export type MultiplayerZoneKey = string; // 'city' | 'warzone' | 'house:sample' | 'house:<owner>'
+
+export interface WorldMultiplayerPeerState {
+  sessionId: string;
+  nearAccountId: string | null;
+  displayName: string;
+  gender: 'male' | 'female';
+  team: 'blue' | 'red';
+  zoneKey: MultiplayerZoneKey;
+  inWorld: boolean;
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  yaw: number;
+  jumpOffset: number;
+  weaponId: string;
+  carryingCrate: string;
+  isSitting: boolean;
+  isDriving: boolean;
+  isHiddenInVehicle: boolean;
+  fishingPhase: 'idle' | 'charging' | 'casting' | 'nibble' | 'bite' | 'fighting';
+  isReeling: boolean;
+  rodBend: number;
+  hasClaimedBase: boolean;
+  chatBubbleText: string | null;
+  updatedAtMs: number;
+}
+
+export interface WorldMultiplayerShotEvent {
+  fromSessionId: string;
+  fromTeam: 'blue' | 'red';
+  zoneKey: MultiplayerZoneKey;
+  weaponType: string;
+  originX: number;
+  originY: number;
+  originZ: number;
+  dirX: number;
+  dirY: number;
+  dirZ: number;
+  speed: number;
+  damage: number;
+}
+
+export interface WorldMultiplayerController {
+  readonly sessionId: string;
+  publishLocalPose: (
+    pose: Omit<WorldMultiplayerPeerState, 'sessionId' | 'updatedAtMs'>,
+    forcePresenceTrack?: boolean,
+  ) => void;
+  broadcastShot: (shot: Omit<WorldMultiplayerShotEvent, 'fromSessionId'>) => void;
+  unsubscribe: () => void;
+}
+
+let cachedFallbackTabSessionId: string | null = null;
+
+export function getOrCreateTabMultiplayerSessionId(): string {
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      const existing = window.sessionStorage.getItem('bb_mp_tab_session_id_v1');
+      if (existing && existing.startsWith('mp-')) {
+        return existing;
+      }
+      const created = `mp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      window.sessionStorage.setItem('bb_mp_tab_session_id_v1', created);
+      return created;
+    } catch {
+      // fall through to memory fallback
+    }
+  }
+  if (!cachedFallbackTabSessionId) {
+    cachedFallbackTabSessionId = `mp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+  return cachedFallbackTabSessionId;
+}
+
+/**
+ * Real-time cross-device multiplayer character & combat sync over Supabase Realtime
+ * (`bb_world_multiplayer_v1`), combining:
+ *   - WebSocket Broadcast (`self: false, ack: false`) at ~12 Hz for low-latency 60 FPS avatar interpolation
+ *   - Realtime Presence (`sync` / `join` / `leave`) for instant discovery of idle peers and immediate disconnect cleanup
+ */
+export function subscribeToWorldMultiplayer(handlers: {
+  onPeersChange: (peers: WorldMultiplayerPeerState[]) => void;
+  onRemoteShot?: (shot: WorldMultiplayerShotEvent) => void;
+}): WorldMultiplayerController {
+  const sessionId = getOrCreateTabMultiplayerSessionId();
+
+  if (!supabase) {
+    handlers.onPeersChange([]);
+    return {
+      sessionId,
+      publishLocalPose: () => {},
+      broadcastShot: () => {},
+      unsubscribe: () => {},
+    };
+  }
+
+  let isSubscribed = false;
+  let lastPresenceTrackMs = 0;
+  let lastTrackedZoneKey = '';
+  let lastTrackedName = '';
+  let lastTrackedGender = '';
+  let lastTrackedInWorld = false;
+  let latestLocalPose: WorldMultiplayerPeerState | null = null;
+  const peersById = new Map<string, WorldMultiplayerPeerState>();
+
+  const sanitizePeer = (raw: Partial<WorldMultiplayerPeerState>, keyFallback?: string): WorldMultiplayerPeerState | null => {
+    const sid = typeof raw.sessionId === 'string' && raw.sessionId ? raw.sessionId : keyFallback || '';
+    if (!sid || sid === sessionId) return null;
+    return {
+      sessionId: sid,
+      nearAccountId: typeof raw.nearAccountId === 'string' && raw.nearAccountId ? raw.nearAccountId : null,
+      displayName: (typeof raw.displayName === 'string' && raw.displayName.trim() ? raw.displayName.trim() : 'CITIZEN').slice(0, 28),
+      gender: raw.gender === 'female' ? 'female' : 'male',
+      team: raw.team === 'red' ? 'red' : 'blue',
+      zoneKey: typeof raw.zoneKey === 'string' && raw.zoneKey ? raw.zoneKey : 'city',
+      inWorld: Boolean(raw.inWorld),
+      x: Number.isFinite(raw.x) ? Number(raw.x) : -85.5,
+      z: Number.isFinite(raw.z) ? Number(raw.z) : 0,
+      vx: Number.isFinite(raw.vx) ? Number(raw.vx) : 0,
+      vz: Number.isFinite(raw.vz) ? Number(raw.vz) : 0,
+      yaw: Number.isFinite(raw.yaw) ? Number(raw.yaw) : 0,
+      jumpOffset: Number.isFinite(raw.jumpOffset) ? Number(raw.jumpOffset) : 0,
+      weaponId: typeof raw.weaponId === 'string' && raw.weaponId ? raw.weaponId : 'unarmed',
+      carryingCrate: typeof raw.carryingCrate === 'string' ? raw.carryingCrate : 'none',
+      isSitting: Boolean(raw.isSitting),
+      isDriving: Boolean(raw.isDriving),
+      isHiddenInVehicle: Boolean(raw.isHiddenInVehicle),
+      fishingPhase:
+        raw.fishingPhase === 'charging' ||
+        raw.fishingPhase === 'casting' ||
+        raw.fishingPhase === 'nibble' ||
+        raw.fishingPhase === 'bite' ||
+        raw.fishingPhase === 'fighting'
+          ? raw.fishingPhase
+          : 'idle',
+      isReeling: Boolean(raw.isReeling),
+      rodBend: Number.isFinite(raw.rodBend) ? Number(raw.rodBend) : 0,
+      hasClaimedBase: Boolean(raw.hasClaimedBase),
+      chatBubbleText: typeof raw.chatBubbleText === 'string' && raw.chatBubbleText ? raw.chatBubbleText.slice(0, 64) : null,
+      updatedAtMs: Date.now(),
+    };
+  };
+
+  const emitActivePeers = () => {
+    const now = Date.now();
+    const active: WorldMultiplayerPeerState[] = [];
+    for (const [sid, peer] of peersById.entries()) {
+      if (now - peer.updatedAtMs > 45_000) {
+        peersById.delete(sid);
+        continue;
+      }
+      active.push(peer);
+    }
+    handlers.onPeersChange(active);
+  };
+
+  try {
+    const channel = supabase.channel('bb_world_multiplayer_v1', {
+      config: {
+        presence: { key: sessionId },
+        broadcast: { self: false, ack: false },
+      },
+    });
+
+    const reconcilePresence = () => {
+      try {
+        const state = channel.presenceState<Partial<WorldMultiplayerPeerState>>();
+        const presentKeys = new Set<string>();
+        for (const [key, entries] of Object.entries(state)) {
+          if (key === sessionId || !Array.isArray(entries) || entries.length === 0) continue;
+          presentKeys.add(key);
+          const latest = entries[entries.length - 1];
+          const clean = sanitizePeer(latest, key);
+          if (!clean) continue;
+          const existing = peersById.get(clean.sessionId);
+          // Only overwrite position from coarse Presence if we don't have a fresher Broadcast packet (<1.8s old)
+          if (!existing || Date.now() - existing.updatedAtMs > 1800 || existing.zoneKey !== clean.zoneKey) {
+            peersById.set(clean.sessionId, clean);
+          } else {
+            existing.displayName = clean.displayName;
+            existing.gender = clean.gender;
+            existing.nearAccountId = clean.nearAccountId;
+            existing.inWorld = clean.inWorld;
+            existing.hasClaimedBase = clean.hasClaimedBase;
+            existing.updatedAtMs = Date.now();
+          }
+        }
+        // Immediately prune disconnected peers no longer in Presence (unless they broadcast <2.5s ago while joining)
+        const now = Date.now();
+        for (const [sid, peer] of peersById.entries()) {
+          if (!presentKeys.has(sid) && now - peer.updatedAtMs > 2500) {
+            peersById.delete(sid);
+          }
+        }
+        emitActivePeers();
+      } catch {
+        // ignore transient presence parse errors
+      }
+    };
+
+    channel
+      .on('presence', { event: 'sync' }, reconcilePresence)
+      .on('presence', { event: 'join' }, reconcilePresence)
+      .on('presence', { event: 'leave' }, (payload) => {
+        const leftKey = typeof payload.key === 'string' ? payload.key : '';
+        if (leftKey && peersById.has(leftKey)) {
+          peersById.delete(leftKey);
+          emitActivePeers();
+        } else {
+          reconcilePresence();
+        }
+      })
+      .on('broadcast', { event: 'peer_pose' }, ({ payload }) => {
+        if (!payload || typeof payload !== 'object') return;
+        const clean = sanitizePeer(payload as Partial<WorldMultiplayerPeerState>);
+        if (!clean) return;
+        peersById.set(clean.sessionId, clean);
+        emitActivePeers();
+      })
+      .on('broadcast', { event: 'peer_shot' }, ({ payload }) => {
+        if (!payload || typeof payload !== 'object' || !handlers.onRemoteShot) return;
+        const raw = payload as Partial<WorldMultiplayerShotEvent>;
+        if (!raw.fromSessionId || raw.fromSessionId === sessionId) return;
+        handlers.onRemoteShot({
+          fromSessionId: raw.fromSessionId,
+          fromTeam: raw.fromTeam === 'red' ? 'red' : 'blue',
+          zoneKey: typeof raw.zoneKey === 'string' ? raw.zoneKey : 'warzone',
+          weaponType: typeof raw.weaponType === 'string' ? raw.weaponType : 'BlitzPistol',
+          originX: Number(raw.originX) || 0,
+          originY: Number(raw.originY) || 1.2,
+          originZ: Number(raw.originZ) || 0,
+          dirX: Number(raw.dirX) || 0,
+          dirY: Number(raw.dirY) || 0,
+          dirZ: Number(raw.dirZ) || 1,
+          speed: Number(raw.speed) || 38,
+          damage: Number(raw.damage) || 18,
+        });
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          isSubscribed = true;
+          if (latestLocalPose) {
+            lastPresenceTrackMs = Date.now();
+            channel.track(latestLocalPose).catch(() => {});
+            channel
+              .send({
+                type: 'broadcast',
+                event: 'peer_pose',
+                payload: latestLocalPose,
+              })
+              .catch(() => {});
+          }
+        }
+      });
+
+    // Background-tab heartbeat so idle or unfocused tabs remain alive & visible to other devices
+    const heartbeatTimer = setInterval(() => {
+      if (!isSubscribed || !latestLocalPose) return;
+      const refreshed: WorldMultiplayerPeerState = {
+        ...latestLocalPose,
+        vx: typeof document !== 'undefined' && document.hidden ? 0 : latestLocalPose.vx,
+        vz: typeof document !== 'undefined' && document.hidden ? 0 : latestLocalPose.vz,
+        updatedAtMs: Date.now(),
+      };
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'peer_pose',
+          payload: refreshed,
+        })
+        .catch(() => {});
+      emitActivePeers();
+    }, 2400);
+
+    return {
+      sessionId,
+      publishLocalPose: (pose, forcePresenceTrack = false) => {
+        const now = Date.now();
+        const packet: WorldMultiplayerPeerState = {
+          sessionId,
+          ...pose,
+          updatedAtMs: now,
+        };
+        latestLocalPose = packet;
+        if (!isSubscribed) return;
+
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'peer_pose',
+            payload: packet,
+          })
+          .catch(() => {});
+
+        const metaChanged =
+          packet.zoneKey !== lastTrackedZoneKey ||
+          packet.displayName !== lastTrackedName ||
+          packet.gender !== lastTrackedGender ||
+          packet.inWorld !== lastTrackedInWorld;
+
+        if (forcePresenceTrack || metaChanged || now - lastPresenceTrackMs >= 3000) {
+          lastPresenceTrackMs = now;
+          lastTrackedZoneKey = packet.zoneKey;
+          lastTrackedName = packet.displayName;
+          lastTrackedGender = packet.gender;
+          lastTrackedInWorld = packet.inWorld;
+          channel.track(packet).catch(() => {});
+        }
+      },
+      broadcastShot: (shot) => {
+        if (!isSubscribed) return;
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'peer_shot',
+            payload: {
+              fromSessionId: sessionId,
+              ...shot,
+            } satisfies WorldMultiplayerShotEvent,
+          })
+          .catch(() => {});
+      },
+      unsubscribe: () => {
+        isSubscribed = false;
+        clearInterval(heartbeatTimer);
+        channel.untrack().catch(() => {});
+        supabase.removeChannel(channel).catch(() => {});
+      },
+    };
+  } catch {
+    handlers.onPeersChange([]);
+    return {
+      sessionId,
+      publishLocalPose: () => {},
+      broadcastShot: () => {},
+      unsubscribe: () => {},
+    };
+  }
+}
+

@@ -323,7 +323,8 @@ import {
   isPositionInsideDynamicCullingRadius,
 } from './buddiesBlitzMinimap';
 import {
-  subscribeToWarzoneRealtimePresence,
+  subscribeToWorldMultiplayer,
+  type WorldMultiplayerPeerState,
   type WarzoneRealtimePeer,
 } from '../lib/supabaseClient';
 import {
@@ -634,8 +635,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       root: THREE.Object3D;
       nameplate?: { sprite: THREE.Sprite } | null;
       isSelf?: boolean;
+      nearAccountId?: string | null;
     } | null = null;
     let selectedCharacterOriginPlayerPos = { x: 0, z: 0 };
+
+    interface RemotePlayerAvatar3D {
+      sessionId: string;
+      peer: WorldMultiplayerPeerState;
+      root: THREE.Group;
+      bodyGroup: THREE.Group;
+      rig: BuddyCharacterRig;
+      teamRing: THREE.Mesh;
+      ringMat: THREE.MeshBasicMaterial;
+      innerFootDiscMat: THREE.MeshBasicMaterial;
+      overheadCrateGroup: THREE.Group;
+      nameplate: ReturnType<typeof createGlassmorphicNameplate>;
+      saluteSign: ReturnType<typeof createBillboardSign>;
+      renderX: number;
+      renderZ: number;
+      renderYaw: number;
+      walkCycle: number;
+      appliedGender: CharacterGender | null;
+      hasGlbUpgraded: boolean;
+      lastLabelKey: string;
+      lastBubbleText: string | null;
+      hitFlashTimer: number;
+    }
+    const remotePlayerAvatars = new Map<string, RemotePlayerAvatar3D>();
 
     const clearCharacterSelection = () => {
       if (selectedCharacterTarget?.nameplate?.sprite) {
@@ -979,9 +1005,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('start-city-tram-ride-transition', onStartCityTramRideTransition);
 
+    const initialMpAppSync =
+      typeof window !== 'undefined'
+        ? (
+            window as unknown as {
+              __bb_multiplayer_app_sync?: {
+                mode?:
+                  | 'none'
+                  | 'npc_merchant'
+                  | 'house_interior'
+                  | 'house_visit'
+                  | 'character_select';
+                isSampleHouse?: boolean;
+                onboardingCompleted?: boolean;
+                characterGender?: CharacterGender;
+                playerDisplayName?: string;
+                nearWalletId?: string | null;
+                houseOwnerKey?: string;
+              };
+            }
+          ).__bb_multiplayer_app_sync
+        : undefined;
+
     let playerCustomDisplayName =
+      initialMpAppSync?.playerDisplayName?.trim() ||
       (typeof window !== 'undefined' && window.localStorage.getItem('bb_active_display_name')) ||
-      'YOU';
+      'CITIZEN';
 
     // Listen for select-character-by-id event to synchronize 3D selection ring and nameplate from React HUD
     const onSelectCharacterById = (e: Event) => {
@@ -1039,6 +1088,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             nameplate: u.nameplate,
             isSelf: Boolean(u.isPlayer),
           };
+        } else {
+          for (const av of remotePlayerAvatars.values()) {
+            const matchId = av.peer.nearAccountId || av.peer.sessionId;
+            if (
+              av.root.visible &&
+              (String(matchId) === String(targetId) || av.peer.sessionId === String(targetId))
+            ) {
+              found = {
+                id: matchId,
+                name: av.peer.displayName,
+                isNpc: false,
+                team: av.peer.team,
+                status:
+                  av.peer.weaponId === 'fishing_rod'
+                    ? 'Fishing'
+                    : av.peer.nearAccountId || 'Online Citizen',
+                root: av.root,
+                nameplate: av.nameplate,
+                isSelf: false,
+                nearAccountId: av.peer.nearAccountId,
+              };
+              break;
+            }
+          }
         }
       }
       if (found) {
@@ -3247,9 +3320,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       | 'npc_merchant'
       | 'house_interior'
       | 'house_visit'
-      | 'character_select' = 'none';
+      | 'character_select' = initialMpAppSync?.mode ?? 'none';
     let npcCameraLocation: 'lobby_cafe' | 'beach_house' = 'lobby_cafe';
     let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
+    let mpOnboardingCompleted = initialMpAppSync?.onboardingCompleted ?? false;
+    let mpLocalGender: CharacterGender =
+      initialMpAppSync?.characterGender ?? getDefaultCharacterGender();
+    let mpIsSampleHouse = Boolean(initialMpAppSync?.isSampleHouse);
+    let mpHouseOwnerKey = initialMpAppSync?.houseOwnerKey ?? 'sample';
+    let mpNearWalletId: string | null = initialMpAppSync?.nearWalletId ?? null;
+
+    const getLocalMultiplayerZoneKey = (): string => {
+      if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+        return mpIsSampleHouse ? 'house:sample' : `house:${mpHouseOwnerKey || 'private'}`;
+      }
+      if (worldModeRef.current === 'warzone') {
+        return 'warzone';
+      }
+      return 'city';
+    };
 
     const onSyncNpcCameraMode = (ev: Event) => {
       const detail = (
@@ -3263,6 +3352,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           location?: 'lobby_cafe' | 'beach_house';
           themeId?: string;
           isSampleHouse?: boolean;
+          onboardingCompleted?: boolean;
+          characterGender?: CharacterGender;
+          playerDisplayName?: string;
+          nearWalletId?: string | null;
+          houseOwnerKey?: string;
           daylightHour?: number;
           floorSwatchId?: string;
           wallSwatchId?: string;
@@ -3282,6 +3376,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }>
       ).detail;
       if (!detail) return;
+      if (typeof detail.onboardingCompleted === 'boolean') {
+        mpOnboardingCompleted = detail.onboardingCompleted;
+      }
+      if (detail.characterGender === 'male' || detail.characterGender === 'female') {
+        mpLocalGender = detail.characterGender;
+      }
+      if (typeof detail.playerDisplayName === 'string' && detail.playerDisplayName.trim()) {
+        playerCustomDisplayName = detail.playerDisplayName.trim();
+      }
+      if (typeof detail.isSampleHouse === 'boolean') {
+        mpIsSampleHouse = detail.isSampleHouse;
+      }
+      if (typeof detail.houseOwnerKey === 'string' && detail.houseOwnerKey) {
+        mpHouseOwnerKey = detail.houseOwnerKey;
+      }
+      if (detail.nearWalletId !== undefined) {
+        mpNearWalletId = detail.nearWalletId;
+      }
       if (detail.mode) {
         const wasHouseMode =
           npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
@@ -4753,9 +4865,177 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const activeLaserBeams: ActiveLaserBeam3D[] = [];
     const activeOrdnanceDevices: ActiveOrdnanceDevice3D[] = [];
     let remoteWarzonePeers: WarzoneRealtimePeer[] = [];
-    let warzonePresenceSyncTimer = 0;
-    const warzonePresenceController = subscribeToWarzoneRealtimePresence((peers) => {
-      remoteWarzonePeers = peers;
+    let remoteWorldPeers: WorldMultiplayerPeerState[] = [];
+    let lastLocalPoseBroadcastMs = 0;
+    let lastBroadcastZoneKey = '';
+    let lastBroadcastChatText: string | null = null;
+    let spawnRemoteShotRef:
+      | ((shot: {
+          fromTeam: 'blue' | 'red';
+          zoneKey: string;
+          weaponType: string;
+          originX: number;
+          originY: number;
+          originZ: number;
+          dirX: number;
+          dirY: number;
+          dirZ: number;
+          speed: number;
+          damage: number;
+        }) => void)
+      | null = null;
+
+    const createRemotePlayerAvatar3D = (peer: WorldMultiplayerPeerState): RemotePlayerAvatar3D => {
+      const root = new THREE.Group();
+      root.rotation.order = 'YXZ';
+      root.position.set(peer.x, getTerrainElevation(peer.x, peer.z), peer.z);
+      scene.add(root);
+
+      const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
+      shadow.position.y = 0.02;
+      shadow.scale.setScalar(0.8);
+      root.add(shadow);
+
+      const footHex =
+        peer.zoneKey === 'warzone'
+          ? getUnitFootRingTeamColor(peer.team).hexInt
+          : 0x38bdf8;
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: footHex,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.76, 0.86, 36), ringMat);
+      teamRing.name = 'remotePlayerFootRing';
+      teamRing.rotation.x = -Math.PI / 2;
+      teamRing.position.y = 0.04;
+      const innerFootDiscMat = new THREE.MeshBasicMaterial({
+        color: footHex,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const innerFootDisc = new THREE.Mesh(new THREE.CircleGeometry(0.76, 36), innerFootDiscMat);
+      innerFootDisc.position.z = -0.005;
+      teamRing.add(innerFootDisc);
+      root.add(teamRing);
+
+      const bodyGroup = new THREE.Group();
+      bodyGroup.rotation.order = 'YXZ';
+      bodyGroup.scale.setScalar(1.16);
+      root.add(bodyGroup);
+
+      const rig = buildProceduralBuddyAvatar(
+        bodyGroup,
+        peer.team,
+        windUniforms,
+        isSoftwareGl,
+        false,
+      );
+
+      const overheadCrateGroup = new THREE.Group();
+      overheadCrateGroup.position.set(0, 1.96, 0.72);
+      overheadCrateGroup.scale.setScalar(1 / 1.16);
+      overheadCrateGroup.visible = false;
+      bodyGroup.add(overheadCrateGroup);
+      addOutlinedPart(
+        overheadCrateGroup,
+        new THREE.BoxGeometry(
+          UNIFIED_WORLD_CRATE_SIZE,
+          UNIFIED_WORLD_CRATE_SIZE,
+          UNIFIED_WORLD_CRATE_SIZE,
+        ),
+        matRedCrate,
+        [0, 0, 0],
+      );
+      populateRealBlitzCrateBoxFromGlb(
+        overheadCrateGroup,
+        'red',
+        loadedBlitzAssets,
+        windUniforms,
+        isSoftwareGl,
+        UNIFIED_WORLD_CRATE_SIZE,
+      );
+
+      const nameplate = createGlassmorphicNameplate(2.8, 0.72, peer.displayName, '', false);
+      nameplate.sprite.position.set(0, 4.35, 0);
+      nameplate.sprite.visible = true;
+      nameplate.updatePlate(
+        peer.displayName,
+        '',
+        peer.nearAccountId ? 'player_veteran' : 'player_rookie',
+      );
+      root.add(nameplate.sprite);
+
+      const saluteSign = createBillboardSign(3.4, 0.92);
+      saluteSign.sprite.position.set(0, 5.15, 0);
+      saluteSign.sprite.visible = false;
+      root.add(saluteSign.sprite);
+
+      return {
+        sessionId: peer.sessionId,
+        peer,
+        root,
+        bodyGroup,
+        rig,
+        teamRing,
+        ringMat,
+        innerFootDiscMat,
+        overheadCrateGroup,
+        nameplate,
+        saluteSign,
+        renderX: peer.x,
+        renderZ: peer.z,
+        renderYaw: peer.yaw,
+        walkCycle: 0,
+        appliedGender: null,
+        hasGlbUpgraded: false,
+        lastLabelKey: `${peer.displayName}|${peer.nearAccountId ?? ''}`,
+        lastBubbleText: null,
+        hitFlashTimer: 0,
+      };
+    };
+
+    const disposeRemotePlayerAvatar3D = (av: RemotePlayerAvatar3D) => {
+      if (selectedCharacterTarget && selectedCharacterTarget.root === av.root) {
+        clearCharacterSelection();
+      }
+      scene.remove(av.root);
+      av.teamRing.geometry.dispose();
+      av.ringMat.dispose();
+      av.innerFootDiscMat.dispose();
+      const npMat = av.nameplate.sprite.material as THREE.SpriteMaterial;
+      npMat.map?.dispose();
+      npMat.dispose();
+      const signMat = av.saluteSign.sprite.material as THREE.SpriteMaterial;
+      signMat.map?.dispose();
+      signMat.dispose();
+    };
+
+    const worldMultiplayer = subscribeToWorldMultiplayer({
+      onPeersChange: (peers) => {
+        remoteWorldPeers = peers;
+        remoteWarzonePeers = peers
+          .filter((p) => p.inWorld && p.zoneKey === 'warzone')
+          .map((p) => ({
+            sessionId: p.sessionId,
+            nearAccountId: p.nearAccountId,
+            team: p.team,
+            x: p.x,
+            z: p.z,
+            hasClaimedBase: p.hasClaimedBase,
+            inWarzone: true,
+            updatedAtMs: p.updatedAtMs,
+          }));
+      },
+      onRemoteShot: (shot) => {
+        if (spawnRemoteShotRef) {
+          spawnRemoteShotRef(shot);
+        }
+      },
     });
     let cachedStaticWorldStructures: StaticWorldStructureObb[] | null = null;
     let cachedStaticWorldStructuresKey = '';
@@ -6032,6 +6312,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     let planeClusterBombCooldown = 0;
 
+    const scratchRemoteShotOrigin = new THREE.Vector3();
+    const scratchRemoteShotDir = new THREE.Vector3();
+
     const fireProjectile = (
       isPlayerTeam: boolean,
       weaponType: string,
@@ -6039,7 +6322,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       dir: THREE.Vector3,
       speed: number,
       damage: number,
+      fromNetworkPeer = false,
     ) => {
+      if (
+        !fromNetworkPeer &&
+        isPlayerTeam &&
+        worldModeRef.current === 'warzone' &&
+        mpOnboardingCompleted
+      ) {
+        worldMultiplayer.broadcastShot({
+          fromTeam: playerUnit?.team ?? 'blue',
+          zoneKey: 'warzone',
+          weaponType,
+          originX: origin.x,
+          originY: origin.y,
+          originZ: origin.z,
+          dirX: dir.x,
+          dirY: dir.y,
+          dirZ: dir.z,
+          speed,
+          damage,
+        });
+      }
       projectilePool.acquire((slot) => {
         slot.isPlayerTeam = isPlayerTeam;
         slot.weaponType = weaponType;
@@ -6085,6 +6389,48 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           origin.z + slot.vel.z,
         );
       });
+    };
+
+    spawnRemoteShotRef = (shot) => {
+      if (
+        worldModeRef.current !== 'warzone' ||
+        shot.zoneKey !== 'warzone' ||
+        !playerUnit ||
+        !mpOnboardingCompleted
+      ) {
+        return;
+      }
+      scratchRemoteShotOrigin.set(shot.originX, shot.originY, shot.originZ);
+      scratchRemoteShotDir.set(shot.dirX, shot.dirY, shot.dirZ);
+      if (scratchRemoteShotDir.lengthSq() < 0.0001) {
+        scratchRemoteShotDir.set(0, 0, 1);
+      }
+      playSpatialSoundAt(shot.originX, shot.originZ, 26.0, 4.5, () => {
+        if (shot.weaponType.toLowerCase().includes('bazooka')) {
+          soundEngine.playBazookaLaunch();
+        } else if (shot.weaponType.toLowerCase().includes('laser')) {
+          soundEngine.playLaserGunFire();
+        } else if (shot.weaponType.toLowerCase().includes('gatling')) {
+          soundEngine.playGatlingGunFire();
+        } else {
+          soundEngine.playSkyshieldShot();
+        }
+      });
+      blitzExplosionSystem.spawnBlitzMuzzleFlash(
+        scratchRemoteShotOrigin,
+        scratchRemoteShotDir,
+        0.45,
+        shot.weaponType.toLowerCase().includes('bazooka') ? 'bazooka' : 'rifle',
+      );
+      fireProjectile(
+        shot.fromTeam === playerUnit.team,
+        shot.weaponType,
+        scratchRemoteShotOrigin,
+        scratchRemoteShotDir,
+        shot.speed,
+        shot.damage,
+        true,
+      );
     };
 
     const expGeo = new THREE.SphereGeometry(0.32, 8, 8);
@@ -8544,6 +8890,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const applyCharacterGenderSwitch = (nextGender: CharacterGender) => {
       soundEngine.playUiClick();
+      mpLocalGender = nextGender;
       setDefaultCharacterGender(nextGender);
       if (promptOverlay) {
         promptOverlay.setAttribute('data-character-gender', nextGender);
@@ -10059,6 +10406,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           root: THREE.Object3D;
           nameplate?: { sprite: THREE.Sprite } | null;
           isSelf?: boolean;
+          nearAccountId?: string;
         } | null = null;
         let bestCharDist = 2.4;
 
@@ -10080,6 +10428,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               root: u.root,
               nameplate: u.nameplate,
               isSelf: false,
+            };
+          }
+        }
+
+        // 2B. Check Real-Time Online Remote Players in the Same Zone
+        for (const av of remotePlayerAvatars.values()) {
+          if (!av.root.visible) continue;
+          scratchCharHitPos.set(av.renderX, av.root.position.y + 1.4, av.renderZ);
+          const rayDist = raycaster.ray.distanceToPoint(scratchCharHitPos);
+          if (rayDist < bestCharDist) {
+            bestCharDist = rayDist;
+            clickedCharacter = {
+              id: av.peer.nearAccountId || av.peer.sessionId,
+              name: av.peer.displayName,
+              isNpc: false,
+              team: av.peer.team,
+              status:
+                av.peer.weaponId === 'fishing_rod'
+                  ? 'Fishing'
+                  : av.peer.nearAccountId || 'Online Citizen',
+              root: av.root,
+              nameplate: av.nameplate,
+              isSelf: false,
+              nearAccountId: av.peer.nearAccountId ?? undefined,
             };
           }
         }
@@ -10158,6 +10530,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               detail: {
                 user: {
                   id: clickedCharacter.isSelf ? 0 : clickedCharacter.id,
+                  nearAccountId: clickedCharacter.nearAccountId,
                   name: clickedCharacter.name,
                   isNpc: clickedCharacter.isNpc,
                   isSelf: Boolean(clickedCharacter.isSelf),
@@ -16271,6 +16644,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               continue;
             }
 
+            // 1B2. Check hit against Real-Time Online Opposing Players in Warzone
+            if (worldModeRef.current === 'warzone' && playerUnit) {
+              let hitRemotePlayer = false;
+              for (const av of remotePlayerAvatars.values()) {
+                if (!av.root.visible) continue;
+                const isSameTeamAsLocal = av.peer.team === playerUnit.team;
+                if (isSameTeamAsLocal === p.isPlayerTeam) continue;
+                const avBaseY = getTerrainElevation(av.renderX, av.renderZ) + av.peer.jumpOffset;
+                if (Math.abs(p.pos.y - (avBaseY + 1.2)) > 1.55) continue;
+                if (getPlanetShortestDistance(p.pos.x, p.pos.z, av.renderX, av.renderZ) < 0.85) {
+                  detonateExplosiveShellIfHeavy(p, av.renderX, avBaseY + 1.1, av.renderZ);
+                  playSpatialSoundAt(av.renderX, av.renderZ, 24.0, 4.5, () => {
+                    soundEngine.playEnemyHit();
+                  });
+                  spawnBurstParticles(p.pos.x, p.pos.y, p.pos.z, 8);
+                  av.hitFlashTimer = 0.16;
+                  hitRemotePlayer = true;
+                  break;
+                }
+              }
+              if (hitRemotePlayer) {
+                projectilePool.release(p);
+                continue;
+              }
+            }
+
             // 1C. Check hit against Grounded Crates (Shooting a wooden crate knocks it back and shatters it with Blitz Explosion VFX + 3D wood planks!)
             for (let ci = worldCrates.length - 1; ci >= 0; ci--) {
               const c = worldCrates[ci];
@@ -17759,6 +18158,264 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // =======================================================================
+      // REAL-TIME CROSS-DEVICE MULTIPLAYER SYNC (City, Houses & Warzone)
+      // =======================================================================
+      {
+        const localZoneKey = getLocalMultiplayerZoneKey();
+        const localInWorld = mpOnboardingCompleted && npcCameraMode !== 'character_select';
+        if (playerUnit) {
+          const nowWallMs = Date.now();
+          const curVx = mountedTank ? mountedTank.vx : playerUnit.vx;
+          const curVz = mountedTank ? mountedTank.vz : playerUnit.vz;
+          const curChat = socialTalkTimer > 0 && socialTalkMessage ? socialTalkMessage : null;
+          const isActivelyMoving =
+            Math.hypot(curVx, curVz) > 0.08 ||
+            playerUnit.jumpOffset > 0.03 ||
+            tidewaterFishingSync.phase !== 'idle';
+          const zoneOrChatChanged =
+            localZoneKey !== lastBroadcastZoneKey || curChat !== lastBroadcastChatText;
+          const minIntervalMs = zoneOrChatChanged ? 0 : isActivelyMoving ? 88 : 1100;
+          if (nowWallMs - lastLocalPoseBroadcastMs >= minIntervalMs) {
+            lastLocalPoseBroadcastMs = nowWallMs;
+            lastBroadcastZoneKey = localZoneKey;
+            lastBroadcastChatText = curChat;
+            worldMultiplayer.publishLocalPose(
+              {
+                nearAccountId: nearSessionState.walletConnected
+                  ? nearSessionState.walletId
+                  : mpNearWalletId,
+                displayName: playerCustomDisplayName || 'CITIZEN',
+                gender: mpLocalGender,
+                team: playerUnit.team,
+                zoneKey: localZoneKey,
+                inWorld: localInWorld,
+                x: mountedTank ? mountedTank.x : playerUnit.x,
+                z: mountedTank ? mountedTank.z : playerUnit.z,
+                vx: curVx,
+                vz: curVz,
+                yaw: mountedTank ? mountedTank.hullYaw : playerUnit.yaw,
+                jumpOffset: playerUnit.jumpOffset,
+                weaponId: playerUnit.weaponId,
+                carryingCrate: playerUnit.carryingCrate,
+                isSitting: Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null,
+                isDriving: Boolean(playerUnit.isDriving) || mountedTank !== null,
+                isHiddenInVehicle: ridingTramCarIdx !== null,
+                fishingPhase: tidewaterFishingSync.phase,
+                isReeling: tidewaterFishingSync.isReeling,
+                rodBend: tidewaterFishingSync.rodBend,
+                hasClaimedBase:
+                  nearSessionState.claimedTeam === playerUnit.team &&
+                  nearSessionState.claimedPlotIndex !== null,
+                chatBubbleText: curChat,
+              },
+              zoneOrChatChanged,
+            );
+          }
+        }
+
+        // Prune disconnected remote player 3D avatars
+        const activePeerIds = new Set<string>();
+        for (let pi = 0; pi < remoteWorldPeers.length; pi++) {
+          activePeerIds.add(remoteWorldPeers[pi].sessionId);
+        }
+        for (const [sid, av] of remotePlayerAvatars.entries()) {
+          if (!activePeerIds.has(sid)) {
+            disposeRemotePlayerAvatar3D(av);
+            remotePlayerAvatars.delete(sid);
+          }
+        }
+
+        // Step & interpolate up to 24 active remote players in the current zone
+        const charGltfForPeers = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
+        const manGltfForPeers = loadedBlitzAssets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
+        const localActorX = mountedTank ? mountedTank.x : (playerUnit?.x ?? 0);
+        const localActorZ = mountedTank ? mountedTank.z : (playerUnit?.z ?? 0);
+
+        for (let pi = 0; pi < remoteWorldPeers.length; pi++) {
+          const peer = remoteWorldPeers[pi];
+          const shouldShowInZone =
+            localInWorld &&
+            peer.inWorld &&
+            peer.zoneKey === localZoneKey &&
+            !peer.isHiddenInVehicle;
+
+          let av = remotePlayerAvatars.get(peer.sessionId);
+          if (!shouldShowInZone) {
+            if (av) {
+              av.peer = peer;
+              av.root.visible = false;
+            }
+            continue;
+          }
+
+          if (!av) {
+            if (remotePlayerAvatars.size >= 24) continue;
+            av = createRemotePlayerAvatar3D(peer);
+            remotePlayerAvatars.set(peer.sessionId, av);
+          }
+          av.peer = peer;
+          av.root.visible = true;
+
+          // Upgrade procedural placeholder rig to Male/Female GLB character mesh
+          const desiredPeerGltf =
+            peer.gender === 'male'
+              ? manGltfForPeers ?? charGltfForPeers
+              : charGltfForPeers;
+          if (desiredPeerGltf && (!av.hasGlbUpgraded || av.appliedGender !== peer.gender)) {
+            upgradeBuddyRigWithCharBuddiesGlb(
+              av.rig,
+              desiredPeerGltf,
+              loadedBlitzAssets?.ar99AssaultGltf,
+            );
+            av.appliedGender = peer.gender;
+            av.hasGlbUpgraded = Boolean(
+              peer.gender === 'male' ? manGltfForPeers : charGltfForPeers,
+            );
+          }
+
+          // Smooth dead-reckoned exponential interpolation (60 FPS butter-smooth motion)
+          const ageSec = Math.max(0, Math.min(0.16, (Date.now() - peer.updatedAtMs) / 1000));
+          const targetX = localZoneKey.startsWith('house:')
+            ? peer.x + peer.vx * ageSec
+            : wrapPlanetCoord(peer.x + peer.vx * ageSec);
+          const targetZ = localZoneKey.startsWith('house:')
+            ? peer.z + peer.vz * ageSec
+            : wrapPlanetCoord(peer.z + peer.vz * ageSec);
+          const jumpDist = localZoneKey.startsWith('house:')
+            ? Math.hypot(targetX - av.renderX, targetZ - av.renderZ)
+            : getPlanetShortestDistance(targetX, targetZ, av.renderX, av.renderZ);
+          const posAlpha = Math.min(1, 1 - Math.exp(-13.5 * dt));
+          if (jumpDist > 14.0) {
+            av.renderX = targetX;
+            av.renderZ = targetZ;
+          } else if (localZoneKey.startsWith('house:')) {
+            av.renderX += (targetX - av.renderX) * posAlpha;
+            av.renderZ += (targetZ - av.renderZ) * posAlpha;
+          } else {
+            av.renderX = wrapPlanetCoord(
+              av.renderX + getPlanetShortestDelta(targetX, av.renderX) * posAlpha,
+            );
+            av.renderZ = wrapPlanetCoord(
+              av.renderZ + getPlanetShortestDelta(targetZ, av.renderZ) * posAlpha,
+            );
+          }
+
+          let yawDelta = peer.yaw - av.renderYaw;
+          while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+          while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+          av.renderYaw += yawDelta * Math.min(1, 1 - Math.exp(-15 * dt));
+
+          av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0);
+          av.overheadCrateGroup.visible =
+            peer.carryingCrate !== 'none' && peer.carryingCrate !== '';
+
+          // Foot ring color: Sky Cyan in peaceful City/House, Team Blue/Red in Warzone
+          const desiredFootHex =
+            av.hitFlashTimer > 0
+              ? 0xffffff
+              : localZoneKey === 'warzone'
+                ? getUnitFootRingTeamColor(peer.team).hexInt
+                : 0x38bdf8;
+          if (av.hitFlashTimer > 0) {
+            av.hitFlashTimer = Math.max(0, av.hitFlashTimer - dt);
+          }
+          av.ringMat.color.setHex(desiredFootHex);
+          av.innerFootDiscMat.color.setHex(desiredFootHex);
+
+          // Update Nameplate & Overhead Chat Speech Bubble
+          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}`;
+          if (av.lastLabelKey !== nextLabelKey) {
+            av.lastLabelKey = nextLabelKey;
+            av.nameplate.updatePlate(
+              peer.displayName,
+              '',
+              peer.nearAccountId ? 'player_veteran' : 'player_rookie',
+            );
+          }
+          const distToPeer = localZoneKey.startsWith('house:')
+            ? Math.hypot(localActorX - av.renderX, localActorZ - av.renderZ)
+            : getPlanetShortestDistance(localActorX, localActorZ, av.renderX, av.renderZ);
+          av.nameplate.sprite.visible = distToPeer <= 48.0;
+
+          if (peer.chatBubbleText !== av.lastBubbleText) {
+            av.lastBubbleText = peer.chatBubbleText;
+            if (peer.chatBubbleText) {
+              av.saluteSign.updateText(peer.displayName, peer.chatBubbleText, '#38bdf8', -1);
+            }
+          }
+          av.saluteSign.sprite.visible = Boolean(peer.chatBubbleText) && distToPeer <= 42.0;
+
+          // Step walk animation & weapon/fishing stance (culled beyond 52m for 60 FPS budget)
+          const peerSpeed = Math.hypot(peer.vx, peer.vz);
+          const peerWalk = computeSynchronizedWalkCycleStep({
+            currentWalkCycle: av.walkCycle,
+            actualGroundSpeed: peerSpeed,
+            dt,
+            carryingCrate: peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
+          });
+          av.walkCycle = peerWalk.nextWalkCycle;
+          if (peer.jumpOffset > 0.08) {
+            av.rig.leftLegPivot.rotation.x = -0.58;
+            av.rig.rightLegPivot.rotation.x = 0.44;
+          } else {
+            av.rig.leftLegPivot.rotation.x = peerWalk.legSwingAngle;
+            av.rig.rightLegPivot.rotation.x = -peerWalk.legSwingAngle;
+          }
+
+          const peerWeaponId: BlitzWeaponId =
+            peer.weaponId === 'pistol' ||
+            peer.weaponId === 'rifle' ||
+            peer.weaponId === 'bazooka' ||
+            peer.weaponId === 'laser' ||
+            peer.weaponId === 'gatling' ||
+            peer.weaponId === 'fishing_rod'
+              ? peer.weaponId
+              : 'unarmed';
+
+          av.rig.fishingPoseState = {
+            phase: peer.fishingPhase,
+            isReeling: peer.isReeling,
+            isSurging: false,
+            tension: peer.isReeling ? 0.52 : 0.22,
+            rodBend: peer.rodBend,
+            reelAngle: peer.isReeling ? timeSec * 9.0 : 0,
+            castPower: 0.72,
+          };
+
+          if (distToPeer <= 52.0) {
+            updateCharacterWeaponStance(
+              av.rig,
+              peerWeaponId,
+              av.walkCycle,
+              peerWalk.isMoving,
+              peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
+              0,
+              0,
+              0,
+              'right',
+              0,
+              peer.jumpOffset,
+              peerWalk.legSwingAmplitude,
+              0,
+              true,
+              'front',
+              1,
+              av.renderYaw,
+              peerSpeed,
+              peer.isSitting,
+              peer.isDriving,
+            );
+          } else if (av.rig.customGlbController) {
+            av.rig.customGlbController.lastStepTimeMs = now;
+          }
+
+          if (peerWeaponId !== 'fishing_rod' && localZoneKey !== 'warzone') {
+            av.rig.weaponRigGroup.visible = false;
+          }
+        }
+      }
+
+      // =======================================================================
       // 4B-0. OPEN "THE CITY" vs "WARZONE ARENA" SCENE VISIBILITY
       // =======================================================================
       const isWarzoneActive = worldModeRef.current === 'warzone';
@@ -18550,6 +19207,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.isPlayer && b.isSitting && activeSeatedSpot ? activeSeatedSpot.seatLiftY : 0;
         b.bodyGroup.position.y = floatY + b.jumpOffset + bHitPose.hopY + seatLift;
         applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
+      }
+
+      // Align Real-Time Online Remote Player Avatars onto Curved Planet Surface (or House Floor)
+      const isLocalInHouseAlign =
+        npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
+      for (const av of remotePlayerAvatars.values()) {
+        if (!av.root.visible) continue;
+        if (isLocalInHouseAlign) {
+          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
+          av.root.position.set(av.renderX, HOUSE_ORIGIN_Y, av.renderZ);
+          av.root.rotation.set(0, 0, 0);
+          av.root.scale.setScalar(0.55);
+        } else {
+          const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
+          av.bodyGroup.position.y = av.peer.jumpOffset + (av.peer.isSitting ? -0.05 : 0);
+          av.root.scale.setScalar(1.0);
+          applyPlanetCurvatureToObject(
+            av.root,
+            av.renderX,
+            avTerrainY,
+            av.renderZ,
+            planetPivotX,
+            planetPivotZ,
+            0,
+            kCurve,
+          );
+        }
       }
 
       // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
@@ -20572,18 +21256,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const localPlayerHasClaimedBase =
         nearSessionState.claimedTeam === playerUnit.team &&
         nearSessionState.claimedPlotIndex !== null;
-      const nowPresenceMs = Date.now();
-      if (nowPresenceMs - warzonePresenceSyncTimer >= 1500) {
-        warzonePresenceSyncTimer = nowPresenceMs;
-        warzonePresenceController.updateLocalPresence({
-          nearAccountId: nearSessionState.walletConnected ? nearSessionState.walletId : null,
-          team: playerUnit.team,
-          x: actorX,
-          z: actorZ,
-          hasClaimedBase: localPlayerHasClaimedBase,
-          inWarzone: !inLobbySafezoneNow && worldModeRef.current === 'warzone',
-        });
-      }
       const realBlueClaimedBasesCount =
         blueCommanderBases.filter((p) => p.commanderIndex !== 0 && isCommanderBasePlotActive(p))
           .length +
@@ -20777,12 +21449,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         nearbyRadiusUsers: (() => {
           const list: Array<{
             id: string | number;
+            nearAccountId?: string;
             name: string;
             isNpc: boolean;
             distance: number;
             team: 'blue' | 'red';
             status: string;
           }> = [];
+          const curZoneForHud = getLocalMultiplayerZoneKey();
+          // 0. Real-Time Online Players across City, Houses & Warzone
+          for (let ri = 0; ri < remoteWorldPeers.length; ri++) {
+            const rp = remoteWorldPeers[ri];
+            if (!rp.inWorld) continue;
+            const sameZone = rp.zoneKey === curZoneForHud;
+            const dist = sameZone
+              ? curZoneForHud.startsWith('house:')
+                ? Math.hypot(actorX - rp.x, actorZ - rp.z)
+                : getPlanetShortestDistance(actorX, actorZ, rp.x, rp.z)
+              : 999;
+            list.push({
+              id: rp.nearAccountId || rp.sessionId,
+              nearAccountId: rp.nearAccountId ?? undefined,
+              name: rp.displayName,
+              isNpc: false,
+              distance: Math.round(dist),
+              team: rp.team,
+              status:
+                rp.zoneKey === 'warzone'
+                  ? 'In Warzone'
+                  : rp.zoneKey.startsWith('house:')
+                    ? 'Inside House'
+                    : rp.weaponId === 'fishing_rod'
+                      ? 'Fishing'
+                      : 'Online in City',
+            });
+          }
           // 1. Nearby Buddy Units (AI Squad & Players)
           for (let i = 0; i < buddyUnits.length; i++) {
             const u = buddyUnits[i];
@@ -20859,7 +21560,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);
       window.clearTimeout(softwareGlTimerId);
-      warzonePresenceController.unsubscribe();
+      worldMultiplayer.unsubscribe();
+      for (const av of remotePlayerAvatars.values()) {
+        disposeRemotePlayerAvatar3D(av);
+      }
+      remotePlayerAvatars.clear();
       soundEngine.stopAllLoops();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);

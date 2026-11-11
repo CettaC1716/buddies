@@ -234,6 +234,7 @@ export interface HudSnapshot {
   socialTalkMessage?: string | null;
   nearbyRadiusUsers?: Array<{
     id: string | number;
+    nearAccountId?: string;
     name: string;
     isNpc: boolean;
     distance: number;

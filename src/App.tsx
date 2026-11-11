@@ -1540,15 +1540,28 @@ export default function App() {
         : activeSpecialModal === 'none' && isInsidePrivateHouse
           ? 'house_visit'
           : activeSpecialModal;
+    const syncDetail = {
+      mode: effectiveMode,
+      location: merchantLocation,
+      themeId: activeHouseThemeId,
+      isSampleHouse: isSampleHouseView,
+      placement: interiorPlacement,
+      onboardingCompleted: onboardingStep === 'completed',
+      characterGender,
+      playerDisplayName: playerDisplayName.trim() || 'CITIZEN',
+      nearWalletId: hud.nearWalletConnected ? hud.nearWalletId : null,
+      houseOwnerKey: isSampleHouseView
+        ? 'sample'
+        : (hud.nearWalletId || playerUid || 'private').toLowerCase(),
+    };
+    (
+      window as unknown as {
+        __bb_multiplayer_app_sync?: typeof syncDetail;
+      }
+    ).__bb_multiplayer_app_sync = syncDetail;
     window.dispatchEvent(
       new CustomEvent('sync-npc-camera-mode', {
-        detail: {
-          mode: effectiveMode,
-          location: merchantLocation,
-          themeId: activeHouseThemeId,
-          isSampleHouse: isSampleHouseView,
-          placement: interiorPlacement,
-        },
+        detail: syncDetail,
       }),
     );
   }, [
@@ -1559,6 +1572,12 @@ export default function App() {
     merchantLocation,
     activeHouseThemeId,
     interiorPlacement,
+    characterGender,
+    playerDisplayName,
+    hud.nearWalletConnected,
+    hud.nearWalletId,
+    playerUid,
+    worldTransitionCount,
   ]);
 
   useEffect(() => {

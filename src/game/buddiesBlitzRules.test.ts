@@ -5673,5 +5673,83 @@ test('Zero-WebGL-context fish perspective triangle rasterizer projects >800 lit,
   }
 });
 
+test('World multiplayer session ID isolates separate tabs/devices while persisting across City <-> Warzone remounts', async () => {
+  const { getOrCreateTabMultiplayerSessionId, subscribeToWorldMultiplayer } = await import(
+    '../lib/supabaseClient'
+  );
+
+  const g = globalThis as unknown as {
+    window?: { sessionStorage?: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } };
+  };
+  const prevWindow = g.window;
+
+  const makeTabStorage = () => {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        map.set(k, v);
+      },
+    };
+  };
+
+  try {
+    const tabAStorage = makeTabStorage();
+    const tabBStorage = makeTabStorage();
+
+    g.window = { sessionStorage: tabAStorage };
+    const idA1 = getOrCreateTabMultiplayerSessionId();
+    const idA2 = getOrCreateTabMultiplayerSessionId();
+    assert.ok(idA1.startsWith('mp-'), 'Multiplayer session ID starts with mp-');
+    assert.equal(idA1, idA2, 'Same tab keeps identical sessionId across remounts');
+
+    g.window = { sessionStorage: tabBStorage };
+    const idB1 = getOrCreateTabMultiplayerSessionId();
+    assert.ok(idB1.startsWith('mp-'));
+    assert.notEqual(idA1, idB1, 'Separate tab/device gets a distinct multiplayer sessionId');
+
+    let receivedPeersCount = -1;
+    const ctrl = subscribeToWorldMultiplayer({
+      onPeersChange: (peers) => {
+        receivedPeersCount = peers.length;
+      },
+    });
+    assert.equal(ctrl.sessionId, idB1);
+    assert.ok(receivedPeersCount === 0 || receivedPeersCount === -1);
+    ctrl.publishLocalPose({
+      nearAccountId: 'alice.testnet',
+      displayName: 'ALICE',
+      gender: 'female',
+      team: 'blue',
+      zoneKey: 'city',
+      inWorld: true,
+      x: -85.5,
+      z: 0,
+      vx: 0,
+      vz: 0,
+      yaw: 0,
+      jumpOffset: 0,
+      weaponId: 'unarmed',
+      carryingCrate: 'none',
+      isSitting: false,
+      isDriving: false,
+      isHiddenInVehicle: false,
+      fishingPhase: 'idle',
+      isReeling: false,
+      rodBend: 0,
+      hasClaimedBase: false,
+      chatBubbleText: 'Hello!',
+    });
+    ctrl.unsubscribe();
+  } finally {
+    if (prevWindow === undefined) {
+      delete g.window;
+    } else {
+      g.window = prevWindow;
+    }
+  }
+});
+
+
 
 
