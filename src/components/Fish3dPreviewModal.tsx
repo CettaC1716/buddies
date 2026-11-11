@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { FISH_SPECIES_CATALOG, computeLengthCmFromWeightKg } from '../game/buddiesFishingMarket';
 import { soundEngine } from '../game/audio';
-import { buildTidewaterProceduralFishGroup } from './TidewaterCatchShowcaseModal';
+import {
+  buildTidewaterProceduralFishGroup,
+  renderFishGroupTo2dCanvas,
+} from './TidewaterCatchShowcaseModal';
 
 export interface Fish3dPreviewSpec {
   speciesId: string;
@@ -28,8 +31,8 @@ function resolveSpeciesColorHex(speciesId: string, fallbackHex?: string): string
 }
 
 /**
- * Renders a crisp studio-lit 3D fish snapshot to a PNG data URL once per `(speciesId, colorHex)`
- * and immediately releases the temporary WebGL context so list views consume zero active WebGL contexts.
+ * Renders a crisp studio-lit perspective fish snapshot to a PNG data URL once per `(speciesId, colorHex)`
+ * using the pure 2D triangle rasterizer (zero WebGL contexts, zero context-loss risk).
  */
 export function getOrRenderFish3dPortraitUrl(speciesId: string, rawColorHex?: string): string {
   const colorHex = resolveSpeciesColorHex(speciesId, rawColorHex);
@@ -39,64 +42,34 @@ export function getOrRenderFish3dPortraitUrl(speciesId: string, rawColorHex?: st
 
   if (typeof document === 'undefined') return '';
 
-  let renderer: THREE.WebGLRenderer | null = null;
   try {
     const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = 320;
-    offscreenCanvas.height = 180;
+    const width = 320;
+    const height = 180;
+    offscreenCanvas.width = width;
+    offscreenCanvas.height = height;
 
-    renderer = new THREE.WebGLRenderer({
-      canvas: offscreenCanvas,
-      alpha: true,
-      antialias: true,
-      preserveDrawingBuffer: true,
-    });
-    renderer.setPixelRatio(1);
-    renderer.setSize(320, 180, false);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.22;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(23, 320 / 180, 0.1, 20);
-    camera.position.set(0, 0.03, 2.55);
-    camera.lookAt(0, 0, 0);
-
-    const ambient = new THREE.AmbientLight('#e2e8f0', 1.45);
-    scene.add(ambient);
-    const keyLight = new THREE.DirectionalLight('#fffbeb', 2.9);
-    keyLight.position.set(-1.5, 2.3, 2.2);
-    scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 1.75);
-    rimLight.position.set(1.8, -1.1, -1.5);
-    scene.add(rimLight);
+    const ctx2d = offscreenCanvas.getContext('2d');
+    if (!ctx2d) return '';
 
     const fishModel = buildTidewaterProceduralFishGroup(speciesId, colorHex);
     fishModel.updateSwimAnimation(0.42);
     fishModel.group.rotation.y = 0.24;
+    fishModel.group.rotation.x = 0.04;
     fishModel.group.rotation.z = 0.02;
-    scene.add(fishModel.group);
 
-    renderer.render(scene, camera);
-    const dataUrl = offscreenCanvas.toDataURL('image/png');
-
+    const drawnCount = renderFishGroupTo2dCanvas(ctx2d, fishModel.group, width, height, 2.42, 23);
     fishModel.dispose();
-    renderer.forceContextLoss();
-    renderer.dispose();
-    renderer = null;
 
-    if (dataUrl && dataUrl.startsWith('data:image/')) {
-      portraitCache.set(cacheKey, dataUrl);
-      return dataUrl;
-    }
-  } catch {
-    if (renderer) {
-      try {
-        renderer.forceContextLoss();
-        renderer.dispose();
-      } catch {
-        // ignore cleanup error
+    if (drawnCount > 0) {
+      const dataUrl = offscreenCanvas.toDataURL('image/png');
+      if (dataUrl && dataUrl.startsWith('data:image/')) {
+        portraitCache.set(cacheKey, dataUrl);
+        return dataUrl;
       }
     }
+  } catch {
+    // Fallback to text label if canvas export is unavailable
   }
 
   return '';
@@ -117,13 +90,11 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
   variant = 'compact',
   onInspect,
 }) => {
-  const [portraitUrl, setPortraitUrl] = useState<string>('');
   const resolvedHex = resolveSpeciesColorHex(speciesId, colorHex);
-
-  useEffect(() => {
-    const url = getOrRenderFish3dPortraitUrl(speciesId, resolvedHex);
-    setPortraitUrl(url);
-  }, [speciesId, resolvedHex]);
+  const portraitUrl = useMemo(
+    () => getOrRenderFish3dPortraitUrl(speciesId, resolvedHex),
+    [speciesId, resolvedHex],
+  );
 
   const containerStyle =
     variant === 'card'
@@ -136,7 +107,7 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
     <button
       type="button"
       data-fish-3d-thumb={speciesId}
-      title={`View ${speciesName} in 3D`}
+      title={`Inspect ${speciesName}`}
       onClick={(e) => {
         e.stopPropagation();
         soundEngine.playUiClick();
@@ -161,9 +132,6 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
           {speciesName}
         </span>
       )}
-      <span className="absolute bottom-1 right-1 z-20 px-1 py-0.2 bg-black/80 text-[#b8ff3c] border border-white/25 font-mono font-black text-[8px] uppercase tracking-wider">
-        3D
-      </span>
     </button>
   );
 };
@@ -175,6 +143,9 @@ interface Fish3dPreviewModalProps {
 
 export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, onClose }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   const dragStateRef = useRef<{
     dragging: boolean;
     lastX: number;
@@ -188,82 +159,69 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
     lastY: 0,
     yaw: 0.25,
     pitch: 0.04,
-    zoom: 2.55,
+    zoom: 2.45,
   });
 
+  const isOpen = Boolean(fish);
+  const activeSpeciesId = fish?.speciesId ?? '';
+  const activeColorHex = fish?.colorHex ?? '';
+
   useEffect(() => {
-    if (!fish) return;
+    if (!isOpen || !activeSpeciesId) return;
     dragStateRef.current = {
       dragging: false,
       lastX: 0,
       lastY: 0,
       yaw: 0.25,
       pitch: 0.04,
-      zoom: 2.55,
+      zoom: 2.45,
     };
 
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx2d = canvas.getContext('2d');
+    if (!ctx2d) return;
 
-    let renderer: THREE.WebGLRenderer | null = null;
-    try {
-      renderer = new THREE.WebGLRenderer({
-        canvas,
-        alpha: true,
-        antialias: true,
-      });
-    } catch {
-      return;
-    }
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const logicalW = 680;
+    const logicalH = 340;
+    canvas.width = Math.round(logicalW * dpr);
+    canvas.height = Math.round(logicalH * dpr);
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(680, 340, false);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(24, 680 / 340, 0.1, 20);
-    camera.position.set(0, 0.03, dragStateRef.current.zoom);
-    camera.lookAt(0, 0, 0);
-
-    const ambient = new THREE.AmbientLight('#e2e8f0', 1.4);
-    scene.add(ambient);
-    const keyLight = new THREE.DirectionalLight('#fffbeb', 2.85);
-    keyLight.position.set(-1.6, 2.4, 2.2);
-    scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 1.7);
-    rimLight.position.set(1.8, -1.2, -1.5);
-    scene.add(rimLight);
-    const fillLight = new THREE.DirectionalLight('#a855f7', 0.65);
-    fillLight.position.set(0, -1.8, 1.5);
-    scene.add(fillLight);
-
-    const resolvedColor = resolveSpeciesColorHex(fish.speciesId, fish.colorHex);
-    const fishModel = buildTidewaterProceduralFishGroup(fish.speciesId, resolvedColor);
-    scene.add(fishModel.group);
+    const resolvedColor = resolveSpeciesColorHex(activeSpeciesId, activeColorHex);
+    const fishModel = buildTidewaterProceduralFishGroup(activeSpeciesId, resolvedColor);
 
     let rafId = 0;
     const startMs = performance.now();
     const animate = (nowMs: number) => {
-      const t = (nowMs - startMs) * 0.001;
-      fishModel.updateSwimAnimation(t);
+      if (typeof document === 'undefined' || !document.hidden) {
+        const t = (nowMs - startMs) * 0.001;
+        fishModel.updateSwimAnimation(t);
 
-      if (!dragStateRef.current.dragging) {
-        dragStateRef.current.yaw += 0.0045;
+        if (!dragStateRef.current.dragging) {
+          dragStateRef.current.yaw += 0.0045;
+        }
+        fishModel.group.rotation.y = dragStateRef.current.yaw;
+        fishModel.group.rotation.x = dragStateRef.current.pitch;
+        fishModel.group.rotation.z = Math.sin(t * 1.6) * 0.025;
+
+        renderFishGroupTo2dCanvas(
+          ctx2d,
+          fishModel.group,
+          logicalW,
+          logicalH,
+          dragStateRef.current.zoom,
+          24,
+        );
       }
-      fishModel.group.rotation.y = dragStateRef.current.yaw;
-      fishModel.group.rotation.x = dragStateRef.current.pitch;
-      fishModel.group.rotation.z = Math.sin(t * 1.6) * 0.025;
-
-      camera.position.z = dragStateRef.current.zoom;
-      renderer?.render(scene, camera);
       rafId = window.requestAnimationFrame(animate);
     };
     rafId = window.requestAnimationFrame(animate);
 
     const onKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -272,10 +230,8 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
       window.removeEventListener('keydown', onKeyDown);
       window.cancelAnimationFrame(rafId);
       fishModel.dispose();
-      renderer?.forceContextLoss();
-      renderer?.dispose();
     };
-  }, [fish, onClose]);
+  }, [isOpen, activeSpeciesId, activeColorHex]);
 
   if (!fish) return null;
 
@@ -292,14 +248,14 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
           ? 'bg-[#2dd4bf] text-black'
           : 'bg-slate-200 text-black';
 
-  return (
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`${fish.speciesName} 3D Preview`}
+      aria-label={`${fish.speciesName} Preview`}
       data-fish-3d-preview-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs pointer-events-auto select-none"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs pointer-events-auto select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -346,7 +302,7 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
           <div className="text-xs font-bold text-slate-400">{fish.waterZoneLabel}</div>
         </div>
 
-        {/* Interactive 360° 3D Fish Canvas Stage */}
+        {/* Interactive 360° Fish Canvas Stage */}
         <div
           style={{
             background:
@@ -393,7 +349,7 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
           />
 
           <div className="absolute bottom-2 left-2.5 text-[10px] font-bold text-slate-300/80 pointer-events-none">
-            Drag to rotate 360°
+            Drag to rotate
           </div>
 
           <div className="absolute bottom-2 right-2 flex items-center gap-1">
@@ -413,7 +369,7 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
                 soundEngine.playUiClick();
                 dragStateRef.current.yaw = 0.25;
                 dragStateRef.current.pitch = 0.04;
-                dragStateRef.current.zoom = 2.55;
+                dragStateRef.current.zoom = 2.45;
               }}
               className="px-2 py-0.5 bg-black/75 hover:bg-black text-[#38bdf8] border border-white/25 text-[9.5px] font-black uppercase cursor-pointer"
             >
@@ -469,4 +425,9 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

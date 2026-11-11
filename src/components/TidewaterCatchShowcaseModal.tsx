@@ -363,7 +363,7 @@ export function buildTidewaterProceduralFishGroup(
       const b = (i + 1) * stride + j;
       const c = (i + 1) * stride + (j + 1);
       const d = i * stride + (j + 1);
-      indices.push(a, b, d, b, c, d);
+      indices.push(a, d, b, b, d, c);
     }
   }
 
@@ -483,10 +483,12 @@ export function buildTidewaterProceduralFishGroup(
   for (const side of [1, -1] as const) {
     const iris = new THREE.Mesh(irisGeo, irisMat);
     iris.position.set(eyeX, eyeY, side * eyeZ);
+    iris.userData = { eyeDepthBias: -0.014 };
     group.add(iris);
 
     const pupil = new THREE.Mesh(pupilGeo, pupilMat);
     pupil.position.set(eyeX - 0.003, eyeY, side * (eyeZ + 0.01));
+    pupil.userData = { eyeDepthBias: -0.022 };
     group.add(pupil);
   }
 
@@ -523,6 +525,311 @@ export function buildTidewaterProceduralFishGroup(
   };
 
   return { group, updateSwimAnimation, dispose };
+}
+
+export interface ProjectedFishTriangle {
+  sx0: number;
+  sy0: number;
+  sx1: number;
+  sy1: number;
+  sx2: number;
+  sy2: number;
+  sortDepth: number;
+  r: number;
+  g: number;
+  b: number;
+  alpha: number;
+}
+
+const reusableTriPool: ProjectedFishTriangle[] = [];
+const reusableSortedRefs: ProjectedFishTriangle[] = [];
+
+function linearToneMapToSrgbByte(linearVal: number): number {
+  const v = Math.max(0, linearVal);
+  const mapped = (v * 1.18) / (1 + v * 0.22);
+  const srgb =
+    mapped <= 0.0031308 ? mapped * 12.92 : 1.055 * Math.pow(mapped, 1 / 2.4) - 0.055;
+  return Math.max(0, Math.min(255, Math.round(srgb * 255)));
+}
+
+function linearDirectToSrgbByte(linearVal: number): number {
+  const v = Math.max(0, Math.min(1, linearVal));
+  const srgb = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+  return Math.max(0, Math.min(255, Math.round(srgb * 255)));
+}
+
+/**
+ * Projects and studio-lights all visible 3D triangles of `fishGroup` in pure CPU math
+ * (zero WebGL contexts, zero GPU contention, zero per-frame heap allocations).
+ */
+export function projectFishGroupTriangles(
+  fishGroup: THREE.Group,
+  width: number,
+  height: number,
+  cameraZ = 2.55,
+  fovDeg = 23,
+): readonly ProjectedFishTriangle[] {
+  fishGroup.updateMatrixWorld(true);
+  const gmw = fishGroup.matrixWorld.elements;
+
+  const camY = 0.02;
+  const camZ = Math.max(0.8, cameraZ);
+  const halfW = width * 0.5;
+  const halfH = height * 0.5;
+  const focal = halfH / Math.tan(((fovDeg * Math.PI) / 180) * 0.5);
+
+  // Normalized 3-point studio light directions
+  const L1x = -0.4362;
+  const L1y = 0.6688;
+  const L1z = 0.6019;
+  const L2x = 0.7181;
+  const L2y = -0.4388;
+  const L2z = -0.5398;
+  const L3x = 0.0;
+  const L3y = -0.7071;
+  const L3z = 0.7071;
+
+  let activeCount = 0;
+
+  fishGroup.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+
+    const geo = mesh.geometry;
+    const posAttr = geo.getAttribute('position');
+    if (!posAttr) return;
+    const colAttr = geo.getAttribute('color');
+    const indexAttr = geo.getIndex();
+    const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as
+      | THREE.MeshStandardMaterial
+      | THREE.MeshBasicMaterial
+      | undefined;
+    if (!mat) return;
+
+    const mw = mesh.matrixWorld.elements;
+    const isBasic = Boolean((mat as THREE.MeshBasicMaterial).isMeshBasicMaterial);
+    const isDoubleSide = mat.side === THREE.DoubleSide;
+    const stdMat = mat as THREE.MeshStandardMaterial;
+    const useVertColors = Boolean(!isBasic && stdMat.vertexColors && colAttr);
+    const matR = mat.color ? mat.color.r : 1;
+    const matG = mat.color ? mat.color.g : 1;
+    const matB = mat.color ? mat.color.b : 1;
+    const roughness = !isBasic && typeof stdMat.roughness === 'number' ? stdMat.roughness : 0.3;
+    const alpha = mat.transparent ? (mat.opacity ?? 0.9) : 1;
+
+    let depthBias = 0;
+    const rawEyeBias = (mesh.userData as { eyeDepthBias?: number } | undefined)?.eyeDepthBias;
+    if (typeof rawEyeBias === 'number') {
+      const sagittalWorldZ = gmw[2] * mesh.position.x + gmw[6] * mesh.position.y + gmw[14];
+      const isFrontFlankEye = mw[14] >= sagittalWorldZ;
+      depthBias = isFrontFlankEye ? rawEyeBias : -rawEyeBias;
+    }
+
+    const triCount = indexAttr ? Math.floor(indexAttr.count / 3) : Math.floor(posAttr.count / 3);
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = indexAttr ? indexAttr.getX(t3) : t3;
+      const i1 = indexAttr ? indexAttr.getX(t3 + 1) : t3 + 1;
+      const i2 = indexAttr ? indexAttr.getX(t3 + 2) : t3 + 2;
+
+      const lx0 = posAttr.getX(i0);
+      const ly0 = posAttr.getY(i0);
+      const lz0 = posAttr.getZ(i0);
+      const x0 = mw[0] * lx0 + mw[4] * ly0 + mw[8] * lz0 + mw[12];
+      const y0 = mw[1] * lx0 + mw[5] * ly0 + mw[9] * lz0 + mw[13];
+      const z0 = mw[2] * lx0 + mw[6] * ly0 + mw[10] * lz0 + mw[14];
+
+      const lx1 = posAttr.getX(i1);
+      const ly1 = posAttr.getY(i1);
+      const lz1 = posAttr.getZ(i1);
+      const x1 = mw[0] * lx1 + mw[4] * ly1 + mw[8] * lz1 + mw[12];
+      const y1 = mw[1] * lx1 + mw[5] * ly1 + mw[9] * lz1 + mw[13];
+      const z1 = mw[2] * lx1 + mw[6] * ly1 + mw[10] * lz1 + mw[14];
+
+      const lx2 = posAttr.getX(i2);
+      const ly2 = posAttr.getY(i2);
+      const lz2 = posAttr.getZ(i2);
+      const x2 = mw[0] * lx2 + mw[4] * ly2 + mw[8] * lz2 + mw[12];
+      const y2 = mw[1] * lx2 + mw[5] * ly2 + mw[9] * lz2 + mw[13];
+      const z2 = mw[2] * lx2 + mw[6] * ly2 + mw[10] * lz2 + mw[14];
+
+      const d0 = camZ - z0;
+      const d1 = camZ - z1;
+      const d2 = camZ - z2;
+      if (d0 < 0.15 || d1 < 0.15 || d2 < 0.15) continue;
+
+      const e1x = x1 - x0;
+      const e1y = y1 - y0;
+      const e1z = z1 - z0;
+      const e2x = x2 - x0;
+      const e2y = y2 - y0;
+      const e2z = z2 - z0;
+
+      let nx = e1y * e2z - e1z * e2y;
+      let ny = e1z * e2x - e1x * e2z;
+      let nz = e1x * e2y - e1y * e2x;
+      const nLenSq = nx * nx + ny * ny + nz * nz;
+      if (nLenSq < 1e-12) continue;
+      const invNLen = 1 / Math.sqrt(nLenSq);
+      nx *= invNLen;
+      ny *= invNLen;
+      nz *= invNLen;
+
+      const cxW = (x0 + x1 + x2) * (1 / 3);
+      const cyW = (y0 + y1 + y2) * (1 / 3);
+      const czW = (z0 + z1 + z2) * (1 / 3);
+
+      let vx = -cxW;
+      let vy = camY - cyW;
+      let vz = camZ - czW;
+      const invVLen = 1 / Math.max(1e-6, Math.sqrt(vx * vx + vy * vy + vz * vz));
+      vx *= invVLen;
+      vy *= invVLen;
+      vz *= invVLen;
+
+      let ndotv = nx * vx + ny * vy + nz * vz;
+      if (isDoubleSide) {
+        if (ndotv < 0) {
+          nx = -nx;
+          ny = -ny;
+          nz = -nz;
+          ndotv = -ndotv;
+        }
+      } else if (ndotv <= 0) {
+        continue;
+      }
+
+      let rByte: number;
+      let gByte: number;
+      let bByte: number;
+
+      if (isBasic) {
+        rByte = linearDirectToSrgbByte(matR);
+        gByte = linearDirectToSrgbByte(matG);
+        bByte = linearDirectToSrgbByte(matB);
+      } else {
+        let br = matR;
+        let bg = matG;
+        let bb = matB;
+        if (useVertColors && colAttr) {
+          br *= (colAttr.getX(i0) + colAttr.getX(i1) + colAttr.getX(i2)) * (1 / 3);
+          bg *= (colAttr.getY(i0) + colAttr.getY(i1) + colAttr.getY(i2)) * (1 / 3);
+          bb *= (colAttr.getZ(i0) + colAttr.getZ(i1) + colAttr.getZ(i2)) * (1 / 3);
+        }
+
+        const diff1 = Math.max(0, nx * L1x + ny * L1y + nz * L1z);
+        const diff2 = Math.max(0, nx * L2x + ny * L2y + nz * L2z);
+        const diff3 = Math.max(0, nx * L3x + ny * L3y + nz * L3z);
+
+        let hx = L1x + vx;
+        let hy = L1y + vy;
+        let hz = L1z + vz;
+        const invHLen = 1 / Math.max(1e-6, Math.sqrt(hx * hx + hy * hy + hz * hz));
+        hx *= invHLen;
+        hy *= invHLen;
+        hz *= invHLen;
+        const ndoth = Math.max(0, nx * hx + ny * hy + nz * hz);
+        const spec =
+          roughness < 0.28 ? Math.pow(ndoth, 28) * 0.44 : Math.pow(ndoth, 12) * 0.14;
+        const oneMinusNdotV = 1 - Math.min(1, ndotv);
+        const fresnel =
+          oneMinusNdotV * oneMinusNdotV * oneMinusNdotV * (isDoubleSide ? 0.08 : 0.2);
+
+        const linR =
+          br * (0.34 + diff1 * 1.18 + diff2 * 0.18 + diff3 * 0.22) +
+          spec * 1.0 +
+          fresnel * 0.22;
+        const linG =
+          bg * (0.36 + diff1 * 1.14 + diff2 * 0.48 + diff3 * 0.25) +
+          spec * 0.99 +
+          fresnel * 0.62;
+        const linB =
+          bb * (0.4 + diff1 * 1.05 + diff2 * 0.68 + diff3 * 0.32) +
+          spec * 0.95 +
+          fresnel * 0.92;
+
+        rByte = linearToneMapToSrgbByte(linR);
+        gByte = linearToneMapToSrgbByte(linG);
+        bByte = linearToneMapToSrgbByte(linB);
+      }
+
+      let slot = reusableTriPool[activeCount];
+      if (!slot) {
+        slot = {
+          sx0: 0,
+          sy0: 0,
+          sx1: 0,
+          sy1: 0,
+          sx2: 0,
+          sy2: 0,
+          sortDepth: 0,
+          r: 0,
+          g: 0,
+          b: 0,
+          alpha: 1,
+        };
+        reusableTriPool[activeCount] = slot;
+      }
+
+      slot.sx0 = halfW + (x0 / d0) * focal;
+      slot.sy0 = halfH - ((y0 - camY) / d0) * focal;
+      slot.sx1 = halfW + (x1 / d1) * focal;
+      slot.sy1 = halfH - ((y1 - camY) / d1) * focal;
+      slot.sx2 = halfW + (x2 / d2) * focal;
+      slot.sy2 = halfH - ((y2 - camY) / d2) * focal;
+      slot.sortDepth = (d0 + d1 + d2) * (1 / 3) + depthBias;
+      slot.r = rByte;
+      slot.g = gByte;
+      slot.b = bByte;
+      slot.alpha = alpha;
+
+      reusableSortedRefs[activeCount] = slot;
+      activeCount++;
+    }
+  });
+
+  reusableSortedRefs.length = activeCount;
+  reusableSortedRefs.sort((a, b) => b.sortDepth - a.sortDepth);
+  return reusableSortedRefs;
+}
+
+/**
+ * Renders `fishGroup` onto a standard HTML5 2D canvas context (`CanvasRenderingContext2D`)
+ * with perspective projection, 3-point studio lighting, and seam-free triangle rasterization.
+ */
+export function renderFishGroupTo2dCanvas(
+  ctx: CanvasRenderingContext2D,
+  fishGroup: THREE.Group,
+  width: number,
+  height: number,
+  cameraZ = 2.55,
+  fovDeg = 23,
+): number {
+  const tris = projectFishGroupTriangles(fishGroup, width, height, cameraZ, fovDeg);
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineJoin = 'round';
+
+  for (let i = 0; i < tris.length; i++) {
+    const tri = tris[i];
+    const style =
+      tri.alpha < 0.999
+        ? `rgba(${tri.r},${tri.g},${tri.b},${tri.alpha.toFixed(2)})`
+        : `rgb(${tri.r},${tri.g},${tri.b})`;
+    ctx.beginPath();
+    ctx.moveTo(tri.sx0, tri.sy0);
+    ctx.lineTo(tri.sx1, tri.sy1);
+    ctx.lineTo(tri.sx2, tri.sy2);
+    ctx.closePath();
+    ctx.fillStyle = style;
+    ctx.fill();
+    if (tri.alpha >= 0.999) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = 0.75;
+      ctx.stroke();
+    }
+  }
+
+  return tris.length;
 }
 
 interface TidewaterFishingHudAndModalProps {
@@ -605,57 +912,40 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
     };
   }, [fishingPhase, onSetHoldingReel, onTriggerFishingAction]);
 
-  // Mount live 60 FPS 3D Studio Fish Portrait (`FishPortrait.js` adaptation) when Catch Card is open
+  // Mount live 60 FPS Studio Fish Portrait when Catch Card is open (zero WebGL contexts)
+  const caughtSpeciesId = lastCaughtFishToast?.speciesId ?? null;
+  const caughtColorHex = lastCaughtFishToast?.colorHex ?? null;
   useEffect(() => {
     const canvas = studioCanvasRef.current;
-    if (!canvas || !lastCaughtFishToast) return;
+    if (!canvas || !caughtSpeciesId) return;
 
-    let renderer: THREE.WebGLRenderer | null = null;
-    try {
-      renderer = new THREE.WebGLRenderer({
-        canvas,
-        alpha: true,
-        antialias: true,
-      });
-    } catch {
-      return;
-    }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(760, 310, false);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.18;
+    const ctx2d = canvas.getContext('2d');
+    if (!ctx2d) return;
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(22, 760 / 310, 0.1, 20);
-    camera.position.set(0, 0.04, 2.75);
-    camera.lookAt(0, 0, 0);
-
-    // Tidewater Studio Softbox Key + Rim + Fill Lighting (`FishPortrait.js`)
-    const ambient = new THREE.AmbientLight('#e2e8f0', 1.35);
-    scene.add(ambient);
-    const keyLight = new THREE.DirectionalLight('#fffbeb', 2.8);
-    keyLight.position.set(-1.6, 2.4, 2.2);
-    scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 1.65);
-    rimLight.position.set(1.8, -1.2, -1.5);
-    scene.add(rimLight);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const logicalW = 760;
+    const logicalH = 310;
+    canvas.width = Math.round(logicalW * dpr);
+    canvas.height = Math.round(logicalH * dpr);
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const fishModel = buildTidewaterProceduralFishGroup(
-      lastCaughtFishToast.speciesId,
-      lastCaughtFishToast.colorHex,
+      caughtSpeciesId,
+      caughtColorHex || '#38bdf8',
     );
-    scene.add(fishModel.group);
 
     let rafId = 0;
     const startMs = performance.now();
     const animate = (nowMs: number) => {
-      const t = (nowMs - startMs) * 0.001;
-      fishModel.updateSwimAnimation(t);
-      const entrance = 1 - Math.exp(-t * 5.5);
-      fishModel.group.position.x = (1 - entrance) * 0.55;
-      fishModel.group.rotation.y = Math.sin(t * 0.85) * 0.38;
-      fishModel.group.rotation.z = Math.sin(t * 1.7) * 0.04;
-      renderer?.render(scene, camera);
+      if (typeof document === 'undefined' || !document.hidden) {
+        const t = (nowMs - startMs) * 0.001;
+        fishModel.updateSwimAnimation(t);
+        const entrance = 1 - Math.exp(-t * 5.5);
+        fishModel.group.position.x = (1 - entrance) * 0.55;
+        fishModel.group.rotation.y = Math.sin(t * 0.85) * 0.38;
+        fishModel.group.rotation.z = Math.sin(t * 1.7) * 0.04;
+        renderFishGroupTo2dCanvas(ctx2d, fishModel.group, logicalW, logicalH, 2.75, 22);
+      }
       rafId = window.requestAnimationFrame(animate);
     };
     rafId = window.requestAnimationFrame(animate);
@@ -663,18 +953,8 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
     return () => {
       window.cancelAnimationFrame(rafId);
       fishModel.dispose();
-      scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) {
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          for (const mat of mats) mat.dispose();
-        }
-      });
-      renderer?.forceContextLoss();
-      renderer?.dispose();
     };
-  }, [lastCaughtFishToast]);
+  }, [caughtSpeciesId, caughtColorHex]);
 
   const lengthCm =
     lastCaughtFishToast?.lengthCm ??

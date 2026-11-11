@@ -5522,4 +5522,156 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
   assert.equal(endStep.isComplete, true);
 });
 
+test('soundEngine browser AudioContext unlock + BGM scheduler executes with zero mutual recursion on UI clicks and mode switches', async () => {
+  const g = globalThis as unknown as {
+    window?: Record<string, unknown>;
+    fetch?: typeof fetch;
+  };
+  const prevWindow = g.window;
+  const prevFetch = g.fetch;
+
+  const makeAudioParam = () => ({
+    value: 0,
+    setValueAtTime: () => {},
+    linearRampToValueAtTime: () => {},
+    exponentialRampToValueAtTime: () => {},
+    setTargetAtTime: () => {},
+  });
+
+  const makeMockNode = () => ({
+    connect: () => {},
+    disconnect: () => {},
+    gain: makeAudioParam(),
+    frequency: makeAudioParam(),
+    Q: makeAudioParam(),
+    threshold: makeAudioParam(),
+    knee: makeAudioParam(),
+    ratio: makeAudioParam(),
+    attack: makeAudioParam(),
+    release: makeAudioParam(),
+    type: 'sine',
+    buffer: null as unknown,
+    loop: false,
+    playbackRate: makeAudioParam(),
+    onended: null as null | (() => void),
+    start: () => {},
+    stop: () => {},
+  });
+
+  class MockBrowserAudioContext {
+    public state: 'running' | 'suspended' = 'running';
+    public currentTime = 0.5;
+    public sampleRate = 44100;
+    public destination = makeMockNode();
+    public resume() {
+      this.state = 'running';
+      return Promise.resolve();
+    }
+    public createGain() {
+      return makeMockNode();
+    }
+    public createBiquadFilter() {
+      return makeMockNode();
+    }
+    public createDynamicsCompressor() {
+      return makeMockNode();
+    }
+    public createOscillator() {
+      return makeMockNode();
+    }
+    public createBufferSource() {
+      return makeMockNode();
+    }
+    public createBuffer(_channels: number, length: number, sampleRate: number) {
+      const ch = new Float32Array(length);
+      return {
+        duration: length / sampleRate,
+        getChannelData: () => ch,
+      };
+    }
+    public decodeAudioData() {
+      return Promise.resolve({});
+    }
+  }
+
+  try {
+    g.fetch = (async () =>
+      ({
+        ok: false,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      }) as Response) as typeof fetch;
+
+    g.window = {
+      AudioContext: MockBrowserAudioContext,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+
+    // Previously threw RangeError: Maximum call stack size exceeded when bgmStarted === true!
+    soundEngine.startBgm('city');
+    soundEngine.playUiClick();
+    soundEngine.setBgmMode('warzone');
+    assert.equal(soundEngine.getBgmMode(), 'warzone');
+    soundEngine.playUiClick();
+    soundEngine.setBgmMode('city');
+    assert.equal(soundEngine.getBgmMode(), 'city');
+  } finally {
+    soundEngine.stopBgm();
+    if (prevWindow === undefined) {
+      delete g.window;
+    } else {
+      g.window = prevWindow;
+    }
+    if (prevFetch === undefined) {
+      delete g.fetch;
+    } else {
+      g.fetch = prevFetch;
+    }
+  }
+});
+
+test('Zero-WebGL-context fish perspective triangle rasterizer projects >800 lit, finite, depth-sorted triangles across all 10 species', async () => {
+  const { FISH_SPECIES_CATALOG } = await import('./buddiesFishingMarket');
+  const { buildTidewaterProceduralFishGroup, projectFishGroupTriangles } = await import(
+    '../components/TidewaterCatchShowcaseModal'
+  );
+
+  assert.equal(FISH_SPECIES_CATALOG.length, 10);
+  for (const spec of FISH_SPECIES_CATALOG) {
+    const model = buildTidewaterProceduralFishGroup(spec.speciesId, spec.colorHex);
+    model.updateSwimAnimation(0.45);
+    model.group.rotation.y = 0.25;
+    model.group.rotation.x = 0.04;
+
+    const tris = projectFishGroupTriangles(model.group, 320, 180, 2.42, 23);
+    assert.ok(
+      tris.length > 800,
+      `Expected >800 visible front/fin triangles for ${spec.speciesId}, got ${tris.length}`,
+    );
+
+    for (let i = 0; i < tris.length; i++) {
+      const t = tris[i];
+      assert.ok(
+        Number.isFinite(t.sx0) &&
+          Number.isFinite(t.sy0) &&
+          Number.isFinite(t.sx1) &&
+          Number.isFinite(t.sy1) &&
+          Number.isFinite(t.sx2) &&
+          Number.isFinite(t.sy2),
+        `Projected coordinates must be finite for ${spec.speciesId}`,
+      );
+      assert.ok(t.r >= 0 && t.r <= 255 && t.g >= 0 && t.g <= 255 && t.b >= 0 && t.b <= 255);
+      if (i > 0) {
+        assert.ok(
+          tris[i - 1].sortDepth >= t.sortDepth,
+          'Triangles must be sorted back-to-front by sortDepth descending',
+        );
+      }
+    }
+
+    model.dispose();
+  }
+});
+
+
 

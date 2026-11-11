@@ -423,7 +423,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               >
                 <img
                   src="/docs/hero-3-house-interior.jpg"
-                  alt="My House 3D Studio"
+                  alt="My House Interior"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
@@ -446,8 +446,8 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </div>
                   <p className="mt-1 text-xs font-bold text-slate-200 line-clamp-2">
                     {hasOwnedHouse
-                      ? 'Enter your 3D House Interior studio directly to hang out and arrange furniture.'
-                      : 'Acquire a Private House in Hana Catalog to unlock your 3D interior studio and city plots.'}
+                      ? 'Enter your house interior directly to hang out and arrange furniture.'
+                      : 'Acquire a Private House in Hana Catalog to unlock your interior and city plots.'}
                   </p>
                 </div>
               </button>

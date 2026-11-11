@@ -6639,7 +6639,7 @@ export default function App() {
                           JAPANESE PAVILION HOUSE
                         </div>
                         <div className="text-[10px] font-bold text-slate-600">
-                          Unlocks residential plots and 3D interior customization.
+                          Unlocks residential plots and interior customization.
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
@@ -6737,7 +6737,7 @@ export default function App() {
                               }}
                               className="px-2 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border border-black text-[9px] font-black uppercase cursor-pointer shrink-0"
                             >
-                              3D VIEW
+                              VIEW
                             </button>
                           </div>
                           <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
@@ -6811,7 +6811,7 @@ export default function App() {
                               }}
                               className="px-2 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border border-black text-[9px] font-black uppercase cursor-pointer shrink-0"
                             >
-                              3D VIEW
+                              VIEW
                             </button>
                           </div>
                           <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
@@ -7334,7 +7334,7 @@ export default function App() {
                             }}
                             className="px-2 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
                           >
-                            3D VIEW
+                            VIEW
                           </button>
 
                           {!fish.isMintedNft ? (
@@ -7843,7 +7843,7 @@ export default function App() {
                   Welcome Home
                 </div>
                 <div className="text-[10.5px] font-bold text-slate-200">
-                  Opening 3D Interior Studio...
+                  Opening Interior...
                 </div>
               </div>
             )}

@@ -582,7 +582,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         <header className="fixed top-0 inset-x-0 h-13 bg-[#0f172a]/95 text-white border-b-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] px-3 sm:px-5 flex items-center justify-between pointer-events-auto z-50">
           <div className="flex items-center gap-2.5">
             <span className={`px-2 py-0.5 ${isSampleHouseView ? 'bg-[#38bdf8]' : 'bg-[#b8ff3c]'} text-[#0d0f12] text-[10px] font-black uppercase tracking-wider border border-[#0d0f12]`}>
-              {isSampleHouseView ? 'SHOWCASE' : '3D STUDIO'}
+              {isSampleHouseView ? 'SHOWCASE' : 'INTERIOR'}
             </span>
             <div className="flex flex-col">
               <span className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-wide text-white leading-tight">
@@ -2097,7 +2097,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           PRIVATE HOUSE
                         </div>
                         <div className="text-[9.5px] font-bold text-[#1c2026]/85">
-                          Claim a residential city plot and decorate your 3D interior studio.
+                          Claim a residential city plot and decorate your private interior.
                         </div>
                       </div>
                       <span
@@ -2529,7 +2529,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               }}
                               className="py-1 px-2 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] text-[9.5px] font-black uppercase cursor-pointer shrink-0"
                             >
-                              3D VIEW
+                              VIEW
                             </button>
                           </div>
 
@@ -2777,7 +2777,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               }}
                               className="w-full px-2.5 py-1 bg-[#0f172a] hover:bg-black text-[#38bdf8] border border-white/25 text-[9px] font-black uppercase cursor-pointer"
                             >
-                              3D VIEW
+                              VIEW
                             </button>
 
                             <button

@@ -587,8 +587,8 @@ class SoundEngine {
       this.preloadStarted = true;
       this.preloadAllBlitzSamples();
     }
-    if (this.bgmStarted && !this._muted && !this.bgmTimerId) {
-      this.ensureBgmSchedulerRunning();
+    if (this.ctx && this.bgmStarted && !this._muted && this.bgmTimerId === null) {
+      this.startBgmSchedulerForCtx(this.ctx);
     }
     return this.ctx;
   }
@@ -617,7 +617,7 @@ class SoundEngine {
     if (typeof window === 'undefined' || this._muted) return;
     const ctx = this.ensureCtx();
     if (ctx && ctx.state === 'running') {
-      this.ensureBgmSchedulerRunning();
+      this.startBgmSchedulerForCtx(ctx);
       return;
     }
     if (!this.bgmUnlockBound) {
@@ -638,8 +638,14 @@ class SoundEngine {
 
   private ensureBgmSchedulerRunning(): void {
     if (typeof window === 'undefined' || this._muted || !this.bgmStarted) return;
-    const ctx = this.ensureCtx();
+    if (this.bgmTimerId !== null && this.ctx) return;
+    const ctx = this.ctx ?? this.ensureCtx();
     if (!ctx) return;
+    this.startBgmSchedulerForCtx(ctx);
+  }
+
+  private startBgmSchedulerForCtx(ctx: AudioContext): void {
+    if (typeof window === 'undefined' || this._muted || !this.bgmStarted) return;
     if (this.bgmBusGain) {
       this.bgmBusGain.gain.setTargetAtTime(
         this.bgmVolume * this._masterVolume,
@@ -654,6 +660,9 @@ class SoundEngine {
         this.clearBgmScheduler();
         return;
       }
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
       if (this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {});
         return;
@@ -663,14 +672,22 @@ class SoundEngine {
         this.bgmNextNoteTime = now + 0.04;
       }
       const lookaheadSec = 0.24;
-      while (this.bgmNextNoteTime < now + lookaheadSec) {
+      let guard = 0;
+      while (this.bgmNextNoteTime < now + lookaheadSec && guard < 8) {
+        guard++;
         const isWarzone = this.bgmMode === 'warzone';
         const stepDurSec = isWarzone ? 60 / 118 / 4 : 60 / 104 / 4;
-        this.scheduleBossaStep(this.ctx, this.bgmStepIndex, this.bgmNextNoteTime, stepDurSec, isWarzone);
+        this.scheduleBossaStep(
+          this.ctx,
+          this.bgmStepIndex,
+          this.bgmNextNoteTime,
+          stepDurSec,
+          isWarzone,
+        );
         this.bgmNextNoteTime += stepDurSec;
         this.bgmStepIndex = (this.bgmStepIndex + 1) % 128;
       }
-    }, 95);
+    }, 110);
   }
 
   private scheduleBossaStep(
@@ -786,25 +803,30 @@ class SoundEngine {
     durSec: number,
     peakGain: number,
   ): void {
+    const lpf = ctx.createBiquadFilter();
+    lpf.type = 'lowpass';
+    lpf.frequency.setValueAtTime(2150, when);
+    lpf.frequency.exponentialRampToValueAtTime(780, when + durSec + 0.04);
+    lpf.connect(dest);
+
     for (let i = 0; i < chordHz.length; i++) {
       const noteTime = when + i * 0.012;
       const osc = ctx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(chordHz[i], noteTime);
 
-      const lpf = ctx.createBiquadFilter();
-      lpf.type = 'lowpass';
-      lpf.frequency.setValueAtTime(2150, noteTime);
-      lpf.frequency.exponentialRampToValueAtTime(780, noteTime + durSec);
-
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, noteTime);
       g.gain.linearRampToValueAtTime(peakGain, noteTime + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0008, noteTime + durSec);
 
-      osc.connect(lpf);
-      lpf.connect(g);
-      g.connect(dest);
+      osc.connect(g);
+      g.connect(lpf);
+      const isLast = i === chordHz.length - 1;
+      osc.onended = () => {
+        g.disconnect();
+        if (isLast) lpf.disconnect();
+      };
       osc.start(noteTime);
       osc.stop(noteTime + durSec + 0.03);
     }
@@ -818,19 +840,23 @@ class SoundEngine {
     durSec: number,
     peakGain: number,
   ): void {
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peakGain, when + 0.06);
+    g.gain.exponentialRampToValueAtTime(peakGain * 0.42, when + durSec * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.0008, when + durSec);
+    g.connect(dest);
+
     for (let i = 0; i < chordHz.length; i++) {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(chordHz[i], when);
-
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, when);
-      g.gain.linearRampToValueAtTime(peakGain, when + 0.06);
-      g.gain.exponentialRampToValueAtTime(peakGain * 0.42, when + durSec * 0.55);
-      g.gain.exponentialRampToValueAtTime(0.0008, when + durSec);
-
       osc.connect(g);
-      g.connect(dest);
+      if (i === chordHz.length - 1) {
+        osc.onended = () => {
+          g.disconnect();
+        };
+      }
       osc.start(when);
       osc.stop(when + durSec + 0.04);
     }
@@ -866,6 +892,10 @@ class SoundEngine {
     tineOsc.connect(tineGain);
     tineGain.connect(env);
     env.connect(dest);
+    bodyOsc.onended = () => {
+      tineGain.disconnect();
+      env.disconnect();
+    };
 
     bodyOsc.start(when);
     tineOsc.start(when);
@@ -908,6 +938,11 @@ class SoundEngine {
     lpf.connect(pluckGain);
     pluckGain.connect(env);
     env.connect(dest);
+    osc.onended = () => {
+      lpf.disconnect();
+      pluckGain.disconnect();
+      env.disconnect();
+    };
 
     osc.start(when);
     pluckOsc.start(when);
@@ -941,6 +976,10 @@ class SoundEngine {
     src.connect(bpf);
     bpf.connect(g);
     g.connect(dest);
+    src.onended = () => {
+      bpf.disconnect();
+      g.disconnect();
+    };
     src.start(when, offset, durSec + 0.02);
   }
 
@@ -962,6 +1001,9 @@ class SoundEngine {
 
     osc.connect(g);
     g.connect(dest);
+    osc.onended = () => {
+      g.disconnect();
+    };
     osc.start(when);
     osc.stop(when + 0.21);
   }
@@ -990,6 +1032,10 @@ class SoundEngine {
     osc.connect(bpf);
     bpf.connect(g);
     g.connect(dest);
+    osc.onended = () => {
+      bpf.disconnect();
+      g.disconnect();
+    };
     osc.start(when);
     osc.stop(when + 0.065);
   }

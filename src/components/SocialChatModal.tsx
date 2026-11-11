@@ -739,7 +739,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                       PRIVATE HOUSE INTERIOR
                     </div>
                     <div className="text-[11px] font-bold text-slate-700">
-                      Open 3D furniture &amp; room theme studio
+                      Open furniture &amp; room theme settings
                     </div>
                   </div>
                   <button

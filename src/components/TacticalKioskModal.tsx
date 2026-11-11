@@ -969,7 +969,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                   }}
                   className="w-full py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-tight cursor-pointer transition-colors"
                 >
-                  ENTER PRIVATE HOUSE &amp; DECORATE (3D INTERIOR)
+                  ENTER PRIVATE HOUSE &amp; DECORATE
                 </button>
               )}
               <div className="p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5">
