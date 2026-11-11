@@ -380,16 +380,23 @@ export function applyGrassChunkSyncedFogOfWar3D(params: {
       continue;
     }
     const isFriendly = b.isPlayer || b.team === playerTeam;
+    // Fog-of-war scaling must be RELATIVE to the unit's authored bodyGroup base
+    // scale (characters are built at 1.16). Setting an absolute 1 here silently
+    // shrank every local unit vs remote-player avatars (which keep 1.16).
+    if (b.bodyGroup.userData.__fowBaseScale === undefined) {
+      b.bodyGroup.userData.__fowBaseScale = b.bodyGroup.scale.x;
+    }
+    const unitBaseScale = b.bodyGroup.userData.__fowBaseScale as number;
     if (isFriendly || isMapPreview) {
       b.root.visible = true;
-      b.bodyGroup.scale.setScalar(1);
+      b.bodyGroup.scale.setScalar(unitBaseScale);
     } else {
       const targetScale = evaluateChunkSynced3DFogOfWar(b.x, b.z, viewerX, viewerZ).scaleFactor;
       const smoothScale = resolveSmoothCullScale(b.root, targetScale);
       const isVisible = smoothScale >= 0.01;
       b.root.visible = isVisible;
       if (isVisible) {
-        b.bodyGroup.scale.setScalar(smoothScale);
+        b.bodyGroup.scale.setScalar(unitBaseScale * smoothScale);
       }
     }
   }
@@ -402,16 +409,20 @@ export function applyGrassChunkSyncedFogOfWar3D(params: {
       continue;
     }
     const isFriendly = v.team === playerTeam;
+    if (v.bodyGroup.userData.__fowBaseScale === undefined) {
+      v.bodyGroup.userData.__fowBaseScale = v.bodyGroup.scale.x;
+    }
+    const vehicleBaseScale = v.bodyGroup.userData.__fowBaseScale as number;
     if (isFriendly || isMapPreview) {
       v.root.visible = true;
-      v.bodyGroup.scale.setScalar(1);
+      v.bodyGroup.scale.setScalar(vehicleBaseScale);
     } else {
       const targetScale = evaluateChunkSynced3DFogOfWar(v.x, v.z, viewerX, viewerZ).scaleFactor;
       const smoothScale = resolveSmoothCullScale(v.root, targetScale);
       const isVisible = smoothScale >= 0.01;
       v.root.visible = isVisible;
       if (isVisible) {
-        v.bodyGroup.scale.setScalar(smoothScale);
+        v.bodyGroup.scale.setScalar(vehicleBaseScale * smoothScale);
       }
     }
   }
