@@ -1182,7 +1182,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                         onRequestRegisterWallet();
                       } else {
                         setShowcaseMintError(
-                          'Mode Guest: Silakan registrasi akun / sub-wallet terlebih dahulu untuk Mint NFT.',
+                          'Guest Mode: Please register an account / sub-wallet first to mint NFTs.',
                         );
                       }
                     }}

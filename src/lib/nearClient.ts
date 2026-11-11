@@ -273,7 +273,7 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
       validFormat: false,
       available: false,
       ownedByCurrentDevice: false,
-      reason: 'Minimal 2 karakter huruf kecil / angka (contoh: xyz).',
+      reason: 'Use at least 2 lowercase letters or numbers (e.g. xyz).',
     };
   }
 
@@ -284,7 +284,7 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
       validFormat: false,
       available: false,
       ownedByCurrentDevice: false,
-      reason: `Nama "${cleanHandle}" dicadangkan untuk sistem smart contract.`,
+      reason: `Prefix "${cleanHandle}" is reserved for smart contract infrastructure.`,
     };
   }
 
@@ -337,7 +337,7 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
     validFormat: true,
     available: false,
     ownedByCurrentDevice: false,
-    reason: `Alamat ${subAccountId} sudah terdaftar oleh warga lain. Pilih nama depan lain.`,
+    reason: `Address ${subAccountId} is already registered by another citizen. Choose a different prefix.`,
   };
 }
 
@@ -369,7 +369,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
       subAccountId: '',
       sessionPublicKey: '',
       custodyMode: 'session_key_ready',
-      error: 'Nama depan sub-wallet minimal 2 karakter (contoh: xyz).',
+      error: 'Sub-wallet prefix must be at least 2 characters (e.g. xyz).',
     };
   }
 
@@ -396,7 +396,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
         sessionPublicKey,
         custodyMode: 'session_key_ready',
         error: String(
-          json?.error || `Gagal membuat sub-wallet ${subAccountId}. Silakan coba nama depan lain.`,
+          json?.error || `Failed to create sub-wallet ${subAccountId}. Please try a different prefix.`,
         ),
       };
     }
@@ -1313,7 +1313,7 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
         method: 'query',
         params: {
           request_type: 'view_access_key',
-          finality: 'final',
+          finality: 'optimistic',
           account_id: cleanSigner,
           public_key: publicKey,
         },
@@ -1382,10 +1382,17 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
     });
     const bcastJson = await bcastResp.json();
     if (bcastJson?.error) {
+      const rawErrData = bcastJson.error?.data;
+      const errDetail =
+        typeof rawErrData === 'string'
+          ? rawErrData
+          : rawErrData
+            ? JSON.stringify(rawErrData)
+            : String(bcastJson.error?.message || 'RPC broadcast failed');
       return {
         ok: false,
         txHash: '',
-        error: String(bcastJson.error?.data || bcastJson.error?.message || 'RPC broadcast failed'),
+        error: errDetail,
       };
     }
 

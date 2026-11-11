@@ -222,7 +222,7 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
             ok: false,
             code: 'HANDLE_TAKEN',
             subAccountId,
-            error: `Alamat ${subAccountId} sudah terdaftar oleh warga lain. Silakan pilih nama depan wallet lain.`,
+            error: `Address ${subAccountId} is already registered by another citizen. Please choose a different wallet prefix.`,
           },
         };
       }
@@ -252,12 +252,19 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
         const nextNonce = BigInt(masterOnSubView.nonce) + 1n;
         const blockHashBytes = base58Decode(String(masterOnSubView.block_hash));
         const sessionPubBytes = base58Decode(sessionPublicKey.replace(/^ed25519:/i, ''));
+        if (sessionPubBytes.length !== 32) {
+          return {
+            status: 400,
+            payload: { ok: false, error: 'Session public key must decode to 32 Ed25519 bytes.' },
+          };
+        }
 
+        // NEAR Borsh Action::AddKey = 5, AccessKeyPermission::FullAccess = 1
         const addPlayerFullKeyAction = Buffer.concat([
-          Buffer.from([4]),
+          Buffer.from([5]),
           borshPubKeyEd25519(sessionPubBytes.slice(0, 32)),
           borshU64(0n),
-          Buffer.from([0]), // AccessKeyPermission::FullAccess (isolated strictly to <handle>.buddiesblitz.testnet)
+          Buffer.from([1]), // AccessKeyPermission::FullAccess (isolated strictly to <handle>.buddiesblitz.testnet)
         ]);
 
         const txBytes = Buffer.concat([
@@ -336,32 +343,37 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
       const sessionClean = sessionPublicKey.replace(/^ed25519:/i, '');
       const sessionPubBytes =
         sessionClean.length > 10 ? base58Decode(sessionClean) : pubKeyBytes;
+      if (sessionPubBytes.length !== 32 || blockHashBytes.length !== 32) {
+        return {
+          status: 400,
+          payload: { ok: false, error: 'Invalid Ed25519 session public key or RPC block hash length.' },
+        };
+      }
 
-      // Actions:
-      // 0: CreateAccount
-      // 2: Transfer (0.06 NEAR initial storage + gas seed)
-      // 4: AddKey (Master FullAccess recovery key)
-      // 4: AddKey (Player Browser Ed25519 FullAccess key isolated strictly to <handle>.buddiesblitz.testnet)
+      // Canonical NEAR Protocol Borsh Action & AccessKeyPermission discriminants:
+      // Action::CreateAccount = 0
+      // Action::Transfer      = 3 (0.08 NEAR initial storage + prepaid gas buffer)
+      // Action::AddKey        = 5, AccessKeyPermission::FullAccess = 1
       const createAccountAction = Buffer.from([0]);
       const transferAction = Buffer.concat([
-        Buffer.from([2]),
-        borshU128(60_000_000_000_000_000_000_000n), // 0.06 NEAR
+        Buffer.from([3]),
+        borshU128(80_000_000_000_000_000_000_000n), // 0.08 NEAR
       ]);
       const addMasterFullKeyAction = Buffer.concat([
-        Buffer.from([4]),
+        Buffer.from([5]),
         borshPubKeyEd25519(pubKeyBytes),
         borshU64(0n),
-        Buffer.from([0]), // AccessKeyPermission::FullAccess
+        Buffer.from([1]), // AccessKeyPermission::FullAccess
       ]);
       const playerKeySlice = sessionPubBytes.slice(0, 32);
       const actions = [createAccountAction, transferAction, addMasterFullKeyAction];
-      if (Buffer.compare(playerKeySlice, pubKeyBytes) !== 0) {
+      if (Buffer.compare(Buffer.from(playerKeySlice), Buffer.from(pubKeyBytes)) !== 0) {
         actions.push(
           Buffer.concat([
-            Buffer.from([4]),
+            Buffer.from([5]),
             borshPubKeyEd25519(playerKeySlice),
             borshU64(0n),
-            Buffer.from([0]), // AccessKeyPermission::FullAccess on <handle>.buddiesblitz.testnet
+            Buffer.from([1]), // AccessKeyPermission::FullAccess on <handle>.buddiesblitz.testnet
           ]),
         );
       }
@@ -383,6 +395,16 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
       const broadcast = await nearRpcCall(rpcUrl, 'broadcast_tx_commit', [
         signedTxBytes.toString('base64'),
       ]);
+      if (broadcast?.status && typeof broadcast.status === 'object' && 'Failure' in broadcast.status) {
+        throw new Error(`NEAR execution failed: ${JSON.stringify(broadcast.status.Failure)}`);
+      }
+      if (Array.isArray(broadcast?.receipts_outcome)) {
+        for (const r of broadcast.receipts_outcome) {
+          if (r?.outcome?.status && typeof r.outcome.status === 'object' && 'Failure' in r.outcome.status) {
+            throw new Error(`NEAR receipt failed: ${JSON.stringify(r.outcome.status.Failure)}`);
+          }
+        }
+      }
       const confirmedHash = String(broadcast?.transaction?.hash || base58Encode(txHash));
 
       return {

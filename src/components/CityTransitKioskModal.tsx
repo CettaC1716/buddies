@@ -253,10 +253,10 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white"
                 style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
               >
-                KELUAR DARI WARZONE
+                LEAVE WARZONE ARENA
               </h3>
               <p className="text-xs sm:text-sm font-bold text-slate-300">
-                Akhiri sesi pertempuran tactical Warzone dan kembali ke Central Plaza di kota utama (The City).
+                End your tactical Warzone combat session and return safely to Central Plaza in the main city.
               </p>
             </div>
 
@@ -271,7 +271,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 }}
                 className="w-full sm:flex-1 py-3 px-6 bg-[#facc15] hover:bg-[#fde047] text-black border-[3px] border-black shadow-[4px_4px_0px_#000] font-black text-sm uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
               >
-                KELUAR KE KOTA UTAMA
+                RETURN TO MAIN CITY
               </button>
 
               <button
@@ -283,7 +283,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 }}
                 className="w-full sm:w-auto py-3 px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 border-[3px] border-black shadow-[4px_4px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
               >
-                TETAP DI WARZONE
+                STAY IN WARZONE
               </button>
             </div>
           </div>
@@ -296,29 +296,29 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="px-2.5 py-0.5 bg-[#38bdf8] text-black border-2 border-black text-[10px] font-black uppercase tracking-wider">
-                    🧭 PANDUAN PORTAL KIOSK TELEPORT (TUTORIAL AKHIR)
+                    🧭 TELEPORT KIOSK PORTAL GUIDE (FINAL STEP)
                   </span>
                   <span className="text-[10.5px] font-bold text-[#b8ff3c]">
-                    Pusat Akses Mini-Game, Distrik &amp; Rumah Pribadi
+                    Hub for Mini-Games, City Districts &amp; Private House
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-bold leading-snug">
                   <div className="p-2 bg-[#1e293b] border border-white/20">
                     <span className="text-[#00f0ff] font-black">1. TRAVEL &amp; DISTRICTS:</span>{' '}
-                    Naik trem cepat ke Beachfront Harbor (Merchant Kai &amp; pancing pantai), NW Fishing Lake, atau Kavling Perumahan.
+                    Fast-travel by tram to Beachfront Harbor (Merchant Kai &amp; ocean fishing), NW Fishing Lake, or Residential Plots.
                   </div>
                   <div className="p-2 bg-[#1e293b] border border-white/20">
                     <span className="text-[#facc15] font-black">2. WARZONE ARENA:</span>{' '}
-                    Pilih Tim <span className="text-[#38bdf8]">BLUE</span> vs <span className="text-[#ff6b6b]">RED</span> &rarr; cutscene trem &rarr; bertempur rebut drop LUL &amp; kendaraan airdrop!
+                    Pick <span className="text-[#38bdf8]">BLUE</span> vs <span className="text-[#ff6b6b]">RED</span> Team &rarr; tram cutscene &rarr; battle for LUL drops &amp; combat vehicle airdrops!
                   </div>
                   <div className="p-2 bg-[#1e293b] border border-white/20">
                     <span className="text-[#a3e635] font-black">3. MY HOUSE:</span>{' '}
-                    Teleport langsung masuk ke interior Studio Rumah 3D pribadimu untuk menata furnitur &amp; mengundang teman.
+                    Teleport straight into your 3D Private House Studio to arrange furniture &amp; invite friends.
                   </div>
                   <div className="p-2 bg-[#1e293b] border border-white/20">
                     <span className="text-[#c084fc] font-black">4. SHOP &amp; EXCHANGE:</span>{' '}
-                    Pintasan cepat membuka Katalog &amp; konversi LUL &rarr; CYON / NEAR &rarr; RESPITE.
+                    Quick shortcut to open the City Catalog &amp; swap LUL &rarr; CYON or NEAR &rarr; RESPITE.
                   </div>
                 </div>
 
@@ -334,7 +334,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                       className="-skew-x-6 px-4 py-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
                     >
                       <span className="skew-x-6 inline-block">
-                        ✅ PAHAM — SELESAI TUTORIAL &amp; MULAI EXPLORE!
+                        ✅ GOT IT — COMPLETE TUTORIAL &amp; EXPLORE!
                       </span>
                     </button>
                   </div>

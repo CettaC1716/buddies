@@ -366,7 +366,7 @@ export default function App() {
     subAccountId: '',
   });
   const [subWalletProvisionStageLabel, setSubWalletProvisionStageLabel] = useState<string>(
-    'Menyiapkan kunci kriptografi Ed25519 di browser...',
+    'Generating browser self-custody Ed25519 key...',
   );
   const [provisionedSubWalletTxHash, setProvisionedSubWalletTxHash] = useState<string>('');
   const [tutorialStage, setTutorialStage] = useState<
@@ -1366,7 +1366,7 @@ export default function App() {
         available: false,
         ownedByCurrentDevice: false,
         subAccountId: fullSubId,
-        reason: 'Minimal 2 karakter huruf kecil / angka (contoh: xyz).',
+        reason: 'Use at least 2 lowercase letters or numbers (e.g. xyz).',
       });
       return;
     }
@@ -2092,7 +2092,7 @@ export default function App() {
       .replace(/[^a-z0-9_-]/g, '')
       .slice(0, 32);
     if (cleanHandle.length < 2) {
-      setWalletConnectError('Nama depan alamat wallet minimal 2 karakter (contoh: xyz).');
+      setWalletConnectError('Wallet prefix must be at least 2 characters (e.g. xyz).');
       return;
     }
 
@@ -2102,12 +2102,12 @@ export default function App() {
 
     setOnboardingStep('provisioning_subwallet');
     setOnboardingLoadingProgress(22);
-    setSubWalletProvisionStageLabel('1/3 Membuat kunci Ed25519 self-custody di browser...');
+    setSubWalletProvisionStageLabel('1/3 Generating self-custody Ed25519 key in browser...');
 
     const stageTimer1 = window.setTimeout(() => {
       setOnboardingLoadingProgress(56);
       setSubWalletProvisionStageLabel(
-        `2/3 Mendaftarkan ${cleanHandle}.${NEAR_CONFIG.masterAccountId} dari Master Wallet...`,
+        `2/3 Provisioning ${cleanHandle}.${NEAR_CONFIG.masterAccountId} from Master Wallet...`,
       );
     }, 380);
 
@@ -2123,14 +2123,14 @@ export default function App() {
       setOnboardingStep('subwallet_naming');
       setWalletConnectError(
         provisioned.error ||
-          `Gagal mendaftarkan ${cleanHandle}.${NEAR_CONFIG.masterAccountId}. Silakan coba nama depan lain.`,
+          `Failed to register ${cleanHandle}.${NEAR_CONFIG.masterAccountId}. Please try a different prefix.`,
       );
       return;
     }
 
     const walletId = provisioned.subAccountId.toLowerCase();
     setOnboardingLoadingProgress(85);
-    setSubWalletProvisionStageLabel('3/3 Menyimpan profil warga & menyinkronkan NEAR Testnet...');
+    setSubWalletProvisionStageLabel('3/3 Saving citizen profile & syncing NEAR Testnet...');
     setProvisionedSubWalletTxHash(provisioned.txHash || '');
 
     const [accountView, hanaStatus] = await Promise.all([
@@ -2199,7 +2199,7 @@ export default function App() {
         txHash: '',
         explorerUrl: '',
         amountNear: 0,
-        error: 'Wallet belum terhubung. Silakan registrasi terlebih dahulu.',
+        error: 'Wallet is not connected yet. Please register or connect first.',
       };
     }
 
@@ -3216,7 +3216,7 @@ export default function App() {
                           }}
                           className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
                         >
-                          LANJUT REGISTRASI SUB-WALLET TANPA POPUP &rarr;
+                          CONTINUE WITHOUT POPUP (CREATE SUB-WALLET) &rarr;
                         </button>
                       </div>
                     )}
@@ -3259,20 +3259,20 @@ export default function App() {
                   <div className="text-center space-y-0.5">
                     <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
                       {onboardingAuthMode === 'wallet'
-                        ? 'STEP 1/3 · PILIH KARAKTER & ISI NAMA'
-                        : 'MODE GUEST · PILIH KARAKTER & NAMA'}
+                        ? 'STEP 1/3 · CHOOSE CHARACTER & ENTER NAME'
+                        : 'GUEST MODE · CHOOSE CHARACTER & NAME'}
                     </div>
                     <div className="text-[10px] font-bold text-slate-300">
                       {onboardingAuthMode === 'wallet'
-                        ? 'Pilih karakter 3D dan ketik nama panggilanmu sebelum membuat sub-wallet.'
-                        : 'Masuk tanpa login untuk jalan-jalan (tab Exchange dikunci sebelum registrasi).'}
+                        ? 'Select your 3D avatar and enter your display name before creating your sub-wallet.'
+                        : 'Enter freely without login to walk & explore (Exchange & purchases require registration).'}
                     </div>
                   </div>
 
                   {/* Row 1: Direct Citizen / Guest Name Input */}
                   <div className="space-y-1">
                     <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
-                      NAMA KARAKTER / DISPLAY NAME
+                      CHARACTER / DISPLAY NAME
                     </label>
                     <input
                       ref={guestNameInputRef}
@@ -3284,7 +3284,7 @@ export default function App() {
                         setIsCustomGuestNameEdited(true);
                         setPlayerDisplayName(e.target.value);
                       }}
-                      placeholder="Ketik nama karaktermu..."
+                      placeholder="Enter your character name..."
                       className="w-full px-3 py-2 bg-white text-black font-black text-sm border-2 border-[#b8ff3c] shadow-[2px_2px_0_#000] focus:outline-none"
                     />
                   </div>
@@ -3364,7 +3364,7 @@ export default function App() {
                       className="-skew-x-6 px-3.5 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                     >
                       <span className="skew-x-6 inline-block">
-                        {onboardingAuthMode === 'wallet' ? 'LANJUT WALLET >' : 'MASUK GUEST >'}
+                        {onboardingAuthMode === 'wallet' ? 'NEXT: WALLET >' : 'ENTER AS GUEST >'}
                       </span>
                     </button>
                   </div>
@@ -3375,17 +3375,17 @@ export default function App() {
                 <div className="space-y-3.5">
                   <div className="text-center space-y-0.5">
                     <div className="text-[10px] font-black uppercase tracking-widest text-[#38bdf8]">
-                      STEP 2/3 · BUAT ALAMAT SUB-WALLET NEAR
+                      STEP 2/3 · CREATE NEAR SUB-WALLET ADDRESS
                     </div>
                     <div className="text-[10.5px] font-bold text-slate-300">
-                      Isi nama depan sub-wallet dari master wallet{' '}
+                      Choose your sub-wallet prefix under master wallet{' '}
                       <span className="font-mono text-[#b8ff3c]">{NEAR_CONFIG.masterAccountId}</span>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
-                      NAMA DEPAN ALAMAT WALLET (CONTOH: XYZ)
+                      WALLET ADDRESS PREFIX (EXAMPLE: XYZ)
                     </label>
                     <div className="flex items-stretch border-2 border-black shadow-[3px_3px_0_#000] bg-white overflow-hidden">
                       <input
@@ -3420,7 +3420,7 @@ export default function App() {
 
                     <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
                       <div className="text-[9.5px] font-black uppercase text-slate-400">
-                        ALAMAT SUB-WALLET KAMU:
+                        YOUR SUB-WALLET ADDRESS:
                       </div>
                       <div
                         data-subwallet-full-preview="true"
@@ -3431,17 +3431,17 @@ export default function App() {
                       <div className="text-[10px] font-bold pt-0.5">
                         {subWalletAvailability.checking ? (
                           <span className="text-[#facc15]">
-                            Memeriksa ketersediaan di NEAR Testnet...
+                            Checking availability on NEAR Testnet...
                           </span>
                         ) : subWalletAvailability.validFormat && subWalletAvailability.available ? (
                           <span className="text-[#b8ff3c]">
                             {subWalletAvailability.ownedByCurrentDevice
-                              ? '✅ Sub-wallet milik perangkat ini siap dipulihkan!'
-                              : '✅ Alamat tersedia di NEAR Testnet!'}
+                              ? '✅ Sub-wallet owned by this device — ready to restore!'
+                              : '✅ Address available on NEAR Testnet!'}
                           </span>
                         ) : (
                           <span className="text-[#fca5a5]">
-                            {subWalletAvailability.reason || 'Ketik minimal 2 karakter (a-z, 0-9).'}
+                            {subWalletAvailability.reason || 'Enter at least 2 characters (a-z, 0-9).'}
                           </span>
                         )}
                       </div>
@@ -3464,7 +3464,7 @@ export default function App() {
                       }}
                       className="px-3 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 text-[11px] font-black uppercase cursor-pointer"
                     >
-                      &lt; KEMBALI
+                      &lt; BACK
                     </button>
 
                     <button
@@ -3478,7 +3478,7 @@ export default function App() {
                       onClick={() => void handleProvisionSubWalletAndShowWelcome()}
                       className="-skew-x-6 flex-1 py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:opacity-50 disabled:cursor-not-allowed text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer transition-all"
                     >
-                      <span className="skew-x-6 inline-block">DAPATKAN SUB-WALLET &rarr;</span>
+                      <span className="skew-x-6 inline-block">CREATE SUB-WALLET &rarr;</span>
                     </button>
                   </div>
                 </div>
@@ -3491,7 +3491,7 @@ export default function App() {
                 >
                   <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase animate-pulse">
                     <span className="skew-x-12 inline-block">
-                      STEP 3/3 · MENDAPATKAN SUB-WALLET...
+                      STEP 3/3 · PROVISIONING SUB-WALLET...
                     </span>
                   </div>
 
@@ -3501,7 +3501,7 @@ export default function App() {
                       <span className="text-[#facc15] font-bold">{NEAR_CONFIG.masterAccountId}</span>
                     </div>
                     <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">SUB-WALLET BARU:</span>
+                      <span className="text-slate-400">NEW SUB-WALLET:</span>
                       <span className="text-[#b8ff3c] font-bold">
                         {subWalletHandleDraft}.{NEAR_CONFIG.masterAccountId}
                       </span>
@@ -3570,18 +3570,18 @@ export default function App() {
 
               <div className="space-y-2">
                 <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
-                  Selamat Datang, {playerDisplayName}!
+                  Welcome, {playerDisplayName}!
                 </h2>
                 <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                  Sub-wallet pribadimu dari master wallet{' '}
+                  Your personal NEAR sub-wallet under master wallet{' '}
                   <span className="font-mono text-[#facc15]">{NEAR_CONFIG.masterAccountId}</span>{' '}
-                  telah berhasil dibuat dengan kunci self-custody di browsermu:
+                  is live with a self-custody key stored locally in your browser:
                 </p>
               </div>
 
               <div className="p-3 bg-[#0f172a] border-2 border-[#38bdf8] space-y-1.5">
                 <div className="text-[9.5px] font-black uppercase text-slate-400">
-                  ALAMAT WALLET WARGA
+                  CITIZEN WALLET ADDRESS
                 </div>
                 <div className="font-mono text-sm font-black text-[#b8ff3c] break-all">
                   {hud.nearWalletId || playerUid}
@@ -3593,16 +3593,16 @@ export default function App() {
                     rel="noopener noreferrer"
                     className="inline-block text-[10.5px] font-mono font-bold text-[#38bdf8] underline"
                   >
-                    Lihat Tx Pembuatan Sub-Wallet di NearBlocks ↗
+                    View Sub-Wallet Creation Tx on NearBlocks ↗
                   </a>
                 )}
               </div>
 
               <div className="p-3 bg-[#1e293b] border-2 border-black text-xs font-bold text-slate-200 leading-relaxed">
-                🎯 <span className="text-[#facc15] font-black">Misi Pertama:</span> Ikuti jalur
-                panah bercahaya menuju <span className="text-[#b8ff3c]">Merchant Hana</span> di
-                Central Plaza Cafe untuk mengikuti tutorial singkat &amp; mengklaim modal awal{' '}
-                <span className="text-[#b8ff3c]">0.30 NEAR</span> dari Smart Contract Treasury Hana!
+                🎯 <span className="text-[#facc15] font-black">First Mission:</span> Follow the
+                glowing ground path to <span className="text-[#b8ff3c]">Merchant Hana</span> at
+                Central Plaza Cafe to complete a quick welcome chat &amp; claim{' '}
+                <span className="text-[#b8ff3c]">0.30 NEAR</span> from Hana&apos;s Smart Contract Treasury!
               </div>
 
               <button
@@ -3615,7 +3615,7 @@ export default function App() {
                 className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
               >
                 <span className="skew-x-6 inline-block">
-                  MENUJU HANA &amp; MULAI TUTORIAL &rarr;
+                  HEAD TO HANA &amp; START TUTORIAL &rarr;
                 </span>
               </button>
             </div>
@@ -3646,14 +3646,14 @@ export default function App() {
                   </span>
                   <span className="text-[10.5px] font-black uppercase text-[#facc15] truncate">
                     {tutorialStage === 'go_to_hana'
-                      ? 'Temui Merchant Hana di Cafe'
-                      : 'Ikuti Jalur ke Kiosk Teleport'}
+                      ? 'Meet Merchant Hana at the Cafe'
+                      : 'Follow the Path to the Teleport Kiosk'}
                   </span>
                 </div>
                 <div className="text-[11px] font-bold text-slate-200 mt-1 leading-snug">
                   {tutorialStage === 'go_to_hana'
-                    ? 'Ikuti jalur panah hijau di lantai menuju Hana (klik Hana) untuk tutorial & klaim 0.30 NEAR gratis!'
-                    : 'Silakan explore! Ikuti jalur panah biru menuju Kiosk Teleport hitam di halte untuk penjelasan semua portal.'}
+                    ? 'Follow the glowing green ground arrows to Hana (click Hana) for a quick tutorial & claim 0.30 NEAR!'
+                    : 'Feel free to explore! Follow the glowing blue arrows to the black Teleport Kiosk at the tram shelter to learn every portal.'}
                 </div>
               </div>
               <button
@@ -6470,7 +6470,7 @@ export default function App() {
                       MY DIGITAL ASSETS &amp; NFTS
                     </div>
                     <div className="text-xs font-bold text-slate-200">
-                      Koleksi NFT NEP-171 &amp; NEP-245 milik {hud.nearWalletId || playerUid || 'Commander'}
+                      NEP-171 &amp; NEP-245 NFT collection owned by {hud.nearWalletId || playerUid || 'Citizen'}
                     </div>
                   </div>
                   <div className="px-2.5 py-1 bg-[#0f172a] border border-white/20 text-[10px] font-mono font-bold text-[#b8ff3c]">
@@ -6503,7 +6503,7 @@ export default function App() {
                           JAPANESE PAVILION HOUSE DEED
                         </div>
                         <div className="text-[10px] font-bold text-slate-600">
-                          Sertifikat Rumah Pribadi Tema Kayu Jepang. Memberikan hak milik plot dan studio dekorasi 3D.
+                          Modern Japanese Wooden Pavilion Deed. Grants private residential plot rights and 3D interior studio access.
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
@@ -6532,7 +6532,7 @@ export default function App() {
                           {m.name}
                         </div>
                         <div className="text-[10px] font-bold text-slate-600">
-                          Perintah: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · Kontrak: {m.planLabel}
+                          Order: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · Plan: {m.planLabel}
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
@@ -6576,9 +6576,9 @@ export default function App() {
 
                   {!hasHouseOwnership && recruitedFamilyMembers.length === 0 && caughtFishBucket.filter((f) => f.isMintedNft).length === 0 && (
                     <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold space-y-1">
-                      <div>BELUM MEMILIKI NFT DI WALLET INI</div>
+                      <div>NO NFTS IN THIS WALLET YET</div>
                       <div className="text-[10.5px] text-slate-400">
-                        Dapatkan Sertifikat Rumah (150 RESPITE), Rekrut Family Member, atau Mint Ikan Tangkapan menjadi NFT di Merchant Kai/Hana.
+                        Acquire a House Deed ({HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE), recruit a Family Member AI, or mint caught fish into NFTs at Merchant Kai/Hana.
                       </div>
                     </div>
                   )}
@@ -6993,7 +6993,7 @@ export default function App() {
                       }}
                       className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
                     >
-                      <span className="skew-x-6 inline-block">LIHAT IKAN</span>
+                      <span className="skew-x-6 inline-block">VIEW FISH</span>
                     </button>
                   </div>
                 </div>
@@ -7005,10 +7005,10 @@ export default function App() {
                 {caughtFishBucket.length === 0 ? (
                   <div className="p-6 bg-slate-50 border-2 border-dashed border-slate-300 text-center space-y-1.5">
                     <div className="text-xs font-black uppercase text-slate-600">
-                      BELUM ADA IKAN DI TAS
+                      NO FISH IN BAG YET
                     </div>
                     <p className="text-[11px] font-bold text-slate-500">
-                      Equip Joran di tab GEAR lalu memancing di tepi pantai atau danau.
+                      Equip your Fishing Rod in the GEAR tab and cast your line at the beach or lake.
                     </p>
                   </div>
                 ) : (
@@ -7032,7 +7032,7 @@ export default function App() {
                           )}
                         </div>
                         <div className="text-[10.5px] font-bold text-slate-600 mt-0.5">
-                          {fish.weightKg} kg · Nilai Jual: {fish.sellValueLul || fish.sellValueCyon || 15} LUL (Kunjungi Merchant Kai)
+                          {fish.weightKg} kg · Sell Value: {fish.sellValueLul || fish.sellValueCyon || 15} LUL (Visit Merchant Kai)
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -7095,10 +7095,10 @@ export default function App() {
                   {ownedPersonalItems.length === 0 ? (
                     <div className="p-6 bg-slate-50 border-2 border-dashed border-slate-300 text-center space-y-1.5">
                       <div className="text-xs font-black uppercase text-slate-600">
-                        BELUM ADA KOLEKSI ITEM
+                        NO COLLECTIBLE ITEMS YET
                       </div>
                       <p className="text-[11px] font-bold text-slate-500">
-                        Beli furnitur & koleksi pribadi dari Merchant Hana (Plaza) atau Kai (Beachfront).
+                        Purchase furniture &amp; personal items from Merchant Hana (Plaza) or Kai (Beachfront).
                       </p>
                     </div>
                   ) : (
@@ -7546,7 +7546,7 @@ export default function App() {
               {houseEntryScanState === 'scanning' ? (
                 <div className="p-3 bg-[#1e293b] border border-[#00f0ff]/50 text-center space-y-2">
                   <div className="text-xs font-black uppercase text-[#00f0ff] tracking-wider animate-pulse">
-                    MEMINDAI KEPEMILIKAN NFT RUMAH PADA NEAR BLOCKCHAIN...
+                    SCANNING HOUSE DEED NFT OWNERSHIP ON NEAR BLOCKCHAIN...
                   </div>
                   <div className="w-full h-1.5 bg-black/50 overflow-hidden">
                     <div
@@ -7561,13 +7561,13 @@ export default function App() {
               ) : (
                 <div className="p-3 bg-[#14532d]/50 border border-[#b8ff3c] text-center space-y-1.5">
                   <div className="text-xs font-black uppercase text-[#b8ff3c] tracking-wider">
-                    KEPEMILIKAN NFT TERVERIFIKASI!
+                    NFT OWNERSHIP VERIFIED!
                   </div>
                   <div className="text-[11px] font-black uppercase text-white">
                     JAPANESE PAVILION RESIDENCE [DEED #101]
                   </div>
                   <div className="text-[10px] font-bold text-slate-300">
-                    Membuka Private 3D Decorative Studio...
+                    Opening Private 3D Decorative Studio...
                   </div>
                 </div>
               )}

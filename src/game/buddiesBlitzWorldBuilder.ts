@@ -358,7 +358,7 @@ export function createBillboardSign(widthWorld: number, heightWorld: number) {
 export function createGlassmorphicNameplate(
   widthWorld = 2.8,
   heightWorld = 0.72,
-  defaultName = 'WARGA',
+  defaultName = 'CITIZEN',
   _defaultSub = '',
   isNpc = false,
 ) {

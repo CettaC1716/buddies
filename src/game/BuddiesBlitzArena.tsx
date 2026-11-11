@@ -8099,7 +8099,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       });
       publicWarzonePadSlotsList[pubIdx] = createEmptyPadSlots();
       syncPublicWarzonePadVisual(pubIdx);
-      kioskStatusMessage = `PUBLIC WARZONE PAD: Berhasil merakit ${craftedWeaponName.toUpperCase()} tanpa Kiosk!`;
+      kioskStatusMessage = `PUBLIC WARZONE PAD: Crafted ${craftedWeaponName.toUpperCase()} directly on pad!`;
       kioskStatusTimer = 4.2;
       emitHudImmediately();
       return true;
@@ -8609,8 +8609,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.vz = 0;
         playerUnit.saluteTimer = 2.0;
         playerUnit.saluteSign.updateText(
-          'ANIMASI SITTING AKTIF',
-          '[C] ATAU WASD UNTUK BERDIRI',
+          'SITTING POSE ACTIVE',
+          'PRESS [C] OR WASD TO STAND',
           getDefaultCharacterGender() === 'male' ? '#38bdf8' : '#f472b6',
           1,
         );
@@ -8656,8 +8656,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.vz = 0;
         playerUnit.saluteTimer = 2.0;
         playerUnit.saluteSign.updateText(
-          'ANIMASI DRIVING AKTIF',
-          'DRIVING.FBX • WASD UNTUK BERDIRI',
+          'DRIVING POSE ACTIVE',
+          'DRIVING.FBX • WASD TO STAND',
           getDefaultCharacterGender() === 'male' ? '#38bdf8' : '#b8ff3c',
           1,
         );

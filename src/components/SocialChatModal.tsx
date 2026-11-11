@@ -739,7 +739,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                       PRIVATE HOUSE INTERIOR
                     </div>
                     <div className="text-[11px] font-bold text-slate-700">
-                      Buka studio perabotan &amp; dekorasi tema ruangan
+                      Open 3D furniture &amp; room theme studio
                     </div>
                   </div>
                   <button
@@ -748,7 +748,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                     onClick={onOpenHouseDecoration}
                     className="-skew-x-6 px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 transition-colors"
                   >
-                    <span className="skew-x-6 inline-block">MODE DEKORASI</span>
+                    <span className="skew-x-6 inline-block">DECORATE MODE</span>
                   </button>
                 </div>
               )}

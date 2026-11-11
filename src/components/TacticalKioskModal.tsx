@@ -835,7 +835,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 /* Unregistered / Not Connected State */
                 <div className="space-y-2">
                   <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                    Hubungkan dompet NEAR atau daftarkan akun citizen untuk memverifikasi kepemilikan NFT Rumah Pribadi.
+                    Connect a NEAR wallet or register a citizen account to verify Private House Deed NFT ownership.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {onNearConnectAndMint && (
@@ -872,7 +872,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       }}
                       className="w-full py-1.5 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] border border-white/30 font-black text-[10px] uppercase tracking-wide cursor-pointer text-center"
                     >
-                      BELUM MEMILIKI RUMAH? BELI DI KATALOG HANA (150 RESPITE)
+                      DON&apos;T OWN A HOUSE YET? BUY IN HANA&apos;S CATALOG
                     </button>
                   )}
                 </div>
@@ -880,10 +880,10 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 /* Scanning NFT in Progress */
                 <div className="py-3 px-3 bg-[#1e293b] border border-[#facc15] text-center space-y-1">
                   <div className="text-xs font-black uppercase text-[#facc15] tracking-wider animate-pulse">
-                    MEMINDAI KEPEMILIKAN NFT RUMAH PADA AKUN {hud.nearWalletId}...
+                    SCANNING HOUSE DEED NFT OWNERSHIP FOR {hud.nearWalletId}...
                   </div>
                   <div className="text-[10px] font-bold text-slate-300">
-                    Memverifikasi kontrak NEP-171 Private House Deed di NEAR Blockchain
+                    Verifying NEP-171 Private House Deed contract on NEAR Blockchain
                   </div>
                 </div>
               ) : isGamepassVerified ? (
@@ -891,7 +891,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 <div className="space-y-2">
                   <div className="p-2 bg-[#14532d]/40 border border-[#4ade80] flex items-center justify-between gap-2">
                     <span className="text-[10.5px] font-black uppercase text-[#4ade80]">
-                      SERTIFIKAT KEPEMILIKAN RUMAH DIVERIFIKASI
+                      HOUSE DEED OWNERSHIP VERIFIED
                     </span>
                     <span className="text-[9.5px] font-mono font-bold text-white/80">
                       {hud.nearWalletId}
@@ -909,7 +909,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       }}
                       className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
                     >
-                      CLAIM KAVLING PLOT INI (SESI ONLINE)
+                      CLAIM THIS RESIDENTIAL PLOT (ONLINE SESSION)
                     </button>
                   )}
                 </div>
@@ -918,10 +918,10 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 <div className="space-y-2">
                   <div className="p-2 bg-[#450a0a]/50 border border-[#f87171] space-y-1">
                     <div className="text-[10.5px] font-black uppercase text-[#f87171]">
-                      NFT RUMAH BELUM DITEMUKAN DI AKUN {hud.nearWalletId}
+                      NO HOUSE DEED NFT FOUND ON {hud.nearWalletId}
                     </div>
                     <div className="text-[9.5px] font-bold text-slate-300">
-                      Beli sertifikat Rumah Pribadi di katalog Hana Merchant (150 RESPITE) atau scan ulang.
+                      Purchase a Private House Deed in Hana Merchant&apos;s Catalog or rescan your wallet.
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -931,7 +931,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       onClick={handleConnectAndScanGamepass}
                       className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10px] uppercase cursor-pointer"
                     >
-                      SCAN ULANG NFT
+                      RESCAN WALLET NFT
                     </button>
                     {onOpenHouseCatalog && (
                       <button
@@ -943,7 +943,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         }}
                         className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black font-black text-[10px] uppercase cursor-pointer"
                       >
-                        BELI RUMAH DI KATALOG
+                        BUY HOUSE IN CATALOG
                       </button>
                     )}
                   </div>

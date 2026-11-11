@@ -266,11 +266,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         setActiveTab('sesi_chat');
         setHanaTutorialStep(1);
         setNpcFullText(
-          `Halo ${displayCitizen}! Selamat datang di ${locLabel}! Senang sekali sub-wallet ${playerNearAccount || 'kamu'} sudah aktif. Yuk ikuti panduan singkatku (3 langkah) lalu klaim 0.30 NEAR pertamamu langsung dari Smart Contract Treasury Hana!`,
+          `Hello ${displayCitizen}! Welcome to ${locLabel}! Your sub-wallet ${playerNearAccount || 'account'} is active. Follow my quick 3-step guide below, then claim your starter 0.30 NEAR directly from Hana's Smart Contract Treasury!`,
         );
       } else {
         const greeting = !walletConnected
-          ? `Halo Buddy! Kamu sedang berada dalam Mode Guest (Tamu). Kamu bebas jalan-jalan dan melihat katalog kota, namun tab Exchange & pembelian terkunci sebelum kamu registrasi.`
+          ? `Hello Buddy! You are currently in Guest Mode. Feel free to walk around the city and browse the catalog, while the Exchange tab & purchases unlock once you register an account.`
           : merchantLocation === 'beach_house'
             ? `Hello ${displayCitizen}! Welcome to ${locLabel}. You can sell caught fish in the FISH MARKET tab, or open the CATALOG tab to buy Fishing Rods, Reels, Lures, and Tackle!`
             : `Hello ${displayCitizen}! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
@@ -412,11 +412,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             </span>
             <div className="flex flex-col">
               <span className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-wide text-white leading-tight">
-                {isSampleHouseView ? 'RUMAH CONTOH // MODEL ESTATE (VIEW ONLY)' : 'PRIVATE HOUSE // DECORATIVE MODE'}
+                {isSampleHouseView ? 'MODEL HOUSE // SHOWCASE ESTATE (VIEW ONLY)' : 'PRIVATE HOUSE // DECORATIVE MODE'}
               </span>
               <span className="text-[9px] font-bold text-slate-300 hidden md:inline">
                 {isSampleHouseView
-                  ? 'RUMAH CONTOH DAPAT DIKUNJUNGI SIAPAPUN · DISPLAY ARSITEKTUR & PERABOTAN CONTOH (TIDAK BISA DIEDIT)'
+                  ? 'OPEN SHOWCASE HOUSE FOR ALL CITIZENS · ARCHITECTURE & FURNITURE PREVIEW (VIEW ONLY)'
                   : 'DRAG FURNITURE TO PLACE (10CM SNAP) · DRAG FLOOR TO ORBIT CAMERA · SCROLL TO ZOOM'}
               </span>
             </div>
@@ -451,7 +451,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               }}
               className="px-3 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[10px] font-black uppercase tracking-wider cursor-pointer"
             >
-              {isSampleHouseView ? 'EXIT RUMAH CONTOH [ESC]' : 'DONE EDITING [ESC]'}
+              {isSampleHouseView ? 'EXIT SHOWCASE HOUSE [ESC]' : 'DONE EDITING [ESC]'}
             </button>
           </div>
         </header>
@@ -459,10 +459,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         {isSampleHouseView ? (
           <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto bg-[#0d0f12] text-white border-[3px] border-[#38bdf8] shadow-[4px_4px_0_#000] px-5 py-3 z-50 text-center max-w-lg space-y-1">
             <div className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
-              RUMAH CONTOH // MODEL ESTATE (VIEW ONLY)
+              MODEL HOUSE // SHOWCASE ESTATE (VIEW ONLY)
             </div>
             <div className="text-[10px] font-bold text-slate-300">
-              Rumah contoh ini adalah peraga resmi untuk seluruh warga. Tidak ada opsi edit atau dekorasi di rumah contoh. Untuk memiliki dan mendekorasi rumah pribadi Anda, beli Rumah di Kiosk Claim Plot atau Katalog Hana.
+              This showcase residence is open for all citizens to tour. Editing is disabled here. To own and decorate your own Private House, purchase a House Deed at the Plot Kiosk or Hana&apos;s Catalog.
             </div>
           </div>
         ) : (
@@ -534,7 +534,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             <div className="pt-2.5">
               {ownedFurniture.length === 0 ? (
                 <div className="py-4 text-center text-xs font-bold text-slate-600">
-                  BELUM MEMILIKI FURNITUR DI TAS. KUNJUNGI KATALOG MERCHANT HANA UNTUK MEMPEROLEH PERABOTAN RUMAH.
+                  NO FURNITURE IN BAG YET. VISIT MERCHANT HANA&apos;S CATALOG TO ACQUIRE HOUSE FURNITURE.
                 </div>
               ) : (
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -967,7 +967,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   walletConnected &&
                   (isTutorialHanaActive || !hanaWelcomeNearClaimed) ? (
                     <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[9.5px] font-black uppercase">
-                      TUTORIAL WARGA BARU · STEP {hanaTutorialStep}/3
+                      NEW CITIZEN TUTORIAL · STEP {hanaTutorialStep}/3
                     </span>
                   ) : (
                     <span />
@@ -988,13 +988,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               {!walletConnected && onConnectWallet && (
                 <div className="p-3.5 bg-[#1e293b] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000] space-y-2.5">
                   <div className="text-[11px] font-black uppercase text-[#b8ff3c]">
-                    🔒 MODE GUEST AKTIF — AKSES TERBATAS
+                    🔒 GUEST MODE ACTIVE — LIMITED ACCESS
                   </div>
                   <p className="text-[11px] font-bold text-slate-200 leading-relaxed">
-                    Daftar dengan Google (otomatis mendapat sub-wallet{' '}
-                    <span className="text-[#38bdf8] font-mono">*.buddiesblitz.testnet</span> + klaim{' '}
-                    <span className="text-[#b8ff3c]">0.30 NEAR</span> gratis dari Hana) atau hubungkan
-                    NEAR Wallet eksternal untuk membuka tab Exchange &amp; pembelian item.
+                    Sign in with Google (provisions your{' '}
+                    <span className="text-[#38bdf8] font-mono">*.buddiesblitz.testnet</span> sub-wallet
+                    + <span className="text-[#b8ff3c]">0.30 NEAR</span> starter grant from Hana) or
+                    connect an external NEAR Wallet to unlock the Exchange &amp; catalog purchases.
                   </p>
                   <button
                     type="button"
@@ -1005,7 +1005,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     }}
                     className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer active:translate-y-0.5"
                   >
-                    REGISTRASI / CONNECT WALLET SEKARANG &rarr;
+                    REGISTER / CONNECT WALLET NOW &rarr;
                   </button>
                 </div>
               )}
@@ -1021,9 +1021,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {/* Step Indicator Pills */}
                     <div className="grid grid-cols-3 gap-1.5">
                       {[
-                        { step: 1 as const, label: '1. Kota & Zona' },
-                        { step: 2 as const, label: '2. Ekonomi' },
-                        { step: 3 as const, label: '3. Klaim NEAR' },
+                        { step: 1 as const, label: '1. City & Zones' },
+                        { step: 2 as const, label: '2. Economy' },
+                        { step: 3 as const, label: '3. Claim NEAR' },
                       ].map((item) => (
                         <button
                           key={item.step}
@@ -1033,15 +1033,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             setHanaTutorialStep(item.step);
                             if (item.step === 1) {
                               triggerNpcSpeech(
-                                `Langkah 1/3: Central Plaza ini adalah Safezone damai untuk bersosialisasi, naik trem keliling kota, dan memamerkan rumah di kavling. Pertempuran hanya terjadi di dalam arena Mini-Game Warzone melalui Kiosk Teleport!`,
+                                `Step 1/3: Central Plaza is our peaceful Safezone for hanging out, riding the city tram, fishing, and flexing your house plot. Combat only happens inside the Warzone Mini-Game via the Teleport Kiosk!`,
                               );
                             } else if (item.step === 2) {
                               triggerNpcSpeech(
-                                `Langkah 2/3: Ekonomi kita bebas bot! Kumpulkan LUL dari Warzone atau jual ikan biasa ke Kai -> tukar jadi CYON untuk belanja item reguler. Untuk beli Sertifikat Rumah (25 RESPITE), Family Member AI, & NFT eksklusif, gunakan RESPITE dari swap NEAR atau jual Ikan NFT P2P!`,
+                                `Step 2/3: Our economy is 100% P2P & bot-proof! Earn LUL in Warzone or sell regular fish to Kai -> swap LUL to CYON for standard items. For House Deeds, Family Member AI contracts, & exclusive NFTs, use RESPITE from NEAR swaps or P2P Fish NFT sales!`,
                               );
                             } else {
                               triggerNpcSpeech(
-                                `Langkah 3/3: Sebagai warga baru (${playerNearAccount}), aku menyiapkan modal awal 0.30 NEAR langsung dari Smart Contract Treasury Hana (market.buddiesblitz.testnet). Klik tombol CLAIM NEAR di bawah sekarang!`,
+                                `Step 3/3: As a new citizen (${playerNearAccount}), I prepared a 0.30 NEAR starter grant directly from Hana's Smart Contract Treasury (market.buddiesblitz.testnet). Click CLAIM NEAR below!`,
                               );
                             }
                           }}
@@ -1059,10 +1059,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {hanaTutorialStep === 1 && (
                       <div className="space-y-2.5">
                         <div className="p-2.5 bg-black/40 border border-white/15 text-[11px] font-bold text-slate-200 leading-relaxed">
-                          🏙️ <span className="text-[#38bdf8]">Main World (Central Plaza)</span> bebas
-                          tembak-menembak. Kamu bisa naik trem kota, memancing, mendekorasi{' '}
-                          <span className="text-[#b8ff3c]">Private House</span>, dan masuk ke{' '}
-                          <span className="text-[#facc15]">Warzone Arena</span> lewat Kiosk Teleport.
+                          🏙️ <span className="text-[#38bdf8]">Main World (Central Plaza)</span> is
+                          combat-free. Ride the autonomous city tram, fish at the harbor/lake, decorate
+                          your <span className="text-[#b8ff3c]">Private House</span>, and enter the{' '}
+                          <span className="text-[#facc15]">Warzone Arena</span> via the Teleport Kiosk.
                         </div>
                         <button
                           type="button"
@@ -1071,12 +1071,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             setHanaTutorialStep(2);
                             triggerNpcSpeech(
-                              `Langkah 2/3: Ekonomi kita bebas bot! Kumpulkan LUL dari Warzone atau jual ikan biasa ke Kai -> tukar jadi CYON untuk belanja item reguler. Untuk beli Sertifikat Rumah (25 RESPITE), Family Member AI, & NFT eksklusif, gunakan RESPITE dari swap NEAR atau jual Ikan NFT P2P!`,
+                              `Step 2/3: Our economy is 100% P2P & bot-proof! Earn LUL in Warzone or sell regular fish to Kai -> swap LUL to CYON for standard items. For House Deeds, Family Member AI contracts, & exclusive NFTs, use RESPITE from NEAR swaps or P2P Fish NFT sales!`,
                             );
                           }}
                           className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer"
                         >
-                          LANJUT: PAHAMI EKONOMI KOTA (1/3) &rarr;
+                          NEXT: LEARN CITY ECONOMY (1/3) &rarr;
                         </button>
                       </div>
                     )}
@@ -1085,13 +1085,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       <div className="space-y-2.5">
                         <div className="p-2.5 bg-black/40 border border-white/15 text-[11px] font-bold text-slate-200 space-y-1 leading-relaxed">
                           <div>
-                            🟡 <span className="text-[#facc15]">LUL &rarr; CYON</span>: Mata uang in-game
-                            untuk furnitur dasar &amp; perlengkapan reguler.
+                            🟡 <span className="text-[#facc15]">LUL &rarr; CYON</span>: Soft currency
+                            for basic furniture &amp; regular fishing/lifestyle gear.
                           </div>
                           <div>
-                            🟣 <span className="text-[#d8b4fe]">NEAR &rarr; RESPITE</span>: Token on-chain
-                            (`1 NEAR = 100 RESPITE`) untuk beli Rumah (`25 RESPITE`), Family Member AI, &amp;
-                            perdagangan Ikan NFT P2P!
+                            🟣 <span className="text-[#d8b4fe]">NEAR &rarr; RESPITE</span>: On-chain
+                            token (`1 NEAR = 100 RESPITE`) for House Deeds, Family Member AI contracts,
+                            &amp; P2P Fish NFT trading!
                           </div>
                         </div>
                         <button
@@ -1101,12 +1101,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             setHanaTutorialStep(3);
                             triggerNpcSpeech(
-                              `Langkah 3/3: Sebagai warga baru (${playerNearAccount}), aku menyiapkan modal awal 0.30 NEAR langsung dari Smart Contract Treasury Hana (market.buddiesblitz.testnet). Klik tombol CLAIM NEAR di bawah sekarang!`,
+                              `Step 3/3: As a new citizen (${playerNearAccount}), I prepared a 0.30 NEAR starter grant directly from Hana's Smart Contract Treasury (market.buddiesblitz.testnet). Click CLAIM NEAR below!`,
                             );
                           }}
                           className="w-full py-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer"
                         >
-                          LANJUT: AMBIL MODAL NEAR DARI HANA (2/3) &rarr;
+                          NEXT: CLAIM STARTER NEAR GRANT (2/3) &rarr;
                         </button>
                       </div>
                     )}
@@ -1123,9 +1123,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             </span>
                           </div>
                           <div className="text-slate-300 text-[10.5px]">
-                            Hadiah Warga Baru: <strong className="text-white">+0.30 NEAR</strong> (cukup
-                            untuk swap <strong className="text-[#d8b4fe]">25 RESPITE</strong> beli Rumah +
-                            biaya gas transaksi!).
+                            Citizen Welcome Grant: <strong className="text-white">+0.30 NEAR</strong>{' '}
+                            (funded on-chain from Hana&apos;s Treasury for gas &amp; your first{' '}
+                            <strong className="text-[#d8b4fe]">NEAR &rarr; RESPITE</strong> swaps!).
                           </div>
                         </div>
 
@@ -1151,7 +1151,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   if (res.ok) {
                                     soundEngine.playPickup();
                                     triggerNpcSpeech(
-                                      `Berhasil! +${res.amountNear.toFixed(2)} NEAR dari Treasury Smart Contract Hana sudah masuk ke wallet ${playerNearAccount}! Silakan eksplorasi kota — ikuti jalur panah biru bercahaya menuju Kiosk Teleport untuk mengenal semua portal!`,
+                                      `Awesome! +${res.amountNear.toFixed(2)} NEAR from Hana's Smart Contract Treasury has arrived in ${playerNearAccount}! Feel free to explore — follow the glowing blue path to the Teleport Kiosk to see every portal!`,
                                     );
                                   } else {
                                     soundEngine.playHit();
@@ -1167,14 +1167,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               }`}
                             >
                               {isClaimingHanaNear
-                                ? 'MENGIRIM 0.30 NEAR DARI TREASURY HANA...'
-                                : '🎁 CLAIM 0.30 NEAR (TREASURY HANA)'}
+                                ? 'CLAIMING 0.30 NEAR FROM HANA TREASURY...'
+                                : '🎁 CLAIM 0.30 NEAR (HANA TREASURY)'}
                             </button>
                           </>
                         ) : (
                           <div className="space-y-2.5">
                             <div className="p-2.5 bg-emerald-950/80 border-2 border-emerald-400 text-[11px] font-bold text-emerald-200 flex items-center justify-between gap-2 flex-wrap">
-                              <span>✅ +0.30 NEAR Starter Grant Terklaim!</span>
+                              <span>✅ +0.30 NEAR Starter Grant Claimed!</span>
                               {hanaClaimResult?.txHash && (
                                 <a
                                   href={
@@ -1200,7 +1200,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 }}
                                 className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
                               >
-                                SELESAI &amp; IKUTI JALUR KE KIOSK TELEPORT &rarr;
+                                FINISH &amp; FOLLOW PATH TO TELEPORT KIOSK &rarr;
                               </button>
                             )}
                           </div>
