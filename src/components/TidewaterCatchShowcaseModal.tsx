@@ -788,6 +788,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
             data-tidewater-minigame-hud="true"
             onPointerDown={() => onSetHoldingReel(true)}
             onPointerUp={() => onSetHoldingReel(false)}
+            onPointerCancel={() => onSetHoldingReel(false)}
             onPointerLeave={() => onSetHoldingReel(false)}
             style={{
               background:
@@ -921,6 +922,11 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                 }
               }}
               onPointerLeave={() => {
+                if (fishingPhase === 'fighting') {
+                  onSetHoldingReel(false);
+                }
+              }}
+              onPointerCancel={() => {
                 if (fishingPhase === 'fighting') {
                   onSetHoldingReel(false);
                 }

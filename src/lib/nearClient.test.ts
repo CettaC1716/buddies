@@ -26,7 +26,12 @@ import {
   createInitialNearGamepassSessionState,
   syncNearWalletSessionOwnership,
 } from '../game/buddiesBlitzRules';
-import { FISH_SPECIES_CATALOG } from '../game/buddiesFishingMarket';
+import {
+  FISH_SPECIES_CATALOG,
+  createTidewaterBiteSchedule,
+  createTidewaterMinigameState,
+  stepTidewaterMinigame,
+} from '../game/buddiesFishingMarket';
 import { buildTidewaterProceduralFishGroup } from '../components/TidewaterCatchShowcaseModal';
 
 test('resolveNearRpcUrl routes .testnet and .near accounts to matching NEAR JSON-RPC endpoints', () => {
@@ -511,4 +516,58 @@ test('fetchOwnedFishNftsFromChain parses owned Fish NFTs from chain and excludes
     model.updateSwimAnimation(0.5);
     model.dispose();
   }
+});
+
+test('Tidewater fishing enforces realistic calm-float + nibble wait and multi-second surge reeling fight to shore', () => {
+  // 1. Pre-bite pacing is never instant: >= 2.8s calm float + 2..4 spaced nibbles (>= 1.2s each)
+  for (const rVal of [0.0, 0.45, 0.99]) {
+    const sched = createTidewaterBiteSchedule({
+      waterZone: 'east_beach',
+      castPower: 0.75,
+      rng: () => rVal,
+    });
+    assert.ok(sched.initialWaitSec >= 2.8 && sched.initialWaitSec <= 5.4);
+    assert.ok(sched.nibbleIntervalSec >= 1.2 && sched.nibbleIntervalSec <= 1.7);
+    assert.ok(sched.nibblesTotal >= 2 && sched.nibblesTotal <= 4);
+    const totalPreBiteSec = Number(
+      (sched.initialWaitSec + sched.nibblesTotal * sched.nibbleIntervalSec).toFixed(2),
+    );
+    assert.ok(
+      totalPreBiteSec >= 5.2,
+      `Expected >= 5.2s pre-bite wait, got ${totalPreBiteSec.toFixed(2)}s`,
+    );
+  }
+
+  // 2. Fight minigame never catches in < 4s, snaps if blindly reeling through heavy surges, and lands when reeled to <= 1.6m
+  const strongSpecies =
+    FISH_SPECIES_CATALOG.find((s) => s.fightStrength >= 0.8) ?? FISH_SPECIES_CATALOG[0];
+  let blindState = createTidewaterMinigameState(strongSpecies, 0.8);
+  let blindElapsedSec = 0;
+  while (blindState.status === 'active' && blindElapsedSec < 25) {
+    blindState = stepTidewaterMinigame(blindState, 0.05, true, () => 0.8);
+    blindElapsedSec += 0.05;
+    if (blindElapsedSec < 4.0) {
+      assert.notEqual(blindState.status, 'caught', 'Fish must not be caught in under 4 seconds');
+    }
+  }
+  assert.equal(
+    blindState.status,
+    'snapped',
+    'Blindly reeling a strong fish through surges should overload and snap the line',
+  );
+
+  // Smart angler eases off when surging/high tension and reels when safe -> lands at shore (distanceM <= 1.6) after real fight
+  let smartState = createTidewaterMinigameState(strongSpecies, 0.7);
+  let smartElapsedSec = 0;
+  while (smartState.status === 'active' && smartElapsedSec < 30) {
+    const shouldReel = !smartState.isSurging && smartState.tension < 0.82;
+    smartState = stepTidewaterMinigame(smartState, 0.05, shouldReel, () => 0.5);
+    smartElapsedSec += 0.05;
+  }
+  assert.equal(smartState.status, 'caught');
+  assert.ok(smartState.distanceM <= 1.6);
+  assert.ok(
+    smartElapsedSec >= 5.0,
+    `Expected realistic >= 5.0s fight duration, got ${smartElapsedSec.toFixed(2)}s`,
+  );
 });

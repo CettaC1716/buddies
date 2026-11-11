@@ -7104,6 +7104,15 @@ export interface RobloxBuddyRig {
   bazookaFrontFlash: THREE.Group;
   bazookaBackblastGroup: THREE.Group;
   customGlbController?: CharBuddiesGlbRigController;
+  fishingPoseState?: {
+    phase: 'idle' | 'charging' | 'casting' | 'nibble' | 'bite' | 'fighting';
+    isReeling: boolean;
+    isSurging: boolean;
+    tension: number;
+    rodBend: number;
+    reelAngle: number;
+    castPower: number;
+  };
   bodyGroupRef?: THREE.Group;
   teamRef?: 'blue' | 'red';
   isSeatedRiderRef?: boolean;
@@ -7173,10 +7182,10 @@ export function buildProceduralFishingRod(addPart: AddWeaponPartFn): THREE.Group
     addPart(rodFlexPivot, new THREE.TorusGeometry(rGuide, 0.004, 6, 12), '#cbd5e1', [0, -0.020, gzLocal], [0, 0, 0], [1, 1, 1], 0);
   }
 
-  // Hanging Fishing Line & Classic Red/White Bobber Float at Tip (`z = 1.32` inside `rodFlexPivot` = `2.48` total)
-  const hangingLineMesh = addPart(rodFlexPivot, new THREE.CylinderGeometry(0.0025, 0.0025, 0.78, 6), '#e2e8f0', [0, -0.40, 1.32], [0, 0, 0], [1, 1, 1], 0);
-  const hangingBobberRedMesh = addPart(rodFlexPivot, new THREE.SphereGeometry(0.048, 10, 10), '#ef4444', [0, -0.76, 1.32], [0, 0, 0], [1, 1, 1.15], 0.008);
-  const hangingBobberWhiteMesh = addPart(rodFlexPivot, new THREE.SphereGeometry(0.046, 10, 10), '#ffffff', [0, -0.81, 1.32], [0, 0, 0], [1, 1, 1], 0.008);
+  // Hanging Fishing Line & Sleek Miniature Red/White Float at Tip (`z = 1.32` inside `rodFlexPivot` = `2.48` total)
+  const hangingLineMesh = addPart(rodFlexPivot, new THREE.CylinderGeometry(0.0018, 0.0018, 0.56, 6), '#e2e8f0', [0, -0.29, 1.32], [0, 0, 0], [1, 1, 1], 0);
+  const hangingBobberRedMesh = addPart(rodFlexPivot, new THREE.SphereGeometry(0.022, 10, 10), '#ef4444', [0, -0.56, 1.32], [0, 0, 0], [1, 1.25, 1], 0.005);
+  const hangingBobberWhiteMesh = addPart(rodFlexPivot, new THREE.SphereGeometry(0.021, 10, 10), '#ffffff', [0, -0.585, 1.32], [0, 0, 0], [1, 1.15, 1], 0.005);
 
   const rodTipAnchor = new THREE.Object3D();
   rodTipAnchor.position.set(0, -0.02, 1.32);
@@ -7623,21 +7632,36 @@ export function populateFishingRodFromGlb(
     }
   }
 
-  // Align the cork grip above the spinning reel stem (`Object001`) to `[0, 0, 0]` and the shaft to `+Z`
+  // Align the cork grip above the spinning reel stem (`Object001`) to `[0, 0, 0]`, shaft to `+Z`,
+  // and roll +90 deg around +Z so the spinning reel, guide rings, and internal nylon (`Thread_RodThread_0`)
+  // hang straight DOWNWARD (`-Y`) and `Bone002..Bone010` flex downward toward the water!
   const ROD_GLB_SCALE = 0.36;
   rodGlbRoot.scale.setScalar(ROD_GLB_SCALE);
-  rodGlbRoot.rotation.set(0, Math.PI / 2, 0);
-  rodGlbRoot.position.set(0, -0.265 * ROD_GLB_SCALE, 0.12 * ROD_GLB_SCALE);
+  const qRodYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const qRodRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+  rodGlbRoot.quaternion.copy(qRodRoll).multiply(qRodYaw);
+  rodGlbRoot.position.set(0, 0, 0);
+  rodGlbRoot.updateMatrixWorld(true);
+  const bone02Ref = rodGlbRoot.getObjectByName('Bone002_01');
+  if (bone02Ref) {
+    const pGrip = new THREE.Vector3();
+    bone02Ref.getWorldPosition(pGrip);
+    rodGlbRoot.position.set(-pGrip.x, -pGrip.y, 0.12 * ROD_GLB_SCALE);
+  } else {
+    rodGlbRoot.position.set(0, 0.0954, 0.12 * ROD_GLB_SCALE);
+  }
 
-  // Attach only an invisible `rodTipAnchor` Object3D to `Bone010_09` (do NOT attach procedural rod parts!)
+  // Attach `rodTipAnchor` to `Bone010_09` at the exact front guide eyelet `(2.84, -7.0, 0)` where `Thread_RodThread_0` ends!
   const tipAnchor = new THREE.Object3D();
   tipAnchor.name = 'FishingRodGlbTipAnchor';
   const rodFlexPivot = new THREE.Group();
 
   const bone10 = rodGlbRoot.getObjectByName('Bone010_09');
   if (bone10) {
+    tipAnchor.position.set(2.84, -7.0, 0);
     bone10.add(tipAnchor);
   } else {
+    tipAnchor.position.set(0, -0.025, 2.33);
     rodGlbRoot.add(tipAnchor);
   }
 
@@ -9368,8 +9392,12 @@ const _palmPinky3Local = new THREE.Vector3();
 const _palmFwdVec = new THREE.Vector3();
 const _palmAcrossVec = new THREE.Vector3();
 const _palmNormalVec = new THREE.Vector3();
-const _rodLocalForwardZ = new THREE.Vector3(0, 0, 1);
 const _rodTargetDir = new THREE.Vector3();
+const _rodFightAimDir = new THREE.Vector3();
+const _rodUpRef = new THREE.Vector3(0, 1, 0);
+const _rodRightAxis = new THREE.Vector3();
+const _rodTrueUpAxis = new THREE.Vector3();
+const _rodBasisMat = new THREE.Matrix4();
 const _ikJointWorldPos = new THREE.Vector3();
 const _ikPalmWorldPos = new THREE.Vector3();
 const _ikWristWorldPos = new THREE.Vector3();
@@ -10613,10 +10641,20 @@ function stepCharBuddiesGlbRigController(
   fadeToCharBuddiesAction(ctrl, targetClip, 0.14, timeScale);
   const clipChanged = ctrl.activeClipName !== prevClipName;
 
+  const isActiveFishingAction =
+    weaponId === 'fishing_rod' &&
+    Boolean(rig.fishingPoseState && rig.fishingPoseState.phase !== 'idle');
   const minStepInterval =
-    isMoving || ctrl.turnInPlaceTimer > 0 || jumpOffset > 0.05 ? 0.014 : 0.028;
+    isMoving || ctrl.turnInPlaceTimer > 0 || jumpOffset > 0.05 || isActiveFishingAction
+      ? 0.014
+      : 0.028;
   const shouldStepMixer =
-    clipChanged || rawDt >= minStepInterval || recoilAmount > 0.02 || punchTimer > 0 || kickTimer > 0;
+    clipChanged ||
+    rawDt >= minStepInterval ||
+    recoilAmount > 0.02 ||
+    punchTimer > 0 ||
+    kickTimer > 0 ||
+    isActiveFishingAction;
   if (shouldStepMixer && rawDt >= 0.002) {
     ctrl.lastStepTimeMs = nowMs;
     ctrl.mixer.update(stepDt);
@@ -10638,6 +10676,47 @@ function stepCharBuddiesGlbRigController(
       ? Math.max(-0.055, Math.min(0.055, -strafeDir * 0.038 + yawRateRad * 0.008))
       : 0;
     stabilizeCharBuddiesUprightPosture(ctrl.bones, ctrl.bindQuats, bankLeanRad);
+
+    // 2C. Dynamic Angler Torso & Arm Bracing / Pumping Animation when Charging, Striking, or Pulling a Fish
+    if (!isMoving && !carryingCrate && weaponId === 'fishing_rod' && rig.fishingPoseState) {
+      const fp = rig.fishingPoseState;
+      let spineBackLean = 0;
+      let spineSideTwist = 0;
+      let rightArmLift = 0;
+      if (fp.phase === 'charging') {
+        spineBackLean = -0.18 * fp.castPower;
+        rightArmLift = -0.32 * fp.castPower;
+      } else if (fp.phase === 'bite') {
+        spineBackLean = -0.16;
+        rightArmLift = -0.22;
+      } else if (fp.phase === 'fighting') {
+        const pumpWave = fp.isReeling ? Math.sin(fp.reelAngle * 0.32) : Math.sin(nowMs * 0.0035) * 0.35;
+        const surgeTug = fp.isSurging ? Math.sin(nowMs * 0.028) * 0.045 + 0.08 : 0;
+        spineBackLean = -0.14 - fp.tension * 0.14 - Math.max(0, pumpWave) * 0.09 + surgeTug;
+        spineSideTwist = fp.isReeling ? Math.cos(fp.reelAngle * 0.32) * 0.05 : 0;
+        rightArmLift = -0.22 - Math.max(0, pumpWave) * 0.16 + surgeTug * 0.8;
+      }
+      if (Math.abs(spineBackLean) > 0.004 || Math.abs(rightArmLift) > 0.004) {
+        const spine1 = ctrl.bones.get('Spine1');
+        const spine2 = ctrl.bones.get('Spine2');
+        const rArm = ctrl.bones.get('RightArm');
+        if (spine1) {
+          _recoilEuler.set(spineBackLean * 0.55, spineSideTwist * 0.5, 0);
+          _recoilDeltaQuat.setFromEuler(_recoilEuler);
+          spine1.quaternion.multiply(_recoilDeltaQuat);
+        }
+        if (spine2) {
+          _recoilEuler.set(spineBackLean * 0.55, spineSideTwist * 0.5, 0);
+          _recoilDeltaQuat.setFromEuler(_recoilEuler);
+          spine2.quaternion.multiply(_recoilDeltaQuat);
+        }
+        if (rArm && Math.abs(rightArmLift) > 0.004) {
+          _recoilEuler.set(rightArmLift, 0, 0);
+          _recoilDeltaQuat.setFromEuler(_recoilEuler);
+          rArm.quaternion.multiply(_recoilDeltaQuat);
+        }
+      }
+    }
   }
 
   // 3. Apply Upper-Body / Limb Overrides on top of the evaluated skeletal pose
@@ -10777,9 +10856,41 @@ function stepCharBuddiesGlbRigController(
             }
           }
         } else if (weaponId === 'fishing_rod') {
-          // 5A. PURE MIXAMO FISHING ANIMATION (`fishing_idle.001` & `fishing_cast.001` WITH 30 NATIVE FINGER TRACKS):
-          // Do not force any arm/elbow IK — let the Mixamo animation drive shoulders, elbows, wrists, and all 30 finger
-          // joints natively while `sampleMixamoHandPalmLocal` reads the exact tunnel center and axis inside the curled right hand!
+          // 5A. FISHING ANIMATION + TWO-HANDED FIGHTING & SPINNING-REEL CRANKING IK:
+          // In calm idle/cast, let Mixamo's 30 native finger tracks drive both hands naturally.
+          // During 'fighting' / 'bite', place Left Hand on the spinning reel crank handle (circular cranking motion
+          // when `isReeling` is active!) or bracing the lower cork butt when holding against a fish surge!
+          const fp = rig.fishingPoseState;
+          if (fp && (fp.phase === 'fighting' || fp.phase === 'bite')) {
+            if (fp.phase === 'fighting' && fp.isReeling) {
+              const crankRadius = 0.046;
+              const crankTargetX = ctrl.rightHandLocalPos.x + 0.068;
+              const crankTargetY =
+                ctrl.rightHandLocalPos.y - 0.155 + Math.sin(fp.reelAngle) * crankRadius;
+              const crankTargetZ =
+                ctrl.rightHandLocalPos.z + 0.025 + Math.cos(fp.reelAngle) * crankRadius;
+              solveTwoBoneArmPalmIkLocal(
+                ctrl,
+                bodyGroup,
+                false,
+                crankTargetX,
+                crankTargetY,
+                crankTargetZ,
+                0.88,
+              );
+            } else {
+              solveTwoBoneArmPalmIkLocal(
+                ctrl,
+                bodyGroup,
+                false,
+                ctrl.rightHandLocalPos.x + 0.02,
+                ctrl.rightHandLocalPos.y - 0.11,
+                ctrl.rightHandLocalPos.z - 0.13,
+                0.82,
+              );
+            }
+            sampleMixamoHandPalmLocal(ctrl, bodyGroup, false, ctrl.leftHandLocalPos);
+          }
         } else if (weaponId === 'pistol') {
           // 5B. TWO-HANDED TACTICAL PISTOL CUP GRIP:
           // Bring Left Palm directly against/underneath Right Palm on the pistol grip
@@ -10994,9 +11105,10 @@ export function updateCharacterWeaponStance(
     hasHandBones && glbCtrl ? (glbCtrl.rightHandLocalPos.x + glbCtrl.leftHandLocalPos.x) * 0.5 : -0.12;
 
   if (weaponId === 'fishing_rod') {
-    // 0C. 3D JORAN PANCING / FISHING ROD STANCE (`fishing_idle.001` & `fishing_cast.001`)
-    // Origin [0, 0, 0] of `fishingRodGroup` sits directly inside the Right-Hand Curled Finger Tunnel (`rightHandLocalPos`),
-    // and its +Z shaft axis aligns 100% with the animated finger cylinder axis (`rightHandGripAxisLocal`).
+    // 0C. 3D JORAN PANCING / FISHING ROD STANCE (`fishing_idle.001`, `fishing_cast.001`, & Active Fish Fighting)
+    // Origin [0, 0, 0] sits inside the Right-Hand Curled Finger Tunnel (`rightHandLocalPos`), and we build a
+    // gravity-upright orthonormal basis (`makeBasis`) so the spinning reel & guide rings ALWAYS hang downward (-Y)!
+    const fp = rig.fishingPoseState;
     const castPitch = r * 0.55;
     rig.weaponRigGroup.position.set(
       hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : -0.06,
@@ -11008,9 +11120,45 @@ export function updateCharacterWeaponStance(
       if (_rodTargetDir.lengthSq() > 1e-6) {
         _rodTargetDir.normalize();
       } else {
-        _rodTargetDir.set(0, 0.72, 0.69);
+        _rodTargetDir.set(0, 0.68, 0.73);
       }
-      rig.weaponRigGroup.quaternion.setFromUnitVectors(_rodLocalForwardZ, _rodTargetDir);
+      // Prevent downward/inverted grip axis during transitions
+      if (_rodTargetDir.z < 0.15 && (!fp || fp.phase !== 'charging')) {
+        _rodTargetDir.z = 0.45;
+        _rodTargetDir.normalize();
+      }
+      if (fp) {
+        if (fp.phase === 'charging') {
+          _rodFightAimDir.set(0, Math.min(0.96, 0.68 + fp.castPower * 0.26), 0.72 - fp.castPower * 0.35).normalize();
+          _rodTargetDir.lerp(_rodFightAimDir, 0.75).normalize();
+        } else if (fp.phase === 'bite') {
+          _rodFightAimDir.set(0, 0.80, 0.60).normalize();
+          _rodTargetDir.lerp(_rodFightAimDir, 0.82).normalize();
+        } else if (fp.phase === 'fighting') {
+          const pumpLift = fp.isReeling ? Math.sin(fp.reelAngle * 0.32) * 0.11 : 0;
+          const surgeDip = fp.isSurging ? 0.13 : 0;
+          _rodFightAimDir
+            .set(
+              0,
+              Math.max(0.35, Math.min(0.88, 0.68 + pumpLift - surgeDip)),
+              0.73,
+            )
+            .normalize();
+          _rodTargetDir.lerp(_rodFightAimDir, 0.85).normalize();
+        } else if (fp.phase === 'casting' || fp.phase === 'nibble') {
+          _rodFightAimDir.set(0, 0.56, 0.83).normalize();
+          _rodTargetDir.lerp(_rodFightAimDir, 0.65).normalize();
+        }
+      }
+      _rodRightAxis.crossVectors(_rodUpRef, _rodTargetDir);
+      if (_rodRightAxis.lengthSq() < 1e-5) {
+        _rodRightAxis.set(1, 0, 0);
+      } else {
+        _rodRightAxis.normalize();
+      }
+      _rodTrueUpAxis.crossVectors(_rodTargetDir, _rodRightAxis).normalize();
+      _rodBasisMat.makeBasis(_rodRightAxis, _rodTrueUpAxis, _rodTargetDir);
+      rig.weaponRigGroup.quaternion.setFromRotationMatrix(_rodBasisMat);
     } else {
       rig.weaponRigGroup.rotation.set(-0.82 - castPitch, 0, 0);
     }

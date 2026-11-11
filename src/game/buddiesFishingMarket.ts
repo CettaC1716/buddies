@@ -594,6 +594,10 @@ export interface TidewaterBiteSchedule {
   species: FishSpeciesSpec;
   castPower: number;
   castDistanceM: number;
+  /** Calm floating wait on water (seconds) after bobber splashdown before first nibble */
+  initialWaitSec: number;
+  /** Interval (seconds) between preliminary bobber nibbles */
+  nibbleIntervalSec: number;
   nibblesTotal: number;
   nibblesDone: number;
   strikeWindowSec: number;
@@ -613,13 +617,17 @@ export function createTidewaterBiteSchedule(params: {
     castPower,
     rng: rand,
   });
-  const nibblesTotal = 1 + Math.floor(rand() * 2); // 1..2 preliminary nibbles
-  const strikeWindowSec = Number((2.5 - species.fightStrength * 0.55).toFixed(2));
-  const castDistanceM = Number((8.0 + castPower * 20.0).toFixed(1));
+  const initialWaitSec = Number((2.8 + rand() * 2.6).toFixed(2)); // 2.8s..5.4s calm float after splashdown
+  const nibbleIntervalSec = Number((1.2 + rand() * 0.5).toFixed(2)); // 1.2s..1.7s per nibble
+  const nibblesTotal = 2 + Math.floor(rand() * 3); // 2..4 preliminary nibbles before real bite
+  const strikeWindowSec = Number((2.6 - species.fightStrength * 0.45).toFixed(2));
+  const castDistanceM = Number((9.5 + castPower * 16.5).toFixed(1));
   return {
     species,
     castPower,
     castDistanceM,
+    initialWaitSec,
+    nibbleIntervalSec,
     nibblesTotal,
     nibblesDone: 0,
     strikeWindowSec,
@@ -629,7 +637,7 @@ export function createTidewaterBiteSchedule(params: {
 export interface TidewaterMinigameState {
   species: FishSpeciesSpec;
   castPower: number;
-  /** Remaining line distance to land the fish (`0` = landed!) */
+  /** Remaining line distance to land the fish (`<= 1.6` = landed at shore!) */
   distanceM: number;
   initialDistanceM: number;
   maxDistanceM: number;
@@ -645,9 +653,9 @@ export interface TidewaterMinigameState {
   surgeIntensity: number;
   timeToNextSurgeSec: number;
   surgeRemainingSec: number;
-  /** Cumulative seconds spent above `tension > 1.0` (`>= 0.65s` snaps the line) */
+  /** Cumulative seconds spent above `tension > 1.0` (`>= 0.85s` snaps the line) */
   overloadSec: number;
-  /** Cumulative seconds spent below `tension < 0.10` (`>= 4.5s` throws the hook) */
+  /** Cumulative seconds spent below `tension < 0.10` (`>= 5.5s` throws the hook) */
   slackSec: number;
   /** Progressive rod blank bend (`0..1`) for 3D vertex/rig animation */
   rodBend: number;
@@ -661,24 +669,24 @@ export function createTidewaterMinigameState(
   species: FishSpeciesSpec,
   castPower = 0.7,
 ): TidewaterMinigameState {
-  const initialDistanceM = Number((8.0 + castPower * 8.5).toFixed(1));
+  const initialDistanceM = Number((10.5 + castPower * 11.5).toFixed(1));
   const fight = species.fightStrength;
   return {
     species,
     castPower,
     distanceM: initialDistanceM,
     initialDistanceM,
-    maxDistanceM: Number((initialDistanceM + 25.0).toFixed(1)),
-    tension: 0.38,
+    maxDistanceM: Number((initialDistanceM + 22.0).toFixed(1)),
+    tension: 0.42,
     greenBand: [0.30, 0.85],
     stamina: 1.0,
     isSurging: false,
     surgeIntensity: 0,
-    timeToNextSurgeSec: 1.5 + (1 - fight) * 1.4,
+    timeToNextSurgeSec: 1.15 + (1 - fight) * 1.1,
     surgeRemainingSec: 0,
     overloadSec: 0,
     slackSec: 0,
-    rodBend: 0.32,
+    rodBend: 0.38,
     reelAngle: 0,
     status: 'active',
     statusReason: null,
@@ -687,7 +695,7 @@ export function createTidewaterMinigameState(
 
 /**
  * Advances the Tidewater Line-Tension + Stamina + Surge fight minigame by `dt` seconds.
- * Directly adapts `CatchMinigame.update(dt, reeling)` from Tidewater (`CatchMinigame.js`).
+ * Requires reeling the fish all the way into shore (`distanceM <= 1.6m`) while managing surges.
  */
 export function stepTidewaterMinigame(
   state: TidewaterMinigameState,
@@ -700,76 +708,76 @@ export function stepTidewaterMinigame(
   const fight = state.species.fightStrength;
   const tired = 1 - state.stamina;
 
-  // 1. Update periodic fish surges (runs), rarer and weaker as the fish tires (CatchMinigame.js lines 46-56)
+  // 1. Periodic fish surges (runs), weaker and rarer as stamina drops toward 0
   let timeToNextSurgeSec = state.timeToNextSurgeSec - clampedDt;
   let surgeRemainingSec = state.surgeRemainingSec;
-  if (timeToNextSurgeSec <= 0 && surgeRemainingSec <= 0) {
-    surgeRemainingSec = (0.75 + randRange(rng, 0, 0.85)) * (1 - tired * 0.6);
-    timeToNextSurgeSec = (2.2 + randRange(rng, 0, 2.4)) * (1 + tired);
+  if (state.stamina > 0.08 && timeToNextSurgeSec <= 0 && surgeRemainingSec <= 0) {
+    surgeRemainingSec = (0.9 + randRange(rng, 0, 0.95)) * (1 - tired * 0.55);
+    timeToNextSurgeSec = (1.9 + randRange(rng, 0, 2.1)) * (1 + tired * 0.85);
   }
   if (surgeRemainingSec > 0) {
     surgeRemainingSec = Math.max(0, surgeRemainingSec - clampedDt);
   }
-  const targetSurge = surgeRemainingSec > 0 ? 1 : 0;
+  const targetSurge = surgeRemainingSec > 0 && state.stamina > 0.05 ? 1 : 0;
   const surgeIntensity =
     state.surgeIntensity +
     (targetSurge - state.surgeIntensity) * (1 - Math.exp(-clampedDt * 6.0));
-  const isSurging = surgeIntensity > 0.45;
+  const isSurging = surgeIntensity > 0.42;
 
-  // 2. Fish pull and exponential tension relaxation (CatchMinigame.js lines 59-62)
-  // When not surging, holding Reel settles tension smoothly inside the Green Band [0.30, 0.85]!
-  // Only during a surge does holding Reel push tension > 1.0.
-  const power = 0.56 + fight * 0.52;
-  const pull = power * (0.35 + 0.65 * surgeIntensity) * (1 - 0.65 * tired);
-  const targetTension = isReeling ? 0.46 + pull * 0.88 : Math.max(0.22, pull * 0.72);
-  const rate = isReeling ? 2.2 : 3.0;
+  // 2. Fish pull and exponential tension relaxation
+  const power = 0.54 + fight * 0.54;
+  const pull = power * (0.34 + 0.66 * surgeIntensity) * (1 - 0.62 * tired);
+  const targetTension = isReeling ? 0.48 + pull * 0.86 : Math.max(0.20, pull * 0.68);
+  const rate = isReeling ? 2.4 : 3.2;
   const tension = Math.max(
     0,
     Math.min(1.18, state.tension + (targetTension - state.tension) * (1 - Math.exp(-clampedDt * rate))),
   );
 
-  // 3. Stamina drains 3.3x faster inside the Green Band [0.30, 0.85] (CatchMinigame.js lines 70-71)
+  // 3. Stamina drains faster inside the Green Band [0.30, 0.85] over ~7.5s..15s
   const [bandLow, bandHigh] = state.greenBand;
   const inGreenBand = tension >= bandLow && tension <= bandHigh;
-  const staminaMaxSec = 3.2 + fight * 5.0;
+  const staminaMaxSec = 6.5 + fight * 9.0;
   const stamina = Math.max(
     0,
-    state.stamina - (clampedDt / staminaMaxSec) * (inGreenBand ? 1.0 : 0.3),
+    state.stamina - (clampedDt / staminaMaxSec) * (inGreenBand ? 1.0 : 0.32),
   );
 
-  // 4. Line in / out (CatchMinigame.js lines 65-67)
-  const reelSpeedMps = 3.6;
+  // 4. Line in / out: fresh fish resists strongly; tired fish reels smoothly to shore
+  const effectiveReelSpeedMps = 1.55 + tired * 2.25;
+  const surgeResistance = 1.0 - 0.72 * surgeIntensity * (1 - tired * 0.65);
   const distanceDelta = isReeling
-    ? -reelSpeedMps * clampedDt * (1.15 - 0.55 * surgeIntensity * (1 - tired))
-    : pull * 1.15 * clampedDt;
+    ? -effectiveReelSpeedMps * clampedDt * Math.max(0.18, surgeResistance)
+    : pull * 1.25 * clampedDt;
   const distanceM = Math.max(0, state.distanceM + distanceDelta);
 
-  // 5. Overload & Slack outcomes (CatchMinigame.js lines 74-82)
+  // 5. Overload & Slack outcomes
   const overloadSec =
     tension > 1.0
       ? state.overloadSec + clampedDt
-      : Math.max(0, state.overloadSec - clampedDt * 2.0);
+      : Math.max(0, state.overloadSec - clampedDt * 1.8);
   const slackSec =
     tension < 0.12
       ? state.slackSec + clampedDt
       : Math.max(0, state.slackSec - clampedDt * 2.0);
 
   // 6. Progressive rod bend & spinning reel crank rotation
-  const targetBend = Math.min(1, tension * 0.78 + surgeIntensity * 0.28);
+  const reelPumpWave = isReeling ? Math.sin(state.reelAngle * 0.5) * 0.08 : 0;
+  const targetBend = Math.min(1, tension * 0.76 + surgeIntensity * 0.30 + reelPumpWave);
   const rodBend = state.rodBend + (targetBend - state.rodBend) * Math.min(1, clampedDt * 10);
-  const reelAngle = state.reelAngle + (isReeling ? 15.0 : 1.5) * clampedDt;
+  const reelAngle = state.reelAngle + (isReeling ? 14.0 : 1.1) * clampedDt;
 
   let status: TidewaterMinigameState['status'] = 'active';
   let statusReason: string | null = null;
-  if (distanceM < 1.2 || stamina <= 0.02) {
+  if (distanceM <= 1.6) {
     status = 'caught';
     statusReason = null;
-  } else if (overloadSec > 0.65) {
+  } else if (overloadSec > 0.85) {
     status = 'snapped';
-    statusReason = 'Line snapped · ease tension when fish surges';
-  } else if (slackSec > 5.0 || distanceM > state.maxDistanceM) {
+    statusReason = 'Line snapped. Ease off when the fish pulls hard.';
+  } else if (slackSec > 5.5 || distanceM > state.maxDistanceM) {
     status = 'escaped';
-    statusReason = 'Fish escaped due to slack line';
+    statusReason = 'Fish escaped due to slack line.';
   }
 
   return {

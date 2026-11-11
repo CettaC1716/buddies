@@ -11092,7 +11092,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     // =========================================================================
-    // 11B. TIDEWATER 3D BOBBER, 48-SEGMENT CATENARY LINE & WATER RIPPLE RING
+    // 11B. TIDEWATER SLEEK MINIATURE FLOAT, 48-SEG NYLON LINE & 3D LANDING FISH
     // =========================================================================
     const TIDEWATER_LINE_SEGS = 48;
     const tidewaterFishing3DGroup = new THREE.Group();
@@ -11100,39 +11100,74 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     tidewaterFishing3DGroup.visible = false;
     scene.add(tidewaterFishing3DGroup);
 
+    // Proportional miniature pear/spindle float (~6cm diameter, never oversized!)
     const castBobberGroup = new THREE.Group();
     const castBobberTopMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.11, 12, 12),
+      new THREE.SphereGeometry(0.028, 12, 10),
       new THREE.MeshBasicMaterial({ color: '#ef4444' }),
     );
-    castBobberTopMesh.position.y = 0.05;
+    castBobberTopMesh.scale.set(1, 1.32, 1);
+    castBobberTopMesh.position.y = 0.022;
     castBobberGroup.add(castBobberTopMesh);
+
     const castBobberBottomMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.105, 12, 12),
-      new THREE.MeshBasicMaterial({ color: '#ffffff' }),
+      new THREE.SphereGeometry(0.026, 12, 10),
+      new THREE.MeshBasicMaterial({ color: '#f8fafc' }),
     );
-    castBobberBottomMesh.position.y = -0.04;
+    castBobberBottomMesh.scale.set(1, 1.32, 1);
+    castBobberBottomMesh.position.y = -0.016;
     castBobberGroup.add(castBobberBottomMesh);
 
+    const castBobberStemMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0035, 0.0045, 0.048, 8),
+      new THREE.MeshBasicMaterial({ color: '#fb923c' }),
+    );
+    castBobberStemMesh.position.y = 0.064;
+    castBobberGroup.add(castBobberStemMesh);
+
+    const castBobberSinkerMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.007, 0.004, 0.020, 8),
+      new THREE.MeshBasicMaterial({ color: '#334155' }),
+    );
+    castBobberSinkerMesh.position.y = -0.048;
+    castBobberGroup.add(castBobberSinkerMesh);
+
+    const bobberEyeletAnchor = new THREE.Object3D();
+    bobberEyeletAnchor.position.set(0, 0.088, 0);
+    castBobberGroup.add(bobberEyeletAnchor);
+
     const bobberRippleRingMesh = new THREE.Mesh(
-      new THREE.RingGeometry(0.16, 0.36, 24),
+      new THREE.RingGeometry(0.052, 0.135, 24),
       new THREE.MeshBasicMaterial({
         color: '#e0f2fe',
         transparent: true,
-        opacity: 0.78,
+        opacity: 0.72,
         side: THREE.DoubleSide,
         depthWrite: false,
       }),
     );
     bobberRippleRingMesh.rotation.x = -Math.PI / 2;
-    bobberRippleRingMesh.position.y = 0.02;
+    bobberRippleRingMesh.position.y = 0.008;
     castBobberGroup.add(bobberRippleRingMesh);
     tidewaterFishing3DGroup.add(castBobberGroup);
 
-    const waterFightingFish = buildTidewaterProceduralFishGroup('golden_harbor_tuna', '#38bdf8');
-    waterFightingFish.group.scale.setScalar(0.75);
+    let activeWaterFishKey = 'golden_harbor_tuna:#38bdf8';
+    let waterFightingFish = buildTidewaterProceduralFishGroup('golden_harbor_tuna', '#38bdf8');
+    waterFightingFish.group.scale.setScalar(0.56);
     waterFightingFish.group.visible = false;
     tidewaterFishing3DGroup.add(waterFightingFish.group);
+
+    const ensureWaterFightingFishModel = (speciesId: string, colorHex: string) => {
+      const nextKey = `${speciesId}:${colorHex}`;
+      if (nextKey === activeWaterFishKey) return;
+      activeWaterFishKey = nextKey;
+      tidewaterFishing3DGroup.remove(waterFightingFish.group);
+      waterFightingFish.dispose();
+      waterFightingFish = buildTidewaterProceduralFishGroup(speciesId, colorHex);
+      waterFightingFish.group.scale.setScalar(0.56);
+      waterFightingFish.group.visible = false;
+      tidewaterFishing3DGroup.add(waterFightingFish.group);
+    };
 
     const catenaryLinePositions = new Float32Array((TIDEWATER_LINE_SEGS + 1) * 3);
     const catenaryLineGeo = new THREE.BufferGeometry();
@@ -11143,42 +11178,67 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const catenaryLineMat = new THREE.LineBasicMaterial({
       color: '#e2e8f0',
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.88,
     });
     const catenaryLineMesh = new THREE.Line(catenaryLineGeo, catenaryLineMat);
     catenaryLineMesh.frustumCulled = false;
     tidewaterFishing3DGroup.add(catenaryLineMesh);
+
+    const _tipWorldScratch = new THREE.Vector3();
+    const _eyeletWorldScratch = new THREE.Vector3();
+    const idleFloatPosSmooth = new THREE.Vector3();
+    let hasIdleFloatPos = false;
 
     const tidewaterFishingSync: {
       phase: FishingPhaseState;
       castPower: number;
       tension: number;
       isSurging: boolean;
+      isReeling: boolean;
       rodBend: number;
       reelAngle: number;
       zoneId: FishingWaterZoneId;
       distanceM: number;
       nibblePulse: number;
+      speciesId: string;
+      speciesColorHex: string;
       castOriginYaw: number;
       hasLockedCastYaw: boolean;
       lastSplashTime: number;
       castStartWallMs: number;
       hasSplashedDown: boolean;
+      landingStartWallMs: number;
+      landingOriginX: number;
+      landingOriginY: number;
+      landingOriginZ: number;
+      lastWaterBobberX: number;
+      lastWaterBobberY: number;
+      lastWaterBobberZ: number;
     } = {
       phase: 'idle',
       castPower: 0.7,
       tension: 0.2,
       isSurging: false,
+      isReeling: false,
       rodBend: 0,
       reelAngle: 0,
       zoneId: 'east_beach',
-      distanceM: 12,
+      distanceM: 15,
       nibblePulse: 0,
+      speciesId: 'golden_harbor_tuna',
+      speciesColorHex: '#38bdf8',
       castOriginYaw: 0,
       hasLockedCastYaw: false,
       lastSplashTime: 0,
       castStartWallMs: 0,
       hasSplashedDown: false,
+      landingStartWallMs: 0,
+      landingOriginX: 0,
+      landingOriginY: 0,
+      landingOriginZ: 0,
+      lastWaterBobberX: 0,
+      lastWaterBobberY: 0,
+      lastWaterBobberZ: 0,
     };
 
     const onTidewaterFishingSync = (event: Event) => {
@@ -11189,15 +11249,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (detail.castPower !== undefined) tidewaterFishingSync.castPower = detail.castPower;
       if (detail.tension !== undefined) tidewaterFishingSync.tension = detail.tension;
       if (detail.isSurging !== undefined) tidewaterFishingSync.isSurging = detail.isSurging;
+      if (detail.isReeling !== undefined) tidewaterFishingSync.isReeling = detail.isReeling;
       if (detail.rodBend !== undefined) tidewaterFishingSync.rodBend = detail.rodBend;
       if (detail.reelAngle !== undefined) tidewaterFishingSync.reelAngle = detail.reelAngle;
       if (detail.zoneId !== undefined && detail.zoneId) tidewaterFishingSync.zoneId = detail.zoneId;
       if (detail.distanceM !== undefined) tidewaterFishingSync.distanceM = detail.distanceM;
-      if (detail.nibblePulse !== undefined) tidewaterFishingSync.nibblePulse = detail.nibblePulse;
+      if (detail.nibblePulse !== undefined) {
+        tidewaterFishingSync.nibblePulse = Math.max(0, Math.min(1, detail.nibblePulse));
+      }
+      if (detail.speciesId) tidewaterFishingSync.speciesId = detail.speciesId;
+      if (detail.speciesColorHex) tidewaterFishingSync.speciesColorHex = detail.speciesColorHex;
+
+      ensureWaterFightingFishModel(
+        tidewaterFishingSync.speciesId,
+        tidewaterFishingSync.speciesColorHex,
+      );
 
       if (tidewaterFishingSync.phase === 'casting' && prevPhase !== 'casting') {
         tidewaterFishingSync.castStartWallMs = performance.now();
         tidewaterFishingSync.hasSplashedDown = false;
+        if (playerUnit) {
+          playerUnit.weaponRecoil = 1.0;
+          if (playerUnit.rig.customGlbController) {
+            playerUnit.rig.customGlbController.fishingCastTimer = 1.45;
+          }
+        }
       }
 
       if (
@@ -11218,17 +11294,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         tidewaterFishingSync.castOriginYaw = playerUnit.yaw;
         tidewaterFishingSync.hasLockedCastYaw = true;
-        playerUnit.weaponRecoil = 0.85;
       } else if (tidewaterFishingSync.phase === 'idle') {
         tidewaterFishingSync.hasLockedCastYaw = false;
-        waterFightingFish.group.visible = false;
       }
+    };
+
+    const onTidewaterFishingLanded = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ speciesId?: string; colorHex?: string; weightKg?: number }>
+      ).detail;
+      if (detail?.speciesId) {
+        ensureWaterFightingFishModel(detail.speciesId, detail.colorHex || '#38bdf8');
+      }
+      tidewaterFishingSync.landingStartWallMs = performance.now();
+      tidewaterFishingSync.landingOriginX = tidewaterFishingSync.lastWaterBobberX;
+      tidewaterFishingSync.landingOriginY = tidewaterFishingSync.lastWaterBobberY;
+      tidewaterFishingSync.landingOriginZ = tidewaterFishingSync.lastWaterBobberZ;
+      spawnBurstParticles(
+        tidewaterFishingSync.landingOriginX,
+        tidewaterFishingSync.landingOriginY + 0.22,
+        tidewaterFishingSync.landingOriginZ,
+        14,
+      );
     };
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
     window.addEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
+    window.addEventListener('tidewater-fishing-landed', onTidewaterFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
@@ -15512,6 +15606,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const unitIsSitting =
               Boolean(b.isSitting) || (b.isPlayer && ridingTramCarIdx !== null);
             const unitIsDriving = Boolean(b.isDriving);
+            if (b.isPlayer) {
+              b.rig.fishingPoseState = {
+                phase: tidewaterFishingSync.phase,
+                isReeling: tidewaterFishingSync.isReeling,
+                isSurging: tidewaterFishingSync.isSurging,
+                tension: tidewaterFishingSync.tension,
+                rodBend: tidewaterFishingSync.rodBend,
+                reelAngle: tidewaterFishingSync.reelAngle,
+                castPower: tidewaterFishingSync.castPower,
+              };
+              if (
+                !isMoving &&
+                b.weaponId === 'fishing_rod' &&
+                tidewaterFishingSync.phase === 'fighting' &&
+                tidewaterFishingSync.hasLockedCastYaw
+              ) {
+                const fightReach = Math.max(
+                  1.5,
+                  Math.min(18.5, tidewaterFishingSync.distanceM * 0.78),
+                );
+                const fightSway =
+                  Math.sin(timeSec * 2.35) * 1.15 +
+                  Math.sin(timeSec * 5.7) * (tidewaterFishingSync.isSurging ? 0.95 : 0.32);
+                b.yaw =
+                  tidewaterFishingSync.castOriginYaw +
+                  Math.atan2(-fightSway * 0.42, Math.max(3.0, fightReach));
+                b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
+              }
+            }
             updateCharacterWeaponStance(
               b.rig,
               b.weaponId,
@@ -15551,7 +15674,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 if (b.rig.fishingRodGroup) b.rig.fishingRodGroup.visible = false;
                 b.weaponMesh.visible = false;
               }
-              // TIDEWATER 3D FISHING ROD BEND, SPINNING REEL CRANK, FLOATING BOBBER & 48-SEG CATENARY LINE
+              // TIDEWATER 3D FISHING ROD SKELETAL BEND & SPINNING REEL CRANK (Downward -Y Axis)
               const rodGrp = b.rig.fishingRodGroup;
               const isCastInWater =
                 tidewaterFishingSync.phase === 'casting' ||
@@ -15564,7 +15687,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 const hLine = rodGrp.userData.hangingLineMesh as THREE.Mesh | undefined;
                 const hRed = rodGrp.userData.hangingBobberRedMesh as THREE.Mesh | undefined;
                 const hWhite = rodGrp.userData.hangingBobberWhiteMesh as THREE.Mesh | undefined;
-                const tipAnchor = rodGrp.userData.rodTipAnchor as THREE.Object3D | undefined;
                 if (crankMesh) {
                   if (rodGrp.userData.hasFishingRodGlb) {
                     crankMesh.rotation.z = tidewaterFishingSync.reelAngle;
@@ -15572,34 +15694,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                     crankMesh.rotation.x = tidewaterFishingSync.reelAngle;
                   }
                 }
-                if (hLine) hLine.visible = !isCastInWater;
-                if (hRed) hRed.visible = !isCastInWater;
-                if (hWhite) hWhite.visible = !isCastInWater;
+                // Hide static fallback leader meshes — live gravity-true nylon & mini float render via `tidewaterFishing3DGroup`
+                if (hLine) hLine.visible = false;
+                if (hRed) hRed.visible = false;
+                if (hWhite) hWhite.visible = false;
 
-                // Apply Tidewater progressive rod blank bend (`rodFlexPivot.rotation.x`) without tilting the handle out of the hands
                 if (tidewaterFishingSync.phase === 'charging') {
-                  b.rig.weaponRigGroup.rotation.x -= tidewaterFishingSync.castPower * 0.45;
                   if (rodFlexPivot) {
-                    rodFlexPivot.rotation.x = -tidewaterFishingSync.castPower * 0.16;
+                    rodFlexPivot.rotation.x = -tidewaterFishingSync.castPower * 0.22;
                   }
                 } else if (isCastInWater) {
+                  const nibbleBend =
+                    tidewaterFishingSync.nibblePulse > 0.01
+                      ? 0.24 *
+                        tidewaterFishingSync.nibblePulse *
+                        (0.6 + 0.4 * Math.abs(Math.sin(timeSec * 14.0)))
+                      : 0.05;
                   const bend =
                     tidewaterFishingSync.phase === 'fighting'
                       ? tidewaterFishingSync.rodBend
                       : tidewaterFishingSync.phase === 'bite'
-                        ? 0.62
-                        : tidewaterFishingSync.phase === 'nibble'
-                          ? 0.22 * Math.abs(Math.sin(timeSec * 8.5))
-                          : 0.08;
-                  b.rig.weaponRigGroup.rotation.x += bend * 0.12;
+                        ? 0.68 + Math.abs(Math.sin(timeSec * 12.0)) * 0.14
+                        : nibbleBend;
                   if (rodFlexPivot) {
-                    rodFlexPivot.rotation.x = bend * 0.54;
+                    rodFlexPivot.rotation.x = bend * 0.62;
                   }
                 } else if (rodFlexPivot) {
-                  rodFlexPivot.rotation.x = 0;
+                  rodFlexPivot.rotation.x = 0.03;
                 }
 
-                // Drive the 9 skeletal flex joints (`Bone002_01`..`Bone010_09`) of `/assets/fishing-rod.glb`
+                // Drive the 9 skeletal flex joints (`Bone002_01`..`Bone010_09`) of `/assets/fishing-rod.glb` downward (-Y)
                 const flexBones = rodGrp.userData.flexBones as THREE.Object3D[] | undefined;
                 if (flexBones && flexBones.length > 0 && rodFlexPivot) {
                   const flexAngle = rodFlexPivot.rotation.x;
@@ -15608,185 +15732,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                     const bone = flexBones[bi];
                     const baseRotZ = (bone.userData.baseRotZ as number | undefined) ?? 0;
                     const weight = (bi + 1) / nBones;
-                    bone.rotation.z = baseRotZ - flexAngle * 0.40 * weight;
+                    bone.rotation.z = baseRotZ - flexAngle * 0.44 * weight;
                   }
                 }
-
-                if (isCastInWater && tipAnchor) {
-                  tidewaterFishing3DGroup.visible = true;
-                  const tipWorld = new THREE.Vector3();
-                  tipAnchor.getWorldPosition(tipWorld);
-
-                  const castYaw = tidewaterFishingSync.hasLockedCastYaw
-                    ? tidewaterFishingSync.castOriginYaw
-                    : b.yaw;
-                  const fwdX = Math.cos(castYaw);
-                  const fwdZ = -Math.sin(castYaw);
-                  const rightX = Math.sin(castYaw);
-                  const rightZ = Math.cos(castYaw);
-
-                  const castReach =
-                    tidewaterFishingSync.phase === 'fighting'
-                      ? Math.max(2.4, Math.min(14.5, tidewaterFishingSync.distanceM * 0.55))
-                      : 4.5 + tidewaterFishingSync.castPower * 6.5;
-                  const fishSway =
-                    tidewaterFishingSync.phase === 'fighting'
-                      ? Math.sin(timeSec * (tidewaterFishingSync.isSurging ? 9.5 : 3.4)) *
-                        (tidewaterFishingSync.isSurging ? 1.85 : 0.65)
-                      : 0;
-
-                  const targetBobberX = wrapPlanetCoord(b.x + fwdX * castReach + rightX * fishSway);
-                  const targetBobberZ = wrapPlanetCoord(b.z + fwdZ * castReach + rightZ * fishSway);
-                  const waveSample = evaluateTidewaterWaveHeight(
-                    targetBobberX,
-                    targetBobberZ,
-                    timeSec,
-                    tidewaterFishingSync.zoneId,
-                  );
-                  const baseWaterY =
-                    tidewaterFishingSync.zoneId === 'central_oasis'
-                      ? -0.14
-                      : Math.min(0.05, getTerrainElevation(targetBobberX, targetBobberZ) + 0.08);
-                  const dipOffset =
-                    tidewaterFishingSync.phase === 'bite'
-                      ? -0.22 - Math.abs(Math.sin(timeSec * 12.0)) * 0.14
-                      : tidewaterFishingSync.phase === 'nibble'
-                        ? -0.12 * Math.abs(Math.sin(timeSec * 7.5))
-                        : tidewaterFishingSync.phase === 'fighting'
-                          ? -0.08
-                          : 0;
-                  const targetBobberY =
-                    baseWaterY +
-                    waveSample.heightY +
-                    dipOffset +
-                    computePlanetYOffset(
-                      targetBobberX,
-                      targetBobberZ,
-                      camera.position.x,
-                      camera.position.z,
-                    );
-
-                  // Parabolic Ballistic Cast Flight (Tidewater FishingRod.js: flying -> splash -> floating)
-                  const flyElapsedSec = Math.max(
-                    0,
-                    (performance.now() - tidewaterFishingSync.castStartWallMs) / 1000,
-                  );
-                  const flyDurationSec = 0.44 + tidewaterFishingSync.castPower * 0.22;
-                  const flyProgress =
-                    tidewaterFishingSync.phase === 'casting'
-                      ? Math.min(1, flyElapsedSec / flyDurationSec)
-                      : 1;
-                  const isFlyingInAir = flyProgress < 1;
-
-                  const bobberX = isFlyingInAir
-                    ? tipWorld.x + (targetBobberX - tipWorld.x) * flyProgress
-                    : targetBobberX;
-                  const bobberZ = isFlyingInAir
-                    ? tipWorld.z + (targetBobberZ - tipWorld.z) * flyProgress
-                    : targetBobberZ;
-                  const arcLiftY = isFlyingInAir
-                    ? Math.sin(flyProgress * Math.PI) * (1.85 + tidewaterFishingSync.castPower * 2.4)
-                    : 0;
-                  const bobberY = isFlyingInAir
-                    ? tipWorld.y + (targetBobberY - tipWorld.y) * flyProgress + arcLiftY
-                    : targetBobberY;
-
-                  if (!isFlyingInAir && !tidewaterFishingSync.hasSplashedDown) {
-                    tidewaterFishingSync.hasSplashedDown = true;
-                    spawnBurstParticles(bobberX, bobberY + 0.18, bobberZ, 8);
-                  }
-
-                  castBobberGroup.position.set(bobberX, bobberY, bobberZ);
-                  // Scale bobber slightly with camera distance so it stays readable at all cast ranges (Tidewater FishingRod.js line 536)
-                  const camDistToBobber = Math.hypot(
-                    camera.position.x - bobberX,
-                    camera.position.y - bobberY,
-                    camera.position.z - bobberZ,
-                  );
-                  const readableBobberScale = Math.max(1.25, Math.min(2.6, camDistToBobber / 6.5));
-                  castBobberGroup.scale.setScalar(readableBobberScale);
-                  castBobberGroup.rotation.x = dipOffset * -1.2;
-
-                  bobberRippleRingMesh.visible = !isFlyingInAir;
-                  const ringPulse =
-                    tidewaterFishingSync.phase === 'bite' || tidewaterFishingSync.isSurging
-                      ? 1.0 + (timeSec * 3.2 - Math.floor(timeSec * 3.2)) * 2.2
-                      : tidewaterFishingSync.phase === 'nibble'
-                        ? 1.0 + (timeSec * 1.8 - Math.floor(timeSec * 1.8)) * 1.4
-                        : 1.0 + 0.25 * Math.sin(timeSec * 2.5);
-                  bobberRippleRingMesh.scale.setScalar(ringPulse);
-
-                  // Show 3D struggling fish thrashing in the water during 'fighting' (Tidewater FishingRod.js _waterFish)
-                  if (tidewaterFishingSync.phase === 'fighting') {
-                    waterFightingFish.group.visible = true;
-                    waterFightingFish.group.position.set(bobberX, bobberY - 0.06, bobberZ);
-                    const swimYaw =
-                      castYaw +
-                      Math.PI * 0.5 +
-                      Math.cos(timeSec * (tidewaterFishingSync.isSurging ? 9.5 : 3.4)) * 0.55;
-                    waterFightingFish.group.rotation.set(
-                      Math.sin(timeSec * 11.0) * 0.14,
-                      swimYaw,
-                      Math.cos(timeSec * 9.0) * 0.18,
-                    );
-                    waterFightingFish.updateSwimAnimation(
-                      timeSec * (tidewaterFishingSync.isSurging ? 2.6 : 1.35),
-                    );
-                  } else {
-                    waterFightingFish.group.visible = false;
-                  }
-
-                  if (
-                    (tidewaterFishingSync.phase === 'bite' || tidewaterFishingSync.isSurging) &&
-                    timeSec - tidewaterFishingSync.lastSplashTime > 0.36
-                  ) {
-                    tidewaterFishingSync.lastSplashTime = timeSec;
-                    spawnBurstParticles(bobberX, bobberY + 0.15, bobberZ, 6);
-                  }
-
-                  // Tidewater 48-Segment Catenary Fishing Line (`sag = (1 - tension) * min(dist * 0.08, 1.2) * 4 * s * (1 - s)`)
-                  const lineTension =
-                    tidewaterFishingSync.phase === 'fighting'
-                      ? Math.max(0, Math.min(1, tidewaterFishingSync.tension))
-                      : tidewaterFishingSync.phase === 'bite'
-                        ? 0.85
-                        : 0.18;
-                  const lineDist = Math.hypot(
-                    bobberX - tipWorld.x,
-                    bobberY - tipWorld.y,
-                    bobberZ - tipWorld.z,
-                  );
-                  const maxSag = (1.0 - lineTension) * Math.min(lineDist * 0.08, 1.2);
-                  for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
-                    const s = seg / TIDEWATER_LINE_SEGS;
-                    const sag = maxSag * 4.0 * s * (1.0 - s);
-                    const idx3 = seg * 3;
-                    catenaryLinePositions[idx3] = tipWorld.x + (bobberX - tipWorld.x) * s;
-                    catenaryLinePositions[idx3 + 1] =
-                      tipWorld.y + (bobberY - tipWorld.y) * s - sag;
-                    catenaryLinePositions[idx3 + 2] = tipWorld.z + (bobberZ - tipWorld.z) * s;
-                  }
-                  catenaryLineGeo.attributes.position.needsUpdate = true;
-
-                  if (tidewaterFishingSync.phase === 'fighting') {
-                    if (tidewaterFishingSync.tension > 0.85) {
-                      catenaryLineMat.color.setHex(0xef4444); // Danger Overload Red
-                    } else if (
-                      tidewaterFishingSync.tension >= 0.3 &&
-                      tidewaterFishingSync.tension <= 0.85
-                    ) {
-                      catenaryLineMat.color.setHex(0x4ade80); // Green Sweet-Spot Band (3.3x Stamina Drain!)
-                    } else {
-                      catenaryLineMat.color.setHex(0xfacc15); // Low-tension Yellow
-                    }
-                  } else {
-                    catenaryLineMat.color.setHex(0xe2e8f0);
-                  }
-                } else {
-                  tidewaterFishing3DGroup.visible = false;
-                }
-              } else {
-                tidewaterFishing3DGroup.visible = false;
               }
               if (promptOverlay) {
                 promptOverlay.setAttribute(
@@ -18551,6 +18499,401 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
       }
 
+      // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
+      // Evaluated AFTER `applyPlanetCurvatureToObject(playerUnit.root, ...)` so `_tipWorldScratch`
+      // matches the rendered 3D rod front guide eyelet (`Bone010_09`) to 0.000m at all camera angles!
+      tidewaterFishingSync.nibblePulse = Math.max(0, tidewaterFishingSync.nibblePulse - dt * 2.1);
+      const isPlayerInHouseVisual =
+        npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
+      const playerRodGrp = playerUnit?.rig.fishingRodGroup;
+      const playerRodTipAnchor = playerRodGrp?.userData.rodTipAnchor as THREE.Object3D | undefined;
+      const landingElapsedMs = performance.now() - tidewaterFishingSync.landingStartWallMs;
+      const isLandingLeapActive =
+        tidewaterFishingSync.landingStartWallMs > 0 &&
+        landingElapsedMs >= 0 &&
+        landingElapsedMs < 560;
+      const isCastInWaterVisual =
+        tidewaterFishingSync.phase === 'casting' ||
+        tidewaterFishingSync.phase === 'nibble' ||
+        tidewaterFishingSync.phase === 'bite' ||
+        tidewaterFishingSync.phase === 'fighting';
+
+      if (
+        playerUnit &&
+        playerUnit.alive &&
+        playerUnit.root.visible &&
+        playerUnit.rig.weaponRigGroup.visible &&
+        playerUnit.weaponId === 'fishing_rod' &&
+        playerRodTipAnchor &&
+        !isPlayerInHouseVisual &&
+        !mountedTank &&
+        ridingTramCarIdx === null
+      ) {
+        tidewaterFishing3DGroup.visible = true;
+        playerUnit.root.updateMatrixWorld(true);
+        playerRodTipAnchor.getWorldPosition(_tipWorldScratch);
+
+        if (isLandingLeapActive) {
+          // STATE C: 0.55s 3D Fish Landing Leap Arc out of the water toward the angler!
+          hasIdleFloatPos = false;
+          const lp = Math.min(1, landingElapsedMs / 540);
+          const startLx = tidewaterFishingSync.landingOriginX;
+          const startLy = tidewaterFishingSync.landingOriginY;
+          const startLz = tidewaterFishingSync.landingOriginZ;
+          const endLx = playerUnit.x;
+          const endLy = getTerrainElevation(playerUnit.x, playerUnit.z) + 1.32;
+          const endLz = playerUnit.z;
+
+          const startVx = planetPivotX + getPlanetShortestDelta(startLx, planetPivotX);
+          const startVz = planetPivotZ + getPlanetShortestDelta(startLz, planetPivotZ);
+          const startVy =
+            startLy + computePlanetYOffset(startLx, startLz, planetPivotX, planetPivotZ, kCurve);
+          const endVx = planetPivotX + getPlanetShortestDelta(endLx, planetPivotX);
+          const endVz = planetPivotZ + getPlanetShortestDelta(endLz, planetPivotZ);
+          const endVy =
+            endLy + computePlanetYOffset(endLx, endLz, planetPivotX, planetPivotZ, kCurve);
+
+          const leapArcY = Math.sin(lp * Math.PI) * 1.75;
+          const fishVx = startVx + (endVx - startVx) * lp;
+          const fishVy = startVy + (endVy - startVy) * lp + leapArcY;
+          const fishVz = startVz + (endVz - startVz) * lp;
+
+          waterFightingFish.group.visible = true;
+          waterFightingFish.group.position.set(fishVx, fishVy, fishVz);
+          waterFightingFish.group.scale.setScalar(0.62 * (1 - lp * 0.16));
+          const toPlayerYaw = Math.atan2(-(endVz - startVz), endVx - startVx);
+          waterFightingFish.group.rotation.set(
+            Math.cos(lp * Math.PI) * -0.55,
+            toPlayerYaw,
+            Math.sin(lp * Math.PI * 3.0) * 0.25,
+          );
+          waterFightingFish.updateSwimAnimation(timeSec * 3.5);
+
+          bobberRippleRingMesh.visible = false;
+          castBobberGroup.scale.setScalar(0.82);
+          castBobberGroup.position.set(
+            fishVx + (_tipWorldScratch.x - fishVx) * 0.14,
+            fishVy + (_tipWorldScratch.y - fishVy) * 0.14 + 0.04,
+            fishVz + (_tipWorldScratch.z - fishVz) * 0.14,
+          );
+          castBobberGroup.rotation.set(0, 0, 0);
+
+          for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
+            const s = seg / TIDEWATER_LINE_SEGS;
+            const idx3 = seg * 3;
+            catenaryLinePositions[idx3] = _tipWorldScratch.x + (fishVx - _tipWorldScratch.x) * s;
+            catenaryLinePositions[idx3 + 1] =
+              _tipWorldScratch.y + (fishVy - _tipWorldScratch.y) * s;
+            catenaryLinePositions[idx3 + 2] =
+              _tipWorldScratch.z + (fishVz - _tipWorldScratch.z) * s;
+          }
+          catenaryLineGeo.attributes.position.needsUpdate = true;
+          catenaryLineMat.color.setHex(0xe2e8f0);
+        } else if (isCastInWaterVisual) {
+          // STATE B: Cast Windup -> Parabolic Flight -> Calm Float & Nibbles -> Bite -> Fighting & Reeling!
+          hasIdleFloatPos = false;
+          const castYaw = tidewaterFishingSync.hasLockedCastYaw
+            ? tidewaterFishingSync.castOriginYaw
+            : playerUnit.yaw;
+          const fwdX = Math.cos(castYaw);
+          const fwdZ = -Math.sin(castYaw);
+          const rightX = Math.sin(castYaw);
+          const rightZ = Math.cos(castYaw);
+
+          const castReach =
+            tidewaterFishingSync.phase === 'fighting'
+              ? Math.max(1.45, Math.min(18.5, tidewaterFishingSync.distanceM * 0.78))
+              : 5.2 + tidewaterFishingSync.castPower * 7.8;
+          const fishSway =
+            tidewaterFishingSync.phase === 'fighting'
+              ? Math.sin(timeSec * 2.35) * 1.15 +
+                Math.sin(timeSec * 5.7) * (tidewaterFishingSync.isSurging ? 0.95 : 0.32)
+              : 0;
+
+          const targetLogicalX = wrapPlanetCoord(
+            playerUnit.x + fwdX * castReach + rightX * fishSway,
+          );
+          const targetLogicalZ = wrapPlanetCoord(
+            playerUnit.z + fwdZ * castReach + rightZ * fishSway,
+          );
+          const waveSample = evaluateTidewaterWaveHeight(
+            targetLogicalX,
+            targetLogicalZ,
+            timeSec,
+            tidewaterFishingSync.zoneId,
+          );
+          const baseWaterY =
+            tidewaterFishingSync.zoneId === 'central_oasis'
+              ? -0.14
+              : Math.min(0.05, getTerrainElevation(targetLogicalX, targetLogicalZ) + 0.08);
+          const nibbleDip =
+            tidewaterFishingSync.nibblePulse > 0.01
+              ? -0.058 *
+                tidewaterFishingSync.nibblePulse *
+                (0.65 + 0.35 * Math.abs(Math.sin(timeSec * 14.0)))
+              : 0;
+          const dipOffset =
+            tidewaterFishingSync.phase === 'bite'
+              ? -0.11 - Math.abs(Math.sin(timeSec * 12.0)) * 0.06
+              : tidewaterFishingSync.phase === 'fighting'
+                ? -0.045 - (tidewaterFishingSync.isSurging ? 0.04 : 0)
+                : nibbleDip;
+          const targetSurfaceLogicalY = baseWaterY + waveSample.heightY;
+          const targetBobberLogicalY = targetSurfaceLogicalY + dipOffset;
+
+          tidewaterFishingSync.lastWaterBobberX = targetLogicalX;
+          tidewaterFishingSync.lastWaterBobberY = targetSurfaceLogicalY;
+          tidewaterFishingSync.lastWaterBobberZ = targetLogicalZ;
+
+          const targetVisX = planetPivotX + getPlanetShortestDelta(targetLogicalX, planetPivotX);
+          const targetVisZ = planetPivotZ + getPlanetShortestDelta(targetLogicalZ, planetPivotZ);
+          const targetPlanetOffY = computePlanetYOffset(
+            targetLogicalX,
+            targetLogicalZ,
+            planetPivotX,
+            planetPivotZ,
+            kCurve,
+          );
+          const targetSurfaceVisY = targetSurfaceLogicalY + targetPlanetOffY;
+          const targetVisY = targetBobberLogicalY + targetPlanetOffY;
+
+          // Sync cast launch with `fishing_cast.001` 0.16s backswing windup before forward release
+          const flyElapsedSec = Math.max(
+            0,
+            (performance.now() - tidewaterFishingSync.castStartWallMs) / 1000,
+          );
+          const windupSec = 0.16;
+          const flyDurationSec = 0.48 + tidewaterFishingSync.castPower * 0.24;
+          const isWindingUpCast =
+            tidewaterFishingSync.phase === 'casting' && flyElapsedSec < windupSec;
+          const flyProgress =
+            tidewaterFishingSync.phase === 'casting'
+              ? Math.max(0, Math.min(1, (flyElapsedSec - windupSec) / flyDurationSec))
+              : 1;
+          const isFlyingInAir = isWindingUpCast || flyProgress < 1;
+
+          let bobberVisX = targetVisX;
+          let bobberVisY = targetVisY;
+          let bobberVisZ = targetVisZ;
+          if (isWindingUpCast) {
+            bobberVisX = _tipWorldScratch.x - fwdX * 0.12;
+            bobberVisY = _tipWorldScratch.y - 0.34;
+            bobberVisZ = _tipWorldScratch.z - fwdZ * 0.12;
+          } else if (flyProgress < 1) {
+            const arcLiftY =
+              Math.sin(flyProgress * Math.PI) * (1.65 + tidewaterFishingSync.castPower * 2.1);
+            bobberVisX = _tipWorldScratch.x + (targetVisX - _tipWorldScratch.x) * flyProgress;
+            bobberVisY =
+              _tipWorldScratch.y + (targetVisY - _tipWorldScratch.y) * flyProgress + arcLiftY;
+            bobberVisZ = _tipWorldScratch.z + (targetVisZ - _tipWorldScratch.z) * flyProgress;
+          }
+
+          if (!isFlyingInAir && !tidewaterFishingSync.hasSplashedDown) {
+            tidewaterFishingSync.hasSplashedDown = true;
+            spawnBurstParticles(targetLogicalX, targetSurfaceLogicalY + 0.16, targetLogicalZ, 8);
+          }
+
+          // Sleek, proportional float scale (0.88..1.18 -> ~5..6.5cm wide, NEVER huge!)
+          const camDistToBobber = Math.hypot(
+            camera.position.x - bobberVisX,
+            camera.position.y - bobberVisY,
+            camera.position.z - bobberVisZ,
+          );
+          const sleekBobberScale = Math.max(0.88, Math.min(1.18, camDistToBobber / 11.5));
+          castBobberGroup.position.set(bobberVisX, bobberVisY, bobberVisZ);
+          castBobberGroup.scale.setScalar(sleekBobberScale);
+          const tiltTowardTip =
+            tidewaterFishingSync.phase === 'fighting'
+              ? 0.42
+              : tidewaterFishingSync.phase === 'bite'
+                ? 0.28
+                : Math.sin(timeSec * 2.4) * 0.08;
+          castBobberGroup.rotation.set(
+            tiltTowardTip * -fwdZ,
+            0,
+            tiltTowardTip * fwdX + Math.cos(timeSec * 2.1) * 0.06,
+          );
+          castBobberGroup.updateMatrixWorld(true);
+          bobberEyeletAnchor.getWorldPosition(_eyeletWorldScratch);
+
+          bobberRippleRingMesh.visible = !isFlyingInAir;
+          const ringPulse =
+            tidewaterFishingSync.phase === 'bite' || tidewaterFishingSync.isSurging
+              ? 1.0 + (timeSec * 3.4 - Math.floor(timeSec * 3.4)) * 1.9
+              : tidewaterFishingSync.nibblePulse > 0.1
+                ? 1.0 + tidewaterFishingSync.nibblePulse * 1.25
+                : 1.0 + 0.18 * Math.sin(timeSec * 2.4);
+          bobberRippleRingMesh.scale.setScalar(ringPulse);
+
+          // 3D Hooked Fish Swimming & Thrashing Closer Across the Water During 'fighting'
+          if (tidewaterFishingSync.phase === 'fighting') {
+            waterFightingFish.group.visible = true;
+            waterFightingFish.group.scale.setScalar(0.56);
+            waterFightingFish.group.position.set(
+              bobberVisX + fwdX * 0.16,
+              bobberVisY - 0.055,
+              bobberVisZ + fwdZ * 0.16,
+            );
+            const swimYaw = tidewaterFishingSync.isSurging
+              ? castYaw + Math.sin(timeSec * 7.5) * 0.65
+              : tidewaterFishingSync.isReeling
+                ? castYaw + Math.PI + Math.sin(timeSec * 5.2) * 0.35
+                : castYaw + Math.PI * 0.5 + Math.cos(timeSec * 3.4) * 0.5;
+            waterFightingFish.group.rotation.set(
+              Math.sin(timeSec * 11.0) * 0.12,
+              swimYaw,
+              Math.cos(timeSec * 9.0) * 0.16,
+            );
+            waterFightingFish.updateSwimAnimation(
+              timeSec * (tidewaterFishingSync.isSurging ? 2.8 : 1.55),
+            );
+          } else {
+            waterFightingFish.group.visible = false;
+          }
+
+          if (
+            !isFlyingInAir &&
+            (tidewaterFishingSync.phase === 'bite' ||
+              tidewaterFishingSync.isSurging ||
+              tidewaterFishingSync.nibblePulse > 0.72) &&
+            timeSec - tidewaterFishingSync.lastSplashTime > 0.38
+          ) {
+            tidewaterFishingSync.lastSplashTime = timeSec;
+            spawnBurstParticles(
+              targetLogicalX,
+              targetSurfaceLogicalY + 0.14,
+              targetLogicalZ,
+              tidewaterFishingSync.nibblePulse > 0.72 && tidewaterFishingSync.phase !== 'bite'
+                ? 3
+                : 6,
+            );
+          }
+
+          // 48-Segment Physically Continuous Nylon Line (`_tipWorldScratch` -> `_eyeletWorldScratch`)
+          const endX = _eyeletWorldScratch.x;
+          const endY = _eyeletWorldScratch.y;
+          const endZ = _eyeletWorldScratch.z;
+          const lineTension =
+            tidewaterFishingSync.phase === 'fighting'
+              ? Math.max(0.38, Math.min(1, tidewaterFishingSync.tension))
+              : tidewaterFishingSync.phase === 'bite'
+                ? 0.88
+                : tidewaterFishingSync.nibblePulse > 0.05
+                  ? 0.25 + tidewaterFishingSync.nibblePulse * 0.45
+                  : 0.22;
+          const lineDist = Math.hypot(
+            endX - _tipWorldScratch.x,
+            endY - _tipWorldScratch.y,
+            endZ - _tipWorldScratch.z,
+          );
+          const maxSag = isFlyingInAir
+            ? 0
+            : (1.0 - lineTension) * Math.min(lineDist * 0.042, 0.44);
+          const airLiftBow =
+            !isWindingUpCast && flyProgress < 1
+              ? Math.sin(flyProgress * Math.PI) * 0.26
+              : 0;
+          const tautVibAmp =
+            tidewaterFishingSync.phase === 'fighting' || tidewaterFishingSync.phase === 'bite'
+              ? 0.011 * lineTension
+              : 0;
+
+          for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
+            const s = seg / TIDEWATER_LINE_SEGS;
+            const arch = 4.0 * s * (1.0 - s);
+            const sag = maxSag * arch;
+            const airBow = airLiftBow * arch;
+            const vib =
+              tautVibAmp > 0
+                ? Math.sin(s * Math.PI * 3.0 + timeSec * 44.0) * tautVibAmp * Math.sin(s * Math.PI)
+                : 0;
+            let py = _tipWorldScratch.y + (endY - _tipWorldScratch.y) * s - sag + airBow + vib;
+            // Clamp intermediate slack segments above the water surface so nylon never dips underwater!
+            if (!isFlyingInAir && seg > 0 && seg < TIDEWATER_LINE_SEGS && s > 0.35) {
+              const waterFloorY = targetSurfaceVisY + 0.012;
+              if (py < waterFloorY) py = waterFloorY;
+            }
+            const idx3 = seg * 3;
+            catenaryLinePositions[idx3] =
+              _tipWorldScratch.x + (endX - _tipWorldScratch.x) * s + rightX * vib;
+            catenaryLinePositions[idx3 + 1] = py;
+            catenaryLinePositions[idx3 + 2] =
+              _tipWorldScratch.z + (endZ - _tipWorldScratch.z) * s + rightZ * vib;
+          }
+          catenaryLineGeo.attributes.position.needsUpdate = true;
+
+          if (tidewaterFishingSync.phase === 'fighting') {
+            if (tidewaterFishingSync.tension > 0.85) {
+              catenaryLineMat.color.setHex(0xef4444); // Danger Overload Red
+            } else if (
+              tidewaterFishingSync.tension >= 0.3 &&
+              tidewaterFishingSync.tension <= 0.85
+            ) {
+              catenaryLineMat.color.setHex(0x4ade80); // Green Sweet-Spot Band
+            } else {
+              catenaryLineMat.color.setHex(0xfacc15); // Slack Tension Yellow
+            }
+          } else {
+            catenaryLineMat.color.setHex(0xe2e8f0);
+          }
+        } else {
+          // STATE A: Uncast (`idle` / `charging`) — Gravity-True Swinging Leader & Miniature Float!
+          bobberRippleRingMesh.visible = false;
+          waterFightingFish.group.visible = false;
+          const leaderLen = tidewaterFishingSync.phase === 'charging' ? 0.34 : 0.42;
+          const goalX = _tipWorldScratch.x + Math.sin(timeSec * 1.9) * 0.012;
+          const goalY = _tipWorldScratch.y - leaderLen;
+          const goalZ = _tipWorldScratch.z + Math.cos(timeSec * 1.6) * 0.012;
+          if (!hasIdleFloatPos) {
+            idleFloatPosSmooth.set(goalX, goalY, goalZ);
+            hasIdleFloatPos = true;
+          } else {
+            const followAlpha = 1 - Math.exp(-dt * 16.0);
+            idleFloatPosSmooth.x += (goalX - idleFloatPosSmooth.x) * followAlpha;
+            idleFloatPosSmooth.y += (goalY - idleFloatPosSmooth.y) * followAlpha;
+            idleFloatPosSmooth.z += (goalZ - idleFloatPosSmooth.z) * followAlpha;
+            // Enforce taut leader distance so float never stretches far from the rod tip while sprinting
+            const dx = idleFloatPosSmooth.x - _tipWorldScratch.x;
+            const dy = idleFloatPosSmooth.y - _tipWorldScratch.y;
+            const dz = idleFloatPosSmooth.z - _tipWorldScratch.z;
+            const dist = Math.hypot(dx, dy, dz);
+            if (dist > leaderLen * 1.25 && dist > 1e-4) {
+              const clampRatio = (leaderLen * 1.25) / dist;
+              idleFloatPosSmooth.set(
+                _tipWorldScratch.x + dx * clampRatio,
+                _tipWorldScratch.y + dy * clampRatio,
+                _tipWorldScratch.z + dz * clampRatio,
+              );
+            }
+          }
+
+          castBobberGroup.position.copy(idleFloatPosSmooth);
+          castBobberGroup.scale.setScalar(0.76);
+          const pendDx = idleFloatPosSmooth.x - _tipWorldScratch.x;
+          const pendDz = idleFloatPosSmooth.z - _tipWorldScratch.z;
+          castBobberGroup.rotation.set(pendDz * 0.85, 0, -pendDx * 0.85);
+          castBobberGroup.updateMatrixWorld(true);
+          bobberEyeletAnchor.getWorldPosition(_eyeletWorldScratch);
+
+          for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
+            const s = seg / TIDEWATER_LINE_SEGS;
+            const sag = 0.018 * 4.0 * s * (1.0 - s);
+            const idx3 = seg * 3;
+            catenaryLinePositions[idx3] =
+              _tipWorldScratch.x + (_eyeletWorldScratch.x - _tipWorldScratch.x) * s;
+            catenaryLinePositions[idx3 + 1] =
+              _tipWorldScratch.y + (_eyeletWorldScratch.y - _tipWorldScratch.y) * s - sag;
+            catenaryLinePositions[idx3 + 2] =
+              _tipWorldScratch.z + (_eyeletWorldScratch.z - _tipWorldScratch.z) * s;
+          }
+          catenaryLineGeo.attributes.position.needsUpdate = true;
+          catenaryLineMat.color.setHex(0xe2e8f0);
+        }
+      } else {
+        tidewaterFishing3DGroup.visible = false;
+        hasIdleFloatPos = false;
+      }
+
       // 3E. REAL-TIME CONTINUOUS RAYCAST LASER BEAM UPDATE (FOLLOWS BARREL MUZZLE EVERY FRAME):
       // Computes beam startPoint directly from the character's weapon barrel tip (with hand/weapon stance & body rotation)
       // and endPoint from the closest 3D raycast intersection (enemies, vehicles, crates/peti, props, structures, or max range).
@@ -20484,6 +20827,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('select-character-by-id', onSelectCharacterById);
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
       window.removeEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
+      window.removeEventListener('tidewater-fishing-landed', onTidewaterFishingLanded);
       window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
       scene.remove(tutorialWaypointGroup);
       tutorialChevronGeo.dispose();
@@ -20493,6 +20837,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         item.mat.dispose();
       }
       scene.remove(tidewaterFishing3DGroup);
+      waterFightingFish.dispose();
+      castBobberTopMesh.geometry.dispose();
+      (castBobberTopMesh.material as THREE.Material).dispose();
+      castBobberBottomMesh.geometry.dispose();
+      (castBobberBottomMesh.material as THREE.Material).dispose();
+      castBobberStemMesh.geometry.dispose();
+      (castBobberStemMesh.material as THREE.Material).dispose();
+      castBobberSinkerMesh.geometry.dispose();
+      (castBobberSinkerMesh.material as THREE.Material).dispose();
+      bobberRippleRingMesh.geometry.dispose();
+      (bobberRippleRingMesh.material as THREE.Material).dispose();
       catenaryLineGeo.dispose();
       catenaryLineMat.dispose();
       if (promptOverlay.parentElement) {

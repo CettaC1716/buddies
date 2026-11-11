@@ -2563,10 +2563,22 @@ export default function App() {
           castPower: fishingCastPower,
           tension: fishingMinigame?.tension ?? (fishingPhase === 'bite' ? 0.82 : 0.2),
           isSurging: fishingMinigame?.isSurging ?? false,
+          isReeling: isHoldingReel && fishingPhase === 'fighting',
           rodBend: fishingMinigame?.rodBend ?? (fishingPhase === 'bite' ? 0.62 : 0),
           reelAngle: fishingMinigame?.reelAngle ?? 0,
           zoneId: nearbyWaterZone.zoneId ?? 'east_beach',
-          distanceM: fishingMinigame?.distanceM ?? 8.0 + fishingCastPower * 16.0,
+          distanceM:
+            fishingMinigame?.distanceM ??
+            fishingBiteSchedule?.castDistanceM ??
+            9.5 + fishingCastPower * 16.5,
+          speciesId:
+            fishingMinigame?.species.speciesId ??
+            fishingBiteSchedule?.species.speciesId ??
+            'golden_harbor_tuna',
+          speciesColorHex:
+            fishingMinigame?.species.colorHex ??
+            fishingBiteSchedule?.species.colorHex ??
+            '#38bdf8',
         },
       }),
     );
@@ -2574,6 +2586,8 @@ export default function App() {
     fishingPhase,
     fishingCastPower,
     fishingMinigame,
+    fishingBiteSchedule,
+    isHoldingReel,
     nearbyWaterZone.zoneId,
   ]);
 
@@ -2622,8 +2636,19 @@ export default function App() {
         specificSpecies: fishingMinigame.species,
       });
       setCaughtFishBucket((prev) => [caught, ...prev].slice(0, 20));
-      setLastCaughtFishToast(caught);
       setFishingHintMessage(null);
+      window.dispatchEvent(
+        new CustomEvent('tidewater-fishing-landed', {
+          detail: {
+            speciesId: caught.speciesId,
+            colorHex: caught.colorHex,
+            weightKg: caught.weightKg,
+          },
+        }),
+      );
+      window.setTimeout(() => {
+        setLastCaughtFishToast(caught);
+      }, 540);
     } else {
       soundEngine.playHit();
       setFishingHintMessage(
@@ -2669,21 +2694,34 @@ export default function App() {
       setIsChargingCast(false);
       setFishingPhase('casting');
 
-      const nibbleDelayMs = 650;
-      const plungeDelayMs = 650 + schedule.nibblesTotal * 650;
+      const castFlightMs = Math.round((0.62 + clampedPower * 0.24) * 1000);
+      const firstNibbleDelayMs = castFlightMs + Math.round(schedule.initialWaitSec * 1000);
+      const nibbleStepMs = Math.round(schedule.nibbleIntervalSec * 1000);
+      const plungeDelayMs = firstNibbleDelayMs + schedule.nibblesTotal * nibbleStepMs;
       const expireDelayMs = plungeDelayMs + Math.round(schedule.strikeWindowSec * 1000);
 
-      // Stage 1: Preliminary Nibble
-      const t1 = window.setTimeout(() => {
-        setFishingPhase((curr) => {
-          if (curr !== 'casting') return curr;
-          soundEngine.playUiClick();
-          return 'nibble';
-        });
-      }, nibbleDelayMs);
+      const scheduledTimers: number[] = [];
 
-      // Stage 2: Deep Bobber Plunge ('bite' / Take) after scheduled nibble(s)
-      const t2 = window.setTimeout(() => {
+      // Stage 1: 2..4 Preliminary Nibbles spaced naturally after calm floating wait
+      for (let ni = 0; ni < schedule.nibblesTotal; ni++) {
+        const nibbleAtMs = firstNibbleDelayMs + ni * nibbleStepMs;
+        const tn = window.setTimeout(() => {
+          setFishingPhase((curr) => {
+            if (curr !== 'casting' && curr !== 'nibble') return curr;
+            soundEngine.playUiClick();
+            window.dispatchEvent(
+              new CustomEvent('tidewater-fishing-sync', {
+                detail: { nibblePulse: 1.0 },
+              }),
+            );
+            return 'nibble';
+          });
+        }, nibbleAtMs);
+        scheduledTimers.push(tn);
+      }
+
+      // Stage 2: Deep Bobber Plunge ('bite' / Take) after scheduled nibbles
+      const tPlunge = window.setTimeout(() => {
         setFishingPhase((curr) => {
           if (curr !== 'casting' && curr !== 'nibble') return curr;
           soundEngine.playPickup();
@@ -2691,17 +2729,19 @@ export default function App() {
           return 'bite';
         });
       }, plungeDelayMs);
+      scheduledTimers.push(tPlunge);
 
       // Stage 3: Missed strike window auto-reset
-      const t3 = window.setTimeout(() => {
+      const tExpire = window.setTimeout(() => {
         setFishingPhase((curr) => {
           if (curr !== 'bite') return curr;
-          setFishingHintMessage('Missed the strike window! Press [F] to cast again.');
+          setFishingHintMessage('Missed the bite. Press [F] to cast again.');
           return 'idle';
         });
       }, expireDelayMs);
+      scheduledTimers.push(tExpire);
 
-      fishingCastTimersRef.current = [t1, t2, t3];
+      fishingCastTimersRef.current = scheduledTimers;
     },
     [caughtFishBucket.length, clearFishingCastTimers, ensureFishingRodEquipped, lightingPreset],
   );
@@ -2717,26 +2757,23 @@ export default function App() {
 
     // Non-punishing Tidewater Nibble Cue: clicking early warns the player without losing the cast!
     if (fishingPhase === 'nibble') {
-      setFishingHintMessage('Not yet · wait for the bobber to plunge under!');
+      setFishingHintMessage('Not yet. Wait for the float to plunge under.');
       return;
     }
 
-    // Active Fight Minigame: clicking/tapping gives a crisp reel-in impulse inside the Green Band!
+    // Active Fight Minigame: holding Reel drives the fight; single taps only give a gentle crank nudge (never an instant catch!)
     if (fishingPhase === 'fighting' && fishingMinigame) {
       setFishingMinigame((prev) => {
         if (!prev || prev.status !== 'active') return prev;
-        const nextDist = Math.max(0, prev.distanceM - 2.6);
-        const nextStamina = Math.max(0, prev.stamina - 0.18);
+        const nudgeDist = prev.isSurging ? prev.distanceM : Math.max(1.65, prev.distanceM - 0.18);
         const nextTension = prev.isSurging
-          ? Math.min(0.92, prev.tension + 0.08)
-          : Math.max(0.38, Math.min(0.76, prev.tension + 0.04));
+          ? Math.min(1.06, prev.tension + 0.06)
+          : Math.max(0.36, Math.min(0.78, prev.tension + 0.03));
         return {
           ...prev,
-          distanceM: Number(nextDist.toFixed(2)),
-          stamina: Number(nextStamina.toFixed(3)),
+          distanceM: Number(nudgeDist.toFixed(2)),
           tension: Number(nextTension.toFixed(3)),
-          reelAngle: prev.reelAngle + 1.8,
-          status: nextDist <= 0.05 || nextStamina <= 0.02 ? 'caught' : 'active',
+          reelAngle: prev.reelAngle + 0.85,
         };
       });
       return;
