@@ -558,14 +558,14 @@ export function getSingleRiverCenterZ(_px: number): number {
   return 0.0;
 }
 
-export function getTolanWaterSdf(rawX: number, rawZ: number): number {
+export function getPlanetWaterSdf(rawX: number, rawZ: number): number {
   const lakeSdf = evaluateNwLakeSdf(rawX, rawZ);
   const { waterSdf } = evaluateSeHarborSdf(rawX, rawZ);
   return Math.min(lakeSdf, waterSdf);
 }
 
-export function evaluateTolanWaterField(worldX: number, worldZ: number): number {
-  return 1.0 - smoothstep(-0.4, 0.4, getTolanWaterSdf(worldX, worldZ));
+export function evaluatePlanetWaterField(worldX: number, worldZ: number): number {
+  return 1.0 - smoothstep(-0.4, 0.4, getPlanetWaterSdf(worldX, worldZ));
 }
 
 /**
