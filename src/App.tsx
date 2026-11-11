@@ -62,7 +62,7 @@ import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
 } from './components/NpcMerchantAndHouseModal';
-import { TidewaterFishingHudAndShowcase } from './components/TidewaterCatchShowcaseModal';
+import { ShorelineFishingHudAndShowcase } from './components/ShorelineCatchShowcaseModal';
 import {
   Fish3dPreviewModal,
   Fish3dThumbnail,
@@ -140,14 +140,14 @@ import {
   computeLengthCmFromWeightKg,
   detectNearbyFishingWaterZone,
   rollRandomCaughtFish,
-  createTidewaterBiteSchedule,
-  createTidewaterMinigameState,
-  stepTidewaterMinigame,
+  createShorelineBiteSchedule,
+  createShorelineMinigameState,
+  stepShorelineMinigame,
   type CaughtFishItem,
   type FishNftMarketplaceListing,
   type FishingPhaseState,
-  type TidewaterBiteSchedule,
-  type TidewaterMinigameState,
+  type ShorelineBiteSchedule,
+  type ShorelineMinigameState,
 } from './game/buddiesFishingMarket';
 
 const INITIAL_HUD: HudSnapshot = {
@@ -598,11 +598,11 @@ export default function App() {
   const [fishingPhase, setFishingPhase] = useState<FishingPhaseState>('idle');
   const [fishingCastPower, setFishingCastPower] = useState<number>(0.72);
   const [isChargingCast, setIsChargingCast] = useState<boolean>(false);
-  const [fishingBiteSchedule, setFishingBiteSchedule] = useState<TidewaterBiteSchedule | null>(
+  const [fishingBiteSchedule, setFishingBiteSchedule] = useState<ShorelineBiteSchedule | null>(
     null,
   );
   const [fishingHintMessage, setFishingHintMessage] = useState<string | null>(null);
-  const [fishingMinigame, setFishingMinigame] = useState<TidewaterMinigameState | null>(null);
+  const [fishingMinigame, setFishingMinigame] = useState<ShorelineMinigameState | null>(null);
   const [isHoldingReel, setIsHoldingReel] = useState<boolean>(false);
   const [lastCaughtFishToast, setLastCaughtFishToast] = useState<CaughtFishItem | null>(null);
 
@@ -2590,10 +2590,10 @@ export default function App() {
     }
   }, [hud.worldMode, isJoranEquipped, fishingPhase, clearFishingCastTimers]);
 
-  // Sync Tidewater 3D Bobber, 48-Seg Catenary Line, Progressive Rod Bend & Spinning Reel with BuddiesBlitzArena
+  // Sync Shoreline 3D Bobber, 48-Seg Catenary Line, Progressive Rod Bend & Spinning Reel with BuddiesBlitzArena
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent('tidewater-fishing-sync', {
+      new CustomEvent('shoreline-fishing-sync', {
         detail: {
           phase: fishingPhase,
           castPower: fishingCastPower,
@@ -2627,7 +2627,7 @@ export default function App() {
     nearbyWaterZone.zoneId,
   ]);
 
-  // Tidewater Hold-to-Charge Cast Power Loop (0..100% over 1.1s)
+  // Shoreline Hold-to-Charge Cast Power Loop (0..100% over 1.1s)
   useEffect(() => {
     if (!isChargingCast || fishingPhase !== 'charging') return;
     let power = 0.18;
@@ -2639,19 +2639,19 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [isChargingCast, fishingPhase]);
 
-  // Tidewater Line-Tension + Stamina + Periodic Surge 60FPS Minigame Loop
+  // Shoreline Line-Tension + Stamina + Periodic Surge 60FPS Minigame Loop
   useEffect(() => {
     if (fishingPhase !== 'fighting') return;
     const id = window.setInterval(() => {
       setFishingMinigame((prev) => {
         if (!prev || prev.status !== 'active') return prev;
-        return stepTidewaterMinigame(prev, 0.05, isHoldingReel);
+        return stepShorelineMinigame(prev, 0.05, isHoldingReel);
       });
     }, 50);
     return () => window.clearInterval(id);
   }, [fishingPhase, isHoldingReel]);
 
-  // Resolve Tidewater Minigame Outcome ('caught' | 'snapped' | 'escaped')
+  // Resolve Shoreline Minigame Outcome ('caught' | 'snapped' | 'escaped')
   useEffect(() => {
     if (fishingPhase !== 'fighting' || !fishingMinigame || fishingMinigame.status === 'active') {
       return;
@@ -2674,7 +2674,7 @@ export default function App() {
       setCaughtFishBucket((prev) => [caught, ...prev].slice(0, 20));
       setFishingHintMessage(null);
       window.dispatchEvent(
-        new CustomEvent('tidewater-fishing-landed', {
+        new CustomEvent('shoreline-fishing-landed', {
           detail: {
             speciesId: caught.speciesId,
             colorHex: caught.colorHex,
@@ -2705,7 +2705,7 @@ export default function App() {
     }
   }, [dispatchBuddyAction]);
 
-  const launchTidewaterCast = useCallback(
+  const launchShorelineCast = useCallback(
     (powerToUse: number) => {
       if (hudRef.current.worldMode === 'warzone') return;
       if (caughtFishBucket.length >= 20) return;
@@ -2719,7 +2719,7 @@ export default function App() {
       soundEngine.playPickup();
       const clampedPower = Math.max(0.2, Math.min(1.0, powerToUse));
       setFishingCastPower(clampedPower);
-      const schedule = createTidewaterBiteSchedule({
+      const schedule = createShorelineBiteSchedule({
         waterZone: activeZone,
         lightingPreset,
         castPower: clampedPower,
@@ -2746,7 +2746,7 @@ export default function App() {
             if (curr !== 'casting' && curr !== 'nibble') return curr;
             soundEngine.playUiClick();
             window.dispatchEvent(
-              new CustomEvent('tidewater-fishing-sync', {
+              new CustomEvent('shoreline-fishing-sync', {
                 detail: { nibblePulse: 1.0 },
               }),
             );
@@ -2791,7 +2791,7 @@ export default function App() {
 
     soundEngine.playUiClick();
 
-    // Non-punishing Tidewater Nibble Cue: clicking early warns the player without losing the cast!
+    // Non-punishing Shoreline Nibble Cue: clicking early warns the player without losing the cast!
     if (fishingPhase === 'nibble') {
       setFishingHintMessage('Not yet. Wait for the float to plunge under.');
       return;
@@ -2815,18 +2815,18 @@ export default function App() {
       return;
     }
 
-    // Hook Set on 'bite' ('take' window) -> Every catch enters the Tidewater Line-Tension + Stamina + Surge Fight Minigame!
+    // Hook Set on 'bite' ('take' window) -> Every catch enters the Shoreline Line-Tension + Stamina + Surge Fight Minigame!
     if (fishingPhase === 'bite') {
       clearFishingCastTimers();
       const targetSpecies =
         fishingBiteSchedule?.species ??
-        createTidewaterBiteSchedule({
+        createShorelineBiteSchedule({
           waterZone: activeZone,
           lightingPreset,
           castPower: fishingCastPower,
         }).species;
 
-      setFishingMinigame(createTidewaterMinigameState(targetSpecies, fishingCastPower));
+      setFishingMinigame(createShorelineMinigameState(targetSpecies, fishingCastPower));
       setFishingPhase('fighting');
       setIsHoldingReel(false);
       setFishingHintMessage(null);
@@ -2834,7 +2834,7 @@ export default function App() {
     }
 
     if (fishingPhase === 'idle' || fishingPhase === 'charging') {
-      launchTidewaterCast(fishingCastPower);
+      launchShorelineCast(fishingCastPower);
     }
   }, [
     clearFishingCastTimers,
@@ -2843,7 +2843,7 @@ export default function App() {
     fishingCastPower,
     fishingMinigame,
     fishingPhase,
-    launchTidewaterCast,
+    launchShorelineCast,
     lightingPreset,
   ]);
 
@@ -2943,7 +2943,7 @@ export default function App() {
     [cyonBalance, ownedMerchantItemIds, playerUid, respiteBalance],
   );
 
-  // Keyboard support (KeyF or Space while fishing) for Tidewater Hold-to-Charge, Strike & Hold-to-Reel
+  // Keyboard support (KeyF or Space while fishing) for Shoreline Hold-to-Charge, Strike & Hold-to-Reel
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!isPreloadComplete) return;
@@ -2977,7 +2977,7 @@ export default function App() {
         if (fishingPhase === 'fighting') {
           setIsHoldingReel(false);
         } else if (fishingPhase === 'charging') {
-          launchTidewaterCast(fishingCastPower);
+          launchShorelineCast(fishingCastPower);
         }
       }
     };
@@ -2995,7 +2995,7 @@ export default function App() {
     fishingPhase,
     handleTriggerFishingAction,
     lastCaughtFishToast,
-    launchTidewaterCast,
+    launchShorelineCast,
     nearbyWaterZone.canFish,
   ]);
 
@@ -4846,10 +4846,10 @@ export default function App() {
           )}
 
           {/* =================================================================
-              3E-2. BOTTOM-CENTER: TIDEWATER FISHING HUD, NEEDLE GAUGE & 3D CATCH SHOWCASE MODAL
+              3E-2. BOTTOM-CENTER: SHORELINE FISHING HUD, NEEDLE GAUGE & 3D CATCH SHOWCASE MODAL
              ================================================================= */}
           {playMode !== 'editor' && (nearbyWaterZone.canFish || lastCaughtFishToast) && (
-            <TidewaterFishingHudAndShowcase
+            <ShorelineFishingHudAndShowcase
               nearbyWaterZone={nearbyWaterZone}
               fishingPhase={fishingPhase}
               fishingCastPower={fishingCastPower}
@@ -4873,7 +4873,7 @@ export default function App() {
               }}
               onReleaseChargeCast={() => {
                 if (fishingPhase === 'charging') {
-                  launchTidewaterCast(fishingCastPower);
+                  launchShorelineCast(fishingCastPower);
                 }
               }}
               onSetHoldingReel={(holding) => {

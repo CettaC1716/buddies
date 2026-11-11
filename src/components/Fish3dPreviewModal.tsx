@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import { FISH_SPECIES_CATALOG, computeLengthCmFromWeightKg } from '../game/buddiesFishingMarket';
 import { soundEngine } from '../game/audio';
 import {
-  buildTidewaterProceduralFishGroup,
+  buildShorelineProceduralFishGroup,
   renderFishGroupTo2dCanvas,
-} from './TidewaterCatchShowcaseModal';
+} from './ShorelineCatchShowcaseModal';
 
 export interface Fish3dPreviewSpec {
   speciesId: string;
@@ -52,7 +52,7 @@ export function getOrRenderFish3dPortraitUrl(speciesId: string, rawColorHex?: st
     const ctx2d = offscreenCanvas.getContext('2d');
     if (!ctx2d) return '';
 
-    const fishModel = buildTidewaterProceduralFishGroup(speciesId, colorHex);
+    const fishModel = buildShorelineProceduralFishGroup(speciesId, colorHex);
     fishModel.updateSwimAnimation(0.42);
     fishModel.group.rotation.y = 0.24;
     fishModel.group.rotation.x = 0.04;
@@ -190,7 +190,7 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
     ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const resolvedColor = resolveSpeciesColorHex(activeSpeciesId, activeColorHex);
-    const fishModel = buildTidewaterProceduralFishGroup(activeSpeciesId, resolvedColor);
+    const fishModel = buildShorelineProceduralFishGroup(activeSpeciesId, resolvedColor);
 
     let rafId = 0;
     const startMs = performance.now();

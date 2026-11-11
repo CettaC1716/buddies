@@ -208,11 +208,11 @@ import {
   evaluateBlitzGrassMask,
 } from './buddiesPlanetCurvature';
 import {
-  evaluateTidewaterWaveHeight,
+  evaluateShorelineWaveHeight,
   type FishingPhaseState,
   type FishingWaterZoneId,
 } from './buddiesFishingMarket';
-import { buildTidewaterProceduralFishGroup } from '../components/TidewaterCatchShowcaseModal';
+import { buildShorelineProceduralFishGroup } from '../components/ShorelineCatchShowcaseModal';
 import {
   soundEngine,
   computeSpatialAudioGain,
@@ -11468,13 +11468,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     // =========================================================================
-    // 11B. TIDEWATER SLEEK MINIATURE FLOAT, 48-SEG NYLON LINE & 3D LANDING FISH
+    // 11B. SHORELINE SLEEK MINIATURE FLOAT, 48-SEG NYLON LINE & 3D LANDING FISH
     // =========================================================================
-    const TIDEWATER_LINE_SEGS = 48;
-    const tidewaterFishing3DGroup = new THREE.Group();
-    tidewaterFishing3DGroup.name = 'TidewaterFishing3DAssembly';
-    tidewaterFishing3DGroup.visible = false;
-    scene.add(tidewaterFishing3DGroup);
+    const SHORELINE_LINE_SEGS = 48;
+    const shorelineFishing3DGroup = new THREE.Group();
+    shorelineFishing3DGroup.name = 'ShorelineFishing3DAssembly';
+    shorelineFishing3DGroup.visible = false;
+    scene.add(shorelineFishing3DGroup);
 
     // Proportional miniature pear/spindle float (~6cm diameter, never oversized!)
     const castBobberGroup = new THREE.Group();
@@ -11525,27 +11525,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     bobberRippleRingMesh.rotation.x = -Math.PI / 2;
     bobberRippleRingMesh.position.y = 0.008;
     castBobberGroup.add(bobberRippleRingMesh);
-    tidewaterFishing3DGroup.add(castBobberGroup);
+    shorelineFishing3DGroup.add(castBobberGroup);
 
     let activeWaterFishKey = 'golden_harbor_tuna:#38bdf8';
-    let waterFightingFish = buildTidewaterProceduralFishGroup('golden_harbor_tuna', '#38bdf8');
+    let waterFightingFish = buildShorelineProceduralFishGroup('golden_harbor_tuna', '#38bdf8');
     waterFightingFish.group.scale.setScalar(0.56);
     waterFightingFish.group.visible = false;
-    tidewaterFishing3DGroup.add(waterFightingFish.group);
+    shorelineFishing3DGroup.add(waterFightingFish.group);
 
     const ensureWaterFightingFishModel = (speciesId: string, colorHex: string) => {
       const nextKey = `${speciesId}:${colorHex}`;
       if (nextKey === activeWaterFishKey) return;
       activeWaterFishKey = nextKey;
-      tidewaterFishing3DGroup.remove(waterFightingFish.group);
+      shorelineFishing3DGroup.remove(waterFightingFish.group);
       waterFightingFish.dispose();
-      waterFightingFish = buildTidewaterProceduralFishGroup(speciesId, colorHex);
+      waterFightingFish = buildShorelineProceduralFishGroup(speciesId, colorHex);
       waterFightingFish.group.scale.setScalar(0.56);
       waterFightingFish.group.visible = false;
-      tidewaterFishing3DGroup.add(waterFightingFish.group);
+      shorelineFishing3DGroup.add(waterFightingFish.group);
     };
 
-    const catenaryLinePositions = new Float32Array((TIDEWATER_LINE_SEGS + 1) * 3);
+    const catenaryLinePositions = new Float32Array((SHORELINE_LINE_SEGS + 1) * 3);
     const catenaryLineGeo = new THREE.BufferGeometry();
     catenaryLineGeo.setAttribute(
       'position',
@@ -11558,14 +11558,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     });
     const catenaryLineMesh = new THREE.Line(catenaryLineGeo, catenaryLineMat);
     catenaryLineMesh.frustumCulled = false;
-    tidewaterFishing3DGroup.add(catenaryLineMesh);
+    shorelineFishing3DGroup.add(catenaryLineMesh);
 
     const _tipWorldScratch = new THREE.Vector3();
     const _eyeletWorldScratch = new THREE.Vector3();
     const idleFloatPosSmooth = new THREE.Vector3();
     let hasIdleFloatPos = false;
 
-    const tidewaterFishingSync: {
+    const shorelineFishingSync: {
       phase: FishingPhaseState;
       castPower: number;
       tension: number;
@@ -11617,33 +11617,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       lastWaterBobberZ: 0,
     };
 
-    const onTidewaterFishingSync = (event: Event) => {
-      const detail = (event as CustomEvent<Partial<typeof tidewaterFishingSync>>).detail;
+    const onShorelineFishingSync = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<typeof shorelineFishingSync>>).detail;
       if (!detail) return;
-      const prevPhase = tidewaterFishingSync.phase;
-      if (detail.phase !== undefined) tidewaterFishingSync.phase = detail.phase;
-      if (detail.castPower !== undefined) tidewaterFishingSync.castPower = detail.castPower;
-      if (detail.tension !== undefined) tidewaterFishingSync.tension = detail.tension;
-      if (detail.isSurging !== undefined) tidewaterFishingSync.isSurging = detail.isSurging;
-      if (detail.isReeling !== undefined) tidewaterFishingSync.isReeling = detail.isReeling;
-      if (detail.rodBend !== undefined) tidewaterFishingSync.rodBend = detail.rodBend;
-      if (detail.reelAngle !== undefined) tidewaterFishingSync.reelAngle = detail.reelAngle;
-      if (detail.zoneId !== undefined && detail.zoneId) tidewaterFishingSync.zoneId = detail.zoneId;
-      if (detail.distanceM !== undefined) tidewaterFishingSync.distanceM = detail.distanceM;
+      const prevPhase = shorelineFishingSync.phase;
+      if (detail.phase !== undefined) shorelineFishingSync.phase = detail.phase;
+      if (detail.castPower !== undefined) shorelineFishingSync.castPower = detail.castPower;
+      if (detail.tension !== undefined) shorelineFishingSync.tension = detail.tension;
+      if (detail.isSurging !== undefined) shorelineFishingSync.isSurging = detail.isSurging;
+      if (detail.isReeling !== undefined) shorelineFishingSync.isReeling = detail.isReeling;
+      if (detail.rodBend !== undefined) shorelineFishingSync.rodBend = detail.rodBend;
+      if (detail.reelAngle !== undefined) shorelineFishingSync.reelAngle = detail.reelAngle;
+      if (detail.zoneId !== undefined && detail.zoneId) shorelineFishingSync.zoneId = detail.zoneId;
+      if (detail.distanceM !== undefined) shorelineFishingSync.distanceM = detail.distanceM;
       if (detail.nibblePulse !== undefined) {
-        tidewaterFishingSync.nibblePulse = Math.max(0, Math.min(1, detail.nibblePulse));
+        shorelineFishingSync.nibblePulse = Math.max(0, Math.min(1, detail.nibblePulse));
       }
-      if (detail.speciesId) tidewaterFishingSync.speciesId = detail.speciesId;
-      if (detail.speciesColorHex) tidewaterFishingSync.speciesColorHex = detail.speciesColorHex;
+      if (detail.speciesId) shorelineFishingSync.speciesId = detail.speciesId;
+      if (detail.speciesColorHex) shorelineFishingSync.speciesColorHex = detail.speciesColorHex;
 
       ensureWaterFightingFishModel(
-        tidewaterFishingSync.speciesId,
-        tidewaterFishingSync.speciesColorHex,
+        shorelineFishingSync.speciesId,
+        shorelineFishingSync.speciesColorHex,
       );
 
-      if (tidewaterFishingSync.phase === 'casting' && prevPhase !== 'casting') {
-        tidewaterFishingSync.castStartWallMs = performance.now();
-        tidewaterFishingSync.hasSplashedDown = false;
+      if (shorelineFishingSync.phase === 'casting' && prevPhase !== 'casting') {
+        shorelineFishingSync.castStartWallMs = performance.now();
+        shorelineFishingSync.hasSplashedDown = false;
         if (playerUnit) {
           playerUnit.weaponRecoil = 1.0;
           if (playerUnit.rig.customGlbController) {
@@ -11653,13 +11653,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       if (
-        tidewaterFishingSync.phase !== 'idle' &&
+        shorelineFishingSync.phase !== 'idle' &&
         (prevPhase === 'idle' || prevPhase === 'charging') &&
         playerUnit
       ) {
         handleQcEquipWeapon('fishing_rod');
         // Aim toward nearest water when casting
-        if (tidewaterFishingSync.zoneId === 'central_oasis') {
+        if (shorelineFishingSync.zoneId === 'central_oasis') {
           const dx = -31.0 - playerUnit.x;
           const dz = 0.0 - playerUnit.z;
           if (Math.hypot(dx, dz) > 0.2) {
@@ -11668,28 +11668,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else {
           playerUnit.yaw = 0; // Face East Beach Ocean (+X)
         }
-        tidewaterFishingSync.castOriginYaw = playerUnit.yaw;
-        tidewaterFishingSync.hasLockedCastYaw = true;
-      } else if (tidewaterFishingSync.phase === 'idle') {
-        tidewaterFishingSync.hasLockedCastYaw = false;
+        shorelineFishingSync.castOriginYaw = playerUnit.yaw;
+        shorelineFishingSync.hasLockedCastYaw = true;
+      } else if (shorelineFishingSync.phase === 'idle') {
+        shorelineFishingSync.hasLockedCastYaw = false;
       }
     };
 
-    const onTidewaterFishingLanded = (event: Event) => {
+    const onShorelineFishingLanded = (event: Event) => {
       const detail = (
         event as CustomEvent<{ speciesId?: string; colorHex?: string; weightKg?: number }>
       ).detail;
       if (detail?.speciesId) {
         ensureWaterFightingFishModel(detail.speciesId, detail.colorHex || '#38bdf8');
       }
-      tidewaterFishingSync.landingStartWallMs = performance.now();
-      tidewaterFishingSync.landingOriginX = tidewaterFishingSync.lastWaterBobberX;
-      tidewaterFishingSync.landingOriginY = tidewaterFishingSync.lastWaterBobberY;
-      tidewaterFishingSync.landingOriginZ = tidewaterFishingSync.lastWaterBobberZ;
+      shorelineFishingSync.landingStartWallMs = performance.now();
+      shorelineFishingSync.landingOriginX = shorelineFishingSync.lastWaterBobberX;
+      shorelineFishingSync.landingOriginY = shorelineFishingSync.lastWaterBobberY;
+      shorelineFishingSync.landingOriginZ = shorelineFishingSync.lastWaterBobberZ;
       spawnBurstParticles(
-        tidewaterFishingSync.landingOriginX,
-        tidewaterFishingSync.landingOriginY + 0.22,
-        tidewaterFishingSync.landingOriginZ,
+        shorelineFishingSync.landingOriginX,
+        shorelineFishingSync.landingOriginY + 0.22,
+        shorelineFishingSync.landingOriginZ,
         14,
       );
     };
@@ -11697,8 +11697,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
-    window.addEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
-    window.addEventListener('tidewater-fishing-landed', onTidewaterFishingLanded);
+    window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
+    window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
@@ -14588,12 +14588,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   });
 
             const inputLen = Math.hypot(moveX, moveZ);
-            const isFishingActive = tidewaterFishingSync.phase !== 'idle';
+            const isFishingActive = shorelineFishingSync.phase !== 'idle';
             if (isFishingActive) {
               playerUnit.vx = 0;
               playerUnit.vz = 0;
-              if (tidewaterFishingSync.hasLockedCastYaw) {
-                playerUnit.yaw = tidewaterFishingSync.castOriginYaw;
+              if (shorelineFishingSync.hasLockedCastYaw) {
+                playerUnit.yaw = shorelineFishingSync.castOriginYaw;
               }
             } else if (inputLen > 0.01) {
               if (playerUnit.isSitting && activeSeatedSpot) {
@@ -14722,8 +14722,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               playerUnit.weaponId !== 'unarmed' &&
               playerUnit.weaponId !== 'fishing_rod';
             if (isFishingActive) {
-              if (tidewaterFishingSync.hasLockedCastYaw) {
-                playerUnit.yaw = tidewaterFishingSync.castOriginYaw;
+              if (shorelineFishingSync.hasLockedCastYaw) {
+                playerUnit.yaw = shorelineFishingSync.castOriginYaw;
               }
             } else if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
               if (inputLen > 0.01) {
@@ -15984,29 +15984,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const unitIsDriving = Boolean(b.isDriving);
             if (b.isPlayer) {
               b.rig.fishingPoseState = {
-                phase: tidewaterFishingSync.phase,
-                isReeling: tidewaterFishingSync.isReeling,
-                isSurging: tidewaterFishingSync.isSurging,
-                tension: tidewaterFishingSync.tension,
-                rodBend: tidewaterFishingSync.rodBend,
-                reelAngle: tidewaterFishingSync.reelAngle,
-                castPower: tidewaterFishingSync.castPower,
+                phase: shorelineFishingSync.phase,
+                isReeling: shorelineFishingSync.isReeling,
+                isSurging: shorelineFishingSync.isSurging,
+                tension: shorelineFishingSync.tension,
+                rodBend: shorelineFishingSync.rodBend,
+                reelAngle: shorelineFishingSync.reelAngle,
+                castPower: shorelineFishingSync.castPower,
               };
               if (
                 !isMoving &&
                 b.weaponId === 'fishing_rod' &&
-                tidewaterFishingSync.phase === 'fighting' &&
-                tidewaterFishingSync.hasLockedCastYaw
+                shorelineFishingSync.phase === 'fighting' &&
+                shorelineFishingSync.hasLockedCastYaw
               ) {
                 const fightReach = Math.max(
                   1.5,
-                  Math.min(18.5, tidewaterFishingSync.distanceM * 0.78),
+                  Math.min(18.5, shorelineFishingSync.distanceM * 0.78),
                 );
                 const fightSway =
                   Math.sin(timeSec * 2.35) * 1.15 +
-                  Math.sin(timeSec * 5.7) * (tidewaterFishingSync.isSurging ? 0.95 : 0.32);
+                  Math.sin(timeSec * 5.7) * (shorelineFishingSync.isSurging ? 0.95 : 0.32);
                 b.yaw =
-                  tidewaterFishingSync.castOriginYaw +
+                  shorelineFishingSync.castOriginYaw +
                   Math.atan2(-fightSway * 0.42, Math.max(3.0, fightReach));
                 b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
               }
@@ -16054,13 +16054,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 if (b.rig.fishingRodGroup) b.rig.fishingRodGroup.visible = false;
                 b.weaponMesh.visible = false;
               }
-              // TIDEWATER 3D FISHING ROD SKELETAL BEND & SPINNING REEL CRANK (Downward -Y Axis)
+              // SHORELINE 3D FISHING ROD SKELETAL BEND & SPINNING REEL CRANK (Downward -Y Axis)
               const rodGrp = b.rig.fishingRodGroup;
               const isCastInWater =
-                tidewaterFishingSync.phase === 'casting' ||
-                tidewaterFishingSync.phase === 'nibble' ||
-                tidewaterFishingSync.phase === 'bite' ||
-                tidewaterFishingSync.phase === 'fighting';
+                shorelineFishingSync.phase === 'casting' ||
+                shorelineFishingSync.phase === 'nibble' ||
+                shorelineFishingSync.phase === 'bite' ||
+                shorelineFishingSync.phase === 'fighting';
               if (rodGrp && b.weaponId === 'fishing_rod') {
                 const crankMesh = rodGrp.userData.reelCrankMesh as THREE.Mesh | undefined;
                 const rodFlexPivot = rodGrp.userData.rodFlexPivot as THREE.Group | undefined;
@@ -16069,31 +16069,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 const hWhite = rodGrp.userData.hangingBobberWhiteMesh as THREE.Mesh | undefined;
                 if (crankMesh) {
                   if (rodGrp.userData.hasFishingRodGlb) {
-                    crankMesh.rotation.z = tidewaterFishingSync.reelAngle;
+                    crankMesh.rotation.z = shorelineFishingSync.reelAngle;
                   } else {
-                    crankMesh.rotation.x = tidewaterFishingSync.reelAngle;
+                    crankMesh.rotation.x = shorelineFishingSync.reelAngle;
                   }
                 }
-                // Hide static fallback leader meshes — live gravity-true nylon & mini float render via `tidewaterFishing3DGroup`
+                // Hide static fallback leader meshes — live gravity-true nylon & mini float render via `shorelineFishing3DGroup`
                 if (hLine) hLine.visible = false;
                 if (hRed) hRed.visible = false;
                 if (hWhite) hWhite.visible = false;
 
-                if (tidewaterFishingSync.phase === 'charging') {
+                if (shorelineFishingSync.phase === 'charging') {
                   if (rodFlexPivot) {
-                    rodFlexPivot.rotation.x = -tidewaterFishingSync.castPower * 0.22;
+                    rodFlexPivot.rotation.x = -shorelineFishingSync.castPower * 0.22;
                   }
                 } else if (isCastInWater) {
                   const nibbleBend =
-                    tidewaterFishingSync.nibblePulse > 0.01
+                    shorelineFishingSync.nibblePulse > 0.01
                       ? 0.24 *
-                        tidewaterFishingSync.nibblePulse *
+                        shorelineFishingSync.nibblePulse *
                         (0.6 + 0.4 * Math.abs(Math.sin(timeSec * 14.0)))
                       : 0.05;
                   const bend =
-                    tidewaterFishingSync.phase === 'fighting'
-                      ? tidewaterFishingSync.rodBend
-                      : tidewaterFishingSync.phase === 'bite'
+                    shorelineFishingSync.phase === 'fighting'
+                      ? shorelineFishingSync.rodBend
+                      : shorelineFishingSync.phase === 'bite'
                         ? 0.68 + Math.abs(Math.sin(timeSec * 12.0)) * 0.14
                         : nibbleBend;
                   if (rodFlexPivot) {
@@ -18171,7 +18171,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const isActivelyMoving =
             Math.hypot(curVx, curVz) > 0.08 ||
             playerUnit.jumpOffset > 0.03 ||
-            tidewaterFishingSync.phase !== 'idle';
+            shorelineFishingSync.phase !== 'idle';
           const zoneOrChatChanged =
             localZoneKey !== lastBroadcastZoneKey || curChat !== lastBroadcastChatText;
           const minIntervalMs = zoneOrChatChanged ? 0 : isActivelyMoving ? 88 : 1100;
@@ -18200,9 +18200,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isSitting: Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null,
                 isDriving: Boolean(playerUnit.isDriving) || mountedTank !== null,
                 isHiddenInVehicle: ridingTramCarIdx !== null,
-                fishingPhase: tidewaterFishingSync.phase,
-                isReeling: tidewaterFishingSync.isReeling,
-                rodBend: tidewaterFishingSync.rodBend,
+                fishingPhase: shorelineFishingSync.phase,
+                isReeling: shorelineFishingSync.isReeling,
+                rodBend: shorelineFishingSync.rodBend,
                 hasClaimedBase:
                   nearSessionState.claimedTeam === playerUnit.team &&
                   nearSessionState.claimedPlotIndex !== null,
@@ -19239,21 +19239,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
       // Evaluated AFTER `applyPlanetCurvatureToObject(playerUnit.root, ...)` so `_tipWorldScratch`
       // matches the rendered 3D rod front guide eyelet (`Bone010_09`) to 0.000m at all camera angles!
-      tidewaterFishingSync.nibblePulse = Math.max(0, tidewaterFishingSync.nibblePulse - dt * 2.1);
+      shorelineFishingSync.nibblePulse = Math.max(0, shorelineFishingSync.nibblePulse - dt * 2.1);
       const isPlayerInHouseVisual =
         npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
       const playerRodGrp = playerUnit?.rig.fishingRodGroup;
       const playerRodTipAnchor = playerRodGrp?.userData.rodTipAnchor as THREE.Object3D | undefined;
-      const landingElapsedMs = performance.now() - tidewaterFishingSync.landingStartWallMs;
+      const landingElapsedMs = performance.now() - shorelineFishingSync.landingStartWallMs;
       const isLandingLeapActive =
-        tidewaterFishingSync.landingStartWallMs > 0 &&
+        shorelineFishingSync.landingStartWallMs > 0 &&
         landingElapsedMs >= 0 &&
         landingElapsedMs < 560;
       const isCastInWaterVisual =
-        tidewaterFishingSync.phase === 'casting' ||
-        tidewaterFishingSync.phase === 'nibble' ||
-        tidewaterFishingSync.phase === 'bite' ||
-        tidewaterFishingSync.phase === 'fighting';
+        shorelineFishingSync.phase === 'casting' ||
+        shorelineFishingSync.phase === 'nibble' ||
+        shorelineFishingSync.phase === 'bite' ||
+        shorelineFishingSync.phase === 'fighting';
 
       if (
         playerUnit &&
@@ -19266,7 +19266,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         !mountedTank &&
         ridingTramCarIdx === null
       ) {
-        tidewaterFishing3DGroup.visible = true;
+        shorelineFishing3DGroup.visible = true;
         playerUnit.root.updateMatrixWorld(true);
         playerRodTipAnchor.getWorldPosition(_tipWorldScratch);
 
@@ -19274,9 +19274,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           // STATE C: 0.55s 3D Fish Landing Leap Arc out of the water toward the angler!
           hasIdleFloatPos = false;
           const lp = Math.min(1, landingElapsedMs / 540);
-          const startLx = tidewaterFishingSync.landingOriginX;
-          const startLy = tidewaterFishingSync.landingOriginY;
-          const startLz = tidewaterFishingSync.landingOriginZ;
+          const startLx = shorelineFishingSync.landingOriginX;
+          const startLy = shorelineFishingSync.landingOriginY;
+          const startLz = shorelineFishingSync.landingOriginZ;
           const endLx = playerUnit.x;
           const endLy = getTerrainElevation(playerUnit.x, playerUnit.z) + 1.32;
           const endLz = playerUnit.z;
@@ -19315,8 +19315,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           );
           castBobberGroup.rotation.set(0, 0, 0);
 
-          for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
-            const s = seg / TIDEWATER_LINE_SEGS;
+          for (let seg = 0; seg <= SHORELINE_LINE_SEGS; seg++) {
+            const s = seg / SHORELINE_LINE_SEGS;
             const idx3 = seg * 3;
             catenaryLinePositions[idx3] = _tipWorldScratch.x + (fishVx - _tipWorldScratch.x) * s;
             catenaryLinePositions[idx3 + 1] =
@@ -19329,8 +19329,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else if (isCastInWaterVisual) {
           // STATE B: Cast Windup -> Parabolic Flight -> Calm Float & Nibbles -> Bite -> Fighting & Reeling!
           hasIdleFloatPos = false;
-          const castYaw = tidewaterFishingSync.hasLockedCastYaw
-            ? tidewaterFishingSync.castOriginYaw
+          const castYaw = shorelineFishingSync.hasLockedCastYaw
+            ? shorelineFishingSync.castOriginYaw
             : playerUnit.yaw;
           const fwdX = Math.cos(castYaw);
           const fwdZ = -Math.sin(castYaw);
@@ -19338,13 +19338,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const rightZ = Math.cos(castYaw);
 
           const castReach =
-            tidewaterFishingSync.phase === 'fighting'
-              ? Math.max(1.45, Math.min(18.5, tidewaterFishingSync.distanceM * 0.78))
-              : 5.2 + tidewaterFishingSync.castPower * 7.8;
+            shorelineFishingSync.phase === 'fighting'
+              ? Math.max(1.45, Math.min(18.5, shorelineFishingSync.distanceM * 0.78))
+              : 5.2 + shorelineFishingSync.castPower * 7.8;
           const fishSway =
-            tidewaterFishingSync.phase === 'fighting'
+            shorelineFishingSync.phase === 'fighting'
               ? Math.sin(timeSec * 2.35) * 1.15 +
-                Math.sin(timeSec * 5.7) * (tidewaterFishingSync.isSurging ? 0.95 : 0.32)
+                Math.sin(timeSec * 5.7) * (shorelineFishingSync.isSurging ? 0.95 : 0.32)
               : 0;
 
           const targetLogicalX = wrapPlanetCoord(
@@ -19353,34 +19353,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const targetLogicalZ = wrapPlanetCoord(
             playerUnit.z + fwdZ * castReach + rightZ * fishSway,
           );
-          const waveSample = evaluateTidewaterWaveHeight(
+          const waveSample = evaluateShorelineWaveHeight(
             targetLogicalX,
             targetLogicalZ,
             timeSec,
-            tidewaterFishingSync.zoneId,
+            shorelineFishingSync.zoneId,
           );
           const baseWaterY =
-            tidewaterFishingSync.zoneId === 'central_oasis'
+            shorelineFishingSync.zoneId === 'central_oasis'
               ? -0.14
               : Math.min(0.05, getTerrainElevation(targetLogicalX, targetLogicalZ) + 0.08);
           const nibbleDip =
-            tidewaterFishingSync.nibblePulse > 0.01
+            shorelineFishingSync.nibblePulse > 0.01
               ? -0.058 *
-                tidewaterFishingSync.nibblePulse *
+                shorelineFishingSync.nibblePulse *
                 (0.65 + 0.35 * Math.abs(Math.sin(timeSec * 14.0)))
               : 0;
           const dipOffset =
-            tidewaterFishingSync.phase === 'bite'
+            shorelineFishingSync.phase === 'bite'
               ? -0.11 - Math.abs(Math.sin(timeSec * 12.0)) * 0.06
-              : tidewaterFishingSync.phase === 'fighting'
-                ? -0.045 - (tidewaterFishingSync.isSurging ? 0.04 : 0)
+              : shorelineFishingSync.phase === 'fighting'
+                ? -0.045 - (shorelineFishingSync.isSurging ? 0.04 : 0)
                 : nibbleDip;
           const targetSurfaceLogicalY = baseWaterY + waveSample.heightY;
           const targetBobberLogicalY = targetSurfaceLogicalY + dipOffset;
 
-          tidewaterFishingSync.lastWaterBobberX = targetLogicalX;
-          tidewaterFishingSync.lastWaterBobberY = targetSurfaceLogicalY;
-          tidewaterFishingSync.lastWaterBobberZ = targetLogicalZ;
+          shorelineFishingSync.lastWaterBobberX = targetLogicalX;
+          shorelineFishingSync.lastWaterBobberY = targetSurfaceLogicalY;
+          shorelineFishingSync.lastWaterBobberZ = targetLogicalZ;
 
           const targetVisX = planetPivotX + getPlanetShortestDelta(targetLogicalX, planetPivotX);
           const targetVisZ = planetPivotZ + getPlanetShortestDelta(targetLogicalZ, planetPivotZ);
@@ -19397,14 +19397,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           // Sync cast launch with `fishing_cast.001` 0.16s backswing windup before forward release
           const flyElapsedSec = Math.max(
             0,
-            (performance.now() - tidewaterFishingSync.castStartWallMs) / 1000,
+            (performance.now() - shorelineFishingSync.castStartWallMs) / 1000,
           );
           const windupSec = 0.16;
-          const flyDurationSec = 0.48 + tidewaterFishingSync.castPower * 0.24;
+          const flyDurationSec = 0.48 + shorelineFishingSync.castPower * 0.24;
           const isWindingUpCast =
-            tidewaterFishingSync.phase === 'casting' && flyElapsedSec < windupSec;
+            shorelineFishingSync.phase === 'casting' && flyElapsedSec < windupSec;
           const flyProgress =
-            tidewaterFishingSync.phase === 'casting'
+            shorelineFishingSync.phase === 'casting'
               ? Math.max(0, Math.min(1, (flyElapsedSec - windupSec) / flyDurationSec))
               : 1;
           const isFlyingInAir = isWindingUpCast || flyProgress < 1;
@@ -19418,15 +19418,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             bobberVisZ = _tipWorldScratch.z - fwdZ * 0.12;
           } else if (flyProgress < 1) {
             const arcLiftY =
-              Math.sin(flyProgress * Math.PI) * (1.65 + tidewaterFishingSync.castPower * 2.1);
+              Math.sin(flyProgress * Math.PI) * (1.65 + shorelineFishingSync.castPower * 2.1);
             bobberVisX = _tipWorldScratch.x + (targetVisX - _tipWorldScratch.x) * flyProgress;
             bobberVisY =
               _tipWorldScratch.y + (targetVisY - _tipWorldScratch.y) * flyProgress + arcLiftY;
             bobberVisZ = _tipWorldScratch.z + (targetVisZ - _tipWorldScratch.z) * flyProgress;
           }
 
-          if (!isFlyingInAir && !tidewaterFishingSync.hasSplashedDown) {
-            tidewaterFishingSync.hasSplashedDown = true;
+          if (!isFlyingInAir && !shorelineFishingSync.hasSplashedDown) {
+            shorelineFishingSync.hasSplashedDown = true;
             spawnBurstParticles(targetLogicalX, targetSurfaceLogicalY + 0.16, targetLogicalZ, 8);
           }
 
@@ -19440,9 +19440,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           castBobberGroup.position.set(bobberVisX, bobberVisY, bobberVisZ);
           castBobberGroup.scale.setScalar(sleekBobberScale);
           const tiltTowardTip =
-            tidewaterFishingSync.phase === 'fighting'
+            shorelineFishingSync.phase === 'fighting'
               ? 0.42
-              : tidewaterFishingSync.phase === 'bite'
+              : shorelineFishingSync.phase === 'bite'
                 ? 0.28
                 : Math.sin(timeSec * 2.4) * 0.08;
           castBobberGroup.rotation.set(
@@ -19455,15 +19455,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
           bobberRippleRingMesh.visible = !isFlyingInAir;
           const ringPulse =
-            tidewaterFishingSync.phase === 'bite' || tidewaterFishingSync.isSurging
+            shorelineFishingSync.phase === 'bite' || shorelineFishingSync.isSurging
               ? 1.0 + (timeSec * 3.4 - Math.floor(timeSec * 3.4)) * 1.9
-              : tidewaterFishingSync.nibblePulse > 0.1
-                ? 1.0 + tidewaterFishingSync.nibblePulse * 1.25
+              : shorelineFishingSync.nibblePulse > 0.1
+                ? 1.0 + shorelineFishingSync.nibblePulse * 1.25
                 : 1.0 + 0.18 * Math.sin(timeSec * 2.4);
           bobberRippleRingMesh.scale.setScalar(ringPulse);
 
           // 3D Hooked Fish Swimming & Thrashing Closer Across the Water During 'fighting'
-          if (tidewaterFishingSync.phase === 'fighting') {
+          if (shorelineFishingSync.phase === 'fighting') {
             waterFightingFish.group.visible = true;
             waterFightingFish.group.scale.setScalar(0.56);
             waterFightingFish.group.position.set(
@@ -19471,9 +19471,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               bobberVisY - 0.055,
               bobberVisZ + fwdZ * 0.16,
             );
-            const swimYaw = tidewaterFishingSync.isSurging
+            const swimYaw = shorelineFishingSync.isSurging
               ? castYaw + Math.sin(timeSec * 7.5) * 0.65
-              : tidewaterFishingSync.isReeling
+              : shorelineFishingSync.isReeling
                 ? castYaw + Math.PI + Math.sin(timeSec * 5.2) * 0.35
                 : castYaw + Math.PI * 0.5 + Math.cos(timeSec * 3.4) * 0.5;
             waterFightingFish.group.rotation.set(
@@ -19482,7 +19482,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               Math.cos(timeSec * 9.0) * 0.16,
             );
             waterFightingFish.updateSwimAnimation(
-              timeSec * (tidewaterFishingSync.isSurging ? 2.8 : 1.55),
+              timeSec * (shorelineFishingSync.isSurging ? 2.8 : 1.55),
             );
           } else {
             waterFightingFish.group.visible = false;
@@ -19490,17 +19490,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
           if (
             !isFlyingInAir &&
-            (tidewaterFishingSync.phase === 'bite' ||
-              tidewaterFishingSync.isSurging ||
-              tidewaterFishingSync.nibblePulse > 0.72) &&
-            timeSec - tidewaterFishingSync.lastSplashTime > 0.38
+            (shorelineFishingSync.phase === 'bite' ||
+              shorelineFishingSync.isSurging ||
+              shorelineFishingSync.nibblePulse > 0.72) &&
+            timeSec - shorelineFishingSync.lastSplashTime > 0.38
           ) {
-            tidewaterFishingSync.lastSplashTime = timeSec;
+            shorelineFishingSync.lastSplashTime = timeSec;
             spawnBurstParticles(
               targetLogicalX,
               targetSurfaceLogicalY + 0.14,
               targetLogicalZ,
-              tidewaterFishingSync.nibblePulse > 0.72 && tidewaterFishingSync.phase !== 'bite'
+              shorelineFishingSync.nibblePulse > 0.72 && shorelineFishingSync.phase !== 'bite'
                 ? 3
                 : 6,
             );
@@ -19511,12 +19511,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const endY = _eyeletWorldScratch.y;
           const endZ = _eyeletWorldScratch.z;
           const lineTension =
-            tidewaterFishingSync.phase === 'fighting'
-              ? Math.max(0.38, Math.min(1, tidewaterFishingSync.tension))
-              : tidewaterFishingSync.phase === 'bite'
+            shorelineFishingSync.phase === 'fighting'
+              ? Math.max(0.38, Math.min(1, shorelineFishingSync.tension))
+              : shorelineFishingSync.phase === 'bite'
                 ? 0.88
-                : tidewaterFishingSync.nibblePulse > 0.05
-                  ? 0.25 + tidewaterFishingSync.nibblePulse * 0.45
+                : shorelineFishingSync.nibblePulse > 0.05
+                  ? 0.25 + shorelineFishingSync.nibblePulse * 0.45
                   : 0.22;
           const lineDist = Math.hypot(
             endX - _tipWorldScratch.x,
@@ -19531,12 +19531,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               ? Math.sin(flyProgress * Math.PI) * 0.26
               : 0;
           const tautVibAmp =
-            tidewaterFishingSync.phase === 'fighting' || tidewaterFishingSync.phase === 'bite'
+            shorelineFishingSync.phase === 'fighting' || shorelineFishingSync.phase === 'bite'
               ? 0.011 * lineTension
               : 0;
 
-          for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
-            const s = seg / TIDEWATER_LINE_SEGS;
+          for (let seg = 0; seg <= SHORELINE_LINE_SEGS; seg++) {
+            const s = seg / SHORELINE_LINE_SEGS;
             const arch = 4.0 * s * (1.0 - s);
             const sag = maxSag * arch;
             const airBow = airLiftBow * arch;
@@ -19546,7 +19546,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 : 0;
             let py = _tipWorldScratch.y + (endY - _tipWorldScratch.y) * s - sag + airBow + vib;
             // Clamp intermediate slack segments above the water surface so nylon never dips underwater!
-            if (!isFlyingInAir && seg > 0 && seg < TIDEWATER_LINE_SEGS && s > 0.35) {
+            if (!isFlyingInAir && seg > 0 && seg < SHORELINE_LINE_SEGS && s > 0.35) {
               const waterFloorY = targetSurfaceVisY + 0.012;
               if (py < waterFloorY) py = waterFloorY;
             }
@@ -19559,12 +19559,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           catenaryLineGeo.attributes.position.needsUpdate = true;
 
-          if (tidewaterFishingSync.phase === 'fighting') {
-            if (tidewaterFishingSync.tension > 0.85) {
+          if (shorelineFishingSync.phase === 'fighting') {
+            if (shorelineFishingSync.tension > 0.85) {
               catenaryLineMat.color.setHex(0xef4444); // Danger Overload Red
             } else if (
-              tidewaterFishingSync.tension >= 0.3 &&
-              tidewaterFishingSync.tension <= 0.85
+              shorelineFishingSync.tension >= 0.3 &&
+              shorelineFishingSync.tension <= 0.85
             ) {
               catenaryLineMat.color.setHex(0x4ade80); // Green Sweet-Spot Band
             } else {
@@ -19577,7 +19577,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           // STATE A: Uncast (`idle` / `charging`) — Gravity-True Swinging Leader & Miniature Float!
           bobberRippleRingMesh.visible = false;
           waterFightingFish.group.visible = false;
-          const leaderLen = tidewaterFishingSync.phase === 'charging' ? 0.34 : 0.42;
+          const leaderLen = shorelineFishingSync.phase === 'charging' ? 0.34 : 0.42;
           const goalX = _tipWorldScratch.x + Math.sin(timeSec * 1.9) * 0.012;
           const goalY = _tipWorldScratch.y - leaderLen;
           const goalZ = _tipWorldScratch.z + Math.cos(timeSec * 1.6) * 0.012;
@@ -19612,8 +19612,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           castBobberGroup.updateMatrixWorld(true);
           bobberEyeletAnchor.getWorldPosition(_eyeletWorldScratch);
 
-          for (let seg = 0; seg <= TIDEWATER_LINE_SEGS; seg++) {
-            const s = seg / TIDEWATER_LINE_SEGS;
+          for (let seg = 0; seg <= SHORELINE_LINE_SEGS; seg++) {
+            const s = seg / SHORELINE_LINE_SEGS;
             const sag = 0.018 * 4.0 * s * (1.0 - s);
             const idx3 = seg * 3;
             catenaryLinePositions[idx3] =
@@ -19627,7 +19627,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           catenaryLineMat.color.setHex(0xe2e8f0);
         }
       } else {
-        tidewaterFishing3DGroup.visible = false;
+        shorelineFishing3DGroup.visible = false;
         hasIdleFloatPos = false;
       }
 
@@ -21589,8 +21589,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('start-city-tram-ride-transition', onStartCityTramRideTransition);
       window.removeEventListener('select-character-by-id', onSelectCharacterById);
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
-      window.removeEventListener('tidewater-fishing-sync', onTidewaterFishingSync);
-      window.removeEventListener('tidewater-fishing-landed', onTidewaterFishingLanded);
+      window.removeEventListener('shoreline-fishing-sync', onShorelineFishingSync);
+      window.removeEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
       window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
       scene.remove(tutorialWaypointGroup);
       tutorialChevronGeo.dispose();
@@ -21599,7 +21599,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       for (const item of tutorialChevronMeshes) {
         item.mat.dispose();
       }
-      scene.remove(tidewaterFishing3DGroup);
+      scene.remove(shorelineFishing3DGroup);
       waterFightingFish.dispose();
       castBobberTopMesh.geometry.dispose();
       (castBobberTopMesh.material as THREE.Material).dispose();

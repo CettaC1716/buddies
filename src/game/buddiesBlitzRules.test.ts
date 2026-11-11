@@ -5632,13 +5632,13 @@ test('soundEngine browser AudioContext unlock + BGM scheduler executes with zero
 
 test('Zero-WebGL-context fish perspective triangle rasterizer projects >800 lit, finite, depth-sorted triangles across all 10 species', async () => {
   const { FISH_SPECIES_CATALOG } = await import('./buddiesFishingMarket');
-  const { buildTidewaterProceduralFishGroup, projectFishGroupTriangles } = await import(
-    '../components/TidewaterCatchShowcaseModal'
+  const { buildShorelineProceduralFishGroup, projectFishGroupTriangles } = await import(
+    '../components/ShorelineCatchShowcaseModal'
   );
 
   assert.equal(FISH_SPECIES_CATALOG.length, 10);
   for (const spec of FISH_SPECIES_CATALOG) {
-    const model = buildTidewaterProceduralFishGroup(spec.speciesId, spec.colorHex);
+    const model = buildShorelineProceduralFishGroup(spec.speciesId, spec.colorHex);
     model.updateSwimAnimation(0.45);
     model.group.rotation.y = 0.25;
     model.group.rotation.x = 0.04;

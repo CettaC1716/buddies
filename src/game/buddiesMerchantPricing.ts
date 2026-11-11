@@ -214,7 +214,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   {
     id: 'fishing_rod_carbon_pro',
     tokenId: 'item:fishing_rod_carbon_pro',
-    name: 'Tidewater Carbon Pro Rod',
+    name: 'Shoreline Carbon Pro Rod',
     category: 'fishing_gear',
     merchantId: 'beach_house',
     isEquippableRod: true,
@@ -254,7 +254,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   {
     id: 'fishing_cooler_icebox',
     tokenId: 'item:fishing_cooler_icebox',
-    name: 'Tidewater Marine Ice Cooler',
+    name: 'Shoreline Marine Ice Cooler',
     category: 'fishing_gear',
     merchantId: 'beach_house',
     currency: 'CYON',
@@ -281,7 +281,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   {
     id: 'nft_sonar_fishfinder_pro',
     tokenId: 'nep245:fishing:sonar_fishfinder_pro',
-    name: 'Tidewater Sonar Fishfinder NFT',
+    name: 'Shoreline Sonar Fishfinder NFT',
     category: 'fishing_gear',
     merchantId: 'beach_house',
     currency: 'RESPITE',

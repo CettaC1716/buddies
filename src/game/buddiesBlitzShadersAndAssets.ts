@@ -7168,7 +7168,7 @@ export function buildProceduralFishingRod(addPart: AddWeaponPartFn): THREE.Group
   addPart(g, new THREE.CylinderGeometry(0.036, 0.036, 0.12, 10), '#1e293b', [0, 0, -0.32], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
   addPart(g, new THREE.CylinderGeometry(0.034, 0.034, 0.08, 10), '#f59e0b', [0, 0, 0.20], [Math.PI / 2, 0, 0], [1, 1, 1], 0.01);
 
-  // Spinning Reel Assembly underneath grip (Tidewater 3000-size spinning reel)
+  // Spinning Reel Assembly underneath grip (Shoreline 3000-size spinning reel)
   addPart(g, new THREE.BoxGeometry(0.032, 0.09, 0.075), '#334155', [0, -0.055, 0.04], [0, 0, 0], [1, 1, 1], 0.01);
   addPart(g, new THREE.CylinderGeometry(0.054, 0.054, 0.085, 12), '#fbbf24', [0, -0.11, 0.06], [Math.PI / 2, 0, 0], [1, 1, 1], 0.012);
   addPart(g, new THREE.CylinderGeometry(0.040, 0.046, 0.055, 12), '#1e293b', [0, -0.11, 0.00], [Math.PI / 2, 0, 0], [1, 1, 1], 0.01);
@@ -11818,7 +11818,7 @@ export function createCurvedPlanetEnvironment(
           surfaceCol = mix(surfaceCol, dockCol, concreteMask);
         }
         if (seaMask > 0.001) {
-          // Tidewater 60 FPS 4-Cascade Non-Integer Wavelengths ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Whitecap Foam
+          // Shoreline 60 FPS 4-Cascade Non-Integer Wavelengths ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Whitecap Foam
           float k0 = 6.2831853 / 73.3;
           float k1 = 6.2831853 / 15.7;
           float k2 = 6.2831853 / 3.33;
@@ -11846,7 +11846,7 @@ export function createCurvedPlanetEnvironment(
           float wallDropShadow = smoothstep(0.15, 0.85, quayDist) * (1.0 - smoothstep(0.85, 3.6, quayDist)) * (1.0 - seBeachShoreline);
           seaCol *= mix(1.0, 0.46, wallDropShadow);
 
-          // Tidewater Depth-Gated Shore Swash & Stranded Voronoi Lace Foam (only evaluated within WATER_SHORE_DEEP < 26m)
+          // Shoreline Depth-Gated Shore Swash & Stranded Voronoi Lace Foam (only evaluated within WATER_SHORE_DEEP < 26m)
           if (harborSdf.y > -26.0) {
             float foam = smoothstep(-2.25, -0.85, harborSdf.y) * (1.0 - smoothstep(-0.85, -0.15, harborSdf.y));
             float beachSurfWave = sin(p.x * 1.65 + uTime * 2.4 + sin(p.y * 0.28) * 1.8) * 0.5 + 0.5;
@@ -17085,7 +17085,7 @@ export function createCurvedPlanetEnvironment(
   };
 
   // 1B. Translucent 3D Oasis Lake Water Surface Plane (y = -0.16m) over the 3-Level Concave Lake Basin (-1.55m depth)
-  //     Upgraded with Tidewater 60 FPS 4-Cascade Non-Integer Wave Synthesis ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Foam!
+  //     Upgraded with Shoreline 60 FPS 4-Cascade Non-Integer Wave Synthesis ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Foam!
   const lakeSurfaceGeo = new THREE.PlaneGeometry(28.0, 30.0, 24, 24);
   lakeSurfaceGeo.rotateX(-Math.PI / 2);
   const lakeSurfaceMat = new THREE.ShaderMaterial({

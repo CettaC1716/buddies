@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * BUDDIES BLITZ 3D — TIDEWATER 60FPS WATER & FISHING ENGINE + KAI'S NFT MARKET
+ * BUDDIES BLITZ 3D — SHORELINE 60FPS WATER & FISHING ENGINE + KAI'S NFT MARKET
  * ============================================================================
- * Economy & Gameplay Rules (Adapted from Tidewater Architecture):
+ * Economy & Gameplay Rules (fishing loop adapted from the MIT-licensed Tidewater project
+ * by Dan Greenheck / DRG Software Solutions LLC - see THIRD-PARTY-NOTICES.md):
  *   1. LUL is earned ONLY in the Warzone (high supply from combat & crates).
- *   2. Fishing at East Beach or Central Oasis Lake uses Tidewater's tactile loop:
+ *   2. Fishing at East Beach or Central Oasis Lake uses the adapted tactile loop:
  *      - Charge-to-Cast (0..100% power -> 8m..28m ballistic cast + 48-seg catenary line)
  *      - Habitat Depth + Time-of-Day activity curves ('day' | 'dawnDusk' | 'night' | 'any')
  *      - Two-Stage Bite Cues: 1..3 Preliminary Nibbles (gentle dip) -> Take! (deep plunge)
@@ -51,9 +52,9 @@ export interface FishSpeciesSpec {
   dropWeight: number;
   colorHex: string;
   loreTag: string;
-  /** Tidewater time-of-day activity preference ('day' | 'dawnDusk' | 'night' | 'any') */
+  /** Shoreline time-of-day activity preference ('day' | 'dawnDusk' | 'night' | 'any') */
   timePreference: FishTimePreference;
-  /** Tidewater fight intensity (0.15 calm -> 0.92 apex predator) */
+  /** Shoreline fight intensity (0.15 calm -> 0.92 apex predator) */
   fightStrength: number;
   /** FishBase length-weight power-law coefficient `a` (g / cm^b) */
   lwA: number;
@@ -108,24 +109,24 @@ export interface FishNftMarketplaceListing {
 }
 
 /**
- * Shared 60 FPS analytical multi-cascade wave evaluator (adapted from Tidewater's
- * non-integer cascade wavelengths `[73.3m, 15.7m, 3.33m, 0.71m]`).
+ * Shared 60 FPS analytical multi-cascade wave evaluator (adapted from the MIT-licensed
+ * Tidewater project by Dan Greenheck / DRG Software Solutions LLC - see THIRD-PARTY-NOTICES.md).
  * Used by both the 3D floating bobber and water surface shaders so the bobber
  * tracks wave crests and troughs with zero GPU-to-CPU pipeline stalls.
  */
-export interface TidewaterWaveSample {
+export interface ShorelineWaveSample {
   heightY: number;
   slopeX: number;
   slopeZ: number;
   jacobianFoam: number;
 }
 
-export function evaluateTidewaterWaveHeight(
+export function evaluateShorelineWaveHeight(
   worldX: number,
   worldZ: number,
   timeSec: number,
   zoneId: FishingWaterZoneId = 'east_beach',
-): TidewaterWaveSample {
+): ShorelineWaveSample {
   const ampScale = zoneId === 'east_beach' ? 1.0 : 0.45;
   // Cascade 0: 73.3m primary swell
   const k0 = (2.0 * Math.PI) / 73.3;
@@ -183,7 +184,7 @@ export function computeLengthCmFromWeightKg(
 }
 
 /**
- * Tidewater time-of-day activity multiplier (`Bites.js` TIME_CURVES adaptation).
+ * Shoreline time-of-day activity multiplier (`Bites.js` TIME_CURVES adaptation).
  */
 export function evaluateTimeOfDayFactor(
   preference: FishTimePreference,
@@ -469,9 +470,9 @@ export function detectNearbyFishingWaterZone(
 }
 
 /**
- * Selects a fish species using Tidewater's habitat depth + time-of-day weighting (`Bites.js`).
+ * Selects a fish species using Shoreline's habitat depth + time-of-day weighting (`Bites.js`).
  */
-export function pickTidewaterFishSpecies(params: {
+export function pickShorelineFishSpecies(params: {
   waterZone: FishingWaterZoneId;
   lightingPreset?: 'day' | 'dusk' | 'night' | 'dawn';
   castPower?: number;
@@ -502,7 +503,7 @@ export function pickTidewaterFishSpecies(params: {
 }
 
 /**
- * Rolls a caught fish using Tidewater's skewed weight curve (`t = rng()^2.2`),
+ * Rolls a caught fish using Shoreline's skewed weight curve (`t = rng()^2.2`),
  * FishBase length-weight power law (`W = a * L^b`), and Trophy bonus (`>70%` max weight = up to +25% value).
  */
 export function rollRandomCaughtFish(params: {
@@ -517,14 +518,14 @@ export function rollRandomCaughtFish(params: {
   const castPower = Math.max(0, Math.min(1, params.castPower ?? 0.65));
   const chosen =
     params.specificSpecies ??
-    pickTidewaterFishSpecies({
+    pickShorelineFishSpecies({
       waterZone: params.waterZone,
       lightingPreset: params.lightingPreset,
       castPower,
       rng: rand,
     });
 
-  // Tidewater skewed weight roll (`t = Math.pow(rng(), 2.2)` shifted slightly by cast power)
+  // Shoreline skewed weight roll (`t = Math.pow(rng(), 2.2)` shifted slightly by cast power)
   const skewExp = Math.max(1.45, 2.2 - castPower * 0.45);
   const weightRatio = Math.max(0, Math.min(1, Math.pow(rand(), skewExp)));
   const weightSpan = chosen.maxWeightKg - chosen.minWeightKg;
@@ -532,7 +533,7 @@ export function rollRandomCaughtFish(params: {
   const weightKg = Number(rawWeight.toFixed(2));
   const lengthCm = computeLengthCmFromWeightKg(weightKg, chosen.lwA, chosen.lwB);
 
-  // Tidewater Trophy threshold: top 30% of species weight range (> 0.70) gets up to +25% bonus value
+  // Shoreline Trophy threshold: top 30% of species weight range (> 0.70) gets up to +25% bonus value
   const isTrophy = weightRatio >= 0.70;
   const trophyBonusMultiplier = isTrophy
     ? 1.0 + Math.min(1, (weightRatio - 0.70) / 0.30) * 0.25
@@ -586,11 +587,11 @@ export function rollRandomCaughtFish(params: {
 
 /**
  * ============================================================================
- * TIDEWATER TWO-STAGE BITE SCHEDULE & LINE-TENSION / STAMINA / SURGE MINIGAME
+ * SHORELINE TWO-STAGE BITE SCHEDULE & LINE-TENSION / STAMINA / SURGE MINIGAME
  * ============================================================================
- * Ported from Tidewater's `Game.js` (nibble -> take cues) and `CatchMinigame.js`.
+ * Ported from Shoreline's `Game.js` (nibble -> take cues) and `CatchMinigame.js`.
  */
-export interface TidewaterBiteSchedule {
+export interface ShorelineBiteSchedule {
   species: FishSpeciesSpec;
   castPower: number;
   castDistanceM: number;
@@ -603,15 +604,15 @@ export interface TidewaterBiteSchedule {
   strikeWindowSec: number;
 }
 
-export function createTidewaterBiteSchedule(params: {
+export function createShorelineBiteSchedule(params: {
   waterZone: FishingWaterZoneId;
   lightingPreset?: 'day' | 'dusk' | 'night' | 'dawn';
   castPower?: number;
   rng?: () => number;
-}): TidewaterBiteSchedule {
+}): ShorelineBiteSchedule {
   const rand = params.rng ?? Math.random;
   const castPower = Math.max(0.15, Math.min(1, params.castPower ?? 0.7));
-  const species = pickTidewaterFishSpecies({
+  const species = pickShorelineFishSpecies({
     waterZone: params.waterZone,
     lightingPreset: params.lightingPreset,
     castPower,
@@ -634,7 +635,7 @@ export function createTidewaterBiteSchedule(params: {
   };
 }
 
-export interface TidewaterMinigameState {
+export interface ShorelineMinigameState {
   species: FishSpeciesSpec;
   castPower: number;
   /** Remaining line distance to land the fish (`<= 1.6` = landed at shore!) */
@@ -665,10 +666,10 @@ export interface TidewaterMinigameState {
   statusReason: string | null;
 }
 
-export function createTidewaterMinigameState(
+export function createShorelineMinigameState(
   species: FishSpeciesSpec,
   castPower = 0.7,
-): TidewaterMinigameState {
+): ShorelineMinigameState {
   const initialDistanceM = Number((10.5 + castPower * 11.5).toFixed(1));
   const fight = species.fightStrength;
   return {
@@ -694,15 +695,15 @@ export function createTidewaterMinigameState(
 }
 
 /**
- * Advances the Tidewater Line-Tension + Stamina + Surge fight minigame by `dt` seconds.
+ * Advances the Shoreline Line-Tension + Stamina + Surge fight minigame by `dt` seconds.
  * Requires reeling the fish all the way into shore (`distanceM <= 1.6m`) while managing surges.
  */
-export function stepTidewaterMinigame(
-  state: TidewaterMinigameState,
+export function stepShorelineMinigame(
+  state: ShorelineMinigameState,
   dt: number,
   isReeling: boolean,
   rng: () => number = Math.random,
-): TidewaterMinigameState {
+): ShorelineMinigameState {
   if (state.status !== 'active') return state;
   const clampedDt = Math.min(dt, 0.1);
   const fight = state.species.fightStrength;
@@ -767,7 +768,7 @@ export function stepTidewaterMinigame(
   const rodBend = state.rodBend + (targetBend - state.rodBend) * Math.min(1, clampedDt * 10);
   const reelAngle = state.reelAngle + (isReeling ? 14.0 : 1.1) * clampedDt;
 
-  let status: TidewaterMinigameState['status'] = 'active';
+  let status: ShorelineMinigameState['status'] = 'active';
   let statusReason: string | null = null;
   if (distanceM <= 1.6) {
     status = 'caught';
