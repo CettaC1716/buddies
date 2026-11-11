@@ -3685,6 +3685,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
 
+    // Vehicles were proportioned while the fog-of-war bug shrank characters to
+    // 1/1.16 of their authored size. Characters are back at full size, so vehicle
+    // bodies scale by the same 1.16 to restore the original proportion. Rider
+    // avatar scales below are divided back so seated characters keep true size.
+    const VEHICLE_BODY_SCALE = 1.16;
+
     const createBlitzTankVehicle = (spawnX: number, spawnZ: number, isSuper: boolean, team: 'blue' | 'red'): TankVehicle => {
       const root = new THREE.Group();
       root.position.set(spawnX, getTerrainElevation(spawnX, spawnZ), spawnZ);
@@ -3693,10 +3699,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const tankScale = isSuper ? 2.75 : 2.45;
       const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
       shadow.position.y = 0.02;
-      shadow.scale.set(3.4, 3.0, 1);
+      shadow.scale.set(3.4 * VEHICLE_BODY_SCALE, 3.0 * VEHICLE_BODY_SCALE, 1);
       root.add(shadow);
 
       const bodyGroup = new THREE.Group();
+      bodyGroup.scale.setScalar(VEHICLE_BODY_SCALE);
       root.add(bodyGroup);
 
       const stunMesh = createBlitzStunEffectMesh();
@@ -3714,7 +3721,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const tankRiderAvatar = new THREE.Group();
       tankRiderAvatar.position.set(-0.12, -1.02, 0);
       tankRiderAvatar.rotation.y = Math.PI / 2;
-      tankRiderAvatar.scale.setScalar(1.06);
+      tankRiderAvatar.scale.setScalar(1.06 / VEHICLE_BODY_SCALE);
       riderGroup.add(tankRiderAvatar);
       riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         tankRiderAvatar,
@@ -3792,10 +3799,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
       shadow.name = 'ContactShadowDisc';
       shadow.position.y = 0.02;
-      shadow.scale.set(3.6, 3.2, 1);
+      shadow.scale.set(3.6 * VEHICLE_BODY_SCALE, 3.2 * VEHICLE_BODY_SCALE, 1);
       root.add(shadow);
 
       const bodyGroup = new THREE.Group();
+      bodyGroup.scale.setScalar(VEHICLE_BODY_SCALE);
       root.add(bodyGroup);
 
       const stunMesh = createBlitzStunEffectMesh();
@@ -3812,7 +3820,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const planeRiderAvatar = new THREE.Group();
       planeRiderAvatar.position.set(-0.12, -0.96, 0);
       planeRiderAvatar.rotation.y = Math.PI / 2;
-      planeRiderAvatar.scale.setScalar(1.12);
+      planeRiderAvatar.scale.setScalar(1.12 / VEHICLE_BODY_SCALE);
       riderGroup.add(planeRiderAvatar);
       riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         planeRiderAvatar,
@@ -3896,10 +3904,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
       shadow.name = 'ContactShadowDisc';
       shadow.position.y = 0.02;
-      shadow.scale.set(3.8, 2.8, 1);
+      shadow.scale.set(3.8 * VEHICLE_BODY_SCALE, 2.8 * VEHICLE_BODY_SCALE, 1);
       root.add(shadow);
 
       const bodyGroup = new THREE.Group();
+      bodyGroup.scale.setScalar(VEHICLE_BODY_SCALE);
       bodyGroup.rotation.y = initialYaw;
       root.add(bodyGroup);
 
