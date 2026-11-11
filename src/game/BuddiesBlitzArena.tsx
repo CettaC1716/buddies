@@ -826,20 +826,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Pergola Bench
       { id: 'lobby_pergola_seat', x: -100.1, z: 12.1, yaw: 0, seatLiftY: -0.04, indicatorHeightY: 1.08 },
       // City Park Benches
-      // Park bench yaws are in CHARACTER facing convention (unit forward = (cos yaw, -sin yaw)),
-      // converted from the bench prop's rotY (prop front = (sin rotY, cos rotY)) by -PI/2.
-      // Copying prop rotY verbatim (as these originally did) seated players 90 degrees off,
-      // facing along the bench instead of out of it.
-      { id: 'park_bench_520', x: 2.0, z: -34.5, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_521', x: 2.0, z: -29.5, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_522', x: -1.0, z: 29.8, yaw: -Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_523', x: -1.0, z: 34.2, yaw: -Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_524', x: 23.8, z: 0.0, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_525', x: 25.2, z: 0.0, yaw: -Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_526', x: -44.2, z: -2.0, yaw: -Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: -Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
-      { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      // Park bench yaws are in CHARACTER facing convention (unit forward = (cos yaw, -sin yaw)).
+      // The rendered bench's front is -(sin rotY, cos rotY), NOT +(sin, cos): the prop template
+      // is built from bench.glb's first scene node (Bench.002), whose baked quaternion is a
+      // 180-degree yaw that spawnRealBlitzPropFromGlb preserves — so the placed bench is
+      // flipped 180 degrees vs the raw GLB geometry. Correct conversion: spot yaw = rotY + PI/2.
+      // (Copying rotY verbatim seated players 90 degrees off; rotY - PI/2 faced the backrest.)
+      { id: 'park_bench_520', x: 2.0, z: -34.5, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_521', x: 2.0, z: -29.5, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_522', x: -1.0, z: 29.8, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_523', x: -1.0, z: 34.2, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_524', x: 23.8, z: 0.0, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_525', x: 25.2, z: 0.0, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_526', x: -44.2, z: -2.0, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
       // Beachfront Harbor Pergola Bench
       { id: 'beach_pergola_bench_1', x: 83.92, z: 93.61, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
     ];
@@ -880,7 +882,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // wrapper's +Z axis in world space, plus the player's depth along the bench axis.
     const seatDiagEnabled =
       typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('seatdiag') === '1';
+      new URLSearchParams(window.location.search).get('seatdiag') !== '0';
     let seatDiagEl: HTMLDivElement | null = null;
     let seatDiagLastMs = 0;
     const seatDiagVec = new THREE.Vector3();
@@ -929,10 +931,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const relZ = playerUnit.z - wrapper.position.z;
           const depth = relX * seatDiagVec2.x + relZ * seatDiagVec2.z;
           txt += `\nbench+Z world: x=${seatDiagVec2.x.toFixed(2)} z=${seatDiagVec2.z.toFixed(2)}`;
-          txt += `\ndepth along bench+Z: ${depth.toFixed(2)} (front edge +0.63, panel face -0.35)`;
+          txt += `\ndepth along bench+Z: ${depth.toFixed(2)} (panel face +0.35, front edge -0.63)`;
           if (facing) {
             const dot = facing.x * seatDiagVec2.x + facing.z * seatDiagVec2.z;
-            txt += `\nfacing dot bench+Z: ${dot.toFixed(2)} (+1 searah depan, -1 menghadap sandaran)`;
+            txt += `\nfacing dot bench+Z: ${dot.toFixed(2)} (-1 BENAR keluar bangku, +1 SALAH ke sandaran)`;
           }
         } else {
           txt += '\nbench wrapper: NOT FOUND';
