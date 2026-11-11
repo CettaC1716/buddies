@@ -333,6 +333,97 @@ function no(e: string, t: Record<string, unknown> = {}): i.MeshPhysicalMaterial 
 const ct = (e: string, t = 1) =>
   new i.MeshBasicMaterial({ color: new i.Color(e).multiplyScalar(t), fog: false });
 
+// --- Procedural Japandi canvas textures (interior redesign Phase 1) ---
+// Interior box-projected UVs are in metres, so the oak map is authored as a 1 m x 1 m tile.
+function japandiRand(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeJapandiOakTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(20261112);
+  ctx.fillStyle = '#c9a26b';
+  ctx.fillRect(0, 0, S, S);
+  // Long grain streaks running along U
+  for (let k = 0; k < 110; k++) {
+    const y0 = rnd() * S;
+    ctx.strokeStyle = rnd() > 0.5 ? 'rgba(232,207,158,0.16)' : 'rgba(146,106,58,0.15)';
+    ctx.lineWidth = 0.6 + rnd() * 2.8;
+    ctx.beginPath();
+    ctx.moveTo(-8, y0);
+    for (let x = 0; x <= S + 16; x += 32) {
+      ctx.lineTo(x, y0 + Math.sin((x / S) * Math.PI * (1 + rnd())) * 3 + (rnd() - 0.5) * 2);
+    }
+    ctx.stroke();
+  }
+  // Sparse subtle knots
+  for (let k = 0; k < 3; k++) {
+    const kx = 60 + rnd() * (S - 120);
+    const ky = 40 + rnd() * (S - 80);
+    for (let r = 7; r > 1; r -= 2) {
+      ctx.strokeStyle = 'rgba(120,84,40,0.10)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, r * 2.2, r, 0.2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  // Fine speckle
+  for (let k = 0; k < 2600; k++) {
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,240,205,0.05)' : 'rgba(110,78,38,0.05)';
+    ctx.fillRect(rnd() * S, rnd() * S, 1.4, 1.4);
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeJapandiWeaveBump(repeat: number): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, S, S);
+  const cell = 4;
+  for (let y = 0; y < S; y += cell) {
+    for (let x = 0; x < S; x += cell) {
+      const over = (x / cell + y / cell) % 2 === 0;
+      ctx.fillStyle = over ? '#969696' : '#6a6a6a';
+      if (over) ctx.fillRect(x, y + 1, cell, cell - 2);
+      else ctx.fillRect(x + 1, y, cell - 2, cell);
+    }
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  return tex;
+}
+
+const JAPANDI_OAK_MAP = makeJapandiOakTexture();
+const JAPANDI_WEAVE_FINE = makeJapandiWeaveBump(6);
+const JAPANDI_WEAVE_RUG = makeJapandiWeaveBump(4);
+
 export const BUDDIES_SLOT_MATERIALS = {
   upholstery: new i.MeshPhysicalMaterial({
     color: '#ede7dc',
@@ -340,30 +431,35 @@ export const BUDDIES_SLOT_MATERIALS = {
     sheen: 0.25,
     sheenRoughness: 0.5,
     sheenColor: new i.Color('#ffffff'),
+    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.4 } : {}),
   }),
   accent: new i.MeshPhysicalMaterial({
-    color: '#b5613d',
+    color: '#a9714b',
     roughness: 0.82,
     sheen: 0.2,
     sheenRoughness: 0.5,
     sheenColor: new i.Color('#ffffff'),
+    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.4 } : {}),
   }),
   bedding: new i.MeshPhysicalMaterial({
-    color: '#dcd3c3',
+    color: '#e7e0d1',
     roughness: 0.85,
     sheen: 0.2,
     sheenRoughness: 0.5,
+    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.4 } : {}),
   }),
   rug: new i.MeshPhysicalMaterial({
-    color: '#d9ccb5',
+    color: '#ded3be',
     roughness: 0.94,
     sheen: 0.15,
+    ...(JAPANDI_WEAVE_RUG ? { bumpMap: JAPANDI_WEAVE_RUG, bumpScale: 0.6 } : {}),
   }),
   joinery: new i.MeshPhysicalMaterial({
-    color: '#7c5238',
-    roughness: 0.48,
-    clearcoat: 0.32,
-    clearcoatRoughness: 0.25,
+    color: '#ffffff',
+    ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
+    roughness: 0.5,
+    clearcoat: 0.18,
+    clearcoatRoughness: 0.4,
   }),
 };
 

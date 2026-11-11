@@ -2699,19 +2699,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const staggerX = ((r * 173) % 240) + 60;
           ctx.fillRect(staggerX, y, 3, rowH);
           ctx.fillRect((staggerX + 240) % 512, y, 3, rowH);
+          ctx.globalAlpha = 0.07;
+          ctx.fillStyle = secondaryHex;
+          for (let gLine = 0; gLine < 5; gLine++) {
+            const gy = y + 5 + ((r * 37 + gLine * 13) % Math.max(8, rowH - 10));
+            ctx.fillRect(0, gy, 512, 1);
+          }
         }
         ctx.globalAlpha = 1.0;
       }
       floorCanvasTex.needsUpdate = true;
     };
-    redrawFloorTexture('#c99a62', '#93612e', false);
+    redrawFloorTexture('#dcbd8f', '#b28c5a', false);
 
     const interiorWallMat = new THREE.MeshStandardMaterial({
-      color: '#e3d2b6',
+      color: '#ece5d8',
       roughness: 0.85,
     });
     const interiorTrimMat = new THREE.MeshStandardMaterial({
-      color: '#7c5238',
+      color: '#a97e50',
       roughness: 0.55,
     });
     const interiorFloorMat = new THREE.MeshStandardMaterial({
@@ -3545,14 +3551,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           redrawWallArtCanvas(['#fef9c3', '#fde047', '#d97706', '#92400e', '#f59e0b']);
           triggerHouseRadialWipe('#facc15', 0, 0);
         } else {
-          interiorWallMat.color.set('#e3d2b6');
-          interiorTrimMat.color.set('#7c5238');
-          BUDDIES_SLOT_MATERIALS.joinery.color.set('#7c5238');
+          interiorWallMat.color.set('#ece5d8');
+          interiorTrimMat.color.set('#a97e50');
+          BUDDIES_SLOT_MATERIALS.joinery.color.set('#ffffff');
           BUDDIES_SLOT_MATERIALS.upholstery.color.set('#ede7dc');
-          BUDDIES_SLOT_MATERIALS.accent.color.set('#b5613d');
-          BUDDIES_SLOT_MATERIALS.rug.color.set('#d9ccb5');
-          redrawFloorTexture('#c99a62', '#93612e', false);
-          redrawWallArtCanvas(['#ece5d8', '#d4bf9e', '#b5613d', '#24334c', '#c48d2f']);
+          BUDDIES_SLOT_MATERIALS.accent.color.set('#a9714b');
+          BUDDIES_SLOT_MATERIALS.rug.color.set('#ded3be');
+          redrawFloorTexture('#dcbd8f', '#b28c5a', false);
+          redrawWallArtCanvas(['#ece5d8', '#d8c6a5', '#a9714b', '#5b6552', '#8a6f4d']);
           triggerHouseRadialWipe('#38bdf8', 0, 0);
         }
       }
