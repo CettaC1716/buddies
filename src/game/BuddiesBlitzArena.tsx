@@ -844,6 +844,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: -Math.PI / 2, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       // Beachfront Harbor Pergola Bench
       { id: 'beach_pergola_bench_1', x: 83.92, z: 93.61, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      // SE Beach sun loungers & Adirondack chairs (ShadersAndAssets §6B placements; builder
+      // coords are world coords). Spot yaw = placement rotY - PI/2: these procedural groups
+      // render with rotation.y = rotY verbatim and their backrests sit at local -Z, so the
+      // sitter faces local +Z (east, toward the ocean). Per-seat yaw offsets mirror the
+      // builders' hand-placed rotY variations. seatLiftY starts from measured seat-top
+      // heights (lounger bed ~0.74, chair seat ~0.77 vs park bench ~0.85 at lift 0).
+      { id: 'beach_lounger_1', x: 100.2, z: 54.0, yaw: -0.12, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_lounger_2', x: 100.2, z: 57.2, yaw: -0.08, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_lounger_3', x: 100.2, z: 60.4, yaw: -0.05, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_lounger_4', x: 101.0, z: 77.5, yaw: 0.08, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_lounger_5', x: 101.0, z: 80.8, yaw: 0.12, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_lounger_6', x: 100.2, z: 91.5, yaw: -0.1, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_lounger_7', x: 100.2, z: 94.8, yaw: -0.06, seatLiftY: -0.11, indicatorHeightY: 1.1 },
+      { id: 'beach_chair_1', x: 96.2, z: 81.8, yaw: 0.15, seatLiftY: -0.08, indicatorHeightY: 1.2 },
+      { id: 'beach_chair_2', x: 96.2, z: 85.0, yaw: 0.05, seatLiftY: -0.08, indicatorHeightY: 1.2 },
+      { id: 'beach_chair_3', x: 96.2, z: 88.2, yaw: -0.1, seatLiftY: -0.08, indicatorHeightY: 1.2 },
+      { id: 'beach_chair_4', x: 97.5, z: 49.5, yaw: -0.2, seatLiftY: -0.08, indicatorHeightY: 1.2 },
     ];
 
     let activeSeatedSpot: LobbySeatSpot | null = null;
@@ -868,9 +885,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // backrest's front face ~0.35 behind it. The measured sitting pose reaches ~0.88 in
     // front of the hips, so anchoring the hips 0.12 toward the backrest from center lands
     // the knees ~0.13 past the front edge (shins hang clear, feet plant on the ground)
-    // with the pelvis clear of the backrest. All other seat types anchor on the spot.
+    // with the pelvis clear of the backrest. Beach seats use their own smaller shifts
+    // (see below); the remaining seat types anchor exactly on the spot.
     const getSeatedAnchor = (spot: LobbySeatSpot) => {
-      const backShift = spot.id.startsWith('park_bench') ? 0.12 : 0;
+      // Beach seats: loungers sit up on the bed near the backrest with legs resting along
+      // the bed (bed front edge is ~1.78 ahead of the origin), Adirondack chairs take a
+      // small shift like a normal chair. Other seat types anchor exactly on the spot.
+      const backShift = spot.id.startsWith('park_bench')
+        ? 0.12
+        : spot.id.startsWith('beach_lounger')
+          ? 0.1
+          : spot.id.startsWith('beach_chair')
+            ? 0.05
+            : 0;
       return {
         x: spot.x - Math.cos(spot.yaw) * backShift,
         z: spot.z + Math.sin(spot.yaw) * backShift,

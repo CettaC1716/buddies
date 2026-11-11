@@ -15738,12 +15738,12 @@ export function createCurvedPlanetEnvironment(
   // Red Lifeguard Rescue Torpedo Buoy mounted on side rail
   addBeachPart(lifeguardGrp, new THREE.CylinderGeometry(0.11, 0.11, 0.78, 8), '#ef4444', [1.44, 2.75, 0.45], [0.35, 0, 0], 0.010);
 
-  // 6B. Slatted Timber Sun Loungers with Rear Wheels & Coastal Adirondack Beach Chairs ("Timber Lounger & Beach Seating" — scaled 1.55x)
+  // 6B. Slatted Timber Sun Loungers with Rear Wheels & Coastal Adirondack Beach Chairs ("Timber Lounger & Beach Seating" — scaled 1.798x: original 1.55 x 1.16 rebalance so the seating matches full-size 3.92 avatars, same factor as park benches & vehicles)
   const buildTimberSunLounger = (wx: number, wz: number, rotY: number) => {
     const lGrp = new THREE.Group();
     lGrp.position.set(wx, 0.04, wz);
     lGrp.rotation.y = rotY;
-    lGrp.scale.setScalar(1.55);
+    lGrp.scale.setScalar(1.798);
     seBeachGroup.add(lGrp);
 
     // Slatted horizontal timber bed frame
@@ -15762,7 +15762,7 @@ export function createCurvedPlanetEnvironment(
     const aGrp = new THREE.Group();
     aGrp.position.set(wx, 0.04, wz);
     aGrp.rotation.y = rotY;
-    aGrp.scale.setScalar(1.55);
+    aGrp.scale.setScalar(1.798);
     seBeachGroup.add(aGrp);
 
     // Tilted seat + Fanned high backrest + Wide coastal armrests
