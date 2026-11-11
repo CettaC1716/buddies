@@ -657,6 +657,123 @@ export async function fetchMarketTransactionsFromSupabase(
   }
 }
 
+export interface FishNftSaleRecord {
+  speciesName: string;
+  weightKg: number | null;
+  priceRespite: number;
+  buyerAccount: string;
+  sellerAccount: string | null;
+  txHash: string | null;
+  soldAtIso: string;
+}
+
+export interface FishNftMarketSalesStats {
+  topSale: FishNftSaleRecord | null;
+  recentSale: FishNftSaleRecord | null;
+  totalSalesCount: number;
+}
+
+function parseFishNftSaleRow(row: DbMarketTransactionRow): FishNftSaleRecord | null {
+  const priceRespite = Math.max(0, Number(row.unit_price || 0), Number(row.amount || 0));
+  if (priceRespite <= 0) return null;
+
+  const spec = row.item_id
+    ? FISH_SPECIES_CATALOG.find((s) => s.speciesId === row.item_id)
+    : undefined;
+  const summary = String(row.reasoning_summary || '');
+  const speciesMatch = summary.match(/bought\s+(.+?)\s+NFT/i);
+  const weightMatch = summary.match(/\(([\d.]+)\s*kg\)/i);
+  const sellerMatch = summary.match(/from\s+([a-z0-9_.-]+)\s+for/i);
+
+  const speciesName =
+    spec?.speciesName || (speciesMatch?.[1] ? speciesMatch[1].trim() : 'Fish NFT');
+  const parsedWeight = weightMatch?.[1] ? Number(weightMatch[1]) : NaN;
+  const weightKg = Number.isFinite(parsedWeight) && parsedWeight > 0 ? parsedWeight : null;
+
+  return {
+    speciesName,
+    weightKg,
+    priceRespite,
+    buyerAccount: String(row.actor_near_account || 'player'),
+    sellerAccount: sellerMatch?.[1] ? sellerMatch[1].trim() : null,
+    txHash: row.near_tx_hash ? String(row.near_tx_hash) : null,
+    soldAtIso: String(row.created_at || new Date().toISOString()),
+  };
+}
+
+/**
+ * Fetches live completed Fish NFT sales stats (`BUY_FISH_NFT`) from `bb_market_transactions`
+ * merged with in-memory session sales so Hana and Kai can answer market record questions accurately.
+ */
+export async function fetchFishNftMarketSalesStats(): Promise<FishNftMarketSalesStats> {
+  const localSales = sessionMarketTransactions.filter(
+    (tx) => tx.action_type.toUpperCase() === 'BUY_FISH_NFT' && Math.max(tx.unit_price, tx.amount) > 0,
+  );
+
+  let remoteRows: DbMarketTransactionRow[] = [];
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('bb_market_transactions')
+        .select('*')
+        .in('action_type', ['BUY_FISH_NFT', 'buy_fish_nft'])
+        .gt('amount', 0)
+        .order('amount', { ascending: false })
+        .limit(40);
+
+      if (!error && Array.isArray(data)) {
+        remoteRows = (data as Array<Record<string, unknown>>).map((r, idx) => ({
+          id: String(r.id ?? `fish-sale-${idx}`),
+          merchant_id: (r.merchant_id as 'lobby_cafe' | 'beach_house' | null) ?? 'beach_house',
+          actor_near_account: String(r.actor_near_account ?? 'player'),
+          action_type: String(r.action_type ?? 'BUY_FISH_NFT'),
+          item_id: r.item_id ? String(r.item_id) : null,
+          nep245_token_id: r.nep245_token_id ? String(r.nep245_token_id) : null,
+          currency: (r.currency as DbMarketTransactionRow['currency']) ?? 'RESPITE',
+          amount: Number(r.amount ?? 0),
+          unit_price: Number(r.unit_price ?? 0),
+          reasoning_summary: String(r.reasoning_summary ?? ''),
+          near_tx_hash: r.near_tx_hash ? String(r.near_tx_hash) : null,
+          created_at: String(r.created_at ?? new Date().toISOString()),
+        }));
+      }
+    } catch {
+      // fall back to local sales
+    }
+  }
+
+  const seenKeys = new Set<string>();
+  const parsedSales: FishNftSaleRecord[] = [];
+  for (const row of [...remoteRows, ...localSales]) {
+    const key = row.near_tx_hash || `${row.actor_near_account}:${row.nep245_token_id}:${row.amount}:${row.created_at}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    const parsed = parseFishNftSaleRow(row);
+    if (parsed) {
+      parsedSales.push(parsed);
+    }
+  }
+
+  if (parsedSales.length === 0) {
+    return {
+      topSale: null,
+      recentSale: null,
+      totalSalesCount: 0,
+    };
+  }
+
+  const sortedByPrice = [...parsedSales].sort((a, b) => b.priceRespite - a.priceRespite);
+  const sortedByDate = [...parsedSales].sort(
+    (a, b) => new Date(b.soldAtIso).getTime() - new Date(a.soldAtIso).getTime(),
+  );
+
+  return {
+    topSale: sortedByPrice[0] ?? null,
+    recentSale: sortedByDate[0] ?? null,
+    totalSalesCount: parsedSales.length,
+  };
+}
+
 /**
  * Fetches recent social chat messages from `bb_social_messages`.
  */

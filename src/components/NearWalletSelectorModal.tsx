@@ -87,7 +87,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     } catch (err) {
       setStatusBanner(null);
       setErrorMessage(
-        err instanceof Error ? err.message : 'Unable to provision Citizen Sub-Account right now.',
+        err instanceof Error ? err.message : 'Unable to create wallet right now.',
       );
     } finally {
       setIsConnecting(false);
@@ -108,7 +108,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
       onClose();
     } catch (err) {
       setErrorMessage(
-        err instanceof Error ? err.message : 'Account not found on NEAR Testnet RPC.',
+        err instanceof Error ? err.message : 'Account not found.',
       );
     } finally {
       setIsConnecting(false);
@@ -119,7 +119,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     soundEngine.playUiClick();
     await disconnectNearWallet();
     onDisconnectAccount?.();
-    setStatusBanner('Wallet disconnected. Connect a NEAR Testnet signer below.');
+    setStatusBanner('Wallet disconnected.');
   };
 
   const cleanedHandlePreview = citizenHandleInput
@@ -132,7 +132,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Account Registration & Wallet Connection"
+      aria-label="Wallet Connection"
       data-near-wallet-selector-modal="true"
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 p-4 select-none"
     >
@@ -140,13 +140,13 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
         <div className="flex items-start justify-between gap-3 border-b-[3px] border-[#0d0f12] pb-3">
           <div>
             <div className="inline-block px-2 py-0.5 bg-[#b8ff3c] border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-wider">
-              NEAR TESTNET WALLET &amp; SMART CONTRACT SIGNER
+              BUDDIES BLITZ
             </div>
             <h2
               className="mt-1.5 text-xl sm:text-2xl font-black uppercase tracking-tight leading-none"
               style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
             >
-              CONNECT NEAR WALLET
+              CONNECT WALLET
             </h2>
           </div>
 
@@ -174,7 +174,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[9px] font-black uppercase px-1.5 py-0.5 border border-[#0d0f12] bg-white">
-                    {isReadOnlyObserver ? 'VIEW-ONLY OBSERVER (NO SIGNER)' : 'CONNECTED SIGNER'}
+                    {isReadOnlyObserver ? 'VIEW ONLY' : 'CONNECTED'}
                   </span>
                   <a
                     href={getNearBlocksAccountUrl(currentWalletId, 'testnet')}
@@ -182,7 +182,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                     rel="noopener noreferrer"
                     className="text-[10px] font-black underline text-[#0284c7]"
                   >
-                    NearBlocks ↗
+                    Explorer
                   </a>
                 </div>
                 <div className="mt-1 text-xs font-mono font-black truncate text-[#0d0f12]">
@@ -190,7 +190,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 </div>
                 {isReadOnlyObserver && (
                   <div className="text-[10px] font-bold text-[#92400e] mt-0.5">
-                    Read-only mode cannot sign swaps or NFTs. Connect a real wallet below!
+                    View-only mode cannot sign transactions. Connect a wallet below.
                   </div>
                 )}
               </div>
@@ -219,24 +219,18 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
             </div>
           )}
 
-          {/* Option 1: Real Signing Wallet (Meteor Web / MyNearWallet / Intear / Extension) */}
-          <div className="p-3 bg-[#eff6ff] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2.5">
+          {/* Option 1: External NEAR Wallet */}
+          <div className="p-3 bg-[#eff6ff] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
-                1. NEAR SIGNING WALLET (RECOMMENDED)
+                EXTERNAL WALLET
               </span>
               <span className="px-1.5 py-0.5 bg-[#38bdf8] border border-[#0d0f12] text-[9px] font-black uppercase">
-                FULL TX SIGNER
+                RECOMMENDED
               </span>
             </div>
             <p className="text-[11px] font-bold text-[#334155] leading-snug">
-              Connect <strong>Meteor Wallet (Web Popup or Extension)</strong>,{' '}
-              <strong>MyNearWallet</strong>, or <strong>Intear</strong> on{' '}
-              <code className="font-mono text-[10px] bg-white px-1 border border-slate-300">
-                testnet
-              </code>{' '}
-              to swap <strong>NEAR &rarr; RESPITE</strong>, buy <strong>House Ownership</strong>,
-              mint <strong>NEP-171 Fish NFTs</strong>, and trade on P2P Market!
+              Connect Meteor, MyNearWallet, or Intear to trade and purchase items.
             </p>
 
             <button
@@ -246,28 +240,22 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               onClick={() => void handleOpenNearConnectorPopup()}
               className="w-full py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider cursor-pointer"
             >
-              {isConnecting
-                ? 'OPENING WALLET SELECTOR...'
-                : 'CONNECT METEOR / NEAR TESTNET WALLET'}
+              {isConnecting ? 'OPENING...' : 'CONNECT EXTERNAL WALLET'}
             </button>
           </div>
 
-          {/* Option 2: Seedless Google OAuth + Sub-Account Naming */}
-          <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2.5">
+          {/* Option 2: Create In-Game Wallet */}
+          <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
-                2. CITIZEN SUB-ACCOUNT HANDLE
+                CREATE WALLET
               </span>
               <span className="px-1.5 py-0.5 bg-[#fde047] border border-[#0d0f12] text-[9px] font-black uppercase">
-                FUNCTION CALL KEY
+                INSTANT
               </span>
             </div>
             <p className="text-[11px] font-bold text-[#334155] leading-snug">
-              Claim a citizen identity under{' '}
-              <code className="font-mono text-[10px] bg-white px-1 border border-slate-300">
-                .{NEAR_CONFIG.masterAccountId}
-              </code>{' '}
-              or sign in with Google OAuth.
+              Sign in with Google or choose a wallet username below.
             </p>
 
             {onSelectGoogleAutoRegister && (
@@ -282,20 +270,20 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 }}
                 className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>CONTINUE WITH GOOGLE OAUTH</span>
+                <span>CONTINUE WITH GOOGLE</span>
               </button>
             )}
 
             <form onSubmit={handleProvisionCitizenSubAccount} className="space-y-1.5 pt-1">
               <label className="block text-[10px] font-black uppercase tracking-wider text-[#0d0f12]">
-                CHOOSE YOUR CITIZEN HANDLE
+                WALLET USERNAME
               </label>
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"
                   value={citizenHandleInput}
                   onChange={(e) => setCitizenHandleInput(e.target.value)}
-                  placeholder="e.g. sakura01"
+                  placeholder="sakura01"
                   className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
                 />
                 <button
@@ -322,13 +310,13 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               </div>
               {cleanedHandlePreview.length >= 2 && (
                 <div className="text-[10px] font-mono font-bold text-emerald-800">
-                  Preview: {cleanedHandlePreview}.{NEAR_CONFIG.masterAccountId}
+                  {cleanedHandlePreview}.{NEAR_CONFIG.masterAccountId}
                 </div>
               )}
             </form>
           </div>
 
-          {/* Option 3: Read-only RPC Observer */}
+          {/* Option 3: View Account */}
           <div className="p-3 bg-[#f8fafc] border-[2px] border-slate-400 space-y-1.5">
             <form
               onSubmit={(e) => {
@@ -338,7 +326,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               className="space-y-1.5"
             >
               <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600">
-                3. INSPECT ACCOUNT (VIEW-ONLY — CANNOT SIGN TRANSACTIONS)
+                VIEW ACCOUNT (READ ONLY)
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -346,7 +334,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                   data-wallet-account-input="true"
                   value={accountInput}
                   onChange={(e) => setAccountInput(e.target.value)}
-                  placeholder="market.buddiesblitz.testnet"
+                  placeholder="username.buddiesblitz.testnet"
                   className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
                 />
                 <button

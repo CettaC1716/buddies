@@ -894,8 +894,8 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
             className="inline-flex items-center h-[42px] min-w-[210px] max-w-[340px] rounded-full px-1.5 text-white cursor-pointer hover:brightness-110 transition-all select-none gap-1"
           >
             {/* Fishing rod icon badge */}
-            <div className="w-[34px] h-[34px] rounded-full bg-white/14 border-[1.5px] border-white/85 flex items-center justify-center overflow-hidden shrink-0 text-base">
-              🎣
+            <div className="w-[34px] h-[34px] rounded-full bg-white/14 border-[1.5px] border-white/85 flex items-center justify-center overflow-hidden shrink-0 text-[9.5px] font-black tracking-wider text-[#b8ff3c]">
+              ROD
             </div>
 
             {/* Dynamic Fishing Action Label / Button */}
@@ -1156,7 +1156,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                         const ok = await onMintCaughtFishAsNft(lastCaughtFishToast);
                         if (ok === false) {
                           setShowcaseMintError(
-                            'Connect a NEAR Testnet signing wallet (Sub-Wallet / Meteor) to mint this catch on-chain.',
+                            'Connect your wallet to mint this catch as an NFT.',
                           );
                         }
                       } finally {
@@ -1171,7 +1171,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                     }}
                     className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 disabled:opacity-60 transition-all"
                   >
-                    {isMintingShowcaseNft ? 'Minting on NEAR...' : 'Mint NFT'}
+                    {isMintingShowcaseNft ? 'Minting...' : 'Mint NFT'}
                   </button>
                 ) : (
                   <button
@@ -1182,7 +1182,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                         onRequestRegisterWallet();
                       } else {
                         setShowcaseMintError(
-                          'Guest Mode: Please register an account / sub-wallet first to mint NFTs.',
+                          'Sign in first to mint Fish NFTs.',
                         );
                       }
                     }}
@@ -1193,12 +1193,12 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                     }}
                     className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-lime-400/30 transition-all"
                   >
-                    🔒 Register to Mint NFT
+                    Sign in to Mint
                   </button>
                 )
               ) : (
                 <span className="px-4 py-2 rounded-full text-[12px] font-mono font-bold bg-emerald-500/25 border border-emerald-400/70 text-emerald-200">
-                  Minted NEP-171 ✓{' '}
+                  Minted NFT{' '}
                   {lastCaughtFishToast.nearTxHash && (
                     <a
                       href={`https://testnet.nearblocks.io/txns/${lastCaughtFishToast.nearTxHash}`}
@@ -1206,7 +1206,7 @@ export const TidewaterFishingHudAndShowcase: React.FC<TidewaterFishingHudAndModa
                       rel="noreferrer"
                       className="underline ml-1 text-[#5fe3d4]"
                     >
-                      Tx ↗
+                      Receipt
                     </a>
                   )}
                 </span>

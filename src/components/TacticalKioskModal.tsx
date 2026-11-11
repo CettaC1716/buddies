@@ -787,12 +787,12 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
             <p className="mt-1.5 h-[34px] sm:h-[36px] line-clamp-2 overflow-hidden text-[12px] sm:text-[13px] font-medium leading-[1.32] text-[#1c2026]">
               {!isPlotClaimedAndDeployed
                 ? isScanningGamepass
-                  ? 'Scanning NEAR wallet for NEP-171 House ownership verification...'
+                  ? 'Checking house ownership...'
                   : isGamepassVerified
-                  ? 'House ownership verified! Click CLAIM PLOT below to materialize your 3D House showcase on this plot while online in The City.'
-                  : 'Connect your NEAR wallet in the top-right corner or buy a House in the Catalog to claim this House Plot in The City.'
+                  ? 'House ownership verified. Click CLAIM PLOT below to place your house on this plot.'
+                  : 'Connect your wallet or buy a House in Hana Catalog to claim this city plot.'
                 : isSafezoneCityMode
-                ? 'Configure automatic perimeter gate permissions and trusted friend wallets for your active House Plot in The City.'
+                ? 'Set gate access and friend permissions for your house plot.'
                 : currentPage.headerSubtitle}
             </p>
           </div>
@@ -807,7 +807,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="w-2 h-2 rounded-full bg-[#00f0ff] animate-ping" />
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 truncate">
-                    CITIZEN PLOT VERIFICATION {targetPlotLabel}
+                    HOUSE PLOT {targetPlotLabel}
                   </span>
                 </div>
                 <span
@@ -822,12 +822,12 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                   }`}
                 >
                   {isGamepassVerified
-                    ? 'NFT VERIFIED'
+                    ? 'VERIFIED'
                     : isScanningGamepass
-                    ? 'SCANNING NFT...'
+                    ? 'CHECKING...'
                     : hasValidWalletId
-                    ? 'WALLET CONNECTED'
-                    : 'GUEST / UNREGISTERED'}
+                    ? 'CONNECTED'
+                    : 'GUEST'}
                 </span>
               </div>
 
@@ -835,7 +835,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 /* Unregistered / Not Connected State */
                 <div className="space-y-2">
                   <p className="text-[11px] font-bold text-slate-300 leading-snug">
-                    Connect a NEAR wallet or register a citizen account to verify Private House Deed NFT ownership.
+                    Sign in or connect your wallet to verify house ownership.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {onNearConnectAndMint && (
@@ -845,7 +845,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         onClick={handleConnectAndScanGamepass}
                         className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10.5px] uppercase tracking-tight shadow-[2px_2px_0_#000] cursor-pointer"
                       >
-                        CONNECT NEAR WALLET
+                        CONNECT WALLET
                       </button>
                     )}
                     {onOpenPersonalWallet && (
@@ -858,7 +858,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         }}
                         className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-[#0f172a] border-2 border-black font-black text-[10.5px] uppercase tracking-tight shadow-[2px_2px_0_#000] cursor-pointer"
                       >
-                        REGISTER / CREATE SUB-ACCOUNT
+                        OPEN WALLET
                       </button>
                     )}
                   </div>
@@ -872,18 +872,15 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       }}
                       className="w-full py-1.5 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] border border-white/30 font-black text-[10px] uppercase tracking-wide cursor-pointer text-center"
                     >
-                      DON&apos;T OWN A HOUSE YET? BUY IN HANA&apos;S CATALOG
+                      BUY HOUSE IN CATALOG
                     </button>
                   )}
                 </div>
               ) : isScanningGamepass ? (
-                /* Scanning NFT in Progress */
+                /* Scanning in Progress */
                 <div className="py-3 px-3 bg-[#1e293b] border border-[#facc15] text-center space-y-1">
                   <div className="text-xs font-black uppercase text-[#facc15] tracking-wider animate-pulse">
-                    SCANNING HOUSE DEED NFT OWNERSHIP FOR {hud.nearWalletId}...
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-300">
-                    Verifying NEP-171 Private House Deed contract on NEAR Blockchain
+                    CHECKING HOUSE OWNERSHIP...
                   </div>
                 </div>
               ) : isGamepassVerified ? (
@@ -891,7 +888,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 <div className="space-y-2">
                   <div className="p-2 bg-[#14532d]/40 border border-[#4ade80] flex items-center justify-between gap-2">
                     <span className="text-[10.5px] font-black uppercase text-[#4ade80]">
-                      HOUSE DEED OWNERSHIP VERIFIED
+                      HOUSE OWNERSHIP VERIFIED
                     </span>
                     <span className="text-[9.5px] font-mono font-bold text-white/80">
                       {hud.nearWalletId}
@@ -909,19 +906,19 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       }}
                       className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
                     >
-                      CLAIM THIS RESIDENTIAL PLOT (ONLINE SESSION)
+                      CLAIM PLOT
                     </button>
                   )}
                 </div>
               ) : (
-                /* Connected But No House NFT */
+                /* Connected But No House */
                 <div className="space-y-2">
                   <div className="p-2 bg-[#450a0a]/50 border border-[#f87171] space-y-1">
                     <div className="text-[10.5px] font-black uppercase text-[#f87171]">
-                      NO HOUSE DEED NFT FOUND ON {hud.nearWalletId}
+                      NO HOUSE FOUND ON {hud.nearWalletId}
                     </div>
                     <div className="text-[9.5px] font-bold text-slate-300">
-                      Purchase a Private House Deed in Hana Merchant&apos;s Catalog or rescan your wallet.
+                      Buy a Private House in Hana Catalog to claim a city plot.
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -931,7 +928,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       onClick={handleConnectAndScanGamepass}
                       className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10px] uppercase cursor-pointer"
                     >
-                      RESCAN WALLET NFT
+                      RECHECK WALLET
                     </button>
                     {onOpenHouseCatalog && (
                       <button
@@ -943,7 +940,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         }}
                         className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black font-black text-[10px] uppercase cursor-pointer"
                       >
-                        BUY HOUSE IN CATALOG
+                        BUY HOUSE
                       </button>
                     )}
                   </div>

@@ -273,7 +273,7 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
       validFormat: false,
       available: false,
       ownedByCurrentDevice: false,
-      reason: 'Use at least 2 lowercase letters or numbers (e.g. xyz).',
+      reason: 'Enter at least 2 letters or numbers.',
     };
   }
 
@@ -284,7 +284,7 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
       validFormat: false,
       available: false,
       ownedByCurrentDevice: false,
-      reason: `Prefix "${cleanHandle}" is reserved for smart contract infrastructure.`,
+      reason: `"${cleanHandle}" is reserved. Try another name.`,
     };
   }
 
@@ -337,7 +337,7 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
     validFormat: true,
     available: false,
     ownedByCurrentDevice: false,
-    reason: `Address ${subAccountId} is already registered by another citizen. Choose a different prefix.`,
+    reason: 'Already taken. Try another name.',
   };
 }
 
@@ -369,7 +369,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
       subAccountId: '',
       sessionPublicKey: '',
       custodyMode: 'session_key_ready',
-      error: 'Sub-wallet prefix must be at least 2 characters (e.g. xyz).',
+      error: 'Wallet username must be at least 2 characters.',
     };
   }
 
@@ -396,7 +396,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
         sessionPublicKey,
         custodyMode: 'session_key_ready',
         error: String(
-          json?.error || `Failed to create sub-wallet ${subAccountId}. Please try a different prefix.`,
+          json?.error || `Could not create wallet ${subAccountId}. Try another name.`,
         ),
       };
     }

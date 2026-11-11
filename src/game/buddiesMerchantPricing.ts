@@ -159,7 +159,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     targetStock: 5,
     initialStock: 4,
     isNft: true,
-    description: 'NEP-245 House Theme NFT: Transforms house exterior & interior into electric cyan Cyber Neon.',
+    description: 'Exclusive House Theme: Transforms house exterior and interior into electric cyan neon.',
     skinThemeId: 'cyber_neon',
     gardenPresetId: 'zen_rock',
   },
@@ -173,7 +173,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     targetStock: 3,
     initialStock: 2,
     isNft: true,
-    description: 'NEP-245 House Theme NFT: Royal gold-leaf facade with a festive Sakura garden.',
+    description: 'Exclusive House Theme: Gold-leaf facade paired with a Sakura garden.',
     skinThemeId: 'royal_gold',
     gardenPresetId: 'golden_park',
   },
@@ -187,7 +187,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     targetStock: 4,
     initialStock: 3,
     isNft: true,
-    description: 'NEP-245 Collector Furniture NFT: Wooden credenza & Golden Katana rack with ceramic vases.',
+    description: 'Collector Furniture: Wooden credenza and golden katana display rack.',
     interiorSlot: 'left_wall',
     footprints: [[0, 0, 1.65, 0.55]],
     height: 1.35,
@@ -203,7 +203,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     targetStock: 4,
     initialStock: 3,
     isNft: true,
-    description: 'NEP-245 Collector Furniture NFT: Circular command table with a rotating 3D planet hologram.',
+    description: 'Collector Furniture: Circular table with a rotating 3D planet hologram.',
     interiorSlot: 'center_table',
     footprints: [[0, 0, 1.35, 1.35]],
     height: 1.45,
@@ -218,13 +218,12 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     category: 'fishing_gear',
     merchantId: 'beach_house',
     isEquippableRod: true,
-    iconEmoji: '🎣',
     currency: 'CYON',
     basePrice: 45,
     targetStock: 10,
     initialStock: 10,
     isNft: false,
-    description: 'High-modulus carbon spinning rod with reinforced line tension control. Stored in your Personal Bag.',
+    description: 'Carbon spinning rod with smooth line tension control. Stored in your Bag.',
   },
   {
     id: 'fishing_reel_twinpower',
@@ -232,13 +231,12 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     name: 'Twin-Drag Saltwater Reel',
     category: 'fishing_gear',
     merchantId: 'beach_house',
-    iconEmoji: '⚙️',
     currency: 'CYON',
     basePrice: 60,
     targetStock: 8,
     initialStock: 8,
     isNft: false,
-    description: 'Precision twin-drag spinning reel that reduces line snap risk during strong fish surges.',
+    description: 'Precision saltwater reel that reduces line snap risk during strong surges.',
   },
   {
     id: 'fishing_lure_luminous_minnow',
@@ -246,13 +244,12 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     name: 'Luminous Minnow Lure Box',
     category: 'fishing_gear',
     merchantId: 'beach_house',
-    iconEmoji: '🐟',
     currency: 'CYON',
     basePrice: 30,
     targetStock: 12,
     initialStock: 12,
     isNft: false,
-    description: 'UV-glow crankbait & popper lure set designed to attract Rare coastal and oasis fish.',
+    description: 'Glow lure set crafted to attract rare coastal and lake fish.',
   },
   {
     id: 'fishing_cooler_icebox',
@@ -260,13 +257,12 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     name: 'Tidewater Marine Ice Cooler',
     category: 'fishing_gear',
     merchantId: 'beach_house',
-    iconEmoji: '🧊',
     currency: 'CYON',
     basePrice: 55,
     targetStock: 8,
     initialStock: 8,
     isNft: false,
-    description: 'Insulated marine cooler box to keep fresh catches in top condition inside your Personal Bag.',
+    description: 'Insulated marine cooler box to keep fresh catches in your Bag.',
   },
   {
     id: 'nft_golden_poseidon_rod',
@@ -275,13 +271,12 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     category: 'fishing_gear',
     merchantId: 'beach_house',
     isEquippableRod: true,
-    iconEmoji: '🔱',
     currency: 'RESPITE',
     basePrice: 15,
     targetStock: 4,
     initialStock: 4,
     isNft: true,
-    description: 'NEP-245 Collector Rod NFT: Gold-anodized deep-sea rod & titanium leader for Mythic catches.',
+    description: 'Collector Rod: Gold-anodized deep-sea rod built for Mythic catches.',
   },
   {
     id: 'nft_sonar_fishfinder_pro',
@@ -289,13 +284,12 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     name: 'Tidewater Sonar Fishfinder NFT',
     category: 'fishing_gear',
     merchantId: 'beach_house',
-    iconEmoji: '📡',
     currency: 'RESPITE',
     basePrice: 12,
     targetStock: 5,
     initialStock: 5,
     isNft: true,
-    description: 'NEP-245 Collector Tackle NFT: Portable acoustic sonar for scanning trophy fish pockets.',
+    description: 'Collector Tackle: Portable acoustic sonar for spotting trophy fish.',
   },
 ];
 
@@ -616,177 +610,297 @@ export function stepFastForwardEconomyTick(
   };
 }
 
+export interface NpcConciergeLiveContext {
+  playerNearAccount?: string;
+  nearBalance?: number;
+  hasHouseOwnership?: boolean;
+  hanaWelcomeNearClaimed?: boolean;
+  caughtFishCount?: number;
+  recruitedFamilyCount?: number;
+  fishMarketListings?: ReadonlyArray<{
+    speciesName: string;
+    rarity: string;
+    weightKg: number;
+    priceRespite: number;
+    sellerNearAccount: string;
+  }>;
+  fishSalesStats?: {
+    topSale: {
+      speciesName: string;
+      weightKg: number | null;
+      priceRespite: number;
+      buyerAccount: string;
+      sellerAccount: string | null;
+    } | null;
+    recentSale: {
+      speciesName: string;
+      weightKg: number | null;
+      priceRespite: number;
+      buyerAccount: string;
+      sellerAccount: string | null;
+    } | null;
+    totalSalesCount: number;
+  } | null;
+}
+
 /**
- * Conversational AI Merchant Reply Generator (Context-Aware Local Brain).
+ * Conversational Game Concierge for Hana (Central Plaza Cafe) & Kai (Beachfront Harbor).
+ * Answers questions in clear, natural English using live player, shop, and Fish NFT market data.
  */
 export function generateNpcMerchantReply(
   userMessage: string,
   location: MerchantLocationId,
   state: MerchantAgentMarketState,
   balances: { lul: number; cyon: number; respite: number; walletConnected: boolean },
+  liveContext?: NpcConciergeLiveContext,
 ): string {
   const q = userMessage.trim().toLowerCase();
-  const locName = location === 'lobby_cafe' ? 'Mini Cafe Lobby' : 'East Beach House';
+  const locName = location === 'lobby_cafe' ? 'Central Plaza Cafe' : 'Beachfront Harbor';
   const npcName = location === 'lobby_cafe' ? 'Hana' : 'Kai';
+  const quote = evaluateLulToCyonExchangeQuote(state);
   const guestNotice = !balances.walletConnected
-    ? ' Please register your account first to unlock the Exchange and full Catalog.'
+    ? ' Sign in first to unlock the Exchange and Catalog.'
     : '';
 
-  if (state.isShopBroke && q.includes('invest')) {
-    return `Thank you for asking. My shop CYON reserve at ${locName} is currently low (${state.treasuryCyon} CYON). Registered players can invest LUL to restore shop liquidity.${guestNotice}`;
+  if (!q) {
+    return `Hi, I am ${npcName} at ${locName}. Ask me about places in the city, fishing, Fish NFT sales, currencies, houses, or the Warzone.`;
   }
 
-  // 1. Greetings
+  // 1. Shop support / investor bailout when shop reserve is low
   if (
-    /^(hi|hello|hey|halo|hallo|yo|greetings|good morning|good afternoon|good evening|selamat)\b/.test(
+    (state.isShopBroke || state.treasuryCyon < 250) &&
+    /\b(invest|bailout|support|reopen|modal|suntik)\b/.test(q)
+  ) {
+    return `Our shop reserve at ${locName} is currently ${state.treasuryCyon} CYON. Investing 300 LUL restores 450 CYON to the shop, pays you a 45 CYON bonus, and unlocks a 15% catalog discount.${guestNotice}`;
+  }
+
+  // 2. Most Expensive / Record / Sold / Rarest Fish NFT (Live Market Data)
+  const mentionsFishOrNft =
+    /\b(fish|nft|ikan|catch|tangkapan|arowana|coelacanth|marlin|koi|tuna)\b/.test(q);
+  const asksTopOrSold =
+    /\b(most expensive|expensive|highest|top|record|sold|sale|sales|rarest|mythic|best|termahal|paling mahal|terjual|laku|rekor|langka)\b/.test(
+      q,
+    );
+  if (
+    (mentionsFishOrNft && asksTopOrSold) ||
+    q.includes('most expensive') ||
+    q.includes('paling mahal') ||
+    q.includes('termahal') ||
+    q.includes('terjual')
+  ) {
+    const stats = liveContext?.fishSalesStats;
+    const listings = liveContext?.fishMarketListings ?? [];
+    const highestListing =
+      listings.length > 0
+        ? [...listings].sort((a, b) => b.priceRespite - a.priceRespite)[0]
+        : null;
+
+    if (stats?.topSale && stats.totalSalesCount > 0) {
+      const top = stats.topSale;
+      const weightText = top.weightKg ? ` (${top.weightKg.toFixed(2)} kg)` : '';
+      const sellerText = top.sellerAccount ? ` from ${top.sellerAccount}` : '';
+      const activeTail = highestListing
+        ? ` Right now, the highest active listing on Kai's Fish Market is ${highestListing.speciesName} (${highestListing.weightKg.toFixed(2)} kg) at ${highestListing.priceRespite} RESPITE.`
+        : '';
+      return `The most expensive Fish NFT sold so far is ${top.speciesName}${weightText}, bought by ${top.buyerAccount}${sellerText} for ${top.priceRespite} RESPITE (${stats.totalSalesCount} total sales completed).${activeTail}`;
+    }
+
+    if (highestListing) {
+      return `No Fish NFT has been sold yet, so the record is still open. The highest active listing on Kai's Fish Market right now is ${highestListing.speciesName} (${highestListing.weightKg.toFixed(2)} kg, ${highestListing.rarity}) listed by ${highestListing.sellerNearAccount} for ${highestListing.priceRespite} RESPITE.`;
+    }
+
+    return `No Fish NFTs have been sold or listed on Kai's market yet—you can set the first record. Aim for the Mythic Astral Dragon Arowana at NW Fishing Lake or the Mythic Nebula Coelacanth at Beachfront Harbor, both most active at night.`;
+  }
+
+  // 3. Cheapest / Active Fish Market Listings
+  if (
+    q.includes('fish market') ||
+    q.includes('pasar ikan') ||
+    (mentionsFishOrNft &&
+      /\b(cheapest|lowest|floor|for sale|listed|listing|listings|buy|termurah|paling murah|dijual|beli)\b/.test(
+        q,
+      ))
+  ) {
+    const listings = liveContext?.fishMarketListings ?? [];
+    if (listings.length > 0) {
+      const sorted = [...listings].sort((a, b) => a.priceRespite - b.priceRespite);
+      const cheapest = sorted[0];
+      const priciest = sorted[sorted.length - 1];
+      return `There ${listings.length === 1 ? 'is 1 Fish NFT' : `are ${listings.length} Fish NFTs`} listed on Kai's Fish Market right now. Prices start at ${cheapest.priceRespite} RESPITE for ${cheapest.speciesName} (${cheapest.weightKg.toFixed(2)} kg) up to ${priciest.priceRespite} RESPITE.`;
+    }
+    return `There are currently 0 Fish NFTs listed on Kai's Fish Market at Beachfront Harbor. Catch a fish, mint it as an NFT in your Bag or at Kai's counter, and list it for RESPITE.`;
+  }
+
+  // 4. Welcome Bonus / Claim 0.30 NEAR
+  if (
+    /\b(claim|free near|welcome bonus|starter|bonus|faucet|0\.30|0\.3|klaim|gratis|hadiah)\b/.test(q)
+  ) {
+    if (!balances.walletConnected) {
+      return `New players get a one-time 0.30 NEAR welcome bonus from Hana at Central Plaza Cafe. Sign in with Google first to create your wallet, then click Claim 0.30 NEAR in Hana's chat.`;
+    }
+    if (liveContext?.hanaWelcomeNearClaimed) {
+      return `You have already claimed your 0.30 NEAR welcome bonus. You can swap NEAR into RESPITE anytime in the Exchange tab (1 NEAR = 100 RESPITE).`;
+    }
+    return `Your 0.30 NEAR welcome bonus is ready to claim. Visit Hana at Central Plaza Cafe and click Claim 0.30 NEAR inside the Chat Session tab.`;
+  }
+
+  // 5. Specific Place & Direction Queries ("Where is...", "Dimana...", "How do I get to...")
+  const isAskingLocation =
+    /\b(where|how to get|how do i get|find|direction|directions|go to|dimana|di mana|lokasi|arah|kemana|ke mana|tempat)\b/.test(
+      q,
+    );
+
+  if (isAskingLocation && /\b(kai|beach|harbor|ocean|sea|coast|pantai|laut|pelabuhan)\b/.test(q)) {
+    return `Merchant Kai and the ocean fishing dock are at Beachfront Harbor in the southeast. Open any black Transit Kiosk (press B), choose Travel and Districts, and take the tram to Beachfront Harbor.`;
+  }
+
+  if (isAskingLocation && /\b(lake|oasis|freshwater|pond|danau|kolam)\b/.test(q)) {
+    return `The freshwater fishing spot is NW Fishing Lake in the northwest corner of the city. Open any black Transit Kiosk (press B) and travel to NW Fishing Lake, or walk northwest from Central Plaza.`;
+  }
+
+  if (isAskingLocation && /\b(hana|cafe|plaza|center|kafe|tengah)\b/.test(q)) {
+    return `Merchant Hana is at Central Plaza Cafe right in the heart of the city. Use any black Transit Kiosk and pick Central Plaza to return directly to the cafe.`;
+  }
+
+  if (isAskingLocation && /\b(warzone|arena|combat|battle|fight|perang|tempur)\b/.test(q)) {
+    return `To enter the Warzone Arena, open any black Transit Kiosk (press B), select Warzone Arena, and pick Blue Team or Red Team to ride the tram into battle.`;
+  }
+
+  if (isAskingLocation && /\b(house|home|plot|residential|sample|model|rumah|kavling)\b/.test(q)) {
+    return `Residential house plots line the North and South avenues of the city, and you can tour an open Model House on the southwest plot. Once you own a house, you can also enter straight from any Transit Kiosk via My House.`;
+  }
+
+  if (isAskingLocation && /\b(fish|fishing|mancing|memancing|ikan)\b/.test(q)) {
+    return `There are two fishing spots: Beachfront Harbor in the southeast for saltwater fish (also where Kai's shop is) and NW Fishing Lake in the northwest for freshwater fish. Use any black Transit Kiosk (press B) to travel to either spot.`;
+  }
+
+  if (/\b(kiosk|teleport|portal|tram|train|station|halte|kereta)\b/.test(q)) {
+    return `Black Transit Kiosks stand beside every tram shelter across the city. Walk up to a kiosk and press B (or click it) to ride the tram between districts, deploy to the Warzone Arena, enter My House, or open the Shop.`;
+  }
+
+  // 6. Controls & Keybindings
+  if (
+    /\b(control|controls|key|keys|keyboard|shortcut|button|how to move|walk|camera|kontrol|tombol|cara jalan|gerak)\b/.test(
+      q,
+    )
+  ) {
+    return `Move with WASD or click on the ground, and drag to rotate the camera. Press B for the Transit Kiosk, F to cast your fishing rod by water or build on a Warzone pad, E to grab supply crates, and G to enter vehicles.`;
+  }
+
+  // 7. Player's Own Wallet, Balance, Login, or Guest Status
+  if (
+    /\b(my balance|my wallet|my account|register|sign up|signup|login|sign in|google|wallet|account|guest|daftar|akun|saldo)\b/.test(
       q,
     )
   ) {
     if (!balances.walletConnected) {
-      return `Hello and welcome, Buddy. It looks like you have not registered yet. Please register to access the Exchange and the full Catalog. Meanwhile, you can walk around and ask me any questions about this game.`;
+      return `You are currently exploring in Guest Mode. Click Sign In to register with Google or connect an external wallet—you will get your own wallet address, 0.30 NEAR from Hana, and full access to the Exchange and Catalog.`;
     }
-    return `Hello Buddy, welcome back to ${locName}. My name is ${npcName}. Ask me about where you are, how to play, currencies, houses, family members, fishing, or the Warzone.`;
+    const addr = liveContext?.playerNearAccount ? ` (${liveContext.playerNearAccount})` : '';
+    const nearPart =
+      typeof liveContext?.nearBalance === 'number'
+        ? `${liveContext.nearBalance.toFixed(2)} NEAR, `
+        : '';
+    return `Your wallet${addr} is active with ${nearPart}${balances.lul} LUL, ${balances.cyon} CYON, and ${balances.respite} RESPITE. Open the Wallet button at the top right anytime to copy your address, send RESPITE, or check your items.`;
   }
 
-  // 2. Where am I / What is this place / Who are you
+  // 8. Currencies & Exchange (LUL, CYON, RESPITE, NEAR)
   if (
-    q.includes('where am i') ||
-    q.includes('where is this') ||
-    q.includes('what is this') ||
-    q.includes('what place') ||
-    q.includes('who are you') ||
-    q.includes('apa ini') ||
-    q.includes('dimana ini') ||
-    q.includes('di mana ini') ||
-    q.includes('siapa kamu') ||
-    q.includes('location') ||
-    q.includes('lobby') ||
-    q.includes('city') ||
-    q.includes('map')
+    /\b(lul|cyon|respite|near|coin|coins|money|currency|currencies|exchange|swap|rate|tukar|kurs|uang|koin)\b/.test(
+      q,
+    )
   ) {
-    return `You are currently inside the ${locName} in Buddies Blitz, and my name is ${npcName}. This world has three main areas: the Mini Cafe Lobby, the peaceful Safezone City with private houses and fishing waters, and the Warzone Arena for team battles.${guestNotice}`;
+    return `Earn LUL in the Warzone or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 100 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House, Family Member companions, and collector items. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
   }
 
-  // 3. Game guide / How to play / Hints
+  // 9. Family Member Companions
   if (
-    q.includes('how to play') ||
-    q.includes('guide') ||
-    q.includes('help') ||
-    q.includes('hint') ||
-    q.includes('tips') ||
-    q.includes('tutorial') ||
-    q.includes('what to do') ||
-    q.includes('objective') ||
-    q.includes('petunjuk') ||
-    q.includes('cara main')
+    /\b(family|companion|helper|harvester|recruit|hire|agent|pendamping|asisten)\b/.test(q)
   ) {
-    return `Here is how to play Buddies Blitz: First, register with Google to create your personal citizen wallet. Second, enter the Warzone via the City Transit Kiosk or catch fish with the interactive Tension Gauge minigame to earn LUL. Swap LUL into CYON at the Exchange to buy regular catalog items, or mint caught fish into NEP-171 NFTs to sell P2P on Kai's Fish Market for RESPITE (or swap NEAR -> RESPITE at Hana's ATM).${guestNotice}`;
+    const activeCount = liveContext?.recruitedFamilyCount ?? 0;
+    const countNote =
+      activeCount > 0 ? ` You currently have ${activeCount} active Family Member companion(s).` : '';
+    return `You can hire a Family Member companion in Hana's Catalog for 15 RESPITE (1 Week), 45 RESPITE (1 Month), or 180 RESPITE (1 Year). Once hired, assign them to collect Warzone crates, fish along the shore, or guard your base.${countNote}${guestNotice}`;
   }
 
-  // 4. Registration / Account / Wallet questions
+  // 10. Private House, Plots & 3D Furniture Studio
   if (
-    q.includes('register') ||
-    q.includes('sign up') ||
-    q.includes('signup') ||
-    q.includes('login') ||
-    q.includes('google') ||
-    q.includes('wallet') ||
-    q.includes('account') ||
-    q.includes('guest') ||
-    q.includes('daftar') ||
-    q.includes('akun')
+    /\b(house|home|furniture|decor|decorate|interior|studio|plot|theme|gate|friend|rumah|dekor|perabot|katalog|catalog)\b/.test(
+      q,
+    )
+  ) {
+    const houseNote = liveContext?.hasHouseOwnership
+      ? ' You already own a Private House—claim any open city plot or enter via the Transit Kiosk.'
+      : '';
+    return `Buy a Private House in Hana's Catalog for 25 RESPITE to claim a residential plot in the city and unlock your 3D interior studio. Place CYON or collector RESPITE furniture, customize lighting and wall finishes, and set your gate to Public, Friends Only, or Private.${houseNote}${guestNotice}`;
+  }
+
+  // 11. Fishing, Rods, Species & Minting
+  if (
+    /\b(fish|fishing|rod|reel|lure|bait|lake|beach|kai|water|mint|nft|mancing|memancing|ikan|joran|pantai)\b/.test(
+      q,
+    )
+  ) {
+    const bagCount =
+      typeof liveContext?.caughtFishCount === 'number'
+        ? ` You currently have ${liveContext.caughtFishCount}/20 fish in your Bag.`
+        : '';
+    return `Open your Bag (top right) to equip your Fishing Rod, walk to Beachfront Harbor or NW Fishing Lake, and press F to cast. Wait for the bite alert (!), keep the tension bar inside the green zone, then sell fish to Kai for LUL or mint rare catches as NFTs to sell on Kai's market for RESPITE.${bagCount}${guestNotice}`;
+  }
+
+  // 12. Warzone Combat, Crates & Vehicles
+  if (
+    /\b(warzone|fight|battle|combat|crate|box|weapon|rifle|bazooka|tank|vehicle|truck|plane|blue|red|hq|perang|senjata|kotak|tank)\b/.test(
+      q,
+    )
+  ) {
+    return `Enter the Warzone from any Transit Kiosk and pick Blue Team or Red Team (5 lives per match). Grab supply boxes with E, stack them on your base pad, and press F or open the Base Kiosk to build rifles, bazookas, tanks, planes, and HQ upgrades while earning LUL.`;
+  }
+
+  // 13. Live Shop Stock, Market Day & Dynamic Pricing
+  if (
+    /\b(price|prices|market|stock|supply|demand|day|reserve|discount|cost|harga|pasar|stok|diskon)\b/.test(
+      q,
+    )
+  ) {
+    const discountNote = state.investorDiscountActive
+      ? ' A 15% supporter discount is currently active on catalog items.'
+      : '';
+    return `We are on Market Day ${state.dayCounter} with ${state.treasuryCyon} CYON in shop reserve, and the current rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. Catalog prices adjust dynamically with item stock and player demand.${discountNote}${guestNotice}`;
+  }
+
+  // 14. Where am I / Who are you / City Overview
+  if (
+    /\b(where am i|where is this|what is this|what place|who are you|location|lobby|city|map|apa ini|siapa kamu)\b/.test(
+      q,
+    )
+  ) {
+    return `You are at ${locName} in Buddies Blitz, and I am ${npcName}. From here you can explore the peaceful city, fish at Beachfront Harbor or NW Fishing Lake, decorate a Private House, or ride the tram into the Warzone Arena.${guestNotice}`;
+  }
+
+  // 15. General How to Play / Beginner Guide
+  if (
+    /\b(how to play|guide|help|hint|tips|tutorial|what to do|start|objective|petunjuk|cara main|mulai|bantuan)\b/.test(
+      q,
+    )
+  ) {
+    return `Start by claiming your 0.30 NEAR welcome bonus from Hana at Central Plaza Cafe, then use any black Transit Kiosk (press B) to explore. Earn LUL by fishing or fighting in the Warzone, exchange LUL for CYON to buy gear, and use RESPITE (from NEAR swaps or selling Fish NFTs at Kai's harbor) to own a Private House.${guestNotice}`;
+  }
+
+  // 16. Greetings
+  if (
+    /^(hi|hello|hey|halo|hallo|yo|sup|pagi|siang|sore|malam|greetings|good morning|good afternoon|good evening|selamat)\b/.test(
+      q,
+    )
   ) {
     if (!balances.walletConnected) {
-      return `You are currently playing as a Guest with zero coins and read-only shop access. Click the REGISTER button in the Exchange or Catalog tab to sign up with Google and create your personal wallet address.`;
+      return `Hi Buddy, welcome to ${locName}. You are in Guest Mode right now—feel free to explore and ask me anything about places, fishing, Fish NFT records, currencies, houses, or the Warzone.`;
     }
-    return `Your account is already registered and your personal wallet is active. You can view and copy your wallet address anytime inside your Personal Wallet menu.`;
+    return `Hi Buddy, welcome to ${locName}. I am ${npcName}—ask me where anything is, which Fish NFT sold for the highest price, how currencies work, or what to do next.`;
   }
 
-  // 5. Currencies & Exchange (LUL, CYON, RESPITE, NEAR)
-  if (
-    q.includes('lul') ||
-    q.includes('cyon') ||
-    q.includes('respite') ||
-    q.includes('near') ||
-    q.includes('coin') ||
-    q.includes('money') ||
-    q.includes('currency') ||
-    q.includes('exchange') ||
-    q.includes('swap') ||
-    q.includes('rate') ||
-    q.includes('tukar') ||
-    q.includes('kurs') ||
-    q.includes('uang') ||
-    q.includes('koin')
-  ) {
-    return `Buddies Blitz uses a 3-currency anti-bot P2P economy: LUL is earned only from Mini-Games (Warzone) or selling raw non-NFT fish to Merchant Kai, and its sole function is swapping into CYON at the Exchange. CYON buys regular non-NFT catalog items (tackle, outfits, basic furniture). RESPITE is pure on-chain NEAR crypto obtained via NEAR -> RESPITE ATM swap or P2P NFT sales on Kai's Fish Market, used for House Ownership (25 RESPITE), Family Member contracts, and exclusive NFTs. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
-  }
-
-  // 6. House, Family Members & Catalog
-  if (
-    q.includes('family') ||
-    q.includes('harvester') ||
-    q.includes('recruit') ||
-    q.includes('agent') ||
-    q.includes('contract') ||
-    q.includes('house') ||
-    q.includes('home') ||
-    q.includes('furniture') ||
-    q.includes('catalog') ||
-    q.includes('rumah') ||
-    q.includes('katalog')
-  ) {
-    return `In the Catalog tab, registered players can buy the Modern Japanese Wooden Pavilion House Certificate for 25 RESPITE (starts empty so you can furnish it with CYON or NFT RESPITE furniture, flex on a Main World plot, teleport via Kiosk, and invite friends) and recruit a Family Member AI companion for 15/45/180 RESPITE (active exclusively inside Mini-Games like Warzone).${guestNotice}`;
-  }
-
-  // 7. Fishing & East Beach
-  if (
-    q.includes('fish') ||
-    q.includes('rod') ||
-    q.includes('lake') ||
-    q.includes('beach') ||
-    q.includes('kai') ||
-    q.includes('water') ||
-    q.includes('mancing') ||
-    q.includes('ikan') ||
-    q.includes('pantai')
-  ) {
-    return `Open your Personal Bag to equip a Fishing Rod, cast into the water, wait for the bite indicator (!), and reel in using the Tension Gauge minigame. Caught fish go to your Personal Bag where you can Release them, sell non-NFT fish to Kai for LUL (then swap LUL -> CYON), or Mint them as NEP-171 NFTs to list on Kai's P2P Market for RESPITE.${guestNotice}`;
-  }
-
-  // 8. Warzone / Combat / Crates
-  if (
-    q.includes('warzone') ||
-    q.includes('fight') ||
-    q.includes('battle') ||
-    q.includes('crate') ||
-    q.includes('box') ||
-    q.includes('weapon') ||
-    q.includes('tank') ||
-    q.includes('blue') ||
-    q.includes('red') ||
-    q.includes('perang') ||
-    q.includes('senjata') ||
-    q.includes('kotak')
-  ) {
-    return `To enter the Warzone, step onto the Warzone Teleport pad in the Lobby and choose Blue Team or Red Team. In the Warzone, grab supply boxes with E, stack them on your base pad, and press F to craft weapons, infantry, or vehicles. Every player has 5 lives per deployment.`;
-  }
-
-  // 9. Prices / Market Stock
-  if (
-    q.includes('price') ||
-    q.includes('market') ||
-    q.includes('stock') ||
-    q.includes('cost') ||
-    q.includes('harga') ||
-    q.includes('pasar')
-  ) {
-    const quote = evaluateLulToCyonExchangeQuote(state);
-    return `Today is Market Day ${state.dayCounter}. The exchange rate is ${quote.lulCostFor10Cyon} LUL for 10 CYON, and catalog prices adjust based on item stock and player demand.${guestNotice}`;
-  }
-
-  // 10. Off-Topic / Irrelevant Questions -> Polite fallback directing player to ask people around
-  return `I do not know about that topic. Perhaps you can ask the other people around the plaza, or ask me about Buddies Blitz locations, currencies, houses, family members, fishing, or the Warzone.`;
+  // 17. Friendly Concierge Fallback
+  return `I can help with anything in Buddies Blitz. Try asking where Kai or the fishing lake is, what the most expensive Fish NFT sold for, how LUL, CYON, and RESPITE work, or how to get a Private House.`;
 }
 
 /**

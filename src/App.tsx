@@ -106,6 +106,7 @@ import {
   creditRecipientRespiteInSupabase,
   fetchBasePlotsFromSupabase,
   fetchFishMarketplaceListingsFromSupabase,
+  fetchFishNftMarketSalesStats,
   fetchGamepassNftLedgerFromSupabase,
   fetchHouseInteriorFromSupabase,
   fetchMarketTransactionsFromSupabase,
@@ -126,6 +127,7 @@ import {
   syncNpcMerchantToSupabase,
   syncPlayerBalancesToSupabase,
   type DbMarketTransactionRow,
+  type FishNftMarketSalesStats,
 } from './lib/supabaseClient';
 import {
   FISH_SPECIES_CATALOG,
@@ -583,6 +585,7 @@ export default function App() {
     useState<Nep171GamepassSubAccountLedger>(EMPTY_NEP171_LEDGER);
   const [caughtFishBucket, setCaughtFishBucket] = useState<CaughtFishItem[]>([]);
   const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>([]);
+  const [fishSalesStats, setFishSalesStats] = useState<FishNftMarketSalesStats | null>(null);
   const [fishingPhase, setFishingPhase] = useState<FishingPhaseState>('idle');
   const [fishingCastPower, setFishingCastPower] = useState<number>(0.72);
   const [isChargingCast, setIsChargingCast] = useState<boolean>(false);
@@ -616,10 +619,12 @@ export default function App() {
   }, [isFastForwardRunning, activeSpecialModal, merchantLocation]);
 
   const refreshFishMarketplaceFromChainAndDb = useCallback(async () => {
-    const [dbListings, onChainListings] = await Promise.all([
+    const [dbListings, onChainListings, latestSalesStats] = await Promise.all([
       fetchFishMarketplaceListingsFromSupabase(),
       fetchBuddiesMarketFishListings(),
+      fetchFishNftMarketSalesStats(),
     ]);
+    setFishSalesStats(latestSalesStats);
     const mappedOnChain: FishNftMarketplaceListing[] = onChainListings.map((row) => {
       const spec = FISH_SPECIES_CATALOG.find((s) => s.speciesId === row.species_id);
       const waterZone =
@@ -654,6 +659,12 @@ export default function App() {
     ];
     setFishMarketListings(merged);
   }, []);
+
+  useEffect(() => {
+    if (activeSpecialModal === 'npc_merchant') {
+      void refreshFishMarketplaceFromChainAndDb();
+    }
+  }, [activeSpecialModal, refreshFishMarketplaceFromChainAndDb]);
 
   // Hydrate initial state from NEAR RPC & Supabase PostgreSQL + Realtime
   useEffect(() => {
@@ -2092,7 +2103,7 @@ export default function App() {
       .replace(/[^a-z0-9_-]/g, '')
       .slice(0, 32);
     if (cleanHandle.length < 2) {
-      setWalletConnectError('Wallet prefix must be at least 2 characters (e.g. xyz).');
+      setWalletConnectError('Wallet username must be at least 2 characters.');
       return;
     }
 
@@ -2102,12 +2113,12 @@ export default function App() {
 
     setOnboardingStep('provisioning_subwallet');
     setOnboardingLoadingProgress(22);
-    setSubWalletProvisionStageLabel('1/3 Generating self-custody Ed25519 key in browser...');
+    setSubWalletProvisionStageLabel('Creating your wallet...');
 
     const stageTimer1 = window.setTimeout(() => {
       setOnboardingLoadingProgress(56);
       setSubWalletProvisionStageLabel(
-        `2/3 Provisioning ${cleanHandle}.${NEAR_CONFIG.masterAccountId} from Master Wallet...`,
+        `Registering ${cleanHandle}.${NEAR_CONFIG.masterAccountId}...`,
       );
     }, 380);
 
@@ -2123,14 +2134,14 @@ export default function App() {
       setOnboardingStep('subwallet_naming');
       setWalletConnectError(
         provisioned.error ||
-          `Failed to register ${cleanHandle}.${NEAR_CONFIG.masterAccountId}. Please try a different prefix.`,
+          `Could not register ${cleanHandle}.${NEAR_CONFIG.masterAccountId}. Try another name.`,
       );
       return;
     }
 
     const walletId = provisioned.subAccountId.toLowerCase();
     setOnboardingLoadingProgress(85);
-    setSubWalletProvisionStageLabel('3/3 Saving citizen profile & syncing NEAR Testnet...');
+    setSubWalletProvisionStageLabel('Loading Central Plaza...');
     setProvisionedSubWalletTxHash(provisioned.txHash || '');
 
     const [accountView, hanaStatus] = await Promise.all([
@@ -3176,7 +3187,7 @@ export default function App() {
                           </svg>
                           <span>
                             {isVerifyingNearWallet || privyOAuthLoading
-                              ? 'AUTHENTICATING WITH GOOGLE...'
+                              ? 'SIGNING IN...'
                               : 'CONTINUE WITH GOOGLE'}
                           </span>
                         </span>
@@ -3195,7 +3206,7 @@ export default function App() {
                       >
                         <span className="skew-x-6 flex items-center justify-center gap-2">
                           <Wallet className="w-3.5 h-3.5 stroke-[2.5] shrink-0" aria-hidden="true" />
-                          <span>CONNECT NEAR WALLET (METEOR / TESTNET)</span>
+                          <span>CONNECT EXTERNAL WALLET</span>
                         </span>
                       </button>
                     </div>
@@ -3216,7 +3227,7 @@ export default function App() {
                           }}
                           className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
                         >
-                          CONTINUE WITHOUT POPUP (CREATE SUB-WALLET) &rarr;
+                          CREATE WALLET
                         </button>
                       </div>
                     )}
@@ -3231,7 +3242,7 @@ export default function App() {
                     <div className="flex-1 h-px bg-white/15" />
                   </div>
 
-                  {/* 2. Secondary Action: Play as Guest (Walk around freely; Exchange & Purchases locked until registered) */}
+                  {/* 2. Secondary Action: Play as Guest */}
                   <button
                     type="button"
                     data-login-guest-btn="true"
@@ -3249,7 +3260,7 @@ export default function App() {
                     }}
                     className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                   >
-                    <span className="skew-x-6 inline-block">PLAY AS GUEST (WALK &amp; EXPLORE)</span>
+                    <span className="skew-x-6 inline-block">PLAY AS GUEST</span>
                   </button>
                 </>
               )}
@@ -3258,21 +3269,19 @@ export default function App() {
                 <div className="space-y-3.5">
                   <div className="text-center space-y-0.5">
                     <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                      {onboardingAuthMode === 'wallet'
-                        ? 'STEP 1/3 · CHOOSE CHARACTER & ENTER NAME'
-                        : 'GUEST MODE · CHOOSE CHARACTER & NAME'}
+                      CHOOSE CHARACTER
                     </div>
-                    <div className="text-[10px] font-bold text-slate-300">
+                    <div className="text-[10.5px] font-bold text-slate-300">
                       {onboardingAuthMode === 'wallet'
-                        ? 'Select your 3D avatar and enter your display name before creating your sub-wallet.'
-                        : 'Enter freely without login to walk & explore (Exchange & purchases require registration).'}
+                        ? 'Pick your character and display name.'
+                        : 'Explore freely. Sign in later to unlock trading.'}
                     </div>
                   </div>
 
                   {/* Row 1: Direct Citizen / Guest Name Input */}
                   <div className="space-y-1">
                     <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
-                      CHARACTER / DISPLAY NAME
+                      DISPLAY NAME
                     </label>
                     <input
                       ref={guestNameInputRef}
@@ -3284,7 +3293,7 @@ export default function App() {
                         setIsCustomGuestNameEdited(true);
                         setPlayerDisplayName(e.target.value);
                       }}
-                      placeholder="Enter your character name..."
+                      placeholder="Enter your name..."
                       className="w-full px-3 py-2 bg-white text-black font-black text-sm border-2 border-[#b8ff3c] shadow-[2px_2px_0_#000] focus:outline-none"
                     />
                   </div>
@@ -3297,7 +3306,7 @@ export default function App() {
                         soundEngine.playUiClick();
                         setOnboardingStep('auth_choice');
                       }}
-                      title="Back to Login Options"
+                      title="Back"
                       aria-label="Back"
                       className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
                     >
@@ -3361,10 +3370,10 @@ export default function App() {
                       type="button"
                       data-confirm-guest-character-btn="true"
                       onClick={handleConfirmGuestCharacterAndEnterLobby}
-                      className="-skew-x-6 px-3.5 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
+                      className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                     >
                       <span className="skew-x-6 inline-block">
-                        {onboardingAuthMode === 'wallet' ? 'NEXT: WALLET >' : 'ENTER AS GUEST >'}
+                        {onboardingAuthMode === 'wallet' ? 'NEXT' : 'PLAY'}
                       </span>
                     </button>
                   </div>
@@ -3375,17 +3384,16 @@ export default function App() {
                 <div className="space-y-3.5">
                   <div className="text-center space-y-0.5">
                     <div className="text-[10px] font-black uppercase tracking-widest text-[#38bdf8]">
-                      STEP 2/3 · CREATE NEAR SUB-WALLET ADDRESS
+                      CREATE WALLET
                     </div>
                     <div className="text-[10.5px] font-bold text-slate-300">
-                      Choose your sub-wallet prefix under master wallet{' '}
-                      <span className="font-mono text-[#b8ff3c]">{NEAR_CONFIG.masterAccountId}</span>
+                      Choose a unique wallet username.
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
-                      WALLET ADDRESS PREFIX (EXAMPLE: XYZ)
+                      USERNAME
                     </label>
                     <div className="flex items-stretch border-2 border-black shadow-[3px_3px_0_#000] bg-white overflow-hidden">
                       <input
@@ -3410,7 +3418,7 @@ export default function App() {
                             void handleProvisionSubWalletAndShowWelcome();
                           }
                         }}
-                        placeholder="xyz"
+                        placeholder="username"
                         className="w-full min-w-0 px-2.5 py-2 bg-white text-black font-mono font-black text-sm focus:outline-none"
                       />
                       <div className="px-2 py-2 bg-[#e2e8f0] text-slate-800 border-l-2 border-black font-mono font-black text-[10.5px] flex items-center shrink-0">
@@ -3419,31 +3427,31 @@ export default function App() {
                     </div>
 
                     <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
-                      <div className="text-[9.5px] font-black uppercase text-slate-400">
-                        YOUR SUB-WALLET ADDRESS:
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9.5px] font-black uppercase text-slate-400">
+                          YOUR WALLET
+                        </span>
+                        <span className="text-[10px] font-bold">
+                          {subWalletAvailability.checking ? (
+                            <span className="text-[#facc15]">Checking...</span>
+                          ) : subWalletAvailability.validFormat && subWalletAvailability.available ? (
+                            <span className="text-[#b8ff3c]">
+                              {subWalletAvailability.ownedByCurrentDevice
+                                ? 'Restoring your wallet'
+                                : 'Available'}
+                            </span>
+                          ) : (
+                            <span className="text-[#fca5a5]">
+                              {subWalletAvailability.reason || 'Min 2 characters'}
+                            </span>
+                          )}
+                        </span>
                       </div>
                       <div
                         data-subwallet-full-preview="true"
                         className="font-mono text-xs font-black text-[#38bdf8] break-all"
                       >
-                        {(subWalletHandleDraft.trim() || 'xyz') + `.${NEAR_CONFIG.masterAccountId}`}
-                      </div>
-                      <div className="text-[10px] font-bold pt-0.5">
-                        {subWalletAvailability.checking ? (
-                          <span className="text-[#facc15]">
-                            Checking availability on NEAR Testnet...
-                          </span>
-                        ) : subWalletAvailability.validFormat && subWalletAvailability.available ? (
-                          <span className="text-[#b8ff3c]">
-                            {subWalletAvailability.ownedByCurrentDevice
-                              ? '✅ Sub-wallet owned by this device — ready to restore!'
-                              : '✅ Address available on NEAR Testnet!'}
-                          </span>
-                        ) : (
-                          <span className="text-[#fca5a5]">
-                            {subWalletAvailability.reason || 'Enter at least 2 characters (a-z, 0-9).'}
-                          </span>
-                        )}
+                        {(subWalletHandleDraft.trim() || 'username') + `.${NEAR_CONFIG.masterAccountId}`}
                       </div>
                     </div>
 
@@ -3464,7 +3472,7 @@ export default function App() {
                       }}
                       className="px-3 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 text-[11px] font-black uppercase cursor-pointer"
                     >
-                      &lt; BACK
+                      BACK
                     </button>
 
                     <button
@@ -3478,7 +3486,7 @@ export default function App() {
                       onClick={() => void handleProvisionSubWalletAndShowWelcome()}
                       className="-skew-x-6 flex-1 py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:opacity-50 disabled:cursor-not-allowed text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer transition-all"
                     >
-                      <span className="skew-x-6 inline-block">CREATE SUB-WALLET &rarr;</span>
+                      <span className="skew-x-6 inline-block">CREATE WALLET</span>
                     </button>
                   </div>
                 </div>
@@ -3490,22 +3498,11 @@ export default function App() {
                   className="flex flex-col items-center gap-3 text-center py-3"
                 >
                   <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase animate-pulse">
-                    <span className="skew-x-12 inline-block">
-                      STEP 3/3 · PROVISIONING SUB-WALLET...
-                    </span>
+                    <span className="skew-x-12 inline-block">CREATING WALLET...</span>
                   </div>
 
-                  <div className="w-full p-3 bg-[#0f172a] border-2 border-white/20 space-y-1.5 text-left">
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">MASTER WALLET:</span>
-                      <span className="text-[#facc15] font-bold">{NEAR_CONFIG.masterAccountId}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">NEW SUB-WALLET:</span>
-                      <span className="text-[#b8ff3c] font-bold">
-                        {subWalletHandleDraft}.{NEAR_CONFIG.masterAccountId}
-                      </span>
-                    </div>
+                  <div className="w-full p-2.5 bg-[#0f172a] border border-white/20 font-mono text-xs font-bold text-[#b8ff3c] break-all">
+                    {subWalletHandleDraft}.{NEAR_CONFIG.masterAccountId}
                   </div>
 
                   <div className="text-[11px] font-bold text-slate-200">
@@ -3524,13 +3521,13 @@ export default function App() {
               {onboardingStep === 'entering_lobby' && (
                 <div className="flex flex-col items-center gap-3 text-center py-2">
                   <div className="-skew-x-12 px-5 py-2 bg-[#b8ff3c] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[3px_3px_0_#000] font-black text-base tracking-widest uppercase">
-                    <span className="skew-x-12 inline-block">ENTERING CENTRAL PLAZA...</span>
+                    <span className="skew-x-12 inline-block">LOADING...</span>
                   </div>
 
                   <div className="text-[11px] font-black tracking-widest uppercase text-[#38bdf8]">
                     {onboardingAuthMode === 'wallet'
-                      ? `SESSION · ${connectedGoogleEmail || hud.nearWalletId || walletConnectInput}`
-                      : `GUEST · ${playerDisplayName.toUpperCase()}`}
+                      ? hud.nearWalletId || walletConnectInput || connectedGoogleEmail
+                      : playerDisplayName.toUpperCase()}
                   </div>
 
                   <div className="w-full h-2.5 bg-[#0b0e16] border border-white/50 overflow-hidden">
@@ -3558,51 +3555,42 @@ export default function App() {
             data-citizen-welcome-modal="true"
             className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs pointer-events-auto select-none"
           >
-            <div className="w-full max-w-md bg-[#14161d] text-white border-4 border-black ring-4 ring-[#b8ff3c] shadow-[10px_10px_0_#000] p-6 space-y-4">
-              <div className="flex items-center justify-between gap-2 border-b-2 border-white/15 pb-3">
-                <span className="-skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black font-black text-[10.5px] uppercase tracking-widest">
-                  <span className="skew-x-12 inline-block">WELCOME CITIZEN!</span>
+            <div className="w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-[#b8ff3c] shadow-[10px_10px_0_#000] p-5 space-y-3.5">
+              <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2.5">
+                <span className="-skew-x-12 px-2.5 py-0.5 bg-[#b8ff3c] text-black border-2 border-black font-black text-[10px] uppercase tracking-widest">
+                  <span className="skew-x-12 inline-block">WELCOME</span>
                 </span>
-                <span className="text-[10px] font-mono font-bold text-[#38bdf8]">
-                  NEAR TESTNET VERIFIED
-                </span>
+                <span className="text-[10px] font-mono font-bold text-[#38bdf8]">READY</span>
               </div>
 
-              <div className="space-y-2">
-                <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
-                  Welcome, {playerDisplayName}!
+              <div>
+                <h2 className="text-xl font-black uppercase tracking-tight text-white">
+                  Welcome, {playerDisplayName}
                 </h2>
-                <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                  Your personal NEAR sub-wallet under master wallet{' '}
-                  <span className="font-mono text-[#facc15]">{NEAR_CONFIG.masterAccountId}</span>{' '}
-                  is live with a self-custody key stored locally in your browser:
+                <p className="text-xs font-bold text-slate-300 mt-1">
+                  Visit Hana at Central Plaza Cafe to claim your 0.30 NEAR welcome bonus.
                 </p>
               </div>
 
-              <div className="p-3 bg-[#0f172a] border-2 border-[#38bdf8] space-y-1.5">
-                <div className="text-[9.5px] font-black uppercase text-slate-400">
-                  CITIZEN WALLET ADDRESS
+              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9.5px] font-black uppercase text-slate-400">
+                    YOUR WALLET
+                  </span>
+                  {provisionedSubWalletTxHash && (
+                    <a
+                      href={getNearBlocksTxUrl(provisionedSubWalletTxHash, 'testnet')}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] font-mono font-bold text-[#38bdf8] underline"
+                    >
+                      Receipt
+                    </a>
+                  )}
                 </div>
-                <div className="font-mono text-sm font-black text-[#b8ff3c] break-all">
+                <div className="font-mono text-xs font-black text-[#b8ff3c] break-all">
                   {hud.nearWalletId || playerUid}
                 </div>
-                {provisionedSubWalletTxHash && (
-                  <a
-                    href={getNearBlocksTxUrl(provisionedSubWalletTxHash, 'testnet')}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block text-[10.5px] font-mono font-bold text-[#38bdf8] underline"
-                  >
-                    View Sub-Wallet Creation Tx on NearBlocks ↗
-                  </a>
-                )}
-              </div>
-
-              <div className="p-3 bg-[#1e293b] border-2 border-black text-xs font-bold text-slate-200 leading-relaxed">
-                🎯 <span className="text-[#facc15] font-black">First Mission:</span> Follow the
-                glowing ground path to <span className="text-[#b8ff3c]">Merchant Hana</span> at
-                Central Plaza Cafe to complete a quick welcome chat &amp; claim{' '}
-                <span className="text-[#b8ff3c]">0.30 NEAR</span> from Hana&apos;s Smart Contract Treasury!
               </div>
 
               <button
@@ -3612,11 +3600,9 @@ export default function App() {
                   soundEngine.playPickup();
                   setTutorialStage('go_to_hana');
                 }}
-                className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
               >
-                <span className="skew-x-6 inline-block">
-                  HEAD TO HANA &amp; START TUTORIAL &rarr;
-                </span>
+                <span className="skew-x-6 inline-block">START</span>
               </button>
             </div>
           </div>
@@ -3630,31 +3616,24 @@ export default function App() {
         !tramRideCutsceneUi?.active && (
           <div
             data-tutorial-objective-hud="true"
-            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-lg pointer-events-auto select-none"
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-auto select-none"
           >
-            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-4 py-2.5 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 border border-black text-[9.5px] font-black uppercase ${
-                      tutorialStage === 'go_to_hana'
-                        ? 'bg-[#b8ff3c] text-black'
-                        : 'bg-[#38bdf8] text-black'
-                    }`}
-                  >
-                    {tutorialStage === 'go_to_hana' ? 'TUTORIAL 1/2 · HANA' : 'TUTORIAL 2/2 · KIOSK'}
-                  </span>
-                  <span className="text-[10.5px] font-black uppercase text-[#facc15] truncate">
-                    {tutorialStage === 'go_to_hana'
-                      ? 'Meet Merchant Hana at the Cafe'
-                      : 'Follow the Path to the Teleport Kiosk'}
-                  </span>
-                </div>
-                <div className="text-[11px] font-bold text-slate-200 mt-1 leading-snug">
+            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={`px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 ${
+                    tutorialStage === 'go_to_hana'
+                      ? 'bg-[#b8ff3c] text-black'
+                      : 'bg-[#38bdf8] text-black'
+                  }`}
+                >
+                  NEXT
+                </span>
+                <span className="text-[11px] font-bold text-slate-100 truncate">
                   {tutorialStage === 'go_to_hana'
-                    ? 'Follow the glowing green ground arrows to Hana (click Hana) for a quick tutorial & claim 0.30 NEAR!'
-                    : 'Feel free to explore! Follow the glowing blue arrows to the black Teleport Kiosk at the tram shelter to learn every portal.'}
-                </div>
+                    ? 'Talk to Hana at Central Plaza Cafe to claim 0.30 NEAR.'
+                    : 'Follow the blue path to the Transit Kiosk.'}
+                </span>
               </div>
               <button
                 type="button"
@@ -4012,7 +3991,7 @@ export default function App() {
 
                 <div
                   data-top-cyon-badge="true"
-                  title="CYON (Halcyon) — Non-Crypto Currency exchanged from LUL at the NPC ATM"
+                  title="CYON — Shop currency exchanged from LUL"
                   className="-skew-x-12 px-2 py-1 bg-[#38bdf8] text-[#0f172a] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] font-black text-[10px]"
                 >
                   <span className="skew-x-12 inline-block">{cyonBalance} CYON</span>
@@ -4020,7 +3999,7 @@ export default function App() {
 
                 <div
                   data-top-respite-badge="true"
-                  title="RESPITE — NEAR Crypto Token (NEP-141) for NFT themes & furniture"
+                  title="RESPITE — Token for houses, companions, and Fish Market"
                   className="-skew-x-12 px-2 py-1 bg-[#d8b4fe] text-[#1e1b4b] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] font-black text-[10px]"
                 >
                   <span className="skew-x-12 inline-block">{respiteBalance} RESPITE</span>
@@ -5547,6 +5526,7 @@ export default function App() {
         }}
         caughtFishBucket={caughtFishBucket}
         fishMarketListings={fishMarketListings}
+        fishSalesStats={fishSalesStats}
         playerNearAccount={hud.nearWalletId || playerUid || ''}
         onSellCaughtFish={handleSellRawFishForLul}
         onReleaseCaughtFish={(fish: CaughtFishItem) => {
@@ -6174,11 +6154,11 @@ export default function App() {
                 </button>
               </div>
 
-              {/* CREATED SUB-ACCOUNT WALLET ADDRESS OR GUEST REGISTER PROMPT */}
+              {/* WALLET ADDRESS OR SIGN IN PROMPT */}
               <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                    WALLET ADDRESS
+                    YOUR WALLET
                   </div>
                   {hud.nearWalletConnected && hud.nearWalletId && (
                     <span
@@ -6188,9 +6168,7 @@ export default function App() {
                           : 'bg-[#b8ff3c] text-black'
                       }`}
                     >
-                      {isActiveWalletReadOnlyObserver()
-                        ? 'VIEW-ONLY · CONNECT SIGNER'
-                        : 'SIGNER READY'}
+                      {isActiveWalletReadOnlyObserver() ? 'VIEW ONLY' : 'CONNECTED'}
                     </span>
                   )}
                 </div>
@@ -6233,9 +6211,7 @@ export default function App() {
                       className="w-full -skew-x-6 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border border-black cursor-pointer"
                     >
                       <span className="skew-x-6 inline-block">
-                        {isActiveWalletReadOnlyObserver()
-                          ? 'CONNECT SIGNING WALLET (METEOR / TESTNET)'
-                          : 'SWITCH / MANAGE NEAR WALLET'}
+                        {isActiveWalletReadOnlyObserver() ? 'CONNECT WALLET' : 'MANAGE WALLET'}
                       </span>
                     </button>
                   </div>
@@ -6245,7 +6221,7 @@ export default function App() {
                       data-wallet-active-uid="true"
                       className="text-[11px] font-bold text-slate-300"
                     >
-                      Connect Meteor / NEAR Testnet Wallet or create a Citizen Sub-Account.
+                      Connect or create a wallet to unlock trading.
                     </div>
                     <button
                       type="button"
@@ -6298,7 +6274,7 @@ export default function App() {
                 <div>
                   <div className="text-xs font-black uppercase text-black">RESPITE</div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    House and Family Member token
+                    House, companions, and Fish Market
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#d8b4fe] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -6310,7 +6286,7 @@ export default function App() {
                 <div>
                   <div className="text-xs font-black uppercase text-black">NEAR</div>
                   <div className="text-[10px] font-bold text-slate-600">
-                    Connected wallet balance
+                    Wallet balance
                   </div>
                 </div>
                 <div className="-skew-x-6 px-3 py-1 bg-[#10b981] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-sm">
@@ -6324,13 +6300,8 @@ export default function App() {
               data-wallet-send-respite-card="true"
               className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2"
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[10.5px] font-black uppercase tracking-wider text-[#d8b4fe]">
-                  SEND RESPITE TO WALLET (NEP-141)
-                </div>
-                <div className="text-[9.5px] font-mono text-slate-300">
-                  market.buddiesblitz.testnet
-                </div>
+              <div className="text-[10.5px] font-black uppercase tracking-wider text-[#d8b4fe]">
+                SEND RESPITE
               </div>
               <input
                 type="text"
@@ -6339,7 +6310,7 @@ export default function App() {
                   setRespiteTransferRecipient(e.target.value);
                   setRespiteTransferStatus(null);
                 }}
-                placeholder="Recipient (e.g. kxvqmr.buddiesblitz.testnet)"
+                placeholder="Recipient username or wallet"
                 className="w-full px-2.5 py-1.5 bg-white text-black font-mono font-bold text-xs border-2 border-black"
               />
               <div className="flex gap-1.5">
@@ -6363,7 +6334,7 @@ export default function App() {
                     if (!senderId) {
                       setRespiteTransferStatus({
                         type: 'error',
-                        text: 'Connect a verified NEAR wallet before sending RESPITE.',
+                        text: 'Connect a wallet before sending RESPITE.',
                       });
                       return;
                     }
@@ -6371,7 +6342,7 @@ export default function App() {
                     if (!rawTarget) {
                       setRespiteTransferStatus({
                         type: 'error',
-                        text: 'Enter a valid recipient wallet address.',
+                        text: 'Enter a valid recipient wallet.',
                       });
                       return;
                     }
@@ -6388,7 +6359,7 @@ export default function App() {
                     if (respiteBalance < amt) {
                       setRespiteTransferStatus({
                         type: 'error',
-                        text: `Insufficient RESPITE balance (${respiteBalance} RESPITE available).`,
+                        text: `Not enough RESPITE (${respiteBalance} available).`,
                       });
                       return;
                     }
@@ -6404,7 +6375,7 @@ export default function App() {
                     if (!res.ok || !res.txHash) {
                       setRespiteTransferStatus({
                         type: 'error',
-                        text: res.error || 'On-chain NEP-141 transfer requires a connected NEAR wallet signer.',
+                        text: res.error || 'Connect your wallet to send RESPITE.',
                       });
                       return;
                     }
@@ -6436,7 +6407,7 @@ export default function App() {
                   }}
                   className="flex-1 -skew-x-6 px-3 py-1.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer"
                 >
-                  <span className="skew-x-6 inline-block">SEND RESPITE</span>
+                  <span className="skew-x-6 inline-block">SEND</span>
                 </button>
               </div>
               {respiteTransferStatus && (
@@ -6455,7 +6426,7 @@ export default function App() {
                       rel="noreferrer"
                       className="underline text-[#b8ff3c] break-all"
                     >
-                      Tx: {respiteTransferStatus.txHash}
+                      Receipt
                     </a>
                   )}
                 </div>
@@ -6467,32 +6438,32 @@ export default function App() {
                 <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-wider text-[#38bdf8]">
-                      MY DIGITAL ASSETS &amp; NFTS
+                      MY ITEMS
                     </div>
-                    <div className="text-xs font-bold text-slate-200">
-                      NEP-171 &amp; NEP-245 NFT collection owned by {hud.nearWalletId || playerUid || 'Citizen'}
+                    <div className="text-xs font-bold text-slate-200 truncate">
+                      {hud.nearWalletId || playerUid || 'Guest'}
                     </div>
                   </div>
                   <div className="px-2.5 py-1 bg-[#0f172a] border border-white/20 text-[10px] font-mono font-bold text-[#b8ff3c]">
-                    {(hasHouseOwnership ? 1 : 0) + caughtFishBucket.filter((f) => f.isMintedNft).length + recruitedFamilyMembers.length} ASSETS
+                    {(hasHouseOwnership ? 1 : 0) + caughtFishBucket.filter((f) => f.isMintedNft).length + recruitedFamilyMembers.length} OWNED
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* 1. HOUSE DEED NFT CARD */}
+                  {/* 1. HOUSE DEED CARD */}
                   {hasHouseOwnership && (
                     <div className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
                       <div className="relative w-full h-28 bg-slate-900 border-2 border-black overflow-hidden flex items-center justify-center">
                         <img
                           src="/assets/kiosk/private_house_isometric.jpg"
-                          alt="Japanese Pavilion House NFT"
+                          alt="Private House"
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
                           }}
                         />
                         <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#b8ff3c] text-black border border-black font-black text-[9px] uppercase">
-                          NEP-171 NFT
+                          HOUSE
                         </div>
                         <div className="absolute bottom-1.5 right-1.5 px-2 py-0.5 bg-black/80 text-[#38bdf8] font-mono text-[9px]">
                           DEED #001
@@ -6500,14 +6471,14 @@ export default function App() {
                       </div>
                       <div>
                         <div className="text-xs font-black uppercase text-black">
-                          JAPANESE PAVILION HOUSE DEED
+                          JAPANESE PAVILION HOUSE
                         </div>
                         <div className="text-[10px] font-bold text-slate-600">
-                          Modern Japanese Wooden Pavilion Deed. Grants private residential plot rights and 3D interior studio access.
+                          Unlocks residential plots and 3D interior customization.
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
-                        <span className="text-emerald-600 font-bold">VERIFIED ON-CHAIN</span>
+                        <span className="text-emerald-600 font-bold">OWNED</span>
                         <span className="text-slate-500">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</span>
                       </div>
                     </div>
@@ -6518,13 +6489,13 @@ export default function App() {
                     <div key={m.agentId} className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
                       <div className="relative w-full h-28 bg-[#0f172a] border-2 border-black flex flex-col items-center justify-center text-center p-2">
                         <div className="text-xl font-black text-[#facc15] tracking-widest uppercase">
-                          AI CITIZEN
+                          COMPANION
                         </div>
                         <div className="text-[10px] font-mono text-slate-300">
                           {m.contractAddress}
                         </div>
                         <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#facc15] text-black border border-black font-black text-[9px] uppercase">
-                          NEP-245 AGENT
+                          COMPANION
                         </div>
                       </div>
                       <div>
@@ -6532,11 +6503,11 @@ export default function App() {
                           {m.name}
                         </div>
                         <div className="text-[10px] font-bold text-slate-600">
-                          Order: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · Plan: {m.planLabel}
+                          Order: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · {m.planLabel}
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
-                        <span className="text-emerald-600 font-bold">ACTIVE CONTRACT</span>
+                        <span className="text-emerald-600 font-bold">ACTIVE</span>
                         <span className="text-slate-500">{m.pricePaidRespite} RESPITE</span>
                       </div>
                     </div>
@@ -6556,19 +6527,19 @@ export default function App() {
                           {fish.weightKg} KG · {fish.rarity}
                         </div>
                         <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#38bdf8] text-black border border-black font-black text-[9px] uppercase">
-                          NEP-245 NFT
+                          FISH NFT
                         </div>
                       </div>
                       <div>
                         <div className="text-xs font-black uppercase text-black">
-                          {fish.speciesName} NFT
+                          {fish.speciesName}
                         </div>
                         <div className="text-[10px] font-bold text-slate-600 truncate">
                           {fish.nftTokenId || fish.id}
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
-                        <span className="text-emerald-600 font-bold">MINTED NFT</span>
+                        <span className="text-emerald-600 font-bold">MINTED</span>
                         <span className="text-slate-500">{fish.suggestedRespitePrice || 12} RESPITE</span>
                       </div>
                     </div>
@@ -6576,9 +6547,9 @@ export default function App() {
 
                   {!hasHouseOwnership && recruitedFamilyMembers.length === 0 && caughtFishBucket.filter((f) => f.isMintedNft).length === 0 && (
                     <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold space-y-1">
-                      <div>NO NFTS IN THIS WALLET YET</div>
+                      <div>NO ITEMS YET</div>
                       <div className="text-[10.5px] text-slate-400">
-                        Acquire a House Deed ({HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE), recruit a Family Member AI, or mint caught fish into NFTs at Merchant Kai/Hana.
+                        Buy a house, recruit a companion, or mint caught fish into NFTs.
                       </div>
                     </div>
                   )}
@@ -6591,10 +6562,10 @@ export default function App() {
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                        TRANSACTION LEDGER
+                        HISTORY
                       </div>
                       <div className="text-xs font-bold text-slate-200 truncate">
-                        {hud.nearWalletId || playerUid || connectedGoogleEmail || 'Current Session'}
+                        {hud.nearWalletId || playerUid || connectedGoogleEmail || 'Guest'}
                       </div>
                     </div>
                     <button
@@ -6847,7 +6818,7 @@ export default function App() {
               );
               return (
                 <div className="space-y-3">
-                  {/* Personal Joran (Fishing Rod) Card */}
+                  {/* Personal Fishing Rod Card */}
                   <div
                     data-bag-item-card="fishing_rod"
                     className={`p-3.5 border-[2.5px] border-black shadow-[3px_3px_0px_#000] transition-colors ${
@@ -6856,13 +6827,13 @@ export default function App() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-12 h-12 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-center text-2xl shrink-0">
-                          🎣
+                        <div className="w-12 h-12 bg-[#1e293b] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-center font-black text-xs tracking-wider shrink-0">
+                          ROD
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-sm font-black uppercase tracking-wide text-black">
-                              JORAN FISHING ROD
+                              FISHING ROD
                             </span>
                             <span
                               className={`px-1.5 py-0.5 text-[9.5px] font-black uppercase border border-black ${
@@ -6875,7 +6846,7 @@ export default function App() {
                             </span>
                           </div>
                           <p className="text-[11px] font-bold text-slate-600 mt-0.5">
-                            Tidewater Carbon Spin Rod · Gunakan di tepi pantai atau danau.
+                            Carbon spin rod. Use along the beach or lake shore.
                           </p>
                         </div>
                       </div>
@@ -6883,7 +6854,7 @@ export default function App() {
 
                     <div className="mt-3 pt-2.5 border-t border-black/15 flex items-center justify-between gap-2">
                       <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
-                        STATUS: {isJoranEquipped ? 'DIPEGANG KARAKTER' : 'TERSIMPAN DI TAS'}
+                        {isJoranEquipped ? 'Equipped' : 'Stored in Bag'}
                       </span>
 
                       <button
@@ -6909,7 +6880,7 @@ export default function App() {
                         }`}
                       >
                         <span className="skew-x-6 inline-block">
-                          {isJoranEquipped ? 'UNEQUIP' : 'EQUIP JORAN'}
+                          {isJoranEquipped ? 'UNEQUIP' : 'EQUIP'}
                         </span>
                       </button>
                     </div>
@@ -6923,8 +6894,8 @@ export default function App() {
                       className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-10 h-10 bg-[#0f172a] border-2 border-black flex items-center justify-center text-lg shrink-0">
-                          {gear.iconEmoji || '🎣'}
+                        <div className="w-10 h-10 bg-[#0f172a] text-[#b8ff3c] border-2 border-black flex items-center justify-center font-black text-[10px] shrink-0">
+                          GEAR
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -6979,10 +6950,10 @@ export default function App() {
                   <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                        FISH BUCKET CAPACITY
+                        FISH BUCKET
                       </div>
                       <div className="text-xs font-bold text-slate-200 mt-0.5">
-                        {caughtFishBucket.length} / 20 Ikan Tersimpan
+                        {caughtFishBucket.length} / 20 Fish Stored
                       </div>
                     </div>
                     <button
@@ -7032,7 +7003,7 @@ export default function App() {
                           )}
                         </div>
                         <div className="text-[10.5px] font-bold text-slate-600 mt-0.5">
-                          {fish.weightKg} kg · Sell Value: {fish.sellValueLul || fish.sellValueCyon || 15} LUL (Visit Merchant Kai)
+                          {fish.weightKg} kg · {fish.sellValueLul || fish.sellValueCyon || 15} LUL at Kai&apos;s Shop
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -7059,12 +7030,12 @@ export default function App() {
                               }}
                               className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
                             >
-                              🔒 Register
+                              Sign In
                             </button>
                           )
                         ) : (
                           <span className="text-[9.5px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 border border-purple-400 font-mono">
-                            NFT ACTIVE
+                            MINTED
                           </span>
                         )}
                         <button
@@ -7490,30 +7461,21 @@ export default function App() {
       />
 
       {/* =====================================================================
-          13. ON-SCREEN NEP-171 HOUSE NFT SCANNING VERIFICATION MODAL
+          13. PRIVATE HOUSE ENTRY MODAL
          ===================================================================== */}
       {houseEntryScanState !== 'idle' && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="House NFT Verification Scan"
+          aria-label="Private House Entry"
           data-house-entry-scan-modal="true"
           className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs pointer-events-auto select-none"
         >
-          <div className="relative w-full max-w-md bg-[#0f172a] border-[3.5px] border-black shadow-[8px_8px_0px_#000] p-6 text-white space-y-4">
-            <div className="flex items-center justify-between border-b-2 border-white/20 pb-3">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`w-3 h-3 rounded-full ${
-                    houseEntryScanState === 'verified'
-                      ? 'bg-[#b8ff3c]'
-                      : 'bg-[#00f0ff] animate-ping'
-                  }`}
-                />
-                <span className="text-xs font-black uppercase tracking-wider text-slate-300">
-                  NEP-171 SMART CONTRACT VERIFICATION
-                </span>
-              </div>
+          <div className="relative w-full max-w-sm bg-[#0f172a] border-[3.5px] border-black shadow-[8px_8px_0px_#000] p-5 text-white space-y-3">
+            <div className="flex items-center justify-between border-b border-white/20 pb-2.5">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-200">
+                PRIVATE HOUSE
+              </span>
               <span
                 className={`px-2 py-0.5 text-[10px] font-black uppercase border border-black ${
                   houseEntryScanState === 'verified'
@@ -7521,57 +7483,32 @@ export default function App() {
                     : 'bg-[#facc15] text-black'
                 }`}
               >
-                {houseEntryScanState === 'verified' ? 'ACCESS GRANTED' : 'SCANNING ON-CHAIN'}
+                {houseEntryScanState === 'verified' ? 'UNLOCKED' : 'CHECKING...'}
               </span>
             </div>
 
-            <div className="space-y-3 py-1">
-              <div className="p-3 bg-black/40 border border-white/10 space-y-2 text-[11px] font-mono">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">TARGET CONTRACT:</span>
-                  <span className="text-[#38bdf8] font-bold">{NEAR_CONFIG.marketContractId}</span>
+            {houseEntryScanState === 'scanning' ? (
+              <div className="p-3 bg-[#1e293b] border border-[#00f0ff]/50 text-center space-y-2">
+                <div className="text-xs font-black uppercase text-[#00f0ff] tracking-wider animate-pulse">
+                  Checking house access...
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">ACCOUNT:</span>
-                  <span className="text-white font-bold">
-                    {hud.nearWalletId || playerUid || 'commander-p1.near'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">DEED STANDARD:</span>
-                  <span className="text-[#facc15] font-bold">NEP-171 NON-FUNGIBLE TOKEN</span>
+                <div className="w-full h-1.5 bg-black/50 overflow-hidden">
+                  <div
+                    className="h-full bg-[#00f0ff] animate-[pulse_1s_infinite]"
+                    style={{ width: '85%' }}
+                  />
                 </div>
               </div>
-
-              {houseEntryScanState === 'scanning' ? (
-                <div className="p-3 bg-[#1e293b] border border-[#00f0ff]/50 text-center space-y-2">
-                  <div className="text-xs font-black uppercase text-[#00f0ff] tracking-wider animate-pulse">
-                    SCANNING HOUSE DEED NFT OWNERSHIP ON NEAR BLOCKCHAIN...
-                  </div>
-                  <div className="w-full h-1.5 bg-black/50 overflow-hidden">
-                    <div
-                      className="h-full bg-[#00f0ff] animate-[pulse_1s_infinite]"
-                      style={{ width: '85%' }}
-                    />
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-400">
-                    Querying nft_tokens_for_owner RPC node...
-                  </div>
+            ) : (
+              <div className="p-3 bg-[#14532d]/50 border border-[#b8ff3c] text-center space-y-1">
+                <div className="text-xs font-black uppercase text-[#b8ff3c] tracking-wider">
+                  Welcome Home
                 </div>
-              ) : (
-                <div className="p-3 bg-[#14532d]/50 border border-[#b8ff3c] text-center space-y-1.5">
-                  <div className="text-xs font-black uppercase text-[#b8ff3c] tracking-wider">
-                    NFT OWNERSHIP VERIFIED!
-                  </div>
-                  <div className="text-[11px] font-black uppercase text-white">
-                    JAPANESE PAVILION RESIDENCE [DEED #101]
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-300">
-                    Opening Private 3D Decorative Studio...
-                  </div>
+                <div className="text-[10.5px] font-bold text-slate-200">
+                  Opening 3D Interior Studio...
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}

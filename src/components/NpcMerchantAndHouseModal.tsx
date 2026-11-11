@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   MERCHANT_CATALOG_ITEMS,
   MerchantAgentMarketState,
@@ -15,6 +15,7 @@ import {
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
+import type { FishNftMarketSalesStats } from '../lib/supabaseClient';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
@@ -77,6 +78,7 @@ interface NpcMerchantAndHouseModalProps {
   playerBubbleTextColor?: string;
   caughtFishBucket?: CaughtFishItem[];
   fishMarketListings?: FishNftMarketplaceListing[];
+  fishSalesStats?: FishNftMarketSalesStats | null;
   playerNearAccount?: string;
   onSellCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
@@ -121,7 +123,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   ownedItemIds,
   activeHouseThemeId,
   interiorPlacement: _interiorPlacement,
-  isFastForwardRunning = false,
+  isFastForwardRunning: _isFastForwardRunning = false,
   onClose,
   onEarnSafezoneLul: _onEarnSafezoneLul,
   onExchangeLulToCyon,
@@ -129,7 +131,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onInvestInMerchant,
   onBuyMerchantItem,
   onSellMerchantItem,
-  onToggleFastForward,
+  onToggleFastForward: _onToggleFastForward,
   onSelectHouseTheme,
   onAssignInteriorSlot: _onAssignInteriorSlot,
   onRotateInteriorSlot: _onRotateInteriorSlot,
@@ -138,6 +140,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   playerBubbleTextColor = '#f8fafc',
   caughtFishBucket = [],
   fishMarketListings = [],
+  fishSalesStats = null,
   playerNearAccount = '',
   onSellCaughtFish,
   onReleaseCaughtFish,
@@ -154,7 +157,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market'>(
     'sesi_chat',
   );
-  const [hanaTutorialStep, setHanaTutorialStep] = useState<1 | 2 | 3>(1);
   const [isClaimingHanaNear, setIsClaimingHanaNear] = useState<boolean>(false);
   const [hanaClaimResult, setHanaClaimResult] = useState<{
     ok: boolean;
@@ -165,7 +167,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   } | null>(null);
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
-  const [lastPlayerMessage, setLastPlayerMessage] = useState<string>('');
+  const [, setLastPlayerMessage] = useState<string>('');
+  const [chatInputDraft, setChatInputDraft] = useState<string>('');
+  const [chatHistory, setChatHistory] = useState<
+    Array<{ id: string; role: 'player' | 'npc'; text: string }>
+  >([]);
+  const chatScrollEndRef = useRef<HTMLDivElement | null>(null);
   const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('0');
   const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('0.25');
   const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
@@ -260,24 +267,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   // Initial greeting when NPC modal opens
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
-      const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza Cafe' : 'East Beach House';
+      const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza Cafe' : 'Beachfront Harbor';
       const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
-      if (merchantLocation === 'lobby_cafe' && walletConnected && (isTutorialHanaActive || !hanaWelcomeNearClaimed)) {
+      let greeting = '';
+      if (
+        merchantLocation === 'lobby_cafe' &&
+        walletConnected &&
+        (isTutorialHanaActive || !hanaWelcomeNearClaimed)
+      ) {
         setActiveTab('sesi_chat');
-        setHanaTutorialStep(1);
-        setNpcFullText(
-          `Hello ${displayCitizen}! Welcome to ${locLabel}! Your sub-wallet ${playerNearAccount || 'account'} is active. Follow my quick 3-step guide below, then claim your starter 0.30 NEAR directly from Hana's Smart Contract Treasury!`,
-        );
+        greeting = `Welcome to ${locLabel}, ${displayCitizen}. Claim your 0.30 NEAR welcome bonus below, or ask me anything about places in the city, fishing, Fish NFT sales, currencies, or the Warzone.`;
+      } else if (!walletConnected) {
+        greeting = `Welcome, Buddy. You are in Guest Mode—ask me anything about the game below, or sign in to unlock the Exchange and Catalog.`;
+      } else if (merchantLocation === 'beach_house') {
+        greeting = `Welcome to ${locLabel}, ${displayCitizen}. Sell fish, trade Fish NFTs, browse tackle, or ask me anything about fishing and market records.`;
       } else {
-        const greeting = !walletConnected
-          ? `Hello Buddy! You are currently in Guest Mode. Feel free to walk around the city and browse the catalog, while the Exchange tab & purchases unlock once you register an account.`
-          : merchantLocation === 'beach_house'
-            ? `Hello ${displayCitizen}! Welcome to ${locLabel}. You can sell caught fish in the FISH MARKET tab, or open the CATALOG tab to buy Fishing Rods, Reels, Lures, and Tackle!`
-            : `Hello ${displayCitizen}! Welcome to ${locLabel}. You can exchange LUL to CYON, swap NEAR and RESPITE, or open the CATALOG tab to buy a House and recruit a Family Member.`;
-        setNpcFullText(greeting);
+        greeting = `Welcome back, ${displayCitizen}. Exchange currencies, browse the Catalog, or ask me anything about the game below.`;
       }
+      setNpcFullText(greeting);
       setNpcTypedText('');
       setLastPlayerMessage('');
+      setChatHistory([]);
+      setChatInputDraft('');
     }
   }, [
     activeModalMode,
@@ -295,7 +306,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     if (npcTypedText.length >= npcFullText.length) return;
     const timer = window.setTimeout(() => {
       setNpcTypedText(npcFullText.slice(0, npcTypedText.length + 2));
-    }, 18);
+    }, 16);
     return () => window.clearTimeout(timer);
   }, [activeModalMode, npcFullText, npcTypedText]);
 
@@ -304,24 +315,68 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     setNpcTypedText('');
   };
 
+  const submitPlayerQuestion = (rawText: string) => {
+    const text = rawText.trim();
+    if (!text) return;
+    const prevNpcMsg = npcFullText.trim();
+    setLastPlayerMessage(text);
+    setActiveTab('sesi_chat');
+    const reply = generateNpcMerchantReply(
+      text,
+      merchantLocation,
+      marketState,
+      {
+        lul: lulBalance,
+        cyon: cyonBalance,
+        respite: respiteBalance,
+        walletConnected,
+      },
+      {
+        playerNearAccount,
+        nearBalance: nearTestnetBalance,
+        hasHouseOwnership,
+        hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
+        caughtFishCount: caughtFishBucket.length,
+        recruitedFamilyCount: recruitedFamilyMembers.length,
+        fishMarketListings,
+        fishSalesStats,
+      },
+    );
+    setChatHistory((prev) => {
+      const withPrevNpc = prevNpcMsg
+        ? [...prev, { id: `npc-${Date.now()}-prev`, role: 'npc' as const, text: prevNpcMsg }]
+        : prev;
+      return [
+        ...withPrevNpc.slice(-14),
+        { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: 'player', text },
+      ];
+    });
+    triggerNpcSpeech(reply);
+    window.setTimeout(() => {
+      chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 30);
+  };
+
+  const handleSubmitInlineChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = chatInputDraft.trim();
+    if (!trimmed) return;
+    soundEngine.playUiClick();
+    setChatInputDraft('');
+    submitPlayerQuestion(trimmed);
+  };
+
   // Receive player chat messages submitted via the bottom-left TALK input bar
   useEffect(() => {
     if (activeModalMode !== 'npc_merchant') return;
     const onUserChat = (ev: Event) => {
       const text = (ev as CustomEvent<{ text?: string }>).detail?.text?.trim();
       if (!text) return;
-      setLastPlayerMessage(text);
-      setActiveTab('sesi_chat');
-      const reply = generateNpcMerchantReply(text, merchantLocation, marketState, {
-        lul: lulBalance,
-        cyon: cyonBalance,
-        respite: respiteBalance,
-        walletConnected,
-      });
-      triggerNpcSpeech(reply);
+      submitPlayerQuestion(text);
     };
     window.addEventListener('npc-merchant-user-chat', onUserChat);
     return () => window.removeEventListener('npc-merchant-user-chat', onUserChat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeModalMode,
     merchantLocation,
@@ -329,7 +384,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     lulBalance,
     cyonBalance,
     respiteBalance,
+    nearTestnetBalance,
     walletConnected,
+    hasHouseOwnership,
+    hanaWelcomeNearClaimed,
+    hanaClaimResult,
+    caughtFishBucket.length,
+    recruitedFamilyMembers.length,
+    fishMarketListings,
+    fishSalesStats,
+    npcFullText,
   ]);
 
   const exchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
@@ -549,7 +613,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             item.isNft ? 'bg-[#38bdf8] text-black' : 'bg-[#a7f3d0] text-black'
                           }`}
                         >
-                          {item.isNft ? 'NEP-245 NFT' : 'CYON ITEM'}
+                          {item.isNft ? 'NFT ITEM' : 'CYON ITEM'}
                         </span>
                         <div className="text-[10px] font-black uppercase truncate mt-1">
                           {item.name}
@@ -579,7 +643,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               {/* Architecture Themes */}
               <div className="space-y-1">
                 <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
-                  HOUSE ARCHITECTURE THEME (NEP-245):
+                  HOUSE THEME
                 </div>
                 <div className="grid grid-cols-1 gap-1">
                   {ownedThemes.map((th) => {
@@ -611,7 +675,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               {/* Surface Finish Swatches */}
               <div className="space-y-1">
                 <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
-                  FLOOR &amp; WALL FINISH (RADIAL 3D WIPE):
+                  FLOOR &amp; WALL FINISH
                 </div>
                 <div className="grid grid-cols-2 gap-1">
                   {HOUSE_SURFACE_SWATCHES.filter((s) => s.slot === 'floor' || s.slot === 'wall').map(
@@ -708,7 +772,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               <div className="p-2.5 bg-[#0f172a] text-white border border-[#0d0f12] space-y-1.5">
                 <div className="flex items-center justify-between pb-1 border-b border-white/15">
                   <span className="text-[9.5px] font-black uppercase text-[#38bdf8]">
-                    SOFTMAX ROOM MOOD SCORE:
+                    ROOM MOOD
                   </span>
                   <div className="flex items-center gap-1">
                     {(['cozy', 'bright', 'moody'] as const).map((mId) => (
@@ -855,360 +919,236 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           </button>
         </div>
 
-        {/* Autonomous Agent Economy & Fast-Forward Bar (`09-games` Track) */}
-        <div
-          data-merchant-economy-sim-bar="true"
-          className="mt-2.5 p-2 bg-[#0f172a] text-white border-2 border-black shadow-[2.5px_2.5px_0px_#000] space-y-1.5 shrink-0"
-        >
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[9px] font-black uppercase">
-                DAY #{marketState.dayCounter}
-              </span>
-              <span
-                className={`px-1.5 py-0.5 border border-black text-[9px] font-black uppercase ${
-                  marketState.isShopBroke
-                    ? 'bg-[#ff3b30] text-white'
-                    : 'bg-[#38bdf8] text-black'
-                }`}
-              >
-                {marketState.isShopBroke
-                  ? 'BANKRUPT (NEEDS BAILOUT)'
-                  : `NPC TREASURY: ${marketState.treasuryCyon} CYON`}
-              </span>
-              {marketState.investorDiscountActive && (
-                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
-                  INVESTOR -15%
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {(marketState.isShopBroke || marketState.treasuryCyon < 250) && (
-                <button
-                  type="button"
-                  data-merchant-invest-btn="true"
-                  disabled={!walletConnected || lulBalance < 300}
-                  onClick={() => {
-                    onInvestInMerchant();
-                    triggerNpcSpeech(
-                      'Thank you Investor! Your 300 LUL bailout restored +450 CYON shop liquidity, granted +45 CYON dividend, and unlocked -15% catalog pricing!',
-                    );
-                  }}
-                  title="Inject 300 LUL liquidity into NPC Merchant treasury to earn +45 CYON dividend & -15% catalog discount"
-                  className={`px-2 py-0.5 border border-black text-[9px] font-black uppercase ${
-                    walletConnected && lulBalance >= 300
-                      ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                      : 'bg-slate-600 text-slate-300 cursor-not-allowed'
-                  }`}
-                >
-                  INVEST 300 LUL (+45 CYON)
-                </button>
-              )}
-
-              {onToggleFastForward && (
-                <button
-                  type="button"
-                  data-merchant-fast-forward-btn="true"
-                  onClick={onToggleFastForward}
-                  title="Simulate multi-day supply, demand, and NPC solvency ticks in real time"
-                  className={`px-2 py-0.5 border border-black text-[9px] font-black uppercase cursor-pointer transition-colors ${
-                    isFastForwardRunning
-                      ? 'bg-[#ff3b30] text-white animate-pulse'
-                      : 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-black'
-                  }`}
-                >
-                  {isFastForwardRunning ? 'PAUSE SIM' : 'FAST-FORWARD 7D ⏩'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="text-[9.5px] font-bold text-slate-300 leading-tight truncate" title={marketState.lastMarketHeadline}>
-            {marketState.lastMarketHeadline}
-          </div>
-        </div>
-
         {/* Tab Content Viewport */}
-        <div className="mt-2.5 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+        <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-1 space-y-3 min-h-0">
           {/* ===============================================================
-              TAB 1: CHAT SESSION (NPC Chat Session — Chat Input Uses the Bottom Bar)
+              TAB 1: LIVE CHAT SESSION (Interactive Game Concierge)
              =============================================================== */}
           {activeTab === 'sesi_chat' && (
-            <div className="space-y-3">
-              {/* Player Chat Bubble (When Player Sends a Message from the Bottom Bar) */}
-              {lastPlayerMessage && (
-                <div
-                  data-player-chat-bubble="true"
-                  style={{
-                    backgroundColor: playerBubbleBgColor,
-                    color: playerBubbleTextColor,
-                  }}
-                  className="p-3.5 border-[2.5px] border-black shadow-[4px_4px_0px_#000] mr-6"
-                >
-                  <div className="flex items-center justify-start mb-1.5">
-                    <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[10.5px] font-black uppercase">
-                      YOU
-                    </span>
-                  </div>
-                  <p className="text-xs sm:text-[13px] font-bold leading-relaxed">
-                    {lastPlayerMessage}
-                  </p>
-                </div>
-              )}
-
-              {/* Hana / NPC Chat Bubble */}
-              <div
-                data-npc-chat-bubble="true"
-                className="p-3.5 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000]"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  {merchantLocation === 'lobby_cafe' &&
-                  walletConnected &&
-                  (isTutorialHanaActive || !hanaWelcomeNearClaimed) ? (
-                    <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[9.5px] font-black uppercase">
-                      NEW CITIZEN TUTORIAL · STEP {hanaTutorialStep}/3
-                    </span>
-                  ) : (
-                    <span />
-                  )}
-                  <span className="px-2.5 py-0.5 bg-[#2bb3b1] text-black border border-black text-[10.5px] font-black uppercase">
-                    {npcShortName}
-                  </span>
-                </div>
-                <p className="text-xs sm:text-[13px] font-bold leading-relaxed text-[#f8fafc] min-h-[72px]">
-                  {npcTypedText}
-                  {npcTypedText.length < npcFullText.length && (
-                    <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5 animate-pulse" />
-                  )}
-                </p>
-              </div>
-
-              {/* Guest Registration Callout inside Chat Session */}
-              {!walletConnected && onConnectWallet && (
-                <div className="p-3.5 bg-[#1e293b] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000] space-y-2.5">
-                  <div className="text-[11px] font-black uppercase text-[#b8ff3c]">
-                    🔒 GUEST MODE ACTIVE — LIMITED ACCESS
-                  </div>
-                  <p className="text-[11px] font-bold text-slate-200 leading-relaxed">
-                    Sign in with Google (provisions your{' '}
-                    <span className="text-[#38bdf8] font-mono">*.buddiesblitz.testnet</span> sub-wallet
-                    + <span className="text-[#b8ff3c]">0.30 NEAR</span> starter grant from Hana) or
-                    connect an external NEAR Wallet to unlock the Exchange &amp; catalog purchases.
-                  </p>
-                  <button
-                    type="button"
-                    data-chat-guest-register-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      onConnectWallet();
-                    }}
-                    className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer active:translate-y-0.5"
-                  >
-                    REGISTER / CONNECT WALLET NOW &rarr;
-                  </button>
-                </div>
-              )}
-
-              {/* Hana Interactive Onboarding Tutorial + Smart Contract Treasury Claim */}
-              {merchantLocation === 'lobby_cafe' &&
-                walletConnected &&
-                (isTutorialHanaActive || !hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
-                  <div
-                    data-hana-onboarding-tutorial-box="true"
-                    className="p-3.5 bg-[#141c2e] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] space-y-3"
-                  >
-                    {/* Step Indicator Pills */}
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[
-                        { step: 1 as const, label: '1. City & Zones' },
-                        { step: 2 as const, label: '2. Economy' },
-                        { step: 3 as const, label: '3. Claim NEAR' },
-                      ].map((item) => (
-                        <button
-                          key={item.step}
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setHanaTutorialStep(item.step);
-                            if (item.step === 1) {
-                              triggerNpcSpeech(
-                                `Step 1/3: Central Plaza is our peaceful Safezone for hanging out, riding the city tram, fishing, and flexing your house plot. Combat only happens inside the Warzone Mini-Game via the Teleport Kiosk!`,
-                              );
-                            } else if (item.step === 2) {
-                              triggerNpcSpeech(
-                                `Step 2/3: Our economy is 100% P2P & bot-proof! Earn LUL in Warzone or sell regular fish to Kai -> swap LUL to CYON for standard items. For House Deeds, Family Member AI contracts, & exclusive NFTs, use RESPITE from NEAR swaps or P2P Fish NFT sales!`,
-                              );
-                            } else {
-                              triggerNpcSpeech(
-                                `Step 3/3: As a new citizen (${playerNearAccount}), I prepared a 0.30 NEAR starter grant directly from Hana's Smart Contract Treasury (market.buddiesblitz.testnet). Click CLAIM NEAR below!`,
-                              );
-                            }
-                          }}
-                          className={`py-1.5 px-2 border-2 border-black text-[9.5px] font-black uppercase cursor-pointer transition-all ${
-                            hanaTutorialStep === item.step
-                              ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000]'
-                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
+            <div className="flex-1 flex flex-col justify-between gap-3 min-h-0">
+              {/* Scrollable Conversation Thread */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0">
+                {chatHistory.map((entry) =>
+                  entry.role === 'player' ? (
+                    <div
+                      key={entry.id}
+                      data-player-chat-bubble="true"
+                      style={{
+                        backgroundColor: playerBubbleBgColor,
+                        color: playerBubbleTextColor,
+                      }}
+                      className="p-3 border-[2.5px] border-black shadow-[3px_3px_0px_#000] ml-6"
+                    >
+                      <div className="flex items-center justify-end mb-1">
+                        <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[9.5px] font-black uppercase">
+                          YOU
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] font-bold leading-relaxed">
+                        {entry.text}
+                      </p>
                     </div>
-
-                    {hanaTutorialStep === 1 && (
-                      <div className="space-y-2.5">
-                        <div className="p-2.5 bg-black/40 border border-white/15 text-[11px] font-bold text-slate-200 leading-relaxed">
-                          🏙️ <span className="text-[#38bdf8]">Main World (Central Plaza)</span> is
-                          combat-free. Ride the autonomous city tram, fish at the harbor/lake, decorate
-                          your <span className="text-[#b8ff3c]">Private House</span>, and enter the{' '}
-                          <span className="text-[#facc15]">Warzone Arena</span> via the Teleport Kiosk.
-                        </div>
-                        <button
-                          type="button"
-                          data-hana-tutorial-next-1="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setHanaTutorialStep(2);
-                            triggerNpcSpeech(
-                              `Step 2/3: Our economy is 100% P2P & bot-proof! Earn LUL in Warzone or sell regular fish to Kai -> swap LUL to CYON for standard items. For House Deeds, Family Member AI contracts, & exclusive NFTs, use RESPITE from NEAR swaps or P2P Fish NFT sales!`,
-                            );
-                          }}
-                          className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer"
-                        >
-                          NEXT: LEARN CITY ECONOMY (1/3) &rarr;
-                        </button>
+                  ) : (
+                    <div
+                      key={entry.id}
+                      className="p-3 bg-[#1e293b] text-slate-100 border-[2px] border-black shadow-[3px_3px_0px_#000] mr-4"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="px-2 py-0.5 bg-[#2bb3b1] text-black border border-black text-[9.5px] font-black uppercase">
+                          {npcShortName}
+                        </span>
                       </div>
+                      <p className="text-xs font-bold leading-relaxed">{entry.text}</p>
+                    </div>
+                  ),
+                )}
+
+                {/* Active NPC Reply Bubble */}
+                <div
+                  data-npc-chat-bubble="true"
+                  className="p-3.5 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000]"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="px-2.5 py-0.5 bg-[#2bb3b1] text-black border border-black text-[10px] font-black uppercase">
+                      {npcShortName}
+                    </span>
+                    <span className="text-[9.5px] font-bold text-slate-400">
+                      {merchantLocation === 'lobby_cafe'
+                        ? 'Central Plaza Cafe'
+                        : 'Beachfront Harbor'}
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-[13px] font-bold leading-relaxed text-[#f8fafc] min-h-[54px]">
+                    {npcTypedText}
+                    {npcTypedText.length < npcFullText.length && (
+                      <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5 animate-pulse" />
                     )}
+                  </p>
+                </div>
 
-                    {hanaTutorialStep === 2 && (
-                      <div className="space-y-2.5">
-                        <div className="p-2.5 bg-black/40 border border-white/15 text-[11px] font-bold text-slate-200 space-y-1 leading-relaxed">
-                          <div>
-                            🟡 <span className="text-[#facc15]">LUL &rarr; CYON</span>: Soft currency
-                            for basic furniture &amp; regular fishing/lifestyle gear.
-                          </div>
-                          <div>
-                            🟣 <span className="text-[#d8b4fe]">NEAR &rarr; RESPITE</span>: On-chain
-                            token (`1 NEAR = 100 RESPITE`) for House Deeds, Family Member AI contracts,
-                            &amp; P2P Fish NFT trading!
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          data-hana-tutorial-next-2="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setHanaTutorialStep(3);
-                            triggerNpcSpeech(
-                              `Step 3/3: As a new citizen (${playerNearAccount}), I prepared a 0.30 NEAR starter grant directly from Hana's Smart Contract Treasury (market.buddiesblitz.testnet). Click CLAIM NEAR below!`,
-                            );
-                          }}
-                          className="w-full py-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase cursor-pointer"
-                        >
-                          NEXT: CLAIM STARTER NEAR GRANT (2/3) &rarr;
-                        </button>
-                      </div>
-                    )}
-
-                    {hanaTutorialStep === 3 && (
-                      <div className="space-y-2.5">
-                        <div className="p-2.5 bg-[#0f172a] border-2 border-[#b8ff3c]/70 text-[11px] font-bold text-slate-100 space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[#b8ff3c] font-black uppercase text-[10px]">
-                              HANA SMART CONTRACT TREASURY
-                            </span>
-                            <span className="font-mono text-[10px] text-[#38bdf8]">
-                              market.buddiesblitz.testnet
-                            </span>
-                          </div>
-                          <div className="text-slate-300 text-[10.5px]">
-                            Citizen Welcome Grant: <strong className="text-white">+0.30 NEAR</strong>{' '}
-                            (funded on-chain from Hana&apos;s Treasury for gas &amp; your first{' '}
-                            <strong className="text-[#d8b4fe]">NEAR &rarr; RESPITE</strong> swaps!).
-                          </div>
-                        </div>
-
-                        {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
-                          <>
-                            {hanaClaimResult?.error && (
-                              <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold">
-                                {hanaClaimResult.error}
-                              </div>
-                            )}
-                            <button
-                              type="button"
-                              data-hana-claim-near-btn="true"
-                              disabled={isClaimingHanaNear || !onClaimHanaWelcomeNear}
-                              onClick={async () => {
-                                if (!onClaimHanaWelcomeNear || isClaimingHanaNear) return;
-                                soundEngine.playUiClick();
-                                setIsClaimingHanaNear(true);
-                                setHanaClaimResult(null);
-                                try {
-                                  const res = await onClaimHanaWelcomeNear();
-                                  setHanaClaimResult(res);
-                                  if (res.ok) {
-                                    soundEngine.playPickup();
-                                    triggerNpcSpeech(
-                                      `Awesome! +${res.amountNear.toFixed(2)} NEAR from Hana's Smart Contract Treasury has arrived in ${playerNearAccount}! Feel free to explore — follow the glowing blue path to the Teleport Kiosk to see every portal!`,
-                                    );
-                                  } else {
-                                    soundEngine.playHit();
-                                  }
-                                } finally {
-                                  setIsClaimingHanaNear(false);
-                                }
-                              }}
-                              className={`w-full py-3 border-2 border-black shadow-[4px_4px_0px_#000] font-black text-xs uppercase tracking-wider transition-all ${
-                                isClaimingHanaNear
-                                  ? 'bg-slate-600 text-slate-200 cursor-wait'
-                                  : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer active:translate-y-0.5'
-                              }`}
-                            >
-                              {isClaimingHanaNear
-                                ? 'CLAIMING 0.30 NEAR FROM HANA TREASURY...'
-                                : '🎁 CLAIM 0.30 NEAR (HANA TREASURY)'}
-                            </button>
-                          </>
-                        ) : (
-                          <div className="space-y-2.5">
-                            <div className="p-2.5 bg-emerald-950/80 border-2 border-emerald-400 text-[11px] font-bold text-emerald-200 flex items-center justify-between gap-2 flex-wrap">
-                              <span>✅ +0.30 NEAR Starter Grant Claimed!</span>
-                              {hanaClaimResult?.txHash && (
-                                <a
-                                  href={
-                                    hanaClaimResult.explorerUrl ||
-                                    getNearBlocksTxUrl(hanaClaimResult.txHash, 'testnet')
-                                  }
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[#38bdf8] underline font-mono text-[10px]"
-                                >
-                                  NearBlocks Tx ↗
-                                </a>
-                              )}
-                            </div>
-
-                            {onFinishHanaTutorialAndGuideKiosk && (
-                              <button
-                                type="button"
-                                data-hana-go-to-kiosk-btn="true"
-                                onClick={() => {
-                                  soundEngine.playUiClick();
-                                  onFinishHanaTutorialAndGuideKiosk();
-                                }}
-                                className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
-                              >
-                                FINISH &amp; FOLLOW PATH TO TELEPORT KIOSK &rarr;
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                {/* Guest Sign-In Callout (Simple 1-line) */}
+                {!walletConnected && onConnectWallet && (
+                  <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2.5 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-200">
+                      Sign in to unlock currency exchange and item purchases.
+                    </span>
+                    <button
+                      type="button"
+                      data-chat-guest-register-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        onConnectWallet();
+                      }}
+                      className="px-3.5 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer shrink-0"
+                    >
+                      SIGN IN
+                    </button>
                   </div>
                 )}
+
+                {/* Hana Welcome Bonus Card (Clean, Simple, Zero Jargon) */}
+                {merchantLocation === 'lobby_cafe' &&
+                  walletConnected &&
+                  (isTutorialHanaActive || !hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
+                    <div
+                      data-hana-onboarding-tutorial-box="true"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                              WELCOME BONUS
+                            </span>
+                            <span className="text-[10.5px] font-black text-white">0.30 NEAR</span>
+                          </div>
+                          <p className="text-[11px] font-bold text-slate-300">
+                            Claim your one-time starter NEAR to begin exploring and trading.
+                          </p>
+                          {hanaClaimResult?.error && (
+                            <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold">
+                              {hanaClaimResult.error}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            data-hana-claim-near-btn="true"
+                            disabled={isClaimingHanaNear || !onClaimHanaWelcomeNear}
+                            onClick={async () => {
+                              if (!onClaimHanaWelcomeNear || isClaimingHanaNear) return;
+                              soundEngine.playUiClick();
+                              setIsClaimingHanaNear(true);
+                              setHanaClaimResult(null);
+                              try {
+                                const res = await onClaimHanaWelcomeNear();
+                                setHanaClaimResult(res);
+                                if (res.ok) {
+                                  soundEngine.playPickup();
+                                  triggerNpcSpeech(
+                                    `${res.amountNear.toFixed(2)} NEAR has been added to your wallet. Follow the blue path outside to the Transit Kiosk whenever you are ready to explore.`,
+                                  );
+                                } else {
+                                  soundEngine.playHit();
+                                }
+                              } finally {
+                                setIsClaimingHanaNear(false);
+                              }
+                            }}
+                            className={`w-full py-2.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider transition-all ${
+                              isClaimingHanaNear
+                                ? 'bg-slate-600 text-slate-200 cursor-wait'
+                                : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer active:translate-y-0.5'
+                            }`}
+                          >
+                            {isClaimingHanaNear ? 'CLAIMING...' : 'CLAIM 0.30 NEAR'}
+                          </button>
+                        </>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-emerald-300">
+                            <span>0.30 NEAR added to your wallet.</span>
+                            {hanaClaimResult?.txHash && (
+                              <a
+                                href={
+                                  hanaClaimResult.explorerUrl ||
+                                  getNearBlocksTxUrl(hanaClaimResult.txHash, 'testnet')
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#38bdf8] underline font-mono text-[10px]"
+                              >
+                                Receipt
+                              </a>
+                            )}
+                          </div>
+                          {onFinishHanaTutorialAndGuideKiosk && (
+                            <button
+                              type="button"
+                              data-hana-go-to-kiosk-btn="true"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                onFinishHanaTutorialAndGuideKiosk();
+                              }}
+                              className="w-full py-2 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
+                            >
+                              CONTINUE
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                <div ref={chatScrollEndRef} />
+              </div>
+
+              {/* Quick Question Chips + Direct Inline Chat Input */}
+              <div className="pt-2 border-t-2 border-black space-y-2 shrink-0 bg-white">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {(
+                    [
+                      'Where can I fish?',
+                      'Most expensive Fish NFT sold?',
+                      'How do currencies work?',
+                    ] as const
+                  ).map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        submitPlayerQuestion(prompt);
+                      }}
+                      className="px-2 py-1 bg-slate-100 hover:bg-[#fef08a] text-black border border-black text-[9.5px] font-bold cursor-pointer transition-colors"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+
+                <form
+                  data-npc-inline-chat-form="true"
+                  onSubmit={handleSubmitInlineChat}
+                  className="flex items-stretch gap-1.5"
+                >
+                  <input
+                    type="text"
+                    data-npc-inline-chat-input="true"
+                    value={chatInputDraft}
+                    onChange={(e) => setChatInputDraft(e.target.value)}
+                    placeholder={`Ask ${npcShortName === 'HANA' ? 'Hana' : 'Kai'} anything about the game...`}
+                    className="flex-1 min-w-0 px-3 py-2 bg-slate-50 text-black font-bold text-xs border-2 border-black focus:outline-none focus:bg-white"
+                  />
+                  <button
+                    type="submit"
+                    data-npc-inline-chat-send="true"
+                    disabled={!chatInputDraft.trim()}
+                    className="px-4 py-2 bg-[#facc15] hover:bg-[#fde047] disabled:bg-slate-200 disabled:text-slate-500 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-xs uppercase cursor-pointer shrink-0"
+                  >
+                    SEND
+                  </button>
+                </form>
+              </div>
             </div>
           )}
 
@@ -1249,16 +1189,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             return (
               <div className="space-y-3.5">
-                {/* Top-Up / Register or Wallet Box */}
+                {/* Wallet or Sign-In Header */}
                 <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                      {walletConnected ? 'WALLET AND CURRENCY EXCHANGE' : 'REGISTRATION REQUIRED'}
+                      {walletConnected ? 'YOUR WALLET' : 'SIGN IN REQUIRED'}
                     </div>
-                    <div className="text-[10px] font-bold text-white/85 mt-0.5">
+                    <div className="text-[10px] font-bold text-white/85 mt-0.5 truncate">
                       {walletConnected
-                        ? `${playerNearAccount} | ${nearTestnetBalance.toFixed(2)} NEAR | ${respiteBalance.toLocaleString()} RESPITE`
-                        : 'You are playing as a Guest. Please register to receive your wallet and unlock the Exchange.'}
+                        ? `${playerNearAccount} · ${nearTestnetBalance.toFixed(2)} NEAR · ${respiteBalance.toLocaleString()} RESPITE`
+                        : 'Sign in to exchange currencies.'}
                     </div>
                   </div>
                   {onConnectWallet && (
@@ -1276,15 +1216,40 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       }`}
                     >
                       <span className="skew-x-6 inline-block">
-                        {walletConnected ? 'WALLET' : 'REGISTER'}
+                        {walletConnected ? 'WALLET' : 'SIGN IN'}
                       </span>
                     </button>
                   )}
                 </div>
 
+                {marketState.isShopBroke && (
+                  <div className="p-2.5 bg-[#1e293b] text-white border-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10.5px] font-bold text-slate-200">
+                      Shop CYON reserve is low. Support the shop for +45 CYON and a 15% discount.
+                    </span>
+                    <button
+                      type="button"
+                      data-merchant-invest-btn="true"
+                      disabled={!walletConnected || lulBalance < 300}
+                      onClick={() => {
+                        onInvestInMerchant();
+                        triggerNpcSpeech(
+                          'Thank you! Shop reserves are refilled, +45 CYON added, and your 15% catalog discount is active.',
+                        );
+                      }}
+                      className={`px-2.5 py-1 border border-black text-[9.5px] font-black uppercase ${
+                        walletConnected && lulBalance >= 300
+                          ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
+                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                      }`}
+                    >
+                      SUPPORT (300 LUL)
+                    </button>
+                  </div>
+                )}
+
                 {/* ===========================================================
-                    CARD 1: NON-CRYPTO EXCHANGE (LUL -> CYON)
-                    Locked when playing as an unregistered Guest
+                    CARD 1: LUL -> CYON EXCHANGE
                    =========================================================== */}
                 <div
                   data-lul-cyon-exchange-card="true"
@@ -1292,42 +1257,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                   }`}
                 >
-                  {/* Exchange Banner */}
-                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2">
                     <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase">
                       <span className="skew-x-6 inline-block">LUL TO CYON</span>
                     </span>
-                    <span className="text-[9.5px] font-bold text-slate-300">
-                      Exchange LUL for CYON
+                    <span className="text-[10px] font-bold text-slate-300">
+                      {rateLul} LUL = {rateCyon} CYON
                     </span>
                   </div>
 
-                  <div className="p-4 sm:p-5 space-y-3.5">
-                    {/* Exchange Rate Header */}
-                    <div className="text-center space-y-1">
-                      <div className="text-xs font-black uppercase tracking-wider text-slate-200">
-                        Exchange Rate
-                      </div>
-                      <div className="flex items-center justify-center gap-2.5 text-lg sm:text-xl font-black">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
-                            <span className="skew-x-6 inline-block">LUL</span>
-                          </span>
-                          <span className="text-white">{rateLul}</span>
-                        </span>
-                        <span className="text-slate-400">=</span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="-skew-x-6 px-2 py-0.5 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
-                            <span className="skew-x-6 inline-block">CYON</span>
-                          </span>
-                          <span className="text-white">{rateCyon}</span>
-                        </span>
-                      </div>
-                      <div className="text-[9.5px] font-bold text-slate-300 pt-0.5">
-                        {exchangeQuote.reasoningTooltip}
-                      </div>
-                    </div>
-
+                  <div className="p-4 space-y-3">
                     {/* LUL Amount Input Row */}
                     <div className="flex items-center gap-3 max-w-xs mx-auto">
                       <div className="-skew-x-6 w-16 py-2 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
@@ -1345,9 +1284,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       />
                     </div>
 
-                    {/* Middle Label: You will receive */}
-                    <div className="text-center text-xs font-black uppercase tracking-wider text-slate-200">
-                      You will receive
+                    <div className="text-center text-[11px] font-black uppercase tracking-wider text-slate-300">
+                      You receive
                     </div>
 
                     {/* CYON Output Row */}
@@ -1365,7 +1303,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
 
                   {/* Bottom Divider & Exchange Button */}
-                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3.5 flex justify-center">
+                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3 flex justify-center">
                     <button
                       type="button"
                       data-exchange-submit-btn="true"
@@ -1375,23 +1313,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onExchangeLulToCyon(parsedLul, calculatedCyon);
                         triggerNpcSpeech(
-                          `Done! ${parsedLul} LUL has been exchanged for +${calculatedCyon} CYON.`,
+                          `Exchanged ${parsedLul} LUL for +${calculatedCyon} CYON.`,
                         );
                       }}
-                      className={`-skew-x-6 min-w-[190px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
+                      className={`-skew-x-6 min-w-[180px] py-2 px-6 border-2 border-black text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
                         canPerformExchange
                           ? 'bg-[#10b981] hover:bg-[#34d399] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
                           : 'bg-slate-600 text-slate-300 cursor-not-allowed'
                       }`}
                     >
-                      <span className="skew-x-6 inline-block">EXCHANGE LUL TO CYON</span>
+                      <span className="skew-x-6 inline-block">EXCHANGE</span>
                     </button>
                   </div>
                 </div>
 
                 {/* ===========================================================
-                    CARD 2: NEAR <-> RESPITE SWAP
-                    Locked when playing as an unregistered Guest
+                    CARD 2: NEAR -> RESPITE SWAP
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
@@ -1399,46 +1336,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                   }`}
                 >
-                  {/* Header Banner */}
-                  <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                  <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2">
                     <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase">
-                      <span className="skew-x-6 inline-block">NEAR AND RESPITE</span>
+                      <span className="skew-x-6 inline-block">NEAR TO RESPITE</span>
                     </span>
-                    <span className="text-[9.5px] font-bold text-slate-300">
-                      Swap NEAR Testnet &rarr; RESPITE (`market.buddiesblitz.testnet`)
+                    <span className="text-[10px] font-bold text-slate-300">
+                      1 NEAR = {respitePerNearRate} RESPITE
                     </span>
                   </div>
 
-                  <div className="p-4 sm:p-5 space-y-3.5">
-                    {/* Swap Direction Badge & Live Rate */}
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="px-2.5 py-1 bg-[#38bdf8] text-black border border-black text-[9.5px] font-black uppercase tracking-wide">
-                        ONE-WAY UTILITY SWAP · ANTI-BOT TREASURY FIREWALL
-                      </div>
-
-                      <div className="flex items-center justify-center gap-2.5 text-base sm:text-lg font-black pt-0.5">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="-skew-x-6 px-2 py-0.5 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
-                            <span className="skew-x-6 inline-block">NEAR</span>
-                          </span>
-                          <span className="text-white">1</span>
-                        </span>
-                        <span className="text-slate-400">=</span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase">
-                            <span className="skew-x-6 inline-block">RESPITE</span>
-                          </span>
-                          <span className="text-white">{respitePerNearRate}</span>
-                        </span>
-                      </div>
-                    </div>
-
+                  <div className="p-4 space-y-3">
                     {/* Quick Amount Presets */}
                     <div className="flex items-center justify-center gap-1.5 flex-wrap">
                       {[
-                        { near: '0.25', label: '0.25 NEAR (25 = House)' },
-                        { near: '0.5', label: '0.5 NEAR (50)' },
-                        { near: '1', label: '1 NEAR (100)' },
+                        { near: '0.25', label: '0.25 NEAR' },
+                        { near: '0.5', label: '0.5 NEAR' },
+                        { near: '1', label: '1 NEAR' },
                       ].map((preset) => (
                         <button
                           key={preset.near}
@@ -1448,7 +1361,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             setCryptoSwapInputStr(preset.near);
                             setSwapErrorText(null);
                           }}
-                          className="px-2 py-0.5 bg-[#1e293b] hover:bg-[#334155] border border-white/40 text-[9.5px] font-black uppercase text-[#d8b4fe] cursor-pointer"
+                          className="px-2.5 py-0.5 bg-[#1e293b] hover:bg-[#334155] border border-white/40 text-[9.5px] font-black uppercase text-[#d8b4fe] cursor-pointer"
                         >
                           {preset.label}
                         </button>
@@ -1587,7 +1500,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       }`}
                     >
                       <span className="skew-x-6 inline-block">
-                        {isSwappingNear ? 'SIGNING ON NEAR...' : 'SWAP NEAR TO RESPITE'}
+                        {isSwappingNear ? 'SWAPPING...' : 'SWAP'}
                       </span>
                     </button>
                   </div>
@@ -1779,9 +1692,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             ? 'OWNED IN BAG'
                             : `${selectedQuote.buyPrice} ${selectedFishingItem.currency}`}
                         </span>
-                      </div>
-                      <div className="text-[8.5px] font-mono font-bold text-[#0f7a78] border-t border-black/15 pt-1">
-                        Pricing Rule: {selectedQuote.reasoningTooltip}
                       </div>
                     </div>
                   )}
@@ -2060,17 +1970,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {isHouseSlide ? (
                   <div
                     data-buy-house-section="true"
-                    className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-1.5 ${
+                    className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] ${
                       !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-[11px] font-black uppercase tracking-tight text-[#0d0f12]">
-                          NEP-171 SUB-ACCOUNT HOUSE DEED
+                          PRIVATE HOUSE
                         </div>
                         <div className="text-[9.5px] font-bold text-[#1c2026]/85">
-                          Controls your dedicated sub-account estate &amp; 3D interior studio.
+                          Claim a residential city plot and decorate your 3D interior studio.
                         </div>
                       </div>
                       <span
@@ -2080,13 +1990,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             : 'bg-[#d8b4fe] text-[#0d0f12]'
                         }`}
                       >
-                        {isHouseOwned ? 'HOUSE OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                        {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
                       </span>
-                    </div>
-                    <div className="text-[8.5px] font-mono font-bold text-[#0f7a78] border-t border-black/15 pt-1">
-                      Security Invariant: Transferring this NEP-171 Deed atomically increments{' '}
-                      <span className="text-black">key_epoch</span>, revoking the seller&apos;s{' '}
-                      <span className="text-black">FunctionCall</span> key &amp; routing all unpaid royalties to the new owner.
                     </div>
                   </div>
                 ) : (
@@ -2098,7 +2003,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-[10px] font-black uppercase tracking-wider text-[#facc15]">
-                        SELECT CONTRACT DURATION
+                        SELECT DURATION
                       </div>
                       <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase shrink-0">
                         ACTIVE: {recruitedFamilyMembers.length}
@@ -2334,13 +2239,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
              =============================================================== */}
           {merchantLocation === 'beach_house' && activeTab === 'fish_market' && (
             <div className="space-y-3" data-fish-market-panel="true">
-              {/* Top Balance / Registration Gate Header */}
-              <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-1.5">
+              {/* Top Balance / Sign-In Header */}
+              <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-1">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[11px] font-black uppercase text-[#b8ff3c]">
-                    {walletConnected
-                      ? 'KAI COASTAL AND OASIS FISH MARKET'
-                      : 'REGISTRATION REQUIRED FOR FISH MARKET'}
+                    {walletConnected ? 'FISH MARKET' : 'SIGN IN REQUIRED'}
                   </span>
                   {walletConnected ? (
                     <div className="flex items-center gap-1.5">
@@ -2361,15 +2264,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         }}
                         className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer"
                       >
-                        <span className="skew-x-6 inline-block">REGISTER</span>
+                        <span className="skew-x-6 inline-block">SIGN IN</span>
                       </button>
                     )
                   )}
                 </div>
                 <p className="text-[10px] font-bold text-slate-300 leading-snug">
                   {walletConnected
-                    ? 'Catch fish at East Beach or Central Oasis Lake. Sell your catch directly to Merchant Kai for CYON, or mint your fish as an NFT to list on the Marketplace where other players buy it with RESPITE.'
-                    : 'You are playing as a Guest. Please register to sell fish for CYON or mint and trade Fish NFTs for RESPITE.'}
+                    ? 'Sell catches for LUL or mint Fish NFTs to trade with players for RESPITE.'
+                    : 'Sign in to sell fish or trade Fish NFTs.'}
                 </p>
               </div>
 
@@ -2505,7 +2408,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   try {
                                     const ok = await onMintFishAsNft?.(fish);
                                     if (ok) {
-                                      const msg = `Minted on NEAR (market.buddiesblitz.testnet)! Your ${fish.weightKg} kg ${fish.speciesName} is now a NEP-171 Fish NFT. Set a RESPITE price below to sell it!`;
+                                      const msg = `Minted ${fish.speciesName} (${fish.weightKg} kg) as an NFT. Set a RESPITE price below to list it.`;
                                       setFishMarketFeedback({ ok: true, text: msg });
                                       triggerNpcSpeech(msg);
                                     } else {
@@ -2624,10 +2527,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               >
                 <div className="flex items-center justify-between border-b border-white/20 pb-1.5">
                   <span className="text-[11px] font-black uppercase text-[#d8b4fe]">
-                    2. PLAYER FISH NFT MARKETPLACE ({fishMarketListings.length} LISTED · RESPITE)
+                    PLAYER MARKET ({fishMarketListings.length})
                   </span>
                   <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-[#d8b4fe] text-black">
-                    RESPITE P2P
+                    RESPITE
                   </span>
                 </div>
 

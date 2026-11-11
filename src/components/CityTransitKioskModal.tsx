@@ -292,52 +292,29 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
             {isTutorialTourActive && (
               <div
                 data-kiosk-tutorial-tour-banner="true"
-                className="mb-4 p-3.5 sm:p-4 bg-[#0f172a] text-white border-[3px] border-black shadow-[5px_5px_0px_#000] space-y-2.5"
+                className="mb-4 px-3.5 py-2.5 bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] flex flex-wrap items-center justify-between gap-2.5"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="px-2.5 py-0.5 bg-[#38bdf8] text-black border-2 border-black text-[10px] font-black uppercase tracking-wider">
-                    🧭 TELEPORT KIOSK PORTAL GUIDE (FINAL STEP)
-                  </span>
-                  <span className="text-[10.5px] font-bold text-[#b8ff3c]">
-                    Hub for Mini-Games, City Districts &amp; Private House
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-bold leading-snug">
-                  <div className="p-2 bg-[#1e293b] border border-white/20">
-                    <span className="text-[#00f0ff] font-black">1. TRAVEL &amp; DISTRICTS:</span>{' '}
-                    Fast-travel by tram to Beachfront Harbor (Merchant Kai &amp; ocean fishing), NW Fishing Lake, or Residential Plots.
+                <div className="min-w-0">
+                  <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                    TRANSIT KIOSK
                   </div>
-                  <div className="p-2 bg-[#1e293b] border border-white/20">
-                    <span className="text-[#facc15] font-black">2. WARZONE ARENA:</span>{' '}
-                    Pick <span className="text-[#38bdf8]">BLUE</span> vs <span className="text-[#ff6b6b]">RED</span> Team &rarr; tram cutscene &rarr; battle for LUL drops &amp; combat vehicle airdrops!
-                  </div>
-                  <div className="p-2 bg-[#1e293b] border border-white/20">
-                    <span className="text-[#a3e635] font-black">3. MY HOUSE:</span>{' '}
-                    Teleport straight into your 3D Private House Studio to arrange furniture &amp; invite friends.
-                  </div>
-                  <div className="p-2 bg-[#1e293b] border border-white/20">
-                    <span className="text-[#c084fc] font-black">4. SHOP &amp; EXCHANGE:</span>{' '}
-                    Quick shortcut to open the City Catalog &amp; swap LUL &rarr; CYON or NEAR &rarr; RESPITE.
+                  <div className="text-xs font-bold text-slate-200">
+                    Fast-travel across the city, join the Warzone Arena, enter My House, or open the Shop.
                   </div>
                 </div>
 
                 {onCompleteTutorialTour && (
-                  <div className="pt-1 flex justify-end">
-                    <button
-                      type="button"
-                      data-kiosk-complete-tutorial-btn="true"
-                      onClick={() => {
-                        soundEngine.playPickup();
-                        onCompleteTutorialTour();
-                      }}
-                      className="-skew-x-6 px-4 py-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
-                    >
-                      <span className="skew-x-6 inline-block">
-                        ✅ GOT IT — COMPLETE TUTORIAL &amp; EXPLORE!
-                      </span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    data-kiosk-complete-tutorial-btn="true"
+                    onClick={() => {
+                      soundEngine.playPickup();
+                      onCompleteTutorialTour();
+                    }}
+                    className="-skew-x-6 px-4 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer shrink-0"
+                  >
+                    <span className="skew-x-6 inline-block">GOT IT</span>
+                  </button>
                 )}
               </div>
             )}
@@ -469,8 +446,8 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </div>
                   <p className="mt-1 text-xs font-bold text-slate-200 line-clamp-2">
                     {hasOwnedHouse
-                      ? 'Enter your private 3D House Interior studio directly from this kiosk to hang out and decorate furniture.'
-                      : 'Browse and acquire a NEP-171 House NFT to unlock your personal 3D interior studio and city plots.'}
+                      ? 'Enter your 3D House Interior studio directly to hang out and arrange furniture.'
+                      : 'Acquire a Private House in Hana Catalog to unlock your 3D interior studio and city plots.'}
                   </p>
                 </div>
               </button>
@@ -491,7 +468,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-0.5 bg-[#c084fc] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
-                    HANA CATALOG &amp; DEX
+                    SHOP &amp; EXCHANGE
                   </span>
                   <span className="px-2 py-0.5 bg-black/80 text-white border-[2px] border-white/80 text-[10px] font-black uppercase">
                     LUL / CYON / RESPITE

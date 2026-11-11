@@ -299,3 +299,89 @@ test('strictUniqueHandle blocks hijacking taken <handle>.buddiesblitz.testnet & 
     }
   }
 });
+
+test('Hana and Kai live chat concierge answers Fish NFT sales records, locations, and game mechanics in simple English without jargon or emojis', () => {
+  const state = createInitialMerchantMarketState();
+  const balances = {
+    lul: 180,
+    cyon: 45,
+    respite: 30,
+    nearBalance: 0.36,
+    walletConnected: true,
+    playerAccount: 'india0x69.buddiesblitz.testnet',
+    ownsHouse: false,
+    hanaWelcomeNearClaimed: false,
+  };
+
+  // 1. Most expensive Fish NFT sold (with live completed sale record)
+  const topSaleReply = generateNpcMerchantReply(
+    'ikan nft paling mahal terjual apa?',
+    'lobby_cafe',
+    state,
+    balances,
+    {
+      fishSalesStats: {
+        topSale: {
+          speciesName: 'Astral Dragon Arowana',
+          weightKg: 14.5,
+          priceRespite: 95,
+          buyerAccount: 'ace.buddiesblitz.testnet',
+          sellerAccount: 'kai_fan.buddiesblitz.testnet',
+        },
+        recentSale: null,
+        totalSalesCount: 3,
+      },
+      fishMarketListings: [],
+    },
+  );
+  assert.match(topSaleReply, /Astral Dragon Arowana/);
+  assert.match(topSaleReply, /14\.50 kg/);
+  assert.match(topSaleReply, /95 RESPITE/);
+
+  // 2. Most expensive Fish NFT sold when 0 completed sales exist -> reports highest active listing
+  const activeListingReply = generateNpcMerchantReply(
+    'what is the most expensive fish nft sold?',
+    'lobby_cafe',
+    state,
+    balances,
+    {
+      fishSalesStats: { topSale: null, recentSale: null, totalSalesCount: 0 },
+      fishMarketListings: [
+        {
+          speciesName: 'Golden Harbor Tuna',
+          rarity: 'Rare',
+          weightKg: 11.2,
+          sellerNearAccount: 'angler.buddiesblitz.testnet',
+          priceRespite: 42,
+        },
+      ],
+    },
+  );
+  assert.match(activeListingReply, /No Fish NFT has been sold yet/i);
+  assert.match(activeListingReply, /Golden Harbor Tuna/);
+  assert.match(activeListingReply, /42 RESPITE/);
+
+  // 3. Location / navigation questions (English & Indonesian)
+  const whereFishingReply = generateNpcMerchantReply(
+    'dimana tempat mancing dan kai?',
+    'lobby_cafe',
+    state,
+    balances,
+  );
+  assert.match(whereFishingReply, /Beachfront Harbor|NW Fishing Lake/i);
+
+  const whereWarzoneReply = generateNpcMerchantReply(
+    'where is the warzone arena?',
+    'lobby_cafe',
+    state,
+    balances,
+  );
+  assert.match(whereWarzoneReply, /Transit Kiosk/i);
+  assert.match(whereWarzoneReply, /Warzone/i);
+
+  // 4. Zero developer jargon & zero emojis in concierge replies
+  for (const reply of [topSaleReply, activeListingReply, whereFishingReply, whereWarzoneReply]) {
+    assert.doesNotMatch(reply, /NEP-171|NEP-245|NEP-141|sub-wallet|Ed25519/i);
+    assert.doesNotMatch(reply, /[\u{1F300}-\u{1FAFF}]/u);
+  }
+});
