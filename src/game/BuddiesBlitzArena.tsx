@@ -222,7 +222,7 @@ import {
   loadAllRealBlitzAssets,
   getCachedLoadedBlitzAssets,
   createBlitzInfiniteGrassSystem,
-  createTolanCurvedPlanetEnvironment,
+  createCurvedPlanetEnvironment,
   applyPlanetCurvatureToObject,
   computePlanetYOffset,
   getTerrainElevation,
@@ -1407,7 +1407,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     });
 
     // =========================================================================
-    // 4. TOLAN'S WORLD CURVED PLANET ENVIRONMENT, PONDS, FLORA & SKY SUNBEAMS
+    // 4. CURVED PLANET ENVIRONMENT, PONDS, FLORA & SKY SUNBEAMS
     // =========================================================================
     const windUniforms: BlitzWindUniforms = {
       uTime: { value: 0 },
@@ -1422,7 +1422,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       uCurvatureStrength: { value: PLANET_CURVATURE_STRENGTH },
     };
 
-    const tolanPlanetEnv = createTolanCurvedPlanetEnvironment(scene, windUniforms, isSoftwareGl);
+    const curvedPlanetEnv = createCurvedPlanetEnvironment(scene, windUniforms, isSoftwareGl);
 
     // 4A. Modern Urban Street Tram (100% Low-Floor LRV — 1 Rangkaian 2 Gerbong) circulating the road network
     const cityTram = createProceduralCityTramConsist(scene, windUniforms, isSoftwareGl);
@@ -17591,12 +17591,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
       if (!buildingViewMode && !skyshieldViewMode && !planeViewMode) {
         const showOutdoorScene = !isInHouseScene;
-        tolanPlanetEnv.groundMesh.visible = showOutdoorScene;
-        tolanPlanetEnv.waterMesh.visible = showOutdoorScene;
-        tolanPlanetEnv.planetCoreMesh.visible = showOutdoorScene;
-        tolanPlanetEnv.roadsGroup.visible = showOutdoorScene;
-        tolanPlanetEnv.natureGroup.visible = showOutdoorScene;
-        tolanPlanetEnv.sunbeamGroup.visible = showOutdoorScene;
+        curvedPlanetEnv.groundMesh.visible = showOutdoorScene;
+        curvedPlanetEnv.waterMesh.visible = showOutdoorScene;
+        curvedPlanetEnv.planetCoreMesh.visible = showOutdoorScene;
+        curvedPlanetEnv.roadsGroup.visible = showOutdoorScene;
+        curvedPlanetEnv.natureGroup.visible = showOutdoorScene;
+        curvedPlanetEnv.sunbeamGroup.visible = showOutdoorScene;
         realPropsGroup.visible = showOutdoorScene;
         blueBase.baseGroup.visible = showOutdoorScene;
         redBase.baseGroup.visible = showOutdoorScene;
@@ -18087,7 +18087,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               playerUnit.rig.pistolGroup.visible = false;
               syncUnitFootRingTeamColor(playerUnit);
               snapCameraAndStartSpawnBlink(playerUnit);
-              tolanPlanetEnv.update(playerUnit.x, playerUnit.z, camera.position, timeSec);
+              curvedPlanetEnv.update(playerUnit.x, playerUnit.z, camera.position, timeSec);
               renderer.render(scene, camera);
               soundEngine.playPickup();
               spawnBurstParticles(playerUnit.x, 1.5, playerUnit.z, 18);
@@ -18528,7 +18528,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Update Flat Ground Map, Splatmap, Wildflowers, Stones, Dandelions & Sunbeams
-      tolanPlanetEnv.update(planetPivotX, planetPivotZ, camera.position, timeSec);
+      curvedPlanetEnv.update(planetPivotX, planetPivotZ, camera.position, timeSec);
 
       // Advance & Articulate the 2-Car Modern Urban Street Tram (1 Rangkaian 2 Gerbong) along the closed road loop
       // In Safezone Mode, if the tram is stopped at the Halte Trem and the player is nearby on foot, hold the tram at the Halte so they can easily click RIDE TRAM!
@@ -21638,7 +21638,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       animeSkyImageTex.dispose();
       sparkleGeo.dispose();
       animeSparkleMat.dispose();
-      tolanPlanetEnv.dispose();
+      curvedPlanetEnv.dispose();
       cityTram.dispose();
       blitzGrassSystem.dispose();
       blitzExplosionSystem.dispose();

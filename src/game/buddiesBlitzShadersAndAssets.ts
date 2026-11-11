@@ -38,7 +38,7 @@ import {
   wrapPlanetCoord,
   getPlanetShortestDelta,
   getPlanetShortestDistance,
-  getTolanWaterSdf,
+  getPlanetWaterSdf,
   evaluateEmbankmentTierOffsets,
   evaluateOuterEmbankmentSdf,
   evaluateRoadNetworkSdf,
@@ -53,7 +53,7 @@ import {
   computePlanetYOffset,
   computePlanetSurfaceNormal,
   applyPlanetCurvatureToObject,
-  evaluateTolanWaterField,
+  evaluatePlanetWaterField,
 } from './buddiesPlanetCurvature';
 
 export {
@@ -74,7 +74,7 @@ export {
   wrapPlanetCoord,
   getPlanetShortestDelta,
   getPlanetShortestDistance,
-  getTolanWaterSdf,
+  getPlanetWaterSdf,
   evaluateEmbankmentTierOffsets,
   evaluateOuterEmbankmentSdf,
   evaluateRoadNetworkSdf,
@@ -89,7 +89,7 @@ export {
   computePlanetYOffset,
   computePlanetSurfaceNormal,
   applyPlanetCurvatureToObject,
-  evaluateTolanWaterField,
+  evaluatePlanetWaterField,
 };
 export type { PlanetBridgeSpec };
 
@@ -336,7 +336,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 
     float westPlantSdf = evaluateWestPowerPlantSdf(p);
     // Keep underlying procedural terrain mesh tucked inside the 0.48m basalt plinth (2.10m below the +2.50m granite Plaza deck)
-    // so TolanCurvedPlanetGround never z-fights with the +2.50m Plaza floor or the Urban Staircase steps
+    // so CurvedPlanetGround never z-fights with the +2.50m Plaza floor or the Urban Staircase steps
     float westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 0.40;
     if (p.x > -85.45 && p.x < -75.40 && abs(p.y) < 10.05) {
       float stairCarveX = smoothstep(-85.45, -84.50, p.x);
@@ -11502,7 +11502,7 @@ export function buildProceduralBuddyAvatar(
   return rig;
 }
 
-export interface TolanCurvedPlanetEnvironment {
+export interface CurvedPlanetEnvironment {
   groundMesh: THREE.Mesh;
   waterMesh: THREE.Mesh;
   planetCoreMesh: THREE.Mesh;
@@ -11522,11 +11522,11 @@ export interface TolanCurvedPlanetEnvironment {
  * - Crisp real-time directional cast shadows with Blitz's signature 45° halftone dot border onto both
  *   the #d6a868 sandy-brown dirt floor and the green grass!
  */
-export function createTolanCurvedPlanetEnvironment(
+export function createCurvedPlanetEnvironment(
   scene: THREE.Scene,
   windUniforms: BlitzWindUniforms,
   isSoftwareGl: boolean,
-): TolanCurvedPlanetEnvironment {
+): CurvedPlanetEnvironment {
   const uPlanetPivot = windUniforms.uPlanetPivot || { value: new THREE.Vector3(0, 0, 12.5) };
   const uCurvatureStrength = windUniforms.uCurvatureStrength || { value: 0.0 };
   const uSculptMap = windUniforms.uSculptMap || { value: getOrCreateSharedSculptTexture() };
@@ -12046,7 +12046,7 @@ export function createTolanCurvedPlanetEnvironment(
   });
 
   const groundMesh = new THREE.Mesh(groundGeo, groundMat);
-  groundMesh.name = 'TolanCurvedPlanetGround';
+  groundMesh.name = 'CurvedPlanetGround';
   groundMesh.frustumCulled = false;
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
