@@ -740,6 +740,120 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
   };
 }
 
+export interface OnChainOwnedFishNftRecord {
+  tokenId: string;
+  speciesId: string;
+  speciesName: string;
+  waterZone: 'central_oasis' | 'east_beach';
+  rarity: 'Common' | 'Uncommon' | 'Rare' | 'Mythic';
+  weightKg: number;
+}
+
+/**
+ * Queries `nft_tokens_for_owner` on `market.buddiesblitz.testnet` and returns all
+ * Fish NFTs currently owned by `accountId` (excluding House Deeds).
+ */
+export async function fetchOwnedFishNftsFromChain(
+  accountId: string,
+): Promise<OnChainOwnedFishNftRecord[]> {
+  const cleanId = accountId.trim().toLowerCase();
+  if (!cleanId) return [];
+
+  const parsed = await callNearContractViewMethod<
+    Array<{
+      token_id?: string;
+      metadata?: { title?: string; description?: string; extra?: string };
+    }>
+  >({
+    contractId: NEAR_CONFIG.gamepassContractId,
+    methodName: 'nft_tokens_for_owner',
+    args: { account_id: cleanId, from_index: '0', limit: 50 },
+    networkOrAccount: cleanId,
+  });
+
+  if (!Array.isArray(parsed) || parsed.length === 0) return [];
+
+  const results: OnChainOwnedFishNftRecord[] = [];
+  for (const t of parsed) {
+    const tokenId = String(t?.token_id || '').trim();
+    if (!tokenId) continue;
+    const tidLower = tokenId.toLowerCase();
+    const rawExtra = String(t?.metadata?.extra || '');
+    const title = String(t?.metadata?.title || '');
+
+    if (
+      tidLower.startsWith('house-deed-') ||
+      rawExtra.toLowerCase().includes('"house_deed"') ||
+      title.toLowerCase().includes('house deed')
+    ) {
+      continue;
+    }
+
+    let extraObj: Record<string, unknown> = {};
+    try {
+      if (rawExtra.trim().startsWith('{')) {
+        extraObj = JSON.parse(rawExtra) as Record<string, unknown>;
+      }
+    } catch {
+      // ignore malformed extra
+    }
+
+    const isFish =
+      tidLower.startsWith('nep171-fish-') ||
+      tidLower.startsWith('fish-') ||
+      extraObj.kind === 'fish' ||
+      extraObj.kind === 'fish_nft';
+    if (!isFish) continue;
+
+    const speciesFromTokenId = tidLower
+      .replace(/^nep171-fish-/, '')
+      .replace(/^fish-/, '')
+      .replace(/-\d+$/, '');
+    const speciesId = String(extraObj.species_id || speciesFromTokenId || 'coral_sardine');
+    const cleanTitleName = title.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const speciesName =
+      cleanTitleName ||
+      speciesId
+        .split('_')
+        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ''))
+        .join(' ');
+
+    const rawZone = String(extraObj.water_zone || '');
+    const waterZone: 'central_oasis' | 'east_beach' =
+      rawZone === 'central_oasis' || /oasis|lake/i.test(rawZone) ? 'central_oasis' : 'east_beach';
+
+    const rawRarity = String(extraObj.rarity || 'Common');
+    const rarity: 'Common' | 'Uncommon' | 'Rare' | 'Mythic' =
+      rawRarity === 'Mythic' || rawRarity === 'Legendary'
+        ? 'Mythic'
+        : rawRarity === 'Rare' || rawRarity === 'Epic'
+          ? 'Rare'
+          : rawRarity === 'Uncommon'
+            ? 'Uncommon'
+            : 'Common';
+
+    const weightX100 = Number(extraObj.weight_kg_x100 ?? 0);
+    const titleKgMatch = title.match(/([\d.]+)\s*kg/i);
+    const weightKg =
+      weightX100 > 0
+        ? Number((weightX100 / 100).toFixed(2))
+        : titleKgMatch?.[1]
+          ? Math.max(0.1, Number(Number(titleKgMatch[1]).toFixed(2)))
+          : 2.5;
+
+    results.push({
+      tokenId,
+      speciesId,
+      speciesName,
+      waterZone,
+      rarity,
+      weightKg,
+    });
+  }
+
+  return results;
+}
+
 export type NearWalletAuthKind =
   | 'near-connect'
   | 'injected'

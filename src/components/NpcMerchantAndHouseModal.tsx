@@ -17,6 +17,11 @@ import { soundEngine } from '../game/audio';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
 import type { FishNftMarketSalesStats } from '../lib/supabaseClient';
 import {
+  Fish3dPreviewModal,
+  Fish3dThumbnail,
+  type Fish3dPreviewSpec,
+} from './Fish3dPreviewModal';
+import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
@@ -199,6 +204,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     'fishing_rod_carbon_pro',
   );
   const [listingPriceByFishId, setListingPriceByFishId] = useState<Record<string, string>>({});
+  const [preview3dFish, setPreview3dFish] = useState<Fish3dPreviewSpec | null>(null);
 
   useEffect(() => {
     const onOpenFishTab = () => {
@@ -925,19 +931,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const isNpcOpen = activeModalMode === 'npc_merchant';
 
   return (
-    <aside
-      role="dialog"
-      aria-modal="false"
-      aria-hidden={!isNpcOpen}
-      aria-label="MMORPG AI Merchant Dialogue & Exchange"
-      data-npc-merchant-modal="true"
-      data-lobby-gold-exchange-modal="true"
-      className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
-        isNpcOpen
-          ? 'translate-x-0 opacity-100 pointer-events-auto'
-          : '-translate-x-[120%] opacity-0 pointer-events-none'
-      }`}
-    >
+    <>
+      <aside
+        role="dialog"
+        aria-modal="false"
+        aria-hidden={!isNpcOpen}
+        aria-label="MMORPG AI Merchant Dialogue & Exchange"
+        data-npc-merchant-modal="true"
+        data-lobby-gold-exchange-modal="true"
+        className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
+          isNpcOpen
+            ? 'translate-x-0 opacity-100 pointer-events-auto'
+            : '-translate-x-[120%] opacity-0 pointer-events-none'
+        }`}
+      >
       <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
         {/* Top Bar: 3 Navigation Tab Buttons (CHAT SESSION, EXCHANGE, CATALOG) + Close */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
@@ -2447,14 +2454,43 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               ? 'bg-[#2dd4bf] text-black'
                               : 'bg-slate-200 text-black';
 
+                      const openBucketFish3d = () => {
+                        setPreview3dFish({
+                          speciesId: fish.speciesId,
+                          speciesName: fish.speciesName,
+                          rarity: fish.rarity,
+                          weightKg: fish.weightKg,
+                          lengthCm: fish.lengthCm,
+                          waterZoneLabel: fish.waterZoneLabel,
+                          colorHex: fish.colorHex,
+                          isTrophy: fish.isTrophy,
+                          isMintedNft: fish.isMintedNft,
+                          nftTokenId: fish.nftTokenId,
+                          valueLabel: fish.isMintedNft
+                            ? `${parsedListPriceRespite} RESPITE`
+                            : `+${lulValue} LUL`,
+                          ownerOrSellerLabel: fish.caughtByAccount
+                            ? `Angler: ${fish.caughtByAccount}`
+                            : undefined,
+                        });
+                      };
+
                       return (
                         <div
                           key={fish.id}
                           data-fish-bucket-item={fish.speciesId}
                           className="p-2.5 bg-white border-2 border-black shadow-[2px_2px_0px_#000] flex flex-col gap-2"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
+                          <div className="flex items-start gap-2.5">
+                            <Fish3dThumbnail
+                              speciesId={fish.speciesId}
+                              speciesName={fish.speciesName}
+                              colorHex={fish.colorHex}
+                              variant="compact"
+                              onInspect={openBucketFish3d}
+                            />
+
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span
                                   className={`px-1.5 py-0.5 border border-black text-[9px] font-black uppercase ${rarityBadgeStyle}`}
@@ -2475,19 +2511,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 )}
                                 {fish.isMintedNft && (
                                   <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
-                                    MINTED NFT
+                                    FISH NFT
                                   </span>
                                 )}
                               </div>
                               <div className="text-[9.5px] font-bold text-slate-600 mt-0.5">
-                                Caught at {fish.waterZoneLabel} · {fish.loreTag}
+                                Caught at {fish.waterZoneLabel}
                               </div>
-                              {fish.isMintedNft && fish.nftTokenId && (
-                                <div className="text-[9px] font-mono font-bold text-[#0f7a78] mt-0.5">
-                                  Token: {fish.nftTokenId}
-                                </div>
-                              )}
                             </div>
+
+                            <button
+                              type="button"
+                              data-fish-3d-view-btn={fish.id}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                openBucketFish3d();
+                              }}
+                              className="py-1 px-2 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] text-[9.5px] font-black uppercase cursor-pointer shrink-0"
+                            >
+                              3D VIEW
+                            </button>
                           </div>
 
                           {!fish.isMintedNft ? (
@@ -2499,12 +2542,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onSellCaughtFish?.(fish);
                                   triggerNpcSpeech(
-                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab!`,
+                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab.`,
                                   );
                                 }}
                                 className="flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                SELL FOR LUL (+{lulValue} LUL)
+                                SELL (+{lulValue} LUL)
                               </button>
 
                               <button
@@ -2518,13 +2561,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   try {
                                     const ok = await onMintFishAsNft?.(fish);
                                     if (ok) {
-                                      const msg = `Minted ${fish.speciesName} (${fish.weightKg} kg) as an NFT. Set a RESPITE price below to list it.`;
+                                      const msg = `Minted ${fish.speciesName} (${fish.weightKg} kg) as a Fish NFT. Set a RESPITE price below to list it.`;
                                       setFishMarketFeedback({ ok: true, text: msg });
                                       triggerNpcSpeech(msg);
                                     } else {
                                       const detail =
                                         getLastNearTransactionError() ||
-                                        'Fish NFT minting requires a confirmed NEAR wallet signature.';
+                                        'Could not mint Fish NFT. Please check your wallet balance.';
                                       setFishMarketFeedback({ ok: false, text: detail });
                                       triggerNpcSpeech(detail);
                                     }
@@ -2534,9 +2577,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 }}
                                 className="flex-1 py-1.5 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] disabled:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
-                                {busyFishActionId === fish.id
-                                  ? 'MINTING ON NEAR...'
-                                  : 'MINT FISH AS NFT'}
+                                {busyFishActionId === fish.id ? 'MINTING...' : 'MINT NFT'}
                               </button>
 
                               <button
@@ -2546,7 +2587,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onReleaseCaughtFish?.(fish);
                                   triggerNpcSpeech(
-                                    `Released ${fish.speciesName} (${fish.weightKg} kg) back into the water to free up bag space.`,
+                                    `Released ${fish.speciesName} (${fish.weightKg} kg) back into the water.`,
                                   );
                                 }}
                                 className="py-1.5 px-2.5 bg-slate-200 hover:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
@@ -2558,7 +2599,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
                               <div className="flex items-center gap-1">
                                 <span className="text-[9.5px] font-black uppercase">
-                                  SET PRICE (RESPITE):
+                                  PRICE (RESPITE):
                                 </span>
                                 <input
                                   type="number"
@@ -2588,13 +2629,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       parsedListPriceRespite,
                                     );
                                     if (ok) {
-                                      const msg = `Listed on NEAR! Your ${fish.speciesName} NFT (${fish.weightKg} kg) is live on the P2P Marketplace for ${parsedListPriceRespite} RESPITE.`;
+                                      const msg = `Your ${fish.speciesName} NFT (${fish.weightKg} kg) is now listed on Kai's Market for ${parsedListPriceRespite} RESPITE.`;
                                       setFishMarketFeedback({ ok: true, text: msg });
                                       triggerNpcSpeech(msg);
                                     } else {
                                       const detail =
                                         getLastNearTransactionError() ||
-                                        'Listing requires a confirmed NEAR wallet transaction.';
+                                        'Could not list Fish NFT right now.';
                                       setFishMarketFeedback({ ok: false, text: detail });
                                       triggerNpcSpeech(detail);
                                     }
@@ -2605,8 +2646,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 className="flex-1 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
                                 {busyFishActionId === fish.id
-                                  ? 'LISTING ON NEAR...'
-                                  : `LIST ON MARKETPLACE (${parsedListPriceRespite} RESPITE)`}
+                                  ? 'LISTING...'
+                                  : `LIST FOR ${parsedListPriceRespite} RESPITE`}
                               </button>
                             </div>
                           )}
@@ -2629,12 +2670,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
               )}
 
-              {/* SECTION 2: KAI'S P2P FISH NFT MARKETPLACE (BOUGHT & SOLD USING RESPITE) */}
-              <div
-                className={`p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5 ${
-                  !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                }`}
-              >
+              {/* SECTION 2: KAI'S PLAYER MARKET (BOUGHT & SOLD USING RESPITE) */}
+              <div className="p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5">
                 <div className="flex items-center justify-between border-b border-white/20 pb-1.5">
                   <span className="text-[11px] font-black uppercase text-[#d8b4fe]">
                     PLAYER MARKET ({fishMarketListings.length})
@@ -2649,7 +2686,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     No Fish NFTs currently listed. Mint a caught fish above and list it for RESPITE.
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-[230px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
                     {fishMarketListings.map((listing) => {
                       const isOwnListing =
                         listing.sellerNearAccount.toLowerCase() ===
@@ -2674,13 +2711,38 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               ? 'bg-[#2dd4bf] text-black'
                               : 'bg-slate-200 text-black';
 
+                      const openListingFish3d = () => {
+                        setPreview3dFish({
+                          speciesId: listing.speciesId,
+                          speciesName: listing.speciesName,
+                          rarity: listing.rarity,
+                          weightKg: listing.weightKg,
+                          lengthCm: listing.lengthCm,
+                          waterZoneLabel: listing.waterZoneLabel,
+                          colorHex: listing.colorHex,
+                          isTrophy: listing.isTrophy,
+                          isMintedNft: true,
+                          nftTokenId: listing.nftTokenId,
+                          valueLabel: `${listingPriceRespite.toLocaleString()} RESPITE`,
+                          ownerOrSellerLabel: `Seller: ${listing.sellerNearAccount}`,
+                        });
+                      };
+
                       return (
                         <div
                           key={listing.listingId}
                           data-fish-market-listing={listing.listingId}
-                          className="p-2.5 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-between gap-2"
+                          className="p-2.5 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-between gap-2.5"
                         >
-                          <div className="min-w-0">
+                          <Fish3dThumbnail
+                            speciesId={listing.speciesId}
+                            speciesName={listing.speciesName}
+                            colorHex={listing.colorHex}
+                            variant="dark"
+                            onInspect={openListingFish3d}
+                          />
+
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span
                                 className={`px-1.5 py-0.5 border border-black text-[8.5px] font-black uppercase ${rarityBadgeStyle}`}
@@ -2701,58 +2763,69 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               )}
                             </div>
                             <div className="text-[9.5px] font-bold text-slate-300 mt-0.5 truncate">
-                              Zone: {listing.waterZoneLabel} · Angler: {listing.caughtByAccount}
-                            </div>
-                            <div className="text-[9px] font-mono text-slate-400 truncate">
-                              Seller: {listing.sellerNearAccount} · {listing.nftTokenId}
+                              {listing.waterZoneLabel} · Seller: {listing.sellerNearAccount}
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            disabled={!canBuy}
-                            onClick={async () => {
-                              if (!canBuy) return;
-                              soundEngine.playUiClick();
-                              setFishMarketFeedback(null);
-                              setBusyFishActionId(listing.listingId);
-                              try {
-                                const ok = await onBuyFishNftFromMarket?.({
-                                  ...listing,
-                                  priceRespite: listingPriceRespite,
-                                  priceLul: listingPriceRespite,
-                                });
-                                if (ok) {
-                                  const msg = isOwnListing
-                                    ? `Listing cancelled! ${listing.speciesName} (${listing.weightKg} kg) returned to your Fish Bucket.`
-                                    : `Purchased ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE!`;
-                                  setFishMarketFeedback({ ok: true, text: msg });
-                                  triggerNpcSpeech(msg);
-                                } else {
-                                  const detail =
-                                    getLastNearTransactionError() ||
-                                    'Transaction failed or was rejected by your NEAR wallet signer.';
-                                  setFishMarketFeedback({ ok: false, text: detail });
-                                  triggerNpcSpeech(detail);
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <button
+                              type="button"
+                              data-market-fish-3d-btn={listing.listingId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                openListingFish3d();
+                              }}
+                              className="w-full px-2.5 py-1 bg-[#0f172a] hover:bg-black text-[#38bdf8] border border-white/25 text-[9px] font-black uppercase cursor-pointer"
+                            >
+                              3D VIEW
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canBuy}
+                              onClick={async () => {
+                                if (!canBuy) return;
+                                soundEngine.playUiClick();
+                                setFishMarketFeedback(null);
+                                setBusyFishActionId(listing.listingId);
+                                try {
+                                  const ok = await onBuyFishNftFromMarket?.({
+                                    ...listing,
+                                    priceRespite: listingPriceRespite,
+                                    priceLul: listingPriceRespite,
+                                  });
+                                  if (ok) {
+                                    const msg = isOwnListing
+                                      ? `Listing removed. ${listing.speciesName} (${listing.weightKg} kg) returned to your Fish Bucket.`
+                                      : `Purchased ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`;
+                                    setFishMarketFeedback({ ok: true, text: msg });
+                                    triggerNpcSpeech(msg);
+                                  } else {
+                                    const detail =
+                                      getLastNearTransactionError() ||
+                                      'Purchase could not be completed. Check your RESPITE balance.';
+                                    setFishMarketFeedback({ ok: false, text: detail });
+                                    triggerNpcSpeech(detail);
+                                  }
+                                } finally {
+                                  setBusyFishActionId(null);
                                 }
-                              } finally {
-                                setBusyFishActionId(null);
-                              }
-                            }}
-                            className={`px-3 py-2 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase shrink-0 ${
-                              isOwnListing
-                                ? 'bg-[#facc15] hover:bg-[#fde047] text-black cursor-pointer'
-                                : canBuy
-                                  ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
-                                  : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            {busyFishActionId === listing.listingId
-                              ? 'SIGNING...'
-                              : isOwnListing
-                                ? 'UNLIST NFT'
-                                : `BUY (${listingPriceRespite.toLocaleString()} RESPITE)`}
-                          </button>
+                              }}
+                              className={`px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase shrink-0 ${
+                                isOwnListing
+                                  ? 'bg-[#facc15] hover:bg-[#fde047] text-black cursor-pointer'
+                                  : canBuy
+                                    ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
+                                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              {busyFishActionId === listing.listingId
+                                ? 'PROCESSING...'
+                                : isOwnListing
+                                  ? 'UNLIST'
+                                  : `BUY (${listingPriceRespite.toLocaleString()} RESPITE)`}
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -2763,7 +2836,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           )}
         </div>
       </div>
-    </aside>
+      </aside>
+      <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
+    </>
   );
 };
 

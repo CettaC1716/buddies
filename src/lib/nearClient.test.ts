@@ -6,6 +6,7 @@ import {
   NEAR_CONFIG,
   RESPITE_NEP141_METADATA,
   executeNearTestnetAndRespiteSwap,
+  fetchOwnedFishNftsFromChain,
   getMyNearWalletLoginUrl,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
@@ -25,6 +26,8 @@ import {
   createInitialNearGamepassSessionState,
   syncNearWalletSessionOwnership,
 } from '../game/buddiesBlitzRules';
+import { FISH_SPECIES_CATALOG } from '../game/buddiesFishingMarket';
+import { buildTidewaterProceduralFishGroup } from '../components/TidewaterCatchShowcaseModal';
 
 test('resolveNearRpcUrl routes .testnet and .near accounts to matching NEAR JSON-RPC endpoints', () => {
   assert.deepEqual(resolveNearRpcUrl('testnet'), {
@@ -450,5 +453,62 @@ test('api/npc-agent enforces multilingual in-game guardrails, injects live Fish 
     assert.doesNotMatch(res.payload.reply, /🎣/);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchOwnedFishNftsFromChain parses owned Fish NFTs from chain and excludes House Deeds, and 3D fish meshes build cleanly', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const mockTokens = [
+      {
+        token_id: 'house-deed-india0x69.buddiesblitz.testnet',
+        metadata: {
+          title: 'Safezone House Deed',
+          extra: JSON.stringify({ kind: 'house_deed' }),
+        },
+      },
+      {
+        token_id: 'nep171-fish-golden_harbor_tuna-8821',
+        metadata: {
+          title: 'Golden Harbor Tuna (14.25 kg - Rare)',
+          extra: JSON.stringify({
+            kind: 'fish',
+            species_id: 'golden_harbor_tuna',
+            water_zone: 'east_beach',
+            rarity: 'Rare',
+            weight_kg_x100: 1425,
+          }),
+        },
+      },
+    ];
+    const encodedResult = Array.from(Buffer.from(JSON.stringify(mockTokens), 'utf8'));
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          result: { result: encodedResult },
+        }),
+      }) as Response) as typeof fetch;
+
+    const ownedFish = await fetchOwnedFishNftsFromChain('india0x69.buddiesblitz.testnet');
+    assert.equal(ownedFish.length, 1);
+    assert.deepEqual(ownedFish[0], {
+      tokenId: 'nep171-fish-golden_harbor_tuna-8821',
+      speciesId: 'golden_harbor_tuna',
+      speciesName: 'Golden Harbor Tuna',
+      waterZone: 'east_beach',
+      rarity: 'Rare',
+      weightKg: 14.25,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // Verify 3D procedural fish geometry builds & animates cleanly for every catalog species
+  for (const species of FISH_SPECIES_CATALOG) {
+    const model = buildTidewaterProceduralFishGroup(species.speciesId, species.colorHex);
+    assert.ok(model.group.children.length > 0, `Expected 3D meshes for ${species.speciesId}`);
+    model.updateSwimAnimation(0.5);
+    model.dispose();
   }
 });

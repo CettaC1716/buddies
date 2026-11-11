@@ -64,6 +64,11 @@ import {
 } from './components/NpcMerchantAndHouseModal';
 import { TidewaterFishingHudAndShowcase } from './components/TidewaterCatchShowcaseModal';
 import {
+  Fish3dPreviewModal,
+  Fish3dThumbnail,
+  type Fish3dPreviewSpec,
+} from './components/Fish3dPreviewModal';
+import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
   investInMerchantShop,
@@ -89,6 +94,7 @@ import {
   fetchNearAccountView,
   fetchNearNetworkStatus,
   fetchNep141Balance,
+  fetchOwnedFishNftsFromChain,
   getNearBlocksTxUrl,
   isActiveWalletReadOnlyObserver,
   onNearSigningWalletConnected,
@@ -131,6 +137,7 @@ import {
 } from './lib/supabaseClient';
 import {
   FISH_SPECIES_CATALOG,
+  computeLengthCmFromWeightKg,
   detectNearbyFishingWaterZone,
   rollRandomCaughtFish,
   createTidewaterBiteSchedule,
@@ -586,6 +593,8 @@ export default function App() {
   const [caughtFishBucket, setCaughtFishBucket] = useState<CaughtFishItem[]>([]);
   const [fishMarketListings, setFishMarketListings] = useState<FishNftMarketplaceListing[]>([]);
   const [fishSalesStats, setFishSalesStats] = useState<FishNftMarketSalesStats | null>(null);
+  const [preview3dFish, setPreview3dFish] = useState<Fish3dPreviewSpec | null>(null);
+  const hydratedFishBucketKeyRef = useRef<string>('');
   const [fishingPhase, setFishingPhase] = useState<FishingPhaseState>('idle');
   const [fishingCastPower, setFishingCastPower] = useState<number>(0.72);
   const [isChargingCast, setIsChargingCast] = useState<boolean>(false);
@@ -618,11 +627,54 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [isFastForwardRunning, activeSpecialModal, merchantLocation]);
 
+  const activeFishBucketStorageKey = `bb_caught_fish_bucket_v2:${(
+    hud.nearWalletId || 'guest'
+  )
+    .trim()
+    .toLowerCase()}`;
+
+  // Restore locally caught fish when active wallet / guest key changes
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(activeFishBucketStorageKey);
+      const parsed: CaughtFishItem[] = raw ? (JSON.parse(raw) as CaughtFishItem[]) : [];
+      const validStored = Array.isArray(parsed)
+        ? parsed.filter((f) => f && typeof f.speciesId === 'string' && typeof f.weightKg === 'number')
+        : [];
+      setCaughtFishBucket((prev) => {
+        // Preserve any unminted fish caught while playing as guest right before registering
+        const guestCarryOver = prev.filter(
+          (f) => !f.isMintedNft && !validStored.some((s) => s.id === f.id),
+        );
+        return [...guestCarryOver, ...validStored].slice(0, 30);
+      });
+    } catch {
+      // ignore localStorage read errors
+    } finally {
+      hydratedFishBucketKeyRef.current = activeFishBucketStorageKey;
+    }
+  }, [activeFishBucketStorageKey]);
+
+  // Persist caught fish bucket per wallet / guest key
+  useEffect(() => {
+    if (hydratedFishBucketKeyRef.current !== activeFishBucketStorageKey) return;
+    try {
+      window.localStorage.setItem(
+        activeFishBucketStorageKey,
+        JSON.stringify(caughtFishBucket.slice(0, 30)),
+      );
+    } catch {
+      // ignore localStorage quota errors
+    }
+  }, [caughtFishBucket, activeFishBucketStorageKey]);
+
   const refreshFishMarketplaceFromChainAndDb = useCallback(async () => {
-    const [dbListings, onChainListings, latestSalesStats] = await Promise.all([
+    const activeWallet = (hudRef.current.nearWalletId || '').trim().toLowerCase();
+    const [dbListings, onChainListings, latestSalesStats, ownedChainFish] = await Promise.all([
       fetchFishMarketplaceListingsFromSupabase(),
       fetchBuddiesMarketFishListings(),
       fetchFishNftMarketSalesStats(),
+      activeWallet ? fetchOwnedFishNftsFromChain(activeWallet) : Promise.resolve([]),
     ]);
     setFishSalesStats(latestSalesStats);
     const mappedOnChain: FishNftMarketplaceListing[] = onChainListings.map((row) => {
@@ -641,6 +693,7 @@ export default function App() {
           waterZone === 'central_oasis' ? 'Central Oasis Lake' : 'East Beach Shoreline',
         rarity: (row.rarity as FishNftMarketplaceListing['rarity']) || spec?.rarity || 'Common',
         weightKg,
+        lengthCm: computeLengthCmFromWeightKg(weightKg, spec?.lwA, spec?.lwB),
         isTrophy: spec ? weightKg >= spec.maxWeightKg * 0.7 : false,
         colorHex: spec?.colorHex || '#38bdf8',
         caughtByAccount: row.seller_id,
@@ -658,13 +711,80 @@ export default function App() {
       ...dbListings.filter((item) => !onChainIds.has(item.listingId) && !item.listingId.startsWith('listing-')),
     ];
     setFishMarketListings(merged);
+
+    if (activeWallet) {
+      const listedTokenIds = new Set(onChainListings.map((r) => r.token_id));
+      const ownedTokenIds = new Set(ownedChainFish.map((n) => n.tokenId));
+      setCaughtFishBucket((prev) => {
+        // Keep unminted catches + minted NFTs still owned & not currently listed
+        const next = prev.filter((f) => {
+          if (!f.isMintedNft || !f.nftTokenId) return true;
+          if (listedTokenIds.has(f.nftTokenId)) return false;
+          // Keep freshly minted NFTs or chain-confirmed owned NFTs
+          return ownedTokenIds.size === 0 || ownedTokenIds.has(f.nftTokenId);
+        });
+
+        for (const nft of ownedChainFish) {
+          if (listedTokenIds.has(nft.tokenId)) continue;
+          if (next.some((f) => f.nftTokenId === nft.tokenId)) continue;
+          const spec = FISH_SPECIES_CATALOG.find((s) => s.speciesId === nft.speciesId);
+          const waterZone = spec?.waterZone || nft.waterZone;
+          const isTrophy = spec ? nft.weightKg >= spec.maxWeightKg * 0.7 : false;
+          const sellLul = Math.max(
+            15,
+            Math.round((spec?.baseLulPerKg || 14) * nft.weightKg * (isTrophy ? 1.25 : 1)),
+          );
+          const suggestedRespite = Math.max(
+            4,
+            Math.round((spec?.suggestedRespitePrice || 12) * (isTrophy ? 1.25 : 1)),
+          );
+          next.push({
+            id: `chain-fish-${nft.tokenId}`,
+            speciesId: nft.speciesId,
+            speciesName: spec?.speciesName || nft.speciesName,
+            waterZone,
+            waterZoneLabel:
+              waterZone === 'central_oasis' ? 'Central Oasis Lake' : 'East Beach Shoreline',
+            rarity: spec?.rarity || nft.rarity,
+            weightKg: nft.weightKg,
+            lengthCm: computeLengthCmFromWeightKg(nft.weightKg, spec?.lwA, spec?.lwB),
+            isTrophy,
+            sellValueCyon: sellLul,
+            sellValueLul: sellLul,
+            mintFeeLul: 0,
+            suggestedRespitePrice: suggestedRespite,
+            colorHex: spec?.colorHex || '#38bdf8',
+            loreTag: spec?.loreTag || 'Caught in Buddies Blitz Safezone waters.',
+            caughtByAccount: activeWallet,
+            caughtAtIso: new Date().toISOString(),
+            isMintedNft: true,
+            nftTokenId: nft.tokenId,
+            nearTxHash: null,
+          });
+        }
+
+        return next;
+      });
+    }
   }, []);
 
   useEffect(() => {
-    if (activeSpecialModal === 'npc_merchant') {
+    if (
+      activeSpecialModal === 'npc_merchant' ||
+      isPersonalWalletModalOpen ||
+      isPersonalBagModalOpen ||
+      hud.nearWalletConnected
+    ) {
       void refreshFishMarketplaceFromChainAndDb();
     }
-  }, [activeSpecialModal, refreshFishMarketplaceFromChainAndDb]);
+  }, [
+    activeSpecialModal,
+    isPersonalWalletModalOpen,
+    isPersonalBagModalOpen,
+    hud.nearWalletConnected,
+    hud.nearWalletId,
+    refreshFishMarketplaceFromChainAndDb,
+  ]);
 
   // Hydrate initial state from NEAR RPC & Supabase PostgreSQL + Realtime
   useEffect(() => {
@@ -6513,46 +6633,166 @@ export default function App() {
                     </div>
                   ))}
 
-                  {/* 3. MINTED FISH NFTS */}
-                  {caughtFishBucket.filter((f) => f.isMintedNft).map((fish) => (
-                    <div key={fish.id} className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
-                      <div
-                        className="relative w-full h-28 border-2 border-black flex flex-col items-center justify-center p-2"
-                        style={{ backgroundColor: fish.colorHex || '#1e293b' }}
-                      >
-                        <div className="text-lg font-black text-white drop-shadow-[0_2px_2px_#000] uppercase text-center">
-                          {fish.speciesName}
-                        </div>
-                        <div className="text-[10px] font-bold text-yellow-300 drop-shadow-[0_1px_1px_#000]">
-                          {fish.weightKg} KG · {fish.rarity}
-                        </div>
-                        <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-[#38bdf8] text-black border border-black font-black text-[9px] uppercase">
-                          FISH NFT
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-black uppercase text-black">
-                          {fish.speciesName}
-                        </div>
-                        <div className="text-[10px] font-bold text-slate-600 truncate">
-                          {fish.nftTokenId || fish.id}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
-                        <span className="text-emerald-600 font-bold">MINTED</span>
-                        <span className="text-slate-500">{fish.suggestedRespitePrice || 12} RESPITE</span>
-                      </div>
-                    </div>
-                  ))}
+                  {/* 3. MINTED FISH NFTS (IN BAG + LISTED BY PLAYER) */}
+                  {caughtFishBucket
+                    .filter((f) => f.isMintedNft)
+                    .map((fish) => {
+                      const openWalletFish3d = () => {
+                        setPreview3dFish({
+                          speciesId: fish.speciesId,
+                          speciesName: fish.speciesName,
+                          rarity: fish.rarity,
+                          weightKg: fish.weightKg,
+                          lengthCm: fish.lengthCm,
+                          waterZoneLabel: fish.waterZoneLabel,
+                          colorHex: fish.colorHex,
+                          isTrophy: fish.isTrophy,
+                          isMintedNft: true,
+                          nftTokenId: fish.nftTokenId,
+                          valueLabel: `${fish.suggestedRespitePrice || 12} RESPITE`,
+                          ownerOrSellerLabel: hud.nearWalletId
+                            ? `Owner: ${hud.nearWalletId}`
+                            : undefined,
+                        });
+                      };
 
-                  {!hasHouseOwnership && recruitedFamilyMembers.length === 0 && caughtFishBucket.filter((f) => f.isMintedNft).length === 0 && (
-                    <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold space-y-1">
-                      <div>NO ITEMS YET</div>
-                      <div className="text-[10.5px] text-slate-400">
-                        Buy a house, recruit a companion, or mint caught fish into NFTs.
+                      return (
+                        <div
+                          key={fish.id}
+                          data-wallet-fish-nft={fish.speciesId}
+                          className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+                        >
+                          <div className="relative">
+                            <Fish3dThumbnail
+                              speciesId={fish.speciesId}
+                              speciesName={fish.speciesName}
+                              colorHex={fish.colorHex}
+                              variant="card"
+                              onInspect={openWalletFish3d}
+                            />
+                            <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 bg-[#38bdf8] text-black border border-black font-black text-[9px] uppercase pointer-events-none">
+                              FISH NFT
+                            </div>
+                          </div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-xs font-black uppercase text-black truncate">
+                                {fish.speciesName}
+                              </div>
+                              <div className="text-[10px] font-bold text-slate-600">
+                                {fish.weightKg.toFixed(2)} kg · {fish.rarity}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              data-wallet-fish-3d-btn={fish.id}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                openWalletFish3d();
+                              }}
+                              className="px-2 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border border-black text-[9px] font-black uppercase cursor-pointer shrink-0"
+                            >
+                              3D VIEW
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                            <span className="text-emerald-600 font-bold">OWNED</span>
+                            <span className="text-slate-500">
+                              {fish.suggestedRespitePrice || 12} RESPITE
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {fishMarketListings
+                    .filter(
+                      (l) =>
+                        Boolean(hud.nearWalletId) &&
+                        l.sellerNearAccount.toLowerCase() ===
+                          (hud.nearWalletId || '').toLowerCase(),
+                    )
+                    .map((listing) => {
+                      const openListedWalletFish3d = () => {
+                        setPreview3dFish({
+                          speciesId: listing.speciesId,
+                          speciesName: listing.speciesName,
+                          rarity: listing.rarity,
+                          weightKg: listing.weightKg,
+                          lengthCm: listing.lengthCm,
+                          waterZoneLabel: listing.waterZoneLabel,
+                          colorHex: listing.colorHex,
+                          isTrophy: listing.isTrophy,
+                          isMintedNft: true,
+                          nftTokenId: listing.nftTokenId,
+                          valueLabel: `Listed · ${listing.priceRespite} RESPITE`,
+                          ownerOrSellerLabel: `Seller: ${listing.sellerNearAccount}`,
+                        });
+                      };
+
+                      return (
+                        <div
+                          key={listing.listingId}
+                          data-wallet-listed-fish-nft={listing.speciesId}
+                          className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+                        >
+                          <div className="relative">
+                            <Fish3dThumbnail
+                              speciesId={listing.speciesId}
+                              speciesName={listing.speciesName}
+                              colorHex={listing.colorHex}
+                              variant="card"
+                              onInspect={openListedWalletFish3d}
+                            />
+                            <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 bg-[#facc15] text-black border border-black font-black text-[9px] uppercase pointer-events-none">
+                              LISTED AT KAI
+                            </div>
+                          </div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-xs font-black uppercase text-black truncate">
+                                {listing.speciesName}
+                              </div>
+                              <div className="text-[10px] font-bold text-slate-600">
+                                {listing.weightKg.toFixed(2)} kg · {listing.rarity}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              data-wallet-listed-fish-3d-btn={listing.listingId}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                openListedWalletFish3d();
+                              }}
+                              className="px-2 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border border-black text-[9px] font-black uppercase cursor-pointer shrink-0"
+                            >
+                              3D VIEW
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                            <span className="text-amber-600 font-bold">ON MARKET</span>
+                            <span className="text-slate-500">{listing.priceRespite} RESPITE</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {!hasHouseOwnership &&
+                    recruitedFamilyMembers.length === 0 &&
+                    caughtFishBucket.filter((f) => f.isMintedNft).length === 0 &&
+                    fishMarketListings.filter(
+                      (l) =>
+                        Boolean(hud.nearWalletId) &&
+                        l.sellerNearAccount.toLowerCase() ===
+                          (hud.nearWalletId || '').toLowerCase(),
+                    ).length === 0 && (
+                      <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold space-y-1">
+                        <div>NO ITEMS YET</div>
+                        <div className="text-[10.5px] text-slate-400">
+                          Buy a house, recruit a companion, or mint caught fish into NFTs.
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               </div>
             ) : (
@@ -6983,76 +7223,129 @@ export default function App() {
                     </p>
                   </div>
                 ) : (
-                  caughtFishBucket.map((fish) => (
-                    <div
-                      key={fish.id}
-                      className="p-2.5 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-black uppercase text-black">
-                            {fish.speciesName}
-                          </span>
-                          <span className="px-1.5 py-0.5 bg-[#1e293b] text-[#38bdf8] text-[9.5px] font-black uppercase">
-                            {fish.rarity}
-                          </span>
-                          {fish.isMintedNft && (
-                            <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#1e1b4b] border border-black text-[9px] font-black uppercase">
-                              NFT
+                  caughtFishBucket.map((fish) => {
+                    const openBagFish3d = () => {
+                      setPreview3dFish({
+                        speciesId: fish.speciesId,
+                        speciesName: fish.speciesName,
+                        rarity: fish.rarity,
+                        weightKg: fish.weightKg,
+                        lengthCm: fish.lengthCm,
+                        waterZoneLabel: fish.waterZoneLabel,
+                        colorHex: fish.colorHex,
+                        isTrophy: fish.isTrophy,
+                        isMintedNft: fish.isMintedNft,
+                        nftTokenId: fish.nftTokenId,
+                        valueLabel: fish.isMintedNft
+                          ? `${fish.suggestedRespitePrice || 12} RESPITE`
+                          : `${fish.sellValueLul || fish.sellValueCyon || 15} LUL`,
+                        ownerOrSellerLabel: fish.caughtByAccount
+                          ? `Angler: ${fish.caughtByAccount}`
+                          : undefined,
+                      });
+                    };
+
+                    return (
+                      <div
+                        key={fish.id}
+                        data-bag-fish-row={fish.speciesId}
+                        className="p-2.5 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
+                      >
+                        <Fish3dThumbnail
+                          speciesId={fish.speciesId}
+                          speciesName={fish.speciesName}
+                          colorHex={fish.colorHex}
+                          variant="compact"
+                          onInspect={openBagFish3d}
+                        />
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black uppercase text-black">
+                              {fish.speciesName}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-[#1e293b] text-[#38bdf8] text-[9.5px] font-black uppercase">
+                              {fish.rarity}
+                            </span>
+                            {fish.isMintedNft && (
+                              <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#1e1b4b] border border-black text-[9px] font-black uppercase">
+                                NFT
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5">
+                            {fish.weightKg.toFixed(2)} kg ·{' '}
+                            {fish.sellValueLul || fish.sellValueCyon || 15} LUL at Kai&apos;s Shop
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                          <button
+                            type="button"
+                            data-bag-fish-3d-btn={fish.id}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              openBagFish3d();
+                            }}
+                            className="px-2 py-1 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                          >
+                            3D VIEW
+                          </button>
+
+                          {!fish.isMintedNft ? (
+                            hud.nearWalletConnected ? (
+                              <button
+                                type="button"
+                                data-bag-mint-fish-btn={fish.id}
+                                onClick={() => {
+                                  void handleMintCaughtFishNft(fish);
+                                }}
+                                className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                              >
+                                Mint NFT
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                data-bag-guest-register-btn={fish.id}
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  setIsPersonalBagModalOpen(false);
+                                  setOnboardingStep('auth_choice');
+                                }}
+                                className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                              >
+                                Sign In
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-[9.5px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 border border-purple-400 font-mono">
+                              MINTED
                             </span>
                           )}
-                        </div>
-                        <div className="text-[10.5px] font-bold text-slate-600 mt-0.5">
-                          {fish.weightKg} kg · {fish.sellValueLul || fish.sellValueCyon || 15} LUL at Kai&apos;s Shop
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {!fish.isMintedNft ? (
-                          hud.nearWalletConnected ? (
+
+                          {!fish.isMintedNft && (
                             <button
                               type="button"
-                              data-bag-mint-fish-btn={fish.id}
-                              onClick={() => {
-                                void handleMintCaughtFishNft(fish);
-                              }}
-                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
-                            >
-                              Mint NFT
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              data-bag-guest-register-btn={fish.id}
+                              data-bag-release-fish-btn={fish.id}
                               onClick={() => {
                                 soundEngine.playUiClick();
-                                setIsPersonalBagModalOpen(false);
-                                setOnboardingStep('auth_choice');
+                                setCaughtFishBucket((prev) =>
+                                  prev.filter((f) => f.id !== fish.id),
+                                );
+                                setLastCaughtFishToast((prev) =>
+                                  prev?.id === fish.id ? null : prev,
+                                );
                               }}
-                              className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
+                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-900 font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
                             >
-                              Sign In
+                              Release
                             </button>
-                          )
-                        ) : (
-                          <span className="text-[9.5px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 border border-purple-400 font-mono">
-                            MINTED
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          data-bag-release-fish-btn={fish.id}
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
-                            setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
-                          }}
-                          className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-900 font-mono text-[10px] font-black uppercase border border-black shadow-[1.5px_1.5px_0px_#000] cursor-pointer"
-                        >
-                          Release
-                        </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -7512,6 +7805,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 14. 3D FISH PREVIEW MODAL (WALLET + BAG) */}
+      <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
     </main>
   );
 }
