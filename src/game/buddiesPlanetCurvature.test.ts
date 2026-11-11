@@ -21,7 +21,7 @@ import {
   evaluateEastConstructionYardSdf,
   evaluateEmbankmentTierOffsets,
   evaluateOuterEmbankmentSdf,
-  evaluateTolanWaterField,
+  evaluatePlanetWaterField,
   evaluateBlitzGrassMask,
   ZEBRA_CROSSWALK_ZONES,
   isPointOnZebraCrosswalk,
@@ -187,7 +187,7 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   // 2. Centered Turquoise Oasis Lake at (-31.0, 0.0) with N/S Mirror Symmetry
   assert.ok(evaluateNwLakeSdf(-31.0, 0.0) < -5.0);
   assert.ok(evaluateNwLakeSdf(-58.0, -32.0) > 2.0);
-  assert.ok(evaluateTolanWaterField(-31.0, 0.0) > 0.9);
+  assert.ok(evaluatePlanetWaterField(-31.0, 0.0) > 0.9);
   assert.ok(Math.abs(evaluateNwLakeSdf(-31.0, 6.5) - evaluateNwLakeSdf(-31.0, -6.5)) < 1e-6);
 
   // 3. Shifted Right-Side (East) Harbor Concrete Dock (x ∈ [76, 110]), Coastal Seawall (x ∈ [101.5, 110]), & Open East Ocean (x > 110)
@@ -205,8 +205,8 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
 
   const seaEast = evaluateSeHarborSdf(120, 0);
   assert.ok(seaEast.waterSdf < 0);
-  assert.ok(evaluateTolanWaterField(120, 0) > 0.9);
-  assert.ok(evaluateTolanWaterField(120, 95) > 0.9);
+  assert.ok(evaluatePlanetWaterField(120, 0) > 0.9);
+  assert.ok(evaluatePlanetWaterField(120, 95) > 0.9);
 });
 
 test('evaluateBlitzGrassMask preserves zero grass inside the single intact Bottom-Left Model Estate Base and renders lush green lawn across all 7 emptied base lots and Warzone islands', () => {
