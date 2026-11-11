@@ -291,3 +291,71 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- ============================================================================
+-- SECURITY HARDENING (applied to live project 2026-11-11)
+-- 1) Player emails are extracted from bb_profiles into the locked table
+--    bb_profile_contacts (RLS on, all privileges revoked for anon/authenticated),
+--    so the public REST API can never read them. A trigger keeps bb_profiles.email
+--    permanently NULL and captures new emails into the locked table.
+-- 2) Lookup by email stays possible only through the SECURITY DEFINER RPC
+--    bb_lookup_account_by_email(p_email), which returns just the NEAR account id
+--    for an exact email match.
+-- 3) The former *_mvp_access ALL policies are replaced by per-command policies
+--    (SELECT/INSERT/UPDATE only). No role can DELETE profiles, merchants,
+--    interiors, gamepass NFTs, or base plots through the API anymore.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.bb_profile_contacts (
+  near_account_id text PRIMARY KEY,
+  email text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.bb_profile_contacts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.bb_profile_contacts FROM anon, authenticated;
+INSERT INTO public.bb_profile_contacts (near_account_id, email)
+SELECT near_account_id, lower(email) FROM public.bb_profiles WHERE email IS NOT NULL
+ON CONFLICT (near_account_id) DO UPDATE SET email = EXCLUDED.email, updated_at = now();
+CREATE OR REPLACE FUNCTION public.bb_profiles_extract_email() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.email IS NOT NULL AND length(trim(NEW.email)) > 3 THEN
+    INSERT INTO public.bb_profile_contacts (near_account_id, email, updated_at)
+    VALUES (NEW.near_account_id, lower(trim(NEW.email)), now())
+    ON CONFLICT (near_account_id) DO UPDATE SET email = EXCLUDED.email, updated_at = now();
+    NEW.email := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_bb_profiles_extract_email ON public.bb_profiles;
+CREATE TRIGGER trg_bb_profiles_extract_email
+BEFORE INSERT OR UPDATE ON public.bb_profiles
+FOR EACH ROW EXECUTE FUNCTION public.bb_profiles_extract_email();
+UPDATE public.bb_profiles SET email = NULL WHERE email IS NOT NULL;
+CREATE OR REPLACE FUNCTION public.bb_lookup_account_by_email(p_email text) RETURNS text
+LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT near_account_id FROM public.bb_profile_contacts
+  WHERE email = lower(trim(p_email)) LIMIT 1
+$$;
+REVOKE ALL ON FUNCTION public.bb_lookup_account_by_email(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.bb_lookup_account_by_email(text) TO anon, authenticated;
+DROP POLICY IF EXISTS "bb_profiles_mvp_access" ON public.bb_profiles;
+CREATE POLICY "bb_profiles_select" ON public.bb_profiles FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "bb_profiles_insert" ON public.bb_profiles FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "bb_profiles_update" ON public.bb_profiles FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "bb_npc_merchants_mvp_access" ON public.bb_npc_merchants;
+CREATE POLICY "bb_npc_merchants_select" ON public.bb_npc_merchants FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "bb_npc_merchants_insert" ON public.bb_npc_merchants FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "bb_npc_merchants_update" ON public.bb_npc_merchants FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "bb_house_interiors_mvp_access" ON public.bb_house_interiors;
+CREATE POLICY "bb_house_interiors_select" ON public.bb_house_interiors FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "bb_house_interiors_insert" ON public.bb_house_interiors FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "bb_house_interiors_update" ON public.bb_house_interiors FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "bb_gamepass_nfts_mvp_access" ON public.bb_gamepass_nfts;
+CREATE POLICY "bb_gamepass_nfts_select" ON public.bb_gamepass_nfts FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "bb_gamepass_nfts_insert" ON public.bb_gamepass_nfts FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "bb_gamepass_nfts_update" ON public.bb_gamepass_nfts FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "bb_base_plots_mvp_access" ON public.bb_base_plots;
+CREATE POLICY "bb_base_plots_select" ON public.bb_base_plots FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "bb_base_plots_insert" ON public.bb_base_plots FOR INSERT TO anon, authenticated WITH CHECK (plot_key <> 'blue_0');
+CREATE POLICY "bb_base_plots_update" ON public.bb_base_plots FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (plot_key <> 'blue_0');

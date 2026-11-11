@@ -243,7 +243,11 @@ export function subscribeToSupabaseAuthUser(
 }
 
 /**
- * Fetches an existing player profile by Google email address from `bb_profiles`.
+ * Fetches an existing player profile by Google email address.
+ * Emails are stored in the locked `bb_profile_contacts` table and are never
+ * exposed through the REST API; the SECURITY DEFINER RPC
+ * `bb_lookup_account_by_email` returns only the matching NEAR account id,
+ * then the public profile row is loaded by account id.
  */
 export async function fetchPlayerProfileByEmail(email: string): Promise<DbPlayerProfile | null> {
   if (!supabase) return null;
@@ -251,12 +255,15 @@ export async function fetchPlayerProfileByEmail(email: string): Promise<DbPlayer
   if (!cleanEmail || !cleanEmail.includes('@')) return null;
 
   try {
+    const { data: accountId, error: rpcError } = await supabase.rpc('bb_lookup_account_by_email', {
+      p_email: cleanEmail,
+    });
+    if (rpcError || !accountId) return null;
+
     const { data, error } = await supabase
       .from('bb_profiles')
       .select('*')
-      .ilike('email', cleanEmail)
-      .order('updated_at', { ascending: false })
-      .limit(1)
+      .eq('near_account_id', accountId as string)
       .maybeSingle();
 
     if (error || !data) return null;
