@@ -2857,6 +2857,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     addCutawayWallSegment(0.65, J + L, 0, Yn, N, N + L);
     addCutawayWallSegment(J, J + L, 0, Yn, T, N);
 
+    // Full-height wall completions, visible ONLY in `house_visit` mode: they raise
+    // the front & right cutaway stubs to full height so walking inside feels like a
+    // real enclosed room. Edit mode (`house_interior`) keeps the open cutaway.
+    const houseVisitWallGrp = new THREE.Group();
+    houseVisitWallGrp.name = 'HouseVisitFullWalls';
+    const addVisitWall = (
+      x0: number,
+      x1: number,
+      y0: number,
+      y1: number,
+      z0: number,
+      z1: number,
+    ) => {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0),
+        interiorWallMat,
+      );
+      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      m.raycast = () => {};
+      houseVisitWallGrp.add(m);
+      const cap = new THREE.Mesh(
+        new THREE.BoxGeometry(x1 - x0 + 0.01, 0.025, z1 - z0 + 0.01),
+        capWallMat,
+      );
+      cap.position.set((x0 + x1) / 2, y1 + 0.012, (z0 + z1) / 2);
+      cap.raycast = () => {};
+      houseVisitWallGrp.add(cap);
+    };
+    addVisitWall(A - L, -0.65, Yn, ee, N, N + L); // front wall, left of the exit door
+    addVisitWall(0.65, J + L, Yn, ee, N, N + L); // front wall, right of the exit door
+    addVisitWall(-0.65, 0.65, 2.42, ee, N, N + L); // transom above the exit door (EXIT sign glows below it)
+    addVisitWall(J, J + L, Yn, ee, T, N); // right wall
+    houseVisitWallGrp.visible = false;
+    houseInteriorRoomGrp.add(houseVisitWallGrp);
+
     // 3D Exit Door Frame, Wooden Door Panel, Gold Handle & Glowing Exit Mat at Front Doorway (x = 0, z = N = 3.7)
     const houseExitDoorGrp = new THREE.Group();
     houseExitDoorGrp.position.set(0, 0, N);
@@ -3461,6 +3496,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (sampleHouseZonesGrp && typeof detail.isSampleHouse === 'boolean') {
             sampleHouseZonesGrp.visible = detail.isSampleHouse;
           }
+          houseVisitWallGrp.visible = detail.mode === 'house_visit';
           if (!wasHouseMode && playerUnit) {
             savedOutdoorHousePos = {
               x: playerUnit.x,
@@ -17972,9 +18008,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const lookZ = playerUnit.z;
           const cosPitch = Math.cos(houseVisitCamPitch);
           const sinPitch = Math.sin(houseVisitCamPitch);
-          const camX = lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist;
-          const camY = lookY + sinPitch * houseVisitCamDist;
-          const camZ = lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist;
+          // Contain the visit camera inside the fully walled room so it can
+          // never slip outside and capture the exterior.
+          const camX = clamp(
+            lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
+            CUTAWAY_ROOM_BOUNDS.minX + 0.35,
+            CUTAWAY_ROOM_BOUNDS.maxX - 0.35,
+          );
+          const camY = clamp(
+            lookY + sinPitch * houseVisitCamDist,
+            HOUSE_ORIGIN_Y + 0.3,
+            HOUSE_ORIGIN_Y + CUTAWAY_ROOM_BOUNDS.fullWallHeight - 0.2,
+          );
+          const camZ = clamp(
+            lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
+            CUTAWAY_ROOM_BOUNDS.minZ + 0.35,
+            CUTAWAY_ROOM_BOUNDS.maxZ - 0.35,
+          );
           camera.up.set(0, 1, 0);
           camera.position.set(camX, camY, camZ);
           camera.lookAt(lookX, lookY, lookZ);
