@@ -4178,6 +4178,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let socialTalkTimer = 0;
 
     let currentNearHouseDoorWorldPos: { x: number; z: number } | null = null;
+    let currentNearHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
+      null;
     const scratchLiveObjPos = new THREE.Vector3();
 
     const findNearestBaseKiosk = (actorX: number, actorZ: number) => {
@@ -10060,7 +10062,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           currentNearHouseDoorWorldPos !== null
         ) {
           soundEngine.playUiClick();
-          window.dispatchEvent(new CustomEvent('open-house-interior-ui'));
+          window.dispatchEvent(
+            new CustomEvent('open-house-interior-ui', {
+              detail: {
+                team: currentNearHouseDoorPlot?.team ?? null,
+                commanderIdx: currentNearHouseDoorPlot?.commanderIdx ?? null,
+              },
+            }),
+          );
           return;
         }
 
@@ -11543,7 +11552,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         window.dispatchEvent(new CustomEvent('open-npc-merchant-ui', { detail: { location: loc } }));
       } else if (act === 'enterPrivateHouseInterior') {
         soundEngine.playUiClick();
-        window.dispatchEvent(new CustomEvent('open-house-interior-ui'));
+        const nearestKioskForEntry = findNearestBaseKiosk(playerUnit.x, playerUnit.z);
+        window.dispatchEvent(
+          new CustomEvent('open-house-interior-ui', {
+            detail: {
+              team: nearestKioskForEntry.team,
+              commanderIdx: nearestKioskForEntry.plotIdx,
+            },
+          }),
+        );
       } else if (act === 'exitPrivateHouseInterior') {
         soundEngine.playUiClick();
         window.dispatchEvent(new CustomEvent('exit-house-interior-ui'));
@@ -20928,6 +20945,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // 0A-1. Floating "ENTER HOUSE [E]" at active, visible House doorway in The City (<= 3.5m)
       let nearClaimedHouseDoorPos: { x: number; z: number } | null = null;
+      let nearClaimedHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
+        null;
       if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
         const getPlotHouseVisList = (baseGroup: THREE.Group): boolean[] => {
           const pcs = (
@@ -20967,9 +20986,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
         if (proxEval.canTriggerEnterHouseDoor && proxEval.nearestHouseDoorWorldPos) {
           nearClaimedHouseDoorPos = proxEval.nearestHouseDoorWorldPos;
+          if (
+            proxEval.nearestHouseDoorTeam &&
+            typeof proxEval.nearestHouseDoorPlotIndex === 'number'
+          ) {
+            nearClaimedHouseDoorPlot = {
+              team: proxEval.nearestHouseDoorTeam,
+              commanderIdx: proxEval.nearestHouseDoorPlotIndex,
+            };
+          }
         }
       }
       currentNearHouseDoorWorldPos = nearClaimedHouseDoorPos;
+      currentNearHouseDoorPlot = nearClaimedHouseDoorPlot;
       if (nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
         const hy = getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z) + 3.2;
         const proj = projectWorldToScreenPixels(
