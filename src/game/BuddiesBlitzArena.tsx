@@ -4886,9 +4886,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const activeOrdnanceDevices: ActiveOrdnanceDevice3D[] = [];
     let remoteWarzonePeers: WarzoneRealtimePeer[] = [];
     let remoteWorldPeers: WorldMultiplayerPeerState[] = [];
+    // Per-peer pose history for snapshot interpolation. Samples are stamped with the LOCAL
+    // receive time (never the sender's clock, which may be skewed), newest last, capped at 6.
+    interface PeerPoseSample {
+      x: number;
+      z: number;
+      vx: number;
+      vz: number;
+      yaw: number;
+      senderStampMs: number;
+      receivedAtMs: number;
+    }
+    const peerPoseHistory = new Map<string, PeerPoseSample[]>();
     let lastLocalPoseBroadcastMs = 0;
     let lastBroadcastZoneKey = '';
     let lastBroadcastChatText: string | null = null;
+    let lastBroadcastYaw = 0;
+    let lastBroadcastSitting = false;
+    let lastBroadcastWeaponId = '';
+    let lastBroadcastCarryingCrate = '';
     let spawnRemoteShotRef:
       | ((shot: {
           fromTeam: 'blue' | 'red';
@@ -5038,6 +5054,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const worldMultiplayer = subscribeToWorldMultiplayer({
       onPeersChange: (peers) => {
         remoteWorldPeers = peers;
+        // Feed the snapshot-interpolation history: one sample per genuinely new pose
+        // packet (deduped by the sender's stamp), stamped with local receive time.
+        {
+          const nowRecvMs = Date.now();
+          const seenPeerIds = new Set<string>();
+          for (const p of peers) {
+            seenPeerIds.add(p.sessionId);
+            let hist = peerPoseHistory.get(p.sessionId);
+            if (!hist) {
+              hist = [];
+              peerPoseHistory.set(p.sessionId, hist);
+            }
+            const lastSample = hist[hist.length - 1];
+            if (!lastSample || lastSample.senderStampMs !== p.updatedAtMs) {
+              hist.push({
+                x: p.x,
+                z: p.z,
+                vx: p.vx,
+                vz: p.vz,
+                yaw: p.yaw,
+                senderStampMs: p.updatedAtMs,
+                receivedAtMs: nowRecvMs,
+              });
+              if (hist.length > 6) hist.splice(0, hist.length - 6);
+            }
+          }
+          for (const sid of peerPoseHistory.keys()) {
+            if (!seenPeerIds.has(sid)) peerPoseHistory.delete(sid);
+          }
+        }
         remoteWarzonePeers = peers
           .filter((p) => p.inWorld && p.zoneKey === 'warzone')
           .map((p) => ({
@@ -18196,11 +18242,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             shorelineFishingSync.phase !== 'idle';
           const zoneOrChatChanged =
             localZoneKey !== lastBroadcastZoneKey || curChat !== lastBroadcastChatText;
-          const minIntervalMs = zoneOrChatChanged ? 0 : isActivelyMoving ? 88 : 1100;
+          // Turning in place and discrete state changes (sit/weapon/crate) used to ride the
+          // 1100ms idle cadence because isActivelyMoving only looks at vx/vz — peers saw
+          // rotations snap ~once per second. Give them a fast (45ms) lane instead.
+          const curYawForBroadcast = mountedTank ? mountedTank.hullYaw : playerUnit.yaw;
+          let yawDeltaForBroadcast = Math.abs(curYawForBroadcast - lastBroadcastYaw);
+          if (yawDeltaForBroadcast > Math.PI) yawDeltaForBroadcast = Math.PI * 2 - yawDeltaForBroadcast;
+          const curSittingForBroadcast = Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null;
+          const stateChangedForBroadcast =
+            curSittingForBroadcast !== lastBroadcastSitting ||
+            playerUnit.weaponId !== lastBroadcastWeaponId ||
+            playerUnit.carryingCrate !== lastBroadcastCarryingCrate;
+          const minIntervalMs = zoneOrChatChanged
+            ? 0
+            : stateChangedForBroadcast || yawDeltaForBroadcast > 0.05
+              ? 45
+              : isActivelyMoving
+                ? 88
+                : 1100;
           if (nowWallMs - lastLocalPoseBroadcastMs >= minIntervalMs) {
             lastLocalPoseBroadcastMs = nowWallMs;
             lastBroadcastZoneKey = localZoneKey;
             lastBroadcastChatText = curChat;
+            lastBroadcastYaw = curYawForBroadcast;
+            lastBroadcastSitting = curSittingForBroadcast;
+            lastBroadcastWeaponId = playerUnit.weaponId;
+            lastBroadcastCarryingCrate = playerUnit.carryingCrate;
             worldMultiplayer.publishLocalPose(
               {
                 nearAccountId: nearSessionState.walletConnected
@@ -18295,37 +18362,63 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
           }
 
-          // Smooth dead-reckoned exponential interpolation (60 FPS butter-smooth motion)
-          const ageSec = Math.max(0, Math.min(0.16, (Date.now() - peer.updatedAtMs) / 1000));
-          const targetX = localZoneKey.startsWith('house:')
-            ? peer.x + peer.vx * ageSec
-            : wrapPlanetCoord(peer.x + peer.vx * ageSec);
-          const targetZ = localZoneKey.startsWith('house:')
-            ? peer.z + peer.vz * ageSec
-            : wrapPlanetCoord(peer.z + peer.vz * ageSec);
-          const jumpDist = localZoneKey.startsWith('house:')
-            ? Math.hypot(targetX - av.renderX, targetZ - av.renderZ)
-            : getPlanetShortestDistance(targetX, targetZ, av.renderX, av.renderZ);
-          const posAlpha = Math.min(1, 1 - Math.exp(-13.5 * dt));
-          if (jumpDist > 14.0) {
-            av.renderX = targetX;
-            av.renderZ = targetZ;
-          } else if (localZoneKey.startsWith('house:')) {
-            av.renderX += (targetX - av.renderX) * posAlpha;
-            av.renderZ += (targetZ - av.renderZ) * posAlpha;
-          } else {
-            av.renderX = wrapPlanetCoord(
-              av.renderX + getPlanetShortestDelta(targetX, av.renderX) * posAlpha,
-            );
-            av.renderZ = wrapPlanetCoord(
-              av.renderZ + getPlanetShortestDelta(targetZ, av.renderZ) * posAlpha,
-            );
+          // Snapshot interpolation (replaces chase-the-latest exponential smoothing):
+          // render the peer ~110ms in the past and interpolate between the two received
+          // poses bracketing that moment, on the LOCAL receive-time timeline — immune to
+          // sender clock skew and to per-packet jitter. If packets run late, dead-reckon
+          // briefly (<=150ms) from the newest pose instead of freezing.
+          const peerInHouse = localZoneKey.startsWith('house:');
+          const poseHist = peerPoseHistory.get(peer.sessionId);
+          let sampleX = peer.x;
+          let sampleZ = peer.z;
+          let sampleYaw = peer.yaw;
+          if (poseHist && poseHist.length > 0) {
+            const renderMs = Date.now() - 110;
+            const newestSample = poseHist[poseHist.length - 1];
+            if (renderMs >= newestSample.receivedAtMs) {
+              const extraSec = Math.min(0.15, (renderMs - newestSample.receivedAtMs) / 1000);
+              sampleX = newestSample.x + newestSample.vx * extraSec;
+              sampleZ = newestSample.z + newestSample.vz * extraSec;
+              sampleYaw = newestSample.yaw;
+            } else {
+              let sampleA = poseHist[0];
+              let sampleB = poseHist[0];
+              for (let hi = 0; hi < poseHist.length; hi++) {
+                if (poseHist[hi].receivedAtMs <= renderMs) sampleA = poseHist[hi];
+                if (poseHist[hi].receivedAtMs >= renderMs) {
+                  sampleB = poseHist[hi];
+                  break;
+                }
+              }
+              if (sampleB !== sampleA && sampleB.receivedAtMs > sampleA.receivedAtMs) {
+                const t =
+                  (renderMs - sampleA.receivedAtMs) /
+                  (sampleB.receivedAtMs - sampleA.receivedAtMs);
+                if (peerInHouse) {
+                  sampleX = sampleA.x + (sampleB.x - sampleA.x) * t;
+                  sampleZ = sampleA.z + (sampleB.z - sampleA.z) * t;
+                } else {
+                  sampleX = wrapPlanetCoord(
+                    sampleA.x + getPlanetShortestDelta(sampleB.x, sampleA.x) * t,
+                  );
+                  sampleZ = wrapPlanetCoord(
+                    sampleA.z + getPlanetShortestDelta(sampleB.z, sampleA.z) * t,
+                  );
+                }
+                let sampleYawDelta = sampleB.yaw - sampleA.yaw;
+                while (sampleYawDelta > Math.PI) sampleYawDelta -= Math.PI * 2;
+                while (sampleYawDelta < -Math.PI) sampleYawDelta += Math.PI * 2;
+                sampleYaw = sampleA.yaw + sampleYawDelta * t;
+              } else {
+                sampleX = sampleA.x;
+                sampleZ = sampleA.z;
+                sampleYaw = sampleA.yaw;
+              }
+            }
           }
-
-          let yawDelta = peer.yaw - av.renderYaw;
-          while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
-          while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
-          av.renderYaw += yawDelta * Math.min(1, 1 - Math.exp(-15 * dt));
+          av.renderX = peerInHouse ? sampleX : wrapPlanetCoord(sampleX);
+          av.renderZ = peerInHouse ? sampleZ : wrapPlanetCoord(sampleZ);
+          av.renderYaw = sampleYaw;
 
           av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0);
           av.overheadCrateGroup.visible =

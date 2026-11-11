@@ -1500,7 +1500,11 @@ export function subscribeToWorldMultiplayer(handlers: {
             existing.nearAccountId = clean.nearAccountId;
             existing.inWorld = clean.inWorld;
             existing.hasClaimedBase = clean.hasClaimedBase;
-            existing.updatedAtMs = Date.now();
+            // NOTE: do NOT bump existing.updatedAtMs here. That timestamp belongs to the
+            // fresher Broadcast pose; refreshing it without new position data made the
+            // renderer treat a stale pose as brand new (visible backward judder ~every 3s).
+            // Liveness is maintained by the peer's own pose broadcasts (<=1.1s idle,
+            // 2.4s heartbeat), so pruning clocks stay correct without this bump.
           }
         }
         // Immediately prune disconnected peers no longer in Presence (unless they broadcast <2.5s ago while joining)
