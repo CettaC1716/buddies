@@ -868,8 +868,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       resetAllPlayerMovementInputs();
       clearTeleportKioskSelection();
       activeSeatedSpot = spot;
-      playerUnit.x = spot.x;
-      playerUnit.z = spot.z;
+      // Park benches (GLB prop): the authored sitting pose swings the legs ~48 deg
+      // toward the sitter's right and tucks the left foot back under the seat, so a
+      // sitter placed at the bench center spears the bench's front structure with
+      // the left shin/foot. Shift park-bench sitters forward (+0.45 along the bench
+      // front) and toward their left (+0.25) so both feet land past the front edge
+      // (measured: bench seat front edge is +0.65 from the prop origin; the tucked
+      // left foot reaches only +0.31 without this offset).
+      const seatFwdShift = spot.id.startsWith('park_bench') ? 0.45 : 0;
+      const seatLeftShift = spot.id.startsWith('park_bench') ? 0.25 : 0;
+      playerUnit.x =
+        spot.x + Math.sin(spot.yaw) * seatFwdShift + Math.cos(spot.yaw) * seatLeftShift;
+      playerUnit.z =
+        spot.z + Math.cos(spot.yaw) * seatFwdShift - Math.sin(spot.yaw) * seatLeftShift;
       playerUnit.vx = 0;
       playerUnit.vz = 0;
       playerUnit.yaw = spot.yaw;
