@@ -11,9 +11,9 @@
  *                         at the Exchange Merchant. Used to buy non-NFT items such as
  *                         Outfits (future expansion) & standard interior furniture.
  *  3. `RESPITE`         — Crypto smart contract coin (`NEP-141` Fungible Token on NEAR Protocol:
- *                         `respite.buddiesblitz.testnet`). Obtained by swapping
- *                         `NEAR Testnet <-> RESPITE` in the Exchange Merchant. Used for
- *                         exclusive Web3 NFT House Themes & Collector Items.
+ *                         `market.buddiesblitz.testnet`). Obtained via one-way `NEAR Testnet -> RESPITE`
+ *                         utility swap (`swap_near_for_respite`) at Hana's ATM or P2P NFT sales on
+ *                         Kai's Market. Used for House Ownership Deeds, Family AI, & Collector NFTs.
  * ============================================================================
  */
 

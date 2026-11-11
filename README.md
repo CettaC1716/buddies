@@ -131,6 +131,10 @@ ON-CHAIN P2P OWNERSHIP LAYER (NEAR Testnet: market.buddiesblitz.testnet)
 | **`CYON`** | Off-chain | Converted from `LUL` (`LUL -> CYON` Exchange) | Buys all regular non-NFT catalog items (standard outfits, basic furniture, fishing tackle) | Strictly isolated from `RESPITE` and `NEAR` — zero cash-out drain path |
 | **`RESPITE`** | On-chain **NEP-141** | `NEAR -> RESPITE` swap at Hana's ATM (`1 NEAR = 100 RESPITE`) **or** selling minted **NEP-171 NFTs** to other players on Kai's P2P Market | Buys **House Ownership Certificate (`25 RESPITE`)**, **Family Member Contracts (`15 / 45 / 180 RESPITE`)**, exclusive NFT furniture/outfits, and P2P NFT listings | **Zero P2E inflation**: if no player buys a listed NFT, no `RESPITE` is minted; one-way `NEAR -> RESPITE` utility firewall |
 
+> **Authoritative Source-of-Truth Guarantee (Hybrid Architecture):**
+> - **On-Chain Authoritative State (`market.buddiesblitz.testnet`)**: All `RESPITE` balances (`ft_balance_of`), House Ownership Deeds & Fish NFTs (`nft_tokens_for_owner` / `get_player_estate`), NEP-245 furnishings (`mt_balance_of`), and P2P marketplace escrows settle and verify strictly on NEAR Protocol.
+> - **Off-Chain Social & UI Read-Cache (`Supabase`)**: PostgreSQL (`bb_profiles`, `bb_fish_listings`, `bb_market_transactions`) stores strictly off-chain gameplay currencies (`LUL` & `CYON`), interior furniture coordinates, and a **non-authoritative UI read-cache** for public profile cards. Whenever a citizen session loads or transacts, live NEAR RPC (`ft_balance_of`) overwrites any cached `respite_balance` (including `0`).
+
 ### 2. Sub-Account Deed Security Invariant: Mid-Payout NFT Transfer (`Track 10-nfts`)
 
 Track `10-nfts` asks a critical security question: **What happens if an NFT that controls a sub-account and accrues revenue is transferred in the middle of an unclaimed payout?**
@@ -184,14 +188,18 @@ Compiled with `near-sdk 5.30.1` + `cargo-near` into [`contracts/buddies-market/t
 | On-Chain Entity / Action | NEAR Testnet Identifier | Explorer |
 |---|---|---|
 | **Master Sub-Account Factory** | `buddiesblitz.testnet` | [NearBlocks](https://testnet.nearblocks.io/address/buddiesblitz.testnet) |
-| **Unified Market, FT, NFT & MT Contract** | `market.buddiesblitz.testnet` (`SHA-256: 5oyJPQv9vEmRKudutyeZ4fciJWJKgzixaFJiuTtpYm4F`) | [NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
-| **Deploy WASM + `init` Transaction** | `2ZPfGcyGe6pnivJE6RcM88EnLXQwG8o6Fv7hcQnaKDiL` | [Tx Receipt](https://testnet.nearblocks.io/txns/2ZPfGcyGe6pnivJE6RcM88EnLXQwG8o6Fv7hcQnaKDiL) |
+| **Unified Market, FT, NFT & MT Contract** | `market.buddiesblitz.testnet` (`code_hash` / Base58 SHA-256: `F5aaWpSW5jRFhU4KqDAuXCikpi5nQ9dSH6yhgLMQT5Xp`) | [NearBlocks](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) |
+| **Genesis `init` Contract Deployment Tx** | `2ZPfGcyGe6pnivJE6RcM88EnLXQwG8o6Fv7hcQnaKDiL` | [Tx Receipt](https://testnet.nearblocks.io/txns/2ZPfGcyGe6pnivJE6RcM88EnLXQwG8o6Fv7hcQnaKDiL) |
 | **Live `swap_near_for_respite` (`0.35 NEAR -> 35 RESPITE`)** | `3VWiVeHMpQgDDk2ULJ748XcviLgC7qVrgkWA8G9YsWwG` | [Tx Receipt](https://testnet.nearblocks.io/txns/3VWiVeHMpQgDDk2ULJ748XcviLgC7qVrgkWA8G9YsWwG) |
 | **Live `purchase_citizen_asset` (`house-deed-0001`, `25 RESPITE`)** | `H2E2mwmaBajYsF5TAtBp6CmX6p7PCa7PcesfNDiHgSjw` | [Tx Receipt](https://testnet.nearblocks.io/txns/H2E2mwmaBajYsF5TAtBp6CmX6p7PCa7PcesfNDiHgSjw) |
 | **Live `mint_fish_nft` (`nep171-fish-golden_harbor_tuna-1001`)** | `8Ez5r9dq1ky6wRgutqot2MbPJLCWNP5Ryj9HV3FZuEy` | [Tx Receipt](https://testnet.nearblocks.io/txns/8Ez5r9dq1ky6wRgutqot2MbPJLCWNP5Ryj9HV3FZuEy) |
 | **Live `list_fish_nft` (`listing-genesis-golden-tuna-1001`, `15 RESPITE`)** | `CpyXwmWFFBVR9rJLFM5c336nAWpgCeZkmmETL3nZxwSd` | [Tx Receipt](https://testnet.nearblocks.io/txns/CpyXwmWFFBVR9rJLFM5c336nAWpgCeZkmmETL3nZxwSd) |
 
 ```bash
+# Verify live on-chain WASM code_hash (F5aaWpSW5jRFhU4KqDAuXCikpi5nQ9dSH6yhgLMQT5Xp == SHA-256 of target/near/buddies_market.wasm)
+curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","finality":"final","account_id":"market.buddiesblitz.testnet"}}'
+
 # Query get_contract_overview() & get_fish_listings() on market.buddiesblitz.testnet via FastNEAR RPC
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"get_contract_overview","args_base64":"e30="}}'
@@ -241,7 +249,7 @@ src/
     audio.ts                            Procedural Web Audio synthesizer (Sunny Morning Bossa & Chill Warzone Bossa)
   lib/
     nearClient.ts                       FastNEAR JSON-RPC client, Ed25519 session keys, NEP-413 & typed calls
-    supabaseClient.ts                   Supabase PostgreSQL persistence, P2P listing sync & Realtime presence
+    supabaseClient.ts                   Supabase PostgreSQL persistence, P2P listing sync & Realtime multiplayer (`bb_world_multiplayer_v1`)
     privyAuthBridge.tsx                 Headless Google OAuth bridge & injected wallet recursion guards
 
 supabase_mvp_schema.sql                 Normalized PostgreSQL tables, RLS policies, public view & atomic RPC
@@ -259,7 +267,7 @@ Copy [`.env.example`](.env.example) to `.env` for local development or Vercel de
 | `VITE_NEAR_RPC_URL` | `https://rpc.testnet.fastnear.com` |
 | `VITE_NEAR_MARKET_CONTRACT_ID` | `market.buddiesblitz.testnet` |
 | `NEAR_MASTER_ACCOUNT_ID` | `buddiesblitz.testnet` (used by `/api/near-relayer`) |
-| `NEAR_MASTER_PRIVATE_KEY` | Optional server-side `ed25519:` key on Vercel to broadcast live `CreateAccount` transactions |
+| `NEAR_MASTER_PRIVATE_KEY` | Server-side `ed25519:` key configured on live Vercel Production (`buddies-rouge.vercel.app`) to broadcast real on-chain `CreateAccount` + `0.08 NEAR` funding transactions (offline local dev falls back to local session-key generation if unset) |
 | `GEMINI_API_KEY` | Server-side Gemini API key on Vercel for `/api/npc-agent` interactive in-game NPC dialogue |
 | `VITE_PRIVY_APP_ID` | Privy App ID for headless Google OAuth onboarding |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Supabase project URL and public `anon` key (initialize with [`supabase_mvp_schema.sql`](supabase_mvp_schema.sql)) |
@@ -269,5 +277,5 @@ Copy [`.env.example`](.env.example) to `.env` for local development or Vercel de
 ## NEAR Hackathon Disclosures (`HACKATHON.md`)
 
 - **Tracks**: Primary **`games`** (*Games With Real Economies*, `09-games`) · Secondary **`nfts`** (*NFTs That Do Something*, `10-nfts`).
-- **Baseline & Open-Source Stack Disclosure (`Q-005`)**: Built with `Three.js` (`v0.183`), `React 19`, `Vite 8`, `Tailwind CSS v4`, `@privy-io/react-auth`, `@supabase/supabase-js`, and `near-sdk` (`v5.30.1`, Rust). All NEAR smart contract standards (`NEP-141`, `NEP-145`, `NEP-171/177/181`, `NEP-245`, Sub-Account Deed `key_epoch` rotation), `/api/near-relayer` Dual-Key sub-account provisioning, non-ponzi P2P `RESPITE` marketplace synchronization, and autonomous NPC merchant simulation were engineered specifically for this NEAR Hackathon entry.
+- **Baseline, Prior Iteration & Open-Source Stack Disclosure (`Q-005` & `Q-015`)**: Built with `Three.js` (`v0.183`), `React 19`, `Vite 8`, `Tailwind CSS v4`, `@privy-io/react-auth`, `@supabase/supabase-js`, and `near-sdk` (`v5.30.1`, Rust). This repository (`CettaC1716/buddies`) consolidates and supersedes the author's own earlier hackathon prototype repository [`CettaC1716/BuddiesBlitz`](https://github.com/CettaC1716/BuddiesBlitz) (created Nov 5–8 within the hackathon window); **`CettaC1716/buddies` is the sole official submission** (`CettaC1716/BuddiesBlitz` is archived/unsubmitted per `Q-015`). All NEAR smart contract standards (`NEP-141`, `NEP-145`, `NEP-171/177/181`, `NEP-245`, Sub-Account Deed `key_epoch` rotation), `/api/near-relayer` Dual-Key sub-account provisioning, non-ponzi P2P `RESPITE` marketplace synchronization, real-time cross-device multiplayer, and autonomous NPC merchant simulation were engineered specifically during this NEAR Hackathon window.
 - **License (`Q-014`)**: Open source under the [MIT License](LICENSE).

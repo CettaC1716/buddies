@@ -2,7 +2,10 @@
 -- Economy Invariant: LUL & CYON are strictly off-chain social currencies.
 -- RESPITE, Fish NFTs (NEP-171), Citizen Deeds, and Multi-Tokens (NEP-245) live on NEAR (`market.buddiesblitz.testnet`).
 
--- 1. Player Profiles (Off-Chain Social Balances & Avatar Metadata)
+-- 1. Player Profiles (Off-Chain Social Balances & Non-Authoritative UI Read-Cache)
+-- Note: `market.buddiesblitz.testnet` (`ft_balance_of` / `get_player_estate`) is the sole authoritative
+-- Source of Truth for `RESPITE` and NFT ownership; `respite_balance` below is strictly a UI read-cache
+-- for public profile inspection and is always overwritten by live NEAR RPC balances on wallet session load.
 CREATE TABLE IF NOT EXISTS public.bb_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   near_account_id text UNIQUE NOT NULL CHECK (char_length(near_account_id) BETWEEN 2 AND 64),
@@ -260,35 +263,9 @@ CREATE POLICY "bb_base_plots_upsert" ON public.bb_base_plots
   USING (plot_key <> 'blue_0')
   WITH CHECK (plot_key <> 'blue_0' AND is_model_estate = false);
 
--- Atomic helper RPC for crediting peer-to-peer RESPITE recipients safely
-CREATE OR REPLACE FUNCTION public.bb_credit_respite_recipient(
-  p_receiver_near_account text,
-  p_added_respite numeric
-) RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  IF p_added_respite <= 0 OR p_added_respite > 100000 THEN
-    RAISE EXCEPTION 'Invalid RESPITE transfer amount';
-  END IF;
-
-  INSERT INTO public.bb_profiles (near_account_id, display_name, respite_balance, updated_at)
-  VALUES (
-    lower(trim(p_receiver_near_account)),
-    split_part(lower(trim(p_receiver_near_account)), '.', 1),
-    p_added_respite,
-    now()
-  )
-  ON CONFLICT (near_account_id)
-  DO UPDATE SET
-    respite_balance = LEAST(100000, public.bb_profiles.respite_balance + p_added_respite),
-    updated_at = now();
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.bb_credit_respite_recipient(text, numeric) TO anon, authenticated;
+-- Remove legacy off-chain RESPITE credit RPC: `market.buddiesblitz.testnet` (`ft_balance_of`)
+-- is the sole authoritative Source of Truth for `RESPITE`; Supabase only mirrors read-cache snapshots.
+DROP FUNCTION IF EXISTS public.bb_credit_respite_recipient(text, numeric);
 
 -- Enable Supabase Realtime idempotently across live game tables
 DO $$

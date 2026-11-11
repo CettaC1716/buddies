@@ -109,7 +109,7 @@ import {
   type RecruitedFamilyMemberAgent,
 } from './lib/nearClient';
 import {
-  creditRecipientRespiteInSupabase,
+  mirrorRecipientOnChainRespiteCacheInSupabase,
   fetchBasePlotsFromSupabase,
   fetchFishMarketplaceListingsFromSupabase,
   fetchFishNftMarketSalesStats,
@@ -1733,9 +1733,11 @@ export default function App() {
         fetchHanaTreasuryStatus(normalizedWallet),
       ]);
       setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
+      const hasAuthoritativeOnChainBalance =
+        Boolean(accountView) || onChainRespiteRaw !== null || onChainEstate !== null;
       const estateRespite = Number(onChainEstate?.respite_balance || '0') || 0;
-      const onChainRespite = Math.max(Number(onChainRespiteRaw || '0') || 0, estateRespite);
-      if (onChainRespite > 0) {
+      const onChainRespite = Math.max(0, Number(onChainRespiteRaw || '0') || 0, estateRespite);
+      if (hasAuthoritativeOnChainBalance) {
         setRespiteBalance(onChainRespite);
       }
       if (onChainEstate && Array.isArray(onChainEstate.family_contracts) && onChainEstate.family_contracts.length > 0) {
@@ -1849,8 +1851,15 @@ export default function App() {
         if (profile) {
           setSupabaseConnected(true);
           setCyonBalance(profile.cyon_balance);
-          if (onChainRespite <= 0) {
+          if (!hasAuthoritativeOnChainBalance) {
             setRespiteBalance(profile.respite_balance);
+          } else if (profile.respite_balance !== onChainRespite) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: normalizedWallet,
+              lulBalance: profile.lul_balance,
+              cyonBalance: profile.cyon_balance,
+              respiteBalance: onChainRespite,
+            });
           }
           if (Array.isArray(profile.owned_token_ids)) {
             setOwnedMerchantItemIds(profile.owned_token_ids);
@@ -5832,7 +5841,17 @@ export default function App() {
               }
             }
             setRespiteBalance(nextRespite);
-            void creditRecipientRespiteInSupabase(listing.sellerNearAccount, listingPriceRespite);
+            void fetchNep141Balance(
+              NEAR_CONFIG.nep141RespiteContractId,
+              listing.sellerNearAccount,
+            ).then((sellerChainBal) => {
+              if (sellerChainBal !== null) {
+                void mirrorRecipientOnChainRespiteCacheInSupabase(
+                  listing.sellerNearAccount,
+                  Math.max(0, Number(sellerChainBal) || 0),
+                );
+              }
+            });
             if (resolvedActor) {
               void syncPlayerBalancesToSupabase({
                 nearAccountId: resolvedActor,
@@ -6563,9 +6582,26 @@ export default function App() {
                       });
                       return;
                     }
-                    const nextRespite = Math.max(0, respiteBalance - amt);
+                    const liveSenderBal = await fetchNep141Balance(
+                      NEAR_CONFIG.nep141RespiteContractId,
+                      senderId,
+                    );
+                    const nextRespite =
+                      liveSenderBal !== null
+                        ? Math.max(0, Number(liveSenderBal) || 0)
+                        : Math.max(0, respiteBalance - amt);
                     setRespiteBalance(nextRespite);
-                    void creditRecipientRespiteInSupabase(targetWallet, amt);
+                    void fetchNep141Balance(
+                      NEAR_CONFIG.nep141RespiteContractId,
+                      targetWallet,
+                    ).then((recipientChainBal) => {
+                      if (recipientChainBal !== null) {
+                        void mirrorRecipientOnChainRespiteCacheInSupabase(
+                          targetWallet,
+                          Math.max(0, Number(recipientChainBal) || 0),
+                        );
+                      }
+                    });
                     void syncPlayerBalancesToSupabase({
                       nearAccountId: senderId,
                       lulBalance: hud.gold,

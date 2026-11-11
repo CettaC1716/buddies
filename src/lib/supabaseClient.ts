@@ -267,39 +267,31 @@ export async function fetchPlayerProfileByEmail(email: string): Promise<DbPlayer
 }
 
 /**
- * Credits a recipient's off-chain cached `respite_balance` in `bb_profiles` after a P2P `ft_transfer`.
+ * Mirrors a recipient's verified on-chain `ft_balance_of` (`market.buddiesblitz.testnet`)
+ * into `bb_profiles.respite_balance` strictly as a non-authoritative UI read-cache after an
+ * on-chain `ft_transfer` or `buy_fish_nft` settlement.
  */
-export async function creditRecipientRespiteInSupabase(
+export async function mirrorRecipientOnChainRespiteCacheInSupabase(
   recipientNearAccount: string,
-  addedRespite: number,
+  verifiedOnChainRespite: number,
 ): Promise<boolean> {
   if (!supabase) return false;
   const cleanRecipient = sanitizeAccountId(recipientNearAccount);
-  const cleanAmount = clampSafeBalance(addedRespite, 100_000);
-  if (cleanRecipient.length < 2 || cleanAmount <= 0) return false;
+  const cleanBalance = clampSafeBalance(verifiedOnChainRespite, 100_000);
+  if (cleanRecipient.length < 2) return false;
 
   try {
-    const { error: rpcError } = await supabase.rpc('bb_credit_respite_recipient', {
-      p_receiver_near_account: cleanRecipient,
-      p_added_respite: cleanAmount,
-    });
-    if (!rpcError) return true;
-
     const { data: existing } = await supabase
       .from('bb_profiles')
-      .select('respite_balance, display_name')
+      .select('display_name')
       .eq('near_account_id', cleanRecipient)
       .maybeSingle();
 
-    const nextRespite = clampSafeBalance(
-      Number(existing?.respite_balance ?? 0) + cleanAmount,
-      100_000,
-    );
     const { error } = await supabase.from('bb_profiles').upsert(
       {
         near_account_id: cleanRecipient,
         display_name: existing?.display_name || cleanRecipient.split('.')[0] || 'CITIZEN',
-        respite_balance: nextRespite,
+        respite_balance: cleanBalance,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'near_account_id' },
