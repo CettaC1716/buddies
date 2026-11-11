@@ -13051,6 +13051,62 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       softwareGlTimerId = window.setTimeout(poll, 5);
     };
 
+
+    // === AVATAR HEIGHT DIAGNOSTIC (aktif hanya dengan ?avatardiag=1) ===
+    const avatarDiagEnabled =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('avatardiag') === '1';
+    let avatarDiagAccumulator = 0;
+    let avatarDiagEl: HTMLDivElement | null = null;
+    const avatarDiagBox = new THREE.Box3();
+    const avatarDiagTmpBox = new THREE.Box3();
+    const avatarDiagVec = new THREE.Vector3();
+    const measureAvatarDiag = (
+      label: string,
+      rootObj: THREE.Object3D,
+      rig: BuddyCharacterRig | undefined,
+    ): string => {
+      const rootScale = rootObj.getWorldScale(avatarDiagVec).x;
+      let bodyScale = -1;
+      let glbScale = -1;
+      let glbLocalScale = -1;
+      let worldHeight = -1;
+      const glbRoot = rig?.customGlbController?.glbRoot;
+      if (rig?.bodyGroupRef) {
+        bodyScale = rig.bodyGroupRef.getWorldScale(avatarDiagVec).x;
+      }
+      if (glbRoot) {
+        glbLocalScale = glbRoot.scale.x;
+        glbScale = glbRoot.getWorldScale(avatarDiagVec).x;
+        let found = false;
+        avatarDiagBox.makeEmpty();
+        glbRoot.traverse((node) => {
+          const skinned = node as THREE.SkinnedMesh;
+          if (skinned.isSkinnedMesh) {
+            skinned.computeBoundingBox();
+            if (skinned.boundingBox) {
+              avatarDiagTmpBox.copy(skinned.boundingBox).applyMatrix4(skinned.matrixWorld);
+              if (!found) {
+                avatarDiagBox.copy(avatarDiagTmpBox);
+                found = true;
+              } else {
+                avatarDiagBox.union(avatarDiagTmpBox);
+              }
+            }
+          }
+        });
+        if (found) worldHeight = avatarDiagBox.max.y - avatarDiagBox.min.y;
+      }
+      return (
+        label +
+        ' h=' + (worldHeight >= 0 ? worldHeight.toFixed(3) : 'no-glb') +
+        ' rootS=' + rootScale.toFixed(3) +
+        ' bodyS=' + (bodyScale >= 0 ? bodyScale.toFixed(3) : '?') +
+        ' glbWorldS=' + (glbScale >= 0 ? glbScale.toFixed(3) : '?') +
+        ' glbLocalS=' + (glbLocalScale >= 0 ? glbLocalScale.toFixed(3) : '?')
+      );
+    };
+
     const animate = (now: number) => {
       if (isDisposed) return;
       frameTickCount++;
@@ -20571,6 +20627,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         onHudUpdate(buildHudSnapshot(null));
       }
 
+      // === AVATAR HEIGHT DIAGNOSTIC RENDER (hanya ?avatardiag=1) ===
+      if (avatarDiagEnabled) {
+        avatarDiagAccumulator += dt;
+        if (avatarDiagAccumulator >= 0.5) {
+          avatarDiagAccumulator = 0;
+          if (!avatarDiagEl) {
+            avatarDiagEl = document.createElement('div');
+            avatarDiagEl.style.cssText =
+              'position:fixed;top:8px;left:8px;z-index:99999;background:rgba(0,0,0,0.78);color:#7cfc90;font:11px/1.5 monospace;padding:8px 10px;border-radius:8px;white-space:pre;pointer-events:none;';
+            document.body.appendChild(avatarDiagEl);
+          }
+          const lines: string[] = ['AVATAR DIAG (h=tinggi world, S=skala)'];
+          if (playerUnit) {
+            lines.push(measureAvatarDiag('SELF', playerUnit.root, playerUnit.rig));
+          }
+          for (const b of buddyUnits) {
+            if (!b.isPlayer && b.alive) {
+              lines.push(measureAvatarDiag('AI  ', b.root, b.rig));
+              break;
+            }
+          }
+          for (const av of remotePlayerAvatars.values()) {
+            lines.push(
+              measureAvatarDiag('PEER ' + (av.peer.displayName || '?'), av.root, av.rig),
+            );
+          }
+          avatarDiagEl.textContent = lines.join('\n');
+        }
+      }
+
       if (isSoftwareGl) {
         afterDraw(() => {
           if (!isDisposed) animate(performance.now());
@@ -21556,6 +21642,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     rafId = requestAnimationFrame(animate);
 
     return () => {
+      if (avatarDiagEl) {
+        avatarDiagEl.remove();
+        avatarDiagEl = null;
+      }
       isDisposed = true;
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);
