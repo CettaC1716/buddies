@@ -1360,34 +1360,41 @@ function bc(): i.Group {
 }
 
 /** `Cc`: Platform Bed with Upholstered Headboard, Duvet & 4 Pillows (`#L451`) */
+const JAPANDI_PANEL_GLOW = new i.MeshBasicMaterial({
+  color: '#ffc98a',
+  transparent: true,
+  opacity: 0.9,
+  fog: false,
+});
+
 function Cc(): i.Group {
   const e = new i.Group();
   const t = O();
   const o = 1.8;
   const a = 2.12;
-  t.box(R, 0, 0.19, 0.03, o + 0.08, 0.14, a - 0.02, { r: 0.02 });
-  for (const [n, r] of [
-    [-o / 2 + 0.08, -a / 2 + 0.12],
-    [o / 2 - 0.08, -a / 2 + 0.12],
-    [-o / 2 + 0.08, a / 2 - 0.12],
-    [o / 2 - 0.08, a / 2 - 0.12],
-  ]) {
-    t.cyl(R, n, 0.06, r, 0.03, 0.024, 0.12, { seg: 10 });
-  }
-  t.box(R, 0, 0.62, -a / 2 + 0.02, o + 0.14, 1, 0.06, { r: 0.02 })
-    .geo(_e, Je(o - 0.02, 0.66, 0.1, 0.05, 0.006), 0, 0.74, -a / 2 + 0.09)
-    .geo(Xs, Ee(We(o - 0.04, 0.24, a - 0.12, 0.07, 3)), 0, 0.38, 0.04)
-    .geo(Zs, Ee(We(o + 0.05, 0.27, a * 0.64, 0.1, 3)), 0, 0.4, a / 2 - a * 0.32 + 0.01)
-    .geo(Zs, Ee(We(o + 0.05, 0.07, 0.26, 0.035, 2)), 0, 0.53, a / 2 - a * 0.64 + 0.1, {
+  // Japandi platform bedroom suite (redesign Phase 2, reference sheet 2):
+  // warm backlight halo + full-width oak headboard wall panel with seam grooves
+  t.box(JAPANDI_PANEL_GLOW, 0, 0.82, -a / 2 - 0.008, 3.0, 1.64, 0.01)
+    .box(R, 0, 0.78, -a / 2 + 0.015, 2.9, 1.56, 0.03, { r: 0.008 })
+    .box(Ks, -0.97, 0.78, -a / 2 + 0.0315, 0.014, 1.5, 0.003)
+    .box(Ks, 0.97, 0.78, -a / 2 + 0.0315, 0.014, 1.5, 0.003)
+    // Recessed dark plinth + low floating platform slab (lip extends past the mattress)
+    .box(en, 0, 0.04, 0.03, 1.66, 0.08, 1.86)
+    .box(R, 0, 0.16, 0.03, o + 0.26, 0.16, a - 0.02, { r: 0.015 });
+  // Upholstered fabric headboard cushion mounted on the panel
+  t.geo(_e, Je(o + 0.1, 0.58, 0.12, 0.05, 0.006), 0, 0.66, -a / 2 + 0.09)
+    .geo(Xs, Ee(We(o - 0.04, 0.24, a - 0.14, 0.07, 3)), 0, 0.36, 0.02)
+    .geo(Zs, Ee(We(o + 0.05, 0.25, a * 0.61, 0.1, 3)), 0, 0.4, 0.4)
+    .geo(Zs, Ee(We(o + 0.05, 0.07, 0.26, 0.035, 2)), 0, 0.545, -0.24, {
       rx: 0.18,
     });
   for (const n of [-1, 1]) {
-    t.geo(Xs, io(0.66, 0.42, 0.17), n * 0.44, 0.6, -a / 2 + 0.36, { rx: -1.18 });
+    t.geo(Xs, io(0.66, 0.42, 0.17), n * 0.44, 0.56, -a / 2 + 0.28, { rx: -1.18 });
   }
   for (const n of [-1, 1]) {
-    t.geo(dt, io(0.46, 0.34, 0.13), n * 0.36, 0.66, -a / 2 + 0.52, { rx: -1, rz: n * 0.06 });
+    t.geo(dt, io(0.46, 0.34, 0.13), n * 0.36, 0.6, -a / 2 + 0.44, { rx: -1, rz: n * 0.06 });
   }
-  t.geo(dt, Ee(We(o + 0.12, 0.035, 0.5, 0.015, 2)), 0, 0.545, a / 2 - 0.34);
+  t.geo(dt, Ee(We(o + 0.12, 0.035, 0.5, 0.015, 2)), 0, 0.53, a / 2 - 0.34);
   t.flush(e);
   return e;
 }
@@ -1408,9 +1415,16 @@ function kc(): i.Group {
   ]) {
     t.cyl(R, s, 0.05, l, 0.016, 0.012, 0.1, { seg: 8 });
   }
-  t.box(Ks, 0, 0.33, a / 2 + 0.001, o - 0.05, 0.006, 0.004)
-    .box(ro, 0, 0.41, a / 2 + 0.012, 0.12, 0.012, 0.012, { r: 0.004 })
-    .box(He[0], 0.1, n + 0.015, 0.03, 0.2, 0.03, 0.15, { ry: 0.2 });
+  t.box(Ks, 0, 0.33, a / 2 + 0.001, o - 0.05, 0.006, 0.004).box(
+    He[0],
+    0.1,
+    n + 0.015,
+    0.03,
+    0.2,
+    0.03,
+    0.15,
+    { ry: 0.2 },
+  );
   Mc(e, t, -0.08, n, -0.04, 0.85, 0);
   t.flush(e);
   return e;
@@ -1425,10 +1439,12 @@ function zc(): i.Group {
   const n = 2.15;
   t.box(Ys, 0, n / 2 + 0.04, 0, o, n - 0.08, a, { r: 0.012 })
     .box(Ae, 0, 0.04, 0, o - 0.04, 0.08, a - 0.06)
-    .box(R, -o / 4 + 0.01, n / 2 + 0.05, a / 2 + 0.012, o / 2, n - 0.14, 0.022, { r: 0.006 })
-    .box(Ys, o / 4 - 0.01, n / 2 + 0.05, a / 2 + 0.034, o / 2, n - 0.14, 0.022, { r: 0.006 })
-    .box(D, -0.03, n / 2 + 0.05, a / 2 + 0.03, 0.012, 0.6, 0.02)
-    .box(D, 0.03, n / 2 + 0.05, a / 2 + 0.052, 0.012, 0.6, 0.02);
+    // Sliding doors (redesign Phase 2, sheet 2): oak door on the rear track,
+    // warm-white door overlapping on the front track, handle-less
+    .box(R, 0.38, n / 2 + 0.02, a / 2 + 0.008, 0.84, n - 0.24, 0.02, { r: 0.006 })
+    .box(Ys, -0.38, n / 2 + 0.02, a / 2 + 0.032, 0.84, n - 0.24, 0.02, { r: 0.006 })
+    // Oak pelmet band hiding the sliding track
+    .box(R, 0, n - 0.03, a / 2 + 0.02, o - 0.02, 0.14, 0.05, { r: 0.006 });
   t.flush(e);
   return e;
 }
