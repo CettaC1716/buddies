@@ -5325,7 +5325,7 @@ test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB collider
   assert.ok(byId.get('halte_passenger_bench'), 'Halte passenger bench collider must be registered');
 
   // 3. Street & industrial props are calibrated to Halte-ratio heights and footprints
-  assert.equal(getPropBaseHeight('bench'), 1.08);
+  assert.equal(getPropBaseHeight('bench'), 1.2528);
   assert.equal(getPropBaseHeight('recycle_bin'), 1.22);
   assert.equal(getPropBaseHeight('hydrant'), 1.18);
   assert.equal(getPropBaseHeight('traffic_cone'), 0.86);

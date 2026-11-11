@@ -292,7 +292,9 @@ export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
     case 'recycle_bin':
       return 1.22;
     case 'bench':
-      return 1.08;
+      // Scaled x1.16 (from 1.08) so park benches match full-size 3.91 avatars,
+      // same rebalance as vehicles after the fog-of-war shrink fix.
+      return 1.2528;
     case 'wheelbarrow':
       return 1.14;
     case 'pallet_1a':

@@ -826,16 +826,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Pergola Bench
       { id: 'lobby_pergola_seat', x: -100.1, z: 12.1, yaw: 0, seatLiftY: -0.04, indicatorHeightY: 1.08 },
       // City Park Benches
-      { id: 'park_bench_520', x: 2.0, z: -34.5, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_521', x: 2.0, z: -29.5, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_522', x: -1.0, z: 29.8, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_523', x: -1.0, z: 34.2, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_524', x: 23.8, z: 0.0, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_525', x: 25.2, z: 0.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_526', x: -44.2, z: -2.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'park_bench_520', x: 2.0, z: -34.5, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_521', x: 2.0, z: -29.5, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_522', x: -1.0, z: 29.8, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_523', x: -1.0, z: 34.2, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_524', x: 23.8, z: 0.0, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_525', x: 25.2, z: 0.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_526', x: -44.2, z: -2.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.25 },
+      { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.25 },
       // Beachfront Harbor Pergola Bench
       { id: 'beach_pergola_bench_1', x: 83.92, z: 93.61, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
     ];
