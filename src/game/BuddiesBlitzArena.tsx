@@ -860,18 +860,85 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const getSitBarHtml = (label: string) =>
       `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,28,0.82); backdrop-filter:blur(8px); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${CHAIR_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
 
-    // Final seated position for a spot. Park benches: the spot point sits at the bench
-    // prop's origin, which is at the seat's FRONT edge (the seat extends ~0.88 world units
-    // back toward the backrest). The measured sitting pose reaches ~0.88 in front of the
-    // hips, so anchoring the hips 0.68 back from the spot point lands the knees just past
-    // the front edge (shins hang clear) and the pelvis near the backrest. All other seat
-    // types were authored at their sit point and anchor exactly on the spot.
+    // Final seated position for a spot. Park benches: spawnRealBlitzPropFromGlb recenters
+    // every prop on its bounding-box center, so the spot point is the bench's CENTER —
+    // decoded bench geometry puts the seat's front edge ~+0.63 from center and the
+    // backrest's front face at ~-0.35. The measured sitting pose reaches ~0.88 in front
+    // of the hips, so anchoring the hips 0.20 toward the backrest from center lands the
+    // knees at ~+0.68 (just past the front edge, shins hang clear) and the pelvis ~0.15
+    // in front of the backrest. All other seat types anchor exactly on the spot.
     const getSeatedAnchor = (spot: LobbySeatSpot) => {
-      const backShift = spot.id.startsWith('park_bench') ? 0.68 : 0;
+      const backShift = spot.id.startsWith('park_bench') ? 0.2 : 0;
       return {
         x: spot.x - Math.cos(spot.yaw) * backShift,
         z: spot.z + Math.sin(spot.yaw) * backShift,
       };
+    };
+
+    // === SEAT DIAGNOSTIC (temporary, active only with ?seatdiag=1) ===
+    // Runtime ground truth while seated: bodyGroup facing vs the spawned bench
+    // wrapper's +Z axis in world space, plus the player's depth along the bench axis.
+    const seatDiagEnabled =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('seatdiag') === '1';
+    let seatDiagEl: HTMLDivElement | null = null;
+    let seatDiagLastMs = 0;
+    const seatDiagVec = new THREE.Vector3();
+    const seatDiagVec2 = new THREE.Vector3();
+    const updateSeatDiag = () => {
+      if (!seatDiagEnabled) return;
+      const nowMs = performance.now();
+      if (nowMs - seatDiagLastMs < 150) return;
+      seatDiagLastMs = nowMs;
+      if (!seatDiagEl) {
+        seatDiagEl = document.createElement('div');
+        seatDiagEl.style.cssText =
+          'position:fixed;top:8px;left:8px;z-index:99999;background:rgba(0,0,0,0.8);color:#7cfc00;font:11px/1.55 monospace;padding:8px 10px;border-radius:6px;pointer-events:none;white-space:pre;';
+        document.body.appendChild(seatDiagEl);
+      }
+      if (!playerUnit?.isSitting || !activeSeatedSpot) {
+        seatDiagEl.textContent = 'SEATDIAG: not sitting';
+        return;
+      }
+      const deg = (r: number) => ((r * 180) / Math.PI).toFixed(0);
+      let txt = `SEATDIAG ${activeSeatedSpot.id}\nspotYaw=${deg(activeSeatedSpot.yaw)} unitYaw=${deg(playerUnit.yaw)} camYaw=${deg(seatedCameraYaw)}`;
+      const bodyGrp: THREE.Object3D | undefined =
+        playerUnit.rig?.bodyGroupRef ?? playerUnit.root;
+      let facing: THREE.Vector3 | null = null;
+      if (bodyGrp) {
+        bodyGrp.getWorldDirection(seatDiagVec);
+        facing = seatDiagVec;
+        txt += `\ncharFacing(bodyGroup+Z): x=${facing.x.toFixed(2)} z=${facing.z.toFixed(2)}`;
+      }
+      const glbRoot = playerUnit.rig?.customGlbController?.glbRoot as
+        | THREE.Object3D
+        | undefined;
+      if (glbRoot) {
+        glbRoot.getWorldDirection(seatDiagVec2);
+        txt += `\nglbRoot+Z: x=${seatDiagVec2.x.toFixed(2)} z=${seatDiagVec2.z.toFixed(2)}`;
+      }
+      const benchMatch = activeSeatedSpot.id.match(/park_bench_(\d+)/);
+      if (benchMatch) {
+        const propId = Number(benchMatch[1]);
+        const wrapper = realPropsGroup.children.find(
+          (c) => (c as THREE.Object3D).userData?.propId === propId,
+        ) as THREE.Object3D | undefined;
+        if (wrapper) {
+          wrapper.getWorldDirection(seatDiagVec2);
+          const relX = playerUnit.x - wrapper.position.x;
+          const relZ = playerUnit.z - wrapper.position.z;
+          const depth = relX * seatDiagVec2.x + relZ * seatDiagVec2.z;
+          txt += `\nbench+Z world: x=${seatDiagVec2.x.toFixed(2)} z=${seatDiagVec2.z.toFixed(2)}`;
+          txt += `\ndepth along bench+Z: ${depth.toFixed(2)} (front edge +0.63, panel face -0.35)`;
+          if (facing) {
+            const dot = facing.x * seatDiagVec2.x + facing.z * seatDiagVec2.z;
+            txt += `\nfacing dot bench+Z: ${dot.toFixed(2)} (+1 searah depan, -1 menghadap sandaran)`;
+          }
+        } else {
+          txt += '\nbench wrapper: NOT FOUND';
+        }
+      }
+      seatDiagEl.textContent = txt;
     };
 
     const sitOnLobbySeat = (spot: LobbySeatSpot) => {
@@ -20633,6 +20700,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else {
         renderer.render(scene, camera);
       }
+      updateSeatDiag();
 
       // Smoothly rotate & bob the 3D Hologram shape on top of the Kiosk's side scale platform
       const holoTime = windUniforms.uTime.value;
