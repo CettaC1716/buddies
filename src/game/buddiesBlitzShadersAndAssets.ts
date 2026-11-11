@@ -13924,13 +13924,18 @@ export function createCurvedPlanetEnvironment(
 
     // 5E. Cantilevered Slatted Teak Timber Bench ("Slatted Teak Timber Bench" / "Integrated Floating Bench")
     //     Recessed niche on front wall (+Z) + dark steel cantilever brackets + slatted teak seat
-    addLobbyPart(pGrp, new THREE.BoxGeometry(3.48, 0.34, 0.08), '#b8b5ad', [0, 0.44, 1.14], [0, 0, 0], 0.008);
+    //     Seat assembly is lifted by the seated-hip delta of full-size avatars
+    //     (hips rose ~0.158 world when characters went 1.0 -> 1.16 bodyGroup scale);
+    //     converted into this group's local units via its own scale factor so the
+    //     planter body & tree stay untouched and sitters no longer float.
+    const seatLiftLocal = 0.158 / scale;
+    addLobbyPart(pGrp, new THREE.BoxGeometry(3.48, 0.34, 0.08), '#b8b5ad', [0, 0.44 + seatLiftLocal, 1.14], [0, 0, 0], 0.008);
     for (const bx of [-1.28, 0.0, 1.28]) {
-      addLobbyPart(pGrp, new THREE.BoxGeometry(0.09, 0.10, 0.56), '#2b3036', [bx, 0.41, 1.38], [0, 0, 0], 0.006);
+      addLobbyPart(pGrp, new THREE.BoxGeometry(0.09, 0.10, 0.56), '#2b3036', [bx, 0.41 + seatLiftLocal, 1.38], [0, 0, 0], 0.006);
     }
-    addLobbyPart(pGrp, new THREE.BoxGeometry(3.42, 0.09, 0.58), COL_PLANTER_TEAK, [0, 0.48, 1.44], [0, 0, 0], 0.012, lobbyTimberTex, 1.5);
+    addLobbyPart(pGrp, new THREE.BoxGeometry(3.42, 0.09, 0.58), COL_PLANTER_TEAK, [0, 0.48 + seatLiftLocal, 1.44], [0, 0, 0], 0.012, lobbyTimberTex, 1.5);
     for (const szSlat of [1.24, 1.37, 1.50, 1.63]) {
-      addLobbyPart(pGrp, new THREE.BoxGeometry(3.44, 0.02, 0.025), '#6e4720', [0, 0.525, szSlat], [0, 0, 0], 0);
+      addLobbyPart(pGrp, new THREE.BoxGeometry(3.44, 0.02, 0.025), '#6e4720', [0, 0.525 + seatLiftLocal, szSlat], [0, 0, 0], 0);
     }
 
     // 5F. Multi-Branched Organic Forked Coastal Tree Trunk ("Tree Silhouette" in Sheet 4)
