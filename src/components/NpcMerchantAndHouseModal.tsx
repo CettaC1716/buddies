@@ -169,6 +169,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [, setLastPlayerMessage] = useState<string>('');
   const [chatInputDraft, setChatInputDraft] = useState<string>('');
+  const [isNpcThinking, setIsNpcThinking] = useState<boolean>(false);
+  const activeNpcRequestIdRef = useRef<number>(0);
   const [chatHistory, setChatHistory] = useState<
     Array<{ id: string; role: 'player' | 'npc'; text: string }>
   >([]);
@@ -289,6 +291,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       setLastPlayerMessage('');
       setChatHistory([]);
       setChatInputDraft('');
+      setIsNpcThinking(false);
+      activeNpcRequestIdRef.current += 1;
     }
   }, [
     activeModalMode,
@@ -318,43 +322,143 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const submitPlayerQuestion = (rawText: string) => {
     const text = rawText.trim();
     if (!text) return;
-    const prevNpcMsg = npcFullText.trim();
+
+    const prevNpcMsg = isNpcThinking ? '' : npcFullText.trim();
     setLastPlayerMessage(text);
     setActiveTab('sesi_chat');
-    const reply = generateNpcMerchantReply(
-      text,
-      merchantLocation,
-      marketState,
-      {
-        lul: lulBalance,
-        cyon: cyonBalance,
-        respite: respiteBalance,
-        walletConnected,
-      },
-      {
-        playerNearAccount,
-        nearBalance: nearTestnetBalance,
-        hasHouseOwnership,
-        hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
-        caughtFishCount: caughtFishBucket.length,
-        recruitedFamilyCount: recruitedFamilyMembers.length,
-        fishMarketListings,
-        fishSalesStats,
-      },
-    );
-    setChatHistory((prev) => {
-      const withPrevNpc = prevNpcMsg
-        ? [...prev, { id: `npc-${Date.now()}-prev`, role: 'npc' as const, text: prevNpcMsg }]
-        : prev;
-      return [
-        ...withPrevNpc.slice(-14),
-        { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: 'player', text },
-      ];
-    });
-    triggerNpcSpeech(reply);
+
+    const priorTurns = prevNpcMsg
+      ? [...chatHistory, { id: `npc-${Date.now()}-prev`, role: 'npc' as const, text: prevNpcMsg }]
+      : [...chatHistory];
+    const nextHistory = [
+      ...priorTurns.slice(-14),
+      { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: 'player' as const, text },
+    ];
+    setChatHistory(nextHistory);
+
+    const reqId = activeNpcRequestIdRef.current + 1;
+    activeNpcRequestIdRef.current = reqId;
+    setIsNpcThinking(true);
+    setNpcFullText('');
+    setNpcTypedText('');
+
     window.setTimeout(() => {
       chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, 30);
+
+    const quote = evaluateLulToCyonExchangeQuote(marketState);
+    const catalogSnapshot = MERCHANT_CATALOG_ITEMS.map((item) => {
+      const p = evaluateMerchantItemQuote(marketState, item);
+      return {
+        name: item.name,
+        category: item.category,
+        currency: item.currency,
+        buyPrice: p.buyPrice,
+        stock: p.stock,
+      };
+    });
+
+    const fallbackReply = () =>
+      generateNpcMerchantReply(
+        text,
+        merchantLocation,
+        marketState,
+        {
+          lul: lulBalance,
+          cyon: cyonBalance,
+          respite: respiteBalance,
+          walletConnected,
+        },
+        {
+          playerNearAccount,
+          nearBalance: nearTestnetBalance,
+          hasHouseOwnership,
+          hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
+          caughtFishCount: caughtFishBucket.length,
+          recruitedFamilyCount: recruitedFamilyMembers.length,
+          fishMarketListings,
+          fishSalesStats,
+        },
+      );
+
+    void (async () => {
+      try {
+        const res = await fetch('/api/npc-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userMessage: text,
+            merchantLocation,
+            history: nextHistory.slice(-10).map((h) => ({ role: h.role, text: h.text })),
+            liveState: {
+              citizenDisplayName,
+              playerNearAccount,
+              walletConnected,
+              lulBalance,
+              cyonBalance,
+              respiteBalance,
+              nearBalance: nearTestnetBalance,
+              hasHouseOwnership,
+              hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
+              caughtFishCount: caughtFishBucket.length,
+              recruitedFamilyCount: recruitedFamilyMembers.length,
+              simulatedDay: marketState.dayCounter,
+              shopCyonReserve: marketState.treasuryCyon,
+              isShopBroke: marketState.isShopBroke,
+              lulCostFor10Cyon: quote.lulCostFor10Cyon,
+              cyonGranted: quote.cyonGranted,
+              investorDiscountActive: marketState.investorDiscountActive,
+              fishSalesStats: fishSalesStats
+                ? {
+                    topSale: fishSalesStats.topSale
+                      ? {
+                          speciesName: fishSalesStats.topSale.speciesName,
+                          weightKg: fishSalesStats.topSale.weightKg,
+                          priceRespite: fishSalesStats.topSale.priceRespite,
+                          buyerAccount: fishSalesStats.topSale.buyerAccount,
+                          sellerAccount: fishSalesStats.topSale.sellerAccount,
+                        }
+                      : null,
+                    recentSale: fishSalesStats.recentSale
+                      ? {
+                          speciesName: fishSalesStats.recentSale.speciesName,
+                          weightKg: fishSalesStats.recentSale.weightKg,
+                          priceRespite: fishSalesStats.recentSale.priceRespite,
+                          buyerAccount: fishSalesStats.recentSale.buyerAccount,
+                          sellerAccount: fishSalesStats.recentSale.sellerAccount,
+                        }
+                      : null,
+                    totalSalesCount: fishSalesStats.totalSalesCount,
+                  }
+                : null,
+              fishMarketListings: fishMarketListings.slice(0, 8).map((l) => ({
+                speciesName: l.speciesName,
+                rarity: l.rarity,
+                weightKg: l.weightKg,
+                priceRespite: l.priceRespite,
+                sellerNearAccount: l.sellerNearAccount,
+              })),
+              catalogSnapshot,
+            },
+          }),
+        });
+        const data = (await res.json()) as { ok?: boolean; reply?: string };
+        if (activeNpcRequestIdRef.current !== reqId) return;
+        setIsNpcThinking(false);
+        if (res.ok && data?.ok && data.reply?.trim()) {
+          triggerNpcSpeech(data.reply.trim());
+        } else {
+          triggerNpcSpeech(fallbackReply());
+        }
+      } catch {
+        if (activeNpcRequestIdRef.current !== reqId) return;
+        setIsNpcThinking(false);
+        triggerNpcSpeech(fallbackReply());
+      }
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+    })();
   };
 
   const handleSubmitInlineChat = (e: React.FormEvent) => {
@@ -979,9 +1083,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </span>
                   </div>
                   <p className="text-xs sm:text-[13px] font-bold leading-relaxed text-[#f8fafc] min-h-[54px]">
-                    {npcTypedText}
-                    {npcTypedText.length < npcFullText.length && (
-                      <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5 animate-pulse" />
+                    {isNpcThinking ? (
+                      <span className="text-slate-400 animate-pulse">Typing...</span>
+                    ) : (
+                      <>
+                        {npcTypedText}
+                        {npcTypedText.length < npcFullText.length && (
+                          <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5 animate-pulse" />
+                        )}
+                      </>
                     )}
                   </p>
                 </div>

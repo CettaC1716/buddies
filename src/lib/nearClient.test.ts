@@ -14,6 +14,7 @@ import {
   verifyNep171GamepassOwnership,
 } from './nearClient';
 import { handleNearRelayerRequest } from '../../api/near-relayer';
+import { buildNpcSystemInstruction, handleNpcAgentRequest } from '../../api/npc-agent';
 import {
   MERCHANT_CATALOG_ITEMS,
   createInitialMerchantMarketState,
@@ -383,5 +384,71 @@ test('Hana and Kai live chat concierge answers Fish NFT sales records, locations
   for (const reply of [topSaleReply, activeListingReply, whereFishingReply, whereWarzoneReply]) {
     assert.doesNotMatch(reply, /NEP-171|NEP-245|NEP-141|sub-wallet|Ed25519/i);
     assert.doesNotMatch(reply, /[\u{1F300}-\u{1FAFF}]/u);
+  }
+});
+
+test('api/npc-agent enforces multilingual in-game guardrails, injects live Fish NFT records, and sanitizes Gemini output', async () => {
+  const sysPrompt = buildNpcSystemInstruction('lobby_cafe', {
+    citizenDisplayName: 'Raka',
+    playerNearAccount: 'india0x69.buddiesblitz.testnet',
+    walletConnected: true,
+    lulBalance: 240,
+    cyonBalance: 50,
+    respiteBalance: 15,
+    nearBalance: 0.36,
+    fishSalesStats: {
+      topSale: {
+        speciesName: 'Ancient Coelacanth',
+        weightKg: 29.4,
+        priceRespite: 140,
+        buyerAccount: 'collector.buddiesblitz.testnet',
+        sellerAccount: 'kai_pro.buddiesblitz.testnet',
+      },
+      recentSale: null,
+      totalSalesCount: 4,
+    },
+  });
+
+  assert.match(sysPrompt, /IN-GAME TOPICS ONLY/);
+  assert.match(sysPrompt, /MATCH PLAYER LANGUAGE/);
+  assert.match(sysPrompt, /Ancient Coelacanth \(29\.40 kg\) for 140 RESPITE/);
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: '🎣 Rekor tertinggi saat ini adalah **Ancient Coelacanth** seharga 140 RESPITE di sub-wallet NEP-171!',
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as Response) as typeof fetch;
+
+    const res = await handleNpcAgentRequest(
+      {
+        userMessage: 'ikan apa yang paling mahal laku?',
+        merchantLocation: 'lobby_cafe',
+        history: [{ role: 'player', text: 'halo hana' }],
+      },
+      'test-gemini-key',
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.payload.ok, true);
+    assert.ok(res.payload.reply);
+    assert.doesNotMatch(res.payload.reply, /\*\*/);
+    assert.doesNotMatch(res.payload.reply, /NEP-171/i);
+    assert.doesNotMatch(res.payload.reply, /sub-wallet/i);
+    assert.doesNotMatch(res.payload.reply, /🎣/);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

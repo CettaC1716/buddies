@@ -1,8 +1,9 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { handleNearRelayerRequest } from './api/near-relayer.ts';
+import { handleNpcAgentRequest } from './api/npc-agent.ts';
 
 function privyUnusedOptionalPeerStubPlugin(): Plugin {
   const stubs: Record<string, string> = {
@@ -75,11 +76,44 @@ function nearSubAccountRelayerDevPlugin(): Plugin {
           }
         });
       });
+
+      server.middlewares.use('/api/npc-agent', (req, res, next) => {
+        if (req.method !== 'POST') {
+          next();
+          return;
+        }
+        let rawBody = '';
+        req.on('data', (chunk) => {
+          rawBody += String(chunk);
+        });
+        req.on('end', async () => {
+          try {
+            const parsed = rawBody ? JSON.parse(rawBody) : {};
+            const out = await handleNpcAgentRequest(parsed);
+            res.statusCode = out.status;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(out.payload));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: err instanceof Error ? err.message : 'NPC agent middleware error',
+              }),
+            );
+          }
+        });
+      });
     },
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  if (env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY) {
+    process.env.GEMINI_API_KEY = env.GEMINI_API_KEY;
+  }
   return {
     plugins: [
       privyUnusedOptionalPeerStubPlugin(),
