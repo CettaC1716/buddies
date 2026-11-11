@@ -21,7 +21,7 @@ import {
   SafezonePlotAccessMode,
 } from './buddiesBlitzRules';
 import {
-  RobloxBuddyRig,
+  BuddyCharacterRig,
   BlitzWeaponId,
 } from './buddiesBlitzShadersAndAssets';
 
@@ -125,7 +125,7 @@ export interface HudSnapshot {
   enemiesDefeated: number;
   totalEnemies: number;
   lightingPreset: LightingPresetKey;
-  cameraFovMode: 'webgl35' | 'roblox18';
+  cameraFovMode: 'webgl35' | 'ortho18';
   outcome: 'victory' | 'defeat' | null;
   clearTimeSec: number;
   // Team Buddies 3D World State
@@ -253,7 +253,7 @@ export interface BuddiesBlitzArenaProps {
   deployedFromLobby?: boolean;
   onRequestWorldModeChange?: (nextMode: WorldMode, team?: 'blue' | 'red') => void;
   lightingPreset: LightingPresetKey;
-  cameraFovMode: 'webgl35' | 'roblox18';
+  cameraFovMode: 'webgl35' | 'ortho18';
   resetTrigger: number;
   onHudUpdate: (snapshot: HudSnapshot) => void;
   onGameOver: (outcome: 'victory' | 'defeat', finalSnapshot: HudSnapshot) => void;
@@ -435,7 +435,7 @@ export interface BuddyUnit {
   classId: BuddyClassId;
   root: THREE.Group;
   bodyGroup: THREE.Group;
-  rig: RobloxBuddyRig;
+  rig: BuddyCharacterRig;
   headMesh: THREE.Mesh;
   leftArmPivot: THREE.Group;
   rightArmPivot: THREE.Group;

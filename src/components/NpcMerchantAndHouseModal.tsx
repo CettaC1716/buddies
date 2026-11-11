@@ -231,7 +231,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     return () => window.removeEventListener('open-npc-catalog-house', onOpenCatalogHouse);
   }, []);
 
-  // `buddies-blitz.com/interior` ("Set the Mood") Cutaway Studio State
+  // Cutaway Interior Studio State
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
     'furniture',
   );

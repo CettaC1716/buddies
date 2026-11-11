@@ -1,6 +1,5 @@
 /**
- * Pure physics, camera spring, and gameplay math bundled via BUDDIES from
- * https://buddies-blitz.com/ (bundles CQl67Veh.js, B1Nq4Kq6.js, BlAypStk.js, CJn-Xu8f.js)
+ * Pure physics, critically damped camera spring, and gameplay math for Buddies Blitz.
  */
 
 import {
@@ -34,12 +33,12 @@ export interface LightingPresetConfig {
 }
 
 /**
- * Exact deobfuscated constants from buddies-blitz.com production bundles
+ * Core camera, physics, and gameplay constants for Buddies Blitz
  */
 export const BUDDIES_CONSTANTS = {
   camera: {
     fov: 42,
-    robloxPseudoOrthoFov: 18,
+    pseudoOrthoFov: 18,
     near: 0.1,
     far: 1000,
     chaseOffset: { x: 0, y: 5.2, z: 12.5 } as Vec3,
@@ -282,7 +281,7 @@ export function lerp(a: number, b: number, t: number): number {
 }
 
 /**
- * Exact 1:1 port of CQl67Veh.js initFollowTarget critically damped spring
+ * Critically damped 3D follow-target spring solver
  */
 export function stepCriticalDampedSpring3D(
   current: Vec3,
@@ -339,7 +338,7 @@ export function stepCriticalDampedSpring3D(
 }
 
 /**
- * Exact 1:1 port of ur.handlePhysics drive speed & boost ramp from B1Nq4Kq6.js,
+ * Vehicle drive speed & boost ramp solver,
  * scaled by +35% top speed & initial acceleration, plus optional +20% Road Speed Boost.
  */
 export function computeTankSpeedStep(
@@ -366,7 +365,7 @@ export function shortestAngleDelta(fromRad: number, toRad: number): number {
 }
 
 /**
- * Exact turret slerp damping factor from B1Nq4Kq6.js applyTurretAim:
+ * Turret exponential damping factor:
  * n = turretDamping * 60; r = 1 - Math.exp(-n * dt)
  */
 export function stepTurretYaw(currentYaw: number, targetYaw: number, dt: number): number {
@@ -1379,7 +1378,7 @@ export interface PropCollisionSpec {
   destructible: boolean;
   maxHp: number;
   ramBreakSpeed: number;
-  /** BUDDIES-bundled bullet impact impulse (`Ri.objectShootImpulseOverrides` in `B1Nq4Kq6.js:441572`). 0 for fixed/massive objects. */
+  /** Bullet impact impulse override (0 for fixed/massive objects). */
   shootImpulse: number;
   /** Whether this prop is allowed to wobble/jiggle when hit by bullets or bumped. False for massive/fixed structures (turbine, crane, buildings, etc.). */
   canJiggleOnHit: boolean;
@@ -4044,8 +4043,7 @@ export function findPathAStar(
 }
 
 // ============================================================================
-// BUDDIES-BUNDLED BLITZ HIT REACTION, STUN EFFECT, SHOT RECOIL & EMISSIVE FLASH
-// (`ir.handleHitReaction`, `ya.handleHitReaction`, `Ci`, `ci.fireSingleShot` in `B1Nq4Kq6.js`)
+// HIT REACTION, STUN EFFECT, SHOT RECOIL & EMISSIVE FLASH SOLVERS
 // ============================================================================
 
 export interface BlitzHitReactionPose {
@@ -4056,9 +4054,9 @@ export interface BlitzHitReactionPose {
 }
 
 /**
- * Evaluates Blitz's directional hit-reaction body hop & tilt (`ir.handleHitReaction` @ `B1Nq4Kq6.js:40549`
- * for Player/Vehicle: `+0.05m` lift, `12°` max tilt; `ya.handleHitReaction` @ `B1Nq4Kq6.js:696500`
- * for Enemy/Bot: `+0.10m` lift, `30°` max tilt; `0.10s` `power2.out` attack, `0.50s` `power3.out` recovery).
+ * Evaluates directional hit-reaction body hop & tilt
+ * (Player/Vehicle: `+0.05m` lift, `12°` max tilt;
+ * Enemy/Bot: `+0.10m` lift, `30°` max tilt; `0.10s` `power2.out` attack, `0.50s` `power3.out` recovery).
  * `hitTimerRemaining` counts down from `durationSec` (`0.60s`) to `0`.
  */
 export function evaluateBlitzHitReactionPose(
@@ -4106,8 +4104,7 @@ export interface BlitzStunEffectState {
 }
 
 /**
- * Evaluates Blitz's overhead spinning stunned star effect (`ir.updateStunEffect` & `xa.updateStunEffect`
- * @ `B1Nq4Kq6.js:61800, 725000`):
+ * Evaluates overhead spinning stunned star effect:
  * - `stunDuration = 1.5s` default
  * - First `0.25s`: `back.out(1.5)` scale `0 -> 1`
  * - Last `0.25s`: `power2.in` scale `1 -> 0`
@@ -4157,7 +4154,7 @@ export interface BlitzTankShotRecoilPose {
 }
 
 /**
- * Evaluates Blitz's 4-part tank cannon firing recoil (`ci.fireSingleShot` @ `B1Nq4Kq6.js:228877`):
+ * Evaluates 4-part tank cannon firing recoil:
  * - Camera kick `0.13m`
  * - Turret & Barrel slide back `0.16m` (`0.05s` `sine.out` push, `0.22s` `power2.out` return)
  * - Turret lifts `+0.06m` & pitches `6°` (`0.05s` out, `0.22s` return)
@@ -4216,7 +4213,7 @@ export function evaluateBlitzTankShotRecoilPose(
 }
 
 /**
- * Evaluates Blitz's yellow emissive hit flash intensity (`Ci` @ `B1Nq4Kq6.js:334028`):
+ * Evaluates yellow emissive hit flash intensity:
  * `flashColor = '#ffff00'`, `flashDuration = 0.15s`,
  * decaying quadratically from `1.0` to `0.0` as `remainingRatio^2`.
  */

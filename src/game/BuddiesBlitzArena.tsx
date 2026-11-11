@@ -240,14 +240,14 @@ import {
   populateRealBlitzCrateBoxFromGlb,
   buildProceduralBlitzPlane,
   stepBlitzPlaneAnimation,
-  buildProceduralRobloxBuddyAvatar,
+  buildProceduralBuddyAvatar,
   upgradeBuddyRigWithCharBuddiesGlb,
   CharacterGender,
   setDefaultCharacterGender,
   getDefaultCharacterGender,
   populateAr99AssaultFromGlb,
   updateCharacterWeaponStance,
-  RobloxBuddyRig,
+  BuddyCharacterRig,
   BlitzWeaponId,
   stepBlitzTankTracks,
   spawnRealBlitzPropFromGlb,
@@ -383,7 +383,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
   const onRequestWorldModeChangeRef = useRef(onRequestWorldModeChange);
   const onPreloadSceneReadyRef = useRef(onPreloadSceneReady);
   const lightingPresetRef = useRef<LightingPresetKey>(lightingPreset);
-  const cameraFovModeRef = useRef<'webgl35' | 'roblox18'>(cameraFovMode);
+  const cameraFovModeRef = useRef<'webgl35' | 'ortho18'>(cameraFovMode);
 
   useEffect(() => {
     onPreloadSceneReadyRef.current = onPreloadSceneReady;
@@ -406,7 +406,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
   }, [onRequestWorldModeChange]);
 
   const applyLightingRef = useRef<((preset: LightingPresetKey) => void) | null>(null);
-  const applyFovModeRef = useRef<((mode: 'webgl35' | 'roblox18') => void) | null>(null);
+  const applyFovModeRef = useRef<((mode: 'webgl35' | 'ortho18') => void) | null>(null);
   const applyPlayModeRef = useRef<((mode: PlayMode) => void) | null>(null);
   const resetArenaRef = useRef<(() => void) | null>(null);
 
@@ -1186,7 +1186,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     dirLight.castShadow = true;
     const shadowMapRes = 1024;
     dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
-    const d = 45;
+    const d = 36;
     const shadowTexelWorldSize = (d * 2) / shadowMapRes;
     const shadowLightBack = blitzSunOffset.clone().normalize();
     const shadowLightRight = new THREE.Vector3()
@@ -1196,12 +1196,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       .crossVectors(shadowLightBack, shadowLightRight)
       .normalize();
     dirLight.shadow.camera.near = 2;
-    dirLight.shadow.camera.far = 160;
+    dirLight.shadow.camera.far = 122;
     dirLight.shadow.camera.left = -d;
     dirLight.shadow.camera.right = d;
     dirLight.shadow.camera.top = d;
     dirLight.shadow.camera.bottom = -d;
     dirLight.shadow.bias = -0.0004;
+    let prevSnappedShadowX = Number.NaN;
+    let prevSnappedShadowZ = Number.NaN;
     scene.add(dirLight);
     scene.add(dirLight.target);
 
@@ -1232,8 +1234,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     applyLightingRef.current = applyLightingPreset;
     applyLightingPreset(lightingPresetRef.current);
 
-    const applyFovMode = (mode: 'webgl35' | 'roblox18') => {
-      camera.fov = mode === 'roblox18' ? BUDDIES_CONSTANTS.camera.robloxPseudoOrthoFov : BUDDIES_CONSTANTS.camera.fov;
+    const applyFovMode = (mode: 'webgl35' | 'ortho18') => {
+      camera.fov = mode === 'ortho18' ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov : BUDDIES_CONSTANTS.camera.fov;
       camera.updateProjectionMatrix();
     };
     applyFovModeRef.current = applyFovMode;
@@ -2206,7 +2208,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       bodyGroup.scale.setScalar(1.16);
       root.add(bodyGroup);
 
-      const rig = buildProceduralRobloxBuddyAvatar(
+      const rig = buildProceduralBuddyAvatar(
         bodyGroup,
         team,
         windUniforms,
@@ -2410,7 +2412,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       bodyGrp.scale.setScalar(1.16);
       npcGrp.add(bodyGrp);
 
-      const npcRig = buildProceduralRobloxBuddyAvatar(
+      const npcRig = buildProceduralBuddyAvatar(
         bodyGrp,
         teamStyle,
         windUniforms,
@@ -2515,7 +2517,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
 
     // =========================================================================
-    // 3D PRIVATE HOUSE INTERIOR CUTAWAY STUDIO (`buddies-blitz.com/interior` BUDDIES Port)
+    // 3D PRIVATE HOUSE INTERIOR CUTAWAY STUDIO
     // World Origin: (0, 145, 0) | Cutaway Plinth: 10.6m x 7.4m x 2.75m
     // =========================================================================
     const HOUSE_ORIGIN_Y = 145.0;
@@ -2561,7 +2563,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ctx.strokeRect(2, p + 2, 508, 124);
         }
       } else {
-        // Staggered timber planks + tatami weave grain (`slotLay k==1` in buddies-blitz.com/interior)
+        // Staggered timber planks + tatami weave grain
         const rows = 8;
         const rowH = 512 / rows;
         for (let r = 0; r < rows; r++) {
@@ -2686,7 +2688,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     roomFloor.position.set(0, -0.02, 0);
     houseInteriorRoomGrp.add(roomFloor);
 
-    // Helper to add a box wall segment with dark top coping (`Se` in buddies-blitz.com/interior `#L356`)
+    // Helper to add a box wall segment with dark top coping
     const addCutawayWallSegment = (
       x0: number,
       x1: number,
@@ -2841,7 +2843,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       houseInteriorRoomGrp.add(bar);
     }
 
-    // Sine-Wave Pleated Sheer Curtain Builder (`mr` from buddies-blitz.com/interior `#L360`)
+    // Sine-Wave Pleated Sheer Curtain Builder
     const sheerCurtainMat = new THREE.MeshStandardMaterial({
       color: '#f4efe6',
       roughness: 0.9,
@@ -2875,7 +2877,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     addSineWaveSheerCurtain(0.56, 2.5, winB.x0 - 0.05, T + 0.1, 0, 10, 1.0);
     addSineWaveSheerCurtain(0.56, 2.5, winB.x1 + 0.05, T + 0.1, 0, 10, 2.2);
 
-    // Framed Dynamic Wall Art on Back Wall (`gc` & `yc` from buddies-blitz.com/interior `#L443-L444`)
+    // Framed Dynamic Wall Art on Back Wall
     const wallArtCanvas = document.createElement('canvas');
     wallArtCanvas.width = 256;
     wallArtCanvas.height = 340;
@@ -3113,7 +3115,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       });
     };
 
-    // 5. Verbatim Bundled 3D Furniture Builders (`lc..Dc`, `Je`, `io`, `Ft`, `Ro`, `Eo`) from `buddies-blitz.com/interior`
+    // 5. Procedural 3D Furniture Builders & Interior Showcase Zones
     let buddiesBackgroundZonesPopulated = false;
 
     const buildCatalogFurnitureMesh = (catalogId: string): THREE.Group =>
@@ -3131,7 +3133,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let isPanningHouseCamera = false;
     let houseOrbitDragStart = { x: 0, y: 0, yaw: -0.58, pitch: 0.48, tx: -0.4, tz: -0.2 };
 
-    // Cutaway Camera Spherical State (`Mo[0]` in buddies-blitz.com/interior: isometric cutaway angle)
+    // Cutaway Camera Spherical State (isometric cutaway angle)
     let houseCamYaw = -0.56;
     let houseCamPitch = 0.48;
     let houseCamDist = 12.6;
@@ -3160,6 +3162,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (!buddiesBackgroundZonesPopulated) {
         buddiesBackgroundZonesPopulated = true;
         sampleHouseZonesGrp = buildBuddiesInteriorBackgroundZones();
+        bakeStaticGroupMeshes(sampleHouseZonesGrp, { minShadowCasterSpan: 0.45 });
         sampleHouseZonesGrp.visible = false;
         houseInteriorRoomGrp.add(sampleHouseZonesGrp);
       }
@@ -3601,7 +3604,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       tankRiderAvatar.rotation.y = Math.PI / 2;
       tankRiderAvatar.scale.setScalar(1.06);
       riderGroup.add(tankRiderAvatar);
-      riderGroup.userData.riderRig = buildProceduralRobloxBuddyAvatar(
+      riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         tankRiderAvatar,
         team,
         windUniforms,
@@ -3699,7 +3702,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       planeRiderAvatar.rotation.y = Math.PI / 2;
       planeRiderAvatar.scale.setScalar(1.12);
       riderGroup.add(planeRiderAvatar);
-      riderGroup.userData.riderRig = buildProceduralRobloxBuddyAvatar(
+      riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         planeRiderAvatar,
         team,
         windUniforms,
@@ -5545,7 +5548,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         1,
       );
       playerUnit.saluteSign.sprite.visible = true;
-      kioskStatusMessage = `${randomPadSpawn.label} AKTIF! Tim: ${targetTeam.toUpperCase()} (${formatWarzoneLivesHudLabel(playerWarzoneLives, PLAYER_WARZONE_MAX_LIVES)}).`;
+      kioskStatusMessage = `${randomPadSpawn.label} ACTIVE! Team: ${targetTeam.toUpperCase()} (${formatWarzoneLivesHudLabel(playerWarzoneLives, PLAYER_WARZONE_MAX_LIVES)}).`;
       kioskStatusTimer = 5.5;
       worldModeRef.current = 'warzone';
       emitHudImmediately();
@@ -5591,7 +5594,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       unit.saluteTimer = 3.2;
       unit.saluteSign.updateText(
         formatWarzoneLivesHudLabel(deathStep.livesRemaining, deathStep.maxLives),
-        'RESPAWN SEKTOR TIM (BASE TETAP AMAN)',
+        'TEAM SECTOR RESPAWN (BASE SECURE)',
         unit.team === 'red' ? '#ff453a' : '#38bdf8',
         1,
       );
@@ -9835,7 +9838,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               return;
             }
           }
-          // Dragging on empty space orbits the cutaway dollhouse camera (`buddies-blitz.com/interior`)
+          // Dragging on empty space orbits the cutaway studio camera
           isOrbitingHouseCamera = true;
           houseOrbitDragStart = {
             x: e.clientX,
@@ -11404,7 +11407,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     // Detonate an Explosive Red Barrel with 5-Layer Blitz Explosion VFX + 3D Metal Debris + Shockwave Knockback + Blitz Barrel SFX
-    // (BUDDIES ExplosiveBarrel `Qi` in `B1Nq4Kq6.js:183450`: explosionRadius = 8.0m, damageRadius = 6.0m, chain-reaction + stun 1.5s)
+    // (explosionRadius = 8.0m, damageRadius = 6.0m, chain-reaction + stun 1.5s)
     const triggerBarrelExplosion = (bx: number, bz: number) => {
       playSpatialSoundAt(bx, bz, 36.0, 6.0, () => {
         soundEngine.playBarrelExplosion();
@@ -12687,7 +12690,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const state = gameStateRef.current;
       const currentPlayMode = playModeRef.current;
 
-      // 1. Decompiled Blitz InfiniteGrass & TreeLeaves Wind Shader Uniforms
+      // 1. InfiniteGrass & TreeLeaves Wind Shader Uniforms
       windUniforms.uTime.value = timeSec;
       windUniforms.uWindPhase.value = timeSec * 4.8;
       windUniforms.uWindGust.value = 0.25 + 0.25 * Math.sin(timeSec * 1.7);
@@ -13645,7 +13648,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
             if (v.riderGroup.visible && v.riderGroup.userData.riderRig) {
               updateCharacterWeaponStance(
-                v.riderGroup.userData.riderRig as RobloxBuddyRig,
+                v.riderGroup.userData.riderRig as BuddyCharacterRig,
                 'unarmed',
                 0,
                 false,
@@ -15498,7 +15501,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               b.kickTimer = Math.max(0, b.kickTimer - dt);
             }
 
-            // Animate Roblox Buddy Limbs, Jump Arc, Front Kick, Directional Hit-Reaction Hop/Tilt & Stun Effect (+Z local front faces movement direction yaw)
+            // Animate Buddy Character Limbs, Jump Arc, Front Kick, Directional Hit-Reaction Hop/Tilt & Stun Effect (+Z local front faces movement direction yaw)
             if ((b.hitReactionTimer ?? 0) > 0) {
               b.hitReactionTimer = Math.max(0, (b.hitReactionTimer ?? 0) - dt);
             }
@@ -15635,28 +15638,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
               }
             }
-            updateCharacterWeaponStance(
-              b.rig,
-              b.weaponId,
-              b.walkCycle,
-              isMoving,
-              b.carryingCrate !== 'none',
-              b.saluteTimer,
-              b.weaponRecoil,
-              b.punchTimer,
-              b.punchHand,
-              b.kickTimer,
-              b.jumpOffset,
-              walkSync.legSwingAmplitude,
-              unitStrafeDir,
-              true,
-              'front',
-              unitForwardDir,
-              b.yaw,
-              speedMag,
-              unitIsSitting,
-              unitIsDriving,
-            );
+            if (b.isPlayer || b.root.visible) {
+              updateCharacterWeaponStance(
+                b.rig,
+                b.weaponId,
+                b.walkCycle,
+                isMoving,
+                b.carryingCrate !== 'none',
+                b.saluteTimer,
+                b.weaponRecoil,
+                b.punchTimer,
+                b.punchHand,
+                b.kickTimer,
+                b.jumpOffset,
+                walkSync.legSwingAmplitude,
+                unitStrafeDir,
+                true,
+                'front',
+                unitForwardDir,
+                b.yaw,
+                speedMag,
+                unitIsSitting,
+                unitIsDriving,
+              );
+            } else if (b.rig.customGlbController) {
+              b.rig.customGlbController.lastStepTimeMs = now;
+            }
             if (b.isPlayer) {
               const hidePlayerHandWeapon =
                 !qcForceWeaponVisible &&
@@ -17021,7 +17028,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const shakeX = (Math.random() - 0.5) * shakeAmt;
       const shakeZ = (Math.random() - 0.5) * shakeAmt;
 
-      const fovScale = cameraFovModeRef.current === 'roblox18' ? 1.85 : 1.0;
+      const fovScale = cameraFovModeRef.current === 'ortho18' ? 1.85 : 1.0;
       const planeAltZoom = 1.0 + activePlaneAlt * 0.038;
       const zoomMult = state === 'title' ? 1.0 : cameraZoom * planeAltZoom;
       const camOffset =
@@ -17181,6 +17188,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         nukeCinematicRocketGroup.visible = false;
       }
 
+      const isInHouseScene =
+        npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
+      if (!buildingViewMode && !skyshieldViewMode && !planeViewMode) {
+        const showOutdoorScene = !isInHouseScene;
+        tolanPlanetEnv.groundMesh.visible = showOutdoorScene;
+        tolanPlanetEnv.waterMesh.visible = showOutdoorScene;
+        tolanPlanetEnv.planetCoreMesh.visible = showOutdoorScene;
+        tolanPlanetEnv.roadsGroup.visible = showOutdoorScene;
+        tolanPlanetEnv.natureGroup.visible = showOutdoorScene;
+        tolanPlanetEnv.sunbeamGroup.visible = showOutdoorScene;
+        realPropsGroup.visible = showOutdoorScene;
+        blueBase.baseGroup.visible = showOutdoorScene;
+        redBase.baseGroup.visible = showOutdoorScene;
+        blitzGrassSystem.grassMesh.visible = showOutdoorScene && !isFullMapOverview;
+        blitzGrassSystem.petalMesh.visible = showOutdoorScene && !isFullMapOverview;
+      }
+
       if (buildingViewMode) {
         scene.fog = null;
         scene.background = debugShowcaseBgColor;
@@ -17315,12 +17339,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (playerUnit) {
           playerUnit.root.visible = false;
         }
-        // Gentle MMORPG NPC greeting wave & breathing animation
+        // Gentle MMORPG NPC greeting wave & breathing animation (only step Mixamo rig on the active portrait NPC)
         const waveAngle = Math.sin(timeSec * 4.2) * 0.28;
-        lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
-        beachHouseNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
-        updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 1.0, 0);
-        updateCharacterWeaponStance(beachHouseNpc.npcRig, 'unarmed', 0, false, false, 1.0, 0);
+        if (npcCameraLocation === 'beach_house') {
+          beachHouseNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
+          updateCharacterWeaponStance(beachHouseNpc.npcRig, 'unarmed', 0, false, false, 1.0, 0);
+          if (lobbyCafeNpc.npcRig.customGlbController) {
+            lobbyCafeNpc.npcRig.customGlbController.lastStepTimeMs = now;
+          }
+        } else {
+          lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
+          updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 1.0, 0);
+          if (beachHouseNpc.npcRig.customGlbController) {
+            beachHouseNpc.npcRig.customGlbController.lastStepTimeMs = now;
+          }
+        }
         lobbyCafeNpc.exclamationGroup.visible = false;
         beachHouseNpc.exclamationGroup.visible = false;
 
@@ -17458,8 +17491,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           playerUnit.root.visible = true;
         }
         const desiredPlayFov =
-          cameraFovModeRef.current === 'roblox18'
-            ? BUDDIES_CONSTANTS.camera.robloxPseudoOrthoFov
+          cameraFovModeRef.current === 'ortho18'
+            ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov
             : BUDDIES_CONSTANTS.camera.fov;
         if (camera.fov !== desiredPlayFov) {
           camera.fov = desiredPlayFov;
@@ -17475,10 +17508,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         );
         lobbyCafeNpc.npcGrp.rotation.y = Math.PI / 2;
         beachHouseNpc.npcGrp.rotation.y = Math.PI / 2;
-        lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
-        beachHouseNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
-        updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
-        updateCharacterWeaponStance(beachHouseNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
+        if (
+          lobbyCafeNpc.npcGrp.visible &&
+          Math.hypot(
+            lobbyCafeNpc.npcGrp.position.x - finalLookX,
+            lobbyCafeNpc.npcGrp.position.z - finalLookZ,
+          ) <= 52
+        ) {
+          lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
+          updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
+        } else if (lobbyCafeNpc.npcRig.customGlbController) {
+          lobbyCafeNpc.npcRig.customGlbController.lastStepTimeMs = now;
+        }
+        if (
+          beachHouseNpc.npcGrp.visible &&
+          Math.hypot(
+            beachHouseNpc.npcGrp.position.x - finalLookX,
+            beachHouseNpc.npcGrp.position.z - finalLookZ,
+          ) <= 52
+        ) {
+          beachHouseNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
+          updateCharacterWeaponStance(beachHouseNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
+        } else if (beachHouseNpc.npcRig.customGlbController) {
+          beachHouseNpc.npcRig.customGlbController.lastStepTimeMs = now;
+        }
 
         // Animate Floating 3D Exclamation Mark Indicator (bobbing Y + gentle rotation facing camera)
         const excBob = Math.sin(timeSec * 3.2) * 0.08;
@@ -19455,8 +19508,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         p.padSign.sprite.visible = false;
       }
 
-      const shouldUpdateShadowMap = !isSoftwareGl && frameTickCount % 3 === 0;
-      if (shouldUpdateShadowMap || frameTickCount <= 2) {
+      if (!isSoftwareGl && !isInHouseScene && state !== 'paused') {
         // Snap directional light target in light-space texel increments so stationary tree/building
         // shadows stay 100% locked to the world grid without sub-texel swimming or 1-frame matrix lag.
         const projU = finalLookX * shadowLightRight.x + finalLookZ * shadowLightRight.z;
@@ -19471,17 +19523,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           shadowLightRight.y * snapU + shadowLightUp.y * snapV + shadowLightBack.y * snapW;
         const snappedLookZ =
           shadowLightRight.z * snapU + shadowLightUp.z * snapV + shadowLightBack.z * snapW;
+        const shadowMoved =
+          snappedLookX !== prevSnappedShadowX || snappedLookZ !== prevSnappedShadowZ;
 
-        dirLight.position.set(
-          snappedLookX + blitzSunOffset.x,
-          snappedLookY + blitzSunOffset.y,
-          snappedLookZ + blitzSunOffset.z,
-        );
-        dirLight.target.position.set(snappedLookX, snappedLookY, snappedLookZ);
-        dirLight.updateMatrixWorld();
-        dirLight.target.updateMatrixWorld();
-        dirLight.shadow.updateMatrices(dirLight);
-        renderer.shadowMap.needsUpdate = true;
+        if (shadowMoved || frameTickCount % 4 === 0 || frameTickCount <= 2) {
+          prevSnappedShadowX = snappedLookX;
+          prevSnappedShadowZ = snappedLookZ;
+          dirLight.position.set(
+            snappedLookX + blitzSunOffset.x,
+            snappedLookY + blitzSunOffset.y,
+            snappedLookZ + blitzSunOffset.z,
+          );
+          dirLight.target.position.set(snappedLookX, snappedLookY, snappedLookZ);
+          dirLight.updateMatrixWorld();
+          dirLight.target.updateMatrixWorld();
+          dirLight.shadow.updateMatrices(dirLight);
+          renderer.shadowMap.needsUpdate = true;
+        }
       }
 
       if (
@@ -19706,14 +19764,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const halfH = Math.floor(h / 2);
         const aspect = halfW / Math.max(1, halfH);
         const orthoSize = 2.95;
-        const orthoCam = new THREE.OrthographicCamera(
-          -orthoSize * aspect,
-          orthoSize * aspect,
-          orthoSize,
-          -orthoSize,
-          0.1,
-          100,
-        );
+        const orthoCam = debugOrthoCam;
+        orthoCam.left = -orthoSize * aspect;
+        orthoCam.right = orthoSize * aspect;
+        orthoCam.top = orthoSize;
+        orthoCam.bottom = -orthoSize;
+        orthoCam.near = 0.1;
+        orthoCam.far = 100;
+        orthoCam.updateProjectionMatrix();
         const centerY = 0.95;
         renderer.setScissorTest(true);
 

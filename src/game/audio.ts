@@ -185,6 +185,195 @@ export const TACTICAL_AUDIO_SPEC: TacticalAudioSpec = {
   },
 };
 
+export type BgmMode = 'city' | 'warzone';
+
+interface BossaBarSpec {
+  bassRootHz: number;
+  bassFifthHz: number;
+  chordHz: readonly [number, number, number, number];
+  melodyNotes: readonly { step: number; hz: number; durSteps: number }[];
+}
+
+// Gentle Sunny Morning Bossa Nova progression in F Major / C Major (~104 BPM)
+const CITY_SUNNY_BOSSA_PROGRESSION: readonly BossaBarSpec[] = [
+  // Bar 0: Fmaj9
+  {
+    bassRootHz: 87.31,
+    bassFifthHz: 130.81,
+    chordHz: [220.0, 261.63, 329.63, 392.0],
+    melodyNotes: [
+      { step: 2, hz: 523.25, durSteps: 4 },
+      { step: 6, hz: 659.25, durSteps: 4 },
+      { step: 11, hz: 587.33, durSteps: 4 },
+    ],
+  },
+  // Bar 1: G13
+  {
+    bassRootHz: 98.0,
+    bassFifthHz: 146.83,
+    chordHz: [174.61, 246.94, 329.63, 440.0],
+    melodyNotes: [
+      { step: 0, hz: 659.25, durSteps: 5 },
+      { step: 8, hz: 587.33, durSteps: 4 },
+      { step: 12, hz: 523.25, durSteps: 4 },
+    ],
+  },
+  // Bar 2: Em9
+  {
+    bassRootHz: 82.41,
+    bassFifthHz: 123.47,
+    chordHz: [196.0, 246.94, 293.66, 369.99],
+    melodyNotes: [
+      { step: 2, hz: 493.88, durSteps: 5 },
+      { step: 10, hz: 587.33, durSteps: 5 },
+    ],
+  },
+  // Bar 3: A7(b13)
+  {
+    bassRootHz: 110.0,
+    bassFifthHz: 164.81,
+    chordHz: [196.0, 277.18, 349.23, 440.0],
+    melodyNotes: [
+      { step: 0, hz: 554.37, durSteps: 5 },
+      { step: 6, hz: 523.25, durSteps: 4 },
+      { step: 11, hz: 440.0, durSteps: 5 },
+    ],
+  },
+  // Bar 4: Dm9
+  {
+    bassRootHz: 73.42,
+    bassFifthHz: 110.0,
+    chordHz: [174.61, 220.0, 261.63, 329.63],
+    melodyNotes: [
+      { step: 2, hz: 440.0, durSteps: 4 },
+      { step: 6, hz: 523.25, durSteps: 4 },
+      { step: 10, hz: 659.25, durSteps: 5 },
+    ],
+  },
+  // Bar 5: G13
+  {
+    bassRootHz: 98.0,
+    bassFifthHz: 146.83,
+    chordHz: [174.61, 246.94, 329.63, 440.0],
+    melodyNotes: [
+      { step: 0, hz: 587.33, durSteps: 5 },
+      { step: 8, hz: 493.88, durSteps: 4 },
+      { step: 12, hz: 440.0, durSteps: 4 },
+    ],
+  },
+  // Bar 6: Cmaj9
+  {
+    bassRootHz: 65.41,
+    bassFifthHz: 98.0,
+    chordHz: [164.81, 196.0, 246.94, 293.66],
+    melodyNotes: [
+      { step: 2, hz: 587.33, durSteps: 6 },
+      { step: 10, hz: 523.25, durSteps: 5 },
+    ],
+  },
+  // Bar 7: Gm9 -> C13 Turnaround
+  {
+    bassRootHz: 98.0,
+    bassFifthHz: 130.81,
+    chordHz: [233.08, 293.66, 349.23, 440.0],
+    melodyNotes: [
+      { step: 0, hz: 440.0, durSteps: 4 },
+      { step: 6, hz: 466.16, durSteps: 4 },
+      { step: 11, hz: 523.25, durSteps: 5 },
+    ],
+  },
+];
+
+// Chill Upbeat Bossa / Lo-Fi Groove in E Dorian / G Major (~118 BPM) for Warzone
+const WARZONE_CHILL_BEAT_BOSSA_PROGRESSION: readonly BossaBarSpec[] = [
+  // Bar 0: Em9
+  {
+    bassRootHz: 82.41,
+    bassFifthHz: 123.47,
+    chordHz: [196.0, 246.94, 293.66, 369.99],
+    melodyNotes: [
+      { step: 0, hz: 587.33, durSteps: 3 },
+      { step: 6, hz: 659.25, durSteps: 4 },
+      { step: 11, hz: 493.88, durSteps: 4 },
+    ],
+  },
+  // Bar 1: Am9
+  {
+    bassRootHz: 110.0,
+    bassFifthHz: 164.81,
+    chordHz: [196.0, 261.63, 329.63, 493.88],
+    melodyNotes: [
+      { step: 2, hz: 523.25, durSteps: 4 },
+      { step: 8, hz: 587.33, durSteps: 3 },
+      { step: 12, hz: 659.25, durSteps: 4 },
+    ],
+  },
+  // Bar 2: D13
+  {
+    bassRootHz: 73.42,
+    bassFifthHz: 110.0,
+    chordHz: [185.0, 261.63, 329.63, 493.88],
+    melodyNotes: [
+      { step: 0, hz: 739.99, durSteps: 4 },
+      { step: 6, hz: 659.25, durSteps: 4 },
+      { step: 11, hz: 587.33, durSteps: 4 },
+    ],
+  },
+  // Bar 3: Gmaj9
+  {
+    bassRootHz: 98.0,
+    bassFifthHz: 146.83,
+    chordHz: [185.0, 246.94, 293.66, 440.0],
+    melodyNotes: [
+      { step: 2, hz: 587.33, durSteps: 5 },
+      { step: 10, hz: 493.88, durSteps: 5 },
+    ],
+  },
+  // Bar 4: Cmaj9
+  {
+    bassRootHz: 65.41,
+    bassFifthHz: 98.0,
+    chordHz: [164.81, 196.0, 246.94, 293.66],
+    melodyNotes: [
+      { step: 0, hz: 523.25, durSteps: 3 },
+      { step: 6, hz: 587.33, durSteps: 4 },
+      { step: 12, hz: 659.25, durSteps: 4 },
+    ],
+  },
+  // Bar 5: F#m7b5
+  {
+    bassRootHz: 92.5,
+    bassFifthHz: 130.81,
+    chordHz: [164.81, 220.0, 261.63, 329.63],
+    melodyNotes: [
+      { step: 2, hz: 659.25, durSteps: 4 },
+      { step: 8, hz: 587.33, durSteps: 4 },
+      { step: 13, hz: 523.25, durSteps: 3 },
+    ],
+  },
+  // Bar 6: B7(b9)
+  {
+    bassRootHz: 61.74,
+    bassFifthHz: 92.5,
+    chordHz: [155.56, 220.0, 261.63, 369.99],
+    melodyNotes: [
+      { step: 0, hz: 493.88, durSteps: 4 },
+      { step: 6, hz: 523.25, durSteps: 4 },
+      { step: 11, hz: 493.88, durSteps: 4 },
+    ],
+  },
+  // Bar 7: Em9 Turnaround
+  {
+    bassRootHz: 82.41,
+    bassFifthHz: 123.47,
+    chordHz: [196.0, 246.94, 293.66, 369.99],
+    melodyNotes: [
+      { step: 2, hz: 659.25, durSteps: 5 },
+      { step: 10, hz: 587.33, durSteps: 5 },
+    ],
+  },
+];
+
 export function getTacticalAudioSpec(): TacticalAudioSpec {
   return TACTICAL_AUDIO_SPEC;
 }
@@ -195,6 +384,8 @@ class SoundEngine {
   private masterLowShelfFilter: BiquadFilterNode | null = null;
   private masterLowPassFilter: BiquadFilterNode | null = null;
   private masterCompressor: DynamicsCompressorNode | null = null;
+  private bgmBusGain: GainNode | null = null;
+  private bgmWarmFilter: BiquadFilterNode | null = null;
   private buffers = new Map<BlitzSampleKey, AudioBuffer>();
   private rawAudioBuffers = new Map<BlitzSampleKey, ArrayBuffer>();
   private loadingKeys = new Set<BlitzSampleKey>();
@@ -209,9 +400,13 @@ class SoundEngine {
   private softClipCurves = new Map<number, Float32Array<ArrayBuffer>>();
   private currentSpatialNode: GainNode | null = null;
 
-  private bgmAudio: HTMLAudioElement | null = null;
   private bgmStarted = false;
-  private bgmVolume = 0.40;
+  private bgmMode: BgmMode = 'city';
+  private bgmVolume = 0.34;
+  private bgmTimerId: ReturnType<typeof setInterval> | null = null;
+  private bgmNextNoteTime = 0;
+  private bgmStepIndex = 0;
+  private bgmUnlockBound = false;
 
   private _muted = false;
   private _masterVolume = 1.0;
@@ -224,21 +419,26 @@ class SoundEngine {
     this._muted = Boolean(val);
     if (this._muted) {
       this.stopAllLoops();
-      if (this.bgmAudio) {
-        this.bgmAudio.pause();
-      }
+      this.clearBgmScheduler();
       if (this.ctx && this.masterInputGain) {
         this.masterInputGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      }
+      if (this.ctx && this.bgmBusGain) {
+        this.bgmBusGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.04);
       }
     } else {
       if (this.ctx && this.masterInputGain) {
         this.masterInputGain.gain.setValueAtTime(1.58 * this._masterVolume, this.ctx.currentTime);
       }
-      if (this.bgmAudio) {
-        this.bgmAudio.volume = this.bgmVolume * this._masterVolume;
-        if (this.bgmStarted) {
-          this.bgmAudio.play().catch(() => {});
-        }
+      if (this.ctx && this.bgmBusGain) {
+        this.bgmBusGain.gain.setTargetAtTime(
+          this.bgmVolume * this._masterVolume,
+          this.ctx.currentTime,
+          0.08,
+        );
+      }
+      if (this.bgmStarted) {
+        this.ensureBgmSchedulerRunning();
       }
     }
   }
@@ -255,8 +455,28 @@ class SoundEngine {
         this.ctx.currentTime,
       );
     }
-    if (this.bgmAudio) {
-      this.bgmAudio.volume = this._muted ? 0 : this.bgmVolume * this._masterVolume;
+    if (this.ctx && this.bgmBusGain) {
+      this.bgmBusGain.gain.setTargetAtTime(
+        this._muted ? 0 : this.bgmVolume * this._masterVolume,
+        this.ctx.currentTime,
+        0.05,
+      );
+    }
+  }
+
+  public getBgmMode(): BgmMode {
+    return this.bgmMode;
+  }
+
+  public setBgmMode(mode: BgmMode): void {
+    const nextMode: BgmMode = mode === 'warzone' ? 'warzone' : 'city';
+    if (this.bgmMode === nextMode) return;
+    this.bgmMode = nextMode;
+    // Align transition cleanly to the start of the next musical bar so mode switches sound seamless
+    const nextBarStep = Math.ceil(this.bgmStepIndex / 16) * 16;
+    this.bgmStepIndex = nextBarStep % 128;
+    if (this.bgmStarted && !this._muted) {
+      this.ensureBgmSchedulerRunning();
     }
   }
 
@@ -341,6 +561,22 @@ class SoundEngine {
           this.masterLowShelfFilter = lowShelf;
           this.masterLowPassFilter = lpf;
           this.masterCompressor = comp;
+
+          // Dedicated warm BGM bus (bypasses combat limiter so Sunny Morning Bossa stays silky & uncompressed)
+          const bgmFilter = this.ctx.createBiquadFilter();
+          bgmFilter.type = 'lowpass';
+          bgmFilter.frequency.setValueAtTime(5200, this.ctx.currentTime);
+          bgmFilter.Q.setValueAtTime(0.65, this.ctx.currentTime);
+
+          const bgmGain = this.ctx.createGain();
+          bgmGain.gain.setValueAtTime(
+            this._muted ? 0 : this.bgmVolume * this._masterVolume,
+            this.ctx.currentTime,
+          );
+          bgmFilter.connect(bgmGain);
+          bgmGain.connect(this.ctx.destination);
+          this.bgmWarmFilter = bgmFilter;
+          this.bgmBusGain = bgmGain;
         }
       }
     }
@@ -351,34 +587,411 @@ class SoundEngine {
       this.preloadStarted = true;
       this.preloadAllBlitzSamples();
     }
-    if (this.bgmStarted && this.bgmAudio && !this._muted && this.bgmAudio.paused) {
-      this.bgmAudio.play().catch(() => {});
+    if (this.bgmStarted && !this._muted && !this.bgmTimerId) {
+      this.ensureBgmSchedulerRunning();
     }
     return this.ctx;
   }
 
-  public startBgm(): void {
-    if (typeof window === 'undefined') return;
-    if (!this.bgmAudio) {
-      const audio = new Audio('/assets/buddies/audio/tactical-bgm.mp3');
-      audio.loop = true;
-      audio.volume = this._muted ? 0 : this.bgmVolume * this._masterVolume;
-      this.bgmAudio = audio;
+  private getBgmDestination(ctx: AudioContext): AudioNode {
+    return this.bgmWarmFilter || this.bgmBusGain || ctx.destination;
+  }
+
+  private clearBgmScheduler(): void {
+    if (this.bgmTimerId !== null) {
+      clearInterval(this.bgmTimerId);
+      this.bgmTimerId = null;
+    }
+  }
+
+  public stopBgm(): void {
+    this.bgmStarted = false;
+    this.clearBgmScheduler();
+  }
+
+  public startBgm(mode?: BgmMode): void {
+    if (mode) {
+      this.bgmMode = mode === 'warzone' ? 'warzone' : 'city';
     }
     this.bgmStarted = true;
-    if (!this._muted) {
-      this.bgmAudio.play().catch(() => {
-        const enableAudioOnInteraction = () => {
-          if (this.bgmAudio && this.bgmStarted && !this._muted) {
-            this.bgmAudio.play().catch(() => {});
-          }
-          window.removeEventListener('pointerdown', enableAudioOnInteraction);
-          window.removeEventListener('keydown', enableAudioOnInteraction);
-        };
-        window.addEventListener('pointerdown', enableAudioOnInteraction, { once: true });
-        window.addEventListener('keydown', enableAudioOnInteraction, { once: true });
-      });
+    if (typeof window === 'undefined' || this._muted) return;
+    const ctx = this.ensureCtx();
+    if (ctx && ctx.state === 'running') {
+      this.ensureBgmSchedulerRunning();
+      return;
     }
+    if (!this.bgmUnlockBound) {
+      this.bgmUnlockBound = true;
+      const unlockBgm = () => {
+        this.bgmUnlockBound = false;
+        this.userInteracted = true;
+        window.removeEventListener('pointerdown', unlockBgm, true);
+        window.removeEventListener('keydown', unlockBgm, true);
+        if (this.bgmStarted && !this._muted) {
+          this.ensureBgmSchedulerRunning();
+        }
+      };
+      window.addEventListener('pointerdown', unlockBgm, { capture: true, once: true });
+      window.addEventListener('keydown', unlockBgm, { capture: true, once: true });
+    }
+  }
+
+  private ensureBgmSchedulerRunning(): void {
+    if (typeof window === 'undefined' || this._muted || !this.bgmStarted) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    if (this.bgmBusGain) {
+      this.bgmBusGain.gain.setTargetAtTime(
+        this.bgmVolume * this._masterVolume,
+        ctx.currentTime,
+        0.08,
+      );
+    }
+    if (this.bgmTimerId !== null) return;
+    this.bgmNextNoteTime = ctx.currentTime + 0.06;
+    this.bgmTimerId = setInterval(() => {
+      if (!this.bgmStarted || this._muted || !this.ctx) {
+        this.clearBgmScheduler();
+        return;
+      }
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+        return;
+      }
+      const now = this.ctx.currentTime;
+      if (this.bgmNextNoteTime < now - 0.3) {
+        this.bgmNextNoteTime = now + 0.04;
+      }
+      const lookaheadSec = 0.24;
+      while (this.bgmNextNoteTime < now + lookaheadSec) {
+        const isWarzone = this.bgmMode === 'warzone';
+        const stepDurSec = isWarzone ? 60 / 118 / 4 : 60 / 104 / 4;
+        this.scheduleBossaStep(this.ctx, this.bgmStepIndex, this.bgmNextNoteTime, stepDurSec, isWarzone);
+        this.bgmNextNoteTime += stepDurSec;
+        this.bgmStepIndex = (this.bgmStepIndex + 1) % 128;
+      }
+    }, 95);
+  }
+
+  private scheduleBossaStep(
+    ctx: AudioContext,
+    globalStep: number,
+    when: number,
+    stepDur: number,
+    isWarzone: boolean,
+  ): void {
+    const barIdx = Math.floor(globalStep / 16) % 8;
+    const step = globalStep % 16;
+    const isEvenBar = barIdx % 2 === 0;
+    const bar = isWarzone
+      ? WARZONE_CHILL_BEAT_BOSSA_PROGRESSION[barIdx]
+      : CITY_SUNNY_BOSSA_PROGRESSION[barIdx];
+    const dest = this.getBgmDestination(ctx);
+
+    // 1. Warm Fender Rhodes Electric Piano Pad (step 0 of every bar)
+    if (step === 0) {
+      this.triggerBossaRhodesPad(ctx, dest, bar.chordHz, when, stepDur * 15.2, isWarzone ? 0.052 : 0.062);
+    }
+
+    // 2. Authentic Brazilian 2-3 Bossa Clave Nylon-String Acoustic Guitar Comping
+    const cityGuitarComp = isEvenBar
+      ? step === 0 || step === 3 || step === 6 || step === 10 || step === 14
+      : step === 2 || step === 6 || step === 9 || step === 12;
+    const warzoneGuitarComp = isEvenBar
+      ? step === 0 || step === 3 || step === 6 || step === 10 || step === 12 || step === 14
+      : step === 2 || step === 6 || step === 9 || step === 12 || step === 15;
+
+    if (isWarzone ? warzoneGuitarComp : cityGuitarComp) {
+      const dur = step === 0 || step === 6 ? stepDur * 2.9 : stepDur * 2.1;
+      const accent = step === 0 || step === 3 || step === 6 ? 1.0 : 0.78;
+      this.triggerBossaNylonStrum(ctx, dest, bar.chordHz, when, dur, (isWarzone ? 0.072 : 0.078) * accent);
+    }
+
+    // 3. Warm Acoustic Contrabass (gentle root-fifth surdo feel in City; bouncy pocket in Warzone)
+    if (!isWarzone) {
+      if (step === 0) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassRootHz, when, stepDur * 6.8, 0.16);
+      } else if (step === 7) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassFifthHz, when, stepDur * 1.1, 0.085);
+      } else if (step === 8) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassFifthHz, when, stepDur * 6.5, 0.145);
+      } else if (step === 15) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassRootHz, when, stepDur * 0.95, 0.08);
+      }
+    } else {
+      if (step === 0) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassRootHz, when, stepDur * 3.2, 0.19);
+      } else if (step === 3) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassRootHz * 1.5, when, stepDur * 2.2, 0.13);
+      } else if (step === 6) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassFifthHz, when, stepDur * 1.8, 0.14);
+      } else if (step === 8) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassFifthHz, when, stepDur * 3.0, 0.18);
+      } else if (step === 11) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassRootHz, when, stepDur * 2.2, 0.135);
+      } else if (step === 14) {
+        this.triggerBossaUprightBass(ctx, dest, bar.bassFifthHz, when, stepDur * 1.6, 0.12);
+      }
+    }
+
+    // 4. Sunlit Rhodes / Flute Lyrical Melody Touches
+    for (let i = 0; i < bar.melodyNotes.length; i++) {
+      const m = bar.melodyNotes[i];
+      if (m.step === step) {
+        this.triggerBossaSunlitMelody(
+          ctx,
+          dest,
+          m.hz,
+          when,
+          stepDur * m.durSteps,
+          isWarzone ? 0.058 : 0.068,
+        );
+      }
+    }
+
+    // 5. Percussion:
+    //    - City: Whisper-light brushed cabasa/shaker only (gentle sunlit cafe breeze)
+    //    - Warzone: Soft round lo-fi bossa kick + crisp wooden cross-stick rimshot + syncopated shaker pocket
+    if (!isWarzone) {
+      if (step % 2 === 0) {
+        const shakerGain = step === 4 || step === 12 ? 0.028 : 0.016;
+        this.triggerBossaShaker(ctx, dest, when, stepDur * 0.62, shakerGain, 5800);
+      }
+    } else {
+      // Soft round lo-fi/bossa kick drum ("sedikit beat tapi tetap chill")
+      if (step === 0 || step === 7 || step === 8 || step === 15) {
+        const kickVol = step === 0 || step === 8 ? 0.21 : 0.135;
+        this.triggerChillBossaKick(ctx, dest, when, kickVol);
+      }
+      // Wooden cross-stick rimshot on 2-3 bossa clave
+      const rimHit = isEvenBar
+        ? step === 0 || step === 3 || step === 6 || step === 10 || step === 12
+        : step === 2 || step === 6 || step === 10 || step === 13;
+      if (rimHit) {
+        this.triggerBossaCrossStick(ctx, dest, when, step === 6 || step === 12 ? 0.085 : 0.062);
+      }
+      // Crisp 16th-note pocket shaker/hi-hat
+      if (step % 2 === 0 || step === 3 || step === 11) {
+        const hatVol = step === 4 || step === 12 ? 0.044 : step % 2 === 0 ? 0.026 : 0.018;
+        this.triggerBossaShaker(ctx, dest, when, stepDur * 0.52, hatVol, 6600);
+      }
+    }
+  }
+
+  private triggerBossaNylonStrum(
+    ctx: AudioContext,
+    dest: AudioNode,
+    chordHz: readonly [number, number, number, number],
+    when: number,
+    durSec: number,
+    peakGain: number,
+  ): void {
+    for (let i = 0; i < chordHz.length; i++) {
+      const noteTime = when + i * 0.012;
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(chordHz[i], noteTime);
+
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.setValueAtTime(2150, noteTime);
+      lpf.frequency.exponentialRampToValueAtTime(780, noteTime + durSec);
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, noteTime);
+      g.gain.linearRampToValueAtTime(peakGain, noteTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0008, noteTime + durSec);
+
+      osc.connect(lpf);
+      lpf.connect(g);
+      g.connect(dest);
+      osc.start(noteTime);
+      osc.stop(noteTime + durSec + 0.03);
+    }
+  }
+
+  private triggerBossaRhodesPad(
+    ctx: AudioContext,
+    dest: AudioNode,
+    chordHz: readonly [number, number, number, number],
+    when: number,
+    durSec: number,
+    peakGain: number,
+  ): void {
+    for (let i = 0; i < chordHz.length; i++) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(chordHz[i], when);
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.linearRampToValueAtTime(peakGain, when + 0.06);
+      g.gain.exponentialRampToValueAtTime(peakGain * 0.42, when + durSec * 0.55);
+      g.gain.exponentialRampToValueAtTime(0.0008, when + durSec);
+
+      osc.connect(g);
+      g.connect(dest);
+      osc.start(when);
+      osc.stop(when + durSec + 0.04);
+    }
+  }
+
+  private triggerBossaSunlitMelody(
+    ctx: AudioContext,
+    dest: AudioNode,
+    hz: number,
+    when: number,
+    durSec: number,
+    peakGain: number,
+  ): void {
+    const bodyOsc = ctx.createOscillator();
+    bodyOsc.type = 'sine';
+    bodyOsc.frequency.setValueAtTime(hz, when);
+
+    const tineOsc = ctx.createOscillator();
+    tineOsc.type = 'triangle';
+    tineOsc.frequency.setValueAtTime(hz * 2, when);
+
+    const tineGain = ctx.createGain();
+    tineGain.gain.setValueAtTime(peakGain * 0.24, when);
+    tineGain.gain.exponentialRampToValueAtTime(0.0005, when + Math.min(0.16, durSec * 0.5));
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, when);
+    env.gain.linearRampToValueAtTime(peakGain, when + 0.018);
+    env.gain.exponentialRampToValueAtTime(peakGain * 0.48, when + durSec * 0.45);
+    env.gain.exponentialRampToValueAtTime(0.0008, when + durSec);
+
+    bodyOsc.connect(env);
+    tineOsc.connect(tineGain);
+    tineGain.connect(env);
+    env.connect(dest);
+
+    bodyOsc.start(when);
+    tineOsc.start(when);
+    bodyOsc.stop(when + durSec + 0.03);
+    tineOsc.stop(when + durSec + 0.03);
+  }
+
+  private triggerBossaUprightBass(
+    ctx: AudioContext,
+    dest: AudioNode,
+    hz: number,
+    when: number,
+    durSec: number,
+    peakGain: number,
+  ): void {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(hz * 1.03, when);
+    osc.frequency.exponentialRampToValueAtTime(hz, when + 0.025);
+
+    const pluckOsc = ctx.createOscillator();
+    pluckOsc.type = 'triangle';
+    pluckOsc.frequency.setValueAtTime(hz, when);
+
+    const lpf = ctx.createBiquadFilter();
+    lpf.type = 'lowpass';
+    lpf.frequency.setValueAtTime(340, when);
+    lpf.frequency.exponentialRampToValueAtTime(160, when + durSec);
+
+    const pluckGain = ctx.createGain();
+    pluckGain.gain.setValueAtTime(0.45, when);
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, when);
+    env.gain.linearRampToValueAtTime(peakGain, when + 0.014);
+    env.gain.exponentialRampToValueAtTime(0.001, when + durSec);
+
+    osc.connect(env);
+    pluckOsc.connect(lpf);
+    lpf.connect(pluckGain);
+    pluckGain.connect(env);
+    env.connect(dest);
+
+    osc.start(when);
+    pluckOsc.start(when);
+    osc.stop(when + durSec + 0.03);
+    pluckOsc.stop(when + durSec + 0.03);
+  }
+
+  private triggerBossaShaker(
+    ctx: AudioContext,
+    dest: AudioNode,
+    when: number,
+    durSec: number,
+    peakGain: number,
+    centerHz: number,
+  ): void {
+    const src = ctx.createBufferSource();
+    src.buffer = this.ensurePinkNoiseBuffer(ctx);
+    const maxOffset = Math.max(0, src.buffer.duration - durSec - 0.05);
+    const offset = (when * 0.37) % Math.max(0.05, maxOffset);
+
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.setValueAtTime(centerHz, when);
+    bpf.Q.setValueAtTime(1.8, when);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peakGain, when + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0005, when + durSec);
+
+    src.connect(bpf);
+    bpf.connect(g);
+    g.connect(dest);
+    src.start(when, offset, durSec + 0.02);
+  }
+
+  private triggerChillBossaKick(
+    ctx: AudioContext,
+    dest: AudioNode,
+    when: number,
+    peakGain: number,
+  ): void {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(116, when);
+    osc.frequency.exponentialRampToValueAtTime(48, when + 0.085);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peakGain, when + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0008, when + 0.19);
+
+    osc.connect(g);
+    g.connect(dest);
+    osc.start(when);
+    osc.stop(when + 0.21);
+  }
+
+  private triggerBossaCrossStick(
+    ctx: AudioContext,
+    dest: AudioNode,
+    when: number,
+    peakGain: number,
+  ): void {
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(820, when);
+    osc.frequency.exponentialRampToValueAtTime(410, when + 0.028);
+
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.setValueAtTime(1450, when);
+    bpf.Q.setValueAtTime(2.6, when);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peakGain, when + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0006, when + 0.055);
+
+    osc.connect(bpf);
+    bpf.connect(g);
+    g.connect(dest);
+    osc.start(when);
+    osc.stop(when + 0.065);
   }
 
   private getMasterBusNode(ctx: AudioContext): AudioNode {
@@ -505,7 +1118,7 @@ class SoundEngine {
   }
 
   /**
-   * Preloads all 22 SFX `.mp3` files and the tactical BGM `.mp3` concurrently via `Promise.all`,
+   * Preloads all 22 SFX `.mp3` files concurrently via `Promise.all`,
    * reporting progress `(loaded, total)` and logging a warning on any missing optional file
    * without blocking the preload gate.
    */
@@ -513,8 +1126,7 @@ class SoundEngine {
     onProgress?: (loaded: number, total: number) => void,
   ): Promise<void> {
     const sampleKeys = Object.keys(BLITZ_AUDIO_PATHS) as BlitzSampleKey[];
-    const bgmUrl = '/assets/buddies/audio/tactical-bgm.mp3';
-    const total = sampleKeys.length + 1;
+    const total = sampleKeys.length;
 
     if (this.audioPreloadComplete || typeof fetch === 'undefined') {
       onProgress?.(total, total);
@@ -559,21 +1171,7 @@ class SoundEngine {
       }
     });
 
-    const bgmPromise = (async () => {
-      try {
-        const res = await fetch(bgmUrl);
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        await res.arrayBuffer();
-      } catch (err) {
-        console.warn(`[PreloadGate] Non-critical BGM audio failed to preload (${bgmUrl}):`, err);
-      } finally {
-        advance();
-      }
-    })();
-
-    const allPromise = Promise.all([...samplePromises, bgmPromise]).then(() => {
+    const allPromise = Promise.all(samplePromises).then(() => {
       this.audioPreloadComplete = true;
     });
 
@@ -811,7 +1409,6 @@ class SoundEngine {
 
   /**
    * Brick / Masonry Impact (`hit-brick-01.mp3` & `hit-brick-02.mp3`, baseVolume: 0.50, throttleMs: 90)
-   * Bundled via BUDDIES from `Da` & `Na.handleRobotCollision` (`B1Nq4Kq6.js:771500, 808200`).
    */
   public playBrickHit(impactSpeed = 4.0): void {
     const ctx = this.ensureCtx();
@@ -827,7 +1424,7 @@ class SoundEngine {
   }
 
   /**
-   * Dispatches the exact Blitz material impact SFX for any `CollisionMaterialTag` (`Da` & `Na` in `B1Nq4Kq6.js`).
+   * Dispatches the surface material impact SFX for any `CollisionMaterialTag`.
    */
   public playMaterialImpact(materialTag: CollisionMaterialTag, impactSpeed: number): void {
     const isBrick = materialTag === 'brick';

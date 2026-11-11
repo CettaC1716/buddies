@@ -472,7 +472,7 @@ export function getBlitzDefaultLightDirection(): THREE.Vector3 {
 }
 
 /**
- * Exact 128x128 3-octave Perlin noise texture from Blitz's Ni.prototype.initWindNoiseTexture (B1Nq4Kq6.js:407200)
+ * Procedural 128x128 3-octave Perlin wind noise texture
  */
 export function createBlitzWindNoiseTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -577,10 +577,10 @@ export function createFallbackFoliageMaskTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Port of Blitz's WorldMaterial (class Yn in B1Nq4Kq6.js:14500-21000):
+ * Cel-shaded WorldMaterial shader builder:
  * Extends MeshStandardMaterial/MeshToonMaterial or ShaderMaterial with:
  * - uShadowStep = 0.15, uHighlightStep = 0.60, uShadowColor = #2a2b36
- * - 45-degree rotated Halftone dot grid (Jn, scale 180) & Cross-Hatching (Kn/Gn) in core shadows
+ * - 45-degree rotated Halftone dot grid (scale 180) & Cross-Hatching in core shadows
  * - Ground bounce light (bounceColor = #82487f / #75d424 grass bounce within 1.5m of ground)
  */
 const blitzWorldMaterialCache = new WeakMap<BlitzWindUniforms, Map<string, THREE.ShaderMaterial>>();
@@ -667,7 +667,7 @@ export function upgradeMeshToBlitzWorldMaterial(
         varying vec3 vWorldNormal;
         varying vec3 vWorldPos;
 
-        // Port of Jn (45-deg halftone grid) from B1Nq4Kq6.js:12100
+        // 45-degree halftone dot grid for cel-shaded shadow transitions
         float blitzHalftone(vec2 coord, float scale, float radius) {
           float c = cos(0.785398);
           float s = sin(0.785398);
@@ -991,6 +991,8 @@ export function bakeStaticGroupMeshes(
     bakedMesh.castShadow = bucket.castShadow;
     bakedMesh.receiveShadow = bucket.receiveShadow;
     bakedMesh.frustumCulled = true;
+    bakedMesh.matrixAutoUpdate = false;
+    bakedMesh.updateMatrix();
     rootGroup.add(bakedMesh);
   }
 
@@ -1006,13 +1008,33 @@ export function bakeStaticGroupMeshes(
       bakedStroke.castShadow = false;
       bakedStroke.receiveShadow = false;
       bakedStroke.frustumCulled = true;
+      bakedStroke.matrixAutoUpdate = false;
+      bakedStroke.updateMatrix();
       bakedStroke.userData.isModelStroke = true;
       rootGroup.add(bakedStroke);
     }
   }
 
+  const candidateParents = new Set<THREE.Object3D>();
   for (const m of meshesToRemove) {
+    if (m.parent && m.parent !== rootGroup) {
+      candidateParents.add(m.parent);
+    }
     m.parent?.remove(m);
+  }
+  for (const p of candidateParents) {
+    let cur: THREE.Object3D | null = p;
+    while (
+      cur &&
+      cur !== rootGroup &&
+      !excludeSet?.has(cur) &&
+      !cur.name &&
+      cur.children.length === 0
+    ) {
+      const parentObj: THREE.Object3D | null = cur.parent;
+      parentObj?.remove(cur);
+      cur = parentObj;
+    }
   }
 }
 
@@ -1033,26 +1055,25 @@ export function isBlitzColliderOrHelperNode(obj: THREE.Object3D): boolean {
 }
 
 /**
- * Exact port of Blitz's Ni (InfiniteGrass + InfiniteGrassPetals) from B1Nq4Kq6.js:389500-407500
+ * Toroidal GPU-instanced InfiniteGrass & InfiniteGrassPetals shader system
  */
 export function createBlitzInfiniteGrassSystem(
   scene: THREE.Scene,
   windUniforms: BlitzWindUniforms,
   isSoftwareGl: boolean,
 ) {
-  // Exact metrics from Ni.prototype.initMetrics (B1Nq4Kq6.js:390800)
-  // Camera-following 42m x 42m toroidal streaming window around uViewPos for ultra-thick, lush Blitz grass carpet
+  // Camera-following 42m x 42m toroidal streaming window around uViewPos for a lush grass carpet with low GPU overdraw
   const isCompact = isSoftwareGl;
   const poolRadiusChunks = 3;
   const poolDiameterChunks = poolRadiusChunks * 2 + 1;
-  const chunkColumns = isCompact ? 24 : 28;
-  const chunkRows = isCompact ? 22 : 26;
+  const chunkColumns = isCompact ? 20 : 24;
+  const chunkRows = isCompact ? 18 : 22;
   const fieldSize = 42.0;
   const wrappedJitterFactor = 0.78;
   const fullCircle = Math.PI * 2;
   const nearScaleMin = 0.45;
   const nearScaleMax = 1.05;
-  const bladeWidth = 0.22;
+  const bladeWidth = 0.24;
   const bladeHeight = 0.64;
   const bladeFold = 0.5;
   const bladeKeepRatio = isCompact ? 0.85 : 0.92;
@@ -1214,7 +1235,7 @@ export function createBlitzInfiniteGrassSystem(
   windUniforms.uDirShadowMatrix = uDirShadowMatrix;
   windUniforms.uHasDirShadow = uHasDirShadow;
 
-  // Original Bundled Buddies Blitz InfiniteGrass Shader (class Ni in B1Nq4Kq6.js:389700)
+  // Toroidal Instanced InfiniteGrass Shader
   // Sun palette: #1b6e1e root -> #75d424 mid -> #d1f542 tip
   // Shadow palette: #083d12 root -> #1a7a24 mid -> #57b825 tip
   const grassMaterial = new THREE.ShaderMaterial({
@@ -1246,7 +1267,7 @@ export function createBlitzInfiniteGrassSystem(
       uWindDirection: windUniforms.uWindDirection,
       uWindStrength: windUniforms.uWindStrength,
       uWindGust: windUniforms.uWindGust,
-      // Authentic BUDDIES-bundled Buddies Blitz grass palette (Ni @ B1Nq4Kq6.js:389700)
+      // Sunlit & shadowed cel-shaded grass palette
       uSunBottom: { value: new THREE.Color('#1b6e1e') },
       uSunMid: { value: new THREE.Color('#75d424') },
       uSunTop: { value: new THREE.Color('#d1f542') },
@@ -1503,7 +1524,10 @@ export function createBlitzInfiniteGrassSystem(
   const grassMesh = new THREE.InstancedMesh(bladeGeo, grassMaterial, count);
   grassMesh.name = 'InfiniteGrass';
   grassMesh.frustumCulled = false;
+  grassMesh.castShadow = false;
   grassMesh.receiveShadow = true;
+  grassMesh.matrixAutoUpdate = false;
+  grassMesh.updateMatrix();
   const ident = new THREE.Matrix4().identity();
   for (let i = 0; i < count; i++) {
     grassMesh.setMatrixAt(i, ident);
@@ -1511,7 +1535,7 @@ export function createBlitzInfiniteGrassSystem(
   grassMesh.instanceMatrix.needsUpdate = true;
   scene.add(grassMesh);
 
-  // Authentic Buddies Blitz Colorful Flower/Petal Specks nestled inside the grass (class Ni in B1Nq4Kq6.js)
+  // Colorful Flower/Petal Specks nestled inside the grass
   // Small crisp diamond/square flower specks (#fff04a, #ffb300, #b366ff, #ff5c8a, #38bdf8) swaying with the wind
   const petalCount = isCompact ? 520 : 680;
   const petalGeo = new THREE.PlaneGeometry(1, 1);
@@ -1698,6 +1722,10 @@ export function createBlitzInfiniteGrassSystem(
   const petalMesh = new THREE.InstancedMesh(petalGeo, petalMat, petalCount);
   petalMesh.name = 'InfiniteGrassPetals';
   petalMesh.frustumCulled = false;
+  petalMesh.castShadow = false;
+  petalMesh.receiveShadow = false;
+  petalMesh.matrixAutoUpdate = false;
+  petalMesh.updateMatrix();
   for (let i = 0; i < petalCount; i++) {
     petalMesh.setMatrixAt(i, ident);
   }
@@ -2556,8 +2584,7 @@ function getOrCreateSt01TankTextures(isSuper: boolean): St01TankTextureSet {
 }
 
 /**
- * Exact port of Blitz's Robot Model Assembly (B1Nq4Kq6.js:100500-103500 & tr track curve),
- * upgraded 1:1 with the ST-01 Combat Mini-Tank 4-View Blueprint & Green-Screen Reference!
+ * Tracked chassis curve points for the ST-01 Combat Mini-Tank assembly
  */
 const DEFAULT_BLITZ_TANK_TRACK_POINTS: { x: number; y: number; z: number }[] = [
   { x: -0.00021, y: 0.09568, z: -0.60929 },
@@ -4180,8 +4207,7 @@ function updateSingleChimneySmokePuff(puff: ChimneySmokePuff, timeSec: number): 
   const rawAge = (timeSec + puff.phaseOffset * puff.lifetime) % puff.lifetime;
   const norm = Math.max(0, Math.min(1, rawAge / puff.lifetime));
 
-  // Scale envelope from bundled B1Nq4Kq6.js class Ji (ChimneySmoke):
-  // growEnd = 0.25, shrinkStart = 0.70
+  // Chimney smoke puff scale envelope: growEnd = 0.25, shrinkStart = 0.70
   let s = puff.startScale + (puff.endScale - puff.startScale) * Math.min(1, norm / 0.28);
   if (norm > 0.70) {
     const fade = 1.0 - (norm - 0.70) / 0.30;
@@ -4683,7 +4709,7 @@ export function spawnRealBlitzPropFromGlb(
     wrapper.add(plinthMesh);
   }
 
-  // Build Authentic Blitz ChimneySmoke Plumes (bundled B1Nq4Kq6.js class Ji + 3D cel-shaded puffs)
+  // Build 3D cel-shaded ChimneySmoke plumes
   if (rawSmokeEmitters.length > 0) {
     if (!sharedChimneyPuffGeo) {
       sharedChimneyPuffGeo = new THREE.IcosahedronGeometry(0.42, 2);
@@ -7087,7 +7113,7 @@ export interface CharBuddiesGlbRigController {
   meshes: { mesh: THREE.Mesh; defaultMat: THREE.Material | THREE.Material[] }[];
 }
 
-export interface RobloxBuddyRig {
+export interface BuddyCharacterRig {
   headMesh: THREE.Mesh;
   leftArmPivot: THREE.Group;
   rightArmPivot: THREE.Group;
@@ -9961,12 +9987,12 @@ function solveTwoBoneArmPalmIkLocal(
 }
 
 /**
- * Upgrades a RobloxBuddyRig with the custom humanoid `.glb` model (`/assets/charbuddies.glb` or
+ * Upgrades a BuddyCharacterRig with the custom humanoid `.glb` model (`/assets/charbuddies.glb` or
  * `/assets/mancharacterbuddies.glb`), wiring all 72 baked Mixamo skeletal animations while keeping
  * the 3D weapon rig & overhead crate.
  */
 export function upgradeBuddyRigWithCharBuddiesGlb(
-  rig: RobloxBuddyRig,
+  rig: BuddyCharacterRig,
   gltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.charBuddiesGltf,
   ar99AssaultGltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.ar99AssaultGltf,
   fishingRodGltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.fishingRodGltf,
@@ -10165,7 +10191,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
 
 function stepCharBuddiesGlbRigController(
   ctrl: CharBuddiesGlbRigController,
-  rig: RobloxBuddyRig,
+  rig: BuddyCharacterRig,
   weaponId: BlitzWeaponId,
   isMoving: boolean,
   carryingCrate: boolean,
@@ -10947,7 +10973,7 @@ function stepCharBuddiesGlbRigController(
 }
 
 /**
- * Updates the Roblox Character's Arm Poses and 3D Tactical Weapon Placement:
+ * Updates the Character's Arm Poses and 3D Tactical Weapon Placement:
  * - 'pistol' (BlitzPistol): Two-Handed Aiming Grip in front of upper chest; right hand grips handle,
  *   left hand cups/supports underneath right hand (matches Reference Image 1).
  * - 'rifle' (BlitzAssaultRifle): Buttstock tucked against right shoulder, right hand on pistol grip,
@@ -10958,7 +10984,7 @@ function stepCharBuddiesGlbRigController(
  * Also applies dynamic recoil kickback & Bazooka front sparks / rear exhaust backblast!
  */
 export function updateCharacterWeaponStance(
-  rig: RobloxBuddyRig,
+  rig: BuddyCharacterRig,
   weaponId: BlitzWeaponId,
   walkCycle: number,
   isMoving: boolean,
@@ -11286,14 +11312,14 @@ export function updateCharacterWeaponStance(
   }
 }
 
-export function buildProceduralRobloxBuddyAvatar(
+export function buildProceduralBuddyAvatar(
   bodyGroup: THREE.Group,
   team: 'blue' | 'red',
   windUniforms: BlitzWindUniforms,
   isSoftwareGl: boolean,
   isSeatedRider = false,
   preferredGender?: CharacterGender,
-): RobloxBuddyRig {
+): BuddyCharacterRig {
   bodyGroup.rotation.order = 'YXZ';
   if (bodyGroup.parent) {
     bodyGroup.parent.rotation.order = 'YXZ';
@@ -11329,8 +11355,8 @@ export function buildProceduralRobloxBuddyAvatar(
     return mesh;
   };
 
-  // Hidden state/material carrier anchors (legacy Roblox character meshes completely removed;
-  // only the 3D human character `mancharacterbuddies.glb` in `/assets/charbuddies.glb` is rendered)
+  // Hidden state/material carrier anchors (procedural placeholder pivots hidden;
+  // the 3D human character `mancharacterbuddies.glb` / `charbuddies.glb` is rendered)
   const headMesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.01, 0.01, 0.01),
     new THREE.MeshStandardMaterial({ color: '#f5cfa8', roughness: 0.55, metalness: 0.08 }),
@@ -11438,7 +11464,7 @@ export function buildProceduralRobloxBuddyAvatar(
   weaponMesh.visible = false;
   weaponRigGroup.add(weaponMesh);
 
-  const rig: RobloxBuddyRig = {
+  const rig: BuddyCharacterRig = {
     headMesh,
     leftArmPivot,
     rightArmPivot,
@@ -11488,8 +11514,7 @@ export interface TolanCurvedPlanetEnvironment {
 }
 
 /**
- * Builds the permanent 360° Seamless Spherical / Toroidal Curved Planet Environment:
- * Original Buddies Blitz 100% Flat Splatmap Ground Environment (class Gr in B1Nq4Kq6.js):
+ * Builds the 360° Splatmap Ground & Coastal Terrain Environment:
  * - 100% flat terrain (elevation = 0, curvature = 0) with no planet curvature, no toroidal loop jumps,
  *   no gray city asphalt roads, and no carved rivers/bridges.
  * - Soft organic splatmap blend between lush green grass floor (#4ea832 -> #75d424) and warm sandy-brown
@@ -17359,6 +17384,12 @@ export function createTolanCurvedPlanetEnvironment(
   bakeStaticGroupMeshes(constructionYardGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(seBeachGroup, { minShadowCasterSpan: 0.65 });
   bakeStaticGroupMeshes(embankmentGroup, { minShadowCasterSpan: 0.55 });
+  groundMesh.updateMatrix();
+  groundMesh.matrixAutoUpdate = false;
+  waterMesh.updateMatrix();
+  waterMesh.matrixAutoUpdate = false;
+  planetCoreMesh.updateMatrix();
+  planetCoreMesh.matrixAutoUpdate = false;
 
   return {
     groundMesh,
@@ -17383,7 +17414,7 @@ export function createTolanCurvedPlanetEnvironment(
 }
 
 // ============================================================================
-// ORIGINAL LONG HOANG (BLITZ) 5-LAYER CEL-SHADED EXPLOSION & MUZZLE FLASH ENGINE
+// 5-LAYER CEL-SHADED EXPLOSION & MUZZLE FLASH ENGINE
 // ============================================================================
 
 export type BlitzExplosionVfxType = 'cannon' | 'barrel' | 'crate' | 'vehicle' | 'hq' | 'fodder';
@@ -17419,7 +17450,7 @@ export interface BlitzExplosionSystem {
 }
 
 /**
- * Creates Blitz's overhead spinning yellow StunEffect mesh (`hi` in `B1Nq4Kq6.js:178732`):
+ * Creates the overhead spinning yellow StunEffect mesh:
  * - 1.5m x 1.5m horizontal plane (`rotation.x = -Math.PI * 0.5`)
  * - Tinted `#ffe600` (`0xffe600`) with stylized comic dizzy stars & ring texture
  * - Spins 2 full revolutions (`4π rad`) over 1.5s while stunned by an explosion
@@ -18105,7 +18136,7 @@ export function createBlitzExplosionSystem(
   };
 
   /**
-   * BUDDIES-bundled Bullet Hit Burst (`yi` EnemyHit & `bi` PlayerHit in `B1Nq4Kq6.js:300792`):
+   * Bullet Hit Burst (EnemyHit & PlayerHit):
    * - 0.15s crisp impact flash + shockwave ring (`scale 0.45 -> 0.85 -> 1.15`)
    * - 9 flying golden shards (`#fff8dd`, `#ffd77a`, `#ffb24c` for enemy hit; `#ffd6b0`, `#ff5b2e`, `#c81d25` for player hit)
    */
@@ -18156,7 +18187,7 @@ export function createBlitzExplosionSystem(
   };
 
   /**
-   * BUDDIES-bundled Low-Health Critical Smoke Emitter (`ei` & `Ti` in `B1Nq4Kq6.js:178500`):
+   * Low-Health Critical Smoke Emitter:
    * Spawns rising warm gray smoke puffs (`#e8e2d8 -> #c8bfb5 -> #aaa199`) when vehicle HP <= 33%.
    */
   const spawnLowHealthSmokePuff = (position: THREE.Vector3) => {

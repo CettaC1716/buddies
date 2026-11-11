@@ -22,7 +22,7 @@
 Traditional Web3 games break both immersion and tokenomics: they interrupt 60 FPS gameplay with wallet popups, and they mint P2E tokens out of thin air whenever bots grind repetitive tasks. **Buddies Blitz** solves both using native NEAR primitives and a strict player-to-player (`P2P`) real economy:
 
 1. **Seedless Dual-Key Citizen Sub-Accounts (`<handle>.buddiesblitz.testnet`)** — Citizens sign in with Google OAuth (via Privy) and pick a handle, provisioning a browser-scoped Ed25519 `FunctionCall` session key (`0.25 NEAR` gas allowance scoped strictly to `market.buddiesblitz.testnet`) via [`api/near-relayer.ts`](api/near-relayer.ts) while `buddiesblitz.testnet` retains recovery custody. External NEAR wallets (**Meteor Wallet** and **MyNearWallet Testnet**) are also supported with **NEP-413 `signMessage`** cryptographic ownership verification.
-2. **Non-Ponzi P2P Real Economy (`Track 09-games`)** — Grinding Mini-Games (**Warzone**) or selling unminted fish to **Merchant Kai** yields off-chain **`LUL`**, whose **sole function** is converting into off-chain **`CYON`** to buy standard non-NFT items. On-chain **`RESPITE` (NEP-141)** is **never printed from gameplay grinding**: it enters circulation only when a player swaps `NEAR -> RESPITE` at **Merchant Hana's** ATM (`1 NEAR = 100 RESPITE`) and circulates **player-to-player** when citizens mint caught fish or rare items as **NEP-171 NFTs** and another player buys them on **Kai's P2P Marketplace** (inspired by *Roblox Fish It* / *Fisch*). If no player buys a listed NFT, zero `RESPITE` is created.
+2. **Non-Ponzi P2P Real Economy (`Track 09-games`)** — Grinding Mini-Games (**Warzone**) or selling unminted fish to **Merchant Kai** yields off-chain **`LUL`**, whose **sole function** is converting into off-chain **`CYON`** to buy standard non-NFT items. On-chain **`RESPITE` (NEP-141)** is **never printed from gameplay grinding**: it enters circulation only when a player swaps `NEAR -> RESPITE` at **Merchant Hana's** ATM (`1 NEAR = 100 RESPITE`) and circulates **player-to-player** when citizens mint caught fish or rare items as **NEP-171 NFTs** and another player buys them on **Kai's P2P Marketplace**. If no player buys a listed NFT, zero `RESPITE` is created.
 3. **Functional Sub-Account Deeds & Autonomous NPC Merchants (`Track 10-nfts` & `09-games`)** — Purchasing the **Modern Japanese Wooden Pavilion House Certificate (`25 RESPITE`)** mints a **NEP-171 Sub-Account Deed** with atomic `key_epoch` session-key rotation on transfer, while NPC Merchants **Hana** (Central Plaza Cafe) and **Kai** (East Beach House) manage live `CYON` treasuries, dynamic supply/demand pricing, and bankruptcy bailouts.
 
 ---
@@ -36,9 +36,9 @@ Requires **Node.js 18+** and **npm** (plus **Rust `stable` + `cargo-near`** if r
 npm install
 npm run dev
 
-# 2. Run TypeScript static verification, 106 unit tests, and production WebGL bundle build
+# 2. Run TypeScript static verification, 112+ unit tests, and production WebGL bundle build
 npm run lint     # tsc --noEmit (0 errors)
-npm test         # 106 unit tests (3-currency P2P invariants, House Deed vs Fish NFT filter, NEAR client & relayer)
+npm test         # 112+ unit tests (3-currency P2P invariants, House Deed vs Fish NFT filter, NEAR client, audio & preloader)
 npm run build    # Production Vite 8 build into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM binary (near-sdk 5.30.1)
@@ -207,6 +207,7 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 ```text
 api/
   near-relayer.ts                       Serverless Dual-Key sub-account provisioner (<handle>.buddiesblitz.testnet)
+  npc-agent.ts                          Serverless Gemini 2.5 Flash in-game AI citizen guide for Hana & Kai
 
 contracts/buddies-market/
   Cargo.toml                            near-sdk 5.30.1 Rust manifest
@@ -220,6 +221,7 @@ src/
     CityTransitKioskModal.tsx           Portal Hub: Travel & Districts, Warzone Team Select, My House & Shop
     NpcMerchantAndHouseModal.tsx        Hana & Kai Chat, LUL->CYON / NEAR->RESPITE Exchange, Catalog & House Studio
     TidewaterCatchShowcaseModal.tsx     Tension-Gauge fishing HUD, 3D fish portrait, Bag/LUL-sell/NFT-mint/Release
+    Fish3dPreviewModal.tsx              Interactive 360-degree 3D fish inspector for Bag, Wallet Assets & Kai Market
     TacticalKioskModal.tsx              Warzone Weapon Armory, Vehicle Hangar & residential plot access
     NearWalletSelectorModal.tsx         Meteor / MyNearWallet Testnet connector & NEP-413 verifier
     SocialChatModal.tsx                 3-column MMORPG public & private whisper chat modal
@@ -236,7 +238,7 @@ src/
     buddiesBlitzCombat.ts               Raycast ballistics, melee knockback & vehicle turret physics
     buddiesBlitzMinimap.ts              2D radar & dynamic chunk culling (20.8m)
     buddiesAssetPreloader.ts            Deduplicated GLB & UI texture preloader
-    audio.ts                            Procedural Web Audio API synthesizer
+    audio.ts                            Procedural Web Audio synthesizer (Sunny Morning Bossa & Chill Warzone Bossa)
   lib/
     nearClient.ts                       FastNEAR JSON-RPC client, Ed25519 session keys, NEP-413 & typed calls
     supabaseClient.ts                   Supabase PostgreSQL persistence, P2P listing sync & Realtime presence
@@ -258,6 +260,7 @@ Copy [`.env.example`](.env.example) to `.env` for local development or Vercel de
 | `VITE_NEAR_MARKET_CONTRACT_ID` | `market.buddiesblitz.testnet` |
 | `NEAR_MASTER_ACCOUNT_ID` | `buddiesblitz.testnet` (used by `/api/near-relayer`) |
 | `NEAR_MASTER_PRIVATE_KEY` | Optional server-side `ed25519:` key on Vercel to broadcast live `CreateAccount` transactions |
+| `GEMINI_API_KEY` | Server-side Gemini API key on Vercel for `/api/npc-agent` interactive in-game NPC dialogue |
 | `VITE_PRIVY_APP_ID` | Privy App ID for headless Google OAuth onboarding |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Supabase project URL and public `anon` key (initialize with [`supabase_mvp_schema.sql`](supabase_mvp_schema.sql)) |
 

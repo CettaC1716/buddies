@@ -250,10 +250,12 @@ import {
   computeSpatialAudioGain,
   isListenerInsideBasePerimeter,
   computeBuildBoxAudioGain,
+  soundEngine,
 } from './audio';
 
-test('BUDDIES constants match bundled buddies-blitz.com values and low-angle horizon chase camera', () => {
+test('Core camera and physics constants match low-angle horizon chase camera targets', () => {
   assert.equal(BUDDIES_CONSTANTS.camera.fov, 42);
+  assert.equal(BUDDIES_CONSTANTS.camera.pseudoOrthoFov, 18);
   assert.deepEqual(BUDDIES_CONSTANTS.camera.chaseOffset, { x: 0, y: 5.2, z: 12.5 });
   assert.equal(BUDDIES_CONSTANTS.camera.chaseLookAtYOffset, 2.4);
   assert.deepEqual(BUDDIES_CONSTANTS.camera.defaultAngleOffset, { x: 4, y: 14, z: 8 });
@@ -263,6 +265,14 @@ test('BUDDIES constants match bundled buddies-blitz.com values and low-angle hor
   assert.equal(BUDDIES_CONSTANTS.physics.drive.rotationSpeed, 4.212);
   assert.equal(BUDDIES_CONSTANTS.physics.cannon.projectileSpeed, 55.0);
   assert.equal(BUDDIES_CONSTANTS.shadersAndLighting.outline.strokeWidth, 0.018);
+
+  // Sunny Morning Bossa (city) & Chill Beat Bossa (warzone) mode switching
+  assert.equal(soundEngine.getBgmMode(), 'city');
+  soundEngine.setBgmMode('warzone');
+  assert.equal(soundEngine.getBgmMode(), 'warzone');
+  soundEngine.setBgmMode('city');
+  assert.equal(soundEngine.getBgmMode(), 'city');
+  soundEngine.stopBgm();
   assert.equal(BUDDIES_CONSTANTS.shadersAndLighting.outline.strokeColor, '#17110f');
 });
 
@@ -973,7 +983,7 @@ test('Large structures (turbine, crane, buildings, giant tanks/pipes) never wobb
   assert.equal(getPropCollisionSpec('explosive_barrel').canJiggleOnHit, true);
 });
 
-test('BUDDIES hit-reaction pose, stun star spin, 4-part tank recoil, emissive flash, and explosion audio ducking match buddies-blitz.com formulas', () => {
+test('Hit-reaction pose, stun star spin, 4-part tank recoil, emissive flash, and explosion audio ducking formulas', () => {
   // 1. Directional hit reaction: peak at t = 0.10s (timer = 0.50s out of 0.60s)
   const playerPeak = evaluateBlitzHitReactionPose(0.50, 0.60, 0, 1, true);
   const enemyPeak = evaluateBlitzHitReactionPose(0.50, 0.60, 0, 1, false);
@@ -4861,7 +4871,7 @@ test('3-Currency Economy (LUL, CYON, RESPITE), NPC Merchant Dynamic Pricing, Ban
   assert.ok(reply.length > 20);
 });
 
-test('BUDDIES buddies-blitz.com/interior Cutaway Studio: 10cm Grid + 25cm Wall Snap, 2D SAT OBB Collision, Spiral Free-Spot Search, 120Hz Spring-Wobble, Daylight Arc, and Softmax Mood Meter', () => {
+test('Cutaway House Studio: 10cm Grid + 25cm Wall Snap, 2D SAT OBB Collision, Spiral Free-Spot Search, 120Hz Spring-Wobble, Daylight Arc, and Softmax Mood Meter', () => {
   // 1. Cutaway room bounds match 10.6m x 7.4m x 2.75m studio floorplan
   assert.equal(CUTAWAY_ROOM_BOUNDS.minX, -5.3);
   assert.equal(CUTAWAY_ROOM_BOUNDS.maxX, 5.3);
@@ -4945,7 +4955,7 @@ test('BUDDIES buddies-blitz.com/interior Cutaway Studio: 10cm Grid + 25cm Wall S
   assert.ok(moodyNight.explanationText.length > 15);
 });
 
-test('Verbatim bundled buddies-blitz.com/interior 3D builders (lc..Ec) and charbuddies.glb humanoid avatar asset', async () => {
+test('Procedural interior 3D furniture builders and charbuddies.glb humanoid avatar asset', async () => {
   const fs = await import('node:fs');
   const {
     BUDDIES_FURNITURE_BUILDERS,
@@ -4953,19 +4963,19 @@ test('Verbatim bundled buddies-blitz.com/interior 3D builders (lc..Ec) and charb
     buildBuddiesInteriorBackgroundZones,
   } = await import('./buddiesInteriorAssets');
 
-  // 1. All 21 bundled buddies-blitz.com/interior 3D furniture builders produce non-empty merged Three.js Groups
+  // 1. All 21 procedural 3D furniture builders produce non-empty merged Three.js Groups
   const builderKeys = Object.keys(BUDDIES_FURNITURE_BUILDERS);
   assert.equal(builderKeys.length, 21);
   for (const key of builderKeys) {
     const grp = BUDDIES_FURNITURE_BUILDERS[key]();
-    assert.ok(grp.children.length > 0, `Bundled buddies-blitz.com/interior builder '${key}' has 3D meshes`);
+    assert.ok(grp.children.length > 0, `Procedural interior builder '${key}' has 3D meshes`);
   }
 
   // 2. Background zones (Dining Wr, Bedroom Ur, Study Vr, Back Wall Shelves xc) build cleanly
   const bgZones = buildBuddiesInteriorBackgroundZones();
   assert.ok(bgZones.children.length >= 20, 'Background zones contain all static room furniture');
 
-  // 3. All 7 interactive catalog furniture items build from original buddies-blitz.com/interior builders
+  // 3. All 7 interactive catalog furniture items build from procedural interior builders
   for (const catId of [
     'tatami_tea_table',
     'sakura_bonsai_pot',

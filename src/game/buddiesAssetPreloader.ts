@@ -3,7 +3,7 @@
  * Coordinates:
  * 1. 3D `.glb` models, `.ktx2` textures, and track JSON via `THREE.LoadingManager` + `Promise.all`
  * 2. All UI / Tactical Kiosk / Merchant Catalog / Profile thumbnail images via `new Image()` + `img.decode()`
- * 3. All SFX & BGM `.mp3` audio files via `Promise.all`
+ * 3. All SFX `.mp3` audio files via `Promise.all` (with procedural Web Audio BGM)
  * 4. Three.js `renderer.compile(scene, camera)` + 1 warm-up frame render gate
  */
 
@@ -39,7 +39,7 @@ export const CRITICAL_UI_IMAGE_URLS: readonly string[] = [
 ];
 
 export const CRITICAL_3D_ASSET_COUNT = 40;
-export const CRITICAL_AUDIO_ASSET_COUNT = 23;
+export const CRITICAL_AUDIO_ASSET_COUNT = 22;
 
 export interface PreloadProgressInput {
   modelsLoaded: number;

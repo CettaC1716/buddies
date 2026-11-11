@@ -720,7 +720,7 @@ function Mc(
 }
 
 // ============================================================================
-// ALL 23 VERBATIM BUNDLED `buddies-blitz.com/interior` 3D FURNITURE BUILDERS (`lc..Dc`)
+// PROCEDURAL 3D CUTAWAY INTERIOR FURNITURE BUILDERS
 // ============================================================================
 
 /** `lc`: L-Sectional Sofa (`#L427`) */
@@ -1612,7 +1612,7 @@ export const BUDDIES_FURNITURE_BUILDERS: Record<string, () => i.Group> = {
 
 /**
  * Builds the static background room furniture zones (`Wr` Dining, `Ur` Bedroom, `Vr` Study, plus wall shelves)
- * from `buddies-blitz.com/interior` (`#L609`) so the entire 10.6m x 7.4m cutaway studio is populated with the original bundled 3D assets!
+ * so the 10.6m x 7.4m cutaway studio is populated with warm interior props.
  */
 export function buildBuddiesInteriorBackgroundZones(): i.Group {
   const grp = new i.Group();
@@ -1671,7 +1671,7 @@ export function buildBuddiesInteriorBackgroundZones(): i.Group {
 }
 
 /**
- * Builds the interactive draggable catalog furniture items using the verbatim bundled `buddies-blitz.com/interior` 3D builders (`lc..Dc`).
+ * Builds the interactive draggable catalog furniture items using the procedural 3D furniture builders.
  */
 export function buildOriginalBuddiesCatalogFurnitureMesh(catalogId: string): i.Group {
   if (BUDDIES_FURNITURE_BUILDERS[catalogId]) {

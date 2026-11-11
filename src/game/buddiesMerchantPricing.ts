@@ -40,7 +40,7 @@ export interface MerchantCatalogItem {
   interiorSlot?: HouseInteriorSlotId;
   skinThemeId?: BaseSkinThemeId;
   gardenPresetId?: BaseGardenPresetId;
-  /** 2D OBB footprint rectangles `[offsetX, offsetZ, width, depth]` in meters (BUDDIES buddies-blitz.com/interior `fp`) */
+  /** 2D OBB footprint rectangles `[offsetX, offsetZ, width, depth]` in meters */
   footprints?: readonly [number, number, number, number][];
   /** Item height in meters used for spring-damper wobble pivot `Gc(item)` */
   height?: number;
@@ -905,10 +905,7 @@ export function generateNpcMerchantReply(
 
 /**
  * ============================================================================
- * BUDDIES-BUNDLED `buddies-blitz.com/interior` ("Set the Mood") 3D CUTAWAY HOUSE ENGINE
- * ============================================================================
- * Ported directly from `scratch/buddies_interior/app_formatted.js` (`#L25-L30`,
- * `#L351-L368`, `#L480-L530`, `#L628-L633`).
+ * 3D CUTAWAY PRIVATE HOUSE INTERIOR STUDIO ENGINE
  * ============================================================================
  */
 
@@ -1638,7 +1635,7 @@ export function evaluateRoomMoodScores(params: {
       ? HOUSE_SURFACE_SWATCHES[10]
       : HOUSE_SURFACE_SWATCHES[8]);
 
-  // Weighted surface averages (`En` weights in buddies-blitz.com/interior `#L628`)
+  // Weighted surface luminance, warmth, and texture averages
   const L = wallSw.L * 0.48 + floorSw.L * 0.36 + slatsSw.L * 0.16;
   const W = wallSw.warm * 0.48 + floorSw.warm * 0.36 + slatsSw.warm * 0.16;
   const X = wallSw.tx * 0.48 + floorSw.tx * 0.36 + slatsSw.tx * 0.16;

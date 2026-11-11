@@ -508,7 +508,7 @@ export default function App() {
     hudRef.current = hud;
   }, [hud]);
   const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('day');
-  const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'roblox18'>('webgl35');
+  const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'ortho18'>('webgl35');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [audioVolumePct, setAudioVolumePct] = useState<number>(100);
   const [isKioskModalOpen, setIsKioskModalOpen] = useState<boolean>(false);
@@ -1216,9 +1216,13 @@ export default function App() {
     }
   }, [gameState]);
 
+  const activeBgmMode =
+    worldMode === 'warzone' || hud.worldMode === 'warzone' ? 'warzone' : 'city';
+
   useEffect(() => {
-    soundEngine.startBgm();
-  }, []);
+    soundEngine.setBgmMode(activeBgmMode);
+    soundEngine.startBgm(activeBgmMode);
+  }, [activeBgmMode]);
 
   const handleToggleAudio = useCallback(() => {
     const nextMuted = !soundEngine.muted;
@@ -1229,7 +1233,9 @@ export default function App() {
         soundEngine.setMasterVolume(0.5);
         setAudioVolumePct(50);
       }
-      soundEngine.startBgm();
+      soundEngine.startBgm(
+        hudRef.current.worldMode === 'warzone' ? 'warzone' : 'city',
+      );
       soundEngine.playUiClick();
     }
   }, []);
@@ -1244,7 +1250,9 @@ export default function App() {
     } else if (soundEngine.muted) {
       soundEngine.muted = false;
       setIsMuted(false);
-      soundEngine.startBgm();
+      soundEngine.startBgm(
+        hudRef.current.worldMode === 'warzone' ? 'warzone' : 'city',
+      );
     }
   }, []);
 
@@ -1258,7 +1266,7 @@ export default function App() {
 
   const handleToggleFovMode = useCallback(() => {
     soundEngine.playUiClick();
-    setCameraFovMode((prev) => (prev === 'webgl35' ? 'roblox18' : 'webgl35'));
+    setCameraFovMode((prev) => (prev === 'webgl35' ? 'ortho18' : 'webgl35'));
   }, []);
 
   const handleTogglePause = useCallback(() => {
@@ -3071,7 +3079,7 @@ export default function App() {
       />
 
       {/* =====================================================================
-          2. TITLE SCREEN: HEXAGON CUTOUT & COMIC STICKER LOCKUP (CJn-Xu8f.js)
+          2. TITLE SCREEN: HEXAGON CUTOUT & COMIC STICKER LOCKUP
          ===================================================================== */}
       {isPreloadComplete && gameState === 'title' && (
         <section
