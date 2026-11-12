@@ -287,6 +287,18 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   onMeetKai,
 }) => {
   const [activeTab, setActiveTab] = useState<SocialChatSubTab>('public');
+  const [phoneClock, setPhoneClock] = useState<string>(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPhoneClock(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      );
+    }, 20000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const publicEndRef = useRef<HTMLDivElement | null>(null);
   const privateEndRef = useRef<HTMLDivElement | null>(null);
@@ -367,70 +379,60 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
       aria-hidden={!isOpen}
       aria-label="Social Chat Room"
       data-social-chat-modal="true"
-      className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
+      className={`fixed left-3 bottom-3 z-40 w-[min(372px,94vw)] h-[min(724px,calc(100dvh-6rem))] select-none transition-all duration-300 ease-out transform ${
         isOpen
           ? 'translate-x-0 opacity-100 pointer-events-auto'
           : '-translate-x-[120%] opacity-0 pointer-events-none'
       }`}
     >
-      <div className="relative bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black flex flex-col h-full overflow-hidden">
-        {/* TOP HEADER & SUB-TABS */}
-        <div className="flex items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(
-              [
-                { id: 'online', label: `ONLINE LIST (${realHumanOnlinePeers.length})` },
-                { id: 'public', label: 'PUBLIC' },
-                {
-                  id: 'private',
-                  label: unreadPrivateCount > 0 ? `PRIVATE (${unreadPrivateCount})` : 'PRIVATE',
-                },
-                {
-                  id: 'kai',
-                  label: !kaiHasMet || kaiRawFishCount > 0 ? 'KAI (1)' : 'KAI',
-                },
-                { id: 'settings', label: 'SETTINGS' },
-              ] as { id: SocialChatSubTab; label: string }[]
-            ).map((tab) => {
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  data-social-tab={tab.id}
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setActiveTab(tab.id);
-                    if (tab.id === 'private') {
-                      onClearUnreadPrivate?.();
-                    }
-                  }}
-                  className={`-skew-x-6 px-3 py-1.5 font-black text-[11px] uppercase tracking-wider border-2 border-black transition-all cursor-pointer ${
-                    active
-                      ? 'bg-[#facc15] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  <span className="skew-x-6 inline-flex items-center gap-1">
-                    {tab.label}
-                    {tab.id === 'private' && unreadPrivateCount > 0 && (
-                      <span
-                        data-private-tab-unread-dot="true"
-                        className="w-2 h-2 rounded-full bg-[#ff3b30] border border-black inline-block"
-                      />
-                    )}
-                    {tab.id === 'kai' && (!kaiHasMet || kaiRawFishCount > 0) && (
-                      <span
-                        data-kai-tab-unread-dot="true"
-                        className="w-2 h-2 rounded-full bg-[#ff3b30] border border-black inline-block"
-                      />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
+      {/* PHONE FRAME: titanium body, side buttons, punch-hole camera */}
+      <div className="relative h-full rounded-[2.7rem] bg-[#17181c] border-[3px] border-black shadow-[6px_6px_0px_#000] p-[10px]">
+        <div className="absolute -left-[6px] top-28 w-[5px] h-10 bg-[#17181c] border-2 border-black rounded-l-md" />
+        <div className="absolute -left-[6px] top-[11.5rem] w-[5px] h-14 bg-[#17181c] border-2 border-black rounded-l-md" />
+        <div className="absolute -right-[6px] top-36 w-[5px] h-16 bg-[#17181c] border-2 border-black rounded-r-md" />
+        {/* PHONE SCREEN */}
+        <div className="relative bg-white text-black rounded-[2.1rem] flex flex-col h-full overflow-hidden">
+          <div className="absolute left-1/2 -translate-x-1/2 top-[6px] w-3.5 h-3.5 rounded-full bg-[#17181c] border border-black z-20 flex items-center justify-center">
+            <div className="w-1 h-1 rounded-full bg-[#46586b]" />
           </div>
-
+          {/* STATUS BAR */}
+          <div className="shrink-0 flex items-center justify-between px-5 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-600">
+            <span>{phoneClock}</span>
+            <span className="text-slate-400">Buddies OS</span>
+            <span className="flex items-center gap-1.5">
+              <span className="flex items-end gap-[2px]">
+                <span className="w-[3px] h-[4px] bg-slate-700 inline-block" />
+                <span className="w-[3px] h-[6px] bg-slate-700 inline-block" />
+                <span className="w-[3px] h-[8px] bg-slate-700 inline-block" />
+                <span className="w-[3px] h-[10px] bg-slate-300 inline-block" />
+              </span>
+              <span className="w-6 h-3 border-2 border-slate-700 rounded-[3px] p-[1px] flex">
+                <span className="bg-[#b8ff3c] w-[70%] h-full inline-block" />
+              </span>
+            </span>
+          </div>
+        {/* APP HEADER */}
+        <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-2.5 border-b-[2.5px] border-black shrink-0">
+          <div className="min-w-0">
+            <div className="font-black text-[13px] uppercase tracking-wider leading-tight">
+              {
+                {
+                  online: 'Online List',
+                  public: 'Public Chat',
+                  private: 'Private Chat',
+                  kai: 'Kai · Fish Market',
+                  settings: 'Settings',
+                }[activeTab]
+              }
+            </div>
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
+              {activeTab === 'online'
+                ? `${realHumanOnlinePeers.length} peer${realHumanOnlinePeers.length === 1 ? '' : 's'} in zone`
+                : activeTab === 'kai'
+                  ? 'Fisherman & Beach Keeper'
+                  : 'Buddies Phone'}
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -445,7 +447,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
         </div>
 
         {/* SUB-TAB BODY CONTENT */}
-        <div className="mt-3 flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-3 pt-3">
           {/* 1. ONLINE LIST SUB-TAB (Real Human Multiplayer Peers Only) */}
           {activeTab === 'online' && (
             <div className="flex-1 flex flex-col min-h-0">
@@ -897,6 +899,115 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
               )}
             </div>
           )}
+        </div>
+
+        {/* PHONE BOTTOM MENU */}
+        <div className="shrink-0 border-t-[2.5px] border-black bg-white px-1.5 pt-1.5 pb-1.5">
+          <div className="flex items-stretch justify-between gap-1">
+            {(
+              [
+                {
+                  id: 'online',
+                  label: 'ONLINE',
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: 'public',
+                  label: 'PUBLIC',
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: 'private',
+                  label: 'PRIVATE',
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                      <rect x="2" y="4" width="20" height="16" rx="2" />
+                      <path d="M22 6l-10 7L2 6" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: 'kai',
+                  label: 'KAI',
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: 'settings',
+                  label: 'SETTINGS',
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                      <line x1="4" y1="21" x2="4" y2="14" />
+                      <line x1="4" y1="10" x2="4" y2="3" />
+                      <line x1="12" y1="21" x2="12" y2="12" />
+                      <line x1="12" y1="8" x2="12" y2="3" />
+                      <line x1="20" y1="21" x2="20" y2="16" />
+                      <line x1="20" y1="12" x2="20" y2="3" />
+                      <line x1="1" y1="14" x2="7" y2="14" />
+                      <line x1="9" y1="8" x2="15" y2="8" />
+                      <line x1="17" y1="16" x2="23" y2="16" />
+                    </svg>
+                  ),
+                },
+              ] as { id: SocialChatSubTab; label: string; icon: React.ReactNode }[]
+            ).map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  data-social-tab={tab.id}
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setActiveTab(tab.id);
+                    if (tab.id === 'private') {
+                      onClearUnreadPrivate?.();
+                    }
+                  }}
+                  className={`flex-1 flex flex-col items-center gap-0.5 px-1 py-1.5 border-2 transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#facc15] text-black border-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
+                      : 'text-slate-500 border-transparent hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="relative">
+                    {tab.icon}
+                    {tab.id === 'private' && unreadPrivateCount > 0 && (
+                      <span
+                        data-private-tab-unread-dot="true"
+                        className="absolute -top-1.5 -right-2.5 min-w-4 h-4 px-0.5 rounded-full bg-[#ff3b30] border border-black text-white text-[8px] font-black flex items-center justify-center"
+                      >
+                        {unreadPrivateCount}
+                      </span>
+                    )}
+                    {tab.id === 'kai' && (!kaiHasMet || kaiRawFishCount > 0) && (
+                      <span
+                        data-kai-tab-unread-dot="true"
+                        className="absolute -top-1.5 -right-2 w-2.5 h-2.5 rounded-full bg-[#ff3b30] border border-black inline-block"
+                      />
+                    )}
+                  </span>
+                  <span className="text-[8px] font-black uppercase tracking-wider">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mx-auto mt-1.5 h-1 w-24 rounded-full bg-black/70" />
+        </div>
         </div>
       </div>
     </aside>
