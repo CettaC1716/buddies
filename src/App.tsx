@@ -1274,21 +1274,29 @@ export default function App() {
   // Landing page PLAY / LOG IN: enter immediately once assets are ready;
   // otherwise the landing swaps to its own loading bar until preload lands.
   const [landingPlayPressed, setLandingPlayPressed] = useState<boolean>(false);
+  // While the post-PLAY camera descent runs, the login card waits off-screen
+  // so the dive down to the avatar reads cleanly before the card fades in.
+  const [landingDiveHold, setLandingDiveHold] = useState<boolean>(false);
+  const enterFromLanding = useCallback(() => {
+    setLandingDiveHold(true);
+    window.setTimeout(() => setLandingDiveHold(false), 1500);
+    handleStartGame(false);
+  }, [handleStartGame]);
   const handleLandingPlay = useCallback(() => {
     soundEngine.playUiClick();
     if (isPreloadComplete) {
-      handleStartGame(false);
+      enterFromLanding();
     } else {
       setLandingPlayPressed(true);
     }
-  }, [isPreloadComplete, handleStartGame]);
+  }, [isPreloadComplete, enterFromLanding]);
 
   useEffect(() => {
     if (landingPlayPressed && isPreloadComplete) {
       setLandingPlayPressed(false);
-      handleStartGame(false);
+      enterFromLanding();
     }
-  }, [landingPlayPressed, isPreloadComplete, handleStartGame]);
+  }, [landingPlayPressed, isPreloadComplete, enterFromLanding]);
 
   // After the guest avatar picker finishes at the lakeside stage, cover the
   // teleport with a short loading state, then spawn the player in the plaza.
@@ -1781,7 +1789,7 @@ export default function App() {
 
   useEffect(() => {
     const effectiveMode =
-      onboardingStep === 'guest_character_select'
+      onboardingStep === 'guest_character_select' || onboardingStep === 'auth_choice'
         ? 'character_select'
         : activeSpecialModal === 'none' && isInsidePrivateHouse
           ? 'house_visit'
@@ -3651,6 +3659,7 @@ export default function App() {
       {isPreloadComplete &&
         gameState === 'playing' &&
         !isFullMapOverview &&
+        !landingDiveHold &&
         onboardingStep !== 'completed' && (
           <section
             aria-label="Buddies Blitz Login & Onboarding"
