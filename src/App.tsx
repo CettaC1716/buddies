@@ -4546,11 +4546,11 @@ export default function App() {
                 {activeSpecialModal === 'npc_merchant' && (
                   <div
                     data-lobby-gold-exchange-btn="true"
-                    title="Merchant Shop & ATM Name"
+                    title={merchantLocation === 'beach_house' ? 'Kai — Fisherman & Beach Keeper' : 'Hana — Property Agent & City Guide'}
                     className="-skew-x-12 px-2.5 py-1 bg-[#ffd700] text-[#1a1a1a] border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-black text-[10px]"
                   >
                     <span className="skew-x-12 inline-block">
-                      {merchantLocation === 'beach_house' ? 'Kai Merchant & ATM' : 'Hana Merchant & ATM'}
+                      {merchantLocation === 'beach_house' ? 'Kai Fish Market' : 'Hana Property & Housing'}
                     </span>
                   </div>
                 )}
