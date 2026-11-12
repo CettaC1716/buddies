@@ -54,8 +54,8 @@ export const BUDDIES_CONSTANTS = {
       bridgeTargetDistance: 25,
     },
     followSpring: {
-      smoothTimeNormal: 0.18,
-      smoothTimeBoost: 0.22,
+      smoothTimeNormal: 0.12,
+      smoothTimeBoost: 0.16,
       snapDistanceSqThreshold: 36,
     },
     mousePan: {

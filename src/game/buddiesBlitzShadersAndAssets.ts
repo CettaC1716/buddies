@@ -4001,6 +4001,7 @@ export interface LoadedBlitzAssets {
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
+  longTurnClips: { left: THREE.AnimationClip | null; right: THREE.AnimationClip | null };
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -4200,11 +4201,49 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
+  // Long in-place turns: user-supplied Mixamo takes (1.63s) parsed at runtime like
+  // the sleeping clip above. The baked turn clips are the short 90-degree variants
+  // played back sped up and cut after 0.36s; these longer takes turn more gently.
+  // FBX units are centimeters, so the hip position track is scaled by 0.01.
+  const loadLongTurnClip = (url: string, clipName: string): Promise<THREE.AnimationClip | null> =>
+    (async () => {
+      try {
+        const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const buf = await res.arrayBuffer();
+        const fbx = new FBXLoader().parse(buf, '');
+        const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+        if (!raw) return null;
+        raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+        for (const t of raw.tracks) {
+          if (/Hips\.position$/i.test(t.name)) {
+            const vals = t.values;
+            for (let i = 0; i < vals.length; i++) vals[i] *= 0.01;
+          }
+        }
+        raw.name = clipName;
+        return raw;
+      } catch (err) {
+        console.warn('[PreloadGate] Long turn clip failed to load:', err);
+        return null;
+      }
+    })();
+  const longTurnClipsPromise = Promise.all([
+    loadLongTurnClip('/assets/turn-left.fbx', 'unarmed_turn_long_left.001'),
+    loadLongTurnClip('/assets/turn-right.fbx', 'unarmed_turn_long_right.001'),
+  ]).then(([left, right]) => ({ left, right }));
+  longTurnClipsPromise
+    .then((c) => {
+      loadedLongTurnClips = c;
+    })
+    .catch(() => {});
+
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, longTurnClipsPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4260,6 +4299,7 @@ export async function loadAllRealBlitzAssets(
     ),
     loadFoliageTex(),
     sleepingClipPromise,
+    longTurnClipsPromise,
   ]).then(
     ([
       playerGltf,
@@ -4303,6 +4343,7 @@ export async function loadAllRealBlitzAssets(
       playerTrackPoints,
       treeFoliageTex,
       sleepingClip,
+      longTurnClips,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4348,6 +4389,7 @@ export async function loadAllRealBlitzAssets(
         playerTrackPoints,
         treeFoliageTex,
         sleepingClip,
+        longTurnClips,
       };
       cachedLoadedBlitzAssets = loaded;
       inFlightLoadedBlitzAssetsPromise = null;
@@ -4364,6 +4406,10 @@ let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
 // batch: character rigs are built early (onCharacterGltfReady) and their clip maps
 // must already see the sleeping clip at build time.
 let loadedSleepingClip: THREE.AnimationClip | null = null;
+let loadedLongTurnClips: { left: THREE.AnimationClip | null; right: THREE.AnimationClip | null } = {
+  left: null,
+  right: null,
+};
 let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
@@ -9830,6 +9876,38 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('sleeping.001', c);
   }
+  // Merge the long in-place turn clips (runtime FBX takes) with the same track
+  // filtering and root-motion lock as the sleeping clip above. The controller
+  // applies the actual yaw rotation; these clips provide the stepping legs.
+  const longTurnMergeSrcs: Array<{ name: string; src: THREE.AnimationClip | null | undefined }> = [
+    { name: 'unarmed_turn_long_left.001', src: loadedLongTurnClips.left ?? cachedLoadedBlitzAssets?.longTurnClips?.left },
+    { name: 'unarmed_turn_long_right.001', src: loadedLongTurnClips.right ?? cachedLoadedBlitzAssets?.longTurnClips?.right },
+  ];
+  for (const { name, src: turnSrc } of longTurnMergeSrcs) {
+    if (!turnSrc || clips.has(name)) continue;
+    const c = turnSrc.clone();
+    c.name = name;
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set(name, c);
+  }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
     clips.set('fire.001', fallbackFireClip);
@@ -9946,6 +10024,8 @@ function configureCharBuddiesClipAction(act: THREE.AnimationAction, clipName: st
     clipName === 'unarmed_jump.001' ||
     clipName === 'unarmed_turn_left.001' ||
     clipName === 'unarmed_turn_right.001' ||
+    clipName === 'unarmed_turn_long_left.001' ||
+    clipName === 'unarmed_turn_long_right.001' ||
     clipName === 'pistol_jump.001' ||
     clipName === 'jump_up.001' ||
     clipName === 'jumping_down.001' ||
@@ -10407,6 +10487,20 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   };
 }
 
+// Natural ground speeds of the basic in-place locomotion clips, measured on the
+// assembled rig (foot travel per second at 1x playback, world units): the feet of
+// walk.001 move at 2.94 u/s, run.001 at 4.68 u/s. Playing them at a fixed 1x while
+// the unit moves faster makes the feet slide; the stride sync below scales the
+// cadence toward the unit's actual speed.
+const STRIDE_NATURAL_SPEEDS: Record<string, number> = {
+  'walk.001': 2.94,
+  'run.001': 4.68,
+  'unarmed_walk_strafe_left.001': 2.76,
+  'unarmed_walk_strafe_right.001': 2.76,
+  'unarmed_strafe_left.001': 5.34,
+  'unarmed_strafe_right.001': 5.34,
+};
+
 function stepCharBuddiesGlbRigController(
   ctrl: CharBuddiesGlbRigController,
   rig: BuddyCharacterRig,
@@ -10506,7 +10600,12 @@ function stepCharBuddiesGlbRigController(
   ctrl.prevYaw = yaw;
   ctrl.hasPrevYaw = true;
   if (!isMoving && jumpOffset <= 0.05 && !carryingCrate && Math.abs(deltaYaw) / Math.max(0.008, stepDt) > 2.0) {
-    ctrl.turnInPlaceTimer = 0.36;
+    // The long turn takes (1.63s at 1.35x playback) need a longer window than the
+    // short 90-degree clips (0.36s); without it they would be cut to a stub.
+    const hasLongTurn =
+      (weaponId === 'unarmed' || weaponId === 'fishing_rod' || weaponId === 'pistol') &&
+      (ctrl.clips.has('unarmed_turn_long_left.001') || ctrl.clips.has('unarmed_turn_long_right.001'));
+    ctrl.turnInPlaceTimer = hasLongTurn ? 1.15 : 0.36;
   } else if (isMoving || jumpOffset > 0.05 || carryingCrate) {
     ctrl.turnInPlaceTimer = 0;
   } else if (ctrl.turnInPlaceTimer > 0 && rawDt >= 0.002) {
@@ -10832,15 +10931,24 @@ function stepCharBuddiesGlbRigController(
     ctrl.turnInPlaceTimer > 0 &&
     !carryingCrate &&
     (weaponId === 'unarmed' || weaponId === 'fishing_rod' || weaponId === 'pistol') &&
-    (ctrl.clips.has('unarmed_turn_left.001') || ctrl.clips.has('unarmed_turn_right.001'))
+    (ctrl.clips.has('unarmed_turn_left.001') ||
+      ctrl.clips.has('unarmed_turn_right.001') ||
+      ctrl.clips.has('unarmed_turn_long_left.001') ||
+      ctrl.clips.has('unarmed_turn_long_right.001'))
   ) {
-    targetClip =
-      deltaYaw >= 0 && ctrl.clips.has('unarmed_turn_left.001')
-        ? 'unarmed_turn_left.001'
-        : ctrl.clips.has('unarmed_turn_right.001')
-          ? 'unarmed_turn_right.001'
-          : 'unarmed_turn_left.001';
-    timeScale = 1.2;
+    const longName = deltaYaw >= 0 ? 'unarmed_turn_long_left.001' : 'unarmed_turn_long_right.001';
+    if (ctrl.clips.has(longName)) {
+      targetClip = longName;
+      timeScale = 1.35;
+    } else {
+      targetClip =
+        deltaYaw >= 0 && ctrl.clips.has('unarmed_turn_left.001')
+          ? 'unarmed_turn_left.001'
+          : ctrl.clips.has('unarmed_turn_right.001')
+            ? 'unarmed_turn_right.001'
+            : 'unarmed_turn_left.001';
+      timeScale = 1.2;
+    }
   } else if (ctrl.turnInPlaceTimer > 0 && !carryingCrate && weaponId !== 'unarmed' && weaponId !== 'pistol' && (hasRifleTurnClip || hasRifleCrouchTurnClip)) {
     if (deltaYaw > 0 && ctrl.clips.has('rifle_turn_left.001')) {
       targetClip = 'rifle_turn_left.001';
@@ -10886,6 +10994,11 @@ function stepCharBuddiesGlbRigController(
   }
 
   const prevClipName = ctrl.activeClipName;
+  const strideNatural = STRIDE_NATURAL_SPEEDS[targetClip];
+  if (strideNatural && isMoving && moveSpeed > 0.1) {
+    const cadence = Math.min(1.8, Math.max(0.8, moveSpeed / strideNatural));
+    timeScale = Math.sign(timeScale || 1) * Math.abs(timeScale) * cadence;
+  }
   fadeToCharBuddiesAction(ctrl, targetClip, 0.14, timeScale);
   const clipChanged = ctrl.activeClipName !== prevClipName;
 
