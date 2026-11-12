@@ -478,7 +478,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       }
       setNpcFullText(greeting);
       setNpcTypedText('');
-      setPitchViewBoth(hanaPitchOrigin ? 'full' : 'mini');
+      setPitchViewBoth('full');
       setLastPlayerMessage('');
       setChatHistory([]);
       setChatInputDraft('');
@@ -537,14 +537,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       ? caughtFishBucket.find((f) => f.id === tradeFishId) ?? null
       : null;
 
-  /* Hana property pitch visibility. The full card belongs to the housing
-   * intent moment (arriving from MY HOUSE / Browse Homes). Everyday chat
-   * only carries a slim strip, so the offer never crowds a conversation
-   * about something else; a property-topic message re-expands the card,
-   * and the player can minimize or dismiss it for the session. */
-  const [pitchView, setPitchView] = useState<'full' | 'mini' | 'hidden'>('mini');
-  const pitchViewRef = useRef<'full' | 'mini' | 'hidden'>('mini');
-  const setPitchViewBoth = (v: 'full' | 'mini' | 'hidden') => {
+  /* Hana property pitch visibility. The offer card is present in full at
+   * the start of every Hana chat (she is the property agent). When the
+   * conversation topic moves elsewhere the card steps aside entirely,
+   * and when the topic turns back to housing Hana offers it again —
+   * the card follows the conversation, not the other way around. */
+  const [pitchView, setPitchView] = useState<'full' | 'hidden'>('full');
+  const pitchViewRef = useRef<'full' | 'hidden'>('full');
+  const setPitchViewBoth = (v: 'full' | 'hidden') => {
     pitchViewRef.current = v;
     setPitchView(v);
   };
@@ -684,19 +684,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     ];
     setChatHistory(nextHistory);
 
-    if (
-      merchantLocation === 'lobby_cafe' &&
-      !hasHouseOwnership &&
-      pitchViewRef.current !== 'hidden'
-    ) {
+    if (merchantLocation === 'lobby_cafe' && !hasHouseOwnership) {
+      const lowered = text.toLowerCase();
       const propertyTopic =
         /(rumah|properti|property|home|house|housing|deed|model house|tempat tinggal|kiosk|teleport|pulang)/.test(
-          text.toLowerCase(),
+          lowered,
+        );
+      const greetingOnly =
+        /^(ha+lo+|ha+i+|he+i+|hi+|hello+|hey+|pagi|siang|sore|malam|selamat pagi|selamat siang|selamat sore|selamat malam)( hana)?$/.test(
+          lowered.replace(/[!.,\s]+/g, ' ').trim(),
         );
       if (propertyTopic) {
         setPitchViewBoth('full');
-      } else if (pitchViewRef.current === 'full') {
-        setPitchViewBoth('mini');
+      } else if (!greetingOnly) {
+        setPitchViewBoth('hidden');
       }
     }
 
@@ -1907,8 +1908,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           </span>
                           <button
                             type="button"
-                            aria-label="Minimize property offer"
-                            onClick={() => setPitchViewBoth('mini')}
+                            aria-label="Dismiss property offer for now"
+                            onClick={() => setPitchViewBoth('hidden')}
                             className="w-5 h-5 leading-none bg-[#1e293b] hover:bg-[#334155] text-white border border-black font-black text-[10px] cursor-pointer"
                           >
                             ✕
@@ -1956,49 +1957,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           </button>
                         )}
                       </div>
-                    </div>
-                  )}
-
-                {merchantLocation === 'lobby_cafe' &&
-                  !hasHouseOwnership &&
-                  !isTutorialHanaActive &&
-                  pitchView === 'mini' && (
-                    <div
-                      data-hana-property-pitch-mini="true"
-                      className="px-3 py-2 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2"
-                    >
-                      <span className="text-[10px] font-black uppercase text-slate-300">
-                        No home yet
-                      </span>
-                      <span className="flex items-center gap-2">
-                        {onViewModelHouse && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              onViewModelHouse();
-                            }}
-                            className="text-[10px] font-black uppercase text-[#b8ff3c] hover:text-[#d9f99d] cursor-pointer"
-                          >
-                            Model House
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={openPitchCatalog}
-                          className="text-[10px] font-black uppercase text-white hover:text-slate-200 cursor-pointer"
-                        >
-                          Catalog
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Dismiss property offer"
-                          onClick={() => setPitchViewBoth('hidden')}
-                          className="text-[10px] font-black text-slate-400 hover:text-white cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      </span>
                     </div>
                   )}
 
