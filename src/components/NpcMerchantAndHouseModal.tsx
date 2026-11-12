@@ -271,6 +271,12 @@ function detectTradeLang(text: string): TradeLang | null {
   return idHits >= enHits ? 'id' : 'en';
 }
 
+/* Family Member recruitment is fully built (plans, orders, agents) but
+ * hidden from Hana's catalog for now: players met the card without any
+ * explanation of what a companion does, which made the catalog confusing.
+ * Flip to true to re-list it. */
+const FAMILY_MEMBER_CATALOG_VISIBLE = false;
+
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
   activeModalMode,
   merchantLocation,
@@ -2756,13 +2762,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   <div className="min-w-0">
                     <div className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
                       {walletConnected
-                        ? 'HOUSE & FAMILY MEMBER KIOSK'
+                        ? FAMILY_MEMBER_CATALOG_VISIBLE
+                          ? 'HOUSE & FAMILY MEMBER KIOSK'
+                          : 'PROPERTY CATALOG'
                         : 'REGISTRATION REQUIRED FOR CATALOG'}
                     </div>
                     <div className="text-[9.5px] font-bold text-white/85">
                       {walletConnected
                         ? `Balance: ${respiteBalance.toLocaleString()} RESPITE`
-                        : 'Register your account to unlock House & Family Member.'}
+                        : FAMILY_MEMBER_CATALOG_VISIBLE
+                          ? 'Register your account to unlock House & Family Member.'
+                          : 'Register your account to unlock the House catalog.'}
                     </div>
                   </div>
                   <button
@@ -2785,7 +2795,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                 {/* Tactical Kiosk-Style Selectable Cards: [01] HOUSE & [02] FAMILY MEMBER */}
                 <div
-                  className={`grid grid-cols-2 gap-2.5 ${
+                  className={`grid ${FAMILY_MEMBER_CATALOG_VISIBLE ? 'grid-cols-2' : 'grid-cols-1'} gap-2.5 ${
                     !walletConnected ? 'opacity-70 pointer-events-none select-none' : ''
                   }`}
                 >
@@ -2854,6 +2864,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </button>
 
                   {/* Card 2: FAMILY MEMBER (Slide 02 / 02) */}
+                  {FAMILY_MEMBER_CATALOG_VISIBLE && (
                   <button
                     type="button"
                     data-katalog-card="buddies_family_member_agent"
@@ -2916,12 +2927,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     </div>
                   </button>
+                  )}
                 </div>
 
                 {/* ===========================================================
                      ACTIVE SLIDE CONFIGURATION PANEL (ONLY 1 SHOWN AT A TIME)
                     =========================================================== */}
-                {isHouseSlide ? (
+                {isHouseSlide || !FAMILY_MEMBER_CATALOG_VISIBLE ? (
                   <div
                     data-buy-house-section="true"
                     className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] ${
@@ -2946,6 +2958,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       >
                         {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
                       </span>
+                    </div>
+                    <div className="mt-1.5 space-y-0.5">
+                      <div className="text-[9.5px] font-bold text-[#1c2026]/85">
+                        ✓ On-chain deed (NFT) — this house is truly yours
+                      </div>
+                      <div className="text-[9.5px] font-bold text-[#1c2026]/85">
+                        ✓ Private plot + interior studio to decorate with furniture
+                      </div>
+                      <div className="text-[9.5px] font-bold text-[#1c2026]/85">
+                        ✓ Sell the deed later — its access keys rotate to the buyer
+                      </div>
+                      <div className="text-[9.5px] font-black text-[#0d0f12] pt-0.5">
+                        {isHouseOwned
+                          ? 'You own this house — enter it anytime from the Teleport Kiosk (MY HOUSE).'
+                          : canAffordHouse
+                            ? `Your balance covers it: ${respiteBalance.toLocaleString()} RESPITE.`
+                            : `You need ${HOUSE_OWNERSHIP_PRICE_RESPITE - respiteBalance} more RESPITE — swap NEAR in the Exchange tab.`}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -3052,6 +3082,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   }`}
                 >
                   {/* Bottom-Left Pagination Controls (like Tactical Kiosk) */}
+                  {FAMILY_MEMBER_CATALOG_VISIBLE && (
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
@@ -3081,9 +3112,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       {isHouseSlide ? '01 / 02' : '02 / 02'}
                     </span>
                   </div>
+                  )}
 
                   {/* Bottom-Right Skewed Kiosk Action Button */}
-                  {isHouseSlide ? (
+                  {isHouseSlide || !FAMILY_MEMBER_CATALOG_VISIBLE ? (
                     <button
                       type="button"
                       data-buy-house-btn="true"
@@ -3101,7 +3133,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         try {
                           const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
                           if (ok) {
-                            const msg = `House Deed minted on NEAR Testnet for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE!`;
+                            const msg = `House Deed minted on NEAR Testnet for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE! Open the Teleport Kiosk and choose MY HOUSE to step inside.`;
                             setCatalogActionFeedback({ ok: true, text: msg });
                             triggerNpcSpeech(msg);
                           } else {
@@ -3184,6 +3216,111 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {catalogActionFeedback.text}
                   </div>
                 )}
+
+                {/* House furniture & themes: the special catalog. CYON pieces are
+                    regular game items; NFT pieces are minted on NEAR (NEP-245).
+                    This is the purchase surface the house studio points to. */}
+                <div
+                  className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2"
+                  data-catalog-hana-furniture-panel="true"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                      House Furniture &amp; Themes
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase">
+                        {cyonBalance.toLocaleString()} CYON
+                      </span>
+                      <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
+                        {respiteBalance.toLocaleString()} RESPITE
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[9.5px] font-bold text-slate-300 leading-snug">
+                    Buy a piece, then place it from your house studio. NFT pieces are
+                    minted to your wallet on NEAR (NEP-245). Prices move with stock
+                    and demand.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {MERCHANT_CATALOG_ITEMS.filter(
+                      (item) => item.category !== 'fishing_gear',
+                    ).map((item) => {
+                      const quote = evaluateMerchantItemQuote(marketState, item);
+                      const isOwned = ownedItemIds.includes(item.id);
+                      const balance =
+                        item.currency === 'CYON' ? cyonBalance : respiteBalance;
+                      const canBuy =
+                        !isOwned &&
+                        quote.stock > 0 &&
+                        balance >= quote.buyPrice &&
+                        (item.currency === 'CYON' || walletConnected);
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-2 bg-[#1e293b] border-2 border-black flex flex-col gap-1.5"
+                          data-catalog-furniture-card={item.id}
+                        >
+                          <div className="flex items-start justify-between gap-1.5">
+                            <span className="text-[10px] font-black uppercase leading-tight">
+                              {item.name}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 border border-black text-[8px] font-black uppercase shrink-0 ${
+                                item.isNft
+                                  ? 'bg-[#38bdf8] text-black'
+                                  : 'bg-[#a7f3d0] text-black'
+                              }`}
+                            >
+                              {item.isNft ? 'NFT' : 'CYON'}
+                            </span>
+                          </div>
+                          <p className="text-[9px] font-bold text-slate-300 leading-snug">
+                            {item.description}
+                          </p>
+                          <div className="mt-auto flex items-end justify-between gap-1.5">
+                            <span className="text-[9.5px] font-black text-[#d8b4fe]">
+                              {quote.buyPrice} {item.currency}
+                              <span className="block text-[8px] font-bold text-slate-400">
+                                Stock {quote.stock}
+                              </span>
+                            </span>
+                            {isOwned ? (
+                              <span className="px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase">
+                                Owned
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                data-buy-furniture-btn={item.id}
+                                disabled={!canBuy}
+                                onClick={() => {
+                                  if (!canBuy) return;
+                                  soundEngine.playPickup();
+                                  onBuyMerchantItem(item, quote.buyPrice);
+                                  setCatalogActionFeedback({
+                                    ok: true,
+                                    text: `Purchased ${item.name} for ${quote.buyPrice} ${item.currency}.`,
+                                  });
+                                  triggerNpcSpeech(
+                                    `Purchased ${item.name}! It is in your bag — place it from your house studio.`,
+                                  );
+                                }}
+                                className={`px-2.5 py-1 border border-black text-[9px] font-black uppercase ${
+                                  canBuy
+                                    ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-black cursor-pointer'
+                                    : 'bg-slate-500 text-slate-300 cursor-not-allowed'
+                                }`}
+                              >
+                                {quote.stock <= 0 ? 'Sold out' : 'Buy'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             );
           })()}
