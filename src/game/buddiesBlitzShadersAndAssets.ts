@@ -4001,6 +4001,7 @@ export interface LoadedBlitzAssets {
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
+  jumpClip: THREE.AnimationClip | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -4200,11 +4201,57 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
+  // Replacement jump: a user-supplied FBX take (root-motion) parsed at runtime.
+  // The take carries its forward travel on the hip track's Y component (0 ->
+  // 211.9cm) and its height arc on Z (-98.1..-42.9cm, i.e. 0.43..0.98 in rig
+  // units). The rig's baked jump keeps its height arc on Y within 0.38..0.65 —
+  // the unit's real height comes from the physics jump offset, the clip only
+  // poses the body. Remap: drop the travel, and rescale the height arc onto
+  // the baked range so the pose arc survives without stacking on the physics.
+  const loadJumpClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/jump-2.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              for (let i = 0; i < vals.length; i += 3) {
+                const h = -vals[i + 2] * 0.01;
+                const arc = (h - 0.429) / 0.552;
+                vals[i] = 0;
+                vals[i + 1] = 0.38 + Math.min(1, Math.max(0, arc)) * 0.27;
+                vals[i + 2] = 0;
+              }
+            }
+          }
+          raw.name = 'unarmed_jump.001';
+          return raw;
+        } catch (err) {
+          console.warn('[PreloadGate] Jump clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const jumpClipPromise = loadJumpClip();
+  jumpClipPromise
+    .then((c) => {
+      loadedJumpClip = c;
+    })
+    .catch(() => {});
+
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4260,6 +4307,7 @@ export async function loadAllRealBlitzAssets(
     ),
     loadFoliageTex(),
     sleepingClipPromise,
+    jumpClipPromise,
   ]).then(
     ([
       playerGltf,
@@ -4303,6 +4351,7 @@ export async function loadAllRealBlitzAssets(
       playerTrackPoints,
       treeFoliageTex,
       sleepingClip,
+      jumpClip,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4348,6 +4397,7 @@ export async function loadAllRealBlitzAssets(
         playerTrackPoints,
         treeFoliageTex,
         sleepingClip,
+        jumpClip,
       };
       cachedLoadedBlitzAssets = loaded;
       inFlightLoadedBlitzAssetsPromise = null;
@@ -4364,6 +4414,7 @@ let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
 // batch: character rigs are built early (onCharacterGltfReady) and their clip maps
 // must already see the sleeping clip at build time.
 let loadedSleepingClip: THREE.AnimationClip | null = null;
+let loadedJumpClip: THREE.AnimationClip | null = null;
 let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
@@ -9829,6 +9880,35 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       }
     }
     if (c.tracks.length) clips.set('sleeping.001', c);
+  }
+  // Swap in the replacement jump (runtime FBX take, already remapped to an
+  // in-place clip by its loader) over the baked unarmed_jump.001, with the same
+  // track filtering and root-motion lock. If the take failed to load, the
+  // baked jump stays untouched.
+  const jumpClipSrc = loadedJumpClip ?? cachedLoadedBlitzAssets?.jumpClip;
+  if (jumpClipSrc) {
+    const c = jumpClipSrc.clone();
+    c.name = 'unarmed_jump.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('unarmed_jump.001', c);
   }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
