@@ -125,6 +125,140 @@ interface NpcMerchantAndHouseModalProps {
   onKaiTutorialLater?: () => void;
 }
 
+/* Kai chat-trade language pack: the card and Kai's short scripted lines
+ * follow the language of the player's latest message (Indonesian or
+ * English; other languages keep the English card while the AI dialogue
+ * itself still answers in the player's language). */
+type TradeLang = 'en' | 'id';
+const TRADE_LINES: Record<
+  TradeLang,
+  Record<
+    | 'pick'
+    | 'open'
+    | 'raise1'
+    | 'raise2'
+    | 'final'
+    | 'agreed'
+    | 'acceptCounter'
+    | 'done'
+    | 'walkaway',
+    string
+  >
+> = {
+  en: {
+    pick: 'Pick the fish you want to sell.',
+    open: 'Let me weigh it. Here is my offer.',
+    raise1: 'Alright, a little more.',
+    raise2: 'You bargain hard, friend.',
+    final: 'That is my limit. Take it, or list it on the market.',
+    agreed: 'Deal! Tap sell and I will pay you.',
+    acceptCounter: 'Deal. You drive a fair bargain.',
+    done: 'Fresh stock for my market. Thank you!',
+    walkaway: 'No hard feelings. The market may pay more.',
+  },
+  id: {
+    pick: 'Pilih ikan yang mau kamu jual.',
+    open: 'Biar kutimbang dulu. Ini tawaranku.',
+    raise1: 'Baiklah, kunaikkan sedikit.',
+    raise2: 'Kamu jago menawar, kawan.',
+    final: 'Itu batasku. Ambil, atau jual di marketplace.',
+    agreed: 'Sepakat! Tekan jual, langsung kubayar.',
+    acceptCounter: 'Sepakat. Tawaran yang adil.',
+    done: 'Stok segar untuk pasarku. Terima kasih!',
+    walkaway: 'Tidak apa-apa. Di marketplace mungkin lebih mahal.',
+  },
+};
+const TRADE_LABELS: Record<
+  TradeLang,
+  Record<
+    | 'entryTitle'
+    | 'paidIn'
+    | 'entrySub'
+    | 'startHaggling'
+    | 'pickFish'
+    | 'cancel'
+    | 'offerLabel'
+    | 'standardPrice'
+    | 'finalOffer'
+    | 'accept'
+    | 'haggle'
+    | 'stop'
+    | 'deal'
+    | 'fishPicked'
+    | 'payment'
+    | 'sellNow'
+    | 'sold'
+    | 'sellMore'
+    | 'close'
+    | 'lastOffer'
+    | 'takeIt'
+    | 'fishMarket',
+    string
+  >
+> = {
+  en: {
+    entryTitle: 'SELL FISH TO KAI',
+    paidIn: 'PAID IN LUL',
+    entrySub: 'Haggle the price right here in chat.',
+    startHaggling: 'START HAGGLING',
+    pickFish: 'PICK A FISH',
+    cancel: 'CANCEL',
+    offerLabel: "Kai's offer",
+    standardPrice: 'Standard price',
+    finalOffer: 'Final offer',
+    accept: 'ACCEPT',
+    haggle: 'HAGGLE',
+    stop: 'STOP',
+    deal: 'DEAL',
+    fishPicked: 'Fish picked',
+    payment: 'Payment',
+    sellNow: 'SELL NOW',
+    sold: 'SOLD',
+    sellMore: 'SELL MORE',
+    close: 'CLOSE',
+    lastOffer: 'LAST OFFER',
+    takeIt: 'TAKE IT',
+    fishMarket: 'FISH MARKET',
+  },
+  id: {
+    entryTitle: 'JUAL IKAN KE KAI',
+    paidIn: 'DIBAYAR LUL',
+    entrySub: 'Tawar harganya langsung di chat ini.',
+    startHaggling: 'MULAI TAWAR',
+    pickFish: 'PILIH IKAN',
+    cancel: 'BATAL',
+    offerLabel: 'Tawaran Kai',
+    standardPrice: 'Harga standar',
+    finalOffer: 'Tawaran terakhir',
+    accept: 'TERIMA',
+    haggle: 'TAWAR',
+    stop: 'SUDAH',
+    deal: 'SEPAKAT',
+    fishPicked: 'Ikan dipilih',
+    payment: 'Pembayaran',
+    sellNow: 'JUAL SEKARANG',
+    sold: 'TERJUAL',
+    sellMore: 'JUAL LAGI',
+    close: 'TUTUP',
+    lastOffer: 'TAWARAN TERAKHIR',
+    takeIt: 'AMBIL',
+    fishMarket: 'PASAR IKAN',
+  },
+};
+function detectTradeLang(text: string): TradeLang | null {
+  const t = ` ${text.toLowerCase()} `;
+  const idHits =
+    t.match(
+      /\b(aku|saya|yang|tidak|nggak|enggak|mahal|murah|jual|ikan|harga|terima|kasih|bisa|mau|dengan|untuk|sudah|belum|lagi|naik|kurang|tambah|berapa|tolong|dong|sih|kok|deh)\b/g,
+    )?.length ?? 0;
+  const enHits =
+    t.match(
+      /\b(the|you|your|want|sell|selling|fish|price|too|expensive|cheap|please|thanks|thank|deal|more|higher|lower|this|that|with|have|will|can)\b/g,
+    )?.length ?? 0;
+  if (idHits === 0 && enHits === 0) return null;
+  return idHits >= enHits ? 'id' : 'en';
+}
+
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
   activeModalMode,
   merchantLocation,
@@ -378,6 +512,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   );
   const tradePhaseRef = useRef<KaiTradePhase | null>(null);
   const tradeSessionRef = useRef<NegotiationSession | null>(null);
+  const [tradeLang, setTradeLang] = useState<TradeLang>('en');
+  const tradeLangRef = useRef<TradeLang>('en');
+  const tradeLabels = TRADE_LABELS[tradeLang];
+  const tradeLine = (key: keyof (typeof TRADE_LINES)['en']): string =>
+    TRADE_LINES[tradeLangRef.current][key];
   const tradeFish =
     tradeFishId != null
       ? caughtFishBucket.find((f) => f.id === tradeFishId) ?? null
@@ -402,24 +541,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const startTradePick = () => {
     soundEngine.playUiClick();
     syncTrade(null, 'pick', null);
-    triggerNpcSpeech('Pick the fish you want to sell.');
+    triggerNpcSpeech(tradeLine('pick'));
   };
 
   const chooseTradeFish = (fish: CaughtFishItem) => {
     soundEngine.playUiClick();
     const value = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
     syncTrade(createNegotiationSession(value), 'offering', fish.id);
-    triggerNpcSpeech('Let me weigh it. Here is my offer.');
+    triggerNpcSpeech(tradeLine('open'));
   };
 
   const applyRaisedSession = (next: NegotiationSession) => {
     syncTrade(next, 'offering', tradeFishId);
     if (next.isFinalOffer) {
-      triggerNpcSpeech('That is my limit. Take it, or list it on the market.');
+      triggerNpcSpeech(tradeLine('final'));
     } else if (next.roundsUsed <= 1) {
-      triggerNpcSpeech('Alright, a little more.');
+      triggerNpcSpeech(tradeLine('raise1'));
     } else {
-      triggerNpcSpeech('You bargain hard, friend.');
+      triggerNpcSpeech(tradeLine('raise2'));
     }
   };
 
@@ -435,7 +574,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     if (!s) return;
     soundEngine.playUiClick();
     syncTrade(negotiateAccept(s), 'agreed', tradeFishId);
-    triggerNpcSpeech('Deal! Tap sell and I will pay you.');
+    triggerNpcSpeech(tradeLine('agreed'));
   };
 
   const doTradeWalkAway = () => {
@@ -446,7 +585,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     } else {
       endTrade();
     }
-    triggerNpcSpeech('No hard feelings. The market may pay more.');
+    triggerNpcSpeech(tradeLine('walkaway'));
   };
 
   const doTradeSell = () => {
@@ -457,7 +596,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     onSellCaughtFishNegotiated?.(fish, s.agreedPrice);
     setTradeDoneInfo({ name: fish.speciesName, price: s.agreedPrice });
     syncTrade(null, 'done', null);
-    triggerNpcSpeech('Fresh stock for my market. Thank you!');
+    triggerNpcSpeech(tradeLine('done'));
   };
 
   // A trade never outlives the modal, and a fish sold elsewhere ends it.
@@ -481,6 +620,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const submitPlayerQuestion = (rawText: string) => {
     const text = rawText.trim();
     if (!text) return;
+
+    const detectedLang = detectTradeLang(text);
+    if (detectedLang && detectedLang !== tradeLangRef.current) {
+      tradeLangRef.current = detectedLang;
+      setTradeLang(detectedLang);
+    }
 
     const prevNpcMsg = isNpcThinking ? '' : npcFullText.trim();
     setLastPlayerMessage(text);
@@ -524,7 +669,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       };
       if (/tidak jadi|batal|cancel|stop|sudah/.test(lower)) {
         syncTrade(negotiateWalkAway(s), 'walkaway', tradeFishId);
-        finishLocal('No hard feelings. The market may pay more.');
+        finishLocal(tradeLine('walkaway'));
         return;
       }
       const askMatch = lower.match(/\d+/);
@@ -533,20 +678,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         const { session: next, outcome } = negotiatePlayerCounter(s, ask);
         if (outcome === 'agreed') {
           syncTrade(next, 'agreed', tradeFishId);
-          finishLocal('Deal. You drive a fair bargain.');
+          finishLocal(tradeLine('acceptCounter'));
         } else {
           syncTrade(next, 'offering', tradeFishId);
           finishLocal(
             outcome === 'final' || next.isFinalOffer
-              ? 'That is my limit. Take it, or list it on the market.'
-              : 'Alright, a little more.',
+              ? tradeLine('final')
+              : tradeLine('raise1'),
           );
         }
         return;
       }
       if (/\b(terima|setuju|deal|oke|ok|ya|yes|accept|baiklah|boleh)\b/.test(lower)) {
         syncTrade(negotiateAccept(s), 'agreed', tradeFishId);
-        finishLocal('Deal! Tap sell and I will pay you.');
+        finishLocal(tradeLine('agreed'));
         return;
       }
       if (/mahal|murah|naik|tambah|kurang|tidak|nggak|enggak|higher|more|cheap|lagi/.test(lower)) {
@@ -554,10 +699,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         syncTrade(next, 'offering', tradeFishId);
         finishLocal(
           next.isFinalOffer
-            ? 'That is my limit. Take it, or list it on the market.'
+            ? tradeLine('final')
             : next.roundsUsed <= 1
-              ? 'Alright, a little more.'
-              : 'You bargain hard, friend.',
+              ? tradeLine('raise1')
+              : tradeLine('raise2'),
         );
         return;
       }
@@ -1443,12 +1588,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                          SELL FISH TO KAI
+                          {tradeLabels.entryTitle}
                         </span>
-                        <span className="text-[10.5px] font-black text-white">PAID IN LUL</span>
+                        <span className="text-[10.5px] font-black text-white">{tradeLabels.paidIn}</span>
                       </div>
                       <p className="text-[11px] font-bold text-slate-300">
-                        Haggle the price right here in chat.
+                        {tradeLabels.entrySub}
                       </p>
                       <button
                         type="button"
@@ -1456,7 +1601,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         onClick={startTradePick}
                         className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
                       >
-                        START HAGGLING
+                        {tradeLabels.startHaggling}
                       </button>
                     </div>
                   )}
@@ -1467,7 +1612,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                   >
                     <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                      PICK A FISH
+                      {tradeLabels.pickFish}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {caughtFishBucket
@@ -1494,7 +1639,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       onClick={endTrade}
                       className="w-full py-2 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
                     >
-                      CANCEL
+                      {tradeLabels.cancel}
                     </button>
                   </div>
                 )}
@@ -1520,7 +1665,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                       <div>
                         <div className="text-[9.5px] font-black uppercase text-slate-400">
-                          Kai's offer
+                          {tradeLabels.offerLabel}
                         </div>
                         <div className="text-2xl font-black text-white leading-none">
                           {tradeSession.currentOffer} LUL
@@ -1534,8 +1679,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           />
                         </div>
                         <div className="text-[9.5px] font-bold text-slate-400 mt-1">
-                          Standard price: {tradeSession.baseValue} LUL
-                          {tradeSession.isFinalOffer ? ' · Final offer' : ''}
+                          {tradeLabels.standardPrice}: {tradeSession.baseValue} LUL
+                          {tradeSession.isFinalOffer ? ` · ${tradeLabels.finalOffer}` : ''}
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -1545,7 +1690,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           onClick={doTradeAccept}
                           className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
-                          ACCEPT
+                          {tradeLabels.accept}
                         </button>
                         <button
                           type="button"
@@ -1554,14 +1699,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           disabled={tradeSession.isFinalOffer}
                           className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-40 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
-                          HAGGLE
+                          {tradeLabels.haggle}
                         </button>
                         <button
                           type="button"
                           onClick={doTradeWalkAway}
                           className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
                         >
-                          STOP
+                          {tradeLabels.stop}
                         </button>
                       </div>
                     </div>
@@ -1576,10 +1721,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                        DEAL · {tradeSession.agreedPrice} LUL
+                        {tradeLabels.deal} · {tradeSession.agreedPrice} LUL
                       </div>
                       <div className="text-[11px] font-bold text-slate-300">
-                        ✓ Fish picked · ● Payment
+                        ✓ {tradeLabels.fishPicked} · ● {tradeLabels.payment}
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -1588,14 +1733,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           onClick={doTradeSell}
                           className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
-                          SELL NOW
+                          {tradeLabels.sellNow}
                         </button>
                         <button
                           type="button"
                           onClick={endTrade}
                           className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
                         >
-                          CANCEL
+                          {tradeLabels.cancel}
                         </button>
                       </div>
                     </div>
@@ -1607,7 +1752,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                   >
                     <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                      ✓ SOLD · {tradeDoneInfo.name} · +{tradeDoneInfo.price} LUL
+                      ✓ {tradeLabels.sold} · {tradeDoneInfo.name} · +{tradeDoneInfo.price} LUL
                     </div>
                     <div className="flex gap-2">
                       {caughtFishBucket.some((f) => !f.isMintedNft) && (
@@ -1616,7 +1761,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           onClick={startTradePick}
                           className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
-                          SELL MORE
+                          {tradeLabels.sellMore}
                         </button>
                       )}
                       <button
@@ -1624,7 +1769,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         onClick={endTrade}
                         className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
                       >
-                        CLOSE
+                        {tradeLabels.close}
                       </button>
                     </div>
                   </div>
@@ -1638,7 +1783,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                        LAST OFFER · {tradeSession.currentOffer} LUL
+                        {tradeLabels.lastOffer} · {tradeSession.currentOffer} LUL
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -1646,7 +1791,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           onClick={doTradeAccept}
                           className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
-                          TAKE IT
+                          {tradeLabels.takeIt}
                         </button>
                         <button
                           type="button"
@@ -1657,14 +1802,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           }}
                           className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
-                          FISH MARKET
+                          {tradeLabels.fishMarket}
                         </button>
                         <button
                           type="button"
                           onClick={endTrade}
                           className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
                         >
-                          CLOSE
+                          {tradeLabels.close}
                         </button>
                       </div>
                     </div>
