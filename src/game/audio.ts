@@ -2294,7 +2294,8 @@ class SoundEngine {
   }
 
   public playPickup(): void {
-    if (this.playSample('collect-gear', 0.65, 0.95 + Math.random() * 0.1, 30)) return;
+    // Soft synth arpeggio only - the 'collect-gear' sample (peak -1.3 dB at 0.65
+    // gain) sounded harsh, and this fires on every cast and rod equip.
     const ctx = this.ensureCtx();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -2305,7 +2306,7 @@ class SoundEngine {
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(f, now + idx * 0.045);
-      gain.gain.setValueAtTime(0.14, now + idx * 0.045);
+      gain.gain.setValueAtTime(0.09, now + idx * 0.045);
       gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.045 + 0.14);
       osc.connect(gain);
       gain.connect(out);
