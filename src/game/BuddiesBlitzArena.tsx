@@ -16992,6 +16992,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const unitIsSitting =
               Boolean(b.isSitting) || (b.isPlayer && ridingTramCarIdx !== null);
             const unitIsDriving = Boolean(b.isDriving);
+            const unitIsSleeping = Boolean(b.isSleeping);
             if (b.isPlayer) {
               b.rig.fishingPoseState = {
                 phase: shorelineFishingSync.phase,
@@ -17055,6 +17056,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 speedMag,
                 unitIsSitting,
                 unitIsDriving,
+                unitIsSleeping,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
