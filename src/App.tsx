@@ -2811,6 +2811,7 @@ export default function App() {
   }, [kaiTutorialStage, hud.equippedWeapon, nearbyWaterZone, caughtFishBucket.length]);
 
   const fishingCastTimersRef = useRef<number[]>([]);
+  const lastCastLaunchAtRef = useRef<number>(0);
   const clearFishingCastTimers = useCallback(() => {
     for (const tid of fishingCastTimersRef.current) {
       window.clearTimeout(tid);
@@ -2955,6 +2956,12 @@ export default function App() {
     (powerToUse: number) => {
       if (hudRef.current.worldMode === 'warzone') return;
       if (caughtFishBucket.length >= 20) return;
+      // One physical press fires pointerup (release) AND click (trigger) for the
+      // same gesture; the click closure still sees phase 'charging' and would
+      // launch a second time, doubling the cast sound. Ignore re-entry <600ms.
+      const launchNow = performance.now();
+      if (launchNow - lastCastLaunchAtRef.current < 600) return;
+      lastCastLaunchAtRef.current = launchNow;
       ensureFishingRodEquipped();
       clearFishingCastTimers();
 
