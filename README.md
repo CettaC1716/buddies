@@ -3,6 +3,7 @@
 **A 60 FPS WebGL 3D peaceful social city, Kiosk Portal Hub, interactive Tension-Gauge shoreline fishing system, Modern Japanese Wooden Pavilion interior studio, and separated Red vs. Blue Warzone mini-game built in Three.js & React 19 — powered by seedless NEAR Protocol citizen sub-accounts (`<handle>.buddiesblitz.testnet`), autonomous NPC merchant treasuries, a non-ponzi P2P `RESPITE` (NEP-141) economy, NEP-245 furnishings, and NEP-171 Sub-Account House Deeds & P2P Fish NFTs (`market.buddiesblitz.testnet`).**
 
 - **Live Playable App**: [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)
+- **AI Chat Haggling**: Catch a fish, then negotiate its price with Merchant Kai in natural-language chat, in any language — the AI owns the words, a deterministic rules engine owns every number (judges: see step 4 below).
 - **Primary NEAR Hackathon Track**: **`games` — Games With Real Economies (`09-games`)**
 - **Secondary NEAR Hackathon Track**: **`nfts` — NFTs That Do Something (`10-nfts`)**
 - **On-Chain Smart Contract (NEAR Testnet)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) · Master Factory: [`buddiesblitz.testnet`](https://testnet.nearblocks.io/address/buddiesblitz.testnet)
@@ -165,9 +166,13 @@ In [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs),
 
 ### 3. Interactive Tension-Gauge Fishing -> `LUL` -> `CYON` vs. P2P `RESPITE` NFT Market (`Track 09-games`)
 - **Do:** Walk to East Beach House or Central Oasis Lake, equip your Fishing Rod via **`BAG`** (or press **`F`** by the water), wait for the **`!`** bite callout, and complete the **Line-Tension Gauge** minigame.
-- **See:** In the 3D Catch Showcase, keep the fish in **`BAG`** (where you can **`Release`** or **`Mint NFT`**), or visit **Merchant Kai (`[E]`) -> `FISH MARKET`** to click **`SELL FOR LUL (+X LUL)`**, then open **`EXCHANGE`** to convert **`LUL -> CYON`** (`LUL 20 = CYON 10`, with live autonomous NPC treasury & **`FAST-FORWARD 7D`** simulation) — **or** click **`MINT FISH AS NFT`** (`mint_fish_nft`) and list it for **`RESPITE`** on the player-to-player order book!
+- **See:** The 3D Catch Showcase offers **`Keep in Bag`** / **`Release`** only — selling and minting live elsewhere on purpose. Visit **Merchant Kai (`[E]`) -> `FISH MARKET`** to click **`SELL FOR LUL (+X LUL)`**, then open **`EXCHANGE`** to convert **`LUL -> CYON`** (`LUL 20 = CYON 10`, with live autonomous NPC treasury & **`FAST-FORWARD 7D`** simulation) — **or** click **`MINT FISH AS NFT`** (`mint_fish_nft`, also available per fish in the **`BAG`**) and list it for **`RESPITE`** on the player-to-player order book!
 
-### 4. Modern Japanese Wooden Pavilion House (`25 RESPITE`), Empty Studio & Friend Invite (`Track 10-nfts`)
+### 4. Haggle With an AI Merchant in Chat — In Your Own Language (`Track 09-games`)
+- **Do:** At East Beach, catch any fish (Kai's fishing lesson speeds up your first catch), **`Keep in Bag`**, talk to **Merchant Kai (`[E]`)**, and in his chat session tap **`START HAGGLING`**. Pick your fish, then haggle with the **`HAGGLE`** button — or simply type, in any language: *"too cheap"*, *"terlalu murah"*, or name your price.
+- **See:** Kai answers in your language and raises his offer on one simple trade card that also shows *why* he pays that price. The numbers are not the AI's: a deterministic negotiation engine (`src/game/buddiesMerchantPricing.ts`, unit-tested in `src/game/buddiesNegotiation.test.ts`) opens at 80% of the standard formula price, raises in bounded steps (+7% / +5% / +3%), and enforces a hard 115% ceiling with a walk-away limit. The LLM (trade mode in `api/npc-agent.ts`) only words the replies and proposes moves inside that envelope — every price is clamped server-side and again client-side, so Kai cannot be sweet-talked or prompt-injected past his ceiling. Accept the deal and the agreed `LUL` price is paid; refuse his final offer and he points you to the P2P **`FISH MARKET`** instead.
+
+### 5. Modern Japanese Wooden Pavilion House (`25 RESPITE`), Empty Studio & Friend Invite (`Track 10-nfts`)
 - **Do:** Swap `NEAR -> RESPITE` (`1 NEAR = 100 RESPITE`) in **Hana's `EXCHANGE`** tab, purchase **House Ownership (`25 RESPITE`)** in **`CATALOG`**, then open the **City Transit Kiosk -> `MY HOUSE`**.
 - **See:** On-chain NEP-171 House Deed verification grants entry into your **empty-start Modern Japanese Wooden Pavilion**. Click **`DECORATE STUDIO`** to place `CYON` or `RESPITE` furniture, click **`INVITE FRIEND`** on the top HUD to invite citizens from your friendlist, and click **`EXIT ROOM`** to return to the exact Kiosk coordinates you teleported from.
 
