@@ -2219,21 +2219,22 @@ class SoundEngine {
   }
 
   public playUiClick(): void {
-    if (this.playSample('button-click', 0.48, 0.96 + Math.random() * 0.08, 30)) return;
+    // Soft synth click only - the old 'button-click' sample (0.55s at 0.48 gain)
+    // sounded harsh and noisy on every UI press, so it is no longer used here.
     const ctx = this.ensureCtx();
     if (!ctx) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(this.pitchJitter(520), now);
-    osc.frequency.exponentialRampToValueAtTime(780, now + 0.06);
-    gain.gain.setValueAtTime(0.14, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(this.pitchJitter(540), now);
+    osc.frequency.exponentialRampToValueAtTime(720, now + 0.05);
+    gain.gain.setValueAtTime(0.09, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
     osc.connect(gain);
     gain.connect(this.getOutputNode(ctx));
     osc.start(now);
-    osc.stop(now + 0.07);
+    osc.stop(now + 0.095);
   }
 
   /** Quiet synth-only tap for high-frequency action buttons (fishing) - no sample, low gain. */
