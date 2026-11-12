@@ -3998,6 +3998,7 @@ export interface LoadedBlitzAssets {
   bulletGltf: GLTF | null;
   charBuddiesGltf: GLTF | null;
   manCharacterBuddiesGltf: GLTF | null;
+  npcKaiGltf: GLTF | null;
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
@@ -4046,6 +4047,7 @@ export async function loadAllRealBlitzAssets(
     charBuddiesGltf: GLTF | null,
     manCharacterBuddiesGltf: GLTF | null,
     fishingRodGltf?: GLTF | null,
+    npcKaiGltf?: GLTF | null,
   ) => void,
 ): Promise<LoadedBlitzAssets> {
   if (cachedLoadedBlitzAssets) {
@@ -4057,6 +4059,7 @@ export async function loadAllRealBlitzAssets(
           cached.charBuddiesGltf,
           cached.manCharacterBuddiesGltf,
           cached.fishingRodGltf,
+          cached.npcKaiGltf,
         );
       });
     }
@@ -4070,6 +4073,7 @@ export async function loadAllRealBlitzAssets(
             loaded.charBuddiesGltf,
             loaded.manCharacterBuddiesGltf,
             loaded.fishingRodGltf,
+            loaded.npcKaiGltf,
           );
         })
         .catch(() => {});
@@ -4165,11 +4169,17 @@ export async function loadAllRealBlitzAssets(
 
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
+  const npcKaiPromise = loadOptionalGltf('/assets/npc-kai.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise])
-      .then(([charGltf, manGltf, rodGltf]) => {
-        onCharacterGltfReady(charGltf, manGltf, rodGltf);
+    Promise.all([
+      charBuddiesPromise,
+      manCharacterBuddiesPromise,
+      fishingRodPromise,
+      npcKaiPromise,
+    ])
+      .then(([charGltf, manGltf, rodGltf, npcKaiGltf]) => {
+        onCharacterGltfReady(charGltf, manGltf, rodGltf, npcKaiGltf);
       })
       .catch(() => {});
   }
@@ -4211,6 +4221,7 @@ export async function loadAllRealBlitzAssets(
     loadOptionalGltf('/assets/buddies/models/blitz-shell.glb'),
     charBuddiesPromise,
     manCharacterBuddiesPromise,
+    npcKaiPromise,
     loadOptionalGltf('/assets/ar99-assault.glb'),
     fishingRodPromise,
     trackAssetTask(
@@ -4260,6 +4271,7 @@ export async function loadAllRealBlitzAssets(
       bulletGltf,
       charBuddiesGltf,
       manCharacterBuddiesGltf,
+      npcKaiGltf,
       ar99AssaultGltf,
       fishingRodGltf,
       playerTrackPoints,
@@ -4304,6 +4316,7 @@ export async function loadAllRealBlitzAssets(
         bulletGltf,
         charBuddiesGltf,
         manCharacterBuddiesGltf,
+        npcKaiGltf,
         ar99AssaultGltf,
         fishingRodGltf,
         playerTrackPoints,
