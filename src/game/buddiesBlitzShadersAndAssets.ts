@@ -10894,7 +10894,7 @@ function stepCharBuddiesGlbRigController(
     Boolean(rig.fishingPoseState && rig.fishingPoseState.phase !== 'idle');
   const minStepInterval =
     isMoving || ctrl.turnInPlaceTimer > 0 || jumpOffset > 0.05 || isActiveFishingAction
-      ? 0.014
+      ? 0.008
       : 0.028;
   const shouldStepMixer =
     clipChanged ||

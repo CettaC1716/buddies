@@ -16027,6 +16027,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 const terrainY = getTerrainElevation(b.x, b.z);
                 b.root.position.set(b.x, terrainY, b.z);
                 b.bodyGroup.position.y = 0;
+                b.visualYaw = b.yaw;
                 b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
                 if (b.hitFlashTimer > 0) {
                   b.hitFlashTimer = Math.max(0, b.hitFlashTimer - dt);
@@ -16875,7 +16876,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
-            b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
+            // Soften the facing snap just slightly: the visual facing chases the unit yaw
+            // at up to ~12 rad/s (a 180-degree turn settles in ~0.26s instead of one
+            // frame). Seat/bed poses and teleports snap instantly.
+            if (b.visualYaw === undefined) b.visualYaw = b.yaw;
+            {
+              const dYaw = Math.atan2(Math.sin(b.yaw - b.visualYaw), Math.cos(b.yaw - b.visualYaw));
+              if (Math.abs(dYaw) > 2.4 || b.isSitting || b.isSleeping) {
+                b.visualYaw = b.yaw;
+              } else {
+                const maxStep = 12 * dt;
+                b.visualYaw += Math.max(-maxStep, Math.min(maxStep, dYaw));
+              }
+            }
+            b.bodyGroup.rotation.set(0, b.visualYaw + Math.PI / 2, 0);
 
             const speedMag = Math.hypot(b.vx, b.vz);
             const walkSync = computeSynchronizedWalkCycleStep({
