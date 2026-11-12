@@ -1536,6 +1536,74 @@ export default function App() {
     hud.worldMode,
   ]);
 
+  // Kai's local fishing tutorial (Beachfront Harbor):
+  // meet -> equip -> to_water -> catch -> sell -> done. Persisted per device.
+  type KaiTutorialStage =
+    | 'off'
+    | 'meet'
+    | 'equip'
+    | 'to_water'
+    | 'catch'
+    | 'sell'
+    | 'done';
+  const [kaiTutorialStage, setKaiTutorialStage] = useState<KaiTutorialStage>(() => {
+    try {
+      const raw = window.localStorage.getItem('bb_kai_tutorial_v1');
+      if (raw && (JSON.parse(raw) as { stage?: string }).stage === 'done') return 'done';
+    } catch {
+      // ignore
+    }
+    return 'off';
+  });
+  const [kaiCardDismissed, setKaiCardDismissed] = useState<boolean>(() => {
+    try {
+      const raw = window.localStorage.getItem('bb_kai_tutorial_v1');
+      if (raw) return Boolean((JSON.parse(raw) as { cardDismissed?: boolean }).cardDismissed);
+    } catch {
+      // ignore
+    }
+    return false;
+  });
+  const kaiTutorialStageRef = useRef<KaiTutorialStage>(kaiTutorialStage);
+  const kaiTutorialAssistRef = useRef<boolean>(false);
+  const advanceKaiTutorial = (next: KaiTutorialStage, cardDismissed?: boolean) => {
+    kaiTutorialStageRef.current = next;
+    setKaiTutorialStage(next);
+    if (cardDismissed !== undefined) setKaiCardDismissed(cardDismissed);
+    try {
+      window.localStorage.setItem(
+        'bb_kai_tutorial_v1',
+        JSON.stringify({
+          stage: next,
+          cardDismissed: cardDismissed ?? kaiCardDismissed,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  // Kai's exclamation + pinpoint in the 3D world follow the tutorial stage:
+  // the pin floats over Kai (meet/sell) or over the cast point (to_water).
+  useEffect(() => {
+    const pin =
+      kaiTutorialStage === 'meet' || kaiTutorialStage === 'sell'
+        ? { x: 85.8, z: 60 }
+        : kaiTutorialStage === 'to_water'
+          ? { x: 103, z: 60 }
+          : null;
+    window.dispatchEvent(
+      new CustomEvent('set-kai-tutorial', {
+        detail: {
+          exclamation: ['meet', 'equip', 'to_water', 'catch', 'sell'].includes(
+            kaiTutorialStage,
+          ),
+          pin,
+        },
+      }),
+    );
+  }, [kaiTutorialStage]);
+
   useEffect(() => {
     if (onboardingStep !== 'subwallet_naming') return;
     let cancelled = false;
@@ -2634,6 +2702,48 @@ export default function App() {
       ? { ...rawWaterZone, canFish: false, zoneId: null, zoneLabel: null }
       : rawWaterZone;
 
+  const prevBucketLenRef = useRef<number>(caughtFishBucket.length);
+
+  // Kai tutorial: arm the meeting when the player first comes near Kai.
+  useEffect(() => {
+    if (kaiTutorialStage !== 'off') return;
+    if (onboardingStep !== 'completed' || gameState !== 'playing') return;
+    if (hud.worldMode === 'warzone' || !playerRadarDot) return;
+    const distToKai = Math.hypot(playerRadarDot.x - 85.8, playerRadarDot.z - 60);
+    if (distToKai > 42) return;
+    advanceKaiTutorial(caughtFishBucket.length > 0 ? 'sell' : 'meet');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    kaiTutorialStage,
+    onboardingStep,
+    gameState,
+    hud.worldMode,
+    playerRadarDot,
+    caughtFishBucket.length,
+  ]);
+
+  // Kai tutorial: advance steps from live game state.
+  useEffect(() => {
+    kaiTutorialAssistRef.current =
+      kaiTutorialStage === 'to_water' || kaiTutorialStage === 'catch';
+    if (kaiTutorialStage === 'equip' && hud.equippedWeapon === 'Joran Fishing') {
+      advanceKaiTutorial('to_water');
+    } else if (
+      kaiTutorialStage === 'to_water' &&
+      nearbyWaterZone.canFish &&
+      nearbyWaterZone.zoneId === 'east_beach'
+    ) {
+      advanceKaiTutorial('catch');
+    } else if (
+      kaiTutorialStage === 'catch' &&
+      caughtFishBucket.length > prevBucketLenRef.current
+    ) {
+      advanceKaiTutorial('sell');
+    }
+    prevBucketLenRef.current = caughtFishBucket.length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kaiTutorialStage, hud.equippedWeapon, nearbyWaterZone, caughtFishBucket.length]);
+
   const fishingCastTimersRef = useRef<number[]>([]);
   const clearFishingCastTimers = useCallback(() => {
     for (const tid of fishingCastTimersRef.current) {
@@ -2789,11 +2899,26 @@ export default function App() {
       soundEngine.playPickup();
       const clampedPower = Math.max(0.2, Math.min(1.0, powerToUse));
       setFishingCastPower(clampedPower);
-      const schedule = createShorelineBiteSchedule({
+      let schedule = createShorelineBiteSchedule({
         waterZone: activeZone,
         lightingPreset,
         castPower: clampedPower,
       });
+      if (kaiTutorialAssistRef.current) {
+        // Tutorial catch assist: the first lesson fish bites fast, is a
+        // common species, and gives a generous strike window.
+        const commonSpecies = FISH_SPECIES_CATALOG.find(
+          (s) => s.waterZone === activeZone && s.rarity === 'Common',
+        );
+        schedule = {
+          ...schedule,
+          initialWaitSec: Math.min(schedule.initialWaitSec, 1.2),
+          nibbleIntervalSec: Math.min(schedule.nibbleIntervalSec, 0.9),
+          nibblesTotal: Math.min(schedule.nibblesTotal, 1),
+          strikeWindowSec: Math.max(schedule.strikeWindowSec, 6),
+          ...(commonSpecies ? { species: commonSpecies } : {}),
+        };
+      }
       setFishingBiteSchedule(schedule);
       setFishingHintMessage(null);
       setLastCaughtFishToast(null);
@@ -2943,6 +3068,9 @@ export default function App() {
           unit_price: earnedLul,
           reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedLul} LUL (convertible to CYON at Exchange).`,
         });
+      }
+      if (kaiTutorialStageRef.current === 'sell') {
+        advanceKaiTutorial('done');
       }
     },
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
@@ -3832,8 +3960,8 @@ export default function App() {
                 </h2>
                 <p className="text-xs font-bold text-slate-300 mt-1">
                   {hud.nearWalletConnected
-                    ? 'Visit Hana at Central Plaza Cafe to claim your 0.30 NEAR welcome bonus.'
-                    : 'Meet Hana at Central Plaza Cafe \u2014 she will show you around the city. You are in Guest Mode, so trading unlocks after you sign in.'}
+                    ? 'Visit Hana \u2014 your property agent & city guide at Central Plaza \u2014 to claim your 0.30 NEAR welcome bonus.'
+                    : 'Meet Hana \u2014 your property agent & city guide at Central Plaza. She will show you around the city. You are in Guest Mode, so trading unlocks after you sign in.'}
                 </p>
               </div>
 
@@ -3898,7 +4026,7 @@ export default function App() {
                 </span>
                 <span className="text-[11px] font-bold text-slate-100 truncate">
                   {tutorialStage === 'go_to_hana'
-                    ? 'Talk to Hana at Central Plaza Cafe to claim 0.30 NEAR.'
+                    ? 'Talk to Hana, your city guide at Central Plaza, to claim 0.30 NEAR.'
                     : 'Follow the blue path to the Transit Kiosk.'}
                 </span>
               </div>
@@ -3924,6 +4052,66 @@ export default function App() {
              - Viewport: 3D-to-2D Contextual Hexagonal Floating Prompts ([E] AMBIL, [F] RAKIT, [G] NAIK, [B] KIOSK)
              - Bottom-Right: Compact 3 Weapon Slots ([1] Pistol, [2] Rifle, [3] Bazooka)
          ===================================================================== */}
+      {onboardingStep === 'completed' &&
+        tutorialStage === 'none' &&
+        activeSpecialModal === 'none' &&
+        activeTeleportKioskModal === 'none' &&
+        (kaiTutorialStage === 'meet' ||
+          kaiTutorialStage === 'equip' ||
+          kaiTutorialStage === 'to_water' ||
+          kaiTutorialStage === 'catch' ||
+          kaiTutorialStage === 'sell') && (
+          <div
+            data-kai-tutorial-objective="true"
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-auto select-none"
+          >
+            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#38bdf8] text-black">
+                  KAI
+                </span>
+                <span className="text-[11px] font-bold text-slate-100 truncate">
+                  {kaiTutorialStage === 'meet'
+                    ? 'Meet Kai at the Fish Market \u2014 follow the marker.'
+                    : kaiTutorialStage === 'equip'
+                      ? 'Equip your Fishing Rod.'
+                      : kaiTutorialStage === 'to_water'
+                        ? 'Stand by the water east of Kai.'
+                        : kaiTutorialStage === 'catch'
+                          ? 'Hold [F] to cast \u2014 wait for the plunge, then reel it in!'
+                          : 'Sell your catch to Kai at the Fish Market.'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {kaiTutorialStage === 'equip' &&
+                  hud.equippedWeapon !== 'Joran Fishing' && (
+                    <button
+                      type="button"
+                      data-kai-equip-rod-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        ensureFishingRodEquipped();
+                      }}
+                      className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] border border-black text-[9.5px] font-black uppercase text-black cursor-pointer"
+                    >
+                      EQUIP ROD
+                    </button>
+                  )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    advanceKaiTutorial('done');
+                  }}
+                  className="px-2 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-[9.5px] font-black uppercase text-slate-300 cursor-pointer"
+                >
+                  SKIP
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       {isPreloadComplete && tramRideCutsceneUi?.active && (
         <div
           data-tram-ride-cutscene-banner="true"
@@ -5241,6 +5429,17 @@ export default function App() {
         walletConnected={Boolean(hud.nearWalletConnected)}
         hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
         citizenDisplayName={playerDisplayName}
+        kaiTutorialStage={kaiTutorialStage === 'off' ? null : kaiTutorialStage}
+        kaiCardDismissed={kaiCardDismissed}
+        onKaiTutorialStart={() => {
+          soundEngine.playUiClick();
+          setActiveSpecialModal('none');
+          advanceKaiTutorial('equip');
+        }}
+        onKaiTutorialLater={() => {
+          soundEngine.playUiClick();
+          advanceKaiTutorial(kaiTutorialStage, true);
+        }}
         hanaPitchOrigin={hanaPitchOrigin}
         onViewModelHouse={() => {
           soundEngine.playUiClick();

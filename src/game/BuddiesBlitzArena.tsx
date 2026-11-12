@@ -2982,7 +2982,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       0,
       'blue',
       'HANA',
-      'MINI CAFÉ MERCHANT',
+      'PROPERTY AGENT & CITY GUIDE',
       'female',
     );
     const beachHouseNpc = buildStandingNpcMerchant3D(
@@ -2992,7 +2992,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       Math.PI / 2,
       'red',
       'KAI',
-      'BEACH HOUSE MERCHANT',
+      'FISHERMAN & BEACH KEEPER',
       'male',
     );
 
@@ -4404,6 +4404,55 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
     window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
+
+    // Kai's local tutorial markers: his exclamation plus a floating pinpoint
+    // whose target (Kai himself, or the shoreline cast point) is set by App.
+    let kaiExclamationActive = false;
+    let kaiPinpointTarget: { x: number; z: number } | null = null;
+    const kaiPinpointGroup = new THREE.Group();
+    kaiPinpointGroup.name = 'KaiTutorialPinpoint3D';
+    kaiPinpointGroup.visible = false;
+    scene.add(kaiPinpointGroup);
+    const kaiPinMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', fog: false });
+    const kaiPinHead = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 16), kaiPinMat);
+    kaiPinHead.position.y = 0.55;
+    const kaiPinTipGeo = new THREE.ConeGeometry(0.24, 0.62, 20);
+    kaiPinTipGeo.rotateX(Math.PI);
+    const kaiPinTip = new THREE.Mesh(kaiPinTipGeo, kaiPinMat);
+    kaiPinTip.position.y = 0.12;
+    const kaiPinDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 14, 12),
+      new THREE.MeshBasicMaterial({ color: '#0d0f12', fog: false }),
+    );
+    kaiPinDot.position.y = 0.55;
+    const kaiPinRingGeo = new THREE.RingGeometry(0.5, 0.72, 32);
+    kaiPinRingGeo.rotateX(-Math.PI / 2);
+    const kaiPinRingMat = new THREE.MeshBasicMaterial({
+      color: '#b8ff3c',
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    const kaiPinRing = new THREE.Mesh(kaiPinRingGeo, kaiPinRingMat);
+    kaiPinRing.position.y = -0.28;
+    kaiPinRing.renderOrder = 18;
+    kaiPinpointGroup.add(kaiPinHead, kaiPinTip, kaiPinDot, kaiPinRing);
+    const onSetKaiTutorial = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          exclamation?: boolean;
+          pin?: { x: number; z: number } | null;
+        }>
+      ).detail;
+      kaiExclamationActive = Boolean(detail?.exclamation);
+      kaiPinpointTarget = detail?.pin ?? null;
+      if (!kaiPinpointTarget) {
+        kaiPinpointGroup.visible = false;
+      }
+    };
+    window.addEventListener('set-kai-tutorial', onSetKaiTutorial);
 
     // Vehicles were proportioned while the fog-of-war bug shrank characters to
     // 1/1.16 of their authored size. Characters are back at full size, so vehicle
@@ -18777,7 +18826,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const hasActiveEvent = activeTutorialWaypointTarget === 'hana';
         lobbyCafeNpc.exclamationGroup.visible =
           hasActiveEvent && worldModeRef.current !== 'warzone';
-        beachHouseNpc.exclamationGroup.visible = false;
+        beachHouseNpc.exclamationGroup.visible =
+          kaiExclamationActive && worldModeRef.current !== 'warzone';
+
+        // Animate Kai's tutorial pinpoint above its current target.
+        if (
+          kaiPinpointTarget &&
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          playerUnit &&
+          playerUnit.alive
+        ) {
+          kaiPinpointGroup.visible = true;
+          kaiPinpointGroup.position.set(
+            kaiPinpointTarget.x,
+            getTerrainElevation(kaiPinpointTarget.x, kaiPinpointTarget.z) +
+              4.0 +
+              Math.sin(timeSec * 2.6) * 0.18,
+            kaiPinpointTarget.z,
+          );
+          kaiPinpointGroup.rotation.y = timeSec * 0.9;
+          kaiPinRing.scale.setScalar(1 + Math.sin(timeSec * 4.5) * 0.15);
+          kaiPinRingMat.opacity = 0.55 + Math.sin(timeSec * 4.5) * 0.25;
+        } else if (kaiPinpointGroup.visible) {
+          kaiPinpointGroup.visible = false;
+        }
 
         // Animate the floating property pinpoint (bob + slow spin + pulsing
         // ring) above whichever Teleport Kiosk is nearest to the player.
@@ -22543,6 +22616,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
       window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
       window.removeEventListener('set-property-pinpoint', onSetPropertyPinpoint);
+      window.removeEventListener('set-kai-tutorial', onSetKaiTutorial);
       scene.remove(tutorialWaypointGroup);
       tutorialChevronGeo.dispose();
       tutorialDestRingGeo.dispose();

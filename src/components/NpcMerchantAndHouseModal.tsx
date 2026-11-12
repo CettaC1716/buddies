@@ -111,6 +111,10 @@ interface NpcMerchantAndHouseModalProps {
   hanaPitchOrigin?: 'kiosk' | 'browse' | null;
   onViewModelHouse?: () => void;
   onOpenTeleportKioskFromPitch?: () => void;
+  kaiTutorialStage?: 'meet' | 'equip' | 'to_water' | 'catch' | 'sell' | 'done' | null;
+  kaiCardDismissed?: boolean;
+  onKaiTutorialStart?: () => void;
+  onKaiTutorialLater?: () => void;
 }
 
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
@@ -164,6 +168,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   hanaPitchOrigin = null,
   onViewModelHouse,
   onOpenTeleportKioskFromPitch,
+  kaiTutorialStage = null,
+  kaiCardDismissed = false,
+  onKaiTutorialStart,
+  onKaiTutorialLater,
 }) => {
   const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market'>(
     'sesi_chat',
@@ -237,6 +245,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     return () => window.removeEventListener('open-npc-catalog-house', onOpenCatalogHouse);
   }, []);
 
+  useEffect(() => {
+    if (
+      activeModalMode === 'npc_merchant' &&
+      merchantLocation === 'beach_house' &&
+      kaiTutorialStage === 'sell'
+    ) {
+      setActiveTab('fish_market');
+    }
+  }, [activeModalMode, merchantLocation, kaiTutorialStage]);
+
   // Cutaway Interior Studio State
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
     'furniture',
@@ -281,25 +299,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   // Initial greeting when NPC modal opens
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
-      const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza Cafe' : 'Beachfront Harbor';
+      const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza' : 'Beachfront Harbor';
       const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
       let greeting = '';
       if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
         setActiveTab('sesi_chat');
-        greeting = `Hi ${displayCitizen}, I'm Hana \u2014 I run the Central Plaza Cafe, where citizens exchange currency and find their homes. It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like. And feel free to ask me anything \u2014 I reply right away!`;
+        greeting = `Hi ${displayCitizen}, I'm Hana \u2014 the city's property & housing agent, and your guide around town. I help citizens find their homes and exchange currency. It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like. And feel free to ask me anything \u2014 I reply right away!`;
       } else if (
         merchantLocation === 'lobby_cafe' &&
         walletConnected &&
         (isTutorialHanaActive || !hanaWelcomeNearClaimed)
       ) {
         setActiveTab('sesi_chat');
-        greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 I run this cafe, welcome new citizens, and handle currency exchange and the property catalog. Claim your 0.30 NEAR welcome bonus below to get started. And feel free to ask me anything \u2014 I reply right away!`;
+        greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your 0.30 NEAR welcome bonus below to get started. And feel free to ask me anything \u2014 I reply right away!`;
       } else if (!walletConnected) {
-        greeting = `Hi there, I'm Hana \u2014 I run the Central Plaza Cafe, where citizens exchange currency and browse the property catalog. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and feel free to ask me anything about the city!`;
+        greeting = `Hi there, I'm Hana \u2014 the city's property & housing agent and city guide. I help citizens find homes, browse the property catalog, and exchange currency. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and feel free to ask me anything about the city!`;
       } else if (merchantLocation === 'beach_house') {
-        greeting = `Ahoy, ${displayCitizen}! I'm Kai \u2014 I run the fish market here at ${locLabel}. I buy your catches, sell tackle, and trade Fish NFTs. Show me what you caught \u2014 and feel free to ask me anything about fishing and the market!`;
+        greeting = `Ahoy, ${displayCitizen}! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. Show me what you caught \u2014 and feel free to ask me anything about fishing and the market!`;
       } else {
-        greeting = `Welcome back, ${displayCitizen} \u2014 Hana here, from the Central Plaza Cafe. Currency exchange, the catalog, and city homes are my desk \u2014 feel free to ask me anything about the game!`;
+        greeting = `Welcome back, ${displayCitizen} \u2014 Hana here, your property & housing agent and city guide. City homes, the catalog, and currency exchange are my desk \u2014 feel free to ask me anything about the game!`;
       }
       setNpcFullText(greeting);
       setNpcTypedText('');
@@ -1096,7 +1114,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </span>
                     <span className="text-[9.5px] font-bold text-slate-400">
                       {merchantLocation === 'lobby_cafe'
-                        ? 'Central Plaza Cafe'
+                        ? 'Central Plaza'
                         : 'Beachfront Harbor'}
                     </span>
                   </div>
@@ -1133,6 +1151,51 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </button>
                   </div>
                 )}
+
+                {/* Kai Fishing Lesson Card (his local tutorial, first meeting) */}
+                {merchantLocation === 'beach_house' &&
+                  kaiTutorialStage === 'meet' &&
+                  !kaiCardDismissed && (
+                    <div
+                      data-kai-tutorial-card="true"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                          KAI'S FISHING LESSON
+                        </span>
+                        <span className="text-[10.5px] font-black text-white">2 MINUTES</span>
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-300">
+                        The loop is simple: cast from the shore, reel something in, and I'll
+                        weigh it and pay you on the spot. Want a quick lesson?
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          data-kai-start-lesson-btn="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            onKaiTutorialStart?.();
+                          }}
+                          className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                        >
+                          SHOW ME HOW
+                        </button>
+                        <button
+                          type="button"
+                          data-kai-later-btn="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            onKaiTutorialLater?.();
+                          }}
+                          className="w-full py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                        >
+                          LATER
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                 {/* Hana Property Pitch Card (players who do not own a home yet) */}
                 {merchantLocation === 'lobby_cafe' &&
@@ -2504,6 +2567,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
                 </div>
 
+                {kaiTutorialStage === 'sell' && (
+                  <div
+                    data-kai-sell-guide="true"
+                    className="p-2.5 mb-2 bg-[#0f172a] text-white border-2 border-black text-[11px] font-bold"
+                  >
+                    KAI: Let's weigh your catch \u2014 tap the glowing SELL button below.
+                    Weight is money here; mint a fish as an NFT later and it can sell for
+                    RESPITE.
+                  </div>
+                )}
                 {caughtFishBucket.length === 0 ? (
                   <div className="py-4 px-3 bg-white border-2 border-dashed border-slate-400 text-center text-[11px] font-bold text-slate-600">
                     Your Fish Bucket is empty. Walk to the East Beach shoreline or the Central Oasis Lake and press [F] CAST ROD to catch fish.
@@ -2623,7 +2696,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab.`,
                                   );
                                 }}
-                                className="flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className={`flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer ${kaiTutorialStage === 'sell' ? 'animate-pulse ring-4 ring-[#b8ff3c]' : ''}`}
                               >
                                 SELL (+{lulValue} LUL)
                               </button>
