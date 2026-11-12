@@ -1271,6 +1271,25 @@ export default function App() {
     setGameState('playing');
   }, []);
 
+  // Landing page PLAY / LOG IN: enter immediately once assets are ready;
+  // otherwise the landing swaps to its own loading bar until preload lands.
+  const [landingPlayPressed, setLandingPlayPressed] = useState<boolean>(false);
+  const handleLandingPlay = useCallback(() => {
+    soundEngine.playUiClick();
+    if (isPreloadComplete) {
+      handleStartGame(false);
+    } else {
+      setLandingPlayPressed(true);
+    }
+  }, [isPreloadComplete, handleStartGame]);
+
+  useEffect(() => {
+    if (landingPlayPressed && isPreloadComplete) {
+      setLandingPlayPressed(false);
+      handleStartGame(false);
+    }
+  }, [landingPlayPressed, isPreloadComplete, handleStartGame]);
+
   const handleSwitchPlayMode = useCallback((nextMode: PlayMode) => {
     soundEngine.playUiClick();
     if (document.activeElement instanceof HTMLElement) {
@@ -2742,7 +2761,7 @@ export default function App() {
 
       if (gameState === 'title' && (e.code === 'Enter' || e.code === 'Space')) {
         e.preventDefault();
-        handleStartGame(false);
+        handleLandingPlay();
         return;
       }
 
@@ -2783,6 +2802,7 @@ export default function App() {
     isKioskModalOpen,
     dispatchBuddyAction,
     handleStartGame,
+    handleLandingPlay,
     handleToggleAudio,
     handleCycleLighting,
     handleToggleFovMode,
@@ -3410,8 +3430,10 @@ export default function App() {
         onPreloadSceneReady={handlePreloadSceneReady}
       />
 
-      {/* Unified Blocking Preload Gate (0% to 100%) */}
-      {!isPreloadComplete && (
+      {/* Unified Blocking Preload Gate (0% to 100%). Suppressed on the title
+          screen: the landing page is the front door and carries its own
+          loading state once PLAY is pressed. */}
+      {!isPreloadComplete && gameState !== 'title' && (
         <div
           role="status"
           aria-live="polite"
@@ -3486,13 +3508,23 @@ export default function App() {
           2. LANDING PAGE: bright Pudgy-style front door over the live world.
              One PLAY NOW (or LOG IN) press hands over to the START GAME card.
          ===================================================================== */}
-      {isPreloadComplete && gameState === 'title' && (
+      {gameState === 'title' && (
         <section
           aria-label="Buddies Blitz Landing"
           className="fixed inset-0 z-20 flex flex-col pointer-events-none"
         >
-          {/* Bright sky wash over the live 3D world */}
-          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/60 via-sky-200/25 to-transparent" />
+          {/* Looping gameplay video backdrop (pond fishing scene) */}
+          <video
+            className="absolute inset-0 w-full h-full object-cover"
+            src="/assets/landing-loop.mp4"
+            autoPlay
+            muted
+            loop
+            playsInline
+            aria-hidden="true"
+          />
+          {/* Light sky wash so the logo and buttons stay readable */}
+          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/35 via-transparent to-sky-900/25" />
 
           {/* Top banner */}
           <div className="relative z-10 bg-[#60a5fa] text-white text-center font-black uppercase tracking-[0.18em] text-[10px] sm:text-xs py-2 px-3 border-b-2 border-black/60">
@@ -3518,7 +3550,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => handleStartGame(false)}
+                onClick={handleLandingPlay}
                 className="px-4 py-2 bg-[#4285f4] hover:bg-[#5b96f7] text-white font-black text-[11px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
               >
                 Log In
@@ -3544,15 +3576,33 @@ export default function App() {
                 </span>
               ))}
             </div>
-            <button
-              type="button"
-              data-start="true"
-              onClick={() => handleStartGame(false)}
-              aria-label="Play Now"
-              className="pointer-events-auto mt-5 -rotate-2 hover:-rotate-3 hover:scale-105 active:scale-95 px-10 py-4 bg-[#b4ff39] hover:bg-[#c7ff72] text-[#11121a] font-black text-2xl sm:text-3xl tracking-wider rounded-full border-4 border-[#11121a] ring-4 ring-white shadow-[6px_6px_0_#000] transition-all duration-150 cursor-pointer whitespace-nowrap"
-            >
-              PLAY NOW
-            </button>
+            {landingPlayPressed ? (
+              <div className="pointer-events-auto mt-5 w-[min(420px,80vw)] -rotate-1 bg-[#14161d]/90 border-3 border-black ring-2 ring-white shadow-[6px_6px_0_#000] px-5 py-4 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-widest text-white">
+                  <span>Loading World</span>
+                  <span className="font-mono">{preloadProgress}%</span>
+                </div>
+                <div className="w-full h-2.5 bg-[#181b26] border border-white/25 overflow-hidden">
+                  <div
+                    className="h-full bg-[#b8ff3c] transition-[width] duration-150 ease-out"
+                    style={{ width: `${preloadProgress}%` }}
+                  />
+                </div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-white/60">
+                  Preparing the plaza, the beach &amp; your buddies...
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                data-start="true"
+                onClick={handleLandingPlay}
+                aria-label="Play Now"
+                className="pointer-events-auto mt-5 -rotate-2 hover:-rotate-3 hover:scale-105 active:scale-95 px-10 py-4 bg-[#b4ff39] hover:bg-[#c7ff72] text-[#11121a] font-black text-2xl sm:text-3xl tracking-wider rounded-full border-4 border-[#11121a] ring-4 ring-white shadow-[6px_6px_0_#000] transition-all duration-150 cursor-pointer whitespace-nowrap"
+              >
+                PLAY NOW
+              </button>
+            )}
           </div>
 
           <div className="relative z-10 pb-5 px-6 text-center text-xs sm:text-sm font-bold tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
