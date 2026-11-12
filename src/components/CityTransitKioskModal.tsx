@@ -44,6 +44,38 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   onCompleteTutorialTour,
 }) => {
   const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect'>('grid');
+  // Hana's interactive kiosk tour: she explains each menu while a spotlight
+  // ring steps across the cards.
+  const KIOSK_TOUR_STEPS = [
+    {
+      card: 'travel_districts',
+      text: "This is TRAVEL & DISTRICTS \u2014 how you get around the city. Pick a district and the tram takes you straight there, no long walks.",
+    },
+    {
+      card: 'my_house',
+      text: 'This is MY HOUSE \u2014 your home in the city. If you do not own one yet, this is where the catalog and our model house come in.',
+    },
+    {
+      card: 'shop_exchange',
+      text: 'This is SHOP & EXCHANGE \u2014 trade LUL, CYON and RESPITE here, and browse items, outfits and furniture.',
+    },
+    {
+      card: 'warzone_arena',
+      text: 'And this is the WARZONE ARENA \u2014 the optional Red vs Blue combat game. Jump in whenever you feel like it, totally up to you.',
+    },
+  ] as const;
+  const [tourStep, setTourStep] = useState<number>(0);
+  useEffect(() => {
+    if (isTutorialTourActive) {
+      setTourStep(0);
+    }
+  }, [isTutorialTourActive, isOpen]);
+  const tourCardClass = (card: string): string => {
+    if (!isTutorialTourActive || levelView !== 'grid') return '';
+    return KIOSK_TOUR_STEPS[tourStep]?.card === card
+      ? ' ring-4 ring-[#b8ff3c] scale-[1.015] z-20 brightness-110'
+      : ' opacity-60 saturate-50';
+  };
   const [browserSectionTitle, setBrowserSectionTitle] = useState<string>('TRAVEL & DISTRICTS');
   const [selectedStationId, setSelectedStationId] = useState<CityTransitStationId>('central_plaza');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -292,30 +324,83 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
             {isTutorialTourActive && (
               <div
                 data-kiosk-tutorial-tour-banner="true"
-                className="mb-4 px-3.5 py-2.5 bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] flex flex-wrap items-center justify-between gap-2.5"
+                data-kiosk-hana-tour="true"
+                className="mb-4 bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] flex gap-3 p-3"
               >
-                <div className="min-w-0">
-                  <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                    TRANSIT KIOSK
+                <img
+                  src="/docs/hero-4-hana-exchange.jpg"
+                  alt="Hana"
+                  className="w-14 h-14 sm:w-16 sm:h-16 object-cover border-2 border-black shrink-0"
+                />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                      HANA · KIOSK TOUR {tourStep + 1}/{KIOSK_TOUR_STEPS.length}
+                    </span>
+                    <button
+                      type="button"
+                      data-kiosk-skip-tour-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        onCompleteTutorialTour?.();
+                      }}
+                      className="text-[9.5px] font-black uppercase text-slate-400 hover:text-white underline cursor-pointer shrink-0"
+                    >
+                      SKIP TOUR
+                    </button>
                   </div>
-                  <div className="text-xs font-bold text-slate-200">
-                    Fast-travel across the city, join the Warzone Arena, enter My House, or open the Shop.
+                  <p className="text-xs font-bold text-slate-100 leading-snug">
+                    {KIOSK_TOUR_STEPS[tourStep].text}
+                  </p>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      data-kiosk-tour-back-btn="true"
+                      disabled={tourStep === 0}
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setTourStep((s) => Math.max(0, s - 1));
+                      }}
+                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-white border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                    >
+                      BACK
+                    </button>
+                    {tourStep < KIOSK_TOUR_STEPS.length - 1 ? (
+                      <button
+                        type="button"
+                        data-kiosk-tour-next-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setTourStep((s) =>
+                            Math.min(KIOSK_TOUR_STEPS.length - 1, s + 1),
+                          );
+                        }}
+                        className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                      >
+                        NEXT
+                      </button>
+                    ) : (
+                      onCompleteTutorialTour && (
+                        <button
+                          type="button"
+                          data-kiosk-complete-tutorial-btn="true"
+                          onClick={() => {
+                            soundEngine.playPickup();
+                            onCompleteTutorialTour();
+                          }}
+                          className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                        >
+                          GOT IT
+                        </button>
+                      )
+                    )}
+                    {tourStep === KIOSK_TOUR_STEPS.length - 1 && (
+                      <span className="text-[10px] font-bold text-slate-400">
+                        That's the kiosk \u2014 where would you like to go first?
+                      </span>
+                    )}
                   </div>
                 </div>
-
-                {onCompleteTutorialTour && (
-                  <button
-                    type="button"
-                    data-kiosk-complete-tutorial-btn="true"
-                    onClick={() => {
-                      soundEngine.playPickup();
-                      onCompleteTutorialTour();
-                    }}
-                    className="-skew-x-6 px-4 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 inline-block">GOT IT</span>
-                  </button>
-                )}
               </div>
             )}
 
@@ -335,7 +420,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="travel_districts"
                 data-teleport-option="safezone"
                 onClick={handleOpenTravelBrowser}
-                className="group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('travel_districts')}`}
               >
                 <img
                   src="/docs/hero-2-tram-station.jpg"
@@ -372,7 +457,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="warzone_arena"
                 data-teleport-option="warzone"
                 onClick={handleOpenWarzoneBrowser}
-                className="group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('warzone_arena')}`}
               >
                 <img
                   src="/docs/hero-7-crate-stacking-pad.jpg"
@@ -419,7 +504,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="my_house"
                 onClick={handleClickMyHouse}
-                className="group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('my_house')}`}
               >
                 <img
                   src="/docs/hero-3-house-interior.jpg"
@@ -457,7 +542,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="shop_exchange"
                 onClick={handleClickShopExchange}
-                className="group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('shop_exchange')}`}
               >
                 <img
                   src="/docs/hero-4-hana-exchange.jpg"

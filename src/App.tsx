@@ -1843,6 +1843,15 @@ export default function App() {
       setOnboardingAuthMode('wallet');
       setOnboardingStep('completed');
       setGameState('playing');
+      // First entry on this device gets Hana's guided intro, once.
+      try {
+        if (!window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
+          window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
+          setTutorialStage('welcome_modal');
+        }
+      } catch {
+        // ignore
+      }
       setHasHouseOwnership(ownsHouseVerified);
 
       dispatchBuddyAction(
@@ -2395,6 +2404,11 @@ export default function App() {
     soundEngine.playPickup();
     setOnboardingStep('completed');
     setGameState('playing');
+    try {
+      window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
+    } catch {
+      // ignore
+    }
     setTutorialStage('welcome_modal');
   }, [
     characterGender,
@@ -2459,6 +2473,15 @@ export default function App() {
     const doneTimer = window.setTimeout(() => {
       setOnboardingLoadingProgress(100);
       setOnboardingStep('completed');
+      // Guests join Hana's guided intro too, once per device.
+      try {
+        if (!window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
+          window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
+          setTutorialStage('welcome_modal');
+        }
+      } catch {
+        // ignore
+      }
     }, 1150);
     return () => {
       window.clearInterval(interval);
@@ -3808,10 +3831,13 @@ export default function App() {
                   Welcome, {playerDisplayName}
                 </h2>
                 <p className="text-xs font-bold text-slate-300 mt-1">
-                  Visit Hana at Central Plaza Cafe to claim your 0.30 NEAR welcome bonus.
+                  {hud.nearWalletConnected
+                    ? 'Visit Hana at Central Plaza Cafe to claim your 0.30 NEAR welcome bonus.'
+                    : 'Meet Hana at Central Plaza Cafe \u2014 she will show you around the city. You are in Guest Mode, so trading unlocks after you sign in.'}
                 </p>
               </div>
 
+              {hud.nearWalletConnected && (
               <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[9.5px] font-black uppercase text-slate-400">
@@ -3832,6 +3858,7 @@ export default function App() {
                   {hud.nearWalletId || playerUid}
                 </div>
               </div>
+              )}
 
               <button
                 type="button"
@@ -5419,6 +5446,11 @@ export default function App() {
           soundEngine.playUiClick();
           setActiveSpecialModal('none');
           setHanaPitchOrigin(null);
+          // Guests cannot claim the welcome NEAR, so meeting Hana completes
+          // the beat: point them onward to the Transit Kiosk tour.
+          if (tutorialStage === 'go_to_hana' && !hud.nearWalletConnected) {
+            setTutorialStage('go_to_kiosk');
+          }
         }}
         onEarnSafezoneLul={(amount: number) => {
           soundEngine.playUiClick();

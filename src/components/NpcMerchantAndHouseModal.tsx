@@ -286,20 +286,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       let greeting = '';
       if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
         setActiveTab('sesi_chat');
-        greeting = `Hi ${displayCitizen}, Hana here! It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like.`;
+        greeting = `Hi ${displayCitizen}, I'm Hana \u2014 I run the Central Plaza Cafe, where citizens exchange currency and find their homes. It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like. And feel free to ask me anything \u2014 I reply right away!`;
       } else if (
         merchantLocation === 'lobby_cafe' &&
         walletConnected &&
         (isTutorialHanaActive || !hanaWelcomeNearClaimed)
       ) {
         setActiveTab('sesi_chat');
-        greeting = `Welcome to ${locLabel}, ${displayCitizen}. Claim your 0.30 NEAR welcome bonus below, or ask me anything about places in the city, fishing, Fish NFT sales, currencies, or the Warzone.`;
+        greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 I run this cafe, welcome new citizens, and handle currency exchange and the property catalog. Claim your 0.30 NEAR welcome bonus below to get started. And feel free to ask me anything \u2014 I reply right away!`;
       } else if (!walletConnected) {
-        greeting = `Welcome, Buddy. You are in Guest Mode—ask me anything about the game below, or sign in to unlock the Exchange and Catalog.`;
+        greeting = `Hi there, I'm Hana \u2014 I run the Central Plaza Cafe, where citizens exchange currency and browse the property catalog. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and feel free to ask me anything about the city!`;
       } else if (merchantLocation === 'beach_house') {
-        greeting = `Welcome to ${locLabel}, ${displayCitizen}. Sell fish, trade Fish NFTs, browse tackle, or ask me anything about fishing and market records.`;
+        greeting = `Ahoy, ${displayCitizen}! I'm Kai \u2014 I run the fish market here at ${locLabel}. I buy your catches, sell tackle, and trade Fish NFTs. Show me what you caught \u2014 and feel free to ask me anything about fishing and the market!`;
       } else {
-        greeting = `Welcome back, ${displayCitizen}. Exchange currencies, browse the Catalog, or ask me anything about the game below.`;
+        greeting = `Welcome back, ${displayCitizen} \u2014 Hana here, from the Central Plaza Cafe. Currency exchange, the catalog, and city homes are my desk \u2014 feel free to ask me anything about the game!`;
       }
       setNpcFullText(greeting);
       setNpcTypedText('');
