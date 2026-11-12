@@ -141,7 +141,11 @@ const TRADE_LINES: Record<
     | 'agreed'
     | 'acceptCounter'
     | 'done'
-    | 'walkaway',
+    | 'walkaway'
+    | 'reasonRare'
+    | 'reasonDemand'
+    | 'reasonStock'
+    | 'reasonFair',
     string
   >
 > = {
@@ -155,6 +159,10 @@ const TRADE_LINES: Record<
     acceptCounter: 'Deal. You drive a fair bargain.',
     done: 'Fresh stock for my market. Thank you!',
     walkaway: 'No hard feelings. The market may pay more.',
+    reasonRare: 'Rare catches move fast at my stall, so I pay well.',
+    reasonDemand: 'Market demand is strong, so I can stretch my price.',
+    reasonStock: 'I still hold plenty of this kind, so I buy lower.',
+    reasonFair: 'A fair trade price. I resell it at the fish market.',
   },
   id: {
     pick: 'Pilih ikan yang mau kamu jual.',
@@ -166,6 +174,10 @@ const TRADE_LINES: Record<
     acceptCounter: 'Sepakat. Tawaran yang adil.',
     done: 'Stok segar untuk pasarku. Terima kasih!',
     walkaway: 'Tidak apa-apa. Di marketplace mungkin lebih mahal.',
+    reasonRare: 'Tangkapan langka cepat laku di lapakku, jadi kubayar bagus.',
+    reasonDemand: 'Permintaan pasar lagi kuat, jadi hargaku bisa naik.',
+    reasonStock: 'Stokku jenis ini masih banyak, jadi kubeli lebih murah.',
+    reasonFair: 'Harga wajar. Nanti kujual lagi di pasar ikan.',
   },
 };
 const TRADE_LABELS: Record<
@@ -455,6 +467,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       ) {
         setActiveTab('sesi_chat');
         greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your 0.30 NEAR welcome bonus below to get started. And feel free to ask me anything \u2014 I reply right away!`;
+      } else if (!walletConnected && merchantLocation === 'beach_house') {
+        greeting = `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and feel free to ask me anything about fishing and the market!`;
       } else if (!walletConnected) {
         greeting = `Hi there, I'm Hana \u2014 the city's property & housing agent and city guide. I help citizens find homes, browse the property catalog, and exchange currency. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and feel free to ask me anything about the city!`;
       } else if (merchantLocation === 'beach_house') {
@@ -560,6 +574,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     } else {
       triggerNpcSpeech(tradeLine('raise2'));
     }
+  };
+
+  type TradeReasonKey = 'reasonRare' | 'reasonDemand' | 'reasonStock' | 'reasonFair';
+  const getTradeReasonKey = (s: NegotiationSession): TradeReasonKey => {
+    const rarity = (tradeFish?.rarity || '').toLowerCase();
+    if (rarity === 'legendary' || rarity === 'epic' || rarity === 'rare') return 'reasonRare';
+    if (s.currentOffer >= s.baseValue) return 'reasonDemand';
+    if (s.currentOffer <= Math.round(s.baseValue * 0.85)) return 'reasonStock';
+    return 'reasonFair';
   };
 
   const doTradeRaise = () => {
@@ -687,6 +710,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               : tradeLine('raise1'),
           );
         }
+        return;
+      }
+      if (
+        /(kenapa|mengapa|why|alasan|reason)/.test(lower) &&
+        !/(naik|tambah|more|higher|lagi)/.test(lower)
+      ) {
+        finishLocal(tradeLine(getTradeReasonKey(s)));
         return;
       }
       if (/\b(terima|setuju|deal|oke|ok|ya|yes|accept|baiklah|boleh)\b/.test(lower)) {
@@ -1682,6 +1712,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           {tradeLabels.standardPrice}: {tradeSession.baseValue} LUL
                           {tradeSession.isFinalOffer ? ` · ${tradeLabels.finalOffer}` : ''}
                         </div>
+                        <div className="text-[9.5px] italic font-bold text-slate-400 mt-0.5">
+                          {TRADE_LINES[tradeLang][getTradeReasonKey(tradeSession)]}
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -1784,6 +1817,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     >
                       <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
                         {tradeLabels.lastOffer} · {tradeSession.currentOffer} LUL
+                      </div>
+                      <div className="text-[9.5px] italic font-bold text-slate-400">
+                        {TRADE_LINES[tradeLang][getTradeReasonKey(tradeSession)]}
                       </div>
                       <div className="flex gap-2">
                         <button
