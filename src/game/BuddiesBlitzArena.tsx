@@ -15631,7 +15631,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 CUTAWAY_ROOM_BOUNDS.minZ + 0.55,
                 CUTAWAY_ROOM_BOUNDS.maxZ - 0.55,
               );
-              if (npcCameraMode === 'house_visit') {
+              if (npcCameraMode === 'house_visit' && !playerUnit.isSleeping) {
                 resolveHouseVisitCollisions();
               }
             } else {
@@ -20367,7 +20367,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         );
         const localY = getTerrainElevation(b.x, b.z);
         if (b.isPlayer && (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')) {
-          b.bodyGroup.position.y = (floatY + b.jumpOffset + bHitPose.hopY) * 0.55;
+          const sleepLiftY =
+            b.isSleeping && activeSleepSpot ? activeSleepSpot.sleepLiftY : 0;
+          b.bodyGroup.position.y = (floatY + b.jumpOffset + bHitPose.hopY) * 0.55 + sleepLiftY;
           b.root.position.set(b.x, HOUSE_ORIGIN_Y, b.z);
           b.root.rotation.set(0, 0, 0);
           b.root.scale.setScalar(0.55);
