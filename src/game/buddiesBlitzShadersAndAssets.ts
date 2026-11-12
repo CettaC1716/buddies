@@ -11098,7 +11098,9 @@ function stepCharBuddiesGlbRigController(
             .normalize();
 
           const foregripDist = weaponId === 'laser' ? 0.42 : 0.45;
-          const foregripRiseY = weaponId === 'gatling' ? 0.10 : 0.08;
+          // Palm center belongs just UNDER the handguard (~4cm below the barrel line);
+          // the old +0.08/+0.10 rise floated the support hand 0.12-0.18m off the weapon (measured).
+          const foregripRiseY = weaponId === 'gatling' ? -0.02 : -0.04;
           const fgX = ctrl.rightHandLocalPos.x + ctrl.rightHandGripAxisLocal.x * foregripDist;
           const fgY =
             ctrl.rightHandLocalPos.y + ctrl.rightHandGripAxisLocal.y * foregripDist + foregripRiseY;
@@ -11379,8 +11381,8 @@ export function updateCharacterWeaponStance(
     const kickPitch = r * 0.04;
     rig.weaponRigGroup.position.set(
       hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : -0.12,
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.075 : (hasCustomGlb ? 1.34 : 1.26) + walkBob,
-      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z + 0.20 : hasCustomGlb ? 0.38 : 0.50) - kickZ,
+      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.063 : (hasCustomGlb ? 1.34 : 1.26) + walkBob,
+      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z + 0.168 : hasCustomGlb ? 0.38 : 0.50) - kickZ,
     );
     rig.weaponRigGroup.rotation.set(-kickPitch, 0, 0);
 
@@ -11405,7 +11407,7 @@ export function updateCharacterWeaponStance(
       const az = Math.max(0.25, glbCtrl.rightHandGripAxisLocal.z);
       const barrelYaw = Math.atan2(ax, az);
       const barrelPitch = -Math.atan2(ay, Math.hypot(ax, az)) - kickPitch;
-      const rearGripZ = weaponId === 'gatling' ? 0.18 : 0.15;
+      const rearGripZ = weaponId === 'gatling' ? 0.11 : 0.15;
       const rearGripY = weaponId === 'gatling' ? 0.13 : 0.14;
       rig.weaponRigGroup.position.set(
         glbCtrl.rightHandLocalPos.x + Math.sin(barrelYaw) * rearGripZ,
@@ -11439,8 +11441,8 @@ export function updateCharacterWeaponStance(
     const kickPitch = r * 0.30;
     rig.weaponRigGroup.position.set(
       hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : hasCustomGlb ? -0.44 : -0.46,
-      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.20 : hasCustomGlb ? 2.12 : 1.62) + walkBob,
-      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z - 0.24 : 0.14) - kickZ,
+      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y + 0.172 : hasCustomGlb ? 2.12 : 1.62) + walkBob,
+      (hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z - 0.206 : 0.14) - kickZ,
     );
     rig.weaponRigGroup.rotation.set(-kickPitch, 0, 0);
 
