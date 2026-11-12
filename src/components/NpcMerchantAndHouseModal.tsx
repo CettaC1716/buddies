@@ -478,6 +478,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       }
       setNpcFullText(greeting);
       setNpcTypedText('');
+      setPitchViewBoth(hanaPitchOrigin ? 'full' : 'mini');
       setLastPlayerMessage('');
       setChatHistory([]);
       setChatInputDraft('');
@@ -535,6 +536,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     tradeFishId != null
       ? caughtFishBucket.find((f) => f.id === tradeFishId) ?? null
       : null;
+
+  /* Hana property pitch visibility. The full card belongs to the housing
+   * intent moment (arriving from MY HOUSE / Browse Homes). Everyday chat
+   * only carries a slim strip, so the offer never crowds a conversation
+   * about something else; a property-topic message re-expands the card,
+   * and the player can minimize or dismiss it for the session. */
+  const [pitchView, setPitchView] = useState<'full' | 'mini' | 'hidden'>('mini');
+  const pitchViewRef = useRef<'full' | 'mini' | 'hidden'>('mini');
+  const setPitchViewBoth = (v: 'full' | 'mini' | 'hidden') => {
+    pitchViewRef.current = v;
+    setPitchView(v);
+  };
+  const openPitchCatalog = () => {
+    soundEngine.playUiClick();
+    setActiveTab('katalog');
+    setHanaCatalogSlide('house');
+    triggerNpcSpeech(
+      'Here is the property catalog. The Private House Deed is listed first \u2014 once it is yours, the Teleport Kiosk takes you straight home.',
+    );
+  };
 
   const syncTrade = (
     session: NegotiationSession | null,
@@ -662,6 +683,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: 'player' as const, text },
     ];
     setChatHistory(nextHistory);
+
+    if (
+      merchantLocation === 'lobby_cafe' &&
+      !hasHouseOwnership &&
+      pitchViewRef.current !== 'hidden'
+    ) {
+      const propertyTopic =
+        /(rumah|properti|property|home|house|housing|deed|model house|tempat tinggal|kiosk|teleport|pulang)/.test(
+          text.toLowerCase(),
+        );
+      if (propertyTopic) {
+        setPitchViewBoth('full');
+      } else if (pitchViewRef.current === 'full') {
+        setPitchViewBoth('mini');
+      }
+    }
 
     const reqId = activeNpcRequestIdRef.current + 1;
     activeNpcRequestIdRef.current = reqId;
@@ -1854,7 +1891,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {/* Hana Property Pitch Card (players who do not own a home yet) */}
                 {merchantLocation === 'lobby_cafe' &&
                   !hasHouseOwnership &&
-                  !isTutorialHanaActive && (
+                  !isTutorialHanaActive &&
+                  pitchView === 'full' && (
                     <div
                       data-hana-property-pitch="true"
                       className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
@@ -1863,8 +1901,18 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
                           NO PROPERTY YET
                         </span>
-                        <span className="text-[10.5px] font-black text-white">
-                          YOUR FIRST HOME
+                        <span className="flex items-center gap-2">
+                          <span className="text-[10.5px] font-black text-white">
+                            YOUR FIRST HOME
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Minimize property offer"
+                            onClick={() => setPitchViewBoth('mini')}
+                            className="w-5 h-5 leading-none bg-[#1e293b] hover:bg-[#334155] text-white border border-black font-black text-[10px] cursor-pointer"
+                          >
+                            ✕
+                          </button>
                         </span>
                       </div>
                       <p className="text-[11px] font-bold text-slate-300">
@@ -1889,14 +1937,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <button
                           type="button"
                           data-hana-view-catalog-btn="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setActiveTab('katalog');
-                            setHanaCatalogSlide('house');
-                            triggerNpcSpeech(
-                              'Here is the property catalog. The Private House Deed is listed first \u2014 once it is yours, the Teleport Kiosk takes you straight home.',
-                            );
-                          }}
+                          onClick={openPitchCatalog}
                           className="w-full py-2.5 bg-white hover:bg-slate-100 text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
                         >
                           VIEW CATALOG
@@ -1915,6 +1956,49 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           </button>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                {merchantLocation === 'lobby_cafe' &&
+                  !hasHouseOwnership &&
+                  !isTutorialHanaActive &&
+                  pitchView === 'mini' && (
+                    <div
+                      data-hana-property-pitch-mini="true"
+                      className="px-3 py-2 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2"
+                    >
+                      <span className="text-[10px] font-black uppercase text-slate-300">
+                        No home yet
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {onViewModelHouse && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onViewModelHouse();
+                            }}
+                            className="text-[10px] font-black uppercase text-[#b8ff3c] hover:text-[#d9f99d] cursor-pointer"
+                          >
+                            Model House
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={openPitchCatalog}
+                          className="text-[10px] font-black uppercase text-white hover:text-slate-200 cursor-pointer"
+                        >
+                          Catalog
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Dismiss property offer"
+                          onClick={() => setPitchViewBoth('hidden')}
+                          className="text-[10px] font-black text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </span>
                     </div>
                   )}
 
