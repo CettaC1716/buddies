@@ -870,6 +870,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       { id: 'beach_chair_4', x: 97.5, z: 49.5, yaw: -0.2, seatLiftY: -0.08, indicatorHeightY: 1.2 },
     ];
 
+    // Bed sleep spots for the private-house bedroom (static zone bed at interior
+    // (3.4, -2.62), headboard toward -Z): one floating point over each pillow side.
+    // Hips anchor sits 0.47 (world) from the pillows so the reclined sleeping pose
+    // rests its head on the pillows and its feet stay on the 2.12-long mattress.
+    // sleepLiftY is in bodyGroup units: mattress top 0.50 world / 0.54 house scale,
+    // minus the clip's own hip height over its calm segment (measured -0.12).
+    type BedSleepSpot = {
+      id: string;
+      x: number;
+      z: number;
+      yaw: number;
+      sleepLiftY: number;
+      indicatorX: number;
+      indicatorZ: number;
+      indicatorHeightY: number;
+      wakeX: number;
+      wakeZ: number;
+    };
+    const HOUSE_BED_SLEEP_SPOTS: BedSleepSpot[] = [
+      { id: 'bed_left', x: 2.96, z: -2.55, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 2.96, indicatorZ: -3.32, indicatorHeightY: 1.02, wakeX: 2.96, wakeZ: -0.45 },
+      { id: 'bed_right', x: 3.84, z: -2.55, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 3.84, indicatorZ: -3.32, indicatorHeightY: 1.02, wakeX: 3.84, wakeZ: -0.45 },
+    ];
+    let activeSleepSpot: BedSleepSpot | null = null;
+    let currentNearestSleepSpot: BedSleepSpot | null = null;
+
     let activeSeatedSpot: LobbySeatSpot | null = null;
     let currentNearestLobbySeat: LobbySeatSpot | null = null;
     let seatedCameraYaw = -Math.PI / 2 + 0.35;
@@ -883,6 +908,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const SEAT_DISC_BLUE_HTML = `<span style="display:block; width:40px; height:40px; pointer-events:none; user-select:none;"></span>`;
 
     const CHAIR_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M7 4v9h10"/><path d="M7 13v7"/><path d="M17 13v7"/><path d="M7 16h10"/></svg>`;
+    const MOON_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff" style="display:block;"><path d="M20 13.2A8.5 8.5 0 1 1 10.8 4a7 7 0 0 0 9.2 9.2z"/></svg>`;
+    const getSleepDiscHtml = (near: boolean) =>
+      `<span style="display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background:${near ? 'rgba(146,110,32,0.88)' : 'rgba(38,32,52,0.82)'}; border:1.5px solid rgba(255,255,255,0.85); box-shadow:0 6px 18px rgba(0,0,0,0.45); pointer-events:none; user-select:none;">${MOON_SVG_ICON}</span>`;
+    const getSleepBarHtml = (label: string) =>
+      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,52,0.86); backdrop-filter:blur(8px); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${MOON_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
+
     const getSitBarHtml = (label: string) =>
       `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,28,0.82); backdrop-filter:blur(8px); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${CHAIR_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
 
@@ -973,6 +1004,58 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       emitHudImmediately();
     };
 
+    const sleepOnBed = (spot: BedSleepSpot) => {
+      if (!playerUnit || !playerUnit.alive) return;
+      soundEngine.playUiClick();
+      resetAllPlayerMovementInputs();
+      clearTeleportKioskSelection();
+      activeSleepSpot = spot;
+      playerUnit.x = spot.x;
+      playerUnit.z = spot.z;
+      playerUnit.vx = 0;
+      playerUnit.vz = 0;
+      playerUnit.yaw = spot.yaw;
+      playerUnit.isSleeping = true;
+      playerUnit.isSitting = false;
+      playerUnit.isDriving = false;
+      updateCharacterWeaponStance(
+        playerUnit.rig,
+        playerUnit.weaponId,
+        playerUnit.walkCycle,
+        false,
+        playerUnit.carryingCrate !== 'none',
+        0,
+        0,
+        0,
+        'right',
+        0,
+        0,
+        0.76,
+        0,
+        true,
+        'front',
+        1,
+        playerUnit.yaw,
+        0,
+        false,
+        false,
+        true,
+      );
+      emitHudImmediately();
+    };
+
+    const wakeUpFromBed = () => {
+      if (!playerUnit) return;
+      if (activeSleepSpot) {
+        playerUnit.x = activeSleepSpot.wakeX;
+        playerUnit.z = activeSleepSpot.wakeZ;
+      }
+      activeSleepSpot = null;
+      playerUnit.isSleeping = false;
+      soundEngine.playUiClick();
+      emitHudImmediately();
+    };
+
     const seatIndicatorBtns: { btn: HTMLButtonElement; state: 'none' | 'blue' | 'green' }[] =
       LOBBY_SEAT_SPOTS.map((spot) => {
         const btn = createPromptButton(SEAT_DISC_BLUE_HTML, 'Sit on Chair');
@@ -1000,6 +1083,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         standUpFromLobbySeat();
       } else if (currentNearestLobbySeat) {
         sitOnLobbySeat(currentNearestLobbySeat);
+      }
+    };
+
+    const sleepIndicatorBtns: { btn: HTMLButtonElement; state: 'none' | 'far' | 'near' }[] =
+      HOUSE_BED_SLEEP_SPOTS.map((spot) => {
+        const btn = createPromptButton(getSleepDiscHtml(false), 'Sleep');
+        btn.setAttribute('data-sleep-indicator-id', spot.id);
+        btn.onpointerdown = (e) => {
+          e.stopPropagation();
+          resetAllPlayerMovementInputs();
+        };
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          sleepOnBed(spot);
+        };
+        return { btn, state: 'far' };
+      });
+
+    const bottomSleepActionBtn = createPromptButton(getSleepBarHtml('Sleep'), 'Sleep');
+    bottomSleepActionBtn.setAttribute('data-bottom-sleep-action-btn', 'true');
+    bottomSleepActionBtn.onpointerdown = (e) => {
+      e.stopPropagation();
+      resetAllPlayerMovementInputs();
+    };
+    bottomSleepActionBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (playerUnit?.isSleeping && activeSleepSpot) {
+        wakeUpFromBed();
+      } else if (currentNearestSleepSpot) {
+        sleepOnBed(currentNearestSleepSpot);
       }
     };
 
@@ -9753,6 +9866,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           0,
           Boolean(playerUnit.isSitting),
           Boolean(playerUnit.isDriving),
+          Boolean(playerUnit.isSleeping),
         );
         if (mountedTank?.riderGroup.userData.riderRig) {
           upgradeBuddyRigWithCharBuddiesGlb(mountedTank.riderGroup.userData.riderRig, targetGltf);
@@ -15465,6 +15579,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 playerUnit.yaw = shorelineFishingSync.castOriginYaw;
               }
             } else if (inputLen > 0.01) {
+              if (playerUnit.isSleeping && activeSleepSpot) {
+                playerUnit.x = activeSleepSpot.wakeX;
+                playerUnit.z = activeSleepSpot.wakeZ;
+                activeSleepSpot = null;
+                playerUnit.isSleeping = false;
+              }
               if (playerUnit.isSitting && activeSeatedSpot) {
                 playerUnit.x = wrapPlanetCoord(
                   activeSeatedSpot.x + Math.cos(activeSeatedSpot.yaw) * 0.88,
@@ -15491,6 +15611,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 playerUnit.x = pinAnchor.x;
                 playerUnit.z = pinAnchor.z;
                 playerUnit.yaw = activeSeatedSpot.yaw;
+              }
+              if (playerUnit.isSleeping && activeSleepSpot) {
+                playerUnit.x = activeSleepSpot.x;
+                playerUnit.z = activeSleepSpot.z;
+                playerUnit.yaw = activeSleepSpot.yaw;
               }
             }
 
@@ -16793,7 +16918,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const seatLift =
               b.isPlayer && b.isSitting && activeSeatedSpot
                 ? activeSeatedSpot.seatLiftY + 0.178
-                : 0;
+                : b.isPlayer && b.isSleeping && activeSleepSpot
+                  ? activeSleepSpot.sleepLiftY
+                  : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
             b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
@@ -21726,6 +21853,73 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         exitHouseRoomPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
       } else {
         exitHouseRoomPromptBtn.style.display = 'none';
+      }
+
+      // 0A-000. Floating bed sleep points inside the private house (one over each pillow side)
+      const isHouseModeForSleep =
+        npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
+      if (playerUnit.isSleeping && !isHouseModeForSleep) {
+        playerUnit.isSleeping = false;
+        activeSleepSpot = null;
+      }
+      if (isHouseModeForSleep && !isKioskModalOpenCanvas) {
+        let bestSleepIdx = -1;
+        let bestSleepDist = 2.3;
+        if (!playerUnit.isSleeping) {
+          for (let si = 0; si < HOUSE_BED_SLEEP_SPOTS.length; si++) {
+            const d = Math.hypot(
+              playerUnit.x - HOUSE_BED_SLEEP_SPOTS[si].x,
+              playerUnit.z - HOUSE_BED_SLEEP_SPOTS[si].z,
+            );
+            if (d <= bestSleepDist) {
+              bestSleepDist = d;
+              bestSleepIdx = si;
+            }
+          }
+        }
+        currentNearestSleepSpot =
+          bestSleepIdx !== -1 ? HOUSE_BED_SLEEP_SPOTS[bestSleepIdx] : null;
+        for (let si = 0; si < HOUSE_BED_SLEEP_SPOTS.length; si++) {
+          const spot = HOUSE_BED_SLEEP_SPOTS[si];
+          const entry = sleepIndicatorBtns[si];
+          if (playerUnit.isSleeping) {
+            entry.btn.style.display = 'none';
+            continue;
+          }
+          const isNear = si === bestSleepIdx;
+          const desired = isNear ? 'near' : 'far';
+          if (entry.state !== desired) {
+            entry.state = desired;
+            entry.btn.innerHTML = getSleepDiscHtml(isNear);
+          }
+          const bobY = Math.sin(performance.now() * 0.0036 + si * 0.85) * 0.07;
+          const proj = projectFlatRoomToScreenPixels(
+            spot.indicatorX,
+            HOUSE_ORIGIN_Y + spot.indicatorHeightY + bobY,
+            spot.indicatorZ,
+          );
+          if (proj.visible && proj.x >= 24 && proj.x <= w - 24 && proj.y >= 24 && proj.y <= h - 24) {
+            entry.btn.style.display = 'block';
+            entry.btn.style.transform = `translate3d(${proj.x}px, ${proj.y}px, 0) translate(-50%, -50%)`;
+          } else {
+            entry.btn.style.display = 'none';
+          }
+        }
+        if (playerUnit.isSleeping && activeSleepSpot) {
+          bottomSleepActionBtn.innerHTML = getSleepBarHtml('Wake Up');
+          bottomSleepActionBtn.style.display = 'block';
+          bottomSleepActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+        } else if (currentNearestSleepSpot) {
+          bottomSleepActionBtn.innerHTML = getSleepBarHtml('Sleep');
+          bottomSleepActionBtn.style.display = 'block';
+          bottomSleepActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+        } else {
+          bottomSleepActionBtn.style.display = 'none';
+        }
+      } else {
+        for (const entry of sleepIndicatorBtns) entry.btn.style.display = 'none';
+        bottomSleepActionBtn.style.display = 'none';
+        currentNearestSleepSpot = null;
       }
 
       // 0A-0. Floating "TALK" at Central Plaza Cafe (-94.0, -13.8) or East Beach House (85.8, 60.0)

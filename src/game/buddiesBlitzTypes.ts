@@ -491,6 +491,7 @@ export interface BuddyUnit {
   frozenTimer: number;
   saluteTimer: number;
   isSitting?: boolean;
+  isSleeping?: boolean;
   isDriving?: boolean;
   aiTargetCrateId: number | null;
   alive: boolean;

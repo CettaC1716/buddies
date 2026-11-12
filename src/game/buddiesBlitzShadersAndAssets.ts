@@ -4000,6 +4000,7 @@ export interface LoadedBlitzAssets {
   manCharacterBuddiesGltf: GLTF | null;
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
+  sleepingClip: THREE.AnimationClip | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -4163,6 +4164,37 @@ export async function loadAllRealBlitzAssets(
       }),
     );
 
+  // Sleeping idle: a user-supplied FBX take parsed at runtime. FBX units are centimeters
+  // while the character rigs are meters, so the hip-height track is scaled by 0.01. Only the
+  // calm reclined segment (0.5s-6.5s) is looped: the full take rolls over mid-way, which
+  // would sink the body through the mattress.
+  const loadSleepingIdleClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/sleeping-idle.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              for (let i = 0; i < vals.length; i += 3) vals[i + 1] *= 0.01;
+            }
+          }
+          return THREE.AnimationUtils.subclip(raw, 'sleeping.001', 15, 195, 30);
+        } catch (err) {
+          console.warn('[PreloadGate] Sleeping idle clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const sleepingClipPromise = loadSleepingIdleClip();
+
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
@@ -4222,6 +4254,7 @@ export async function loadAllRealBlitzAssets(
         }),
     ),
     loadFoliageTex(),
+    sleepingClipPromise,
   ]).then(
     ([
       playerGltf,
@@ -4264,6 +4297,7 @@ export async function loadAllRealBlitzAssets(
       fishingRodGltf,
       playerTrackPoints,
       treeFoliageTex,
+      sleepingClip,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4308,6 +4342,7 @@ export async function loadAllRealBlitzAssets(
         fishingRodGltf,
         playerTrackPoints,
         treeFoliageTex,
+        sleepingClip,
       };
       cachedLoadedBlitzAssets = loaded;
       inFlightLoadedBlitzAssetsPromise = null;
@@ -9758,6 +9793,34 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     clips.set(rawClip.name, rawClip);
   }
+  // Merge the separately loaded sleeping clip (FBX take), dropping any track whose
+  // target bone does not exist on this character, same as the baked clips above.
+  const sleepingClipSrc = cachedLoadedBlitzAssets?.sleepingClip;
+  if (sleepingClipSrc && !clips.has('sleeping.001')) {
+    const c = sleepingClipSrc.clone();
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    // Same root-motion lock as the baked clips: the source take was recorded meters
+    // away from its stage origin, so pin hip X/Z to the bind values and clamp Y.
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('sleeping.001', c);
+  }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
     clips.set('fire.001', fallbackFireClip);
@@ -10355,6 +10418,7 @@ function stepCharBuddiesGlbRigController(
   moveSpeed = 0,
   isSitting = false,
   isDriving = false,
+  isSleeping = false,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -10490,6 +10554,9 @@ function stepCharBuddiesGlbRigController(
     ctrl.clips.has('driving.001')
   ) {
     targetClip = 'driving.001';
+    timeScale = 1.0;
+  } else if (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sleeping.001')) {
+    targetClip = 'sleeping.001';
     timeScale = 1.0;
   } else if (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sitting.001')) {
     targetClip = 'sitting.001';
@@ -10841,7 +10908,7 @@ function stepCharBuddiesGlbRigController(
 
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
-  const isSeatedOrPiloting = Boolean(rig.isSeatedRiderRef) || isDriving || isSitting;
+  const isSeatedOrPiloting = Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping;
   if (!isSeatedOrPiloting) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving
@@ -11152,6 +11219,7 @@ export function updateCharacterWeaponStance(
   moveSpeed = 0,
   isSitting = false,
   isDriving = false,
+  isSleeping = false,
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -11174,13 +11242,15 @@ export function updateCharacterWeaponStance(
       moveSpeed,
       isSitting,
       isDriving,
+      isSleeping,
     );
   }
   if (
     !isAlive ||
     Boolean(rig.isSeatedRiderRef) ||
     (isDriving && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('driving.001')) ||
-    (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001'))
+    (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001')) ||
+    (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
   ) {
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;
