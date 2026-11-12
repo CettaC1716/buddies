@@ -889,8 +889,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       wakeZ: number;
     };
     const HOUSE_BED_SLEEP_SPOTS: BedSleepSpot[] = [
-      { id: 'bed_left', x: 2.96, z: -2.55, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 2.96, indicatorZ: -3.32, indicatorHeightY: 1.02, wakeX: 2.96, wakeZ: -0.45 },
-      { id: 'bed_right', x: 3.84, z: -2.55, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 3.84, indicatorZ: -3.32, indicatorHeightY: 1.02, wakeX: 3.84, wakeZ: -0.45 },
+      { id: 'bed_left', x: 2.96, z: -2.2, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 2.96, indicatorZ: -2.45, indicatorHeightY: 1.02, wakeX: 2.96, wakeZ: -0.45 },
+      { id: 'bed_right', x: 3.84, z: -2.2, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 3.84, indicatorZ: -2.45, indicatorHeightY: 1.02, wakeX: 3.84, wakeZ: -0.45 },
     ];
     let activeSleepSpot: BedSleepSpot | null = null;
     let currentNearestSleepSpot: BedSleepSpot | null = null;
@@ -3363,9 +3363,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // Interior partitions raised to full height (visit only): top sections over
     // the half-height dividers plus headers above their doorway passages, so the
     // bedroom and study read as real enclosed rooms while walking inside.
-    addVisitWall(fe - U / 2, fe + U / 2, _a, ee, T, Da.z0);
-    addVisitWall(fe - U / 2, fe + U / 2, _a, ee, Da.z1, N);
-    addVisitWall(fe - U / 2, fe + U / 2, 2.15, ee, Da.z0, Da.z1); // header over the bedroom doorway
     addVisitWall(fe + U / 2, Ia.x0, _a, ee, lt - U / 2, lt + U / 2);
     addVisitWall(Ia.x1, J, _a, ee, lt - U / 2, lt + U / 2);
     addVisitWall(Ia.x0, Ia.x1, 2.15, ee, lt - U / 2, lt + U / 2); // header over the study doorway
@@ -3566,8 +3563,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let houseDoorSwingPrevT = 0;
 
     // Interior Half-Height Partition Walls (`_a = 1.3m`) with Doorway Passages (`Da`, `Ia`)
-    addCutawayWallSegment(fe - U / 2, fe + U / 2, 0, _a, T, Da.z0);
-    addCutawayWallSegment(fe - U / 2, fe + U / 2, 0, _a, Da.z1, N);
+    // The vertical partition beside the bed was removed at the user's request:
+    // it squeezed the bedroom into a narrow strip. Only the study divider stays.
     addCutawayWallSegment(fe + U / 2, Ia.x0, 0, _a, lt - U / 2, lt + U / 2);
     addCutawayWallSegment(Ia.x1, J, 0, _a, lt - U / 2, lt + U / 2);
 
@@ -4015,8 +4012,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const px = B.partitionX;
       const pz = B.partitionZ;
       const pt = B.partitionThickness / 2;
-      pushPlayerOutOfHouseObb(px, (B.minZ + B.doorPassZ.z0) / 2, pt, (B.doorPassZ.z0 - B.minZ) / 2, 0);
-      pushPlayerOutOfHouseObb(px, (B.doorPassZ.z1 + B.maxZ) / 2, pt, (B.maxZ - B.doorPassZ.z1) / 2, 0);
       pushPlayerOutOfHouseObb(
         (px + pt + B.doorPassX.x0) / 2,
         pz,

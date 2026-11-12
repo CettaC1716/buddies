@@ -494,7 +494,7 @@ const Do = j('#ffffff', {
   envMapIntensity: 0.8,
 });
 const Ns = rr('#edebe6', { roughness: 0.46, clearcoat: 0.4, flatShading: true });
-const js = rr('#3b3e44', { roughness: 0.5, clearcoat: 0.4 });
+const js = rr('#b3a48f', { roughness: 0.5, clearcoat: 0.4 });
 const en = j('#2c231b');
 const $s = j('#5c4b35', { roughness: 0.8 });
 const rc = j('#ffffff', { roughness: 0.75, vertexColors: true });
@@ -516,7 +516,7 @@ const He = [
   '#e6dfd2',
   '#3a2f28',
 ].map((e) => qs(rc, e));
-const me = ['#e9e4da', '#c9b59a', '#8e9a86', '#2f3136', '#b86f4c'].map((e) => qs(sc, e));
+const me = ['#e9e4da', '#c9b59a', '#8e9a86', '#8c7a66', '#b86f4c'].map((e) => qs(sc, e));
 const yr = j('#efe6d4', { roughness: 0.9, side: i.DoubleSide, envMapIntensity: 0.4 });
 const Ne = {
   shade: ct('#ffd6a0', 1),
