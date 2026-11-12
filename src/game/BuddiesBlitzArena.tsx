@@ -3057,6 +3057,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       'PROPERTY AGENT & CITY GUIDE',
       'female',
     );
+    lobbyCafeNpc.npcRig.idleClipOverrideName = 'hana_idle.001';
     const beachHouseNpc = buildStandingNpcMerchant3D(
       85.8,
       getTerrainElevation(85.8, 60.0),
@@ -3067,6 +3068,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       'FISHERMAN & BEACH KEEPER',
       'male',
     );
+    beachHouseNpc.npcRig.idleClipOverrideName = 'kai_idle.001';
 
     // =========================================================================
     // 3D PRIVATE HOUSE INTERIOR CUTAWAY STUDIO

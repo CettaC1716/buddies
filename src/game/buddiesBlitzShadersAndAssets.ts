@@ -4004,6 +4004,8 @@ export interface LoadedBlitzAssets {
   jumpClip: THREE.AnimationClip | null;
   jumpIdleClip: THREE.AnimationClip | null;
   idleClip: THREE.AnimationClip | null;
+  kaiIdleClip: THREE.AnimationClip | null;
+  hanaIdleClip: THREE.AnimationClip | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -4332,11 +4334,92 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
+  // Kai's personal idle (fold-arms take, user-supplied Tripo/Mixamo FBX): only
+  // Kai's rig carries the override name that selects it. In this export the hip
+  // height rides on the position track's Z component as a constant ~0.5 (rig
+  // units, no centimetre scaling) — remap it onto Y like the other takes.
+  const loadKaiIdleClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/kai-idle.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              for (let i = 0; i < vals.length; i += 3) {
+                vals[i + 1] = vals[i + 2];
+                vals[i] = 0;
+                vals[i + 2] = 0;
+              }
+            }
+          }
+          raw.name = 'kai_idle.001';
+          return raw;
+        } catch (err) {
+          console.warn('[PreloadGate] Kai idle clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const kaiIdleClipPromise = loadKaiIdleClip();
+  kaiIdleClipPromise
+    .then((c) => {
+      loadedKaiIdleClip = c;
+    })
+    .catch(() => {});
+
+  // Hana's personal idle (user-supplied Tripo/Mixamo FBX), same export
+  // convention as Kai's take: hip height rides on the position track's Z
+  // (~0.55 rig units) and is remapped onto Y. Only Hana's rig selects it.
+  const loadHanaIdleClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/hana-idle.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              for (let i = 0; i < vals.length; i += 3) {
+                vals[i + 1] = vals[i + 2];
+                vals[i] = 0;
+                vals[i + 2] = 0;
+              }
+            }
+          }
+          raw.name = 'hana_idle.001';
+          return raw;
+        } catch (err) {
+          console.warn('[PreloadGate] Hana idle clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const hanaIdleClipPromise = loadHanaIdleClip();
+  hanaIdleClipPromise
+    .then((c) => {
+      loadedHanaIdleClip = c;
+    })
+    .catch(() => {});
+
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4395,6 +4478,8 @@ export async function loadAllRealBlitzAssets(
     jumpClipPromise,
     jumpIdleClipPromise,
     idleClipPromise,
+    kaiIdleClipPromise,
+    hanaIdleClipPromise,
   ]).then(
     ([
       playerGltf,
@@ -4441,6 +4526,8 @@ export async function loadAllRealBlitzAssets(
       jumpClip,
       jumpIdleClip,
       idleClip,
+      kaiIdleClip,
+      hanaIdleClip,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4489,6 +4576,8 @@ export async function loadAllRealBlitzAssets(
         jumpClip,
         jumpIdleClip,
         idleClip,
+        kaiIdleClip,
+        hanaIdleClip,
       };
       cachedLoadedBlitzAssets = loaded;
       inFlightLoadedBlitzAssetsPromise = null;
@@ -4508,6 +4597,8 @@ let loadedSleepingClip: THREE.AnimationClip | null = null;
 let loadedJumpClip: THREE.AnimationClip | null = null;
 let loadedJumpIdleClip: THREE.AnimationClip | null = null;
 let loadedIdleClip: THREE.AnimationClip | null = null;
+let loadedKaiIdleClip: THREE.AnimationClip | null = null;
+let loadedHanaIdleClip: THREE.AnimationClip | null = null;
 let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
@@ -7441,6 +7532,7 @@ export interface CharBuddiesGlbRigController {
 }
 
 export interface BuddyCharacterRig {
+  idleClipOverrideName?: string;
   headMesh: THREE.Mesh;
   leftArmPivot: THREE.Group;
   rightArmPivot: THREE.Group;
@@ -10057,6 +10149,59 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('idle.001', c);
   }
+  // Register Kai's personal idle take under its own clip name. It is only ever
+  // selected by a rig whose idleClipOverrideName points at it (Kai's rig).
+  const kaiIdleClipSrc = loadedKaiIdleClip ?? cachedLoadedBlitzAssets?.kaiIdleClip;
+  if (kaiIdleClipSrc && !clips.has('kai_idle.001')) {
+    const c = kaiIdleClipSrc.clone();
+    c.name = 'kai_idle.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('kai_idle.001', c);
+  }
+  // Same registration for Hana's personal idle take (selected only by her rig).
+  const hanaIdleClipSrc = loadedHanaIdleClip ?? cachedLoadedBlitzAssets?.hanaIdleClip;
+  if (hanaIdleClipSrc && !clips.has('hana_idle.001')) {
+    const c = hanaIdleClipSrc.clone();
+    c.name = 'hana_idle.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('hana_idle.001', c);
+  }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
     clips.set('fire.001', fallbackFireClip);
@@ -11119,6 +11264,12 @@ function stepCharBuddiesGlbRigController(
   } else {
     targetClip = 'idle.001';
     timeScale = 1.0;
+  }
+
+  // A rig may carry a personal idle (e.g. Kai's fold-arms take): whenever the
+  // selection lands on the shared idle, swap in the rig's own take instead.
+  if (targetClip === 'idle.001' && rig.idleClipOverrideName && ctrl.clips.has(rig.idleClipOverrideName)) {
+    targetClip = rig.idleClipOverrideName;
   }
 
   const prevClipName = ctrl.activeClipName;
