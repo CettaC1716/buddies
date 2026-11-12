@@ -3050,7 +3050,7 @@ export default function App() {
     const waterCheck = detectNearbyFishingWaterZone(pDot?.x ?? 0, pDot?.z ?? 0);
     const activeZone = waterCheck.zoneId ?? 'east_beach';
 
-    soundEngine.playUiClick();
+    soundEngine.playSoftTap();
 
     // Non-punishing Shoreline Nibble Cue: clicking early warns the player without losing the cast!
     if (fishingPhase === 'nibble') {
@@ -8340,6 +8340,34 @@ export default function App() {
         onTriggerBuddyAction={dispatchBuddyAction}
         forceShowJoystick={showJoystickOnDesktop}
         isWarzoneActive={worldMode === 'warzone' || hud.worldMode === 'warzone'}
+        canFish={nearbyWaterZone.canFish}
+        fishingPhase={fishingPhase}
+        fishingCastPower={fishingCastPower}
+        fishingBucketFull={caughtFishBucket.length >= 20}
+        isHoldingReel={isHoldingReel}
+        onFishingStartCharge={() => {
+          if (fishingPhase === 'idle' && caughtFishBucket.length < 20) {
+            ensureFishingRodEquipped();
+            setIsChargingCast(true);
+            setFishingPhase('charging');
+          }
+        }}
+        onFishingReleaseCharge={() => {
+          if (fishingPhase === 'charging') {
+            launchShorelineCast(fishingCastPower);
+          }
+        }}
+        onFishingSetHoldingReel={(holding) => setIsHoldingReel(holding)}
+        onFishingTriggerAction={handleTriggerFishingAction}
+        onFishingCancel={() => {
+          soundEngine.playSoftTap();
+          clearFishingCastTimers();
+          setIsChargingCast(false);
+          setIsHoldingReel(false);
+          setFishingMinigame(null);
+          setFishingHintMessage(null);
+          setFishingPhase('idle');
+        }}
         primaryContextualAction={
           hud.floatingPrompts.length > 0
             ? {

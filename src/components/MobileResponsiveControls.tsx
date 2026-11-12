@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpDown } from 'lucide-react';
+import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpDown, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
+import type { FishingPhaseState } from '../game/buddiesFishingMarket';
 
 export type DeviceFormFactor = 'mobile' | 'tablet' | 'desktop';
 
@@ -15,6 +16,17 @@ interface MobileResponsiveControlsProps {
   forceShowJoystick?: boolean;
   /** True while the player is in the Warzone map - the camera flip is main-map only */
   isWarzoneActive?: boolean;
+  /** Fishing context: while the player can fish, the round JUMP button becomes the fishing action (CAST / STRIKE / REEL) */
+  canFish?: boolean;
+  fishingPhase?: FishingPhaseState;
+  fishingCastPower?: number;
+  fishingBucketFull?: boolean;
+  isHoldingReel?: boolean;
+  onFishingStartCharge?: () => void;
+  onFishingReleaseCharge?: () => void;
+  onFishingSetHoldingReel?: (holding: boolean) => void;
+  onFishingTriggerAction?: () => void;
+  onFishingCancel?: () => void;
   /** Optional primary contextual floating prompt action (e.g. Enter Room, Fish, Grab) */
   primaryContextualAction?: {
     label: string;
@@ -29,6 +41,16 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   primaryContextualAction,
   forceShowJoystick,
   isWarzoneActive,
+  canFish,
+  fishingPhase = 'idle',
+  fishingCastPower = 0,
+  fishingBucketFull = false,
+  isHoldingReel = false,
+  onFishingStartCharge,
+  onFishingReleaseCharge,
+  onFishingSetHoldingReel,
+  onFishingTriggerAction,
+  onFishingCancel,
 }) => {
   const [viewport, setViewport] = useState<{
     width: number;
@@ -427,21 +449,98 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
               </button>
             )}
 
-            <button
-              type="button"
-              data-mobile-jump-btn="true"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                soundEngine.playUiClick();
-                onTriggerBuddyAction('jump');
-              }}
-              aria-label="Jump"
-              className={`${
-                isCompactLandscape ? 'w-11 h-11 text-[9.5px]' : 'w-13 h-13 text-[10.5px]'
-              } rounded-full bg-[#38bdf8]/40 hover:bg-[#38bdf8]/65 active:scale-90 text-white border-2 border-white/55 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all`}
-            >
-              JUMP
-            </button>
+            {canFish ? (
+              <button
+                type="button"
+                data-mobile-cast-btn="true"
+                disabled={
+                  fishingPhase === 'casting' || (fishingPhase === 'idle' && fishingBucketFull)
+                }
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  if (fishingPhase === 'fighting') {
+                    onFishingSetHoldingReel?.(true);
+                  } else if (fishingPhase === 'idle' && !fishingBucketFull) {
+                    onFishingStartCharge?.();
+                  }
+                }}
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                  if (fishingPhase === 'fighting') {
+                    onFishingSetHoldingReel?.(false);
+                  } else if (fishingPhase === 'charging') {
+                    onFishingReleaseCharge?.();
+                  }
+                }}
+                onPointerLeave={() => {
+                  if (fishingPhase === 'fighting') onFishingSetHoldingReel?.(false);
+                }}
+                onPointerCancel={() => {
+                  if (fishingPhase === 'fighting') onFishingSetHoldingReel?.(false);
+                }}
+                onClick={() => onFishingTriggerAction?.()}
+                aria-label="Fishing action"
+                className={`${
+                  isCompactLandscape ? 'w-11 h-11' : 'w-13 h-13'
+                } rounded-full active:scale-90 text-white border-2 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all ${
+                  fishingPhase === 'bite'
+                    ? 'bg-[#f59e0b]/70 border-white/85 animate-pulse text-[9px]'
+                    : fishingPhase === 'fighting'
+                      ? 'bg-[#5fe3d4]/45 hover:bg-[#5fe3d4]/65 border-white/55 text-[9.5px]'
+                      : 'bg-[#38bdf8]/55 hover:bg-[#38bdf8]/75 border-white/70 text-[10px]'
+                }`}
+              >
+                {fishingPhase === 'fighting'
+                  ? isHoldingReel
+                    ? 'REEL'
+                    : 'HOLD'
+                  : fishingPhase === 'bite'
+                    ? 'STRIKE'
+                    : fishingPhase === 'charging'
+                      ? `${Math.round(fishingCastPower * 100)}%`
+                      : fishingPhase === 'casting' || fishingPhase === 'nibble'
+                        ? 'WAIT'
+                        : fishingBucketFull
+                          ? 'FULL'
+                          : 'CAST'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-mobile-jump-btn="true"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  soundEngine.playUiClick();
+                  onTriggerBuddyAction('jump');
+                }}
+                aria-label="Jump"
+                className={`${
+                  isCompactLandscape ? 'w-11 h-11 text-[9.5px]' : 'w-13 h-13 text-[10.5px]'
+                } rounded-full bg-[#38bdf8]/40 hover:bg-[#38bdf8]/65 active:scale-90 text-white border-2 border-white/55 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all`}
+              >
+                JUMP
+              </button>
+            )}
+
+            {canFish && (fishingPhase === 'casting' || fishingPhase === 'nibble') && (
+              <button
+                type="button"
+                data-mobile-fishing-stop-btn="true"
+                aria-label="Stop fishing"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFishingCancel?.();
+                }}
+                className="mr-1.5 flex flex-col items-center gap-0.5 cursor-pointer active:scale-90 transition-all"
+              >
+                <span className="w-10 h-10 rounded-full bg-[#ef4444]/85 hover:bg-[#ef4444] border-2 border-white/70 backdrop-blur-[1.5px] text-white flex items-center justify-center">
+                  <X className="w-5 h-5" aria-hidden="true" />
+                </span>
+                <span className="text-[8px] font-black uppercase tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                  Stop
+                </span>
+              </button>
+            )}
           </div>
         </div>
       )}

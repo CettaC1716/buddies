@@ -997,24 +997,6 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
         </div>
       )}
 
-      {nearbyWaterZone.canFish && fishingPhase === 'charging' && (
-        <div
-          style={{
-            background: 'rgba(170, 215, 235, 0.16)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
-          }}
-          className="fixed left-1/2 top-[56%] -translate-x-1/2 z-40 w-[160px] h-[6px] rounded-full overflow-hidden pointer-events-none select-none"
-        >
-          <span
-            style={{
-              width: `${Math.round(fishingCastPower * 100)}%`,
-              background: 'linear-gradient(90deg, #5fe3d4, #ffb86b)',
-            }}
-            className="block h-full rounded-full transition-all duration-75"
-          />
-        </div>
-      )}
-
       {/* =====================================================================
           2. SHORELINE TRANSLUCENT GLASS `.gm-fight` GAUGE & `.tw-prompt` PILL
           Exact port of `GameHUD.js` lines 25-41 & `ui.css` lines 442-472, 782-805
@@ -1047,108 +1029,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
           </div>
         )}
 
-        {/* Shoreline `.gm-fight.tw-glass` Needle-in-Band Tension & Fish Stamina Card */}
-        {nearbyWaterZone.canFish && fishingPhase === 'fighting' && fishingMinigame && (
-          <div
-            data-shoreline-minigame-hud="true"
-            onPointerDown={() => onSetHoldingReel(true)}
-            onPointerUp={() => onSetHoldingReel(false)}
-            onPointerCancel={() => onSetHoldingReel(false)}
-            onPointerLeave={() => onSetHoldingReel(false)}
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 40%), rgba(12, 18, 26, 0.68)',
-              border: '1px solid rgba(170, 215, 235, 0.16)',
-              backdropFilter: 'blur(18px) saturate(1.6)',
-              boxShadow:
-                'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.25), 0 12px 32px -12px rgba(0, 0, 0, 0.55)',
-            }}
-            className="w-[340px] sm:w-[370px] px-4 py-3 rounded-2xl text-[#eef6f8] cursor-pointer mb-1"
-          >
-            {/* `.gm-fight-head`: Callout left, Distance right */}
-            <div className="flex items-center justify-between mb-2 text-[13px]">
-              <span
-                style={{
-                  color:
-                    fightCallTone === 'warn'
-                      ? '#ff7a85'
-                      : fightCallTone === 'good'
-                        ? '#5fe3d4'
-                        : '#eef6f8',
-                }}
-                className="font-semibold tracking-wide"
-              >
-                {fightCallText}
-              </span>
-              <span className="font-mono text-[12.5px] text-[#deecf2]/75">
-                {fishingMinigame.distanceM.toFixed(1)} m
-              </span>
-            </div>
-
-            {/* `.gm-tension`: Rounded capsule with `.gm-band`, `.gm-danger`, `.gm-needle` */}
-            <div
-              style={{ background: 'rgba(170, 215, 235, 0.12)' }}
-              className="relative h-3 rounded-full overflow-visible"
-            >
-              <div className="absolute inset-0 rounded-full overflow-hidden">
-                {/* `.gm-band` [30%..85%] */}
-                <span
-                  style={{
-                    left: `${(fishingMinigame.greenBand[0] / 1.05) * 100}%`,
-                    width: `${((fishingMinigame.greenBand[1] - fishingMinigame.greenBand[0]) / 1.05) * 100}%`,
-                    background: 'rgba(95, 227, 212, 0.28)',
-                    borderLeft: '1px solid rgba(95, 227, 212, 0.65)',
-                    borderRight: '1px solid rgba(95, 227, 212, 0.65)',
-                  }}
-                  className="absolute top-0 bottom-0"
-                />
-                {/* `.gm-danger` right 12% */}
-                <span
-                  style={{
-                    width: '12%',
-                    background: 'rgba(255, 122, 133, 0.38)',
-                  }}
-                  className="absolute top-0 bottom-0 right-0"
-                />
-              </div>
-
-              {/* `.gm-needle` */}
-              <span
-                style={{
-                  left: `${Math.max(1, Math.min(99, (Math.min(fishingMinigame.tension, 1.05) / 1.05) * 100))}%`,
-                  background:
-                    fishingMinigame.tension > fishingMinigame.greenBand[1]
-                      ? '#ff7a85'
-                      : '#eef6f8',
-                  boxShadow:
-                    fishingMinigame.tension > fishingMinigame.greenBand[1]
-                      ? '0 0 10px #ff7a85'
-                      : '0 0 8px rgba(255, 255, 255, 0.7)',
-                }}
-                className="absolute -top-0.5 -bottom-0.5 w-[3px] -ml-[1.5px] rounded-full transition-[left] duration-75"
-              />
-            </div>
-
-            {/* `.gm-stamina` */}
-            <div className="mt-2.5 flex items-center gap-2.5 text-[11.5px] text-[#c8dee8]/60">
-              <span>Fish</span>
-              <span
-                style={{ background: 'rgba(170, 215, 235, 0.12)' }}
-                className="flex-1 h-1 rounded-full overflow-hidden"
-              >
-                <span
-                  style={{
-                    width: `${Math.max(0, Math.round(fishingMinigame.stamina * 100))}%`,
-                    background: '#ffb86b',
-                  }}
-                  className="block h-full rounded-full transition-all duration-75"
-                />
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Unified Dark Glassmorphic Fishing Action Pill Bar */}
+                {/* Unified Dark Glassmorphic Fishing Action Pill Bar */}
         {nearbyWaterZone.canFish && (
           <div
             style={{
@@ -1236,6 +1117,116 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
           </div>
         )}
       </div>
+
+      {/* Fishing gauge stack - vertical capsule docked on the right, above the round action button */}
+      {nearbyWaterZone.canFish &&
+        ((fishingPhase === 'fighting' && fishingMinigame) || fishingPhase === 'charging') && (
+          <div
+            data-fishing-gauge-stack="true"
+            className="fixed right-5 sm:right-7 bottom-[188px] z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 w-[84px]"
+          >
+            {fishingPhase === 'fighting' && fishingMinigame && (
+              <>
+                <span
+                  style={{
+                    color:
+                      fightCallTone === 'warn'
+                        ? '#ff7a85'
+                        : fightCallTone === 'good'
+                          ? '#5fe3d4'
+                          : '#ffffff',
+                    textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                  }}
+                  className="font-bold tracking-wide text-[10.5px] leading-tight text-center"
+                >
+                  {fightCallText}
+                </span>
+                <span
+                  style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
+                  className="font-mono text-[10px] text-white/90"
+                >
+                  {fishingMinigame.distanceM.toFixed(1)} m
+                </span>
+              </>
+            )}
+
+            {/* Vertical capsule gauge: slack / low power at the bottom, danger at the top */}
+            <div className="relative w-[26px] h-[168px] rounded-full border-2 border-white/75 bg-white/25 backdrop-blur-[2px] shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
+              <div className="absolute inset-0 rounded-full overflow-hidden">
+                {fishingPhase === 'charging' ? (
+                  <span
+                    style={{
+                      height: `${Math.round(fishingCastPower * 100)}%`,
+                      background: 'linear-gradient(0deg, #5fe3d4, #ffb86b)',
+                    }}
+                    className="absolute bottom-0 left-0 right-0 transition-all duration-75"
+                  />
+                ) : fishingMinigame ? (
+                  <>
+                    <span
+                      style={{
+                        bottom: `${(fishingMinigame.greenBand[0] / 1.05) * 100}%`,
+                        height: `${((fishingMinigame.greenBand[1] - fishingMinigame.greenBand[0]) / 1.05) * 100}%`,
+                        background: 'rgba(95, 227, 212, 0.35)',
+                      }}
+                      className="absolute left-0 right-0"
+                    />
+                    <span
+                      style={{
+                        height: '12%',
+                        background: 'rgba(255, 122, 133, 0.45)',
+                      }}
+                      className="absolute top-0 left-0 right-0"
+                    />
+                  </>
+                ) : null}
+              </div>
+              {fishingPhase === 'fighting' && fishingMinigame && (
+                <span
+                  style={{
+                    bottom: `${Math.max(1, Math.min(99, (Math.min(fishingMinigame.tension, 1.05) / 1.05) * 100))}%`,
+                    background:
+                      fishingMinigame.tension > fishingMinigame.greenBand[1]
+                        ? '#ff7a85'
+                        : '#0f172a',
+                    boxShadow: '0 0 0 2px rgba(255,255,255,0.85), 0 0 8px rgba(0,0,0,0.35)',
+                  }}
+                  className="absolute -left-1.5 -right-1.5 h-[4px] -mb-[2px] rounded-full transition-[bottom] duration-75"
+                />
+              )}
+            </div>
+
+            {fishingPhase === 'charging' ? (
+              <span
+                style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
+                className="font-mono font-bold text-[11px] text-white"
+              >
+                {Math.round(fishingCastPower * 100)}%
+              </span>
+            ) : fishingMinigame ? (
+              <div className="w-[52px] flex flex-col items-center gap-1">
+                <span
+                  style={{ background: 'rgba(15, 23, 42, 0.35)' }}
+                  className="block w-full h-1.5 rounded-full overflow-hidden"
+                >
+                  <span
+                    style={{
+                      width: `${Math.max(0, Math.round(fishingMinigame.stamina * 100))}%`,
+                      background: '#ffb86b',
+                    }}
+                    className="block h-full rounded-full transition-all duration-75"
+                  />
+                </span>
+                <span
+                  style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
+                  className="text-[8.5px] font-bold uppercase tracking-wider text-white/85"
+                >
+                  Fish
+                </span>
+              </div>
+            ) : null}
+          </div>
+        )}
 
       {/* =====================================================================
           3. SHORELINE FULL-SCREEN `.gm-catch-scrim` & `.gm-catch` STUDIO SHOWCASE

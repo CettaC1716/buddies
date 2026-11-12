@@ -2236,6 +2236,24 @@ class SoundEngine {
     osc.stop(now + 0.07);
   }
 
+  /** Quiet synth-only tap for high-frequency action buttons (fishing) - no sample, low gain. */
+  public playSoftTap(): void {
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(300, now + 0.07);
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc.connect(gain);
+    gain.connect(this.getOutputNode(ctx));
+    osc.start(now);
+    osc.stop(now + 0.085);
+  }
+
   public playHit(): void {
     if (this.playSample('player-hit', 0.36, 0.94 + Math.random() * 0.12, 35)) return;
     const ctx = this.ensureCtx();
