@@ -379,7 +379,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
       aria-hidden={!isOpen}
       aria-label="Social Chat Room"
       data-social-chat-modal="true"
-      className={`fixed left-3 bottom-3 z-40 w-[min(372px,94vw)] h-[min(724px,calc(100dvh-6rem))] select-none transition-all duration-300 ease-out transform ${
+      className={`fixed left-3 bottom-24 z-40 w-[min(372px,94vw)] h-[min(724px,calc(100dvh-11.5rem))] select-none transition-all duration-300 ease-out transform ${
         isOpen
           ? 'translate-x-0 opacity-100 pointer-events-auto'
           : '-translate-x-[120%] opacity-0 pointer-events-none'
@@ -398,7 +398,6 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           {/* STATUS BAR */}
           <div className="shrink-0 flex items-center justify-between px-5 pt-2 pb-1 text-[9px] font-black uppercase tracking-wider text-slate-600">
             <span>{phoneClock}</span>
-            <span className="text-slate-400">Buddies OS</span>
             <span className="flex items-center gap-1.5">
               <span className="flex items-end gap-[2px]">
                 <span className="w-[3px] h-[4px] bg-slate-700 inline-block" />
