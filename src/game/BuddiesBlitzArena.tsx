@@ -1,11 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import {
   BUDDIES_CONSTANTS,
   LIGHTING_PRESETS,
@@ -1660,46 +1654,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // of bloom lifts the lamps and signs, SMAA cleans the edges, and the
     // output pass applies tone mapping + sRGB. The open world keeps the
     // plain renderer path, so its look and cost are unchanged.
-    let houseComposer: EffectComposer | null = null;
-    if (!isSoftwareGl) {
-      try {
-        const startW = container.clientWidth || window.innerWidth;
-        const startH = container.clientHeight || window.innerHeight;
-        const composer = new EffectComposer(renderer);
-        composer.addPass(new RenderPass(scene, camera));
-        const gtaoPass = new GTAOPass(scene, camera, startW, startH);
-        gtaoPass.output = GTAOPass.OUTPUT.Default;
-        gtaoPass.blendIntensity = 0.9;
-        gtaoPass.updateGtaoMaterial({
-          radius: 0.25,
-          distanceExponent: 1,
-          thickness: 1,
-          scale: 1,
-        });
-        gtaoPass.updatePdMaterial({
-          lumaPhi: 10,
-          depthPhi: 2,
-          normalPhi: 3,
-          radius: 4,
-          radiusExponent: 1,
-          rings: 2,
-          samples: 16,
-        });
-        composer.addPass(gtaoPass);
-        composer.addPass(
-          new UnrealBloomPass(new THREE.Vector2(startW, startH), 0.18, 0.4, 1.0),
-        );
-        composer.addPass(new SMAAPass());
-        composer.addPass(new OutputPass());
-        houseComposer = composer;
-      } catch (postErr) {
-        console.warn(
-          '[BuddiesBlitzArena] House post-processing unavailable, using plain renderer:',
-          postErr,
-        );
-        houseComposer = null;
-      }
-    }
+    // The house interior renders with the SAME plain pipeline as the plaza
+    // (no post-processing chain): the GTAO/bloom/SMAA composer that used to
+    // run only indoors halved the frame rate on mobile GPUs, so it was
+    // removed at the user's request — interiors now match the plaza style.
+
 
     const hemiLight = new THREE.HemisphereLight('#fffdf0', '#3d7068', 1.2);
     scene.add(hemiLight);
@@ -12673,7 +12632,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      houseComposer?.setSize(w, h);
     };
     window.addEventListener('resize', onResize);
 
@@ -21671,11 +21629,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, w, h);
-      } else if (
-        houseComposer &&
-        (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')
-      ) {
-        houseComposer.render();
       } else {
         renderer.render(scene, camera);
       }
