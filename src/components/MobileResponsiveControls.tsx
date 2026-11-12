@@ -487,13 +487,13 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 onClick={() => onFishingTriggerAction?.()}
                 aria-label="Fishing action"
                 className={`${
-                  isCompactLandscape ? 'w-14 h-14' : 'w-16 h-16'
+                  isCompactLandscape ? 'w-16 h-16' : 'w-20 h-20'
                 } rounded-full active:scale-90 text-white border-2 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all ${
                   fishingPhase === 'bite'
-                    ? 'bg-[#f59e0b]/70 border-white/85 animate-pulse text-[10px]'
+                    ? 'bg-[#f59e0b]/70 border-white/85 animate-pulse text-[11px]'
                     : fishingPhase === 'fighting'
-                      ? 'bg-[#5fe3d4]/45 hover:bg-[#5fe3d4]/65 border-white/55 text-[10.5px]'
-                      : 'bg-[#38bdf8]/55 hover:bg-[#38bdf8]/75 border-white/70 text-[11px]'
+                      ? 'bg-[#5fe3d4]/45 hover:bg-[#5fe3d4]/65 border-white/55 text-[11.5px]'
+                      : 'bg-[#38bdf8]/55 hover:bg-[#38bdf8]/75 border-white/70 text-[12.5px]'
                 }`}
               >
                 {fishingPhase === 'fighting'
@@ -521,7 +521,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 }}
                 aria-label="Jump"
                 className={`${
-                  isCompactLandscape ? 'w-14 h-14 text-[10.5px]' : 'w-16 h-16 text-[11.5px]'
+                  isCompactLandscape ? 'w-16 h-16 text-[11.5px]' : 'w-20 h-20 text-[13px]'
                 } rounded-full bg-[#38bdf8]/40 hover:bg-[#38bdf8]/65 active:scale-90 text-white border-2 border-white/55 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all`}
               >
                 JUMP

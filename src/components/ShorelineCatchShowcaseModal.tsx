@@ -1033,7 +1033,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
         ((fishingPhase === 'fighting' && fishingMinigame) || fishingPhase === 'charging') && (
           <div
             data-fishing-gauge-stack="true"
-            className="fixed right-5 sm:right-7 bottom-[188px] z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 w-[84px]"
+            className="fixed right-4 sm:right-6 bottom-[166px] sm:bottom-[174px] z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 w-20"
           >
             {fishingPhase === 'fighting' && fishingMinigame && (
               <>
