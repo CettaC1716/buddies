@@ -4350,6 +4350,13 @@ export async function loadAllRealBlitzAssets(
           const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
           if (!raw) return null;
           raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          // Tripo exports carry per-bone position tracks and scale tracks
+          // (scales as low as 0.01) that this rig cannot consume — its baked
+          // clips are bone quaternions plus the hip position only. Reduce the
+          // take to exactly that shape before remapping the hip track.
+          raw.tracks = raw.tracks.filter(
+            (t) => t.name.endsWith('.quaternion') || /Hips\.position$/i.test(t.name),
+          );
           for (const t of raw.tracks) {
             if (/Hips\.position$/i.test(t.name)) {
               const vals = t.values;
@@ -4390,6 +4397,13 @@ export async function loadAllRealBlitzAssets(
           const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
           if (!raw) return null;
           raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          // Tripo exports carry per-bone position tracks and scale tracks
+          // (scales as low as 0.01) that this rig cannot consume — its baked
+          // clips are bone quaternions plus the hip position only. Reduce the
+          // take to exactly that shape before remapping the hip track.
+          raw.tracks = raw.tracks.filter(
+            (t) => t.name.endsWith('.quaternion') || /Hips\.position$/i.test(t.name),
+          );
           for (const t of raw.tracks) {
             if (/Hips\.position$/i.test(t.name)) {
               const vals = t.values;
