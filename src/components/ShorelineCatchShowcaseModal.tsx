@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import type {
   CaughtFishItem,
@@ -841,8 +841,6 @@ interface ShorelineFishingHudAndModalProps {
   isHoldingReel: boolean;
   caughtFishBucketCount: number;
   lastCaughtFishToast: CaughtFishItem | null;
-  walletConnected?: boolean;
-  onRequestRegisterWallet?: () => void;
   onStartChargeCast: () => void;
   onReleaseChargeCast: () => void;
   onTriggerFishingAction: () => void;
@@ -850,8 +848,6 @@ interface ShorelineFishingHudAndModalProps {
   onCancelCast?: () => void;
   onKeepCaughtFish: () => void;
   onReleaseCaughtFish: (fish: CaughtFishItem) => void;
-  onSellCaughtFishToKai: (fish: CaughtFishItem) => void;
-  onMintCaughtFishAsNft: (fish: CaughtFishItem) => void | Promise<boolean>;
 }
 
 export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModalProps> = ({
@@ -863,8 +859,6 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
   isHoldingReel,
   caughtFishBucketCount,
   lastCaughtFishToast,
-  walletConnected = false,
-  onRequestRegisterWallet,
   onStartChargeCast,
   onReleaseChargeCast,
   onTriggerFishingAction,
@@ -872,17 +866,8 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
   onCancelCast,
   onKeepCaughtFish,
   onReleaseCaughtFish,
-  onSellCaughtFishToKai,
-  onMintCaughtFishAsNft,
 }) => {
   const studioCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isMintingShowcaseNft, setIsMintingShowcaseNft] = useState<boolean>(false);
-  const [showcaseMintError, setShowcaseMintError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setIsMintingShowcaseNft(false);
-    setShowcaseMintError(null);
-  }, [lastCaughtFishToast?.id]);
 
   // Global mouse hold-to-reel during 'fighting' and click-to-strike during 'bite' so the player
   // never has to hunt for a UI button while watching the 3D water & bobber!
@@ -1400,7 +1385,9 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
               </div>
             </div>
 
-            {/* Rounded Pill Action Buttons (`.gm-btn`) */}
+            {/* Rounded Pill Action Buttons (`.gm-btn`). Catch screen rule:
+                Keep in Bag or Release ONLY \u2014 selling and minting happen
+                at Kai's fish market, never from the catch showcase. */}
             <div className="flex flex-wrap items-center justify-center gap-2.5 mt-5">
               <button
                 type="button"
@@ -1412,77 +1399,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                 Keep in Bag
               </button>
 
-              {!lastCaughtFishToast.isMintedNft && (
-                <button
-                  type="button"
-                  data-showcase-sell-fish-btn="true"
-                  onClick={() => onSellCaughtFishToKai(lastCaughtFishToast)}
-                  style={{
-                    background: 'rgba(250, 204, 21, 0.22)',
-                    border: '1px solid rgba(250, 204, 21, 0.72)',
-                    color: '#fef9c3',
-                  }}
-                  className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-amber-400/35 transition-all"
-                >
-                  Sell (+{lastCaughtFishToast.sellValueLul || lastCaughtFishToast.sellValueCyon}{' '}
-                  LUL)
-                </button>
-              )}
-
-              {!lastCaughtFishToast.isMintedNft ? (
-                walletConnected ? (
-                  <button
-                    type="button"
-                    data-showcase-mint-fish-btn="true"
-                    disabled={isMintingShowcaseNft}
-                    onClick={async () => {
-                      setShowcaseMintError(null);
-                      setIsMintingShowcaseNft(true);
-                      try {
-                        const ok = await onMintCaughtFishAsNft(lastCaughtFishToast);
-                        if (ok === false) {
-                          setShowcaseMintError(
-                            'Connect your wallet to mint this catch as an NFT.',
-                          );
-                        }
-                      } finally {
-                        setIsMintingShowcaseNft(false);
-                      }
-                    }}
-                    style={{
-                      background:
-                        'linear-gradient(135deg, rgba(216, 180, 254, 0.3), rgba(168, 85, 247, 0.2))',
-                      border: '1px solid rgba(216, 180, 254, 0.6)',
-                      color: '#f3e8ff',
-                    }}
-                    className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-purple-500/40 disabled:opacity-60 transition-all"
-                  >
-                    {isMintingShowcaseNft ? 'Minting...' : 'Mint NFT'}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    data-showcase-guest-register-btn="true"
-                    onClick={() => {
-                      if (onRequestRegisterWallet) {
-                        onRequestRegisterWallet();
-                      } else {
-                        setShowcaseMintError(
-                          'Sign in first to mint Fish NFTs.',
-                        );
-                      }
-                    }}
-                    style={{
-                      background: 'rgba(184, 255, 60, 0.2)',
-                      border: '1px solid rgba(184, 255, 60, 0.65)',
-                      color: '#d9f99d',
-                    }}
-                    className="px-5 py-2 rounded-full text-[13px] font-bold cursor-pointer hover:bg-lime-400/30 transition-all"
-                  >
-                    Sign in to Mint
-                  </button>
-                )
-              ) : (
+              {lastCaughtFishToast.isMintedNft && (
                 <span className="px-4 py-2 rounded-full text-[12px] font-mono font-bold bg-emerald-500/25 border border-emerald-400/70 text-emerald-200">
                   Minted NFT{' '}
                   {lastCaughtFishToast.nearTxHash && (
@@ -1512,11 +1429,6 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                 Release
               </button>
             </div>
-            {showcaseMintError && (
-              <div className="mt-2.5 text-center text-xs font-mono text-rose-300">
-                {showcaseMintError}
-              </div>
-            )}
           </div>
         </div>
       )}

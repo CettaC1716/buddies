@@ -5155,12 +5155,6 @@ export default function App() {
               isHoldingReel={isHoldingReel}
               caughtFishBucketCount={caughtFishBucket.length}
               lastCaughtFishToast={lastCaughtFishToast}
-              walletConnected={Boolean(hud.nearWalletConnected)}
-              onRequestRegisterWallet={() => {
-                soundEngine.playUiClick();
-                setLastCaughtFishToast(null);
-                setOnboardingStep('auth_choice');
-              }}
               onStartChargeCast={() => {
                 if (fishingPhase === 'idle' && caughtFishBucket.length < 20) {
                   ensureFishingRodEquipped();
@@ -5195,8 +5189,6 @@ export default function App() {
                 setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
                 setLastCaughtFishToast(null);
               }}
-              onSellCaughtFishToKai={handleSellRawFishForLul}
-              onMintCaughtFishAsNft={handleMintCaughtFishNft}
             />
           )}
 
