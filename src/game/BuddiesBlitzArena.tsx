@@ -12614,6 +12614,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
+    // After the lakeside avatar selection, App asks for the plaza spawn
+    // (it covers the move with its ENTERING CENTRAL PLAZA loading state).
+    const onSpawnToPlaza = () => {
+      if (!playerUnit) return;
+      const dest = getCityTransitDestinationById('central_plaza');
+      playerUnit.x = dest.spawnX;
+      playerUnit.z = dest.spawnZ;
+      playerUnit.vx = 0;
+      playerUnit.vz = 0;
+      playerUnit.vy = 0;
+      playerUnit.yaw = dest.spawnYaw;
+      playerUnit.root.visible = true;
+      snapCameraAndStartSpawnBlink(playerUnit);
+    };
+    window.addEventListener('buddies-spawn-to-plaza', onSpawnToPlaza);
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
@@ -18356,6 +18371,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
+      // Landing stage: until onboarding completes, the avatar waits at the
+      // Central Oasis Lake shore — the same spot the avatar picker uses.
+      if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
+        playerUnit.x = -31.0;
+        playerUnit.z = 13.8;
+        playerUnit.vx = 0;
+        playerUnit.vz = 0;
+        playerUnit.yaw = 0.55;
+      }
+
       // Character-select cinematic phase transitions (see the
       // 'character_select' camera branch below for the dive itself).
       if (npcCameraMode === 'character_select' && charCinePhase === 'idle') {
@@ -18400,7 +18425,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         activePlaneAlt <= 4.0 ? activePlaneAlt : 4.0 + (activePlaneAlt - 4.0) * 0.35;
       const activeTerrainY =
         state === 'title'
-          ? getTerrainElevation(-32.5, 38.5)
+          ? getTerrainElevation(-31.0, 13.8)
           : currentPlayMode === 'editor'
           ? getTerrainElevation(editorPan.x, editorPan.z)
           : mountedTank
@@ -18409,7 +18434,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const focusTarget: Vec3 =
         state === 'title'
-          ? { x: -32.5, y: activeTerrainY + 0.9, z: 38.5 }
+          ? { x: -31.0, y: activeTerrainY + 0.9, z: 13.8 }
           : currentPlayMode === 'editor'
           ? { x: editorPan.x, y: activeTerrainY + 0.5, z: editorPan.z }
           : mountedTank
@@ -18494,7 +18519,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const zoomMult = state === 'title' ? 1.0 : cameraZoom * planeAltZoom;
       const camOffset =
         state === 'title'
-          ? { x: -3.2, y: 10.6, z: 14.5 }
+          ? { x: 5.2, y: 3.0, z: 8.6 }
           : currentPlayMode === 'editor'
           ? { x: 0, y: 54.0 * editorZoom, z: 22.0 * editorZoom }
           : { x: 0, y: 13.6 * zoomMult, z: 16.2 * zoomMult };
@@ -22926,6 +22951,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
+      window.removeEventListener('buddies-spawn-to-plaza', onSpawnToPlaza);
       window.removeEventListener('mobile-joystick-input', onMobileJoystickInput);
       window.removeEventListener('camera-flip-view', onCameraFlipView);
       window.removeEventListener('blur', onWindowBlurOrVisibilityReset);

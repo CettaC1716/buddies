@@ -1290,6 +1290,21 @@ export default function App() {
     }
   }, [landingPlayPressed, isPreloadComplete, handleStartGame]);
 
+  // After the guest avatar picker finishes at the lakeside stage, cover the
+  // teleport with a short loading state, then spawn the player in the plaza.
+  const [isEnteringPlaza, setIsEnteringPlaza] = useState<boolean>(false);
+  const prevOnboardingStepRef = useRef<string>('');
+  useEffect(() => {
+    const prev = prevOnboardingStepRef.current;
+    prevOnboardingStepRef.current = onboardingStep;
+    if (prev === 'guest_character_select' && onboardingStep === 'completed') {
+      setIsEnteringPlaza(true);
+      window.dispatchEvent(new CustomEvent('buddies-spawn-to-plaza'));
+      const t = window.setTimeout(() => setIsEnteringPlaza(false), 1600);
+      return () => window.clearTimeout(t);
+    }
+  }, [onboardingStep]);
+
   const handleSwitchPlayMode = useCallback((nextMode: PlayMode) => {
     soundEngine.playUiClick();
     if (document.activeElement instanceof HTMLElement) {
@@ -3494,6 +3509,29 @@ export default function App() {
         </div>
       )}
 
+      {/* Plaza entry loading state after the lakeside avatar selection */}
+      {isEnteringPlaza && (
+        <div
+          data-entering-plaza="true"
+          className="fixed inset-0 z-[99998] flex flex-col items-center justify-center bg-[#0b0e16] text-white pointer-events-auto select-none"
+        >
+          <div className="flex flex-col items-center gap-3">
+            <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase animate-pulse">
+              <span className="skew-x-12 inline-block">LOADING...</span>
+            </div>
+            <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#00d2ff]">
+              ENTERING CENTRAL PLAZA
+            </div>
+            <div className="w-56 sm:w-64 h-2.5 bg-[#14161d] border-2 border-white/70 rounded-full overflow-hidden mt-1 shadow-[2px_2px_0_#000]">
+              <div className="h-full bg-[#b8ff3c] animate-pulse w-full" />
+            </div>
+            <div className="text-[10px] font-bold text-white/60 tracking-wider">
+              Preparing area &amp; syncing map...
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Atmospheric Viewport Color Tint Overlay */}
       <div
         aria-hidden="true"
@@ -3513,18 +3551,9 @@ export default function App() {
           aria-label="Buddies Blitz Landing"
           className="fixed inset-0 z-20 flex flex-col pointer-events-none"
         >
-          {/* Looping gameplay video backdrop (pond fishing scene) */}
-          <video
-            className="absolute inset-0 w-full h-full object-cover"
-            src="/assets/landing-loop.mp4"
-            autoPlay
-            muted
-            loop
-            playsInline
-            aria-hidden="true"
-          />
-          {/* Light sky wash so the logo and buttons stay readable */}
-          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/35 via-transparent to-sky-900/25" />
+          {/* Live 3D world backdrop: the avatar waits at the Central Oasis
+              Lake shore behind the landing UI (see the Arena title camera). */}
+          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/40 via-transparent to-sky-900/25" />
 
           {/* Top banner */}
           <div className="relative z-10 bg-[#60a5fa] text-white text-center font-black uppercase tracking-[0.18em] text-[10px] sm:text-xs py-2 px-3 border-b-2 border-black/60">
