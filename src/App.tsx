@@ -4337,6 +4337,7 @@ export default function App() {
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
             {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room and Private House interior) */}
             {!isInsidePrivateHouse &&
+              activeSpecialModal !== 'npc_merchant' &&
               peacefulUiState.minimapRadarVisible &&
               (() => {
                 const ccLevel = hud.commandCenterLevel ?? hud.baseBuildingLevel;
