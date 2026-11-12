@@ -16986,16 +16986,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   rodFlexPivot.rotation.x = 0.03;
                 }
 
-                // Drive the 9 skeletal flex joints (`Bone002_01`..`Bone010_09`) of `/assets/fishing-rod.glb` downward (-Y)
+                // Drive the 9 skeletal flex joints (`Bone002_01`..`Bone010_09`) of `/assets/fishing-rod.glb`.
+                // Measured on the real model: rotating the bones around their local Y axis bows the tip
+                // DOWN (-Y, toward the water) + back toward the angler; the old local-Z drive bent the
+                // rod sideways instead, dragging the line's tip anchor (and the cast) sideways with it.
                 const flexBones = rodGrp.userData.flexBones as THREE.Object3D[] | undefined;
                 if (flexBones && flexBones.length > 0 && rodFlexPivot) {
                   const flexAngle = rodFlexPivot.rotation.x;
                   const nBones = flexBones.length;
                   for (let bi = 0; bi < nBones; bi++) {
                     const bone = flexBones[bi];
-                    const baseRotZ = (bone.userData.baseRotZ as number | undefined) ?? 0;
+                    const baseRotY = (bone.userData.baseRotY as number | undefined) ?? 0;
                     const weight = (bi + 1) / nBones;
-                    bone.rotation.z = baseRotZ - flexAngle * 0.44 * weight;
+                    bone.rotation.y = baseRotY - flexAngle * 0.44 * weight;
                   }
                 }
               }

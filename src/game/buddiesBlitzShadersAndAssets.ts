@@ -7792,6 +7792,7 @@ export function populateFishingRodFromGlb(
     const bObj = rodGlbRoot.getObjectByName(bName);
     if (bObj) {
       bObj.userData.baseRotZ = bObj.rotation.z;
+      bObj.userData.baseRotY = bObj.rotation.y;
       flexBones.push(bObj);
     }
   }
