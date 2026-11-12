@@ -3567,39 +3567,7 @@ export default function App() {
               Lake shore behind the landing UI (see the Arena title camera). */}
           <div className="absolute inset-0 bg-gradient-to-b from-sky-400/40 via-transparent to-sky-900/25" />
 
-          {/* Top banner */}
-          <div className="relative z-10 bg-[#60a5fa] text-white text-center font-black uppercase tracking-[0.18em] text-[10px] sm:text-xs py-2 px-3 border-b-2 border-black/60">
-            Free to Play · No Download · A Social World on NEAR Testnet
-          </div>
-
-          {/* Header row: wordmark chip + sound + log in */}
-          <div className="relative z-10 flex items-start justify-between px-4 sm:px-8 pt-4">
-            <div className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
-              <span className="skew-x-6 inline-block">Buddies Blitz</span>
-            </div>
-            <div className="flex items-center gap-2 pointer-events-auto">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  handleToggleAudio();
-                }}
-                aria-label={isMuted ? 'Sound Muted' : 'Sound Active'}
-                className="px-3 py-2 bg-white hover:bg-[#fec83e] text-[#11121a] font-black text-[10px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-              >
-                {isMuted ? 'Muted' : 'Sound'}
-              </button>
-              <button
-                type="button"
-                onClick={handleLandingPlay}
-                className="px-4 py-2 bg-[#4285f4] hover:bg-[#5b96f7] text-white font-black text-[11px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-              >
-                Log In
-              </button>
-            </div>
-          </div>
-
-          {/* Center: logo, feature chips, PLAY NOW */}
+          {/* The whole overlay is just the logo and PLAY over the live view. */}
           <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 pb-2">
             <img
               src="/assets/logo-buddies-blitz.png"
@@ -3607,16 +3575,6 @@ export default function App() {
               draggable={false}
               className="w-[min(520px,82vw)] drop-shadow-[0_10px_24px_rgba(2,32,71,0.45)] animate-bounce [animation-duration:2.8s]"
             />
-            <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-              {['AI Merchants', 'Fish NFTs', 'Your Own House', '10v10 Warzone'].map((chip) => (
-                <span
-                  key={chip}
-                  className="px-2 py-0.5 bg-white/90 text-black border-2 border-black text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0_#000]"
-                >
-                  {chip}
-                </span>
-              ))}
-            </div>
             {landingPlayPressed ? (
               <div className="pointer-events-auto mt-5 w-[min(420px,80vw)] -rotate-1 bg-[#14161d]/90 border-3 border-black ring-2 ring-white shadow-[6px_6px_0_#000] px-5 py-4 space-y-2">
                 <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-widest text-white">
@@ -3644,11 +3602,6 @@ export default function App() {
                 PLAY NOW
               </button>
             )}
-          </div>
-
-          <div className="relative z-10 pb-5 px-6 text-center text-xs sm:text-sm font-bold tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
-            WASD Run &nbsp;·&nbsp; [E] Talk / Interact &nbsp;·&nbsp; [F] Fishing &nbsp;·&nbsp;
-            Chat with Kai &amp; Hana to trade
           </div>
         </section>
       )}
