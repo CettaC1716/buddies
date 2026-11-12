@@ -3076,6 +3076,41 @@ export default function App() {
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
   );
 
+  // Chat-negotiated variant (F1 pilot): Kai pays the price agreed in the
+  // chat negotiation instead of the standard formula price. The price was
+  // produced by the negotiation envelope, so it is only clamped for sanity.
+  const handleSellRawFishNegotiated = useCallback(
+    (fish: CaughtFishItem, agreedPriceLul: number) => {
+      soundEngine.playPickup();
+      const actorAccount = hudRef.current.nearWalletId || playerUid;
+      const standardLul = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
+      const earnedLul = Math.max(1, Math.round(agreedPriceLul));
+      setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+      setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
+      const nextLul = Math.max(0, (hudRef.current.gold ?? 0) + earnedLul);
+      dispatchBuddyAction(`adjustPlayerLul:${earnedLul}`);
+      if (actorAccount) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: actorAccount,
+          lulBalance: nextLul,
+          cyonBalance,
+          respiteBalance,
+        });
+        void logMarketTransactionToSupabase({
+          merchant_id: 'beach_house',
+          actor_near_account: actorAccount,
+          action_type: 'sell_fish',
+          item_id: fish.speciesId,
+          currency: 'LUL',
+          amount: earnedLul,
+          unit_price: earnedLul,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL).`,
+        });
+      }
+    },
+    [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
+  );
+
   const handleMintCaughtFishNft = useCallback(
     async (fish: CaughtFishItem): Promise<boolean> => {
       soundEngine.playPickup();
@@ -6029,6 +6064,7 @@ export default function App() {
         fishSalesStats={fishSalesStats}
         playerNearAccount={hud.nearWalletId || playerUid || ''}
         onSellCaughtFish={handleSellRawFishForLul}
+        onSellCaughtFishNegotiated={handleSellRawFishNegotiated}
         onReleaseCaughtFish={(fish: CaughtFishItem) => {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);

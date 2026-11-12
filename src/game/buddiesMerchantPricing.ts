@@ -610,6 +610,121 @@ export function stepFastForwardEconomyTick(
   };
 }
 
+/* ============================================================================
+ * CHAT NEGOTIATION ENGINE (F1 pilot: raw fish sold to Kai for LUL)
+ * The AI negotiates words; this engine owns every number. Offers open below
+ * the standard formula value, rise in shrinking steps, and can never pass a
+ * hard ceiling — no dialogue, prompt, or modified client can move a price
+ * outside the envelope computed here.
+ * ==========================================================================*/
+
+export interface NegotiationEnvelope {
+  /** Standard formula value of the goods (the public reference price). */
+  baseValue: number;
+  /** First offer the NPC makes. */
+  openOffer: number;
+  /** Absolute maximum the NPC may ever pay in this session. */
+  ceiling: number;
+  /** Raise steps as fractions of baseValue, applied in order. */
+  stepPcts: readonly number[];
+}
+
+export function evaluateNegotiationEnvelope(baseValue: number): NegotiationEnvelope {
+  const v = Math.max(1, Math.round(baseValue));
+  const openOffer = Math.max(1, Math.round(v * 0.8));
+  const ceiling = Math.max(openOffer, Math.round(v * 1.15));
+  return { baseValue: v, openOffer, ceiling, stepPcts: [0.07, 0.05, 0.03] };
+}
+
+export interface NegotiationSession {
+  baseValue: number;
+  ceiling: number;
+  currentOffer: number;
+  roundsUsed: number;
+  maxRounds: number;
+  /** True once the current offer is the NPC's last one. */
+  isFinalOffer: boolean;
+  agreedPrice: number | null;
+  closed: 'agreed' | 'walked_away' | null;
+}
+
+export function createNegotiationSession(baseValue: number): NegotiationSession {
+  const env = evaluateNegotiationEnvelope(baseValue);
+  return {
+    baseValue: env.baseValue,
+    ceiling: env.ceiling,
+    currentOffer: env.openOffer,
+    roundsUsed: 0,
+    maxRounds: env.stepPcts.length,
+    isFinalOffer: false,
+    agreedPrice: null,
+    closed: null,
+  };
+}
+
+/** NPC raises its offer by the next shrinking step, clamped to the ceiling. */
+export function negotiateRaise(session: NegotiationSession): NegotiationSession {
+  if (session.closed || session.agreedPrice !== null) return session;
+  const env = evaluateNegotiationEnvelope(session.baseValue);
+  if (session.roundsUsed >= session.maxRounds || session.currentOffer >= session.ceiling) {
+    return { ...session, isFinalOffer: true };
+  }
+  const step = Math.max(
+    1,
+    Math.round(session.baseValue * env.stepPcts[session.roundsUsed]),
+  );
+  const nextOffer = Math.min(session.ceiling, session.currentOffer + step);
+  const roundsUsed = session.roundsUsed + 1;
+  return {
+    ...session,
+    currentOffer: nextOffer,
+    roundsUsed,
+    isFinalOffer: roundsUsed >= session.maxRounds || nextOffer >= session.ceiling,
+  };
+}
+
+/**
+ * Applies a price named by the player. At or below the ceiling the NPC
+ * accepts the player's own price (a deal is a deal); above the ceiling the
+ * NPC simply moves one raise step toward it.
+ */
+export function negotiatePlayerCounter(
+  session: NegotiationSession,
+  playerAsk: number,
+): { session: NegotiationSession; outcome: 'agreed' | 'raised' | 'final' } {
+  if (session.closed || session.agreedPrice !== null) {
+    return { session, outcome: 'final' };
+  }
+  const ask = Math.round(playerAsk);
+  if (Number.isFinite(ask) && ask >= 1 && ask <= session.ceiling) {
+    return {
+      session: { ...session, agreedPrice: ask, closed: 'agreed' },
+      outcome: 'agreed',
+    };
+  }
+  const raised = negotiateRaise(session);
+  return { session: raised, outcome: raised.isFinalOffer ? 'final' : 'raised' };
+}
+
+/** Player accepts the NPC's current offer. */
+export function negotiateAccept(session: NegotiationSession): NegotiationSession {
+  if (session.closed || session.agreedPrice !== null) return session;
+  return { ...session, agreedPrice: session.currentOffer, closed: 'agreed' };
+}
+
+/** Session ends without a deal; the last offer stays readable on the card. */
+export function negotiateWalkAway(session: NegotiationSession): NegotiationSession {
+  if (session.closed) return session;
+  return { ...session, closed: 'walked_away' };
+}
+
+/** Clamps any externally proposed price (e.g. an LLM move) into the envelope. */
+export function clampNegotiationOffer(session: NegotiationSession, price: number): number {
+  const p = Math.round(price);
+  if (!Number.isFinite(p)) return session.currentOffer;
+  return Math.max(session.currentOffer, Math.min(session.ceiling, p));
+}
+
 export interface NpcConciergeLiveContext {
   playerNearAccount?: string;
   nearBalance?: number;

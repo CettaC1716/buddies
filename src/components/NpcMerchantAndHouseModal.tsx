@@ -9,6 +9,13 @@ import {
   PlacedHouseFurnitureItem,
   evaluateLulToCyonExchangeQuote,
   evaluateMerchantItemQuote,
+  createNegotiationSession,
+  negotiateRaise,
+  negotiatePlayerCounter,
+  negotiateAccept,
+  negotiateWalkAway,
+  clampNegotiationOffer,
+  type NegotiationSession,
   generateNpcMerchantReply,
   formatDaylightHour,
   evaluateRoomMoodScores,
@@ -86,6 +93,7 @@ interface NpcMerchantAndHouseModalProps {
   fishSalesStats?: FishNftMarketSalesStats | null;
   playerNearAccount?: string;
   onSellCaughtFish?: (fish: CaughtFishItem) => void;
+  onSellCaughtFishNegotiated?: (fish: CaughtFishItem, agreedPriceLul: number) => void;
   onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseAllCommonFish?: () => void;
   onMintFishAsNft?: (fish: CaughtFishItem) => Promise<boolean> | boolean | void;
@@ -155,6 +163,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   fishSalesStats = null,
   playerNearAccount = '',
   onSellCaughtFish,
+  onSellCaughtFishNegotiated,
   onReleaseCaughtFish,
   onReleaseAllCommonFish,
   onMintFishAsNft,
@@ -354,6 +363,121 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     setNpcTypedText('');
   };
 
+  /* ------------------------------------------------------------------
+   * Kai chat trade (F1 pilot): haggle over a raw fish in the chat itself.
+   * The negotiation engine owns every number; this state only mirrors the
+   * session for the card UI. Kai's spoken lines stay one short sentence —
+   * prices live on the card, never in the dialogue.
+   * ------------------------------------------------------------------ */
+  type KaiTradePhase = 'pick' | 'offering' | 'agreed' | 'done' | 'walkaway';
+  const [tradePhase, setTradePhase] = useState<KaiTradePhase | null>(null);
+  const [tradeFishId, setTradeFishId] = useState<string | null>(null);
+  const [tradeSession, setTradeSession] = useState<NegotiationSession | null>(null);
+  const [tradeDoneInfo, setTradeDoneInfo] = useState<{ name: string; price: number } | null>(
+    null,
+  );
+  const tradePhaseRef = useRef<KaiTradePhase | null>(null);
+  const tradeSessionRef = useRef<NegotiationSession | null>(null);
+  const tradeFish =
+    tradeFishId != null
+      ? caughtFishBucket.find((f) => f.id === tradeFishId) ?? null
+      : null;
+
+  const syncTrade = (
+    session: NegotiationSession | null,
+    phase: KaiTradePhase | null,
+    fishId?: string | null,
+  ) => {
+    tradeSessionRef.current = session;
+    tradePhaseRef.current = phase;
+    setTradeSession(session);
+    setTradePhase(phase);
+    if (fishId !== undefined) setTradeFishId(fishId);
+  };
+
+  const endTrade = () => {
+    syncTrade(null, null, null);
+  };
+
+  const startTradePick = () => {
+    soundEngine.playUiClick();
+    syncTrade(null, 'pick', null);
+    triggerNpcSpeech('Pick the fish you want to sell.');
+  };
+
+  const chooseTradeFish = (fish: CaughtFishItem) => {
+    soundEngine.playUiClick();
+    const value = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
+    syncTrade(createNegotiationSession(value), 'offering', fish.id);
+    triggerNpcSpeech('Let me weigh it. Here is my offer.');
+  };
+
+  const applyRaisedSession = (next: NegotiationSession) => {
+    syncTrade(next, 'offering', tradeFishId);
+    if (next.isFinalOffer) {
+      triggerNpcSpeech('That is my limit. Take it, or list it on the market.');
+    } else if (next.roundsUsed <= 1) {
+      triggerNpcSpeech('Alright, a little more.');
+    } else {
+      triggerNpcSpeech('You bargain hard, friend.');
+    }
+  };
+
+  const doTradeRaise = () => {
+    const s = tradeSessionRef.current;
+    if (!s || tradePhaseRef.current !== 'offering') return;
+    soundEngine.playUiClick();
+    applyRaisedSession(negotiateRaise(s));
+  };
+
+  const doTradeAccept = () => {
+    const s = tradeSessionRef.current;
+    if (!s) return;
+    soundEngine.playUiClick();
+    syncTrade(negotiateAccept(s), 'agreed', tradeFishId);
+    triggerNpcSpeech('Deal! Tap sell and I will pay you.');
+  };
+
+  const doTradeWalkAway = () => {
+    const s = tradeSessionRef.current;
+    soundEngine.playUiClick();
+    if (s) {
+      syncTrade(negotiateWalkAway(s), 'walkaway', tradeFishId);
+    } else {
+      endTrade();
+    }
+    triggerNpcSpeech('No hard feelings. The market may pay more.');
+  };
+
+  const doTradeSell = () => {
+    const s = tradeSessionRef.current;
+    const fish = tradeFish;
+    if (!s || s.agreedPrice == null || !fish) return;
+    soundEngine.playUiClick();
+    onSellCaughtFishNegotiated?.(fish, s.agreedPrice);
+    setTradeDoneInfo({ name: fish.speciesName, price: s.agreedPrice });
+    syncTrade(null, 'done', null);
+    triggerNpcSpeech('Fresh stock for my market. Thank you!');
+  };
+
+  // A trade never outlives the modal, and a fish sold elsewhere ends it.
+  useEffect(() => {
+    if (activeModalMode !== 'npc_merchant' && tradePhaseRef.current) {
+      endTrade();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeModalMode]);
+  useEffect(() => {
+    if (
+      (tradePhase === 'offering' || tradePhase === 'agreed') &&
+      tradeFishId != null &&
+      !caughtFishBucket.some((f) => f.id === tradeFishId)
+    ) {
+      endTrade();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caughtFishBucket, tradePhase, tradeFishId]);
+
   const submitPlayerQuestion = (rawText: string) => {
     const text = rawText.trim();
     if (!text) return;
@@ -380,6 +504,65 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     window.setTimeout(() => {
       chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, 30);
+
+    // Kai chat trade: while a negotiation is live at the beach, clear
+    // haggling language is settled locally by the negotiation engine —
+    // the AI never moves a price on its own (see the trade card).
+    if (
+      merchantLocation === 'beach_house' &&
+      tradePhaseRef.current === 'offering' &&
+      tradeSessionRef.current
+    ) {
+      const s = tradeSessionRef.current;
+      const lower = text.toLowerCase();
+      const finishLocal = (line: string) => {
+        setIsNpcThinking(false);
+        triggerNpcSpeech(line);
+        window.setTimeout(() => {
+          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 40);
+      };
+      if (/tidak jadi|batal|cancel|stop|sudah/.test(lower)) {
+        syncTrade(negotiateWalkAway(s), 'walkaway', tradeFishId);
+        finishLocal('No hard feelings. The market may pay more.');
+        return;
+      }
+      const askMatch = lower.match(/\d+/);
+      if (askMatch) {
+        const ask = parseInt(askMatch[0], 10);
+        const { session: next, outcome } = negotiatePlayerCounter(s, ask);
+        if (outcome === 'agreed') {
+          syncTrade(next, 'agreed', tradeFishId);
+          finishLocal('Deal. You drive a fair bargain.');
+        } else {
+          syncTrade(next, 'offering', tradeFishId);
+          finishLocal(
+            outcome === 'final' || next.isFinalOffer
+              ? 'That is my limit. Take it, or list it on the market.'
+              : 'Alright, a little more.',
+          );
+        }
+        return;
+      }
+      if (/\b(terima|setuju|deal|oke|ok|ya|yes|accept|baiklah|boleh)\b/.test(lower)) {
+        syncTrade(negotiateAccept(s), 'agreed', tradeFishId);
+        finishLocal('Deal! Tap sell and I will pay you.');
+        return;
+      }
+      if (/mahal|murah|naik|tambah|kurang|tidak|nggak|enggak|higher|more|cheap|lagi/.test(lower)) {
+        const next = negotiateRaise(s);
+        syncTrade(next, 'offering', tradeFishId);
+        finishLocal(
+          next.isFinalOffer
+            ? 'That is my limit. Take it, or list it on the market.'
+            : next.roundsUsed <= 1
+              ? 'Alright, a little more.'
+              : 'You bargain hard, friend.',
+        );
+        return;
+      }
+      // No clear haggling intent: fall through to the AI with trade context.
+    }
 
     const quote = evaluateLulToCyonExchangeQuote(marketState);
     const catalogSnapshot = MERCHANT_CATALOG_ITEMS.map((item) => {
@@ -424,6 +607,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           body: JSON.stringify({
             userMessage: text,
             merchantLocation,
+            ...(merchantLocation === 'beach_house' &&
+            tradePhaseRef.current === 'offering' &&
+            tradeSessionRef.current
+              ? {
+                  tradeContext: {
+                    itemLabel: tradeFish
+                      ? `${tradeFish.speciesName} (${tradeFish.weightKg.toFixed(2)} kg)`
+                      : 'raw fish',
+                    currency: 'LUL',
+                    currentOffer: tradeSessionRef.current.currentOffer,
+                    ceiling: tradeSessionRef.current.ceiling,
+                    roundsLeft: Math.max(
+                      0,
+                      tradeSessionRef.current.maxRounds - tradeSessionRef.current.roundsUsed,
+                    ),
+                    playerAsk: (() => {
+                      const m = text.match(/\d+/);
+                      return m ? parseInt(m[0], 10) : null;
+                    })(),
+                  },
+                }
+              : {}),
             history: nextHistory.slice(-10).map((h) => ({ role: h.role, text: h.text })),
             liveState: {
               citizenDisplayName,
@@ -477,10 +682,42 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             },
           }),
         });
-        const data = (await res.json()) as { ok?: boolean; reply?: string };
+        const data = (await res.json()) as {
+          ok?: boolean;
+          reply?: string;
+          trade?: { moveType?: string; price?: number | null } | null;
+        };
         if (activeNpcRequestIdRef.current !== reqId) return;
         setIsNpcThinking(false);
         if (res.ok && data?.ok && data.reply?.trim()) {
+          // Apply the AI's proposed move — always re-clamped by the local
+          // negotiation engine before it can touch the session price.
+          const move = data.trade;
+          const sNow = tradeSessionRef.current;
+          if (move && sNow && tradePhaseRef.current === 'offering') {
+            if (move.moveType === 'walkaway') {
+              syncTrade(negotiateWalkAway(sNow), 'walkaway', tradeFishId);
+            } else if (move.moveType === 'accept_player_price' && move.price != null) {
+              const { session: next, outcome } = negotiatePlayerCounter(sNow, move.price);
+              if (outcome === 'agreed') syncTrade(next, 'agreed', tradeFishId);
+            } else if (move.moveType === 'offer' && move.price != null) {
+              const clamped = clampNegotiationOffer(sNow, move.price);
+              if (clamped > sNow.currentOffer) {
+                const roundsUsed = sNow.roundsUsed + 1;
+                syncTrade(
+                  {
+                    ...sNow,
+                    currentOffer: clamped,
+                    roundsUsed,
+                    isFinalOffer:
+                      roundsUsed >= sNow.maxRounds || clamped >= sNow.ceiling,
+                  },
+                  'offering',
+                  tradeFishId,
+                );
+              }
+            }
+          }
           triggerNpcSpeech(data.reply.trim());
         } else {
           triggerNpcSpeech(fallbackReply());
@@ -1192,6 +1429,242 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           className="w-full py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
                         >
                           LATER
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                {/* Kai Chat Trade (F1 pilot): one mutating card, buttons only */}
+                {merchantLocation === 'beach_house' && !tradePhase &&
+                  caughtFishBucket.some((f) => !f.isMintedNft) && (
+                    <div
+                      data-kai-trade-entry="true"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                          SELL FISH TO KAI
+                        </span>
+                        <span className="text-[10.5px] font-black text-white">PAID IN LUL</span>
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-300">
+                        Haggle the price right here in chat.
+                      </p>
+                      <button
+                        type="button"
+                        data-kai-trade-start-btn="true"
+                        onClick={startTradePick}
+                        className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                      >
+                        START HAGGLING
+                      </button>
+                    </div>
+                  )}
+
+                {merchantLocation === 'beach_house' && tradePhase === 'pick' && (
+                  <div
+                    data-kai-trade-card="pick"
+                    className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                  >
+                    <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                      PICK A FISH
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {caughtFishBucket
+                        .filter((f) => !f.isMintedNft)
+                        .map((fish) => (
+                          <button
+                            key={fish.id}
+                            type="button"
+                            data-kai-trade-fish={fish.id}
+                            onClick={() => chooseTradeFish(fish)}
+                            className="p-2 bg-white text-black border-2 border-black shadow-[2px_2px_0px_#000] text-left cursor-pointer hover:bg-[#ecfccb]"
+                          >
+                            <div className="text-[11px] font-black uppercase truncate">
+                              {fish.speciesName}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-600">
+                              {fish.weightKg.toFixed(2)} kg · {fish.rarity}
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={endTrade}
+                      className="w-full py-2 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                    >
+                      CANCEL
+                    </button>
+                  </div>
+                )}
+
+                {merchantLocation === 'beach_house' &&
+                  tradePhase === 'offering' &&
+                  tradeSession &&
+                  tradeFish && (
+                    <div
+                      data-kai-trade-card="offering"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8] truncate">
+                          {tradeFish.speciesName} · {tradeFish.weightKg.toFixed(2)} kg
+                        </span>
+                        <span className="text-[10px] font-black text-slate-300 shrink-0">
+                          {'\u25CF'.repeat(tradeSession.roundsUsed)}
+                          {'\u25CB'.repeat(
+                            Math.max(0, tradeSession.maxRounds - tradeSession.roundsUsed),
+                          )}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-[9.5px] font-black uppercase text-slate-400">
+                          Kai's offer
+                        </div>
+                        <div className="text-2xl font-black text-white leading-none">
+                          {tradeSession.currentOffer} LUL
+                        </div>
+                        <div className="mt-1.5 h-2 bg-slate-700 border border-black">
+                          <div
+                            className="h-full bg-[#b8ff3c]"
+                            style={{
+                              width: `${Math.min(100, Math.round((tradeSession.currentOffer / tradeSession.baseValue) * 100))}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="text-[9.5px] font-bold text-slate-400 mt-1">
+                          Standard price: {tradeSession.baseValue} LUL
+                          {tradeSession.isFinalOffer ? ' · Final offer' : ''}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          data-kai-trade-accept-btn="true"
+                          onClick={doTradeAccept}
+                          className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          ACCEPT
+                        </button>
+                        <button
+                          type="button"
+                          data-kai-trade-raise-btn="true"
+                          onClick={doTradeRaise}
+                          disabled={tradeSession.isFinalOffer}
+                          className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-40 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          HAGGLE
+                        </button>
+                        <button
+                          type="button"
+                          onClick={doTradeWalkAway}
+                          className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          STOP
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                {merchantLocation === 'beach_house' &&
+                  tradePhase === 'agreed' &&
+                  tradeSession &&
+                  tradeSession.agreedPrice != null && (
+                    <div
+                      data-kai-trade-card="agreed"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                        DEAL · {tradeSession.agreedPrice} LUL
+                      </div>
+                      <div className="text-[11px] font-bold text-slate-300">
+                        ✓ Fish picked · ● Payment
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          data-kai-trade-sell-btn="true"
+                          onClick={doTradeSell}
+                          className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          SELL NOW
+                        </button>
+                        <button
+                          type="button"
+                          onClick={endTrade}
+                          className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          CANCEL
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                {merchantLocation === 'beach_house' && tradePhase === 'done' && tradeDoneInfo && (
+                  <div
+                    data-kai-trade-card="done"
+                    className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                  >
+                    <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                      ✓ SOLD · {tradeDoneInfo.name} · +{tradeDoneInfo.price} LUL
+                    </div>
+                    <div className="flex gap-2">
+                      {caughtFishBucket.some((f) => !f.isMintedNft) && (
+                        <button
+                          type="button"
+                          onClick={startTradePick}
+                          className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          SELL MORE
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={endTrade}
+                        className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                      >
+                        CLOSE
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {merchantLocation === 'beach_house' &&
+                  tradePhase === 'walkaway' &&
+                  tradeSession && (
+                    <div
+                      data-kai-trade-card="walkaway"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                        LAST OFFER · {tradeSession.currentOffer} LUL
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={doTradeAccept}
+                          className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          TAKE IT
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            endTrade();
+                            setActiveTab('fish_market');
+                          }}
+                          className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          FISH MARKET
+                        </button>
+                        <button
+                          type="button"
+                          onClick={endTrade}
+                          className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                        >
+                          CLOSE
                         </button>
                       </div>
                     </div>
