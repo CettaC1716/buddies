@@ -18374,8 +18374,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Landing stage: until onboarding completes, the avatar waits at the
       // Central Oasis Lake shore — the same spot the avatar picker uses.
       if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
-        playerUnit.x = -31.0;
-        playerUnit.z = -15.5;
+        playerUnit.x = -24.0;
+        playerUnit.z = -13.5;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
         playerUnit.yaw = -Math.PI / 2;
@@ -18434,7 +18434,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         activePlaneAlt <= 4.0 ? activePlaneAlt : 4.0 + (activePlaneAlt - 4.0) * 0.35;
       const activeTerrainY =
         state === 'title'
-          ? getTerrainElevation(-31.0, -15.5)
+          ? getTerrainElevation(-24.0, -13.5)
           : currentPlayMode === 'editor'
           ? getTerrainElevation(editorPan.x, editorPan.z)
           : mountedTank
@@ -18443,7 +18443,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const focusTarget: Vec3 =
         state === 'title'
-          ? { x: -31.0, y: activeTerrainY + 0.9, z: -15.5 }
+          ? { x: -24.0, y: activeTerrainY + 0.9, z: -13.5 }
           : currentPlayMode === 'editor'
           ? { x: editorPan.x, y: activeTerrainY + 0.5, z: editorPan.z }
           : mountedTank
@@ -18495,6 +18495,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         z: wrapPlanetCoord(springStep.position.z),
       };
       camFollowVel = springStep.velocity;
+      if (state === 'title') {
+        // The landing shot is a fixed framing: pin the focus to the showcase
+        // spot so the camera never sweeps across the map after loading.
+        camFollowPos = { x: focusTarget.x, y: focusTarget.y, z: focusTarget.z };
+        camFollowVel = { x: 0, y: 0, z: 0 };
+      }
 
       const panAlpha = 1 - Math.exp(-BUDDIES_CONSTANTS.camera.mousePan.dampSpeed * dt);
       const panScale =
