@@ -4002,6 +4002,8 @@ export interface LoadedBlitzAssets {
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
   jumpClip: THREE.AnimationClip | null;
+  jumpIdleClip: THREE.AnimationClip | null;
+  idleClip: THREE.AnimationClip | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -4247,11 +4249,94 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
+  // Standing-jump variant of the take above (user-supplied, in-place: its hip
+  // track has almost no travel). Height arc on Z is -72.8..-29.5cm (0.295..0.728
+  // in rig units); rescaled onto the same baked 0.38..0.65 range as the run jump.
+  const loadJumpIdleClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/jump-idle.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              for (let i = 0; i < vals.length; i += 3) {
+                const h = -vals[i + 2] * 0.01;
+                const arc = (h - 0.295) / 0.433;
+                vals[i] = 0;
+                vals[i + 1] = 0.38 + Math.min(1, Math.max(0, arc)) * 0.27;
+                vals[i + 2] = 0;
+              }
+            }
+          }
+          raw.name = 'unarmed_jump_idle.001';
+          return raw;
+        } catch (err) {
+          console.warn('[PreloadGate] Idle jump clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const jumpIdleClipPromise = loadJumpIdleClip();
+  jumpIdleClipPromise
+    .then((c) => {
+      loadedJumpIdleClip = c;
+    })
+    .catch(() => {});
+
+  // Replacement idle: a user-supplied FBX take parsed at runtime. It is a true
+  // in-place idle (its hip track barely moves: height -51.8..-51.7cm on Z, i.e.
+  // ~0.52 in rig units — the same height the baked idle uses on Y). Remap the
+  // height onto Y and pin the rest, like the other runtime takes.
+  const loadIdleClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/idle-2.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              for (let i = 0; i < vals.length; i += 3) {
+                vals[i + 1] = -vals[i + 2] * 0.01;
+                vals[i] = 0;
+                vals[i + 2] = 0;
+              }
+            }
+          }
+          raw.name = 'idle.001';
+          return raw;
+        } catch (err) {
+          console.warn('[PreloadGate] Idle clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const idleClipPromise = loadIdleClip();
+  idleClipPromise
+    .then((c) => {
+      loadedIdleClip = c;
+    })
+    .catch(() => {});
+
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4308,6 +4393,8 @@ export async function loadAllRealBlitzAssets(
     loadFoliageTex(),
     sleepingClipPromise,
     jumpClipPromise,
+    jumpIdleClipPromise,
+    idleClipPromise,
   ]).then(
     ([
       playerGltf,
@@ -4352,6 +4439,8 @@ export async function loadAllRealBlitzAssets(
       treeFoliageTex,
       sleepingClip,
       jumpClip,
+      jumpIdleClip,
+      idleClip,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4398,6 +4487,8 @@ export async function loadAllRealBlitzAssets(
         treeFoliageTex,
         sleepingClip,
         jumpClip,
+        jumpIdleClip,
+        idleClip,
       };
       cachedLoadedBlitzAssets = loaded;
       inFlightLoadedBlitzAssetsPromise = null;
@@ -4415,6 +4506,8 @@ let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
 // must already see the sleeping clip at build time.
 let loadedSleepingClip: THREE.AnimationClip | null = null;
 let loadedJumpClip: THREE.AnimationClip | null = null;
+let loadedJumpIdleClip: THREE.AnimationClip | null = null;
+let loadedIdleClip: THREE.AnimationClip | null = null;
 let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
@@ -7334,6 +7427,7 @@ export interface CharBuddiesGlbRigController {
   hasHandBonePositions: boolean;
   prevJumpOffset: number;
   landRecoveryTimer: number;
+  airJumpClipName?: string;
   wasMoving: boolean;
   runToStopTimer: number;
   kickAnimTimer: number;
@@ -9910,6 +10004,59 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('unarmed_jump.001', c);
   }
+  const jumpIdleClipSrc = loadedJumpIdleClip ?? cachedLoadedBlitzAssets?.jumpIdleClip;
+  if (jumpIdleClipSrc && !clips.has('unarmed_jump_idle.001')) {
+    const c = jumpIdleClipSrc.clone();
+    c.name = 'unarmed_jump_idle.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('unarmed_jump_idle.001', c);
+  }
+  // Swap in the replacement idle (runtime FBX take) over the baked idle.001,
+  // with the same track filtering and root-motion lock. If the take failed to
+  // load, the baked idle stays untouched.
+  const idleClipSrc = loadedIdleClip ?? cachedLoadedBlitzAssets?.idleClip;
+  if (idleClipSrc) {
+    const c = idleClipSrc.clone();
+    c.name = 'idle.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('idle.001', c);
+  }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
     clips.set('fire.001', fallbackFireClip);
@@ -10024,6 +10171,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
 function configureCharBuddiesClipAction(act: THREE.AnimationAction, clipName: string) {
   if (
     clipName === 'unarmed_jump.001' ||
+    clipName === 'unarmed_jump_idle.001' ||
     clipName === 'unarmed_turn_left.001' ||
     clipName === 'unarmed_turn_right.001' ||
     clipName === 'pistol_jump.001' ||
@@ -10547,6 +10695,13 @@ function stepCharBuddiesGlbRigController(
   } else if (ctrl.runToStopTimer > 0 && rawDt >= 0.002) {
     ctrl.runToStopTimer = Math.max(0, ctrl.runToStopTimer - stepDt);
   }
+  // Latch which jump take plays at the moment of takeoff (running vs standing),
+  // so releasing the stick mid-air cannot switch takes mid-flight. Runs before
+  // the prevJumpOffset update below, while it still holds last frame's value.
+  if (jumpOffset > 0.05 && ctrl.prevJumpOffset <= 0.05) {
+    ctrl.airJumpClipName =
+      !isMoving && ctrl.clips.has('unarmed_jump_idle.001') ? 'unarmed_jump_idle.001' : 'unarmed_jump.001';
+  }
   ctrl.prevJumpOffset = jumpOffset;
   ctrl.wasMoving = isMoving;
 
@@ -10658,7 +10813,8 @@ function stepCharBuddiesGlbRigController(
     timeScale = 1.45;
   } else if (jumpOffset > 0.05) {
     if (!carryingCrate && (weaponId === 'unarmed' || weaponId === 'fishing_rod') && ctrl.clips.has('unarmed_jump.001')) {
-      targetClip = 'unarmed_jump.001';
+      targetClip =
+        ctrl.airJumpClipName && ctrl.clips.has(ctrl.airJumpClipName) ? ctrl.airJumpClipName : 'unarmed_jump.001';
       timeScale = 1.05;
     } else if (!carryingCrate && weaponId === 'pistol' && ctrl.clips.has('pistol_jump.001')) {
       targetClip = 'pistol_jump.001';
