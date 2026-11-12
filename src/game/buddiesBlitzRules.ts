@@ -12905,18 +12905,23 @@ export function evaluateBasePlotProximityTriggers(params: {
         }
       }
 
-      // 2. House Interior Entrance Door at (pwx, hqZ + sign * 1.85) — ONLY if 3D House is active & visible in The City
+      // 2. House Interior Entrance Door — ONLY if 3D House is active & visible in The City
       const isPlotActive = isCommanderBasePlotActive(plot) && !plot.destroyed && plot.buildingHp > 0;
       const isHouseVisible = houseVisList ? Boolean(houseVisList[i]) : isPlotActive;
       if (isPeacefulCityMode && isPlotActive && isHouseVisible) {
-        const doorX = pwx;
-        const doorZ = hqZ + sign * 1.85;
-        const dd = Math.hypot(params.actorX - doorX, params.actorZ - doorZ);
-        if (dd < bestDoorDist) {
-          bestDoorDist = dd;
-          bestDoorTeam = team;
-          bestDoorIdx = i;
-          bestDoorPos = { x: doorX, z: doorZ };
+        const doorCandidates: ReadonlyArray<{ x: number; z: number }> = [
+          { x: pwx, z: hqZ + sign * 1.85 },
+          { x: pwx - sign * 1.15, z: hqZ - sign * 0.55 },
+          { x: pwx + sign * 2.38, z: hqZ + sign * 9.35 },
+        ];
+        for (const cand of doorCandidates) {
+          const dd = Math.hypot(params.actorX - cand.x, params.actorZ - cand.z);
+          if (dd < bestDoorDist) {
+            bestDoorDist = dd;
+            bestDoorTeam = team;
+            bestDoorIdx = i;
+            bestDoorPos = { x: cand.x, z: cand.z };
+          }
         }
       }
     }

@@ -149,8 +149,13 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       smoothstep(-54.0, -90.0, p.x) * smoothstep(62.0, 102.0, abs(p.y)) * 11.5;
     float westPlantClear =
       smoothstep(-76.0, -104.0, p.x) * (1.0 - smoothstep(36.0, 44.0, abs(p.y))) * 9.5;
+    float tennisClubClear =
+      smoothstep(-74.0, -102.0, p.x) *
+      (12.2 - 1.7 * smoothstep(-106.0, -112.0, p.x)) *
+      smoothstep(35.0, 41.0, p.y) *
+      (1.0 - smoothstep(75.0, 82.0, p.y));
     float eastCoastalOpen = smoothstep(96.5, 102.0, p.x) * 92.0;
-    float d0 = dBox + westCornerBulge - westPlantClear - eastCoastalOpen;
+    float d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - eastCoastalOpen;
     if (d0 < -6.5) {
       return vec4(d0, d0 - 6.0, d0 - 12.0, d0 - 18.0);
     }
@@ -277,7 +282,9 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dNorth = sdRoundedBox2D(p, vec2(6.5, -44.67), vec2(9.4, 3.6), 0.4);
     float dSouth = sdRoundedBox2D(p, vec2(-36.5, 44.67), vec2(9.4, 3.6), 0.4);
     float dBeach = sdRoundedBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4), 0.4);
-    return min(dCentral, min(dNorth, min(dSouth, dBeach)));
+    float dPlazaSidewalk = sdRoundedBox2D(p, vec2(-75.25, 0.0), vec2(1.45, 38.2), 0.2);
+    float dTennisClub = sdRoundedBox2D(p, vec2(-89.20, 51.90), vec2(15.20, 13.70), 0.3);
+    return min(dTennisClub, min(dPlazaSidewalk, min(dCentral, min(dNorth, min(dSouth, dBeach)))));
   }
 
   float evaluateBlitzGrassMaskFromSdfs(
@@ -335,9 +342,9 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float harborDrop = -1.65 * smoothstep(0.15, -0.85, harborSdf.y);
 
     float westPlantSdf = evaluateWestPowerPlantSdf(p);
-    // Keep underlying procedural terrain mesh tucked inside the 0.48m basalt plinth (2.10m below the +2.50m granite Plaza deck)
-    // so CurvedPlanetGround never z-fights with the +2.50m Plaza floor or the Urban Staircase steps
-    float westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 0.40;
+    // Keep underlying procedural terrain mesh strictly inside the Plaza retaining walls (westPlantSdf < -0.40)
+    // so CurvedPlanetGround NEVER pokes through the +0.09m Roadside Sidewalk ("di trotoar plaza masih ada tanah")
+    float westPlantElev = (1.0 - smoothstep(-0.85, -0.40, westPlantSdf)) * 0.40;
     if (p.x > -85.45 && p.x < -75.40 && abs(p.y) < 10.05) {
       float stairCarveX = smoothstep(-85.45, -84.50, p.x);
       float stairCarveZ = 1.0 - smoothstep(9.60, 10.05, abs(p.y));
@@ -831,6 +838,101 @@ function flipNonIndexedGeometryWinding(geo: THREE.BufferGeometry): void {
  * outline meshes into a single BackSide stroke mesh, cutting draw calls by 85-95% while preserving
  * excluded animated sub-groups (`excludeObjects`).
  */
+const bakedVertexColorWorldMatCache = new WeakMap<object, THREE.ShaderMaterial>();
+
+function getOrCreateBakedVertexColorWorldMaterial(
+  srcMat: THREE.ShaderMaterial,
+): THREE.ShaderMaterial {
+  const lightDirUniform = srcMat.uniforms?.uLightDirection;
+  const cacheKeyObj = (lightDirUniform && typeof lightDirUniform === 'object' ? lightDirUniform : srcMat) as object;
+  let cached = bakedVertexColorWorldMatCache.get(cacheKeyObj);
+  if (cached) return cached;
+
+  cached = new THREE.ShaderMaterial({
+    uniforms: {
+      uShadowColor: { value: new THREE.Color('#2a2b36') },
+      uBounceColor: { value: new THREE.Color('#75d424') },
+      uLightDirection: srcMat.uniforms.uLightDirection,
+      uLightColor: srcMat.uniforms.uLightColor,
+      uShadowStep: { value: 0.15 },
+      uHighlightStep: { value: 0.6 },
+    },
+    vertexShader: /* glsl */ `
+      attribute vec4 aColorAndBounce;
+      varying vec3 vBaseColor;
+      varying float vBounceStrength;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
+      void main() {
+        vBaseColor = aColorAndBounce.rgb;
+        vBounceStrength = aColorAndBounce.a;
+        #ifdef USE_INSTANCING
+          mat4 worldMat = modelMatrix * instanceMatrix;
+        #else
+          mat4 worldMat = modelMatrix;
+        #endif
+        vec4 worldPosition = worldMat * vec4(position, 1.0);
+        vWorldPos = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(worldMat) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uShadowColor;
+      uniform vec3 uBounceColor;
+      uniform vec3 uLightDirection;
+      uniform vec3 uLightColor;
+      uniform float uShadowStep;
+      uniform float uHighlightStep;
+
+      varying vec3 vBaseColor;
+      varying float vBounceStrength;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
+
+      float blitzHalftone(vec2 coord, float scale, float radius) {
+        float c = cos(0.785398);
+        float s = sin(0.785398);
+        vec2 rot = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c) * scale;
+        float dist = length(fract(rot) - 0.5);
+        float r = radius * 0.7071;
+        return smoothstep(r - 0.08, r + 0.08, dist);
+      }
+
+      void main() {
+        vec3 albedo = vBaseColor;
+        vec3 N = normalize(vWorldNormal);
+        vec3 L = normalize(uLightDirection);
+        float ndl = dot(N, L);
+
+        float litFactor = clamp((ndl - uShadowStep) / max(0.001, uHighlightStep - uShadowStep), 0.0, 1.0);
+        float shadowFactor = 1.0 - litFactor;
+
+        float downFacing = smoothstep(-0.2, 0.85, -N.y);
+        float heightAtten = clamp(1.0 - max(vWorldPos.y, 0.0) / 1.8, 0.0, 1.0);
+        float bounceAmt = downFacing * heightAtten * heightAtten * vBounceStrength;
+        vec3 colorWithBounce = mix(albedo, uBounceColor, bounceAmt);
+
+        vec2 screenCoord = gl_FragCoord.xy * 0.0045;
+        float dots = blitzHalftone(screenCoord, 34.0, shadowFactor * 0.45);
+        float shadowBlend = clamp(shadowFactor * (1.0 - dots * 0.06), 0.0, 1.0) * 0.62;
+
+        vec3 litColor = colorWithBounce * uLightColor * (0.95 + 0.12 * litFactor);
+        vec3 shadedColor = colorWithBounce * mix(vec3(0.66, 0.68, 0.74), uShadowColor * 1.45, 0.48);
+        vec3 finalRgb = mix(litColor, shadedColor, shadowBlend);
+
+        gl_FragColor = vec4(finalRgb, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    side: THREE.DoubleSide,
+  });
+  cached.userData.isBakedVertexColorWorldMat = true;
+  bakedVertexColorWorldMatCache.set(cacheKeyObj, cached);
+  return cached;
+}
+
 export function bakeStaticGroupMeshes(
   rootGroup: THREE.Object3D,
   options?: {
@@ -928,8 +1030,45 @@ export function bakeStaticGroupMeshes(
               new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2),
             );
           }
+          let mat = node.material as THREE.Material;
+          const shaderMat = mat as THREE.ShaderMaterial;
+          const isAlreadyBakedVCol = Boolean(
+            mat.userData?.isBakedVertexColorWorldMat && g.getAttribute('aColorAndBounce'),
+          );
+          const isUntexturedWorldShader = Boolean(
+            !isAlreadyBakedVCol &&
+              shaderMat.isShaderMaterial &&
+              shaderMat.uniforms?.uBaseColor?.value &&
+              shaderMat.uniforms?.uLightDirection &&
+              (shaderMat.uniforms?.uHasMap?.value ?? 0) < 0.5,
+          );
+
+          if (isUntexturedWorldShader) {
+            const baseCol = shaderMat.uniforms.uBaseColor.value as THREE.Color;
+            const bounceVal = Number(shaderMat.uniforms.uBounceStrength?.value ?? 0.35);
+            const colBounceArr = new Float32Array(pos.count * 4);
+            const r = baseCol.r;
+            const gr = baseCol.g;
+            const b = baseCol.b;
+            for (let i = 0; i < pos.count; i++) {
+              const idx = i * 4;
+              colBounceArr[idx] = r;
+              colBounceArr[idx + 1] = gr;
+              colBounceArr[idx + 2] = b;
+              colBounceArr[idx + 3] = bounceVal;
+            }
+            g.setAttribute('aColorAndBounce', new THREE.BufferAttribute(colBounceArr, 4));
+            mat = getOrCreateBakedVertexColorWorldMaterial(shaderMat);
+          }
+
+          const keepColorAndBounce = isAlreadyBakedVCol || isUntexturedWorldShader;
           for (const attrName of Object.keys(g.attributes)) {
-            if (attrName !== 'position' && attrName !== 'normal' && attrName !== 'uv') {
+            if (
+              attrName !== 'position' &&
+              attrName !== 'normal' &&
+              attrName !== 'uv' &&
+              (!keepColorAndBounce || attrName !== 'aColorAndBounce')
+            ) {
               g.deleteAttribute(attrName);
             }
           }
@@ -951,7 +1090,6 @@ export function bakeStaticGroupMeshes(
             }
           }
           g.applyMatrix4(relMatrix);
-          const mat = node.material as THREE.Material;
           const key = `${mat.uuid}_${castShadow ? 1 : 0}_${node.receiveShadow ? 1 : 0}`;
           let bucket = materialBuckets.get(key);
           if (!bucket) {
@@ -12184,6 +12322,7 @@ export function createCurvedPlanetEnvironment(
 
     const horn = new THREE.Mesh(bollardHornGeo, new THREE.MeshStandardMaterial({ color: '#1e222d' }));
     horn.position.y = 0.62;
+    upgradeMeshToBlitzWorldMaterial(horn, windUniforms, '#1e222d');
     bollardGrp.add(horn);
 
     if (includeFender) {
@@ -12416,6 +12555,129 @@ export function createCurvedPlanetEnvironment(
     return tex;
   })();
 
+  // Procedural Architectural Flamed Blue-Slate & Silver-Basalt Staircase Tread Texture
+  // (Distinct from both the warm travertine Upper Plaza floor and the roadside concrete sidewalk)
+  const lobbyStairTreadTex = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#7e8996';
+    ctx.fillRect(0, 0, 512, 512);
+
+    const cols = 3;
+    const rows = 6;
+    const tileW = 512 / cols;
+    const tileH = 512 / rows;
+    const slateTones = ['#8793a1', '#7c8795', '#8f9ba9', '#778290', '#838f9d', '#8c98a6'];
+    for (let r = 0; r < rows; r++) {
+      const staggerX = (r % 2) * (tileW * 0.5);
+      for (let c = -1; c <= cols; c++) {
+        const tx = c * tileW + staggerX;
+        const ty = r * tileH;
+        const baseHex = slateTones[(r * 3 + c * 2 + 6) % slateTones.length];
+        ctx.fillStyle = baseHex;
+        ctx.fillRect(tx + 2, ty + 2, tileW - 4, tileH - 4);
+
+        // Subtle brushed slate linear striation & silver-quartz mineral fleck
+        ctx.fillStyle = 'rgba(226, 236, 248, 0.10)';
+        ctx.fillRect(tx + 5, ty + 5, tileW - 10, tileH * 0.28);
+        ctx.fillStyle = 'rgba(42, 50, 62, 0.14)';
+        for (let sp = 0; sp < 10; sp++) {
+          const sx = tx + 8 + ((sp * 41 + r * 17 + c * 29) % Math.max(8, tileW - 16));
+          const sy = ty + 8 + ((sp * 31 + r * 23 + c * 13) % Math.max(8, tileH - 16));
+          ctx.fillRect(sx, sy, 4, 2);
+        }
+        // Anti-slip micro-grooves along each stair stone slab edge
+        ctx.fillStyle = 'rgba(46, 54, 66, 0.34)';
+        ctx.fillRect(tx + 3, ty + 4, tileW - 6, 3);
+        ctx.fillRect(tx + 3, ty + 10, tileW - 6, 2);
+      }
+    }
+    // Deep recessed architectural slate mortar joints
+    ctx.strokeStyle = 'rgba(44, 52, 62, 0.52)';
+    ctx.lineWidth = 3.0;
+    for (let r = 0; r <= rows; r++) {
+      const ty = r * tileH;
+      ctx.beginPath();
+      ctx.moveTo(0, ty);
+      ctx.lineTo(512, ty);
+      ctx.stroke();
+      if (r < rows) {
+        const staggerX = (r % 2) * (tileW * 0.5);
+        for (let c = 0; c <= cols; c++) {
+          const jx = (c * tileW + staggerX) % 512;
+          ctx.beginPath();
+          ctx.moveTo(jx, ty);
+          ctx.lineTo(jx, ty + tileH);
+          ctx.stroke();
+        }
+      }
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  })();
+
+  // Procedural Urban Pedestrian Concrete Sidewalk Flagstone Grid Texture
+  // (Distinct square sidewalk paving slabs with crisp expansion joints & chamfered borders)
+  const lobbySidewalkPaverTex = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#aeb5be';
+    ctx.fillRect(0, 0, 512, 512);
+
+    const gridN = 4;
+    const step = 512 / gridN;
+    const slabTones = ['#b8bfc8', '#b1b8c1', '#bcc3cc', '#acb3bc'];
+    for (let r = 0; r < gridN; r++) {
+      for (let c = 0; c < gridN; c++) {
+        const x = c * step;
+        const y = r * step;
+        ctx.fillStyle = slabTones[(r * 2 + c) % slabTones.length];
+        ctx.fillRect(x + 3, y + 3, step - 6, step - 6);
+
+        // Inner chamfered sidewalk flagstone bevel
+        ctx.strokeStyle = 'rgba(245, 248, 252, 0.32)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 5, y + 5, step - 10, step - 10);
+
+        // Fine broom-brushed urban concrete texture lines
+        ctx.strokeStyle = 'rgba(78, 86, 96, 0.10)';
+        ctx.lineWidth = 1;
+        for (let ln = 12; ln < step - 10; ln += 10) {
+          ctx.beginPath();
+          ctx.moveTo(x + 8, y + ln);
+          ctx.lineTo(x + step - 8, y + ln);
+          ctx.stroke();
+        }
+      }
+    }
+    // Crisp dark concrete sidewalk control joints
+    ctx.strokeStyle = 'rgba(64, 72, 82, 0.55)';
+    ctx.lineWidth = 4;
+    for (let i = 0; i <= gridN; i++) {
+      const p = i * step;
+      ctx.beginPath();
+      ctx.moveTo(0, p);
+      ctx.lineTo(512, p);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(p, 0);
+      ctx.lineTo(p, 512);
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  })();
+
   // Procedural Warm Architectural Burmese Teak & Roasted Cedar Slatted Timber Texture (Sheet 2, 3, 4, 5)
   const lobbyVerticalTimberTex = (() => {
     const canvas = document.createElement('canvas');
@@ -12534,6 +12796,16 @@ export function createCurvedPlanetEnvironment(
     uvAttr.needsUpdate = true;
   };
 
+  const sharedLobbyClearGlassMat = new THREE.MeshStandardMaterial({
+    color: '#d6f4ff',
+    transparent: true,
+    opacity: 0.35,
+    roughness: 0.08,
+    metalness: 0.1,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
   const addLobbyPart = (
     parent: THREE.Object3D,
     geo: THREE.BufferGeometry,
@@ -12544,36 +12816,64 @@ export function createCurvedPlanetEnvironment(
     mapTex?: THREE.Texture,
     worldTileMeters = 2.6,
   ): THREE.Mesh => {
-    if (mapTex && (mapTex.wrapS === THREE.RepeatWrapping || mapTex.wrapT === THREE.RepeatWrapping)) {
+    const lowerHex = colorHex.toLowerCase();
+    const isSoilBed =
+      lowerHex === '#4a3525' || lowerHex === '#463324' || lowerHex === '#3d2b1d';
+    const effectiveMapTex = isSoilBed && mapTex === lobbyBasaltTex ? undefined : mapTex;
+
+    if (
+      effectiveMapTex &&
+      (effectiveMapTex.wrapS === THREE.RepeatWrapping ||
+        effectiveMapTex.wrapT === THREE.RepeatWrapping)
+    ) {
       tileLobbyBoxGeometryUVs(geo, worldTileMeters);
     }
     const isGlassMat =
-      colorHex === '#88cce6' ||
-      colorHex === '#7bc6e2' ||
-      colorHex.toLowerCase() === '#88cce6' ||
-      colorHex.toLowerCase() === '#7bc6e2';
+      lowerHex === '#88cce6' || lowerHex === '#7bc6e2' || lowerHex === '#bfe8f7';
+
+    // Prevent double-darkening (uBaseColor * texCol.rgb in linear space) and lift overly dark
+    // charcoal/iron colors so cel-shaded plaza objects never collapse into pitch-black (#000000)
+    const parsedCol = new THREE.Color(isSoilBed ? '#664933' : colorHex);
+    const luma = 0.2126 * parsedCol.r + 0.7152 * parsedCol.g + 0.0722 * parsedCol.b;
+    let effectiveTintHex: string;
+    if (effectiveMapTex) {
+      if (luma < 0.28) {
+        effectiveTintHex = '#ffffff';
+      } else {
+        parsedCol.lerp(new THREE.Color('#ffffff'), 0.65);
+        effectiveTintHex = `#${parsedCol.getHexString()}`;
+      }
+    } else {
+      if (luma < 0.08) {
+        parsedCol.lerp(new THREE.Color('#5a6575'), 0.48);
+      }
+      effectiveTintHex = `#${parsedCol.getHexString()}`;
+    }
+
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const minDim = bb
+      ? Math.min(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z)
+      : 1.0;
+
     const meshMat = isGlassMat
-      ? new THREE.MeshStandardMaterial({
-          color: '#d6f4ff',
-          transparent: true,
-          opacity: 0.35,
-          roughness: 0.08,
-          metalness: 0.1,
-          side: THREE.DoubleSide,
-        })
+      ? sharedLobbyClearGlassMat
       : new THREE.MeshStandardMaterial({
-          color: colorHex,
-          map: mapTex || null,
+          color: effectiveTintHex,
+          map: effectiveMapTex || null,
           roughness: 0.78,
         });
     const mesh = new THREE.Mesh(geo, meshMat);
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rot[0], rot[1], rot[2]);
-    mesh.castShadow = !isSoftwareGl && !isGlassMat;
+    mesh.castShadow = !isSoftwareGl && !isGlassMat && minDim >= 0.16;
     mesh.receiveShadow = !isSoftwareGl && !isGlassMat;
-    upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, colorHex);
-    if (strokeW > 0) {
-      const st = createBlitzStrokeMesh(geo, Math.min(strokeW, 0.016));
+    if (!isGlassMat) {
+      upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, effectiveTintHex, 0.08);
+    }
+
+    if (!isGlassMat && strokeW > 0.005 && geo.type !== 'TorusGeometry' && minDim >= 0.05) {
+      const st = createBlitzStrokeMesh(geo, Math.min(strokeW, 0.011));
       if (st) mesh.add(st);
     }
     parent.add(mesh);
@@ -12597,12 +12897,7 @@ export function createCurvedPlanetEnvironment(
   // East-South Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [+10.00 .. +37.90], top at y = +2.50m)
   addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.02, 27.9), '#e5e2da', [9.55, 1.49, 23.95], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
 
-  // Polished Flamed Granite Walkway Border Curbs & Architectural Expansion Joint Grid (+2.50m Plaza Level)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 27.9), '#c4c1b8', [13.65, 2.54, -23.95], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 27.9), '#c4c1b8', [13.65, 2.54, 23.95], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.48, 0.14, 75.6), '#c4c1b8', [-13.65, 2.54, 0], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.14, 0.48), '#c4c1b8', [0, 2.54, -37.65], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.14, 0.48), '#c4c1b8', [0, 2.54, 37.65], [0, 0, 0], 0.014, lobbyConcreteTex, 2.5);
+  // Walkway border curb is now integrated into the continuous mitred perimeter balustrade curb (+2.50m Plaza Level)
 
   // -------------------------------------------------------------------------
   // 1B. 1:1 URBAN PLAZA TO STREET STAIRCASE — ARCHITECTURAL MODEL SHEET
@@ -12619,34 +12914,30 @@ export function createCurvedPlanetEnvironment(
   urbanStaircaseGrp.name = 'LobbyUrbanPlazaToStreetStaircase';
   westPlantGroup.add(urbanStaircaseGrp);
 
-  const COL_STAIR_GRANITE = '#dcdad2';
-  const COL_STAIR_NOSING = '#e8e6de';
+  const COL_STAIR_GRANITE = '#94a0ad';
+  const COL_STAIR_NOSING = '#b2bcc8';
   const COL_STAIR_CONC = '#cac7bf';
   const COL_STAIR_SUB = '#b5b2aa';
-  const COL_STAIR_STEEL = '#98a2ad';
-  const COL_STAIR_POST = '#323840';
-  const COL_STAIR_GLASS = '#88cce6';
   const COL_STAIR_LED = '#ffe4a8';
-  const COL_STAIR_SOIL = '#4a3525';
 
-  // A. Flush Granite Stair Threshold Nosing at Upper Plaza Lip (lx = +5.20, non-overlapping with the [-13.90..+5.20] Plaza Deck)
+  // A. Flush Granite Stair Threshold Nosing at Upper Plaza Lip (lx = +5.23, non-overlapping with the [-13.90..+5.20] Plaza Deck)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(0.12, 0.06, 16.84),
+    new THREE.BoxGeometry(0.06, 0.06, 16.80),
     COL_STAIR_NOSING,
-    [5.20, 2.475, 0.0],
+    [5.23, 2.47, 0.0],
     [0, 0, 0],
     0.008,
-    lobbyGranitePaverTex,
-    2.4,
+    lobbyStairTreadTex,
+    2.0,
   );
 
-  // B. Monolithic Concrete Substructure ("Concrete Substructure" under Upper Flight, Mid-Landing & Lower Flight)
+  // B. Monolithic Concrete Substructure ("Concrete Substructure" recessed cleanly below Upper Flight & Mid-Landing to prevent Z-fighting)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(3.52, 1.28, 16.84),
+    new THREE.BoxGeometry(3.46, 1.20, 16.80),
     COL_STAIR_SUB,
-    [6.95, 0.64, 0.0],
+    [6.95, 0.60, 0.0],
     [0, 0, 0],
     0.012,
     lobbyConcreteTex,
@@ -12654,45 +12945,47 @@ export function createCurvedPlanetEnvironment(
   );
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(1.44, 1.32, 16.84),
+    new THREE.BoxGeometry(1.36, 1.22, 16.80),
     COL_STAIR_CONC,
-    [9.40, 0.66, 0.0],
+    [9.40, 0.61, 0.0],
     [0, 0, 0],
     0.014,
     lobbyConcreteTex,
     2.4,
   );
 
-  // C. Upper Flight: 7 Wide Granite Paver Steps (lx = 5.20 -> 8.70, descending +2.50m -> +1.32m)
+  // C. Upper Flight: 7 Wide Flamed Blue-Slate Granite Steps (lx = 5.20 -> 8.70, descending +2.50m -> +1.32m)
   const upperStepCount = 7;
   const upperStepRun = 0.50;
   const upperStepDrop = (2.50 - 1.32) / upperStepCount;
   for (let s = 0; s < upperStepCount; s++) {
     const stepCenterX = 5.20 + (s + 0.5) * upperStepRun;
     const stepTopY = 2.50 - (s + 1) * upperStepDrop;
-    const stepBaseY = 1.24;
-    const stepH = Math.max(0.10, stepTopY - stepBaseY);
+    const stepBaseY = 1.22;
+    const stepH = Math.max(0.08, stepTopY - stepBaseY);
     addLobbyPart(
       urbanStaircaseGrp,
-      new THREE.BoxGeometry(upperStepRun + 0.02, stepH, 16.80),
+      new THREE.BoxGeometry(upperStepRun - 0.004, stepH, 16.80),
       COL_STAIR_GRANITE,
       [stepCenterX, stepBaseY + stepH * 0.5, 0.0],
       [0, 0, 0],
       0.010,
-      lobbyGranitePaverTex,
-      2.6,
+      lobbyStairTreadTex,
+      2.0,
     );
-    // Granite Step Nosing Overhang
     const riserX = 5.20 + s * upperStepRun;
     const prevTopY = 2.50 - s * upperStepDrop;
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(0.06, 0.04, 16.80),
-      COL_STAIR_NOSING,
-      [riserX + 0.02, prevTopY - 0.02, 0.0],
-      [0, 0, 0],
-      0.006,
-    );
+    if (s > 0) {
+      // Contrasting Silver-Slate Step Nosing Overhang (recessed 2mm below previous step top to prevent coplanar Z-fighting)
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.045, 0.036, 16.78),
+        COL_STAIR_NOSING,
+        [riserX + 0.024, prevTopY - 0.022, 0.0],
+        [0, 0, 0],
+        0.006,
+      );
+    }
     // Recessed Warm LED Step Lighting under nosing ("LED Step Lighting (Recessed)")
     for (const channelZ of [-4.25, 4.25]) {
       addLobbyPart(
@@ -12706,20 +12999,19 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
-  // D. Intermediate Granite Mid-Landing (lx in [8.70 .. 10.10], y = +1.32m)
+  // D. Intermediate Slate-Granite Mid-Landing (lx in [8.702 .. 10.098], y = +1.32m, sitting cleanly above the y = +1.22m concrete substructure)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(1.42, 0.08, 16.80),
-    COL_STAIR_NOSING,
+    new THREE.BoxGeometry(1.396, 0.08, 16.80),
+    COL_STAIR_GRANITE,
     [9.40, 1.28, 0.0],
     [0, 0, 0],
     0.010,
-    lobbyGranitePaverTex,
-    2.4,
+    lobbyStairTreadTex,
+    2.0,
   );
-  addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.04, 0.015, 16.76), '#aca9a0', [9.40, 1.325, 0.0], [0, 0, 0], 0);
 
-  // E. Lower Flight: 7 Wide Granite Paver Steps (lx = 10.10 -> 13.60, descending +1.32m -> +0.08m)
+  // E. Lower Flight: 7 Wide Flamed Blue-Slate Granite Steps (lx = 10.10 -> 13.60, descending +1.32m -> +0.08m)
   const lowerStepCount = 7;
   const lowerStepRun = 0.50;
   const lowerStepDrop = (1.32 - 0.08) / lowerStepCount;
@@ -12730,25 +13022,27 @@ export function createCurvedPlanetEnvironment(
     const stepH = Math.max(0.06, stepTopY - stepBaseY);
     addLobbyPart(
       urbanStaircaseGrp,
-      new THREE.BoxGeometry(lowerStepRun + 0.02, stepH, 16.80),
+      new THREE.BoxGeometry(lowerStepRun - 0.004, stepH, 16.80),
       COL_STAIR_GRANITE,
       [stepCenterX, stepBaseY + stepH * 0.5, 0.0],
       [0, 0, 0],
       0.010,
-      lobbyGranitePaverTex,
-      2.6,
+      lobbyStairTreadTex,
+      2.0,
     );
-    // Granite Step Nosing Overhang
     const riserX = 10.10 + s * lowerStepRun;
     const prevTopY = 1.32 - s * lowerStepDrop;
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(0.06, 0.04, 16.80),
-      COL_STAIR_NOSING,
-      [riserX + 0.02, prevTopY - 0.02, 0.0],
-      [0, 0, 0],
-      0.006,
-    );
+    if (s > 0) {
+      // Contrasting Silver-Slate Step Nosing Overhang (recessed 2mm below previous step top to prevent coplanar Z-fighting)
+      addLobbyPart(
+        urbanStaircaseGrp,
+        new THREE.BoxGeometry(0.045, 0.036, 16.78),
+        COL_STAIR_NOSING,
+        [riserX + 0.024, prevTopY - 0.022, 0.0],
+        [0, 0, 0],
+        0.006,
+      );
+    }
     // Recessed Warm LED Step Lighting under nosing
     for (const channelZ of [-4.25, 4.25]) {
       addLobbyPart(
@@ -12762,366 +13056,594 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
-  // Longitudinal Paver Joint Grooves across Upper Flight, Mid-Landing & Lower Flight
-  for (const jz of [-6.3, -4.2, -2.1, 2.1, 4.2, 6.3]) {
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.38, 0.015, 0.035), '#a8a59c', [9.40, 1.325, jz], [0, 0, 0], 0);
-  }
-
-  // F. Bottom Urban Concrete Sidewalk & Street Curb ("Concrete Sidewalk / Trotoar & Aspal Raya", lx in [13.60 .. 15.25], y = +0.08m)
+  // F. Continuous Urban Pedestrian Concrete Sidewalk & Roadside Curb along the ENTIRE East Plaza Road Edge
+  //    - Connects seamlessly from the bottom of the staircase (lx = +13.605) and North/South Plaza walls (lx = +13.92)
+  //      all the way to the West Ring Road asphalt edge at lx = +16.60 (worldX = -73.90m)!
+  //    - Uses dedicated `lobbySidewalkPaverTex` (square urban concrete flagstones, distinct from Plaza & Stairs)
+  // 1) Central Staircase Landing Sidewalk (lz in [-10.00 .. +10.00], lx in [13.605 .. 16.47])
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(1.66, 0.10, 20.40),
-    '#d6d8dc',
-    [14.42, 0.04, 0.0],
+    new THREE.BoxGeometry(2.865, 0.09, 20.00),
+    '#bcc3cc',
+    [15.0375, 0.045, 0.0],
     [0, 0, 0],
     0.012,
-    lobbyConcreteTex,
-    2.8,
+    lobbySidewalkPaverTex,
+    2.2,
   );
+  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [13.92 .. 16.47])
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(0.18, 0.11, 20.44),
-    '#9ea3aa',
-    [15.18, 0.045, 0.0],
+    new THREE.BoxGeometry(2.55, 0.09, 28.10),
+    '#bcc3cc',
+    [15.195, 0.045, -24.05],
+    [0, 0, 0],
+    0.012,
+    lobbySidewalkPaverTex,
+    2.2,
+  );
+  // 3) South Plaza Roadside Sidewalk Promenade (lz in [+10.00 .. +38.10], lx in [13.92 .. 16.47])
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(2.55, 0.09, 28.10),
+    '#bcc3cc',
+    [15.195, 0.045, 24.05],
+    [0, 0, 0],
+    0.012,
+    lobbySidewalkPaverTex,
+    2.2,
+  );
+  // 4) Continuous Full-Length Roadside Granite Curb Beam right along the Asphalt Road Edge (lx = +16.57, lz in [-38.15 .. +38.15])
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(0.20, 0.105, 76.30),
+    '#8f96a0',
+    [16.57, 0.0525, 0.0],
     [0, 0, 0],
     0.010,
     lobbyConcreteTex,
     2.2,
   );
-  for (let sz = -10.0; sz <= 10.0; sz += 2.5) {
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.60, 0.015, 0.04), '#94989e', [14.40, 0.092, sz], [0, 0, 0], 0);
-  }
-  // Recessed Cast-Iron Street Storm Drain Grate at South-East Curb (matching Top Plan View)
+  // North Sidewalk End-Return Curb at lz = -38.12 (South end flows continuously into the Tennis Court Sidewalk!)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(0.46, 0.03, 0.92),
-    '#383e45',
-    [15.48, 0.015, 7.20],
+    new THREE.BoxGeometry(2.75, 0.105, 0.18),
+    '#8f96a0',
+    [15.295, 0.0525, -38.12],
     [0, 0, 0],
-    0.008,
-    lobbyDrainGrilleTex,
-    1.0,
+    0.010,
+    lobbyConcreteTex,
+    2.2,
   );
+  // Recessed Cast-Iron Street Storm Drain Grates in the Asphalt Gutter beside the Curb
+  for (const drainZ of [-22.0, 7.20, 22.0]) {
+    addLobbyPart(
+      urbanStaircaseGrp,
+      new THREE.BoxGeometry(0.46, 0.03, 0.92),
+      '#383e45',
+      [16.92, 0.015, drainZ],
+      [0, 0, 0],
+      0.008,
+      lobbyDrainGrilleTex,
+      1.0,
+    );
+  }
+
+  // Helper for Blitz Toon/Cel-Shaded Plaza Railings, Balustrades & Stepped Planters
+  // Uses flat solid colors (zero procedural textures), low-poly geometry, and explicit BackSide Toon Outlines
+  // Transparent glass panels skip BackSide stroke meshes so they remain 100% see-through crystal clear
+  const addToonRailingPart = (
+    parent: THREE.Object3D,
+    geo: THREE.BufferGeometry,
+    colorHex: string,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+    strokeW = 0.009,
+    isGlass = false,
+    castShad = false,
+  ) => {
+    const mat = isGlass
+      ? sharedLobbyClearGlassMat
+      : new THREE.MeshStandardMaterial({
+          color: colorHex,
+          roughness: 0.65,
+          metalness: 0.08,
+        });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    mesh.rotation.set(rot[0], rot[1], rot[2]);
+    mesh.castShadow = !isSoftwareGl && castShad && !isGlass;
+    mesh.receiveShadow = !isSoftwareGl && !isGlass;
+    if (!isGlass) {
+      upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, colorHex, 0.12);
+      if (strokeW > 0) {
+        const st = createBlitzStrokeMesh(geo, strokeW);
+        if (st) mesh.add(st);
+      }
+    }
+    parent.add(mesh);
+    return mesh;
+  };
+
+  // Helper: Continuous Vertical-Plane (X-Y) Mitred Strip Geometry for Sloped-to-Horizontal Staircase Handrails & Balustrades
+  const createVerticalMitredRailGeometry = (
+    ptsXY: [number, number][],
+    heightY: number,
+    widthZ: number,
+  ): THREE.BufferGeometry => {
+    const n = ptsXY.length;
+    const halfH = heightY * 0.5;
+    const halfW = widthZ * 0.5;
+    const topPts: [number, number][] = [];
+    const botPts: [number, number][] = [];
+
+    for (let i = 0; i < n; i++) {
+      let nx = 0;
+      let ny = 1;
+      if (i === 0) {
+        const dx = ptsXY[1][0] - ptsXY[0][0];
+        const dy = ptsXY[1][1] - ptsXY[0][1];
+        const len = Math.hypot(dx, dy) || 1;
+        nx = -dy / len;
+        ny = dx / len;
+      } else if (i === n - 1) {
+        const dx = ptsXY[n - 1][0] - ptsXY[n - 2][0];
+        const dy = ptsXY[n - 1][1] - ptsXY[n - 2][1];
+        const len = Math.hypot(dx, dy) || 1;
+        nx = -dy / len;
+        ny = dx / len;
+      } else {
+        const dx1 = ptsXY[i][0] - ptsXY[i - 1][0];
+        const dy1 = ptsXY[i][1] - ptsXY[i - 1][1];
+        const l1 = Math.hypot(dx1, dy1) || 1;
+        const n1x = -dy1 / l1;
+        const n1y = dx1 / l1;
+
+        const dx2 = ptsXY[i + 1][0] - ptsXY[i][0];
+        const dy2 = ptsXY[i + 1][1] - ptsXY[i][1];
+        const l2 = Math.hypot(dx2, dy2) || 1;
+        const n2x = -dy2 / l2;
+        const n2y = dx2 / l2;
+
+        let mx = n1x + n2x;
+        let my = n1y + n2y;
+        const mLen = Math.hypot(mx, my) || 1;
+        mx /= mLen;
+        my /= mLen;
+        const dot = Math.max(0.5, mx * n1x + my * n1y);
+        nx = mx / dot;
+        ny = my / dot;
+      }
+      topPts.push([ptsXY[i][0] + nx * halfH, ptsXY[i][1] + ny * halfH]);
+      botPts.push([ptsXY[i][0] - nx * halfH, ptsXY[i][1] - ny * halfH]);
+    }
+
+    const pos: number[] = [];
+    const pushQuad = (
+      ax: number, ay: number, az: number,
+      bx: number, by: number, bz: number,
+      cx: number, cy: number, cz: number,
+      dx: number, dy: number, dz: number,
+    ) => {
+      pos.push(
+        ax, ay, az, bx, by, bz, cx, cy, cz,
+        ax, ay, az, cx, cy, cz, dx, dy, dz,
+      );
+    };
+
+    for (let i = 0; i < n - 1; i++) {
+      const [tx0, ty0] = topPts[i];
+      const [tx1, ty1] = topPts[i + 1];
+      const [bx0, by0] = botPts[i];
+      const [bx1, by1] = botPts[i + 1];
+
+      // Top face
+      pushQuad(tx0, ty0, halfW, tx1, ty1, halfW, tx1, ty1, -halfW, tx0, ty0, -halfW);
+      // Bottom face
+      pushQuad(bx0, by0, -halfW, bx1, by1, -halfW, bx1, by1, halfW, bx0, by0, halfW);
+      // Front (+Z) face
+      pushQuad(bx0, by0, halfW, bx1, by1, halfW, tx1, ty1, halfW, tx0, ty0, halfW);
+      // Back (-Z) face
+      pushQuad(tx0, ty0, -halfW, tx1, ty1, -halfW, bx1, by1, -halfW, bx0, by0, -halfW);
+    }
+    // Start & End caps
+    pushQuad(botPts[0][0], botPts[0][1], -halfW, botPts[0][0], botPts[0][1], halfW, topPts[0][0], topPts[0][1], halfW, topPts[0][0], topPts[0][1], -halfW);
+    const last = n - 1;
+    pushQuad(botPts[last][0], botPts[last][1], halfW, botPts[last][0], botPts[last][1], -halfW, topPts[last][0], topPts[last][1], -halfW, topPts[last][0], topPts[last][1], halfW);
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    return g;
+  };
 
   // G. 4-Tier Stepped Side Concrete Planters with Lush Green Shrubs ("Stepped Side Planters / Integrated Planters with Shrubs")
   //    Placed along North (lz = -9.20, spanning [-10.00 .. -8.40]) and South (lz = +9.20, spanning [+8.40 .. +10.00])
+  //    Tier heights calibrated so shrubs sit cleanly below the continuous sloped balustrade & handrails without clipping!
   const steppedPlanterTiers: [number, number, number][] = [
-    [6.12, 1.86, 2.58],  // Tier 1 (Upper Plaza Edge)
-    [8.05, 2.02, 1.96],  // Tier 2 (Upper Mid-Flight)
-    [10.00, 1.92, 1.38], // Tier 3 (Mid-Landing / Lower Top)
-    [12.30, 2.70, 0.78], // Tier 4 (Lower Street Foot)
+    [6.12, 1.84, 2.18],  // Tier 1 (Upper Plaza Edge)
+    [8.05, 1.98, 1.66],  // Tier 2 (Upper Mid-Flight)
+    [10.00, 1.90, 1.18], // Tier 3 (Mid-Landing / Lower Top)
+    [12.30, 2.66, 0.64], // Tier 4 (Lower Street Foot)
   ];
-  const shrubColors = ['#3b7a38', '#4d9244', '#5fa650', '#326b30'];
+  const shrubColors = ['#3b8c36', '#4ea844', '#63bd52', '#32782e'];
   for (const sideSign of [-1, 1]) {
     const planterZ = sideSign * 9.20;
     for (let tIdx = 0; tIdx < steppedPlanterTiers.length; tIdx++) {
       const [tierX, tierLenX, tierTopY] = steppedPlanterTiers[tIdx];
-      // Monolithic Architectural Concrete Planter Box
-      addLobbyPart(
+      // Monolithic Architectural Concrete Planter Box (Blitz Toon solid color + outline)
+      addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(tierLenX, tierTopY, 1.60),
-        COL_STAIR_CONC,
+        new THREE.BoxGeometry(tierLenX, tierTopY, 1.56),
+        '#d6d2c8',
         [tierX, tierTopY * 0.5, planterZ],
         [0, 0, 0],
-        0.014,
-        lobbyConcreteTex,
-        2.2,
+        0.011,
+        false,
+        true,
       );
-      // Chamfered Concrete Planter Coping Rim
-      addLobbyPart(
+      // Chamfered Concrete Planter Coping Rim (Blitz Toon solid color + outline)
+      addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(tierLenX + 0.08, 0.09, 1.66),
-        '#dedbd3',
+        new THREE.BoxGeometry(tierLenX + 0.06, 0.09, 1.62),
+        '#e8e4da',
         [tierX, tierTopY - 0.03, planterZ],
         [0, 0, 0],
-        0.010,
-        lobbyConcreteTex,
-        2.0,
+        0.009,
       );
       // Dark Soil & Mulch Bed inside Planter
-      addLobbyPart(
+      addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(tierLenX - 0.24, 0.06, 1.24),
-        COL_STAIR_SOIL,
+        new THREE.BoxGeometry(tierLenX - 0.22, 0.05, 1.18),
+        '#6b4c35',
         [tierX, tierTopY + 0.02, planterZ],
         [0, 0, 0],
         0.006,
-        lobbyBasaltTex,
-        1.4,
       );
-      // Lush Sculpted Green Coastal Shrub Mounds inside each Stepped Planter
+      // Lush Low-Poly Blitz Toon Green Shrub Mounds centered neatly inside each Stepped Planter
       const shrubCount = tIdx === 3 ? 4 : 3;
       for (let sh = 0; sh < shrubCount; sh++) {
         const shFrac = sh / (shrubCount - 1) - 0.5;
-        const shX = tierX + shFrac * (tierLenX - 0.62);
-        const shZ = planterZ + ((sh % 2 === 0 ? -1 : 1) * 0.12);
-        const shR = 0.34 + (sh % 2) * 0.06;
+        const shX = tierX + shFrac * (tierLenX - 0.64);
+        const shZ = planterZ + ((sh % 2 === 0 ? -1 : 1) * 0.08);
+        const shR = 0.28 + (sh % 2) * 0.04;
         const shCol = shrubColors[(tIdx + sh) % shrubColors.length];
-        addLobbyPart(
+        addToonRailingPart(
           urbanStaircaseGrp,
-          new THREE.SphereGeometry(shR, 9, 7),
+          new THREE.DodecahedronGeometry(shR, 1),
           shCol,
-          [shX, tierTopY + shR * 0.62, shZ],
+          [shX, tierTopY + shR * 0.58, shZ],
           [0, (sh * 1.1) % Math.PI, 0],
-          0.010,
-        );
-        addLobbyPart(
-          urbanStaircaseGrp,
-          new THREE.SphereGeometry(shR * 0.76, 8, 6),
-          shrubColors[(tIdx + sh + 1) % shrubColors.length],
-          [shX + 0.14, tierTopY + shR * 0.48, shZ - sideSign * 0.12],
-          [0, 0, 0],
           0.008,
+        );
+        addToonRailingPart(
+          urbanStaircaseGrp,
+          new THREE.DodecahedronGeometry(shR * 0.74, 1),
+          shrubColors[(tIdx + sh + 1) % shrubColors.length],
+          [shX + 0.12, tierTopY + shR * 0.44, planterZ],
+          [0, 0, 0],
+          0.007,
         );
       }
     }
 
-    // H. Outer Brushed Steel & Tempered Glass Balustrade ("Brush Steel & Glass Handrails / Glass & Steel Balustrade")
-    //    Mounted along the outer edge of the stepped planters (lz = ±9.90) + Top Plaza Landing Return Wing
-    const outerRailZ = sideSign * 9.90;
+    // I. Inner Planter Edge Continuous Mitred Brushed-Steel Handrail (along inner wall of stepped planters at lz = ±8.46)
     const innerPlanterZ = sideSign * 8.46;
-
-    // Transverse glass return framing the top of the stepped planter at Plaza Level (lx = 5.20, lz in [8.46 .. 9.90])
-    addLobbyPart(
+    const innerRailProfile: [number, number][] = [
+      [5.25, 3.40],
+      [8.70, 2.24],
+      [10.10, 2.24],
+      [13.60, 1.02],
+    ];
+    addToonRailingPart(
       urbanStaircaseGrp,
-      new THREE.BoxGeometry(0.08, 0.84, 1.48),
-      COL_STAIR_GLASS,
-      [5.20, 2.98, sideSign * 9.18],
-      [0, 0, 0],
-      0.008,
-      lobbyWindowTex,
-    );
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(0.14, 0.07, 1.54),
-      COL_STAIR_STEEL,
-      [5.20, 3.43, sideSign * 9.18],
+      createVerticalMitredRailGeometry(innerRailProfile, 0.065, 0.08),
+      '#c4cdd6',
+      [0, 0, innerPlanterZ],
       [0, 0, 0],
       0.008,
     );
-
-    // Sloped Upper-Flight Glass & Steel Balustrade (lx = 5.20 -> 8.70, pitch = -0.325 rad)
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(3.68, 0.78, 0.08),
-      COL_STAIR_GLASS,
-      [6.95, 2.52, outerRailZ],
-      [0, 0, -0.325],
-      0.008,
-      lobbyWindowTex,
-    );
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(3.74, 0.07, 0.14),
-      COL_STAIR_STEEL,
-      [6.95, 2.94, outerRailZ],
-      [0, 0, -0.325],
-      0.008,
-    );
-
-    // Horizontal Mid-Landing Glass & Steel Balustrade (lx = 8.70 -> 10.10)
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(1.44, 0.78, 0.08),
-      COL_STAIR_GLASS,
-      [9.40, 1.88, outerRailZ],
-      [0, 0, 0],
-      0.008,
-      lobbyWindowTex,
-    );
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(1.50, 0.07, 0.14),
-      COL_STAIR_STEEL,
-      [9.40, 2.30, outerRailZ],
-      [0, 0, 0],
-      0.008,
-    );
-
-    // Sloped Lower-Flight Glass & Steel Balustrade (lx = 10.10 -> 13.65, pitch = -0.340 rad)
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(3.74, 0.78, 0.08),
-      COL_STAIR_GLASS,
-      [11.88, 1.24, outerRailZ],
-      [0, 0, -0.340],
-      0.008,
-      lobbyWindowTex,
-    );
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(3.80, 0.07, 0.14),
-      COL_STAIR_STEEL,
-      [11.88, 1.66, outerRailZ],
-      [0, 0, -0.340],
-      0.008,
-    );
-
-    // Vertical Brushed Steel Stanchion Posts along Outer Glass Balustrade
-    for (const [postX, postBaseY, postH] of [
-      [5.20, 2.50, 0.96],
-      [7.00, 1.96, 0.96],
-      [8.70, 1.38, 0.96],
-      [10.10, 1.38, 0.96],
-      [11.85, 0.78, 0.94],
-      [13.64, 0.78, 0.42],
+    for (const [ipX, ipBaseY, ipTopY] of [
+      [5.28, 2.18, 3.40],
+      [7.00, 1.66, 2.81],
+      [8.70, 1.18, 2.24],
+      [10.10, 1.18, 2.24],
+      [11.85, 0.64, 1.63],
+      [13.58, 0.08, 1.02],
     ] as [number, number, number][]) {
-      addLobbyPart(
+      const ipH = ipTopY - ipBaseY;
+      addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(0.11, postH, 0.11),
-        COL_STAIR_POST,
-        [postX, postBaseY + postH * 0.5, outerRailZ],
+        new THREE.BoxGeometry(0.07, ipH, 0.07),
+        '#38424d',
+        [ipX, ipBaseY + ipH * 0.5, innerPlanterZ],
         [0, 0, 0],
-        0.006,
-      );
-    }
-
-    // I. Inner Planter Edge Brushed Steel Handrail (along inner wall of stepped planters at lz = ±8.46)
-    //    Follows Upper Flight slope -> Mid-Landing horizontal -> Lower Flight slope
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(3.72, 0.055, 0.07),
-      COL_STAIR_STEEL,
-      [6.95, 2.84, innerPlanterZ],
-      [0, 0, -0.325],
-      0.006,
-    );
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(1.44, 0.055, 0.07),
-      COL_STAIR_STEEL,
-      [9.40, 2.24, innerPlanterZ],
-      [0, 0, 0],
-      0.006,
-    );
-    addLobbyPart(
-      urbanStaircaseGrp,
-      new THREE.BoxGeometry(3.76, 0.055, 0.07),
-      COL_STAIR_STEEL,
-      [11.88, 1.60, innerPlanterZ],
-      [0, 0, -0.340],
-      0.006,
-    );
-    for (const [ipX, ipBaseY] of [
-      [5.24, 2.50],
-      [7.00, 1.92],
-      [8.70, 1.32],
-      [10.10, 1.32],
-      [11.85, 0.72],
-      [13.60, 0.08],
-    ] as [number, number][]) {
-      addLobbyPart(
-        urbanStaircaseGrp,
-        new THREE.BoxGeometry(0.06, 0.92, 0.06),
-        COL_STAIR_POST,
-        [ipX, ipBaseY + 0.46, innerPlanterZ],
-        [0, 0, 0],
-        0.005,
+        0.008,
       );
     }
   }
 
-  // J. Twin Central Brushed-Steel Handrail Divider ("Central Handrail Divider" at lz = 0.0)
-  //    Stepped Granite Spine Curb + Twin Parallel Brushed Steel Railings with Top & Mid Bars
-  addLobbyPart(
+  // J. Twin Central Continuous Mitred Brushed-Steel Handrail Divider ("Central Handrail Divider" at lz = 0.0)
+  const centerSpineProfile: [number, number][] = [
+    [5.20, 2.52],
+    [8.70, 1.36],
+    [10.10, 1.36],
+    [13.65, 0.14],
+  ];
+  addToonRailingPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(3.72, 0.18, 0.34),
-    '#cfccc4',
-    [6.95, 1.96, 0.0],
-    [0, 0, -0.325],
-    0.008,
-    lobbyConcreteTex,
-  );
-  addLobbyPart(
-    urbanStaircaseGrp,
-    new THREE.BoxGeometry(1.48, 0.16, 0.34),
-    '#cfccc4',
-    [9.40, 1.36, 0.0],
+    createVerticalMitredRailGeometry(centerSpineProfile, 0.18, 0.34),
+    '#d6d2c8',
+    [0, 0, 0.0],
     [0, 0, 0],
-    0.008,
-    lobbyConcreteTex,
+    0.010,
   );
-  addLobbyPart(
-    urbanStaircaseGrp,
-    new THREE.BoxGeometry(3.76, 0.18, 0.34),
-    '#cfccc4',
-    [11.88, 0.74, 0.0],
-    [0, 0, -0.340],
-    0.008,
-    lobbyConcreteTex,
-  );
+  const centerTopRailProfile: [number, number][] = [
+    [5.18, 3.42],
+    [8.70, 2.26],
+    [10.10, 2.26],
+    [13.65, 1.02],
+  ];
+  const centerMidRailProfile: [number, number][] = [
+    [5.18, 3.06],
+    [8.70, 1.90],
+    [10.10, 1.90],
+    [13.65, 0.66],
+  ];
   for (const railSide of [-0.10, 0.10]) {
-    // Upper Flight Top Rail & Mid Rail
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.74, 0.055, 0.055), COL_STAIR_STEEL, [6.95, 2.86, railSide], [0, 0, -0.325], 0.006);
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.74, 0.035, 0.045), COL_STAIR_STEEL, [6.95, 2.50, railSide], [0, 0, -0.325], 0.005);
-    // Mid-Landing Horizontal Top Rail & Mid Rail
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.46, 0.055, 0.055), COL_STAIR_STEEL, [9.40, 2.26, railSide], [0, 0, 0], 0.006);
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(1.46, 0.035, 0.045), COL_STAIR_STEEL, [9.40, 1.90, railSide], [0, 0, 0], 0.005);
-    // Lower Flight Top Rail & Mid Rail
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.78, 0.055, 0.055), COL_STAIR_STEEL, [11.88, 1.62, railSide], [0, 0, -0.340], 0.006);
-    addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(3.78, 0.035, 0.045), COL_STAIR_STEEL, [11.88, 1.26, railSide], [0, 0, -0.340], 0.005);
+    addToonRailingPart(
+      urbanStaircaseGrp,
+      createVerticalMitredRailGeometry(centerTopRailProfile, 0.06, 0.06),
+      '#c4cdd6',
+      [0, 0, railSide],
+      [0, 0, 0],
+      0.008,
+    );
+    addToonRailingPart(
+      urbanStaircaseGrp,
+      createVerticalMitredRailGeometry(centerMidRailProfile, 0.04, 0.05),
+      '#9aa6b2',
+      [0, 0, railSide],
+      [0, 0, 0],
+      0.007,
+    );
 
-    for (const [cpX, cpBaseY] of [
-      [5.18, 2.50],
-      [6.95, 1.92],
-      [8.70, 1.32],
-      [10.10, 1.32],
-      [11.88, 0.72],
-      [13.65, 0.08],
-    ] as [number, number][]) {
-      addLobbyPart(
+    for (const [cpX, cpBaseY, cpTopY] of [
+      [5.20, 2.50, 3.42],
+      [6.95, 1.92, 2.84],
+      [8.70, 1.34, 2.26],
+      [10.10, 1.34, 2.26],
+      [11.88, 0.72, 1.64],
+      [13.62, 0.10, 1.02],
+    ] as [number, number, number][]) {
+      const cpH = cpTopY - cpBaseY;
+      addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(0.055, 0.94, 0.055),
-        COL_STAIR_POST,
-        [cpX, cpBaseY + 0.47, railSide],
+        new THREE.BoxGeometry(0.06, cpH, 0.06),
+        '#38424d',
+        [cpX, cpBaseY + cpH * 0.5, railSide],
         [0, 0, 0],
-        0.005,
+        0.008,
       );
     }
   }
   // Top & Bottom Looped End Returns of Central Handrail Divider
-  addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.18, 0.055, 0.26), COL_STAIR_STEEL, [5.14, 3.44, 0.0], [0, 0, 0], 0.006);
-  addLobbyPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.18, 0.055, 0.26), COL_STAIR_STEEL, [13.70, 1.02, 0.0], [0, 0, 0], 0.006);
+  addToonRailingPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.18, 0.06, 0.26), '#c4cdd6', [5.16, 3.42, 0.0], [0, 0, 0], 0.008);
+  addToonRailingPart(urbanStaircaseGrp, new THREE.BoxGeometry(0.18, 0.06, 0.26), '#c4cdd6', [13.68, 1.02, 0.0], [0, 0, 0], 0.008);
 
   // Glass-and-Timber Waterfront Balustrade around the Plaza Perimeter (+2.50m Plaza Level)
-  // 1) East-North Upper Promenade Edge (lx = +13.65, lz in [-37.65 .. -10.00])
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 27.7), '#cbc8c0', [13.65, 2.70, -23.85], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 27.3), '#88cce6', [13.65, 3.30, -23.85], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 27.6), '#c48a52', [13.65, 3.76, -23.85], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-  for (let pz = -36.5; pz <= -10.1; pz += 4.4) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 3.28, pz], [0, 0, 0], 0.008);
-  }
-  // 2) East-South Upper Promenade Edge (lx = +13.65, lz in [+10.00 .. +37.65])
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 27.7), '#cbc8c0', [13.65, 2.70, 23.85], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 27.3), '#88cce6', [13.65, 3.30, 23.85], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 27.6), '#c48a52', [13.65, 3.76, 23.85], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-  for (let pz = 10.1; pz <= 36.5; pz += 4.4) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [13.65, 3.28, pz], [0, 0, 0], 0.008);
-  }
-  // 2B) Return Balustrades framing the North (lz = -10.00) and South (lz = +10.00) Upper Plaza Wings along lx in [+5.25 .. +13.65]
-  for (const wingZ of [-10.00, 10.00]) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.40, 0.34, 0.46), '#cbc8c0', [9.45, 2.70, wingZ], [0, 0, 0], 0.012, lobbyConcreteTex, 2.4);
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.20, 0.84, 0.10), '#88cce6', [9.45, 3.30, wingZ], [0, 0, 0], 0.008, lobbyWindowTex, 3.2);
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.40, 0.10, 0.22), '#c48a52', [9.45, 3.76, wingZ], [0, 0, 0], 0.010, lobbyTimberTex, 2.2);
-    for (const px of [5.35, 9.45, 13.55]) {
-      addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [px, 3.28, wingZ], [0, 0, 0], 0.008);
+  // Built with Solution 3: Continuous 45-Degree Mitred Extruded Geometry (zero internal end-caps,
+  // zero corner Z-fighting, and continuous Toon Outlines wrapping smoothly around all 6 corners)
+  const COL_PLAZA_CURB = '#d8d4ca';
+  const COL_PLAZA_GLASS = '#98dcf5';
+  const COL_PLAZA_TIMBER_RAIL = '#d89148';
+  const COL_PLAZA_POST = '#38424d';
+  const COL_PLAZA_POST_CAP = '#4f5b69';
+
+  const createMitredPolylineStripGeometry = (
+    pts: [number, number][],
+    width: number,
+    height: number,
+    closedLoop = false,
+  ): THREE.BufferGeometry => {
+    const n = pts.length;
+    const halfW = width * 0.5;
+    const y0 = -height * 0.5;
+    const y1 = height * 0.5;
+
+    const segCount = closedLoop ? n : n - 1;
+    const segRights: [number, number][] = [];
+    for (let i = 0; i < segCount; i++) {
+      const pA = pts[i];
+      const pB = pts[(i + 1) % n];
+      const dx = pB[0] - pA[0];
+      const dz = pB[1] - pA[1];
+      const len = Math.hypot(dx, dz) || 1;
+      const tx = dx / len;
+      const tz = dz / len;
+      segRights.push([-tz, tx]);
     }
-  }
-  // 3) West Promenade Edge (lx = -13.65)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.54, 0.34, 75.6), '#cbc8c0', [-13.65, 2.70, 0.0], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.10, 0.84, 74.8), '#88cce6', [-13.65, 3.30, 0.0], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.10, 75.4), '#c48a52', [-13.65, 3.76, 0.0], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-  for (let pz = -36.0; pz <= 36.0; pz += 4.5) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [-13.65, 3.28, pz], [0, 0, 0], 0.008);
-  }
-  // 4) North & South Promenade Edges (lz = ±37.65)
-  for (const zEdge of [-37.65, 37.65]) {
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.6, 0.34, 0.54), '#cbc8c0', [0.0, 2.70, zEdge], [0, 0, 0], 0.014, lobbyConcreteTex, 2.8);
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(26.8, 0.84, 0.10), '#88cce6', [0.0, 3.30, zEdge], [0, 0, 0], 0.008, lobbyWindowTex, 4.0);
-    addLobbyPart(westPlantGroup, new THREE.BoxGeometry(27.4, 0.10, 0.24), '#c48a52', [0.0, 3.76, zEdge], [0, 0, 0], 0.010, lobbyTimberTex, 2.4);
-    for (let px = -12.0; px <= 12.0; px += 4.8) {
-      addLobbyPart(westPlantGroup, new THREE.BoxGeometry(0.16, 0.92, 0.16), '#2d3238', [px, 3.28, zEdge], [0, 0, 0], 0.008);
+
+    const leftPts: [number, number][] = [];
+    const rightPts: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      let mx = 0;
+      let mz = 0;
+      if (!closedLoop && i === 0) {
+        mx = segRights[0][0] * halfW;
+        mz = segRights[0][1] * halfW;
+      } else if (!closedLoop && i === n - 1) {
+        mx = segRights[n - 2][0] * halfW;
+        mz = segRights[n - 2][1] * halfW;
+      } else {
+        const rPrev = segRights[(i - 1 + segCount) % segCount];
+        const rNext = segRights[i % segCount];
+        const sx = rPrev[0] + rNext[0];
+        const sz = rPrev[1] + rNext[1];
+        const sLen = Math.hypot(sx, sz);
+        if (sLen > 1e-5) {
+          const ux = sx / sLen;
+          const uz = sz / sLen;
+          const dot = Math.max(0.25, ux * rPrev[0] + uz * rPrev[1]);
+          const miterLen = halfW / dot;
+          mx = ux * miterLen;
+          mz = uz * miterLen;
+        } else {
+          mx = rPrev[0] * halfW;
+          mz = rPrev[1] * halfW;
+        }
+      }
+      leftPts.push([pts[i][0] - mx, pts[i][1] - mz]);
+      rightPts.push([pts[i][0] + mx, pts[i][1] + mz]);
     }
+
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+
+    const pushQuad = (
+      p0: [number, number, number],
+      p1: [number, number, number],
+      p2: [number, number, number],
+      p3: [number, number, number],
+    ) => {
+      const ux = p1[0] - p0[0];
+      const uy = p1[1] - p0[1];
+      const uz = p1[2] - p0[2];
+      const vx = p2[0] - p0[0];
+      const vy = p2[1] - p0[1];
+      const vz = p2[2] - p0[2];
+      let nx = uy * vz - uz * vy;
+      let ny = uz * vx - ux * vz;
+      let nz = ux * vy - uy * vx;
+      const nLen = Math.hypot(nx, ny, nz) || 1;
+      nx /= nLen;
+      ny /= nLen;
+      nz /= nLen;
+
+      positions.push(
+        p0[0], p0[1], p0[2],
+        p1[0], p1[1], p1[2],
+        p2[0], p2[1], p2[2],
+        p0[0], p0[1], p0[2],
+        p2[0], p2[1], p2[2],
+        p3[0], p3[1], p3[2],
+      );
+      for (let k = 0; k < 6; k++) {
+        normals.push(nx, ny, nz);
+      }
+      uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+    };
+
+    for (let i = 0; i < segCount; i++) {
+      const nextIdx = (i + 1) % n;
+      const l0 = leftPts[i];
+      const r0 = rightPts[i];
+      const l1 = leftPts[nextIdx];
+      const r1 = rightPts[nextIdx];
+
+      const r0Top: [number, number, number] = [r0[0], y1, r0[1]];
+      const r1Top: [number, number, number] = [r1[0], y1, r1[1]];
+      const l1Top: [number, number, number] = [l1[0], y1, l1[1]];
+      const l0Top: [number, number, number] = [l0[0], y1, l0[1]];
+
+      const r0Bot: [number, number, number] = [r0[0], y0, r0[1]];
+      const r1Bot: [number, number, number] = [r1[0], y0, r1[1]];
+      const l1Bot: [number, number, number] = [l1[0], y0, l1[1]];
+      const l0Bot: [number, number, number] = [l0[0], y0, l0[1]];
+
+      // Top (+Y), Bottom (-Y), Right Wall (+R), Left Wall (-R)
+      pushQuad(r0Top, r1Top, l1Top, l0Top);
+      pushQuad(l0Bot, l1Bot, r1Bot, r0Bot);
+      pushQuad(r0Bot, r1Bot, r1Top, r0Top);
+      pushQuad(l1Bot, l0Bot, l0Top, l1Top);
+
+      if (!closedLoop && i === 0) {
+        pushQuad(l0Bot, r0Bot, r0Top, l0Top);
+      }
+      if (!closedLoop && i === segCount - 1) {
+        pushQuad(r1Bot, l1Bot, l1Top, r1Top);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    return geo;
+  };
+
+  // Single Continuous 10-Point Perimeter Path wrapping all 8 corners (including the staircase planter top returns at lx = 5.25, lz = ±8.46) with exact 45-degree miters
+  const plazaPerimeterPath: [number, number][] = [
+    [5.25, -8.46],
+    [5.25, -10.00],
+    [13.65, -10.00],
+    [13.65, -37.65],
+    [-13.65, -37.65],
+    [-13.65, 37.65],
+    [13.65, 37.65],
+    [13.65, 10.00],
+    [5.25, 10.00],
+    [5.25, 8.46],
+  ];
+
+  // 1) Continuous Mitred Concrete Base Curb (flush with y = +2.50m plaza deck -> top at y = +2.87m)
+  addToonRailingPart(
+    westPlantGroup,
+    createMitredPolylineStripGeometry(plazaPerimeterPath, 0.54, 0.37),
+    COL_PLAZA_CURB,
+    [0, 2.685, 0],
+    [0, 0, 0],
+    0.012,
+    false,
+    true,
+  );
+
+  // 2) Continuous Mitred Clear Glass Balustrade Panels
+  addToonRailingPart(
+    westPlantGroup,
+    createMitredPolylineStripGeometry(plazaPerimeterPath, 0.10, 0.84),
+    COL_PLAZA_GLASS,
+    [0, 3.30, 0],
+    [0, 0, 0],
+    0,
+    true,
+  );
+
+  // 3) Continuous Mitred Slatted Timber Top Handrail
+  addToonRailingPart(
+    westPlantGroup,
+    createMitredPolylineStripGeometry(plazaPerimeterPath, 0.26, 0.11),
+    COL_PLAZA_TIMBER_RAIL,
+    [0, 3.76, 0],
+    [0, 0, 0],
+    0.011,
+    false,
+    true,
+  );
+
+  // 4) Stanchion Posts & Base Caps along the Perimeter (including all 6 corner nodes + intermediate spans)
+  const addPlazaPerimeterPost = (px: number, pz: number) => {
+    addToonRailingPart(westPlantGroup, new THREE.BoxGeometry(0.18, 0.92, 0.18), COL_PLAZA_POST, [px, 3.28, pz], [0, 0, 0], 0.010);
+    addToonRailingPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.06, 0.24), COL_PLAZA_POST_CAP, [px, 2.89, pz], [0, 0, 0], 0.008);
+  };
+  for (const [cx, cz] of plazaPerimeterPath) {
+    addPlazaPerimeterPost(cx, cz);
+  }
+  addPlazaPerimeterPost(9.45, -10.00);
+  addPlazaPerimeterPost(9.45, 10.00);
+  for (let pz = -33.2; pz <= -14.0; pz += 4.6) {
+    addPlazaPerimeterPost(13.65, pz);
+    addPlazaPerimeterPost(13.65, -pz);
+  }
+  for (let pz = -33.0; pz <= 33.0; pz += 4.4) {
+    addPlazaPerimeterPost(-13.65, pz);
+  }
+  for (let px = -9.6; px <= 9.6; px += 4.8) {
+    addPlazaPerimeterPost(px, -37.65);
+    addPlazaPerimeterPost(px, 37.65);
   }
 
   // -------------------------------------------------------------------------
@@ -13131,7 +13653,8 @@ export function createCurvedPlanetEnvironment(
   //    - Wide Flamed Granite Coping Stone Rim (7.6m x 13.8m)
   // -------------------------------------------------------------------------
   // 2. ARCHITECTURAL MODEL SHEET: CIVIC PLAZA MULTI-TIER CASCADE & DYNAMIC FOUNTAIN
-  //    - Moved to the West/Left Plaza bay at local (-6.8, 2.50, -0.8) (world x = -97.3, z = -0.8)
+  //    - Placed in the center of the South Plaza Courtyard between the West-South, East-South & South Planter Benches
+  //      at local (0.1, 2.50, 24.8) (world x = -90.4, z = 24.8) in Landscape orientation (rotation.y = Math.PI / 2)
   //    - Perimeter Linear Overflow Drain / Gutter Grate + Granite Paver Apron
   //    - Dark Charcoal-Basalt Granite Coping / Seating Ledger with 4 Cantilevered Slatted Teak Benches
   //    - Lower Reflecting Pool with 6 Submerged LED Luminaires & Real-Time Expanding Concentric Water Ripples
@@ -13140,7 +13663,8 @@ export function createCurvedPlanetEnvironment(
   // -------------------------------------------------------------------------
   const mirrorPoolGrp = new THREE.Group();
   mirrorPoolGrp.name = 'LobbySunkenMirrorPoolAndJets';
-  mirrorPoolGrp.position.set(-6.8, 2.50, -0.8);
+  mirrorPoolGrp.position.set(0.1, 2.50, 24.8);
+  mirrorPoolGrp.rotation.y = Math.PI / 2;
   westPlantGroup.add(mirrorPoolGrp);
 
   const COL_FOUNTAIN_APRON = '#dcd9d0';
@@ -13534,126 +14058,783 @@ export function createCurvedPlanetEnvironment(
   }
 
   // -------------------------------------------------------------------------
-  // 3. SHEET 2: ARCHITECTURAL MODEL SHEET — CONTEMPORARY STEEL & TIMBER PERGOLA
-  //    (Paviliun Kanopi Baja & Kisi Kayu Peneduh)
-  //    Reference: media_1794077939922_837da94e.jpg
-  //    Placed at local (-7.8, 1.42, 12.2), facing East (+X) toward the Sunken Mirror Pool,
-  //    scaled 1.48x for realistic character proportions (~6.66m W x 5.92m D x 4.55m H).
+  // 3. SHEET 2: 4-VIEW ARCHITECTURAL MODEL SHEET — BOTANICAL GLASSHOUSE CONSERVATORY
+  //    Reference: screen_0e3a3155.png (Front Elevation, Side Elevation, Top Plan & 3/4 Isometric View)
+  //    Placed along the West Plaza border at local (-9.90, 2.50, 12.2), facing East (+X) toward the Central Plaza,
+  //    enlarged to 1.85x scale (~8.1m W x 5.8m D x 5.8m H) with wide-open double doors so players can walk inside!
   // -------------------------------------------------------------------------
-  const pergolaGroup = new THREE.Group();
-  pergolaGroup.name = 'LobbyPergolaWaterCascadePavilion';
-  pergolaGroup.position.set(-7.8, 2.50, 12.2);
-  pergolaGroup.rotation.y = Math.PI / 2;
-  pergolaGroup.scale.setScalar(1.48);
-  westPlantGroup.add(pergolaGroup);
+  const conservatoryGrp = new THREE.Group();
+  conservatoryGrp.name = 'LobbyBotanicalGlasshouseConservatory';
+  conservatoryGrp.position.set(-9.90, 2.50, 12.2);
+  conservatoryGrp.rotation.y = Math.PI / 2;
+  conservatoryGrp.scale.setScalar(1.85);
+  westPlantGroup.add(conservatoryGrp);
 
   const COL_PERG_STEEL = '#2b3036';
-  const COL_PERG_BASEPLATE = '#4a5058';
   const COL_PERG_TIMBER = '#c28a54';
-  const COL_PERG_TIMBER_DARK = '#8c5d30';
-  const COL_PERG_LANTERN = '#ffefc2';
 
-  // 3A. Granite Paver Patio Plinth ("Granite Paver Patio" — 4.8m W x 4.2m D in local pergola space, +0.01m above Plaza deck)
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.86, 0.09, 4.26), '#dcd9d0', [0, 0.055, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.0);
+  const COL_GH_FRAME = '#786346'; // Warm Victorian olive-bronze / weathered brass-timber frame
+  const COL_GH_FRAME_DARK = '#54442f';
+  const COL_GH_FRAME_LIGHT = '#967e5c';
+  const COL_GH_BRICK = '#b8684e'; // Warm terracotta red-brick base knee-wall
+  const COL_GH_STONE = '#d6cfc2'; // Limestone base apron & mitred coping cap
+  const COL_GH_PLANTER = '#a87648'; // Interior wooden planter boxes & tiered plant benches
+  const COL_GH_POT = '#c86d51'; // Terracotta clay flower pots
 
-  // 3B. Sleek Dark Charcoal Steel Posts & Foundation Base Plates with Anchor Bolts
-  //     Rear posts at z = -1.85 (x = -2.18, 0.0, +2.18), Left-front post at (-2.18, +0.45), Right-mid post at (+2.18, +0.45)
-  const pergPostCoords: [number, number][] = [
-    [-2.18, -1.85],
-    [0.0, -1.85],
-    [2.18, -1.85],
-    [-2.18, 0.45],
-    [2.18, 0.45],
-  ];
-  for (const [px, pz] of pergPostCoords) {
-    // Foundation Base Plate & 4 Corner Anchor Bolts ("Foundation Base Plates")
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.30, 0.03, 0.30), COL_PERG_BASEPLATE, [px, 0.115, pz], [0, 0, 0], 0.006);
-    for (const [bx, bz] of [
-      [-0.10, -0.10],
-      [0.10, -0.10],
-      [-0.10, 0.10],
-      [0.10, 0.10],
-    ] as [number, number][]) {
-      addLobbyPart(pergolaGroup, new THREE.CylinderGeometry(0.016, 0.016, 0.03, 6), '#1a1d21', [px + bx, 0.14, pz + bz], [0, 0, 0], 0);
+  // Helper: add a Blitz Toon/Cel-Shaded part with BackSide Toon Outline to the Conservatory
+  const addGhToonPart = (
+    parent: THREE.Object3D,
+    geo: THREE.BufferGeometry,
+    colorHex: string,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+    toonStrokeWidth = 0.009,
+    tex?: THREE.Texture,
+    bumpScale = 1.4,
+    castShad = true,
+  ) => {
+    const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
+    m.castShadow = !isSoftwareGl && castShad;
+    if (toonStrokeWidth > 0) {
+      const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
+      if (st) m.add(st);
     }
-    // Vertical Sleek Steel Column (3.0m height)
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.16, 2.96, 0.16), COL_PERG_STEEL, [px, 1.58, pz], [0, 0, 0], 0.012, lobbySteelRoofTex);
+    return m;
+  };
+
+  // Helper: add a translucent Victorian Conservatory Glass Pane
+  const addGhGlassPane = (
+    parent: THREE.Object3D,
+    w: number,
+    h: number,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+  ) => {
+    const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), sharedLobbyClearGlassMat);
+    gMesh.position.set(pos[0], pos[1], pos[2]);
+    gMesh.rotation.set(rot[0], rot[1], rot[2]);
+    gMesh.castShadow = false;
+    gMesh.receiveShadow = false;
+    parent.add(gMesh);
+    return gMesh;
+  };
+
+  // Procedural Warm Terracotta Brick Texture for the Conservatory Base Knee-Wall
+  const ghBrickTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#dcd3c4';
+      ctx.fillRect(0, 0, 256, 256);
+      const rows = 8;
+      const cols = 4;
+      const rH = 256 / rows;
+      const cW = 256 / cols;
+      const shades = ['#b8684e', '#c47358', '#a65b42', '#bd6d52'];
+      for (let r = 0; r < rows; r++) {
+        const xOff = (r % 2) * (cW * 0.5);
+        for (let col = -1; col <= cols; col++) {
+          ctx.fillStyle = shades[(r * 3 + col + 4) % shades.length];
+          ctx.fillRect(col * cW + xOff + 3, r * rH + 3, cW - 6, rH - 6);
+        }
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+
+  // 3A. Stepped Stone Flagstone Base Apron & Warm Limestone Interior Floor (3/4 Isometric & Top Plan View)
+  //     Outer stone apron: 4.84m W x 3.56m D, with Continuous 45° Mitred Stone Border Curb (flush walkable height)
+  addGhToonPart(
+    conservatoryGrp,
+    new THREE.BoxGeometry(4.84, 0.02, 3.56),
+    COL_GH_STONE,
+    [0, 0.01, 0],
+    [0, 0, 0],
+    0.008,
+    lobbyGranitePaverTex,
+    1.6,
+    false,
+  );
+  const ghOuterApronPath: [number, number][] = [
+    [-2.42, -1.78],
+    [2.42, -1.78],
+    [2.42, 1.78],
+    [-2.42, 1.78],
+  ];
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghOuterApronPath, 0.14, 0.032, true),
+    '#c6beb0',
+    [0, 0.016, 0],
+    [0, 0, 0],
+    0.007,
+    lobbyConcreteTex,
+    1.4,
+    false,
+  );
+  // Warm interior sandstone tile floor inside the glasshouse (4.36m W x 3.08m D)
+  addGhToonPart(
+    conservatoryGrp,
+    new THREE.BoxGeometry(4.36, 0.012, 3.08),
+    '#e8dec9',
+    [0, 0.022, 0],
+    [0, 0, 0],
+    0,
+    lobbyGranitePaverTex,
+    1.1,
+    false,
+  );
+
+  // 3B. Continuous 45° Mitred Terracotta Brick Base Knee-Wall & Stone Sill Coping (y = 0.028m .. 0.48m)
+  //     Wraps continuously around East-North -> Rear (-Z) -> West-South -> Front (+Z), leaving a 1.28m
+  //     open entrance doorway at x in [-0.64 .. +0.64] on the Front (+Z = +1.56) façade!
+  const ghBrickWallPath: [number, number][] = [
+    [0.64, 1.56],
+    [2.20, 1.56],
+    [2.20, -1.56],
+    [-2.20, -1.56],
+    [-2.20, 1.56],
+    [-0.64, 1.56],
+  ];
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghBrickWallPath, 0.18, 0.39, false),
+    COL_GH_BRICK,
+    [0, 0.225, 0],
+    [0, 0, 0],
+    0.010,
+    ghBrickTex,
+    1.2,
+  );
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghBrickWallPath, 0.22, 0.06, false),
+    COL_GH_STONE,
+    [0, 0.45, 0],
+    [0, 0, 0],
+    0.009,
+    lobbyConcreteTex,
+    1.2,
+  );
+
+  // 3C. Victorian Olive-Bronze Vertical Mullion Columns, Continuous Mitred Eaves Cornice & Arched Window Bays
+  //     - Front & Rear Walls (z = ±1.56): 5 Bays -> 6 Mullions at x = [-2.20, -1.42, -0.64, +0.64, +1.42, +2.20]
+  //     - Left & Right Side Walls (x = ±2.20): 4 Bays -> 5 Mullions at z = [-1.56, -0.78, 0.00, +0.78, +1.56]
+  const ghWallTopY = 1.92;
+  const ghSillY = 0.48;
+  const ghColH = ghWallTopY - ghSillY;
+  const ghColMidY = (ghWallTopY + ghSillY) * 0.5;
+  const frontRearX = [-2.20, -1.42, -0.64, 0.64, 1.42, 2.20];
+
+  for (const mx of frontRearX) {
+    for (const mz of [-1.56, 1.56]) {
+      const isDoorPillar = mz > 0 && Math.abs( Math.abs(mx) - 0.64 ) < 0.05;
+      const colW = isDoorPillar ? 0.10 : 0.075;
+      const h = isDoorPillar ? ghWallTopY - 0.08 : ghColH;
+      const cy = isDoorPillar ? (ghWallTopY + 0.08) * 0.5 : ghColMidY;
+      addGhToonPart(
+        conservatoryGrp,
+        new THREE.BoxGeometry(colW, h, colW),
+        COL_GH_FRAME,
+        [mx, cy, mz],
+        [0, 0, 0],
+        0.008,
+      );
+    }
+  }
+  for (const mz of [-0.78, 0.0, 0.78]) {
+    for (const mx of [-2.20, 2.20]) {
+      addGhToonPart(
+        conservatoryGrp,
+        new THREE.BoxGeometry(0.075, ghColH, 0.075),
+        COL_GH_FRAME,
+        [mx, ghColMidY, mz],
+        [0, 0, 0],
+        0.008,
+      );
+    }
+  }
+  // Rear center mullion at x = 0.0, z = -1.56
+  addGhToonPart(
+    conservatoryGrp,
+    new THREE.BoxGeometry(0.075, ghColH, 0.075),
+    COL_GH_FRAME,
+    [0, ghColMidY, -1.56],
+    [0, 0, 0],
+    0.008,
+  );
+
+  // Continuous 45° Mitred Eaves Cornice Beam around the top of the vertical walls (y = 1.92m)
+  const ghEavesRectPath: [number, number][] = [
+    [-2.22, -1.58],
+    [2.22, -1.58],
+    [2.22, 1.58],
+    [-2.22, 1.58],
+  ];
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghEavesRectPath, 0.12, 0.09, true),
+    COL_GH_FRAME,
+    [0, ghWallTopY, 0],
+    [0, 0, 0],
+    0.009,
+  );
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghEavesRectPath, 0.15, 0.04, true),
+    COL_GH_FRAME_DARK,
+    [0, ghWallTopY + 0.055, 0],
+    [0, 0, 0],
+    0.007,
+  );
+
+  // Helper: build an arched window bay header (matching Front & Side Elevation Views) + clear glass pane
+  const buildArchedWindowBay = (
+    cx: number,
+    cz: number,
+    spanW: number,
+    alongZ: boolean,
+  ) => {
+    const bGrp = new THREE.Group();
+    bGrp.position.set(cx, 0, cz);
+    if (alongZ) bGrp.rotation.y = Math.PI / 2;
+    conservatoryGrp.add(bGrp);
+
+    // Clear vertical glass pane (from sill y = 0.48m to eaves y = 1.90m)
+    addGhGlassPane(bGrp, spanW - 0.04, ghColH - 0.04, [0, ghColMidY, 0], [0, 0, 0]);
+
+    // Segmental Victorian Arch Curve inside the top of the bay (y = 1.62m .. 1.88m)
+    const archPts: THREE.Vector3[] = [];
+    const halfSpan = (spanW - 0.06) * 0.5;
+    for (let s = 0; s <= 8; s++) {
+      const t = s / 8;
+      const ang = Math.PI * (1 - t);
+      const ax = Math.cos(ang) * halfSpan;
+      const ay = 1.62 + Math.sin(ang) * 0.25;
+      archPts.push(new THREE.Vector3(ax, ay, 0));
+    }
+    const archCurve = new THREE.CatmullRomCurve3(archPts);
+    const archGeo = new THREE.TubeGeometry(archCurve, 8, 0.024, 6, false);
+    addGhToonPart(bGrp, archGeo, COL_GH_FRAME_LIGHT, [0, 0, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+  };
+
+  // Front 4 Arched Window Bays (2 left of entrance, 2 right of entrance)
+  for (const bx of [-1.81, -1.03, 1.03, 1.81]) {
+    buildArchedWindowBay(bx, 1.56, 0.78, false);
+    buildArchedWindowBay(bx, -1.56, 0.78, false);
+  }
+  // Rear 2 Center Arched Window Bays
+  buildArchedWindowBay(-0.32, -1.56, 0.64, false);
+  buildArchedWindowBay(0.32, -1.56, 0.64, false);
+  // Left & Right Side 4 Arched Window Bays (z = -1.17, -0.39, +0.39, +1.17)
+  for (const bz of [-1.17, -0.39, 0.39, 1.17]) {
+    buildArchedWindowBay(-2.20, bz, 0.78, true);
+    buildArchedWindowBay(2.20, bz, 0.78, true);
   }
 
-  // 3C. Full-Height Slatted Horizontal Timber Screen on Rear Wall (-Z) & Left Return Wall (-X)
-  //     ("Back of Slatted Timber Screen" & "Detailed Timber Texture")
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.24, 2.68, 0.08), COL_PERG_TIMBER, [0, 1.54, -1.85], [0, 0, 0], 0.012, lobbyTimberTex, 1.8);
-  for (let sy = 0.30; sy <= 2.78; sy += 0.14) {
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.26, 0.025, 0.10), COL_PERG_TIMBER_DARK, [0, sy, -1.85], [0, 0, 0], 0);
+  // 3D. Grand Front Center Double-Door Entrance & Semicircular Sunburst Fanlight Arch (Front Elevation View)
+  const entryFrontGrp = new THREE.Group();
+  entryFrontGrp.position.set(0, 0, 1.56);
+  conservatoryGrp.add(entryFrontGrp);
+
+  // Semicircular Fanlight Arch rising above the doorway (x in [-0.64 .. +0.64], center y = 1.92m, radius = 0.64m)
+  const fanOuterPts: THREE.Vector3[] = [];
+  const fanInnerPts: THREE.Vector3[] = [];
+  for (let s = 0; s <= 12; s++) {
+    const ang = (Math.PI * s) / 12;
+    fanOuterPts.push(new THREE.Vector3(Math.cos(ang) * 0.64, 1.92 + Math.sin(ang) * 0.64, 0));
+    fanInnerPts.push(new THREE.Vector3(Math.cos(ang) * 0.34, 1.92 + Math.sin(ang) * 0.34, 0));
   }
-  // Left Side Return Slatted Timber Screen (spanning z in [-1.85..+0.45] at x = -2.18)
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.08, 2.68, 2.22), COL_PERG_TIMBER, [-2.18, 1.54, -0.70], [0, 0, 0], 0.012, lobbyTimberTex, 1.8);
-  for (let sy = 0.30; sy <= 2.78; sy += 0.14) {
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.10, 0.025, 2.24), COL_PERG_TIMBER_DARK, [-2.18, sy, -0.70], [0, 0, 0], 0);
+  addGhToonPart(
+    entryFrontGrp,
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(fanOuterPts), 12, 0.048, 6, false),
+    COL_GH_FRAME,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.009,
+  );
+  addGhToonPart(
+    entryFrontGrp,
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(fanInnerPts), 10, 0.022, 6, false),
+    COL_GH_FRAME_LIGHT,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.006,
+    undefined,
+    1.0,
+    false,
+  );
+  // 5 Radial Sunburst Spokes inside the Semicircular Fanlight
+  for (const spokeAng of [0.22, 0.44, 0.66, 0.88]) {
+    const theta = Math.PI * spokeAng;
+    const mx = Math.cos(theta) * 0.48;
+    const my = 1.92 + Math.sin(theta) * 0.48;
+    addGhToonPart(
+      entryFrontGrp,
+      new THREE.CylinderGeometry(0.014, 0.014, 0.30, 5),
+      COL_GH_FRAME_LIGHT,
+      [mx, my, 0],
+      [0, 0, theta - Math.PI / 2],
+      0.005,
+      undefined,
+      1.0,
+      false,
+    );
+  }
+  // Semicircular Fanlight Glass Disc
+  const fanGlassGeo = new THREE.CircleGeometry(0.62, 14, 0, Math.PI);
+  const fanGlassMesh = new THREE.Mesh(fanGlassGeo, sharedLobbyClearGlassMat);
+  fanGlassMesh.position.set(0, 1.92, 0);
+  entryFrontGrp.add(fanGlassMesh);
+
+  // Double Glass-Paneled Wooden Conservatory Doors (swung wide open outward as in Top Plan & Side Views so players can walk right inside!)
+  for (const side of [-1, 1]) {
+    const doorPivot = new THREE.Group();
+    doorPivot.position.set(side * 0.60, 0.028, 0);
+    doorPivot.rotation.y = side * 1.38; // Swung wide open outward (~79°) for unobstructed entry
+    entryFrontGrp.add(doorPivot);
+
+    const leafX = -side * 0.29;
+    // Outer wooden stiles & rails
+    addGhToonPart(doorPivot, new THREE.BoxGeometry(0.06, 1.80, 0.05), COL_GH_FRAME, [leafX - side * 0.26, 0.90, 0], [0, 0, 0], 0.007);
+    addGhToonPart(doorPivot, new THREE.BoxGeometry(0.06, 1.80, 0.05), COL_GH_FRAME, [leafX + side * 0.26, 0.90, 0], [0, 0, 0], 0.007);
+    addGhToonPart(doorPivot, new THREE.BoxGeometry(0.58, 0.07, 0.05), COL_GH_FRAME, [leafX, 1.765, 0], [0, 0, 0], 0.007);
+    // Lower recessed solid wood kick panel (y = 0.0m .. 0.44m)
+    addGhToonPart(doorPivot, new THREE.BoxGeometry(0.56, 0.42, 0.045), COL_GH_FRAME, [leafX, 0.21, 0], [0, 0, 0], 0.007);
+    addGhToonPart(doorPivot, new THREE.BoxGeometry(0.42, 0.26, 0.055), COL_GH_FRAME_LIGHT, [leafX, 0.21, 0], [0, 0, 0], 0.005);
+    // Brass vertical door handle
+    addGhToonPart(doorPivot, new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6), '#d4af37', [leafX - side * 0.21, 0.88, 0.035], [0, 0, 0], 0.004, undefined, 1.0, false);
+    // Upper clear door glass pane
+    addGhGlassPane(doorPivot, 0.46, 1.28, [leafX, 1.08, 0], [0, 0, 0]);
   }
 
-  // 3D. Rear Diagonal Steel X-Bracing ("Rear Steel Bracing" in Rear Elevation View)
-  //     Two crossed diagonal steel flat bars spanning across the back of the slatted timber screen (4.36m W x 2.76m H -> diag 5.16m, angle ±0.564 rad)
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(5.12, 0.07, 0.06), COL_PERG_STEEL, [0, 1.56, -1.93], [0, 0, 0.564], 0.008);
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(5.12, 0.07, 0.06), COL_PERG_STEEL, [0, 1.56, -1.95], [0, 0, -0.564], 0.008);
-  // Central X-Bracing Gusset Plate
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.22, 0.22, 0.08), COL_PERG_BASEPLATE, [0, 1.56, -1.94], [0, 0, 0], 0.006);
+  // 3E. Curved Mansard / Hip Barrel-Vaulted Glass Roof & Ornate Victorian Wrought-Iron Cresting (All 4 Views)
+  //     - Rises from eaves (y = 1.92m, |z| = 1.56, |x| = 2.20) through mid-vault purlin
+  //       (y = 2.48m, |z| = 1.04, |x| = 1.78) to the flat skylight ridge frame (y = 2.76m, |z| = 0.36, |x| = 1.42)
+  const buildCurvedVaultRib = (p0: [number, number, number], p1: [number, number, number], p2: [number, number, number], rad = 0.030) => {
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(p0[0], p0[1], p0[2]),
+      new THREE.Vector3(p1[0], p1[1], p1[2]),
+      new THREE.Vector3(p2[0], p2[1], p2[2]),
+    ]);
+    addGhToonPart(
+      conservatoryGrp,
+      new THREE.TubeGeometry(curve, 8, rad, 6, false),
+      COL_GH_FRAME,
+      [0, 0, 0],
+      [0, 0, 0],
+      0.007,
+    );
+  };
 
-  // 3E. Angled Structural Steel Knee-Brace Supports ("Structural Steel Support" in Side Profile View)
-  for (const px of [-2.18, 0.0, 2.18]) {
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.10, 0.10, 1.32), COL_PERG_STEEL, [px, 2.52, -1.32], [0.68, 0, 0], 0.008);
+  // Transverse curved roof ribs at x = -1.42, -0.64, +0.64, +1.42 (and rear x = 0.0)
+  for (const rx of [-1.42, -0.64, 0.0, 0.64, 1.42]) {
+    for (const zSign of [-1, 1]) {
+      if (rx === 0.0 && zSign === 1) continue; // Front center has the semicircular fanlight arch
+      buildCurvedVaultRib(
+        [rx, 1.92, zSign * 1.56],
+        [rx, 2.48, zSign * 1.04],
+        [rx, 2.76, zSign * 0.36],
+        0.028,
+      );
+    }
+    // Top flat skylight cross-bar at y = 2.76m spanning z in [-0.36 .. +0.36]
+    addGhToonPart(conservatoryGrp, new THREE.BoxGeometry(0.05, 0.05, 0.72), COL_GH_FRAME, [rx, 2.76, 0], [0, 0, 0], 0.006);
   }
-  for (const px of [-2.18, 2.18]) {
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.10, 0.10, 1.24), COL_PERG_STEEL, [px, 2.54, 0.92], [0.64, 0, 0], 0.008);
-  }
-
-  // 3F. Cantilevered Roof Overhang (1.5m overhang beyond front posts to z = +1.95) & Slatted Timber Louvers ("Kisi Kayu Peneduh")
-  const pergRoofGrp = new THREE.Group();
-  pergRoofGrp.position.set(0, 2.98, 0.05);
-  pergRoofGrp.rotation.x = -0.035; // Subtle architectural drainage pitch toward rear
-  pergolaGroup.add(pergRoofGrp);
-
-  // Perimeter & Intermediate Dark Charcoal Steel Roof Beams (4.6m W x 3.96m D)
-  addLobbyPart(pergRoofGrp, new THREE.BoxGeometry(4.62, 0.18, 0.16), COL_PERG_STEEL, [0, 0, -1.90], [0, 0, 0], 0.012, lobbySteelRoofTex);
-  addLobbyPart(pergRoofGrp, new THREE.BoxGeometry(4.62, 0.18, 0.16), COL_PERG_STEEL, [0, 0, 0.40], [0, 0, 0], 0.012, lobbySteelRoofTex);
-  addLobbyPart(pergRoofGrp, new THREE.BoxGeometry(4.62, 0.18, 0.16), COL_PERG_STEEL, [0, 0, 1.90], [0, 0, 0], 0.012, lobbySteelRoofTex);
-  for (const rx of [-2.18, -0.73, 0.73, 2.18]) {
-    addLobbyPart(pergRoofGrp, new THREE.BoxGeometry(0.14, 0.18, 3.96), COL_PERG_STEEL, [rx, 0, 0], [0, 0, 0], 0.012, lobbySteelRoofTex);
-  }
-  // Slatted Timber Louvers ("Slatted Timber Louvers / Kisi Kayu Peneduh") across the roof bays
-  for (let lz = -1.72; lz <= 1.74; lz += 0.18) {
-    if (Math.abs(lz - 0.40) < 0.10) continue;
-    addLobbyPart(pergRoofGrp, new THREE.BoxGeometry(4.22, 0.11, 0.08), COL_PERG_TIMBER, [0, 0.01, lz], [0, 0, 0], 0.008, lobbyTimberTex);
-  }
-
-  // 3G. Cantilevered L-Shaped Floating Timber Bench ("Cantilevered Floating Bench / Bangku Kayu Terapung", 0.45m seat H)
-  //     Rear Bench Section (along z = -1.48) + Left Return Bench Section (along x = -1.80)
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.06, 0.10, 0.56), COL_PERG_TIMBER, [0.06, 0.52, -1.50], [0, 0, 0], 0.010, lobbyTimberTex, 1.6);
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(4.06, 0.34, 0.08), COL_PERG_TIMBER, [0.06, 0.76, -1.74], [-0.14, 0, 0], 0.010, lobbyTimberTex, 1.6);
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.56, 0.10, 1.72), COL_PERG_TIMBER, [-1.82, 0.52, -0.36], [0, 0, 0], 0.010, lobbyTimberTex, 1.6);
-  addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.08, 0.34, 1.72), COL_PERG_TIMBER, [-2.06, 0.76, -0.36], [0, 0, 0.14], 0.010, lobbyTimberTex, 1.6);
-  // Hidden Dark Steel Cantilever Support Brackets under Floating Bench
-  for (const bx of [-1.4, -0.2, 1.0, 1.9]) {
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.08, 0.14, 0.48), COL_PERG_STEEL, [bx, 0.42, -1.54], [0, 0, 0], 0.006);
-  }
-  for (const bz of [-0.95, 0.15]) {
-    addLobbyPart(pergolaGroup, new THREE.BoxGeometry(0.48, 0.14, 0.08), COL_PERG_STEEL, [-1.86, 0.42, bz], [0, 0, 0], 0.006);
-  }
-
-  // 3H. Warm Cylindrical Hanging Lanterns ("Hanging Lanterns in 3D")
-  for (const [lx, lz] of [
-    [-1.15, -0.55],
-    [1.15, -0.55],
-    [-1.15, 1.05],
-    [1.15, 1.05],
-  ] as [number, number][]) {
-    addLobbyPart(pergolaGroup, new THREE.CylinderGeometry(0.015, 0.015, 0.52, 6), COL_PERG_STEEL, [lx, 2.70, lz], [0, 0, 0], 0);
-    addLobbyPart(pergolaGroup, new THREE.CylinderGeometry(0.11, 0.11, 0.04, 12), COL_PERG_STEEL, [lx, 2.44, lz], [0, 0, 0], 0.006);
-    addLobbyPart(pergolaGroup, new THREE.CylinderGeometry(0.10, 0.10, 0.28, 12), COL_PERG_LANTERN, [lx, 2.28, lz], [0, 0, 0], 0.006);
-    addLobbyPart(pergolaGroup, new THREE.CylinderGeometry(0.11, 0.11, 0.03, 12), COL_PERG_STEEL, [lx, 2.13, lz], [0, 0, 0], 0.006);
+  // 4 Corner Hip Curved Rafters (from corners (±2.20, 1.92, ±1.56) to ridge ends (±1.42, 2.76, ±0.36), matching Top Plan View!)
+  for (const xSign of [-1, 1]) {
+    for (const zSign of [-1, 1]) {
+      buildCurvedVaultRib(
+        [xSign * 2.20, 1.92, zSign * 1.56],
+        [xSign * 1.82, 2.48, zSign * 1.04],
+        [xSign * 1.42, 2.76, zSign * 0.36],
+        0.034,
+      );
+    }
+    // Side Hipped Center Ribs at z = ±0.78 and z = 0.0 (matching Top Plan View radial end ribs!)
+    for (const sideZVal of [-0.78, 0.0, 0.78]) {
+      buildCurvedVaultRib(
+        [xSign * 2.20, 1.92, sideZVal],
+        [xSign * 1.82, 2.48, sideZVal * (1.04 / 1.56)],
+        [xSign * 1.42, 2.76, sideZVal * (0.36 / 1.56)],
+        0.026,
+      );
+    }
   }
 
-  // 3I. 2 Round Timber Café Tables & Chairs under the Pergola Overhang (Sheet 5: "Outdoor Cafe Seating")
+  // Continuous 45° Mitred Mid-Vault Purlin Ring (y = 2.48m, x in [-1.82 .. +1.82], z in [-1.04 .. +1.04])
+  const ghMidPurlinPath: [number, number][] = [
+    [-1.82, -1.04],
+    [1.82, -1.04],
+    [1.82, 1.04],
+    [-1.82, 1.04],
+  ];
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghMidPurlinPath, 0.055, 0.055, true),
+    COL_GH_FRAME,
+    [0, 2.48, 0],
+    [0, 0, 0],
+    0.007,
+  );
+
+  // Continuous 45° Mitred Upper Skylight Collar Frame (y = 2.76m, x in [-1.42 .. +1.42], z in [-0.36 .. +0.36])
+  const ghTopRidgeRect: [number, number][] = [
+    [-1.42, -0.36],
+    [1.42, -0.36],
+    [1.42, 0.36],
+    [-1.42, 0.36],
+  ];
+  addGhToonPart(
+    conservatoryGrp,
+    createMitredPolylineStripGeometry(ghTopRidgeRect, 0.065, 0.065, true),
+    COL_GH_FRAME,
+    [0, 2.76, 0],
+    [0, 0, 0],
+    0.008,
+  );
+
+  // Custom-Fitted Curved Mansard Vault Glass Roof Shell (follows the exact CatmullRomCurve3 rib profile
+  // from eaves [±2.20, 1.92, ±1.56] -> mid-purlin [±1.82, 2.48, ±1.04] -> skylight collar [±1.42, 2.76, ±0.36]
+  // with zero overhanging corners or overlapping planes!)
+  const ghVaultProfileCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(2.20, 1.92, 1.56),
+    new THREE.Vector3(1.82, 2.48, 1.04),
+    new THREE.Vector3(1.42, 2.76, 0.36),
+  ]);
+  const ghVaultSteps = 8;
+  const ghGlassPos: number[] = [];
+  const pushGhQuad = (
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number,
+    cx: number, cy: number, cz: number,
+    dx: number, dy: number, dz: number,
+  ) => {
+    ghGlassPos.push(
+      ax, ay, az, bx, by, bz, cx, cy, cz,
+      ax, ay, az, cx, cy, cz, dx, dy, dz,
+    );
+  };
+  for (let s = 0; s < ghVaultSteps; s++) {
+    const pA = ghVaultProfileCurve.getPoint(s / ghVaultSteps);
+    const pB = ghVaultProfileCurve.getPoint((s + 1) / ghVaultSteps);
+    // 4 perimeter corners for lower ring (pA) and upper ring (pB)
+    const rA: [number, number, number][] = [
+      [-pA.x, pA.y, -pA.z],
+      [pA.x, pA.y, -pA.z],
+      [pA.x, pA.y, pA.z],
+      [-pA.x, pA.y, pA.z],
+    ];
+    const rB: [number, number, number][] = [
+      [-pB.x, pB.y, -pB.z],
+      [pB.x, pB.y, -pB.z],
+      [pB.x, pB.y, pB.z],
+      [-pB.x, pB.y, pB.z],
+    ];
+    for (let sideIdx = 0; sideIdx < 4; sideIdx++) {
+      const nextIdx = (sideIdx + 1) % 4;
+      const a0 = rA[sideIdx];
+      const a1 = rA[nextIdx];
+      const b1 = rB[nextIdx];
+      const b0 = rB[sideIdx];
+      pushGhQuad(
+        a0[0], a0[1], a0[2],
+        a1[0], a1[1], a1[2],
+        b1[0], b1[1], b1[2],
+        b0[0], b0[1], b0[2],
+      );
+    }
+  }
+  // Top flat skylight glass pane at y = 2.76m spanning x in [-1.42 .. +1.42], z in [-0.36 .. +0.36]
+  pushGhQuad(
+    -1.42, 2.76, 0.36,
+    1.42, 2.76, 0.36,
+    1.42, 2.76, -0.36,
+    -1.42, 2.76, -0.36,
+  );
+  const ghVaultGlassGeo = new THREE.BufferGeometry();
+  ghVaultGlassGeo.setAttribute('position', new THREE.Float32BufferAttribute(ghGlassPos, 3));
+  ghVaultGlassGeo.computeVertexNormals();
+  const ghVaultGlassMesh = new THREE.Mesh(ghVaultGlassGeo, sharedLobbyClearGlassMat);
+  ghVaultGlassMesh.castShadow = false;
+  ghVaultGlassMesh.receiveShadow = false;
+  conservatoryGrp.add(ghVaultGlassMesh);
+
+  // Central Ornate Victorian Wrought-Iron Roof Cresting & Twin Pointed Spire Finials (178" Ridge in Front & Side Views)
+  addGhToonPart(conservatoryGrp, new THREE.BoxGeometry(2.92, 0.065, 0.065), COL_GH_FRAME_DARK, [0, 2.81, 0], [0, 0, 0], 0.008);
+  // Twin Pointed Spire Finials at x = -1.42 and x = +1.42
+  for (const fx of [-1.42, 1.42]) {
+    addGhToonPart(conservatoryGrp, new THREE.CylinderGeometry(0.032, 0.045, 0.14, 6), COL_GH_FRAME_DARK, [fx, 2.90, 0], [0, 0, 0], 0.006);
+    addGhToonPart(conservatoryGrp, new THREE.SphereGeometry(0.048, 6, 5), COL_GH_FRAME_LIGHT, [fx, 2.99, 0], [0, 0, 0], 0.005);
+    addGhToonPart(conservatoryGrp, new THREE.ConeGeometry(0.035, 0.18, 6), COL_GH_FRAME_DARK, [fx, 3.11, 0], [0, 0, 0], 0.006);
+  }
+  // 15 Ornate Fleur-de-Lis / Diamond Wrought-Iron Cresting Spikes along the roof ridge
+  for (let i = -7; i <= 7; i++) {
+    const cx = i * 0.18;
+    const diamondGeo = new THREE.OctahedronGeometry(0.048, 0);
+    diamondGeo.scale(0.85, 1.45, 0.45);
+    addGhToonPart(conservatoryGrp, diamondGeo, COL_GH_FRAME_DARK, [cx, 2.90, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+  }
+
+  // 3F. Lush Botanical Interior: Perimeter Planters, 2-Tiered Potted Flower Tables,
+  //     4 Hanging Wicker Flower Baskets, Warm Festoon String Bulbs & Cascading Purple Wisteria Vines!
+  const leafPalette = ['#4b8a42', '#5c9e50', '#3d7536', '#6eb060'];
+  const pinkPalette = ['#f299b8', '#e6789e', '#f7b5cd', '#d9628a'];
+  const yellowPalette = ['#f5c85b', '#e8b23c', '#fae08c'];
+  const wisteriaPalette = ['#9b7ede', '#b398eb', '#7c5cc4', '#cbb5f5'];
+
+  // 1) Perimeter Wooden Planter Boxes inside the Glasshouse with Rich Botanical Blooms
+  const buildInteriorBotanicalPlanter = (
+    px: number,
+    pz: number,
+    w: number,
+    d: number,
+    flowerStyle: 'lavender_spikes' | 'pink_hydrangea' | 'yellow_sun' | 'mixed_tropical',
+  ) => {
+    const pGrp = new THREE.Group();
+    pGrp.position.set(px, 0.028, pz);
+    conservatoryGrp.add(pGrp);
+
+    addGhToonPart(pGrp, new THREE.BoxGeometry(w, 0.34, d), COL_GH_PLANTER, [0, 0.17, 0], [0, 0, 0], 0.008, lobbyTimberTex);
+    addGhToonPart(pGrp, new THREE.BoxGeometry(w - 0.06, 0.04, d - 0.06), '#4a3525', [0, 0.33, 0], [0, 0, 0], 0, undefined, 1.0, false);
+
+    // Base lush green foliage cushions
+    const count = Math.max(2, Math.round(Math.max(w, d) * 2.2));
+    const isAlongX = w >= d;
+    for (let i = 0; i < count; i++) {
+      const u = count === 1 ? 0 : i / (count - 1) - 0.5;
+      const ox = isAlongX ? u * (w - 0.28) : ((i % 2) - 0.5) * 0.08;
+      const oz = isAlongX ? ((i % 2) - 0.5) * 0.08 : u * (d - 0.28);
+      const bushGeo = new THREE.DodecahedronGeometry(0.19, 1);
+      bushGeo.scale(1.15, 0.85, 1.15);
+      addGhToonPart(pGrp, bushGeo, leafPalette[i % leafPalette.length], [ox, 0.44, oz], [0, i * 0.8, 0], 0.007, undefined, 1.0, false);
+
+      if (flowerStyle === 'lavender_spikes') {
+        // Tall blue/lavender Delphinium & Lupine botanical spikes (matching Front & Side left bay!)
+        const spikeH = 0.52 + (i % 2) * 0.18;
+        const spkGeo = new THREE.ConeGeometry(0.11, spikeH, 6);
+        addGhToonPart(
+          pGrp,
+          spkGeo,
+          wisteriaPalette[i % wisteriaPalette.length],
+          [ox, 0.56 + spikeH * 0.5, oz],
+          [0, i * 0.5, 0],
+          0.007,
+          undefined,
+          1.0,
+          false,
+        );
+      } else if (flowerStyle === 'pink_hydrangea') {
+        const hydGeo = new THREE.DodecahedronGeometry(0.14, 1);
+        addGhToonPart(
+          pGrp,
+          hydGeo,
+          pinkPalette[i % pinkPalette.length],
+          [ox, 0.58 + (i % 2) * 0.06, oz],
+          [0, i * 0.9, 0],
+          0.006,
+          undefined,
+          1.0,
+          false,
+        );
+      } else if (flowerStyle === 'yellow_sun') {
+        // Tall golden-yellow & rose botanical stems (matching Front right bay!)
+        for (let b = 0; b < 2; b++) {
+          const flGeo = new THREE.DodecahedronGeometry(0.12, 0);
+          addGhToonPart(
+            pGrp,
+            flGeo,
+            b === 0 ? yellowPalette[i % yellowPalette.length] : pinkPalette[i % pinkPalette.length],
+            [ox + (b - 0.5) * 0.08, 0.62 + b * 0.22, oz],
+            [0, i + b, 0],
+            0.006,
+            undefined,
+            1.0,
+            false,
+          );
+        }
+      } else {
+        // Broad tropical foliage & mixed blooms along the rear conservatory wall
+        const tallLeafGeo = new THREE.DodecahedronGeometry(0.24, 1);
+        tallLeafGeo.scale(0.95, 1.55, 0.85);
+        addGhToonPart(
+          pGrp,
+          tallLeafGeo,
+          leafPalette[(i + 1) % leafPalette.length],
+          [ox, 0.72, oz - 0.04],
+          [0.12, i * 0.6, 0],
+          0.007,
+          undefined,
+          1.0,
+          false,
+        );
+        const bloomGeo = new THREE.DodecahedronGeometry(0.12, 0);
+        addGhToonPart(
+          pGrp,
+          bloomGeo,
+          pinkPalette[i % pinkPalette.length],
+          [ox, 0.56, oz + 0.08],
+          [0, i, 0],
+          0.005,
+          undefined,
+          1.0,
+          false,
+        );
+      }
+    }
+  };
+
+  // Front-Left & Front-Right Interior Planters (visible through the front arched windows!)
+  buildInteriorBotanicalPlanter(-1.80, 1.18, 0.64, 0.42, 'lavender_spikes');
+  buildInteriorBotanicalPlanter(-1.04, 1.18, 0.64, 0.42, 'pink_hydrangea');
+  buildInteriorBotanicalPlanter(1.04, 1.18, 0.64, 0.42, 'pink_hydrangea');
+  buildInteriorBotanicalPlanter(1.80, 1.18, 0.64, 0.42, 'yellow_sun');
+  // Rear Wall Lush Tropical & Hydrangea Planters
+  buildInteriorBotanicalPlanter(-1.35, -1.16, 1.48, 0.46, 'mixed_tropical');
+  buildInteriorBotanicalPlanter(0.0, -1.16, 1.06, 0.46, 'pink_hydrangea');
+  buildInteriorBotanicalPlanter(1.35, -1.16, 1.48, 0.46, 'mixed_tropical');
+
+  // 2) 2-Tiered Wooden Plant Display Benches with Terracotta Flower Pots (Side Elevation & 3/4 Isometric Views)
+  for (const sideSign of [-1, 1]) {
+    const benchGrp = new THREE.Group();
+    benchGrp.position.set(sideSign * 1.62, 0.028, -0.02);
+    conservatoryGrp.add(benchGrp);
+
+    // Lower shelf (y = 0.36m) & Upper stepped shelf (y = 0.68m) + 4 wooden legs
+    addGhToonPart(benchGrp, new THREE.BoxGeometry(0.68, 0.05, 1.56), COL_GH_PLANTER, [0, 0.36, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+    addGhToonPart(benchGrp, new THREE.BoxGeometry(0.36, 0.05, 1.56), COL_GH_PLANTER, [sideSign * 0.14, 0.68, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+    for (const lz of [-0.70, 0.70]) {
+      addGhToonPart(benchGrp, new THREE.BoxGeometry(0.06, 0.36, 0.06), COL_GH_FRAME_DARK, [-sideSign * 0.28, 0.18, lz], [0, 0, 0], 0.005);
+      addGhToonPart(benchGrp, new THREE.BoxGeometry(0.06, 0.68, 0.06), COL_GH_FRAME_DARK, [sideSign * 0.28, 0.34, lz], [0, 0, 0], 0.005);
+    }
+
+    // 6 Terracotta Flower Pots with Colorful Blooms on the 2-Tier Bench
+    for (let p = 0; p < 3; p++) {
+      const pz = (p - 1) * 0.48;
+      // Lower tier pot
+      addGhToonPart(benchGrp, new THREE.CylinderGeometry(0.11, 0.08, 0.18, 8), COL_GH_POT, [-sideSign * 0.14, 0.47, pz], [0, 0, 0], 0.006, undefined, 1.0, false);
+      const b1 = new THREE.DodecahedronGeometry(0.13, 0);
+      addGhToonPart(benchGrp, b1, pinkPalette[(p + (sideSign > 0 ? 1 : 0)) % pinkPalette.length], [-sideSign * 0.14, 0.62, pz], [0, p, 0], 0.006, undefined, 1.0, false);
+      // Upper tier pot
+      addGhToonPart(benchGrp, new THREE.CylinderGeometry(0.11, 0.08, 0.18, 8), COL_GH_POT, [sideSign * 0.14, 0.79, pz], [0, 0, 0], 0.006, undefined, 1.0, false);
+      const b2 = new THREE.DodecahedronGeometry(0.14, 0);
+      addGhToonPart(
+        benchGrp,
+        b2,
+        p === 1 ? yellowPalette[0] : wisteriaPalette[p % wisteriaPalette.length],
+        [sideSign * 0.14, 0.95, pz],
+        [0, p * 1.2, 0],
+        0.006,
+        undefined,
+        1.0,
+        false,
+      );
+    }
+  }
+
+  // 3) 4 Suspended Wicker Hanging Flower Baskets (Front Elevation & 3/4 Isometric Views)
+  const hangingBasketCoords: [number, number, number][] = [
+    [-1.03, 1.72, 1.18],
+    [1.03, 1.72, 1.18],
+    [-0.95, 1.88, -0.45],
+    [0.95, 1.88, -0.45],
+  ];
+  for (let b = 0; b < hangingBasketCoords.length; b++) {
+    const [bx, by, bz] = hangingBasketCoords[b];
+    const hbGrp = new THREE.Group();
+    hbGrp.position.set(bx, by, bz);
+    conservatoryGrp.add(hbGrp);
+
+    // Hanging rod + woven wicker bowl + lush pink/green trailing bouquet
+    addGhToonPart(hbGrp, new THREE.CylinderGeometry(0.010, 0.010, 0.42, 5), COL_GH_FRAME_DARK, [0, 0.21, 0], [0, 0, 0], 0, undefined, 1.0, false);
+    const bowlGeo = new THREE.SphereGeometry(0.19, 8, 6, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55);
+    addGhToonPart(hbGrp, bowlGeo, '#9c6b3b', [0, 0.04, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+    const moundGeo = new THREE.DodecahedronGeometry(0.18, 1);
+    moundGeo.scale(1.15, 0.75, 1.15);
+    addGhToonPart(hbGrp, moundGeo, leafPalette[b % leafPalette.length], [0, 0.06, 0], [0, b, 0], 0.006, undefined, 1.0, false);
+    const flGeo = new THREE.DodecahedronGeometry(0.13, 0);
+    addGhToonPart(hbGrp, flGeo, pinkPalette[b % pinkPalette.length], [0, 0.14, 0], [0, b * 0.7, 0], 0.005, undefined, 1.0, false);
+  }
+
+  // 4) Warm Glowing Interior Festoon String Bulbs (3/4 Isometric View)
+  for (const bx of [-1.25, -0.42, 0.42, 1.25]) {
+    for (const bz of [-0.55, 0.55]) {
+      addGhToonPart(
+        conservatoryGrp,
+        new THREE.SphereGeometry(0.045, 6, 5),
+        '#ffe89e',
+        [bx, 2.18, bz],
+        [0, 0, 0],
+        0.004,
+        undefined,
+        1.0,
+        false,
+      );
+    }
+  }
+
+  // 5) Cascading Purple Wisteria Vines over the Right Vaulted Roof & Window Bays (Side Elevation & 3/4 Isometric Views)
+  const wisteriaClusters: [number, number, number, number][] = [
+    // Hanging under the upper roof arch on the right side (x in [0.65 .. 2.15])
+    [0.95, 2.24, 0.85, 0.44],
+    [1.32, 2.18, 1.12, 0.52],
+    [1.68, 2.08, 0.92, 0.48],
+    [1.98, 1.92, 0.65, 0.56],
+    [2.16, 1.76, 0.25, 0.50],
+    [2.16, 1.82, -0.35, 0.46],
+    [1.75, 2.16, -0.55, 0.44],
+    // Cascading down the right-front corner mullion (x = +2.22, z = +1.45)
+    [2.22, 1.55, 1.38, 0.42],
+    [2.22, 1.18, 1.44, 0.38],
+  ];
+  for (let w = 0; w < wisteriaClusters.length; w++) {
+    const [wx, wy, wz, dropH] = wisteriaClusters[w];
+    // Green vine foliage canopy pad above the blossom raceme
+    const padGeo = new THREE.DodecahedronGeometry(0.16, 0);
+    padGeo.scale(1.25, 0.55, 1.25);
+    addGhToonPart(
+      conservatoryGrp,
+      padGeo,
+      leafPalette[w % leafPalette.length],
+      [wx, wy + 0.08, wz],
+      [0, w * 0.7, 0],
+      0.006,
+      undefined,
+      1.0,
+      false,
+    );
+    // Pendulous tapered cluster of purple/lavender Wisteria blossoms
+    const racemeGeo = new THREE.ConeGeometry(0.115, dropH, 6);
+    racemeGeo.rotateX(Math.PI); // Pointing downward like hanging Wisteria racemes!
+    addGhToonPart(
+      conservatoryGrp,
+      racemeGeo,
+      wisteriaPalette[w % wisteriaPalette.length],
+      [wx, wy - dropH * 0.45, wz],
+      [0, w * 0.9, 0],
+      0.006,
+      undefined,
+      1.0,
+      false,
+    );
+  }
+
+  // Exterior Terracotta Potted Shrub beside the Entrance Door (Side Elevation View)
+  const extPotGrp = new THREE.Group();
+  extPotGrp.position.set(0.84, 0.024, 1.68);
+  conservatoryGrp.add(extPotGrp);
+  addGhToonPart(extPotGrp, new THREE.CylinderGeometry(0.18, 0.13, 0.34, 8), COL_GH_POT, [0, 0.17, 0], [0, 0, 0], 0.007);
+  const extShrubGeo = new THREE.DodecahedronGeometry(0.22, 1);
+  extShrubGeo.scale(1.08, 1.15, 1.08);
+  addGhToonPart(extShrubGeo ? extPotGrp : extPotGrp, extShrubGeo, '#529447', [0, 0.46, 0], [0, 0.4, 0], 0.008);
+
+  // 3I. Helper for Round Timber Café Tables & Chairs (used by `outdoorCafeZoneGrp` on East-South Plaza Wing)
   const buildLobbyCafeTableAndChairs = (
     parent: THREE.Object3D,
     tx: number,
@@ -13663,50 +14844,49 @@ export function createCurvedPlanetEnvironment(
     const tGrp = new THREE.Group();
     tGrp.position.set(tx, 0.10, tz);
     parent.add(tGrp);
-    // Dark steel pedestal base + column + warm teak circular tabletop
-    addLobbyPart(tGrp, new THREE.CylinderGeometry(0.32, 0.34, 0.04, 14), COL_PERG_STEEL, [0, 0.02, 0], [0, 0, 0], 0.006);
-    addLobbyPart(tGrp, new THREE.CylinderGeometry(0.05, 0.05, 0.72, 10), COL_PERG_STEEL, [0, 0.38, 0], [0, 0, 0], 0.006);
-    addLobbyPart(tGrp, new THREE.CylinderGeometry(0.62, 0.62, 0.06, 18), COL_PERG_TIMBER, [0, 0.75, 0], [0, 0, 0], 0.010, lobbyTimberTex);
-    // 4 Timber Café Chairs around table
+    // Dark steel pedestal base + column + warm teak circular tabletop (scaled to match character sitting height)
+    addLobbyPart(tGrp, new THREE.CylinderGeometry(0.42, 0.45, 0.05, 14), COL_PERG_STEEL, [0, 0.025, 0], [0, 0, 0], 0.006);
+    addLobbyPart(tGrp, new THREE.CylinderGeometry(0.065, 0.065, 0.90, 10), COL_PERG_STEEL, [0, 0.47, 0], [0, 0, 0], 0.006);
+    addLobbyPart(tGrp, new THREE.CylinderGeometry(0.74, 0.74, 0.07, 18), COL_PERG_TIMBER, [0, 0.94, 0], [0, 0, 0], 0.010, lobbyTimberTex);
+    // 4 Full-Scale Timber Café Chairs around table (enlarged ~1.72x to match character proportions)
     for (let c = 0; c < 4; c++) {
       const cAng = (c * Math.PI) / 2 + 0.38;
-      const cx = Math.cos(cAng) * 0.88;
-      const cz = Math.sin(cAng) * 0.88;
+      const cx = Math.cos(cAng) * 1.08;
+      const cz = Math.sin(cAng) * 1.08;
       const chGrp = new THREE.Group();
       chGrp.position.set(cx, 0, cz);
       chGrp.rotation.y = -cAng + Math.PI / 2;
       tGrp.add(chGrp);
-      addLobbyPart(chGrp, new THREE.BoxGeometry(0.38, 0.05, 0.38), COL_PERG_TIMBER, [0, 0.44, 0], [0, 0, 0], 0.008, lobbyTimberTex);
-      addLobbyPart(chGrp, new THREE.BoxGeometry(0.38, 0.34, 0.05), COL_PERG_TIMBER, [0, 0.66, 0.17], [0.12, 0, 0], 0.008, lobbyTimberTex);
+      // Wide slatted timber seat + tall angled timber backrest + side frame rails
+      addLobbyPart(chGrp, new THREE.BoxGeometry(0.64, 0.075, 0.64), COL_PERG_TIMBER, [0, 0.66, 0], [0, 0, 0], 0.009, lobbyTimberTex);
+      addLobbyPart(chGrp, new THREE.BoxGeometry(0.64, 0.58, 0.075), COL_PERG_TIMBER, [0, 0.99, 0.28], [0.12, 0, 0], 0.009, lobbyTimberTex);
       for (const [lx, lz] of [
-        [-0.15, -0.15],
-        [0.15, -0.15],
-        [-0.15, 0.15],
-        [0.15, 0.15],
+        [-0.26, -0.26],
+        [0.26, -0.26],
+        [-0.26, 0.26],
+        [0.26, 0.26],
       ] as [number, number][]) {
-        addLobbyPart(chGrp, new THREE.CylinderGeometry(0.02, 0.02, 0.44, 6), COL_PERG_STEEL, [lx, 0.22, lz], [0, 0, 0], 0);
+        addLobbyPart(chGrp, new THREE.CylinderGeometry(0.034, 0.030, 0.66, 8), COL_PERG_STEEL, [lx, 0.33, lz], [0, 0, 0], 0.005);
       }
     }
     if (withParasol) {
       // Pole & Cream Octagonal Parasol Canopy ("Outdoor Cafe Seating / Parasols" in Sheet 5)
-      addLobbyPart(tGrp, new THREE.CylinderGeometry(0.038, 0.042, 2.38, 10), COL_PERG_STEEL, [0, 1.24, 0], [0, 0, 0], 0.006);
-      addLobbyPart(tGrp, new THREE.ConeGeometry(1.58, 0.48, 8), '#f5f0e4', [0, 2.42, 0], [0, 0, 0], 0.012);
-      addLobbyPart(tGrp, new THREE.CylinderGeometry(0.06, 0.08, 0.10, 8), COL_PERG_TIMBER, [0, 2.68, 0], [0, 0, 0], 0.006);
+      addLobbyPart(tGrp, new THREE.CylinderGeometry(0.044, 0.048, 2.58, 10), COL_PERG_STEEL, [0, 1.38, 0], [0, 0, 0], 0.006);
+      addLobbyPart(tGrp, new THREE.ConeGeometry(1.66, 0.52, 8), '#f5f0e4', [0, 2.66, 0], [0, 0, 0], 0.012);
+      addLobbyPart(tGrp, new THREE.CylinderGeometry(0.068, 0.088, 0.11, 8), COL_PERG_TIMBER, [0, 2.94, 0], [0, 0, 0], 0.006);
     }
   };
-  buildLobbyCafeTableAndChairs(pergolaGroup, -0.65, 0.92, false);
-  buildLobbyCafeTableAndChairs(pergolaGroup, 1.15, 0.92, false);
 
   // -------------------------------------------------------------------------
   // 4. SHEET 3: ARCHITECTURAL MODEL SHEET — MODERN COFFEE & GELATO KIOSK
   //    (Kios Kopi & Gelato Kaca Modern)
   //    Reference: media_1794077939964_7e39720f.jpg
-  //    Placed at local (-7.8, 1.42, -13.8), facing East (+X) toward the Plaza,
+  //    Placed along the West Plaza border at local (-10.2, 2.50, -13.8), facing East (+X) toward the Plaza,
   //    scaled 1.48x for realistic character proportions (~7.6m W x 5.9m D x 4.4m H).
   // -------------------------------------------------------------------------
   const gelatoKioskGrp = new THREE.Group();
   gelatoKioskGrp.name = 'LobbyModernCoffeeAndGelatoKiosk';
-  gelatoKioskGrp.position.set(-7.8, 2.50, -13.8);
+  gelatoKioskGrp.position.set(-10.2, 2.50, -13.8);
   gelatoKioskGrp.rotation.y = Math.PI / 2;
   gelatoKioskGrp.scale.setScalar(1.48);
   westPlantGroup.add(gelatoKioskGrp);
@@ -13716,25 +14896,27 @@ export function createCurvedPlanetEnvironment(
   const COL_KIOSK_GLASS = '#7bc6e2';
   const COL_KIOSK_LED = '#ffefc2';
 
-  // 4A. Granite Plaza Paver Base (5.2m W x 4.0m D, +0.01m above Plaza deck) & Dark Charcoal Steel Structural Frame
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(5.24, 0.09, 4.04), '#dcd9d0', [0, 0.055, 0], [0, 0, 0], 0.012, lobbyGranitePaverTex, 2.0);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.48, 0.12, 3.28), COL_KIOSK_STEEL, [0, 0.14, 0], [0, 0, 0], 0.012, lobbySteelRoofTex);
+  // 4A. Granite Plaza Paver Base (5.24m W x 4.04m D) & Dark Charcoal Steel Structural Frame (non-overlapping Y levels to prevent z-fighting)
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(5.24, 0.08, 4.04), '#dcd9d0', [0, 0.05, 0], [0, 0, 0], 0.010, lobbyGranitePaverTex, 2.0);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.48, 0.10, 3.28), COL_KIOSK_STEEL, [0, 0.15, 0], [0, 0, 0], 0.010, lobbySteelRoofTex);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.12, 0.025, 2.94), '#dfd8c8', [0, 0.215, 0], [0, 0, 0], 0, lobbyGranitePaverTex, 1.4);
 
   for (const cx of [-2.14, 2.14]) {
     for (const cz of [-1.54, 1.54]) {
-      addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.20, 2.68, 0.20), COL_KIOSK_STEEL, [cx, 1.48, cz], [0, 0, 0], 0.012, lobbySteelRoofTex);
+      addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.20, 2.62, 0.20), COL_KIOSK_STEEL, [cx, 1.51, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
     }
   }
+  // Center Front Vertical Steel Mullion cleanly separating Left Service Counter Bar ([-2.04 .. +0.06]) from Right Gelato Vitrine ([+0.16 .. +2.04])
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.10, 2.62, 0.18), COL_KIOSK_STEEL, [0.11, 1.51, 1.54], [0, 0, 0], 0.010, lobbySteelRoofTex);
 
   // 4B. Front Elevation (+Z): Left Service Counter Bar + 3x Timber Bar Stools & Right Artisanal Gelato Display Case
-  // Lower Front Wall Base (Charcoal steel frame + Warm Timber Cladding Accents on left + White Gelato Case Base on right)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.24, 1.02, 0.16), COL_KIOSK_WOOD, [-0.96, 0.65, 1.52], [0, 0, 0], 0.012, lobbyTimberTex, 1.6);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.78, 0.20), '#e2e5ea', [1.10, 0.53, 1.54], [0, 0, 0], 0.012, lobbyConcreteTex, 1.8);
-  // Projecting Warm Timber Service Counter Bar ("Service Counter Bar")
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.56, 0.08, 0.56), COL_KIOSK_WOOD, [-0.92, 1.18, 1.72], [0, 0, 0], 0.012, lobbyTimberTex, 1.5);
+  // Left Lower Front Wall Base (Warm Timber Cladding spanning strictly x in [-2.04 .. +0.06], y in [0.21 .. 1.14], z = 1.51)
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.10, 0.93, 0.16), COL_KIOSK_WOOD, [-0.99, 0.675, 1.51], [0, 0, 0], 0.011, lobbyTimberTex, 1.6);
+  // Projecting Warm Timber Service Counter Bar trimmed to fit strictly between Left Column (-2.04) and Center Divider (+0.06) without penetrating the Gelato Case!
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.10, 0.08, 0.54), COL_KIOSK_WOOD, [-0.99, 1.18, 1.71], [0, 0, 0], 0.011, lobbyTimberTex, 1.5);
 
   // 3x Timber Bar Stools in front of Service Counter Bar ("3x Timber Bar Stools")
-  for (const sx of [-1.72, -0.96, -0.20]) {
+  for (const sx of [-1.70, -0.99, -0.28]) {
     const stGrp = new THREE.Group();
     stGrp.position.set(sx, 0.10, 2.12);
     gelatoKioskGrp.add(stGrp);
@@ -13753,28 +14935,68 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
-  // Artisanal Gelato Display Case ("Gelato Display" — Sloped Glass Sneeze-Guard + 6 Colorful Gelato Tubs)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.86, 0.10, 0.74), '#cbd5e1', [1.10, 0.96, 1.48], [0, 0, 0], 0.010);
-  // 6 Colorful Artisanal Gelato Tubs (Pistachio, Strawberry, Mango, Vanilla, Berry, Chocolate)
+  // Artisanal Gelato Display Case ("Gelato Display" — Full-Depth Cabinet Base + Chilled Stainless Deck + 8 Gelato Tubs + Crystal-Clear Enclosed Glass Vitrine)
+  // 1) Full-depth cabinet base underneath the Gelato Display Case (x in [0.16 .. 2.04], y in [0.21 .. 0.93], z in [1.16 .. 1.78] — non-coplanar with steel base/columns to eliminate z-fighting)
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.86, 0.72, 0.62), '#e5e7eb', [1.10, 0.57, 1.47], [0, 0, 0], 0.010, lobbyConcreteTex, 1.8);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.74, 0.54, 0.03), '#f3f4f6', [1.10, 0.58, 1.79], [0, 0, 0], 0.006, lobbyConcreteTex, 1.5);
+  // 2) Chilled stainless-steel gelato well deck (y in [0.94 .. 1.01], z in [1.14 .. 1.80])
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.07, 0.66), '#cbd5e1', [1.10, 0.975, 1.47], [0, 0, 0], 0.009);
+  // 3) 8 Colorful Artisanal Gelato Tubs (2 rows x 4 columns recessed cleanly inside the stainless well)
   const gelatoFlavors: [number, number, string][] = [
-    [0.46, 1.34, '#a3d977'], // Pistachio Green
-    [0.90, 1.34, '#ff8da1'], // Strawberry Pink
-    [1.34, 1.34, '#ffd166'], // Mango Passion Gold
-    [1.74, 1.34, '#fdf6e2'], // Vanilla Bean Cream
-    [0.68, 1.62, '#c77dff'], // Blueberry Lavender
-    [1.48, 1.62, '#7f4f24'], // Dark Gianduja Chocolate
+    [0.43, 1.32, '#a3d977'], // Pistachio Green
+    [0.88, 1.32, '#ff8da1'], // Strawberry Pink
+    [1.32, 1.32, '#ffd166'], // Mango Passion Gold
+    [1.77, 1.32, '#fdf6e2'], // Vanilla Bean Cream
+    [0.43, 1.60, '#72ddf7'], // Sea Salt Blue Gelato
+    [0.88, 1.60, '#c77dff'], // Blueberry Lavender
+    [1.32, 1.60, '#f4a261'], // Salted Caramel
+    [1.77, 1.60, '#7f4f24'], // Dark Gianduja Chocolate
   ];
   for (const [gx, gz, gCol] of gelatoFlavors) {
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.36, 0.04, 0.22), '#94a3b8', [gx, 1.02, gz], [0, 0, 0], 0.005);
-    addLobbyPart(gelatoKioskGrp, new THREE.SphereGeometry(0.14, 10, 8), gCol, [gx, 1.05, gz], [0, 0, 0], 0.006);
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.36, 0.035, 0.22), '#94a3b8', [gx, 1.02, gz], [0, 0, 0], 0.005);
+    addLobbyPart(gelatoKioskGrp, new THREE.SphereGeometry(0.13, 10, 8), gCol, [gx, 1.05, gz], [0, 0, 0], 0.006);
   }
-  // Sloped Glass Front & Top Canopy of Gelato Display Case
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.86, 0.56, 0.05), '#bfe8f7', [1.10, 1.24, 1.80], [-0.26, 0, 0], 0.008, lobbyWindowTex);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.05, 0.56), '#bfe8f7', [1.10, 1.50, 1.54], [0, 0, 0], 0.008, lobbyWindowTex);
+  // 4) Sleek Brushed-Steel / Charcoal Vitrine Frame Bars & Crystal-Clear Enclosed Glass Vitrine (Front Sloped Sneeze-Guard + Top Canopy + Side Glass End Panels)
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.035, 0.035), COL_KIOSK_STEEL, [1.10, 1.02, 1.79], [0, 0, 0], 0.005);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.038, 0.038), COL_KIOSK_STEEL, [1.10, 1.49, 1.66], [0, 0, 0], 0.005);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.038, 0.038), COL_KIOSK_STEEL, [1.10, 1.49, 1.16], [0, 0, 0], 0.005);
+  for (const vx of [0.18, 2.02]) {
+    // Sloped front vitrine side stile + rear vertical vitrine stile + top horizontal side rail
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.035, 0.49, 0.035), COL_KIOSK_STEEL, [vx, 1.255, 1.725], [-0.27, 0, 0], 0.005);
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.035, 0.49, 0.035), COL_KIOSK_STEEL, [vx, 1.255, 1.16], [0, 0, 0], 0.005);
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.035, 0.035, 0.52), COL_KIOSK_STEEL, [vx, 1.49, 1.41], [0, 0, 0], 0.005);
+  }
+  // Custom-fitted crystal-clear glass geometry (Front sloped pane + Top horizontal canopy + Left & Right trapezoidal side cheeks)
+  const gvPos: number[] = [];
+  const pushGvQuad = (
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number,
+    cx: number, cy: number, cz: number,
+    dx: number, dy: number, dz: number,
+  ) => {
+    gvPos.push(
+      ax, ay, az, bx, by, bz, cx, cy, cz,
+      ax, ay, az, cx, cy, cz, dx, dy, dz,
+    );
+  };
+  // Front sloped sneeze-guard glass (z = 1.79 at y = 1.02 -> z = 1.66 at y = 1.49)
+  pushGvQuad(0.19, 1.02, 1.79, 2.01, 1.02, 1.79, 2.01, 1.49, 1.66, 0.19, 1.49, 1.66);
+  // Top horizontal glass canopy (y = 1.49, z = 1.66 -> z = 1.16)
+  pushGvQuad(0.19, 1.49, 1.66, 2.01, 1.49, 1.66, 2.01, 1.49, 1.16, 0.19, 1.49, 1.16);
+  // Left & Right trapezoidal side glass end panels (x = 0.19 and x = 2.01)
+  pushGvQuad(0.19, 1.02, 1.16, 0.19, 1.02, 1.79, 0.19, 1.49, 1.66, 0.19, 1.49, 1.16);
+  pushGvQuad(2.01, 1.02, 1.79, 2.01, 1.02, 1.16, 2.01, 1.49, 1.16, 2.01, 1.49, 1.66);
+  const gvGlassGeo = new THREE.BufferGeometry();
+  gvGlassGeo.setAttribute('position', new THREE.Float32BufferAttribute(gvPos, 3));
+  gvGlassGeo.computeVertexNormals();
+  const gvGlassMesh = new THREE.Mesh(gvGlassGeo, sharedLobbyClearGlassMat);
+  gvGlassMesh.castShadow = false;
+  gvGlassMesh.receiveShadow = false;
+  gelatoKioskGrp.add(gvGlassMesh);
 
-  // Folding Glass Shutters ("Folding Glass Shutters" on left & right of front service opening)
-  for (const fx of [-1.92, -1.68, 1.92]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.24, 1.38, 0.08), COL_KIOSK_GLASS, [fx, 1.92, 1.54], [0, fx < 0 ? 0.35 : -0.35, 0], 0.008, lobbyWindowTex);
+  // Folding Glass Shutters on left side of front service counter opening ("Folding Glass Shutters")
+  for (const fx of [-1.92, -1.68]) {
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.24, 1.38, 0.08), COL_KIOSK_GLASS, [fx, 1.92, 1.54], [0, 0.35, 0], 0.008, lobbyWindowTex);
   }
 
   // 4C. Interior Work Counter, Commercial Espresso Machine, Grinder, POS Register, Shelves & Chalkboard Menu Board
@@ -13847,14 +15069,442 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 4B-2. ARCHITECTURAL MODEL SHEET: MODERN FASHION & APPAREL KIOSK
+  //       (Compact Glass & Steel Fashion & Apparel Boutique Kiosk / Kios Toko Baju & Butik Pakaian Modern)
+  //       Reference: screen_47d90552.png (Front, Side Profile, Rear & 3/4 Isometric Views)
+  //       Placed along the West Plaza border between Café Hana & the Botanical Glasshouse Conservatory
+  //       at local (-10.2, 2.50, -1.2), facing East (+X) toward the Central Plaza, scaled 1.48x.
+  // -------------------------------------------------------------------------
+  const fashionKioskGrp = new THREE.Group();
+  fashionKioskGrp.name = 'LobbyModernFashionAndApparelKiosk';
+  fashionKioskGrp.position.set(-10.2, 2.50, -1.2);
+  fashionKioskGrp.rotation.y = Math.PI / 2;
+  fashionKioskGrp.scale.setScalar(1.48);
+  westPlantGroup.add(fashionKioskGrp);
+
+  const addFkToonPart = (
+    parent: THREE.Object3D,
+    geo: THREE.BufferGeometry,
+    colorHex: string,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+    toonStrokeWidth = 0.009,
+    tex?: THREE.Texture,
+    bumpScale = 1.5,
+    castShad = true,
+  ) => {
+    const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
+    m.castShadow = !isSoftwareGl && castShad;
+    if (toonStrokeWidth > 0) {
+      const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
+      if (st) m.add(st);
+    }
+    return m;
+  };
+
+  const addFkGlassPane = (
+    parent: THREE.Object3D,
+    w: number,
+    h: number,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+  ) => {
+    const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), sharedLobbyClearGlassMat);
+    gMesh.position.set(pos[0], pos[1], pos[2]);
+    gMesh.rotation.set(rot[0], rot[1], rot[2]);
+    gMesh.castShadow = false;
+    gMesh.receiveShadow = false;
+    parent.add(gMesh);
+    return gMesh;
+  };
+
+  // Procedural Signboard Texture for the Outdoor A-Frame Sign ("FASHION & APPAREL BOUTIQUE")
+  const fashionBoutiqueSignTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 384;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#efe8d8';
+      ctx.fillRect(0, 0, 256, 384);
+      ctx.strokeStyle = '#4a3d31';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(14, 14, 228, 356);
+      ctx.strokeStyle = '#8c765c';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(24, 24, 208, 336);
+
+      ctx.fillStyle = '#262320';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 34px Georgia, serif';
+      ctx.fillText('FASHION', 128, 128);
+      ctx.font = 'italic bold 22px Georgia, serif';
+      ctx.fillText('& APPAREL', 128, 178);
+      ctx.font = 'bold 30px Georgia, serif';
+      ctx.fillText('BOUTIQUE', 128, 232);
+
+      // Decorative divider rules
+      ctx.fillRect(54, 74, 148, 3);
+      ctx.fillRect(54, 268, 148, 3);
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillStyle = '#5c4e3e';
+      ctx.fillText('NEW COLLECTION', 128, 312);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 1) Granite Plaza Paver Base (5.24m W x 4.04m D) with Continuous 45° Mitred Curb & Dark Charcoal Steel Frame
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(5.24, 0.09, 4.04), '#dcd9d0', [0, 0.055, 0], [0, 0, 0], 0.011, lobbyGranitePaverTex, 2.0);
+  const fkApronPath: [number, number][] = [
+    [-2.62, -2.02],
+    [2.62, -2.02],
+    [2.62, 2.02],
+    [-2.62, 2.02],
+  ];
+  addFkToonPart(
+    fashionKioskGrp,
+    createMitredPolylineStripGeometry(fkApronPath, 0.12, 0.10, true),
+    '#b8b3a8',
+    [0, 0.058, 0],
+    [0, 0, 0],
+    0.008,
+    lobbyConcreteTex,
+    1.5,
+    false,
+  );
+  // Dark Charcoal Steel Structural Base Plinth & Warm Boutique Parquet/Stone Interior Floor
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.48, 0.12, 3.28), COL_KIOSK_STEEL, [0, 0.14, 0], [0, 0, 0], 0.011, lobbySteelRoofTex);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.12, 0.03, 2.94), '#e8dfd1', [0, 0.205, 0], [0, 0, 0], 0, lobbyGranitePaverTex, 1.2, false);
+
+  // 4 Corner Dark Charcoal Steel Columns (x = ±2.14, z = ±1.54)
+  for (const cx of [-2.14, 2.14]) {
+    for (const cz of [-1.54, 1.54]) {
+      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.20, 2.68, 0.20), COL_KIOSK_STEEL, [cx, 1.48, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
+    }
+  }
+  // Continuous 45° Mitred Upper Steel Architrave / Header Ring (y = 2.74m)
+  const fkFrameRectPath: [number, number][] = [
+    [-2.14, -1.54],
+    [2.14, -1.54],
+    [2.14, 1.54],
+    [-2.14, 1.54],
+  ];
+  addFkToonPart(
+    fashionKioskGrp,
+    createMitredPolylineStripGeometry(fkFrameRectPath, 0.18, 0.14, true),
+    COL_KIOSK_STEEL,
+    [0, 2.74, 0],
+    [0, 0, 0],
+    0.010,
+    lobbySteelRoofTex,
+  );
+
+  // 2) Front Elevation (+Z = +1.54): 2 Tempered Display Glass Bays (Left & Center) + Right Glass Entrance Door
+  //    2 Vertical Mullions at x = -0.72 and x = +0.72 dividing Front into 3 equal bays
+  for (const mx of [-0.72, 0.72]) {
+    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 2.56, 0.14), COL_KIOSK_STEEL, [mx, 1.46, 1.54], [0, 0, 0], 0.009, lobbySteelRoofTex);
+  }
+  // Bottom steel glazing sill along Left & Center display windows
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(2.86, 0.08, 0.12), COL_KIOSK_STEEL, [-0.71, 0.24, 1.54], [0, 0, 0], 0.007);
+  // Clear Tempered Display Glass Panes (Left & Center Bays)
+  addFkGlassPane(fashionKioskGrp, 1.30, 2.40, [-1.43, 1.48, 1.54], [0, 0, 0]);
+  addFkGlassPane(fashionKioskGrp, 1.32, 2.40, [0.0, 1.48, 1.54], [0, 0, 0]);
+
+  // Right Bay: Framed Glass Entrance Door ("Glass Entrance Door" at x in [+0.78 .. +2.04])
+  // Inner door frame stiles & top/bottom door rails
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.42, 0.08), '#3b424c', [0.82, 1.41, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.42, 0.08), '#3b424c', [2.00, 1.41, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.09, 0.08), '#3b424c', [1.41, 2.58, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.10, 0.08), '#3b424c', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
+  addFkGlassPane(fashionKioskGrp, 1.10, 2.24, [1.41, 1.42, 1.54], [0, 0, 0]);
+  // Brushed Stainless Lever Door Handle & Escutcheon Plate on Left Stile of Entrance Door
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.04, 0.22, 0.09), '#cbd5e1', [0.90, 1.18, 1.56], [0, 0, 0], 0.005, undefined, 1.0, false);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 0.035, 0.12), '#e2e8f0', [0.95, 1.20, 1.59], [0, 0, 0], 0.005, undefined, 1.0, false);
+
+  // 3) Side Profile Elevations (±X = ±2.14): 3 Panoramic Glass Wall Bays ("Panoramic Glass Wall" & "Side Glazing Panel")
+  for (const sideX of [-2.14, 2.14]) {
+    for (const mz of [-0.52, 0.48]) {
+      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 2.56, 0.12), COL_KIOSK_STEEL, [sideX, 1.46, mz], [0, 0, 0], 0.009, lobbySteelRoofTex);
+    }
+    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 0.08, 2.88), COL_KIOSK_STEEL, [sideX, 0.24, 0.0], [0, 0, 0], 0.007);
+    addFkGlassPane(fashionKioskGrp, 2.88, 2.40, [sideX, 1.48, 0.0], [0, Math.PI / 2, 0]);
+  }
+
+  // 4) Rear Elevation (-Z = -1.52): Solid Vertical Timber Cladding, Rear Staff Door, Exterior Ventilation Grille & Conduits
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.12, 2.58, 0.16), COL_KIOSK_WOOD, [0, 1.48, -1.52], [0, 0, 0], 0.012, lobbyVerticalTimberTex, 1.6);
+  // Rear Staff Door ("Rear Staff Door" on right rear -> x = -1.02 when viewed from rear)
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.16, 2.18, 0.08), COL_KIOSK_STEEL, [-1.02, 1.28, -1.61], [0, 0, 0], 0.010);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.02, 2.06, 0.09), '#c8ccd2', [-1.02, 1.28, -1.62], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.08), '#2b3036', [-0.62, 1.22, -1.67], [0, 0, 0], 0.005);
+  // Exterior Ventilation Grille ("Exterior Ventilation Grille" on lower-left rear -> x = +1.18)
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.08), '#47505c', [1.18, 0.68, -1.62], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
+  // Surface-Mounted Electrical Utility Conduits & Twin Junction Boxes ("Electrical Utility Conduits")
+  addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.024, 0.024, 2.36, 8), '#64748b', [0.32, 1.46, -1.63], [0, 0, 0], 0.005, undefined, 1.0, false);
+  addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.78, 8), '#64748b', [0.71, 0.30, -1.63], [0, 0, Math.PI / 2], 0.005, undefined, 1.0, false);
+  for (const jbx of [0.06, 0.32]) {
+    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.16, 0.22, 0.08), '#94a3b8', [jbx, 0.42, -1.63], [0, 0, 0], 0.006, undefined, 1.0, false);
+    addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.02, 0.02, 0.28, 6), '#475569', [jbx, 0.20, -1.63], [0, 0, 0], 0, undefined, 1.0, false);
+  }
+
+  // 5) Cantilevered Sloped Canopy Roof & Integrated Warm LED Spotlights ("Cantilevered Canopy Roof" & "Integrated LED Spotlights")
+  const fkRoofGrp = new THREE.Group();
+  fkRoofGrp.position.set(0, 2.84, 0.14);
+  fkRoofGrp.rotation.x = -0.055; // Higher at front (+Z), sloping gently down toward rear (-Z) as in Side Profile View
+  fashionKioskGrp.add(fkRoofGrp);
+
+  addFkToonPart(fkRoofGrp, new THREE.BoxGeometry(5.16, 0.18, 4.18), COL_KIOSK_STEEL, [0, 0.04, 0], [0, 0, 0], 0.013, lobbySteelRoofTex, 2.4);
+  addFkToonPart(fkRoofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), '#1e2228', [0, 0.15, 0], [0, 0, 0], 0.010);
+  addFkToonPart(fkRoofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
+  for (const sx of [-1.85, -0.62, 0.62, 1.85]) {
+    for (const sz of [1.65, 0.45, -0.65]) {
+      addFkToonPart(fkRoofGrp, new THREE.CylinderGeometry(0.075, 0.075, 0.03, 10), COL_KIOSK_LED, [sx, -0.08, sz], [0, 0, 0], 0.004, undefined, 1.0, false);
+    }
+  }
+
+  // 6) Boutique Interior Architecture: Left Vertical Timber Accent Panel, Rear Boutique Wall & Interior Staff Doorway
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 2.38, 1.48), COL_KIOSK_WOOD, [-1.92, 1.40, -0.45], [0, 0, 0], 0.009, lobbyVerticalTimberTex, 1.5);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(3.84, 2.42, 0.08), '#f3efe6', [0, 1.42, -1.36], [0, 0, 0], 0.008, lobbyConcreteTex, 1.2);
+  // Interior wooden staff doorway frame on rear partition (visible through center glass window in Front View)
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.86, 1.98, 0.11), '#d6cfc2', [0.42, 1.20, -1.34], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.74, 1.88, 0.12), '#e5dec9', [0.42, 1.16, -1.33], [0, 0, 0], 0.006);
+  // Low Warm-Timber Center Display Plinth behind Center Mannequin
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.12, 0.24, 0.56), COL_KIOSK_WOOD, [-0.18, 0.34, 0.18], [0, 0, 0], 0.008, lobbyTimberTex, 1.4);
+
+  // 7) 3 Sculpted Fashion Mannequin Displays ("Fashion Mannequin Display" & "Boutique Display & Mannequins")
+  const buildFashionMannequin = (
+    mx: number,
+    mz: number,
+    rotY: number,
+    style: 'camel_trench_coat' | 'charcoal_pleated_dress' | 'dove_grey_blazer',
+  ) => {
+    const mGrp = new THREE.Group();
+    mGrp.position.set(mx, 0.22, mz);
+    mGrp.rotation.y = rotY;
+    fashionKioskGrp.add(mGrp);
+
+    // Brushed steel circular pedestal base + tripod/crossbar feet + chrome vertical support rod
+    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.22, 0.24, 0.03, 12), '#94a3b8', [0, 0.015, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.72, 8), '#cbd5e1', [0, 0.37, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+
+    // Mannequin neck & wooden finial cap (y = 1.46m .. 1.60m)
+    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.048, 0.056, 0.14, 8), '#ede4d3', [0, 1.48, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.052, 0.052, 0.03, 8), '#8a623e', [0, 1.56, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+
+    if (style === 'camel_trench_coat') {
+      // Left Window Mannequin: Long Tailored Camel/Beige Trench Coat over Dark Turtleneck
+      // Inner dark charcoal turtleneck chest
+      addFkToonPart(mGrp, new THREE.CylinderGeometry(0.12, 0.10, 0.36, 8), '#2b3038', [0, 1.26, 0.02], [0, 0, 0], 0.006, undefined, 1.0, false);
+      // Upper camel coat torso & shoulders
+      const torsoGeo = new THREE.CylinderGeometry(0.20, 0.16, 0.48, 10);
+      torsoGeo.scale(1.12, 1.0, 0.72);
+      addFkToonPart(mGrp, torsoGeo, '#c8a97e', [0, 1.18, 0], [0, 0, 0], 0.008);
+      // Lower long flared camel trench coat skirt (y = 0.42m .. 0.96m)
+      const skirtGeo = new THREE.CylinderGeometry(0.16, 0.25, 0.58, 10);
+      skirtGeo.scale(1.08, 1.0, 0.76);
+      addFkToonPart(mGrp, skirtGeo, '#c8a97e', [0, 0.68, 0], [0, 0, 0], 0.008);
+      // Waist belt & notched lapels
+      addFkToonPart(mGrp, new THREE.BoxGeometry(0.36, 0.05, 0.26), '#a6855b', [0, 0.95, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+      for (const side of [-1, 1]) {
+        addFkToonPart(mGrp, new THREE.BoxGeometry(0.07, 0.34, 0.04), '#b8966b', [side * 0.08, 1.24, 0.12], [0, 0, side * 0.22], 0.005, undefined, 1.0, false);
+        // Tailored coat sleeves
+        addFkToonPart(mGrp, new THREE.CylinderGeometry(0.055, 0.048, 0.56, 8), '#c8a97e', [side * 0.24, 1.10, 0], [0, 0, -side * 0.14], 0.007, undefined, 1.0, false);
+      }
+    } else if (style === 'charcoal_pleated_dress') {
+      // Center Window Mannequin: Sleeveless Charcoal-Taupe Pleated Boutique Dress
+      // Exposed cream mannequin shoulders & upper bust
+      const shoulderGeo = new THREE.CylinderGeometry(0.18, 0.14, 0.16, 10);
+      shoulderGeo.scale(1.10, 1.0, 0.68);
+      addFkToonPart(mGrp, shoulderGeo, '#ede4d3', [0, 1.36, 0], [0, 0, 0], 0.007, undefined, 1.0, false);
+      // Fitted bodice (y = 0.98m .. 1.32m)
+      const bodiceGeo = new THREE.CylinderGeometry(0.16, 0.12, 0.36, 10);
+      bodiceGeo.scale(1.08, 1.0, 0.70);
+      addFkToonPart(mGrp, bodiceGeo, '#5c5650', [0, 1.15, 0], [0, 0, 0], 0.008);
+      // Cinched waist ribbon
+      addFkToonPart(mGrp, new THREE.BoxGeometry(0.28, 0.04, 0.20), '#3d3935', [0, 0.97, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+      // Flared A-line pleated knee-length dress skirt (y = 0.52m .. 0.97m)
+      const dressSkirtGeo = new THREE.CylinderGeometry(0.13, 0.28, 0.48, 12);
+      dressSkirtGeo.scale(1.06, 1.0, 0.82);
+      addFkToonPart(mGrp, dressSkirtGeo, '#6b645d', [0, 0.74, 0], [0, 0, 0], 0.008);
+    } else {
+      // Front-Right Side Window Mannequin: Tailored Dove-Grey Structured Blazer & Midi Skirt
+      addFkToonPart(mGrp, new THREE.CylinderGeometry(0.11, 0.09, 0.32, 8), '#f5efe6', [0, 1.26, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
+      const blazerGeo = new THREE.CylinderGeometry(0.19, 0.15, 0.46, 10);
+      blazerGeo.scale(1.10, 1.0, 0.72);
+      addFkToonPart(mGrp, blazerGeo, '#787e87', [0, 1.16, 0], [0, 0, 0], 0.008);
+      const skirtGeo = new THREE.CylinderGeometry(0.15, 0.21, 0.46, 10);
+      skirtGeo.scale(1.05, 1.0, 0.74);
+      addFkToonPart(mGrp, skirtGeo, '#646a73', [0, 0.72, 0], [0, 0, 0], 0.008);
+      for (const side of [-1, 1]) {
+        addFkToonPart(mGrp, new THREE.CylinderGeometry(0.052, 0.045, 0.52, 8), '#787e87', [side * 0.23, 1.10, 0], [0, 0, -side * 0.12], 0.006, undefined, 1.0, false);
+      }
+    }
+  };
+
+  buildFashionMannequin(-1.42, 0.78, 0.08, 'camel_trench_coat');
+  buildFashionMannequin(-0.04, 0.74, -0.05, 'charcoal_pleated_dress');
+  buildFashionMannequin(1.42, 0.88, 0.42, 'dove_grey_blazer');
+
+  // Helper: build a Structured Designer Leather Handbag with Double Arched Handles
+  const addDesignerHandbag = (
+    parent: THREE.Object3D,
+    pos: [number, number, number],
+    rotY: number,
+    bagColor: string,
+    strapColor = '#4a3525',
+  ) => {
+    const bgGrp = new THREE.Group();
+    bgGrp.position.set(pos[0], pos[1], pos[2]);
+    bgGrp.rotation.y = rotY;
+    parent.add(bgGrp);
+
+    // Structured trapezoidal leather tote body + brass clasp accent
+    addFkToonPart(bgGrp, new THREE.BoxGeometry(0.30, 0.22, 0.14), bagColor, [0, 0.11, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+    addFkToonPart(bgGrp, new THREE.BoxGeometry(0.28, 0.04, 0.15), strapColor, [0, 0.20, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
+    addFkToonPart(bgGrp, new THREE.BoxGeometry(0.04, 0.04, 0.16), '#d4af37', [0, 0.16, 0], [0, 0, 0], 0, undefined, 1.0, false);
+    // Arched leather top handle
+    const handleArch = new THREE.TorusGeometry(0.075, 0.014, 6, 10, Math.PI);
+    addFkToonPart(bgGrp, handleArch, strapColor, [0, 0.22, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
+  };
+
+  // 8) 2 Indoor Garment Display Racks ("Indoor Display Rack") with Hanging Shirts, Coats & Top Handbag Shelf
+  const buildIndoorGarmentRack = (
+    rx: number,
+    rz: number,
+    rotY: number,
+    rackWidth: number,
+    withTopBagShelf: boolean,
+  ) => {
+    const rGrp = new THREE.Group();
+    rGrp.position.set(rx, 0.22, rz);
+    rGrp.rotation.y = rotY;
+    fashionKioskGrp.add(rGrp);
+
+    const halfW = rackWidth * 0.5;
+    // Warm timber lower platform base
+    addFkToonPart(rGrp, new THREE.BoxGeometry(rackWidth + 0.12, 0.08, 0.52), COL_KIOSK_WOOD, [0, 0.04, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+    // Vertical brushed-steel rack uprights & top crossbar (height 1.38m)
+    for (const sx of [-halfW, halfW]) {
+      addFkToonPart(rGrp, new THREE.CylinderGeometry(0.022, 0.022, 1.36, 8), '#94a3b8', [sx, 0.72, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+    }
+    addFkToonPart(
+      rGrp,
+      new THREE.CylinderGeometry(0.020, 0.020, rackWidth, 8),
+      '#cbd5e1',
+      [0, 1.34, 0],
+      [0, 0, Math.PI / 2],
+      0.005,
+      undefined,
+      1.0,
+      false,
+    );
+
+    // Row of Neatly Hung Tailored Garments (Shirts, Blouses, Jackets) on Hangers along the Rail
+    const garmentColors = ['#eef2f6', '#b8c7d6', '#d8c5b0', '#7c8b99', '#f4efe6', '#94a3b8', '#c8b29b'];
+    const garmentCount = Math.max(4, Math.round(rackWidth * 5.2));
+    for (let g = 0; g < garmentCount; g++) {
+      const gx = -halfW + 0.14 + (g / (garmentCount - 1)) * (rackWidth - 0.28);
+      const gH = 0.64 + (g % 3) * 0.08;
+      // Wire hanger hook
+      addFkToonPart(rGrp, new THREE.BoxGeometry(0.02, 0.09, 0.04), '#cbd5e1', [gx, 1.30, 0], [0, 0, 0], 0, undefined, 1.0, false);
+      // Hanging garment body (draped perpendicular to the rail)
+      addFkToonPart(
+        rGrp,
+        new THREE.BoxGeometry(0.09, gH, 0.42),
+        garmentColors[g % garmentColors.length],
+        [gx, 1.26 - gH * 0.5, 0],
+        [0, (g % 2 === 0 ? 1 : -1) * 0.04, 0],
+        0.006,
+        undefined,
+        1.0,
+        false,
+      );
+    }
+
+    if (withTopBagShelf) {
+      // Upper Warm-Timber Accessory Shelf above the Garment Rail + 2 Designer Handbags (Side Profile & Isometric Views)
+      addFkToonPart(rGrp, new THREE.BoxGeometry(rackWidth + 0.14, 0.06, 0.46), COL_KIOSK_WOOD, [0, 1.42, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+      addDesignerHandbag(rGrp, [-0.28, 1.45, 0], 0.12, '#a6825c', '#5c3f24');
+      addDesignerHandbag(rGrp, [0.28, 1.45, 0], -0.10, '#c8b49c', '#6e5236');
+    }
+  };
+
+  // Foreground Right-Side Garment Rack (oriented along Z so its profile faces the Front Entrance Door & full rack faces the Right Side Window!)
+  buildIndoorGarmentRack(1.42, -0.02, Math.PI / 2, 1.12, true);
+  // Rear-Center Garment Rack (oriented along X behind the Center Dress Mannequin, visible through the Front Display Glass!)
+  buildIndoorGarmentRack(-0.56, -0.78, 0.0, 1.32, false);
+
+  // 9) Rear-Right Tall Warm-Timber Apparel & Accessories Display Cabinet ("Apparel & Accessories Display" / "Timber Cladding Accents")
+  const shelfCabGrp = new THREE.Group();
+  shelfCabGrp.position.set(1.48, 0.22, -0.98);
+  shelfCabGrp.rotation.y = Math.PI / 2; // Facing outward toward the Right Side Glazing Panel (+X) and Front-Left (-X)
+  fashionKioskGrp.add(shelfCabGrp);
+
+  // Tall wooden cabinet frame (0.86m W x 1.82m H x 0.48m D)
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.86, 0.52, 0.48), COL_KIOSK_WOOD, [0, 0.26, 0], [0, 0, 0], 0.008, lobbyTimberTex);
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.06, 1.30, 0.46), COL_KIOSK_WOOD, [-0.40, 1.17, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.06, 1.30, 0.46), COL_KIOSK_WOOD, [0.40, 1.17, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.82, 1.30, 0.05), '#b07b47', [0, 1.17, -0.21], [0, 0, 0], 0.006, lobbyTimberTex);
+  for (const sy of [0.94, 1.36, 1.80]) {
+    addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.86, 0.05, 0.48), COL_KIOSK_WOOD, [0, sy, 0], [0, 0, 0], 0.007, lobbyTimberTex);
+  }
+  // Top Shelf: Structured Designer Handbag
+  addDesignerHandbag(shelfCabGrp, [0, 1.83, 0.02], 0.05, '#8c7258', '#4a3525');
+  // Upper Cubby (y = 1.39m): Boutique Wide-Brimmed Sun Hat / Fedora with Dark Ribbon Band
+  addFkToonPart(shelfCabGrp, new THREE.CylinderGeometry(0.21, 0.22, 0.025, 12), '#dfd3be', [0, 1.41, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
+  addFkToonPart(shelfCabGrp, new THREE.CylinderGeometry(0.11, 0.13, 0.12, 10), '#e8dec9', [0, 1.48, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
+  addFkToonPart(shelfCabGrp, new THREE.CylinderGeometry(0.125, 0.128, 0.03, 10), '#3b332b', [0, 1.44, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
+  // Middle Cubby (y = 0.97m): Neatly Folded Stack of Boutique Knitwear Sweaters
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.38, 0.06, 0.28), '#c8beb0', [0, 1.00, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.36, 0.06, 0.26), '#8f96a0', [0, 1.06, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
+  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.34, 0.05, 0.25), '#ede6d8', [0, 1.115, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
+  // Lower Cubby (y = 0.52m): Structured Saddle-Brown Leather Tote Bag
+  addDesignerHandbag(shelfCabGrp, [0, 0.53, 0.02], -0.08, '#966842', '#4a301a');
+
+  // 10) Outdoor Wooden A-Frame Sidewalk Sign ("Outdoor A-Frame Sign" / "A-Frame Sidewalk Sign")
+  //     Placed on the granite paver apron outside the front-right corner (x = +1.36, z = +2.06)
+  const fkSignGrp = new THREE.Group();
+  fkSignGrp.position.set(1.36, 0.10, 2.04);
+  fkSignGrp.rotation.y = 0.32;
+  fashionKioskGrp.add(fkSignGrp);
+
+  for (const sideZ of [-1, 1]) {
+    const legAngle = sideZ * 0.20;
+    const panelZ = sideZ * 0.11;
+    // Wooden easel frame & legs
+    addFkToonPart(
+      fkSignGrp,
+      new THREE.BoxGeometry(0.58, 0.88, 0.04),
+      COL_KIOSK_WOOD,
+      [0, 0.44, panelZ],
+      [-legAngle, 0, 0],
+      0.007,
+      lobbyTimberTex,
+    );
+    // Printed "FASHION & APPAREL BOUTIQUE" placard face
+    addFkToonPart(
+      fkSignGrp,
+      new THREE.BoxGeometry(0.48, 0.66, 0.048),
+      '#ffffff',
+      [0, 0.48, panelZ + sideZ * 0.006],
+      [-legAngle, 0, 0],
+      0.005,
+      fashionBoutiqueSignTex,
+      0.4,
+      false,
+    );
+  }
+
   // 4G. 2 Outdoor Café Tables with Cream Octagonal Parasol Umbrellas moved near the Flowering Pink Tree on the East-South Plaza Wing (pindah kursi payung.png)
   const outdoorCafeZoneGrp = new THREE.Group();
   outdoorCafeZoneGrp.name = 'LobbyOutdoorParasolCafeTables';
   outdoorCafeZoneGrp.position.set(8.8, 2.50, 16.2);
   outdoorCafeZoneGrp.scale.setScalar(1.48);
   westPlantGroup.add(outdoorCafeZoneGrp);
-  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, -1.75, true);
-  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, 1.75, true);
+  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, -1.95, true);
+  buildLobbyCafeTableAndChairs(outdoorCafeZoneGrp, 0.0, 1.95, true);
 
   // -------------------------------------------------------------------------
   // 5. SHEET 4: ARCHITECTURAL MODEL SHEET — INTEGRATED CONCRETE PLANTER BENCH
@@ -13959,36 +15609,2593 @@ export function createCurvedPlanetEnvironment(
     });
   };
 
-  // Place 6 Integrated Concrete Planter Benches around the Lobby Plaza (matching Sheet 4 & Sheet 5 Master Plan)
-  buildIntegratedConcretePlanterBench(0.0, -33.0, 0, true, 1.22); // North Plaza Center (Flowering Pink Tree)
+  // Place 3 South Integrated Concrete Planter Benches around the South Lobby Plaza
+  // (North & West-North planters removed and replaced by the Grand Neoclassical Municipal Hall & Clock Tower facing South!)
   buildIntegratedConcretePlanterBench(0.0, 33.0, Math.PI, true, 1.22); // South Plaza Center (Flowering Pink Tree)
-  buildIntegratedConcretePlanterBench(-9.4, -24.5, Math.PI / 2, false, 1.14); // West-North Planter (Lush Green Tree)
   buildIntegratedConcretePlanterBench(-9.4, 24.8, Math.PI / 2, true, 1.14); // West-South Planter (Flowering Pink Tree)
-  buildIntegratedConcretePlanterBench(9.6, -24.5, -Math.PI / 2, false, 1.14); // East-North Planter (Lush Green Tree)
   buildIntegratedConcretePlanterBench(9.6, 24.8, -Math.PI / 2, true, 1.14); // East-South Planter (Flowering Pink Tree)
 
+  // =========================================================================
+  // 5B. ARCHITECTURAL MODEL SHEET — GRAND NEOCLASSICAL MUNICIPAL HALL & CLOCK TOWER
+  //     Reference: a_single_concept_art_architectural_building_model_sheet_based_on_the_one_story__1__84330923.png
+  //     Placed across the North Central Plaza at local (-0.8, 2.50, -29.2), facing South (+Z)
+  //     toward the Central Plaza, scaled 1.42x (~17.6m W x 12.8m D x 13.2m H).
+  //     Features all 4 views 1:1:
+  //       - Fan-Pattern Porphyry Promenade & Circular Bronze Commemorative Seal Inlay
+  //       - Curved/Stepped Stone Retaining Balustrades & Hydrangea / Lavender Planters
+  //       - Projecting Classical 2-Column Pediment Portico, "MAYOR'S OFFICE" Plaque,
+  //         Arched Double Doors, Sunburst Transom & Twin Coach Wall Lanterns
+  //       - Cream-Stucco Walls, Exposed Terracotta Brick Corner Quoins, 6 Mullioned
+  //         Windows with Sage-Green Louvered Shutters & Blooming Window Boxes
+  //       - Pitched Slate-Tile Gable Roof, Red-Brick Chimney, Cascading Ivy Vines,
+  //         Perched Birds, and Central Clock & Bell Tower Cupola with Golden Rooster Weathervane
+  //       - Freestanding Carved-Wood Civic Info Kiosks, Sculpted Stone Lion-Head Water Spigots,
+  //         Vintage Municipal Letterbox, Galvanized Downspout & Forest-Green Cast-Iron Benches
+  // =========================================================================
+  const civicHallGrp = new THREE.Group();
+  civicHallGrp.name = 'LobbyMunicipalClockTowerHall';
+  civicHallGrp.position.set(-0.8, 2.50, -29.2);
+  civicHallGrp.rotation.y = 0; // Facing South (+Z) toward the Central Plaza
+  civicHallGrp.scale.setScalar(1.42);
+  westPlantGroup.add(civicHallGrp);
+
+  const COL_CH_STUCCO = '#ede2ce';
+  const COL_CH_STONE = '#d6cebe';
+  const COL_CH_STONE_DARK = '#b5ad9e';
+  const COL_CH_BRICK = '#c48768';
+  const COL_CH_BRICK_DARK = '#ab6f52';
+  const COL_CH_SAGE = '#6b8c76';
+  const COL_CH_SAGE_DARK = '#4f6b58';
+  const COL_CH_SLATE = '#667782';
+  const COL_CH_SLATE_DARK = '#4e5d66';
+  const COL_CH_WOOD = '#9c7148';
+  const COL_CH_WOOD_DARK = '#6e4c2c';
+  const COL_CH_BENCH_GREEN = '#36523e';
+  const COL_CH_GOLD = '#d9a636';
+
+  const addChToonPart = (
+    parent: THREE.Object3D,
+    geo: THREE.BufferGeometry,
+    colorHex: string,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+    toonStrokeWidth = 0.009,
+    tex?: THREE.Texture,
+    bumpScale = 1.4,
+    castShad = true,
+  ) => {
+    const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
+    m.castShadow = !isSoftwareGl && castShad;
+    if (toonStrokeWidth > 0) {
+      const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
+      if (st) m.add(st);
+    }
+    return m;
+  };
+
+  // --- Procedural Textures for the Neoclassical Municipal Hall & Clock Tower ---
+  // 1) Fan-Pattern Porphyry / Granite Cobblestone Promenade Texture ("Fan-Pattern Porphyry Promenade")
+  const chPorphyryFanTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 512;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#a8948b';
+      ctx.fillRect(0, 0, 512, 512);
+      const fanCols = ['#b8a399', '#9e8980', '#c2aea4', '#8f7b72'];
+      const spacingX = 128;
+      const spacingY = 86;
+      for (let row = -1; row <= 7; row++) {
+        const cy = row * spacingY;
+        const xShift = (row % 2) * (spacingX * 0.5);
+        for (let col = -1; col <= 5; col++) {
+          const cx = col * spacingX + xShift;
+          for (let ring = 4; ring >= 1; ring--) {
+            const rOuter = ring * 18;
+            ctx.beginPath();
+            ctx.arc(cx, cy, rOuter, Math.PI * 1.12, Math.PI * 1.88);
+            ctx.strokeStyle = fanCols[(row + col + ring + 8) % fanCols.length];
+            ctx.lineWidth = 14;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, rOuter + 7, Math.PI * 1.10, Math.PI * 1.90);
+            ctx.strokeStyle = '#6e5f58';
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+          }
+          // Radial cobblestone joints along each fan arc
+          ctx.strokeStyle = '#6e5f58';
+          ctx.lineWidth = 2;
+          for (let a = 0; a <= 8; a++) {
+            const ang = Math.PI * (1.12 + (a / 8) * 0.76);
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(ang) * 14, cy + Math.sin(ang) * 14);
+            ctx.lineTo(cx + Math.cos(ang) * 76, cy + Math.sin(ang) * 76);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+
+  // 2) Circular Bronze Commemorative Seal Inlay Texture ("Commemorative Seal Inlay")
+  const chSealMedalTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#735a3c';
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.beginPath();
+      ctx.arc(128, 128, 120, 0, Math.PI * 2);
+      ctx.fillStyle = '#8c6d46';
+      ctx.fill();
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#d4aa4f';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(128, 128, 92, 0, Math.PI * 2);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#e0bc68';
+      ctx.stroke();
+
+      // Perimeter commemorative bead dots
+      ctx.fillStyle = '#e6c575';
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(128 + Math.cos(a) * 106, 128 + Math.sin(a) * 106, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Central civic emblem crest
+      ctx.fillStyle = '#d9b155';
+      ctx.beginPath();
+      ctx.arc(128, 128, 46, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#59432a';
+      ctx.font = 'bold 24px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('1894', 128, 136);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 3) Classical Clock Tower Dial Texture
+  const chClockDialTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#f7f1e1';
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.strokeStyle = '#2d2924';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(128, 128, 112, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(128, 128, 98, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 12 Hour Markers
+      for (let h = 0; h < 12; h++) {
+        const ang = (h / 12) * Math.PI * 2 - Math.PI / 2;
+        const x0 = 128 + Math.cos(ang) * 76;
+        const y0 = 128 + Math.sin(ang) * 76;
+        const x1 = 128 + Math.cos(ang) * 95;
+        const y1 = 128 + Math.sin(ang) * 95;
+        ctx.lineWidth = h % 3 === 0 ? 7 : 4;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+      // Hour hand & Minute hand (pointing to ~10:10 as in Panel 1)
+      ctx.strokeStyle = '#1f1c18';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(128, 128);
+      ctx.lineTo(82, 96);
+      ctx.stroke();
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(128, 128);
+      ctx.lineTo(176, 86);
+      ctx.stroke();
+
+      ctx.fillStyle = '#c89b3c';
+      ctx.beginPath();
+      ctx.arc(128, 128, 10, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 4) Portico Pediment Plaque Texture ("MAYOR'S OFFICE")
+  const chMayorsPlaqueTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#d4b483';
+      ctx.fillRect(0, 0, 512, 256);
+      ctx.strokeStyle = '#6e4e2e';
+      ctx.lineWidth = 18;
+      ctx.strokeRect(12, 12, 488, 232);
+      ctx.strokeStyle = '#8c6842';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(30, 30, 452, 196);
+
+      ctx.fillStyle = '#3b2816';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 44px Georgia, serif';
+      ctx.fillText('INFORMATION', 256, 116);
+      ctx.font = 'bold 48px Georgia, serif';
+      ctx.fillText('CENTER', 256, 184);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 5) Civic Info Kiosk Notice Board Texture ("Civic Info Kiosk")
+  const chKioskPosterTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 384;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#f2ead7';
+      ctx.fillRect(0, 0, 256, 384);
+      ctx.strokeStyle = '#5c4631';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(10, 10, 236, 364);
+      ctx.fillStyle = '#3b2e22';
+      ctx.font = 'bold 22px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('CIVIC NOTICE', 128, 52);
+      ctx.fillRect(32, 66, 192, 4);
+
+      // Left & Right text columns + map diagram
+      ctx.fillStyle = '#6e5d4c';
+      for (let r = 0; r < 8; r++) {
+        ctx.fillRect(32, 88 + r * 18, 82, 7);
+        ctx.fillRect(132, 88 + r * 18, 90, 7);
+      }
+      ctx.fillStyle = '#d8cbb5';
+      ctx.fillRect(32, 246, 192, 98);
+      ctx.strokeStyle = '#6e5d4c';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(32, 246, 192, 98);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // --- PART 1: FAN-PATTERN PORPHYRY PROMENADE, MITRED GRANITE CURB & COMMEMORATIVE SEAL INLAY ---
+  addChToonPart(
+    civicHallGrp,
+    new THREE.BoxGeometry(12.20, 0.04, 8.80),
+    '#ffffff',
+    [0, 0.02, 0],
+    [0, 0, 0],
+    0.010,
+    chPorphyryFanTex,
+    1.8,
+    false,
+  );
+  const chOuterCurbPath: [number, number][] = [
+    [-6.18, -4.48],
+    [6.18, -4.48],
+    [6.18, 4.48],
+    [-6.18, 4.48],
+  ];
+  addChToonPart(
+    civicHallGrp,
+    createMitredPolylineStripGeometry(chOuterCurbPath, 0.22, 0.065, true),
+    COL_CH_STONE,
+    [0, 0.0325, 0],
+    [0, 0, 0],
+    0.009,
+    lobbyConcreteTex,
+    1.5,
+    false,
+  );
+
+  // Circular Bronze Commemorative Seal Inlay embedded in front entrance promenade ("Commemorative Seal Inlay")
+  addChToonPart(
+    civicHallGrp,
+    new THREE.CylinderGeometry(0.76, 0.78, 0.045, 20),
+    COL_CH_STONE,
+    [0, 0.024, 3.48],
+    [0, 0, 0],
+    0.007,
+    lobbyConcreteTex,
+    1.2,
+    false,
+  );
+  addChToonPart(
+    civicHallGrp,
+    new THREE.CylinderGeometry(0.64, 0.64, 0.052, 20),
+    '#ffffff',
+    [0, 0.028, 3.48],
+    [0, 0, 0],
+    0.006,
+    chSealMedalTex,
+    0.5,
+    false,
+  );
+
+  // 6 Recessed Flush Uplighting Discs along the Front Promenade ("Flush Uplighting")
+  for (const [ux, uz] of [
+    [-1.42, 3.42],
+    [1.42, 3.42],
+    [-2.55, 2.25],
+    [2.55, 2.25],
+    [-4.10, 3.85],
+    [4.10, 3.85],
+  ] as [number, number][]) {
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.11, 0.12, 0.05, 10), '#52493e', [ux, 0.026, uz], [0, 0, 0], 0.004, undefined, 1.0, false);
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.055, 10), '#ffe699', [ux, 0.029, uz], [0, 0, 0], 0, undefined, 1.0, false);
+  }
+
+  // --- PART 2: STONE RETAINING BALUSTRADES, HYDRANGEA/LAVENDER PLANTERS & FRONT LAMPPOSTS ---
+  const chLeafPalette = ['#4d8545', '#5f9955', '#3e7037', '#6eab63'];
+  const chHydrangeaBlue = ['#8ca8d9', '#9eb8e6', '#7995c7', '#b2c8f0'];
+  const chHydrangeaPink = ['#e89bb5', '#d982a0', '#f2b3c8'];
+  const chLavenderCols = ['#8c6ec9', '#a184de', '#7456b0'];
+
+  for (const sideSign of [-1, 1]) {
+    // Continuous 45° Mitred L-Shaped Stone Retaining Balustrade wrapping the Front-Left & Front-Right Promenade Corners
+    const balPath: [number, number][] = [
+      [sideSign * 1.95, 4.18],
+      [sideSign * 5.88, 4.18],
+      [sideSign * 5.88, 1.35],
+    ];
+    // Lower Stone Plinth Rail (y = 0.04m .. 0.22m) & Top Molded Handrail Coping (y = 0.68m .. 0.78m)
+    addChToonPart(
+      civicHallGrp,
+      createMitredPolylineStripGeometry(balPath, 0.28, 0.18, false),
+      COL_CH_STONE,
+      [0, 0.13, 0],
+      [0, 0, 0],
+      0.009,
+      lobbyConcreteTex,
+    );
+    addChToonPart(
+      civicHallGrp,
+      createMitredPolylineStripGeometry(balPath, 0.32, 0.10, false),
+      COL_CH_STONE,
+      [0, 0.73, 0],
+      [0, 0, 0],
+      0.009,
+      lobbyConcreteTex,
+    );
+
+    // 3 Square Stone Balustrade Piers (Inner End, Corner, Side End)
+    for (const [px, pz] of [
+      [sideSign * 1.95, 4.18],
+      [sideSign * 5.88, 4.18],
+      [sideSign * 5.88, 1.35],
+    ] as [number, number][]) {
+      addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.38, 0.76, 0.38), COL_CH_STONE, [px, 0.42, pz], [0, 0, 0], 0.009, lobbyConcreteTex);
+      addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.44, 0.08, 0.44), COL_CH_STONE_DARK, [px, 0.82, pz], [0, 0, 0], 0.008);
+    }
+
+    // Classical Vase-Shaped Stone Balusters along Front & Side Runs
+    for (let b = 1; b <= 7; b++) {
+      const bx = sideSign * (1.95 + (b / 8) * 3.93);
+      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.055, 0.075, 0.46, 8), COL_CH_STONE, [bx, 0.45, 4.18], [0, 0, 0], 0.006, undefined, 1.0, false);
+      addChToonPart(civicHallGrp, new THREE.SphereGeometry(0.082, 8, 6), COL_CH_STONE, [bx, 0.40, 4.18], [0, 0, 0], 0.005, undefined, 1.0, false);
+    }
+    for (let b = 1; b <= 5; b++) {
+      const bz = 1.35 + (b / 6) * 2.83;
+      addChToonPart(
+        civicHallGrp,
+        new THREE.CylinderGeometry(0.055, 0.075, 0.46, 8),
+        COL_CH_STONE,
+        [sideSign * 5.88, 0.45, bz],
+        [0, 0, 0],
+        0.006,
+        undefined,
+        1.0,
+        false,
+      );
+      addChToonPart(civicHallGrp, new THREE.SphereGeometry(0.082, 8, 6), COL_CH_STONE, [sideSign * 5.88, 0.40, bz], [0, 0, 0], 0.005, undefined, 1.0, false);
+    }
+
+    // Raised Stone Planter Bed inside the Balustrade Corner ("Hydrangea & Lavender Planters")
+    const bedCenterX = sideSign * 3.95;
+    const bedCenterZ = 3.15;
+    addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.45, 0.34, 1.56), COL_CH_STONE_DARK, [bedCenterX, 0.21, bedCenterZ], [0, 0, 0], 0.009, lobbyConcreteTex);
+    addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.25, 0.05, 1.36), '#4a3525', [bedCenterX, 0.39, bedCenterZ], [0, 0, 0], 0, undefined, 1.0, false);
+
+    // Lush Green Shrubs + Pastel Blue/Pink Hydrangea Globes + Tall Purple Lavender Spikes
+    for (let f = 0; f < 9; f++) {
+      const fx = bedCenterX + ((f % 5) - 2.0) * 0.68;
+      const fz = bedCenterZ + (Math.floor(f / 5) - 0.5) * 0.52;
+      const foliageGeo = new THREE.DodecahedronGeometry(0.32, 1);
+      foliageGeo.scale(1.18, 0.82, 1.18);
+      addChToonPart(
+        civicHallGrp,
+        foliageGeo,
+        chLeafPalette[f % chLeafPalette.length],
+        [fx, 0.54, fz],
+        [0, f * 0.7, 0],
+        0.008,
+        undefined,
+        1.0,
+        false,
+      );
+      const hydGeo = new THREE.DodecahedronGeometry(0.21, 1);
+      addChToonPart(
+        civicHallGrp,
+        hydGeo,
+        f % 3 === 0 ? chHydrangeaPink[f % chHydrangeaPink.length] : chHydrangeaBlue[f % chHydrangeaBlue.length],
+        [fx + 0.06, 0.74, fz + 0.04],
+        [0, f * 1.1, 0],
+        0.007,
+        undefined,
+        1.0,
+        false,
+      );
+      if (f % 2 === 0) {
+        const spkGeo = new THREE.ConeGeometry(0.11, 0.54, 6);
+        addChToonPart(
+          civicHallGrp,
+          spkGeo,
+          chLavenderCols[f % chLavenderCols.length],
+          [fx - 0.10, 0.88, fz - 0.08],
+          [0, f * 0.5, 0],
+          0.006,
+          undefined,
+          1.0,
+          false,
+        );
+      }
+    }
+
+    // Vintage Cast-Iron Lamppost with Hanging Flower Baskets inside Front Planter Bed
+    const lampX = sideSign * 4.75;
+    const lampZ = 3.25;
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.14, 0.18, 0.55, 8), '#2c353d', [lampX, 0.65, lampZ], [0, 0, 0], 0.008);
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.065, 0.095, 2.35, 8), '#2c353d', [lampX, 2.05, lampZ], [0, 0, 0], 0.009);
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.96, 6), '#2c353d', [lampX, 2.95, lampZ], [0, 0, Math.PI / 2], 0.007, undefined, 1.0, false);
+    // Twin hanging flower baskets on lamppost crossarm
+    for (const bSide of [-1, 1]) {
+      const bx = lampX + bSide * 0.38;
+      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.16, 0.10, 0.18, 8), '#8c6239', [bx, 2.52, lampZ], [0, 0, 0], 0.007, undefined, 1.0, false);
+      const bLeaf = new THREE.DodecahedronGeometry(0.16, 1);
+      bLeaf.scale(1.15, 0.75, 1.15);
+      addChToonPart(civicHallGrp, bLeaf, chLeafPalette[0], [bx, 2.64, lampZ], [0, 0, 0], 0.006, undefined, 1.0, false);
+      addChToonPart(civicHallGrp, new THREE.DodecahedronGeometry(0.11, 0), chHydrangeaPink[0], [bx, 2.74, lampZ], [0, 0, 0], 0.005, undefined, 1.0, false);
+    }
+    // Top warm glowing lantern head
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.17, 0.12, 0.38, 4), '#ffe896', [lampX, 3.42, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
+    addChToonPart(civicHallGrp, new THREE.ConeGeometry(0.22, 0.20, 4), '#2c353d', [lampX, 3.70, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
+  }
+
+  // --- PART 3: MAIN ONE-STORY NEOCLASSICAL CIVIC HALL BODY, EXPOSED BRICK QUOINS & PORTICO STEPS ---
+  // Stepped Grey-Stone Foundation Plinth (9.24m W x 5.64m D, y = 0.04m .. 0.42m)
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(9.24, 0.38, 5.64), COL_CH_STONE_DARK, [0, 0.23, -0.55], [0, 0, 0], 0.011, lobbyConcreteTex, 1.8);
+  // 3 Wide Front Stone Entrance Steps leading up to the Portico (z = +2.25 .. +2.95)
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.96, 0.12, 1.42), COL_CH_STONE, [0, 0.10, 2.38], [0, 0, 0], 0.009, lobbyConcreteTex);
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.72, 0.12, 1.16), COL_CH_STONE, [0, 0.22, 2.25], [0, 0, 0], 0.009, lobbyConcreteTex);
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.52, 0.14, 0.92), COL_CH_STONE, [0, 0.35, 2.13], [0, 0, 0], 0.009, lobbyConcreteTex);
+
+  // Main Cream-Stucco Building Body (8.96m W x 3.16m H x 5.36m D, centered at z = -0.55, y = 0.42m .. 3.58m)
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(8.96, 3.16, 5.36), COL_CH_STUCCO, [0, 2.00, -0.55], [0, 0, 0], 0.013, lobbyConcreteTex, 1.4);
+
+  // Alternating Exposed Terracotta Brick Corner Quoins on all 4 Building Corners
+  for (const cxSign of [-1, 1]) {
+    for (const czSign of [-1, 1]) {
+      const qx = cxSign * 4.46;
+      const qz = -0.55 + czSign * 2.66;
+      for (let q = 0; q < 9; q++) {
+        const isLongX = q % 2 === 0;
+        const qw = isLongX ? 0.44 : 0.28;
+        const qd = isLongX ? 0.28 : 0.44;
+        const qy = 0.58 + q * 0.32;
+        addChToonPart(
+          civicHallGrp,
+          new THREE.BoxGeometry(qw, 0.26, qd),
+          q % 3 === 0 ? COL_CH_BRICK_DARK : COL_CH_BRICK,
+          [qx - cxSign * (qw * 0.5 - 0.03), qy, qz - czSign * (qd * 0.5 - 0.03)],
+          [0, 0, 0],
+          0.007,
+          undefined,
+          1.0,
+          false,
+        );
+      }
+    }
+  }
+  // Exposed Rustic Terracotta Brick Patches under Left Front Eaves & Side Eaves (matching Panel 1 & Panel 2!)
+  for (const [bx, by, bz, bw, bh, bd] of [
+    [-3.15, 3.22, 2.14, 0.85, 0.24, 0.06],
+    [-2.85, 2.98, 2.14, 0.52, 0.20, 0.06],
+    [4.49, 2.92, -1.65, 0.06, 0.26, 0.78],
+  ] as [number, number, number, number, number, number][]) {
+    addChToonPart(civicHallGrp, new THREE.BoxGeometry(bw, bh, bd), COL_CH_BRICK, [bx, by, bz], [0, 0, 0], 0.006, undefined, 1.0, false);
+  }
+
+  // Continuous 45° Mitred Sage-Green Molded Eaves Cornice & Frieze Band around the Building Top (y = 3.56m)
+  const chEavesPath: [number, number][] = [
+    [-4.58, -3.33],
+    [4.58, -3.33],
+    [4.58, 2.23],
+    [-4.58, 2.23],
+  ];
+  addChToonPart(
+    civicHallGrp,
+    createMitredPolylineStripGeometry(chEavesPath, 0.24, 0.22, true),
+    COL_CH_SAGE,
+    [0, 3.56, 0],
+    [0, 0, 0],
+    0.010,
+  );
+  addChToonPart(
+    civicHallGrp,
+    createMitredPolylineStripGeometry(chEavesPath, 0.30, 0.08, true),
+    COL_CH_SAGE_DARK,
+    [0, 3.70, 0],
+    [0, 0, 0],
+    0.008,
+  );
+
+  // --- PART 4: PROJECTING CLASSICAL 2-COLUMN PEDIMENT PORTICO, MAYOR'S OFFICE PLAQUE & ARCHED DOUBLE DOORS ---
+  const porticoGrp = new THREE.Group();
+  porticoGrp.position.set(0, 0, 2.13);
+  civicHallGrp.add(porticoGrp);
+
+  // 2 Fluted Classical Doric/Tuscan Stone Columns (x = ±1.44, z = +0.58 -> world z = +2.71)
+  for (const colSide of [-1, 1]) {
+    const cx = colSide * 1.44;
+    const cz = 0.56;
+    // Square pedestal plinth + torus base + tapered column shaft + capital
+    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.56, 0.42, 0.56), COL_CH_STONE, [cx, 0.63, cz], [0, 0, 0], 0.009, lobbyConcreteTex);
+    addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.24, 0.26, 0.10, 12), COL_CH_STONE_DARK, [cx, 0.89, cz], [0, 0, 0], 0.007);
+    addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.19, 0.23, 2.38, 12), '#e8dec9', [cx, 2.13, cz], [0, 0, 0], 0.010);
+    addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.26, 0.20, 0.12, 12), COL_CH_STONE, [cx, 3.36, cz], [0, 0, 0], 0.008);
+    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.54, 0.10, 0.54), COL_CH_STONE_DARK, [cx, 3.47, cz], [0, 0, 0], 0.008);
+  }
+
+  // Portico Entablature, Triangular Pediment, Pitched Slate Roof & "MAYOR'S OFFICE" Plaque
+  addChToonPart(porticoGrp, new THREE.BoxGeometry(3.64, 0.24, 0.96), COL_CH_SAGE, [0, 3.62, 0.38], [0, 0, 0], 0.010);
+  // Triangular Pediment Tympanum & Raking Cornices
+  const pedShape = new THREE.Shape();
+  pedShape.moveTo(-1.86, 0);
+  pedShape.lineTo(1.86, 0);
+  pedShape.lineTo(0, 1.18);
+  pedShape.closePath();
+  const pedGeo = new THREE.ExtrudeGeometry(pedShape, { depth: 0.88, bevelEnabled: false });
+  pedGeo.translate(0, 0, -0.44);
+  addChToonPart(porticoGrp, pedGeo, COL_CH_STUCCO, [0, 3.74, 0.38], [0, 0, 0], 0.010, lobbyConcreteTex);
+  for (const rSide of [-1, 1]) {
+    addChToonPart(
+      porticoGrp,
+      new THREE.BoxGeometry(2.26, 0.14, 0.98),
+      COL_CH_SAGE,
+      [rSide * 0.96, 4.34, 0.38],
+      [0, 0, -rSide * 0.56],
+      0.009,
+    );
+    addChToonPart(
+      porticoGrp,
+      new THREE.BoxGeometry(2.30, 0.08, 1.04),
+      COL_CH_SLATE,
+      [rSide * 0.96, 4.43, 0.38],
+      [0, 0, -rSide * 0.56],
+      0.009,
+    );
+  }
+  // Framed "MAYOR'S OFFICE" Plaque centered in the Portico Tympanum
+  addChToonPart(
+    porticoGrp,
+    new THREE.BoxGeometry(1.16, 0.54, 0.08),
+    '#ffffff',
+    [0, 4.10, 0.84],
+    [0, 0, 0],
+    0.008,
+    chMayorsPlaqueTex,
+    0.4,
+    false,
+  );
+
+  // Arched Double Wooden Entrance Doors, Semicircular Fanlight Transom & 2 Coach Wall Lanterns
+  addChToonPart(porticoGrp, new THREE.BoxGeometry(1.64, 2.26, 0.14), COL_CH_STONE, [0, 1.55, 0.02], [0, 0, 0], 0.009);
+  for (const dSide of [-1, 1]) {
+    const dx = dSide * 0.35;
+    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.66, 2.02, 0.10), COL_CH_WOOD, [dx, 1.43, 0.05], [0, 0, 0], 0.008, lobbyTimberTex);
+    // Upper door glass pane & lower recessed wood panel
+    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.46, 0.78, 0.12), '#9ec2cc', [dx, 1.82, 0.05], [0, 0, 0], 0.006, lobbyWindowTex);
+    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.46, 0.68, 0.12), COL_CH_WOOD_DARK, [dx, 0.90, 0.05], [0, 0, 0], 0.006);
+    // Brass door handle
+    addChToonPart(porticoGrp, new THREE.SphereGeometry(0.038, 6, 6), COL_CH_GOLD, [dSide * 0.10, 1.32, 0.12], [0, 0, 0], 0.004, undefined, 1.0, false);
+  }
+  // Semicircular Arched Fanlight Transom above the Double Doors (y = 2.52m)
+  const doorArchGeo = new THREE.CylinderGeometry(0.76, 0.76, 0.14, 14, 1, false, 0, Math.PI);
+  doorArchGeo.rotateZ(Math.PI / 2);
+  doorArchGeo.rotateY(Math.PI / 2);
+  addChToonPart(porticoGrp, doorArchGeo, COL_CH_SAGE, [0, 2.52, 0.04], [0, 0, 0], 0.008);
+  const doorTransomGlass = new THREE.CylinderGeometry(0.64, 0.64, 0.16, 14, 1, false, 0, Math.PI);
+  doorTransomGlass.rotateZ(Math.PI / 2);
+  doorTransomGlass.rotateY(Math.PI / 2);
+  addChToonPart(porticoGrp, doorTransomGlass, '#a8cbd4', [0, 2.52, 0.05], [0, 0, 0], 0.006, undefined, 1.0, false);
+
+  // 2 Vintage Coach Wall Lanterns flanking the Entrance Door
+  for (const lSide of [-1, 1]) {
+    const lx = lSide * 1.02;
+    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.08, 0.22, 0.14), '#2b3036', [lx, 2.18, 0.06], [0, 0, 0], 0.005, undefined, 1.0, false);
+    addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.12, 0.08, 0.26, 4), '#ffe896', [lx, 2.18, 0.16], [0, Math.PI / 4, 0], 0.006, undefined, 1.0, false);
+    addChToonPart(porticoGrp, new THREE.ConeGeometry(0.15, 0.12, 4), '#2b3036', [lx, 2.36, 0.16], [0, Math.PI / 4, 0], 0.005, undefined, 1.0, false);
+  }
+
+  // --- PART 5: 6 MULLIONED WINDOWS WITH SAGE-GREEN LOUVERED SHUTTERS & BLOOMING WINDOW BOXES ---
+  const buildCivicShutteredWindow = (
+    wx: number,
+    wz: number,
+    rotY: number,
+  ) => {
+    const wGrp = new THREE.Group();
+    wGrp.position.set(wx, 1.92, wz);
+    wGrp.rotation.y = rotY;
+    civicHallGrp.add(wGrp);
+
+    // Stone lintel & sill + white window frame + glass pane + 6-pane crossbars
+    addChToonPart(wGrp, new THREE.BoxGeometry(1.06, 0.12, 0.12), COL_CH_STONE, [0, 0.72, 0.02], [0, 0, 0], 0.007);
+    addChToonPart(wGrp, new THREE.BoxGeometry(0.96, 1.28, 0.08), '#f5f1e6', [0, 0.04, 0.01], [0, 0, 0], 0.008);
+    addChToonPart(wGrp, new THREE.BoxGeometry(0.82, 1.14, 0.09), '#96bcc7', [0, 0.04, 0.015], [0, 0, 0], 0.006, lobbyWindowTex);
+    addChToonPart(wGrp, new THREE.BoxGeometry(0.05, 1.14, 0.11), '#f5f1e6', [0, 0.04, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
+    for (const my of [-0.18, 0.24]) {
+      addChToonPart(wGrp, new THREE.BoxGeometry(0.82, 0.045, 0.11), '#f5f1e6', [0, my, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
+    }
+
+    // Left & Right Sage-Green Louvered Wooden Shutters
+    for (const sSide of [-1, 1]) {
+      addChToonPart(
+        wGrp,
+        new THREE.BoxGeometry(0.38, 1.24, 0.06),
+        COL_CH_SAGE,
+        [sSide * 0.69, 0.04, 0.02],
+        [0, 0, 0],
+        0.007,
+        lobbyLouverTex,
+        1.2,
+      );
+    }
+
+    // Wooden Window Flower Box + Lush Green & Pink Blooms under the Sill
+    addChToonPart(wGrp, new THREE.BoxGeometry(1.04, 0.22, 0.26), COL_CH_WOOD, [0, -0.68, 0.11], [0, 0, 0], 0.007, lobbyTimberTex);
+    for (const bx of [-0.32, 0.0, 0.32]) {
+      const bushG = new THREE.DodecahedronGeometry(0.15, 1);
+      bushG.scale(1.15, 0.80, 1.05);
+      addChToonPart(wGrp, bushG, chLeafPalette[0], [bx, -0.52, 0.13], [0, bx, 0], 0.006, undefined, 1.0, false);
+      addChToonPart(wGrp, new THREE.DodecahedronGeometry(0.10, 0), chHydrangeaPink[0], [bx, -0.42, 0.16], [0, 0, 0], 0.005, undefined, 1.0, false);
+    }
+  };
+
+  // 2 Front Windows (facing South +Z)
+  buildCivicShutteredWindow(-2.95, 2.13, 0);
+  buildCivicShutteredWindow(2.95, 2.13, 0);
+  // 2 East/Right Side Windows (facing East +X)
+  buildCivicShutteredWindow(4.48, 0.82, Math.PI / 2);
+  buildCivicShutteredWindow(4.48, -1.55, Math.PI / 2);
+  // 2 West/Left Side Windows (facing West -X)
+  buildCivicShutteredWindow(-4.48, 0.82, -Math.PI / 2);
+  buildCivicShutteredWindow(-4.48, -1.55, -Math.PI / 2);
+
+  // --- PART 6: PITCHED SLATE-TILE GABLE ROOF, ARCHED ATTIC VENTS, RED-BRICK CHIMNEY & IVY VINES ---
+  // Left & Right Side Gable Triangles (spanning z in [-3.23 .. +2.13], rising from y = 3.68m to ridge y = 5.42m at z = -0.55)
+  const mainGableShape = new THREE.Shape();
+  mainGableShape.moveTo(-2.72, 0);
+  mainGableShape.lineTo(2.72, 0);
+  mainGableShape.lineTo(0, 1.76);
+  mainGableShape.closePath();
+  const mainGableGeo = new THREE.ExtrudeGeometry(mainGableShape, { depth: 8.96, bevelEnabled: false });
+  mainGableGeo.rotateY(Math.PI / 2);
+  mainGableGeo.translate(-4.48, 3.66, -0.55);
+  addChToonPart(civicHallGrp, mainGableGeo, COL_CH_STUCCO, [0, 0, 0], [0, 0, 0], 0.011, lobbyConcreteTex);
+
+  // Front & Rear Pitched Slate Roof Slopes + Sage-Green Raking Gable Trim
+  for (const zSide of [-1, 1]) {
+    const slopeZ = -0.55 + zSide * 1.42;
+    const slopePitch = zSide * 0.575;
+    addChToonPart(
+      civicHallGrp,
+      new THREE.BoxGeometry(9.42, 0.14, 3.42),
+      COL_CH_SLATE,
+      [0, 4.58, slopeZ],
+      [slopePitch, 0, 0],
+      0.011,
+      lobbySteelRoofTex,
+      2.2,
+    );
+    for (const xEnd of [-4.65, 4.65]) {
+      addChToonPart(
+        civicHallGrp,
+        new THREE.BoxGeometry(0.18, 0.18, 3.46),
+        COL_CH_SAGE,
+        [xEnd, 4.52, slopeZ],
+        [slopePitch, 0, 0],
+        0.008,
+      );
+    }
+  }
+  // Roof Ridge Beam (y = 5.46m, z = -0.55)
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(9.46, 0.14, 0.24), COL_CH_SLATE_DARK, [0, 5.46, -0.55], [0, 0, 0], 0.009);
+
+  // Arched Sage-Green Louvered Attic Vents on Left & Right Side Gables (Panel 2 Side Elevation View!)
+  for (const sideX of [-4.50, 4.50]) {
+    addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.12, 0.62, 0.52), COL_CH_SAGE, [sideX, 4.32, -0.55], [0, 0, 0], 0.007, lobbyLouverTex);
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.26, 0.26, 0.12, 10), COL_CH_SAGE, [sideX, 4.63, -0.55], [0, 0, Math.PI / 2], 0.007);
+  }
+
+  // Red-Brick Chimney Stack & Terracotta Flue Pot on Rear Roof Slope (Panel 2 Side Elevation View!)
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.68, 1.48, 0.68), COL_CH_BRICK, [2.65, 5.18, -1.95], [0, 0, 0], 0.009);
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.78, 0.12, 0.78), COL_CH_STONE, [2.65, 5.95, -1.95], [0, 0, 0], 0.008);
+  addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.14, 0.16, 0.34, 8), COL_CH_BRICK_DARK, [2.65, 6.18, -1.95], [0, 0, 0], 0.007);
+
+  // --- PART 7: CENTRAL SQUARE CLOCK & BELL TOWER CUPOLA WITH GOLDEN ROOSTER WEATHERVANE ---
+  const towerGrp = new THREE.Group();
+  towerGrp.position.set(0, 4.85, -0.55);
+  civicHallGrp.add(towerGrp);
+
+  // Square Clock Tower Pedestal & Belfry Shaft (2.16m W x 2.48m H x 2.16m D)
+  addChToonPart(towerGrp, new THREE.BoxGeometry(2.36, 0.22, 2.36), COL_CH_SAGE, [0, 0.56, 0], [0, 0, 0], 0.009);
+  addChToonPart(towerGrp, new THREE.BoxGeometry(2.12, 1.88, 2.12), COL_CH_STUCCO, [0, 1.60, 0], [0, 0, 0], 0.011, lobbyConcreteTex);
+  addChToonPart(towerGrp, new THREE.BoxGeometry(2.42, 0.18, 2.42), COL_CH_SAGE, [0, 2.58, 0], [0, 0, 0], 0.009);
+
+  // Front (+Z) & Rear (-Z) Circular Clock Dials + Gold Bezel Rim
+  for (const czSign of [-1, 1]) {
+    const clockRing = new THREE.CylinderGeometry(0.68, 0.68, 0.12, 18);
+    clockRing.rotateX(Math.PI / 2);
+    addChToonPart(towerGrp, clockRing, COL_CH_GOLD, [0, 1.62, czSign * 1.06], [0, 0, 0], 0.008);
+    const clockFace = new THREE.CylinderGeometry(0.58, 0.58, 0.14, 18);
+    clockFace.rotateX(Math.PI / 2);
+    addChToonPart(towerGrp, clockFace, '#ffffff', [0, 1.62, czSign * 1.07], [0, 0, 0], 0.006, chClockDialTex, 0.4, false);
+  }
+
+  // East (+X) & West (-X) Arched Bell Belfry Alcoves + Hanging Cast-Bronze Civic Bell (Panel 2!)
+  for (const cxSign of [-1, 1]) {
+    addChToonPart(towerGrp, new THREE.BoxGeometry(0.14, 1.08, 0.88), '#3b352e', [cxSign * 1.04, 1.54, 0], [0, 0, 0], 0.007);
+    // Cast-Bronze Hanging Bell visible in side belfry arch
+    addChToonPart(towerGrp, new THREE.CylinderGeometry(0.14, 0.32, 0.42, 10), COL_CH_GOLD, [cxSign * 0.96, 1.56, 0], [0, 0, 0], 0.007);
+    addChToonPart(towerGrp, new THREE.SphereGeometry(0.08, 8, 6), '#8c6222', [cxSign * 0.96, 1.32, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
+  }
+
+  // Bell-Cast Slate Mansard Cupola Roof (y = 2.68m .. 3.85m)
+  addChToonPart(towerGrp, new THREE.CylinderGeometry(0.92, 1.68, 0.96, 4), COL_CH_SLATE, [0, 3.15, 0], [0, Math.PI / 4, 0], 0.011);
+  addChToonPart(towerGrp, new THREE.CylinderGeometry(0.22, 0.92, 0.48, 4), COL_CH_SLATE_DARK, [0, 3.82, 0], [0, Math.PI / 4, 0], 0.009);
+
+  // Finial Spire, N-S-E-W Cardinal Crossbars & Golden Rooster Weathervane at Pinnacle (y = 4.05m .. 4.95m)
+  addChToonPart(towerGrp, new THREE.SphereGeometry(0.16, 8, 8), COL_CH_SLATE_DARK, [0, 4.12, 0], [0, 0, 0], 0.007);
+  addChToonPart(towerGrp, new THREE.CylinderGeometry(0.025, 0.035, 0.78, 6), '#2b3036', [0, 4.50, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+  addChToonPart(towerGrp, new THREE.CylinderGeometry(0.018, 0.018, 0.76, 6), '#2b3036', [0, 4.44, 0], [0, 0, Math.PI / 2], 0.005, undefined, 1.0, false);
+  addChToonPart(towerGrp, new THREE.CylinderGeometry(0.018, 0.018, 0.76, 6), '#2b3036', [0, 4.44, 0], [Math.PI / 2, 0, 0], 0.005, undefined, 1.0, false);
+  // Golden Rooster Weathervane Silhouette (Body, Plumed Tail, Comb & Beak)
+  addChToonPart(towerGrp, new THREE.SphereGeometry(0.14, 8, 6), COL_CH_GOLD, [0.02, 4.86, 0], [0, 0, 0], 0.007, undefined, 1.0, false);
+  addChToonPart(towerGrp, new THREE.ConeGeometry(0.12, 0.28, 6), COL_CH_GOLD, [-0.16, 4.96, 0], [0, 0, 0.65], 0.007, undefined, 1.0, false);
+  addChToonPart(towerGrp, new THREE.SphereGeometry(0.085, 8, 6), COL_CH_GOLD, [0.14, 4.98, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
+  addChToonPart(towerGrp, new THREE.BoxGeometry(0.08, 0.07, 0.03), '#c85a32', [0.15, 5.06, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
+
+  // Cascading Green Ivy Vines over Right Portico, Eaves & Clock Tower + 3 Little Perched Birds
+  const chIvySpots: [number, number, number, number][] = [
+    [1.15, 4.48, 2.35, 0.30],
+    [1.52, 4.22, 2.42, 0.34],
+    [1.88, 3.88, 2.38, 0.32],
+    [2.12, 3.52, 2.28, 0.28],
+    [2.28, 3.18, 2.22, 0.24],
+    [-0.95, 7.38, 0.42, 0.28],
+    [-1.08, 7.02, 0.48, 0.26],
+    [-1.12, 6.64, 0.52, 0.24],
+  ];
+  for (let iv = 0; iv < chIvySpots.length; iv++) {
+    const [ix, iy, iz, ir] = chIvySpots[iv];
+    const ivGeo = new THREE.DodecahedronGeometry(ir, 1);
+    ivGeo.scale(1.18, 0.72, 1.05);
+    addChToonPart(civicHallGrp, ivGeo, chLeafPalette[iv % chLeafPalette.length], [ix, iy, iz], [0.2, iv * 0.8, 0], 0.007, undefined, 1.0, false);
+  }
+  // 3 Little Brown Perched Birds on the Roof & Tower Cornice
+  for (const [bx, by, bz, bYaw] of [
+    [-1.45, 4.16, 2.42, 0.4],
+    [1.12, 7.52, 0.55, -0.5],
+    [2.55, 4.02, 2.15, 0.2],
+  ] as [number, number, number, number][]) {
+    const birdG = new THREE.SphereGeometry(0.09, 6, 6);
+    birdG.scale(1.35, 0.85, 0.85);
+    addChToonPart(civicHallGrp, birdG, '#8c6d53', [bx, by, bz], [0, bYaw, 0], 0.005, undefined, 1.0, false);
+  }
+
+  // --- PART 8: DETAILED AMENITIES (CIVIC INFO KIOSKS, LION-HEAD SPIGOTS, LETTERBOX & CAST-IRON BENCHES) ---
+  // 1) Freestanding Carved-Wood Civic Info Kiosk ("Civic Info Kiosk" / "Freestanding Kiosk" in Panels 2, 3 & 4)
+  const buildCivicInfoKiosk = (kx: number, kz: number, rotY: number) => {
+    const kGrp = new THREE.Group();
+    kGrp.position.set(kx, 0.04, kz);
+    kGrp.rotation.y = rotY;
+    civicHallGrp.add(kGrp);
+
+    // Twin turned wooden columns + central cabinet frame + carved scroll pediment & tiered finial cap
+    for (const sx of [-0.52, 0.52]) {
+      addChToonPart(kGrp, new THREE.BoxGeometry(0.22, 0.26, 0.22), COL_CH_WOOD_DARK, [sx, 0.13, 0], [0, 0, 0], 0.006);
+      addChToonPart(kGrp, new THREE.CylinderGeometry(0.075, 0.085, 1.56, 8), COL_CH_WOOD, [sx, 1.02, 0], [0, 0, 0], 0.007);
+    }
+    addChToonPart(kGrp, new THREE.BoxGeometry(0.92, 1.24, 0.16), COL_CH_WOOD, [0, 1.08, 0], [0, 0, 0], 0.008, lobbyTimberTex);
+    // Double-sided Notice Board Poster
+    for (const fz of [-0.09, 0.09]) {
+      addChToonPart(kGrp, new THREE.BoxGeometry(0.76, 1.02, 0.02), '#ffffff', [0, 1.08, fz], [0, 0, 0], 0.005, chKioskPosterTex, 0.4, false);
+    }
+    // Ornate Pediment Header & Tiered Shingle Cap
+    addChToonPart(kGrp, new THREE.BoxGeometry(1.28, 0.12, 0.36), COL_CH_WOOD_DARK, [0, 1.82, 0], [0, 0, 0], 0.007);
+    addChToonPart(kGrp, new THREE.CylinderGeometry(0.22, 0.62, 0.34, 4), COL_CH_WOOD, [0, 2.04, 0], [0, Math.PI / 4, 0], 0.008);
+    addChToonPart(kGrp, new THREE.CylinderGeometry(0.04, 0.26, 0.24, 4), COL_CH_WOOD_DARK, [0, 2.30, 0], [0, Math.PI / 4, 0], 0.007);
+  };
+  buildCivicInfoKiosk(-5.15, 0.85, Math.PI / 2);
+  buildCivicInfoKiosk(5.15, 0.55, Math.PI / 2);
+
+  // 2) Sculpted Stone Lion-Head Water Spigot Fountains ("Lion-Head Spigot" in Panels 2, 3 & 4)
+  const buildLionHeadSpigot = (sx: number, sz: number, rotY: number) => {
+    const sGrp = new THREE.Group();
+    sGrp.position.set(sx, 0.04, sz);
+    sGrp.rotation.y = rotY;
+    civicHallGrp.add(sGrp);
+
+    // Stone pedestal column + pyramidal cap + golden lion-head medallion + semicircular stone basin
+    addChToonPart(sGrp, new THREE.BoxGeometry(0.54, 1.18, 0.54), COL_CH_STONE, [0, 0.59, 0], [0, 0, 0], 0.008, lobbyConcreteTex);
+    addChToonPart(sGrp, new THREE.CylinderGeometry(0.08, 0.42, 0.22, 4), COL_CH_STONE_DARK, [0, 1.28, 0], [0, Math.PI / 4, 0], 0.007);
+    addChToonPart(sGrp, new THREE.SphereGeometry(0.13, 8, 6), COL_CH_GOLD, [0, 0.82, 0.26], [0, 0, 0], 0.006, undefined, 1.0, false);
+    addChToonPart(sGrp, new THREE.CylinderGeometry(0.36, 0.32, 0.36, 12), COL_CH_STONE, [0, 0.18, 0.36], [0, 0, 0], 0.008, lobbyConcreteTex);
+    addChToonPart(sGrp, new THREE.CylinderGeometry(0.28, 0.28, 0.04, 12), '#5ea8bd', [0, 0.35, 0.36], [0, 0, 0], 0, undefined, 1.0, false);
+  };
+  buildLionHeadSpigot(-5.55, -0.35, Math.PI / 2);
+  buildLionHeadSpigot(5.45, -2.55, -Math.PI / 2);
+
+  // 3) Vintage Dark-Green Municipal Letterbox & Galvanized Rainwater Downspout Pipe (Panel 2 Side Elevation View!)
+  const mbGrp = new THREE.Group();
+  mbGrp.position.set(4.85, 0.04, -3.15);
+  civicHallGrp.add(mbGrp);
+  addChToonPart(mbGrp, new THREE.BoxGeometry(0.46, 0.96, 0.42), COL_CH_BENCH_GREEN, [0, 0.48, 0], [0, 0, 0], 0.008);
+  addChToonPart(mbGrp, new THREE.CylinderGeometry(0.21, 0.21, 0.46, 10, 1, false, 0, Math.PI), COL_CH_BENCH_GREEN, [0, 0.96, 0], [0, 0, Math.PI / 2], 0.008);
+  addChToonPart(mbGrp, new THREE.BoxGeometry(0.28, 0.05, 0.44), '#1e2b22', [0, 0.82, 0], [0, 0, 0], 0, undefined, 1.0, false);
+  // Galvanized rainwater downspout along the rear-right corner
+  addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.045, 0.045, 3.35, 8), '#8a959e', [4.54, 1.85, -3.15], [0, 0, 0], 0.006, undefined, 1.0, false);
+
+  // 4) 3 Forest-Green Cast-Iron & Slatted Park Benches ("Cast-Iron Bench" in Panels 1, 2, 3 & 4)
+  const buildCivicCastIronBench = (bx: number, bz: number, rotY: number) => {
+    const bGrp = new THREE.Group();
+    bGrp.position.set(bx, 0.04, bz);
+    bGrp.rotation.y = rotY;
+    civicHallGrp.add(bGrp);
+
+    // Slatted dark-green seat & backrest + cast-iron legs & scroll armrests
+    addChToonPart(bGrp, new THREE.BoxGeometry(1.68, 0.07, 0.52), COL_CH_BENCH_GREEN, [0, 0.44, 0.04], [0, 0, 0], 0.008);
+    addChToonPart(bGrp, new THREE.BoxGeometry(1.68, 0.48, 0.07), COL_CH_BENCH_GREEN, [0, 0.74, -0.18], [-0.14, 0, 0], 0.008);
+    for (const lx of [-0.76, 0.76]) {
+      addChToonPart(bGrp, new THREE.BoxGeometry(0.07, 0.44, 0.07), '#222b25', [lx, 0.22, 0.22], [0, 0, 0], 0.006);
+      addChToonPart(bGrp, new THREE.BoxGeometry(0.07, 0.78, 0.07), '#222b25', [lx, 0.39, -0.18], [0, 0, 0], 0.006);
+      addChToonPart(bGrp, new THREE.BoxGeometry(0.08, 0.06, 0.52), '#222b25', [lx, 0.62, 0.02], [0, 0, 0], 0.006);
+    }
+  };
+  buildCivicCastIronBench(5.15, -0.85, Math.PI / 2);   // Right-Side promenade bench (Panels 2 & 3)
+
+
   // -------------------------------------------------------------------------
-  // 6. SLEEK URBAN PROMENADE LIGHT POLES (Sheet 5: "Urban Promenade" Light Poles)
+  // 6. BLITZ TOON/CEL-SHADED VINTAGE PARK LAMPPOST WITH FLOWER BASKETS
+  //    Uses solid flat cel-shaded colors (upgradeMeshToBlitzWorldMaterial) +
+  //    bold BackSide Toon Outlines (createBlitzStrokeMesh) and chunky low-poly
+  //    foliage & blossoms that bake 100% into the static plaza mesh (High FPS).
   // -------------------------------------------------------------------------
   const buildUrbanPromenadeLampPole = (lx: number, lz: number, rotY: number) => {
     const lGrp = new THREE.Group();
     lGrp.position.set(lx, 2.50, lz);
     lGrp.rotation.y = rotY;
-    lGrp.scale.setScalar(1.06);
     westPlantGroup.add(lGrp);
-    addLobbyPart(lGrp, new THREE.CylinderGeometry(0.14, 0.17, 0.22, 10), '#2b3036', [0, 0.11, 0], [0, 0, 0], 0.008);
-    addLobbyPart(lGrp, new THREE.CylinderGeometry(0.075, 0.095, 4.45, 10), '#2b3036', [0, 2.34, 0], [0, 0, 0], 0.010, lobbySteelRoofTex);
-    addLobbyPart(lGrp, new THREE.BoxGeometry(0.14, 0.10, 0.92), '#2b3036', [0, 4.54, 0.38], [0, 0, 0], 0.008, lobbySteelRoofTex);
-    addLobbyPart(lGrp, new THREE.BoxGeometry(0.24, 0.05, 0.64), '#ffefc2', [0, 4.48, 0.48], [0, 0, 0], 0.006);
+
+    const COL_IRON_DARK = '#2f3742';
+    const COL_IRON_MID = '#3d4754';
+    const COL_IRON_ACCENT = '#4f5b6b';
+    const COL_PLINTH_PAD = '#cbc6ba';
+    const COL_PLINTH_STONE = '#b8b3a8';
+    const COL_PLINTH_DARK = '#969186';
+    const COL_WICKER_BOWL = '#9c6b3b';
+    const COL_WICKER_RIM = '#b07b47';
+    const COL_LANTERN_GLOW = '#ffe885';
+
+    const addToonLampPart = (
+      parent: THREE.Object3D,
+      geo: THREE.BufferGeometry,
+      colorHex: string,
+      pos: [number, number, number],
+      rot: [number, number, number],
+      toonStrokeWidth = 0.0085,
+      castShad = false,
+    ) => {
+      const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0);
+      m.castShadow = !isSoftwareGl && castShad;
+      if (toonStrokeWidth > 0 && geo.type !== 'TorusGeometry') {
+        const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
+        if (st) m.add(st);
+      }
+      return m;
+    };
+
+    // A. Low-Poly Stone Base Pad & Molded Plinth (with crisp Toon Outlines)
+    addToonLampPart(lGrp, new THREE.BoxGeometry(1.04, 0.036, 1.04), COL_PLINTH_PAD, [0, 0.018, 0], [0, 0, 0], 0.009, false);
+    addToonLampPart(lGrp, new THREE.BoxGeometry(0.58, 0.065, 0.58), COL_PLINTH_STONE, [0, 0.052, 0], [0, 0, 0], 0.009, true);
+    addToonLampPart(lGrp, new THREE.BoxGeometry(0.50, 0.045, 0.50), COL_PLINTH_DARK, [0, 0.095, 0], [0, 0, 0], 0.008, false);
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.235, 0.25, 0.04, 8), COL_IRON_DARK, [0, 0.125, 0], [0, Math.PI / 8, 0], 0.008, false);
+
+    // B. Molded Octagonal/Tapered Cast-Iron Pedestal Base (0.14m .. 0.90m)
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.195, 0.225, 0.09, 8), COL_IRON_DARK, [0, 0.19, 0], [0, 0, 0], 0.0085, true);
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.112, 0.184, 0.58, 8), COL_IRON_MID, [0, 0.53, 0], [0, 0, 0], 0.0095, true);
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.105, 0.118, 0.09, 8), COL_IRON_DARK, [0, 0.865, 0], [0, 0, 0], 0.008, false);
+
+    // C. Bulbous Collar Node (y = 0.91m .. 1.18m)
+    const bulbGeo = new THREE.SphereGeometry(0.136, 8, 7);
+    bulbGeo.scale(1.0, 0.82, 1.0);
+    addToonLampPart(lGrp, bulbGeo, COL_IRON_ACCENT, [0, 1.03, 0], [0, 0, 0], 0.009, false);
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.092, 0.108, 0.06, 8), COL_IRON_DARK, [0, 1.165, 0], [0, 0, 0], 0.0075, false);
+
+    // D. Tapered Cast-Iron Vertical Shaft (y = 1.18m .. 3.31m)
+    addToonLampPart(
+      lGrp,
+      new THREE.CylinderGeometry(0.068, 0.088, 2.06, 8),
+      COL_IRON_MID,
+      [0, 2.21, 0],
+      [0, 0, 0],
+      0.0095,
+      true,
+    );
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.086, 0.086, 0.045, 8), COL_IRON_ACCENT, [0, 2.86, 0], [0, 0, 0], 0.007, false);
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.094, 0.072, 0.10, 8), COL_IRON_DARK, [0, 3.24, 0], [0, 0, 0], 0.008, false);
+
+    // E. Wrought-Iron Crossarm, S-Scroll Brackets & Twin Suspended Toon Flower Baskets
+    const crossarmGrp = new THREE.Group();
+    const armYaw = -0.28;
+    crossarmGrp.rotation.y = armYaw;
+    lGrp.add(crossarmGrp);
+
+    addToonLampPart(crossarmGrp, new THREE.BoxGeometry(0.14, 0.13, 0.15), COL_IRON_DARK, [0, 3.31, 0], [0, 0, 0], 0.008, false);
+    addToonLampPart(
+      crossarmGrp,
+      new THREE.CylinderGeometry(0.024, 0.024, 1.14, 6),
+      COL_IRON_DARK,
+      [0, 3.31, 0],
+      [Math.PI / 2, 0, 0],
+      0.0075,
+      false,
+    );
+
+    const foliageColors = ['#468c3b', '#529e46', '#3b7a31', '#5ead50'];
+    const blossomColors = ['#f7a4c6', '#ef88b2', '#fcc8df', '#e678a5'];
+
+    for (const side of [-1, 1]) {
+      const zSign = side;
+      addToonLampPart(
+        crossarmGrp,
+        new THREE.SphereGeometry(0.034, 6, 6),
+        COL_IRON_ACCENT,
+        [0, 3.31, zSign * 0.58],
+        [0, 0, 0],
+        0.006,
+        false,
+      );
+
+      // Stylized S-Scroll Bracket under each crossarm
+      addToonLampPart(
+        crossarmGrp,
+        new THREE.BoxGeometry(0.024, 0.026, 0.42),
+        COL_IRON_DARK,
+        [0, 3.15, zSign * 0.25],
+        [zSign * 0.58, 0, 0],
+        0.0065,
+        false,
+      );
+      addToonLampPart(
+        crossarmGrp,
+        new THREE.BoxGeometry(0.022, 0.022, 0.34),
+        COL_IRON_MID,
+        [0, 3.26, zSign * 0.24],
+        [0, 0, 0],
+        0.006,
+        false,
+      );
+
+      // F. Suspended Low-Poly Toon Wicker Flower Basket
+      const basketZ = zSign * 0.46;
+      const hookY = 3.28;
+      const rimY = 2.66;
+      const rimR = 0.195;
+
+      // 3 Suspension Chains
+      for (let ch = 0; ch < 3; ch++) {
+        const chAng = (ch * Math.PI * 2) / 3 + (side > 0 ? 0.25 : -0.25);
+        const dx = Math.cos(chAng) * (rimR - 0.015);
+        const dy = rimY - hookY;
+        const dz = Math.sin(chAng) * (rimR - 0.015);
+        const chainLen = Math.hypot(dx, dy, dz);
+        const chainGeo = new THREE.CylinderGeometry(0.008, 0.008, chainLen, 4);
+        const chainMesh = addToonLampPart(
+          crossarmGrp,
+          chainGeo,
+          '#1e232a',
+          [dx * 0.5, hookY + dy * 0.5, basketZ + dz * 0.5],
+          [0, 0, 0],
+          0,
+          false,
+        );
+        const dirVec = new THREE.Vector3(dx, dy, dz).normalize();
+        chainMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirVec);
+      }
+
+      // Wicker Basket Bowl + Rim Collar (with bold Toon Outline)
+      addToonLampPart(
+        crossarmGrp,
+        new THREE.CylinderGeometry(0.215, 0.135, 0.24, 8),
+        COL_WICKER_BOWL,
+        [0, 2.54, basketZ],
+        [0, 0, 0],
+        0.009,
+        false,
+      );
+      addToonLampPart(
+        crossarmGrp,
+        new THREE.CylinderGeometry(0.232, 0.220, 0.042, 8),
+        COL_WICKER_RIM,
+        [0, 2.66, basketZ],
+        [0, 0, 0],
+        0.008,
+        false,
+      );
+
+      // Chunky Blitz Toon-Outlined Green Foliage Cushions inside Basket
+      const foliagePuffs: [number, number, number, number, number][] = [
+        [0.0, 2.74, 0.0, 0.165, 0.74],
+        [-0.11, 2.69, 0.08, 0.125, 0.78],
+        [0.11, 2.69, -0.08, 0.125, 0.78],
+        [0.10, 2.70, 0.10, 0.12, 0.76],
+        [-0.10, 2.70, -0.10, 0.12, 0.76],
+      ];
+      for (let fIdx = 0; fIdx < foliagePuffs.length; fIdx++) {
+        const [fx, fy, fz, fRad, fSy] = foliagePuffs[fIdx];
+        const fGeo = new THREE.IcosahedronGeometry(fRad, 1);
+        fGeo.scale(1.10, fSy, 1.10);
+        addToonLampPart(
+          crossarmGrp,
+          fGeo,
+          foliageColors[fIdx % foliageColors.length],
+          [fx, fy, basketZ + fz],
+          [0, fIdx * 0.7, 0],
+          0.0085,
+          false,
+        );
+      }
+
+      // Chunky Blitz Toon-Outlined Pink Flower Globes on Basket Crown
+      const blossomSpots: [number, number, number, number][] = [
+        [0.0, 2.83, 0.0, 0.082],
+        [-0.10, 2.78, 0.07, 0.072],
+        [0.10, 2.78, -0.06, 0.072],
+        [0.08, 2.76, 0.10, 0.068],
+        [-0.09, 2.76, -0.09, 0.068],
+      ];
+      for (let bIdx = 0; bIdx < blossomSpots.length; bIdx++) {
+        const [bx, by, bz, bRad] = blossomSpots[bIdx];
+        const bGeo = new THREE.DodecahedronGeometry(bRad, 1);
+        bGeo.scale(1.14, 0.82, 1.14);
+        addToonLampPart(
+          crossarmGrp,
+          bGeo,
+          blossomColors[bIdx % blossomColors.length],
+          [bx, by, basketZ + bz],
+          [0.2 * bIdx, bIdx * 0.9, 0],
+          0.0075,
+          false,
+        );
+      }
+
+      // Stylized Toon-Outlined Trailing Green Ivy Vines
+      const vineTrails: [number, number, number][] = [
+        [0.04, zSign * 0.18, 5],
+        [-0.14, zSign * 0.06, 4],
+      ];
+      for (let vIdx = 0; vIdx < vineTrails.length; vIdx++) {
+        const [vxBase, vzBase, nodeCount] = vineTrails[vIdx];
+        for (let n = 0; n < nodeCount; n++) {
+          const vy = 2.58 - n * 0.082;
+          const swayX = vxBase + Math.sin(n * 1.2 + vIdx) * 0.018;
+          const swayZ = basketZ + vzBase + Math.cos(n * 0.9 + vIdx) * 0.015;
+          const leafR = 0.046 - n * 0.005;
+          const leafGeo = new THREE.DodecahedronGeometry(leafR, 0);
+          leafGeo.scale(1.18, 0.82, 0.82);
+          addToonLampPart(
+            crossarmGrp,
+            leafGeo,
+            foliageColors[(vIdx + n) % foliageColors.length],
+            [swayX, vy, swayZ],
+            [0.25, n * 0.8, 0.2],
+            0.006,
+            false,
+          );
+        }
+      }
+    }
+
+    // G. Top 4-Sided Lantern Assembly (y = 3.31m .. 4.30m) with Toon Outlines
+    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.095, 0.068, 0.11, 8), COL_IRON_DARK, [0, 3.39, 0], [0, Math.PI / 8, 0], 0.0075, false);
+    addToonLampPart(lGrp, new THREE.BoxGeometry(0.22, 0.036, 0.22), COL_IRON_ACCENT, [0, 3.46, 0], [0, 0, 0], 0.0075, false);
+
+    // Warm Glowing 4-Sided Toon Lantern Glass Cage
+    addToonLampPart(
+      lGrp,
+      new THREE.CylinderGeometry(0.195, 0.135, 0.44, 4),
+      COL_LANTERN_GLOW,
+      [0, 3.70, 0],
+      [0, Math.PI / 4, 0],
+      0.009,
+      false,
+    );
+    // 4 Corner Mullion Struts
+    for (const [cxSign, czSign] of [
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ] as [number, number][]) {
+      const midC = 0.117;
+      addToonLampPart(
+        lGrp,
+        new THREE.BoxGeometry(0.024, 0.45, 0.024),
+        COL_IRON_DARK,
+        [cxSign * midC, 3.70, czSign * midC],
+        [-czSign * 0.095, 0, cxSign * 0.095],
+        0,
+        false,
+      );
+    }
+
+    // Stepped Pyramidal Cast-Iron Lantern Roof Hood & Finial Spire
+    addToonLampPart(lGrp, new THREE.BoxGeometry(0.35, 0.042, 0.35), COL_IRON_DARK, [0, 3.935, 0], [0, 0, 0], 0.0085, false);
+    addToonLampPart(
+      lGrp,
+      new THREE.CylinderGeometry(0.055, 0.22, 0.19, 4),
+      COL_IRON_MID,
+      [0, 4.055, 0],
+      [0, Math.PI / 4, 0],
+      0.009,
+      false,
+    );
+    addToonLampPart(lGrp, new THREE.SphereGeometry(0.040, 6, 6), COL_IRON_ACCENT, [0, 4.19, 0], [0, 0, 0], 0.0065, false);
+    addToonLampPart(lGrp, new THREE.ConeGeometry(0.024, 0.09, 6), COL_IRON_DARK, [0, 4.255, 0], [0, 0, 0], 0.0065, false);
   };
-  for (const lz of [-28.5, -9.5, 9.5, 28.5]) {
-    buildUrbanPromenadeLampPole(-12.2, lz, Math.PI / 2);
-  }
+  // West Plaza Lampposts: corner poles at lx = -12.2 (lz = ±28.5), while the 2 middle poles (lz = -9.5 & +9.5)
+  // stand in front (+X) of Cafe Hana and the Botanical Glasshouse Conservatory at lx = -5.6!
+  buildUrbanPromenadeLampPole(-12.2, -28.5, Math.PI / 2);
+  buildUrbanPromenadeLampPole(-5.6, -9.5, Math.PI / 2);
+  buildUrbanPromenadeLampPole(-5.6, 9.5, Math.PI / 2);
+  buildUrbanPromenadeLampPole(-12.2, 28.5, Math.PI / 2);
   for (const lz of [-28.5, -12.4, 12.4, 28.5]) {
     buildUrbanPromenadeLampPole(12.2, lz, -Math.PI / 2);
   }
 
+  // -------------------------------------------------------------------------
+  // 6B. BLITZ TOON/CEL-SHADED PARK BENCH & PLANTER BOX (High-FPS Game World Style)
+  //     Uses Blitz's Cel-Shader (upgradeMeshToBlitzWorldMaterial: stepped toon
+  //     lighting + ground bounce + halftone shadow) and bold BackSide Toon
+  //     Outlines (createBlitzStrokeMesh) that bake 100% into the static plaza mesh.
+  // -------------------------------------------------------------------------
+  const buildVintageParkBenchWithPlanterBox = (lx: number, lz: number, rotY: number) => {
+    const BENCH_GOLDEN_SCALE = 1.58;
+    const bGrp = new THREE.Group();
+    bGrp.position.set(lx, 2.50, lz);
+    bGrp.rotation.y = rotY;
+    bGrp.scale.setScalar(BENCH_GOLDEN_SCALE);
+    westPlantGroup.add(bGrp);
 
+    const COL_CAST_IRON = '#3d4b42';
+    const COL_CAST_IRON_DARK = '#2f3b34';
+    const COL_CAST_IRON_HIGHLIGHT = '#506357';
+    const COL_TIMBER_SLAT = '#df9b52';
+    const COL_TIMBER_CREST = '#cf8940';
+    const COL_TIMBER_POST = '#be7e3e';
+    const COL_TIMBER_RAIL = '#d18e4a';
+
+    // Helper: add a Blitz Toon/Cel-Shaded part with guaranteed BackSide Toon Outline
+    const addToonBenchPart = (
+      parent: THREE.Object3D,
+      geo: THREE.BufferGeometry,
+      colorHex: string,
+      pos: [number, number, number],
+      rot: [number, number, number],
+      toonStrokeWidth = 0.009,
+      castShad = true,
+    ) => {
+      const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0);
+      m.castShadow = !isSoftwareGl && castShad;
+      if (toonStrokeWidth > 0) {
+        const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
+        if (st) m.add(st);
+      }
+      return m;
+    };
+
+    // Lightweight low-poly curved iron bar helper with Blitz Toon Outline
+    const addCurvedIronBar = (
+      pts: [number, number, number][],
+      radius: number,
+      tubularSegments: number,
+      colorHex: string,
+      scaleX = 1.18,
+      toonStrokeWidth = 0.0075,
+    ) => {
+      const curve = new THREE.CatmullRomCurve3(
+        pts.map(([px, py, pz]) => new THREE.Vector3(px, py, pz)),
+        false,
+        'centripetal',
+        0.5,
+      );
+      const lowSegs = Math.max(8, Math.round(tubularSegments * 0.45));
+      const tubeGeo = new THREE.TubeGeometry(curve, lowSegs, radius, 6, false);
+      if (scaleX !== 1) {
+        const avgX = pts.reduce((acc, p) => acc + p[0], 0) / pts.length;
+        tubeGeo.translate(-avgX, 0, 0);
+        tubeGeo.scale(scaleX, 1, 1);
+        tubeGeo.translate(avgX, 0, 0);
+      }
+      addToonBenchPart(bGrp, tubeGeo, colorHex, [0, 0, 0], [0, 0, 0], toonStrokeWidth, false);
+    };
+
+    // 1. BLITZ TOON/CEL-SHADED CAST-IRON END FRAMES (Left x = -1.00m & Right x = +1.00m)
+    for (const sideSign of [-1, 1]) {
+      const fx = sideSign * 1.00;
+      const flareOut = sideSign * 0.042;
+      const frontFootX = fx + flareOut;
+      const rearFootX = fx + flareOut;
+
+      addToonBenchPart(
+        bGrp,
+        new THREE.CylinderGeometry(0.046, 0.058, 0.036, 6),
+        COL_CAST_IRON_DARK,
+        [frontFootX, 0.018, 0.295],
+        [0, 0, 0],
+        0.007,
+        false,
+      );
+      addToonBenchPart(
+        bGrp,
+        new THREE.CylinderGeometry(0.046, 0.058, 0.036, 6),
+        COL_CAST_IRON_DARK,
+        [rearFootX, 0.018, -0.285],
+        [0, 0, 0],
+        0.007,
+        false,
+      );
+
+      // Ergonomic Backrest & Seat Cradle Frame
+      addCurvedIronBar(
+        [
+          [fx, 1.078, -0.352],
+          [fx, 1.148, -0.330],
+          [fx, 1.010, -0.268],
+          [fx, 0.710, -0.198],
+          [fx, 0.520, -0.120],
+          [fx, 0.504, 0.095],
+          [fx, 0.536, 0.278],
+          [fx, 0.468, 0.312],
+          [fx, 0.458, 0.272],
+        ],
+        0.028,
+        24,
+        COL_CAST_IRON,
+        1.25,
+        0.0085,
+      );
+
+      // Front & Rear Legs
+      addCurvedIronBar(
+        [
+          [frontFootX, 0.025, 0.295],
+          [fx + flareOut * 0.5, 0.16, 0.252],
+          [fx, 0.36, 0.268],
+          [fx, 0.525, 0.255],
+        ],
+        0.029,
+        14,
+        COL_CAST_IRON,
+        1.22,
+        0.0085,
+      );
+      addCurvedIronBar(
+        [
+          [rearFootX, 0.025, -0.285],
+          [fx + flareOut * 0.5, 0.18, -0.228],
+          [fx, 0.38, -0.185],
+          [fx, 0.680, -0.196],
+        ],
+        0.029,
+        14,
+        COL_CAST_IRON,
+        1.22,
+        0.0085,
+      );
+
+      // Curved Armrest + Front Volute Loop
+      addCurvedIronBar(
+        [
+          [fx, 0.768, -0.212],
+          [fx, 0.788, 0.015],
+          [fx, 0.770, 0.238],
+          [fx, 0.715, 0.278],
+          [fx, 0.638, 0.188],
+          [fx, 0.728, 0.168],
+          [fx, 0.686, 0.224],
+        ],
+        0.026,
+        24,
+        COL_CAST_IRON_HIGHLIGHT,
+        1.25,
+        0.008,
+      );
+
+      // Lower Armrest Strut
+      addCurvedIronBar(
+        [
+          [fx, 0.528, 0.245],
+          [fx, 0.642, 0.222],
+          [fx, 0.636, 0.115],
+          [fx, 0.748, -0.202],
+        ],
+        0.020,
+        14,
+        COL_CAST_IRON,
+        1.18,
+        0.0065,
+      );
+
+      // Under-Seat Arch & Heart Scroll
+      addCurvedIronBar(
+        [
+          [fx + flareOut * 0.35, 0.155, 0.248],
+          [fx, 0.252, 0.025],
+          [fx + flareOut * 0.35, 0.155, -0.212],
+        ],
+        0.019,
+        12,
+        COL_CAST_IRON_DARK,
+        1.18,
+        0.0065,
+      );
+      addCurvedIronBar(
+        [
+          [fx, 0.252, 0.025],
+          [fx, 0.355, 0.092],
+          [fx, 0.455, 0.058],
+          [fx, 0.415, 0.025],
+        ],
+        0.016,
+        12,
+        COL_CAST_IRON_HIGHLIGHT,
+        1.15,
+        0.006,
+      );
+      addCurvedIronBar(
+        [
+          [fx, 0.252, 0.025],
+          [fx, 0.355, -0.042],
+          [fx, 0.455, -0.008],
+          [fx, 0.415, 0.025],
+        ],
+        0.016,
+        12,
+        COL_CAST_IRON_HIGHLIGHT,
+        1.15,
+        0.006,
+      );
+    }
+
+    // 2. BLITZ TOON/CEL-SHADED TIMBER SEAT & BACKREST SLATS (with crisp Toon Outlines)
+    const benchSpanW = 2.04;
+    const bullnoseGeo = new THREE.CylinderGeometry(0.028, 0.028, benchSpanW, 8);
+    bullnoseGeo.rotateZ(Math.PI / 2);
+    bullnoseGeo.scale(1, 0.85, 1.25);
+    addToonBenchPart(bGrp, bullnoseGeo, COL_TIMBER_SLAT, [0, 0.542, 0.282], [0.24, 0, 0], 0.0085, true);
+
+    const seatSlats: [number, number, number, number][] = [
+      [0.546, 0.212, 0.070, 0.12],
+      [0.532, 0.132, 0.076, 0.05],
+      [0.522, 0.048, 0.076, -0.01],
+      [0.524, -0.036, 0.076, -0.06],
+      [0.538, -0.118, 0.076, -0.12],
+    ];
+    for (const [sy, sz, sDepth, sPitch] of seatSlats) {
+      addToonBenchPart(
+        bGrp,
+        new THREE.BoxGeometry(benchSpanW, 0.034, sDepth),
+        COL_TIMBER_SLAT,
+        [0, sy, sz],
+        [sPitch, 0, 0],
+        0.0085,
+        true,
+      );
+    }
+
+    const backSlats: [number, number, number, number][] = [
+      [0.665, -0.182, 0.094, -0.19],
+      [0.778, -0.208, 0.094, -0.22],
+      [0.892, -0.238, 0.094, -0.24],
+      [1.006, -0.270, 0.096, -0.26],
+    ];
+    for (const [by, bz, bHeight, bPitch] of backSlats) {
+      addToonBenchPart(
+        bGrp,
+        new THREE.BoxGeometry(benchSpanW, bHeight, 0.034),
+        COL_TIMBER_SLAT,
+        [0, by, bz],
+        [bPitch, 0, 0],
+        0.0085,
+        true,
+      );
+    }
+
+    const crestGeo = new THREE.CylinderGeometry(0.030, 0.030, benchSpanW + 0.02, 8);
+    crestGeo.rotateZ(Math.PI / 2);
+    crestGeo.scale(1, 0.95, 0.80);
+    addToonBenchPart(bGrp, crestGeo, COL_TIMBER_CREST, [0, 1.088, -0.298], [-0.28, 0, 0], 0.0085, true);
+
+    // 3 Rear Support Straps
+    for (const strapX of [-0.64, 0.0, 0.64]) {
+      addCurvedIronBar(
+        [
+          [strapX, 0.518, 0.235],
+          [strapX, 0.502, -0.105],
+          [strapX, 0.565, -0.182],
+          [strapX, 0.895, -0.258],
+          [strapX, 1.095, -0.328],
+        ],
+        0.020,
+        12,
+        COL_CAST_IRON,
+        1.35,
+        0.007,
+      );
+    }
+
+    // 3. BLITZ TOON/CEL-SHADED PLANTER BOXES & CHUNKY TOON FOLIAGE/BLOSSOMS
+    const buildSlattedWoodenPlanterBox = (
+      px: number,
+      pz: number,
+      widthX: number,
+      depthZ: number,
+      heightY: number,
+      clusterCount: number,
+    ) => {
+      const pBoxGrp = new THREE.Group();
+      pBoxGrp.position.set(px, 0, pz);
+      bGrp.add(pBoxGrp);
+
+      const halfW = widthX * 0.5;
+      const halfD = depthZ * 0.5;
+      const postSize = 0.072;
+
+      for (const [cxSign, czSign] of [
+        [-1, -1],
+        [1, -1],
+        [-1, 1],
+        [1, 1],
+      ] as [number, number][]) {
+        const postX = cxSign * (halfW - postSize * 0.5);
+        const postZ = czSign * (halfD - postSize * 0.5);
+        addToonBenchPart(
+          pBoxGrp,
+          new THREE.BoxGeometry(postSize, heightY, postSize),
+          COL_TIMBER_POST,
+          [postX, heightY * 0.5, postZ],
+          [0, 0, 0],
+          0.008,
+          false,
+        );
+      }
+
+      for (const ry of [0.065, heightY - 0.038]) {
+        for (const zSide of [-1, 1]) {
+          addToonBenchPart(
+            pBoxGrp,
+            new THREE.BoxGeometry(widthX - postSize * 1.5, 0.054, 0.050),
+            COL_TIMBER_RAIL,
+            [0, ry, zSide * (halfD - 0.026)],
+            [0, 0, 0],
+            0.0075,
+            false,
+          );
+        }
+        for (const xSide of [-1, 1]) {
+          addToonBenchPart(
+            pBoxGrp,
+            new THREE.BoxGeometry(0.050, 0.054, depthZ - postSize * 1.5),
+            COL_TIMBER_RAIL,
+            [xSide * (halfW - 0.026), ry, 0],
+            [0, 0, 0],
+            0.0075,
+            false,
+          );
+        }
+      }
+
+      // Main Planter Wooden Core Box (with bold Blitz Toon Outline) & Dark Soil Bed
+      addToonBenchPart(
+        pBoxGrp,
+        new THREE.BoxGeometry(widthX - 0.04, heightY - 0.06, depthZ - 0.04),
+        '#c98c4e',
+        [0, heightY * 0.5, 0],
+        [0, 0, 0],
+        0.010,
+        true,
+      );
+      addToonBenchPart(
+        pBoxGrp,
+        new THREE.BoxGeometry(widthX - 0.12, 0.04, depthZ - 0.12),
+        '#4a3525',
+        [0, heightY - 0.025, 0],
+        [0, 0, 0],
+        0,
+        false,
+      );
+
+      // Blitz Toon/Cel-Shaded Foliage Mounds, Pink Hydrangea Globes, Lavender Spikes & Ivy Vines
+      // Matches the exact cel-shaded green & black-outlined style of the staircase shrubs!
+      const leafColors = ['#468c3b', '#529e46', '#3b7a31', '#5ead50'];
+      const pinkColors = ['#f7a4c6', '#ef88b2', '#fcc8df', '#e678a5'];
+      const lavenderColors = ['#7c52b8', '#9268cf', '#683fa3', '#a67fe0'];
+
+      for (let c = 0; c < clusterCount; c++) {
+        const u = clusterCount === 1 ? 0 : c / (clusterCount - 1) - 0.5;
+        const cx = u * (widthX - 0.44);
+
+        // 1) Chunky Blitz Toon-Outlined Green Foliage Cushions (same style as staircase shrubs)
+        const foliageOffsets: [number, number, number, number, number][] = [
+          [0.0, heightY + 0.05, 0.0, 0.175, 0.70],
+          [-0.12, heightY + 0.03, 0.09, 0.14, 0.74],
+          [0.12, heightY + 0.03, 0.08, 0.14, 0.74],
+          [-0.10, heightY + 0.04, -0.09, 0.135, 0.72],
+          [0.10, heightY + 0.04, -0.09, 0.135, 0.72],
+        ];
+        for (let f = 0; f < foliageOffsets.length; f++) {
+          const [ox, oy, oz, rad, sy] = foliageOffsets[f];
+          const fGeo = new THREE.IcosahedronGeometry(rad, 1);
+          fGeo.scale(1.12, sy, 1.08);
+          addToonBenchPart(
+            pBoxGrp,
+            fGeo,
+            leafColors[(c + f) % leafColors.length],
+            [cx + ox, oy, oz],
+            [0, (c + f) * 0.8, 0],
+            0.0095,
+            false,
+          );
+        }
+
+        // 2) Chunky Blitz Toon-Outlined Pink Hydrangea Globes
+        const hydrangeaPositions: [number, number, number, number][] =
+          clusterCount === 1
+            ? [
+                [-0.09, heightY + 0.16, 0.06, 0.118],
+                [0.10, heightY + 0.18, 0.02, 0.128],
+                [-0.02, heightY + 0.15, -0.08, 0.108],
+              ]
+            : [
+                [-0.11, heightY + 0.16, 0.04, 0.120],
+                [0.11, heightY + 0.18, -0.03, 0.126],
+              ];
+        for (let h = 0; h < hydrangeaPositions.length; h++) {
+          const [hx, hy, hz, hRad] = hydrangeaPositions[h];
+          const hGeo = new THREE.DodecahedronGeometry(hRad, 1);
+          hGeo.scale(1.14, 0.88, 1.14);
+          addToonBenchPart(
+            pBoxGrp,
+            hGeo,
+            pinkColors[(c + h) % pinkColors.length],
+            [cx + hx, hy, hz],
+            [0.2 * h, h * 1.1, 0],
+            0.0085,
+            false,
+          );
+          const capGeo = new THREE.DodecahedronGeometry(hRad * 0.56, 0);
+          capGeo.scale(1.1, 0.65, 1.1);
+          addToonBenchPart(
+            pBoxGrp,
+            capGeo,
+            '#fde0ee',
+            [cx + hx, hy + hRad * 0.52, hz],
+            [0, h * 0.7, 0],
+            0,
+            false,
+          );
+        }
+
+        // 3) Stylized Toon Lavender Spikes
+        const spikeCount = clusterCount === 1 ? 6 : 5;
+        for (let s = 0; s < spikeCount; s++) {
+          const sFrac = s / (spikeCount - 1) - 0.5;
+          const sx = cx + sFrac * 0.22;
+          const sz = (s % 2 === 0 ? -1 : 1) * 0.045;
+          const stemH = 0.26 + (1 - Math.abs(sFrac)) * 0.10;
+          const tiltZ = -sFrac * 0.16;
+          const tiltX = (s % 2 === 0 ? -1 : 1) * 0.07;
+
+          addToonBenchPart(
+            pBoxGrp,
+            new THREE.CylinderGeometry(0.009, 0.012, stemH, 5),
+            '#48753e',
+            [sx, heightY + 0.06 + stemH * 0.5, sz],
+            [tiltX, 0, tiltZ],
+            0.004,
+            false,
+          );
+          for (let b = 0; b < 3; b++) {
+            const bHeight = heightY + 0.12 + stemH * 0.45 + b * 0.058;
+            const bRad = 0.027 - b * 0.004;
+            const budGeo = new THREE.DodecahedronGeometry(bRad, 0);
+            budGeo.scale(0.88, 1.45, 0.88);
+            addToonBenchPart(
+              pBoxGrp,
+              budGeo,
+              lavenderColors[(s + b) % lavenderColors.length],
+              [sx - Math.sin(tiltZ) * (b * 0.04), bHeight, sz + Math.sin(tiltX) * (b * 0.04)],
+              [tiltX, s * 0.5, tiltZ],
+              0.005,
+              false,
+            );
+          }
+        }
+      }
+
+      // 4) Stylized Toon-Outlined Cascading Green Ivy Vines
+      const vineOffsets: [number, number, number][] =
+        clusterCount === 1
+          ? [
+              [-0.14, halfD + 0.02, 5],
+              [0.12, halfD + 0.02, 4],
+              [halfW + 0.02, -0.06, 5],
+              [halfW + 0.02, 0.10, 4],
+            ]
+          : [
+              [-0.72, -halfD - 0.02, 5],
+              [-0.18, -halfD - 0.02, 4],
+              [0.32, -halfD - 0.02, 5],
+              [0.78, -halfD - 0.02, 4],
+              [-halfW - 0.02, 0.04, 5],
+            ];
+      for (let v = 0; v < vineOffsets.length; v++) {
+        const [vx, vz, vNodes] = vineOffsets[v];
+        for (let n = 0; n < vNodes; n++) {
+          const vy = heightY - 0.02 - n * 0.072;
+          const vRad = 0.048 - n * 0.005;
+          const vGeo = new THREE.DodecahedronGeometry(vRad, 0);
+          vGeo.scale(1.15, 0.85, 0.75);
+          addToonBenchPart(
+            pBoxGrp,
+            vGeo,
+            leafColors[(v + n) % leafColors.length],
+            [vx + Math.sin(n * 1.3 + v) * 0.012, vy, vz],
+            [0.2 * n, v * 0.6, 0.15 * n],
+            0.006,
+            false,
+          );
+        }
+      }
+    };
+
+    buildSlattedWoodenPlanterBox(0.0, -0.58, 2.06, 0.46, 0.62, 3);
+    buildSlattedWoodenPlanterBox(1.38, -0.06, 0.56, 0.54, 0.62, 1);
+  };
+
+  // Place 2 aligned Blitz Toon/Cel-Shaded Vintage Park Benches with Planter Boxes along the East-North Plaza Promenade
+  buildVintageParkBenchWithPlanterBox(11.48, -16.85, -Math.PI / 2);
+  buildVintageParkBenchWithPlanterBox(11.48, -24.05, -Math.PI / 2);
+
+  // =========================================================================
+  // 6C. ARCHITECTURAL MODEL SHEET — BOUTIQUE TENNIS CLUB & SCENIC CLAY COURT
+  //     Reference: a_single_concept_art_architectural_building_model_sheet_featuring_a_charming_ac2046f5.png
+  //     Placed in the South-West Lawn Pocket directly South of the Central Plaza:
+  //     - World Center: (-83.5, 0.0, +52.5) -> Local to westPlantGroup (-90.5, 0, 0): (7.0, 0.0, 52.5)
+  //     - Features:
+  //       1) Scenic Clay Court (Terracotta Red-Clay outer apron + 2-Tone Tournament Green
+  //          inner playing court + regulation white lines + Net + Umpire High Chair + Ball Hopper)
+  //       2) Courtside Chain-Link Fencing & Continuous 45° Mitred Brick/Stone Curb Walls
+  //          (`createMitredPolylineStripGeometry`) with open East & South Spectator Gateways,
+  //          4 Tall Stadium Floodlight Poles, Courtside Match Scoreboard & Exterior Boxwood Hedges
+  //       3) Stone Paver Spectator Walkway (`lobbySidewalkPaverTex`) with Continuous Mitred Border Curbs
+  //       4) 2-Story Tudor/Half-Timbered Boutique Clubhouse & Viewing Terrace:
+  //          - Ground floor: Cream Stucco walls, Exposed Red-Brick Corner Quoins & Wainscoting,
+  //            Covered Pavilion Entry & Shop Porch (4 warm timber columns), "TENNIS CLUB" Signage,
+  //            Double Wooden Entry Doors, Mullioned Windows, Wall Lanterns, Climbing Rose Vines,
+  //            A-Frame Chalkboard Sign, and 2 Courtside Player Rest Benches with Tennis Racket & Bag
+  //          - Upper floor: Wrap-around Viewing Terrace & Cozy Balcony with Continuous Mitred
+  //            Wooden Balustrade (`createMitredPolylineStripGeometry`), French Terrace Doors,
+  //            External Side Wooden Staircase, Cantilevered Viewing Pergola, and Pitched Slate-Tile
+  //            Gable Roof with Half-Timbered Gable Framing & Louvered Vent
+  // =========================================================================
+  const TENNIS_CLUB_GOLDEN_SCALE = 1.35;
+  const tennisClubGrp = new THREE.Group();
+  tennisClubGrp.name = 'TennisClubAndClayCourtGroup3D';
+  // Placed at worldX = -88.00, worldZ = +50.85 (no 2-story house; North edge at lz = -9.20 -> worldZ = +38.43
+  // attaches 100% flush against the Central Plaza South Retaining Wall at worldZ = +38.33!)
+  tennisClubGrp.position.set(2.5, 0.0, 50.85);
+  tennisClubGrp.scale.setScalar(TENNIS_CLUB_GOLDEN_SCALE);
+  westPlantGroup.add(tennisClubGrp);
+
+  const COL_TC_BRICK = '#b85b43';
+  const COL_TC_TIMBER = '#8f5d38';
+  const COL_TC_TIMBER_DARK = '#694124';
+  const COL_TC_TIMBER_LIGHT = '#b57c4e';
+  const COL_TC_STONE_CURB = '#d4cec2';
+  const COL_TC_FENCE_METAL = '#39463d';
+  const COL_TC_HEDGE_DARK = '#4d7a42';
+  const COL_TC_HEDGE_MID = '#609150';
+  const COL_TC_HEDGE_LIGHT = '#75a862';
+
+  // Helper: add a Blitz Toon/Cel-Shaded part with BackSide Toon Outline to the Tennis Court
+  const addTennisToonPart = (
+    parent: THREE.Object3D,
+    geo: THREE.BufferGeometry,
+    colorHex: string,
+    pos: [number, number, number],
+    rot: [number, number, number] = [0, 0, 0],
+    toonStrokeWidth = 0.011,
+    tex?: THREE.Texture,
+    bumpScale = 1.4,
+    castShad = true,
+  ) => {
+    const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
+    m.castShadow = !isSoftwareGl && castShad;
+    if (toonStrokeWidth > 0) {
+      const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
+      if (st) m.add(st);
+    }
+    return m;
+  };
+
+  // --- Procedural Textures for Standalone Scenic Clay Tennis Court ---
+  // 1) Scenic Clay Court Surface Texture (Terracotta outer apron + 2-Tone Green inner court + crisp white lines)
+  const tennisClayCourtTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 1024;
+    c.height = 1024;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      // Base Terracotta Red-Clay Apron (#c86850)
+      ctx.fillStyle = '#c86850';
+      ctx.fillRect(0, 0, 1024, 1024);
+
+      // Subtle warm clay sweeping bands & fine granular noise
+      for (let i = 0; i < 32; i++) {
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(214, 118, 92, 0.22)' : 'rgba(178, 82, 60, 0.18)';
+        ctx.fillRect(0, i * 32, 1024, 16);
+      }
+      for (let i = 0; i < 2400; i++) {
+        const gx = (i * 197) % 1024;
+        const gy = (i * 353) % 1024;
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(245, 168, 140, 0.20)' : 'rgba(145, 62, 44, 0.22)';
+        ctx.fillRect(gx, gy, 3, 3);
+      }
+
+      // Inner 2-Tone Tournament Green Playing Court (u in [156..868], v in [116..908])
+      const cX0 = 156;
+      const cY0 = 116;
+      const cW = 712;
+      const cH = 792;
+      ctx.fillStyle = '#628d5e';
+      ctx.fillRect(cX0, cY0, cW, cH);
+
+      // Subtle mowing stripes across the green inner court (matching the aerial concept art)
+      const stripeCount = 10;
+      const stripeH = cH / stripeCount;
+      for (let s = 0; s < stripeCount; s++) {
+        if (s % 2 === 1) {
+          ctx.fillStyle = 'rgba(122, 168, 114, 0.28)';
+          ctx.fillRect(cX0, cY0 + s * stripeH, cW, stripeH);
+        }
+      }
+
+      // Crisp White Regulation Tennis Court Lines
+      ctx.strokeStyle = '#f8f9fa';
+      ctx.fillStyle = '#f8f9fa';
+      ctx.lineWidth = 10;
+      // Outer Doubles Rectangle (Baselines & Doubles Sidelines)
+      ctx.strokeRect(cX0, cY0, cW, cH);
+
+      // Singles Sidelines (inset by 88px on left & right)
+      const sLeft = cX0 + 88;
+      const sRight = cX0 + cW - 88;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(sLeft, cY0);
+      ctx.lineTo(sLeft, cY0 + cH);
+      ctx.moveTo(sRight, cY0);
+      ctx.lineTo(sRight, cY0 + cH);
+
+      // Service Lines (North & South of the center net at y = 512)
+      const srvTop = 512 - 196;
+      const srvBot = 512 + 196;
+      ctx.moveTo(sLeft, srvTop);
+      ctx.lineTo(sRight, srvTop);
+      ctx.moveTo(sLeft, srvBot);
+      ctx.lineTo(sRight, srvBot);
+
+      // Center Service Line (dividing the 4 service boxes)
+      ctx.moveTo(512, srvTop);
+      ctx.lineTo(512, srvBot);
+
+      // Center Marks at North & South Baselines
+      ctx.moveTo(512, cY0);
+      ctx.lineTo(512, cY0 + 22);
+      ctx.moveTo(512, cY0 + cH);
+      ctx.lineTo(512, cY0 + cH - 22);
+      ctx.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  })();
+
+  const makeTennisTiledTex = (
+    w: number,
+    h: number,
+    repX: number,
+    repY: number,
+    drawFn: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+  ): THREE.CanvasTexture => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      drawFn(ctx, w, h);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repX, repY);
+    t.anisotropy = 4;
+    return t;
+  };
+
+  // 2) Exposed Red-Brick Curb Wall Texture
+  const tennisBrickWallTex = makeTennisTiledTex(256, 256, 3, 3, (ctx, w, h) => {
+    ctx.fillStyle = '#d8cec0'; // warm mortar joints
+    ctx.fillRect(0, 0, w, h);
+    const rows = 8;
+    const cols = 4;
+    const rH = h / rows;
+    const cW = w / cols;
+    const shades = ['#b85b43', '#c4664d', '#a84f39', '#bf6047'];
+    for (let r = 0; r < rows; r++) {
+      const xOff = (r % 2) * (cW * 0.5);
+      for (let c = -1; c <= cols; c++) {
+        ctx.fillStyle = shades[(r * 3 + c + 4) % shades.length];
+        ctx.fillRect(c * cW + xOff + 3, r * rH + 3, cW - 6, rH - 6);
+        ctx.fillStyle = 'rgba(255, 225, 200, 0.16)';
+        ctx.fillRect(c * cW + xOff + 3, r * rH + 3, cW - 6, 4);
+      }
+    }
+  });
+
+  // 3) "TENNIS CLUB" Signage Banner Texture (mounted on the North Courtside Fence against the Plaza Wall)
+  const tennisClubSignTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 1024;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#f3ead8';
+      ctx.fillRect(0, 0, 1024, 256);
+      ctx.strokeStyle = '#7c4f2b';
+      ctx.lineWidth = 18;
+      ctx.strokeRect(12, 12, 1000, 232);
+      ctx.strokeStyle = '#b88655';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(28, 28, 968, 200);
+      ctx.fillStyle = '#2d2620';
+      ctx.font = 'bold 116px Georgia, "Times New Roman", serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TENNIS CLUB', 512, 134);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 4) Courtside Match Scoreboard Texture ("HOME / GUEST" green board)
+  const tennisScoreboardTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 384;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#2d4c39';
+      ctx.fillRect(0, 0, 512, 384);
+      ctx.strokeStyle = '#e5e0d3';
+      ctx.lineWidth = 14;
+      ctx.strokeRect(12, 12, 488, 360);
+      ctx.fillStyle = '#f8f5ec';
+      ctx.font = 'bold 38px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('CLUB MATCH', 256, 58);
+      ctx.lineWidth = 5;
+      ctx.strokeRect(36, 84, 440, 256);
+      ctx.beginPath();
+      ctx.moveTo(36, 168);
+      ctx.lineTo(476, 168);
+      ctx.moveTo(36, 254);
+      ctx.lineTo(476, 254);
+      ctx.moveTo(210, 84);
+      ctx.lineTo(210, 340);
+      ctx.moveTo(300, 84);
+      ctx.lineTo(300, 340);
+      ctx.moveTo(390, 84);
+      ctx.lineTo(390, 340);
+      ctx.stroke();
+      ctx.font = 'bold 34px sans-serif';
+      ctx.fillText('PLAYER', 122, 138);
+      ctx.fillText('1', 255, 138);
+      ctx.fillText('2', 345, 138);
+      ctx.fillText('3', 433, 138);
+      ctx.fillStyle = '#fde68a';
+      ctx.fillText('HOME', 122, 222);
+      ctx.fillText('6', 255, 222);
+      ctx.fillText('4', 345, 222);
+      ctx.fillText('5', 433, 222);
+      ctx.fillStyle = '#f8f5ec';
+      ctx.fillText('GUEST', 122, 308);
+      ctx.fillText('4', 255, 308);
+      ctx.fillText('6', 345, 308);
+      ctx.fillText('3', 433, 308);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 5) A-Frame Chalkboard Sign Texture
+  const tennisChalkboardTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 384;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#252b28';
+      ctx.fillRect(0, 0, 256, 384);
+      ctx.strokeStyle = '#96613b';
+      ctx.lineWidth = 22;
+      ctx.strokeRect(11, 11, 234, 362);
+      ctx.fillStyle = '#f4efe4';
+      ctx.font = 'bold 28px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('TENNIS COURT', 128, 76);
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText('CENTRAL PLAZA', 128, 112);
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(42, 136);
+      ctx.lineTo(214, 136);
+      ctx.stroke();
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '20px sans-serif';
+      ctx.fillText('• Red Clay Surface', 128, 182);
+      ctx.fillText('• Open Practice', 128, 224);
+      ctx.fillText('• Club Matches', 128, 266);
+      ctx.fillText('• Spectator Walk', 128, 308);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+
+  // 6) Courtside Diamond Chain-Link Wire Mesh Texture (Crisp dark wire grid with alpha cutout)
+  const tennisChainLinkTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 256, 256);
+      ctx.strokeStyle = '#2a342d';
+      ctx.lineWidth = 7;
+      const step = 32;
+      for (let i = -256; i <= 512; i += step) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i + 256, 256);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(i + 256, 0);
+        ctx.lineTo(i, 256);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#4c5d51';
+      ctx.lineWidth = 2.5;
+      for (let i = -256; i <= 512; i += step) {
+        ctx.beginPath();
+        ctx.moveTo(i + 1, 0);
+        ctx.lineTo(i + 257, 256);
+        ctx.stroke();
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+
+  const sharedChainLinkFenceMat = new THREE.MeshStandardMaterial({
+    color: '#465449',
+    map: tennisChainLinkTex,
+    alphaTest: 0.35,
+    transparent: false,
+    side: THREE.DoubleSide,
+    roughness: 0.65,
+    metalness: 0.25,
+  });
+
+  const makeChainLinkFencePanel = (
+    parent: THREE.Object3D,
+    width: number,
+    height: number,
+    pos: [number, number, number],
+    rotY = 0,
+  ) => {
+    const geo = new THREE.PlaneGeometry(width, height);
+    const uvAttr = geo.attributes.uv as THREE.BufferAttribute;
+    const repX = Math.max(1, Math.round(width * 2.2));
+    const repY = Math.max(1, Math.round(height * 2.2));
+    for (let i = 0; i < uvAttr.count; i++) {
+      uvAttr.setXY(i, uvAttr.getX(i) * repX, uvAttr.getY(i) * repY);
+    }
+    const mesh = new THREE.Mesh(geo, sharedChainLinkFenceMat);
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    mesh.rotation.y = rotY;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  };
+
+  // =========================================================================
+  // PART 1: STANDALONE SCENIC CLAY COURT ATTACHED FLUSH TO CENTRAL PLAZA WALL,
+  //         SPECTATOR WALKWAYS & CONTINUOUS 45° MITRED BORDER CURBS
+  // =========================================================================
+  // Court center in tennisClubGrp local coords: cx = -0.60, cz = -0.20 (14.8m W x 18.0m L -> 20.0m W x 24.3m L at 1.35x scale)
+  // Spans lx in [-8.00 .. +6.80] (worldX in [-98.80 .. -78.82]), lz in [-9.20 .. +8.80] (worldZ in [+38.43 .. +62.73])
+  // Notice that lz = -9.20 (worldZ = +38.43) sits 100% flush against the Central Plaza South Retaining Wall (worldZ = +38.33)!
+  const courtFlatGeo = new THREE.BoxGeometry(14.80, 0.08, 18.00);
+  addTennisToonPart(
+    tennisClubGrp,
+    courtFlatGeo,
+    '#ffffff',
+    [-0.60, 0.04, -0.20],
+    [0, 0, 0],
+    0.012,
+    tennisClayCourtTex,
+    0.8,
+    false,
+  );
+
+  // Full-Perimeter Urban Pedestrian Concrete Sidewalks around the Tennis Court ("buatkan trotoar untuk semua area dekat lapang tenih")
+  // - Matches the exact #bcc3cc color, `lobbySidewalkPaverTex` flagstone grid (worldTileMeters = 2.2 / 1.35 = 1.63),
+  //   and y = 0.09m height (0.0667 in local 1.35x scale) of the Central Plaza Roadside Sidewalk!
+  // 1) East Roadside & Spectator Sidewalk Promenade: spans lx in [+6.80 .. +10.35] (worldX in [-78.82 .. -74.03],
+  //    reaching all the way to the West Ring Road curb!) and lz in [-9.444 .. +11.00] (worldZ in [+38.10 .. +65.70],
+  //    connecting 100% seamlessly with the South end of the Central Plaza Roadside Sidewalk at worldZ = +38.10!)
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(3.55, 0.0667, 20.444),
+    '#bcc3cc',
+    [8.575, 0.03335, 0.778],
+    [0, 0, 0],
+    0.009,
+    lobbySidewalkPaverTex,
+    1.63,
+    false,
+  );
+  // 2) South Perimeter Sidewalk Promenade: spans lx in [-12.15 .. +6.80] (worldX in [-104.40 .. -78.82],
+  //    aligned with the West Retaining Wall of the Central Plaza!) and lz in [+8.80 .. +11.00] (worldZ in [+62.73 .. +65.70])
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(18.95, 0.0667, 2.20),
+    '#bcc3cc',
+    [-2.675, 0.03335, 9.90],
+    [0, 0, 0],
+    0.009,
+    lobbySidewalkPaverTex,
+    1.63,
+    false,
+  );
+  // 3) West Perimeter Sidewalk Promenade: spans lx in [-12.15 .. -8.00] (worldX in [-104.40 .. -98.80])
+  //    and lz in [-9.25 .. +8.80] (worldZ in [+38.36 .. +62.73], flush against the Central Plaza South Wall!)
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(4.15, 0.0667, 18.05),
+    '#bcc3cc',
+    [-10.075, 0.03335, -0.225],
+    [0, 0, 0],
+    0.009,
+    lobbySidewalkPaverTex,
+    1.63,
+    false,
+  );
+
+  // Continuous 45° Mitred U-Shaped Roadside & Perimeter Granite Curb Beam (#8f96a0)
+  // Connects directly into the Central Plaza's Roadside Granite Curb at lx = +10.422, lz = -9.444 (worldX = -73.93, worldZ = +38.10)!
+  const spectatorOuterCurbPath: [number, number][] = [
+    [-12.22, -9.25],
+    [-12.22, 11.07],
+    [10.422, 11.07],
+    [10.422, -9.444],
+  ];
+  addTennisToonPart(
+    tennisClubGrp,
+    createMitredPolylineStripGeometry(spectatorOuterCurbPath, 0.148, 0.0778, false),
+    '#8f96a0',
+    [0, 0.0389, 0],
+    [0, 0, 0],
+    0.008,
+    lobbyConcreteTex,
+    1.63,
+    false,
+  );
+
+  // =========================================================================
+  // PART 2: 4-SIDED COURTSIDE CHAIN-LINK FENCING & CONTINUOUS MITRED CURB WALLS
+  //         - North fence (lz = -9.20 -> worldZ = +38.43) runs flush along the
+  //           Central Plaza South Retaining Wall!
+  //         - Uses `createMitredPolylineStripGeometry` so ALL 4 CORNERS (NE, NW,
+  //           SW, SE) are 100% Continuous 45° Mitred Joints!
+  //         - Leaves 2 Open Spectator Gateways:
+  //           * East Spectator Gateway: lx = +6.80, lz in [-1.80 .. +1.40]
+  //           * South Spectator Gateway: lx in [-2.20 .. +1.00], lz = +8.80
+  // =========================================================================
+  // Segment A (East-North Fence -> North Plaza-Wall Fence -> West Sideline Fence -> South-West Fence,
+  //            a single continuous 4-segment polyline with 3 mitred 90° corners!)
+  const fencePathMainU: [number, number][] = [
+    [6.80, -1.80],
+    [6.80, -9.20],
+    [-8.00, -9.20],
+    [-8.00, 8.80],
+    [-2.20, 8.80],
+  ];
+  // Segment B (South-East Fence -> East-South Fence, continuous L-turn with mitred 90° corner!)
+  const fencePathSE: [number, number][] = [
+    [1.00, 8.80],
+    [6.80, 8.80],
+    [6.80, 1.40],
+  ];
+
+  for (const fPath of [fencePathMainU, fencePathSE]) {
+    // 1) Continuous Mitred Brick/Stone Base Curb Wall (y = 0.08m .. 0.36m)
+    addTennisToonPart(
+      tennisClubGrp,
+      createMitredPolylineStripGeometry(fPath, 0.26, 0.28, false),
+      COL_TC_BRICK,
+      [0, 0.22, 0],
+      [0, 0, 0],
+      0.011,
+      tennisBrickWallTex,
+      1.6,
+    );
+    // 2) Continuous Mitred Stone Coping Cap on Curb Wall (y = 0.36m .. 0.43m)
+    addTennisToonPart(
+      tennisClubGrp,
+      createMitredPolylineStripGeometry(fPath, 0.32, 0.07, false),
+      COL_TC_STONE_CURB,
+      [0, 0.395, 0],
+      [0, 0, 0],
+      0.009,
+      lobbyConcreteTex,
+      1.2,
+    );
+    // 3) Continuous Mitred Bottom Fence Rail (y = 0.45m)
+    addTennisToonPart(
+      tennisClubGrp,
+      createMitredPolylineStripGeometry(fPath, 0.07, 0.07, false),
+      COL_TC_FENCE_METAL,
+      [0, 0.46, 0],
+      [0, 0, 0],
+      0.008,
+    );
+    // 4) Continuous Mitred Middle Tension Rail (y = 1.68m)
+    addTennisToonPart(
+      tennisClubGrp,
+      createMitredPolylineStripGeometry(fPath, 0.065, 0.065, false),
+      COL_TC_FENCE_METAL,
+      [0, 1.68, 0],
+      [0, 0, 0],
+      0.008,
+    );
+    // 5) Continuous Mitred Top Tubular Fence Rail (y = 2.88m)
+    addTennisToonPart(
+      tennisClubGrp,
+      createMitredPolylineStripGeometry(fPath, 0.085, 0.085, false),
+      COL_TC_FENCE_METAL,
+      [0, 2.88, 0],
+      [0, 0, 0],
+      0.009,
+    );
+  }
+
+  // Vertical Fence Stanchion Posts & Diamond Chain-Link Wire Panels around all 4 sides
+  const fencePostCoords: [number, number][] = [
+    // North Side (flush against Central Plaza South Wall)
+    [-8.00, -9.20],
+    [-4.30, -9.20],
+    [-0.60, -9.20],
+    [3.10, -9.20],
+    [6.80, -9.20],
+    // West Side
+    [-8.00, -5.60],
+    [-8.00, -2.00],
+    [-8.00, 1.60],
+    [-8.00, 5.20],
+    [-8.00, 8.80],
+    // South Side
+    [-5.10, 8.80],
+    [-2.20, 8.80],
+    [1.00, 8.80],
+    [3.90, 8.80],
+    [6.80, 8.80],
+    // East Side
+    [6.80, 5.10],
+    [6.80, 1.40],
+    [6.80, -1.80],
+    [6.80, -5.50],
+  ];
+  for (const [px, pz] of fencePostCoords) {
+    addTennisToonPart(
+      tennisClubGrp,
+      new THREE.BoxGeometry(0.11, 2.52, 0.11),
+      COL_TC_FENCE_METAL,
+      [px, 1.67, pz],
+      [0, 0, 0],
+      0.009,
+    );
+    addTennisToonPart(
+      tennisClubGrp,
+      new THREE.BoxGeometry(0.15, 0.06, 0.15),
+      '#263029',
+      [px, 2.94, pz],
+      [0, 0, 0],
+      0.007,
+    );
+  }
+
+  // Chain-link mesh panels along all 4 sides (North, West, South, East)
+  makeChainLinkFencePanel(tennisClubGrp, 14.80, 2.40, [-0.60, 1.67, -9.20], 0); // North panel (against Plaza wall)
+  makeChainLinkFencePanel(tennisClubGrp, 18.00, 2.40, [-8.00, 1.67, -0.20], Math.PI / 2); // West panel
+  makeChainLinkFencePanel(tennisClubGrp, 5.80, 2.40, [-5.10, 1.67, 8.80], 0); // South-West panel
+  makeChainLinkFencePanel(tennisClubGrp, 5.80, 2.40, [3.90, 1.67, 8.80], 0);  // South-East panel
+  makeChainLinkFencePanel(tennisClubGrp, 7.40, 2.40, [6.80, 1.67, 5.10], Math.PI / 2);  // East-South panel
+  makeChainLinkFencePanel(tennisClubGrp, 7.40, 2.40, [6.80, 1.67, -5.50], Math.PI / 2); // East-North panel
+
+  // "TENNIS CLUB" Signboard Banner & Club Match Scoreboard mounted on the North Fence against the Central Plaza Wall
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(3.80, 0.62, 0.09),
+    '#ffffff',
+    [-0.60, 2.42, -9.12],
+    [0, 0, 0],
+    0.010,
+    tennisClubSignTex,
+    0.4,
+  );
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(1.36, 1.02, 0.08),
+    '#ffffff',
+    [-6.15, 1.85, -9.12],
+    [0, 0, 0],
+    0.010,
+    tennisScoreboardTex,
+    0.5,
+  );
+
+  // =========================================================================
+  // PART 3: COURTSIDE PLAYER REST BENCHES, TENNIS BAG, RACKET & A-FRAME SIGN
+  //         ALONG THE NORTH WALL (FLUSH AGAINST CENTRAL PLAZA WALL)
+  // =========================================================================
+  const buildCourtsideWoodenBench = (bx: number, bz: number, withProps: boolean) => {
+    const bGrp = new THREE.Group();
+    bGrp.position.set(bx, 0.08, bz);
+    tennisClubGrp.add(bGrp);
+
+    // Bench seat, slatted backrest, and 2 armrests
+    addTennisToonPart(bGrp, new THREE.BoxGeometry(1.86, 0.07, 0.54), COL_TC_TIMBER_LIGHT, [0, 0.46, 0.04], [0, 0, 0], 0.009, lobbyTimberTex);
+    addTennisToonPart(bGrp, new THREE.BoxGeometry(1.86, 0.48, 0.07), COL_TC_TIMBER_LIGHT, [0, 0.78, -0.20], [-0.10, 0, 0], 0.009, lobbyTimberTex);
+    for (const lx of [-0.84, 0.84]) {
+      addTennisToonPart(bGrp, new THREE.BoxGeometry(0.08, 0.46, 0.08), COL_TC_TIMBER_DARK, [lx, 0.23, 0.22], [0, 0, 0], 0.007);
+      addTennisToonPart(bGrp, new THREE.BoxGeometry(0.08, 0.82, 0.08), COL_TC_TIMBER_DARK, [lx, 0.41, -0.20], [0, 0, 0], 0.007);
+      addTennisToonPart(bGrp, new THREE.BoxGeometry(0.09, 0.06, 0.56), COL_TC_TIMBER, [lx, 0.66, 0.02], [0, 0, 0], 0.007);
+    }
+
+    if (withProps) {
+      // Blue/Teal Tennis Sports Duffel Bag resting on the bench
+      const bagGrp = new THREE.Group();
+      bagGrp.position.set(0.22, 0.62, 0.04);
+      bagGrp.rotation.y = -0.24;
+      bGrp.add(bagGrp);
+      const bagGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.62, 10);
+      bagGeo.rotateZ(Math.PI / 2);
+      addTennisToonPart(bagGrp, bagGeo, '#3b6e8c', [0, 0, 0], [0, 0, 0], 0.008);
+      addTennisToonPart(bagGrp, new THREE.BoxGeometry(0.42, 0.06, 0.34), '#e2e8f0', [0, 0.04, 0], [0, 0, 0], 0.005);
+
+      // Leaning Tennis Racket against the front of the bench
+      const rktGrp = new THREE.Group();
+      rktGrp.position.set(0.48, 0.34, 0.36);
+      rktGrp.rotation.set(-0.34, 0.18, -0.22);
+      bGrp.add(rktGrp);
+      const hoopGeo = new THREE.TorusGeometry(0.18, 0.022, 8, 16);
+      hoopGeo.scale(0.82, 1.15, 1.0);
+      addTennisToonPart(rktGrp, hoopGeo, '#7c3f23', [0, 0.18, 0], [0, 0, 0], 0.006);
+      addTennisToonPart(rktGrp, new THREE.CylinderGeometry(0.018, 0.022, 0.36, 8), '#e2d9c8', [0, -0.16, 0], [0, 0, 0], 0.006);
+    }
+  };
+  buildCourtsideWoodenBench(-3.20, -8.35, false);
+  buildCourtsideWoodenBench(2.00, -8.35, true);
+
+  // Wooden A-Frame Chalkboard Sign & 2 Potted Shrubs flanking the Player Rest Benches
+  const aFrameGrp = new THREE.Group();
+  aFrameGrp.position.set(4.55, 0.08, -8.30);
+  aFrameGrp.rotation.y = -0.25;
+  tennisClubGrp.add(aFrameGrp);
+  addTennisToonPart(aFrameGrp, new THREE.BoxGeometry(0.64, 0.96, 0.05), '#ffffff', [0, 0.48, 0.14], [-0.18, 0, 0], 0.008, tennisChalkboardTex, 0.4);
+  addTennisToonPart(aFrameGrp, new THREE.BoxGeometry(0.64, 0.96, 0.05), COL_TC_TIMBER_DARK, [0, 0.48, -0.14], [0.18, 0, 0], 0.008, lobbyTimberTex);
+
+  for (const px of [-0.60, 5.75]) {
+    const pGrp = new THREE.Group();
+    pGrp.position.set(px, 0.08, -8.40);
+    tennisClubGrp.add(pGrp);
+    addTennisToonPart(pGrp, new THREE.CylinderGeometry(0.26, 0.19, 0.42, 10), '#b59e84', [0, 0.21, 0], [0, 0, 0], 0.008);
+    addTennisToonPart(pGrp, new THREE.CylinderGeometry(0.28, 0.26, 0.06, 10), '#c8b298', [0, 0.42, 0], [0, 0, 0], 0.007);
+    const bushGeo = new THREE.DodecahedronGeometry(0.32, 1);
+    bushGeo.scale(1.05, 1.25, 1.05);
+    addTennisToonPart(pGrp, bushGeo, COL_TC_HEDGE_MID, [0, 0.68, 0], [0, 0.4, 0], 0.009);
+  }
+
+  // =========================================================================
+  // PART 4: EXTERIOR TRIMMED BOXWOOD HEDGES & 4 STADIUM FLOODLIGHT POLES
+  // =========================================================================
+  const buildTrimmedBoxwoodHedgeRun = (
+    hx: number,
+    hz: number,
+    lenX: number,
+    lenZ: number,
+    clusters: number,
+  ) => {
+    const hGrp = new THREE.Group();
+    hGrp.position.set(hx, 0.06, hz);
+    tennisClubGrp.add(hGrp);
+
+    // Continuous 45° Mitred Stone Planter Curb around the hedge bed
+    const hw = lenX * 0.5;
+    const hd = lenZ * 0.5;
+    const curbRect: [number, number][] = [
+      [-hw, -hd],
+      [hw, -hd],
+      [hw, hd],
+      [-hw, hd],
+    ];
+    addTennisToonPart(
+      hGrp,
+      createMitredPolylineStripGeometry(curbRect, 0.14, 0.18, true),
+      COL_TC_STONE_CURB,
+      [0, 0.09, 0],
+      [0, 0, 0],
+      0.008,
+      lobbyConcreteTex,
+      1.2,
+    );
+
+    // Main sculpted boxwood hedge block + chunky Blitz Toon foliage puffs along the crown
+    addTennisToonPart(
+      hGrp,
+      new THREE.BoxGeometry(Math.max(0.3, lenX - 0.12), 0.62, Math.max(0.3, lenZ - 0.12)),
+      COL_TC_HEDGE_DARK,
+      [0, 0.42, 0],
+      [0, 0, 0],
+      0.011,
+    );
+    const isAlongX = lenX >= lenZ;
+    const span = isAlongX ? lenX - 0.45 : lenZ - 0.45;
+    const hedgePalette = [COL_TC_HEDGE_MID, COL_TC_HEDGE_LIGHT, COL_TC_HEDGE_DARK];
+    for (let i = 0; i < clusters; i++) {
+      const t = clusters === 1 ? 0 : i / (clusters - 1) - 0.5;
+      const ox = isAlongX ? t * span : ((i % 2) - 0.5) * 0.12;
+      const oz = isAlongX ? ((i % 2) - 0.5) * 0.12 : t * span;
+      const puffGeo = new THREE.DodecahedronGeometry(0.34, 1);
+      puffGeo.scale(isAlongX ? 1.35 : 0.95, 0.72, isAlongX ? 0.95 : 1.35);
+      addTennisToonPart(
+        hGrp,
+        puffGeo,
+        hedgePalette[i % hedgePalette.length],
+        [ox, 0.68, oz],
+        [0, i * 0.7, 0],
+        0.009,
+        undefined,
+        1.0,
+        false,
+      );
+    }
+  };
+
+  // Trimmed hedges along West exterior fence, South spectator border, and East spectator border
+  buildTrimmedBoxwoodHedgeRun(-8.55, -0.20, 0.72, 16.40, 14);
+  buildTrimmedBoxwoodHedgeRun(-5.10, 9.32, 5.20, 0.68, 5);
+  buildTrimmedBoxwoodHedgeRun(3.90, 9.32, 5.20, 0.68, 5);
+  buildTrimmedBoxwoodHedgeRun(7.32, 5.10, 0.68, 6.40, 6);
+  buildTrimmedBoxwoodHedgeRun(7.32, -5.50, 0.68, 6.40, 6);
+
+  // 4 Tall Stadium Floodlight Poles with 4-Lamp Cluster Heads at the 4 corners of the court
+  const buildCourtFloodlightPole = (px: number, pz: number, aimYaw: number) => {
+    const fGrp = new THREE.Group();
+    fGrp.position.set(px, 0.0, pz);
+    fGrp.rotation.y = aimYaw;
+    tennisClubGrp.add(fGrp);
+
+    // Concrete octagonal base pedestal + tapered dark-grey steel pole (height = 6.6m)
+    addTennisToonPart(fGrp, new THREE.CylinderGeometry(0.22, 0.28, 0.65, 8), COL_TC_STONE_CURB, [0, 0.325, 0], [0, 0, 0], 0.009, lobbyConcreteTex);
+    addTennisToonPart(fGrp, new THREE.CylinderGeometry(0.085, 0.135, 6.10, 8), '#37414a', [0, 3.65, 0], [0, 0, 0], 0.010);
+    // Double horizontal crossbars at top (y = 6.45m & 6.82m)
+    addTennisToonPart(fGrp, new THREE.BoxGeometry(1.24, 0.07, 0.07), '#293138', [0, 6.42, 0], [0, 0, 0], 0.008);
+    addTennisToonPart(fGrp, new THREE.BoxGeometry(1.24, 0.07, 0.07), '#293138', [0, 6.82, 0], [0, 0, 0], 0.008);
+    addTennisToonPart(fGrp, new THREE.BoxGeometry(0.08, 0.52, 0.08), '#293138', [0, 6.62, 0], [0, 0, 0], 0.008);
+
+    // 4 Rectangular Stadium Floodlight Housings + Glowing Warm-White Emissive Lenses
+    for (const lx of [-0.42, 0.42]) {
+      for (const ly of [6.42, 6.82]) {
+        const lampGrp = new THREE.Group();
+        lampGrp.position.set(lx, ly, 0.08);
+        lampGrp.rotation.x = 0.38; // pitched downward toward the clay court
+        fGrp.add(lampGrp);
+        addTennisToonPart(lampGrp, new THREE.BoxGeometry(0.36, 0.26, 0.14), '#262d34', [0, 0, 0], [0, 0, 0], 0.008);
+        addTennisToonPart(lampGrp, new THREE.BoxGeometry(0.30, 0.20, 0.04), '#fff6d6', [0, 0, 0.06], [0, 0, 0], 0, undefined, 1.0, false);
+      }
+    }
+  };
+  buildCourtFloodlightPole(-8.55, -8.85, Math.PI * 0.25);
+  buildCourtFloodlightPole(7.35, -8.85, -Math.PI * 0.25);
+  buildCourtFloodlightPole(-8.55, 9.10, Math.PI * 0.75);
+  buildCourtFloodlightPole(7.35, 9.10, -Math.PI * 0.75);
+
+  // =========================================================================
+  // PART 5: CENTER TENNIS NET, UMPIRE HIGH CHAIR & BALL HOPPER BASKET
+  // =========================================================================
+  const netCenterZ = -0.20;
+  const netCenterX = -0.60;
+  // Left & Right Dark Forest-Green Net Posts with Brass Winder Reel
+  for (const side of [-1, 1]) {
+    const postX = netCenterX + side * 5.15;
+    addTennisToonPart(
+      tennisClubGrp,
+      new THREE.CylinderGeometry(0.065, 0.075, 1.12, 10),
+      '#273b2c',
+      [postX, 0.62, netCenterZ],
+      [0, 0, 0],
+      0.009,
+    );
+    addTennisToonPart(
+      tennisClubGrp,
+      new THREE.SphereGeometry(0.08, 8, 6),
+      '#d4a349',
+      [postX, 1.20, netCenterZ],
+      [0, 0, 0],
+      0.006,
+    );
+  }
+  // Crisp White Top Canvas Net Band, Bottom Cord, Center White Strap & Translucent Mesh Netting
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(10.24, 0.09, 0.05),
+    '#f8fafc',
+    [netCenterX, 1.08, netCenterZ],
+    [0, 0, 0],
+    0.009,
+  );
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(10.24, 0.05, 0.04),
+    '#28362c',
+    [netCenterX, 0.14, netCenterZ],
+    [0, 0, 0],
+    0.007,
+  );
+  addTennisToonPart(
+    tennisClubGrp,
+    new THREE.BoxGeometry(0.09, 0.98, 0.06),
+    '#f8fafc',
+    [netCenterX, 0.60, netCenterZ],
+    [0, 0, 0],
+    0.007,
+  );
+  makeChainLinkFencePanel(tennisClubGrp, 10.20, 0.90, [netCenterX, 0.60, netCenterZ], 0);
+
+  // Umpire High Chair at West Net Post (lx = -5.85, lz = -0.20, facing East +X across the net)
+  const umpireGrp = new THREE.Group();
+  umpireGrp.position.set(-5.85, 0.08, netCenterZ);
+  umpireGrp.rotation.y = Math.PI / 2;
+  tennisClubGrp.add(umpireGrp);
+  for (const lx of [-0.34, 0.34]) {
+    // Rear vertical legs & Front angled ladder legs
+    addTennisToonPart(umpireGrp, new THREE.BoxGeometry(0.06, 2.15, 0.06), COL_TC_TIMBER_DARK, [lx, 1.075, -0.28], [0.06, 0, 0], 0.008);
+    addTennisToonPart(umpireGrp, new THREE.BoxGeometry(0.06, 1.72, 0.06), COL_TC_TIMBER_DARK, [lx, 0.84, 0.26], [-0.22, 0, 0], 0.008);
+    // Side armrests
+    addTennisToonPart(umpireGrp, new THREE.BoxGeometry(0.06, 0.06, 0.58), COL_TC_TIMBER, [lx, 1.88, -0.04], [0, 0, 0], 0.007);
+  }
+  // 4 Stepped Ladder Rungs
+  for (let r = 0; r < 4; r++) {
+    addTennisToonPart(
+      umpireGrp,
+      new THREE.BoxGeometry(0.66, 0.045, 0.09),
+      COL_TC_TIMBER,
+      [0, 0.34 + r * 0.32, 0.34 - r * 0.07],
+      [0, 0, 0],
+      0.006,
+    );
+  }
+  // Elevated Seat, Backrest & Writing Tablet Arm
+  addTennisToonPart(umpireGrp, new THREE.BoxGeometry(0.74, 0.07, 0.52), COL_TC_TIMBER, [0, 1.64, -0.06], [0, 0, 0], 0.008, lobbyTimberTex);
+  addTennisToonPart(umpireGrp, new THREE.BoxGeometry(0.74, 0.44, 0.06), COL_TC_TIMBER, [0, 1.98, -0.30], [0, 0, 0], 0.008, lobbyTimberTex);
+
+  // Green Wire Ball Hopper Basket filled with Optic-Yellow Tennis Balls + 3 Loose Balls
+  const hopperGrp = new THREE.Group();
+  hopperGrp.position.set(3.45, 0.08, -1.35);
+  tennisClubGrp.add(hopperGrp);
+  // Wire stand legs
+  for (const [lx, lz] of [
+    [-0.18, -0.18],
+    [0.18, -0.18],
+    [-0.18, 0.18],
+    [0.18, 0.18],
+  ] as [number, number][]) {
+    addTennisToonPart(hopperGrp, new THREE.CylinderGeometry(0.015, 0.015, 0.46, 6), '#2a362c', [lx, 0.23, lz], [lz * 0.4, 0, -lx * 0.4], 0.005);
+  }
+  // Green hopper cage + rim
+  addTennisToonPart(hopperGrp, new THREE.CylinderGeometry(0.24, 0.18, 0.38, 8), '#4a7c44', [0, 0.62, 0], [0, 0, 0], 0.008);
+  addTennisToonPart(hopperGrp, new THREE.CylinderGeometry(0.26, 0.25, 0.04, 8), '#2f522b', [0, 0.81, 0], [0, 0, 0], 0.007);
+  // Optic-yellow tennis balls inside basket & 3 loose balls on clay court
+  const ballSpots: [number, number, number][] = [
+    [0.0, 0.82, 0.0],
+    [-0.10, 0.81, 0.08],
+    [0.11, 0.81, -0.07],
+    [0.08, 0.80, 0.10],
+    [-0.09, 0.80, -0.09],
+    [-0.42, 0.055, 0.32],
+    [-0.24, 0.055, 0.44],
+    [0.36, 0.055, 0.28],
+  ];
+  for (const [bx, by, bz] of ballSpots) {
+    addTennisToonPart(hopperGrp, new THREE.SphereGeometry(0.055, 8, 6), '#d9f94d', [bx, by, bz], [0, 0, 0], 0.005, undefined, 1.0, false);
+  }
 
   // -------------------------------------------------------------------------
   // 4F. LEGACY LOBBY PORTAL GROUP (KEPT EMPTY — ONLY ONE BLACK TRANSIT KIOSK AT CENTRAL PLAZA HALTE)
@@ -16896,7 +21103,7 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
-  // Emit 1 single merged mesh for all 7 palm frond crowns and 1 single merged mesh for all 41 flower bouquets!
+  // Emit 1 single merged mesh for all 7 palm frond crowns and 1 single merged mesh for all flower bouquets!
   if (batchedPalmCrownWorldGeos.length > 0) {
     const mergedPalmsGeo = mergeGeometries(batchedPalmCrownWorldGeos, false);
     batchedPalmCrownWorldGeos.forEach((g) => g.dispose());
@@ -17358,8 +21565,8 @@ export function createCurvedPlanetEnvironment(
   // 2. West Terraced Embankment Bushes & Flat Limestone Boulders (100% N/S Mirrored along the West hill border)
   const westBushRays: [number, number, 1 | 2 | 3, number][] = [
     [-106, 28, 2, 1.04],
-    [-102, 48, 1, 0.94],
-    [-106, 70, 2, 1.06],
+    [-108, 48, 2, 0.94],
+    [-108, 70, 2, 1.06],
     [-100, 92, 3, 1.02],
   ];
   for (const [wx, wz, ledge, wScale] of westBushRays) {
@@ -17371,7 +21578,7 @@ export function createCurvedPlanetEnvironment(
 
   const westBoulderRays: [number, number, 0 | 1 | 2, number, number][] = [
     [-104, 38, 1, 0.40, 0.96],
-    [-104, 64, 1, -0.50, 0.92],
+    [-108, 64, 2, -0.50, 0.92],
     [-104, 84, 2, 0.45, 0.90],
   ];
   for (const [rx, rz, ledge, rYaw, rScale] of westBoulderRays) {
@@ -23754,32 +27961,33 @@ export function buildMilitaryBaseMasterplan(
       color: new THREE.Color(COL_TEAM),
     });
 
-    // --- A. 3-Level Main Building Clones at Rear of Plot (lx = -5.5, relZ = 0.0) ---
+    // --- A. 3-Level Main Building Clones at Rear of Plot (lx = -4.8, relZ = 0.0) ---
     const lv1Building = barracksGroup.clone(true);
     lv1Building.name = `Plot_${pIdx}_Building_Lv1`;
-    lv1Building.position.set(-5.5, 0, 0);
-    lv1Building.scale.setScalar(1.22);
+    lv1Building.position.set(-4.8, 0, 0);
+    lv1Building.scale.setScalar(1.66);
     lv1Building.visible = true;
     plotRoot.add(lv1Building);
 
     const lv2Building = hqGroup.clone(true);
     lv2Building.name = `Plot_${pIdx}_Building_Lv2`;
-    lv2Building.position.set(-5.5, 0, 0);
-    lv2Building.scale.setScalar(1.24);
+    lv2Building.position.set(-4.8, 0, 0);
+    lv2Building.scale.setScalar(1.56);
     lv2Building.visible = false;
     plotRoot.add(lv2Building);
 
     const lv3Building = hangarGroup.clone(true);
     lv3Building.name = `Plot_${pIdx}_Building_Lv3`;
-    lv3Building.position.set(-5.5, 0, 0);
-    lv3Building.scale.setScalar(1.18);
+    lv3Building.position.set(-4.8, 0, 0);
+    lv3Building.scale.setScalar(1.48);
     lv3Building.visible = false;
     plotRoot.add(lv3Building);
 
     // Destroyed Rubble Group when base HP reaches 0
     const rubbleGroup = new THREE.Group();
     rubbleGroup.name = `Plot_${pIdx}_Building_Rubble`;
-    rubbleGroup.position.set(-5.5, 0, 0);
+    rubbleGroup.position.set(-4.8, 0, 0);
+    rubbleGroup.scale.setScalar(1.36);
     rubbleGroup.visible = false;
     plotRoot.add(rubbleGroup);
     const scorchBase = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.22, 6.2), charMat);
@@ -23799,8 +28007,8 @@ export function buildMilitaryBaseMasterplan(
     bakeStaticGroupMeshes(rubbleGroup, { minShadowCasterSpan: 0.45 });
 
     // Skin Theme Accent Trim Strip tucked cleanly around the Plot's Main Building Plinth
-    const plinthTrim = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.10, 6.8), skinAccentMat);
-    plinthTrim.position.set(-5.5, 0.05, 0);
+    const plinthTrim = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.10, 11.0), skinAccentMat);
+    plinthTrim.position.set(-4.8, 0.05, 0);
     plotRoot.add(plinthTrim);
 
     // --- B. 3-Level Perimeter Iron Fence wrapping Plot (lx in [-13.2, +21.8], relZ in [-9.8, +9.8]) ---

@@ -16,7 +16,7 @@ import {
   StaticWorldStructureObb,
 } from './buddiesBlitzTypes';
 
-export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v41';
+export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v53';
 
 /**
  * Single 180°-Rotationally Symmetric Base Section Generator (`buildTeamBaseQuadrant`):
@@ -119,17 +119,9 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 598, kind: 'river_rock', x: 48.0, z: -8.5, rotY: 0.7, scale: 1.35 },
     { id: 599, kind: 'river_rock', x: 48.0, z: 8.5, rotY: -0.7, scale: 1.35 },
 
-    { id: 490, kind: 'tree_purple', x: -100.5, z: -26.5, rotY: 0.25, scale: 1.08 },
-    { id: 491, kind: 'tree_gold', x: -100.5, z: 26.5, rotY: -0.25, scale: 1.08 },
-    { id: 494, kind: 'flower_cluster', x: -96.5, z: -32.5, rotY: 0.4, scale: 1.32 },
-    { id: 495, kind: 'flower_cluster', x: -96.5, z: 32.5, rotY: -0.4, scale: 1.32 },
+    { id: 491, kind: 'tree_gold', x: -99.9, z: 25.4, rotY: 1.32, scale: 0.78 },
 
-    { id: 301, kind: 'turbine', x: -59.5, z: -36.5, rotY: 0.45, scale: 1.25 },
-    { id: 302, kind: 'turbine', x: -59.5, z: 36.5, rotY: 0.45, scale: 1.25 },
-    { id: 303, kind: 'turbine', x: -34.5, z: -38.5, rotY: 0.3, scale: 1.25 },
-    { id: 304, kind: 'turbine', x: -34.5, z: 38.5, rotY: 0.3, scale: 1.25 },
-    { id: 305, kind: 'turbine', x: -84.0, z: -43.5, rotY: 0.35, scale: 1.24 },
-    { id: 306, kind: 'turbine', x: -84.0, z: 43.5, rotY: 0.35, scale: 1.24 },
+    // Wind turbines removed from West Ring Road ("hapus windfarm yang ada di jalan ini")
 
     { id: 310, kind: 'river_rock', x: -41.2, z: -4.5, rotY: 0.2, scale: 1.45 },
     { id: 311, kind: 'river_rock', x: -41.2, z: 4.5, rotY: -0.2, scale: 1.45 },
@@ -156,7 +148,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 334, kind: 'tree_gold', x: -48.5, z: -36.5, rotY: 0.6, scale: 1.1 },
     { id: 335, kind: 'tree_gold', x: -48.5, z: 36.5, rotY: -0.6, scale: 1.1 },
     { id: 336, kind: 'tree_purple', x: -84.0, z: -48.0, rotY: -0.3, scale: 1.12 },
-    { id: 337, kind: 'tree_purple', x: -84.0, z: 48.0, rotY: 0.3, scale: 1.12 },
+    { id: 337, kind: 'tree_purple', x: -68.5, z: 58.5, rotY: 0.3, scale: 1.12 },
 
     { id: 401, kind: 'crane', x: 105.8, z: 0.0, rotY: Math.PI / 2, scale: 1.38 },
     { id: 430, kind: 'forklift', x: 88.5, z: -29.5, rotY: 0.0, scale: 1.18 },
@@ -547,30 +539,57 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'west_wall_east_n', x: -76.45, z: -24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
     { id: 'west_wall_east_s', x: -76.45, z: 24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
 
-    // Central Plaza Contemporary Pergola, Modern Coffee & Gelato Kiosk, Parasol Tables & 6 Integrated Concrete Planter Benches (+2.50m Plaza Level)
-    { id: 'lobby_pergola_rear_screen', x: -101.04, z: 12.2, halfX: 0.38, halfZ: 3.32, rotY: 0, heightY: 6.9, mat: 'wood' },
-    { id: 'lobby_pergola_left_screen', x: -99.34, z: 15.43, halfX: 1.75, halfZ: 0.38, rotY: 0, heightY: 6.9, mat: 'wood' },
-    { id: 'lobby_pergola_post_rf', x: -97.63, z: 8.97, halfX: 0.34, halfZ: 0.34, rotY: 0, heightY: 6.9, mat: 'metal' },
-    { id: 'lobby_pergola_bench_rear', x: -100.52, z: 12.11, halfX: 0.48, halfZ: 3.02, rotY: 0, heightY: 3.7, mat: 'wood' },
-    { id: 'lobby_pergola_bench_left', x: -98.83, z: 14.89, halfX: 1.28, halfZ: 0.48, rotY: 0, heightY: 3.7, mat: 'wood' },
-    { id: 'lobby_pergola_table_s', x: -96.94, z: 13.16, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 3.7, mat: 'wood' },
-    { id: 'lobby_pergola_table_n', x: -96.94, z: 10.50, halfX: 1.45, halfZ: 1.45, rotY: 0, heightY: 3.7, mat: 'wood' },
-    { id: 'lobby_gelato_kiosk_body', x: -98.15, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
-    { id: 'lobby_gelato_kiosk_stools', x: -95.16, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 3.7, mat: 'wood' },
-    { id: 'npc_merchant_hana', x: -94.0, z: -13.8, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
+    // Central Plaza Botanical Glasshouse Conservatory (Walk-in Perimeter Wall Colliders leaving the 2.38m-wide East entrance doorway & 4.5m x 4.8m interior room open!), Modern Coffee & Gelato Kiosk, Parasol Tables & 5 Integrated Concrete Planter Benches (+2.50m Plaza Level)
+    { id: 'lobby_glasshouse_wall_west', x: -102.81, z: 12.20, halfX: 0.55, halfZ: 4.07, rotY: 0, heightY: 8.3, mat: 'metal' },
+    { id: 'lobby_glasshouse_wall_north', x: -100.40, z: 8.96, halfX: 2.89, halfZ: 0.85, rotY: 0, heightY: 8.3, mat: 'metal' },
+    { id: 'lobby_glasshouse_wall_south', x: -100.40, z: 15.44, halfX: 2.89, halfZ: 0.85, rotY: 0, heightY: 8.3, mat: 'metal' },
+    { id: 'lobby_glasshouse_wall_east_n', x: -97.51, z: 9.57, halfX: 0.24, halfZ: 1.44, rotY: 0, heightY: 8.3, mat: 'metal' },
+    { id: 'lobby_glasshouse_wall_east_s', x: -97.51, z: 14.83, halfX: 0.24, halfZ: 1.44, rotY: 0, heightY: 8.3, mat: 'metal' },
+    { id: 'lobby_gelato_kiosk_body', x: -100.55, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
+    { id: 'lobby_gelato_kiosk_stools', x: -97.56, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 3.7, mat: 'wood' },
+    { id: 'lobby_fashion_kiosk_body', x: -100.55, z: -1.2, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
+    { id: 'lobby_fashion_kiosk_sign', x: -97.68, z: -3.21, halfX: 0.42, halfZ: 0.42, rotY: 0, heightY: 3.8, mat: 'wood' },
+    { id: 'npc_merchant_hana', x: -91.3, z: -24.26, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
     { id: 'npc_merchant_kai', x: 85.8, z: 60.0, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
-    { id: 'lobby_civic_fountain_basin', x: -97.3, z: -0.8, halfX: 2.95, halfZ: 5.45, rotY: 0, heightY: 3.1, mat: 'concrete' },
-    { id: 'lobby_parasol_table_n', x: -81.7, z: 13.61, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(5.8 * parasolRatio).toFixed(2), mat: 'wood' },
-    { id: 'lobby_parasol_table_s', x: -81.7, z: 18.79, halfX: +(1.45 * parasolRatio).toFixed(2), halfZ: +(1.45 * parasolRatio).toFixed(2), rotY: 0, heightY: +(5.8 * parasolRatio).toFixed(2), mat: 'wood' },
-    { id: 'lobby_planter_bench_n', x: -90.5, z: -32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 5.6, mat: 'concrete' },
+    { id: 'lobby_civic_fountain_basin', x: -90.4, z: 24.8, halfX: 5.45, halfZ: 2.95, rotY: 0, heightY: 3.1, mat: 'concrete' },
+    { id: 'lobby_parasol_table_n', x: -81.7, z: 13.31, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
+    { id: 'lobby_parasol_table_s', x: -81.7, z: 19.09, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
+    // Grand Neoclassical Municipal Hall & Clock Tower on North Central Plaza (world center x = -91.3, z = -29.2, scale = 1.42)
+    { id: 'lobby_civic_hall_main_body', x: -91.30, z: -29.98, halfX: 6.45, halfZ: 3.90, rotY: 0, heightY: 14.5, mat: 'concrete' },
+    { id: 'lobby_civic_hall_balustrade_w', x: -96.90, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
+    { id: 'lobby_civic_hall_balustrade_e', x: -85.70, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
+    { id: 'lobby_civic_hall_kiosk_w', x: -98.61, z: -27.99, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
+    { id: 'lobby_civic_hall_kiosk_e', x: -83.99, z: -28.42, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
     { id: 'lobby_planter_bench_s', x: -90.5, z: 32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 5.6, mat: 'concrete' },
-    { id: 'lobby_planter_bench_wn', x: -99.7, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
     { id: 'lobby_planter_bench_ws', x: -99.7, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
-    { id: 'lobby_planter_bench_en', x: -81.1, z: -24.5, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
     { id: 'lobby_planter_bench_es', x: -81.1, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
-    // Urban Plaza to Street Staircase — North & South 4-Tier Stepped Side Concrete Planters & Glass-Steel Balustrades (z in [-8.36 .. +8.36] wide open for granite steps)
+    // 8 Vintage Park Lampposts with Flower Baskets along West & East Central Plaza Promenade (+2.50m Plaza Level + 4.30m height = 6.80m)
+    { id: 'lobby_vintage_lamppost_w1', x: -102.7, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w2', x: -96.1, z: -9.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w3', x: -96.1, z: 9.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w4', x: -102.7, z: 28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e1', x: -78.3, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e2', x: -78.3, z: -12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e3', x: -78.3, z: 12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e4', x: -78.3, z: 28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    // 2 Aligned Vintage Park Benches & Planter Boxes along East-North Plaza Promenade
+    { id: 'lobby_vintage_bench_planter_en', x: -78.60, z: -16.40, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
+    { id: 'lobby_vintage_bench_planter_en_2', x: -78.60, z: -23.60, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
+    // Urban Plaza to Street Staircase — North & South 4-Tier Stepped Side Concrete Planters, Glass-Steel Balustrades & Twin Central Handrail Divider
     { id: 'lobby_stair_planter_n', x: -81.1, z: -9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
     { id: 'lobby_stair_planter_s', x: -81.1, z: 9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
+    { id: 'lobby_stair_center_handrail', x: -81.08, z: 0.0, halfX: 4.36, halfZ: 0.22, rotY: 0, heightY: 3.5, mat: 'metal' },
+    // Standalone Scenic Clay Tennis Court Colliders (Attached flush to Central Plaza South Wall at z = +38.43, with Courtside Benches, Net, Umpire Chair & 4-Sided Fencing)
+    { id: 'tennis_porch_bench_l', x: -92.32, z: 39.58, halfX: 1.22, halfZ: 0.48, rotY: 0, heightY: 1.50, mat: 'wood' },
+    { id: 'tennis_porch_bench_r', x: -85.30, z: 39.58, halfX: 1.22, halfZ: 0.48, rotY: 0, heightY: 1.50, mat: 'wood' },
+    { id: 'tennis_court_net', x: -88.81, z: 50.58, halfX: 6.95, halfZ: 0.26, rotY: 0, heightY: 1.65, mat: 'metal' },
+    { id: 'tennis_umpire_chair', x: -95.90, z: 50.58, halfX: 0.72, halfZ: 0.72, rotY: 0, heightY: 3.00, mat: 'wood' },
+    { id: 'tennis_fence_north', x: -88.81, z: 38.43, halfX: 9.99, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
+    { id: 'tennis_fence_west', x: -98.80, z: 50.58, halfX: 0.28, halfZ: 12.15, rotY: 0, heightY: 4.00, mat: 'metal' },
+    { id: 'tennis_fence_east_n', x: -78.82, z: 43.42, halfX: 0.28, halfZ: 5.00, rotY: 0, heightY: 4.00, mat: 'metal' },
+    { id: 'tennis_fence_east_s', x: -78.82, z: 57.74, halfX: 0.28, halfZ: 5.00, rotY: 0, heightY: 4.00, mat: 'metal' },
+    { id: 'tennis_fence_south_w', x: -94.88, z: 62.73, halfX: 3.92, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
+    { id: 'tennis_fence_south_e', x: -82.74, z: 62.73, halfX: 3.92, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
     // Central Plaza Halte Trem Shelter Colliders (Windbreak Wall, Black Transit Kiosk, Ticket Machine & Slatted Passenger Bench)
     { id: 'lobby_tram_shelter_windbreak', x: -59.6, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
     { id: 'halte_teleport_kiosk', x: -61.95, z: 0.0, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
@@ -751,16 +770,16 @@ export function buildStaticWorldStructuresList(params: {
       }
 
       if (plot && !plot.destroyed) {
-        if (!isSafezoneMode && plot.buildingHp > 0) {
+        if (isSafezoneMode || plot.buildingHp > 0) {
           structures.push({
             id: `${team}_plot_${pIdx}_building`,
             x: pwx,
-            z: baseHqZ + sign * 5.5,
-            halfX: 4.25,
-            halfZ: 3.65,
-            rotY: Math.PI / 2,
-            heightY: 6.8 + plot.buildingLevel * 2.1,
-            mat: 'concrete',
+            z: baseHqZ + sign * 4.4,
+            halfX: 5.42,
+            halfZ: 4.78,
+            rotY: 0,
+            heightY: 7.8 + plot.buildingLevel * 2.2,
+            mat: 'wood',
           });
         }
         if (plot.fenceHp > 0) {

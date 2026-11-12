@@ -4212,7 +4212,7 @@ test('Safezone Non-Military Plot Claiming & Kiosk Gate Access Settings (PUBLIC, 
   assert.equal(bluePlots[1].safezoneAccessMode, 'PUBLIC');
   assert.equal(claimRes.message.includes('CLAIMED'), true);
 
-  // Verify Safezone static structures for claimed plot 1: fence, gate, sakura planter, and kiosk exist, while military building & bastion colliders are omitted
+  // Verify Safezone static structures for claimed plot 1: house building, fence, gate, sakura planter, and kiosk exist, while military bastion colliders are omitted
   const szStructures = buildStaticWorldStructuresList({
     blueBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: 74 },
     blueCommanderBases: bluePlots,
@@ -4220,7 +4220,7 @@ test('Safezone Non-Military Plot Claiming & Kiosk Gate Access Settings (PUBLIC, 
     isSafezoneMode: true,
   });
   const szIds = szStructures.map((s) => s.id);
-  assert.equal(szIds.includes('blue_plot_1_building'), false, 'Military house building collider omitted in Safezone');
+  assert.equal(szIds.includes('blue_plot_1_building'), true, 'House building collider active on claimed Safezone plot');
   assert.equal(szIds.includes('bastion_b_1'), false, 'Skyshield turret bastion collider omitted in Safezone');
   assert.ok(szIds.includes('blue_plot_1_fence_w'), 'Perimeter fence collider active on claimed Safezone plot');
   assert.ok(szIds.includes('blue_plot_1_gate'), 'Automatic sliding gate collider active on claimed Safezone plot');

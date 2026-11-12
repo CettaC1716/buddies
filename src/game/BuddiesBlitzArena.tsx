@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import pureAnimeSkyUrl from '../assets/images/pure_anime_sky_1794337544452.jpg';
 import {
   BUDDIES_CONSTANTS,
   LIGHTING_PRESETS,
@@ -269,6 +268,8 @@ import {
   Blitz3dBulletTemplates,
   createProceduralCityTramConsist,
   bakeStaticGroupMeshes,
+  upgradeMeshToBlitzWorldMaterial,
+  createBlitzStrokeMesh,
   buildCraftedWeaponPickupMesh,
   buildTeamBuddiesDropPickupMesh,
   buildSelfServiceTacticalKioskMesh,
@@ -810,21 +811,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     }
 
     const LOBBY_SEAT_SPOTS: readonly LobbySeatSpot[] = [
-      // 6 Integrated Concrete Planter Benches under the Trees around the Lobby Plaza
-      { id: 'lobby_bench_en_1', x: -82.54, z: -25.45, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_en_2', x: -82.54, z: -23.55, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      // 5 Integrated Concrete Planter Benches + 2 Aligned Vintage Park Benches along East-North Promenade
+      { id: 'lobby_bench_en_1', x: -78.98, z: -24.85, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
+      { id: 'lobby_bench_en_2', x: -78.98, z: -23.25, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
       { id: 'lobby_bench_es_1', x: -82.54, z: 23.85, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_es_2', x: -82.54, z: 25.75, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_wn_1', x: -98.26, z: -25.45, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_wn_2', x: -98.26, z: -23.55, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_ws_1', x: -98.26, z: 23.85, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_ws_2', x: -98.26, z: 25.75, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_n_1', x: -91.52, z: -31.24, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_n_2', x: -89.48, z: -31.24, yaw: -Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_s_1', x: -91.52, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       { id: 'lobby_bench_s_2', x: -89.48, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      // Pergola Bench
-      { id: 'lobby_pergola_seat', x: -100.1, z: 12.1, yaw: 0, seatLiftY: -0.04, indicatorHeightY: 1.08 },
+      // Municipal Hall & Clock Tower Cast-Iron Promenade Bench
+      { id: 'lobby_civic_bench_side', x: -83.99, z: -30.41, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      // Vintage Park Bench & Planter Box next to East-North Vintage Lamppost
+      { id: 'lobby_vintage_bench_1', x: -78.98, z: -17.65, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
+      { id: 'lobby_vintage_bench_2', x: -78.98, z: -16.05, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
       // City Park Benches
       // Park bench yaws are in CHARACTER facing convention (unit forward = (cos yaw, -sin yaw)).
       // The rendered bench's front is -(sin rotY, cos rotY), NOT +(sin, cos): the prop template
@@ -867,7 +867,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let currentNearestLobbySeat: LobbySeatSpot | null = null;
     let seatedCameraYaw = -Math.PI / 2 + 0.35;
     let seatedCameraPitch = 0.22;
-    let seatedCameraDist = 4.2;
+    let seatedCameraDist = 3.55;
     let isOrbitingSeatedCamera = false;
     let seatedOrbitDragStart = { x: 0, y: 0, yaw: 0, pitch: 0.22 };
 
@@ -927,7 +927,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Set 3rd-person perspective camera facing the seated character from the open plaza diagonal
       seatedCameraYaw = spot.yaw + Math.PI / 2 + 0.36;
       seatedCameraPitch = 0.22;
-      seatedCameraDist = 4.2;
+      seatedCameraDist = 3.55;
       updateCharacterWeaponStance(
         playerUnit.rig,
         playerUnit.weaponId,
@@ -1241,39 +1241,272 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('sync-kiosk-ui', onKioskUiSynced);
     let updateDirectDomPrompts: () => void = () => {};
 
-    // Load generated high-resolution pure anime skybox image
-    const textureLoader = new THREE.TextureLoader();
-    const animeSkyImageTex = textureLoader.load(pureAnimeSkyUrl);
-    animeSkyImageTex.colorSpace = THREE.SRGBColorSpace;
-    animeSkyImageTex.mapping = THREE.EquirectangularReflectionMapping;
-
     // 2. Scene, Camera & Authentic Buddies Blitz Warm Afternoon Sun Lighting
     const scene = new THREE.Scene();
-    scene.background = animeSkyImageTex;
-    scene.fog = new THREE.FogExp2('#95e1ff', 0.0005);
+    scene.background = new THREE.Color('#7fd8ff');
+    scene.fog = new THREE.FogExp2('#95e1ff', 0.00045);
     scene.add(characterSelectionRing);
 
-    // Inverted 3D Anime Skybox Dome Mesh (Luminous backdrop layer)
-    const animeSkyGeo = new THREE.SphereGeometry(480, 48, 32);
-    animeSkyGeo.scale(-1, 1, 1);
-    const animeSkyMat = new THREE.MeshBasicMaterial({
-      map: animeSkyImageTex,
+    // Procedural Makoto Shinkai / Ghibli Cel-Shaded Sky Dome Shader
+    const initialSunDir = getBlitzDefaultLightDirection().normalize();
+    const animeSkyUniforms = {
+      uTime: { value: 0 },
+      uSunDir: { value: initialSunDir.clone() },
+      uZenithColor: { value: new THREE.Color('#1b5eb8') },
+      uMidSkyColor: { value: new THREE.Color('#3b99f0') },
+      uHorizonSkyColor: { value: new THREE.Color('#8be0ff') },
+      uHorizonGlowColor: { value: new THREE.Color('#fff1cf') },
+      uGroundBounceColor: { value: new THREE.Color('#8ec8e8') },
+      uSunColor: { value: new THREE.Color('#fff9e6') },
+      uCloudLitColor: { value: new THREE.Color('#fffdf9') },
+      uCloudMidColor: { value: new THREE.Color('#d7e8ff') },
+      uCloudShadowColor: { value: new THREE.Color('#a6c2e8') },
+    };
+
+    const animeSkyGeo = new THREE.SphereGeometry(620, 64, 48);
+    const animeSkyMat = new THREE.ShaderMaterial({
+      uniforms: animeSkyUniforms,
       side: THREE.BackSide,
       depthWrite: false,
+      depthTest: true,
       toneMapped: false,
+      fog: false,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldDir;
+        void main() {
+          vWorldDir = normalize(position);
+          vec4 clipPos = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_Position = vec4(clipPos.xy, clipPos.w * 0.9998, clipPos.w);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform vec3 uSunDir;
+        uniform vec3 uZenithColor;
+        uniform vec3 uMidSkyColor;
+        uniform vec3 uHorizonSkyColor;
+        uniform vec3 uHorizonGlowColor;
+        uniform vec3 uGroundBounceColor;
+        uniform vec3 uSunColor;
+        uniform vec3 uCloudLitColor;
+        uniform vec3 uCloudMidColor;
+        uniform vec3 uCloudShadowColor;
+
+        varying vec3 vWorldDir;
+
+        float hash31(vec3 p) {
+          p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+          p += dot(p, p.yxz + 33.33);
+          return fract((p.x + p.y) * p.z);
+        }
+
+        float noise3D(vec3 x) {
+          vec3 i = floor(x);
+          vec3 f = fract(x);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(
+              mix(hash31(i + vec3(0.0, 0.0, 0.0)), hash31(i + vec3(1.0, 0.0, 0.0)), f.x),
+              mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x),
+              f.y
+            ),
+            mix(
+              mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x),
+              mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x),
+              f.y
+            ),
+            f.z
+          );
+        }
+
+        // Billowy cumulus FBM for Ghibli / Shinkai cloud silhouettes
+        float fbmCumulus(vec3 p) {
+          float v = 0.0;
+          float a = 0.52;
+          vec3 shift = vec3(19.7, 31.3, 11.9);
+          for (int i = 0; i < 5; i++) {
+            float n = noise3D(p);
+            float billow = 1.0 - abs(n * 2.0 - 1.0);
+            v += a * mix(n, billow * billow, 0.55);
+            p = p * 2.06 + shift;
+            a *= 0.5;
+          }
+          return v;
+        }
+
+        void main() {
+          vec3 dir = normalize(vWorldDir);
+          vec3 sunDir = normalize(uSunDir);
+          float elev = clamp(dir.y, -1.0, 1.0);
+          float upperElev = max(elev, 0.0);
+
+          // 1. Multi-stop Shinkai Atmospheric Vertical Gradient
+          float tMid = smoothstep(0.0, 0.36, upperElev);
+          float tZenith = smoothstep(0.24, 0.88, upperElev);
+          vec3 skyCol = mix(uHorizonSkyColor, uMidSkyColor, tMid);
+          skyCol = mix(skyCol, uZenithColor, tZenith);
+
+          // Warm golden-peach horizon band
+          float horizonBand = pow(1.0 - smoothstep(0.0, 0.28, abs(elev)), 2.2);
+          skyCol = mix(skyCol, uHorizonGlowColor, horizonBand * 0.62);
+
+          // Smooth lower hemisphere bounce (below horizon)
+          if (elev < 0.0) {
+            float downT = smoothstep(0.0, -0.35, elev);
+            skyCol = mix(skyCol, uGroundBounceColor, downT);
+          }
+
+          // 2. Solar Mie Scattering, Corona & Crisp Anime Sun Disc
+          float sunCos = clamp(dot(dir, sunDir), -1.0, 1.0);
+          float mieHalo = pow(max(sunCos, 0.0), 6.0) * 0.38;
+          float solarCorona = pow(max(sunCos, 0.0), 42.0) * 0.65;
+          float solarDisc = smoothstep(0.9968, 0.9986, sunCos);
+          skyCol += uHorizonGlowColor * mieHalo * (0.45 + 0.55 * horizonBand);
+          skyCol += uSunColor * solarCorona;
+          skyCol = mix(skyCol, uSunColor, solarDisc);
+
+          // 3. Layered Procedural Cel-Shaded Cumulus & Cirrus Clouds (Upper Hemisphere)
+          if (elev > -0.02) {
+            float projScale = 1.0 / (max(elev, 0.0) + 0.24);
+            vec3 cloudCoord = vec3(dir.x * projScale, elev * 2.4, dir.z * projScale);
+            vec3 windDrift = vec3(uTime * 0.0085, 0.0, uTime * 0.0045);
+
+            // High-altitude wispy cirrus streaks
+            float cirrusMask = smoothstep(0.12, 0.32, elev) * (1.0 - smoothstep(0.62, 0.88, elev));
+            if (cirrusMask > 0.001) {
+              vec3 cirrusPos = cloudCoord * 1.65 + windDrift * 0.6;
+              float cirrusN = fbmCumulus(vec3(cirrusPos.x * 1.8, cirrusPos.y * 0.7, cirrusPos.z * 0.65));
+              float cirrusStep = smoothstep(0.58, 0.67, cirrusN) * cirrusMask * 0.42;
+              skyCol = mix(skyCol, mix(uCloudMidColor, uCloudLitColor, 0.75), cirrusStep);
+            }
+
+            // Main Ghibli Cumulus Cloud Bank near horizon to mid-sky
+            float bankEnvelope = smoothstep(-0.01, 0.07, elev) * (1.0 - smoothstep(0.32, 0.62, elev));
+            if (bankEnvelope > 0.001) {
+              vec3 pMain = cloudCoord * 1.18 + windDrift;
+              float baseField = fbmCumulus(pMain);
+              // Sculpt towering cumulus tops and flatter bases
+              float verticalProfile = smoothstep(0.01, 0.09, elev) * (1.0 - smoothstep(0.24, 0.58, elev) * 0.48);
+              float density = baseField * verticalProfile - 0.30;
+
+              if (density > 0.0) {
+                // Sample gradient toward sun & zenith for cel-shaded 3-step toon lighting
+                vec3 lightStepDir = normalize(sunDir + vec3(0.0, 0.65, 0.0)) * 0.14;
+                float litSample = fbmCumulus(pMain + lightStepDir);
+                float shadeFactor = clamp((baseField - litSample) * 3.6 + 0.54 + elev * 0.45, 0.0, 1.0);
+
+                // Quantize into crisp anime cel-shading bands
+                float bandShadowToMid = smoothstep(0.34, 0.41, shadeFactor);
+                float bandMidToLit = smoothstep(0.58, 0.65, shadeFactor);
+                float silverRim = smoothstep(0.76, 0.84, shadeFactor) * (0.45 + 0.55 * pow(max(sunCos, 0.0), 3.0));
+
+                vec3 toonCloudCol = mix(uCloudShadowColor, uCloudMidColor, bandShadowToMid);
+                toonCloudCol = mix(toonCloudCol, uCloudLitColor, bandMidToLit);
+                toonCloudCol = mix(toonCloudCol, uSunColor, silverRim * 0.65);
+
+                // Subtle internal darker contour line near cloud base
+                float bottomContour = 1.0 - smoothstep(0.02, 0.09, elev);
+                toonCloudCol = mix(toonCloudCol, uCloudShadowColor * 0.92, bottomContour * 0.35);
+
+                // Crisp anime silhouette edge with distance horizon fade
+                float cloudAlpha = smoothstep(0.0, 0.045, density) * smoothstep(-0.01, 0.06, elev);
+                skyCol = mix(skyCol, toonCloudCol, cloudAlpha * 0.95);
+              }
+            }
+          }
+
+          gl_FragColor = vec4(skyCol, 1.0);
+        }
+      `,
     });
     const animeSkyDomeMesh = new THREE.Mesh(animeSkyGeo, animeSkyMat);
+    animeSkyDomeMesh.frustumCulled = false;
     animeSkyDomeMesh.renderOrder = -1000;
     scene.add(animeSkyDomeMesh);
 
-    // Floating Anime Sky Sparkles Particle System
-    const sparkleCount = 110;
+    // Volumetric 3D Cel-Shaded Horizon Cloud Ring (Ghibli / Shinkai 3D Puffed Cumulus)
+    const animeCloudRingGroup = new THREE.Group();
+    const cloudPuffSharedGeo = new THREE.IcosahedronGeometry(1, 2);
+    const cloudToonSteps = new Uint8Array([155, 215, 255]);
+    const cloudToonGradTex = new THREE.DataTexture(cloudToonSteps, 3, 1, THREE.RedFormat);
+    cloudToonGradTex.minFilter = THREE.NearestFilter;
+    cloudToonGradTex.magFilter = THREE.NearestFilter;
+    cloudToonGradTex.needsUpdate = true;
+    const cloudPuffToonMat = new THREE.MeshToonMaterial({
+      color: '#ffffff',
+      emissive: '#78b0e8',
+      emissiveIntensity: 0.34,
+      gradientMap: cloudToonGradTex,
+      fog: false,
+      depthWrite: false,
+    });
+    const cloudClusterCount = 16;
+    for (let c = 0; c < cloudClusterCount; c++) {
+      const clusterGrp = new THREE.Group();
+      const angle = (c / cloudClusterCount) * Math.PI * 2 + (c % 2 === 0 ? 0.08 : -0.06);
+      const dist = 420 + (c % 3) * 35;
+      const heightY = 48 + (c % 4) * 18;
+      clusterGrp.position.set(Math.cos(angle) * dist, heightY, Math.sin(angle) * dist);
+      clusterGrp.lookAt(0, heightY * 0.85, 0);
+
+      // Build 5-7 sculpted overlapping cumulus puffs per cluster
+      const puffSpecs: Array<[number, number, number, number, number, number]> = [
+        [0, 0, 0, 34, 21, 18],
+        [-24, -4, 3, 25, 16, 15],
+        [25, -3, 2, 26, 17, 15],
+        [-11, 10, -2, 24, 18, 16],
+        [12, 11, -1, 23, 17, 15],
+        [-38, -9, 5, 17, 11, 12],
+        [39, -8, 4, 18, 12, 12],
+      ];
+      for (const [px, py, pz, sx, sy, sz] of puffSpecs) {
+        const puff = new THREE.Mesh(cloudPuffSharedGeo, cloudPuffToonMat);
+        puff.position.set(px, py, pz);
+        puff.scale.set(sx, sy, sz);
+        puff.renderOrder = -999;
+        puff.frustumCulled = false;
+        clusterGrp.add(puff);
+      }
+      const clusterScale = 0.85 + (c % 3) * 0.22;
+      clusterGrp.scale.setScalar(clusterScale);
+      animeCloudRingGroup.add(clusterGrp);
+    }
+    scene.add(animeCloudRingGroup);
+
+    // Floating 4-Point Anime Star Sparkles Particle System
+    const sparkleCanvas = document.createElement('canvas');
+    sparkleCanvas.width = 64;
+    sparkleCanvas.height = 64;
+    const spCtx = sparkleCanvas.getContext('2d');
+    if (spCtx) {
+      const grad = spCtx.createRadialGradient(32, 32, 1, 32, 32, 28);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+      grad.addColorStop(0.25, 'rgba(235, 248, 255, 0.85)');
+      grad.addColorStop(0.6, 'rgba(165, 225, 255, 0.22)');
+      grad.addColorStop(1, 'rgba(165, 225, 255, 0.0)');
+      spCtx.fillStyle = grad;
+      spCtx.fillRect(0, 0, 64, 64);
+      // Crisp 4-point anime star cross
+      spCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      spCtx.beginPath();
+      spCtx.moveTo(32, 2);
+      spCtx.quadraticCurveTo(34, 29, 62, 32);
+      spCtx.quadraticCurveTo(34, 35, 32, 62);
+      spCtx.quadraticCurveTo(30, 35, 2, 32);
+      spCtx.quadraticCurveTo(30, 29, 32, 2);
+      spCtx.closePath();
+      spCtx.fill();
+    }
+    const animeSparkleTex = new THREE.CanvasTexture(sparkleCanvas);
+    animeSparkleTex.needsUpdate = true;
+
+    const sparkleCount = 95;
     const sparkleGeo = new THREE.BufferGeometry();
     const sparklePositions = new Float32Array(sparkleCount * 3);
     for (let s = 0; s < sparkleCount; s++) {
       const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(Math.random() * 0.75 + 0.15); // upper hemisphere
-      const rad = 380 + Math.random() * 60;
+      const phi = Math.acos(Math.random() * 0.68 + 0.22); // upper sky hemisphere
+      const rad = 360 + Math.random() * 80;
       sparklePositions[s * 3] = rad * Math.sin(phi) * Math.cos(theta);
       sparklePositions[s * 3 + 1] = rad * Math.cos(phi);
       sparklePositions[s * 3 + 2] = rad * Math.sin(phi) * Math.sin(theta);
@@ -1281,14 +1514,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     sparkleGeo.setAttribute('position', new THREE.BufferAttribute(sparklePositions, 3));
     const animeSparkleMat = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 4.5,
+      map: animeSparkleTex,
+      alphaMap: animeSparkleTex,
+      size: 9.5,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.82,
       depthWrite: false,
+      fog: false,
       blending: THREE.AdditiveBlending,
     });
     const animeSparklePoints = new THREE.Points(sparkleGeo, animeSparkleMat);
-    animeSparklePoints.renderOrder = -999;
+    animeSparklePoints.frustumCulled = false;
+    animeSparklePoints.renderOrder = -998;
     scene.add(animeSparklePoints);
 
     const camera = new THREE.PerspectiveCamera(
@@ -1335,10 +1572,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         dirLight.intensity = 2.05;
         hemiLight.color.set('#fffdf0');
         hemiLight.groundColor.set('#3d7068');
-        scene.background = animeSkyImageTex;
+        scene.background = new THREE.Color('#7fd8ff');
+        animeSkyUniforms.uZenithColor.value.set('#1b5eb8');
+        animeSkyUniforms.uMidSkyColor.value.set('#3b99f0');
+        animeSkyUniforms.uHorizonSkyColor.value.set('#8be0ff');
+        animeSkyUniforms.uHorizonGlowColor.value.set('#fff1cf');
+        animeSkyUniforms.uGroundBounceColor.value.set('#8ec8e8');
+        animeSkyUniforms.uSunColor.value.set('#fff9e6');
+        animeSkyUniforms.uCloudLitColor.value.set('#fffdf9');
+        animeSkyUniforms.uCloudMidColor.value.set('#d7e8ff');
+        animeSkyUniforms.uCloudShadowColor.value.set('#a6c2e8');
+        cloudPuffToonMat.color.set('#ffffff');
+        cloudPuffToonMat.emissive.set('#78b0e8');
         if (scene.fog instanceof THREE.FogExp2) {
           scene.fog.color.set('#95e1ff');
-          scene.fog.density = 0.0005;
+          scene.fog.density = 0.00045;
         }
         return;
       }
@@ -1347,10 +1595,47 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       dirLight.intensity = p.lightIntensity;
       hemiLight.groundColor.set(p.shadowColor);
       hemiLight.color.set(p.revealColor);
-      scene.background = animeSkyImageTex;
+      scene.background = new THREE.Color(p.fogColorA);
+      if (presetKey === 'dusk') {
+        animeSkyUniforms.uZenithColor.value.set('#2b2d6e');
+        animeSkyUniforms.uMidSkyColor.value.set('#8c4f7e');
+        animeSkyUniforms.uHorizonSkyColor.value.set('#f28b66');
+        animeSkyUniforms.uHorizonGlowColor.value.set('#ffd08a');
+        animeSkyUniforms.uGroundBounceColor.value.set('#7a4b66');
+        animeSkyUniforms.uSunColor.value.set('#ffe3a8');
+        animeSkyUniforms.uCloudLitColor.value.set('#ffe4bd');
+        animeSkyUniforms.uCloudMidColor.value.set('#d48ca6');
+        animeSkyUniforms.uCloudShadowColor.value.set('#6e5082');
+        cloudPuffToonMat.color.set('#ffe2bf');
+        cloudPuffToonMat.emissive.set('#8a527a');
+      } else if (presetKey === 'night') {
+        animeSkyUniforms.uZenithColor.value.set('#09132b');
+        animeSkyUniforms.uMidSkyColor.value.set('#142852');
+        animeSkyUniforms.uHorizonSkyColor.value.set('#284b7e');
+        animeSkyUniforms.uHorizonGlowColor.value.set('#4773aa');
+        animeSkyUniforms.uGroundBounceColor.value.set('#162947');
+        animeSkyUniforms.uSunColor.value.set('#d8ecff');
+        animeSkyUniforms.uCloudLitColor.value.set('#9ec2eb');
+        animeSkyUniforms.uCloudMidColor.value.set('#5173a3');
+        animeSkyUniforms.uCloudShadowColor.value.set('#273d66');
+        cloudPuffToonMat.color.set('#9fc2eb');
+        cloudPuffToonMat.emissive.set('#233b63');
+      } else {
+        animeSkyUniforms.uZenithColor.value.set('#2c589e');
+        animeSkyUniforms.uMidSkyColor.value.set('#629be0');
+        animeSkyUniforms.uHorizonSkyColor.value.set('#f5c0b8');
+        animeSkyUniforms.uHorizonGlowColor.value.set('#ffe8c2');
+        animeSkyUniforms.uGroundBounceColor.value.set('#96a8c9');
+        animeSkyUniforms.uSunColor.value.set('#fff3d1');
+        animeSkyUniforms.uCloudLitColor.value.set('#fff5eb');
+        animeSkyUniforms.uCloudMidColor.value.set('#dfcce8');
+        animeSkyUniforms.uCloudShadowColor.value.set('#9aa7cf');
+        cloudPuffToonMat.color.set('#fff5eb');
+        cloudPuffToonMat.emissive.set('#879bc7');
+      }
       if (scene.fog instanceof THREE.FogExp2) {
         scene.fog.color.set(p.fogColorA);
-        scene.fog.density = 0.0005;
+        scene.fog.density = 0.00045;
       }
     };
     applyLightingRef.current = applyLightingPreset;
@@ -1481,6 +1766,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // 4A-2. Real 3D Spinning & Floating Coin Indicators (`coin_blue` & `coin_green`) above Lobby Benches
     const lobbySeatCoinMeshes = LOBBY_SEAT_SPOTS.map((spot) => {
       const coinRoot = new THREE.Group();
+      coinRoot.scale.setScalar(0.58);
       const blueCoin = buildTeamBuddiesDropPickupMesh('coin_blue', undefined, windUniforms, isSoftwareGl);
       const greenCoin = buildTeamBuddiesDropPickupMesh('coin_green', undefined, windUniforms, isSoftwareGl);
       greenCoin.scale.setScalar(1.12);
@@ -2002,14 +2288,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       if (prop.kind === 'tree_purple' || prop.kind === 'tree_gold') {
         const isPurple = prop.kind === 'tree_purple';
+        const isPlanterTree = prop.id === 491;
         const grp = new THREE.Group();
-        grp.position.set(prop.x, 0, prop.z);
+        grp.position.set(prop.x, isPlanterTree ? 0.88 : 0, prop.z);
         grp.rotation.y = prop.rotY;
         grp.userData.baseRotY = prop.rotY;
+        grp.userData.extraLiftY = isPlanterTree ? 0.88 : 0;
         const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
         shadow.name = 'ContactShadowDisc';
         shadow.position.y = 0.02;
         shadow.scale.setScalar(2.35 * prop.scale);
+        shadow.visible = !isPlanterTree;
         grp.add(shadow);
         scene.add(grp);
 
@@ -2050,7 +2339,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (prop.kind === 'river_rock') {
         const rockGrp = new THREE.Group();
         const sc = prop.scale;
-        const stoneGeo = new THREE.SphereGeometry(0.68, 12, 10);
+        const stoneGeo = new THREE.SphereGeometry(0.68, 9, 7);
         const mainRock = new THREE.Mesh(
           stoneGeo,
           new THREE.MeshToonMaterial({ color: '#7b8d7e' }),
@@ -2058,6 +2347,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         mainRock.scale.set(1.28 * sc, 0.74 * sc, 1.08 * sc);
         mainRock.position.y = 0.24 * sc;
         mainRock.frustumCulled = true;
+        upgradeMeshToBlitzWorldMaterial(mainRock, windUniforms, '#7b8d7e', 0.22);
+        const mainRockStroke = createBlitzStrokeMesh(stoneGeo, 0.02);
+        if (mainRockStroke) mainRock.add(mainRockStroke);
         rockGrp.add(mainRock);
 
         const mossCap = new THREE.Mesh(
@@ -2067,6 +2359,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         mossCap.scale.set(0.96 * sc, 0.4 * sc, 0.84 * sc);
         mossCap.position.set(0, 0.5 * sc, 0);
         mossCap.frustumCulled = true;
+        upgradeMeshToBlitzWorldMaterial(mossCap, windUniforms, '#82cc59', 0.22);
+        const mossStroke = createBlitzStrokeMesh(stoneGeo, 0.018);
+        if (mossStroke) mossCap.add(mossStroke);
         rockGrp.add(mossCap);
 
         const sidePebble = new THREE.Mesh(
@@ -2076,6 +2371,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         sidePebble.scale.set(0.62 * sc, 0.46 * sc, 0.58 * sc);
         sidePebble.position.set(0.65 * sc, 0.14 * sc, 0.32 * sc);
         sidePebble.frustumCulled = true;
+        upgradeMeshToBlitzWorldMaterial(sidePebble, windUniforms, '#5f7063', 0.22);
+        const pebbleStroke = createBlitzStrokeMesh(stoneGeo, 0.018);
+        if (pebbleStroke) sidePebble.add(pebbleStroke);
         rockGrp.add(sidePebble);
 
         bakeStaticGroupMeshes(rockGrp, { minShadowCasterSpan: 0.45 });
@@ -2109,19 +2407,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const stem = new THREE.Mesh(stemGeo, stemMat);
           stem.position.set(bx, h * 0.5, bz);
           stem.frustumCulled = true;
+          upgradeMeshToBlitzWorldMaterial(stem, windUniforms, '#4ca854', 0.25);
           cluster.add(stem);
 
+          const headCol = colors[(prop.id + i) % colors.length];
           const head = new THREE.Mesh(
             blossomGeo,
-            new THREE.MeshBasicMaterial({ color: colors[(prop.id + i) % colors.length] }),
+            new THREE.MeshBasicMaterial({ color: headCol }),
           );
           head.position.set(bx, h, bz);
           head.frustumCulled = true;
+          upgradeMeshToBlitzWorldMaterial(head, windUniforms, headCol, 0.15);
           cluster.add(head);
 
           const center = new THREE.Mesh(centerGeo, centerMat);
           center.position.set(bx, h + 0.05, bz);
           center.frustumCulled = true;
+          upgradeMeshToBlitzWorldMaterial(center, windUniforms, '#fff6a1', 0.1);
           cluster.add(center);
         }
         bakeStaticGroupMeshes(cluster, { minShadowCasterSpan: 0.45 });
@@ -2323,11 +2625,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       innerFootDisc.name = 'unitFootInnerGlowDisc';
       innerFootDisc.position.z = -0.005;
       teamRing.add(innerFootDisc);
+      teamRing.scale.setScalar(0.845);
       root.add(teamRing);
 
       const bodyGroup = new THREE.Group();
       bodyGroup.rotation.order = 'YXZ';
-      bodyGroup.scale.setScalar(1.16);
+      // Cara 1 Lock-Step World Scaling: 0.98 (0.845x of 1.16) makes the entire World +18.4% larger relative to the avatar
+      bodyGroup.scale.setScalar(0.98);
       root.add(bodyGroup);
 
       const rig = buildProceduralBuddyAvatar(
@@ -2347,11 +2651,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } = rig;
       headMesh.userData.defaultMat = headMesh.material;
 
-      // Overhead Carried 3D Crate (visible when carrying a crate in front of chest between both hands; inverse-scaled by 1/1.16 so world size is 1:1 UNIFIED_WORLD_CRATE_SIZE!)
+      // Overhead Carried 3D Crate (visible when carrying a crate in front of chest between both hands; inverse-scaled by 1/0.98 so world size is 1:1 UNIFIED_WORLD_CRATE_SIZE!)
       const overheadCrateGroup = new THREE.Group();
       overheadCrateGroup.name = 'BuddyOverheadCrateGroup';
       overheadCrateGroup.position.set(0, 1.96, 0.72);
-      overheadCrateGroup.scale.setScalar(1 / 1.16);
+      overheadCrateGroup.scale.setScalar(1 / 0.98);
       overheadCrateGroup.visible = false;
       bodyGroup.add(overheadCrateGroup);
       const overheadCrateBox = addOutlinedPart(
@@ -2526,12 +2830,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
       npcRing.rotation.x = -Math.PI / 2;
       npcRing.position.y = 0.04;
+      npcRing.scale.setScalar(0.845);
       npcGrp.add(npcRing);
 
       const bodyGrp = new THREE.Group();
       bodyGrp.rotation.order = 'YXZ';
-      // 1:1 identical scale (1.16) with playerUnit.bodyGroup so Hana & Kai stand at the exact same height as the player character
-      bodyGrp.scale.setScalar(1.16);
+      // 1:1 identical scale (0.98) with playerUnit.bodyGroup so Hana & Kai stand at the exact same height as the player character
+      bodyGrp.scale.setScalar(0.98);
       npcGrp.add(bodyGrp);
 
       const npcRig = buildProceduralBuddyAvatar(
@@ -2618,10 +2923,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const lobbyCafeNpc = buildStandingNpcMerchant3D(
-      -94.0,
-      getTerrainElevation(-94.0, -13.8),
-      -13.8,
-      Math.PI / 2,
+      -91.3,
+      getTerrainElevation(-91.3, -24.26),
+      -24.26,
+      0,
       'blue',
       'HANA',
       'MINI CAFÉ MERCHANT',
@@ -2856,41 +3161,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     addCutawayWallSegment(A - L, -0.65, 0, Yn, N, N + L);
     addCutawayWallSegment(0.65, J + L, 0, Yn, N, N + L);
     addCutawayWallSegment(J, J + L, 0, Yn, T, N);
-
-    // Full-height wall completions, visible ONLY in `house_visit` mode: they raise
-    // the front & right cutaway stubs to full height so walking inside feels like a
-    // real enclosed room. Edit mode (`house_interior`) keeps the open cutaway.
-    const houseVisitWallGrp = new THREE.Group();
-    houseVisitWallGrp.name = 'HouseVisitFullWalls';
-    const addVisitWall = (
-      x0: number,
-      x1: number,
-      y0: number,
-      y1: number,
-      z0: number,
-      z1: number,
-    ) => {
-      const m = new THREE.Mesh(
-        new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0),
-        interiorWallMat,
-      );
-      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      m.raycast = () => {};
-      houseVisitWallGrp.add(m);
-      const cap = new THREE.Mesh(
-        new THREE.BoxGeometry(x1 - x0 + 0.01, 0.025, z1 - z0 + 0.01),
-        capWallMat,
-      );
-      cap.position.set((x0 + x1) / 2, y1 + 0.012, (z0 + z1) / 2);
-      cap.raycast = () => {};
-      houseVisitWallGrp.add(cap);
-    };
-    addVisitWall(A - L, -0.65, Yn, ee, N, N + L); // front wall, left of the exit door
-    addVisitWall(0.65, J + L, Yn, ee, N, N + L); // front wall, right of the exit door
-    addVisitWall(-0.65, 0.65, 2.42, ee, N, N + L); // transom above the exit door (EXIT sign glows below it)
-    addVisitWall(J, J + L, Yn, ee, T, N); // right wall
-    houseVisitWallGrp.visible = false;
-    houseInteriorRoomGrp.add(houseVisitWallGrp);
 
     // 3D Exit Door Frame, Wooden Door Panel, Gold Handle & Glowing Exit Mat at Front Doorway (x = 0, z = N = 3.7)
     const houseExitDoorGrp = new THREE.Group();
@@ -3496,7 +3766,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (sampleHouseZonesGrp && typeof detail.isSampleHouse === 'boolean') {
             sampleHouseZonesGrp.visible = detail.isSampleHouse;
           }
-          houseVisitWallGrp.visible = detail.mode === 'house_visit';
           if (!wasHouseMode && playerUnit) {
             savedOutdoorHousePos = {
               x: playerUnit.x,
@@ -4178,8 +4447,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let socialTalkTimer = 0;
 
     let currentNearHouseDoorWorldPos: { x: number; z: number } | null = null;
-    let currentNearHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
-      null;
     const scratchLiveObjPos = new THREE.Vector3();
 
     const findNearestBaseKiosk = (actorX: number, actorZ: number) => {
@@ -5039,11 +5306,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const innerFootDisc = new THREE.Mesh(new THREE.CircleGeometry(0.76, 36), innerFootDiscMat);
       innerFootDisc.position.z = -0.005;
       teamRing.add(innerFootDisc);
+      teamRing.scale.setScalar(0.845);
       root.add(teamRing);
 
       const bodyGroup = new THREE.Group();
       bodyGroup.rotation.order = 'YXZ';
-      bodyGroup.scale.setScalar(1.16);
+      bodyGroup.scale.setScalar(0.98);
       root.add(bodyGroup);
 
       const rig = buildProceduralBuddyAvatar(
@@ -5056,7 +5324,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const overheadCrateGroup = new THREE.Group();
       overheadCrateGroup.position.set(0, 1.96, 0.72);
-      overheadCrateGroup.scale.setScalar(1 / 1.16);
+      overheadCrateGroup.scale.setScalar(1 / 0.98);
       overheadCrateGroup.visible = false;
       bodyGroup.add(overheadCrateGroup);
       addOutlinedPart(
@@ -10062,14 +10330,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           currentNearHouseDoorWorldPos !== null
         ) {
           soundEngine.playUiClick();
-          window.dispatchEvent(
-            new CustomEvent('open-house-interior-ui', {
-              detail: {
-                team: currentNearHouseDoorPlot?.team ?? null,
-                commanderIdx: currentNearHouseDoorPlot?.commanderIdx ?? null,
-              },
-            }),
-          );
+          window.dispatchEvent(new CustomEvent('open-house-interior-ui'));
           return;
         }
 
@@ -10802,7 +11063,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (playModeRef.current === 'editor') {
         editorZoom = clamp(editorZoom + Math.sign(e.deltaY) * 0.1, 0.35, 2.2);
       } else if (playerUnit?.isSitting && activeSeatedSpot) {
-        seatedCameraDist = clamp(seatedCameraDist + Math.sign(e.deltaY) * 0.35, 2.6, 6.2);
+        seatedCameraDist = clamp(seatedCameraDist + Math.sign(e.deltaY) * 0.30, 2.2, 5.25);
       } else {
         // Batas kamera zoom-in (0.58) hingga batas maksimal zoom-out (0.86)
         cameraZoom = clamp(cameraZoom + Math.sign(e.deltaY) * 0.07, 0.58, 0.86);
@@ -11552,15 +11813,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         window.dispatchEvent(new CustomEvent('open-npc-merchant-ui', { detail: { location: loc } }));
       } else if (act === 'enterPrivateHouseInterior') {
         soundEngine.playUiClick();
-        const nearestKioskForEntry = findNearestBaseKiosk(playerUnit.x, playerUnit.z);
-        window.dispatchEvent(
-          new CustomEvent('open-house-interior-ui', {
-            detail: {
-              team: nearestKioskForEntry.team,
-              commanderIdx: nearestKioskForEntry.plotIdx,
-            },
-          }),
-        );
+        window.dispatchEvent(new CustomEvent('open-house-interior-ui'));
       } else if (act === 'exitPrivateHouseInterior') {
         soundEngine.playUiClick();
         window.dispatchEvent(new CustomEvent('exit-house-interior-ui'));
@@ -13233,14 +13486,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       windUniforms.uWindPhase.value = timeSec * 4.8;
       windUniforms.uWindGust.value = 0.25 + 0.25 * Math.sin(timeSec * 1.7);
 
-      // Anime Skybox & Sparkles Parallax Tracking
+      // Anime Skybox Shader, Volumetric 3D Cloud Ring & Star Sparkles Tracking
+      animeSkyUniforms.uTime.value = timeSec;
       if (animeSkyDomeMesh) {
         animeSkyDomeMesh.position.copy(camera.position);
-        animeSkyDomeMesh.rotation.y += dt * 0.003;
+      }
+      if (animeCloudRingGroup) {
+        animeCloudRingGroup.position.set(
+          camera.position.x * 0.92,
+          camera.position.y * 0.35,
+          camera.position.z * 0.92,
+        );
+        animeCloudRingGroup.rotation.y += dt * 0.0022;
       }
       if (animeSparklePoints) {
         animeSparklePoints.position.copy(camera.position);
-        animeSparklePoints.rotation.y += dt * 0.006;
+        animeSparklePoints.rotation.y += dt * 0.004;
       }
 
       const activeFocusUnit = mountedTank ? mountedTank : playerUnit;
@@ -13252,7 +13513,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'npc_merchant'
           ? npcCameraLocation === 'beach_house'
             ? 85.8
-            : -94.0
+            : -91.3
           : nukePrePose
           ? nukePrePose.focusPivotPos.x
           : currentPlayMode === 'editor'
@@ -13264,7 +13525,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'npc_merchant'
           ? npcCameraLocation === 'beach_house'
             ? 60.0
-            : -13.8
+            : -24.26
           : nukePrePose
           ? nukePrePose.focusPivotPos.z
           : currentPlayMode === 'editor'
@@ -16079,7 +16340,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               b.root.scale.setScalar(isPlayerInHouseNow ? 0.54 : 1.0);
             }
             const seatLift =
-              b.isPlayer && b.isSitting && activeSeatedSpot ? activeSeatedSpot.seatLiftY : 0;
+              b.isPlayer && b.isSitting && activeSeatedSpot
+                ? activeSeatedSpot.seatLiftY + 0.178
+                : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
             b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
@@ -17931,12 +18194,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.fov = targetNpcFov;
           camera.updateProjectionMatrix();
         }
-        // Frame NPC from waist (y_local ~ 1.95m) to head top (y_local ~ 3.99m), centered on chest (y_local ~ 2.95m),
-        // and shift camera +Z (screen-left) so the NPC appears on the RIGHT side of the left-slide modal (ndc.x ~ +0.42)
-        const npcCamDist = 3.1;
+        // Frame NPC (0.98 scale: waist y_local ~ 1.80m to head top y_local ~ 3.25m) to fill the right-side portrait box
+        // (head top at ~21% from top, waist at bottom, centered horizontally at ~72% screen width / ndc.x ~ +0.44)
+        const npcCamDist = 2.42;
         const halfFovTan = Math.tan(THREE.MathUtils.degToRad(targetNpcFov * 0.5));
         const activeAspect = clamp(camera.aspect || 1.6, 1.0, 2.4);
-        const lateralShiftZ = 0.42 * npcCamDist * halfFovTan * activeAspect;
+        const lateralShiftZ = 0.44 * npcCamDist * halfFovTan * activeAspect;
         const faceCamYaw = Math.atan2(npcCamDist, lateralShiftZ);
 
         camera.up.set(0, 1, 0);
@@ -17945,15 +18208,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const npcY = beachHouseNpc.npcGrp.position.y;
           const npcZ = 60.0;
           beachHouseNpc.npcGrp.rotation.y = faceCamYaw;
-          camera.position.set(npcX + npcCamDist, npcY + 3.02, npcZ + lateralShiftZ);
-          camera.lookAt(npcX, npcY + 2.95, npcZ + lateralShiftZ);
+          camera.position.set(npcX + npcCamDist, npcY + 2.74, npcZ + lateralShiftZ);
+          camera.lookAt(npcX, npcY + 2.70, npcZ + lateralShiftZ);
         } else {
-          const npcX = -94.0;
+          const npcX = -91.3;
           const npcY = lobbyCafeNpc.npcGrp.position.y;
-          const npcZ = -13.8;
-          lobbyCafeNpc.npcGrp.rotation.y = faceCamYaw;
-          camera.position.set(npcX + npcCamDist, npcY + 3.02, npcZ + lateralShiftZ);
-          camera.lookAt(npcX, npcY + 2.95, npcZ + lateralShiftZ);
+          const npcZ = -24.26;
+          lobbyCafeNpc.npcGrp.rotation.y = Math.atan2(-lateralShiftZ, npcCamDist);
+          camera.position.set(npcX - lateralShiftZ, npcY + 2.74, npcZ + npcCamDist);
+          camera.lookAt(npcX - lateralShiftZ, npcY + 2.70, npcZ);
         }
         camera.updateMatrixWorld();
       } else if (npcCameraMode === 'character_select') {
@@ -18025,23 +18288,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const lookZ = playerUnit.z;
           const cosPitch = Math.cos(houseVisitCamPitch);
           const sinPitch = Math.sin(houseVisitCamPitch);
-          // Contain the visit camera inside the fully walled room so it can
-          // never slip outside and capture the exterior.
-          const camX = clamp(
-            lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
-            CUTAWAY_ROOM_BOUNDS.minX + 0.35,
-            CUTAWAY_ROOM_BOUNDS.maxX - 0.35,
-          );
-          const camY = clamp(
-            lookY + sinPitch * houseVisitCamDist,
-            HOUSE_ORIGIN_Y + 0.3,
-            HOUSE_ORIGIN_Y + CUTAWAY_ROOM_BOUNDS.fullWallHeight - 0.2,
-          );
-          const camZ = clamp(
-            lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
-            CUTAWAY_ROOM_BOUNDS.minZ + 0.35,
-            CUTAWAY_ROOM_BOUNDS.maxZ - 0.35,
-          );
+          const camX = lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist;
+          const camY = lookY + sinPitch * houseVisitCamDist;
+          const camZ = lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist;
           camera.up.set(0, 1, 0);
           camera.position.set(camX, camY, camZ);
           camera.lookAt(lookX, lookY, lookZ);
@@ -18088,7 +18337,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           beachHouseNpc.npcGrp.position.x,
           beachHouseNpc.npcGrp.position.z,
         );
-        lobbyCafeNpc.npcGrp.rotation.y = Math.PI / 2;
+        lobbyCafeNpc.npcGrp.rotation.y = 0;
         beachHouseNpc.npcGrp.rotation.y = Math.PI / 2;
         if (
           lobbyCafeNpc.npcGrp.visible &&
@@ -18296,12 +18545,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           const seatGroundY = getTerrainElevation(activeSeatedSpot.x, activeSeatedSpot.z);
           const lookTargetX = activeSeatedSpot.x;
-          const lookTargetY = seatGroundY + 1.48;
+          const lookTargetY = seatGroundY + 1.25;
           const lookTargetZ = activeSeatedSpot.z;
           const cosP = Math.cos(seatedCameraPitch);
           const sinP = Math.sin(seatedCameraPitch);
           const camX = lookTargetX + Math.sin(seatedCameraYaw) * cosP * seatedCameraDist;
-          const camY = Math.max(seatGroundY + 0.65, lookTargetY + sinP * seatedCameraDist);
+          const camY = Math.max(seatGroundY + 0.55, lookTargetY + sinP * seatedCameraDist);
           const camZ = lookTargetZ + Math.cos(seatedCameraYaw) * cosP * seatedCameraDist;
           camera.up.set(0, 1, 0);
           camera.position.set(camX, camY, camZ);
@@ -18323,16 +18572,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               inLobbyForCamera ||
               cityArenaMode === 'safezone',
           });
+          // Cara 1 World-Relative Lock-Step Scaling (k = 0.98 / 1.16 = 0.845):
+          // Scale camera eye & lookAt vectors relative to the avatar's foot anchor (finalLookX, footY, finalLookZ)
+          // by the exact same 0.845 factor as the avatar bodyGroup so the camera-to-avatar framing on screen
+          // stays 100% identical while the entire 3D World around the avatar appears +18.4% larger!
+          const camLockStep =
+            state !== 'title' && !isFullMapOverview && !mountedTank
+              ? 0.845
+              : 1.0;
+          const footY = camFollowPos.y - 1.0;
           camera.up.set(0, 1, 0);
           camera.position.set(
-            mirrorPose.cameraPos.x,
-            mirrorPose.cameraPos.y,
-            mirrorPose.cameraPos.z,
+            finalLookX + (mirrorPose.cameraPos.x - finalLookX) * camLockStep,
+            footY + (mirrorPose.cameraPos.y - footY) * camLockStep,
+            finalLookZ + (mirrorPose.cameraPos.z - finalLookZ) * camLockStep,
           );
           camera.lookAt(
-            mirrorPose.lookAtPos.x,
-            mirrorPose.lookAtPos.y,
-            mirrorPose.lookAtPos.z,
+            finalLookX + (mirrorPose.lookAtPos.x - finalLookX) * camLockStep,
+            footY + (mirrorPose.lookAtPos.y - footY) * camLockStep,
+            finalLookZ + (mirrorPose.lookAtPos.z - finalLookZ) * camLockStep,
           );
           camera.updateMatrixWorld();
           raycaster.setFromCamera(mouseNdc, camera);
@@ -19215,7 +19473,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           applyPlanetCurvatureToObject(
             tr.mesh,
             tr.x,
-            getTerrainElevation(tr.x, tr.z),
+            getTerrainElevation(tr.x, tr.z) + ((tr.mesh.userData.extraLiftY as number) || 0),
             tr.z,
             planetPivotX,
             planetPivotZ,
@@ -19434,7 +19692,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           continue;
         }
         const seatLift =
-          b.isPlayer && b.isSitting && activeSeatedSpot ? activeSeatedSpot.seatLiftY : 0;
+          b.isPlayer && b.isSitting && activeSeatedSpot
+            ? activeSeatedSpot.seatLiftY + 0.178
+            : 0;
         b.bodyGroup.position.y = floatY + b.jumpOffset + bHitPose.hopY + seatLift;
         applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
       }
@@ -19451,7 +19711,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.root.scale.setScalar(0.55);
         } else {
           const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
-          av.bodyGroup.position.y = av.peer.jumpOffset + (av.peer.isSitting ? -0.05 : 0);
+          av.bodyGroup.position.y = av.peer.jumpOffset + (av.peer.isSitting ? 0.128 : 0);
           av.root.scale.setScalar(1.0);
           applyPlanetCurvatureToObject(
             av.root,
@@ -20945,8 +21205,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // 0A-1. Floating "ENTER HOUSE [E]" at active, visible House doorway in The City (<= 3.5m)
       let nearClaimedHouseDoorPos: { x: number; z: number } | null = null;
-      let nearClaimedHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
-        null;
       if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
         const getPlotHouseVisList = (baseGroup: THREE.Group): boolean[] => {
           const pcs = (
@@ -20986,19 +21244,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
         if (proxEval.canTriggerEnterHouseDoor && proxEval.nearestHouseDoorWorldPos) {
           nearClaimedHouseDoorPos = proxEval.nearestHouseDoorWorldPos;
-          if (
-            proxEval.nearestHouseDoorTeam &&
-            typeof proxEval.nearestHouseDoorPlotIndex === 'number'
-          ) {
-            nearClaimedHouseDoorPlot = {
-              team: proxEval.nearestHouseDoorTeam,
-              commanderIdx: proxEval.nearestHouseDoorPlotIndex,
-            };
-          }
         }
       }
       currentNearHouseDoorWorldPos = nearClaimedHouseDoorPos;
-      currentNearHouseDoorPlot = nearClaimedHouseDoorPlot;
       if (nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
         const hy = getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z) + 3.2;
         const proj = projectWorldToScreenPixels(
@@ -21744,7 +21992,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
           }
           // 2. Nearby Standing NPCs (Hana & Kai)
-          const distHana = getPlanetShortestDistance(actorX, actorZ, -94.0, -13.8);
+          const distHana = getPlanetShortestDistance(actorX, actorZ, -91.3, -24.26);
           if (distHana <= 35.0 && worldModeRef.current === 'lobby') {
             list.push({
               id: 'npc_hana',
@@ -21878,8 +22126,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       laserSparkConeGeo.dispose();
       animeSkyGeo.dispose();
       animeSkyMat.dispose();
-      animeSkyImageTex.dispose();
+      cloudPuffSharedGeo.dispose();
+      cloudToonGradTex.dispose();
+      cloudPuffToonMat.dispose();
       sparkleGeo.dispose();
+      animeSparkleTex.dispose();
       animeSparkleMat.dispose();
       curvedPlanetEnv.dispose();
       cityTram.dispose();

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --palette-brand-10: #beef74;
   --palette-brand-20: #c7ff72;
@@ -39,4 +41,40 @@ body {
   -webkit-text-stroke: 5px #11121a;
   text-shadow: 2px 3px 0px #11121a;
 }
+
+/* Custom Tactical Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #11121a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #393b49;
+  border-radius: 3px;
+  border: 1px solid #11121a;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b8ff3c;
+}
+
+/* Glassmorphism Panel Accent */
+.glass-panel-tactical {
+  background: rgba(17, 18, 26, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 2px solid #11121a;
+}
+
 

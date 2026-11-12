@@ -35,7 +35,6 @@ import {
   type CityTransitStationId,
   type CityTransitDestinationSpec,
   getCityTransitDestinationById,
-  isIntactModelEstateBasePlot,
 } from './game/buddiesBlitzRules';
 import { soundEngine } from './game/audio';
 import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
@@ -1317,22 +1316,7 @@ export default function App() {
       setMerchantLocation(loc);
       setActiveSpecialModal('npc_merchant');
     };
-    const onOpenHouseInterior = (ev: Event) => {
-      // The permanent Model Estate showcase plot is registered as claimed by a
-      // system account, so claim status cannot decide this: the Arena reports
-      // which plot's door/action triggered entry, and the model estate always
-      // opens as the sample house.
-      const entryDetail = (
-        ev as CustomEvent<{
-          team?: 'blue' | 'red' | null;
-          commanderIdx?: number | null;
-        }>
-      ).detail;
-      const isSampleEntry = Boolean(
-        entryDetail?.team &&
-          typeof entryDetail?.commanderIdx === 'number' &&
-          isIntactModelEstateBasePlot(entryDetail.team, entryDetail.commanderIdx),
-      );
+    const onOpenHouseInterior = () => {
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
@@ -1344,7 +1328,7 @@ export default function App() {
         window.setTimeout(() => {
           setHouseEntryScanState('idle');
           setIsInsidePrivateHouse(true);
-          setIsSampleHouseView(isSampleEntry);
+          setIsSampleHouseView(false);
           setActiveSpecialModal('none');
         }, 600);
       }, 700);

@@ -861,12 +861,12 @@ function lc(): i.Group {
     .geo(_e, Ee(We(s, 0.3, a - 0.02, 0.08, 3)), c + s / 2, f + 0.28, 0);
   const m = f + 0.14 + 0.08;
   const w = (o - s - n) / 2;
-  t.geo(_e, Je(w - 0.02, 0.19, a - 0.26, 0.075, 0.034), c + s + w / 2, m, d + 0.26 + (a - 0.26) / 2)
-    .geo(_e, Je(w - 0.02, 0.19, a - 0.26, 0.075, 0.034), c + s + w * 1.5, m, d + 0.26 + (a - 0.26) / 2)
-    .geo(_e, Je(n - 0.03, 0.19, r - 0.27, 0.075, 0.034), u - n / 2, m, d + 0.26 + (r - 0.27) / 2);
+  t.geo(_e, Je(w - 0.02, 0.16, a - 0.26, 0.06, 0.022), c + s + w / 2, m, d + 0.26 + (a - 0.26) / 2)
+    .geo(_e, Je(w - 0.02, 0.16, a - 0.26, 0.06, 0.022), c + s + w * 1.5, m, d + 0.26 + (a - 0.26) / 2)
+    .geo(_e, Je(n - 0.03, 0.16, r - 0.27, 0.06, 0.022), u - n / 2, m, d + 0.26 + (r - 0.27) / 2);
   const b = (o - s) / 3;
   for (let S = 0; S < 3; S++) {
-    t.geo(_e, Je(b - 0.03, 0.44, 0.17, 0.07, 0.03), c + s + b * (S + 0.5), m + 0.3, d + 0.25, {
+    t.geo(_e, Je(b - 0.03, 0.44, 0.17, 0.07, 0.012), c + s + b * (S + 0.5), m + 0.3, d + 0.25, {
       rx: -0.2,
     });
   }
@@ -890,39 +890,6 @@ function lc(): i.Group {
       ry: -0.1,
       rz: 0.1,
     });
-  // Piping cords along the seat-cushion front edges and back-cushion top
-  // edges (silhouette seam detail), plus a softly rumpled throw on the chaise.
-  const seatFrontZ = d + 0.26 + (a - 0.26) - 0.015;
-  t.cyl(Ys, c + s + w / 2, m + 0.088, seatFrontZ, 0.011, 0.011, w - 0.08, {
-    seg: 10,
-    dir: [1, 0, 0],
-  }).cyl(Ys, c + s + w * 1.5, m + 0.088, seatFrontZ, 0.011, 0.011, w - 0.08, {
-    seg: 10,
-    dir: [1, 0, 0],
-  });
-  for (let S = 0; S < 3; S++) {
-    t.cyl(Ys, c + s + b * (S + 0.5), m + 0.5, d + 0.19, 0.01, 0.01, b - 0.1, {
-      seg: 10,
-      dir: [1, 0, 0],
-    });
-  }
-  const throwGeo = new i.BoxGeometry(0.8, 0.035, 1.02, 10, 1, 14);
-  const throwPos = throwGeo.attributes.position;
-  const throwRnd = japandiRand(77031);
-  const throwPhase = throwRnd() * 6.28;
-  for (let vi = 0; vi < throwPos.count; vi++) {
-    const vx = throwPos.getX(vi);
-    const vz = throwPos.getZ(vi);
-    throwPos.setY(
-      vi,
-      throwPos.getY(vi) +
-        Math.sin(vx * 9 + throwPhase) * 0.008 +
-        Math.cos(vz * 7 + throwPhase) * 0.007 +
-        (throwRnd() - 0.5) * 0.006,
-    );
-  }
-  throwGeo.computeVertexNormals();
-  t.geo(dt, throwGeo, u - n / 2, m + 0.125, d + 0.26 + (r - 0.27) / 2, { ry: 0.05 });
   t.flush(e);
   return e;
 }
@@ -1731,74 +1698,6 @@ function Ec(): i.Group {
   return e;
 }
 
-/** TV entertainment wall: oak wall panel with a warm halo behind the screen,
- * low credenza with door seams, floating shelves with books and a lathe vase. */
-function TvUnit(): i.Group {
-  const e = new i.Group();
-  const t = O();
-  t.box(R, 0, 1.22, -0.21, 3.4, 2.44, 0.05, { r: 0.01 });
-  const glow = new i.Mesh(new i.BoxGeometry(2.02, 1.2, 0.008), JAPANDI_PANEL_GLOW);
-  glow.position.set(0, 1.62, -0.168);
-  glow.raycast = () => {};
-  e.add(glow);
-  t.box(Ks, 0, 1.62, -0.145, 1.9, 1.08, 0.045, { r: 0.008 }).box(
-    D,
-    0,
-    0.61,
-    0.03,
-    1.15,
-    0.07,
-    0.07,
-    { r: 0.02 },
-  );
-  for (const [lx, lz] of [
-    [-1.12, -0.16],
-    [1.12, -0.16],
-    [-1.12, 0.16],
-    [1.12, 0.16],
-  ] as const) {
-    t.cyl(R, lx, 0.06, lz, 0.02, 0.013, 0.12, { seg: 10 });
-  }
-  t.box(R, 0, 0.33, 0, 2.4, 0.42, 0.44, { r: 0.015 })
-    .box(R, 0, 0.56, 0, 2.5, 0.035, 0.48, { r: 0.01 })
-    .box(Ks, -0.4, 0.33, 0.223, 0.012, 0.34, 0.004)
-    .box(Ks, 0.4, 0.33, 0.223, 0.012, 0.34, 0.004);
-  t.box(R, -1.32, 1.52, -0.13, 0.72, 0.04, 0.24, { r: 0.008 })
-    .box(R, -1.32, 1.88, -0.13, 0.72, 0.04, 0.24, { r: 0.008 })
-    .box(R, 1.32, 1.52, -0.13, 0.72, 0.04, 0.24, { r: 0.008 });
-  const bookCols = [He[0], He[1], me[0], He[2], me[1], He[3]];
-  let bi = 0;
-  for (const [bx, by] of [
-    [-1.5, 1.54],
-    [-1.42, 1.54],
-    [-1.34, 1.54],
-    [1.2, 1.54],
-    [1.28, 1.54],
-    [-1.44, 1.9],
-  ] as const) {
-    const bh = 0.19 + (bi % 3) * 0.025;
-    t.box(bookCols[bi % bookCols.length], bx, by + bh / 2, -0.13, 0.055, bh, 0.16, {
-      r: 0.006,
-    });
-    bi++;
-  }
-  t.geo(
-    dt,
-    Ft([
-      [0, 0],
-      [0.055, 0.005],
-      [0.07, 0.05],
-      [0.045, 0.11],
-      [0.03, 0.13],
-    ]),
-    -1.12,
-    1.9,
-    -0.13,
-  );
-  t.flush(e);
-  return e;
-}
-
 export const BUDDIES_FURNITURE_BUILDERS: Record<string, () => i.Group> = {
   sofa: lc,
   armchair: cc,
@@ -1854,14 +1753,10 @@ export function buildBuddiesInteriorBackgroundZones(): i.Group {
     ['bookcase', 1.69, 3.05, 4 * Ce],
     ['armchair', 4.55, 3.1, -5 * Ce],
     ['snake', 2.3, 3.4, 0],
-    // Living Room Set: sectional facing the TV wall on the left wall
-    ['sofa', -2.35, -0.6, -4 * Ce],
-    ['coffee', -3.38, -0.95, 0],
-    ['rug', -3.2, -0.6, 4 * Ce],
-    ['lamp', -1.55, -1.95, -4 * Ce],
-    ['armchair', -0.75, -2.75, -5 * Ce],
-    ['pouf', -2.9, 0.95, 0],
-    ['side', -1.8, 0.85, 0],
+    // Living Room Accent Pieces from `Fr`
+    ['armchair', -1.85, -1.05, -4 * Ce],
+    ['pouf', -3.2, 0.5, 0],
+    ['side', -4.95, 0.55, 0],
   ];
 
   for (const [type, x, z, ry] of staticPlacements) {
@@ -1883,15 +1778,6 @@ export function buildBuddiesInteriorBackgroundZones(): i.Group {
     c.raycast = () => {};
   });
   grp.add(backShelves);
-
-  // TV entertainment wall against the left wall, facing the sectional
-  const tvUnit = TvUnit();
-  tvUnit.position.set(-4.78, 0, -0.6);
-  tvUnit.rotation.y = Math.PI / 2;
-  tvUnit.traverse((c) => {
-    c.raycast = () => {};
-  });
-  grp.add(tvUnit);
 
   return grp;
 }

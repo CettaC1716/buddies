@@ -252,9 +252,14 @@ export function evaluateEmbankmentTierOffsets(
     smoothstep(-54.0, -90.0, px) * smoothstep(62.0, 102.0, Math.abs(pz)) * 11.5;
   const westPlantClear =
     smoothstep(-76.0, -104.0, px) * (1.0 - smoothstep(36.0, 44.0, Math.abs(pz))) * 9.5;
+  const tennisClubClear =
+    smoothstep(-74.0, -102.0, px) *
+    (12.2 - 1.7 * smoothstep(-106.0, -112.0, px)) *
+    smoothstep(35.0, 41.0, pz) *
+    (1.0 - smoothstep(75.0, 82.0, pz));
   // Smoothly open the East side at x >= 101.5 where the shifted Coastal Concrete Seawall & Open Ocean sit
   const eastCoastalOpen = smoothstep(96.5, 102.0, px) * 92.0;
-  const d0 = dBox + westCornerBulge - westPlantClear - eastCoastalOpen;
+  const d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - eastCoastalOpen;
 
   const w1 =
     Math.sin(px * 0.075 + Math.cos(pz * 0.068) * 1.55) * 2.05 +
@@ -493,7 +498,14 @@ export function evaluateHaltePlatformSdf(px: number, pz: number): number {
   const dSouth = sdRoundedBox2D(px, pz, -36.5, 44.67, 9.4, 3.6, 0.4);
   // Beachfront Harbor Halte: center (79.63, 29.5), halfExtents (3.6, 9.4)
   const dBeach = sdRoundedBox2D(px, pz, 79.63, 29.5, 3.6, 9.4, 0.4);
-  return Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)));
+  // Central Plaza Roadside Pedestrian Sidewalk (worldX in [-76.65 .. -73.85], worldZ in [-38.2 .. +38.2])
+  const dPlazaSidewalk = sdRoundedBox2D(px, pz, -75.25, 0.0, 1.45, 38.2, 0.2);
+  // Standalone Scenic Clay Tennis Court & Full-Width Perimeter Sidewalks (worldX in [-104.40 .. -73.85], worldZ in [+38.10 .. +65.70])
+  const dTennisClub = sdRoundedBox2D(px, pz, -89.20, 51.90, 15.20, 13.70, 0.3);
+  return Math.min(
+    dTennisClub,
+    Math.min(dPlazaSidewalk, Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)))),
+  );
 }
 
 /**
@@ -578,7 +590,7 @@ export function evaluatePlanetWaterField(worldX: number, worldZ: number): number
  */
 export function getBaseProceduralGroundElevation(worldX: number, worldZ: number): number {
   const westPlantSdf = evaluateWestPowerPlantSdf(worldX, worldZ);
-  let westPlantElev = (1.0 - smoothstep(-0.35, 0.45, westPlantSdf)) * 2.5;
+  let westPlantElev = (1.0 - smoothstep(-0.45, -0.15, westPlantSdf)) * 2.5;
   // Urban Plaza to Street Staircase (20m wide: worldZ in [-10.00 .. +10.00], worldX in [-85.30 .. -75.20]):
   // - Upper Flight (worldX in [-85.30 .. -81.80]): descends from +2.50m Plaza Level to +1.32m Mid-Landing
   // - Mid-Landing (worldX in [-81.80 .. -80.40]): flat granite landing at +1.32m
