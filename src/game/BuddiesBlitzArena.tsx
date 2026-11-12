@@ -281,6 +281,7 @@ import {
   buildOriginalBuddiesCatalogFurnitureMesh,
   buildBuddiesInteriorBackgroundZones,
   BUDDIES_SLOT_MATERIALS,
+  BUDDIES_ZONE_COLLIDERS,
 } from './buddiesInteriorAssets';
 import {
   CUTAWAY_ROOM_BOUNDS,
@@ -3797,6 +3798,76 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           });
           placedFurnitureContainer.add(meshGrp);
           houseFurnitureMeshMap.set(item.instanceId, meshGrp);
+        }
+      }
+    };
+
+    // Indoor collision for `house_visit`: the partition walls (with their
+    // doorway gaps left open), the background-zone furniture in the sample
+    // house, and any furniture placed in the player's own house. The avatar
+    // is a circle pushed out of each oriented footprint box.
+    const HOUSE_PLAYER_RADIUS = 0.34;
+    const pushPlayerOutOfHouseObb = (
+      cx: number,
+      cz: number,
+      hw: number,
+      hd: number,
+      ry: number,
+    ) => {
+      if (!playerUnit) return;
+      const dx = playerUnit.x - cx;
+      const dz = playerUnit.z - cz;
+      const cos = Math.cos(ry);
+      const sin = Math.sin(ry);
+      const lx = dx * cos - dz * sin;
+      const lz = dx * sin + dz * cos;
+      const qx = clamp(lx, -hw, hw);
+      const qz = clamp(lz, -hd, hd);
+      let px = lx;
+      let pz = lz;
+      if (qx === lx && qz === lz) {
+        const pushX = hw - Math.abs(lx);
+        const pushZ = hd - Math.abs(lz);
+        if (pushX < pushZ) {
+          px = lx >= 0 ? hw + HOUSE_PLAYER_RADIUS : -hw - HOUSE_PLAYER_RADIUS;
+        } else {
+          pz = lz >= 0 ? hd + HOUSE_PLAYER_RADIUS : -hd - HOUSE_PLAYER_RADIUS;
+        }
+      } else {
+        const ex = lx - qx;
+        const ez = lz - qz;
+        const dist = Math.hypot(ex, ez);
+        if (dist >= HOUSE_PLAYER_RADIUS || dist === 0) return;
+        px = qx + (ex / dist) * HOUSE_PLAYER_RADIUS;
+        pz = qz + (ez / dist) * HOUSE_PLAYER_RADIUS;
+      }
+      playerUnit.x = cx + px * cos + pz * sin;
+      playerUnit.z = cz - px * sin + pz * cos;
+    };
+    const resolveHouseVisitCollisions = () => {
+      if (!playerUnit) return;
+      const B = CUTAWAY_ROOM_BOUNDS;
+      const px = B.partitionX;
+      const pz = B.partitionZ;
+      const pt = B.partitionThickness / 2;
+      pushPlayerOutOfHouseObb(px, (B.minZ + B.doorPassZ.z0) / 2, pt, (B.doorPassZ.z0 - B.minZ) / 2, 0);
+      pushPlayerOutOfHouseObb(px, (B.doorPassZ.z1 + B.maxZ) / 2, pt, (B.maxZ - B.doorPassZ.z1) / 2, 0);
+      pushPlayerOutOfHouseObb(
+        (px + pt + B.doorPassX.x0) / 2,
+        pz,
+        (B.doorPassX.x0 - px - pt) / 2,
+        pt,
+        0,
+      );
+      pushPlayerOutOfHouseObb((B.doorPassX.x1 + B.maxX) / 2, pz, (B.maxX - B.doorPassX.x1) / 2, pt, 0);
+      if (sampleHouseZonesGrp && sampleHouseZonesGrp.visible) {
+        for (const c of BUDDIES_ZONE_COLLIDERS) {
+          pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
+        }
+      }
+      for (const item of housePlacedItems) {
+        for (const obb of buildFurnitureFootprintObbs(item.catalogId, item.sx, item.sz, item.sry)) {
+          pushPlayerOutOfHouseObb(obb.x, obb.z, obb.hw, obb.hd, obb.a);
         }
       }
     };
@@ -15266,6 +15337,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 CUTAWAY_ROOM_BOUNDS.minZ + 0.55,
                 CUTAWAY_ROOM_BOUNDS.maxZ - 0.55,
               );
+              if (npcCameraMode === 'house_visit') {
+                resolveHouseVisitCollisions();
+              }
             } else {
               if (!(playerUnit.isSitting && activeSeatedSpot)) {
                 resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);

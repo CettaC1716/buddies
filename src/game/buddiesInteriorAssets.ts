@@ -936,17 +936,21 @@ function cc(): i.Group {
   const n = 0.56;
   for (const r of [-1, 1]) {
     const s = r * (o / 2 - 0.035);
-    t.box(R, s, n / 2 - 0.01, a / 2 - 0.08, 0.046, n - 0.02, 0.046, { r: 0.009 })
-      .box(R, s, n / 2 + 0.03, -a / 2 + 0.1, 0.046, n + 0.14, 0.046, { r: 0.009, rx: -0.16 })
-      .box(R, s, n + 0.014, 0, 0.078, 0.032, a - 0.02, { r: 0.012 })
-      .box(R, s, 0.13, 0, 0.036, 0.04, a - 0.2, { r: 0.006 });
+    // Continuous side frame: the front leg rises exactly to the underside of
+    // the armrest, the armrest runs flush into the back post, and the back
+    // post is one piece from floor to backrest top sharing one tilt with the
+    // top rail and back cushion, so no joint gaps, sinks or pokes through.
+    t.box(R, s, 0.279, a / 2 - 0.08, 0.046, 0.558, 0.046, { r: 0.009 })
+      .box(R, s, 0.44, -a / 2 + 0.1, 0.046, 0.88, 0.046, { r: 0.009, rx: -0.14 })
+      .box(R, s, n + 0.014, 0, 0.078, 0.032, 0.68, { r: 0.012 })
+      .box(R, s, 0.13, 0.03, 0.036, 0.04, 0.53, { r: 0.006 });
   }
-  t.box(R, 0, 0.28, a / 2 - 0.08, o - 0.09, 0.05, 0.036, { r: 0.006 })
-    .box(R, 0, 0.28, -a / 2 + 0.12, o - 0.09, 0.05, 0.036, { r: 0.006 })
-    .box(R, 0, 0.72, -a / 2 + 0.02, o - 0.09, 0.05, 0.036, { r: 0.006, rx: -0.3 })
+  t.box(R, 0, 0.28, a / 2 - 0.08, o - 0.115, 0.05, 0.036, { r: 0.006 })
+    .box(R, 0, 0.28, -a / 2 + 0.13, o - 0.115, 0.05, 0.036, { r: 0.006 })
+    .box(R, 0, 0.8, -0.345, o - 0.115, 0.05, 0.036, { r: 0.006, rx: -0.14 })
     .geo(_e, Je(o - 0.12, 0.13, a - 0.16, 0.05, 0.016), 0, 0.37, 0.03)
-    .geo(_e, Je(o - 0.13, 0.48, 0.13, 0.06, 0.01), 0, 0.66, -a / 2 + 0.15, { rx: -0.3 })
-    .geo(dt, io(0.36, 0.3, 0.12), 0, 0.58, -0.1, { rx: -0.34, rz: 0.06 });
+    .geo(_e, Je(o - 0.13, 0.48, 0.13, 0.06, 0.01), 0, 0.64, -0.27, { rx: -0.14 })
+    .geo(dt, io(0.36, 0.3, 0.12), 0, 0.58, -0.14, { rx: -0.22, rz: 0.06 });
   t.flush(e);
   return e;
 }
@@ -1539,20 +1543,36 @@ function Tc(): i.Group {
 function Lc(): i.Group {
   const e = new i.Group();
   const t = O();
-  const o = 0.46;
-  const a = 0.48;
-  const n = 0.46;
+  // Continuous-mitred frame: the rear legs run in one piece from the floor
+  // to the top of the backrest, and every apron, slat and stretcher is
+  // fitted exactly between the leg faces it meets, so no member overlaps
+  // another and no joint floats.
+  const legX = 0.185;
+  const legZ = 0.185;
+  const legS = 0.036;
+  const span = (legX - legS / 2) * 2;
+  const postTilt = -0.07;
+  const postZAt = (y: number) => -legZ + (y - 0.44) * Math.sin(postTilt);
   for (const r of [-1, 1]) {
-    t.cyl(R, r * (o / 2 - 0.03), n / 2 - 0.01, a / 2 - 0.03, 0.018, 0.014, n - 0.02, {
-      seg: 8,
-    }).box(R, r * (o / 2 - 0.03), 0.42, -a / 2 + 0.04, 0.028, 0.84, 0.028, {
-      r: 0.006,
-      rx: -0.08,
-    });
+    // front legs, floor to the seat slab (aprons butt into their back faces)
+    t.box(R, r * legX, 0.215, legZ, legS, 0.43, legS, { r: 0.007 });
+    // rear posts, one continuous piece from floor to backrest top
+    t.box(R, r * legX, 0.44, -legZ, legS, 0.88, legS, { r: 0.007, rx: postTilt });
+    // side apron + side stretcher fitted between front leg and rear post
+    t.box(R, r * legX, 0.415, 0, legS, 0.03, span, { r: 0.005 });
+    t.box(R, r * legX, 0.15, 0, 0.024, 0.024, span, { r: 0.005 });
   }
-  t.box(R, 0, n - 0.03, 0, o - 0.02, 0.03, a - 0.02, { r: 0.006 })
-    .geo(dt, Je(o - 0.04, 0.05, a - 0.06, 0.02, 0.008), 0, n + 0.005, 0.01)
-    .box(R, 0, 0.78, -a / 2 + 0.025, o - 0.02, 0.12, 0.022, { r: 0.008, rx: -0.1 });
+  // front + back aprons fitted between the legs / posts
+  t.box(R, 0, 0.415, legZ, span, 0.03, legS, { r: 0.005 });
+  t.box(R, 0, 0.415, -legZ, span, 0.03, legS, { r: 0.005 });
+  // back stretcher fitted between the rear posts
+  t.box(R, 0, 0.19, -legZ, span, 0.024, 0.024, { r: 0.005 });
+  // backrest slats fitted between the rear posts, tilt matched to the posts
+  t.box(R, 0, 0.68, postZAt(0.68), span, 0.09, 0.02, { r: 0.006, rx: postTilt });
+  t.box(R, 0, 0.82, postZAt(0.82), span, 0.09, 0.02, { r: 0.006, rx: postTilt });
+  // seat slab resting exactly on the aprons and leg tops, cushion on the slab
+  t.box(R, 0, 0.4425, 0, 0.44, 0.025, 0.44, { r: 0.006 });
+  t.geo(dt, Je(0.42, 0.05, 0.42, 0.02, 0.008), 0, 0.468, 0);
   t.flush(e);
   return e;
 }
@@ -1655,21 +1675,22 @@ function Pc(): i.Group {
   const t = O();
   for (let o = 0; o < 5; o++) {
     const a = (o / 5) * Math.PI * 2;
-    t.box(D, Math.sin(a) * 0.14, 0.06, Math.cos(a) * 0.14, 0.04, 0.03, 0.3, { ry: a }).sph(
-      D,
-      Math.sin(a) * 0.27,
-      0.03,
-      Math.cos(a) * 0.27,
-      0.03,
-      { seg: 8, seg2: 6 },
-    );
+    // Spokes run from the hub surface outward; they no longer pile up
+    // across the centre of the base.
+    t.box(D, Math.sin(a) * 0.175, 0.06, Math.cos(a) * 0.175, 0.04, 0.03, 0.25, {
+      ry: a,
+    }).sph(D, Math.sin(a) * 0.285, 0.03, Math.cos(a) * 0.285, 0.03, { seg: 8, seg2: 6 });
   }
-  t.cyl(no('#9aa0a8', { roughness: 0.3 }), 0, 0.26, 0, 0.022, 0.026, 0.36, { seg: 12 })
+  t.cyl(D, 0, 0.055, 0, 0.05, 0.055, 0.05, { seg: 16 })
+    .cyl(no('#9aa0a8', { roughness: 0.3 }), 0, 0.255, 0, 0.022, 0.026, 0.35, { seg: 12 })
+    // Under-seat mechanism plate: the lift, the back bracket and both arm
+    // posts land on it, so nothing under the cushion floats.
+    .box(D, 0, 0.44, 0, 0.58, 0.025, 0.4, { r: 0.006 })
     .geo(_e, Je(0.48, 0.08, 0.46, 0.04, 0.01), 0, 0.47, 0.02)
-    .box(D, 0, 0.55, -0.2, 0.06, 0.28, 0.03, { rx: -0.1 })
+    .box(D, 0, 0.57, -0.2, 0.06, 0.28, 0.03, { rx: -0.12 })
     .geo(_e, Je(0.44, 0.42, 0.07, 0.05, 0.006), 0, 0.8, -0.24, { rx: -0.12 });
   for (const o of [-1, 1]) {
-    t.box(D, o * 0.26, 0.6, 0, 0.03, 0.2, 0.03).box(D, o * 0.26, 0.7, 0.02, 0.05, 0.025, 0.26, {
+    t.box(D, o * 0.26, 0.57, 0, 0.03, 0.235, 0.03).box(D, o * 0.26, 0.7, 0.02, 0.05, 0.025, 0.26, {
       r: 0.01,
     });
   }
@@ -1822,6 +1843,49 @@ export const BUDDIES_FURNITURE_BUILDERS: Record<string, () => i.Group> = {
   taskchair: Pc,
   snake: Ec,
 };
+
+/**
+ * Floor colliders for the background zones, in the same placement frame as
+ * `buildBuddiesInteriorBackgroundZones` (centre x/z, rotation ry, half
+ * extents hw/hd). Rugs and wall-mounted shelves intentionally have none.
+ */
+export const BUDDIES_ZONE_COLLIDERS: ReadonlyArray<{
+  x: number;
+  z: number;
+  ry: number;
+  hw: number;
+  hd: number;
+}> = [
+  // Dining zone
+  { x: -3.25, z: 2.15, ry: 0, hw: 0.85, hd: 0.45 },
+  { x: -3.7, z: 1.33, ry: 0, hw: 0.23, hd: 0.24 },
+  { x: -2.8, z: 1.33, ry: 0, hw: 0.23, hd: 0.24 },
+  { x: -3.7, z: 2.97, ry: Math.PI, hw: 0.23, hd: 0.24 },
+  { x: -2.8, z: 2.97, ry: Math.PI, hw: 0.23, hd: 0.24 },
+  { x: -4.95, z: 3.35, ry: 0, hw: 0.2, hd: 0.2 },
+  // Bedroom zone
+  { x: 3.4, z: -2.62, ry: 0, hw: 1.03, hd: 1.05 },
+  { x: 1.95, z: -3.47, ry: 0, hw: 0.28, hd: 0.2 },
+  { x: 4.85, z: -3.47, ry: 0, hw: 0.28, hd: 0.2 },
+  { x: 3.4, z: -1.2, ry: 0, hw: 0.6, hd: 0.2 },
+  { x: 4.95, z: -1.7, ry: -Math.PI / 2, hw: 0.8, hd: 0.3 },
+  { x: 5.0, z: 0.4, ry: 0, hw: 0.22, hd: 0.22 },
+  // Study zone
+  { x: 4.1, z: 1.36, ry: 0, hw: 0.7, hd: 0.33 },
+  { x: 4.1, z: 2.05, ry: Math.PI, hw: 0.3, hd: 0.3 },
+  { x: 1.69, z: 3.05, ry: Math.PI / 2, hw: 0.5, hd: 0.17 },
+  { x: 4.55, z: 3.1, ry: (-5 * Math.PI) / 8, hw: 0.4, hd: 0.42 },
+  { x: 2.3, z: 3.4, ry: 0, hw: 0.2, hd: 0.2 },
+  // Living zone (TV credenza first, then the sectional in two boxes)
+  { x: -4.92, z: -0.6, ry: Math.PI / 2, hw: 1.2, hd: 0.38 },
+  { x: -2.35, z: -0.6, ry: -Math.PI / 2, hw: 1.35, hd: 0.48 },
+  { x: -3.16, z: 0.28, ry: -Math.PI / 2, hw: 0.48, hd: 0.34 },
+  { x: -3.38, z: -0.95, ry: 0, hw: 0.45, hd: 0.45 },
+  { x: -1.55, z: -1.95, ry: -Math.PI / 2, hw: 0.18, hd: 0.18 },
+  { x: -0.75, z: -2.75, ry: (-5 * Math.PI) / 8, hw: 0.4, hd: 0.42 },
+  { x: -2.9, z: 0.95, ry: 0, hw: 0.28, hd: 0.28 },
+  { x: -1.8, z: 0.85, ry: 0, hw: 0.23, hd: 0.23 },
+];
 
 /**
  * Builds the static background room furniture zones (`Wr` Dining, `Ur` Bedroom, `Vr` Study, plus wall shelves)
