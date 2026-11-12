@@ -3769,56 +3769,11 @@ export default function App() {
                         </span>
                       </button>
 
-                      <button
-                        type="button"
-                        data-open-near-wallet-selector-start-btn="true"
-                        disabled={isVerifyingNearWallet || privyOAuthLoading}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setWalletConnectError(null);
-                          setIsNearWalletSelectorOpen(true);
-                        }}
-                        className="-skew-x-6 w-full py-2.5 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                      >
-                        <span className="skew-x-6 flex items-center justify-center gap-2">
-                          <Wallet className="w-3.5 h-3.5 stroke-[2.5] shrink-0" aria-hidden="true" />
-                          <span>CONNECT EXTERNAL WALLET</span>
-                        </span>
-                      </button>
                     </div>
 
-                    {walletConnectError && (
-                      <div
-                        data-wallet-connect-error="true"
-                        className="p-2.5 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold space-y-2"
-                      >
-                        <div>{walletConnectError}</div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setWalletConnectError(null);
-                            setOnboardingAuthMode('wallet');
-                            setOnboardingStep('guest_character_select');
-                          }}
-                          className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
-                        >
-                          CREATE WALLET
-                        </button>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Divider */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-white/15" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      OR
-                    </span>
-                    <div className="flex-1 h-px bg-white/15" />
-                  </div>
-
-                  {/* 2. Secondary Action: Play as Guest */}
+                  {/* 2. Second Primary Action: Play as Guest */}
                   <button
                     type="button"
                     data-login-guest-btn="true"
@@ -3838,6 +3793,54 @@ export default function App() {
                   >
                     <span className="skew-x-6 inline-block">PLAY AS GUEST</span>
                   </button>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-white/15" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      OR
+                    </span>
+                    <div className="flex-1 h-px bg-white/15" />
+                  </div>
+
+                  {/* 3. Demoted: external NEAR wallet as a small link */}
+                  <div className="text-center space-y-2">
+                    <button
+                      type="button"
+                      data-open-near-wallet-selector-start-btn="true"
+                      disabled={isVerifyingNearWallet || privyOAuthLoading}
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setWalletConnectError(null);
+                        setIsNearWalletSelectorOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-300 underline underline-offset-2 hover:text-white disabled:opacity-60 cursor-pointer"
+                    >
+                      <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>Have a NEAR wallet? Connect it here</span>
+                    </button>
+
+                    {walletConnectError && (
+                      <div
+                        data-wallet-connect-error="true"
+                        className="p-2.5 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold space-y-2 text-left"
+                      >
+                        <div>{walletConnectError}</div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setWalletConnectError(null);
+                            setOnboardingAuthMode('wallet');
+                            setOnboardingStep('guest_character_select');
+                          }}
+                          className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
+                        >
+                          CREATE WALLET
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 
