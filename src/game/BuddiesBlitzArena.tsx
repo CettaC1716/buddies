@@ -477,7 +477,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     renderer.toneMappingExposure = 1.08;
     // Enable real-time shadow maps on hardware GPUs; skip shadow pass on CPU software WebGL
     renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.BasicShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = !isSoftwareGl;
 
@@ -1574,7 +1574,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
         composer.addPass(gtaoPass);
         composer.addPass(
-          new UnrealBloomPass(new THREE.Vector2(startW, startH), 0.28, 0.5, 0.8),
+          new UnrealBloomPass(new THREE.Vector2(startW, startH), 0.18, 0.4, 1.0),
         );
         composer.addPass(new SMAAPass());
         composer.addPass(new OutputPass());
