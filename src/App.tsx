@@ -1670,6 +1670,42 @@ export default function App() {
     );
   }, [kaiTutorialStage]);
 
+  // Kai phone contact: Kai is reachable through the player's phone (social
+  // modal), so the chat-haggling feature can be discovered without walking to
+  // East Beach first. He also calls the player once — the first time they
+  // have a fish to sell. Both flags persist per device.
+  const [kaiPhoneState, setKaiPhoneState] = useState<{ called: boolean; met: boolean }>(() => {
+    try {
+      const raw = window.localStorage.getItem('bb_kai_phone_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { called?: boolean; met?: boolean };
+        return { called: Boolean(parsed.called), met: Boolean(parsed.met) };
+      }
+    } catch {
+      // ignore
+    }
+    return { called: false, met: false };
+  });
+  const [kaiIncomingCall, setKaiIncomingCall] = useState(false);
+  const persistKaiPhoneState = (next: { called: boolean; met: boolean }) => {
+    setKaiPhoneState(next);
+    try {
+      window.localStorage.setItem('bb_kai_phone_v1', JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+  const openKaiChatFromPhone = useCallback(() => {
+    soundEngine.stopPhoneRing();
+    setKaiIncomingCall(false);
+    setIsKioskModalOpen(false);
+    setIsSocialChatModalOpen(false);
+    setActiveTeleportKioskModal('none');
+    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+    setMerchantLocation('beach_house');
+    setActiveSpecialModal('npc_merchant');
+  }, []);
+
   useEffect(() => {
     if (onboardingStep !== 'subwallet_naming') return;
     let cancelled = false;
@@ -2809,6 +2845,47 @@ export default function App() {
     prevBucketLenRef.current = caughtFishBucket.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kaiTutorialStage, hud.equippedWeapon, nearbyWaterZone, caughtFishBucket.length]);
+
+  // Kai phone: opening Kai's merchant chat (in person or by phone) counts as
+  // having met him, and silences any ringing call.
+  useEffect(() => {
+    if (
+      activeSpecialModal === 'npc_merchant' &&
+      merchantLocation === 'beach_house' &&
+      !kaiPhoneState.met
+    ) {
+      persistKaiPhoneState({ ...kaiPhoneState, met: true });
+      setKaiIncomingCall(false);
+      soundEngine.stopPhoneRing();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSpecialModal, merchantLocation, kaiPhoneState.met]);
+
+  // Kai phone: once the player first has a fish to sell, Kai calls — once per
+  // device, and only when no other UI is in the way.
+  useEffect(() => {
+    if (kaiPhoneState.called || kaiPhoneState.met || kaiIncomingCall) return;
+    if (gameState !== 'playing' || onboardingStep !== 'completed') return;
+    if (hud.worldMode === 'warzone') return;
+    if (caughtFishBucket.length === 0) return;
+    if (activeSpecialModal !== 'none' || isSocialChatModalOpen || isKioskModalOpen) return;
+    if (lastCaughtFishToast) return;
+    persistKaiPhoneState({ ...kaiPhoneState, called: true });
+    setKaiIncomingCall(true);
+    soundEngine.playPhoneRing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    kaiPhoneState,
+    kaiIncomingCall,
+    gameState,
+    onboardingStep,
+    hud.worldMode,
+    caughtFishBucket.length,
+    activeSpecialModal,
+    isSocialChatModalOpen,
+    isKioskModalOpen,
+    lastCaughtFishToast,
+  ]);
 
   const fishingCastTimersRef = useRef<number[]>([]);
   const lastCastLaunchAtRef = useRef<number>(0);
@@ -5267,6 +5344,63 @@ export default function App() {
           )}
 
           {/* =================================================================
+              3E2. KAI INCOMING PHONE CALL (first fish to sell, once per device)
+             ================================================================= */}
+          {playMode !== 'editor' && kaiIncomingCall && (
+            <div className="fixed inset-x-0 bottom-24 z-40 flex justify-center px-3 pointer-events-none">
+              <div
+                data-kai-incoming-call="true"
+                className="pointer-events-auto w-full max-w-[320px] bg-white text-black border-[3px] border-black shadow-[5px_5px_0px_#000] p-3 animate-pulse"
+              >
+                <div className="flex items-center justify-between gap-2 border-b-2 border-black pb-1.5 mb-2">
+                  <span className="px-1.5 py-0.5 bg-[#0284c7] text-white border border-black text-[9px] font-black uppercase tracking-wider">
+                    Incoming Call
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                    Phone
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-11 h-11 shrink-0 rounded-full bg-[#0284c7] border-2 border-black flex items-center justify-center text-white font-black">
+                    K
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-black text-sm uppercase leading-tight">Kai</div>
+                    <div className="text-[10px] font-bold text-slate-600 leading-snug">
+                      Fisherman · East Beach — wants to buy your catch
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    data-kai-call-accept="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      openKaiChatFromPhone();
+                    }}
+                    className="flex-1 px-3 py-2 bg-[#b8ff3c] hover:bg-[#c9ff5e] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    data-kai-call-later="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      soundEngine.stopPhoneRing();
+                      setKaiIncomingCall(false);
+                    }}
+                    className="flex-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    Later
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
               3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR + PRIVATE NOTIFICATION TOAST
              ================================================================= */}
           {playMode !== 'editor' && (
@@ -6564,6 +6698,14 @@ export default function App() {
         onClearUnreadPrivate={() => {
           setUnreadPrivateCount(0);
           setActivePrivateNotificationToast(null);
+        }}
+        kaiRawFishCount={caughtFishBucket.filter((f) => !f.isMintedNft).length}
+        kaiHasMet={kaiPhoneState.met}
+        onCallKai={openKaiChatFromPhone}
+        onMeetKai={() => {
+          soundEngine.playUiClick();
+          if (kaiTutorialStage === 'off') advanceKaiTutorial('meet');
+          setIsSocialChatModalOpen(false);
         }}
         playerBubbleBgColor={chatBubbleBgColor}
         playerBubbleTextColor={chatBubbleTextColor}

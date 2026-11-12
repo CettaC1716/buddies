@@ -50,9 +50,13 @@ interface SocialChatModalProps {
   onToggleShowJoystickOnDesktop?: () => void;
   unreadPrivateCount?: number;
   onClearUnreadPrivate?: () => void;
+  kaiRawFishCount?: number;
+  kaiHasMet?: boolean;
+  onCallKai?: () => void;
+  onMeetKai?: () => void;
 }
 
-type SocialChatSubTab = 'online' | 'public' | 'private' | 'settings';
+type SocialChatSubTab = 'online' | 'public' | 'private' | 'kai' | 'settings';
 
 const BUBBLE_COLOR_SWATCHES: { bg: string; text: string; label: string }[] = [
   { bg: '#ffffff', text: '#0f172a', label: 'Pure White' },
@@ -277,6 +281,10 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   onToggleShowJoystickOnDesktop,
   unreadPrivateCount = 0,
   onClearUnreadPrivate,
+  kaiRawFishCount = 0,
+  kaiHasMet = false,
+  onCallKai,
+  onMeetKai,
 }) => {
   const [activeTab, setActiveTab] = useState<SocialChatSubTab>('public');
 
@@ -377,6 +385,10 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                   id: 'private',
                   label: unreadPrivateCount > 0 ? `PRIVATE (${unreadPrivateCount})` : 'PRIVATE',
                 },
+                {
+                  id: 'kai',
+                  label: !kaiHasMet || kaiRawFishCount > 0 ? 'KAI (1)' : 'KAI',
+                },
                 { id: 'settings', label: 'SETTINGS' },
               ] as { id: SocialChatSubTab; label: string }[]
             ).map((tab) => {
@@ -404,6 +416,12 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                     {tab.id === 'private' && unreadPrivateCount > 0 && (
                       <span
                         data-private-tab-unread-dot="true"
+                        className="w-2 h-2 rounded-full bg-[#ff3b30] border border-black inline-block"
+                      />
+                    )}
+                    {tab.id === 'kai' && (!kaiHasMet || kaiRawFishCount > 0) && (
+                      <span
+                        data-kai-tab-unread-dot="true"
                         className="w-2 h-2 rounded-full bg-[#ff3b30] border border-black inline-block"
                       />
                     )}
@@ -666,6 +684,100 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 )}
                 <div ref={privateEndRef} />
               </div>
+            </div>
+          )}
+
+          {/* 3B. KAI CONTACT SUB-TAB (phone contact for the fish merchant) */}
+          {activeTab === 'kai' && (
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1" data-kai-contact="true">
+              <div className="p-3 bg-[#e0f2fe] border-2 border-black shadow-[2px_2px_0px_#000]">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-[#0284c7] border-2 border-black flex items-center justify-center text-white font-black text-lg">
+                    K
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-sm uppercase tracking-wide">Kai</span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#b8ff3c] border border-black text-[8px] font-black uppercase">
+                        <span className="w-1.5 h-1.5 rounded-full bg-black inline-block" />
+                        Online
+                      </span>
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                      Fisherman &amp; Beach Keeper · East Beach
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start">
+                <div className="flex items-center gap-1.5 mb-0.5 px-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                    Kai
+                  </span>
+                </div>
+                <div className="max-w-[92%] px-3 py-2 text-xs font-bold leading-snug bg-white text-black border-2 border-black shadow-[2px_2px_0px_#000]">
+                  {kaiRawFishCount > 0
+                    ? 'Heard you caught something! I buy raw fish, and we can haggle the price right in chat — by phone too. Feel free to ask.'
+                    : "Hey! I'm Kai, fisherman and beach keeper at East Beach. Catch a fish and I'll buy it — we can even haggle the price in chat. Feel free to ask."}
+                </div>
+              </div>
+
+              {kaiRawFishCount > 0 ? (
+                <div className="p-3 bg-[#fef08a] border-2 border-black shadow-[2px_2px_0px_#000] space-y-2">
+                  <div className="text-[11px] font-black uppercase tracking-wider">
+                    {kaiRawFishCount} raw fish in your bucket
+                  </div>
+                  <p className="text-[11px] font-bold leading-snug">
+                    Kai is buying. Open the chat and tap START HAGGLING on the trade card.
+                  </p>
+                  <button
+                    type="button"
+                    data-kai-call-button="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onCallKai?.();
+                    }}
+                    className="w-full px-3 py-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    Call Kai — Haggle Now
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    data-kai-call-button="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onCallKai?.();
+                    }}
+                    className="w-full px-3 py-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    Call Kai — Chat
+                  </button>
+                  <button
+                    type="button"
+                    data-kai-meet-button="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onMeetKai?.();
+                    }}
+                    className="w-full px-3 py-2.5 bg-white hover:bg-slate-100 text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    Meet Kai at East Beach
+                  </button>
+                  <p className="text-[10px] font-bold text-slate-500 leading-snug">
+                    No fish yet? Kai waits at East Beach — follow the marker, or call him first and
+                    say hello.
+                  </p>
+                </div>
+              )}
+
+              <p className="text-[10px] font-bold text-slate-500 leading-snug">
+                Phone haggling covers raw fish for LUL. Fish NFT trades happen at Kai&apos;s market
+                stall in person.
+              </p>
             </div>
           )}
 

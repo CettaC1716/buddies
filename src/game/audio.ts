@@ -2255,6 +2255,49 @@ class SoundEngine {
     osc.stop(now + 0.085);
   }
 
+  private phoneRingTimer: number | null = null;
+
+  /** Gentle two-tone phone ring (synth only): a few short cycles, auto-stops. */
+  public playPhoneRing(): void {
+    this.stopPhoneRing();
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    let cycles = 0;
+    const ringCycle = () => {
+      const c = this.ensureCtx();
+      if (!c) return;
+      const t0 = c.currentTime;
+      const out = this.getOutputNode(c);
+      for (let i = 0; i < 4; i += 1) {
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(i % 2 === 0 ? 440 : 480, t0 + i * 0.32);
+        gain.gain.setValueAtTime(0.0001, t0 + i * 0.32);
+        gain.gain.exponentialRampToValueAtTime(0.05, t0 + i * 0.32 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.32 + 0.24);
+        osc.connect(gain);
+        gain.connect(out);
+        osc.start(t0 + i * 0.32);
+        osc.stop(t0 + i * 0.32 + 0.26);
+      }
+      cycles += 1;
+      if (cycles >= 3 && this.phoneRingTimer !== null) {
+        window.clearInterval(this.phoneRingTimer);
+        this.phoneRingTimer = null;
+      }
+    };
+    ringCycle();
+    this.phoneRingTimer = window.setInterval(ringCycle, 3000);
+  }
+
+  public stopPhoneRing(): void {
+    if (this.phoneRingTimer !== null) {
+      window.clearInterval(this.phoneRingTimer);
+      this.phoneRingTimer = null;
+    }
+  }
+
   public playHit(): void {
     if (this.playSample('player-hit', 0.36, 0.94 + Math.random() * 0.12, 35)) return;
     const ctx = this.ensureCtx();
