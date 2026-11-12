@@ -1261,6 +1261,11 @@ export default function App() {
 
   const handleStartGame = useCallback((shouldReset = false) => {
     soundEngine.playUiClick();
+    // Registered players skip the lakeside staging: their camera flies
+    // straight to the plaza and their avatar spawns there.
+    if (!shouldReset && gameState === 'title' && onboardingStep === 'completed') {
+      window.dispatchEvent(new CustomEvent('buddies-fly-to-plaza'));
+    }
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -1269,7 +1274,7 @@ export default function App() {
     }
     document.body.dataset.state = 'playing';
     setGameState('playing');
-  }, []);
+  }, [gameState, onboardingStep]);
 
   // Landing page PLAY / LOG IN: enter immediately once assets are ready;
   // otherwise the landing swaps to its own loading bar until preload lands.
