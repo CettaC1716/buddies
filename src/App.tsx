@@ -387,11 +387,6 @@ export default function App() {
   const [hanaPitchOrigin, setHanaPitchOrigin] = useState<'kiosk' | 'browse' | null>(null);
   const [pendingPitchKioskStation, setPendingPitchKioskStation] =
     useState<CityTransitStationId>('central_plaza');
-  const propertyPitchSeenRef = useRef<boolean>(false);
-  const tutorialStageRef = useRef<'none' | 'welcome_modal' | 'go_to_hana' | 'go_to_kiosk'>(
-    'none',
-  );
-  const ownsHouseRef = useRef<boolean>(false);
   const [preloadProgress, setPreloadProgress] = useState<number>(0);
   const [isPreloadComplete, setIsPreloadComplete] = useState<boolean>(false);
   const preloadTrackerRef = useRef<PreloadProgressInput>({
@@ -1419,24 +1414,6 @@ export default function App() {
           k === 'lobby_warzone' || k === 'lobby_safezone' || k === 'halte_to_lobby'
             ? 'central_plaza'
             : k;
-        if (
-          !ownsHouseRef.current &&
-          !propertyPitchSeenRef.current &&
-          tutorialStageRef.current === 'none'
-        ) {
-          // First Teleport Kiosk visit by a player who owns no property:
-          // Hana greets them first with the property pitch (catalog / model
-          // house), and the kiosk stays one tap away inside her chat.
-          propertyPitchSeenRef.current = true;
-          setPropertyPitchSeen(true);
-          setPendingPitchKioskStation(resolvedStationId);
-          setHanaPitchOrigin('kiosk');
-          setIsKioskModalOpen(false);
-          setIsSocialChatModalOpen(false);
-          setMerchantLocation('lobby_cafe');
-          setActiveSpecialModal('npc_merchant');
-          return;
-        }
         setIsKioskModalOpen(false);
         setActiveSpecialModal('none');
         setIsSocialChatModalOpen(false);
@@ -1531,18 +1508,6 @@ export default function App() {
       }),
     );
   }, [tutorialStage]);
-
-  useEffect(() => {
-    tutorialStageRef.current = tutorialStage;
-  }, [tutorialStage]);
-
-  useEffect(() => {
-    ownsHouseRef.current = hasHouseOwnership || Boolean(hud.nearHasGamepassNft);
-  }, [hasHouseOwnership, hud.nearHasGamepassNft]);
-
-  useEffect(() => {
-    propertyPitchSeenRef.current = propertyPitchSeen;
-  }, [propertyPitchSeen]);
 
   // Floating pinpoint over the nearest Teleport Kiosk while a player who owns
   // no property has not met Hana's property pitch yet.
@@ -6114,6 +6079,7 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
           setMerchantLocation('lobby_cafe');
           setActiveSpecialModal('npc_merchant');
+          setPropertyPitchSeen(true);
           setHanaPitchOrigin('browse');
         }}
         onOpenPersonalWallet={() => {
@@ -6298,13 +6264,17 @@ export default function App() {
         }}
         onOpenHouseCatalog={() => {
           soundEngine.playUiClick();
+          setPendingPitchKioskStation(
+            activeTeleportKioskModal !== 'none' ? activeTeleportKioskModal : 'central_plaza',
+          );
+          setPropertyPitchSeen(true);
           setActiveTeleportKioskModal('none');
           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
           setIsKioskModalOpen(false);
           setIsSocialChatModalOpen(false);
           setMerchantLocation('lobby_cafe');
           setActiveSpecialModal('npc_merchant');
-          setHanaPitchOrigin('browse');
+          setHanaPitchOrigin('kiosk');
         }}
         onOpenShopAndExchange={() => {
           soundEngine.playUiClick();
