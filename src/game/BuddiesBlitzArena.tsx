@@ -18372,6 +18372,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
           : { x: playerUnit.x, y: activeTerrainY + 1.0, z: playerUnit.z };
 
+      // Camera anticipation: aim the follow spring slightly ahead of the player's
+      // velocity so the camera leads instead of chasing. A bare spring lags a
+      // moving target in proportion to its speed (simulated: ~0.6 units behind at
+      // walk pace, ~1.5 at a run, swinging wide through turns — the springy,
+      // dizzy feel when running). A 0.16s lead (capped at 1.4 units) cancels most
+      // of that lag; the spring's own constants are untouched, so the calm walk
+      // framing stays exactly as it was.
+      if (playerUnit && !mountedTank && state !== 'title' && currentPlayMode !== 'editor') {
+        const leadTime = 0.16;
+        let leadX = playerUnit.vx * leadTime;
+        let leadZ = playerUnit.vz * leadTime;
+        const leadLen = Math.hypot(leadX, leadZ);
+        const maxLead = 1.4;
+        if (leadLen > maxLead) {
+          leadX = (leadX / leadLen) * maxLead;
+          leadZ = (leadZ / leadLen) * maxLead;
+        }
+        focusTarget.x += leadX;
+        focusTarget.z += leadZ;
+      }
+
       // Toroidal-aware Camera Spring: unwrap focusTarget relative to camFollowPos so crossing ±80 never snaps!
       const unwrappedFocusTarget: Vec3 = {
         x: camFollowPos.x + getPlanetShortestDelta(focusTarget.x, camFollowPos.x),
