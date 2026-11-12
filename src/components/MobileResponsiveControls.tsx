@@ -257,9 +257,10 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
     !isModalBlocking &&
     (viewport.hasTouch || viewport.formFactor !== 'desktop' || viewport.width <= 1024 || Boolean(forceShowJoystick));
 
-  // On desktop (no touch layer), the round fishing button still appears while fishing.
-  const showDesktopFishing = isGameplayActive && !isModalBlocking && Boolean(canFish);
-  const showControlsLayer = showMobileJoystick || showDesktopFishing;
+  // The controls layer is on for all of gameplay: on desktop the round button
+  // (JUMP, or CAST near water) and the VIEW flip must exist even when the
+  // joystick pad itself is hidden and the player is far from water.
+  const showControlsLayer = isGameplayActive && !isModalBlocking;
 
   const isCompactLandscape = viewport.height <= 460;
 
@@ -334,7 +335,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           data-device-form-factor={viewport.formFactor}
           className="fixed inset-0 pointer-events-none z-[25] select-none overflow-hidden"
         >
-          {showMobileJoystick && (
+          {showControlsLayer && (
           <div
             className={`pointer-events-auto fixed ${
               isCompactLandscape
@@ -368,6 +369,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
             )}
 
             {/* Circular Semi-Transparent Joystick Touch Pad */}
+            {showMobileJoystick && (
             <div
               ref={joystickBaseRef}
               role="application"
@@ -426,6 +428,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 {isSprinting ? 'RUN' : 'MOVE'}
               </div>
             </div>
+            )}
           </div>
 
           )}
