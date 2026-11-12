@@ -22,12 +22,16 @@ import {
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
-import type { FishNftMarketSalesStats } from '../lib/supabaseClient';
+import type {
+  DbPropertyListingRow,
+  FishNftMarketSalesStats,
+} from '../lib/supabaseClient';
 import {
   Fish3dPreviewModal,
   Fish3dThumbnail,
   type Fish3dPreviewSpec,
 } from './Fish3dPreviewModal';
+import { Furniture3dThumbnail } from './Furniture3dThumbnail';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
@@ -63,6 +67,17 @@ interface NpcMerchantAndHouseModalProps {
   hasHouseOwnership?: boolean;
   onBuyHouseWithRespite?: (priceRespite: number) => Promise<boolean> | boolean | void;
   recruitedFamilyMembers?: RecruitedFamilyMemberAgent[];
+  propertyListings?: DbPropertyListingRow[];
+  busyPropertyListingId?: string | null;
+  onCreatePropertyListing?: (input: {
+    assetKind: 'house' | 'furniture';
+    assetId: string;
+    assetLabel: string;
+    priceRespite: number;
+  }) => Promise<boolean>;
+  onCancelPropertyListing?: (listingId: string) => Promise<void> | void;
+  onBuyPropertyListing?: (listing: DbPropertyListingRow) => Promise<boolean>;
+  onCompletePropertyTransfer?: (listing: DbPropertyListingRow) => Promise<boolean>;
   onRecruitFamilyMember?: (
     planId: FamilyMemberContractPlanId,
   ) => Promise<RecruitedFamilyMemberAgent | null> | RecruitedFamilyMemberAgent | null | void;
@@ -290,6 +305,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   hasHouseOwnership = false,
   onBuyHouseWithRespite,
   recruitedFamilyMembers = [],
+  propertyListings = [],
+  busyPropertyListingId = null,
+  onCreatePropertyListing,
+  onCancelPropertyListing,
+  onBuyPropertyListing,
+  onCompletePropertyTransfer,
   onRecruitFamilyMember,
   onCommandFamilyMember,
   ownedItemIds,
@@ -363,6 +384,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [swapErrorText, setSwapErrorText] = useState<string | null>(null);
   const [isBuyingCatalogAsset, setIsBuyingCatalogAsset] = useState<boolean>(false);
   const [catalogActionFeedback, setCatalogActionFeedback] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  const [hanaCatalogTab, setHanaCatalogTab] = useState<'house' | 'furniture' | 'market'>(
+    'house',
+  );
+  const [fishMarketTab, setFishMarketTab] = useState<'mine' | 'market'>('mine');
+  const [houseListPrice, setHouseListPrice] = useState('40');
+  const [furnitureListPrices, setFurnitureListPrices] = useState<Record<string, string>>({});
+  const [marketActionFeedback, setMarketActionFeedback] = useState<{
     ok: boolean;
     text: string;
   } | null>(null);
@@ -558,6 +589,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     soundEngine.playUiClick();
     setActiveTab('katalog');
     setHanaCatalogSlide('house');
+    setHanaCatalogTab('house');
     triggerNpcSpeech(
       'Here is the property catalog. The Private House Deed is listed first \u2014 once it is yours, the Teleport Kiosk takes you straight home.',
     );
@@ -2754,6 +2786,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const canAffordFamilyMember =
               walletConnected && respiteBalance >= selectedFamilyPlan.priceRespite;
             const isHouseSlide = hanaCatalogSlide === 'house';
+            const myPropertyListings = propertyListings.filter(
+              (l) =>
+                l.seller_account.toLowerCase() === playerNearAccount.toLowerCase() &&
+                (l.status === 'active' || l.status === 'paid'),
+            );
+            const myHouseListing =
+              myPropertyListings.find((l) => l.asset_kind === 'house') ?? null;
+            const listedFurnitureIds = new Set(
+              myPropertyListings
+                .filter((l) => l.asset_kind === 'furniture')
+                .map((l) => l.asset_id),
+            );
+            const boardListings = propertyListings.filter(
+              (l) => l.status === 'active' || l.status === 'paid',
+            );
+            const listableNftFurniture = MERCHANT_CATALOG_ITEMS.filter(
+              (item) => item.isNft && ownedItemIds.includes(item.id),
+            );
 
             return (
               <div className="space-y-2.5" data-catalog-house-and-family-panel="true">
@@ -2793,6 +2843,42 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </button>
                 </div>
 
+                {/* Catalog tabs: House | Furniture | Property Market */}
+                <div className="grid grid-cols-3 gap-1.5" data-hana-catalog-tabs="true">
+                  {(
+                    [
+                      { id: 'house', label: 'House' },
+                      { id: 'furniture', label: 'Furniture' },
+                      {
+                        id: 'market',
+                        label:
+                          boardListings.length > 0
+                            ? `Property Market (${boardListings.length})`
+                            : 'Property Market',
+                      },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      data-hana-catalog-tab={tab.id}
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setHanaCatalogTab(tab.id);
+                      }}
+                      className={`px-2 py-1.5 border-2 border-black text-[9.5px] font-black uppercase cursor-pointer ${
+                        hanaCatalogTab === tab.id
+                          ? 'bg-[#38bdf8] text-black shadow-[2px_2px_0px_#000]'
+                          : 'bg-[#1e293b] text-white/60 hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {hanaCatalogTab === 'house' && (
+                  <>
                 {/* Tactical Kiosk-Style Selectable Cards: [01] HOUSE & [02] FAMILY MEMBER */}
                 <div
                   className={`grid ${FAMILY_MEMBER_CATALOG_VISIBLE ? 'grid-cols-2' : 'grid-cols-1'} gap-2.5 ${
@@ -3217,6 +3303,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
                 )}
 
+                  </>
+                )}
+
+                {hanaCatalogTab === 'furniture' && (
+                <>
                 {/* House furniture & themes: the special catalog. CYON pieces are
                     regular game items; NFT pieces are minted on NEAR (NEP-245).
                     This is the purchase surface the house studio points to. */}
@@ -3261,6 +3352,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           className="p-2 bg-[#1e293b] border-2 border-black flex flex-col gap-1.5"
                           data-catalog-furniture-card={item.id}
                         >
+                          <Furniture3dThumbnail
+                            catalogId={item.id}
+                            name={item.name}
+                            iconEmoji={item.iconEmoji}
+                          />
                           <div className="flex items-start justify-between gap-1.5">
                             <span className="text-[10px] font-black uppercase leading-tight">
                               {item.name}
@@ -3321,6 +3417,374 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     })}
                   </div>
                 </div>
+                </>
+                )}
+
+                {hanaCatalogTab === 'market' && (
+                  <div
+                    className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
+                    data-property-market-panel="true"
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
+                        Property Marketplace
+                      </span>
+                      <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
+                        {respiteBalance.toLocaleString()} RESPITE
+                      </span>
+                    </div>
+                    <p className="text-[9.5px] font-bold text-slate-300 leading-snug">
+                      List your house deed or NFT furniture for RESPITE. The buyer pays
+                      on-chain first, then you transfer the asset — deed keys rotate to
+                      the new owner automatically.
+                    </p>
+
+                    {marketActionFeedback && (
+                      <div
+                        className={`p-2 border-2 border-black text-[10px] font-bold ${
+                          marketActionFeedback.ok
+                            ? 'bg-[#ecfdf5] text-[#065f46]'
+                            : 'bg-[#fef2f2] text-[#991b1b]'
+                        }`}
+                      >
+                        {marketActionFeedback.text}
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <div className="text-[9.5px] font-black uppercase text-[#38bdf8]">
+                        Sell yours
+                      </div>
+                      {!walletConnected ? (
+                        <p className="text-[9.5px] font-bold text-slate-400">
+                          Sign in to list or buy property.
+                        </p>
+                      ) : (
+                        <>
+                          {hasHouseOwnership && !myHouseListing && (
+                            <div
+                              className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2"
+                              data-property-list-house="true"
+                            >
+                              <img
+                                src="/assets/kiosk/private_house_isometric.jpg"
+                                alt="Private House"
+                                className="w-12 h-9 object-contain shrink-0"
+                                draggable={false}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] font-black uppercase">
+                                  Private House Deed
+                                </div>
+                                <div className="text-[8.5px] font-bold text-slate-400">
+                                  Your deed, at your price
+                                </div>
+                              </div>
+                              <input
+                                value={houseListPrice}
+                                onChange={(e) =>
+                                  setHouseListPrice(e.target.value.replace(/[^0-9]/g, ''))
+                                }
+                                inputMode="numeric"
+                                aria-label="House listing price in RESPITE"
+                                className="w-16 px-1.5 py-1 bg-black/50 border border-black text-[10px] font-black text-white text-right"
+                              />
+                              <button
+                                type="button"
+                                disabled={busyPropertyListingId !== null}
+                                onClick={async () => {
+                                  const price = parseInt(houseListPrice || '0', 10);
+                                  if (!Number.isFinite(price) || price < 1) {
+                                    setMarketActionFeedback({
+                                      ok: false,
+                                      text: 'Enter a listing price of at least 1 RESPITE.',
+                                    });
+                                    return;
+                                  }
+                                  const ok = await onCreatePropertyListing?.({
+                                    assetKind: 'house',
+                                    assetId: '',
+                                    assetLabel: 'Private House Deed',
+                                    priceRespite: price,
+                                  });
+                                  setMarketActionFeedback(
+                                    ok
+                                      ? {
+                                          ok: true,
+                                          text: `House listed for ${price} RESPITE.`,
+                                        }
+                                      : {
+                                          ok: false,
+                                          text: 'Could not list your house. Make sure your wallet is connected and the deed is yours.',
+                                        },
+                                  );
+                                  if (ok) {
+                                    triggerNpcSpeech(
+                                      'Your house is on the market. Buyers check the board here.',
+                                    );
+                                  }
+                                }}
+                                className="px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
+                              >
+                                List
+                              </button>
+                            </div>
+                          )}
+                          {hasHouseOwnership && myHouseListing && (
+                            <p className="text-[9.5px] font-bold text-[#b8ff3c]">
+                              {myHouseListing.status === 'paid'
+                                ? 'Your house is paid — transfer it from the board below.'
+                                : `Your house is listed for ${myHouseListing.price_respite} RESPITE.`}
+                            </p>
+                          )}
+                          {listableNftFurniture.map((item) => {
+                            const listed = listedFurnitureIds.has(item.id);
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2"
+                                data-property-list-furniture={item.id}
+                              >
+                                <div className="w-14 shrink-0">
+                                  <Furniture3dThumbnail
+                                    catalogId={item.id}
+                                    name={item.name}
+                                    iconEmoji={item.iconEmoji}
+                                    compact
+                                  />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[10px] font-black uppercase truncate">
+                                    {item.name}
+                                  </div>
+                                  <div className="text-[8.5px] font-bold text-slate-400">
+                                    NFT furniture (NEP-245)
+                                  </div>
+                                </div>
+                                {listed ? (
+                                  <span className="px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase">
+                                    Listed
+                                  </span>
+                                ) : (
+                                  <>
+                                    <input
+                                      value={furnitureListPrices[item.id] ?? '20'}
+                                      onChange={(e) =>
+                                        setFurnitureListPrices((prev) => ({
+                                          ...prev,
+                                          [item.id]: e.target.value.replace(/[^0-9]/g, ''),
+                                        }))
+                                      }
+                                      inputMode="numeric"
+                                      aria-label={`Listing price for ${item.name} in RESPITE`}
+                                      className="w-14 px-1.5 py-1 bg-black/50 border border-black text-[10px] font-black text-white text-right"
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={busyPropertyListingId !== null}
+                                      onClick={async () => {
+                                        const price = parseInt(
+                                          furnitureListPrices[item.id] || '0',
+                                          10,
+                                        );
+                                        if (!Number.isFinite(price) || price < 1) {
+                                          setMarketActionFeedback({
+                                            ok: false,
+                                            text: 'Enter a listing price of at least 1 RESPITE.',
+                                          });
+                                          return;
+                                        }
+                                        const ok = await onCreatePropertyListing?.({
+                                          assetKind: 'furniture',
+                                          assetId: item.id,
+                                          assetLabel: item.name,
+                                          priceRespite: price,
+                                        });
+                                        setMarketActionFeedback(
+                                          ok
+                                            ? {
+                                                ok: true,
+                                                text: `${item.name} listed for ${price} RESPITE.`,
+                                              }
+                                            : {
+                                                ok: false,
+                                                text: 'Could not create the listing. Try again.',
+                                              },
+                                        );
+                                      }}
+                                      className="px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
+                                    >
+                                      List
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {!hasHouseOwnership && listableNftFurniture.length === 0 && (
+                            <p className="text-[9.5px] font-bold text-slate-400">
+                              You own no house deed or NFT furniture yet — see the House
+                              and Furniture tabs first.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="text-[9.5px] font-black uppercase text-[#38bdf8]">
+                        Listings ({boardListings.length})
+                      </div>
+                      {boardListings.length === 0 ? (
+                        <p className="text-[9.5px] font-bold text-slate-400">
+                          No property listings yet. Be the first to list above.
+                        </p>
+                      ) : (
+                        boardListings.map((listing) => {
+                          const isMine =
+                            listing.seller_account.toLowerCase() ===
+                            playerNearAccount.toLowerCase();
+                          const isBusy = busyPropertyListingId === listing.id;
+                          const canBuy =
+                            walletConnected &&
+                            !isMine &&
+                            listing.status === 'active' &&
+                            busyPropertyListingId === null &&
+                            respiteBalance >= listing.price_respite;
+                          const isMyPurchase =
+                            (listing.buyer_account || '').toLowerCase() ===
+                            playerNearAccount.toLowerCase();
+                          return (
+                            <div
+                              key={listing.id}
+                              className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2"
+                              data-property-listing={listing.id}
+                            >
+                              {listing.asset_kind === 'house' ? (
+                                <img
+                                  src="/assets/kiosk/private_house_isometric.jpg"
+                                  alt={listing.asset_label}
+                                  className="w-14 h-11 object-contain shrink-0"
+                                  draggable={false}
+                                />
+                              ) : (
+                                <div className="w-14 shrink-0">
+                                  <Furniture3dThumbnail
+                                    catalogId={listing.asset_id}
+                                    name={listing.asset_label}
+                                    compact
+                                  />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] font-black uppercase truncate">
+                                    {listing.asset_label}
+                                  </span>
+                                  <span className="px-1 py-0.5 bg-black/50 text-[#b8ff3c] text-[8px] font-black uppercase">
+                                    {listing.asset_kind === 'house' ? 'Deed' : 'NFT'}
+                                  </span>
+                                  {listing.status === 'paid' && (
+                                    <span className="px-1 py-0.5 bg-[#facc15] text-black text-[8px] font-black uppercase">
+                                      Paid
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[8.5px] font-bold text-slate-400 truncate">
+                                  Seller: {listing.seller_name || listing.seller_account}
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-black text-[#d8b4fe] shrink-0">
+                                {listing.price_respite} R
+                              </span>
+                              {listing.status === 'paid' ? (
+                                isMine ? (
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={async () => {
+                                      const ok =
+                                        await onCompletePropertyTransfer?.(listing);
+                                      setMarketActionFeedback(
+                                        ok
+                                          ? {
+                                              ok: true,
+                                              text: `${listing.asset_label} transferred to the buyer. Sale complete.`,
+                                            }
+                                          : {
+                                              ok: false,
+                                              text: 'Transfer failed. The payment stays yours; try the transfer again.',
+                                            },
+                                      );
+                                      if (ok) {
+                                        triggerNpcSpeech(
+                                          'Transfer complete. A pleasure doing business.',
+                                        );
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300"
+                                  >
+                                    {isBusy ? '...' : 'Transfer'}
+                                  </button>
+                                ) : isMyPurchase ? (
+                                  <span className="text-[8.5px] font-black uppercase text-[#facc15]">
+                                    Awaiting transfer
+                                  </span>
+                                ) : (
+                                  <span className="text-[8.5px] font-black uppercase text-slate-400">
+                                    Sale pending
+                                  </span>
+                                )
+                              ) : isMine ? (
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={async () => {
+                                    await onCancelPropertyListing?.(listing.id);
+                                    setMarketActionFeedback({
+                                      ok: true,
+                                      text: 'Listing cancelled.',
+                                    });
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-500 hover:bg-slate-400 text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:cursor-not-allowed"
+                                >
+                                  Cancel
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!canBuy}
+                                  onClick={async () => {
+                                    const ok = await onBuyPropertyListing?.(listing);
+                                    setMarketActionFeedback(
+                                      ok
+                                        ? {
+                                            ok: true,
+                                            text: `Paid ${listing.price_respite} RESPITE. The seller transfers the asset next — watch this board.`,
+                                          }
+                                        : {
+                                            ok: false,
+                                            text: 'Payment failed or was rejected. Check your RESPITE balance and wallet.',
+                                          },
+                                    );
+                                    if (ok) {
+                                      triggerNpcSpeech(
+                                        'Payment received on-chain. The seller completes the transfer here.',
+                                      );
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
+                                >
+                                  {isBusy ? '...' : 'Buy'}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -3367,6 +3831,42 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </p>
               </div>
 
+              {/* Fish market tabs: My Fish (bucket + my listings) | Market (other players) */}
+              <div className="grid grid-cols-2 gap-1.5" data-fish-market-tabs="true">
+                <button
+                  type="button"
+                  data-fish-market-tab="mine"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setFishMarketTab('mine');
+                  }}
+                  className={`px-2 py-1.5 border-2 border-black text-[10px] font-black uppercase cursor-pointer ${
+                    fishMarketTab === 'mine'
+                      ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000]'
+                      : 'bg-[#1e293b] text-white/60 hover:text-white'
+                  }`}
+                >
+                  {`My Fish (${caughtFishBucket.length + fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()).length})`}
+                </button>
+                <button
+                  type="button"
+                  data-fish-market-tab="market"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setFishMarketTab('market');
+                  }}
+                  className={`px-2 py-1.5 border-2 border-black text-[10px] font-black uppercase cursor-pointer ${
+                    fishMarketTab === 'market'
+                      ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000]'
+                      : 'bg-[#1e293b] text-white/60 hover:text-white'
+                  }`}
+                >
+                  {`Market (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase()).length})`}
+                </button>
+              </div>
+
+              {fishMarketTab === 'mine' && (
+                <>
               {/* SECTION 1: YOUR FISH BUCKET (RAW CATCHES -> CYON OR MINT NFT -> RESPITE MARKETPLACE) */}
               <div
                 className={`p-3 bg-[#f8fafc] border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5 ${
@@ -3654,20 +4154,27 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
               )}
 
+                </>
+              )}
+
               {/* SECTION 2: KAI'S PLAYER MARKET (BOUGHT & SOLD USING RESPITE) */}
               <div className="p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5">
                 <div className="flex items-center justify-between border-b border-white/20 pb-1.5">
                   <span className="text-[11px] font-black uppercase text-[#d8b4fe]">
-                    PLAYER MARKET ({fishMarketListings.length})
+{fishMarketTab === 'mine'
+                      ? `MY LISTINGS (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()).length})`
+                      : `PLAYER MARKET (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase()).length})`}
                   </span>
                   <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-[#d8b4fe] text-black">
                     RESPITE
                   </span>
                 </div>
 
-                {fishMarketListings.length === 0 ? (
+                {(fishMarketTab === 'mine' ? fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()) : fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase())).length === 0 ? (
                   <div className="py-4 text-center text-[11px] font-bold text-slate-400">
-                    No Fish NFTs currently listed. Mint a caught fish above and list it for RESPITE.
+                    {fishMarketTab === 'mine'
+                      ? 'You have no Fish NFTs listed. Mint a caught fish above and list it for RESPITE.'
+                      : 'No Fish NFTs listed by other players yet.'}
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
@@ -3675,6 +4182,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       const isOwnListing =
                         listing.sellerNearAccount.toLowerCase() ===
                         playerNearAccount.toLowerCase();
+                      if ((fishMarketTab === 'mine') !== isOwnListing) return null;
                       const listingPriceRespite = Math.max(
                         1,
                         listing.priceRespite ||

@@ -120,6 +120,7 @@ import {
   fetchNpcMerchantsFromSupabase,
   fetchOrCreatePlayerProfile,
   fetchPlayerProfileByEmail,
+  fetchPropertyListingsFromSupabase,
   fetchRecentSocialMessages,
   insertSocialMessageToSupabase,
   logMarketTransactionToSupabase,
@@ -133,7 +134,9 @@ import {
   syncHouseInteriorToSupabase,
   syncNpcMerchantToSupabase,
   syncPlayerBalancesToSupabase,
+  upsertPropertyListingToSupabase,
   type DbMarketTransactionRow,
+  type DbPropertyListingRow,
   type FishNftMarketSalesStats,
 } from './lib/supabaseClient';
 import {
@@ -546,6 +549,51 @@ export default function App() {
     RecruitedFamilyMemberAgent[]
   >([]);
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([]);
+  const [propertyListings, setPropertyListings] = useState<DbPropertyListingRow[]>([]);
+  const [busyPropertyListingId, setBusyPropertyListingId] = useState<string | null>(null);
+
+  // Property marketplace board (Hana): rows live in Supabase; settlement is
+  // on-chain. The refresh also settles local ownership for assets this
+  // account bought once the seller's transfer lands (status -> 'sold').
+  const refreshPropertyListings = useCallback(async () => {
+    const rows = await fetchPropertyListingsFromSupabase();
+    setPropertyListings(rows);
+    const me = (hud.nearWalletId || '').toLowerCase();
+    if (!me) return;
+    let processed: string[] = [];
+    try {
+      processed = JSON.parse(localStorage.getItem('bb_property_received_v1') || '[]');
+    } catch {
+      processed = [];
+    }
+    const processedSet = new Set<string>(Array.isArray(processed) ? processed : []);
+    let changed = false;
+    for (const row of rows) {
+      if (row.status !== 'sold') continue;
+      if ((row.buyer_account || '').toLowerCase() !== me) continue;
+      if (processedSet.has(row.id)) continue;
+      processedSet.add(row.id);
+      changed = true;
+      if (row.asset_kind === 'house') {
+        setHasHouseOwnership(true);
+      } else {
+        setOwnedMerchantItemIds((prev) =>
+          prev.includes(row.asset_id) ? prev : [...prev, row.asset_id],
+        );
+      }
+    }
+    if (changed) {
+      try {
+        localStorage.setItem('bb_property_received_v1', JSON.stringify([...processedSet]));
+      } catch {
+        /* storage unavailable */
+      }
+    }
+  }, [hud.nearWalletId]);
+
+  useEffect(() => {
+    void refreshPropertyListings();
+  }, [refreshPropertyListings]);
   const [activeHouseThemeId, setActiveHouseThemeId] = useState<string>('theme_japanese_zen');
   const [interiorPlacement, setInteriorPlacement] = useState<HouseInteriorPlacementState>({
     center_table: null,
@@ -5570,6 +5618,130 @@ export default function App() {
           return true;
         }}
         recruitedFamilyMembers={recruitedFamilyMembers}
+        propertyListings={propertyListings}
+        busyPropertyListingId={busyPropertyListingId}
+        onCreatePropertyListing={async ({ assetKind, assetId, assetLabel, priceRespite }) => {
+          const seller = hud.nearWalletId || '';
+          if (!seller) return false;
+          const price = Math.floor(Number(priceRespite) || 0);
+          if (price < 1 || price > 100000) return false;
+          let resolvedAssetId = assetId;
+          let resolvedLabel = assetLabel;
+          if (assetKind === 'house') {
+            const estate = await fetchBuddiesMarketEstate(seller).catch(() => null);
+            const deedId = estate?.house_deed?.deed_token_id || '';
+            if (!deedId) return false;
+            resolvedAssetId = deedId;
+            resolvedLabel = 'Private House Deed';
+          }
+          const ok = await upsertPropertyListingToSupabase({
+            id: `prop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            seller_account: seller,
+            seller_name: playerDisplayName || null,
+            asset_kind: assetKind,
+            asset_id: resolvedAssetId,
+            asset_label: resolvedLabel,
+            price_respite: price,
+            status: 'active',
+            buyer_account: null,
+            payment_tx: null,
+          });
+          if (ok) await refreshPropertyListings();
+          return ok;
+        }}
+        onCancelPropertyListing={async (listingId) => {
+          const listing = propertyListings.find((l) => l.id === listingId);
+          if (!listing || listing.status !== 'active') return;
+          if (listing.seller_account.toLowerCase() !== (hud.nearWalletId || '').toLowerCase()) return;
+          const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
+          await upsertPropertyListingToSupabase({ ...rest, status: 'cancelled' });
+          await refreshPropertyListings();
+        }}
+        onBuyPropertyListing={async (listing) => {
+          const buyer = hud.nearWalletId || '';
+          if (!buyer || listing.status !== 'active') return false;
+          if (listing.seller_account.toLowerCase() === buyer.toLowerCase()) return false;
+          setBusyPropertyListingId(listing.id);
+          try {
+            const res = await executeMarketContractCallOnChain({
+              signerAccountId: buyer,
+              methodName: 'ft_transfer',
+              args: {
+                receiver_id: listing.seller_account,
+                amount: String(listing.price_respite),
+                memo: 'Buddies Blitz Property Market purchase',
+              },
+            });
+            if (!res.ok || !res.txHash) return false;
+            const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
+            const ok = await upsertPropertyListingToSupabase({
+              ...rest,
+              status: 'paid',
+              buyer_account: buyer,
+              payment_tx: res.txHash,
+            });
+            const liveBal = await fetchNep141Balance(
+              NEAR_CONFIG.nep141RespiteContractId,
+              buyer,
+            ).catch(() => null);
+            if (liveBal !== null) {
+              setRespiteBalance(Math.max(0, Number(liveBal) || 0));
+            } else {
+              setRespiteBalance((prev) => Math.max(0, prev - listing.price_respite));
+            }
+            await refreshPropertyListings();
+            return ok;
+          } finally {
+            setBusyPropertyListingId(null);
+          }
+        }}
+        onCompletePropertyTransfer={async (listing) => {
+          const seller = hud.nearWalletId || '';
+          if (!seller || listing.status !== 'paid' || !listing.buyer_account) return false;
+          if (listing.seller_account.toLowerCase() !== seller.toLowerCase()) return false;
+          setBusyPropertyListingId(listing.id);
+          try {
+            let res;
+            if (listing.asset_kind === 'house') {
+              res = await executeMarketContractCallOnChain({
+                signerAccountId: seller,
+                methodName: 'nft_transfer',
+                args: {
+                  receiver_id: listing.buyer_account,
+                  token_id: listing.asset_id,
+                  approval_id: null,
+                  memo: 'Buddies Blitz Property Market deed sale',
+                },
+              });
+            } else {
+              const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id);
+              if (!item?.tokenId) return false;
+              res = await executeMarketContractCallOnChain({
+                signerAccountId: seller,
+                methodName: 'mt_transfer',
+                args: {
+                  receiver_id: listing.buyer_account,
+                  token_id: item.tokenId,
+                  amount: '1',
+                  approval: null,
+                  memo: 'Buddies Blitz Property Market furniture sale',
+                },
+              });
+            }
+            if (!res.ok) return false;
+            const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
+            await upsertPropertyListingToSupabase({ ...rest, status: 'sold' });
+            if (listing.asset_kind === 'house') {
+              setHasHouseOwnership(false);
+            } else {
+              setOwnedMerchantItemIds((prev) => prev.filter((id) => id !== listing.asset_id));
+            }
+            await refreshPropertyListings();
+            return true;
+          } finally {
+            setBusyPropertyListingId(null);
+          }
+        }}
         onRecruitFamilyMember={async (planId) => {
           const plan =
             FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === planId) ||

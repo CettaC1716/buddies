@@ -1660,3 +1660,57 @@ export function subscribeToWorldMultiplayer(handlers: {
   }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Property marketplace (Hana): player listings for house deeds and    */
+/* NFT furniture. The board lives in Supabase; settlement is on-chain   */
+/* (RESPITE ft_transfer, then nft_transfer / mt_transfer by seller).   */
+/* ------------------------------------------------------------------ */
+
+export interface DbPropertyListingRow {
+  id: string;
+  seller_account: string;
+  seller_name: string | null;
+  asset_kind: 'house' | 'furniture';
+  asset_id: string;
+  asset_label: string;
+  price_respite: number;
+  status: 'active' | 'paid' | 'sold' | 'cancelled';
+  buyer_account: string | null;
+  payment_tx: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchPropertyListingsFromSupabase(): Promise<DbPropertyListingRow[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('bb_property_listings')
+      .select('*')
+      .in('status', ['active', 'paid', 'sold'])
+      .order('created_at', { ascending: false })
+      .limit(80);
+    if (error || !data) return [];
+    return data as DbPropertyListingRow[];
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertPropertyListingToSupabase(
+  row: Omit<DbPropertyListingRow, 'created_at' | 'updated_at'>,
+): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('bb_property_listings')
+      .upsert(
+        { ...row, updated_at: new Date().toISOString() },
+        { onConflict: 'id' },
+      );
+    return !error;
+  } catch {
+    return false;
+  }
+}
