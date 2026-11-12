@@ -7276,6 +7276,7 @@ export interface BuddyCharacterRig {
     rodBend: number;
     reelAngle: number;
     castPower: number;
+    castProgress: number;
   };
   bodyGroupRef?: THREE.Group;
   teamRef?: 'blue' | 'red';
@@ -11310,7 +11311,39 @@ export function updateCharacterWeaponStance(
             )
             .normalize();
           _rodTargetDir.lerp(_rodFightAimDir, 0.85).normalize();
-        } else if (fp.phase === 'casting' || fp.phase === 'nibble') {
+        } else if (fp.phase === 'casting') {
+          // Cast whip, driven by the SAME clock as the 3D bobber flight (0.16s backswing windup,
+          // then 0.48 + castPower * 0.24s of flight): the rod tip rises up-and-back during the
+          // windup, whips forward-down at release, then settles to the waiting angle as the
+          // bobber lands. Before this, 'casting' shared the static nibble aim, so the rod stayed
+          // pinned forward while the cast clip swung the arms — reading as a twisted throw.
+          const totalSec = 0.16 + 0.48 + fp.castPower * 0.24;
+          const windupFrac = 0.16 / totalSec;
+          const cp = Math.max(0, Math.min(1, fp.castProgress ?? 1));
+          let aimY: number;
+          let aimZ: number;
+          if (cp < windupFrac) {
+            const t = cp / Math.max(0.0001, windupFrac);
+            const e = 1 - Math.pow(1 - t, 3);
+            aimY = 0.68 + (0.97 - 0.68) * e;
+            aimZ = 0.73 + (0.2 - 0.73) * e;
+          } else {
+            const f = (cp - windupFrac) / Math.max(0.0001, 1 - windupFrac);
+            if (f < 0.32) {
+              const t = f / 0.32;
+              const e = 1 - Math.pow(1 - t, 3);
+              aimY = 0.97 + (0.16 - 0.97) * e;
+              aimZ = 0.2 + (0.985 - 0.2) * e;
+            } else {
+              const t = (f - 0.32) / 0.68;
+              const e = t * t * (3 - 2 * t);
+              aimY = 0.16 + (0.56 - 0.16) * e;
+              aimZ = 0.985 + (0.83 - 0.985) * e;
+            }
+          }
+          _rodFightAimDir.set(0, aimY, aimZ).normalize();
+          _rodTargetDir.lerp(_rodFightAimDir, 0.9).normalize();
+        } else if (fp.phase === 'nibble') {
           _rodFightAimDir.set(0, 0.56, 0.83).normalize();
           _rodTargetDir.lerp(_rodFightAimDir, 0.65).normalize();
         }

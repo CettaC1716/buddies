@@ -16874,6 +16874,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 rodBend: shorelineFishingSync.rodBend,
                 reelAngle: shorelineFishingSync.reelAngle,
                 castPower: shorelineFishingSync.castPower,
+                castProgress:
+                  shorelineFishingSync.phase === 'casting'
+                    ? Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          (performance.now() - shorelineFishingSync.castStartWallMs) /
+                            1000 /
+                            (0.16 + 0.48 + shorelineFishingSync.castPower * 0.24),
+                        ),
+                      )
+                    : 1,
               };
               if (
                 !isMoving &&
@@ -19408,6 +19420,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             rodBend: peer.rodBend,
             reelAngle: peer.isReeling ? timeSec * 9.0 : 0,
             castPower: 0.72,
+            castProgress: 1,
           };
 
           if (distToPeer <= 52.0) {
