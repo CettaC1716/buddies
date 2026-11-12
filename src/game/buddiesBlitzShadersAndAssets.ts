@@ -4194,12 +4194,17 @@ export async function loadAllRealBlitzAssets(
       })(),
     );
   const sleepingClipPromise = loadSleepingIdleClip();
+  sleepingClipPromise
+    .then((c) => {
+      loadedSleepingClip = c;
+    })
+    .catch(() => {});
 
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4355,6 +4360,10 @@ export async function loadAllRealBlitzAssets(
 }
 
 let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
+// Set the moment the sleeping FBX parse finishes, independently of the full asset
+// batch: character rigs are built early (onCharacterGltfReady) and their clip maps
+// must already see the sleeping clip at build time.
+let loadedSleepingClip: THREE.AnimationClip | null = null;
 let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
@@ -9795,7 +9804,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   }
   // Merge the separately loaded sleeping clip (FBX take), dropping any track whose
   // target bone does not exist on this character, same as the baked clips above.
-  const sleepingClipSrc = cachedLoadedBlitzAssets?.sleepingClip;
+  const sleepingClipSrc = loadedSleepingClip ?? cachedLoadedBlitzAssets?.sleepingClip;
   if (sleepingClipSrc && !clips.has('sleeping.001')) {
     const c = sleepingClipSrc.clone();
     c.tracks = c.tracks.filter((track) => {
