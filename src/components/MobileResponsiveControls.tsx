@@ -257,6 +257,10 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
     !isModalBlocking &&
     (viewport.hasTouch || viewport.formFactor !== 'desktop' || viewport.width <= 1024 || Boolean(forceShowJoystick));
 
+  // On desktop (no touch layer), the round fishing button still appears while fishing.
+  const showDesktopFishing = isGameplayActive && !isModalBlocking && Boolean(canFish);
+  const showControlsLayer = showMobileJoystick || showDesktopFishing;
+
   const isCompactLandscape = viewport.height <= 460;
 
   return (
@@ -323,14 +327,14 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           2. MOBILE & TABLET VIRTUAL MOVEMENT JOYSTICK (BOTTOM-LEFT, RAISED ABOVE CHAT BAR)
              + SEMI-TRANSPARENT TOUCH QUICK-ACTION BUTTONS (BOTTOM-RIGHT)
          ===================================================================== */}
-      {showMobileJoystick && (
+      {showControlsLayer && (
         <div
           aria-label="Mobile & Tablet Touch Controls"
           data-mobile-controls-layer="true"
           data-device-form-factor={viewport.formFactor}
           className="fixed inset-0 pointer-events-none z-[25] select-none overflow-hidden"
         >
-          {/* BOTTOM-LEFT (RAISED ABOVE CHAT INPUT BAR): Semi-Transparent 360° Analog Virtual Movement Joystick */}
+          {showMobileJoystick && (
           <div
             className={`pointer-events-auto fixed ${
               isCompactLandscape
@@ -424,6 +428,8 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
             </div>
           </div>
 
+          )}
+
           {/* BOTTOM-RIGHT: Semi-Transparent Mobile Touch Action Buttons (Jump & Contextual Interact) */}
           <div
             className={`pointer-events-auto fixed ${
@@ -432,7 +438,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 : 'bottom-[74px] right-4 sm:bottom-20 sm:right-6'
             } flex flex-col items-end gap-2 touch-none`}
           >
-            {primaryContextualAction && (
+            {primaryContextualAction && showMobileJoystick && (
               <button
                 type="button"
                 data-mobile-interact-btn="true"
@@ -481,13 +487,13 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 onClick={() => onFishingTriggerAction?.()}
                 aria-label="Fishing action"
                 className={`${
-                  isCompactLandscape ? 'w-11 h-11' : 'w-13 h-13'
+                  isCompactLandscape ? 'w-14 h-14' : 'w-16 h-16'
                 } rounded-full active:scale-90 text-white border-2 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all ${
                   fishingPhase === 'bite'
-                    ? 'bg-[#f59e0b]/70 border-white/85 animate-pulse text-[9px]'
+                    ? 'bg-[#f59e0b]/70 border-white/85 animate-pulse text-[10px]'
                     : fishingPhase === 'fighting'
-                      ? 'bg-[#5fe3d4]/45 hover:bg-[#5fe3d4]/65 border-white/55 text-[9.5px]'
-                      : 'bg-[#38bdf8]/55 hover:bg-[#38bdf8]/75 border-white/70 text-[10px]'
+                      ? 'bg-[#5fe3d4]/45 hover:bg-[#5fe3d4]/65 border-white/55 text-[10.5px]'
+                      : 'bg-[#38bdf8]/55 hover:bg-[#38bdf8]/75 border-white/70 text-[11px]'
                 }`}
               >
                 {fishingPhase === 'fighting'
@@ -515,7 +521,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 }}
                 aria-label="Jump"
                 className={`${
-                  isCompactLandscape ? 'w-11 h-11 text-[9.5px]' : 'w-13 h-13 text-[10.5px]'
+                  isCompactLandscape ? 'w-14 h-14 text-[10.5px]' : 'w-16 h-16 text-[11.5px]'
                 } rounded-full bg-[#38bdf8]/40 hover:bg-[#38bdf8]/65 active:scale-90 text-white border-2 border-white/55 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all`}
               >
                 JUMP

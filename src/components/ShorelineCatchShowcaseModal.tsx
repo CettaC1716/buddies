@@ -856,14 +856,9 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
   fishingCastPower,
   fishingHintMessage,
   fishingMinigame,
-  isHoldingReel,
-  caughtFishBucketCount,
   lastCaughtFishToast,
-  onStartChargeCast,
-  onReleaseChargeCast,
   onTriggerFishingAction,
   onSetHoldingReel,
-  onCancelCast,
   onKeepCaughtFish,
   onReleaseCaughtFish,
 }) => {
@@ -1029,93 +1024,8 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
           </div>
         )}
 
-                {/* Unified Dark Glassmorphic Fishing Action Pill Bar */}
-        {nearbyWaterZone.canFish && (
-          <div
-            style={{
-              background: 'rgba(38, 32, 28, 0.88)',
-              backdropFilter: 'blur(8px)',
-              border: '1.5px solid rgba(255, 255, 255, 0.75)',
-              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.45)',
-            }}
-            className="inline-flex items-center h-[42px] min-w-[210px] max-w-[340px] rounded-full px-1.5 text-white cursor-pointer hover:brightness-110 transition-all select-none gap-1"
-          >
-            {/* Fishing rod icon badge */}
-            <div className="w-[34px] h-[34px] rounded-full bg-white/14 border-[1.5px] border-white/85 flex items-center justify-center overflow-hidden shrink-0 text-[9.5px] font-black tracking-wider text-[#b8ff3c]">
-              ROD
-            </div>
+        {/* Fishing action lives on the round button (CAST / STRIKE / REEL) and the [F] / Space keys - no pill bar */}
 
-            {/* Dynamic Fishing Action Label / Button */}
-            <button
-              type="button"
-              data-cast-fishing-rod-btn="true"
-              disabled={
-                fishingPhase === 'casting' ||
-                (fishingPhase === 'idle' && caughtFishBucketCount >= 20)
-              }
-              onPointerDown={() => {
-                if (fishingPhase === 'fighting') {
-                  onSetHoldingReel(true);
-                } else if (fishingPhase === 'idle' && caughtFishBucketCount < 20) {
-                  onStartChargeCast();
-                }
-              }}
-              onPointerUp={() => {
-                if (fishingPhase === 'fighting') {
-                  onSetHoldingReel(false);
-                } else if (fishingPhase === 'charging') {
-                  onReleaseChargeCast();
-                }
-              }}
-              onPointerLeave={() => {
-                if (fishingPhase === 'fighting') {
-                  onSetHoldingReel(false);
-                }
-              }}
-              onPointerCancel={() => {
-                if (fishingPhase === 'fighting') {
-                  onSetHoldingReel(false);
-                }
-              }}
-              onClick={onTriggerFishingAction}
-              className="flex-1 text-center font-mono font-bold text-[14px] text-white tracking-wide px-2 uppercase truncate bg-transparent border-0 cursor-pointer outline-none focus:outline-none"
-            >
-              {fishingPhase === 'fighting'
-                ? isHoldingReel
-                  ? 'REELING...'
-                  : 'HOLD CLICK / [F]'
-                : fishingPhase === 'bite'
-                  ? 'STRIKE! [F]'
-                  : fishingPhase === 'charging'
-                    ? `${Math.round(fishingCastPower * 100)}%`
-                    : fishingPhase === 'casting' || fishingPhase === 'nibble'
-                      ? 'WAITING...'
-                      : caughtFishBucketCount >= 20
-                        ? 'COOLER FULL'
-                        : 'CAST [F]'}
-            </button>
-
-            {/* Cancel or Chevron Button */}
-            {(fishingPhase === 'casting' || fishingPhase === 'nibble') && onCancelCast ? (
-              <button
-                type="button"
-                onClick={onCancelCast}
-                className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold text-white/90 hover:text-white bg-white/15 hover:bg-white/25 transition-colors cursor-pointer shrink-0 border-0 uppercase"
-              >
-                CANCEL
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onTriggerFishingAction}
-                title="Action"
-                className="w-6 h-6 flex items-center justify-center text-white/90 hover:text-white font-black text-base shrink-0 border-0 bg-transparent cursor-pointer"
-              >
-                &gt;
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Fishing gauge stack - vertical capsule docked on the right, above the round action button */}
