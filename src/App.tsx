@@ -19,7 +19,6 @@ import {
   HudSnapshot,
 } from './game/BuddiesBlitzArena';
 import {
-  BUDDIES_CONSTANTS,
   LIGHTING_PRESETS,
   LightingPresetKey,
   evaluateCommandCenterRadarSpec,
@@ -1228,37 +1227,10 @@ export default function App() {
     };
   }, [handleRequestWorldModeChange]);
 
-  const hexContainerRef = useRef<HTMLDivElement | null>(null);
-  const [hexRect, setHexRect] = useState<{ left: number; top: number; width: number; height: number }>({
-    left: 720,
-    top: 140,
-    width: 480,
-    height: 462,
-  });
-
   useEffect(() => {
     document.body.dataset.state = gameState;
     document.body.dataset.mode = playMode;
   }, [gameState, playMode]);
-
-  const syncHexBounds = useCallback(() => {
-    if (!hexContainerRef.current) return;
-    const r = hexContainerRef.current.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) {
-      setHexRect({
-        left: r.left,
-        top: r.top,
-        width: r.width,
-        height: r.height,
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    syncHexBounds();
-    window.addEventListener('resize', syncHexBounds);
-    return () => window.removeEventListener('resize', syncHexBounds);
-  }, [syncHexBounds, gameState]);
 
   const dispatchBuddyAction = useCallback((actionName: string) => {
     window.dispatchEvent(new CustomEvent('buddy-action', { detail: actionName }));
@@ -3383,8 +3355,6 @@ export default function App() {
   ]);
 
   const currentPresetConfig = LIGHTING_PRESETS[lightingPreset];
-  const scaleX = hexRect.width / 500;
-  const scaleY = hexRect.height / 482;
   const isFullMapOverview =
     typeof window !== 'undefined' &&
     (new URLSearchParams(window.location.search).get('fullmap') === '1' ||
@@ -3490,175 +3460,81 @@ export default function App() {
       />
 
       {/* =====================================================================
-          2. TITLE SCREEN: HEXAGON CUTOUT & COMIC STICKER LOCKUP
+          2. LANDING PAGE: bright Pudgy-style front door over the live world.
+             One PLAY NOW (or LOG IN) press hands over to the START GAME card.
          ===================================================================== */}
       {isPreloadComplete && gameState === 'title' && (
         <section
-          aria-label="BLITZ Portfolio Title Screen"
-          className="fixed inset-0 z-20 flex flex-col justify-between pointer-events-none"
+          aria-label="Buddies Blitz Landing"
+          className="fixed inset-0 z-20 flex flex-col pointer-events-none"
         >
-          <svg
-            className="fixed inset-0 w-full h-full pointer-events-none"
-            width="100%"
-            height="100%"
-            preserveAspectRatio="none"
-          >
-            <defs>
-              <mask
-                id="intro-mask-cutout"
-                maskUnits="userSpaceOnUse"
-                x="0"
-                y="0"
-                width="100%"
-                height="100%"
-              >
-                <rect width="100%" height="100%" fill="white" />
-                <g
-                  transform={`translate(${hexRect.left}, ${hexRect.top}) scale(${scaleX}, ${scaleY})`}
-                >
-                  <path d={BUDDIES_CONSTANTS.introHexagonSvgPath} fill="black" />
-                </g>
-              </mask>
-              <linearGradient id="intro-overlay-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#0b0c12" stopOpacity="0.94" />
-                <stop offset="52%" stopColor="#11121a" stopOpacity="0.86" />
-                <stop offset="100%" stopColor="#11121a" stopOpacity="0.72" />
-              </linearGradient>
-            </defs>
-            <rect
-              width="100%"
-              height="100%"
-              fill="url(#intro-overlay-gradient)"
-              mask="url(#intro-mask-cutout)"
-            />
-          </svg>
+          {/* Bright sky wash over the live 3D world */}
+          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/60 via-sky-200/25 to-transparent" />
 
-          <div className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-12 items-center px-6 sm:px-12 lg:px-16 pt-8 pb-4 gap-6">
-            <div className="lg:col-span-6 flex flex-col items-start justify-end lg:justify-center space-y-5 pointer-events-auto">
-              <svg
-                viewBox="0 0 560 225"
-                className="w-full max-w-[510px] drop-shadow-[6px_8px_0px_#11121a]"
-                role="img"
-                aria-label="BUDDIES BLITZ"
-              >
-                <g transform="rotate(-3 260 85)">
-                  <rect
-                    x="10"
-                    y="12"
-                    width="485"
-                    height="108"
-                    rx="18"
-                    fill="#ffffff"
-                    stroke="#11121a"
-                    strokeWidth="8"
-                  />
-                  <text
-                    x="28"
-                    y="94"
-                    fontFamily="'Barlow', sans-serif"
-                    fontWeight="900"
-                    fontStyle="italic"
-                    fontSize="88"
-                    letterSpacing="2"
-                    fill="#ffffff"
-                    stroke="#11121a"
-                    strokeWidth="16"
-                    paintOrder="stroke fill"
-                  >
-                    BUDDIES
-                  </text>
-                </g>
+          {/* Top banner */}
+          <div className="relative z-10 bg-[#60a5fa] text-white text-center font-black uppercase tracking-[0.18em] text-[10px] sm:text-xs py-2 px-3 border-b-2 border-black/60">
+            Free to Play · No Download · A Social World on NEAR Testnet
+          </div>
 
-                <g transform="translate(24, 108) rotate(-1.5 220 45)">
-                  <rect
-                    x="0"
-                    y="0"
-                    width="430"
-                    height="84"
-                    rx="14"
-                    fill="#b4ff39"
-                    stroke="#ffffff"
-                    strokeWidth="10"
-                  />
-                  <rect
-                    x="4"
-                    y="4"
-                    width="422"
-                    height="76"
-                    rx="11"
-                    fill="#b4ff39"
-                    stroke="#11121a"
-                    strokeWidth="6"
-                  />
-                  <text
-                    x="32"
-                    y="61"
-                    fontFamily="'Barlow', sans-serif"
-                    fontWeight="900"
-                    fontSize="58"
-                    letterSpacing="5"
-                    fill="#11121a"
-                  >
-                    BLITZ 3D
-                  </text>
-                </g>
-              </svg>
+          {/* Header row: wordmark chip + sound + log in */}
+          <div className="relative z-10 flex items-start justify-between px-4 sm:px-8 pt-4">
+            <div className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
+              <span className="skew-x-6 inline-block">Buddies Blitz</span>
             </div>
-
-            <div className="lg:col-span-6 flex items-center justify-center">
-              <div
-                ref={hexContainerRef}
-                className="relative w-[330px] h-[318px] sm:w-[440px] sm:h-[424px] lg:w-[485px] lg:h-[468px] pointer-events-none"
+            <div className="flex items-center gap-2 pointer-events-auto">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  handleToggleAudio();
+                }}
+                aria-label={isMuted ? 'Sound Muted' : 'Sound Active'}
+                className="px-3 py-2 bg-white hover:bg-[#fec83e] text-[#11121a] font-black text-[10px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
               >
-                <svg
-                  width="100%"
-                  height="100%"
-                  viewBox="0 0 500 482"
-                  fill="none"
-                  className="absolute inset-0 w-full h-full"
-                >
-                  <path
-                    d={BUDDIES_CONSTANTS.introHexagonSvgPath}
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.55)"
-                    strokeWidth="3.5"
-                  />
-                  <path
-                    d={BUDDIES_CONSTANTS.introHexagonSvgPath}
-                    fill="none"
-                    stroke="#11121a"
-                    strokeWidth="2"
-                    strokeDasharray="10 6"
-                  />
-                </svg>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    handleToggleAudio();
-                  }}
-                  aria-label={isMuted ? 'Sound Muted' : 'Sound Active'}
-                  className="pointer-events-auto absolute top-3 right-6 w-14 h-14 flex items-center justify-center bg-white hover:bg-[#fec83e] text-[#11121a] font-black text-xs border-4 border-[#11121a] ring-2 ring-white rounded-2xl rotate-6 comic-sticker-shadow transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-                >
-                  {isMuted ? 'MUTE' : 'SOUND'}
-                </button>
-
-                <button
-                  type="button"
-                  data-start="true"
-                  onClick={() => handleStartGame(false)}
-                  aria-label="LET'S GO"
-                  className="pointer-events-auto absolute -bottom-3 left-1/2 -translate-x-1/2 -rotate-3 hover:-rotate-6 hover:scale-108 active:scale-95 px-9 py-4 bg-[#b4ff39] hover:bg-[#c7ff72] text-[#11121a] font-black text-2xl sm:text-3xl tracking-wider rounded-2xl border-4 border-[#11121a] ring-4 ring-white comic-sticker-shadow-lg transition-all duration-150 cursor-pointer whitespace-nowrap"
-                >
-                  LET&apos;S GO
-                </button>
-              </div>
+                {isMuted ? 'Muted' : 'Sound'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStartGame(false)}
+                className="px-4 py-2 bg-[#4285f4] hover:bg-[#5b96f7] text-white font-black text-[11px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                Log In
+              </button>
             </div>
           </div>
 
-          <div className="relative z-10 pb-5 px-6 text-center text-xs sm:text-sm font-bold tracking-wide text-[#dfdfe2]/85">
-            WASD Run &nbsp;·&nbsp; [E] Grab/Throw Crate &nbsp;·&nbsp; [Q] Ghost Pad Pattern &nbsp;·&nbsp; [F] Craft &nbsp;·&nbsp; [V] AI Binoculars
+          {/* Center: logo, feature chips, PLAY NOW */}
+          <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 pb-2">
+            <img
+              src="/assets/logo-buddies-blitz.png"
+              alt="Buddies Blitz"
+              draggable={false}
+              className="w-[min(520px,82vw)] drop-shadow-[0_10px_24px_rgba(2,32,71,0.45)] animate-bounce [animation-duration:2.8s]"
+            />
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+              {['AI Merchants', 'Fish NFTs', 'Your Own House', '10v10 Warzone'].map((chip) => (
+                <span
+                  key={chip}
+                  className="px-2 py-0.5 bg-white/90 text-black border-2 border-black text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0_#000]"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+            <button
+              type="button"
+              data-start="true"
+              onClick={() => handleStartGame(false)}
+              aria-label="Play Now"
+              className="pointer-events-auto mt-5 -rotate-2 hover:-rotate-3 hover:scale-105 active:scale-95 px-10 py-4 bg-[#b4ff39] hover:bg-[#c7ff72] text-[#11121a] font-black text-2xl sm:text-3xl tracking-wider rounded-full border-4 border-[#11121a] ring-4 ring-white shadow-[6px_6px_0_#000] transition-all duration-150 cursor-pointer whitespace-nowrap"
+            >
+              PLAY NOW
+            </button>
+          </div>
+
+          <div className="relative z-10 pb-5 px-6 text-center text-xs sm:text-sm font-bold tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
+            WASD Run &nbsp;·&nbsp; [E] Talk / Interact &nbsp;·&nbsp; [F] Fishing &nbsp;·&nbsp;
+            Chat with Kai &amp; Hana to trade
           </div>
         </section>
       )}
