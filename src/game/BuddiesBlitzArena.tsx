@@ -4354,6 +4354,57 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
 
+    // Floating pinpoint over the nearest Teleport Kiosk, shown while a player
+    // who owns no property has not met Hana's property pitch yet. This is the
+    // floating explainer marker for the property-discovery tutorial beat.
+    let propertyPinpointActive = false;
+    const propertyPinpointGroup = new THREE.Group();
+    propertyPinpointGroup.name = 'PropertyDiscoveryPinpoint3D';
+    propertyPinpointGroup.visible = false;
+    scene.add(propertyPinpointGroup);
+    const propertyPinMat = new THREE.MeshBasicMaterial({ color: '#b8ff3c', fog: false });
+    const propertyPinHead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.34, 20, 16),
+      propertyPinMat,
+    );
+    propertyPinHead.position.y = 0.55;
+    const propertyPinTipGeo = new THREE.ConeGeometry(0.24, 0.62, 20);
+    propertyPinTipGeo.rotateX(Math.PI);
+    const propertyPinTip = new THREE.Mesh(propertyPinTipGeo, propertyPinMat);
+    propertyPinTip.position.y = 0.12;
+    const propertyPinDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 14, 12),
+      new THREE.MeshBasicMaterial({ color: '#0d0f12', fog: false }),
+    );
+    propertyPinDot.position.y = 0.55;
+    const propertyPinRingGeo = new THREE.RingGeometry(0.5, 0.72, 32);
+    propertyPinRingGeo.rotateX(-Math.PI / 2);
+    const propertyPinRingMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    const propertyPinRing = new THREE.Mesh(propertyPinRingGeo, propertyPinRingMat);
+    propertyPinRing.position.y = -0.28;
+    propertyPinRing.renderOrder = 18;
+    propertyPinpointGroup.add(
+      propertyPinHead,
+      propertyPinTip,
+      propertyPinDot,
+      propertyPinRing,
+    );
+    const onSetPropertyPinpoint = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ active?: boolean }>).detail;
+      propertyPinpointActive = Boolean(detail?.active);
+      if (!propertyPinpointActive) {
+        propertyPinpointGroup.visible = false;
+      }
+    };
+    window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
+
     // Vehicles were proportioned while the fog-of-war bug shrank characters to
     // 1/1.16 of their authored size. Characters are back at full size, so vehicle
     // bodies scale by the same 1.16 to restore the original proportion. Rider
@@ -18728,6 +18779,45 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           hasActiveEvent && worldModeRef.current !== 'warzone';
         beachHouseNpc.exclamationGroup.visible = false;
 
+        // Animate the floating property pinpoint (bob + slow spin + pulsing
+        // ring) above whichever Teleport Kiosk is nearest to the player.
+        if (
+          propertyPinpointActive &&
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          playerUnit &&
+          playerUnit.alive
+        ) {
+          const pinStation = evaluateNearestCityTransitKioskProximity(
+            playerUnit.x,
+            playerUnit.z,
+            worldModeRef.current === 'lobby' ? 'lobby' : 'safezone',
+            9999,
+          );
+          let pinX = pinStation.kioskX;
+          let pinY =
+            getTerrainElevation(pinStation.kioskX, pinStation.kioskZ) + pinStation.kioskY;
+          let pinZ = pinStation.kioskZ;
+          const pinKioskMesh = getCityTransitKioskMeshById(pinStation.id);
+          if (pinKioskMesh) {
+            pinKioskMesh.getWorldPosition(scratchLiveObjPos);
+            pinX = scratchLiveObjPos.x;
+            pinY = scratchLiveObjPos.y;
+            pinZ = scratchLiveObjPos.z;
+          }
+          propertyPinpointGroup.visible = true;
+          propertyPinpointGroup.position.set(
+            pinX,
+            pinY + 4.35 + Math.sin(timeSec * 2.6) * 0.18,
+            pinZ,
+          );
+          propertyPinpointGroup.rotation.y = timeSec * 0.9;
+          propertyPinRing.scale.setScalar(1 + Math.sin(timeSec * 4.5) * 0.15);
+          propertyPinRingMat.opacity = 0.55 + Math.sin(timeSec * 4.5) * 0.25;
+        } else if (propertyPinpointGroup.visible) {
+          propertyPinpointGroup.visible = false;
+        }
+
         // Update 3D Guided Tutorial Waypoint Chevron Path (`hana` or `kiosk`)
         if (
           activeTutorialWaypointTarget !== 'none' &&
@@ -22452,6 +22542,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('shoreline-fishing-sync', onShorelineFishingSync);
       window.removeEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
       window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
+      window.removeEventListener('set-property-pinpoint', onSetPropertyPinpoint);
       scene.remove(tutorialWaypointGroup);
       tutorialChevronGeo.dispose();
       tutorialDestRingGeo.dispose();

@@ -108,6 +108,9 @@ interface NpcMerchantAndHouseModalProps {
     error?: string;
   }>;
   onFinishHanaTutorialAndGuideKiosk?: () => void;
+  hanaPitchOrigin?: 'kiosk' | 'browse' | null;
+  onViewModelHouse?: () => void;
+  onOpenTeleportKioskFromPitch?: () => void;
 }
 
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
@@ -158,6 +161,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   hanaWelcomeNearClaimed = false,
   onClaimHanaWelcomeNear,
   onFinishHanaTutorialAndGuideKiosk,
+  hanaPitchOrigin = null,
+  onViewModelHouse,
+  onOpenTeleportKioskFromPitch,
 }) => {
   const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market'>(
     'sesi_chat',
@@ -278,7 +284,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza Cafe' : 'Beachfront Harbor';
       const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
       let greeting = '';
-      if (
+      if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
+        setActiveTab('sesi_chat');
+        greeting = `Hi ${displayCitizen}, Hana here! It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like.`;
+      } else if (
         merchantLocation === 'lobby_cafe' &&
         walletConnected &&
         (isTutorialHanaActive || !hanaWelcomeNearClaimed)
@@ -308,6 +317,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     hanaWelcomeNearClaimed,
     citizenDisplayName,
     playerNearAccount,
+    hanaPitchOrigin,
+    hasHouseOwnership,
   ]);
 
   // Typewriter effect for NPC dialogue
@@ -1122,6 +1133,73 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </button>
                   </div>
                 )}
+
+                {/* Hana Property Pitch Card (players who do not own a home yet) */}
+                {merchantLocation === 'lobby_cafe' &&
+                  !hasHouseOwnership &&
+                  !isTutorialHanaActive && (
+                    <div
+                      data-hana-property-pitch="true"
+                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                          NO PROPERTY YET
+                        </span>
+                        <span className="text-[10.5px] font-black text-white">
+                          YOUR FIRST HOME
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-300">
+                        You don't own a home in this city yet. Step inside our fully furnished
+                        model house to see what awaits \u2014 or browse the catalog and make one
+                        yours.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {onViewModelHouse && (
+                          <button
+                            type="button"
+                            data-hana-view-model-house-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onViewModelHouse();
+                            }}
+                            className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                          >
+                            VIEW MODEL HOUSE
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          data-hana-view-catalog-btn="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setActiveTab('katalog');
+                            setHanaCatalogSlide('house');
+                            triggerNpcSpeech(
+                              'Here is the property catalog. The Private House Deed is listed first \u2014 once it is yours, the Teleport Kiosk takes you straight home.',
+                            );
+                          }}
+                          className="w-full py-2.5 bg-white hover:bg-slate-100 text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                        >
+                          VIEW CATALOG
+                        </button>
+                        {hanaPitchOrigin === 'kiosk' && onOpenTeleportKioskFromPitch && (
+                          <button
+                            type="button"
+                            data-hana-open-kiosk-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onOpenTeleportKioskFromPitch();
+                            }}
+                            className="w-full py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                          >
+                            OPEN TELEPORT KIOSK
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                 {/* Hana Welcome Bonus Card (Clean, Simple, Zero Jargon) */}
                 {merchantLocation === 'lobby_cafe' &&
