@@ -4087,6 +4087,38 @@ test('8 Grass-Island Shielded Public Crate Pads, Safe Shield Weapon Lock & Enemy
   assert.equal(blueRight.moveZ, 0);
   assert.equal(redRight.moveX, -1);
   assert.equal(redRight.moveZ, 0);
+
+  // View flip: a flipped Blue camera lands exactly on the Red mirror pose, and
+  // flipped movement input inverts both axes (W now walks Blue toward +Z).
+  const blueCamFlipped = computeTeamMirrorCameraPose({
+    playerTeam: 'blue',
+    focusX: 10,
+    focusY: 1,
+    focusZ: -40,
+    baseOffset: { x: 0, y: 13.6, z: 16.2 },
+    fovScale: 1.0,
+    visualPlaneAlt: 0,
+    isEditorOrTitle: false,
+    flipView: true,
+  });
+  assert.equal(blueCamFlipped.cameraPos.z, redCam.cameraPos.z);
+  assert.equal(blueCamFlipped.lookAtPos.z, redCam.lookAtPos.z);
+  const blueForwardFlipped = computeCameraRelativeMovementVector({
+    inputForward: 1,
+    inputRight: 0,
+    playerTeam: 'blue',
+    flipView: true,
+  });
+  assert.equal(blueForwardFlipped.moveX, 0);
+  assert.equal(blueForwardFlipped.moveZ, 1);
+  const blueRightFlipped = computeCameraRelativeMovementVector({
+    inputForward: 0,
+    inputRight: 1,
+    playerTeam: 'blue',
+    flipView: true,
+  });
+  assert.equal(blueRightFlipped.moveX, -1);
+  assert.equal(blueRightFlipped.moveZ, 0);
 });
 
 test('Claimed Base Plot Gate Authorization: sliding gate opens for plot owner, claimed NEAR Session player, and their AI Harvesters across plots 0..3', () => {

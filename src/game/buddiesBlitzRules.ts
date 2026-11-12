@@ -12597,11 +12597,15 @@ export function computeTeamMirrorCameraPose(params: {
   fovScale?: number;
   visualPlaneAlt?: number;
   isEditorOrTitle?: boolean;
+  flipView?: boolean;
 }): TeamMirrorCameraPose {
   const fovScale = params.fovScale ?? 1.0;
   const visualPlaneAlt = params.visualPlaneAlt ?? 0.0;
-  const mirrorSign: 1 | -1 =
+  const baseMirrorSign: 1 | -1 =
     !params.isEditorOrTitle && params.playerTeam === 'red' ? -1 : 1;
+  // Player-controlled 180-degree view flip (main map only - callers gate
+  // Warzone and the editor out): inverts the side the camera sits on.
+  const mirrorSign = (params.flipView ? -baseMirrorSign : baseMirrorSign) as 1 | -1;
 
   const cameraPos: Vec3 = {
     x: params.focusX + params.baseOffset.x * fovScale * mirrorSign,
@@ -12648,6 +12652,7 @@ export function computeCameraRelativeMovementVector(params: {
   inputForward: number;
   inputRight: number;
   playerTeam: 'blue' | 'red';
+  flipView?: boolean;
   cameraPosX?: number;
   cameraPosZ?: number;
   lookAtPosX?: number;
@@ -12655,6 +12660,13 @@ export function computeCameraRelativeMovementVector(params: {
   isEditorMode?: boolean;
 }): { moveX: number; moveZ: number; mirrorSign: 1 | -1 } {
   if (params.isEditorMode) {
+    if (params.flipView) {
+      return {
+        moveX: -params.inputRight,
+        moveZ: params.inputForward,
+        mirrorSign: -1,
+      };
+    }
     return {
       moveX: params.inputRight,
       moveZ: -params.inputForward,
@@ -12662,7 +12674,7 @@ export function computeCameraRelativeMovementVector(params: {
     };
   }
 
-  const mirrorSign: 1 | -1 = params.playerTeam === 'red' ? -1 : 1;
+  const mirrorSign = ((params.playerTeam === 'red' ? -1 : 1) * (params.flipView ? -1 : 1)) as 1 | -1;
   let fwdX = 0;
   let fwdZ = -mirrorSign;
 
@@ -12717,6 +12729,7 @@ export function evaluatePlayerGhostMovementGuard(params: {
   moveSpeed: number;
   playerTeam: 'blue' | 'red';
   isEditorOrPeacefulCamera?: boolean;
+  flipView?: boolean;
 }): PlayerGhostMovementGuardResult {
   const shouldClearKeys = Boolean(
     params.isSceneTransitioning ||
@@ -12752,6 +12765,7 @@ export function evaluatePlayerGhostMovementGuard(params: {
     inputRight,
     playerTeam: params.playerTeam,
     isEditorMode: params.isEditorOrPeacefulCamera,
+    flipView: params.flipView,
   });
 
   const inputLen = Math.hypot(camMove.moveX, camMove.moveZ);

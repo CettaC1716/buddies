@@ -46,6 +46,8 @@ interface SocialChatModalProps {
   audioVolumePct?: number;
   onToggleAudio?: () => void;
   onChangeVolumePct?: (pct: number) => void;
+  showJoystickOnDesktop?: boolean;
+  onToggleShowJoystickOnDesktop?: () => void;
   unreadPrivateCount?: number;
   onClearUnreadPrivate?: () => void;
 }
@@ -271,6 +273,8 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   audioVolumePct = 80,
   onToggleAudio,
   onChangeVolumePct,
+  showJoystickOnDesktop = false,
+  onToggleShowJoystickOnDesktop,
   unreadPrivateCount = 0,
   onClearUnreadPrivate,
 }) => {
@@ -730,6 +734,33 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                     className="w-full accent-black cursor-pointer"
                   />
                 </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                    ON-SCREEN JOYSTICK (DESKTOP)
+                  </span>
+                  <button
+                    type="button"
+                    data-setting-desktop-joystick-btn="true"
+                    onClick={() => onToggleShowJoystickOnDesktop?.()}
+                    className={`-skew-x-6 px-3 py-1 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
+                      showJoystickOnDesktop
+                        ? 'bg-[#b8ff3c] text-black'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <span className="skew-x-6 inline-block">
+                      {showJoystickOnDesktop ? 'SHOWN' : 'HIDDEN'}
+                    </span>
+                  </button>
+                </div>
+                <p className="text-[11px] font-bold text-slate-600">
+                  Show the touch joystick and the camera flip button on desktop, so you
+                  can move without WASD. The camera flip is available on the main map
+                  only, never in Warzone.
+                </p>
               </div>
 
               {isInsidePrivateHouse && onOpenHouseDecoration && (

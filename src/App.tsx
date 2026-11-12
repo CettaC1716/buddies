@@ -519,6 +519,24 @@ export default function App() {
   const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'ortho18'>('webgl35');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [audioVolumePct, setAudioVolumePct] = useState<number>(100);
+  const [showJoystickOnDesktop, setShowJoystickOnDesktop] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('bb_desktop_joystick_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const handleToggleShowJoystickOnDesktop = useCallback(() => {
+    setShowJoystickOnDesktop((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('bb_desktop_joystick_v1', next ? '1' : '0');
+      } catch {
+        // storage unavailable - the in-session value still applies
+      }
+      return next;
+    });
+  }, []);
   const [isKioskModalOpen, setIsKioskModalOpen] = useState<boolean>(false);
   const [activeSpecialModal, setActiveSpecialModal] = useState<
     'none' | 'npc_merchant' | 'house_interior'
@@ -6546,6 +6564,8 @@ export default function App() {
         audioVolumePct={audioVolumePct}
         onToggleAudio={handleToggleAudio}
         onChangeVolumePct={handleChangeVolumePct}
+        showJoystickOnDesktop={showJoystickOnDesktop}
+        onToggleShowJoystickOnDesktop={handleToggleShowJoystickOnDesktop}
         onOpenHouseDecoration={() => {
           soundEngine.playUiClick();
           setIsSocialChatModalOpen(false);
@@ -8318,6 +8338,8 @@ export default function App() {
           activeTeleportKioskModal !== 'none'
         }
         onTriggerBuddyAction={dispatchBuddyAction}
+        forceShowJoystick={showJoystickOnDesktop}
+        isWarzoneActive={worldMode === 'warzone' || hud.worldMode === 'warzone'}
         primaryContextualAction={
           hud.floatingPrompts.length > 0
             ? {

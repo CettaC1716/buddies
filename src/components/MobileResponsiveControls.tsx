@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
+import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpDown } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 
 export type DeviceFormFactor = 'mobile' | 'tablet' | 'desktop';
@@ -11,6 +11,10 @@ interface MobileResponsiveControlsProps {
   isModalBlocking: boolean;
   /** Callback to trigger a buddy action such as 'jump' or 'pickupOrThrow' */
   onTriggerBuddyAction: (action: string) => void;
+  /** Force the touch controls to show on desktop (Settings toggle) */
+  forceShowJoystick?: boolean;
+  /** True while the player is in the Warzone map - the camera flip is main-map only */
+  isWarzoneActive?: boolean;
   /** Optional primary contextual floating prompt action (e.g. Enter Room, Fish, Grab) */
   primaryContextualAction?: {
     label: string;
@@ -23,6 +27,8 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   isModalBlocking,
   onTriggerBuddyAction,
   primaryContextualAction,
+  forceShowJoystick,
+  isWarzoneActive,
 }) => {
   const [viewport, setViewport] = useState<{
     width: number;
@@ -227,7 +233,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   const showMobileJoystick =
     isGameplayActive &&
     !isModalBlocking &&
-    (viewport.hasTouch || viewport.formFactor !== 'desktop' || viewport.width <= 1024);
+    (viewport.hasTouch || viewport.formFactor !== 'desktop' || viewport.width <= 1024 || Boolean(forceShowJoystick));
 
   const isCompactLandscape = viewport.height <= 460;
 
@@ -312,6 +318,29 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
               isJoystickActive ? 'opacity-90' : 'opacity-55 hover:opacity-75'
             }`}
           >
+            {/* Camera View Flip (main map only): instant 180-degree side swap, not a rotation */}
+            {!isWarzoneActive && (
+              <button
+                type="button"
+                data-camera-flip-btn="true"
+                aria-label="Flip camera view"
+                title="Flip camera view (North <-> South)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundEngine.playUiClick();
+                  window.dispatchEvent(new CustomEvent('camera-flip-view'));
+                }}
+                className={`${
+                  isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
+                } rounded-full bg-black/20 hover:bg-black/35 active:scale-90 border-2 border-white/35 backdrop-blur-[1.5px] text-white/85 flex flex-col items-center justify-center cursor-pointer transition-all`}
+              >
+                <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
+                <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
+                  View
+                </span>
+              </button>
+            )}
+
             {/* Circular Semi-Transparent Joystick Touch Pad */}
             <div
               ref={joystickBaseRef}

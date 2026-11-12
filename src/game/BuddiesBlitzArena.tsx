@@ -10508,6 +10508,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let mobileJoyRight = 0;
     let mobileJoyForward = 0;
     let mobileJoySprint = false;
+    let cameraViewFlipped = false;
+    const onCameraFlipView = () => {
+      // Warzone keeps its own fixed team-mirror view - the flip is main-map only.
+      if (worldModeRef.current === 'warzone') return;
+      cameraViewFlipped = !cameraViewFlipped;
+    };
     const mouseNdc = new THREE.Vector2(0, 0);
     const raycaster = new THREE.Raycaster();
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.2);
@@ -12542,6 +12548,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
+    window.addEventListener('camera-flip-view', onCameraFlipView);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
     window.addEventListener('focusin', onDocumentFocusIn);
@@ -14135,6 +14142,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           moveSpeed: 1,
           playerTeam: playerUnit?.team ?? 'blue',
           isEditorOrPeacefulCamera,
+          flipView:
+            cameraViewFlipped &&
+            currentPlayMode !== 'editor' &&
+            worldModeRef.current !== 'warzone',
         });
         if (ghostGuard.shouldClearKeys) {
           isPointerDown = false;
@@ -14147,7 +14158,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const joyMag = Math.hypot(mobileJoyRight, mobileJoyForward);
         if (!ghostGuard.shouldClearKeys && joyMag > 0.06 && npcCameraMode !== 'house_visit' && npcCameraMode !== 'house_interior') {
           const mirrorSign =
-            !isEditorOrPeacefulCamera && (playerUnit?.team ?? 'blue') === 'red' ? -1 : 1;
+            (!isEditorOrPeacefulCamera && (playerUnit?.team ?? 'blue') === 'red' ? -1 : 1) *
+            (cameraViewFlipped &&
+            currentPlayMode !== 'editor' &&
+            worldModeRef.current !== 'warzone'
+              ? -1
+              : 1);
           moveX = mobileJoyRight * mirrorSign;
           moveZ = -mobileJoyForward * mirrorSign;
         }
@@ -19080,6 +19096,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             focusY: camFollowPos.y,
             focusZ: finalLookZ,
             baseOffset: camOffset,
+            flipView: cameraViewFlipped && worldModeRef.current !== 'warzone',
             fovScale,
             visualPlaneAlt,
             isEditorOrTitle:
@@ -22593,6 +22610,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
       window.removeEventListener('mobile-joystick-input', onMobileJoystickInput);
+      window.removeEventListener('camera-flip-view', onCameraFlipView);
       window.removeEventListener('blur', onWindowBlurOrVisibilityReset);
       document.removeEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
       window.removeEventListener('focusin', onDocumentFocusIn);
