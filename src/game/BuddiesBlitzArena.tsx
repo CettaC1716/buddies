@@ -4766,8 +4766,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       loadedBlitzAssets?.charBuddiesGltf ?? null;
     let earlyLoadedManGltf: LoadedBlitzAssets['manCharacterBuddiesGltf'] =
       loadedBlitzAssets?.manCharacterBuddiesGltf ?? null;
-    let earlyLoadedNpcKaiGltf: LoadedBlitzAssets['npcKaiGltf'] =
-      loadedBlitzAssets?.npcKaiGltf ?? null;
 
     // 1. Clean Zero-Prebuilt Start: All 4 Stacking Pads per Base start completely empty (0/8 crates)
     const createEmptyPadSlots = (): CrateSlotType[] => [
@@ -6784,11 +6782,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const projectiles = projectilePool.slots;
     let staggeredUpgradeRafId = 0;
 
-    loadAllRealBlitzAssets(renderer, (charGltf, manGltf, rodGltf, npcKaiGltf) => {
+    loadAllRealBlitzAssets(renderer, (charGltf, manGltf, rodGltf) => {
       if (isDisposed) return;
       earlyLoadedCharGltf = charGltf;
       earlyLoadedManGltf = manGltf;
-      earlyLoadedNpcKaiGltf = npcKaiGltf ?? null;
       const earlyCharGltf =
         getDefaultCharacterGender() === 'male' ? manGltf ?? charGltf : charGltf;
       if (earlyCharGltf && playerUnit) {
@@ -6846,12 +6843,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
           }
           staggeredUpgradeRafId = requestAnimationFrame(stepStaggeredUpgrades);
-        } else if (earlyLoadedCharGltf || earlyLoadedManGltf || earlyLoadedNpcKaiGltf) {
+        } else if (earlyLoadedCharGltf || earlyLoadedManGltf) {
           if (earlyLoadedCharGltf) {
             upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, earlyLoadedCharGltf);
           }
-          const kaiEarlyGltf =
-            earlyLoadedNpcKaiGltf ?? earlyLoadedManGltf ?? earlyLoadedCharGltf;
+          const kaiEarlyGltf = earlyLoadedManGltf ?? earlyLoadedCharGltf;
           if (kaiEarlyGltf) {
             upgradeBuddyRigWithCharBuddiesGlb(beachHouseNpc.npcRig, kaiEarlyGltf);
           }
