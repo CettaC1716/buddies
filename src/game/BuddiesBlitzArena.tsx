@@ -15667,8 +15667,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               isPointerDown &&
               !playerWeaponTriggerLocked &&
               playerUnit.carryingCrate === 'none' &&
+              playerUnit.weaponId !== 'fishing_rod' &&
               playerUnit.shootCooldown <= 0
             ) {
+              // The fishing rod shares the weapon slot but must never enter this
+              // fire branch: firing it played a pistol shot, consumed ammo and
+              // re-synced the loadout, which unequipped the rod and cancelled
+              // any active cast whenever the player clicked the 3D view.
               if (Math.hypot(aimDx, aimDz) > 0.2) {
                 playerUnit.yaw = Math.atan2(-aimDz, aimDx);
               }
