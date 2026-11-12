@@ -10487,18 +10487,59 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   };
 }
 
-// Natural ground speeds of the basic in-place locomotion clips, measured on the
-// assembled rig (foot travel per second at 1x playback, world units): the feet of
-// walk.001 move at 2.94 u/s, run.001 at 4.68 u/s. Playing them at a fixed 1x while
-// the unit moves faster makes the feet slide; the stride sync below scales the
-// cadence toward the unit's actual speed.
+// Natural ground speeds of the in-place locomotion clips (world units/s at 1x
+// playback), calibrated end-to-end on the assembled rig: each value is the unit
+// speed at which the stance foot's ground velocity measures zero. Playing a clip
+// at a fixed 1x while the unit moves at another speed makes the feet slide, so
+// the stride sync below scales the cadence by moveSpeed / natural (clamped).
+// Values marked (est.) are stance-phase measurements of sibling clips in the
+// same pack, scaled to the calibrated anchors (walk 2.04, run 4.94).
 const STRIDE_NATURAL_SPEEDS: Record<string, number> = {
-  'walk.001': 2.94,
-  'run.001': 4.68,
-  'unarmed_walk_strafe_left.001': 2.76,
-  'unarmed_walk_strafe_right.001': 2.76,
-  'unarmed_strafe_left.001': 5.34,
-  'unarmed_strafe_right.001': 5.34,
+  'walk.001': 2.04,
+  'run.001': 4.94,
+  'unarmed_walk_strafe_left.001': 2.86,
+  'unarmed_walk_strafe_right.001': 2.86,
+  'unarmed_strafe_left.001': 5.05,
+  'unarmed_strafe_right.001': 5.05,
+  'pistol_walk.001': 3.9,
+  'pistol_walk_backward.001': 3.9,
+  'pistol_walk_arc.001': 3.9,
+  'pistol_walk_backward_arc.001': 3.9,
+  'pistol_run.001': 6.83,
+  'pistol_run_backward.001': 6.83,
+  'pistol_run_arc.001': 6.83,
+  'pistol_run_backward_arc.001': 6.83,
+  'pistol_strafe_left.001': 3.36,
+  'pistol_strafe_right.001': 3.75,
+  'run_rifle.001': 6.9,
+  'run_forward_left.001': 6.9,
+  'run_forward_right.001': 6.9,
+  'run_backward_left.001': 6.9,
+  'run_backward_right.001': 6.9,
+  'sprint_forward.001': 7.53,
+  'sprint_forward_left.001': 7.53,
+  'sprint_forward_right.001': 7.53,
+  'sprint_left.001': 7.53,
+  'sprint_right.001': 7.53,
+  'sprint_backward.001': 7.53,
+  'sprint_backward_left.001': 7.53,
+  'sprint_backward_right.001': 7.53,
+  'strafe.001': 5.4,
+  'strafe_right.001': 5.15,
+  'strafing.001': 2.2,
+  'walk_left.001': 2.3,
+  'walk_forward_left.001': 2.35,
+  'walk_forward_right.001': 2.35,
+  'walk_backward.001': 2.4,
+  'walk_backward_left.001': 2.4,
+  'walk_backward_right.001': 2.4,
+  'stepping_forward.001': 2.35,
+  'stepping_backward.001': 2.4,
+  'crouch_walking.001': 2.45,
+  'crouch_walk_left.001': 2.45,
+  'crouch_walk_right.001': 2.45,
+  'crouch_walk_backward.001': 2.45,
+  'jogging_with_box.001': 1.75,
 };
 
 function stepCharBuddiesGlbRigController(
@@ -10876,7 +10917,7 @@ function stepCharBuddiesGlbRigController(
       }
     } else if (!carryingCrate && (weaponId === 'unarmed' || weaponId === 'fishing_rod')) {
       // FEMALE / UNARMED BASIC LOCOMOTION PACK (NON-COMBAT)
-      const isUnarmedWalk = moveSpeed > 0 && moveSpeed < 6.35;
+      const isUnarmedWalk = moveSpeed > 0 && moveSpeed < 4.0;
       if (strafeDir < -0.48 && Math.abs(forwardDir) <= 0.45) {
         if (isUnarmedWalk && ctrl.clips.has('unarmed_walk_strafe_left.001')) {
           targetClip = 'unarmed_walk_strafe_left.001';
@@ -10996,7 +11037,7 @@ function stepCharBuddiesGlbRigController(
   const prevClipName = ctrl.activeClipName;
   const strideNatural = STRIDE_NATURAL_SPEEDS[targetClip];
   if (strideNatural && isMoving && moveSpeed > 0.1) {
-    const cadence = Math.min(1.8, Math.max(0.8, moveSpeed / strideNatural));
+    const cadence = Math.min(2.0, Math.max(0.8, moveSpeed / strideNatural));
     timeScale = Math.sign(timeScale || 1) * Math.abs(timeScale) * cadence;
   }
   fadeToCharBuddiesAction(ctrl, targetClip, 0.14, timeScale);
