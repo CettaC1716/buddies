@@ -287,6 +287,29 @@ export default function App() {
       if (params.get('title') === '1') {
         return 'title';
       }
+      // Direct-entry links keep booting straight into the world: diagnostic
+      // overview views, skip-onboarding links, and non-lobby world links
+      // (mirrors the onboarding initializer's own bypass set).
+      if (
+        params.get('skipOnboarding') === '1' ||
+        params.get('fullmap') === '1' ||
+        params.get('planeview') ||
+        params.get('skyshieldview') ||
+        params.get('buildingview') ||
+        (params.get('world') && params.get('world') !== 'lobby')
+      ) {
+        return 'playing';
+      }
+      // A Privy Google login returning from its redirect continues in place
+      // instead of detouring through the landing page.
+      if (
+        window.location.search.includes('privy_oauth_') ||
+        window.sessionStorage.getItem('bb_pending_privy_google_login') === '1'
+      ) {
+        return 'playing';
+      }
+      // Everyone else lands on the landing page first.
+      return 'title';
     }
     return 'playing';
   });
