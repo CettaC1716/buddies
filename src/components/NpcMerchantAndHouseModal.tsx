@@ -405,6 +405,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [selectedFamilyPlanId, setSelectedFamilyPlanId] =
     useState<FamilyMemberContractPlanId>('1_week');
   const [hanaCatalogSlide, setHanaCatalogSlide] = useState<'house' | 'family'>('house');
+  const [houseCardView, setHouseCardView] = useState<'exterior' | 'interior'>('exterior');
   const [kaiCatalogPage, setKaiCatalogPage] = useState<number>(0);
   const [selectedKaiFishingId, setSelectedKaiFishingId] = useState<string>(
     'fishing_rod_carbon_pro',
@@ -2893,16 +2894,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       soundEngine.playUiClick();
                       setHanaCatalogSlide('house');
                     }}
-                    className={`group relative h-[154px] sm:h-[164px] text-left select-none transition-transform duration-100 cursor-pointer ${
+                    className={`group relative h-[248px] sm:h-[272px] text-left select-none transition-transform duration-100 cursor-pointer ${
                       isHouseSlide
                         ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
                         : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
                     }`}
                   >
-                    <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
+                    <div className="relative h-full border-[2px] border-[#0d0f12] overflow-hidden bg-[#e9e2d4]">
+                      <img
+                        src={houseCardView === 'exterior' ? '/assets/kiosk/house_exterior.jpg' : '/assets/kiosk/house_interior.jpg'}
+                        alt="Private House Ownership"
+                        draggable={false}
+                        className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+                      />
                       {isHouseSlide && (
                         <div
-                          className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-10"
+                          className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-20"
                           style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
                         >
                           <span className="text-[9px] font-black text-[#0d0f12] leading-none">
@@ -2910,41 +2917,68 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           </span>
                         </div>
                       )}
-
-                      <div className="flex items-start justify-between gap-1 pr-4">
-                        <div>
-                          <div
-                            className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
-                            style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-                          >
-                            HOUSE
+                      <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/50 via-black/20 to-transparent px-2.5 pt-2 pb-6">
+                        <div className="flex items-start justify-between gap-1 pr-4">
+                          <div>
+                            <div
+                              className="text-[12.5px] sm:text-[13.5px] font-black uppercase tracking-tight leading-[1.1] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+                              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
+                            >
+                              HOUSE
+                            </div>
+                            <div className="text-[8.5px] sm:text-[9px] font-extrabold uppercase tracking-tight text-white/90 mt-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                              PRIVATE HOME
+                            </div>
                           </div>
-                          <div className="text-[8.5px] sm:text-[9px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
-                            PRIVATE HOME
+                          <span
+                            className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0 ${
+                              isHouseOwned
+                                ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                                : 'bg-[#d8b4fe] text-[#0d0f12]'
+                            }`}
+                          >
+                            {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/65 via-black/30 to-transparent px-2.5 pb-2 pt-7">
+                        <div className="flex items-end justify-between gap-2">
+                          <div className="text-[9px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                            Unlocks Private House &amp; Plot
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <span
+                              role="button"
+                              aria-label="Show house exterior"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setHouseCardView('exterior');
+                              }}
+                              className={`px-1.5 py-0.5 border text-[8px] font-black uppercase cursor-pointer ${
+                                houseCardView === 'exterior'
+                                  ? 'bg-white text-[#0d0f12] border-[#0d0f12]'
+                                  : 'bg-black/45 text-white border-white/50'
+                              }`}
+                            >
+                              Exterior
+                            </span>
+                            <span
+                              role="button"
+                              aria-label="Show house interior"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setHouseCardView('interior');
+                              }}
+                              className={`px-1.5 py-0.5 border text-[8px] font-black uppercase cursor-pointer ${
+                                houseCardView === 'interior'
+                                  ? 'bg-white text-[#0d0f12] border-[#0d0f12]'
+                                  : 'bg-black/45 text-white border-white/50'
+                              }`}
+                            >
+                              Interior
+                            </span>
                           </div>
                         </div>
-                        <span
-                          className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0 ${
-                            isHouseOwned
-                              ? 'bg-[#b8ff3c] text-[#0d0f12]'
-                              : 'bg-[#d8b4fe] text-[#0d0f12]'
-                          }`}
-                        >
-                          {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
-                        </span>
-                      </div>
-
-                      <div className="my-0.5 flex items-center justify-center h-[80px] sm:h-[86px]">
-                        <img
-                          src="/assets/kiosk/private_house_isometric.jpg"
-                          alt="Private House Ownership"
-                          draggable={false}
-                          className="w-full h-[76px] sm:h-[82px] object-contain rounded-sm select-none pointer-events-none"
-                        />
-                      </div>
-
-                      <div className="text-[8.5px] font-bold text-[#1c2026] truncate">
-                        Unlocks Private House &amp; Plot
                       </div>
                     </div>
                   </button>
@@ -3467,9 +3501,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               data-property-list-house="true"
                             >
                               <img
-                                src="/assets/kiosk/private_house_isometric.jpg"
+                                src="/assets/kiosk/house_exterior.jpg"
                                 alt="Private House"
-                                className="w-12 h-9 object-contain shrink-0"
+                                className="w-12 h-9 object-cover shrink-0"
                                 draggable={false}
                               />
                               <div className="min-w-0 flex-1">
@@ -3662,9 +3696,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             >
                               {listing.asset_kind === 'house' ? (
                                 <img
-                                  src="/assets/kiosk/private_house_isometric.jpg"
+                                  src="/assets/kiosk/house_exterior.jpg"
                                   alt={listing.asset_label}
-                                  className="w-14 h-11 object-contain shrink-0"
+                                  className="w-14 h-11 object-cover shrink-0"
                                   draggable={false}
                                 />
                               ) : (

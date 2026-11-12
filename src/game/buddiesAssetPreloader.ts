@@ -24,6 +24,8 @@ export const CRITICAL_UI_IMAGE_URLS: readonly string[] = [
   '/assets/kiosk/family_member_female.jpg',
   '/assets/kiosk/family_member_male.jpg',
   '/assets/kiosk/private_house_isometric.jpg',
+  '/assets/kiosk/house_exterior.jpg',
+  '/assets/kiosk/house_interior.jpg',
   '/assets/kiosk/titan6_gatling.png',
   '/assets/kiosk/tm89_mine.png',
   '/assets/kiosk/vx20_bazooka.png',
