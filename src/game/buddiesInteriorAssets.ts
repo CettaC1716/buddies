@@ -1846,7 +1846,7 @@ export function buildBuddiesInteriorBackgroundZones(): i.Group {
     ['nightstand', 4.85, -3.47, 0],
     ['bench', 3.4, -1.2, 0],
     ['rug', 3.4, -1.75, 0],
-    ['wardrobe', 1.82, -0.2, 4 * Ce],
+    ['wardrobe', 4.95, -1.7, -4 * Ce],
     ['plant2', 5.0, 0.4, 0],
     // Study / Office Zone (`Vr`)
     ['desk', 4.1, 1.36, 0],

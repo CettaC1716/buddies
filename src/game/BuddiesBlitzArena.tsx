@@ -3194,6 +3194,83 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     addVisitWall(0.65, J + L, Yn, ee, N, N + L); // front wall, right of the exit door
     addVisitWall(-0.65, 0.65, 2.42, ee, N, N + L); // transom above the exit door (EXIT sign glows below it)
     addVisitWall(J, J + L, Yn, ee, T, N); // right wall
+    // Interior partitions raised to full height (visit only): top sections over
+    // the half-height dividers plus headers above their doorway passages, so the
+    // bedroom and study read as real enclosed rooms while walking inside.
+    addVisitWall(fe - U / 2, fe + U / 2, _a, ee, T, Da.z0);
+    addVisitWall(fe - U / 2, fe + U / 2, _a, ee, Da.z1, N);
+    addVisitWall(fe - U / 2, fe + U / 2, 2.15, ee, Da.z0, Da.z1); // header over the bedroom doorway
+    addVisitWall(fe + U / 2, Ia.x0, _a, ee, lt - U / 2, lt + U / 2);
+    addVisitWall(Ia.x1, J, _a, ee, lt - U / 2, lt + U / 2);
+    addVisitWall(Ia.x0, Ia.x1, 2.15, ee, lt - U / 2, lt + U / 2); // header over the study doorway
+    // Ceiling (visit only) so the camera can never see over the wall tops.
+    const visitCeiling = new THREE.Mesh(
+      new THREE.BoxGeometry(J - A + 0.3, 0.08, N - T + 0.3),
+      interiorWallMat,
+    );
+    visitCeiling.position.set(0, ee + 0.04, 0);
+    visitCeiling.raycast = () => {};
+    houseVisitWallGrp.add(visitCeiling);
+    // Soft garden backdrops behind the window apertures and outside the front
+    // door (visit only): without them the openings look onto blank sky.
+    const backdropCanvas = document.createElement('canvas');
+    backdropCanvas.width = 256;
+    backdropCanvas.height = 256;
+    const backdropCtx = backdropCanvas.getContext('2d');
+    if (backdropCtx) {
+      const grad = backdropCtx.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0, '#cfe4f2');
+      grad.addColorStop(0.45, '#e8f0e4');
+      grad.addColorStop(0.62, '#a8c48d');
+      grad.addColorStop(1, '#7fae67');
+      backdropCtx.fillStyle = grad;
+      backdropCtx.fillRect(0, 0, 256, 256);
+      backdropCtx.fillStyle = 'rgba(110, 150, 92, 0.55)';
+      for (const [bx, by, br] of [
+        [40, 190, 34],
+        [110, 205, 42],
+        [185, 192, 36],
+        [235, 210, 30],
+        [70, 215, 26],
+      ] as const) {
+        backdropCtx.beginPath();
+        backdropCtx.arc(bx, by, br, 0, Math.PI * 2);
+        backdropCtx.fill();
+      }
+      backdropCtx.fillStyle = 'rgba(90, 130, 74, 0.5)';
+      for (const [bx, by, br] of [
+        [80, 225, 30],
+        [160, 228, 34],
+        [220, 232, 24],
+      ] as const) {
+        backdropCtx.beginPath();
+        backdropCtx.arc(bx, by, br, 0, Math.PI * 2);
+        backdropCtx.fill();
+      }
+    }
+    const backdropMat = new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(backdropCanvas),
+      fog: false,
+    });
+    const backBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 3.4), backdropMat);
+    backBackdrop.position.set(-0.8, 1.45, T - 0.85);
+    backBackdrop.raycast = () => {};
+    houseVisitWallGrp.add(backBackdrop);
+    const leftBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.4), backdropMat);
+    leftBackdrop.rotation.y = Math.PI / 2;
+    leftBackdrop.position.set(A - 0.85, 1.45, 2.05);
+    leftBackdrop.raycast = () => {};
+    houseVisitWallGrp.add(leftBackdrop);
+    const frontBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 3.6), backdropMat);
+    frontBackdrop.rotation.y = Math.PI;
+    frontBackdrop.position.set(0, 1.5, N + 3.4);
+    frontBackdrop.raycast = () => {};
+    houseVisitWallGrp.add(frontBackdrop);
+    // Small wooden porch deck just outside the entrance (visit only).
+    const visitPorch = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.07, 1.5), interiorTrimMat);
+    visitPorch.position.set(0, -0.035, N + 0.95);
+    visitPorch.raycast = () => {};
+    houseVisitWallGrp.add(visitPorch);
     houseVisitWallGrp.visible = false;
     houseInteriorRoomGrp.add(houseVisitWallGrp);
 
@@ -3204,9 +3281,57 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       color: '#2b2118',
       roughness: 0.55,
     });
+    // Procedural oak texture for the door leaf (vertical planks, grain
+    // streaks, two inset panels) so it no longer reads as a flat slab.
+    const doorCanvas = document.createElement('canvas');
+    doorCanvas.width = 256;
+    doorCanvas.height = 464;
+    const doorCtx = doorCanvas.getContext('2d');
+    if (doorCtx) {
+      doorCtx.fillStyle = '#7c5833';
+      doorCtx.fillRect(0, 0, 256, 464);
+      let doorSeed = 4177;
+      const doorRand = () => {
+        doorSeed = (doorSeed * 16807) % 2147483647;
+        return doorSeed / 2147483647;
+      };
+      for (let s = 0; s < 130; s++) {
+        const gx = doorRand() * 256;
+        doorCtx.strokeStyle =
+          doorRand() > 0.5 ? 'rgba(46, 30, 16, 0.16)' : 'rgba(214, 178, 128, 0.13)';
+        doorCtx.lineWidth = 1 + doorRand() * 1.6;
+        doorCtx.beginPath();
+        doorCtx.moveTo(gx, 0);
+        doorCtx.bezierCurveTo(
+          gx + 5 - doorRand() * 10,
+          150,
+          gx + 5 - doorRand() * 10,
+          310,
+          gx + 3 - doorRand() * 6,
+          464,
+        );
+        doorCtx.stroke();
+      }
+      doorCtx.fillStyle = 'rgba(40, 25, 12, 0.5)';
+      doorCtx.fillRect(84, 0, 2, 464);
+      doorCtx.fillRect(170, 0, 2, 464);
+      const doorPanelRect = (px: number, py: number, pw: number, ph: number) => {
+        doorCtx.fillStyle = 'rgba(52, 34, 18, 0.55)';
+        doorCtx.fillRect(px, py, pw, ph);
+        doorCtx.fillStyle = '#86643c';
+        doorCtx.fillRect(px + 5, py + 5, pw - 10, ph - 10);
+        doorCtx.strokeStyle = 'rgba(226, 192, 140, 0.5)';
+        doorCtx.lineWidth = 2;
+        doorCtx.strokeRect(px + 5, py + 5, pw - 10, ph - 10);
+        doorCtx.strokeStyle = 'rgba(30, 19, 9, 0.6)';
+        doorCtx.strokeRect(px, py, pw, ph);
+      };
+      doorPanelRect(38, 36, 180, 190);
+      doorPanelRect(38, 262, 180, 150);
+    }
     const doorPanelMat = new THREE.MeshStandardMaterial({
-      color: '#5c3e26',
-      roughness: 0.48,
+      map: new THREE.CanvasTexture(doorCanvas),
+      roughness: 0.55,
     });
     const doorHandleMat = new THREE.MeshStandardMaterial({
       color: '#facc15',
@@ -3223,10 +3348,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     rightJamb.position.set(0.62, 1.075, 0.04);
     const topLintel = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.12, 0.2), doorFrameMat);
     topLintel.position.set(0, 2.18, 0.04);
-    const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.14, 2.08, 0.06), doorPanelMat);
-    doorLeaf.position.set(0, 1.04, 0.04);
-    const doorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.12), doorHandleMat);
-    doorHandle.position.set(0.42, 1.02, -0.01);
+    // Hinged pivot at the left jamb: the leaf swings open into the room
+    // when the player approaches (animated in the house_visit camera block).
+    const houseExitDoorPivot = new THREE.Group();
+    houseExitDoorPivot.position.set(-0.57, 0, 0.04);
+    const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.14, 2.08, 0.055), doorPanelMat);
+    doorLeaf.position.set(0.57, 1.05, 0);
+    houseExitDoorPivot.add(doorLeaf);
+    const doorBackplate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.34, 0.016),
+      doorFrameMat,
+    );
+    doorBackplate.position.set(0.99, 1.02, -0.036);
+    houseExitDoorPivot.add(doorBackplate);
+    const doorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.24, 0.05), doorHandleMat);
+    doorHandle.position.set(0.99, 1.02, -0.068);
+    houseExitDoorPivot.add(doorHandle);
+    for (const mountY of [0.93, 1.11]) {
+      const doorHandleMount = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.03, 0.03),
+        doorHandleMat,
+      );
+      doorHandleMount.position.set(0.99, mountY, -0.048);
+      houseExitDoorPivot.add(doorHandleMount);
+    }
     const exitSignBoard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.16, 0.08), exitSignGlowMat);
     exitSignBoard.position.set(0, 2.32, 0.02);
     const exitFloorMat = new THREE.Mesh(
@@ -3243,8 +3388,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       leftJamb,
       rightJamb,
       topLintel,
-      doorLeaf,
-      doorHandle,
+      houseExitDoorPivot,
       exitSignBoard,
       exitFloorMat,
     );
@@ -3252,6 +3396,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       c.raycast = () => {};
     });
     houseInteriorRoomGrp.add(houseExitDoorGrp);
+    let houseDoorSwing = 0;
+    let houseDoorSwingPrevT = 0;
 
     // Interior Half-Height Partition Walls (`_a = 1.3m`) with Doorway Passages (`Da`, `Ia`)
     addCutawayWallSegment(fe - U / 2, fe + U / 2, 0, _a, T, Da.z0);
@@ -3802,6 +3948,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             sampleHouseZonesGrp.visible = detail.isSampleHouse;
           }
           houseVisitWallGrp.visible = detail.mode === 'house_visit';
+          if (detail.mode !== 'house_visit') {
+            houseDoorSwing = 0;
+            houseExitDoorPivot.rotation.y = 0;
+          }
           if (!wasHouseMode && playerUnit) {
             savedOutdoorHousePos = {
               x: playerUnit.x,
@@ -18345,23 +18495,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           // never slip outside and capture the exterior.
           const camX = clamp(
             lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
-            CUTAWAY_ROOM_BOUNDS.minX + 0.35,
-            CUTAWAY_ROOM_BOUNDS.maxX - 0.35,
+            CUTAWAY_ROOM_BOUNDS.minX + 0.5,
+            CUTAWAY_ROOM_BOUNDS.maxX - 0.5,
           );
           const camY = clamp(
             lookY + sinPitch * houseVisitCamDist,
             HOUSE_ORIGIN_Y + 0.3,
-            HOUSE_ORIGIN_Y + CUTAWAY_ROOM_BOUNDS.fullWallHeight - 0.2,
+            HOUSE_ORIGIN_Y + 2.35,
           );
           const camZ = clamp(
             lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
-            CUTAWAY_ROOM_BOUNDS.minZ + 0.35,
-            CUTAWAY_ROOM_BOUNDS.maxZ - 0.35,
+            CUTAWAY_ROOM_BOUNDS.minZ + 0.5,
+            CUTAWAY_ROOM_BOUNDS.maxZ - 0.5,
           );
           camera.up.set(0, 1, 0);
           camera.position.set(camX, camY, camZ);
           camera.lookAt(lookX, lookY, lookZ);
           camera.updateMatrixWorld();
+          // Swing the entrance door open as the player approaches it and let
+          // it ease shut again once they walk away.
+          const doorDt = clamp(timeSec - houseDoorSwingPrevT, 0, 0.05);
+          houseDoorSwingPrevT = timeSec;
+          const distToDoor = Math.hypot(playerUnit.x, playerUnit.z - 3.35);
+          const doorTarget = distToDoor <= 2.1 ? 1 : 0;
+          houseDoorSwing += (doorTarget - houseDoorSwing) * Math.min(1, doorDt * 5.5);
+          houseExitDoorPivot.rotation.y = houseDoorSwing * 1.85;
         } else {
           const targetEditFov = 34;
           if (camera.fov !== targetEditFov) {
