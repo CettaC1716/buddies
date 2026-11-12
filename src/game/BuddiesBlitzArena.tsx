@@ -18375,10 +18375,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Central Oasis Lake shore — the same spot the avatar picker uses.
       if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
         playerUnit.x = -31.0;
-        playerUnit.z = 15.2;
+        playerUnit.z = -15.5;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
-        playerUnit.yaw = 0.64;
+        playerUnit.yaw = -Math.PI / 2;
       }
 
       // Character-select cinematic phase transitions (see the
@@ -18434,7 +18434,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         activePlaneAlt <= 4.0 ? activePlaneAlt : 4.0 + (activePlaneAlt - 4.0) * 0.35;
       const activeTerrainY =
         state === 'title'
-          ? getTerrainElevation(-31.0, 15.2)
+          ? getTerrainElevation(-31.0, -15.5)
           : currentPlayMode === 'editor'
           ? getTerrainElevation(editorPan.x, editorPan.z)
           : mountedTank
@@ -18443,7 +18443,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const focusTarget: Vec3 =
         state === 'title'
-          ? { x: -31.0, y: activeTerrainY + 0.9, z: 15.2 }
+          ? { x: -31.0, y: activeTerrainY + 0.9, z: -15.5 }
           : currentPlayMode === 'editor'
           ? { x: editorPan.x, y: activeTerrainY + 0.5, z: editorPan.z }
           : mountedTank
@@ -18528,7 +18528,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const zoomMult = state === 'title' ? 1.0 : cameraZoom * planeAltZoom;
       const camOffset =
         state === 'title'
-          ? { x: 8.5, y: 13.5, z: 11.5 }
+          ? { x: 1.0, y: 7.0, z: 11.0 }
           : currentPlayMode === 'editor'
           ? { x: 0, y: 54.0 * editorZoom, z: 22.0 * editorZoom }
           : { x: 0, y: 13.6 * zoomMult, z: 16.2 * zoomMult };

@@ -3453,10 +3453,9 @@ export default function App() {
         onPreloadSceneReady={handlePreloadSceneReady}
       />
 
-      {/* Unified Blocking Preload Gate (0% to 100%). Suppressed on the title
-          screen: the landing page is the front door and carries its own
-          loading state once PLAY is pressed. */}
-      {!isPreloadComplete && gameState !== 'title' && (
+      {/* Unified Blocking Preload Gate (0% to 100%): the first thing seen
+          when entering the web app; the landing page follows once ready. */}
+      {!isPreloadComplete && (
         <div
           role="status"
           aria-live="polite"
@@ -3554,7 +3553,7 @@ export default function App() {
           2. LANDING PAGE: bright Pudgy-style front door over the live world.
              One PLAY NOW (or LOG IN) press hands over to the START GAME card.
          ===================================================================== */}
-      {gameState === 'title' && (
+      {isPreloadComplete && gameState === 'title' && (
         <section
           aria-label="Buddies Blitz Landing"
           className="fixed inset-0 z-20 flex flex-col pointer-events-none"
