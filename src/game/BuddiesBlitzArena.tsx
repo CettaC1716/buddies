@@ -3249,7 +3249,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       slatEndZ: ko,
       windowLeft: winL,
       windowBack: winB,
-      doorPassZ: Da,
       doorPassX: Ia,
     } = CUTAWAY_ROOM_BOUNDS;
 
