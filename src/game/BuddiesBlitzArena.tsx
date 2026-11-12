@@ -16882,7 +16882,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                           1,
                           (performance.now() - shorelineFishingSync.castStartWallMs) /
                             1000 /
-                            (0.16 + 0.48 + shorelineFishingSync.castPower * 0.24),
+                            (0.36 + 0.48 + shorelineFishingSync.castPower * 0.24),
                         ),
                       )
                     : 1,
@@ -20437,12 +20437,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const targetSurfaceVisY = targetSurfaceLogicalY + targetPlanetOffY;
           const targetVisY = targetBobberLogicalY + targetPlanetOffY;
 
-          // Sync cast launch with `fishing_cast.001` 0.16s backswing windup before forward release
+          // Sync cast launch with the retimed `fishing_cast.001`: 0.36s backswing windup before forward release
           const flyElapsedSec = Math.max(
             0,
             (performance.now() - shorelineFishingSync.castStartWallMs) / 1000,
           );
-          const windupSec = 0.16;
+          const windupSec = 0.36;
           const flyDurationSec = 0.48 + shorelineFishingSync.castPower * 0.24;
           const isWindingUpCast =
             shorelineFishingSync.phase === 'casting' && flyElapsedSec < windupSec;

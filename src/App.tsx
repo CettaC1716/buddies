@@ -2998,7 +2998,7 @@ export default function App() {
       setIsChargingCast(false);
       setFishingPhase('casting');
 
-      const castFlightMs = Math.round((0.62 + clampedPower * 0.24) * 1000);
+      const castFlightMs = Math.round((0.82 + clampedPower * 0.24) * 1000);
       const firstNibbleDelayMs = castFlightMs + Math.round(schedule.initialWaitSec * 1000);
       const nibbleStepMs = Math.round(schedule.nibbleIntervalSec * 1000);
       const plungeDelayMs = firstNibbleDelayMs + schedule.nibblesTotal * nibbleStepMs;

@@ -9927,6 +9927,12 @@ function fadeToCharBuddiesAction(
   nextAction.reset();
   nextAction.setEffectiveWeight(1);
   nextAction.play();
+  if (clipName === 'fishing_cast.001') {
+    // The source clip is 8.77s long and its actual throw sits at 1.75-2.0s (hand-speed peak,
+    // measured on the model). Starting at 1.30s puts the backswing lift first and lands the
+    // throw on the bobber's release instead of ~1.5s after the lure already landed.
+    nextAction.time = 1.3;
+  }
   if (prevAction && prevAction !== nextAction) {
     prevAction.crossFadeTo(nextAction, fadeDuration, false);
   }
@@ -10400,7 +10406,7 @@ function stepCharBuddiesGlbRigController(
 
   // Track active rifle firing burst window (`Firing Rifle (1).fbx` -> `Rifle Aiming Idle.fbx` -> `Rifle Idle.fbx`) & Fishing Cast (`Fishing_Cast.fbx` -> `Fishing_Idle.fbx`)
   if (weaponId === 'fishing_rod' && recoilAmount > 0.05) {
-    ctrl.fishingCastTimer = 2.85;
+    ctrl.fishingCastTimer = 1.45;
   } else if (weaponId !== 'fishing_rod' || isMoving || jumpOffset > 0.05 || carryingCrate) {
     ctrl.fishingCastTimer = 0;
   } else if (ctrl.fishingCastTimer > 0 && rawDt >= 0.002) {
@@ -11288,9 +11294,15 @@ export function updateCharacterWeaponStance(
       } else {
         _rodTargetDir.set(0, 0.68, 0.73);
       }
-      // Prevent downward/inverted grip axis during transitions
-      if (_rodTargetDir.z < 0.15 && (!fp || fp.phase !== 'charging')) {
-        _rodTargetDir.z = 0.45;
+      // Prevent a genuinely inverted grip axis during transitions (pointing down/back).
+      // An earlier z<0.15 rule also fired on the upright idle grip and tilted the rod
+      // ~22deg forward off the hand, so only a clearly downward axis is corrected now.
+      if (
+        _rodTargetDir.y < -0.05 &&
+        (!fp || (fp.phase !== 'charging' && fp.phase !== 'casting'))
+      ) {
+        _rodTargetDir.y = 0.15;
+        _rodTargetDir.z = Math.max(0.45, _rodTargetDir.z);
         _rodTargetDir.normalize();
       }
       if (fp) {
@@ -11311,38 +11323,6 @@ export function updateCharacterWeaponStance(
             )
             .normalize();
           _rodTargetDir.lerp(_rodFightAimDir, 0.85).normalize();
-        } else if (fp.phase === 'casting') {
-          // Cast whip, driven by the SAME clock as the 3D bobber flight (0.16s backswing windup,
-          // then 0.48 + castPower * 0.24s of flight): the rod tip rises up-and-back during the
-          // windup, whips forward-down at release, then settles to the waiting angle as the
-          // bobber lands. Before this, 'casting' shared the static nibble aim, so the rod stayed
-          // pinned forward while the cast clip swung the arms — reading as a twisted throw.
-          const totalSec = 0.16 + 0.48 + fp.castPower * 0.24;
-          const windupFrac = 0.16 / totalSec;
-          const cp = Math.max(0, Math.min(1, fp.castProgress ?? 1));
-          let aimY: number;
-          let aimZ: number;
-          if (cp < windupFrac) {
-            const t = cp / Math.max(0.0001, windupFrac);
-            const e = 1 - Math.pow(1 - t, 3);
-            aimY = 0.68 + (0.97 - 0.68) * e;
-            aimZ = 0.73 + (0.2 - 0.73) * e;
-          } else {
-            const f = (cp - windupFrac) / Math.max(0.0001, 1 - windupFrac);
-            if (f < 0.32) {
-              const t = f / 0.32;
-              const e = 1 - Math.pow(1 - t, 3);
-              aimY = 0.97 + (0.16 - 0.97) * e;
-              aimZ = 0.2 + (0.985 - 0.2) * e;
-            } else {
-              const t = (f - 0.32) / 0.68;
-              const e = t * t * (3 - 2 * t);
-              aimY = 0.16 + (0.56 - 0.16) * e;
-              aimZ = 0.985 + (0.83 - 0.985) * e;
-            }
-          }
-          _rodFightAimDir.set(0, aimY, aimZ).normalize();
-          _rodTargetDir.lerp(_rodFightAimDir, 0.9).normalize();
         } else if (fp.phase === 'nibble') {
           _rodFightAimDir.set(0, 0.56, 0.83).normalize();
           _rodTargetDir.lerp(_rodFightAimDir, 0.65).normalize();
