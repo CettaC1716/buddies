@@ -4,6 +4,7 @@ import {
   mergeGeometries as Xn,
   mergeVertices as hl,
 } from 'three/addons/utils/BufferGeometryUtils.js';
+import { createBlitzStrokeMesh } from './buddiesBlitzShadersAndAssets';
 
 /**
  * Procedural 3D Cutaway House Interior & Catalog Furniture Geometry Builders
@@ -273,6 +274,29 @@ function O() {
           const l = new i.Mesh(merged, r);
           l.castShadow = a;
           l.receiveShadow = true;
+          const matTyped = r as i.Material & { transparent?: boolean; side?: i.Side };
+          if (
+            !matTyped.transparent &&
+            matTyped.side !== i.DoubleSide &&
+            !r.userData?.noToonStroke
+          ) {
+            if (!merged.boundingBox) merged.computeBoundingBox();
+            const bb = merged.boundingBox;
+            const minDim = bb
+              ? Math.min(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z)
+              : 1;
+            if (minDim >= 0.032) {
+              const strokeW =
+                typeof r.userData?.toonStrokeWidth === 'number'
+                  ? r.userData.toonStrokeWidth
+                  : 0.0042;
+              const stroke = createBlitzStrokeMesh(merged, strokeW, '#12121e');
+              if (stroke) {
+                stroke.raycast = () => {};
+                l.add(stroke);
+              }
+            }
+          }
           o.add(l);
           n.push(l);
         }
@@ -288,7 +312,7 @@ const Ue = new Map<string, i.Material>();
 function j(e: string, t: Record<string, unknown> = {}): i.MeshStandardMaterial {
   const o = 'M' + e + JSON.stringify(t);
   if (!Ue.has(o)) {
-    Ue.set(o, new i.MeshStandardMaterial({ color: e, roughness: 0.85, envMapIntensity: 0.5, ...t }));
+    Ue.set(o, new i.MeshStandardMaterial({ color: e, roughness: 0.78, envMapIntensity: 0.55, ...t }));
   }
   return Ue.get(o) as i.MeshStandardMaterial;
 }
@@ -300,10 +324,11 @@ function rr(e: string, t: Record<string, unknown> = {}): i.MeshPhysicalMaterial 
       o,
       new i.MeshPhysicalMaterial({
         color: e,
-        roughness: 0.34,
-        clearcoat: 1,
-        clearcoatRoughness: 0.16,
-        envMapIntensity: 1.1,
+        roughness: 0.36,
+        metalness: 0.04,
+        clearcoat: 0.65,
+        clearcoatRoughness: 0.18,
+        envMapIntensity: 0.9,
         ...t,
       }),
     );
@@ -318,11 +343,11 @@ function no(e: string, t: Record<string, unknown> = {}): i.MeshPhysicalMaterial 
       o,
       new i.MeshPhysicalMaterial({
         color: e,
-        metalness: 0.85,
-        roughness: 0.32,
-        envMapIntensity: 1.25,
-        clearcoat: 0.35,
-        clearcoatRoughness: 0.3,
+        metalness: 0.28,
+        roughness: 0.38,
+        envMapIntensity: 0.9,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.28,
         ...t,
       }),
     );
@@ -333,8 +358,8 @@ function no(e: string, t: Record<string, unknown> = {}): i.MeshPhysicalMaterial 
 const ct = (e: string, t = 1) =>
   new i.MeshBasicMaterial({ color: new i.Color(e).multiplyScalar(t), fog: false });
 
-// --- Procedural Japandi canvas textures (interior redesign Phase 1) ---
-// Interior box-projected UVs are in metres, so the oak map is authored as a 1 m x 1 m tile.
+// --- Procedural Japandi canvas textures (high-craft tactile maps for all furniture & props) ---
+// Interior box-projected UVs are in metres, so tileable maps are authored at 512x512 with crisp detail.
 function japandiRand(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -355,40 +380,368 @@ function makeJapandiOakTexture(): i.Texture | null {
   const ctx = cv.getContext('2d');
   if (!ctx) return null;
   const rnd = japandiRand(20261112);
-  ctx.fillStyle = '#c9a26b';
+  ctx.fillStyle = '#cfa468';
   ctx.fillRect(0, 0, S, S);
-  // Long grain streaks running along U
-  for (let k = 0; k < 110; k++) {
+  // Subtle plank bands with warm tonal variation
+  const plankCount = 6;
+  const plankH = S / plankCount;
+  for (let p = 0; p < plankCount; p++) {
+    const shade = (p % 2 === 0 ? 1 : -1) * (4 + rnd() * 6);
+    ctx.fillStyle = shade > 0 ? 'rgba(246,222,178,0.14)' : 'rgba(150,104,50,0.12)';
+    ctx.fillRect(0, p * plankH, S, plankH);
+    ctx.fillStyle = 'rgba(115,78,36,0.28)';
+    ctx.fillRect(0, p * plankH, S, 1.5);
+  }
+  // Pronounced wood grain streaks running along U
+  for (let k = 0; k < 180; k++) {
     const y0 = rnd() * S;
-    ctx.strokeStyle = rnd() > 0.5 ? 'rgba(232,207,158,0.16)' : 'rgba(146,106,58,0.15)';
-    ctx.lineWidth = 0.6 + rnd() * 2.8;
+    ctx.strokeStyle = rnd() > 0.48 ? 'rgba(245,220,174,0.28)' : 'rgba(134,90,42,0.26)';
+    ctx.lineWidth = 0.8 + rnd() * 2.6;
     ctx.beginPath();
     ctx.moveTo(-8, y0);
-    for (let x = 0; x <= S + 16; x += 32) {
-      ctx.lineTo(x, y0 + Math.sin((x / S) * Math.PI * (1 + rnd())) * 3 + (rnd() - 0.5) * 2);
+    for (let x = 0; x <= S + 16; x += 28) {
+      ctx.lineTo(x, y0 + Math.sin((x / S) * Math.PI * (1 + rnd())) * 4.2 + (rnd() - 0.5) * 2.2);
     }
     ctx.stroke();
   }
-  // Sparse subtle knots
-  for (let k = 0; k < 3; k++) {
-    const kx = 60 + rnd() * (S - 120);
-    const ky = 40 + rnd() * (S - 80);
-    for (let r = 7; r > 1; r -= 2) {
-      ctx.strokeStyle = 'rgba(120,84,40,0.10)';
-      ctx.lineWidth = 1.2;
+  // Cathedral grain arches & knots
+  for (let k = 0; k < 6; k++) {
+    const kx = 50 + rnd() * (S - 100);
+    const ky = 36 + rnd() * (S - 72);
+    for (let r = 11; r > 1.5; r -= 2.2) {
+      ctx.strokeStyle = 'rgba(112,74,32,0.20)';
+      ctx.lineWidth = 1.4;
       ctx.beginPath();
-      ctx.ellipse(kx, ky, r * 2.2, r, 0.2, 0, Math.PI * 2);
+      ctx.ellipse(kx, ky, r * 2.8, r * 0.95, 0.12, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
-  // Fine speckle
-  for (let k = 0; k < 2600; k++) {
-    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,240,205,0.05)' : 'rgba(110,78,38,0.05)';
-    ctx.fillRect(rnd() * S, rnd() * S, 1.4, 1.4);
+  // Fine wood pore speckle
+  for (let k = 0; k < 3000; k++) {
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,242,210,0.08)' : 'rgba(104,70,32,0.08)';
+    ctx.fillRect(rnd() * S, rnd() * S, 2.2, 1.1);
   }
   const tex = new i.CanvasTexture(cv);
   tex.wrapS = i.RepeatWrapping;
   tex.wrapT = i.RepeatWrapping;
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeJapandiAshWoodTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(991042);
+  ctx.fillStyle = '#e5ddd0';
+  ctx.fillRect(0, 0, S, S);
+  for (let k = 0; k < 150; k++) {
+    const y0 = rnd() * S;
+    ctx.strokeStyle = rnd() > 0.5 ? 'rgba(255,250,240,0.30)' : 'rgba(168,150,126,0.26)';
+    ctx.lineWidth = 0.8 + rnd() * 2.2;
+    ctx.beginPath();
+    ctx.moveTo(-8, y0);
+    for (let x = 0; x <= S + 16; x += 32) {
+      ctx.lineTo(x, y0 + Math.sin((x / S) * Math.PI * 2) * 3 + (rnd() - 0.5) * 1.8);
+    }
+    ctx.stroke();
+  }
+  // Vertical fluted ribbing lines for cabinet/wardrobe texture
+  for (let x = 0; x < S; x += 16) {
+    ctx.fillStyle = 'rgba(145,128,106,0.14)';
+    ctx.fillRect(x, 0, 2, S);
+    ctx.fillStyle = 'rgba(255,252,245,0.16)';
+    ctx.fillRect(x + 2, 0, 2, S);
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeJapandiFabricTexture(repeat = 4): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(441821);
+  ctx.fillStyle = '#f4efe6';
+  ctx.fillRect(0, 0, S, S);
+  const step = 4;
+  for (let y = 0; y < S; y += step) {
+    for (let x = 0; x < S; x += step) {
+      const over = ((x / step + y / step) & 1) === 0;
+      ctx.fillStyle = over ? 'rgba(255,253,248,0.55)' : 'rgba(198,184,164,0.42)';
+      if (over) {
+        ctx.fillRect(x, y + 1, step, step - 1);
+      } else {
+        ctx.fillRect(x + 1, y, step - 1, step);
+      }
+    }
+  }
+  // Bouclé slub threads
+  for (let k = 0; k < 420; k++) {
+    const sx = rnd() * S;
+    const sy = rnd() * S;
+    const len = 6 + rnd() * 18;
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,255,255,0.28)' : 'rgba(172,155,132,0.26)';
+    if (rnd() > 0.5) ctx.fillRect(sx, sy, len, 1.5);
+    else ctx.fillRect(sx, sy, 1.5, len);
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeJapandiRugTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(552910);
+  ctx.fillStyle = '#e3d8c4';
+  ctx.fillRect(0, 0, S, S);
+  // Herringbone braided jute rows
+  const rowH = 8;
+  const colW = 16;
+  for (let y = 0; y < S; y += rowH) {
+    const rowIdx = Math.floor(y / rowH);
+    ctx.fillStyle = rowIdx % 2 === 0 ? 'rgba(248,241,228,0.45)' : 'rgba(188,171,144,0.40)';
+    ctx.fillRect(0, y, S, rowH - 1);
+    for (let x = 0; x < S; x += colW) {
+      ctx.strokeStyle = 'rgba(148,130,102,0.32)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      if (((x / colW + rowIdx) & 1) === 0) {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + colW, y + rowH);
+      } else {
+        ctx.moveTo(x + colW, y);
+        ctx.lineTo(x, y + rowH);
+      }
+      ctx.stroke();
+    }
+  }
+  for (let k = 0; k < 1800; k++) {
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,248,235,0.16)' : 'rgba(142,124,96,0.16)';
+    ctx.fillRect(rnd() * S, rnd() * S, 3, 1.5);
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.repeat.set(3, 3);
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeStonewareCeramicTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(718293);
+  const grad = ctx.createLinearGradient(0, 0, 0, S);
+  grad.addColorStop(0, '#fcf9f2');
+  grad.addColorStop(0.55, '#f0e8da');
+  grad.addColorStop(1, '#dfd2be');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, S, S);
+  // Wheel-thrown pottery horizontal throwing rings
+  for (let y = 0; y < S; y += 6) {
+    ctx.fillStyle = (y / 6) % 2 === 0 ? 'rgba(255,255,255,0.24)' : 'rgba(165,148,125,0.22)';
+    ctx.fillRect(0, y, S, 2.5);
+  }
+  // Reactive artisanal stoneware iron speckles
+  for (let k = 0; k < 2200; k++) {
+    const r = 0.8 + rnd() * 1.8;
+    ctx.fillStyle = rnd() > 0.35 ? 'rgba(118,98,76,0.28)' : 'rgba(255,252,244,0.30)';
+    ctx.beginPath();
+    ctx.arc(rnd() * S, rnd() * S, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeBotanicalLeafTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const grad = ctx.createLinearGradient(0, 0, S, 0);
+  grad.addColorStop(0, '#a8d08d');
+  grad.addColorStop(0.46, '#d9f0c4');
+  grad.addColorStop(0.5, '#f2fbe6');
+  grad.addColorStop(0.54, '#d9f0c4');
+  grad.addColorStop(1, '#a8d08d');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, S, S);
+  // Central leaf midrib
+  ctx.strokeStyle = 'rgba(246,255,230,0.85)';
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(S * 0.5, 0);
+  ctx.lineTo(S * 0.5, S);
+  ctx.stroke();
+  // Branching lateral veins
+  for (let k = 1; k <= 10; k++) {
+    const y0 = (k / 11) * S;
+    const yTip = Math.min(S, y0 + S * 0.08);
+    ctx.strokeStyle = 'rgba(232,250,210,0.65)';
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(S * 0.5, y0);
+    ctx.quadraticCurveTo(S * 0.28, y0 + 10, S * 0.04, yTip);
+    ctx.moveTo(S * 0.5, y0);
+    ctx.quadraticCurveTo(S * 0.72, y0 + 10, S * 0.96, yTip);
+    ctx.stroke();
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.ClampToEdgeWrapping;
+  tex.wrapT = i.ClampToEdgeWrapping;
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeBookBindingTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(319482);
+  ctx.fillStyle = '#f6f2ea';
+  ctx.fillRect(0, 0, S, S);
+  // Fine linen book-cloth weave
+  for (let y = 0; y < S; y += 3) {
+    ctx.fillStyle = (y / 3) % 2 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(165,152,135,0.20)';
+    ctx.fillRect(0, y, S, 1.5);
+  }
+  for (let x = 0; x < S; x += 3) {
+    ctx.fillStyle = (x / 3) % 2 === 0 ? 'rgba(255,255,255,0.15)' : 'rgba(155,142,125,0.15)';
+    ctx.fillRect(x, 0, 1.5, S);
+  }
+  // Decorative gold-foil & debossed spine bands
+  for (const by of [36, 48, 128, 208, 220]) {
+    ctx.fillStyle = 'rgba(235,205,145,0.48)';
+    ctx.fillRect(0, by, S, 4);
+    ctx.fillStyle = 'rgba(110,95,78,0.28)';
+    ctx.fillRect(0, by + 4, S, 2);
+  }
+  for (let k = 0; k < 500; k++) {
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,255,255,0.12)' : 'rgba(120,108,92,0.12)';
+    ctx.fillRect(rnd() * S, rnd() * S, 2, 2);
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.repeat.set(3, 3);
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeBrushedMetalTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  const rnd = japandiRand(884120);
+  const grad = ctx.createLinearGradient(0, 0, S, S);
+  grad.addColorStop(0, '#d8ccb8');
+  grad.addColorStop(0.5, '#eee5d5');
+  grad.addColorStop(1, '#c6b79f');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, S, S);
+  for (let k = 0; k < 320; k++) {
+    const y = rnd() * S;
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(255,252,244,0.28)' : 'rgba(120,104,84,0.24)';
+    ctx.fillRect(0, y, S, 1 + rnd() * 1.5);
+  }
+  const tex = new i.CanvasTexture(cv);
+  tex.wrapS = i.RepeatWrapping;
+  tex.wrapT = i.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  tex.colorSpace = i.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeTvAmbientArtTexture(): i.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const W = 512;
+  const H = 288;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  // Warm Japanese sumi-e sunset landscape gallery mode screen
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#f3e6cf');
+  sky.addColorStop(0.6, '#e7cfb0');
+  sky.addColorStop(1, '#c9ab88');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+  // Warm crimson-gold sun disc
+  ctx.fillStyle = '#d97852';
+  ctx.beginPath();
+  ctx.arc(W * 0.62, H * 0.42, 46, 0, Math.PI * 2);
+  ctx.fill();
+  // Layered misty mountain silhouettes
+  const layers: [string, number[]][] = [
+    ['#8d9a8b', [0.68, 0.52, 0.60, 0.44, 0.58, 0.65]],
+    ['#5f6f62', [0.78, 0.64, 0.72, 0.56, 0.68, 0.74]],
+    ['#3b4942', [0.88, 0.76, 0.82, 0.70, 0.80, 0.86]],
+  ];
+  for (const [col, pts] of layers) {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let idx = 0; idx < pts.length; idx++) {
+      const px = (idx / (pts.length - 1)) * W;
+      const py = pts[idx] * H;
+      ctx.lineTo(px, py);
+    }
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const tex = new i.CanvasTexture(cv);
   tex.colorSpace = i.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
@@ -421,45 +774,57 @@ function makeJapandiWeaveBump(repeat: number): i.Texture | null {
 }
 
 const JAPANDI_OAK_MAP = makeJapandiOakTexture();
+const JAPANDI_ASH_MAP = makeJapandiAshWoodTexture();
+const JAPANDI_FABRIC_MAP = makeJapandiFabricTexture(4);
+const JAPANDI_RUG_MAP = makeJapandiRugTexture();
+const JAPANDI_CERAMIC_MAP = makeStonewareCeramicTexture();
+const JAPANDI_LEAF_MAP = makeBotanicalLeafTexture();
+const JAPANDI_BOOK_MAP = makeBookBindingTexture();
+const JAPANDI_METAL_MAP = makeBrushedMetalTexture();
+export const JAPANDI_TV_SCREEN_MAP = makeTvAmbientArtTexture();
 const JAPANDI_WEAVE_FINE = makeJapandiWeaveBump(6);
 const JAPANDI_WEAVE_RUG = makeJapandiWeaveBump(4);
 
 export const BUDDIES_SLOT_MATERIALS = {
   upholstery: new i.MeshPhysicalMaterial({
-    color: '#ede7dc',
-    roughness: 0.88,
-    sheen: 0.25,
-    sheenRoughness: 0.5,
+    color: '#f2ece1',
+    ...(JAPANDI_FABRIC_MAP ? { map: JAPANDI_FABRIC_MAP } : {}),
+    roughness: 0.86,
+    sheen: 0.28,
+    sheenRoughness: 0.48,
     sheenColor: new i.Color('#ffffff'),
-    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.4 } : {}),
+    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.45 } : {}),
   }),
   accent: new i.MeshPhysicalMaterial({
-    color: '#a9714b',
-    roughness: 0.82,
-    sheen: 0.2,
-    sheenRoughness: 0.5,
-    sheenColor: new i.Color('#ffffff'),
-    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.4 } : {}),
+    color: '#c47d52',
+    ...(JAPANDI_FABRIC_MAP ? { map: JAPANDI_FABRIC_MAP } : {}),
+    roughness: 0.8,
+    sheen: 0.24,
+    sheenRoughness: 0.48,
+    sheenColor: new i.Color('#fff4e8'),
+    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.45 } : {}),
   }),
   bedding: new i.MeshPhysicalMaterial({
-    color: '#e7e0d1',
-    roughness: 0.85,
-    sheen: 0.2,
+    color: '#ece5d6',
+    ...(JAPANDI_FABRIC_MAP ? { map: JAPANDI_FABRIC_MAP } : {}),
+    roughness: 0.84,
+    sheen: 0.24,
     sheenRoughness: 0.5,
-    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.4 } : {}),
+    ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.45 } : {}),
   }),
   rug: new i.MeshPhysicalMaterial({
-    color: '#ded3be',
-    roughness: 0.94,
-    sheen: 0.15,
-    ...(JAPANDI_WEAVE_RUG ? { bumpMap: JAPANDI_WEAVE_RUG, bumpScale: 0.6 } : {}),
+    color: '#e5dac6',
+    ...(JAPANDI_RUG_MAP ? { map: JAPANDI_RUG_MAP } : {}),
+    roughness: 0.92,
+    sheen: 0.18,
+    ...(JAPANDI_WEAVE_RUG ? { bumpMap: JAPANDI_WEAVE_RUG, bumpScale: 0.65 } : {}),
   }),
   joinery: new i.MeshPhysicalMaterial({
     color: '#ffffff',
     ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
-    roughness: 0.5,
-    clearcoat: 0.18,
-    clearcoatRoughness: 0.4,
+    roughness: 0.48,
+    clearcoat: 0.2,
+    clearcoatRoughness: 0.38,
   }),
 };
 
@@ -472,9 +837,27 @@ const dt = BUDDIES_SLOT_MATERIALS.accent;
 const R = BUDDIES_SLOT_MATERIALS.joinery;
 const Zs = BUDDIES_SLOT_MATERIALS.bedding;
 
-const D = no('#1b1c1f', { roughness: 0.4, metalness: 0.6 });
-const ro = no('#c9a15e', { roughness: 0.28, metalness: 1, clearcoat: 0.5 });
-const Ae = j('#222731', { roughness: 0.7 });
+const D = no('#8c765c', {
+  roughness: 0.38,
+  metalness: 0.24,
+  ...(JAPANDI_METAL_MAP ? { map: JAPANDI_METAL_MAP } : {}),
+});
+D.userData.boxUV = true;
+
+const ro = no('#d8b168', {
+  roughness: 0.28,
+  metalness: 0.35,
+  clearcoat: 0.5,
+  ...(JAPANDI_METAL_MAP ? { map: JAPANDI_METAL_MAP } : {}),
+});
+ro.userData.boxUV = true;
+
+const Ae = j('#4a433b', {
+  roughness: 0.65,
+  ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
+});
+Ae.userData.boxUV = true;
+
 const lr = new i.MeshBasicMaterial({
   color: '#cfe9ff',
   transparent: true,
@@ -484,40 +867,85 @@ const lr = new i.MeshBasicMaterial({
   fog: false,
 });
 
-const Hs = ['#2f5a2c', '#3b6a33', '#467a3a', '#2a4f2e', '#557f3f'].map((e) => new i.Color(e));
+const Hs = ['#3f853b', '#4e9944', '#5eab50', '#347339', '#6fb85b'].map((e) => new i.Color(e));
 const _o = (e: () => number) =>
-  Hs[Math.floor(e() * Hs.length)].clone().multiplyScalar(0.9 + e() * 0.25);
+  Hs[Math.floor(e() * Hs.length)].clone().multiplyScalar(0.92 + e() * 0.22);
 const Do = j('#ffffff', {
   vertexColors: true,
   side: i.DoubleSide,
-  roughness: 0.48,
-  envMapIntensity: 0.8,
+  roughness: 0.44,
+  envMapIntensity: 0.85,
+  ...(JAPANDI_LEAF_MAP ? { map: JAPANDI_LEAF_MAP } : {}),
 });
-const Ns = rr('#edebe6', { roughness: 0.46, clearcoat: 0.4, flatShading: true });
-const js = rr('#b3a48f', { roughness: 0.5, clearcoat: 0.4 });
-const en = j('#2c231b');
-const $s = j('#5c4b35', { roughness: 0.8 });
-const rc = j('#ffffff', { roughness: 0.75, vertexColors: true });
-const sc = rr('#ffffff', { roughness: 0.4, clearcoat: 0.5, vertexColors: true });
+Do.userData.noToonStroke = true;
+
+const Ns = rr('#f2ede4', {
+  roughness: 0.42,
+  clearcoat: 0.45,
+  flatShading: true,
+  ...(JAPANDI_CERAMIC_MAP ? { map: JAPANDI_CERAMIC_MAP } : {}),
+});
+Ns.userData.boxUV = true;
+
+const js = rr('#d1bfa8', {
+  roughness: 0.44,
+  clearcoat: 0.45,
+  ...(JAPANDI_CERAMIC_MAP ? { map: JAPANDI_CERAMIC_MAP } : {}),
+});
+js.userData.boxUV = true;
+
+const en = j('#523f2d', {
+  roughness: 0.85,
+  ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
+});
+en.userData.boxUV = true;
+
+const $s = j('#6d573c', {
+  roughness: 0.78,
+  ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
+});
+$s.userData.boxUV = true;
+
+const rc = j('#ffffff', {
+  roughness: 0.68,
+  vertexColors: true,
+  ...(JAPANDI_BOOK_MAP ? { map: JAPANDI_BOOK_MAP } : {}),
+});
+rc.userData.boxUV = true;
+
+const sc = rr('#ffffff', {
+  roughness: 0.36,
+  clearcoat: 0.55,
+  vertexColors: true,
+  ...(JAPANDI_CERAMIC_MAP ? { map: JAPANDI_CERAMIC_MAP } : {}),
+});
+sc.userData.boxUV = true;
+
 const qs = (e: i.Material, t: string): TintMaterialRef => ({
   isTint: true,
   base: e,
   col: new i.Color(t),
 });
 const He = [
-  '#2d3a52',
-  '#d9d0c1',
-  '#8a5a3c',
-  '#4d5b4a',
-  '#b9a27f',
-  '#1f2226',
-  '#a44f37',
-  '#6b7686',
-  '#e6dfd2',
-  '#3a2f28',
+  '#3b6288',
+  '#efe6d5',
+  '#c87347',
+  '#567d5c',
+  '#d4ad73',
+  '#526880',
+  '#d16044',
+  '#7a93a8',
+  '#f5ede0',
+  '#9c6844',
 ].map((e) => qs(rc, e));
-const me = ['#e9e4da', '#c9b59a', '#8e9a86', '#8c7a66', '#b86f4c'].map((e) => qs(sc, e));
-const yr = j('#efe6d4', { roughness: 0.9, side: i.DoubleSide, envMapIntensity: 0.4 });
+const me = ['#f5efe4', '#dfc7a7', '#94b39b', '#ba9e82', '#d4825a'].map((e) => qs(sc, e));
+const yr = j('#f7efe0', {
+  roughness: 0.86,
+  side: i.DoubleSide,
+  envMapIntensity: 0.45,
+  ...(JAPANDI_FABRIC_MAP ? { map: JAPANDI_FABRIC_MAP } : {}),
+  ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.35 } : {}),
+});
 const Ne = {
   shade: ct('#ffd6a0', 1),
   bulb: ct('#fff0d6', 1),
@@ -526,13 +954,40 @@ const Ne = {
 };
 Ne.shade.side = i.DoubleSide;
 
-const vc = j('#7c7a75', { roughness: 0.5, envMapIntensity: 0.6 });
-const Ks = j('#3d3c3a');
-const Xs = j('#f3f0ea', { roughness: 0.85 });
-const Ys = j('#d9d4cb', { roughness: 0.45, envMapIntensity: 0.7 });
-const Sc = j('#2e2a27', { roughness: 0.8 });
-const Ya = 3;
-const Za = 2.1;
+const vc = j('#9c8e7b', {
+  roughness: 0.48,
+  envMapIntensity: 0.65,
+  ...(JAPANDI_ASH_MAP ? { map: JAPANDI_ASH_MAP } : {}),
+});
+vc.userData.boxUV = true;
+
+const Ks = j('#4e4338', {
+  roughness: 0.58,
+  ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
+});
+Ks.userData.boxUV = true;
+
+const Xs = j('#f7f3eb', {
+  roughness: 0.82,
+  ...(JAPANDI_FABRIC_MAP ? { map: JAPANDI_FABRIC_MAP } : {}),
+  ...(JAPANDI_WEAVE_FINE ? { bumpMap: JAPANDI_WEAVE_FINE, bumpScale: 0.35 } : {}),
+});
+Xs.userData.boxUV = true;
+
+const Ys = j('#e4ddd1', {
+  roughness: 0.45,
+  envMapIntensity: 0.7,
+  ...(JAPANDI_ASH_MAP ? { map: JAPANDI_ASH_MAP } : {}),
+});
+Ys.userData.boxUV = true;
+
+const Sc = j('#594838', {
+  roughness: 0.75,
+  ...(JAPANDI_OAK_MAP ? { map: JAPANDI_OAK_MAP } : {}),
+});
+Sc.userData.boxUV = true;
+const Ya = 3.35;
+const Za = 2.35;
 
 function Je(e: number, t: number, o: number, a = 0.05, n = 0.018): i.BufferGeometry {
   const r = new vs(e, t, o, 4, Math.min(a, Math.min(e, t, o) / 2.02));
@@ -567,12 +1022,14 @@ function Ft(e: [number, number][], t = 32): i.LatheGeometry {
     e.map(([s, l]) => new i.Vector2(s, l)),
     t,
   );
-  const a = Math.max(...e.map((s) => s[0]));
+  const maxR = Math.max(0.05, ...e.map((s) => s[0]));
+  const maxY = Math.max(0.05, ...e.map((s) => s[1]));
   const n = o.attributes.uv;
   const r = o.attributes.position;
   for (let s = 0; s < n.count; s++) {
-    n.setXY(s, n.getX(s) * Math.PI * 2 * a, r.getY(s));
+    n.setXY(s, n.getX(s) * Math.max(1.5, Math.PI * 2 * maxR * 3), (r.getY(s) / maxY) * 1.5);
   }
+  o.computeVertexNormals();
   return o;
 }
 
@@ -595,6 +1052,7 @@ function Ro(
 ): i.BufferGeometry {
   const l: number[] = [];
   const c: number[] = [];
+  const uvs: number[] = [];
   const u: number[] = [];
   for (let f = 0; f <= r; f++) {
     const m = f / r;
@@ -610,11 +1068,12 @@ function Ro(
     for (let b = -3; b <= 3; b++) {
       const S = b / 3;
       l.push(S * w, m * e, -Math.abs(S) * w * o - a * e * m * m);
+      uvs.push((S + 1) * 0.5, m);
       const g = 1 - Math.abs(S);
       if (s && Math.abs(S) > 0.99) {
         c.push(...s);
       } else {
-        c.push(0.82 + 0.3 * g * g * g, 0.86 + 0.22 * g * g * g, 0.8 + 0.2 * g * g * g);
+        c.push(0.88 + 0.24 * g * g * g, 0.92 + 0.18 * g * g * g, 0.86 + 0.16 * g * g * g);
       }
     }
   }
@@ -631,6 +1090,7 @@ function Ro(
   const h = new i.BufferGeometry();
   h.setAttribute('position', new i.Float32BufferAttribute(l, 3));
   h.setAttribute('color', new i.Float32BufferAttribute(c, 3));
+  h.setAttribute('uv', new i.Float32BufferAttribute(uvs, 2));
   h.setIndex(u);
   h.computeVertexNormals();
   return h.toNonIndexed();
@@ -1407,31 +1867,31 @@ const JAPANDI_PANEL_GLOW = new i.MeshBasicMaterial({
 function Cc(): i.Group {
   const e = new i.Group();
   const t = O();
-  const o = 1.8;
-  const a = 2.12;
-  // Japandi platform bedroom suite (redesign Phase 2, reference sheet 2):
-  // warm backlight halo + full-width oak headboard wall panel with seam grooves
-  t.box(JAPANDI_PANEL_GLOW, 0, 0.82, -a / 2 - 0.008, 3.0, 1.64, 0.01)
-    .box(R, 0, 0.78, -a / 2 + 0.015, 2.9, 1.56, 0.03, { r: 0.008 })
-    .box(Ks, -0.97, 0.78, -a / 2 + 0.0315, 0.014, 1.5, 0.003)
-    .box(Ks, 0.97, 0.78, -a / 2 + 0.0315, 0.014, 1.5, 0.003)
+  const o = 2.18;
+  const a = 2.42;
+  // Enlarged & slightly widened Japandi platform bedroom suite:
+  // warm backlight halo + full-width oak headboard wall panel with non-overlapping Z offsets (zero z-fighting)
+  t.box(JAPANDI_PANEL_GLOW, 0, 0.69, -a / 2 + 0.008, 3.36, 1.38, 0.008)
+    .box(R, 0, 0.67, -a / 2 + 0.032, 3.28, 1.34, 0.032, { r: 0.008 })
+    .box(Ks, -1.12, 0.67, -a / 2 + 0.054, 0.016, 1.28, 0.004)
+    .box(Ks, 1.12, 0.67, -a / 2 + 0.054, 0.016, 1.28, 0.004)
     // Recessed dark plinth + low floating platform slab (lip extends past the mattress)
-    .box(en, 0, 0.04, 0.03, 1.66, 0.08, 1.86)
-    .box(R, 0, 0.16, 0.03, o + 0.26, 0.16, a - 0.02, { r: 0.015 });
-  // Upholstered fabric headboard cushion mounted on the panel
-  t.geo(_e, Je(o + 0.1, 0.58, 0.12, 0.05, 0.006), 0, 0.66, -a / 2 + 0.09)
-    .geo(Xs, Ee(We(o - 0.04, 0.24, a - 0.14, 0.07, 3)), 0, 0.36, 0.02)
-    .geo(Zs, Ee(We(o + 0.05, 0.25, a * 0.61, 0.1, 3)), 0, 0.4, 0.4)
-    .geo(Zs, Ee(We(o + 0.05, 0.07, 0.26, 0.035, 2)), 0, 0.545, -0.24, {
+    .box(en, 0, 0.045, 0.03, o + 0.06, 0.09, a - 0.22)
+    .box(R, 0, 0.17, 0.03, o + 0.3, 0.17, a + 0.02, { r: 0.016 });
+  // Upholstered fabric headboard cushion mounted proud of the oak panel
+  t.geo(_e, Je(o + 0.12, 0.62, 0.13, 0.05, 0.006), 0, 0.68, -a / 2 + 0.115)
+    .geo(Xs, Ee(We(o - 0.04, 0.27, a - 0.14, 0.075, 3)), 0, 0.38, 0.03)
+    .geo(Zs, Ee(We(o + 0.06, 0.28, a * 0.62, 0.1, 3)), 0, 0.42, 0.44)
+    .geo(Zs, Ee(We(o + 0.06, 0.075, 0.3, 0.035, 2)), 0, 0.58, -0.28, {
       rx: 0.18,
     });
   for (const n of [-1, 1]) {
-    t.geo(Xs, io(0.66, 0.42, 0.17), n * 0.44, 0.56, -a / 2 + 0.28, { rx: -1.18 });
+    t.geo(Xs, io(0.78, 0.46, 0.19), n * 0.52, 0.59, -a / 2 + 0.31, { rx: -1.18 });
   }
   for (const n of [-1, 1]) {
-    t.geo(dt, io(0.46, 0.34, 0.13), n * 0.36, 0.6, -a / 2 + 0.44, { rx: -1, rz: n * 0.06 });
+    t.geo(dt, io(0.54, 0.38, 0.15), n * 0.44, 0.63, -a / 2 + 0.49, { rx: -1, rz: n * 0.06 });
   }
-  t.geo(dt, Ee(We(o + 0.12, 0.035, 0.5, 0.015, 2)), 0, 0.53, a / 2 - 0.34);
+  t.geo(dt, Ee(We(o + 0.14, 0.04, 0.56, 0.016, 2)), 0, 0.565, a / 2 - 0.38);
   t.flush(e);
   return e;
 }
@@ -1581,9 +2041,9 @@ function Lc(): i.Group {
 function Ac(): i.Group {
   const e = new i.Group();
   const t = O();
-  const o = 1.2;
-  const a = 0.4;
-  const n = 0.45;
+  const o = 1.44;
+  const a = 0.44;
+  const n = 0.46;
   t.geo(dt, Je(o, 0.1, a, 0.04, 0.012), 0, n - 0.05, 0)
     .box(R, 0, n - 0.115, 0, o - 0.02, 0.03, a - 0.02, { r: 0.006 })
     .box(R, 0, 0.1, 0, o - 0.14, 0.02, a - 0.1);
@@ -1595,7 +2055,7 @@ function Ac(): i.Group {
   ]) {
     t.cyl(R, r, (n - 0.13) / 2, s, 0.02, 0.016, n - 0.13, { seg: 8 });
   }
-  t.box(He[1], 0.3, 0.125, 0, 0.3, 0.03, 0.22).box(He[4], 0.32, 0.155, 0, 0.26, 0.03, 0.2, {
+  t.box(He[1], 0.34, 0.125, 0, 0.3, 0.03, 0.22).box(He[4], 0.36, 0.155, 0, 0.26, 0.03, 0.2, {
     ry: 0.15,
   });
   t.flush(e);
@@ -1772,6 +2232,18 @@ function TvUnit(): i.Group {
     0.07,
     { r: 0.02 },
   );
+  if (JAPANDI_TV_SCREEN_MAP) {
+    const tvScreenMat = new i.MeshBasicMaterial({
+      map: JAPANDI_TV_SCREEN_MAP,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    const tvScreenMesh = new i.Mesh(new i.PlaneGeometry(1.78, 0.96), tvScreenMat);
+    tvScreenMesh.position.set(0, 1.62, -0.12);
+    tvScreenMesh.raycast = () => {};
+    e.add(tvScreenMesh);
+  }
   for (const [lx, lz] of [
     [-1.12, -0.16],
     [1.12, -0.16],
@@ -1863,18 +2335,18 @@ export const BUDDIES_ZONE_COLLIDERS: ReadonlyArray<{
   { x: -3.7, z: 2.97, ry: Math.PI, hw: 0.23, hd: 0.24 },
   { x: -2.8, z: 2.97, ry: Math.PI, hw: 0.23, hd: 0.24 },
   { x: -4.95, z: 3.35, ry: 0, hw: 0.2, hd: 0.2 },
-  // Bedroom zone
-  { x: 3.4, z: -2.62, ry: 0, hw: 1.03, hd: 1.05 },
-  { x: 1.95, z: -3.47, ry: 0, hw: 0.28, hd: 0.2 },
-  { x: 4.85, z: -3.47, ry: 0, hw: 0.28, hd: 0.2 },
-  { x: 3.4, z: -1.2, ry: 0, hw: 0.6, hd: 0.2 },
-  { x: 4.95, z: -1.7, ry: -Math.PI / 2, hw: 0.8, hd: 0.3 },
-  { x: 5.0, z: 0.4, ry: 0, hw: 0.22, hd: 0.22 },
-  // Study zone
-  { x: 4.1, z: 1.36, ry: 0, hw: 0.7, hd: 0.33 },
-  { x: 4.1, z: 2.05, ry: Math.PI, hw: 0.3, hd: 0.3 },
-  { x: 1.69, z: 3.05, ry: Math.PI / 2, hw: 0.5, hd: 0.17 },
-  { x: 4.55, z: 3.1, ry: (-5 * Math.PI) / 8, hw: 0.4, hd: 0.42 },
+  // Bedroom zone (enlarged & slightly widened bed + bench)
+  { x: 3.35, z: -2.46, ry: 0, hw: 1.24, hd: 1.22 },
+  { x: 1.76, z: -3.45, ry: 0, hw: 0.28, hd: 0.2 },
+  { x: 4.94, z: -3.45, ry: 0, hw: 0.28, hd: 0.2 },
+  { x: 3.35, z: -0.88, ry: 0, hw: 0.72, hd: 0.22 },
+  { x: 4.95, z: 0.05, ry: -Math.PI / 2, hw: 0.8, hd: 0.3 },
+  { x: 4.95, z: 1.25, ry: 0, hw: 0.22, hd: 0.22 },
+  // Study zone (open pavilion layout without interior partition wall)
+  { x: 3.55, z: 2.15, ry: 0, hw: 0.7, hd: 0.33 },
+  { x: 3.55, z: 2.84, ry: Math.PI, hw: 0.3, hd: 0.3 },
+  { x: 5.05, z: 2.35, ry: -Math.PI / 2, hw: 0.5, hd: 0.17 },
+  { x: 4.55, z: 3.2, ry: (-5 * Math.PI) / 8, hw: 0.4, hd: 0.42 },
   { x: 2.3, z: 3.4, ry: 0, hw: 0.2, hd: 0.2 },
   // Living zone (TV credenza first, then the sectional in two boxes)
   { x: -4.92, z: -0.6, ry: Math.PI / 2, hw: 1.2, hd: 0.38 },
@@ -1904,19 +2376,19 @@ export function buildBuddiesInteriorBackgroundZones(): i.Group {
     ['chair', -3.7, 2.97, 8 * Ce],
     ['chair', -2.8, 2.97, 8 * Ce],
     ['snake', -4.95, 3.35, 0],
-    // Bedroom Zone (`Ur`)
-    ['bed', 3.4, -2.62, 0],
-    ['nightstand', 1.95, -3.47, 0],
-    ['nightstand', 4.85, -3.47, 0],
-    ['bench', 3.4, -1.2, 0],
-    ['rug', 3.4, -1.75, 0],
-    ['wardrobe', 4.95, -1.7, -4 * Ce],
-    ['plant2', 5.0, 0.4, 0],
-    // Study / Office Zone (`Vr`)
-    ['desk', 4.1, 1.36, 0],
-    ['taskchair', 4.1, 2.05, 8 * Ce],
-    ['bookcase', 1.69, 3.05, 4 * Ce],
-    ['armchair', 4.55, 3.1, -5 * Ce],
+    // Bedroom Zone (`Ur`) — Enlarged & slightly widened bed + flanking nightstands + bench
+    ['bed', 3.35, -2.46, 0],
+    ['nightstand', 1.76, -3.45, 0],
+    ['nightstand', 4.94, -3.45, 0],
+    ['bench', 3.35, -0.88, 0],
+    ['rug', 3.35, -1.62, 0],
+    ['wardrobe', 4.95, 0.05, -4 * Ce],
+    ['plant2', 4.95, 1.25, 0],
+    // Study / Office Zone (`Vr`) — Open pavilion layout with bookcase along right wall
+    ['desk', 3.55, 2.15, 0],
+    ['taskchair', 3.55, 2.84, 8 * Ce],
+    ['bookcase', 5.05, 2.35, -4 * Ce],
+    ['armchair', 4.55, 3.2, -5 * Ce],
     ['snake', 2.3, 3.4, 0],
     // Living Room Set: sectional facing the TV wall on the left wall
     ['sofa', -2.35, -0.6, -4 * Ce],
@@ -1940,9 +2412,9 @@ export function buildBuddiesInteriorBackgroundZones(): i.Group {
     grp.add(itemGrp);
   }
 
-  // Wall-mounted floating shelves (`xc`, `["shelf", "B", -4, 1.62]` on Back Wall)
+  // Wall-mounted floating shelves (`xc`, `["shelf", "B", -4, 1.58]` on Back Wall)
   const backShelves = xc();
-  backShelves.position.set(-4.0, 1.62, -3.7);
+  backShelves.position.set(-4.0, 1.58, -3.62);
   backShelves.traverse((c) => {
     c.raycast = () => {};
   });

@@ -1004,10 +1004,8 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
         {fishingHintMessage && (
           <div
             style={{
-              background:
-                'linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 40%), rgba(12, 18, 26, 0.72)',
-              border: '1px solid rgba(170, 215, 235, 0.16)',
-              backdropFilter: 'blur(18px) saturate(1.6)',
+              background: 'rgba(12, 18, 26, 0.92)',
+              border: '1px solid rgba(170, 215, 235, 0.24)',
               boxShadow:
                 'inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 32px -12px rgba(0,0,0,0.55)',
             }}
@@ -1061,7 +1059,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
             )}
 
             {/* Vertical capsule gauge: slack / low power at the bottom, danger at the top */}
-            <div className="relative w-[26px] h-[168px] rounded-full border-2 border-white/75 bg-white/25 backdrop-blur-[2px] shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
+            <div className="relative w-[26px] h-[168px] rounded-full border-2 border-white/85 bg-[#0f172a]/70 shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
               <div className="absolute inset-0 rounded-full overflow-hidden">
                 {fishingPhase === 'charging' ? (
                   <span
@@ -1147,8 +1145,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
           data-caught-fish-toast="true"
           style={{
             background:
-              'radial-gradient(70% 60% at 50% 50%, rgba(10, 22, 34, 0.58) 0%, rgba(4, 9, 15, 0.88) 100%)',
-            backdropFilter: 'blur(10px) saturate(0.85)',
+              'radial-gradient(70% 60% at 50% 50%, rgba(10, 22, 34, 0.84) 0%, rgba(4, 9, 15, 0.94) 100%)',
           }}
           className="fixed inset-0 z-[120] flex flex-col items-center justify-center px-6 py-8 text-center text-[#f4ead6] pointer-events-auto select-none"
         >

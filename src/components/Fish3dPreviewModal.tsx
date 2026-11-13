@@ -255,7 +255,7 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
       aria-label={`${fish.speciesName} Preview`}
       data-fish-3d-preview-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs pointer-events-auto select-none"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 pointer-events-auto select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

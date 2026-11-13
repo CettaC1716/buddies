@@ -307,10 +307,7 @@ function renderComicCardIllustration(
           className="absolute inset-0 flex items-center justify-center"
         >
           <div className="w-12 h-12 rounded-full bg-[#0d0f12] border-[3px] border-[#f5b82e] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center">
-            <span
-              className="text-[28px] font-black leading-none text-[#f5b82e]"
-              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-            >
+            <span className="text-[28px] font-black leading-none text-[#f5b82e]">
               ?
             </span>
           </div>
@@ -438,7 +435,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'ar99_rifle',
           title: 'AR-99 ASSAULT RIFLE',
-          tagLine: '[PRIMARY // TIER 4]',
+          tagLine: 'PRIMARY · TIER 4',
           illustration: 'ar99_rifle',
           actionKind: 'recipe',
           recipeId: 'assault_plasma',
@@ -447,7 +444,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'p12_handgun',
           title: 'P-12 TACTICAL HANDGUN',
-          tagLine: '[SIDEARM // TIER 2]',
+          tagLine: 'SIDEARM · TIER 2',
           illustration: 'p12_handgun',
           actionKind: 'recipe',
           recipeId: 'pistol_uzi',
@@ -456,7 +453,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'vx20_bazooka',
           title: 'VX-20 HEAVY BAZOOKA',
-          tagLine: '[ORDNANCE // TIER 5]',
+          tagLine: 'ORDNANCE · TIER 5',
           illustration: 'vx20_bazooka',
           actionKind: 'recipe',
           recipeId: 'bazooka',
@@ -465,7 +462,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'titan6_gatling',
           title: 'TITAN-6 ROTARY GATLING',
-          tagLine: '[HEAVY // TIER 4]',
+          tagLine: 'HEAVY · TIER 4',
           illustration: 'titan6_gatling',
           actionKind: 'recipe',
           recipeId: 'gatling_mortar',
@@ -474,7 +471,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'lg88_laser_rifle',
           title: 'LG-88 PHOTON LANCE',
-          tagLine: '[ENERGY // TIER 4]',
+          tagLine: 'ENERGY · TIER 4',
           illustration: 'lg88_laser_rifle',
           actionKind: 'recipe',
           recipeId: 'laser_gun',
@@ -490,7 +487,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'st01_minitank',
           title: 'ST-01 COMBAT MINI-TANK',
-          tagLine: '[GROUND // ASSAULT // TIER 4]',
+          tagLine: 'GROUND · ASSAULT · TIER 4',
           illustration: 'st01_minitank',
           actionKind: 'recipe',
           recipeId: 'blitz_tank',
@@ -499,7 +496,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'ht88_dump_truck',
           title: 'HT-88 HEAVY DUMP TRUCK',
-          tagLine: '[GROUND // CARGO // TIER 3]',
+          tagLine: 'GROUND · CARGO · TIER 3',
           illustration: 'ht88_dump_truck',
           actionKind: 'recipe',
           recipeId: 'dump_truck',
@@ -508,7 +505,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'af9_plane',
           title: 'AF-9 SKY-STRIKER PLANE',
-          tagLine: '[AERIAL // INTERCEPTOR // TIER 4]',
+          tagLine: 'AERIAL · INTERCEPTOR · TIER 4',
           illustration: 'af9_plane',
           actionKind: 'recipe',
           recipeId: 'blitz_plane',
@@ -524,7 +521,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'hq_super_command',
           title: '3-STORY SUPER COMMAND',
-          tagLine: bLv >= 3 ? '[ACTIVE // HQ LV.3 UNLOCKED]' : '[HQ // STRATEGIC // TIER 3]',
+          tagLine: bLv >= 3 ? 'ACTIVE · HQ LV.3 UNLOCKED' : 'HQ · STRATEGIC · TIER 3',
           illustration: 'hq_super_command',
           actionKind: 'upgrade_base',
           upgradeId: 'upgrade_super_command_lv3',
@@ -537,7 +534,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'hq_tactical_comms',
           title: 'CENTRAL TACTICAL COMMS',
-          tagLine: bLv >= 2 ? `[ACTIVE // RADAR LV.${bLv}]` : '[OPERATIONS // TIER 2]',
+          tagLine: bLv >= 2 ? `ACTIVE · RADAR LV.${bLv}` : 'OPERATIONS · TIER 2',
           illustration: 'hq_tactical_comms',
           actionKind: 'upgrade_base',
           upgradeId: 'upgrade_building_only',
@@ -555,7 +552,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'skyshield_turret',
           title: '35mm SKYSHIELD TURRET',
-          tagLine: '[TURRET // TIER 4]',
+          tagLine: 'TURRET · TIER 4',
           illustration: 'skyshield_turret',
           actionKind: 'recipe',
           recipeId: 'skyshield_turret',
@@ -564,7 +561,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'hg04_grenade',
           title: 'HG-04 FRAG GRENADE',
-          tagLine: '[TACTICAL // TIER 2]',
+          tagLine: 'TACTICAL · TIER 2',
           illustration: 'hg04_grenade',
           actionKind: 'recipe',
           recipeId: 'hand_grenade',
@@ -573,7 +570,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'tm89_mine',
           title: 'TM-89 ANTI-VEHICLE MINE',
-          tagLine: '[ORDNANCE // TIER 2]',
+          tagLine: 'ORDNANCE · TIER 2',
           illustration: 'tm89_mine',
           actionKind: 'recipe',
           recipeId: 'land_mine',
@@ -589,7 +586,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'nuclear_launcher',
           title: nukeAccess.isRevealed ? 'TACTICAL NUKE LAUNCHER' : '',
-          tagLine: nukeAccess.isRevealed ? '[TURRET // TIER 5]' : '',
+          tagLine: nukeAccess.isRevealed ? 'TURRET · TIER 5' : '',
           illustration: 'nuclear_launcher',
           actionKind: 'recipe',
           recipeId: 'nuclear_launcher',
@@ -599,7 +596,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
         {
           id: 'cb24_cluster',
           title: clusterAccess.isRevealed ? 'CB-24 CLUSTER BOMB' : '',
-          tagLine: clusterAccess.isRevealed ? '[AIRCRAFT ONLY // TIER 3]' : '',
+          tagLine: clusterAccess.isRevealed ? 'AIRCRAFT ONLY · TIER 3' : '',
           illustration: 'cb24_cluster',
           actionKind: 'recipe',
           recipeId: 'cluster_bomb',
@@ -657,12 +654,13 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
       role="dialog"
       aria-modal="false"
       aria-hidden={!isOpen}
+      inert={!isOpen || undefined}
       aria-label="Self-Service Tactical Kiosk"
       data-kiosk-drawer="true"
       className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col transition-all duration-300 ease-out transform ${
         isOpen
-          ? 'translate-x-0 opacity-100 pointer-events-auto'
-          : '-translate-x-[120%] opacity-0 pointer-events-none'
+          ? 'translate-x-0 opacity-100 visible pointer-events-auto'
+          : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
       }`}
     >
       <div className="relative pt-10 pl-2.5 pb-2.5 pr-1 max-h-full overflow-y-auto">
@@ -749,7 +747,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
             ) : null}
             <div
               data-kiosk-gold="true"
-              className="px-2.5 py-0.5 bg-[#f4f6f8] border-2 border-[#0d0f12] text-[11px] font-black tracking-tight text-[#0d0f12] shadow-[0_2px_0_#0d0f12]"
+              className="px-2.5 py-0.5 bg-[#f4f6f8] border-2 border-[#0d0f12] text-[11px] font-mono-tabular font-bold tracking-tight text-[#0d0f12] shadow-[0_2px_0_#0d0f12]"
               title="LUL (Lulling) Balance"
             >
               {hud.gold.toLocaleString()} LUL
@@ -774,10 +772,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
 
           {/* Header Block: Fixed-Height Title & 2-Line Subtitle so modal never jumps between pages */}
           <div className="mt-1">
-            <h2
-              className="h-[32px] sm:h-[36px] flex items-center text-[25px] sm:text-[31px] font-black uppercase tracking-tight leading-none text-[#0d0f12] whitespace-nowrap truncate"
-              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-            >
+            <h2 className="h-[32px] sm:h-[36px] flex items-center text-[25px] sm:text-[31px] font-black uppercase tracking-tight leading-none text-[#0d0f12] whitespace-nowrap truncate">
               {!isPlotClaimedAndDeployed
                 ? 'CLAIM HOUSE PLOT'
                 : isSafezoneCityMode
@@ -805,7 +800,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
             >
               <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-[#00f0ff] animate-ping" />
+                  <span className="w-2 h-2 rounded-full bg-[#00f0ff]" />
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 truncate">
                     HOUSE PLOT {targetPlotLabel}
                   </span>
@@ -879,7 +874,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               ) : isScanningGamepass ? (
                 /* Scanning in Progress */
                 <div className="py-3 px-3 bg-[#1e293b] border border-[#facc15] text-center space-y-1">
-                  <div className="text-xs font-black uppercase text-[#facc15] tracking-wider animate-pulse">
+                  <div className="text-xs font-black uppercase text-[#facc15] tracking-wider">
                     CHECKING HOUSE OWNERSHIP...
                   </div>
                 </div>
@@ -1152,7 +1147,6 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                                   ? 'text-[10.5px] sm:text-[11.5px]'
                                   : 'text-[12px] sm:text-[13.5px]'
                               } font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12] truncate`}
-                              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                             >
                               {card.title}
                             </div>
@@ -1260,7 +1254,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       <polygon points="6,3 15,10 6,17" />
                     </svg>
                   </button>
-                  <div className="px-2.5 h-11 bg-[#f4f6f8] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center text-[11px] font-black tracking-tight text-[#0d0f12] select-none">
+                  <div className="px-2.5 h-11 bg-[#f4f6f8] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center text-[11px] font-mono-tabular font-bold tracking-tight text-[#0d0f12] select-none">
                     0{pageIndex + 1} / 05
                   </div>
                 </div>
@@ -1275,7 +1269,6 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         ? 'bg-[#262b30] text-[#f5b82e] hover:bg-[#343b42]'
                         : 'bg-[#e2e6ea] hover:bg-[#2bb3b1] text-[#0d0f12]'
                     }`}
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     <span className="inline-block skew-x-6">
                       {selectedCard.isSilhouetteLocked

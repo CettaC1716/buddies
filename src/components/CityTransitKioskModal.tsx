@@ -177,7 +177,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       onConfirmEnterDestination(centralDest);
       return;
     }
-    setBrowserSectionTitle('WARZONE ARENA // SELECT FACTION');
+    setBrowserSectionTitle('WARZONE ARENA · SELECT FACTION');
     setLevelView('warzoneTeamSelect');
   };
 
@@ -209,7 +209,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       aria-label="City Transit Self-Service Kiosk"
       data-teleport-kiosk-modal="true"
       data-transit-kiosk-level={levelView}
-      className="fixed inset-0 z-[105] flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 backdrop-blur-xs pointer-events-auto select-none"
+      className="fixed inset-0 z-[105] flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 pointer-events-auto select-none"
       onClick={() => {
         soundEngine.playUiClick();
         onClose();
@@ -240,7 +240,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
             <div className="min-w-0">
               <h2
                 className="text-lg sm:text-2xl font-black uppercase italic tracking-tight text-white truncate"
-                style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
               >
                 {worldMode === 'warzone'
                   ? 'WARZONE EVACUATION TERMINAL'
@@ -283,7 +282,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               </div>
               <h3
                 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white"
-                style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
               >
                 LEAVE WARZONE ARENA
               </h3>
@@ -441,7 +439,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="relative z-10 p-4 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     TRAVEL &amp; DISTRICTS
                   </div>
@@ -489,7 +486,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="relative z-10 p-4 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     WARZONE ARENA
                   </div>
@@ -525,7 +521,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="relative z-10 p-4 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     MY HOUSE
                   </div>
@@ -563,7 +558,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="relative z-10 p-4 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     SHOP &amp; EXCHANGE
                   </div>
@@ -585,7 +579,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               </div>
               <h3
                 className="text-xl sm:text-3xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
-                style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
               >
                 CHOOSE YOUR TEAM FACTION
               </h3>
@@ -619,7 +612,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="my-2">
                   <div
                     className="text-2xl sm:text-3xl font-black uppercase italic text-white group-hover:text-yellow-300 transition-colors"
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     BLUE TEAM
                   </div>
@@ -662,7 +654,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="my-2">
                   <div
                     className="text-2xl sm:text-3xl font-black uppercase italic text-white group-hover:text-yellow-300 transition-colors"
-                    style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                   >
                     RED TEAM
                   </div>
@@ -798,7 +789,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     <h3
                       data-transit-selected-title="true"
                       className="text-2xl sm:text-3xl font-black uppercase italic tracking-tight text-white leading-none"
-                      style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
                     >
                       {selectedDestination.title}
                     </h3>

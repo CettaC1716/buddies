@@ -142,10 +142,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
             <div className="inline-block px-2 py-0.5 bg-[#b8ff3c] border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-wider">
               BUDDIES BLITZ
             </div>
-            <h2
-              className="mt-1.5 text-xl sm:text-2xl font-black uppercase tracking-tight leading-none"
-              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-            >
+            <h2 className="mt-1.5 text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">
               CONNECT WALLET
             </h2>
           </div>

@@ -277,10 +277,10 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           aria-modal="true"
           aria-label="Rotate Device to Landscape"
           data-portrait-rotate-overlay="true"
-          className="fixed inset-0 z-[100000] bg-[#0b0e16]/95 backdrop-blur-md text-white flex flex-col items-center justify-center p-6 pointer-events-auto select-none text-center"
+          className="fixed inset-0 z-[100000] bg-[#0b0e16]/95 text-white flex flex-col items-center justify-center p-6 pointer-events-auto select-none text-center"
         >
           <div className="w-full max-w-[260px] bg-[#14161d] border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] px-6 py-7 flex flex-col items-center gap-4">
-            {/* Animated Rotating Device Graphic */}
+            {/* Rotating Device Graphic */}
             <div className="relative w-24 h-24 flex items-center justify-center">
               <div
                 className="absolute inset-0 rounded-full border-2 border-dashed border-[#38bdf8]/45 animate-spin"
@@ -288,7 +288,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
               />
               <div className="relative flex items-center justify-center w-18 h-18 bg-[#1e293b] border-3 border-black ring-2 ring-[#b8ff3c] shadow-[4px_4px_0_#000] rounded-2xl">
                 <Smartphone
-                  className="w-10 h-10 text-[#b8ff3c] stroke-[2.2] transition-transform duration-700 -rotate-90 animate-pulse"
+                  className="w-10 h-10 text-[#b8ff3c] stroke-[2.2] transition-transform duration-700 -rotate-90"
                   aria-hidden="true"
                 />
                 <RotateCcw
@@ -335,14 +335,19 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           data-device-form-factor={viewport.formFactor}
           className="fixed inset-0 pointer-events-none z-[25] select-none overflow-hidden"
         >
-          {showControlsLayer && (
           <div
             className={`pointer-events-auto fixed ${
-              isCompactLandscape
-                ? 'bottom-[64px] left-3.5'
-                : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
+              !showMobileJoystick
+                ? 'bottom-[64px] left-3'
+                : isCompactLandscape
+                  ? 'bottom-[64px] left-3.5'
+                  : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
             } flex flex-col items-center gap-1 touch-none transition-opacity duration-150 ${
-              isJoystickActive ? 'opacity-90' : 'opacity-55 hover:opacity-75'
+              !showMobileJoystick
+                ? 'opacity-95'
+                : isJoystickActive
+                  ? 'opacity-90'
+                  : 'opacity-65 hover:opacity-85'
             }`}
           >
             {/* Camera View Flip (main map only): instant 180-degree side swap, not a rotation */}
@@ -357,14 +362,29 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   soundEngine.playUiClick();
                   window.dispatchEvent(new CustomEvent('camera-flip-view'));
                 }}
-                className={`${
-                  isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
-                } rounded-full bg-black/20 hover:bg-black/35 active:scale-90 border-2 border-white/35 backdrop-blur-[1.5px] text-white/85 flex flex-col items-center justify-center cursor-pointer transition-all`}
+                className={
+                  showMobileJoystick
+                    ? `${
+                        isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
+                      } rounded-full bg-[#14161d]/85 hover:bg-[#1e293b] active:scale-90 border-2 border-white/60 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[2px_2px_0_#0d0f12]`
+                    : '-skew-x-12 px-2.5 h-8 bg-[#14161d]/92 hover:bg-[#1e293b] active:scale-95 border-2 border-[#0d0f12] ring-1 ring-white/75 text-white flex items-center justify-center cursor-pointer transition-all shadow-[3px_3px_0_#0d0f12]'
+                }
               >
-                <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
-                <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
-                  View
-                </span>
+                {showMobileJoystick ? (
+                  <>
+                    <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
+                    <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
+                      View
+                    </span>
+                  </>
+                ) : (
+                  <span className="skew-x-12 flex items-center gap-1.5">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-[#38bdf8]" aria-hidden="true" />
+                    <span className="text-[10px] font-black uppercase tracking-wider leading-none">
+                      VIEW
+                    </span>
+                  </span>
+                )}
               </button>
             )}
 
@@ -384,28 +404,28 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'
               } rounded-full border-2 ${
                 isSprinting
-                  ? 'bg-black/35 border-[#facc15]/75 shadow-[0_0_12px_rgba(250,204,21,0.35)]'
+                  ? 'bg-[#14161d]/75 border-[#facc15] shadow-[0_0_12px_rgba(250,204,21,0.35)]'
                   : isJoystickActive
-                    ? 'bg-black/30 border-[#b8ff3c]/70 shadow-[0_0_10px_rgba(184,255,60,0.3)]'
-                    : 'bg-black/20 border-white/35'
-              } backdrop-blur-[1.5px] flex items-center justify-center cursor-grab active:cursor-grabbing transition-all`}
+                    ? 'bg-[#14161d]/70 border-[#b8ff3c] shadow-[0_0_10px_rgba(184,255,60,0.3)]'
+                    : 'bg-[#14161d]/60 border-white/50'
+              } flex items-center justify-center cursor-grab active:cursor-grabbing transition-all`}
             >
               {/* Inner Crosshair Ring & Cardinal Direction Indicators */}
               <div className="absolute inset-3 rounded-full border border-dashed border-white/20 pointer-events-none" />
               <ArrowUp
-                className="w-3 h-3 text-white/35 absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/40 absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <ArrowDown
-                className="w-3 h-3 text-white/35 absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/40 absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <ArrowLeft
-                className="w-3 h-3 text-white/35 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/40 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <ArrowRight
-                className="w-3 h-3 text-white/35 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="w-3 h-3 text-white/40 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
                 aria-hidden="true"
               />
 
@@ -419,10 +439,10 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11 sm:w-12 sm:h-12'
                 } rounded-full ${
                   isSprinting
-                    ? 'bg-[#facc15]/70 text-black border-2 border-white/85'
+                    ? 'bg-[#facc15]/85 text-black border-2 border-white'
                     : isJoystickActive
-                      ? 'bg-[#b8ff3c]/65 text-black border-2 border-white/80'
-                      : 'bg-white/30 text-white/90 border-2 border-white/50'
+                      ? 'bg-[#b8ff3c]/85 text-black border-2 border-white'
+                      : 'bg-white/35 text-white border-2 border-white/65'
                 } flex items-center justify-center font-black text-[8.5px] uppercase tracking-tighter pointer-events-none transition-colors`}
               >
                 {isSprinting ? 'RUN' : 'MOVE'}
@@ -431,126 +451,130 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
             )}
           </div>
 
+          {/* BOTTOM-RIGHT: Mobile Touch Action Buttons (and Cast button when near water on any device) */}
+          {(showMobileJoystick || canFish) && (
+            <div
+              className={`pointer-events-auto fixed ${
+                !showMobileJoystick
+                  ? isWarzoneActive
+                    ? 'bottom-[96px] right-4'
+                    : 'bottom-[68px] right-4'
+                  : isCompactLandscape
+                    ? 'bottom-[64px] right-3.5'
+                    : 'bottom-[74px] right-4 sm:bottom-20 sm:right-6'
+              } flex flex-col items-end gap-2 touch-none`}
+            >
+              {primaryContextualAction && showMobileJoystick && (
+                <button
+                  type="button"
+                  data-mobile-interact-btn="true"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    soundEngine.playUiClick();
+                    onTriggerBuddyAction(primaryContextualAction.actionEvent);
+                  }}
+                  className="-skew-x-6 px-3 py-1.5 bg-[#facc15]/90 hover:bg-[#fde047] active:scale-95 text-black border-2 border-[#0d0f12] shadow-[3px_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                >
+                  <span className="skew-x-6 inline-block">
+                    {primaryContextualAction.label}
+                  </span>
+                </button>
+              )}
+
+              {canFish ? (
+                <button
+                  type="button"
+                  data-mobile-cast-btn="true"
+                  disabled={
+                    fishingPhase === 'casting' || (fishingPhase === 'idle' && fishingBucketFull)
+                  }
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    if (fishingPhase === 'fighting') {
+                      onFishingSetHoldingReel?.(true);
+                    } else if (fishingPhase === 'idle' && !fishingBucketFull) {
+                      onFishingStartCharge?.();
+                    }
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    if (fishingPhase === 'fighting') {
+                      onFishingSetHoldingReel?.(false);
+                    } else if (fishingPhase === 'charging') {
+                      onFishingReleaseCharge?.();
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (fishingPhase === 'fighting') onFishingSetHoldingReel?.(false);
+                  }}
+                  onPointerCancel={() => {
+                    if (fishingPhase === 'fighting') onFishingSetHoldingReel?.(false);
+                  }}
+                  onClick={() => onFishingTriggerAction?.()}
+                  aria-label="Fishing action"
+                  className={`${
+                    isCompactLandscape ? 'w-16 h-16' : 'w-20 h-20'
+                  } rounded-full active:scale-90 text-white border-2 font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all shadow-[0_4px_12px_rgba(0,0,0,0.4)] ${
+                    fishingPhase === 'bite'
+                      ? 'bg-[#f59e0b]/95 border-white ring-4 ring-[#fde047] text-[11px]'
+                      : fishingPhase === 'fighting'
+                        ? 'bg-[#0d9488]/85 hover:bg-[#14b8a6]/90 border-white/80 text-[11.5px]'
+                        : 'bg-[#0284c7]/85 hover:bg-[#0ea5e9]/90 border-white/80 text-[12.5px]'
+                  }`}
+                >
+                  {fishingPhase === 'fighting'
+                    ? isHoldingReel
+                      ? 'REEL'
+                      : 'HOLD'
+                    : fishingPhase === 'bite'
+                      ? 'STRIKE'
+                      : fishingPhase === 'charging'
+                        ? `${Math.round(fishingCastPower * 100)}%`
+                        : fishingPhase === 'casting' || fishingPhase === 'nibble'
+                          ? 'WAIT'
+                          : fishingBucketFull
+                            ? 'FULL'
+                            : 'CAST'}
+                </button>
+              ) : showMobileJoystick ? (
+                <button
+                  type="button"
+                  data-mobile-jump-btn="true"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    soundEngine.playUiClick();
+                    onTriggerBuddyAction('jump');
+                  }}
+                  aria-label="Jump"
+                  className={`${
+                    isCompactLandscape ? 'w-16 h-16 text-[11.5px]' : 'w-20 h-20 text-[13px]'
+                  } rounded-full bg-[#0284c7]/75 hover:bg-[#0ea5e9]/90 active:scale-90 text-white border-2 border-white/75 font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all shadow-[0_4px_12px_rgba(0,0,0,0.35)]`}
+                >
+                  JUMP
+                </button>
+              ) : null}
+
+              {canFish && (fishingPhase === 'casting' || fishingPhase === 'nibble') && (
+                <button
+                  type="button"
+                  data-mobile-fishing-stop-btn="true"
+                  aria-label="Stop fishing"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFishingCancel?.();
+                  }}
+                  className="mr-1.5 flex flex-col items-center gap-0.5 cursor-pointer active:scale-90 transition-all"
+                >
+                  <span className="w-10 h-10 rounded-full bg-[#ef4444]/95 hover:bg-[#ef4444] border-2 border-white/85 text-white flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.4)]">
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </span>
+                  <span className="text-[8px] font-black uppercase tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                    Stop
+                  </span>
+                </button>
+              )}
+            </div>
           )}
-
-          {/* BOTTOM-RIGHT: Semi-Transparent Mobile Touch Action Buttons (Jump & Contextual Interact) */}
-          <div
-            className={`pointer-events-auto fixed ${
-              isCompactLandscape
-                ? 'bottom-[64px] right-3.5'
-                : 'bottom-[74px] right-4 sm:bottom-20 sm:right-6'
-            } flex flex-col items-end gap-2 touch-none`}
-          >
-            {primaryContextualAction && showMobileJoystick && (
-              <button
-                type="button"
-                data-mobile-interact-btn="true"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  soundEngine.playUiClick();
-                  onTriggerBuddyAction(primaryContextualAction.actionEvent);
-                }}
-                className="-skew-x-6 px-3 py-1.5 bg-[#facc15]/65 hover:bg-[#facc15]/85 active:scale-95 text-black border-2 border-white/70 backdrop-blur-[1.5px] font-black text-[11px] uppercase tracking-wider cursor-pointer"
-              >
-                <span className="skew-x-6 inline-block">
-                  {primaryContextualAction.label}
-                </span>
-              </button>
-            )}
-
-            {canFish ? (
-              <button
-                type="button"
-                data-mobile-cast-btn="true"
-                disabled={
-                  fishingPhase === 'casting' || (fishingPhase === 'idle' && fishingBucketFull)
-                }
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  if (fishingPhase === 'fighting') {
-                    onFishingSetHoldingReel?.(true);
-                  } else if (fishingPhase === 'idle' && !fishingBucketFull) {
-                    onFishingStartCharge?.();
-                  }
-                }}
-                onPointerUp={(e) => {
-                  e.stopPropagation();
-                  if (fishingPhase === 'fighting') {
-                    onFishingSetHoldingReel?.(false);
-                  } else if (fishingPhase === 'charging') {
-                    onFishingReleaseCharge?.();
-                  }
-                }}
-                onPointerLeave={() => {
-                  if (fishingPhase === 'fighting') onFishingSetHoldingReel?.(false);
-                }}
-                onPointerCancel={() => {
-                  if (fishingPhase === 'fighting') onFishingSetHoldingReel?.(false);
-                }}
-                onClick={() => onFishingTriggerAction?.()}
-                aria-label="Fishing action"
-                className={`${
-                  isCompactLandscape ? 'w-16 h-16' : 'w-20 h-20'
-                } rounded-full active:scale-90 text-white border-2 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all ${
-                  fishingPhase === 'bite'
-                    ? 'bg-[#f59e0b]/70 border-white/85 animate-pulse text-[11px]'
-                    : fishingPhase === 'fighting'
-                      ? 'bg-[#5fe3d4]/45 hover:bg-[#5fe3d4]/65 border-white/55 text-[11.5px]'
-                      : 'bg-[#38bdf8]/55 hover:bg-[#38bdf8]/75 border-white/70 text-[12.5px]'
-                }`}
-              >
-                {fishingPhase === 'fighting'
-                  ? isHoldingReel
-                    ? 'REEL'
-                    : 'HOLD'
-                  : fishingPhase === 'bite'
-                    ? 'STRIKE'
-                    : fishingPhase === 'charging'
-                      ? `${Math.round(fishingCastPower * 100)}%`
-                      : fishingPhase === 'casting' || fishingPhase === 'nibble'
-                        ? 'WAIT'
-                        : fishingBucketFull
-                          ? 'FULL'
-                          : 'CAST'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                data-mobile-jump-btn="true"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  soundEngine.playUiClick();
-                  onTriggerBuddyAction('jump');
-                }}
-                aria-label="Jump"
-                className={`${
-                  isCompactLandscape ? 'w-16 h-16 text-[11.5px]' : 'w-20 h-20 text-[13px]'
-                } rounded-full bg-[#38bdf8]/40 hover:bg-[#38bdf8]/65 active:scale-90 text-white border-2 border-white/55 backdrop-blur-[1.5px] font-black uppercase tracking-wider flex items-center justify-center cursor-pointer transition-all`}
-              >
-                JUMP
-              </button>
-            )}
-
-            {canFish && (fishingPhase === 'casting' || fishingPhase === 'nibble') && (
-              <button
-                type="button"
-                data-mobile-fishing-stop-btn="true"
-                aria-label="Stop fishing"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFishingCancel?.();
-                }}
-                className="mr-1.5 flex flex-col items-center gap-0.5 cursor-pointer active:scale-90 transition-all"
-              >
-                <span className="w-10 h-10 rounded-full bg-[#ef4444]/85 hover:bg-[#ef4444] border-2 border-white/70 backdrop-blur-[1.5px] text-white flex items-center justify-center">
-                  <X className="w-5 h-5" aria-hidden="true" />
-                </span>
-                <span className="text-[8px] font-black uppercase tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                  Stop
-                </span>
-              </button>
-            )}
-          </div>
         </div>
       )}
     </>
