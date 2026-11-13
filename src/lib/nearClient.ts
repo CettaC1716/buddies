@@ -1785,6 +1785,7 @@ export async function executeNearTestnetAndRespiteSwap(params: {
 export type BuddiesMarketMethodName =
   | 'purchase_citizen_asset'
   | 'mint_fish_nft'
+  | 'mint_fish_nft_attested'
   | 'list_fish_nft'
   | 'buy_fish_nft'
   | 'buy_merchant_item'

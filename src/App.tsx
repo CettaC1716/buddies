@@ -4359,16 +4359,55 @@ export default function App() {
       const actorAccount = hudRef.current.nearWalletId || playerUid;
       const tokenSuffix = Math.floor(1000 + Math.random() * 9000);
       const nftTokenId = `nep171-fish-${fish.speciesId}-${tokenSuffix}`;
+      const weightKgX100 = Math.max(1, Math.round(fish.weightKg * 100));
+      // Contract v1.4.0: a fish NFT can only be minted with a server
+      // attestation over the catch (see api/fish-attest). Without one the
+      // mint is not attempted at all.
+      let attestation: { signatureHex: string; issuedAtMs: number } | null = null;
+      if (actorAccount) {
+        try {
+          const attestResp = await fetch('/api/fish-attest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              playerAccount: actorAccount,
+              tokenId: nftTokenId,
+              speciesId: fish.speciesId,
+              waterZone: fish.waterZone,
+              rarity: fish.rarity,
+              weightKgX100,
+            }),
+          });
+          const attestData = (await attestResp.json().catch(() => null)) as
+            | { ok?: boolean; signatureHex?: string; issuedAtMs?: number }
+            | null;
+          if (
+            attestData?.ok &&
+            attestData.signatureHex &&
+            typeof attestData.issuedAtMs === 'number'
+          ) {
+            attestation = {
+              signatureHex: attestData.signatureHex,
+              issuedAtMs: attestData.issuedAtMs,
+            };
+          }
+        } catch {
+          attestation = null;
+        }
+      }
+      if (!attestation) return false;
       const res = await executeMarketContractCallOnChain({
         signerAccountId: actorAccount || undefined,
-        methodName: 'mint_fish_nft',
+        methodName: 'mint_fish_nft_attested',
         args: {
           token_id: nftTokenId,
           species_id: fish.speciesId,
           species_name: fish.speciesName,
           water_zone: fish.waterZone,
           rarity: fish.rarity,
-          weight_kg_x100: Math.max(1, Math.round(fish.weightKg * 100)),
+          weight_kg_x100: weightKgX100,
+          signature_hex: attestation.signatureHex,
+          issued_at_ms: attestation.issuedAtMs,
         },
       });
       if (!res.ok || !res.txHash) return false;

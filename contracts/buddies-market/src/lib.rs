@@ -226,10 +226,11 @@ pub struct BuddiesMarketContract {
     pub total_fish_nfts_minted: u64,
     pub property_listings: IterableMap<String, PropertyListing>,
     pub total_property_listings: u64,
+    pub fish_attester_pubkey: Option<Vec<u8>>,
 }
 
-/// The v1.2.0 state layout, kept only so `migrate` can read it. Field
-/// order and types must match the deployed v1.2.0 struct exactly.
+/// The v1.3.0 state layout, kept only so `migrate` can read it. Field
+/// order and types must match the deployed v1.3.0 struct exactly.
 #[near(serializers = [borsh])]
 pub struct OldBuddiesMarketContract {
     pub master_account: AccountId,
@@ -247,6 +248,8 @@ pub struct OldBuddiesMarketContract {
     pub total_houses_minted: u64,
     pub total_family_contracts: u64,
     pub total_fish_nfts_minted: u64,
+    pub property_listings: IterableMap<String, PropertyListing>,
+    pub total_property_listings: u64,
 }
 
 #[near]
@@ -278,14 +281,16 @@ impl BuddiesMarketContract {
             total_fish_nfts_minted: 0,
             property_listings: IterableMap::new(b"p"),
             total_property_listings: 0,
+            fish_attester_pubkey: None,
         }
     }
 
-    /// One-time state migration v1.2.0 -> v1.3.0: carries every existing
-    /// field across untouched and starts the property-escrow state empty.
-    /// Deploy the new code WITHOUT an init call, then call this once.
+    /// One-time state migration v1.3.0 -> v1.4.0: carries every existing
+    /// field across untouched and optionally installs the fish attester
+    /// public key (hex, 32 bytes) in the same step. Deploy the new code
+    /// WITHOUT an init call, then call this once as the contract account.
     #[init(ignore_state)]
-    pub fn migrate() -> Self {
+    pub fn migrate(fish_attester_pubkey_hex: Option<String>) -> Self {
         // Only the contract account itself may run the migration.
         require!(
             env::predecessor_account_id() == env::current_account_id(),
@@ -293,6 +298,11 @@ impl BuddiesMarketContract {
         );
         let old: OldBuddiesMarketContract =
             env::state_read().expect("Cannot read the old contract state");
+        let fish_attester_pubkey = fish_attester_pubkey_hex.map(|hex| {
+            let bytes = Self::hex_decode(&hex);
+            require!(bytes.len() == 32, "Attester public key must be 32 bytes");
+            bytes
+        });
         Self {
             master_account: old.master_account,
             total_respite_supply: old.total_respite_supply,
@@ -309,8 +319,9 @@ impl BuddiesMarketContract {
             total_houses_minted: old.total_houses_minted,
             total_family_contracts: old.total_family_contracts,
             total_fish_nfts_minted: old.total_fish_nfts_minted,
-            property_listings: IterableMap::new(b"p"),
-            total_property_listings: 0,
+            property_listings: old.property_listings,
+            total_property_listings: old.total_property_listings,
+            fish_attester_pubkey,
         }
     }
 
@@ -664,8 +675,9 @@ impl BuddiesMarketContract {
     // 3. FISH NFT MINTING & ANTI-DOUBLE-LISTING P2P MARKETPLACE
     // =========================================================================
 
-    pub fn mint_fish_nft(
+    fn internal_mint_fish(
         &mut self,
+        owner: &AccountId,
         token_id: String,
         species_id: String,
         species_name: String,
@@ -673,7 +685,7 @@ impl BuddiesMarketContract {
         rarity: String,
         weight_kg_x100: u32,
     ) -> FishNftToken {
-        let caller = env::predecessor_account_id();
+        let caller = owner.clone();
         let clean_id = token_id.trim().to_string();
         require!(!clean_id.is_empty() && clean_id.len() <= 96, "Invalid token_id");
         require!(!self.nft_tokens_by_id.contains_key(&clean_id), "Fish NFT already minted");
@@ -740,6 +752,150 @@ impl BuddiesMarketContract {
             }]),
         );
         nft
+    }
+
+    /// Legacy direct mint — restricted to the master account since
+    /// v1.4.0. Players mint through `mint_fish_nft_attested`, so a fish
+    /// NFT can only come into existence with the game server's signature
+    /// over the catch (see `api/fish-attest`).
+    pub fn mint_fish_nft(
+        &mut self,
+        token_id: String,
+        species_id: String,
+        species_name: String,
+        water_zone: String,
+        rarity: String,
+        weight_kg_x100: u32,
+    ) -> FishNftToken {
+        let caller = env::predecessor_account_id();
+        require!(
+            caller == self.master_account,
+            "Direct fish minting is restricted; use the attested mint"
+        );
+        self.internal_mint_fish(
+            &caller,
+            token_id,
+            species_id,
+            species_name,
+            water_zone,
+            rarity,
+            weight_kg_x100,
+        )
+    }
+
+    /// The canonical message the server signs for a fish mint. The API
+    /// (`api/fish-attest`) builds the identical string; any drift between
+    /// the two breaks every mint, so this format is frozen as v1.
+    fn fish_mint_attestation_message(
+        owner: &AccountId,
+        token_id: &str,
+        species_id: &str,
+        water_zone: &str,
+        rarity: &str,
+        weight_kg_x100: u32,
+        issued_at_ms: u64,
+    ) -> String {
+        format!(
+            "buddies-fish-mint-v1|{}|{}|{}|{}|{}|{}|{}",
+            owner, token_id, species_id, water_zone, rarity, weight_kg_x100, issued_at_ms
+        )
+    }
+
+    /// Mints a fish NFT for the caller when the game server has attested
+    /// the catch: an ed25519 signature over the canonical message, issued
+    /// at most 10 minutes ago, verified against the configured attester
+    /// public key. The token id is inside the signed message, so an
+    /// attestation cannot be replayed for a different fish.
+    pub fn mint_fish_nft_attested(
+        &mut self,
+        token_id: String,
+        species_id: String,
+        species_name: String,
+        water_zone: String,
+        rarity: String,
+        weight_kg_x100: u32,
+        signature_hex: String,
+        issued_at_ms: u64,
+    ) -> FishNftToken {
+        let caller = env::predecessor_account_id();
+        let pubkey = self
+            .fish_attester_pubkey
+            .clone()
+            .expect("Fish mint attestation is not configured");
+        require!(pubkey.len() == 32, "Stored attester key is malformed");
+        let now_ms = env::block_timestamp_ms();
+        require!(
+            issued_at_ms <= now_ms.saturating_add(60_000),
+            "Attestation issued in the future"
+        );
+        require!(
+            now_ms.saturating_sub(issued_at_ms) <= 600_000,
+            "Attestation expired"
+        );
+        let sig_bytes = Self::hex_decode(&signature_hex);
+        require!(sig_bytes.len() == 64, "Attestation signature must be 64 bytes");
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&sig_bytes);
+        let mut pk = [0u8; 32];
+        pk.copy_from_slice(&pubkey);
+        let message = Self::fish_mint_attestation_message(
+            &caller,
+            &token_id,
+            &species_id,
+            &water_zone,
+            &rarity,
+            weight_kg_x100,
+            issued_at_ms,
+        );
+        require!(
+            env::ed25519_verify(&sig, message.as_bytes(), &pk),
+            "Invalid fish mint attestation"
+        );
+        self.internal_mint_fish(
+            &caller,
+            token_id,
+            species_id,
+            species_name,
+            water_zone,
+            rarity,
+            weight_kg_x100,
+        )
+    }
+
+    /// Master-only: installs or rotates the fish attester public key
+    /// (hex, 32 bytes). The matching private key lives only in the game
+    /// server's environment, never on-chain.
+    pub fn set_fish_attester_pubkey(&mut self, pubkey_hex: String) -> bool {
+        let caller = env::predecessor_account_id();
+        require!(caller == self.master_account, "Only the master can set the attester key");
+        let bytes = Self::hex_decode(&pubkey_hex);
+        require!(bytes.len() == 32, "Attester public key must be 32 bytes");
+        self.fish_attester_pubkey = Some(bytes);
+        true
+    }
+
+    fn hex_decode(input: &str) -> Vec<u8> {
+        let clean = input.trim().trim_start_matches("0x");
+        require!(clean.len() % 2 == 0, "Hex string must have even length");
+        let bytes = clean.as_bytes();
+        let mut out = Vec::with_capacity(clean.len() / 2);
+        let mut i = 0;
+        while i < bytes.len() {
+            let hi = Self::hex_nibble(bytes[i]);
+            let lo = Self::hex_nibble(bytes[i + 1]);
+            out.push((hi << 4) | lo);
+            i += 2;
+        }
+        out
+    }
+
+    fn hex_nibble(b: u8) -> u8 {
+        match b {
+            b'0'..=b'9' => b - b'0',
+            b'a'..=b'f' => b - b'a' + 10,
+            b'A'..=b'F' => b - b'A' + 10,
+            _ => env::panic_str("Invalid hex character"),
+        }
     }
 
     pub fn list_fish_nft(
@@ -1556,7 +1712,7 @@ impl BuddiesMarketContract {
 
     pub fn get_contract_overview(&self) -> ContractOverview {
         ContractOverview {
-            contract_version: "1.3.0".to_string(),
+            contract_version: "1.4.0".to_string(),
             master_account: self.master_account.clone(),
             respite_per_near_rate: (1_000_000_000_000_000_000_000_000 / YOCTO_PER_RESPITE) as u64,
             house_price_respite: U128(HOUSE_OWNERSHIP_PRICE_RESPITE),
@@ -1817,6 +1973,154 @@ impl BuddiesMarketContract {
 
 #[cfg(test)]
 mod tests {
+    // ---- fish mint attestation (v1.4.0) ----
+    // Test keypair: ed25519 seed = 32 x 0x07, generated with node:crypto.
+    // Signatures are over the canonical message for alice's sardine mint
+    // at block time 1_762_800_000_000 ms.
+    const ATTESTER_PUBKEY_HEX: &str =
+        "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+    const SIG_OK_HEX: &str = "34118bbaaced7f595653f1eaeb3f5aa8035842cce2342aa573e281aaef21e198d1d5bde31dde3275fd2c102431dbea746c3aa575c0d882e21acd484fb13d5a07";
+    const SIG_EXPIRED_HEX: &str = "dbbc63dd25dae56f06b49d735dfe0daf904e682ec99d96f84142c834ba82752bb33802c4855e2891e0815e91fd934d14941e0051ce22f9ab29861d0c4557620a";
+
+    fn contract_with_attester() -> BuddiesMarketContract {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut c = BuddiesMarketContract::init("buddiesblitz.testnet".parse().unwrap());
+        assert!(c.set_fish_attester_pubkey(ATTESTER_PUBKEY_HEX.to_string()));
+        c
+    }
+
+    #[test]
+    fn attested_fish_mint_works_with_a_real_signature() {
+        let mut c = contract_with_attester();
+        set_ctx("alice.testnet", 0);
+        let nft = c.mint_fish_nft_attested(
+            "nep171-fish-sardine-1234".to_string(),
+            "sardine".to_string(),
+            "Sardine".to_string(),
+            "plaza_lake".to_string(),
+            "Common".to_string(),
+            250,
+            SIG_OK_HEX.to_string(),
+            1_762_800_000_000,
+        );
+        assert_eq!(nft.owner_id.to_string(), "alice.testnet");
+        assert_eq!(c.get_contract_overview().total_fish_nfts_minted, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid fish mint attestation")]
+    fn attested_fish_mint_rejects_a_signature_for_another_message() {
+        let mut c = contract_with_attester();
+        set_ctx("alice.testnet", 0);
+        // SIG_EXPIRED_HEX signs the same fish with an older issued_at_ms,
+        // so against issued_at_ms = now the signature does not verify.
+        let _ = c.mint_fish_nft_attested(
+            "nep171-fish-sardine-1234".to_string(),
+            "sardine".to_string(),
+            "Sardine".to_string(),
+            "plaza_lake".to_string(),
+            "Common".to_string(),
+            250,
+            SIG_EXPIRED_HEX.to_string(),
+            1_762_800_000_000,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Attestation expired")]
+    fn attested_fish_mint_rejects_an_expired_attestation() {
+        let mut c = contract_with_attester();
+        set_ctx("alice.testnet", 0);
+        let _ = c.mint_fish_nft_attested(
+            "nep171-fish-sardine-1234".to_string(),
+            "sardine".to_string(),
+            "Sardine".to_string(),
+            "plaza_lake".to_string(),
+            "Common".to_string(),
+            250,
+            SIG_EXPIRED_HEX.to_string(),
+            1_762_799_399_000,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Fish mint attestation is not configured")]
+    fn attested_fish_mint_fails_closed_without_an_attester() {
+        set_ctx("alice.testnet", 0);
+        let mut c = BuddiesMarketContract::init("buddiesblitz.testnet".parse().unwrap());
+        let _ = c.mint_fish_nft_attested(
+            "nep171-fish-sardine-1234".to_string(),
+            "sardine".to_string(),
+            "Sardine".to_string(),
+            "plaza_lake".to_string(),
+            "Common".to_string(),
+            250,
+            SIG_OK_HEX.to_string(),
+            1_762_800_000_000,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Direct fish minting is restricted")]
+    fn legacy_fish_mint_is_master_only_now() {
+        set_ctx("alice.testnet", 0);
+        let mut c = BuddiesMarketContract::init("buddiesblitz.testnet".parse().unwrap());
+        let _ = c.mint_fish_nft(
+            "nep171-fish-sardine-9999".to_string(),
+            "sardine".to_string(),
+            "Sardine".to_string(),
+            "plaza_lake".to_string(),
+            "Common".to_string(),
+            250,
+        );
+    }
+
+    #[test]
+    fn migration_from_v130_preserves_state_and_installs_attester() {
+        // The migration guard requires caller == contract account.
+        let mut builder = VMContextBuilder::new();
+        builder
+            .current_account_id(acct("buddiesblitz.testnet"))
+            .predecessor_account_id(acct("buddiesblitz.testnet"))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+        let mut old = OldBuddiesMarketContract {
+            master_account: "buddiesblitz.testnet".parse().unwrap(),
+            total_respite_supply: 777,
+            respite_balances: LookupMap::new(b"r"),
+            storage_deposits: LookupMap::new(b"s"),
+            nft_tokens_by_id: IterableMap::new(b"t"),
+            fish_nfts: LookupMap::new(b"f"),
+            market_listings: IterableMap::new(b"l"),
+            active_listing_by_token: LookupMap::new(b"a"),
+            nft_subaccount_ledgers: LookupMap::new(b"g"),
+            house_deeds: LookupMap::new(b"h"),
+            family_contracts_by_owner: LookupMap::new(b"c"),
+            mt_balances: LookupMap::new(b"m"),
+            total_houses_minted: 2,
+            total_family_contracts: 0,
+            total_fish_nfts_minted: 9,
+            property_listings: IterableMap::new(b"p"),
+            total_property_listings: 3,
+        };
+        old.respite_balances
+            .insert("alice.testnet".parse().unwrap(), 777);
+        near_sdk::env::state_write(&old);
+        drop(old);
+        let migrated =
+            BuddiesMarketContract::migrate(Some(ATTESTER_PUBKEY_HEX.to_string()));
+        let overview = migrated.get_contract_overview();
+        assert_eq!(overview.contract_version, "1.4.0");
+        assert_eq!(overview.total_respite_supply.0, 777);
+        assert_eq!(migrated.ft_balance_of("alice.testnet".parse().unwrap()).0, 777);
+        assert_eq!(overview.active_property_listings, 0);
+        assert_eq!(
+            migrated.fish_attester_pubkey.as_ref().map(|k| k.len()),
+            Some(32)
+        );
+    }
+
     use super::*;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -1871,14 +2175,17 @@ mod tests {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
 
+        contract.set_fish_attester_pubkey(ATTESTER_PUBKEY_HEX.to_string());
         set_ctx("angler.testnet", 0);
-        contract.mint_fish_nft(
+        contract.mint_fish_nft_attested(
             "fish-arowana-01".to_string(),
             "celestial_arowana".to_string(),
             "Celestial Arowana".to_string(),
             "Central Oasis Lake".to_string(),
             "Mythic".to_string(),
             1845,
+            "13653888d96377c8cf812a240d75d757ef918b3a742cfbf1538c4070276f09f4d91e7ce5dce5448d22793772f3a3c1e81d1a8cf78509905420e9d21705781b02".to_string(),
+            1_762_800_000_000,
         );
 
         contract.list_fish_nft(
@@ -1899,14 +2206,17 @@ mod tests {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
 
+        contract.set_fish_attester_pubkey(ATTESTER_PUBKEY_HEX.to_string());
         set_ctx("seller.testnet", 0);
-        contract.mint_fish_nft(
+        contract.mint_fish_nft_attested(
             "fish-hammerhead-77".to_string(),
             "golden_hammerhead".to_string(),
             "Golden Hammerhead".to_string(),
             "East Beach Shoreline".to_string(),
             "Rare".to_string(),
             920,
+            "6515ded727797fceff5ac06025301694f7ef92d4c0091451fa17ce22f4beb2f10469bd2d7c4719de8afd2760c37f8eb669367b2fc3c12a08da55bb51dfbaa508".to_string(),
+            1_762_800_000_000,
         );
         contract.list_fish_nft(
             "list-77".to_string(),
@@ -2575,14 +2885,16 @@ mod tests {
             total_houses_minted: 4,
             total_family_contracts: 1,
             total_fish_nfts_minted: 14,
+            property_listings: IterableMap::new(b"p"),
+            total_property_listings: 0,
         };
         env::state_write(&old);
         // SDK store collections flush their caches on Drop; the old state
         // must be dropped before migrating or its entries stay unwritten.
         drop(old);
-        let contract = BuddiesMarketContract::migrate();
+        let contract = BuddiesMarketContract::migrate(None);
         let overview = contract.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.3.0");
+        assert_eq!(overview.contract_version, "1.4.0");
         assert_eq!(overview.total_respite_supply.0, 50_777);
         assert_eq!(overview.total_houses_minted, 4);
         assert_eq!(overview.active_property_listings, 0);
