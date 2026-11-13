@@ -1988,7 +1988,6 @@ export default function App() {
     setCafeShiftState((prev) => {
       const res = serveActiveCafeOrder(prev, Date.now());
       if (!res.served || !res.servedItem) return prev;
-      soundEngine.playPowerCore();
       grantPlayerXp(
         res.xpGained,
         res.shiftCompleted ? `SHIFT COMPLETE!` : `${res.servedItem.name} SERVED`,

@@ -10880,9 +10880,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.jumpOffset = jumpStep.jumpOffset;
         playerUnit.vy = jumpStep.vy;
         playerUnit.isGrounded = false;
-        soundEngine.playJump();
-        const groundY = getTerrainElevation(playerUnit.x, playerUnit.z);
-        spawnBurstParticles(playerUnit.x, groundY + 0.18, playerUnit.z, 6);
       }
     };
 
@@ -17866,22 +17863,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             playerUnit.vy = jumpStep.vy;
             playerUnit.isGrounded = jumpStep.isGrounded;
             playerUnit.jumpBufferTimer = jumpStep.jumpBufferTimer;
-            if (jumpStep.justJumped) {
-              soundEngine.playJump();
-              spawnBurstParticles(
-                playerUnit.x,
-                getTerrainElevation(playerUnit.x, playerUnit.z) + 0.18,
-                playerUnit.z,
-                6,
-              );
-            } else if (jumpStep.justLanded) {
+            if (jumpStep.justLanded) {
               soundEngine.playHeavyThud(3.2, false);
-              spawnBurstParticles(
-                playerUnit.x,
-                getTerrainElevation(playerUnit.x, playerUnit.z) + 0.15,
-                playerUnit.z,
-                5,
-              );
             }
 
             activeSpeed = Math.hypot(playerUnit.vx, playerUnit.vz);
