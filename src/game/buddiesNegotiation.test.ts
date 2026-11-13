@@ -9,6 +9,7 @@ import {
   negotiateWalkAway,
   clampNegotiationOffer,
   parseTradeChatIntent,
+  countOwnedMerchantItems,
 } from './buddiesMerchantPricing';
 
 test('negotiation envelope: opens at 80% and caps at 115% of formula value', () => {
@@ -107,4 +108,12 @@ test('chat intent: ordinary words cannot kill or sign a deal by accident', () =>
   assert.deepEqual(parseTradeChatIntent('tidak jadi'), { kind: 'walkaway' });
   assert.deepEqual(parseTradeChatIntent('berhenti'), { kind: 'walkaway' });
   assert.equal(parseTradeChatIntent('kenapa murah sekali').kind, 'why');
+});
+
+test('owned item counts: the ownership list is a multiset', () => {
+  assert.deepEqual(countOwnedMerchantItems([]), {});
+  assert.deepEqual(countOwnedMerchantItems(['sofa', 'sofa', 'lamp']), {
+    sofa: 2,
+    lamp: 1,
+  });
 });

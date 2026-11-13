@@ -5935,6 +5935,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           wallSwatchId?: string;
           slatsSwatchId?: string;
           spawnCatalogId?: string;
+          loadPlacedItems?: Array<{
+            instanceId?: string;
+            catalogId: string;
+            x: number;
+            z: number;
+            ry: number;
+          }>;
           rotateSelectedDelta?: number;
           removeSelected?: boolean;
           resetCamera?: boolean;
@@ -6192,6 +6199,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           redrawWallArtCanvas(['#ece5d8', '#d8c6a5', '#a9714b', '#5b6552', '#8a6f4d']);
           triggerHouseRadialWipe('#38bdf8', 0, 0);
         }
+      }
+      // Restore saved 3D placements (persisted in bb_house_interiors)
+      if (Array.isArray(detail.loadPlacedItems)) {
+        housePlacedItems = detail.loadPlacedItems
+          .filter((e) => e && typeof e.catalogId === 'string')
+          .slice(0, 60)
+          .map((e) =>
+            createPlacedHouseFurnitureItem(
+              typeof e.instanceId === 'string' && e.instanceId
+                ? e.instanceId
+                : `inst_${e.catalogId}_${Date.now()}`,
+              e.catalogId,
+              Number(e.x) || 0,
+              Number(e.z) || 0,
+              Number(e.ry) || 0,
+              true,
+            ),
+          );
+        selectedHouseFurnitureId = housePlacedItems[0]?.instanceId ?? null;
+        syncHousePlacedFurnitureMeshes();
+        emitHouseInteriorStateToUi();
       }
       // Spawn / Toggle a furniture item into the 3D room using Spiral Free-Spot Search (`Sr`)
       if (detail.spawnCatalogId) {

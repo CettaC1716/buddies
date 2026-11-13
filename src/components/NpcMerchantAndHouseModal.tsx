@@ -34,6 +34,7 @@ import {
   negotiateWalkAway,
   clampNegotiationOffer,
   parseTradeChatIntent,
+  countOwnedMerchantItems,
   type NegotiationSession,
   generateNpcMerchantReply,
   formatDaylightHour,
@@ -475,6 +476,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [wallSwatchId, setWallSwatchId] = useState<string>('wall_limewash');
   const [slatsSwatchId, setSlatsSwatchId] = useState<string>('slats_walnut');
   const [placed3dItems, setPlaced3dItems] = useState<PlacedHouseFurnitureItem[]>([]);
+  const ownedItemCounts = countOwnedMerchantItems(ownedItemIds);
+  const placedItemCounts = countOwnedMerchantItems(placed3dItems.map((it) => it.catalogId));
   const [selected3dInstanceId, setSelected3dInstanceId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1265,18 +1268,30 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       <div className="text-[9.5px] font-black uppercase truncate">
                         {item.name}
                       </div>
-                      <button
-                        type="button"
-                        data-spawn-3d-furniture={item.id}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          dispatchHouseStudioPatch({ spawnCatalogId: item.id });
-                        }}
-                        className="w-full py-1 bg-[#b8ff3c] hover:bg-[#d2ff7a] border-[1.5px] border-[#0d0f12] text-[9px] font-black uppercase cursor-pointer inline-flex items-center justify-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" aria-hidden="true" />
-                        <span>PLACE</span>
-                      </button>
+                      {(() => {
+                        const inBag =
+                          (ownedItemCounts[item.id] ?? 0) - (placedItemCounts[item.id] ?? 0);
+                        return (
+                          <button
+                            type="button"
+                            data-spawn-3d-furniture={item.id}
+                            disabled={inBag <= 0}
+                            onClick={() => {
+                              if (inBag <= 0) return;
+                              soundEngine.playUiClick();
+                              dispatchHouseStudioPatch({ spawnCatalogId: item.id });
+                            }}
+                            className={`w-full py-1 border-[1.5px] border-[#0d0f12] text-[9px] font-black uppercase inline-flex items-center justify-center gap-1 ${
+                              inBag > 0
+                                ? 'bg-[#b8ff3c] hover:bg-[#d2ff7a] cursor-pointer'
+                                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <Plus className="w-3 h-3" aria-hidden="true" />
+                            <span>{inBag > 0 ? `PLACE · ${inBag} IN BAG` : 'ALL PLACED'}</span>
+                          </button>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -3119,7 +3134,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         const balance =
                           item.currency === 'CYON' ? cyonBalance : respiteBalance;
                         const canBuy =
-                          !isOwned &&
+                          (!isOwned || Boolean(item.interiorSlot)) &&
                           quote.stock > 0 &&
                           balance >= quote.buyPrice &&
                           (item.currency === 'CYON' || walletConnected);
@@ -3197,10 +3212,37 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     {item.currency === 'RESPITE' ? 'R' : item.currency}
                                   </span>
                                 </span>
-                                {isOwned ? (
+                                {isOwned && !item.interiorSlot ? (
                                   <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
                                     <Check className="w-3 h-3" aria-hidden="true" />
-                                    <span>Owned</span>
+                                    <span>Owned{(ownedItemCounts[item.id] ?? 0) > 1 ? ` ×${ownedItemCounts[item.id]}` : ''}</span>
+                                  </span>
+                                ) : isOwned ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
+                                      <Check className="w-3 h-3" aria-hidden="true" />
+                                      <span>×{ownedItemCounts[item.id] ?? 1}</span>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      data-buy-furniture-btn={item.id}
+                                      disabled={!canBuy}
+                                      onClick={() => {
+                                        if (!canBuy) return;
+                                        soundEngine.playPickup();
+                                        onBuyMerchantItem(item, quote.buyPrice);
+                                        setCatalogActionFeedback({
+                                          ok: true,
+                                          text: `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`,
+                                        });
+                                        triggerNpcSpeech(
+                                          `Bought ${item.name}! Place it in your house studio.`,
+                                        );
+                                      }}
+                                      className="px-2 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] disabled:bg-slate-500 text-black border border-black text-[8.5px] font-black uppercase cursor-pointer"
+                                    >
+                                      +1
+                                    </button>
                                   </span>
                                 ) : (
                                   <button

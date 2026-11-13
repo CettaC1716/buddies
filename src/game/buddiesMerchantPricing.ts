@@ -838,6 +838,20 @@ export function parseTradeChatIntent(text: string): TradeChatIntent {
   return { kind: 'none' };
 }
 
+/**
+ * Counts owned merchant items. Ownership is stored as a multiset (the id
+ * appears once per owned copy) so furniture can be owned in multiples —
+ * one copy per placement in the house — while themes and gear stay unique
+ * because their purchase paths never add a second copy.
+ */
+export function countOwnedMerchantItems(
+  ownedIds: readonly string[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const id of ownedIds) counts[id] = (counts[id] ?? 0) + 1;
+  return counts;
+}
+
 /** Clamps any externally proposed price (e.g. an LLM move) into the envelope. */
 export function clampNegotiationOffer(session: NegotiationSession, price: number): number {
   const p = Math.round(price);

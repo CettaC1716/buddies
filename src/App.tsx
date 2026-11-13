@@ -80,6 +80,7 @@ import {
   executeLulToCyonExchangePackets,
   evaluateLulToCyonExchangeQuote,
   evaluateNegotiationEnvelope,
+  countOwnedMerchantItems,
   investInMerchantShop,
   stepFastForwardEconomyTick,
   MerchantLocationId,
@@ -694,6 +695,148 @@ export default function App() {
     RecruitedFamilyMemberAgent[]
   >([]);
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([]);
+
+  // 3D house placements persist in bb_house_interiors.placed_furniture as
+  // [legacySlotObject, ...placed3dEntries]; these refs track the latest
+  // known pieces so every writer (slot assign, theme select, studio edits)
+  // writes the combined array instead of wiping the other half.
+  type SavedPlaced3dEntry = {
+    kind: 'placed3d';
+    instanceId: string;
+    catalogId: string;
+    x: number;
+    z: number;
+    ry: number;
+  };
+  const housePersistRef = useRef<{
+    slot: HouseInteriorPlacementState | null;
+    theme: string;
+    placed3d: SavedPlaced3dEntry[];
+  }>({ slot: null, theme: 'theme_japanese_zen', placed3d: [] });
+  const savedHousePlacementsRef = useRef<SavedPlaced3dEntry[]>([]);
+  const houseLoadAppliedRef = useRef(false);
+  const houseUserEditedRef = useRef(false);
+  const houseFlushTimerRef = useRef<number | null>(null);
+  const [placedFurnitureCounts, setPlacedFurnitureCounts] = useState<Record<string, number>>({});
+
+  const loadSavedHouseInterior = useCallback(
+    async (account: string, ownedIds: readonly string[]) => {
+      const interior = await fetchHouseInteriorFromSupabase(account);
+      if (!interior) return;
+      if (interior.active_theme_id) {
+        setActiveHouseThemeId(interior.active_theme_id);
+        housePersistRef.current.theme = interior.active_theme_id;
+      }
+      const rows = Array.isArray(interior.placed_furniture)
+        ? interior.placed_furniture
+        : [];
+      const firstPlacement = rows[0] as HouseInteriorPlacementState | undefined;
+      if (
+        firstPlacement &&
+        typeof firstPlacement === 'object' &&
+        !('kind' in firstPlacement)
+      ) {
+        setInteriorPlacement((prev) => {
+          const merged = { ...prev, ...firstPlacement };
+          housePersistRef.current.slot = merged;
+          return merged;
+        });
+      }
+      // Saved 3D placements: never resurrect more copies of an item than
+      // the player actually owns.
+      const ownedCounts = countOwnedMerchantItems(ownedIds);
+      const placedCounts: Record<string, number> = {};
+      const entries: SavedPlaced3dEntry[] = [];
+      for (const row of rows) {
+        const e = row as Partial<SavedPlaced3dEntry>;
+        if (!e || e.kind !== 'placed3d' || typeof e.catalogId !== 'string') continue;
+        if ((placedCounts[e.catalogId] ?? 0) >= (ownedCounts[e.catalogId] ?? 0)) continue;
+        placedCounts[e.catalogId] = (placedCounts[e.catalogId] ?? 0) + 1;
+        entries.push({
+          kind: 'placed3d',
+          instanceId:
+            typeof e.instanceId === 'string' && e.instanceId
+              ? e.instanceId
+              : `inst_${e.catalogId}_${entries.length}`,
+          catalogId: e.catalogId,
+          x: Math.round((Number(e.x) || 0) * 1000) / 1000,
+          z: Math.round((Number(e.z) || 0) * 1000) / 1000,
+          ry: Math.round((Number(e.ry) || 0) * 1000) / 1000,
+        });
+        if (entries.length >= 60) break;
+      }
+      savedHousePlacementsRef.current = entries;
+      housePersistRef.current.placed3d = entries;
+    },
+    [],
+  );
+
+  const flushHouseInteriorPersist = useCallback(() => {
+    const actorAccount = hudRef.current.nearWalletId || '';
+    if (!actorAccount) return;
+    const pieces: unknown[] = [];
+    if (housePersistRef.current.slot) pieces.push(housePersistRef.current.slot);
+    pieces.push(...housePersistRef.current.placed3d);
+    void syncHouseInteriorToSupabase({
+      ownerNearAccount: actorAccount,
+      activeThemeId: housePersistRef.current.theme,
+      daylightHour: 14.5,
+      placedFurniture: pieces,
+    });
+  }, []);
+
+  // Studio edits stream in from the Arena: persist them (debounced) as the
+  // placed3d half of the interior row and mirror per-item placed counts for
+  // the Bag. Replays of the saved list emit the identical entries back and
+  // are recognized by signature, so loading never triggers a save loop.
+  useEffect(() => {
+    const onHouseState = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          placedItems?: Array<{
+            instanceId: string;
+            catalogId: string;
+            x: number;
+            z: number;
+            ry: number;
+          }>;
+        }>
+      ).detail;
+      if (!detail?.placedItems) return;
+      const entries: SavedPlaced3dEntry[] = detail.placedItems.slice(0, 60).map((it) => ({
+        kind: 'placed3d' as const,
+        instanceId: it.instanceId,
+        catalogId: it.catalogId,
+        x: Math.round((it.x || 0) * 1000) / 1000,
+        z: Math.round((it.z || 0) * 1000) / 1000,
+        ry: Math.round((it.ry || 0) * 1000) / 1000,
+      }));
+      if (JSON.stringify(entries) === JSON.stringify(housePersistRef.current.placed3d)) return;
+      houseUserEditedRef.current = true;
+      housePersistRef.current.placed3d = entries;
+      const counts: Record<string, number> = {};
+      for (const e of entries) counts[e.catalogId] = (counts[e.catalogId] ?? 0) + 1;
+      setPlacedFurnitureCounts(counts);
+      if (houseFlushTimerRef.current) window.clearTimeout(houseFlushTimerRef.current);
+      houseFlushTimerRef.current = window.setTimeout(() => flushHouseInteriorPersist(), 900);
+    };
+    window.addEventListener('house-interior-state-updated', onHouseState);
+    return () => window.removeEventListener('house-interior-state-updated', onHouseState);
+  }, [flushHouseInteriorPersist]);
+
+  // Once the Arena is alive (first HUD ticks in 'playing'), hand it the
+  // saved placements exactly once — unless the player already edited the
+  // room this session, in which case their edits are the truth.
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    if (houseLoadAppliedRef.current || houseUserEditedRef.current) return;
+    const entries = savedHousePlacementsRef.current;
+    if (entries.length === 0) return;
+    houseLoadAppliedRef.current = true;
+    window.dispatchEvent(
+      new CustomEvent('sync-npc-camera-mode', { detail: { loadPlacedItems: entries } }),
+    );
+  }, [gameState, hud]);
   const [propertyListings, setPropertyListings] = useState<DbPropertyListingRow[]>([]);
   const [busyPropertyListingId, setBusyPropertyListingId] = useState<string | null>(null);
 
@@ -2894,21 +3037,10 @@ export default function App() {
         },
       );
 
-      void fetchHouseInteriorFromSupabase(normalizedWallet).then((interior) => {
-        if (!interior) return;
-        if (interior.active_theme_id) {
-          setActiveHouseThemeId(interior.active_theme_id);
-        }
-        const firstPlacement = interior.placed_furniture?.[0] as
-          | HouseInteriorPlacementState
-          | undefined;
-        if (firstPlacement && typeof firstPlacement === 'object') {
-          setInteriorPlacement((prev) => ({
-            ...prev,
-            ...firstPlacement,
-          }));
-        }
-      });
+      void loadSavedHouseInterior(
+        normalizedWallet,
+        remoteProfile?.owned_token_ids ?? [],
+      );
     },
     [
       beginPlazaFlyToOnboarding,
@@ -3412,6 +3544,7 @@ export default function App() {
         // values: signing in on a new browser must never wipe LUL/CYON.
         setCyonBalance(profile.cyon_balance);
         restoreLulFromProfile(profile.lul_balance);
+        void loadSavedHouseInterior(walletId, profile.owned_token_ids ?? []);
         void syncPlayerBalancesToSupabase({
           nearAccountId: walletId,
           displayName: cleanCitizenName,
@@ -7118,7 +7251,10 @@ export default function App() {
         }}
         onBuyMerchantItem={(item: MerchantCatalogItem, finalPrice: number) => {
           soundEngine.playUiClick();
-          if (ownedMerchantItemIds.includes(item.id)) return;
+          // Furniture is owned per copy (one copy per house placement), so
+          // it can be bought again while stock lasts; themes and gear are
+          // unique and block a second purchase.
+          if (!item.interiorSlot && ownedMerchantItemIds.includes(item.id)) return;
           const actorAccount = hud.nearWalletId || playerUid;
           if (item.currency === 'RESPITE' && !actorAccount) {
             setIsNearWalletSelectorOpen(true);
@@ -7135,9 +7271,7 @@ export default function App() {
             nextRespite = Math.max(0, respiteBalance - finalPrice);
             setRespiteBalance(nextRespite);
           }
-          const nextOwned = ownedMerchantItemIds.includes(item.id)
-            ? ownedMerchantItemIds
-            : [...ownedMerchantItemIds, item.id];
+          const nextOwned = [...ownedMerchantItemIds, item.id];
           setOwnedMerchantItemIds(nextOwned);
           if (item.category === 'nft_house_theme') {
             setActiveHouseThemeId(item.id);
@@ -7146,9 +7280,12 @@ export default function App() {
             );
           } else if (item.interiorSlot) {
             const slotId = item.interiorSlot;
-            setInteriorPlacement((prev) =>
-              prev[slotId] === null ? { ...prev, [slotId]: item.id } : prev,
-            );
+            setInteriorPlacement((prev) => {
+              if (prev[slotId] !== null) return prev;
+              const next = { ...prev, [slotId]: item.id };
+              housePersistRef.current.slot = next;
+              return next;
+            });
           }
           setMarketState((prev) => {
             const nextStock = {
@@ -7207,6 +7344,9 @@ export default function App() {
           if (!ownedMerchantItemIds.includes(item.id)) return;
           const actorAccount = hud.nearWalletId || playerUid;
           if (!actorAccount) return;
+          const ownedCount = ownedMerchantItemIds.filter((id) => id === item.id).length;
+          const placedCount = placedFurnitureCounts[item.id] ?? 0;
+          if (ownedCount - placedCount < 1) return;
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
           if (item.currency === 'CYON') {
@@ -7216,16 +7356,23 @@ export default function App() {
             nextRespite = respiteBalance + refund;
             setRespiteBalance(nextRespite);
           }
-          const nextOwned = ownedMerchantItemIds.filter((id) => id !== item.id);
+          const removeIdx = ownedMerchantItemIds.indexOf(item.id);
+          const nextOwned = ownedMerchantItemIds.filter((_, i) => i !== removeIdx);
           setOwnedMerchantItemIds(nextOwned);
-          setInteriorPlacement((prev) => ({
-            ...prev,
-            center_table: prev.center_table === item.id ? null : prev.center_table,
-            left_wall: prev.left_wall === item.id ? null : prev.left_wall,
-            right_wall: prev.right_wall === item.id ? null : prev.right_wall,
-            corner_plant: prev.corner_plant === item.id ? null : prev.corner_plant,
-            trophy_pedestal: prev.trophy_pedestal === item.id ? null : prev.trophy_pedestal,
-          }));
+          if (ownedCount <= 1) {
+            setInteriorPlacement((prev) => {
+              const next = {
+                ...prev,
+                center_table: prev.center_table === item.id ? null : prev.center_table,
+                left_wall: prev.left_wall === item.id ? null : prev.left_wall,
+                right_wall: prev.right_wall === item.id ? null : prev.right_wall,
+                corner_plant: prev.corner_plant === item.id ? null : prev.corner_plant,
+                trophy_pedestal: prev.trophy_pedestal === item.id ? null : prev.trophy_pedestal,
+              };
+              housePersistRef.current.slot = next;
+              return next;
+            });
+          }
           setMarketState((prev) => {
             const nextStock = {
               ...prev.stockByItemId,
@@ -7282,6 +7429,8 @@ export default function App() {
           const actorAccount = hud.nearWalletId || playerUid;
           if (!actorAccount) return;
           setActiveHouseThemeId(themeItem.id);
+          housePersistRef.current.theme = themeItem.id;
+          if (!housePersistRef.current.slot) housePersistRef.current.slot = interiorPlacement;
           dispatchBuddyAction(
             `applyHouseTheme:${themeItem.skinThemeId ?? 'military_standard'}:${themeItem.gardenPresetId ?? 'sakura_grove'}`,
           );
@@ -7289,7 +7438,10 @@ export default function App() {
             ownerNearAccount: actorAccount,
             activeThemeId: themeItem.id,
             daylightHour: 14.5,
-            placedFurniture: [interiorPlacement],
+            placedFurniture: [
+              housePersistRef.current.slot,
+              ...housePersistRef.current.placed3d,
+            ],
           });
         }}
         onAssignInteriorSlot={(slotId: HouseInteriorSlotId, itemId: string | null) => {
@@ -7300,12 +7452,13 @@ export default function App() {
               ...prev,
               [slotId]: itemId,
             };
+            housePersistRef.current.slot = next;
             if (actorAccount) {
               void syncHouseInteriorToSupabase({
                 ownerNearAccount: actorAccount,
-                activeThemeId: activeHouseThemeId,
+                activeThemeId: housePersistRef.current.theme || activeHouseThemeId,
                 daylightHour: 14.5,
-                placedFurniture: [next],
+                placedFurniture: [next, ...housePersistRef.current.placed3d],
               });
             }
             return next;
@@ -7313,13 +7466,17 @@ export default function App() {
         }}
         onRotateInteriorSlot={(slotId: HouseInteriorSlotId) => {
           soundEngine.playUiClick();
-          setInteriorPlacement((prev) => ({
-            ...prev,
-            rotationStepBySlot: {
-              ...prev.rotationStepBySlot,
-              [slotId]: ((prev.rotationStepBySlot[slotId] ?? 0) + 1) % 4,
-            },
-          }));
+          setInteriorPlacement((prev) => {
+            const next = {
+              ...prev,
+              rotationStepBySlot: {
+                ...prev.rotationStepBySlot,
+                [slotId]: ((prev.rotationStepBySlot[slotId] ?? 0) + 1) % 4,
+              },
+            };
+            housePersistRef.current.slot = next;
+            return next;
+          });
         }}
         onConnectWallet={() => {
           soundEngine.playUiClick();
@@ -9152,6 +9309,7 @@ export default function App() {
               const ownedPersonalItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
                 ownedMerchantItemIds.includes(item.id),
               );
+              const bagOwnedCounts = countOwnedMerchantItems(ownedMerchantItemIds);
               return (
                 <div className="space-y-2">
                   {ownedPersonalItems.length === 0 ? (
@@ -9183,10 +9341,20 @@ export default function App() {
                             >
                               {item.isNft ? 'NFT' : 'ITEM'}
                             </span>
+                            {(bagOwnedCounts[item.id] ?? 1) > 1 && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-black uppercase border border-black bg-[#facc15] text-black">
+                                ×{bagOwnedCounts[item.id]}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
                             {item.description}
                           </div>
+                          {(placedFurnitureCounts[item.id] ?? 0) > 0 && (
+                            <div className="text-[9.5px] font-black uppercase text-emerald-700 mt-0.5">
+                              In room ×{placedFurnitureCounts[item.id]}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))
