@@ -1261,11 +1261,6 @@ export default function App() {
 
   const handleStartGame = useCallback((shouldReset = false) => {
     soundEngine.playUiClick();
-    // From the landing, PLAY flies the camera from the lakeside view to
-    // the plaza, where the avatar is waiting.
-    if (!shouldReset && gameState === 'title') {
-      window.dispatchEvent(new CustomEvent('buddies-fly-to-plaza'));
-    }
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -1274,56 +1269,26 @@ export default function App() {
     }
     document.body.dataset.state = 'playing';
     setGameState('playing');
-  }, [gameState, onboardingStep]);
+  }, []);
 
   // Landing page PLAY / LOG IN: enter immediately once assets are ready;
   // otherwise the landing swaps to its own loading bar until preload lands.
   const [landingPlayPressed, setLandingPlayPressed] = useState<boolean>(false);
-  // While the post-PLAY camera descent runs, the login card waits off-screen
-  // so the dive down to the avatar reads cleanly before the card fades in.
-  const [landingDiveHold, setLandingDiveHold] = useState<boolean>(false);
-  const enterFromLanding = useCallback(() => {
-    setLandingDiveHold(true);
-    window.setTimeout(() => setLandingDiveHold(false), 1500);
-    handleStartGame(false);
-  }, [handleStartGame]);
   const handleLandingPlay = useCallback(() => {
     soundEngine.playUiClick();
     if (isPreloadComplete) {
-      enterFromLanding();
+      handleStartGame(false);
     } else {
       setLandingPlayPressed(true);
     }
-  }, [isPreloadComplete, enterFromLanding]);
+  }, [isPreloadComplete, handleStartGame]);
 
   useEffect(() => {
     if (landingPlayPressed && isPreloadComplete) {
       setLandingPlayPressed(false);
-      enterFromLanding();
+      handleStartGame(false);
     }
-  }, [landingPlayPressed, isPreloadComplete, enterFromLanding]);
-
-  // When a new player finishes entering through the front door (guest
-  // picker, lobby entry, or wallet connect at the login card), cover the
-  // teleport with a short loading state, then spawn the player in the plaza
-  // instead of leaving them standing at the lakeside stage.
-  const [isEnteringPlaza, setIsEnteringPlaza] = useState<boolean>(false);
-  const prevOnboardingStepRef = useRef<string>('');
-  useEffect(() => {
-    const prev = prevOnboardingStepRef.current;
-    prevOnboardingStepRef.current = onboardingStep;
-    if (
-      (prev === 'guest_character_select' ||
-        prev === 'entering_lobby' ||
-        prev === 'auth_choice') &&
-      onboardingStep === 'completed'
-    ) {
-      setIsEnteringPlaza(true);
-      window.dispatchEvent(new CustomEvent('buddies-spawn-to-plaza'));
-      const t = window.setTimeout(() => setIsEnteringPlaza(false), 1600);
-      return () => window.clearTimeout(t);
-    }
-  }, [onboardingStep]);
+  }, [landingPlayPressed, isPreloadComplete, handleStartGame]);
 
   const handleSwitchPlayMode = useCallback((nextMode: PlayMode) => {
     soundEngine.playUiClick();
@@ -1801,7 +1766,7 @@ export default function App() {
 
   useEffect(() => {
     const effectiveMode =
-      onboardingStep === 'guest_character_select' || onboardingStep === 'auth_choice'
+      onboardingStep === 'guest_character_select'
         ? 'character_select'
         : activeSpecialModal === 'none' && isInsidePrivateHouse
           ? 'house_visit'
@@ -3465,9 +3430,10 @@ export default function App() {
         onPreloadSceneReady={handlePreloadSceneReady}
       />
 
-      {/* Unified Blocking Preload Gate (0% to 100%): the first thing seen
-          when entering the web app; the landing page follows once ready. */}
-      {!isPreloadComplete && (
+      {/* Unified Blocking Preload Gate (0% to 100%). Suppressed on the title
+          screen: the landing page is the front door and carries its own
+          loading state once PLAY is pressed. */}
+      {!isPreloadComplete && gameState !== 'title' && (
         <div
           role="status"
           aria-live="polite"
@@ -3528,29 +3494,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Plaza entry loading state after the lakeside avatar selection */}
-      {isEnteringPlaza && (
-        <div
-          data-entering-plaza="true"
-          className="fixed inset-0 z-[99998] flex flex-col items-center justify-center bg-[#0b0e16] text-white pointer-events-auto select-none"
-        >
-          <div className="flex flex-col items-center gap-3">
-            <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase animate-pulse">
-              <span className="skew-x-12 inline-block">LOADING...</span>
-            </div>
-            <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#00d2ff]">
-              ENTERING CENTRAL PLAZA
-            </div>
-            <div className="w-56 sm:w-64 h-2.5 bg-[#14161d] border-2 border-white/70 rounded-full overflow-hidden mt-1 shadow-[2px_2px_0_#000]">
-              <div className="h-full bg-[#b8ff3c] animate-pulse w-full" />
-            </div>
-            <div className="text-[10px] font-bold text-white/60 tracking-wider">
-              Preparing area &amp; syncing map...
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Atmospheric Viewport Color Tint Overlay */}
       <div
         aria-hidden="true"
@@ -3565,14 +3508,23 @@ export default function App() {
           2. LANDING PAGE: bright Pudgy-style front door over the live world.
              One PLAY NOW (or LOG IN) press hands over to the START GAME card.
          ===================================================================== */}
-      {isPreloadComplete && gameState === 'title' && (
+      {gameState === 'title' && (
         <section
           aria-label="Buddies Blitz Landing"
           className="fixed inset-0 z-20 flex flex-col pointer-events-none"
         >
-          {/* Live 3D world backdrop: the avatar waits at the Central Oasis
-              Lake shore behind the landing UI (see the Arena title camera). */}
-          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/40 via-transparent to-sky-900/25" />
+          {/* Looping gameplay video backdrop (pond fishing scene) */}
+          <video
+            className="absolute inset-0 w-full h-full object-cover"
+            src="/assets/landing-loop.mp4"
+            autoPlay
+            muted
+            loop
+            playsInline
+            aria-hidden="true"
+          />
+          {/* Light sky wash so the logo and buttons stay readable */}
+          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/35 via-transparent to-sky-900/25" />
 
           {/* Top banner */}
           <div className="relative z-10 bg-[#60a5fa] text-white text-center font-black uppercase tracking-[0.18em] text-[10px] sm:text-xs py-2 px-3 border-b-2 border-black/60">
@@ -3670,7 +3622,6 @@ export default function App() {
       {isPreloadComplete &&
         gameState === 'playing' &&
         !isFullMapOverview &&
-        !landingDiveHold &&
         onboardingStep !== 'completed' && (
           <section
             aria-label="Buddies Blitz Login & Onboarding"

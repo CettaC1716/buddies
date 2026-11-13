@@ -12614,60 +12614,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
-    // Entry spot on the Central Plaza promenade: the transit destination
-    // spawn itself is sandwiched between the halte shelter and the kiosk,
-    // which blocks the avatar picker camera, so entries land a few units
-    // north of it, still on the plaza.
-    const ENTRY_PLAZA_SPOT = { x: -63.4, z: -7.0, yaw: Math.PI };
-    // After the lakeside avatar selection, App asks for the plaza spawn
-    // (it covers the move with its ENTERING CENTRAL PLAZA loading state).
-    const onSpawnToPlaza = () => {
-      if (!playerUnit) return;
-      playerUnit.x = ENTRY_PLAZA_SPOT.x;
-      playerUnit.z = ENTRY_PLAZA_SPOT.z;
-      playerUnit.vx = 0;
-      playerUnit.vz = 0;
-      playerUnit.vy = 0;
-      playerUnit.yaw = ENTRY_PLAZA_SPOT.yaw;
-      playerUnit.root.visible = true;
-      snapCameraAndStartSpawnBlink(playerUnit);
-    };
-    window.addEventListener('buddies-spawn-to-plaza', onSpawnToPlaza);
-    // Registered players skip the lakeside staging: on PLAY the camera flies
-    // from the landing framing to the plaza while their avatar spawns there.
-    let plazaFlyPhase: 'idle' | 'fly' = 'idle';
-    let plazaFlyT = 0;
-    const plazaFlyStartPos: Vec3 = { x: 0, y: 0, z: 0 };
-    const plazaFlyStartLook: Vec3 = { x: 0, y: 0, z: 0 };
-    const onFlyToPlaza = () => {
-      if (!playerUnit) return;
-      playerUnit.x = ENTRY_PLAZA_SPOT.x;
-      playerUnit.z = ENTRY_PLAZA_SPOT.z;
-      playerUnit.vx = 0;
-      playerUnit.vz = 0;
-      playerUnit.vy = 0;
-      playerUnit.yaw = ENTRY_PLAZA_SPOT.yaw;
-      playerUnit.root.visible = true;
-      plazaFlyStartPos.x = camera.position.x;
-      plazaFlyStartPos.y = camera.position.y;
-      plazaFlyStartPos.z = camera.position.z;
-      const flyDir = new THREE.Vector3();
-      camera.getWorldDirection(flyDir);
-      plazaFlyStartLook.x = camera.position.x + flyDir.x * 12;
-      plazaFlyStartLook.y = camera.position.y + flyDir.y * 12;
-      plazaFlyStartLook.z = camera.position.z + flyDir.z * 12;
-      // Pin the follow focus onto the avatar so the standard camera chain
-      // computes the plaza framing this flight eases into.
-      camFollowPos = {
-        x: playerUnit.x,
-        y: getTerrainElevation(playerUnit.x, playerUnit.z) + 1.0,
-        z: playerUnit.z,
-      };
-      camFollowVel = { x: 0, y: 0, z: 0 };
-      plazaFlyT = 0;
-      plazaFlyPhase = 'fly';
-    };
-    window.addEventListener('buddies-fly-to-plaza', onFlyToPlaza);
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
@@ -18410,46 +18356,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // Landing stage: until onboarding completes, the avatar waits at the
-      // Central Oasis Lake shore — the same spot the avatar picker uses.
-      if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
-        // The landing shot is the empty lakeside view; the avatar waits at
-        // the Central Plaza entry spot, where PLAY flies the camera to.
-        playerUnit.x = -63.4;
-        playerUnit.z = -7.0;
-        playerUnit.vx = 0;
-        playerUnit.vz = 0;
-        playerUnit.yaw = Math.PI;
-      }
-
       // Character-select cinematic phase transitions (see the
       // 'character_select' camera branch below for the dive itself).
       if (npcCameraMode === 'character_select' && charCinePhase === 'idle') {
+        charCinePhase = 'in';
         charCineT = 0;
         if (playerUnit) {
-          // Dive from wherever the camera currently is — right after PLAY
-          // that is the high landing shot, so the descent reads as one move.
-          charCineStartPos.x = camera.position.x;
-          charCineStartPos.y = camera.position.y;
-          charCineStartPos.z = camera.position.z;
-          const cineDir = new THREE.Vector3();
-          camera.getWorldDirection(cineDir);
-          charCineStartLook.x = camera.position.x + cineDir.x * 12;
-          charCineStartLook.y = camera.position.y + cineDir.y * 12;
-          charCineStartLook.z = camera.position.z + cineDir.z * 12;
+          const cineGroundY = getTerrainElevation(playerUnit.x, playerUnit.z);
+          charCineStartPos.x = playerUnit.x + 9;
+          charCineStartPos.y = cineGroundY + 24;
+          charCineStartPos.z = playerUnit.z + 15;
+          charCineStartLook.x = playerUnit.x;
+          charCineStartLook.y = cineGroundY + 1.6;
+          charCineStartLook.z = playerUnit.z;
           charCineLastPos.x = charCineStartPos.x;
           charCineLastPos.y = charCineStartPos.y;
           charCineLastPos.z = charCineStartPos.z;
           charCineLastLook.x = charCineStartLook.x;
           charCineLastLook.y = charCineStartLook.y;
           charCineLastLook.z = charCineStartLook.z;
-          const cineGroundY = getTerrainElevation(playerUnit.x, playerUnit.z);
-          const distToFraming = Math.hypot(
-            playerUnit.x + 6.35 - charCineStartPos.x,
-            cineGroundY + 2.32 - charCineStartPos.y,
-            playerUnit.z - charCineStartPos.z,
-          );
-          charCinePhase = distToFraming < 1.5 ? 'hold' : 'in';
         }
       } else if (
         npcCameraMode !== 'character_select' &&
@@ -18475,7 +18400,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         activePlaneAlt <= 4.0 ? activePlaneAlt : 4.0 + (activePlaneAlt - 4.0) * 0.35;
       const activeTerrainY =
         state === 'title'
-          ? getTerrainElevation(-31.0, 13.8)
+          ? getTerrainElevation(-32.5, 38.5)
           : currentPlayMode === 'editor'
           ? getTerrainElevation(editorPan.x, editorPan.z)
           : mountedTank
@@ -18484,7 +18409,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const focusTarget: Vec3 =
         state === 'title'
-          ? { x: -31.0, y: activeTerrainY + 0.9, z: 13.8 }
+          ? { x: -32.5, y: activeTerrainY + 0.9, z: 38.5 }
           : currentPlayMode === 'editor'
           ? { x: editorPan.x, y: activeTerrainY + 0.5, z: editorPan.z }
           : mountedTank
@@ -18536,12 +18461,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         z: wrapPlanetCoord(springStep.position.z),
       };
       camFollowVel = springStep.velocity;
-      if (state === 'title') {
-        // The landing shot is a fixed framing: pin the focus to the showcase
-        // spot so the camera never sweeps across the map after loading.
-        camFollowPos = { x: focusTarget.x, y: focusTarget.y, z: focusTarget.z };
-        camFollowVel = { x: 0, y: 0, z: 0 };
-      }
 
       const panAlpha = 1 - Math.exp(-BUDDIES_CONSTANTS.camera.mousePan.dampSpeed * dt);
       const panScale =
@@ -18575,7 +18494,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const zoomMult = state === 'title' ? 1.0 : cameraZoom * planeAltZoom;
       const camOffset =
         state === 'title'
-          ? { x: 5.2, y: 3.0, z: 8.6 }
+          ? { x: -3.2, y: 10.6, z: 14.5 }
           : currentPlayMode === 'editor'
           ? { x: 0, y: 54.0 * editorZoom, z: 22.0 * editorZoom }
           : { x: 0, y: 13.6 * zoomMult, z: 16.2 * zoomMult };
@@ -19441,37 +19360,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // Registered-player entry flight: ease the camera from the landing
-      // framing along a lifted arc into the plaza follow framing.
-      if (plazaFlyPhase === 'fly') {
-        plazaFlyT += rawDt;
-        const rawFly = Math.min(1, plazaFlyT / 1.8);
-        if (rawFly >= 1) {
-          plazaFlyPhase = 'idle';
-        } else {
-          const eFly =
-            rawFly < 0.5 ? 2 * rawFly * rawFly : 1 - Math.pow(-2 * rawFly + 2, 2) / 2;
-          const endX = camera.position.x;
-          const endY = camera.position.y;
-          const endZ = camera.position.z;
-          const ctrlX = (plazaFlyStartPos.x + endX) / 2;
-          const ctrlY = Math.max(plazaFlyStartPos.y, endY) + 10;
-          const ctrlZ = (plazaFlyStartPos.z + endZ) / 2;
-          const u = 1 - eFly;
-          camera.position.set(
-            u * u * plazaFlyStartPos.x + 2 * u * eFly * ctrlX + eFly * eFly * endX,
-            u * u * plazaFlyStartPos.y + 2 * u * eFly * ctrlY + eFly * eFly * endY,
-            u * u * plazaFlyStartPos.z + 2 * u * eFly * ctrlZ + eFly * eFly * endZ,
-          );
-          camera.lookAt(
-            plazaFlyStartLook.x + (finalLookX - plazaFlyStartLook.x) * eFly,
-            plazaFlyStartLook.y + (camFollowPos.y - plazaFlyStartLook.y) * eFly,
-            plazaFlyStartLook.z + (finalLookZ - plazaFlyStartLook.z) * eFly,
-          );
-          camera.updateMatrixWorld();
-        }
-      }
-
       // Character-select cinematic exit: ease from the portrait framing back
       // to the camera the standard chain just computed for this frame.
       if (charCinePhase === 'out') {
@@ -19492,16 +19380,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           );
           camera.updateMatrixWorld();
         }
-      }
-
-      // Title screen: the whole camera chain is locked to the avatar, so the
-      // landing shot is applied as a hard override after all of it — a fixed
-      // scenic framing of the lakeside, independent of where the avatar is.
-      if (state === 'title') {
-        const titleGroundY = getTerrainElevation(-31.0, 13.8);
-        camera.position.set(-25.8, titleGroundY + 3.9, 22.4);
-        camera.lookAt(-31.0, titleGroundY + 0.75, 11.3);
-        camera.updateMatrixWorld();
       }
 
       // =======================================================================
@@ -23048,8 +22926,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
-      window.removeEventListener('buddies-spawn-to-plaza', onSpawnToPlaza);
-      window.removeEventListener('buddies-fly-to-plaza', onFlyToPlaza);
       window.removeEventListener('mobile-joystick-input', onMobileJoystickInput);
       window.removeEventListener('camera-flip-view', onCameraFlipView);
       window.removeEventListener('blur', onWindowBlurOrVisibilityReset);
