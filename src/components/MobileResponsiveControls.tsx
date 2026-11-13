@@ -356,11 +356,9 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
         >
           <div
             className={`pointer-events-auto fixed ${
-              !showMobileJoystick
-                ? 'bottom-[64px] left-3'
-                : isCompactLandscape
-                  ? 'bottom-[64px] left-3.5'
-                  : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
+              isCompactLandscape
+                ? 'bottom-[64px] left-3.5'
+                : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
             } flex flex-col items-center gap-1 touch-none transition-opacity duration-150 ${
               !showMobileJoystick
                 ? 'opacity-95'
@@ -457,6 +455,15 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   View
                 </span>
               </button>
+            )}
+
+            {/* Without the joystick pad, an invisible spacer with the pad's
+                footprint keeps ACTS/VIEW at the exact same height. */}
+            {!showMobileJoystick && (
+              <div
+                aria-hidden="true"
+                className={isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'}
+              />
             )}
 
             {/* Circular Semi-Transparent Joystick Touch Pad */}
