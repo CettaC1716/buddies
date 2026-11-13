@@ -555,7 +555,7 @@ export function CafeOrderToastBanner(props: {
     <button
       type="button"
       onClick={props.onClick}
-      className="pointer-events-auto flex max-w-[92vw] items-center gap-2.5 rounded-full bg-[#232936]/92 py-2 pl-3 pr-4 shadow-[0_10px_28px_rgba(10,14,24,0.45)] ring-1 ring-white/25 backdrop-blur-md"
+      className="pointer-events-auto flex w-full items-center gap-2.5 rounded-full bg-[#232936]/92 py-2 pl-3 pr-4 shadow-[0_10px_28px_rgba(10,14,24,0.45)] ring-1 ring-white/25 backdrop-blur-md"
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#35C26B] text-white">
         <Coffee className="h-4 w-4" />
@@ -576,10 +576,13 @@ export function CafeOrderBellButton(props: { count: number; onClick: () => void 
       type="button"
       onClick={props.onClick}
       aria-label="Open cafe orders"
-      className="pointer-events-auto relative flex h-12 w-12 items-center justify-center rounded-full bg-[#232936]/85 text-white shadow-[0_10px_28px_rgba(10,14,24,0.4)] ring-1 ring-white/30 backdrop-blur-md"
+      className="pointer-events-auto flex w-full items-center gap-2.5 rounded-full bg-[#232936]/92 py-2 pl-3 pr-3 text-white shadow-[0_10px_28px_rgba(10,14,24,0.45)] ring-1 ring-white/25 backdrop-blur-md transition hover:bg-[#2c3446]/95 active:scale-[0.98]"
     >
-      <Bell className="h-5 w-5" />
-      <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E5484D] px-1 text-[10px] font-black text-white ring-2 ring-[#232936]">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#35C26B] text-white">
+        <Bell className="h-4 w-4" />
+      </span>
+      <span className="text-[13px] font-bold">Orders</span>
+      <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E5484D] px-1.5 text-[11px] font-black text-white">
         {props.count}
       </span>
     </button>

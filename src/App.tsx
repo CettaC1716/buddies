@@ -639,6 +639,14 @@ export default function App() {
   } | null>(null);
   const cafeOrderBannerTimerRef = useRef<number | null>(null);
   const cafePreparePendingRef = useRef<string | null>(null);
+  const [cafeNotice, setCafeNotice] = useState<string | null>(null);
+  const cafeNoticeTimerRef = useRef<number | null>(null);
+  const [cafePreparingItemId, setCafePreparingItemId] = useState<string | null>(null);
+  const showCafeNotice = useCallback((text: string) => {
+    setCafeNotice(text);
+    if (cafeNoticeTimerRef.current) window.clearTimeout(cafeNoticeTimerRef.current);
+    cafeNoticeTimerRef.current = window.setTimeout(() => setCafeNotice(null), 4200);
+  }, []);
   useEffect(() => {
     cafePresenceRef.current = cafePresence;
   }, [cafePresence]);
@@ -1581,7 +1589,7 @@ export default function App() {
         setActiveCafeModal('order');
         return;
       }
-      dispatchBuddyAction('socialTalk:No barista on shift right now — the cafe needs a worker first!');
+      showCafeNotice('No barista on shift right now — the cafe needs a worker first!');
     };
     const onOpenCafeAtmModal = () => {
       setActiveCafeModal('atm');
@@ -1960,9 +1968,7 @@ export default function App() {
     setCafeShiftState((prev) => {
       const next = startCafeWorkShift(prev, Date.now());
       if (next.activeOrder) {
-        dispatchBuddyAction(
-          `socialTalk:Waiter shift started! Order: ${next.activeOrder.item.name}`,
-        );
+        showCafeNotice(`Waiter shift started! Order: ${next.activeOrder.item.name}`);
       }
       return next;
     });
@@ -1972,9 +1978,9 @@ export default function App() {
     const cur = cafeShiftRef.current;
     if (cur.isWorking && cur.activeOrder && cur.preparedItemId !== cur.activeOrder.item.id) {
       soundEngine.playHit();
-      dispatchBuddyAction(
-        `socialTalk:Prepare the ${cur.activeOrder.item.name} at the ${
-          cur.activeOrder.item.category === 'drink' ? 'coffee machine' : 'food display'
+      showCafeNotice(
+        `Prepare the ${cur.activeOrder.item.name} at the ${
+          cur.activeOrder.item.category === 'drink' ? 'coffee machine' : 'pastry case'
         } first!`,
       );
       return;
@@ -1987,7 +1993,7 @@ export default function App() {
         res.xpGained,
         res.shiftCompleted ? `SHIFT COMPLETE!` : `${res.servedItem.name} SERVED`,
       );
-      dispatchBuddyAction(
+      showCafeNotice(
         res.shiftCompleted
           ? `Shift complete! +${res.xpGained} XP!`
           : `Served ${res.servedItem.name} to the customer!`,
@@ -2027,7 +2033,7 @@ export default function App() {
           message: `Order sent to ${worker.workerName ?? 'the barista'}! They are preparing your ${res.item.name}. +${res.xpGained} XP`,
         };
       }
-      dispatchBuddyAction(`socialTalk:Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
+      showCafeNotice(`Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
       return {
         ok: true,
         message: `Ordered ${res.item.name}! +${res.xpGained} XP`,
@@ -2066,7 +2072,7 @@ export default function App() {
           message: `Order sent to ${worker.workerName ?? 'the barista'}! They are preparing your ${res.item.name}. +${res.xpGained} XP (2.5x)`,
         };
       }
-      dispatchBuddyAction(`socialTalk:Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
+      showCafeNotice(`Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
       return {
         ok: true,
         message: `Ordered ${res.item.name} with CYON! +${res.xpGained} XP (2.5x)`,
@@ -2206,7 +2212,7 @@ export default function App() {
         mine.wantSince = null;
         mine.calledAt = null;
         retrackCafePresence();
-        dispatchBuddyAction('socialTalk:You missed your turn — join the waiting list again!');
+        showCafeNotice('You missed your turn — join the waiting list again!');
       }
       if (myRole !== 'called' && mine.calledAt && !mine.claimSince) {
         mine.calledAt = null;
@@ -2267,14 +2273,14 @@ export default function App() {
   const joinCafeQueue = useCallback(() => {
     cafeMyPresenceRef.current.wantSince = Date.now();
     retrackCafePresence();
-    dispatchBuddyAction('socialTalk:You joined the waiting list!');
+    showCafeNotice('You joined the waiting list!');
   }, [retrackCafePresence, dispatchBuddyAction]);
 
   const leaveCafeQueue = useCallback(() => {
     cafeMyPresenceRef.current.wantSince = null;
     cafeMyPresenceRef.current.calledAt = null;
     retrackCafePresence();
-    dispatchBuddyAction('socialTalk:You left the waiting list.');
+    showCafeNotice('You left the waiting list.');
     setActiveCafeModal('none');
   }, [retrackCafePresence, dispatchBuddyAction]);
 
@@ -2284,7 +2290,7 @@ export default function App() {
     const onRotaInteract = () => {
       const pres = cafePresenceRef.current;
       if (pres.myRole === 'worker') {
-        dispatchBuddyAction('socialTalk:You are on shift — serve 3 orders before the timer ends!');
+        showCafeNotice('You are on shift — serve 3 orders before the timer ends!');
         return;
       }
       if (!pres.workerUid && (pres.queue.length === 0 || pres.myRole === 'called' || pres.queue[0]?.uid === playerUid)) {
@@ -2354,17 +2360,18 @@ export default function App() {
     const onPrepareDone = () => {
       const itemId = cafePreparePendingRef.current;
       cafePreparePendingRef.current = null;
+      setCafePreparingItemId(null);
       if (!itemId) return;
       setCafeShiftState((prev) => prepareActiveCafeOrder(prev, itemId as CafeMenuItemSpec['id']));
       const item = CAFE_MENU_ITEMS.find((it) => it.id === itemId);
-      dispatchBuddyAction(`socialTalk:${item?.name ?? 'Order'} is ready — serve it at the counter!`);
+      showCafeNotice(`${item?.name ?? 'Order'} is ready — serve it at the counter!`);
     };
     const onCounterHint = () => {
       const pres = cafePresenceRef.current;
-      dispatchBuddyAction(
+      showCafeNotice(
         pres.workerUid
-          ? `socialTalk:Order from ${pres.workerName ?? 'the barista'} — walk up and click them!`
-          : 'socialTalk:No barista on shift — take the shift at the SHIFT BOARD!',
+          ? `Order from ${pres.workerName ?? 'the barista'} — walk up and click them!`
+          : 'No barista on shift — take the shift at the SHIFT BOARD!',
       );
     };
     window.addEventListener('open-cafe-prepare-modal', onOpenPrepare);
@@ -2385,7 +2392,7 @@ export default function App() {
       setCafeShiftSecondsLeft(left);
       if (left <= 0 && cafeShiftRef.current.isWorking) {
         setCafeShiftState((prev) => expireCafeWorkShift(prev));
-        dispatchBuddyAction('socialTalk:Shift time is up! The apron goes to the next in line.');
+        showCafeNotice('Shift time is up!');
       }
     };
     tick();
@@ -2437,6 +2444,7 @@ export default function App() {
       const active = cafeShiftRef.current.activeOrder;
       if (!active || active.item.id !== item.id) return;
       cafePreparePendingRef.current = item.id;
+      setCafePreparingItemId(item.id);
       setActiveCafeModal('none');
       soundEngine.playPickup();
       window.dispatchEvent(new CustomEvent('cafe-prepare-start'));
@@ -9608,49 +9616,104 @@ export default function App() {
         treasuryCyon={marketState.treasuryCyon}
         onExchangePackets={handleCafeExchangeLulToCyonPackets}
       />
-      {isInsideGlasshouseCafe && cafeShiftState.isWorking && cafeShiftEndsAt ? (
-        <div className="pointer-events-none fixed right-3 top-[64px] z-[86] flex items-center gap-1.5 rounded-full bg-[#232936]/85 px-3 py-1.5 text-[12px] font-black text-white ring-1 ring-white/30 backdrop-blur-md">
-          <span aria-hidden="true">☕</span>
-          <span>
-            {cafeShiftState.ordersCompletedInShift}/{cafeShiftState.maxOrdersInShift}
-          </span>
-          <span className="text-white/60">·</span>
-          <span>
-            {String(Math.floor(cafeShiftSecondsLeft / 60)).padStart(2, '0')}:
-            {String(cafeShiftSecondsLeft % 60).padStart(2, '0')}
-          </span>
-        </div>
-      ) : null}
-      {isInsideGlasshouseCafe && cafeShiftState.isWorking ? (
-        <div className="fixed right-3 top-[46%] z-[86]">
-          <CafeOrderBellButton
-            count={(cafeShiftState.activeOrder ? 1 : 0) + cafeShiftState.queuedOrders.length}
-            onClick={() => setActiveCafeModal('orders')}
-          />
-        </div>
-      ) : null}
-      {isInsideGlasshouseCafe && cafePresence.myRole === 'called' ? (
-        <div className="fixed left-3 top-[64px] z-[88] flex animate-pulse items-center gap-2.5 rounded-2xl bg-[#14532d]/92 py-2.5 pl-3 pr-4 text-white shadow-[0_12px_30px_rgba(10,40,20,0.5)] ring-1 ring-white/30 backdrop-blur-md">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#35C26B] text-base" aria-hidden="true">
-            ☕
-          </span>
-          <span className="text-[13px] font-bold leading-tight">
-            <span className="block text-[15px] font-black tracking-wide">YOUR TURN TO WORK!</span>
-            Go to the SHIFT BOARD — <span className="font-black text-[#b8ff3c]">{cafeCalledSecondsLeft}s</span> left
-          </span>
-        </div>
-      ) : null}
-      {cafeOrderBanner && isInsideGlasshouseCafe && cafeShiftState.isWorking ? (
-        <div className="pointer-events-none fixed inset-x-0 top-[64px] z-[87] flex justify-center px-3">
-          <CafeOrderToastBanner
-            customerName={cafeOrderBanner.customerName}
-            itemName={cafeOrderBanner.itemName}
-            extraCount={cafeOrderBanner.extraCount}
-            onClick={() => {
-              setCafeOrderBanner(null);
-              setActiveCafeModal('orders');
-            }}
-          />
+      {isInsideGlasshouseCafe &&
+      (cafePresence.myRole === 'called' || cafeShiftState.isWorking || cafeOrderBanner || cafeNotice) ? (
+        <div className="pointer-events-none fixed left-3 top-[64px] z-[88] flex w-[292px] max-w-[86vw] flex-col gap-2">
+          {cafePresence.myRole === 'called' ? (
+            <div className="flex w-full animate-pulse items-center gap-2.5 rounded-2xl bg-[#14532d]/92 py-2.5 pl-3 pr-4 text-white shadow-[0_12px_30px_rgba(10,40,20,0.5)] ring-1 ring-white/30 backdrop-blur-md">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#35C26B] text-base" aria-hidden="true">
+                ☕
+              </span>
+              <span className="text-[13px] font-bold leading-tight">
+                <span className="block text-[15px] font-black tracking-wide">YOUR TURN TO WORK!</span>
+                Go to the SHIFT BOARD — <span className="font-black text-[#b8ff3c]">{cafeCalledSecondsLeft}s</span> left
+              </span>
+            </div>
+          ) : null}
+          {cafeShiftState.isWorking ? (
+            <div className="w-full rounded-2xl bg-[#FBF7EF]/95 p-3 text-[#3E2F26] shadow-[0_14px_34px_rgba(30,20,10,0.35)] ring-1 ring-[#EFE6D8] backdrop-blur-md">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-[#35C26B]" aria-hidden="true" />
+                <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#8A7A6D]">Barista shift</span>
+                <span className="ml-auto flex items-center gap-2">
+                  <span className="flex gap-1" aria-hidden="true">
+                    {Array.from({ length: cafeShiftState.maxOrdersInShift }).map((_, i) => (
+                      <span
+                        key={i}
+                        className={`h-2 w-2 rounded-full ${i < cafeShiftState.ordersCompletedInShift ? 'bg-[#D96C4F]' : 'bg-[#E7DCC8]'}`}
+                      />
+                    ))}
+                  </span>
+                  {cafeShiftEndsAt ? (
+                    <span className="rounded-full bg-[#3E2F26] px-2 py-0.5 text-[11px] font-black tabular-nums text-white">
+                      {String(Math.floor(cafeShiftSecondsLeft / 60)).padStart(2, '0')}:
+                      {String(cafeShiftSecondsLeft % 60).padStart(2, '0')}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+              {cafeShiftState.activeOrder ? (
+                <div className="mt-2 border-t border-[#EFE6D8] pt-2">
+                  <div className="text-[15px] font-black leading-tight">{cafeShiftState.activeOrder.item.name}</div>
+                  <div className="text-[11px] font-bold text-[#8A7A6D]">for {cafeShiftState.activeOrder.customerName}</div>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[12px] font-bold">
+                    {cafeShiftState.preparedItemId === cafeShiftState.activeOrder.item.id ? (
+                      <>
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-[#35C26B]" aria-hidden="true" />
+                        Ready — serve at the counter
+                      </>
+                    ) : cafePreparingItemId === cafeShiftState.activeOrder.item.id ? (
+                      <>
+                        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#f59e0b]" aria-hidden="true" />
+                        Preparing…
+                      </>
+                    ) : (
+                      <>
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-[#D96C4F]" aria-hidden="true" />
+                        {cafeShiftState.activeOrder.item.category === 'drink'
+                          ? 'Prepare at the coffee machine'
+                          : 'Prepare at the pastry case'}
+                      </>
+                    )}
+                  </div>
+                  {cafeShiftState.queuedOrders.length > 0 ? (
+                    <div className="mt-1 text-[11px] font-bold text-[#8A7A6D]">
+                      +{cafeShiftState.queuedOrders.length} more waiting
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-2 border-t border-[#EFE6D8] pt-2 text-[12px] font-bold text-[#8A7A6D]">
+                  Waiting for the next order…
+                </div>
+              )}
+            </div>
+          ) : null}
+          {cafeShiftState.isWorking ? (
+            <CafeOrderBellButton
+              count={(cafeShiftState.activeOrder ? 1 : 0) + cafeShiftState.queuedOrders.length}
+              onClick={() => setActiveCafeModal('orders')}
+            />
+          ) : null}
+          {cafeOrderBanner && cafeShiftState.isWorking ? (
+            <CafeOrderToastBanner
+              customerName={cafeOrderBanner.customerName}
+              itemName={cafeOrderBanner.itemName}
+              extraCount={cafeOrderBanner.extraCount}
+              onClick={() => {
+                setCafeOrderBanner(null);
+                setActiveCafeModal('orders');
+              }}
+            />
+          ) : null}
+          {cafeNotice ? (
+            <div className="flex w-full items-center gap-2 rounded-2xl bg-[#232936]/92 py-2 pl-3 pr-3.5 text-[12.5px] font-bold leading-tight text-white shadow-[0_10px_28px_rgba(10,14,24,0.45)] ring-1 ring-white/25 backdrop-blur-md">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#35C26B] text-[12px]" aria-hidden="true">
+                ☕
+              </span>
+              <span>{cafeNotice}</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <XpGainCelebrationBanner banner={xpCelebrationBanner} />

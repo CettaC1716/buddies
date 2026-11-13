@@ -652,7 +652,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     enterCafePromptBtn.setAttribute('data-enter-cafe-floating-btn', 'true');
 
     const getCafeStationBtnHtml = (label: string, bgHex = '#b8ff3c', fgHex = '#14161d') =>
-      `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:${bgHex}; color:${fgHex}; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(184,255,60,0.65); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">${label}</span></span>`;
+      `<span style="display:inline-flex; align-items:center; justify-content:center; padding:4px 11px; background:${bgHex}; color:${fgHex}; font-family:'Barlow',sans-serif; font-weight:900; font-size:10.5px; letter-spacing:0.05em; text-transform:uppercase; border:2px solid #14161d; border-radius:999px; box-shadow:2px 2px 0 #14161d; user-select:none; pointer-events:none;">${label}</span>`;
     const cafeStationPromptBtn = createPromptButton(
       getCafeStationBtnHtml('ORDER MENU [E]'),
       'CAFE STATION [E]',
