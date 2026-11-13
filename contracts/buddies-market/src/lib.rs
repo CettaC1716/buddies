@@ -5,10 +5,11 @@ use near_sdk::{
     Promise,
 };
 
-/// Fixed on-chain economy constants (`1 NEAR = 100 RESPITE` -> `10^22 yoctoNEAR` per `1 RESPITE`).
+/// Fixed on-chain economy constants (`1 NEAR = 400 RESPITE` -> `2.5 * 10^21 yoctoNEAR` per `1 RESPITE`,
+/// i.e. `0.25 NEAR = 100 RESPITE`).
 /// Note: LUL and CYON are strictly OFF-CHAIN social currencies to isolate the economy from bot farming.
-pub const YOCTO_PER_RESPITE: u128 = 10_000_000_000_000_000_000_000;
-pub const HOUSE_OWNERSHIP_PRICE_RESPITE: u128 = 25;
+pub const YOCTO_PER_RESPITE: u128 = 2_500_000_000_000_000_000_000;
+pub const HOUSE_OWNERSHIP_PRICE_RESPITE: u128 = 100;
 pub const FAMILY_PLAN_1_WEEK_PRICE_RESPITE: u128 = 15;
 pub const FAMILY_PLAN_1_MONTH_PRICE_RESPITE: u128 = 45;
 pub const FAMILY_PLAN_1_YEAR_PRICE_RESPITE: u128 = 180;
@@ -323,13 +324,13 @@ impl BuddiesMarketContract {
         self.internal_transfer_respite(&sender_id, &receiver_id, amount.0, memo);
     }
 
-    /// Swap native NEAR -> RESPITE (`1 NEAR = 100 RESPITE`), refunding any fractional yoctoNEAR dust.
+    /// Swap native NEAR -> RESPITE (`1 NEAR = 400 RESPITE`), refunding any fractional yoctoNEAR dust.
     #[payable]
     pub fn swap_near_for_respite(&mut self) -> U128 {
         let caller = env::predecessor_account_id();
         let attached: NearToken = env::attached_deposit();
         let yocto = attached.as_yoctonear();
-        require!(yocto >= YOCTO_PER_RESPITE, "Minimum swap is 0.01 NEAR (1 RESPITE)");
+        require!(yocto >= YOCTO_PER_RESPITE, "Minimum swap is 0.0025 NEAR (1 RESPITE)");
 
         let added_respite = yocto / YOCTO_PER_RESPITE;
         let dust_yocto = yocto % YOCTO_PER_RESPITE;
@@ -931,6 +932,14 @@ impl BuddiesMarketContract {
         token_id: String,
         amount: U128,
     ) -> U128 {
+        // Merchant items are pre-minted catalog stock: ONLY the merchant
+        // (master_account) may mint. Players receive items by buying them
+        // from that stock (`buy_merchant_item`) or by player-to-player
+        // transfer — never by minting.
+        require!(
+            env::predecessor_account_id() == self.master_account,
+            "Only the merchant (master_account) can mint merchant items"
+        );
         let target = receiver_id.unwrap_or_else(env::predecessor_account_id);
         let clean_token = token_id.trim().to_string();
         require!(!clean_token.is_empty(), "Invalid NEP-245 token_id");
@@ -952,6 +961,96 @@ impl BuddiesMarketContract {
                 "owner_id": target,
                 "token_ids": [clean_token],
                 "amounts": [amount.0.to_string()]
+            }]),
+        );
+        U128(next)
+    }
+
+    /// Catalog base prices (RESPITE) for merchant NEP-245 items, mirroring
+    /// the client catalog. Returns `None` for token ids that are not
+    /// merchant catalog items.
+    fn merchant_item_base_price_respite(token_id: &str) -> Option<u128> {
+        match token_id {
+            "nep245:theme:japanese_zen" => Some(10),
+            "nep245:theme:cyber_neon" => Some(15),
+            "nep245:theme:royal_gold" => Some(25),
+            "nep245:furniture:golden_katana_rack" => Some(12),
+            "nep245:furniture:holo_command_globe" => Some(18),
+            "nep245:furniture:tatami_tea_table" => Some(8),
+            "nep245:furniture:sakura_bonsai_pot" => Some(10),
+            "nep245:furniture:shoji_floor_lamp" => Some(12),
+            "nep245:furniture:tactical_sofa_lounge" => Some(18),
+            "nep245:furniture:arcade_blitz_cab" => Some(20),
+            "nep245:fishing:golden_poseidon_rod" => Some(15),
+            "nep245:fishing:sonar_fishfinder_pro" => Some(12),
+            _ => None,
+        }
+    }
+
+    /// Buy a merchant NEP-245 item from the merchant's pre-minted stock.
+    /// Atomically moves `price_respite` RESPITE from the buyer to the
+    /// merchant (master_account) and `amount` of the item from the
+    /// merchant's stock to the buyer, who then holds it in their bag.
+    ///
+    /// The price is quoted by the client (dynamic stock/demand pricing,
+    /// 0.55x-2.15x of base with an investor discount down to ~0.47x), so the
+    /// contract enforces only a floor of 45% of the catalog base price: any
+    /// quote a legitimate client can produce passes, while a forged client
+    /// cannot name a near-zero price for real stock.
+    pub fn buy_merchant_item(
+        &mut self,
+        token_id: String,
+        amount: U128,
+        price_respite: U128,
+    ) -> U128 {
+        let buyer = env::predecessor_account_id();
+        let clean_token = token_id.trim().to_string();
+        require!(amount.0 > 0, "Amount must be positive");
+        require!(
+            buyer != self.master_account,
+            "The merchant cannot buy from its own stock"
+        );
+        let base = Self::merchant_item_base_price_respite(&clean_token)
+            .expect("Unknown merchant item token_id");
+        let floor_total = base * 45 / 100 * amount.0;
+        require!(
+            price_respite.0 >= floor_total,
+            "Price below the catalog floor for this merchant item"
+        );
+
+        let stock_key = Self::mt_key(&self.master_account, &clean_token);
+        let stock = *self.mt_balances.get(&stock_key).unwrap_or(&0);
+        require!(
+            stock >= amount.0,
+            "Merchant stock is insufficient for this purchase"
+        );
+
+        // Charge the buyer (panics on insufficient RESPITE), then move the
+        // item out of the merchant's stock into the buyer's bag.
+        let merchant = self.master_account.clone();
+        self.internal_transfer_respite(
+            &buyer,
+            &merchant,
+            price_respite.0,
+            Some("buy_merchant_item".to_string()),
+        );
+        self.mt_balances.insert(stock_key, stock - amount.0);
+        let buyer_key = Self::mt_key(&buyer, &clean_token);
+        let buyer_bal = *self.mt_balances.get(&buyer_key).unwrap_or(&0);
+        let next = buyer_bal
+            .checked_add(amount.0)
+            .expect("NEP-245 balance overflow");
+        self.mt_balances.insert(buyer_key, next);
+
+        Self::emit_nep_event(
+            "nep245",
+            "mt_transfer",
+            json!([{
+                "old_owner_id": merchant,
+                "new_owner_id": buyer,
+                "token_ids": [clean_token],
+                "amounts": [amount.0.to_string()],
+                "memo": "buy_merchant_item"
             }]),
         );
         U128(next)
@@ -1006,9 +1105,9 @@ impl BuddiesMarketContract {
 
     pub fn get_contract_overview(&self) -> ContractOverview {
         ContractOverview {
-            contract_version: "1.0.0".to_string(),
+            contract_version: "1.1.0".to_string(),
             master_account: self.master_account.clone(),
-            respite_per_near_rate: 100,
+            respite_per_near_rate: (1_000_000_000_000_000_000_000_000 / YOCTO_PER_RESPITE) as u64,
             house_price_respite: U128(HOUSE_OWNERSHIP_PRICE_RESPITE),
             total_respite_supply: U128(self.total_respite_supply),
             total_houses_minted: self.total_houses_minted,
@@ -1280,13 +1379,13 @@ mod tests {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
 
-        // Alice swaps 1 NEAR -> 100 RESPITE
+        // Alice swaps 1 NEAR -> 400 RESPITE
         set_ctx("alice.buddiesblitz.testnet", 1_000_000_000_000_000_000_000_000);
         let bal = contract.swap_near_for_respite();
-        assert_eq!(bal.0, 100);
+        assert_eq!(bal.0, 400);
         assert_eq!(
             contract.ft_balance_of(acct("alice.buddiesblitz.testnet")).0,
-            100
+            400
         );
 
         // Alice transfers 35 RESPITE to Bob with 1 yoctoNEAR attached
@@ -1298,7 +1397,7 @@ mod tests {
         );
         assert_eq!(
             contract.ft_balance_of(acct("alice.buddiesblitz.testnet")).0,
-            65
+            365
         );
         assert_eq!(
             contract.ft_balance_of(acct("bob.buddiesblitz.testnet")).0,
@@ -1355,13 +1454,13 @@ mod tests {
             U128(30),
         );
 
-        set_ctx("buyer.testnet", 500_000_000_000_000_000_000_000); // 0.5 NEAR = 50 RESPITE
+        set_ctx("buyer.testnet", 500_000_000_000_000_000_000_000); // 0.5 NEAR = 200 RESPITE
         contract.swap_near_for_respite();
 
         set_ctx("buyer.testnet", 0);
         let bought = contract.buy_fish_nft("list-77".to_string());
         assert_eq!(bought.owner_id, acct("buyer.testnet"));
-        assert_eq!(contract.ft_balance_of(acct("buyer.testnet")).0, 20);
+        assert_eq!(contract.ft_balance_of(acct("buyer.testnet")).0, 170);
         assert_eq!(contract.ft_balance_of(acct("seller.testnet")).0, 30);
         assert_eq!(contract.get_fish_listings().len(), 0);
     }
@@ -1371,14 +1470,14 @@ mod tests {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
 
-        // Seller swaps 1 NEAR -> 100 RESPITE and buys House Deed (fixed 25 RESPITE)
+        // Seller swaps 1 NEAR -> 400 RESPITE and buys House Deed (fixed 100 RESPITE)
         set_ctx("seller.testnet", 1_000_000_000_000_000_000_000_000);
         contract.swap_near_for_respite();
 
         set_ctx("seller.testnet", 0);
         let estate = contract.purchase_citizen_asset("house_ownership".to_string(), None, None);
         assert!(estate.owns_house);
-        assert_eq!(estate.respite_balance.0, 75);
+        assert_eq!(estate.respite_balance.0, 300);
         let deed_id = estate.house_deed.unwrap().deed_token_id;
 
         // Seller binds session key at epoch 1
@@ -1449,9 +1548,9 @@ mod tests {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
 
-        set_ctx("alice.testnet", 0);
+        // Only the merchant (master) mints; here it stocks Alice directly
         contract.mint_merchant_item(
-            None,
+            Some(acct("alice.testnet")),
             "furniture:sakura_bonsai_pot".to_string(),
             U128(3),
         );
@@ -1481,6 +1580,161 @@ mod tests {
             ],
         );
         assert_eq!(batch, vec![U128(2), U128(0)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the merchant (master_account) can mint merchant items")]
+    fn test_mint_merchant_item_rejects_non_master() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        set_ctx("alice.testnet", 0);
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:golden_katana_rack".to_string(),
+            U128(1),
+        );
+    }
+
+    #[test]
+    fn test_buy_merchant_item_moves_stock_and_respite() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        // Merchant pre-mints its catalog stock (katana rack, base 12 RESPITE)
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:golden_katana_rack".to_string(),
+            U128(3),
+        );
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("buddiesblitz.testnet"),
+                    "nep245:furniture:golden_katana_rack".to_string()
+                )
+                .0,
+            3
+        );
+
+        // Alice swaps 0.1 NEAR -> 40 RESPITE at the 400-per-NEAR rate
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        let bal = contract.swap_near_for_respite();
+        assert_eq!(bal.0, 40);
+
+        set_ctx("alice.testnet", 0);
+        let owned = contract.buy_merchant_item(
+            "nep245:furniture:golden_katana_rack".to_string(),
+            U128(1),
+            U128(12),
+        );
+        assert_eq!(owned.0, 1);
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("alice.testnet"),
+                    "nep245:furniture:golden_katana_rack".to_string()
+                )
+                .0,
+            1
+        );
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("buddiesblitz.testnet"),
+                    "nep245:furniture:golden_katana_rack".to_string()
+                )
+                .0,
+            2
+        );
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 28);
+        assert_eq!(contract.ft_balance_of(acct("buddiesblitz.testnet")).0, 50_012);
+    }
+
+    #[test]
+    fn test_buy_merchant_item_converted_furniture() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        // Tatami tea table: catalog base 8 RESPITE (floor 3), stock 2
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(2),
+        );
+
+        // Alice swaps 0.1 NEAR -> 40 RESPITE and buys one table at base price
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        let owned = contract.buy_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(8),
+        );
+        assert_eq!(owned.0, 1);
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 32);
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("buddiesblitz.testnet"),
+                    "nep245:furniture:tatami_tea_table".to_string()
+                )
+                .0,
+            1
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Price below the catalog floor for this merchant item")]
+    fn test_buy_merchant_item_rejects_below_floor_price() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:golden_katana_rack".to_string(),
+            U128(1),
+        );
+
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        // Floor for a 12-RESPITE item is 5; naming 4 fails despite stock+funds
+        contract.buy_merchant_item(
+            "nep245:furniture:golden_katana_rack".to_string(),
+            U128(1),
+            U128(4),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Merchant stock is insufficient for this purchase")]
+    fn test_buy_merchant_item_rejects_empty_stock() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:theme:japanese_zen".to_string(),
+            U128(1),
+            U128(10),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown merchant item token_id")]
+    fn test_buy_merchant_item_rejects_unknown_token() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:furniture:does_not_exist".to_string(),
+            U128(1),
+            U128(10),
+        );
     }
 
     #[test]

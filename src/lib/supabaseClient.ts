@@ -1726,3 +1726,115 @@ export async function upsertPropertyListingToSupabase(
     return false;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* In-world letters: purchase certificates delivered to a player's     */
+/* phone (PRIVATE tab). A letter is the human-readable confirmation    */
+/* of an on-chain purchase — house deeds and NEP-245 items.            */
+/* ------------------------------------------------------------------ */
+
+export type BuddiesLetterKind = 'property_purchase' | 'item_purchase';
+
+export interface BuddiesLetterPayload {
+  buyerName?: string;
+  buyerAccount?: string;
+  sellerName?: string;
+  sellerAccount?: string;
+  itemName?: string;
+  itemId?: string;
+  tokenId?: string;
+  assetKind?: string;
+  deedTokenId?: string;
+  estateAccount?: string;
+  priceAmount?: number;
+  priceCurrency?: string;
+  settlementContract?: string;
+  paymentTx?: string;
+}
+
+export interface BuddiesLetter {
+  id: string;
+  recipientAccount: string;
+  kind: BuddiesLetterKind;
+  title: string;
+  payload: BuddiesLetterPayload;
+  txHash: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+interface DbLetterRow {
+  id: string;
+  recipient_account: string;
+  kind: string;
+  title: string;
+  payload: BuddiesLetterPayload | null;
+  tx_hash: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export async function createLetterForAccount(params: {
+  recipientAccount: string;
+  kind: BuddiesLetterKind;
+  title: string;
+  payload: BuddiesLetterPayload;
+  txHash?: string | null;
+}): Promise<boolean> {
+  const cleanRecipient = sanitizeAccountId(params.recipientAccount);
+  if (!supabase || cleanRecipient.length < 2) return false;
+  try {
+    const { error } = await supabase.from('bb_letters').insert({
+      recipient_account: cleanRecipient,
+      kind: params.kind,
+      title: params.title.slice(0, 160),
+      payload: params.payload,
+      tx_hash: params.txHash ? params.txHash.slice(0, 96) : null,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchLettersForAccount(
+  accountId: string,
+  limit = 50,
+): Promise<BuddiesLetter[]> {
+  const cleanAccount = sanitizeAccountId(accountId);
+  if (!supabase || cleanAccount.length < 2) return [];
+  try {
+    const { data, error } = await supabase
+      .from('bb_letters')
+      .select('id, recipient_account, kind, title, payload, tx_hash, is_read, created_at')
+      .eq('recipient_account', cleanAccount)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return (data as DbLetterRow[]).map((row) => ({
+      id: row.id,
+      recipientAccount: row.recipient_account,
+      kind: (row.kind === 'property_purchase' ? 'property_purchase' : 'item_purchase') as BuddiesLetterKind,
+      title: row.title,
+      payload: row.payload ?? {},
+      txHash: row.tx_hash,
+      isRead: Boolean(row.is_read),
+      createdAt: row.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function markLetterRead(letterId: string): Promise<boolean> {
+  if (!supabase || !letterId) return false;
+  try {
+    const { error } = await supabase
+      .from('bb_letters')
+      .update({ is_read: true })
+      .eq('id', letterId);
+    return !error;
+  } catch {
+    return false;
+  }
+}

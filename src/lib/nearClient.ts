@@ -1214,10 +1214,10 @@ export const RESPITE_NEP141_METADATA = {
   symbol: 'RESPITE',
   decimals: 0,
   contractId: NEAR_CONFIG.nep141RespiteContractId,
-  rateRespitePerNear: 100,
+  rateRespitePerNear: 400,
 } as const;
 
-export const HOUSE_OWNERSHIP_PRICE_RESPITE = 25;
+export const HOUSE_OWNERSHIP_PRICE_RESPITE = 100;
 
 export type FamilyMemberContractPlanId = '1_week' | '1_month' | '1_year';
 export type FamilyMemberOrderId = 'collect_boxes' | 'go_fishing' | 'warzone_attack';
@@ -1764,6 +1764,7 @@ export type BuddiesMarketMethodName =
   | 'mint_fish_nft'
   | 'list_fish_nft'
   | 'buy_fish_nft'
+  | 'buy_merchant_item'
   | 'unlist_fish_nft'
   | 'ft_transfer'
   | 'nft_transfer'

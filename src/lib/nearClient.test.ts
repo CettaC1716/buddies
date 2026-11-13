@@ -87,10 +87,10 @@ test('getNearBlocksAccountUrl and getNearBlocksTxUrl generate valid explorer lin
 });
 
 test('on-chain economic constants match contracts/buddies-market/src/lib.rs 1:1', () => {
-  assert.equal(HOUSE_OWNERSHIP_PRICE_RESPITE, 25);
+  assert.equal(HOUSE_OWNERSHIP_PRICE_RESPITE, 100);
   assert.equal(RESPITE_NEP141_METADATA.symbol, 'RESPITE');
   assert.equal(RESPITE_NEP141_METADATA.decimals, 0);
-  assert.equal(RESPITE_NEP141_METADATA.rateRespitePerNear, 100);
+  assert.equal(RESPITE_NEP141_METADATA.rateRespitePerNear, 400);
   assert.deepEqual(
     FAMILY_MEMBER_CONTRACT_PLANS.map((p) => ({ id: p.id, price: p.priceRespite })),
     [

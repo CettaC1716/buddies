@@ -116,7 +116,7 @@ interface NpcMerchantAndHouseModalProps {
     inputAmount: number,
   ) => Promise<NearRespiteSwapReceipt | null> | NearRespiteSwapReceipt | null | void;
   onInvestInMerchant: () => void;
-  onBuyMerchantItem: (item: MerchantCatalogItem, price: number) => void;
+  onBuyMerchantItem: (item: MerchantCatalogItem, price: number) => Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }>;
   onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => void;
   onToggleFastForward?: () => void;
   onSelectHouseTheme: (themeItem: MerchantCatalogItem) => void;
@@ -402,6 +402,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [isSwappingNear, setIsSwappingNear] = useState<boolean>(false);
   const [swapErrorText, setSwapErrorText] = useState<string | null>(null);
   const [isBuyingCatalogAsset, setIsBuyingCatalogAsset] = useState<boolean>(false);
+  const [lastCatalogBuyReceipt, setLastCatalogBuyReceipt] = useState<{
+    txHash: string;
+    explorerUrl: string;
+  } | null>(null);
   const [catalogActionFeedback, setCatalogActionFeedback] = useState<{
     ok: boolean;
     text: string;
@@ -2359,6 +2363,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             setCryptoSwapInputStr(preset.near);
                             setSwapErrorText(null);
+                            setLastCryptoSwapReceipt(null);
                           }}
                           className="px-2.5 py-0.5 bg-[#1e293b] hover:bg-[#334155] border border-white/40 text-[9.5px] font-black uppercase text-[#d8b4fe] cursor-pointer"
                         >
@@ -2387,6 +2392,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         onChange={(e) => {
                           setCryptoSwapInputStr(e.target.value);
                           setSwapErrorText(null);
+                          setLastCryptoSwapReceipt(null);
                         }}
                         className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#d8b4fe]"
                       />
@@ -2436,27 +2442,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     )}
 
-                    {lastCryptoSwapReceipt && (
-                      <div
-                        data-near-respite-swap-receipt="true"
-                        className="p-2 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 text-center space-y-0.5"
-                      >
-                        <div>
-                          Swapped {lastCryptoSwapReceipt.nearAmount} NEAR &rarr; +
-                          {lastCryptoSwapReceipt.respiteAmount} RESPITE
-                        </div>
-                        {lastCryptoSwapReceipt.txHash && (
-                          <a
-                            href={getNearBlocksTxUrl(lastCryptoSwapReceipt.txHash, 'testnet')}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-block text-[#38bdf8] underline font-mono"
-                          >
-                            View Tx on NearBlocks ↗
-                          </a>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* Bottom Divider & Swap Submit Button */}
@@ -2469,6 +2454,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         if (!canPerformCryptoSwap) return;
                         soundEngine.playUiClick();
                         setSwapErrorText(null);
+                        setLastCryptoSwapReceipt(null);
                         setIsSwappingNear(true);
                         try {
                           const receipt = await onSwapNearAndRespite?.(
@@ -2503,6 +2489,30 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </span>
                     </button>
                   </div>
+
+                  {lastCryptoSwapReceipt && (
+                    <div className="px-4 pb-4">
+                      <div
+                        data-near-respite-swap-receipt="true"
+                        className="p-2 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 text-center space-y-0.5"
+                      >
+                        <div>
+                          Swapped {lastCryptoSwapReceipt.nearAmount} NEAR &rarr; +
+                          {lastCryptoSwapReceipt.respiteAmount} RESPITE
+                        </div>
+                        {lastCryptoSwapReceipt.txHash && (
+                          <a
+                            href={getNearBlocksTxUrl(lastCryptoSwapReceipt.txHash, 'testnet')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block text-[#38bdf8] underline font-mono"
+                          >
+                            View Tx on NearBlocks ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -2756,12 +2766,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             type="button"
                             data-buy-fishing-item-btn={selectedFishingItem.id}
                             disabled={!canAffordSelected}
-                            onClick={() => {
+                            onClick={async () => {
                               if (!canAffordSelected) return;
                               soundEngine.playPickup();
-                              onBuyMerchantItem(selectedFishingItem, selectedQuote.buyPrice);
+                              const buyRes = await onBuyMerchantItem(selectedFishingItem, selectedQuote.buyPrice);
+                              const ok = buyRes.ok;
                               triggerNpcSpeech(
-                                `Purchased ${selectedFishingItem.name} for ${selectedQuote.buyPrice} ${selectedFishingItem.currency}! Stored inside your Personal Bag (BAG).`,
+                                ok
+                                  ? `Purchased ${selectedFishingItem.name} for ${selectedQuote.buyPrice} ${selectedFishingItem.currency}! Stored inside your Personal Bag (BAG).`
+                                  : `That purchase did not go through — your balance was not charged.`,
                               );
                             }}
                             className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider transition-all ${
@@ -3099,6 +3112,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           {catalogActionFeedback.text}
                         </div>
                       )}
+                      {lastCatalogBuyReceipt && (
+                        <div
+                          data-catalog-buy-receipt="true"
+                          className="p-2 bg-black/60 border border-[#10b981] text-[10px] font-bold text-slate-100 text-center"
+                        >
+                          Purchase confirmed on-chain.{' '}
+                          <a
+                            href={
+                              lastCatalogBuyReceipt.explorerUrl ||
+                              getNearBlocksTxUrl(lastCatalogBuyReceipt.txHash, 'testnet')
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#38bdf8] underline font-mono"
+                          >
+                            View Tx on NearBlocks ↗
+                          </a>
+                        </div>
+                      )}
                     </>
                   );
                 })()}
@@ -3162,15 +3194,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     stock: quote.stock,
                                     isOwned,
                                     canBuy,
-                                    onBuy: () => {
-                                      onBuyMerchantItem(item, quote.buyPrice);
-                                      setCatalogActionFeedback({
-                                        ok: true,
-                                        text: `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`,
-                                      });
-                                      triggerNpcSpeech(
-                                        `Bought ${item.name}! Place it in your house studio.`,
+                                    onBuy: async () => {
+                                      const buyRes = await onBuyMerchantItem(item, quote.buyPrice);
+                                      const ok = buyRes.ok;
+                                      setLastCatalogBuyReceipt(
+                                        buyRes.txHash
+                                          ? { txHash: buyRes.txHash, explorerUrl: buyRes.explorerUrl ?? '' }
+                                          : null,
                                       );
+                                      setCatalogActionFeedback({
+                                        ok,
+                                        text: ok
+                                          ? `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`
+                                          : `Purchase failed — your balance was not charged.`,
+                                      });
+                                      if (ok) {
+                                        triggerNpcSpeech(
+                                          `Bought ${item.name}! Place it in your house studio.`,
+                                        );
+                                      }
                                     },
                                   })
                                 }
@@ -3227,17 +3269,27 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       type="button"
                                       data-buy-furniture-btn={item.id}
                                       disabled={!canBuy}
-                                      onClick={() => {
+                                      onClick={async () => {
                                         if (!canBuy) return;
                                         soundEngine.playPickup();
-                                        onBuyMerchantItem(item, quote.buyPrice);
-                                        setCatalogActionFeedback({
-                                          ok: true,
-                                          text: `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`,
-                                        });
-                                        triggerNpcSpeech(
-                                          `Bought ${item.name}! Place it in your house studio.`,
+                                        const buyRes = await onBuyMerchantItem(item, quote.buyPrice);
+                                        const ok = buyRes.ok;
+                                        setLastCatalogBuyReceipt(
+                                          buyRes.txHash
+                                            ? { txHash: buyRes.txHash, explorerUrl: buyRes.explorerUrl ?? '' }
+                                            : null,
                                         );
+                                        setCatalogActionFeedback({
+                                          ok,
+                                          text: ok
+                                            ? `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`
+                                            : `Purchase failed — your balance was not charged.`,
+                                        });
+                                        if (ok) {
+                                          triggerNpcSpeech(
+                                            `Bought ${item.name}! Place it in your house studio.`,
+                                          );
+                                        }
                                       }}
                                       className="px-2 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] disabled:bg-slate-500 text-black border border-black text-[8.5px] font-black uppercase cursor-pointer"
                                     >
@@ -3249,17 +3301,27 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     type="button"
                                     data-buy-furniture-btn={item.id}
                                     disabled={!canBuy}
-                                    onClick={() => {
+                                    onClick={async () => {
                                       if (!canBuy) return;
                                       soundEngine.playPickup();
-                                      onBuyMerchantItem(item, quote.buyPrice);
-                                      setCatalogActionFeedback({
-                                        ok: true,
-                                        text: `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`,
-                                      });
-                                      triggerNpcSpeech(
-                                        `Bought ${item.name}! Place it in your house studio.`,
+                                      const buyRes = await onBuyMerchantItem(item, quote.buyPrice);
+                                      const ok = buyRes.ok;
+                                      setLastCatalogBuyReceipt(
+                                        buyRes.txHash
+                                          ? { txHash: buyRes.txHash, explorerUrl: buyRes.explorerUrl ?? '' }
+                                          : null,
                                       );
+                                      setCatalogActionFeedback({
+                                        ok,
+                                        text: ok
+                                          ? `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`
+                                          : `Purchase failed — your balance was not charged.`,
+                                      });
+                                      if (ok) {
+                                        triggerNpcSpeech(
+                                          `Bought ${item.name}! Place it in your house studio.`,
+                                        );
+                                      }
                                     }}
                                     className={`inline-flex items-center gap-1 px-2.5 py-1 border border-black text-[9px] font-black uppercase ${
                                       canBuy

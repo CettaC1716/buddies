@@ -159,6 +159,7 @@ import {
   fetchPropertyListingsFromSupabase,
   fetchRecentSocialMessages,
   insertSocialMessageToSupabase,
+  createLetterForAccount,
   logMarketTransactionToSupabase,
   signInWithSupabaseGoogle,
   signOutSupabaseAuth,
@@ -6846,6 +6847,25 @@ export default function App() {
           setRespiteBalance(nextRespite);
           setHasHouseOwnership(true);
           if (resolvedActor) {
+            void createLetterForAccount({
+              recipientAccount: resolvedActor,
+              kind: 'property_purchase',
+              title: 'Real Estate Sales Contract — House Deed',
+              payload: {
+                buyerAccount: resolvedActor,
+                sellerName: 'Buddies Blitz',
+                sellerAccount: 'buddiesblitz.testnet',
+                itemName: 'House Ownership Certificate',
+                assetKind: 'house',
+                deedTokenId,
+                priceAmount: priceRespite,
+                priceCurrency: 'RESPITE',
+                settlementContract: NEAR_CONFIG.marketContractId,
+              },
+              txHash: res.txHash,
+            });
+          }
+          if (resolvedActor) {
             dispatchBuddyAction(`nearSyncWalletSession:${resolvedActor}:1:${deedTokenId}`);
           }
           setHud((prev) => ({
@@ -7023,6 +7043,34 @@ export default function App() {
             if (!res.ok) return false;
             const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
             await upsertPropertyListingToSupabase({ ...rest, status: 'sold' });
+            void createLetterForAccount({
+              recipientAccount: listing.buyer_account,
+              kind: listing.asset_kind === 'house' ? 'property_purchase' : 'item_purchase',
+              title:
+                listing.asset_kind === 'house'
+                  ? 'Real Estate Sales Contract — House Deed'
+                  : 'Certificate of Ownership — Furniture NFT',
+              payload: {
+                buyerAccount: listing.buyer_account,
+                sellerAccount: listing.seller_account,
+                itemName:
+                  listing.asset_kind === 'house'
+                    ? 'House Ownership Certificate'
+                    : (MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.name ?? listing.asset_id),
+                itemId: listing.asset_id,
+                tokenId:
+                  listing.asset_kind === 'house'
+                    ? listing.asset_id
+                    : MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.tokenId,
+                assetKind: listing.asset_kind,
+                deedTokenId: listing.asset_kind === 'house' ? listing.asset_id : undefined,
+                priceAmount: listing.price_respite,
+                priceCurrency: 'RESPITE',
+                settlementContract: NEAR_CONFIG.marketContractId,
+                paymentTx: listing.payment_tx ?? undefined,
+              },
+              txHash: res.txHash,
+            });
             if (listing.asset_kind === 'house') {
               setHasHouseOwnership(false);
             } else {
@@ -7249,26 +7297,68 @@ export default function App() {
             }
           }
         }}
-        onBuyMerchantItem={(item: MerchantCatalogItem, finalPrice: number) => {
+        onBuyMerchantItem={async (item: MerchantCatalogItem, finalPrice: number): Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }> => {
           soundEngine.playUiClick();
           // Furniture is owned per copy (one copy per house placement), so
           // it can be bought again while stock lasts; themes and gear are
           // unique and block a second purchase.
-          if (!item.interiorSlot && ownedMerchantItemIds.includes(item.id)) return;
+          if (!item.interiorSlot && ownedMerchantItemIds.includes(item.id)) return { ok: false };
           const actorAccount = hud.nearWalletId || playerUid;
           if (item.currency === 'RESPITE' && !actorAccount) {
             setIsNearWalletSelectorOpen(true);
-            return;
+            return { ok: false };
           }
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
+          let onChainBuyReceipt: { txHash?: string; explorerUrl?: string } = {};
           if (item.currency === 'CYON') {
-            if (cyonBalance < finalPrice) return;
+            if (cyonBalance < finalPrice) return { ok: false };
             nextCyon = Math.max(0, cyonBalance - finalPrice);
             setCyonBalance(nextCyon);
           } else {
-            if (respiteBalance < finalPrice) return;
+            if (respiteBalance < finalPrice) return { ok: false };
+            // RESPITE catalog items are real NEP-245 stock held by the
+            // merchant on-chain: the purchase itself settles on-chain
+            // (RESPITE buyer -> merchant, item merchant stock -> buyer bag).
+            // Local balances and ownership only move after the tx succeeds.
+            const buyRes = await executeMarketContractCallOnChain({
+              signerAccountId: actorAccount || undefined,
+              methodName: 'buy_merchant_item',
+              args: {
+                token_id: item.tokenId,
+                amount: '1',
+                price_respite: String(finalPrice),
+              },
+            });
+            if (!buyRes.ok || !buyRes.txHash) return { ok: false };
+            onChainBuyReceipt = { txHash: buyRes.txHash, explorerUrl: buyRes.explorerUrl };
+            void createLetterForAccount({
+              recipientAccount: actorAccount,
+              kind: 'item_purchase',
+              title: `Certificate of Ownership — ${item.name}`,
+              payload: {
+                buyerAccount: actorAccount,
+                sellerName: merchantLocation === 'beach_house' ? 'Kai Fish Market' : 'Hana Property & Housing',
+                sellerAccount: 'buddiesblitz.testnet',
+                itemName: item.name,
+                itemId: item.id,
+                tokenId: item.tokenId,
+                assetKind: item.category,
+                priceAmount: finalPrice,
+                priceCurrency: 'RESPITE',
+                settlementContract: NEAR_CONFIG.marketContractId,
+              },
+              txHash: buyRes.txHash,
+            });
+            const resolvedActor = buyRes.signerAccountId || actorAccount;
             nextRespite = Math.max(0, respiteBalance - finalPrice);
+            const liveRespiteStr = await fetchNep141Balance(
+              NEAR_CONFIG.nep141RespiteContractId,
+              resolvedActor,
+            );
+            if (liveRespiteStr !== null) {
+              nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+            }
             setRespiteBalance(nextRespite);
           }
           const nextOwned = [...ownedMerchantItemIds, item.id];
@@ -7338,6 +7428,7 @@ export default function App() {
               ownedTokenIds: nextOwned,
             });
           }
+          return { ok: true, ...onChainBuyReceipt };
         }}
         onSellMerchantItem={(item: MerchantCatalogItem, refund: number) => {
           soundEngine.playUiClick();

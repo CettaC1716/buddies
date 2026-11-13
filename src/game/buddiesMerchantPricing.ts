@@ -49,17 +49,17 @@ export interface MerchantCatalogItem {
 }
 
 export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
-  // --- NON-NFT FURNITURE (Bought with CYON) ---
+  // --- FURNITURE (all NFT, bought with RESPITE) ---
   {
     id: 'tatami_tea_table',
-    tokenId: 'item:tatami_tea_table',
+    tokenId: 'nep245:furniture:tatami_tea_table',
     name: 'Chabudai Low Tea Table',
-    category: 'non_nft_furniture',
-    currency: 'CYON',
-    basePrice: 35,
+    category: 'nft_collector_furniture',
+    currency: 'RESPITE',
+    basePrice: 8,
     targetStock: 10,
     initialStock: 10,
-    isNft: false,
+    isNft: true,
     description: 'Japanese low wooden tea table complete with zabuton floor cushions & warm candle.',
     interiorSlot: 'center_table',
     footprints: [[0, 0, 1.35, 1.15]],
@@ -68,14 +68,14 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   },
   {
     id: 'sakura_bonsai_pot',
-    tokenId: 'item:sakura_bonsai_pot',
+    tokenId: 'nep245:furniture:sakura_bonsai_pot',
     name: 'Indoor Sakura Bonsai',
-    category: 'non_nft_furniture',
-    currency: 'CYON',
-    basePrice: 40,
+    category: 'nft_collector_furniture',
+    currency: 'RESPITE',
+    basePrice: 10,
     targetStock: 10,
     initialStock: 9,
-    isNft: false,
+    isNft: true,
     description: 'Ceramic Sakura bonsai pot & organic tropical greenery for a private house corner.',
     interiorSlot: 'corner_plant',
     footprints: [[0, 0, 0.65, 0.65]],
@@ -84,14 +84,14 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   },
   {
     id: 'shoji_floor_lamp',
-    tokenId: 'item:shoji_floor_lamp',
+    tokenId: 'nep245:furniture:shoji_floor_lamp',
     name: 'Andon Shoji Arc Lamp',
-    category: 'non_nft_furniture',
-    currency: 'CYON',
-    basePrice: 50,
+    category: 'nft_collector_furniture',
+    currency: 'RESPITE',
+    basePrice: 12,
     targetStock: 8,
     initialStock: 8,
-    isNft: false,
+    isNft: true,
     description: 'Shoji paper & brass arc floor lamp that automatically illuminates in the evening and night.',
     interiorSlot: 'left_wall',
     footprints: [[0, 0, 0.58, 0.58]],
@@ -100,14 +100,14 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   },
   {
     id: 'tactical_sofa_lounge',
-    tokenId: 'item:tactical_sofa_lounge',
+    tokenId: 'nep245:furniture:tactical_sofa_lounge',
     name: 'Velvet L-Sectional Sofa',
-    category: 'non_nft_furniture',
-    currency: 'CYON',
-    basePrice: 85,
+    category: 'nft_collector_furniture',
+    currency: 'RESPITE',
+    basePrice: 18,
     targetStock: 6,
     initialStock: 6,
-    isNft: false,
+    isNft: true,
     description: 'Plush L-sectional sofa with throw pillows for the Private House living room.',
     interiorSlot: 'right_wall',
     footprints: [
@@ -119,14 +119,14 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
   },
   {
     id: 'arcade_blitz_cab',
-    tokenId: 'item:arcade_blitz_cab',
+    tokenId: 'nep245:furniture:arcade_blitz_cab',
     name: 'Retro Blitz Arcade Cabinet',
-    category: 'non_nft_furniture',
-    currency: 'CYON',
-    basePrice: 110,
+    category: 'nft_collector_furniture',
+    currency: 'RESPITE',
+    basePrice: 20,
     targetStock: 5,
     initialStock: 4,
-    isNft: false,
+    isNft: true,
     description: 'Glowing neon retro arcade cabinet with an illuminated CRT screen for the studio room.',
     interiorSlot: 'trophy_pedestal',
     footprints: [[0, 0, 0.92, 0.88]],
@@ -988,7 +988,7 @@ export function generateNpcMerchantReply(
       return `New players get a one-time 0.30 NEAR welcome bonus from Hana at Central Plaza Cafe. Sign in with Google first to create your wallet, then click Claim 0.30 NEAR in Hana's chat.`;
     }
     if (liveContext?.hanaWelcomeNearClaimed) {
-      return `You have already claimed your 0.30 NEAR welcome bonus. You can swap NEAR into RESPITE anytime in the Exchange tab (1 NEAR = 100 RESPITE).`;
+      return `You have already claimed your 0.30 NEAR welcome bonus. You can swap NEAR into RESPITE anytime in the Exchange tab (1 NEAR = 400 RESPITE).`;
     }
     return `Your 0.30 NEAR welcome bonus is ready to claim. Visit Hana at Central Plaza Cafe and click Claim 0.30 NEAR inside the Chat Session tab.`;
   }
@@ -1059,7 +1059,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `Earn LUL in the Warzone or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 100 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House, Family Member companions, and collector items. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
+    return `Earn LUL in the Warzone or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 400 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House, Family Member companions, and collector items. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
   }
 
   // 9. Family Member Companions
@@ -1081,7 +1081,7 @@ export function generateNpcMerchantReply(
     const houseNote = liveContext?.hasHouseOwnership
       ? ' You already own a Private House—claim any open city plot or enter via the Transit Kiosk.'
       : '';
-    return `Buy a Private House in Hana's Catalog for 25 RESPITE to claim a residential plot in the city and unlock your 3D interior studio. Place CYON or collector RESPITE furniture, customize lighting and wall finishes, and set your gate to Public, Friends Only, or Private.${houseNote}${guestNotice}`;
+    return `Buy a Private House in Hana's Catalog for 100 RESPITE to claim a residential plot in the city and unlock your 3D interior studio. Place collector RESPITE NFT furniture, customize lighting and wall finishes, and set your gate to Public, Friends Only, or Private.${houseNote}${guestNotice}`;
   }
 
   // 11. Fishing, Rods, Species & Minting

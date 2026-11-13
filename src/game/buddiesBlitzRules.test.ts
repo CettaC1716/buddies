@@ -4868,9 +4868,9 @@ test('3-Currency Economy (LUL, CYON, RESPITE), NPC Merchant Dynamic Pricing, Ban
   state = exRes.updatedState;
 
   // 2. Dynamic pricing quote with reasoning tooltip for Non-NFT (CYON) and NFT (RESPITE)
-  const chabudai = MERCHANT_CATALOG_ITEMS.find((i) => i.id === 'tatami_tea_table')!;
+  const carbonRod = MERCHANT_CATALOG_ITEMS.find((i) => i.id === 'fishing_rod_carbon_pro')!;
   const neonTheme = MERCHANT_CATALOG_ITEMS.find((i) => i.id === 'theme_cyber_neon')!;
-  const q1 = evaluateMerchantItemQuote(state, chabudai);
+  const q1 = evaluateMerchantItemQuote(state, carbonRod);
   const q2 = evaluateMerchantItemQuote(state, neonTheme);
   assert.ok(q1.buyPrice > 0 && q1.sellbackPrice > 0);
   assert.ok(q1.reasoningTooltip.includes('CYON'));
