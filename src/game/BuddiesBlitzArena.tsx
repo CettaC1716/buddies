@@ -14548,15 +14548,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       y: playerUnit ? getTerrainElevation(playerUnit.x, playerUnit.z) + 1.0 : 0.8,
       z: playerUnit ? playerUnit.z : 38.5,
     };
-    // Character-select cinematic: when the avatar picker opens, the camera
-    // dives from a high crane shot down to the portrait framing, holds with a
-    // gentle drift, then eases back to the follow camera when the picker ends.
-    let charCinePhase: 'idle' | 'in' | 'hold' | 'out' = 'idle';
-    let charCineT = 0;
-    const charCineStartPos: Vec3 = { x: 0, y: 0, z: 0 };
-    const charCineStartLook: Vec3 = { x: 0, y: 0, z: 0 };
-    const charCineLastPos: Vec3 = { x: 0, y: 0, z: 0 };
-    const charCineLastLook: Vec3 = { x: 0, y: 0, z: 0 };
     const initInLobby = playerUnit
       ? isPointInsideLobbySafezone(playerUnit.x, playerUnit.z)
       : false;
@@ -20380,42 +20371,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // Character-select cinematic phase transitions (see the
-      // 'character_select' camera branch below for the dive itself).
-      if (npcCameraMode === 'character_select' && charCinePhase === 'idle') {
-        charCinePhase = 'in';
-        charCineT = 0;
-        if (playerUnit) {
-          const cineGroundY = getTerrainElevation(playerUnit.x, playerUnit.z);
-          charCineStartPos.x = playerUnit.x + 9;
-          charCineStartPos.y = cineGroundY + 24;
-          charCineStartPos.z = playerUnit.z + 15;
-          charCineStartLook.x = playerUnit.x;
-          charCineStartLook.y = cineGroundY + 1.6;
-          charCineStartLook.z = playerUnit.z;
-          charCineLastPos.x = charCineStartPos.x;
-          charCineLastPos.y = charCineStartPos.y;
-          charCineLastPos.z = charCineStartPos.z;
-          charCineLastLook.x = charCineStartLook.x;
-          charCineLastLook.y = charCineStartLook.y;
-          charCineLastLook.z = charCineStartLook.z;
-        }
-      } else if (
-        npcCameraMode !== 'character_select' &&
-        (charCinePhase === 'in' || charCinePhase === 'hold')
-      ) {
-        charCinePhase = 'out';
-        charCineT = 0;
-        charCineStartPos.x = charCineLastPos.x;
-        charCineStartPos.y = charCineLastPos.y;
-        charCineStartPos.z = charCineLastPos.z;
-        charCineStartLook.x = charCineLastLook.x;
-        charCineStartLook.y = charCineLastLook.y;
-        charCineStartLook.z = charCineLastLook.z;
-      }
-      if (charCinePhase !== 'idle') {
-        charCineT += dt;
-      }
 
       // 4. Camera: Follow Camera (Sandbox/Match) vs High Top-Down Orbit Overview (Map Editor)
       const activePlaneAlt =
@@ -20959,54 +20914,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const pz = playerUnit ? playerUnit.z : LOBBY_SAFEZONE_BOUNDS.spawnZ;
         const py = getTerrainElevation(px, pz);
         camera.up.set(0, 1, 0);
-        // Portrait framing the cinematic lands on (unchanged from the
-        // original hard-cut framing).
-        const endPosX = px + 6.35;
-        const endPosY = py + 2.32;
-        const endPosZ = pz;
-        const endLookX = px;
-        const endLookY = py + 1.82;
-        const endLookZ = pz;
-        if (charCinePhase === 'in') {
-          // Dive along a lifted quadratic bezier from the crane start.
-          const rawT = Math.min(1, charCineT / 2.3);
-          const e = rawT * rawT * (3 - 2 * rawT);
-          const ctrlX = (charCineStartPos.x + endPosX) / 2;
-          const ctrlY = Math.max(charCineStartPos.y, endPosY) + 5.0;
-          const ctrlZ = (charCineStartPos.z + endPosZ) / 2;
-          const inv = 1 - e;
-          const diveX = inv * inv * charCineStartPos.x + 2 * inv * e * ctrlX + e * e * endPosX;
-          const diveY = inv * inv * charCineStartPos.y + 2 * inv * e * ctrlY + e * e * endPosY;
-          const diveZ = inv * inv * charCineStartPos.z + 2 * inv * e * ctrlZ + e * e * endPosZ;
-          const lookX = charCineStartLook.x + (endLookX - charCineStartLook.x) * e;
-          const lookY = charCineStartLook.y + (endLookY - charCineStartLook.y) * e;
-          const lookZ = charCineStartLook.z + (endLookZ - charCineStartLook.z) * e;
-          camera.position.set(diveX, diveY, diveZ);
-          camera.lookAt(lookX, lookY, lookZ);
-          charCineLastPos.x = diveX;
-          charCineLastPos.y = diveY;
-          charCineLastPos.z = diveZ;
-          charCineLastLook.x = lookX;
-          charCineLastLook.y = lookY;
-          charCineLastLook.z = lookZ;
-          if (rawT >= 1) {
-            charCinePhase = 'hold';
-          }
-        } else {
-          // Hold: the original framing plus a slow breathing drift.
-          const drift = Math.sin(timeSec * 0.35) * 0.55;
-          const holdX = endPosX + drift * 0.4;
-          const holdY = endPosY + Math.sin(timeSec * 0.5) * 0.05;
-          const holdZ = endPosZ + drift;
-          camera.position.set(holdX, holdY, holdZ);
-          camera.lookAt(endLookX, endLookY, endLookZ);
-          charCineLastPos.x = holdX;
-          charCineLastPos.y = holdY;
-          charCineLastPos.z = holdZ;
-          charCineLastLook.x = endLookX;
-          charCineLastLook.y = endLookY;
-          charCineLastLook.z = endLookZ;
-        }
+        camera.position.set(px + 6.35, py + 2.32, pz);
+        camera.lookAt(px, py + 1.82, pz);
         camera.updateMatrixWorld();
       } else if (npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit') {
         if (playerUnit) {
@@ -21494,28 +21403,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.updateMatrixWorld();
           raycaster.setFromCamera(mouseNdc, camera);
           raycaster.ray.intersectPlane(groundPlane, aimWorldPoint);
-        }
-      }
-
-      // Character-select cinematic exit: ease from the portrait framing back
-      // to the camera the standard chain just computed for this frame.
-      if (charCinePhase === 'out') {
-        const rawOut = Math.min(1, charCineT / 1.1);
-        if (rawOut >= 1) {
-          charCinePhase = 'idle';
-        } else {
-          const eOut = 1 - Math.pow(1 - rawOut, 3);
-          camera.position.set(
-            charCineStartPos.x + (camera.position.x - charCineStartPos.x) * eOut,
-            charCineStartPos.y + (camera.position.y - charCineStartPos.y) * eOut,
-            charCineStartPos.z + (camera.position.z - charCineStartPos.z) * eOut,
-          );
-          camera.lookAt(
-            charCineStartLook.x + (finalLookX - charCineStartLook.x) * eOut,
-            charCineStartLook.y + (camFollowPos.y - charCineStartLook.y) * eOut,
-            charCineStartLook.z + (finalLookZ - charCineStartLook.z) * eOut,
-          );
-          camera.updateMatrixWorld();
         }
       }
 
