@@ -811,37 +811,8 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     if (rackAprons[2]) rackAprons[2].visible = !working;
   };
 
-  // 4c. PASTRY DISPLAY CASE on the bar (food prep station landmark) + station glows
-  const displayCase = new THREE.Group();
-  displayCase.position.set(CAFE_INTERIOR_BOUNDS.prepFoodX, 1.0, -3.86);
-  const caseBase = makeHanaToonMesh(makeRoundedBoxGeo(1.34, 0.07, 0.54, 0.02, 2), '#8c5d34', 0.52, 0.05, 0.004, { map: oakTex });
-  caseBase.position.y = 0.035;
-  displayCase.add(caseBase);
-  const caseGlass = new THREE.Mesh(
-    makeRoundedBoxGeo(1.3, 0.52, 0.5, 0.03, 2),
-    new THREE.MeshStandardMaterial({ color: '#dff3ff', transparent: true, opacity: 0.26, roughness: 0.08, metalness: 0.05, depthWrite: false }),
-  );
-  caseGlass.position.y = 0.33;
-  caseGlass.raycast = () => {};
-  displayCase.add(caseGlass);
-  const shelfMat = new THREE.MeshStandardMaterial({ color: '#e8dcc4', roughness: 0.6 });
-  [0.16, 0.38].forEach((sy) => {
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.025, 0.44), shelfMat);
-    shelf.position.y = sy;
-    displayCase.add(shelf);
-  });
-  const pastryColors = ['#fbbf24', '#f472b6', '#60a5fa', '#d97706', '#4ade80', '#f59e0b'];
-  pastryColors.forEach((pc, pi) => {
-    const blob = new THREE.Mesh(
-      new THREE.SphereGeometry(0.075, 10, 8),
-      new THREE.MeshStandardMaterial({ color: pc, roughness: 0.55 }),
-    );
-    blob.scale.set(1.25, 0.62, 1);
-    blob.position.set(-0.45 + (pi % 3) * 0.45, (pi < 3 ? 0.16 : 0.38) + 0.055, 0);
-    displayCase.add(blob);
-  });
-  staticIndoorGroup.add(displayCase);
-
+  // 4c. Station glows (the pastry prep station is the curved bakery case
+  // that already sits on the espresso bar counter — no extra case needed).
   const makePrepGlow = (colorHex: string, x: number, z: number) => {
     const glow = new THREE.Mesh(
       new THREE.RingGeometry(0.42, 0.62, 24),
