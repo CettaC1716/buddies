@@ -5882,31 +5882,10 @@ export default function App() {
               data-private-house-walkin-hud="true"
               className="fixed top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none"
             >
-              <div className="flex flex-wrap items-center gap-2 bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[4px_4px_0_#000] px-3.5 py-2">
-                <span className="px-2 py-0.5 bg-[#b8ff3c] text-black border border-black text-[10px] font-black uppercase tracking-wider">
+              <div className="flex items-center gap-1.5 bg-[#0f172a]/95 text-white border-2 border-black shadow-[3px_3px_0_#000] px-2.5 py-1.5">
+                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase tracking-wider">
                   {isSampleHouseView ? 'MODEL HOUSE' : 'MY PRIVATE HOUSE'}
                 </span>
-                <span className="text-[11px] font-black uppercase tracking-wide text-slate-200 hidden sm:inline">
-                  {houseArchitectureStyle === 'plaza_manor'
-                    ? 'CLASSIC PLAZA MANOR'
-                    : 'MODERN JAPANESE WOODEN PAVILION'}
-                </span>
-                <button
-                  type="button"
-                  data-house-switch-style-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setHouseArchitectureStyle((prev) =>
-                      prev === 'plaza_manor' ? 'japanese_pavilion' : 'plaza_manor',
-                    );
-                  }}
-                  className="px-2.5 py-1 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer"
-                  title="Switch between Classic Plaza Manor & Modern Japanese Wooden Pavilion"
-                >
-                  {houseArchitectureStyle === 'plaza_manor'
-                    ? 'PREVIEW PAVILION'
-                    : 'VIEW PLAZA MANOR'}
-                </button>
 
                 {!isSampleHouseView && (
                   <>
@@ -5918,7 +5897,7 @@ export default function App() {
                         setIsHouseFriendInviteOpen(false);
                         setActiveSpecialModal('house_interior');
                       }}
-                      className="px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                      className="px-2 py-0.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black text-[9.5px] font-black uppercase cursor-pointer"
                     >
                       DECORATE STUDIO
                     </button>
@@ -5931,7 +5910,7 @@ export default function App() {
                         setHouseInviteFeedback(null);
                         setIsHouseFriendInviteOpen((prev) => !prev);
                       }}
-                      className="px-2.5 py-1 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                      className="px-2 py-0.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black text-[9.5px] font-black uppercase cursor-pointer"
                     >
                       INVITE FRIEND ({(hud.safezoneAllowedFriends ?? []).length})
                     </button>
@@ -5945,7 +5924,7 @@ export default function App() {
                     soundEngine.playUiClick();
                     dispatchBuddyAction('exitPrivateHouseInterior');
                   }}
-                  className="px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                  className="px-2 py-0.5 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[9.5px] font-black uppercase cursor-pointer"
                 >
                   EXIT ROOM
                 </button>

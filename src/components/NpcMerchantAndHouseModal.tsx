@@ -2293,86 +2293,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 )}
 
                 {/* ===========================================================
-                    CARD 1: LUL -> CYON EXCHANGE
-                   =========================================================== */}
-                <div
-                  data-lul-cyon-exchange-card="true"
-                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
-                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                  }`}
-                >
-                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2">
-                    <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase">
-                      <span className="skew-x-6 inline-block">LUL TO CYON</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-300">
-                      {rateLul} LUL = {rateCyon} CYON
-                    </span>
-                  </div>
-
-                  <div className="p-4 space-y-3">
-                    {/* LUL Amount Input Row */}
-                    <div className="flex items-center gap-3 max-w-xs mx-auto">
-                      <div className="-skew-x-6 w-16 py-2 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
-                        <span className="skew-x-6 inline-block">LUL</span>
-                      </div>
-                      <input
-                        type="number"
-                        min={rateLul}
-                        step={rateLul}
-                        max={lulBalance}
-                        data-exchange-lul-input="true"
-                        value={exchangeLulAmountStr}
-                        onChange={(e) => setExchangeLulAmountStr(e.target.value)}
-                        className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#fec83e]"
-                      />
-                    </div>
-
-                    <div className="text-center text-[11px] font-black uppercase tracking-wider text-slate-300">
-                      You receive
-                    </div>
-
-                    {/* CYON Output Row */}
-                    <div className="flex items-center gap-3 max-w-xs mx-auto">
-                      <div className="-skew-x-6 w-16 py-2 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
-                        <span className="skew-x-6 inline-block">CYON</span>
-                      </div>
-                      <div
-                        data-exchange-cyon-output="true"
-                        className="flex-1 px-3 py-2 bg-[#1e293b] text-[#38bdf8] font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000]"
-                      >
-                        {calculatedCyon}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bottom Divider & Exchange Button */}
-                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3 flex justify-center">
-                    <button
-                      type="button"
-                      data-exchange-submit-btn="true"
-                      disabled={!canPerformExchange}
-                      onClick={() => {
-                        if (!canPerformExchange) return;
-                        soundEngine.playUiClick();
-                        onExchangeLulToCyon(exchangeLulSpent, calculatedCyon);
-                        triggerNpcSpeech(
-                          `Exchanged ${exchangeLulSpent} LUL for +${calculatedCyon} CYON.`,
-                        );
-                      }}
-                      className={`-skew-x-6 min-w-[180px] py-2 px-6 border-2 border-black text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
-                        canPerformExchange
-                          ? 'bg-[#10b981] hover:bg-[#34d399] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
-                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
-                      }`}
-                    >
-                      <span className="skew-x-6 inline-block">EXCHANGE</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* ===========================================================
-                    CARD 2: NEAR -> RESPITE SWAP
+                    CARD 1: NEAR -> RESPITE SWAP
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
@@ -2554,6 +2475,85 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* ===========================================================
+                    CARD 2: LUL -> CYON EXCHANGE
+                   =========================================================== */}
+                <div
+                  data-lul-cyon-exchange-card="true"
+                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
+                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
+                  }`}
+                >
+                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2">
+                    <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase">
+                      <span className="skew-x-6 inline-block">LUL TO CYON</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-300">
+                      {rateLul} LUL = {rateCyon} CYON
+                    </span>
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    {/* LUL Amount Input Row */}
+                    <div className="flex items-center gap-3 max-w-xs mx-auto">
+                      <div className="-skew-x-6 w-16 py-2 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
+                        <span className="skew-x-6 inline-block">LUL</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={rateLul}
+                        step={rateLul}
+                        max={lulBalance}
+                        data-exchange-lul-input="true"
+                        value={exchangeLulAmountStr}
+                        onChange={(e) => setExchangeLulAmountStr(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#fec83e]"
+                      />
+                    </div>
+
+                    <div className="text-center text-[11px] font-black uppercase tracking-wider text-slate-300">
+                      You receive
+                    </div>
+
+                    {/* CYON Output Row */}
+                    <div className="flex items-center gap-3 max-w-xs mx-auto">
+                      <div className="-skew-x-6 w-16 py-2 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
+                        <span className="skew-x-6 inline-block">CYON</span>
+                      </div>
+                      <div
+                        data-exchange-cyon-output="true"
+                        className="flex-1 px-3 py-2 bg-[#1e293b] text-[#38bdf8] font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000]"
+                      >
+                        {calculatedCyon}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Divider & Exchange Button */}
+                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3 flex justify-center">
+                    <button
+                      type="button"
+                      data-exchange-submit-btn="true"
+                      disabled={!canPerformExchange}
+                      onClick={() => {
+                        if (!canPerformExchange) return;
+                        soundEngine.playUiClick();
+                        onExchangeLulToCyon(exchangeLulSpent, calculatedCyon);
+                        triggerNpcSpeech(
+                          `Exchanged ${exchangeLulSpent} LUL for +${calculatedCyon} CYON.`,
+                        );
+                      }}
+                      className={`-skew-x-6 min-w-[180px] py-2 px-6 border-2 border-black text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
+                        canPerformExchange
+                          ? 'bg-[#10b981] hover:bg-[#34d399] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
+                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className="skew-x-6 inline-block">EXCHANGE</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );
