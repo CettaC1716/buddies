@@ -653,7 +653,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let markerGuideAnchor: { x: number; y: number; z: number } | null = null;
     let markerPromptAnchor: { x: number; y: number; z: number } | null = null;
     const CAFE_MARKER_ANCHORS: Record<string, { x: number; y: number; z: number }> = {
-      prep_coffee: { x: -1.75, y: CAFE_ORIGIN_Y + 1.8, z: -4.63 },
+      prep_coffee: { x: -0.93, y: CAFE_ORIGIN_Y + 1.85, z: -2.0 },
       prep_food: { x: 1.01, y: CAFE_ORIGIN_Y + 1.75, z: -2.07 },
       serve_customer: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
       order_counter: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
@@ -24324,12 +24324,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         CAFE_EXTERIOR_DOOR_TRIGGER.z,
       );
       if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
-        if (!isKioskModalOpenCanvas && distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius) {
+        if (distToCafeDoor <= 42) {
           markerPromptAnchor = {
             x: CAFE_EXTERIOR_DOOR_TRIGGER.x,
             y: doorTerrainY + 2.5,
             z: CAFE_EXTERIOR_DOOR_TRIGGER.z,
           };
+        }
+        if (!isKioskModalOpenCanvas && distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius) {
           const proj = projectWorldToScreenPixels(
             CAFE_EXTERIOR_DOOR_TRIGGER.x,
             doorTerrainY + 2.35,
@@ -24653,7 +24655,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (nearProximityKiosk !== 'none') {
         markerPromptAnchor = {
           x: nearKioskWorldX,
-          y: getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 2.35,
+          y: getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 2.9,
           z: nearKioskWorldZ,
         };
         const ky = getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 1.85;
@@ -24964,6 +24966,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else {
         isPadDepositPromptActive = false;
         padDepositPromptBtn.style.display = 'none';
+      }
+      if (
+        !markerPromptAnchor &&
+        !markerGuideAnchor &&
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        !isKioskModalOpenCanvas
+      ) {
+        const beaconKiosk = evaluateNearestCityTransitKioskProximity(actorX, actorZ, worldModeRef.current, 25);
+        if (beaconKiosk.isNear) {
+          const beaconMesh = getCityTransitKioskMeshById(beaconKiosk.id);
+          if (beaconMesh && beaconMesh.visible) {
+            beaconMesh.getWorldPosition(scratchLiveObjPos);
+            markerPromptAnchor = {
+              x: scratchLiveObjPos.x,
+              y: scratchLiveObjPos.y + 2.9,
+              z: scratchLiveObjPos.z,
+            };
+          }
+        }
       }
       syncFixedInteractionPrompt();
       syncInteractMarker();
