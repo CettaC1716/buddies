@@ -96,10 +96,8 @@ import {
   type CafeWorkShiftState,
 } from './game/buddiesCafeRules';
 import {
-  CafeInteriorTopHudBar,
   GlasshouseCafeAtmModal,
   GlasshouseCafeOrderModal,
-  PlayerLevelXpBadge,
   XpGainCelebrationBanner,
 } from './components/GlasshouseCafeModal';
 import {
@@ -1913,11 +1911,6 @@ export default function App() {
       return next;
     });
   }, [dispatchBuddyAction]);
-
-  const handleStopCafeWorkShift = useCallback(() => {
-    soundEngine.playUiClick();
-    setCafeShiftState((prev) => ({ ...prev, isWorking: false, activeOrder: null }));
-  }, []);
 
   const handleServeActiveCafeOrder = useCallback(() => {
     setCafeShiftState((prev) => {
@@ -4831,16 +4824,6 @@ export default function App() {
               3B. TOP-LEFT: AVAKIN-STYLE LEVEL/XP BADGE + MINIMAP + STATUS
              ================================================================= */}
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
-            {/* Always-On Player Level, XP Progress Bar, LUL & Shift Bucks Badge */}
-            {playMode !== 'editor' && activeSpecialModal !== 'npc_merchant' && (
-              <PlayerLevelXpBadge
-                levelProgress={levelProgress}
-                playerName={playerDisplayName || 'CITIZEN'}
-                lulBalance={hud.gold}
-                shiftBucks={cafeShiftBucks}
-                isWorkingShift={cafeShiftState.isWorking}
-              />
-            )}
 
             {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House & Glasshouse Cafe interior) */}
             {!isInsidePrivateHouse &&
@@ -5237,30 +5220,6 @@ export default function App() {
             </div>
           )}
 
-          {/* =================================================================
-              3C-1B. BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") TOP HUD BAR
-             ================================================================= */}
-          {isInsideGlasshouseCafe && activeSpecialModal === 'none' && !isInsidePrivateHouse && (
-            <CafeInteriorTopHudBar
-              shiftState={cafeShiftState}
-              shiftBucks={cafeShiftBucks}
-              onStartWorkShift={handleStartCafeWorkShift}
-              onStopWorkShift={handleStopCafeWorkShift}
-              onServeActiveOrder={handleServeActiveCafeOrder}
-              onOpenOrderModal={() => {
-                soundEngine.playUiClick();
-                setActiveCafeModal('order');
-              }}
-              onOpenAtmModal={() => {
-                soundEngine.playUiClick();
-                setActiveCafeModal('atm');
-              }}
-              onExitCafe={() => {
-                soundEngine.playUiClick();
-                dispatchBuddyAction('exitGlasshouseCafe');
-              }}
-            />
-          )}
 
           {/* =================================================================
               3C-2. PRIVATE HOUSE WALK-IN TOP HUD BAR (DECORATE, INVITE FRIEND, EXIT ROOM)
