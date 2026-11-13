@@ -2047,6 +2047,13 @@ export function createBlitzMeadowGrassSystem(
     sctx.arc(x, y, r, 0, Math.PI * 2);
     sctx.fill();
   }
+  // Flower flecks live in the green channel only (the dabs are grey, so
+  // green-minus-red isolates them): the painted ground samples them as
+  // tiny white/yellow specks flecked through the paint.
+  sctx.fillStyle = 'rgb(0,255,0)';
+  for (let i = 0; i < 420; i++) {
+    sctx.fillRect(sRand() * 256, sRand() * 256, 1.6, 1.6);
+  }
   const strokesTex = new THREE.CanvasTexture(strokesCanvas);
   strokesTex.wrapS = THREE.RepeatWrapping;
   strokesTex.wrapT = THREE.RepeatWrapping;
@@ -2113,12 +2120,6 @@ export function createBlitzMeadowGrassSystem(
       uWindDirection: windUniforms.uWindDirection,
       uWindStrength: windUniforms.uWindStrength,
       uWindGust: windUniforms.uWindGust,
-      uSunBottom: { value: new THREE.Color('#1b6e1e') },
-      uSunMid: { value: new THREE.Color('#75d424') },
-      uSunTop: { value: new THREE.Color('#d1f542') },
-      uShadowBottom: { value: new THREE.Color('#083d12') },
-      uShadowMid: { value: new THREE.Color('#1a7a24') },
-      uShadowTop: { value: new THREE.Color('#57b825') },
     },
     vertexShader: /* glsl */ `
       attribute vec2 aLocalAnchor;
@@ -2139,6 +2140,7 @@ export function createBlitzMeadowGrassSystem(
       varying float vS;
       varying float vTone;
       varying float vSide;
+      varying float vDry;
 
       ${PLANET_TERRAIN_GLSL_SNIPPET}
 
@@ -2209,6 +2211,8 @@ export function createBlitzMeadowGrassSystem(
         float dab = texture2D(uStrokesTex, wp / 6.0).r * 0.6
           + texture2D(uStrokesTex, wp / 23.0).r * 0.4;
         vTone = clamp(0.3 + dab * 0.8 + (aRand.y - 0.5) * 0.16, 0.0, 1.0);
+        // Broad dry patches where the paint runs straw-coloured.
+        vDry = smoothstep(0.58, 0.85, texture2D(uStrokesTex, wp / 41.0).r);
         vS = s;
         vSide = side;
 
@@ -2216,24 +2220,22 @@ export function createBlitzMeadowGrassSystem(
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec3 uSunBottom;
-      uniform vec3 uSunMid;
-      uniform vec3 uSunTop;
-      uniform vec3 uShadowBottom;
-      uniform vec3 uShadowMid;
-      uniform vec3 uShadowTop;
-
       varying float vS;
       varying float vTone;
       varying float vSide;
+      varying float vDry;
+
+      // The painted meadow ramp: deep green in the shade of a clump,
+      // yellow-green where the brush laid the light colour.
+      vec3 meadowRamp(float t) {
+        vec3 c = mix(vec3(0.05, 0.25, 0.07), vec3(0.15, 0.46, 0.085), smoothstep(0.2, 0.5, t));
+        return mix(c, vec3(0.3, 0.57, 0.12), smoothstep(0.56, 0.9, t));
+      }
 
       void main() {
-        vec3 bottomCol = mix(uShadowBottom, uSunBottom, vTone);
-        vec3 midCol = mix(uShadowMid, uSunMid, vTone);
-        vec3 topCol = mix(uShadowTop, uSunTop, vTone);
-
-        vec3 col = mix(bottomCol, midCol, smoothstep(0.0, 0.55, vS));
-        col = mix(col, topCol, smoothstep(0.55, 1.0, vS));
+        float t = clamp(vTone * 0.62 + vS * 0.5, 0.0, 1.0);
+        vec3 col = meadowRamp(t);
+        col = mix(col, vec3(0.44, 0.47, 0.17), vDry * 0.4);
         // Folded along its middle like a real blade: centre darker.
         col *= mix(0.82, 1.06, abs(vSide));
 
@@ -2246,7 +2248,7 @@ export function createBlitzMeadowGrassSystem(
   });
 
   const grassMesh = new THREE.InstancedMesh(bladeGeo, meadowMaterial, count);
-  grassMesh.name = 'MeadowGrassTrial';
+  grassMesh.name = 'MeadowBlades';
   grassMesh.frustumCulled = false;
   grassMesh.castShadow = false;
   grassMesh.receiveShadow = false;
@@ -2257,18 +2259,243 @@ export function createBlitzMeadowGrassSystem(
     grassMesh.setMatrixAt(i, ident);
   }
   grassMesh.instanceMatrix.needsUpdate = true;
-  scene.add(grassMesh);
+
+  // =========================================================================
+  // PAINTED GROUND PATCH
+  // The look lives in the ground as much as in the blades: a 42m sheet that
+  // follows the view centre, takes its height from the same sculpt map, and
+  // is painted in the fragment shader with brush dabs at two scales plus
+  // flower flecks. It fades out where the splatmask leaves grass (paths,
+  // pads) and at its rim, so the world's own ground shows elsewhere.
+  // =========================================================================
+  const patchGeo = new THREE.PlaneGeometry(fieldSize, fieldSize, 64, 64);
+  patchGeo.rotateX(-Math.PI / 2);
+  const patchMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uViewPos,
+      uSculptMap,
+      uStrokesTex: { value: strokesTex },
+    },
+    vertexShader: /* glsl */ `
+      uniform vec3 uViewPos;
+      uniform sampler2D uStrokesTex;
+
+      varying float vAlpha;
+      varying float vDab1;
+      varying float vDab2;
+      varying float vSpeck;
+      varying vec2 vWp;
+
+      ${PLANET_TERRAIN_GLSL_SNIPPET}
+
+      void main() {
+        vec2 wp = uViewPos.xz + position.xz;
+        vec2 sculptUv = clamp((wrapPlanetVec2(wp) + 130.0) / 260.0, 0.0, 1.0);
+        float y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625 + 0.045;
+
+        float mask = evaluateBlitzGrassMask(wp);
+        float distC = distance(wp, uViewPos.xz);
+        vAlpha = smoothstep(0.04, 0.45, mask) * (1.0 - smoothstep(15.0, 20.8, distC));
+        vDab1 = texture2D(uStrokesTex, wp / 6.0).r;
+        vDab2 = texture2D(uStrokesTex, wp / 23.0).r;
+        vec4 sp = texture2D(uStrokesTex, wp / 3.5);
+        vSpeck = clamp((sp.g - sp.r) * 3.0, 0.0, 1.0);
+        vWp = wp;
+
+        gl_Position = projectionMatrix * viewMatrix * vec4(wp.x, y, wp.y, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying float vAlpha;
+      varying float vDab1;
+      varying float vDab2;
+      varying float vSpeck;
+      varying vec2 vWp;
+
+      vec3 meadowRamp(float t) {
+        vec3 c = mix(vec3(0.05, 0.25, 0.07), vec3(0.15, 0.46, 0.085), smoothstep(0.2, 0.5, t));
+        return mix(c, vec3(0.3, 0.57, 0.12), smoothstep(0.56, 0.9, t));
+      }
+
+      void main() {
+        float t = clamp(0.22 + vDab1 * 0.55 + vDab2 * 0.3, 0.0, 1.0);
+        vec3 col = meadowRamp(t) * 0.92;
+        vec3 speckCol = mix(vec3(0.93, 0.88, 0.8), vec3(0.85, 0.62, 0.1), step(0.6, vDab2));
+        col = mix(col, speckCol, vSpeck * 0.55);
+
+        gl_FragColor = vec4(col, vAlpha * 0.96);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+  });
+  const patchMesh = new THREE.Mesh(patchGeo, patchMaterial);
+  patchMesh.name = 'MeadowPaintedGround';
+  patchMesh.frustumCulled = false;
+  patchMesh.renderOrder = 2;
+  patchMesh.matrixAutoUpdate = false;
+  patchMesh.updateMatrix();
+
+  // =========================================================================
+  // FLOWERS
+  // Small instanced stems with a petal disc, billboarded around Y, gated to
+  // the same lush mask so they gather where the grass is thick.
+  // =========================================================================
+  const flowerCount = isCompact ? 480 : 720;
+  const flowerGeo = new THREE.BufferGeometry();
+  flowerGeo.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0]), 3),
+  );
+  flowerGeo.setIndex([0, 1, 2, 2, 1, 3]);
+  const flowerAnchorArr = new Float32Array(flowerCount * 2);
+  const flowerRandArr = new Float32Array(flowerCount * 4);
+  for (let i = 0; i < flowerCount; i++) {
+    flowerAnchorArr[i * 2] = gRand() * fieldSize;
+    flowerAnchorArr[i * 2 + 1] = gRand() * fieldSize;
+    flowerRandArr[i * 4] = gRand();
+    flowerRandArr[i * 4 + 1] = gRand();
+    flowerRandArr[i * 4 + 2] = gRand();
+    flowerRandArr[i * 4 + 3] = gRand();
+  }
+  flowerGeo.setAttribute(
+    'aLocalAnchor',
+    new THREE.InstancedBufferAttribute(flowerAnchorArr, 2),
+  );
+  flowerGeo.setAttribute('aRand', new THREE.InstancedBufferAttribute(flowerRandArr, 4));
+  const flowerMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uViewPos,
+      uTime,
+      uSculptMap,
+      uFieldSize: { value: fieldSize },
+      uWindNoiseTex: { value: windNoiseTex },
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+    },
+    vertexShader: /* glsl */ `
+      attribute vec2 aLocalAnchor;
+      attribute vec4 aRand;
+
+      uniform vec3 uViewPos;
+      uniform float uTime;
+      uniform float uFieldSize;
+      uniform sampler2D uWindNoiseTex;
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+
+      varying vec2 vUvF;
+      varying float vSeed;
+      varying float vTone;
+
+      ${PLANET_TERRAIN_GLSL_SNIPPET}
+
+      void main() {
+        float halfField = uFieldSize * 0.5;
+        vec3 anchor = vec3(0.0);
+        anchor.x = mod(aLocalAnchor.x - uViewPos.x + halfField, uFieldSize) - halfField + uViewPos.x;
+        anchor.z = mod(aLocalAnchor.y - uViewPos.z + halfField, uFieldSize) - halfField + uViewPos.z;
+
+        float distToView = distance(anchor.xz, uViewPos.xz);
+        vec2 wp = anchor.xz;
+        float mask = evaluateBlitzGrassMask(wp);
+        float gate = smoothstep(0.3, 0.75, mask) * step(aRand.w, 0.55);
+        float fade = 1.0 - smoothstep(uFieldSize * 0.36, uFieldSize * 0.495, distToView);
+        float scaleF = gate * fade;
+        if (scaleF <= 0.001 || distToView >= halfField) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+
+        vec2 sculptUv = clamp((wrapPlanetVec2(wp) + 130.0) / 260.0, 0.0, 1.0);
+        anchor.y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
+
+        float h = 0.55 * mix(0.75, 1.2, aRand.z) * scaleF;
+        float w = 0.30 * mix(0.8, 1.25, aRand.y) * scaleF;
+
+        vec2 fwd = normalize(cameraPosition.xz - anchor.xz + vec2(0.0001));
+        vec2 right = vec2(-fwd.y, fwd.x);
+        float gust = texture2D(uWindNoiseTex, wp * 0.011 + normalize(uWindDirection + vec2(0.0001)) * (uWindPhase * 0.02)).r;
+        float sway = sin(uTime * 2.2 + aRand.x * 40.0) * 0.03 + gust * 0.05 * uWindStrength;
+
+        vec3 world = anchor
+          + vec3(right.x, 0.0, right.y) * (position.x * w)
+          + vec3(sway * position.y, position.y * h, sway * position.y * 0.6);
+
+        vUvF = vec2(position.x * 0.5 + 0.5, position.y);
+        vSeed = aRand.x;
+        vTone = 0.5 + aRand.y * 0.5;
+
+        gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUvF;
+      varying float vSeed;
+      varying float vTone;
+
+      void main() {
+        vec2 uv = vUvF;
+        vec3 col;
+        if (uv.y < 0.55) {
+          if (abs(uv.x - 0.5) > 0.07) discard;
+          col = vec3(0.10, 0.32, 0.08);
+        } else {
+          vec2 d2 = vec2((uv.x - 0.5) * 1.15, (uv.y - 0.76) * 1.9);
+          float d = length(d2);
+          if (d > 0.30) discard;
+          vec3 petal = vSeed < 0.4
+            ? vec3(0.93, 0.88, 0.80)
+            : (vSeed < 0.75 ? vec3(0.85, 0.62, 0.02) : vec3(0.86, 0.34, 0.55));
+          col = petal;
+          if (d < 0.11) col = vec3(0.60, 0.45, 0.02);
+          col *= 0.85 + vTone * 0.3;
+        }
+
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    side: THREE.DoubleSide,
+  });
+  const flowerMesh = new THREE.InstancedMesh(flowerGeo, flowerMaterial, flowerCount);
+  flowerMesh.name = 'MeadowFlowers';
+  flowerMesh.frustumCulled = false;
+  flowerMesh.castShadow = false;
+  flowerMesh.receiveShadow = false;
+  flowerMesh.matrixAutoUpdate = false;
+  flowerMesh.updateMatrix();
+  for (let i = 0; i < flowerCount; i++) {
+    flowerMesh.setMatrixAt(i, ident);
+  }
+  flowerMesh.instanceMatrix.needsUpdate = true;
+
+  const trialGroup = new THREE.Group();
+  trialGroup.name = 'MeadowGrassTrial';
+  trialGroup.add(grassMesh);
+  trialGroup.add(patchMesh);
+  trialGroup.add(flowerMesh);
+  scene.add(trialGroup);
 
   return {
-    grassMesh,
+    grassMesh: trialGroup,
     update(_playerX: number, _playerZ: number, viewX = _playerX, viewZ = _playerZ) {
       uViewPos.value.set(viewX, 0, viewZ);
       uTime.value = performance.now() / 1000;
     },
     dispose() {
-      scene.remove(grassMesh);
+      scene.remove(trialGroup);
       bladeGeo.dispose();
       meadowMaterial.dispose();
+      patchGeo.dispose();
+      patchMaterial.dispose();
+      flowerGeo.dispose();
+      flowerMaterial.dispose();
       windNoiseTex.dispose();
       strokesTex.dispose();
     },
