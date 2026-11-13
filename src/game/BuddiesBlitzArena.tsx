@@ -12614,17 +12614,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
+    // Entry spot on the Central Plaza promenade: the transit destination
+    // spawn itself is sandwiched between the halte shelter and the kiosk,
+    // which blocks the avatar picker camera, so entries land a few units
+    // north of it, still on the plaza.
+    const ENTRY_PLAZA_SPOT = { x: -63.4, z: -7.0, yaw: Math.PI };
     // After the lakeside avatar selection, App asks for the plaza spawn
     // (it covers the move with its ENTERING CENTRAL PLAZA loading state).
     const onSpawnToPlaza = () => {
       if (!playerUnit) return;
-      const dest = getCityTransitDestinationById('central_plaza');
-      playerUnit.x = dest.spawnX;
-      playerUnit.z = dest.spawnZ;
+      playerUnit.x = ENTRY_PLAZA_SPOT.x;
+      playerUnit.z = ENTRY_PLAZA_SPOT.z;
       playerUnit.vx = 0;
       playerUnit.vz = 0;
       playerUnit.vy = 0;
-      playerUnit.yaw = dest.spawnYaw;
+      playerUnit.yaw = ENTRY_PLAZA_SPOT.yaw;
       playerUnit.root.visible = true;
       snapCameraAndStartSpawnBlink(playerUnit);
     };
@@ -12637,13 +12641,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const plazaFlyStartLook: Vec3 = { x: 0, y: 0, z: 0 };
     const onFlyToPlaza = () => {
       if (!playerUnit) return;
-      const dest = getCityTransitDestinationById('central_plaza');
-      playerUnit.x = dest.spawnX;
-      playerUnit.z = dest.spawnZ;
+      playerUnit.x = ENTRY_PLAZA_SPOT.x;
+      playerUnit.z = ENTRY_PLAZA_SPOT.z;
       playerUnit.vx = 0;
       playerUnit.vz = 0;
       playerUnit.vy = 0;
-      playerUnit.yaw = dest.spawnYaw;
+      playerUnit.yaw = ENTRY_PLAZA_SPOT.yaw;
       playerUnit.root.visible = true;
       plazaFlyStartPos.x = camera.position.x;
       plazaFlyStartPos.y = camera.position.y;
@@ -18411,9 +18414,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Central Oasis Lake shore — the same spot the avatar picker uses.
       if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
         // The landing shot is the empty lakeside view; the avatar waits at
-        // the Central Plaza spawn, where PLAY flies the camera to.
+        // the Central Plaza entry spot, where PLAY flies the camera to.
         playerUnit.x = -63.4;
-        playerUnit.z = 0.0;
+        playerUnit.z = -7.0;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
         playerUnit.yaw = Math.PI;
