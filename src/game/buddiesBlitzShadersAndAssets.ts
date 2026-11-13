@@ -1995,6 +1995,286 @@ export function createBlitzInfiniteGrassSystem(
   };
 }
 
+// ===========================================================================
+// MEADOW GRASS (trial system, enabled with ?grass=pv)
+// A second, independent grass renderer kept beside the infinite grass above:
+// same toroidal 42m field, same splatmask coverage and sculpt-map heights, so
+// blades grow in exactly the same places — but each blade is a 4-row strip
+// bent along an arc, turned partly toward the camera so edge-on blades stay
+// visible, and coloured as one painted tone per clump from a brush-dab
+// texture instead of per-blade shadow/trample work. Nothing in the system
+// above is touched; the arena simply shows one grass or the other.
+// ===========================================================================
+export function createBlitzMeadowGrassSystem(
+  scene: THREE.Scene,
+  windUniforms: BlitzWindUniforms,
+  isSoftwareGl: boolean,
+) {
+  const isCompact = isSoftwareGl;
+  const fieldSize = 42.0;
+  const bladeHeight = 0.62;
+  const bladeHalfW = 0.115;
+  const keepRatio = isCompact ? 0.8 : 0.92;
+
+  const uViewPos = { value: new THREE.Vector3(0, 0, 12.5) };
+  const uTime = { value: 0 };
+  const uSculptMap = windUniforms.uSculptMap || { value: getOrCreateSharedSculptTexture() };
+  const windNoiseTex = createBlitzWindNoiseTexture();
+
+  // Brush-dab tone texture: soft round strokes of grey; the blade shader
+  // samples it at two scales so each clump of grass takes one painted tone.
+  const strokesCanvas = document.createElement('canvas');
+  strokesCanvas.width = 256;
+  strokesCanvas.height = 256;
+  const sctx = strokesCanvas.getContext('2d')!;
+  sctx.fillStyle = '#7a7a7a';
+  sctx.fillRect(0, 0, 256, 256);
+  let sSeed = 987654321;
+  const sRand = () => {
+    sSeed = (Math.imul(sSeed, 1103515245) + 12345) & 0x7fffffff;
+    return sSeed / 0x7fffffff;
+  };
+  for (let i = 0; i < 1100; i++) {
+    const x = sRand() * 256;
+    const y = sRand() * 256;
+    const r = 3 + sRand() * 13;
+    const v = 84 + Math.floor(sRand() * 120);
+    const grad = sctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(${v},${v},${v},0.5)`);
+    grad.addColorStop(1, `rgba(${v},${v},${v},0)`);
+    sctx.fillStyle = grad;
+    sctx.beginPath();
+    sctx.arc(x, y, r, 0, Math.PI * 2);
+    sctx.fill();
+  }
+  const strokesTex = new THREE.CanvasTexture(strokesCanvas);
+  strokesTex.wrapS = THREE.RepeatWrapping;
+  strokesTex.wrapT = THREE.RepeatWrapping;
+
+  // Blade strip: 4 rows x 2 columns, position.y is 0..1 along the blade.
+  const bladeRows = 4;
+  const positions = new Float32Array(bladeRows * 2 * 3);
+  const indices: number[] = [];
+  for (let r = 0; r < bladeRows; r++) {
+    const t = r / (bladeRows - 1);
+    positions.set([-1, t, 0, 1, t, 0], r * 6);
+    if (r < bladeRows - 1) {
+      const a = r * 2;
+      indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
+    }
+  }
+  const bladeGeo = new THREE.BufferGeometry();
+  bladeGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  bladeGeo.setIndex(indices);
+
+  // Same jittered grid distribution as the infinite grass, own seed stream.
+  const totalCols = isCompact ? 140 : 168;
+  const totalRows = isCompact ? 126 : 154;
+  const stepX = fieldSize / totalCols;
+  const stepZ = fieldSize / totalRows;
+  const maxCandidates = totalCols * totalRows;
+  const anchorArr = new Float32Array(maxCandidates * 2);
+  const randArr = new Float32Array(maxCandidates * 4);
+  let gSeed = 20261113;
+  const gRand = () => {
+    gSeed = (Math.imul(gSeed, 1103515245) + 12345) & 0x7fffffff;
+    return gSeed / 0x7fffffff;
+  };
+  let count = 0;
+  for (let row = 0; row < totalRows; row++) {
+    for (let col = 0; col < totalCols; col++) {
+      if (gRand() > keepRatio) continue;
+      anchorArr[count * 2] = (col + 0.5) * stepX + (gRand() - 0.5) * stepX * 0.78;
+      anchorArr[count * 2 + 1] = (row + 0.5) * stepZ + (gRand() - 0.5) * stepZ * 0.78;
+      randArr[count * 4] = gRand();
+      randArr[count * 4 + 1] = gRand();
+      randArr[count * 4 + 2] = gRand();
+      randArr[count * 4 + 3] = gRand();
+      count++;
+    }
+  }
+  bladeGeo.setAttribute(
+    'aLocalAnchor',
+    new THREE.InstancedBufferAttribute(anchorArr.slice(0, count * 2), 2),
+  );
+  bladeGeo.setAttribute('aRand', new THREE.InstancedBufferAttribute(randArr.slice(0, count * 4), 4));
+
+  const meadowMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uViewPos,
+      uTime,
+      uSculptMap,
+      uFieldSize: { value: fieldSize },
+      uBladeHeight: { value: bladeHeight },
+      uBladeHalfW: { value: bladeHalfW },
+      uWindNoiseTex: { value: windNoiseTex },
+      uStrokesTex: { value: strokesTex },
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+      uWindGust: windUniforms.uWindGust,
+      uSunBottom: { value: new THREE.Color('#1b6e1e') },
+      uSunMid: { value: new THREE.Color('#75d424') },
+      uSunTop: { value: new THREE.Color('#d1f542') },
+      uShadowBottom: { value: new THREE.Color('#083d12') },
+      uShadowMid: { value: new THREE.Color('#1a7a24') },
+      uShadowTop: { value: new THREE.Color('#57b825') },
+    },
+    vertexShader: /* glsl */ `
+      attribute vec2 aLocalAnchor;
+      attribute vec4 aRand;
+
+      uniform vec3 uViewPos;
+      uniform float uTime;
+      uniform float uFieldSize;
+      uniform float uBladeHeight;
+      uniform float uBladeHalfW;
+      uniform sampler2D uWindNoiseTex;
+      uniform sampler2D uStrokesTex;
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
+      varying float vS;
+      varying float vTone;
+      varying float vSide;
+
+      ${PLANET_TERRAIN_GLSL_SNIPPET}
+
+      void main() {
+        float halfField = uFieldSize * 0.5;
+        vec3 anchor = vec3(0.0);
+        anchor.x = mod(aLocalAnchor.x - uViewPos.x + halfField, uFieldSize) - halfField + uViewPos.x;
+        anchor.z = mod(aLocalAnchor.y - uViewPos.z + halfField, uFieldSize) - halfField + uViewPos.z;
+
+        float distToView = distance(anchor.xz, uViewPos.xz);
+        if (distToView >= halfField) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+
+        vec2 wp = anchor.xz;
+        float density = smoothstep(0.08, 0.78, evaluateBlitzGrassMask(wp));
+        if (density <= 0.001) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+
+        vec2 sculptUv = clamp((wrapPlanetVec2(wp) + 130.0) / 260.0, 0.0, 1.0);
+        anchor.y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
+
+        float s = position.y;
+        float side = position.x;
+
+        // Lean: a resting direction per blade plus wind gust and flutter.
+        float yaw = aRand.x * 6.2831853;
+        vec2 leanDir = vec2(cos(yaw), sin(yaw));
+        vec2 wdir = normalize(uWindDirection + vec2(0.0001));
+        float gust = texture2D(uWindNoiseTex, wp * 0.011 + wdir * (uWindPhase * 0.02)).r;
+        float flutter = sin(uTime * (4.0 + aRand.z * 3.0) + aRand.x * 40.0) * 0.05;
+        vec2 lean = leanDir * mix(0.15, 0.55, aRand.y)
+          + wdir * ((gust * 0.5 + 0.18) * uWindStrength * (1.0 + uWindGust) + flutter);
+
+        float fade = 1.0 - smoothstep(uFieldSize * 0.36, uFieldSize * 0.495, distToView);
+        float h = uBladeHeight * mix(0.55, 1.15, aRand.z) * density * fade;
+        if (h <= 0.003) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+
+        // The blade bends along an arc instead of folding at the base.
+        float bendAmt = length(lean);
+        vec2 bendDir = bendAmt > 0.0001 ? lean / bendAmt : leanDir;
+        float along = bendAmt * s * s * h;
+        float rise = h * s * (1.0 - 0.35 * bendAmt * s);
+
+        // Width axis: the blade's own across, turned partly to face the
+        // camera so a blade seen edge-on does not vanish.
+        vec2 across0 = vec2(-bendDir.y, bendDir.x);
+        vec2 toCam2 = normalize(cameraPosition.xz - anchor.xz + vec2(0.0001));
+        vec2 facing = vec2(-toCam2.y, toCam2.x);
+        if (dot(facing, across0) < 0.0) facing = -facing;
+        vec2 across = normalize(mix(across0, facing, 0.6));
+
+        float wdt = uBladeHalfW * mix(0.7, 1.3, aRand.w) * (1.0 - s * 0.85) * fade;
+
+        vec3 world = vec3(
+          anchor.x + bendDir.x * along + across.x * side * wdt,
+          anchor.y + rise,
+          anchor.z + bendDir.y * along + across.y * side * wdt
+        );
+
+        // One painted tone per clump: brush dabs at two scales + jitter.
+        float dab = texture2D(uStrokesTex, wp / 6.0).r * 0.6
+          + texture2D(uStrokesTex, wp / 23.0).r * 0.4;
+        vTone = clamp(0.3 + dab * 0.8 + (aRand.y - 0.5) * 0.16, 0.0, 1.0);
+        vS = s;
+        vSide = side;
+
+        gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uSunBottom;
+      uniform vec3 uSunMid;
+      uniform vec3 uSunTop;
+      uniform vec3 uShadowBottom;
+      uniform vec3 uShadowMid;
+      uniform vec3 uShadowTop;
+
+      varying float vS;
+      varying float vTone;
+      varying float vSide;
+
+      void main() {
+        vec3 bottomCol = mix(uShadowBottom, uSunBottom, vTone);
+        vec3 midCol = mix(uShadowMid, uSunMid, vTone);
+        vec3 topCol = mix(uShadowTop, uSunTop, vTone);
+
+        vec3 col = mix(bottomCol, midCol, smoothstep(0.0, 0.55, vS));
+        col = mix(col, topCol, smoothstep(0.55, 1.0, vS));
+        // Folded along its middle like a real blade: centre darker.
+        col *= mix(0.82, 1.06, abs(vSide));
+
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    side: THREE.DoubleSide,
+  });
+
+  const grassMesh = new THREE.InstancedMesh(bladeGeo, meadowMaterial, count);
+  grassMesh.name = 'MeadowGrassTrial';
+  grassMesh.frustumCulled = false;
+  grassMesh.castShadow = false;
+  grassMesh.receiveShadow = false;
+  grassMesh.matrixAutoUpdate = false;
+  grassMesh.updateMatrix();
+  const ident = new THREE.Matrix4().identity();
+  for (let i = 0; i < count; i++) {
+    grassMesh.setMatrixAt(i, ident);
+  }
+  grassMesh.instanceMatrix.needsUpdate = true;
+  scene.add(grassMesh);
+
+  return {
+    grassMesh,
+    update(_playerX: number, _playerZ: number, viewX = _playerX, viewZ = _playerZ) {
+      uViewPos.value.set(viewX, 0, viewZ);
+      uTime.value = performance.now() / 1000;
+    },
+    dispose() {
+      scene.remove(grassMesh);
+      bladeGeo.dispose();
+      meadowMaterial.dispose();
+      windNoiseTex.dispose();
+      strokesTex.dispose();
+    },
+  };
+}
+
 const cachedTreeClusterGeos = new Map<number, THREE.BufferGeometry>();
 const cachedTreeMaterials = new WeakMap<
   BlitzWindUniforms,

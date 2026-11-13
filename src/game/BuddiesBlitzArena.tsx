@@ -221,6 +221,7 @@ import {
   loadAllRealBlitzAssets,
   getCachedLoadedBlitzAssets,
   createBlitzInfiniteGrassSystem,
+  createBlitzMeadowGrassSystem,
   createCurvedPlanetEnvironment,
   applyPlanetCurvatureToObject,
   computePlanetYOffset,
@@ -1962,6 +1963,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // 4B. CURVED PLANET INFINITE GRASS + FLOATING DANDELION SEEDS SHADER
     // =========================================================================
     const blitzGrassSystem = createBlitzInfiniteGrassSystem(scene, windUniforms, isSoftwareGl);
+    // Meadow grass trial (?grass=pv): a separate grass renderer shown INSTEAD
+    // of the infinite grass above for A/B comparison; the default grass is
+    // created and updated exactly as before and only hidden in trial mode.
+    const meadowGrassTrial =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('grass') === 'pv';
+    const meadowGrassSystem = meadowGrassTrial
+      ? createBlitzMeadowGrassSystem(scene, windUniforms, isSoftwareGl)
+      : null;
     let loadedBlitzAssets: LoadedBlitzAssets | null = getCachedLoadedBlitzAssets();
     const realPropsGroup = new THREE.Group();
     realPropsGroup.name = 'RealBlitzFactoryProps';
@@ -14051,6 +14061,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         viewCenterZ,
       );
       blitzGrassSystem.decayBlastWave(dt);
+      if (meadowGrassSystem) {
+        meadowGrassSystem.update(
+          nukePrePose ? nukePrePose.focusPivotPos.x : activeFocusUnit ? activeFocusUnit.x : 0,
+          nukePrePose ? nukePrePose.focusPivotPos.z : activeFocusUnit ? activeFocusUnit.z : 0,
+          viewCenterX,
+          viewCenterZ,
+        );
+      }
 
       // Multi-Unit Grass Trampling (Vehicles + Characters):
       // Only upload tramplers within the 25m grass view radius to minimize CPU-to-GPU uniform & shader loop cost!
@@ -18662,8 +18680,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         realPropsGroup.visible = showOutdoorScene;
         blueBase.baseGroup.visible = showOutdoorScene;
         redBase.baseGroup.visible = showOutdoorScene;
-        blitzGrassSystem.grassMesh.visible = showOutdoorScene && !isFullMapOverview;
-        blitzGrassSystem.petalMesh.visible = showOutdoorScene && !isFullMapOverview;
+        blitzGrassSystem.grassMesh.visible = showOutdoorScene && !isFullMapOverview && !meadowGrassTrial;
+        blitzGrassSystem.petalMesh.visible = showOutdoorScene && !isFullMapOverview && !meadowGrassTrial;
+        if (meadowGrassSystem) {
+          meadowGrassSystem.grassMesh.visible = showOutdoorScene && !isFullMapOverview;
+        }
       }
 
       if (buildingViewMode) {

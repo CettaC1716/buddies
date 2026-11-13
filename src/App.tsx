@@ -265,6 +265,34 @@ const INITIAL_HUD: HudSnapshot = {
 };
 
 const PRESET_ORDER: LightingPresetKey[] = ['day', 'dusk', 'night', 'dawn'];
+
+// FPS meter for A/B performance trials (?fps=1): a tiny fixed overlay fed by
+// requestAnimationFrame, showing the averaged frame rate and frame time.
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fps') === '1') {
+  const meter = document.createElement('div');
+  meter.style.cssText =
+    'position:fixed;right:10px;bottom:10px;z-index:99999;background:rgba(10,14,10,0.78);color:#b4ff39;font:600 13px/1.5 monospace;padding:4px 10px;border-radius:8px;pointer-events:none;';
+  meter.textContent = 'FPS …';
+  let frames = 0;
+  let lastStamp = performance.now();
+  const tick = () => {
+    frames++;
+    const now = performance.now();
+    if (now - lastStamp >= 500) {
+      const fps = (frames * 1000) / (now - lastStamp);
+      meter.textContent = `FPS ${fps.toFixed(0)} · ${(1000 / Math.max(fps, 0.01)).toFixed(1)} ms`;
+      frames = 0;
+      lastStamp = now;
+    }
+    requestAnimationFrame(tick);
+  };
+  const startMeter = () => {
+    document.body.appendChild(meter);
+    requestAnimationFrame(tick);
+  };
+  if (document.body) startMeter();
+  else document.addEventListener('DOMContentLoaded', startMeter, { once: true });
+}
 const EMPTY_NEP171_LEDGER: Nep171GamepassSubAccountLedger = {
   tokenId: '',
   ownerNearAccount: '',
