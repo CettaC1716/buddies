@@ -316,6 +316,7 @@ import {
 import {
   CAFE_INTERIOR_COLLIDERS,
   buildBotanicalGlasshouseCafeInterior,
+  buildGlowingDoorFloorArrowPad,
 } from './buddiesCafeInteriorBuilder';
 import {
   NAMEPLATE_SCREEN_SPEC,
@@ -655,16 +656,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       interactMarkerGroup = group;
       return group;
     };
-    let markerGuideAnchor: { x: number; y: number; z: number } | null = null;
-    let markerPromptAnchor: { x: number; y: number; z: number } | null = null;
-    const CAFE_MARKER_ANCHORS: Record<string, { x: number; y: number; z: number }> = {
+    type MarkerAnchor = { x: number; y: number; z: number; pad?: boolean; flat?: boolean };
+    let markerGuideAnchor: MarkerAnchor | null = null;
+    let markerPromptAnchor: MarkerAnchor | null = null;
+    let doorPad: ReturnType<typeof buildGlowingDoorFloorArrowPad> | null = null;
+    const ensureDoorPad = () => {
+      if (doorPad) return doorPad;
+      doorPad = buildGlowingDoorFloorArrowPad();
+      doorPad.group.visible = false;
+      scene.add(doorPad.group);
+      return doorPad;
+    };
+    const CAFE_MARKER_ANCHORS: Record<string, MarkerAnchor> = {
       prep_coffee: { x: -0.93, y: CAFE_ORIGIN_Y + 1.85, z: -2.0 },
       prep_food: { x: 1.01, y: CAFE_ORIGIN_Y + 1.75, z: -2.07 },
       serve_customer: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
       order_counter: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
       rota_board: { x: 3.45, y: CAFE_ORIGIN_Y + 2.6, z: -4.48 },
       atm_machine: { x: -5.45, y: CAFE_ORIGIN_Y + 2.0, z: -4.18 },
-      exit_door: { x: 0, y: CAFE_ORIGIN_Y + 2.3, z: 4.55 },
+      exit_door: { x: 0, y: CAFE_ORIGIN_Y, z: 4.55, pad: true, flat: true },
     };
 
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
@@ -6415,6 +6425,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
     ensureInteractMarker();
+    ensureDoorPad();
 
     // Kai's local tutorial markers: his exclamation plus a floating pinpoint
     // whose target (Kai himself, or the shoreline cast point) is set by App.
@@ -24186,32 +24197,42 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // Position the ONE triangle marker: the prompt anchor wins, then the
-      // property guide anchor; with neither, it hovers above the player's
-      // own head so it can never silently vanish.
+      // Position the ONE interaction marker: entrance doors get the ground
+      // pad (ring + chevron on the floor); objects get the small triangle
+      // floating just above them. The prompt anchor wins over the guide.
       {
         const ma = markerPromptAnchor ?? markerGuideAnchor;
         const mg = ensureInteractMarker();
-        if (ma) {
-          mg.visible = true;
-          mg.position.set(ma.x, ma.y + Math.sin(timeSec * 2.4) * 0.05, ma.z);
-          mg.rotation.y = timeSec * 0.9;
-        } else if (playerUnit && playerUnit.alive && worldModeRef.current !== 'warzone') {
-          const baseY =
-            npcCameraMode === 'cafe_interior'
-              ? CAFE_ORIGIN_Y
-              : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
-                ? HOUSE_ORIGIN_Y
-                : getTerrainElevation(playerUnit.x, playerUnit.z);
-          mg.visible = true;
-          mg.position.set(
-            playerUnit.x,
-            baseY + 3.7 + Math.sin(timeSec * 2.4) * 0.05,
-            playerUnit.z,
-          );
-          mg.rotation.y = timeSec * 0.9;
-        } else {
+        if (ma && ma.pad) {
           mg.visible = false;
+          const pad = ensureDoorPad();
+          pad.group.visible = true;
+          if (ma.flat) {
+            pad.group.position.set(ma.x, ma.y + 0.03, ma.z);
+          } else {
+            applyPlanetCurvatureToObject(
+              pad.group,
+              ma.x,
+              ma.y + 0.03,
+              ma.z,
+              camFollowPos.x,
+              camFollowPos.z,
+              0,
+              PLANET_CURVATURE_STRENGTH,
+            );
+          }
+          pad.pulseMat.opacity = 0.58 + Math.sin(timeSec * 3.8) * 0.25;
+          pad.chevronArrow.position.y = 0.65 + Math.sin(timeSec * 3.5) * 0.12;
+          pad.chevronArrow.rotation.y = timeSec * 1.6;
+        } else {
+          if (doorPad) doorPad.group.visible = false;
+          if (ma) {
+            mg.visible = true;
+            mg.position.set(ma.x, ma.y + Math.sin(timeSec * 2.4) * 0.05, ma.z);
+            mg.rotation.y = timeSec * 0.9;
+          } else {
+            mg.visible = false;
+          }
         }
       }
 
@@ -24350,8 +24371,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (distToCafeDoor <= 42) {
           markerPromptAnchor = {
             x: CAFE_EXTERIOR_DOOR_TRIGGER.x,
-            y: doorTerrainY + 2.5,
+            y: doorTerrainY,
             z: CAFE_EXTERIOR_DOOR_TRIGGER.z,
+            pad: true,
           };
         }
         if (!isKioskModalOpenCanvas && distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius) {
@@ -24466,7 +24488,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.65), 64, Math.max(64, h - 64));
         exitHouseRoomPromptBtn.style.display = 'block';
         exitHouseRoomPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-        markerPromptAnchor = { x: 0, y: HOUSE_ORIGIN_Y + 2.3, z: 3.35 };
+        markerPromptAnchor = { x: 0, y: HOUSE_ORIGIN_Y, z: 3.35, pad: true, flat: true };
       } else {
         exitHouseRoomPromptBtn.style.display = 'none';
       }
@@ -24640,8 +24662,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         enterHousePromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
         markerPromptAnchor = {
           x: nearClaimedHouseDoorPos.x,
-          y: getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z) + 2.9,
+          y: getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z),
           z: nearClaimedHouseDoorPos.z,
+          pad: true,
         };
       } else {
         enterHousePromptBtn.style.display = 'none';
