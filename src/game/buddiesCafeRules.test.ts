@@ -17,6 +17,7 @@ import {
   purchaseCafeMenuItem,
   purchaseCafeMenuItemWithCyon,
   cafeCyonPurchaseXpForItem,
+  prepareActiveCafeOrder,
   serveActiveCafeOrder,
   startCafeWorkShift,
   xpRequiredForLevelStep,
@@ -71,7 +72,12 @@ test('Barista Work Shift lifecycle spawns AI orders, rewards XP only (no Bucks, 
   assert.ok(shift.activeOrder !== null);
   assert.equal(shift.activeOrder.orderNumber, 1);
 
-  // Serve orders 1 and 2
+  // Serving without preparing at a station must fail
+  const r0 = serveActiveCafeOrder(shift, 100);
+  assert.equal(r0.served, false);
+
+  // Serve orders 1 and 2 (prepare the ordered item first)
+  shift = prepareActiveCafeOrder(shift, shift.activeOrder!.item.id);
   const r1 = serveActiveCafeOrder(shift, 102);
   assert.equal(r1.served, true);
   assert.equal(r1.shiftCompleted, false);
@@ -80,6 +86,7 @@ test('Barista Work Shift lifecycle spawns AI orders, rewards XP only (no Bucks, 
   assert.equal(shift.isWorking, true);
   assert.equal(shift.ordersCompletedInShift, 1);
 
+  shift = prepareActiveCafeOrder(shift, shift.activeOrder!.item.id);
   const r2 = serveActiveCafeOrder(shift, 103);
   assert.equal(r2.served, true);
   assert.equal(r2.shiftCompleted, false);
@@ -88,6 +95,7 @@ test('Barista Work Shift lifecycle spawns AI orders, rewards XP only (no Bucks, 
 
   // Serve 3rd (final) order -> shift completed + bonus
   const finalItem = shift.activeOrder!.item;
+  shift = prepareActiveCafeOrder(shift, finalItem.id);
   const r3 = serveActiveCafeOrder(shift, 104);
   assert.equal(r3.served, true);
   assert.equal(r3.shiftCompleted, true);

@@ -1339,6 +1339,9 @@ export interface WorldMultiplayerPeerState {
   isReeling: boolean;
   rodBend: number;
   hasClaimedBase: boolean;
+  isCafeWorker: boolean;
+  cafePreparing: boolean;
+  level: number;
   chatBubbleText: string | null;
   updatedAtMs: number;
 }
@@ -1454,6 +1457,9 @@ export function subscribeToWorldMultiplayer(handlers: {
       isReeling: Boolean(raw.isReeling),
       rodBend: Number.isFinite(raw.rodBend) ? Number(raw.rodBend) : 0,
       hasClaimedBase: Boolean(raw.hasClaimedBase),
+      isCafeWorker: Boolean(raw.isCafeWorker),
+      cafePreparing: Boolean(raw.cafePreparing),
+      level: Math.max(1, Math.min(999, Math.floor(Number.isFinite(raw.level) ? Number(raw.level) : 1))),
       chatBubbleText: typeof raw.chatBubbleText === 'string' && raw.chatBubbleText ? raw.chatBubbleText.slice(0, 64) : null,
       updatedAtMs: Date.now(),
     };
@@ -1500,6 +1506,9 @@ export function subscribeToWorldMultiplayer(handlers: {
             existing.nearAccountId = clean.nearAccountId;
             existing.inWorld = clean.inWorld;
             existing.hasClaimedBase = clean.hasClaimedBase;
+            existing.isCafeWorker = clean.isCafeWorker;
+            existing.cafePreparing = clean.cafePreparing;
+            existing.level = clean.level;
             // NOTE: do NOT bump existing.updatedAtMs here. That timestamp belongs to the
             // fresher Broadcast pose; refreshing it without new position data made the
             // renderer treat a stale pose as brand new (visible backward judder ~every 3s).

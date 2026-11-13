@@ -78,6 +78,10 @@ export interface CafeInteriorSceneHandle {
   customerBubbleQuad: THREE.Mesh;
   updateVisuals: (timeSec: number, isWorking: boolean) => void;
   setCustomerOrderSign: (visible: boolean, label: string, accentHex: string) => void;
+  setRotaBoard: (state: { status: string; workerName: string | null; queueNames: string[] }) => void;
+  setApronRackWorking: (working: boolean) => void;
+  prepGlowCoffee: THREE.Mesh;
+  prepGlowFood: THREE.Mesh;
 }
 
 function makeHanaToonMesh(
@@ -380,41 +384,6 @@ function addSoftFocusBlurShells(targetRoot: THREE.Object3D, shellConfigs: Readon
       src.add(shell);
     }
   }
-}
-
-function createCanvasSignMaterial(
-  bgHex: string,
-  borderHex: string,
-  title: string,
-  subtitle: string,
-  accentHex = '#b8ff3c',
-): THREE.MeshBasicMaterial {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 256;
-  const ctx = c.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = bgHex;
-    ctx.fillRect(0, 0, 512, 256);
-    ctx.strokeStyle = borderHex;
-    ctx.lineWidth = 14;
-    ctx.strokeRect(7, 7, 498, 242);
-
-    ctx.fillStyle = accentHex;
-    ctx.fillRect(28, 28, 456, 48);
-    ctx.fillStyle = '#14161d';
-    ctx.font = '900 28px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(title, 256, 54);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '800 32px sans-serif';
-    ctx.fillText(subtitle, 256, 152);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({ map: tex, fog: false });
 }
 
 export function buildGlowingDoorFloorArrowPad(): {
@@ -744,14 +713,149 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   const rotaCrown = makeHanaToonMesh(makeRoundedBoxGeo(1.26, 0.10, 0.38, 0.025, 2), '#a8703c', 0.50, 0.05, 0.004, { map: oakTex });
   rotaCrown.position.y = 2.13;
   rotaStand.add(rotaCrown);
+  const rotaBoardCanvas = document.createElement('canvas');
+  rotaBoardCanvas.width = 512;
+  rotaBoardCanvas.height = 440;
+  const rotaBoardTex = new THREE.CanvasTexture(rotaBoardCanvas);
+  rotaBoardTex.colorSpace = THREE.SRGBColorSpace;
+  rotaBoardTex.generateMipmaps = false;
+  rotaBoardTex.minFilter = THREE.LinearFilter;
+  rotaBoardTex.magFilter = THREE.LinearFilter;
+  const drawRotaBoard = (status: string, workerName: string | null, queueNames: string[]) => {
+    const ctx = rotaBoardCanvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#141b26';
+    ctx.fillRect(0, 0, 512, 440);
+    ctx.strokeStyle = '#b8ff3c';
+    ctx.lineWidth = 12;
+    ctx.strokeRect(6, 6, 500, 428);
+    ctx.fillStyle = '#b8ff3c';
+    ctx.fillRect(24, 22, 464, 52);
+    ctx.fillStyle = '#14161d';
+    ctx.font = '900 30px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SHIFT BOARD', 256, 49);
+    ctx.fillStyle = status === 'OPEN' ? '#4ade80' : '#facc15';
+    ctx.font = '900 25px sans-serif';
+    ctx.fillText(status === 'OPEN' ? '● OPEN FOR ORDERS' : '● NO BARISTA ON SHIFT', 256, 104);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '800 19px sans-serif';
+    ctx.fillText('NOW WORKING', 256, 148);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 31px sans-serif';
+    ctx.fillText((workerName ?? '—').toUpperCase().slice(0, 18), 256, 182);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '800 19px sans-serif';
+    ctx.fillText('WAITING LIST', 256, 228);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '800 23px sans-serif';
+    if (queueNames.length === 0) {
+      ctx.fillText('—', 256, 262);
+    } else {
+      queueNames.slice(0, 4).forEach((n, i) => {
+        ctx.fillText(`${i + 1}. ${n.toUpperCase().slice(0, 16)}`, 256, 262 + i * 32);
+      });
+      if (queueNames.length > 4) {
+        ctx.font = '800 19px sans-serif';
+        ctx.fillText(`+${queueNames.length - 4} MORE`, 256, 262 + 4 * 32);
+      }
+    }
+    ctx.fillStyle = '#64748b';
+    ctx.font = '800 17px sans-serif';
+    ctx.fillText('PRESS E HERE TO WORK OR JOIN THE LIST', 256, 414);
+    rotaBoardTex.needsUpdate = true;
+  };
+  drawRotaBoard('CLOSED', null, []);
   const rotaScreen = new THREE.Mesh(
     new THREE.PlaneGeometry(0.98, 0.88),
-    createCanvasSignMaterial('#141b26', '#b8ff3c', 'SHIFT BOARD', 'WORK AS WAITER', '#b8ff3c'),
+    new THREE.MeshBasicMaterial({ map: rotaBoardTex, fog: false }),
   );
   rotaScreen.position.set(0, 1.38, 0.16);
   rotaScreen.raycast = () => {};
   rotaStand.add(rotaScreen);
   staticIndoorGroup.add(rotaStand);
+
+  // 4b. APRON RACK beside the rota stand: three aprons hang here; while a barista
+  // works, one apron is gone from the rack (it is being worn).
+  const apronRack = new THREE.Group();
+  apronRack.position.set(4.62, 0, -4.32);
+  apronRack.rotation.y = -0.12;
+  const rackPole = makeHanaToonMesh(makeRoundedBoxGeo(0.09, 1.86, 0.09, 0.02, 2), '#3f3228', 0.44, 0.22, 0.005);
+  rackPole.position.y = 0.93;
+  apronRack.add(rackPole);
+  const rackBase = makeHanaToonMesh(makeRoundedBoxGeo(0.52, 0.07, 0.34, 0.02, 2), '#8c5d34', 0.52, 0.05, 0.004, { map: oakTex });
+  rackBase.position.y = 0.035;
+  apronRack.add(rackBase);
+  const rackBar = makeHanaToonMesh(makeRoundedBoxGeo(0.78, 0.06, 0.06, 0.02, 2), '#a8703c', 0.5, 0.05, 0.004, { map: oakTex });
+  rackBar.position.y = 1.78;
+  apronRack.add(rackBar);
+  const rackAprons: THREE.Group[] = [];
+  for (let ai = 0; ai < 3; ai++) {
+    const apron = new THREE.Group();
+    const panel = makeHanaToonMesh(makeRoundedBoxGeo(0.4, 0.56, 0.035, 0.03, 2), '#f3ead9', 0.6, 0.1, 0.004);
+    panel.position.y = -0.34;
+    apron.add(panel);
+    const bib = makeHanaToonMesh(makeRoundedBoxGeo(0.26, 0.2, 0.037, 0.03, 2), '#f3ead9', 0.6, 0.1, 0.004);
+    bib.position.y = -0.02;
+    apron.add(bib);
+    const strap = makeHanaToonMesh(makeRoundedBoxGeo(0.4, 0.045, 0.04, 0.01, 1), '#1f4d3a', 0.5, 0.15, 0.004);
+    strap.position.y = -0.18;
+    apron.add(strap);
+    apron.position.set(-0.26 + ai * 0.26, 1.74, 0.02);
+    apronRack.add(apron);
+    rackAprons.push(apron);
+  }
+  staticIndoorGroup.add(apronRack);
+  const setApronRackWorking = (working: boolean) => {
+    if (rackAprons[2]) rackAprons[2].visible = !working;
+  };
+
+  // 4c. PASTRY DISPLAY CASE on the bar (food prep station landmark) + station glows
+  const displayCase = new THREE.Group();
+  displayCase.position.set(CAFE_INTERIOR_BOUNDS.prepFoodX, 1.0, -3.86);
+  const caseBase = makeHanaToonMesh(makeRoundedBoxGeo(1.34, 0.07, 0.54, 0.02, 2), '#8c5d34', 0.52, 0.05, 0.004, { map: oakTex });
+  caseBase.position.y = 0.035;
+  displayCase.add(caseBase);
+  const caseGlass = new THREE.Mesh(
+    makeRoundedBoxGeo(1.3, 0.52, 0.5, 0.03, 2),
+    new THREE.MeshStandardMaterial({ color: '#dff3ff', transparent: true, opacity: 0.26, roughness: 0.08, metalness: 0.05, depthWrite: false }),
+  );
+  caseGlass.position.y = 0.33;
+  caseGlass.raycast = () => {};
+  displayCase.add(caseGlass);
+  const shelfMat = new THREE.MeshStandardMaterial({ color: '#e8dcc4', roughness: 0.6 });
+  [0.16, 0.38].forEach((sy) => {
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.025, 0.44), shelfMat);
+    shelf.position.y = sy;
+    displayCase.add(shelf);
+  });
+  const pastryColors = ['#fbbf24', '#f472b6', '#60a5fa', '#d97706', '#4ade80', '#f59e0b'];
+  pastryColors.forEach((pc, pi) => {
+    const blob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.075, 10, 8),
+      new THREE.MeshStandardMaterial({ color: pc, roughness: 0.55 }),
+    );
+    blob.scale.set(1.25, 0.62, 1);
+    blob.position.set(-0.45 + (pi % 3) * 0.45, (pi < 3 ? 0.16 : 0.38) + 0.055, 0);
+    displayCase.add(blob);
+  });
+  staticIndoorGroup.add(displayCase);
+
+  const makePrepGlow = (colorHex: string, x: number, z: number) => {
+    const glow = new THREE.Mesh(
+      new THREE.RingGeometry(0.42, 0.62, 24),
+      new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.set(x, 0.058, z);
+    glow.visible = false;
+    glow.raycast = () => {};
+    root.add(glow);
+    return glow;
+  };
+  const prepGlowCoffee = makePrepGlow('#f59e0b', CAFE_INTERIOR_BOUNDS.prepCoffeeX, CAFE_INTERIOR_BOUNDS.prepCoffeeZ);
+  const prepGlowFood = makePrepGlow('#4ade80', CAFE_INTERIOR_BOUNDS.prepFoodX, CAFE_INTERIOR_BOUNDS.prepFoodZ);
 
   // 5. STANDARD BANK CASH ATM TERMINAL (1:1 Industrial 4-View Model Sheet: 1.75m height, illuminated ATM // CASH canopy, CCTV dome, angled screen + 8 FDK keys, green LED card slot, shielded PIN pad + NFC, cash shutter & rear vault door)
   const atmStand = buildStandardBankCashAtm(styler, CAFE_GLOBAL_SCALE_SPEC.interiorAtmScale);
@@ -944,61 +1048,13 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     return { coinRoot, blueCoin, greenCoin };
   });
 
-  // 10. AI Customer Order Sign Quad Overhead (camera-aligned constant-screen-size billboard)
-  const customerBubbleCanvas = document.createElement('canvas');
-  customerBubbleCanvas.width = 320;
-  customerBubbleCanvas.height = 128;
-  const customerBubbleTex = new THREE.CanvasTexture(customerBubbleCanvas);
-  customerBubbleTex.colorSpace = THREE.SRGBColorSpace;
-  customerBubbleTex.generateMipmaps = false;
-  customerBubbleTex.minFilter = THREE.LinearFilter;
-  customerBubbleTex.magFilter = THREE.LinearFilter;
-  const customerBubbleMat = new THREE.MeshBasicMaterial({
-    map: customerBubbleTex,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    fog: false,
-  });
-  const customerBubbleQuad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), customerBubbleMat);
-  customerBubbleQuad.scale.set(0.85, 0.34, 1);
-  customerBubbleQuad.position.set(0, 2.02, 0);
-  customerBubbleQuad.renderOrder = 10;
-  customerBubbleQuad.castShadow = false;
-  customerBubbleQuad.receiveShadow = false;
-  customerBubbleQuad.raycast = () => {};
+  // (The overhead customer-order billboard was removed by design: order info now
+  // reaches the barista through the on-screen order banner + order card instead.)
   const customerBubbleGroup = new THREE.Group();
-  customerBubbleGroup.position.set(
-    CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
-    0,
-    CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
-  );
   customerBubbleGroup.visible = false;
-  customerBubbleGroup.add(customerBubbleQuad);
-  root.add(customerBubbleGroup);
-
-  const setCustomerOrderSign = (visible: boolean, label: string, accentHex: string) => {
-    customerBubbleGroup.visible = visible;
-    customerBubbleQuad.visible = visible;
-    if (!visible) return;
-    const ctx = customerBubbleCanvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, 320, 128);
-      ctx.fillStyle = '#14161d';
-      ctx.fillRect(8, 12, 304, 96);
-      ctx.strokeStyle = accentHex;
-      ctx.lineWidth = 8;
-      ctx.strokeRect(12, 16, 296, 88);
-      ctx.fillStyle = accentHex;
-      ctx.font = '900 20px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('CUSTOMER ORDER', 160, 44);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '900 28px sans-serif';
-      ctx.fillText(label.toUpperCase().slice(0, 20), 160, 82);
-    }
-    customerBubbleTex.needsUpdate = true;
-  };
+  const customerBubbleQuad = new THREE.Mesh();
+  customerBubbleQuad.visible = false;
+  const setCustomerOrderSign = (_visible: boolean, _label: string, _accentHex: string) => {};
 
   const updateVisuals = (timeSec: number, isWorking: boolean) => {
     exitPad.pulseMat.opacity = 0.55 + Math.sin(timeSec * 3.8) * 0.25;
@@ -1023,5 +1079,9 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     customerBubbleQuad,
     updateVisuals,
     setCustomerOrderSign,
+    setRotaBoard: (state) => drawRotaBoard(state.status, state.workerName, state.queueNames),
+    setApronRackWorking,
+    prepGlowCoffee,
+    prepGlowFood,
   };
 }

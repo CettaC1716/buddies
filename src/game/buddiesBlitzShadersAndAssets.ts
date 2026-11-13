@@ -4152,6 +4152,7 @@ export interface LoadedBlitzAssets {
   sleepingClip: THREE.AnimationClip | null;
   jumpClip: THREE.AnimationClip | null;
   jumpIdleClip: THREE.AnimationClip | null;
+  bartendingClip: THREE.AnimationClip | null;
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
@@ -4442,6 +4443,35 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
+  // Bartending take (user-supplied Mixamo FBX, 13.6s, no scale tracks): the cafe
+  // barista plays a ~3.2s slice of it while preparing an order at a station.
+  const loadBartendingClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+          const res = await fetch('/assets/bartending.fbx');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const fbx = new FBXLoader().parse(buf, '');
+          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
+          if (!raw) return null;
+          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          const slice = THREE.AnimationUtils.subclip(raw, 'bartending.001', 30, 126, 30);
+          return slice;
+        } catch (err) {
+          console.warn('[PreloadGate] Bartending clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const bartendingClipPromise = loadBartendingClip();
+  bartendingClipPromise
+    .then((c) => {
+      loadedBartendingClip = c;
+    })
+    .catch(() => {});
+
   // Replacement idle: a user-supplied FBX take parsed at runtime. It is a true
   // in-place idle (its hip track barely moves: height -51.8..-51.7cm on Z, i.e.
   // ~0.52 in rig units — the same height the baked idle uses on Y). Remap the
@@ -4582,7 +4612,7 @@ export async function loadAllRealBlitzAssets(
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, bartendingClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4640,6 +4670,7 @@ export async function loadAllRealBlitzAssets(
     sleepingClipPromise,
     jumpClipPromise,
     jumpIdleClipPromise,
+    bartendingClipPromise,
     idleClipPromise,
     kaiIdleClipPromise,
     hanaIdleClipPromise,
@@ -4688,6 +4719,7 @@ export async function loadAllRealBlitzAssets(
       sleepingClip,
       jumpClip,
       jumpIdleClip,
+      bartendingClip,
       idleClip,
       kaiIdleClip,
       hanaIdleClip,
@@ -4738,6 +4770,7 @@ export async function loadAllRealBlitzAssets(
         sleepingClip,
         jumpClip,
         jumpIdleClip,
+      bartendingClip,
         idleClip,
         kaiIdleClip,
         hanaIdleClip,
@@ -4759,6 +4792,7 @@ let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
 let loadedSleepingClip: THREE.AnimationClip | null = null;
 let loadedJumpClip: THREE.AnimationClip | null = null;
 let loadedJumpIdleClip: THREE.AnimationClip | null = null;
+let loadedBartendingClip: THREE.AnimationClip | null = null;
 let loadedIdleClip: THREE.AnimationClip | null = null;
 let loadedKaiIdleClip: THREE.AnimationClip | null = null;
 let loadedHanaIdleClip: THREE.AnimationClip | null = null;
@@ -10413,6 +10447,31 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('unarmed_jump_idle.001', c);
   }
+  const bartendingClipSrc = loadedBartendingClip ?? cachedLoadedBlitzAssets?.bartendingClip;
+  if (bartendingClipSrc && !clips.has('bartending.001')) {
+    const c = bartendingClipSrc.clone();
+    c.name = 'bartending.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    for (const track of c.tracks) {
+      if (/Hips\.position$/i.test(track.name)) {
+        const vals = track.values;
+        for (let i = 0; i < vals.length; i += 3) {
+          vals[i] = hipsBindX;
+          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+            vals[i + 1] = hipsBindY * 0.62;
+          } else if (vals[i + 1] < 0.05) {
+            vals[i + 1] = 0.06;
+          }
+          vals[i + 2] = hipsBindZ;
+        }
+      }
+    }
+    if (c.tracks.length) clips.set('bartending.001', c);
+  }
   // Swap in the replacement idle (runtime FBX take) over the baked idle.001,
   // with the same track filtering and root-motion lock. If the take failed to
   // load, the baked idle stays untouched.
@@ -11093,6 +11152,7 @@ function stepCharBuddiesGlbRigController(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
+  isBartending = false,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -11235,6 +11295,9 @@ function stepCharBuddiesGlbRigController(
     ctrl.clips.has('driving.001')
   ) {
     targetClip = 'driving.001';
+    timeScale = 1.0;
+  } else if (isBartending && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('bartending.001')) {
+    targetClip = 'bartending.001';
     timeScale = 1.0;
   } else if (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sleeping.001')) {
     targetClip = 'sleeping.001';
@@ -11908,6 +11971,7 @@ export function updateCharacterWeaponStance(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
+  isBartending = false,
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -11931,6 +11995,7 @@ export function updateCharacterWeaponStance(
       isSitting,
       isDriving,
       isSleeping,
+      isBartending,
     );
   }
   if (
@@ -11938,7 +12003,8 @@ export function updateCharacterWeaponStance(
     Boolean(rig.isSeatedRiderRef) ||
     (isDriving && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('driving.001')) ||
     (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001')) ||
-    (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
+    (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001')) ||
+    (isBartending && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('bartending.001'))
   ) {
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;

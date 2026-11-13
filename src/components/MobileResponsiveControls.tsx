@@ -366,8 +366,8 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   showMobileJoystick
                     ? `${
                         isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
-                      } rounded-full bg-[#14161d]/85 hover:bg-[#1e293b] active:scale-90 border-2 border-white/60 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[2px_2px_0_#0d0f12]`
-                    : '-skew-x-12 px-2.5 h-8 bg-[#14161d]/92 hover:bg-[#1e293b] active:scale-95 border-2 border-[#0d0f12] ring-1 ring-white/75 text-white flex items-center justify-center cursor-pointer transition-all shadow-[3px_3px_0_#0d0f12]'
+                      } rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`
+                    : '-skew-x-12 px-2.5 h-8 bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-95 border border-white/40 ring-1 ring-white/20 text-white flex items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]'
                 }
               >
                 {showMobileJoystick ? (

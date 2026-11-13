@@ -1249,6 +1249,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isWorkingCafeShift?: boolean;
                 activeCafeOrderLabel?: string;
                 activeCafeOrderAccent?: string;
+                cafeOrderCategory?: 'drink' | 'pastry' | null;
+                cafeOrderPrepared?: boolean;
+                cafeOrderSource?: 'ai' | 'player';
                 onboardingCompleted?: boolean;
                 characterGender?: CharacterGender;
                 playerDisplayName?: string;
@@ -3232,6 +3235,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const cafeInterior = buildBotanicalGlasshouseCafeInterior();
     scene.add(cafeInterior.root);
+
+    // Cafe apron worn by whoever holds the barista shift (local + remote rigs).
+    const buildCafeApronGroup = (): THREE.Group => {
+      const g = new THREE.Group();
+      const cloth = new THREE.MeshStandardMaterial({ color: '#f3ead9', roughness: 0.85 });
+      const strapMat = new THREE.MeshStandardMaterial({ color: '#1f4d3a', roughness: 0.7 });
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.02, 1.28, 0.05), cloth);
+      panel.position.set(0, 2.02, 0.3);
+      panel.rotation.x = -0.05;
+      g.add(panel);
+      const bib = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.05), cloth);
+      bib.position.set(0, 2.86, 0.285);
+      bib.rotation.x = -0.05;
+      g.add(bib);
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.09, 0.055), strapMat);
+      strap.position.set(0, 2.42, 0.3);
+      g.add(strap);
+      g.traverse((o) => {
+        o.raycast = () => {};
+        if (o instanceof THREE.Mesh) o.castShadow = false;
+      });
+      g.visible = false;
+      return g;
+    };
+    const cafeApronByBodyGroup = new Map<THREE.Group, THREE.Group>();
+    const setRigCafeApron = (bodyGroup: THREE.Group, visible: boolean) => {
+      let apron = cafeApronByBodyGroup.get(bodyGroup);
+      if (!apron) {
+        apron = buildCafeApronGroup();
+        cafeApronByBodyGroup.set(bodyGroup, apron);
+        bodyGroup.add(apron);
+      }
+      apron.visible = visible;
+    };
 
     // AI City Citizen Customer NPC inside the Glasshouse Cafe (stands in front of counter during Work Shift)
     const cafeCustomerNpcRoot = new THREE.Group();
@@ -5735,8 +5772,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
     let savedOutdoorCafePos: { x: number; z: number; yaw: number } | null = null;
     let cafeWorkShiftActive = Boolean(initialMpAppSync?.isWorkingCafeShift);
+    let cafePreparingUntilMs = 0;
     let activeCafeOrderLabel = initialMpAppSync?.activeCafeOrderLabel ?? '';
     let activeCafeOrderAccent = initialMpAppSync?.activeCafeOrderAccent ?? '#b8ff3c';
+    let cafeOrderCategory: 'drink' | 'pastry' | null = null;
+    let cafeOrderPrepared = false;
+    let cafeOrderSource: 'ai' | 'player' = 'ai';
+    let cafePresenceState: {
+      workerUid: string | null;
+      workerName: string | null;
+      queueNames: string[];
+      myRole: 'worker' | 'queue' | 'called' | 'none';
+      myQueuePos: number;
+    } = { workerUid: null, workerName: null, queueNames: [], myRole: 'none', myQueuePos: 0 };
+    let cafePrepareDoneArmed = false;
     let cafeVisitCamYaw = 0.0;
     let cafeVisitCamPitch = 0.34;
     let cafeVisitCamDist = 3.65;
@@ -5793,6 +5842,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           isWorkingCafeShift?: boolean;
           activeCafeOrderLabel?: string;
           activeCafeOrderAccent?: string;
+          cafeOrderCategory?: 'drink' | 'pastry' | null;
+          cafeOrderPrepared?: boolean;
+          cafeOrderSource?: 'ai' | 'player';
           houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
           onboardingCompleted?: boolean;
           characterGender?: CharacterGender;
@@ -5849,14 +5901,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (typeof detail.activeCafeOrderAccent === 'string') {
         activeCafeOrderAccent = detail.activeCafeOrderAccent;
       }
-      const showCafeCustomer = Boolean(cafeWorkShiftActive && activeCafeOrderLabel);
+      if (detail.cafeOrderCategory === 'drink' || detail.cafeOrderCategory === 'pastry') {
+        cafeOrderCategory = detail.cafeOrderCategory;
+      } else if (detail.cafeOrderCategory === null) {
+        cafeOrderCategory = null;
+      }
+      if (typeof detail.cafeOrderPrepared === 'boolean') {
+        cafeOrderPrepared = detail.cafeOrderPrepared;
+      }
+      if (detail.cafeOrderSource === 'player' || detail.cafeOrderSource === 'ai') {
+        cafeOrderSource = detail.cafeOrderSource;
+      }
+      const showCafeCustomer = Boolean(
+        cafeWorkShiftActive && activeCafeOrderLabel && cafeOrderSource !== 'player',
+      );
       cafeCustomerNpcRoot.visible = showCafeCustomer;
       cafeInterior.setCustomerOrderSign(showCafeCustomer, activeCafeOrderLabel, activeCafeOrderAccent);
       if (playerUnit?.nameplate?.updatePlate) {
-        playerUnit.nameplate.updatePlate(
-          playerCustomDisplayName,
-          cafeWorkShiftActive ? 'CAFE WAITER' : '',
-        );
+        playerUnit.nameplate.updatePlate(playerCustomDisplayName, cafeWorkShiftActive ? 'CAFE WAITER' : '', undefined, {
+          level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
+          role: cafeWorkShiftActive ? 'barista' : null,
+        });
+      }
+      if (playerUnit?.rig?.bodyGroupRef) {
+        setRigCafeApron(playerUnit.rig.bodyGroupRef, cafeWorkShiftActive);
       }
       if (typeof detail.isSampleHouse === 'boolean') {
         mpIsSampleHouse = detail.isSampleHouse;
@@ -6157,6 +6225,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
     window.addEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
+    const onCafeShiftPresence = (ev: Event) => {
+      const d = (
+        ev as CustomEvent<{
+          workerUid: string | null;
+          workerName: string | null;
+          queueNames: string[];
+          myRole: 'worker' | 'queue' | 'called' | 'none';
+          myQueuePos: number;
+        }>
+      ).detail;
+      if (!d) return;
+      cafePresenceState = {
+        workerUid: d.workerUid ?? null,
+        workerName: d.workerName ?? null,
+        queueNames: Array.isArray(d.queueNames) ? d.queueNames : [],
+        myRole: d.myRole ?? 'none',
+        myQueuePos: d.myQueuePos ?? 0,
+      };
+      cafeInterior.setRotaBoard({
+        status: cafePresenceState.workerUid ? 'OPEN' : 'CLOSED',
+        workerName: cafePresenceState.workerName,
+        queueNames: cafePresenceState.queueNames,
+      });
+      cafeInterior.setApronRackWorking(Boolean(cafePresenceState.workerUid));
+    };
+    window.addEventListener('cafe-shift-presence', onCafeShiftPresence);
+    const onCafePrepareStart = () => {
+      cafePreparingUntilMs = performance.now() + 3000;
+      cafePrepareDoneArmed = true;
+    };
+    window.addEventListener('cafe-prepare-start', onCafePrepareStart);
 
     // =========================================================================
     // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
@@ -7633,11 +7732,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const nameplate = createGlassmorphicNameplate(2.8, 0.72, peer.displayName, '', false);
       nameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
       nameplate.sprite.visible = true;
-      nameplate.updatePlate(
-        peer.displayName,
-        '',
-        peer.nearAccountId ? 'player_veteran' : 'player_rookie',
-      );
+      nameplate.updatePlate(peer.displayName, '', peer.nearAccountId ? 'player_veteran' : 'player_rookie', {
+        level: peer.level,
+        role: peer.isCafeWorker ? 'barista' : null,
+      });
       root.add(nameplate.sprite);
 
       const saluteSign = createBillboardSign(3.4, 0.92);
@@ -12547,9 +12645,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (e.code === 'KeyC' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
         if (mountedTank && mountedTank.vehicleKind === 'plane') {
           mountedTank.targetAltitude = 0;
-        } else if (e.code === 'KeyC' && !mountedTank && ridingTramCarIdx === null) {
-          handleToggleSitting(null);
         }
+        // NOTE: KeyC no longer toggles sitting on foot. Sitting is only allowed at
+        // seat spots (benches, loungers, chairs, cafe seats) via their prompts.
       }
 
       if (e.code === 'KeyE') {
@@ -12560,6 +12658,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             playerUnit.x,
             playerUnit.z,
             cafeWorkShiftActive,
+            { needsPrep: cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared, orderCategory: cafeOrderCategory },
           );
           if (station.kind === 'exit_door') {
             soundEngine.playUiClick();
@@ -12573,12 +12672,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           if (station.kind === 'order_counter') {
             soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
+            window.dispatchEvent(new CustomEvent('cafe-order-counter-hint'));
             return;
           }
           if (station.kind === 'rota_board') {
             soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
+            window.dispatchEvent(new CustomEvent('cafe-rota-interact'));
+            return;
+          }
+          if (station.kind === 'prep_coffee' || station.kind === 'prep_food') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('open-cafe-prepare-modal'));
             return;
           }
           if (station.kind === 'atm_machine') {
@@ -14209,15 +14313,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
       } else if (act === 'cafeStationInteract' && playerUnit) {
         soundEngine.playUiClick();
-        const st = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive);
+        const st = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive, { needsPrep: cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared, orderCategory: cafeOrderCategory });
         if (st.kind === 'exit_door') {
           window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
         } else if (st.kind === 'serve_customer') {
           window.dispatchEvent(new CustomEvent('serve-cafe-active-order'));
         } else if (st.kind === 'order_counter') {
-          window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
+          window.dispatchEvent(new CustomEvent('cafe-order-counter-hint'));
         } else if (st.kind === 'rota_board') {
-          window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
+          window.dispatchEvent(new CustomEvent('cafe-rota-interact'));
+        } else if (st.kind === 'prep_coffee' || st.kind === 'prep_food') {
+          window.dispatchEvent(new CustomEvent('open-cafe-prepare-modal'));
         } else if (st.kind === 'atm_machine') {
           window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
         }
@@ -14526,6 +14632,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('focusin', onDocumentFocusIn);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    const onCafeWorkerClick = (e: MouseEvent) => {
+      if (npcCameraMode !== 'cafe_interior') return;
+      if (
+        cafeVisitOrbitDragStart &&
+        Math.hypot(e.clientX - cafeVisitOrbitDragStart.x, e.clientY - cafeVisitOrbitDragStart.y) > 6
+      ) {
+        return;
+      }
+      updateMouseWorldAim(e.clientX, e.clientY);
+      raycaster.setFromCamera(mouseNdc, camera);
+      const workerRoots: THREE.Object3D[] = [];
+      remotePlayerAvatars.forEach((av) => {
+        if (av.peer.isCafeWorker) workerRoots.push(av.root);
+      });
+      if (workerRoots.length === 0) return;
+      const hits = raycaster.intersectObjects(workerRoots, true);
+      if (hits.length > 0) {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
+      }
+    };
+    renderer.domElement.addEventListener('click', onCafeWorkerClick);
     renderer.domElement.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
@@ -19086,6 +19214,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsSitting,
                 unitIsDriving,
                 unitIsSleeping,
+                b.isPlayer ? cafePreparingUntilMs > performance.now() : false,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -21058,6 +21187,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (npcCameraMode === 'cafe_interior') {
         cafeInterior.root.visible = true;
         cafeInterior.updateVisuals(timeSec, cafeWorkShiftActive);
+        if (cafePrepareDoneArmed && cafePreparingUntilMs > 0 && performance.now() >= cafePreparingUntilMs) {
+          cafePrepareDoneArmed = false;
+          cafePreparingUntilMs = 0;
+          window.dispatchEvent(new CustomEvent('cafe-prepare-done'));
+        }
+        cafeInterior.prepGlowCoffee.visible =
+          cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared && cafeOrderCategory === 'drink';
+        cafeInterior.prepGlowFood.visible =
+          cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared && cafeOrderCategory === 'pastry';
         if (cafeCustomerNpcRoot.visible) {
           const customerCharGltf = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
           if (customerCharGltf && !cafeCustomerGlbUpgraded) {
@@ -21515,6 +21653,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 hasClaimedBase:
                   nearSessionState.claimedTeam === playerUnit.team &&
                   nearSessionState.claimedPlotIndex !== null,
+                isCafeWorker: cafeWorkShiftActive,
+                cafePreparing: cafePreparingUntilMs > performance.now(),
+                level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
                 chatBubbleText: curChat,
               },
               zoneOrChatChanged,
@@ -21659,14 +21800,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.innerFootDiscMat.color.setHex(desiredFootHex);
 
           // Update Nameplate & Overhead Chat Speech Bubble
-          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}`;
+          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}|${peer.level}|${peer.isCafeWorker ? 1 : 0}`;
           if (av.lastLabelKey !== nextLabelKey) {
             av.lastLabelKey = nextLabelKey;
             av.nameplate.updatePlate(
               peer.displayName,
               '',
               peer.nearAccountId ? 'player_veteran' : 'player_rookie',
+              { level: peer.level, role: peer.isCafeWorker ? 'barista' : null },
             );
+            setRigCafeApron(av.bodyGroup, peer.isCafeWorker);
           }
           const distToPeer = localZoneKey.startsWith('house:')
             ? Math.hypot(localActorX - av.renderX, localActorZ - av.renderZ)
@@ -21741,6 +21884,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerSpeed,
               peer.isSitting,
               peer.isDriving,
+              false,
+              peer.cafePreparing,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -24191,7 +24336,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // Floating Station Prompt inside Botanical Glasshouse Cafe ('cafe_interior')
       if (npcCameraMode === 'cafe_interior' && !isKioskModalOpenCanvas) {
-        const station = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive);
+        const station = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive, { needsPrep: cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared, orderCategory: cafeOrderCategory });
         if (station.kind) {
           let tx = 0;
           let ty = CAFE_ORIGIN_Y + 1.95;
@@ -24217,14 +24362,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
             tz = CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ;
             ty = CAFE_ORIGIN_Y + 1.75;
-            label = 'ORDER MENU [E]';
-            bgHex = '#38bdf8';
+            label = cafePresenceState.workerUid ? 'CLICK THE BARISTA TO ORDER' : 'NO BARISTA ON SHIFT';
+            bgHex = cafePresenceState.workerUid ? '#38bdf8' : '#64748b';
             fgHex = '#0f172a';
           } else if (station.kind === 'rota_board') {
             tx = CAFE_INTERIOR_BOUNDS.rotaBoardX;
             tz = CAFE_INTERIOR_BOUNDS.rotaBoardZ;
             ty = CAFE_ORIGIN_Y + 2.05;
-            label = cafeWorkShiftActive ? 'SHIFT ACTIVE' : 'WORK AS WAITER [E]';
+            label =
+              cafePresenceState.myRole === 'worker'
+                ? 'SHIFT ACTIVE'
+                : cafePresenceState.myRole === 'called'
+                  ? 'YOUR TURN — TAKE THE APRON [E]'
+                  : cafePresenceState.myRole === 'queue'
+                    ? `WAITING #${cafePresenceState.myQueuePos} — LEAVE LIST [E]`
+                    : cafePresenceState.workerUid
+                      ? 'JOIN WAITING LIST [E]'
+                      : 'WORK AS WAITER [E]';
+            bgHex = '#4ade80';
+            fgHex = '#052e16';
+          } else if (station.kind === 'prep_coffee') {
+            tx = CAFE_INTERIOR_BOUNDS.prepCoffeeX;
+            tz = CAFE_INTERIOR_BOUNDS.prepCoffeeZ;
+            ty = CAFE_ORIGIN_Y + 1.6;
+            label = `PREPARE ${activeCafeOrderLabel.toUpperCase()} [E]`;
+            bgHex = '#f59e0b';
+            fgHex = '#14161d';
+          } else if (station.kind === 'prep_food') {
+            tx = CAFE_INTERIOR_BOUNDS.prepFoodX;
+            tz = CAFE_INTERIOR_BOUNDS.prepFoodZ;
+            ty = CAFE_ORIGIN_Y + 1.6;
+            label = `PREPARE ${activeCafeOrderLabel.toUpperCase()} [E]`;
             bgHex = '#4ade80';
             fgHex = '#052e16';
           } else if (station.kind === 'atm_machine') {
@@ -25281,12 +25449,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('click', onCafeWorkerClick);
       renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('toggle-kiosk-ui', onKioskUiToggled);
       window.removeEventListener('close-kiosk-ui', onKioskUiClosed);
       window.removeEventListener('sync-kiosk-ui', onKioskUiSynced);
       window.removeEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
+      window.removeEventListener('cafe-shift-presence', onCafeShiftPresence);
+      window.removeEventListener('cafe-prepare-start', onCafePrepareStart);
       window.removeEventListener('clear-character-selection', onWindowClearCharacterSelection);
       window.removeEventListener('close-teleport-kiosk-ui', onCloseTeleportKioskUi);
       window.removeEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);

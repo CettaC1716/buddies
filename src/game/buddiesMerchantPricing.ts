@@ -500,6 +500,69 @@ export function executeLulToCyonExchange(
 }
 
 /**
+ * Multi-packet LUL -> CYON exchange (cafe ATM free-amount mode): exchanges exactly
+ * `packets` packets of 10 CYON at the current quote, applying the market effects once.
+ */
+export function executeLulToCyonExchangePackets(
+  state: MerchantAgentMarketState,
+  playerLul: number,
+  playerCyon: number,
+  packets: number,
+): {
+  ok: boolean;
+  updatedState: MerchantAgentMarketState;
+  updatedLul: number;
+  updatedCyon: number;
+  packetsUsed: number;
+  message: string;
+} {
+  const fail = (message: string) => ({
+    ok: false,
+    updatedState: state,
+    updatedLul: playerLul,
+    updatedCyon: playerCyon,
+    packetsUsed: 0,
+    message,
+  });
+  const want = Math.max(0, Math.floor(packets));
+  if (want < 1) return fail('Enter an amount of LUL to exchange first.');
+  if (state.isShopBroke) {
+    return fail('My shop CYON reserves are depleted! Please invest capital first to reopen the shop.');
+  }
+  const quote = evaluateLulToCyonExchangeQuote(state);
+  const totalCost = quote.lulCostFor10Cyon * want;
+  const totalCyon = quote.cyonGranted * want;
+  if (playerLul < totalCost) {
+    return fail(`Not enough LUL! Need ${totalCost} LUL to exchange for ${totalCyon} CYON.`);
+  }
+  if (state.treasuryCyon < totalCyon) {
+    return fail(`The ATM only has ${state.treasuryCyon} CYON left in reserve.`);
+  }
+  const nextTreasuryCyon = Math.max(0, state.treasuryCyon - totalCyon);
+  const brokeNow = nextTreasuryCyon < 20;
+  const updatedState: MerchantAgentMarketState = {
+    ...state,
+    treasuryCyon: nextTreasuryCyon,
+    treasuryLulPool: state.treasuryLulPool + totalCost,
+    recentLulExchangedVolume: state.recentLulExchangedVolume + totalCost,
+    isShopBroke: brokeNow,
+    lastMarketHeadline: brokeNow
+      ? 'NPC TREASURY DEPLETED! Excessive LUL exchanges drained shop CYON reserves.'
+      : `Exchange complete: ${totalCost} LUL -> +${totalCyon} CYON.`,
+  };
+  return {
+    ok: true,
+    updatedState,
+    updatedLul: playerLul - totalCost,
+    updatedCyon: playerCyon + totalCyon,
+    packetsUsed: want,
+    message: brokeNow
+      ? `Exchanged +${totalCyon} CYON! However, my shop CYON reserves are now depleted—investor needed!`
+      : `Successfully exchanged ${totalCost} LUL for +${totalCyon} CYON!`,
+  };
+}
+
+/**
  * Recapitalize / Invest in a broke (or low-liquidity) NPC Merchant shop.
  */
 export function investInMerchantShop(

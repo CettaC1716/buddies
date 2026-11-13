@@ -406,123 +406,112 @@ export function createGlassmorphicNameplate(
   sprite.receiveShadow = false;
   sprite.raycast = () => {};
 
-  const updatePlate = (name: string, _sub = '', emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie') => {
+  const updatePlate = (
+    name: string,
+    _sub = '',
+    emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie',
+    opts?: { level?: number; role?: 'barista' | null },
+  ) => {
     ctx.clearRect(0, 0, 512, 116);
+    const level = Math.max(1, Math.min(999, Math.floor(opts?.level ?? 1)));
+    const isBarista = opts?.role === 'barista';
 
-    // 1. Crisp High-Contrast Frosted Dark Slate Backing matching UI Prompts
-    const bgGrad = ctx.createLinearGradient(0, 8, 0, 108);
-    bgGrad.addColorStop(0, 'rgba(20, 27, 45, 0.88)');
-    bgGrad.addColorStop(0.45, 'rgba(15, 23, 42, 0.90)');
-    bgGrad.addColorStop(1, 'rgba(8, 12, 24, 0.94)');
-
+    // 1. Glassmorphic pill: translucent dark glass, bright rim, soft drop shadow
+    const bgGrad = ctx.createLinearGradient(0, 16, 0, 108);
+    bgGrad.addColorStop(0, 'rgba(30, 40, 62, 0.52)');
+    bgGrad.addColorStop(0.5, 'rgba(17, 24, 42, 0.58)');
+    bgGrad.addColorStop(1, 'rgba(10, 14, 26, 0.66)');
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 3;
-
     ctx.fillStyle = bgGrad;
     ctx.beginPath();
-    ctx.roundRect(10, 10, 492, 96, 20);
+    ctx.roundRect(10, 16, 492, 92, 20);
     ctx.fill();
     ctx.restore();
 
-    // 2. Subtle Top Specular Sheen
-    const glossGrad = ctx.createLinearGradient(0, 10, 0, 48);
-    glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
+    // 2. Frosted top sheen
+    const glossGrad = ctx.createLinearGradient(0, 16, 0, 52);
+    glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
     glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
     ctx.fillStyle = glossGrad;
     ctx.beginPath();
-    ctx.roundRect(12, 12, 488, 36, [18, 18, 0, 0]);
+    ctx.roundRect(12, 18, 488, 34, [18, 18, 0, 0]);
     ctx.fill();
 
-    // 3. Crisp Accent Border matching UI Prompt stroke weight
-    ctx.lineWidth = 4.0;
-    ctx.strokeStyle = emblemType === 'npc' ? '#facc15' : '#38bdf8';
+    // 3. Glass rim
+    ctx.lineWidth = 3.0;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.beginPath();
-    ctx.roundRect(10, 10, 492, 96, 20);
+    ctx.roundRect(10, 16, 492, 92, 20);
     ctx.stroke();
 
-    // 4. Render Emblem (Left badge circle/shield)
-    ctx.save();
-    const cx = 60;
-    const cy = 58;
-
-    if (emblemType === 'npc') {
-      // NPC Emblem: Royal Golden Crown & Star Crest
-      ctx.fillStyle = '#0f172a';
+    // 4. Shield badge (left): carries the LEVEL number for players, a crown for NPCs
+    const cx = 62;
+    const cy = 62;
+    const shieldPath = () => {
       ctx.beginPath();
-      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 3.0;
-      ctx.strokeStyle = '#facc15';
-      ctx.stroke();
-
-      // Golden Crown polygon
-      ctx.fillStyle = '#facc15';
-      ctx.beginPath();
-      ctx.moveTo(cx - 15, cy + 11);
-      ctx.lineTo(cx - 16, cy - 6);
-      ctx.lineTo(cx - 6, cy + 1);
-      ctx.lineTo(cx, cy - 13);
-      ctx.lineTo(cx + 6, cy + 1);
-      ctx.lineTo(cx + 16, cy - 6);
-      ctx.lineTo(cx + 15, cy + 11);
+      ctx.moveTo(cx, cy - 31);
+      ctx.quadraticCurveTo(cx + 10, cy - 24, cx + 24, cy - 21);
+      ctx.lineTo(cx + 24, cy + 6);
+      ctx.quadraticCurveTo(cx + 24, cy + 22, cx, cy + 31);
+      ctx.quadraticCurveTo(cx - 24, cy + 22, cx - 24, cy + 6);
+      ctx.lineTo(cx - 24, cy - 21);
+      ctx.quadraticCurveTo(cx - 10, cy - 24, cx, cy - 31);
       ctx.closePath();
+    };
+    ctx.save();
+    if (emblemType === 'npc') {
+      const g = ctx.createLinearGradient(0, cy - 31, 0, cy + 31);
+      g.addColorStop(0, '#fbbf24');
+      g.addColorStop(1, '#b45309');
+      ctx.fillStyle = g;
+      shieldPath();
       ctx.fill();
-      ctx.lineWidth = 1.2;
-      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
       ctx.stroke();
-
-      // Center ruby gem
-      ctx.fillStyle = '#ef4444';
+      // Crown glyph
+      ctx.fillStyle = '#fff7ed';
       ctx.beginPath();
-      ctx.arc(cx, cy + 3, 3, 0, Math.PI * 2);
+      ctx.moveTo(cx - 13, cy + 9);
+      ctx.lineTo(cx - 14, cy - 6);
+      ctx.lineTo(cx - 5, cy + 0);
+      ctx.lineTo(cx, cy - 11);
+      ctx.lineTo(cx + 5, cy + 0);
+      ctx.lineTo(cx + 14, cy - 6);
+      ctx.lineTo(cx + 13, cy + 9);
+      ctx.closePath();
       ctx.fill();
     } else {
-      // Player Default Rookie Emblem: Blue Tactical Shield with Wing/Chevron
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
+      const g = ctx.createLinearGradient(0, cy - 31, 0, cy + 31);
+      if (emblemType === 'player_veteran') {
+        g.addColorStop(0, '#a78bfa');
+        g.addColorStop(1, '#6d28d9');
+      } else {
+        g.addColorStop(0, '#818cf8');
+        g.addColorStop(1, '#4f46e5');
+      }
+      ctx.fillStyle = g;
+      shieldPath();
       ctx.fill();
-      ctx.lineWidth = 3.0;
-      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
       ctx.stroke();
-
-      // Shield Chevron / Wings (Rookie military badge)
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - 14);
-      ctx.lineTo(cx + 14, cy - 3);
-      ctx.lineTo(cx + 11, cy + 11);
-      ctx.lineTo(cx, cy + 17);
-      ctx.lineTo(cx - 11, cy + 11);
-      ctx.lineTo(cx - 14, cy - 3);
-      ctx.closePath();
-      ctx.fill();
-
-      // Inner tactical star / chevron
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - 8);
-      ctx.lineTo(cx + 8, cy - 1);
-      ctx.lineTo(cx + 5, cy + 8);
-      ctx.lineTo(cx, cy + 12);
-      ctx.lineTo(cx - 5, cy + 8);
-      ctx.lineTo(cx - 8, cy - 1);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '900 14px "Barlow", sans-serif';
+      ctx.font = `900 ${level >= 100 ? 24 : 30}px "Barlow", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('1', cx, cy + 2);
+      ctx.shadowColor = 'rgba(0,0,0,0.45)';
+      ctx.shadowBlur = 3;
+      ctx.fillText(String(level), cx, cy + 2);
     }
     ctx.restore();
 
-    // 5. Player / NPC Name Text (Bold, legible at compact 146x33px constant screen size)
+    // 5. Name
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
     ctx.shadowBlur = 4;
     ctx.shadowOffsetX = 1.5;
     ctx.shadowOffsetY = 1.5;
@@ -530,8 +519,43 @@ export function createGlassmorphicNameplate(
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 36px "Barlow", sans-serif';
-    ctx.fillText(name.toUpperCase(), 292, 58, 372);
+    ctx.fillText(name.toUpperCase(), 296, 64, 368);
     ctx.restore();
+
+    // 6. Working badge: green circle with a coffee cup, overlapping the top edge.
+    // Shown only while the player is on a cafe shift (the "currently working" mark).
+    if (isBarista) {
+      const bx = 256;
+      const by = 18;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.4)';
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = '#1f9d55';
+      ctx.beginPath();
+      ctx.arc(bx, by, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.arc(bx, by, 16, 0, Math.PI * 2);
+      ctx.stroke();
+      // Cup glyph
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(bx - 8, by - 3, 15, 10, 3);
+      ctx.fill();
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(bx + 9.5, by + 2, 3.4, -Math.PI / 2, Math.PI / 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(bx - 9, by + 10);
+      ctx.lineTo(bx + 9, by + 10);
+      ctx.stroke();
+    }
 
     tex.needsUpdate = true;
   };

@@ -148,6 +148,10 @@ export const CAFE_INTERIOR_BOUNDS = {
   rotaBoardZ: -3.80,
   atmMachineX: -5.10,
   atmMachineZ: -3.55,
+  prepCoffeeX: -2.20,
+  prepCoffeeZ: -2.95,
+  prepFoodX: 1.15,
+  prepFoodZ: -2.95,
 } as const;
 
 /**
@@ -224,6 +228,7 @@ export const CAFE_INTERIOR_SEAT_SPOTS: ReadonlyArray<CafeInteriorSeatSpot> = [
 ];
 
 export const CAFE_SHIFT_MAX_ORDERS = 3;
+export const CAFE_SHIFT_DURATION_SEC = 180;
 export const CAFE_SHIFT_COMPLETION_BONUS_XP = 30;
 export const CAFE_SERVE_XP_BONUS = 15;
 export const CAFE_CYON_XP_MULTIPLIER = 2.5;
@@ -304,6 +309,8 @@ export function applyPlayerXpGain(currentTotalXp: number, gainXp: number): XpGai
 export interface CafeActiveCustomerOrder {
   orderId: string;
   customerName: string;
+  customerUid: string | null;
+  source: 'ai' | 'player';
   item: CafeMenuItemSpec;
   orderNumber: number;
   maxOrdersInShift: number;
@@ -314,6 +321,8 @@ export interface CafeWorkShiftState {
   ordersCompletedInShift: number;
   maxOrdersInShift: number;
   activeOrder: CafeActiveCustomerOrder | null;
+  preparedItemId: CafeMenuItemSpec['id'] | null;
+  queuedOrders: CafeActiveCustomerOrder[];
   totalOrdersServedEver: number;
 }
 
@@ -334,6 +343,8 @@ export function createInitialCafeWorkShiftState(totalOrdersServedEver = 0): Cafe
     ordersCompletedInShift: 0,
     maxOrdersInShift: CAFE_SHIFT_MAX_ORDERS,
     activeOrder: null,
+    preparedItemId: null,
+    queuedOrders: [],
     totalOrdersServedEver,
   };
 }
@@ -349,6 +360,8 @@ export function pickNextAiCafeOrder(
   return {
     orderId: `order-${orderNumber}-${safeSeed}`,
     customerName,
+    customerUid: null,
+    source: 'ai',
     item,
     orderNumber,
     maxOrdersInShift,
@@ -359,12 +372,60 @@ export function startCafeWorkShift(
   prev: CafeWorkShiftState,
   seed = Date.now(),
 ): CafeWorkShiftState {
+  const queued = prev.queuedOrders ?? [];
+  const first = queued.length > 0 ? queued[0] : pickNextAiCafeOrder(1, seed, CAFE_SHIFT_MAX_ORDERS);
   return {
     isWorking: true,
     ordersCompletedInShift: 0,
     maxOrdersInShift: CAFE_SHIFT_MAX_ORDERS,
-    activeOrder: pickNextAiCafeOrder(1, seed, CAFE_SHIFT_MAX_ORDERS),
+    activeOrder: first,
+    preparedItemId: null,
+    queuedOrders: queued.length > 0 ? queued.slice(1) : [],
     totalOrdersServedEver: prev.totalOrdersServedEver,
+  };
+}
+
+/** A real player ordered from this barista: the order joins the shift (active if free, else queued). */
+export function enqueuePlayerCafeOrder(
+  prev: CafeWorkShiftState,
+  input: { customerName: string; customerUid: string; itemId: CafeMenuItemSpec['id']; seed?: number },
+): CafeWorkShiftState {
+  const item = CAFE_MENU_ITEMS.find((i) => i.id === input.itemId);
+  if (!item) return prev;
+  const seed = Math.abs(Math.floor(input.seed ?? Date.now()));
+  const order: CafeActiveCustomerOrder = {
+    orderId: `player-${input.customerUid}-${seed}`,
+    customerName: input.customerName,
+    customerUid: input.customerUid,
+    source: 'player',
+    item,
+    orderNumber: prev.ordersCompletedInShift + 1 + (prev.activeOrder ? 1 : 0) + prev.queuedOrders.length,
+    maxOrdersInShift: prev.maxOrdersInShift,
+  };
+  if (!prev.activeOrder) {
+    return { ...prev, activeOrder: order, preparedItemId: null };
+  }
+  return { ...prev, queuedOrders: [...prev.queuedOrders, order] };
+}
+
+/** The barista prepared an item at a category station; only the active order's item counts. */
+export function prepareActiveCafeOrder(
+  prev: CafeWorkShiftState,
+  itemId: CafeMenuItemSpec['id'],
+): CafeWorkShiftState {
+  if (!prev.isWorking || !prev.activeOrder) return prev;
+  if (prev.activeOrder.item.id !== itemId) return prev;
+  return { ...prev, preparedItemId: itemId };
+}
+
+/** Shift timer ran out: the shift ends, served XP stays, no completion bonus. */
+export function expireCafeWorkShift(prev: CafeWorkShiftState): CafeWorkShiftState {
+  if (!prev.isWorking) return prev;
+  return {
+    ...prev,
+    isWorking: false,
+    activeOrder: null,
+    preparedItemId: null,
   };
 }
 
@@ -381,7 +442,7 @@ export function serveActiveCafeOrder(
   prev: CafeWorkShiftState,
   seed = Date.now(),
 ): ServeCafeOrderResult {
-  if (!prev.isWorking || !prev.activeOrder) {
+  if (!prev.isWorking || !prev.activeOrder || prev.preparedItemId !== prev.activeOrder.item.id) {
     return {
       served: false,
       servedItem: null,
@@ -404,13 +465,20 @@ export function serveActiveCafeOrder(
         ordersCompletedInShift: completedCount,
         maxOrdersInShift: prev.maxOrdersInShift,
         activeOrder: null,
+        preparedItemId: null,
+        queuedOrders: prev.queuedOrders,
         totalOrdersServedEver: prev.totalOrdersServedEver + 1,
       }
     : {
         isWorking: true,
         ordersCompletedInShift: completedCount,
         maxOrdersInShift: prev.maxOrdersInShift,
-        activeOrder: pickNextAiCafeOrder(completedCount + 1, seed + 17, prev.maxOrdersInShift),
+        activeOrder:
+          prev.queuedOrders.length > 0
+            ? prev.queuedOrders[0]
+            : pickNextAiCafeOrder(completedCount + 1, seed + 17, prev.maxOrdersInShift),
+        preparedItemId: null,
+        queuedOrders: prev.queuedOrders.length > 0 ? prev.queuedOrders.slice(1) : [],
         totalOrdersServedEver: prev.totalOrdersServedEver + 1,
       };
 
@@ -507,12 +575,15 @@ export type CafeStationInteractionKind =
   | 'serve_customer'
   | 'order_counter'
   | 'rota_board'
-  | 'atm_machine';
+  | 'atm_machine'
+  | 'prep_coffee'
+  | 'prep_food';
 
 export function detectNearestCafeStation(
   px: number,
   pz: number,
   isWorking: boolean,
+  opts?: { needsPrep: boolean; orderCategory: 'drink' | 'pastry' | null },
 ): { kind: CafeStationInteractionKind | null; dist: number } {
   const candidates: Array<{ kind: CafeStationInteractionKind; x: number; z: number; radius: number }> = [
     {
@@ -533,19 +604,38 @@ export function detectNearestCafeStation(
       z: CAFE_INTERIOR_BOUNDS.atmMachineZ,
       radius: 2.1,
     },
-    isWorking
-      ? {
-          kind: 'serve_customer',
-          x: CAFE_INTERIOR_BOUNDS.baristaCounterStandX,
-          z: CAFE_INTERIOR_BOUNDS.baristaCounterStandZ,
-          radius: 2.6,
-        }
-      : {
-          kind: 'order_counter',
-          x: CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
-          z: CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
-          radius: 2.4,
-        },
+    ...(isWorking
+      ? opts?.needsPrep
+        ? [
+            {
+              kind: (opts.orderCategory === 'drink' ? 'prep_coffee' : 'prep_food') as CafeStationInteractionKind,
+              x:
+                opts.orderCategory === 'drink'
+                  ? CAFE_INTERIOR_BOUNDS.prepCoffeeX
+                  : CAFE_INTERIOR_BOUNDS.prepFoodX,
+              z:
+                opts.orderCategory === 'drink'
+                  ? CAFE_INTERIOR_BOUNDS.prepCoffeeZ
+                  : CAFE_INTERIOR_BOUNDS.prepFoodZ,
+              radius: 1.9,
+            },
+          ]
+        : [
+            {
+              kind: 'serve_customer' as CafeStationInteractionKind,
+              x: CAFE_INTERIOR_BOUNDS.baristaCounterStandX,
+              z: CAFE_INTERIOR_BOUNDS.baristaCounterStandZ,
+              radius: 2.6,
+            },
+          ]
+      : [
+          {
+            kind: 'order_counter' as CafeStationInteractionKind,
+            x: CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
+            z: CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
+            radius: 2.4,
+          },
+        ]),
   ];
 
   let bestKind: CafeStationInteractionKind | null = null;

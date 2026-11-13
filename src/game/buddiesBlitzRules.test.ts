@@ -5770,6 +5770,9 @@ test('World multiplayer session ID isolates separate tabs/devices while persisti
       isReeling: false,
       rodBend: 0,
       hasClaimedBase: false,
+      isCafeWorker: false,
+      cafePreparing: false,
+      level: 1,
       chatBubbleText: 'Hello!',
     });
     ctrl.unsubscribe();
