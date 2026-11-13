@@ -521,6 +521,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     promptOverlay.style.overflow = 'hidden';
     container.appendChild(promptOverlay);
 
+    // Every world prompt button registers here. The floating billboards are
+    // force-hidden by CSS (except the bottom sit/sleep bars); ONE fixed hint
+    // pill at bottom-center mirrors whichever prompt would be visible.
+    const promptButtonRegistry: HTMLButtonElement[] = [];
+    const promptHideStyleEl = document.createElement('style');
+    promptHideStyleEl.textContent =
+      '.bb-world-prompt:not([data-bottom-sit-action-btn]):not([data-bottom-sleep-action-btn]) { display: none !important; }';
+    promptOverlay.appendChild(promptHideStyleEl);
+
     const createPromptButton = (htmlContent: string, title: string, actionDetail?: string) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -542,6 +551,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       btn.style.willChange = 'transform';
       btn.style.transition = 'none';
       btn.innerHTML = htmlContent;
+      btn.classList.add('bb-world-prompt');
+      promptButtonRegistry.push(btn);
       if (actionDetail) {
         btn.onpointerdown = (e) => {
           e.stopPropagation();
@@ -555,6 +566,65 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       promptOverlay.appendChild(btn);
       return btn;
+    };
+
+    // ONE fixed interaction hint (bottom-center) replacing every floating
+    // world billboard: it mirrors the prompt that would be on screen.
+    const fixedPromptBtn = document.createElement('button');
+    fixedPromptBtn.type = 'button';
+    fixedPromptBtn.tabIndex = -1;
+    fixedPromptBtn.setAttribute('data-fixed-interaction-prompt', 'true');
+    fixedPromptBtn.style.cssText =
+      'position:absolute; left:50%; bottom:88px; transform:translateX(-50%); display:none; align-items:center; gap:8px; padding:8px 16px 8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.35); background:rgba(20,22,29,0.88); color:#fff; font-family:Barlow,sans-serif; font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; box-shadow:0 10px 26px rgba(5,8,14,0.45); backdrop-filter:blur(8px); cursor:pointer; pointer-events:auto; user-select:none; white-space:nowrap; z-index:30; margin:0;';
+    const fixedPromptKeyEl = document.createElement('span');
+    fixedPromptKeyEl.style.cssText =
+      'display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 5px; border-radius:6px; background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.45); font-size:11px; font-weight:900;';
+    fixedPromptKeyEl.textContent = 'E';
+    const fixedPromptLabelEl = document.createElement('span');
+    fixedPromptBtn.appendChild(fixedPromptKeyEl);
+    fixedPromptBtn.appendChild(fixedPromptLabelEl);
+    let fixedPromptSource: HTMLButtonElement | null = null;
+    fixedPromptBtn.onpointerdown = (e) => {
+      e.stopPropagation();
+    };
+    fixedPromptBtn.onclick = (e) => {
+      e.stopPropagation();
+      resetAllPlayerMovementInputs();
+      fixedPromptSource?.click();
+    };
+    promptOverlay.appendChild(fixedPromptBtn);
+
+    const syncFixedInteractionPrompt = () => {
+      let best: HTMLButtonElement | null = null;
+      let bestLabel = '';
+      let bestKey = 'E';
+      for (const btn of promptButtonRegistry) {
+        if (btn.hasAttribute('data-bottom-sit-action-btn') || btn.hasAttribute('data-bottom-sleep-action-btn')) continue;
+        if (btn.style.display === 'none' || btn.style.display === '') continue;
+        const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+        let label = text.length > 2 ? text : btn.title || text;
+        if (!label) continue;
+        const keyMatch = label.match(/\[(B \/ E|E|F)\]\s*$/i);
+        const key = keyMatch ? keyMatch[1].toUpperCase().replace(' / ', '/') : 'E';
+        label = label.replace(/\s*\[(B \/ E|E|F)\]\s*$/i, '').trim();
+        if (!label) continue;
+        // While working a cafe shift, PREPARE/SERVE hints live in the shift card.
+        if (cafeWorkShiftActive && (label.startsWith('PREPARE') || label.startsWith('SERVE'))) continue;
+        best = btn;
+        bestLabel = label;
+        bestKey = key;
+      }
+      if (!best) {
+        if (fixedPromptBtn.style.display !== 'none') fixedPromptBtn.style.display = 'none';
+        fixedPromptSource = null;
+        return;
+      }
+      if (fixedPromptSource !== best) {
+        fixedPromptSource = best;
+        fixedPromptLabelEl.textContent = bestLabel;
+        fixedPromptKeyEl.textContent = bestKey;
+      }
+      if (fixedPromptBtn.style.display !== 'inline-flex') fixedPromptBtn.style.display = 'inline-flex';
     };
 
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
@@ -24922,6 +24992,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isPadDepositPromptActive = false;
         padDepositPromptBtn.style.display = 'none';
       }
+      syncFixedInteractionPrompt();
     };
 
     const buildHudSnapshot = (outcome: 'victory' | 'defeat' | null): HudSnapshot => {
