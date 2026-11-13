@@ -15775,6 +15775,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let rafId = 0;
     let prevTime = performance.now();
     let frameTickCount = 0;
+    // Adaptive pixel ratio (low-end FPS rescue): if the frame rate stays low, step the
+    // internal render resolution down (cap x [1, 0.85, 0.7, 0.55], floor 0.8); step back
+    // up only after 3 consecutive healthy ~2s windows. Content and layout are unchanged.
+    const ADAPTIVE_PR_STEPS = [1, 0.85, 0.7, 0.55];
+    const adaptivePrCap = isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+    let adaptivePrIndex = 0;
+    let adaptivePrAccum = 0;
+    let adaptivePrFrames = 0;
+    let adaptivePrGoodWindows = 0;
+    const applyAdaptivePixelRatio = () => {
+      const pr = Math.max(0.8, adaptivePrCap * ADAPTIVE_PR_STEPS[adaptivePrIndex]);
+      renderer.setPixelRatio(pr);
+      renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    };
     const reusableGrassTramplers: { x: number; z: number; radius: number; weight: number }[] = [];
     const reusableGrassExclusions: {
       x: number;
@@ -15874,6 +15888,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const rawDt = (now - prevTime) / 1000;
       prevTime = now;
       const dt = Math.min(rawDt, 0.05);
+      if (!isSoftwareGl && rawDt > 0) {
+        adaptivePrAccum += rawDt;
+        adaptivePrFrames++;
+        if (adaptivePrAccum >= 2) {
+          const avgFps = adaptivePrFrames / adaptivePrAccum;
+          adaptivePrAccum = 0;
+          adaptivePrFrames = 0;
+          if (avgFps < 28 && adaptivePrIndex < ADAPTIVE_PR_STEPS.length - 1) {
+            adaptivePrIndex++;
+            adaptivePrGoodWindows = 0;
+            applyAdaptivePixelRatio();
+          } else if (avgFps > 57 && adaptivePrIndex > 0) {
+            adaptivePrGoodWindows++;
+            if (adaptivePrGoodWindows >= 3) {
+              adaptivePrIndex--;
+              adaptivePrGoodWindows = 0;
+              applyAdaptivePixelRatio();
+            }
+          } else {
+            adaptivePrGoodWindows = 0;
+          }
+        }
+      }
       const timeSec = now * 0.001;
 
       const state = gameStateRef.current;
@@ -20622,7 +20659,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       const isInHouseScene =
-        npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
+        npcCameraMode === 'house_interior' ||
+        npcCameraMode === 'house_visit' ||
+        npcCameraMode === 'cafe_interior';
       if (!buildingViewMode && !skyshieldViewMode && !planeViewMode) {
         const showOutdoorScene = !isInHouseScene;
         curvedPlanetEnv.groundMesh.visible = showOutdoorScene;
