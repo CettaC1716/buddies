@@ -3236,40 +3236,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const cafeInterior = buildBotanicalGlasshouseCafeInterior();
     scene.add(cafeInterior.root);
 
-    // Cafe apron worn by whoever holds the barista shift (local + remote rigs).
-    const buildCafeApronGroup = (): THREE.Group => {
-      const g = new THREE.Group();
-      const cloth = new THREE.MeshStandardMaterial({ color: '#f3ead9', roughness: 0.85 });
-      const strapMat = new THREE.MeshStandardMaterial({ color: '#1f4d3a', roughness: 0.7 });
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.02, 1.28, 0.05), cloth);
-      panel.position.set(0, 2.02, 0.3);
-      panel.rotation.x = -0.05;
-      g.add(panel);
-      const bib = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.05), cloth);
-      bib.position.set(0, 2.86, 0.285);
-      bib.rotation.x = -0.05;
-      g.add(bib);
-      const strap = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.09, 0.055), strapMat);
-      strap.position.set(0, 2.42, 0.3);
-      g.add(strap);
-      g.traverse((o) => {
-        o.raycast = () => {};
-        if (o instanceof THREE.Mesh) o.castShadow = false;
-      });
-      g.visible = false;
-      return g;
-    };
-    const cafeApronByBodyGroup = new Map<THREE.Group, THREE.Group>();
-    const setRigCafeApron = (bodyGroup: THREE.Group, visible: boolean) => {
-      let apron = cafeApronByBodyGroup.get(bodyGroup);
-      if (!apron) {
-        apron = buildCafeApronGroup();
-        cafeApronByBodyGroup.set(bodyGroup, apron);
-        bodyGroup.add(apron);
-      }
-      apron.visible = visible;
-    };
-
     // AI City Citizen Customer NPC inside the Glasshouse Cafe (stands in front of counter during Work Shift)
     const cafeCustomerNpcRoot = new THREE.Group();
     cafeCustomerNpcRoot.position.set(
@@ -5923,9 +5889,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
           role: cafeWorkShiftActive ? 'barista' : null,
         });
-      }
-      if (playerUnit?.rig?.bodyGroupRef) {
-        setRigCafeApron(playerUnit.rig.bodyGroupRef, cafeWorkShiftActive);
       }
       if (typeof detail.isSampleHouse === 'boolean') {
         mpIsSampleHouse = detail.isSampleHouse;
@@ -21828,7 +21791,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.nearAccountId ? 'player_veteran' : 'player_rookie',
               { level: peer.level, role: peer.isCafeWorker ? 'barista' : null },
             );
-            setRigCafeApron(av.bodyGroup, peer.isCafeWorker);
           }
           const distToPeer = localZoneKey.startsWith('house:')
             ? Math.hypot(localActorX - av.renderX, localActorZ - av.renderZ)
