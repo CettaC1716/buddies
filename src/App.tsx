@@ -6795,6 +6795,25 @@ export default function App() {
             }, 600);
           }, 700);
         }}
+        onEnterOwnHouse={(requestedStyle) => {
+          soundEngine.playUiClick();
+          const targetStyle = requestedStyle ?? houseArchitectureStyle;
+          setHouseArchitectureStyle(targetStyle);
+          setActiveSpecialModal('none');
+          setHanaPitchOrigin(null);
+          setIsKioskModalOpen(false);
+          setIsSocialChatModalOpen(false);
+          setHouseEntryScanState('scanning');
+          window.setTimeout(() => {
+            soundEngine.playPickup();
+            setHouseEntryScanState('verified');
+            window.setTimeout(() => {
+              setHouseEntryScanState('idle');
+              setIsSampleHouseView(false);
+              setIsInsidePrivateHouse(true);
+            }, 600);
+          }, 700);
+        }}
         onOpenTeleportKioskFromPitch={
           hanaPitchOrigin === 'kiosk'
             ? () => {

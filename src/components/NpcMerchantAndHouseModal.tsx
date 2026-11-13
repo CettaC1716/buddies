@@ -155,6 +155,7 @@ interface NpcMerchantAndHouseModalProps {
   onFinishHanaTutorialAndGuideKiosk?: () => void;
   hanaPitchOrigin?: 'kiosk' | 'browse' | null;
   onViewModelHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
+  onEnterOwnHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
   houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
   onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
   onOpenTeleportKioskFromPitch?: () => void;
@@ -367,6 +368,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onFinishHanaTutorialAndGuideKiosk,
   hanaPitchOrigin = null,
   onViewModelHouse,
+  onEnterOwnHouse,
   houseArchitectureStyle = 'plaza_manor',
   onSelectHouseArchitectureStyle,
   onOpenTeleportKioskFromPitch,
@@ -2929,7 +2931,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     soundEngine.playUiClick();
                     onSelectHouseArchitectureStyle?.(style);
                     if (isHouseOwned) {
-                      triggerNpcSpeech('You already own your House! Open Transit Kiosk → MY HOUSE.');
+                      triggerNpcSpeech('You already own your House! Tap GO TO YOUR HOUSE to walk in.');
                       return;
                     }
                     setCatalogActionFeedback(null);
@@ -2937,7 +2939,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     try {
                       const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
                       if (ok) {
-                        const msg = `House Deed minted! Open Transit Kiosk → MY HOUSE.`;
+                        const msg = `House Deed minted! Tap GO TO YOUR HOUSE to walk in.`;
                         setCatalogActionFeedback({ ok: true, text: msg });
                         triggerNpcSpeech(msg);
                       } else {
@@ -3078,7 +3080,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   </div>
 
                                   <div className="grid grid-cols-2 gap-2">
-                                    {onViewModelHouse && (
+                                    {isHouseOwned && onEnterOwnHouse ? (
+                                      <button
+                                        type="button"
+                                        data-catalog-go-your-house-btn="true"
+                                        onClick={() => {
+                                          soundEngine.playUiClick();
+                                          onEnterOwnHouse(card.id);
+                                        }}
+                                        className="py-2 px-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[2px_2px_0_#0d0f12] text-[10px] font-black uppercase cursor-pointer inline-flex items-center justify-center gap-1.5"
+                                      >
+                                        <Home className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                        <span className="truncate">GO TO YOUR HOUSE</span>
+                                      </button>
+                                    ) : onViewModelHouse ? (
                                       <button
                                         type="button"
                                         data-catalog-view-model-house-btn={
@@ -3098,7 +3113,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                         <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                         <span className="truncate">{card.previewLabel}</span>
                                       </button>
-                                    )}
+                                    ) : null}
                                     <button
                                       type="button"
                                       data-buy-house-btn={isSelected ? 'true' : undefined}
