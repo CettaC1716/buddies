@@ -77,6 +77,7 @@ import {
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
+  evaluateLulToCyonExchangeQuote,
   investInMerchantShop,
   stepFastForwardEconomyTick,
   MerchantLocationId,
@@ -96,6 +97,7 @@ import {
   type CafeWorkShiftState,
 } from './game/buddiesCafeRules';
 import {
+  GlasshouseCafeAtmModal,
   GlasshouseCafeOrderModal,
   XpGainCelebrationBanner,
 } from './components/GlasshouseCafeModal';
@@ -575,7 +577,7 @@ export default function App() {
   >('none');
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
-  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order'>('none');
+  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order' | 'atm'>('none');
   const [playerTotalXp, setPlayerTotalXp] = useState<number>(() => {
     try {
       const saved = Number(window.localStorage.getItem('bb_player_total_xp_v1') || '0');
@@ -597,6 +599,7 @@ export default function App() {
   const levelProgress = computeLevelProgress(playerTotalXp);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
+  const cafeExchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
   const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
   const [cyonBalance, setCyonBalance] = useState<number>(0);
   const [respiteBalance, setRespiteBalance] = useState<number>(0);
@@ -1516,6 +1519,9 @@ export default function App() {
     const onOpenCafeOrderModal = () => {
       setActiveCafeModal('order');
     };
+    const onOpenCafeAtmModal = () => {
+      setActiveCafeModal('atm');
+    };
     const onStartCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
     };
@@ -1635,6 +1641,7 @@ export default function App() {
     window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
     window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
     window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
+    window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
     window.addEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
     window.addEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
     window.addEventListener('open-character-profile-modal', onOpenCharacterProfile);
@@ -1655,6 +1662,7 @@ export default function App() {
       window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
       window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
       window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
+      window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
       window.removeEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
       window.removeEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
       window.removeEventListener('open-character-profile-modal', onOpenCharacterProfile);
@@ -1958,6 +1966,44 @@ export default function App() {
     },
     [cyonBalance, dispatchBuddyAction, grantPlayerXp],
   );
+
+  const handleCafeExchangeLulToCyon = useCallback((): { ok: boolean; message: string } => {
+    const res = executeLulToCyonExchange(marketState, hudRef.current.gold, cyonBalance);
+    if (!res.ok) {
+      soundEngine.playHit();
+      return { ok: false, message: res.message };
+    }
+    const lulSpent = Math.max(0, hudRef.current.gold - res.updatedLul);
+    soundEngine.playPickup();
+    dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
+    setCyonBalance(res.updatedCyon);
+    setMarketState(res.updatedState);
+    const actorAccount = hudRef.current.nearWalletId || playerUid;
+    if (actorAccount) {
+      void syncNpcMerchantToSupabase({
+        merchant_id: merchantLocation,
+        cyon_treasury: res.updatedState.treasuryCyon,
+        is_bankrupt: res.updatedState.isShopBroke,
+        last_headline: res.updatedState.lastMarketHeadline,
+      });
+      void logMarketTransactionToSupabase({
+        merchant_id: merchantLocation,
+        actor_near_account: actorAccount,
+        action_type: 'exchange_lul_cyon',
+        currency: 'CYON',
+        amount: res.updatedCyon - cyonBalance,
+        unit_price: lulSpent,
+        reasoning_summary: `Cafe ATM exchange: ${res.updatedState.lastMarketHeadline}`,
+      });
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: actorAccount,
+        lulBalance: res.updatedLul,
+        cyonBalance: res.updatedCyon,
+        respiteBalance,
+      });
+    }
+    return { ok: true, message: res.message };
+  }, [marketState, cyonBalance, merchantLocation, playerUid, respiteBalance, dispatchBuddyAction]);
 
   useEffect(() => {
     const onAppCafeAction = (ev: Event) => {
@@ -9056,6 +9102,16 @@ export default function App() {
         levelProgress={levelProgress}
         onPurchaseItem={handlePurchaseCafeItem}
         onPurchaseItemWithCyon={handlePurchaseCafeItemWithCyon}
+      />
+      <GlasshouseCafeAtmModal
+        isOpen={isInsideGlasshouseCafe && activeCafeModal === 'atm'}
+        onClose={() => setActiveCafeModal('none')}
+        lulBalance={hud.gold}
+        cyonBalance={cyonBalance}
+        lulCostFor10Cyon={cafeExchangeQuote.lulCostFor10Cyon}
+        canExchange={cafeExchangeQuote.canExchange}
+        exchangeReason={cafeExchangeQuote.reasoningTooltip}
+        onExchange={handleCafeExchangeLulToCyon}
       />
       <XpGainCelebrationBanner banner={xpCelebrationBanner} />
     </main>

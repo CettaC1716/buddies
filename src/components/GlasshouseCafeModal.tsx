@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Star, Coins, CheckCircle2, X } from 'lucide-react';
+import { Sparkles, Star, Coins, Banknote, CheckCircle2, X } from 'lucide-react';
 import {
   CAFE_MENU_ITEMS,
   cafeCyonPurchaseXpForItem,
@@ -187,6 +187,116 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
               </>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export interface GlasshouseCafeAtmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  lulBalance: number;
+  cyonBalance: number;
+  lulCostFor10Cyon: number;
+  canExchange: boolean;
+  exchangeReason: string;
+  onExchange: () => { ok: boolean; message: string };
+}
+
+export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
+  isOpen,
+  onClose,
+  lulBalance,
+  cyonBalance,
+  lulCostFor10Cyon,
+  canExchange,
+  exchangeReason,
+  onExchange,
+}) => {
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!isOpen) return null;
+  const affordable = lulBalance >= lulCostFor10Cyon;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="CAFE ATM LUL TO CYON EXCHANGE"
+      data-cafe-atm-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 pointer-events-auto"
+    >
+      <div className="w-full max-w-sm bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
+          <div className="flex items-center gap-2">
+            <Banknote className="w-4 h-4 text-[#facc15]" aria-hidden="true" />
+            <h2 className="text-sm font-black uppercase tracking-wider">CAFE ATM · LUL TO CYON</h2>
+          </div>
+          <button
+            type="button"
+            data-cafe-atm-close-btn="true"
+            onClick={() => {
+              setFeedback(null);
+              onClose();
+            }}
+            aria-label="Close ATM"
+            className="w-7 h-7 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+          >
+            <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="p-2.5 bg-[#1b1f29] border-2 border-black rounded-xl text-center">
+              <div className="text-[9.5px] font-black uppercase text-[#fec83e]">YOUR LUL</div>
+              <div data-atm-lul-balance="true" className="text-xl font-black font-mono-tabular text-[#fec83e] mt-0.5">
+                {lulBalance}
+              </div>
+            </div>
+            <div className="p-2.5 bg-[#1b1f29] border-2 border-black rounded-xl text-center">
+              <div className="text-[9.5px] font-black uppercase text-[#38bdf8]">YOUR CYON</div>
+              <div data-atm-cyon-balance="true" className="text-xl font-black font-mono-tabular text-[#38bdf8] mt-0.5">
+                {cyonBalance}
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center text-[11px] font-bold text-slate-300">
+            Exchange Rate: <span className="text-[#b8ff3c] font-black">{lulCostFor10Cyon} LUL = 10 CYON</span>
+          </div>
+          <p className="text-center text-[10px] font-bold text-slate-500 leading-snug">{exchangeReason}</p>
+
+          {feedback && (
+            <div
+              data-cafe-atm-feedback="true"
+              className={`px-2 py-1.5 border-2 border-black text-[10.5px] font-black text-center ${
+                feedback.ok ? 'bg-[#dcfce7] text-emerald-950' : 'bg-[#fee2e2] text-red-900'
+              }`}
+            >
+              {feedback.text}
+            </div>
+          )}
+
+          <button
+            type="button"
+            disabled={!canExchange || !affordable}
+            data-cafe-atm-exchange-btn="true"
+            onClick={() => {
+              const res = onExchange();
+              setFeedback({ ok: res.ok, text: res.message });
+            }}
+            className="w-full py-2.5 bg-[#b8ff3c] disabled:bg-slate-700 disabled:text-slate-400 hover:bg-[#d9f99d] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer disabled:cursor-not-allowed active:translate-y-0.5"
+          >
+            {!canExchange
+              ? 'EXCHANGE UNAVAILABLE'
+              : !affordable
+                ? `NEED ${lulCostFor10Cyon} LUL`
+                : `EXCHANGE ${lulCostFor10Cyon} LUL FOR 10 CYON`}
+          </button>
+          <p className="text-center text-[10px] font-bold text-slate-500 leading-snug">
+            Same live market rate as the merchant exchange. CYON buys cafe food at 2.5x XP.
+          </p>
         </div>
       </div>
     </div>

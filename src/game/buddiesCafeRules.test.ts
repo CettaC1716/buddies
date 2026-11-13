@@ -121,9 +121,9 @@ test('Food Purchase deducts LUL for base XP, or CYON for 2.5x the work XP', () =
   assert.equal(okCyon.xpGained, 125);
 });
 
-test('Cafe interior station proximity detector identifies Rota, Counter/Serve, and Exit Door cleanly (ATM is decor only)', () => {
+test('Cafe interior station proximity detector identifies Rota, Counter/Serve, ATM (LUL to CYON), and Exit Door cleanly', () => {
   assert.equal(detectNearestCafeStation(0.0, 4.4, false).kind, 'exit_door');
-  assert.equal(detectNearestCafeStation(-5.1, -3.5, false).kind, null);
+  assert.equal(detectNearestCafeStation(-5.1, -3.5, false).kind, 'atm_machine');
   assert.equal(detectNearestCafeStation(3.2, -3.7, false).kind, 'rota_board');
   assert.equal(detectNearestCafeStation(-0.2, -1.2, false).kind, 'order_counter');
   assert.equal(detectNearestCafeStation(-0.2, -3.38, true).kind, 'serve_customer');

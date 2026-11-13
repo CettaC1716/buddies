@@ -12581,6 +12581,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
             return;
           }
+          if (station.kind === 'atm_machine') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
+            return;
+          }
         }
         if (npcCameraMode === 'house_visit' && playerUnit) {
           const distToExitDoor = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
@@ -14213,6 +14218,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
         } else if (st.kind === 'rota_board') {
           window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
+        } else if (st.kind === 'atm_machine') {
+          window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
         }
       } else if (act.startsWith('adjustPlayerLul:')) {
         const delta = Number(act.slice('adjustPlayerLul:'.length));
@@ -24220,6 +24227,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             label = cafeWorkShiftActive ? 'SHIFT ACTIVE' : 'WORK AS WAITER [E]';
             bgHex = '#4ade80';
             fgHex = '#052e16';
+          } else if (station.kind === 'atm_machine') {
+            tx = -5.45;
+            tz = -4.18;
+            ty = CAFE_ORIGIN_Y + 1.94;
+            label = 'ATM · LUL TO CYON [E]';
+            bgHex = '#facc15';
+            fgHex = '#14161d';
           }
           cafeStationPromptBtn.innerHTML = getCafeStationBtnHtml(label, bgHex, fgHex);
           const proj = projectFlatRoomToScreenPixels(tx, ty, tz);

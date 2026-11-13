@@ -506,7 +506,8 @@ export type CafeStationInteractionKind =
   | 'exit_door'
   | 'serve_customer'
   | 'order_counter'
-  | 'rota_board';
+  | 'rota_board'
+  | 'atm_machine';
 
 export function detectNearestCafeStation(
   px: number,
@@ -524,6 +525,12 @@ export function detectNearestCafeStation(
       kind: 'rota_board',
       x: CAFE_INTERIOR_BOUNDS.rotaBoardX,
       z: CAFE_INTERIOR_BOUNDS.rotaBoardZ,
+      radius: 2.1,
+    },
+    {
+      kind: 'atm_machine',
+      x: CAFE_INTERIOR_BOUNDS.atmMachineX,
+      z: CAFE_INTERIOR_BOUNDS.atmMachineZ,
       radius: 2.1,
     },
     isWorking
