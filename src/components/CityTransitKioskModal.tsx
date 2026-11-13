@@ -22,6 +22,8 @@ export interface CityTransitKioskModalProps {
   onEnterMyHouseStudio: () => void;
   onOpenHouseCatalog: () => void;
   onOpenShopAndExchange: () => void;
+  /** Live cafe job status peeked from the shift channel (null = unknown). */
+  cafeJobStatus?: { workerName: string | null; queueCount: number } | null;
   isTutorialTourActive?: boolean;
   onCompleteTutorialTour?: () => void;
 }
@@ -40,10 +42,11 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   onEnterMyHouseStudio,
   onOpenHouseCatalog,
   onOpenShopAndExchange,
+  cafeJobStatus = null,
   isTutorialTourActive = false,
   onCompleteTutorialTour,
 }) => {
-  const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect'>('grid');
+  const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect' | 'jobs'>('grid');
   // Hana's interactive kiosk tour: she explains each menu while a spotlight
   // ring steps across the cards.
   const KIOSK_TOUR_STEPS = [
@@ -167,6 +170,12 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza';
     setSelectedStationId(defaultDistrict);
     setLevelView('browser');
+  };
+
+  const handleOpenJobs = () => {
+    soundEngine.playUiClick();
+    setBrowserSectionTitle('JOBS · WORK & EARN XP');
+    setLevelView('jobs');
   };
 
   const handleOpenWarzoneBrowser = () => {
@@ -566,6 +575,119 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </p>
                 </div>
               </button>
+
+              {/* CARD 5: JOBS */}
+              <button
+                type="button"
+                data-transit-card="jobs"
+                onClick={handleOpenJobs}
+                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('jobs')}`}
+              >
+                <img
+                  src="/docs/hero-4-hana-exchange.jpg"
+                  alt="Jobs"
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
+
+                <div className="relative z-10 p-3.5 flex items-center justify-between">
+                  <span className="px-2.5 py-0.5 bg-[#35C26B] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
+                    WORK &amp; EARN XP
+                  </span>
+                  <span className="px-2 py-0.5 bg-black/80 text-white border-[2px] border-white/80 text-[10px] font-black uppercase">
+                    {cafeJobStatus
+                      ? cafeJobStatus.workerName
+                        ? `ON SHIFT: ${cafeJobStatus.workerName.toUpperCase()}`
+                        : 'APRON FREE'
+                      : '1 JOB OPEN'}
+                  </span>
+                </div>
+
+                <div className="relative z-10 p-4 pt-0">
+                  <div className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]">
+                    JOBS
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-slate-200 line-clamp-2">
+                    Take a barista shift at the Glasshouse Cafe — prepare and serve 3 orders before the timer runs out to earn XP.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+        ) : levelView === 'jobs' ? (
+          /* =================================================================
+             JOBS VIEW — work shifts around the city
+             ================================================================= */
+          <div className="p-4 sm:p-6 bg-[#f1f5f9]">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-black uppercase tracking-wider text-slate-700">
+                AVAILABLE JOBS
+              </div>
+              <div className="px-2.5 py-1 bg-white border-[2.5px] border-black text-[11px] font-black uppercase tracking-wider text-black shadow-[2px_2px_0px_#000]">
+                EARN XP · NO WALLET NEEDED
+              </div>
+            </div>
+
+            <div className="bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] overflow-hidden">
+              <div className="relative h-[150px] sm:h-[170px]">
+                <img
+                  src="/docs/hero-4-hana-exchange.jpg"
+                  alt="Glasshouse Cafe"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+                <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
+                  <div className="text-lg sm:text-xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]">
+                    GLASSHOUSE CAFE — BARISTA
+                  </div>
+                  <span className="px-2 py-0.5 bg-[#35C26B] text-black border-[2px] border-black text-[10px] font-black uppercase shrink-0">
+                    CAFE JOB
+                  </span>
+                </div>
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-xs font-bold text-slate-600 leading-relaxed">
+                  Work the counter at the Botanical Glasshouse Cafe in Central Plaza. Customers and other
+                  players place orders — prepare each one at the coffee machine or food display, then serve
+                  it at the counter. Finish 3 orders within the shift timer for a completion bonus.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`px-2.5 py-1 border-[2px] border-black text-[10.5px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000] ${
+                      cafeJobStatus?.workerName ? 'bg-[#facc15] text-black' : 'bg-[#b8ff3c] text-black'
+                    }`}
+                  >
+                    {cafeJobStatus
+                      ? cafeJobStatus.workerName
+                        ? `ON SHIFT: ${cafeJobStatus.workerName.toUpperCase()}`
+                        : 'OPEN — NO BARISTA ON SHIFT'
+                      : 'CHECKING SHIFT…'}
+                  </span>
+                  {cafeJobStatus && cafeJobStatus.queueCount > 0 ? (
+                    <span className="px-2.5 py-1 bg-white border-[2px] border-black text-[10.5px] font-black uppercase tracking-wider">
+                      {cafeJobStatus.queueCount} WAITING
+                    </span>
+                  ) : null}
+                  <span className="px-2.5 py-1 bg-white border-[2px] border-black text-[10.5px] font-black uppercase tracking-wider">
+                    CENTRAL PLAZA
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  data-jobs-go-cafe-btn="true"
+                  onClick={() => {
+                    soundEngine.playPickup();
+                    onConfirmEnterDestination(getCityTransitDestinationById('central_plaza'));
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-[#14161d] hover:bg-[#232936] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
+                >
+                  GO TO GLASSHOUSE CAFE →
+                </button>
+                <p className="text-[10.5px] font-bold text-slate-400">
+                  You arrive at Central Plaza — enter the Glasshouse Cafe and use the SHIFT BOARD inside to
+                  start working or join the waiting list.
+                </p>
+              </div>
             </div>
           </div>
         ) : levelView === 'warzoneTeamSelect' ? (

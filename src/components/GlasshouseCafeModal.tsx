@@ -611,3 +611,122 @@ export function XpGainCelebrationBanner(props: {
     </div>
   );
 }
+
+export function GlasshouseCafeQueueModal(props: {
+  isOpen: boolean;
+  onClose: () => void;
+  workerName: string | null;
+  queueNames: string[];
+  myRole: 'worker' | 'queue' | 'called' | 'none';
+  myQueuePos: number;
+  onJoin: () => void;
+  onLeave: () => void;
+  onClaim: () => void;
+}) {
+  if (!props.isOpen) return null;
+  return (
+    <CafeModalShell
+      title="SHIFT QUEUE"
+      subtitle="One barista at a time — join the list and wait for your turn."
+      onClose={props.onClose}
+    >
+      <div className="flex flex-col gap-2">
+        <div
+          className="flex items-center justify-between rounded-[16px] border px-4 py-3"
+          style={{ borderColor: CREAM.border, backgroundColor: CREAM.card }}
+        >
+          <span className="text-[11px] font-black tracking-wider" style={{ color: CREAM.muted }}>
+            NOW WORKING
+          </span>
+          <span className="text-sm font-black">
+            {props.workerName ?? '— nobody yet —'}
+          </span>
+        </div>
+        <div className="mt-1 text-[11px] font-black tracking-wider" style={{ color: CREAM.muted }}>
+          WAITING LIST
+        </div>
+        {props.queueNames.length === 0 ? (
+          <div
+            className="rounded-[16px] border px-4 py-3 text-sm font-semibold"
+            style={{ borderColor: CREAM.border, backgroundColor: CREAM.card, color: CREAM.muted }}
+          >
+            Nobody is waiting.
+          </div>
+        ) : (
+          props.queueNames.map((name, i) => {
+            const isMe = props.myQueuePos === i + 1;
+            return (
+              <div
+                key={`${name}-${i}`}
+                className="flex items-center justify-between rounded-[16px] border px-4 py-2.5"
+                style={{
+                  borderColor: isMe ? CREAM.selectedBorder : CREAM.border,
+                  backgroundColor: isMe ? CREAM.selectedBg : CREAM.card,
+                }}
+              >
+                <span className="text-sm font-black">
+                  #{i + 1} {name}
+                  {isMe ? ' (You)' : ''}
+                </span>
+                {i === 0 && !props.workerName ? (
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[9px] font-black tracking-wider text-white"
+                    style={{ backgroundColor: CREAM.accent }}
+                  >
+                    NEXT UP
+                  </span>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+        <div className="mt-3">
+          {props.myRole === 'worker' ? (
+            <div
+              className="rounded-[14px] px-3 py-2.5 text-center text-xs font-bold"
+              style={{ backgroundColor: '#EAF7EE', color: '#1E7A3C' }}
+            >
+              You are on shift right now — serve 3 orders before the timer ends!
+            </div>
+          ) : props.myRole === 'called' ? (
+            <button
+              type="button"
+              className="w-full rounded-full py-3 text-sm font-black text-white"
+              style={{ backgroundColor: '#35C26B' }}
+              onClick={props.onClaim}
+            >
+              IT'S YOUR TURN — START WORKING
+            </button>
+          ) : props.myRole === 'queue' ? (
+            <button
+              type="button"
+              className="w-full rounded-full border-2 py-3 text-sm font-black"
+              style={{ borderColor: CREAM.selectedBorder, color: CREAM.accentDark, backgroundColor: CREAM.selectedBg }}
+              onClick={props.onLeave}
+            >
+              LEAVE THE WAITING LIST
+            </button>
+          ) : !props.workerName && props.queueNames.length === 0 ? (
+            <button
+              type="button"
+              className="w-full rounded-full py-3 text-sm font-black text-white"
+              style={{ backgroundColor: CREAM.accent }}
+              onClick={props.onClaim}
+            >
+              START WORKING
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="w-full rounded-full py-3 text-sm font-black text-white"
+              style={{ backgroundColor: CREAM.accent }}
+              onClick={props.onJoin}
+            >
+              JOIN THE WAITING LIST
+            </button>
+          )}
+        </div>
+      </div>
+    </CafeModalShell>
+  );
+}

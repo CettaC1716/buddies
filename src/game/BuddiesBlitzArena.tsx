@@ -5786,6 +5786,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       myQueuePos: number;
     } = { workerUid: null, workerName: null, queueNames: [], myRole: 'none', myQueuePos: 0 };
     let cafePrepareDoneArmed = false;
+    let playerEmoteClip: string | null = null;
     let cafeVisitCamYaw = 0.0;
     let cafeVisitCamPitch = 0.34;
     let cafeVisitCamDist = 3.65;
@@ -6256,6 +6257,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       cafePrepareDoneArmed = true;
     };
     window.addEventListener('cafe-prepare-start', onCafePrepareStart);
+    const onSetPlayerEmote = (ev: Event) => {
+      const d = (ev as CustomEvent<{ clip?: string | null }>).detail;
+      playerEmoteClip = d?.clip ? String(d.clip) : null;
+    };
+    window.addEventListener('set-player-emote', onSetPlayerEmote);
+    const onPlayerEmotePunch = () => {
+      if (playerUnit && playerUnit.alive) {
+        playerUnit.punchHand = playerUnit.punchHand === 'right' ? 'left' : 'right';
+        playerUnit.punchTimer = 0.24;
+      }
+    };
+    window.addEventListener('player-emote-punch', onPlayerEmotePunch);
 
     // =========================================================================
     // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
@@ -19191,6 +19204,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
               }
             }
+            if (b.isPlayer && playerEmoteClip && (isMoving || unitIsSitting || unitIsSleeping)) {
+              playerEmoteClip = null;
+              window.dispatchEvent(new CustomEvent('player-emote-cleared'));
+            }
             if (b.isPlayer || b.root.visible) {
               updateCharacterWeaponStance(
                 b.rig,
@@ -19215,6 +19232,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsDriving,
                 unitIsSleeping,
                 b.isPlayer ? cafePreparingUntilMs > performance.now() : false,
+                b.isPlayer ? playerEmoteClip : null,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -21656,6 +21674,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isCafeWorker: cafeWorkShiftActive,
                 cafePreparing: cafePreparingUntilMs > performance.now(),
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
+                emoteClip: playerEmoteClip ?? '',
                 chatBubbleText: curChat,
               },
               zoneOrChatChanged,
@@ -21886,6 +21905,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.isDriving,
               false,
               peer.cafePreparing,
+              peer.emoteClip || null,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -24375,9 +24395,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 : cafePresenceState.myRole === 'called'
                   ? 'YOUR TURN — TAKE THE APRON [E]'
                   : cafePresenceState.myRole === 'queue'
-                    ? `WAITING #${cafePresenceState.myQueuePos} — LEAVE LIST [E]`
+                    ? `WAITING #${cafePresenceState.myQueuePos} — VIEW QUEUE [E]`
                     : cafePresenceState.workerUid
-                      ? 'JOIN WAITING LIST [E]'
+                      ? 'VIEW QUEUE [E]'
                       : 'WORK AS WAITER [E]';
             bgHex = '#4ade80';
             fgHex = '#052e16';
@@ -25458,6 +25478,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
       window.removeEventListener('cafe-shift-presence', onCafeShiftPresence);
       window.removeEventListener('cafe-prepare-start', onCafePrepareStart);
+      window.removeEventListener('set-player-emote', onSetPlayerEmote);
+      window.removeEventListener('player-emote-punch', onPlayerEmotePunch);
       window.removeEventListener('clear-character-selection', onWindowClearCharacterSelection);
       window.removeEventListener('close-teleport-kiosk-ui', onCloseTeleportKioskUi);
       window.removeEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);

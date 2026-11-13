@@ -5773,6 +5773,7 @@ test('World multiplayer session ID isolates separate tabs/devices while persisti
       isCafeWorker: false,
       cafePreparing: false,
       level: 1,
+      emoteClip: '',
       chatBubbleText: 'Hello!',
     });
     ctrl.unsubscribe();

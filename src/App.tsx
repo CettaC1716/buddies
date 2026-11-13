@@ -109,6 +109,7 @@ import {
   GlasshouseCafeOrderModal,
   GlasshouseCafeOrdersModal,
   GlasshouseCafePrepareModal,
+  GlasshouseCafeQueueModal,
   XpGainCelebrationBanner,
   type CafeWorkerOrderCard,
 } from './components/GlasshouseCafeModal';
@@ -589,7 +590,7 @@ export default function App() {
   >('none');
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
-  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order' | 'atm' | 'prepare' | 'orders'>('none');
+  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order' | 'atm' | 'prepare' | 'orders' | 'queue'>('none');
   const [playerTotalXp, setPlayerTotalXp] = useState<number>(() => {
     try {
       const saved = Number(window.localStorage.getItem('bb_player_total_xp_v1') || '0');
@@ -627,6 +628,9 @@ export default function App() {
   const playerDisplayNameRef = useRef(playerDisplayName);
   const [cafeShiftEndsAt, setCafeShiftEndsAt] = useState<number | null>(null);
   const [cafeShiftSecondsLeft, setCafeShiftSecondsLeft] = useState(0);
+  const [cafeCalledSecondsLeft, setCafeCalledSecondsLeft] = useState(0);
+  const cafeCalledDeadlineRef = useRef<number | null>(null);
+  const [cafeJobPeek, setCafeJobPeek] = useState<{ workerName: string | null; queueCount: number } | null>(null);
   const [cafeOrderBanner, setCafeOrderBanner] = useState<{
     key: string;
     customerName: string;
@@ -2249,38 +2253,97 @@ export default function App() {
     };
   }, [isInsideGlasshouseCafe, playerUid, retrackCafePresence, dispatchBuddyAction]);
 
-  // Rota board interaction: claim the apron, join the list, or leave the list.
+  const claimCafeShift = useCallback(() => {
+    const mine = cafeMyPresenceRef.current;
+    mine.claimSince = Date.now();
+    mine.wantSince = null;
+    mine.calledAt = null;
+    retrackCafePresence();
+    handleStartCafeWorkShift();
+    setCafeShiftEndsAt(Date.now() + CAFE_SHIFT_DURATION_SEC * 1000);
+    setActiveCafeModal('none');
+  }, [retrackCafePresence, handleStartCafeWorkShift]);
+
+  const joinCafeQueue = useCallback(() => {
+    cafeMyPresenceRef.current.wantSince = Date.now();
+    retrackCafePresence();
+    dispatchBuddyAction('socialTalk:You joined the waiting list!');
+  }, [retrackCafePresence, dispatchBuddyAction]);
+
+  const leaveCafeQueue = useCallback(() => {
+    cafeMyPresenceRef.current.wantSince = null;
+    cafeMyPresenceRef.current.calledAt = null;
+    retrackCafePresence();
+    dispatchBuddyAction('socialTalk:You left the waiting list.');
+    setActiveCafeModal('none');
+  }, [retrackCafePresence, dispatchBuddyAction]);
+
+  // Rota board interaction: claim when the apron is free (or it is my turn),
+  // otherwise open the queue panel (Lihat Giliran).
   useEffect(() => {
     const onRotaInteract = () => {
       const pres = cafePresenceRef.current;
-      const mine = cafeMyPresenceRef.current;
       if (pres.myRole === 'worker') {
         dispatchBuddyAction('socialTalk:You are on shift — serve 3 orders before the timer ends!');
         return;
       }
       if (!pres.workerUid && (pres.queue.length === 0 || pres.myRole === 'called' || pres.queue[0]?.uid === playerUid)) {
-        mine.claimSince = Date.now();
-        mine.wantSince = null;
-        mine.calledAt = null;
-        retrackCafePresence();
-        handleStartCafeWorkShift();
-        setCafeShiftEndsAt(Date.now() + CAFE_SHIFT_DURATION_SEC * 1000);
+        claimCafeShift();
         return;
       }
-      if (pres.myRole === 'queue' || pres.myRole === 'called') {
-        mine.wantSince = null;
-        mine.calledAt = null;
-        retrackCafePresence();
-        dispatchBuddyAction('socialTalk:You left the waiting list.');
-        return;
-      }
-      mine.wantSince = Date.now();
-      retrackCafePresence();
-      dispatchBuddyAction('socialTalk:You joined the waiting list!');
+      setActiveCafeModal('queue');
     };
     window.addEventListener('cafe-rota-interact', onRotaInteract);
     return () => window.removeEventListener('cafe-rota-interact', onRotaInteract);
-  }, [playerUid, retrackCafePresence, handleStartCafeWorkShift, dispatchBuddyAction]);
+  }, [playerUid, claimCafeShift, dispatchBuddyAction]);
+
+  // Called banner countdown: my turn shows top-left with a timer; if I do not
+  // reach the board in time, presence derivation drops me for the next player.
+  useEffect(() => {
+    if (cafePresence.myRole !== 'called') {
+      cafeCalledDeadlineRef.current = null;
+      setCafeCalledSecondsLeft(0);
+      return;
+    }
+    if (!cafeCalledDeadlineRef.current) {
+      cafeCalledDeadlineRef.current = Date.now() + 20000;
+    }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil(((cafeCalledDeadlineRef.current ?? 0) - Date.now()) / 1000));
+      setCafeCalledSecondsLeft(left);
+    };
+    tick();
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+  }, [cafePresence.myRole]);
+
+  // Jobs peek for the transit kiosk: read-only look at the cafe shift channel
+  // (no tracking, so the viewer never appears in the queue).
+  useEffect(() => {
+    if (activeTeleportKioskModal === 'none' || !supabase) {
+      setCafeJobPeek(null);
+      return;
+    }
+    const sb = supabase;
+    const channel = sb.channel('bb_cafe_shift_v1', { config: { presence: { key: `peek-${playerUid}` } } });
+    const derive = () => {
+      const state = channel.presenceState() as Record<
+        string,
+        { name?: string; wantSince?: number | null; claimSince?: number | null; hb?: number }[]
+      >;
+      const entries = Object.values(state).flat().filter((e) => e && (e.claimSince || e.wantSince));
+      const now = Date.now();
+      const alive = entries.filter((e) => now - (e.hb ?? 0) < 10000);
+      const worker = alive.filter((e) => e.claimSince).sort((a, b) => (a.claimSince ?? 0) - (b.claimSince ?? 0))[0];
+      const queueCount = alive.filter((e) => e.wantSince && (!worker || e !== worker)).length;
+      setCafeJobPeek({ workerName: worker?.name ?? null, queueCount });
+    };
+    channel.on('presence', { event: 'sync' }, derive);
+    channel.subscribe();
+    return () => {
+      void sb.removeChannel(channel);
+    };
+  }, [activeTeleportKioskModal, playerUid]);
 
   // Prepare flow: station prompt opens the prepare modal; the Arena plays the
   // bartending clip and reports back when the preparation finishes.
@@ -7647,6 +7710,7 @@ export default function App() {
         hasOwnedHouse={Boolean(hasHouseOwnership || hud.nearHasGamepassNft)}
         blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
+        cafeJobStatus={cafeJobPeek}
         isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
         onCompleteTutorialTour={() => {
           setTutorialStage('none');
@@ -9524,6 +9588,17 @@ export default function App() {
         })()}
         onServeActive={handleServeActiveCafeOrder}
       />
+      <GlasshouseCafeQueueModal
+        isOpen={isInsideGlasshouseCafe && activeCafeModal === 'queue'}
+        onClose={() => setActiveCafeModal('none')}
+        workerName={cafePresence.workerName}
+        queueNames={cafePresence.queue.map((q) => q.name)}
+        myRole={cafePresence.myRole}
+        myQueuePos={cafePresence.myQueuePos}
+        onJoin={joinCafeQueue}
+        onLeave={leaveCafeQueue}
+        onClaim={claimCafeShift}
+      />
       <GlasshouseCafeAtmModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'atm'}
         onClose={() => setActiveCafeModal('none')}
@@ -9552,6 +9627,17 @@ export default function App() {
             count={(cafeShiftState.activeOrder ? 1 : 0) + cafeShiftState.queuedOrders.length}
             onClick={() => setActiveCafeModal('orders')}
           />
+        </div>
+      ) : null}
+      {isInsideGlasshouseCafe && cafePresence.myRole === 'called' ? (
+        <div className="fixed left-3 top-[64px] z-[88] flex animate-pulse items-center gap-2.5 rounded-2xl bg-[#14532d]/92 py-2.5 pl-3 pr-4 text-white shadow-[0_12px_30px_rgba(10,40,20,0.5)] ring-1 ring-white/30 backdrop-blur-md">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#35C26B] text-base" aria-hidden="true">
+            ☕
+          </span>
+          <span className="text-[13px] font-bold leading-tight">
+            <span className="block text-[15px] font-black tracking-wide">YOUR TURN TO WORK!</span>
+            Go to the SHIFT BOARD — <span className="font-black text-[#b8ff3c]">{cafeCalledSecondsLeft}s</span> left
+          </span>
         </div>
       ) : null}
       {cafeOrderBanner && isInsideGlasshouseCafe && cafeShiftState.isWorking ? (
