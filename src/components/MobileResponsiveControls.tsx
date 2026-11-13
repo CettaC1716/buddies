@@ -430,29 +430,12 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                 soundEngine.playUiClick();
                 setActionsOpen((v) => !v);
               }}
-              className={
-                showMobileJoystick
-                  ? `${
-                      isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
-                    } rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`
-                  : '-skew-x-12 px-2.5 h-8 bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-95 border border-white/40 ring-1 ring-white/20 text-white flex items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]'
-              }
+              className={`${isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'} rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`}
             >
-              {showMobileJoystick ? (
-                <>
-                  <Sparkles className="w-4 h-4" aria-hidden="true" />
-                  <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
-                    Acts
-                  </span>
-                </>
-              ) : (
-                <span className="skew-x-12 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#b8ff3c]" aria-hidden="true" />
-                  <span className="text-[10px] font-black uppercase tracking-wider leading-none">
-                    ACTIONS
-                  </span>
-                </span>
-              )}
+              <Sparkles className="w-4 h-4 text-[#b8ff3c]" aria-hidden="true" />
+              <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
+                Acts
+              </span>
             </button>
 
             {/* Camera View Flip (main map only): instant 180-degree side swap, not a rotation */}
@@ -467,29 +450,12 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   soundEngine.playUiClick();
                   window.dispatchEvent(new CustomEvent('camera-flip-view'));
                 }}
-                className={
-                  showMobileJoystick
-                    ? `${
-                        isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
-                      } rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`
-                    : '-skew-x-12 px-2.5 h-8 bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-95 border border-white/40 ring-1 ring-white/20 text-white flex items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]'
-                }
+                className={`${isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'} rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`}
               >
-                {showMobileJoystick ? (
-                  <>
-                    <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
-                    <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
-                      View
-                    </span>
-                  </>
-                ) : (
-                  <span className="skew-x-12 flex items-center gap-1.5">
-                    <ArrowUpDown className="w-3.5 h-3.5 text-[#38bdf8]" aria-hidden="true" />
-                    <span className="text-[10px] font-black uppercase tracking-wider leading-none">
-                      VIEW
-                    </span>
-                  </span>
-                )}
+                <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
+                <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
+                  View
+                </span>
               </button>
             )}
 
