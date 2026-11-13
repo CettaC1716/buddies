@@ -1765,6 +1765,7 @@ export type BuddiesMarketMethodName =
   | 'list_fish_nft'
   | 'buy_fish_nft'
   | 'buy_merchant_item'
+  | 'sell_merchant_item'
   | 'unlist_fish_nft'
   | 'ft_transfer'
   | 'nft_transfer'

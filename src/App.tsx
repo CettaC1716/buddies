@@ -7430,21 +7430,43 @@ export default function App() {
           }
           return { ok: true, ...onChainBuyReceipt };
         }}
-        onSellMerchantItem={(item: MerchantCatalogItem, refund: number) => {
+        onSellMerchantItem={async (item: MerchantCatalogItem, refund: number) => {
           soundEngine.playUiClick();
-          if (!ownedMerchantItemIds.includes(item.id)) return;
+          if (!ownedMerchantItemIds.includes(item.id)) return false;
           const actorAccount = hud.nearWalletId || playerUid;
-          if (!actorAccount) return;
+          if (!actorAccount) return false;
           const ownedCount = ownedMerchantItemIds.filter((id) => id === item.id).length;
           const placedCount = placedFurnitureCounts[item.id] ?? 0;
-          if (ownedCount - placedCount < 1) return;
+          if (ownedCount - placedCount < 1) return false;
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
           if (item.currency === 'CYON') {
             nextCyon = cyonBalance + refund;
             setCyonBalance(nextCyon);
           } else {
+            // RESPITE buybacks settle on-chain first (the merchant pays the
+            // seller and restocks the item in one transaction); local state
+            // changes only after the transaction confirms.
+            if (!item.tokenId) return false;
+            const res = await executeMarketContractCallOnChain({
+              signerAccountId: actorAccount,
+              methodName: 'sell_merchant_item',
+              args: {
+                token_id: item.tokenId,
+                amount: '1',
+                price_respite: String(refund),
+              },
+            });
+            if (!res.ok) return false;
+            const resolvedActor = res.signerAccountId || actorAccount;
             nextRespite = respiteBalance + refund;
+            const liveRespiteStr = await fetchNep141Balance(
+              NEAR_CONFIG.nep141RespiteContractId,
+              resolvedActor,
+            ).catch(() => null);
+            if (liveRespiteStr !== null) {
+              nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+            }
             setRespiteBalance(nextRespite);
           }
           const removeIdx = ownedMerchantItemIds.indexOf(item.id);
@@ -7513,6 +7535,7 @@ export default function App() {
             respiteBalance: nextRespite,
             ownedTokenIds: nextOwned,
           });
+          return true;
         }}
         onSelectHouseTheme={(themeItem: MerchantCatalogItem) => {
           soundEngine.playUiClick();

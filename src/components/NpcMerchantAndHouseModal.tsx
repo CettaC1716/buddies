@@ -117,7 +117,7 @@ interface NpcMerchantAndHouseModalProps {
   ) => Promise<NearRespiteSwapReceipt | null> | NearRespiteSwapReceipt | null | void;
   onInvestInMerchant: () => void;
   onBuyMerchantItem: (item: MerchantCatalogItem, price: number) => Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }>;
-  onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => void;
+  onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => Promise<boolean>;
   onToggleFastForward?: () => void;
   onSelectHouseTheme: (themeItem: MerchantCatalogItem) => void;
   onAssignInteriorSlot: (slot: HouseInteriorSlotId, itemId: string | null) => void;
@@ -2789,11 +2789,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           <button
                             type="button"
                             data-sell-fishing-item-btn={selectedFishingItem.id}
-                            onClick={() => {
+                            onClick={async () => {
                               soundEngine.playUiClick();
-                              onSellMerchantItem(selectedFishingItem, selectedQuote.sellbackPrice);
+                              const ok = await onSellMerchantItem(
+                                selectedFishingItem,
+                                selectedQuote.sellbackPrice,
+                              );
                               triggerNpcSpeech(
-                                `Sold back ${selectedFishingItem.name} for +${selectedQuote.sellbackPrice} ${selectedFishingItem.currency}.`,
+                                ok
+                                  ? `Sold back ${selectedFishingItem.name} for +${selectedQuote.sellbackPrice} ${selectedFishingItem.currency}.`
+                                  : `That sale did not go through — your item was not taken.`,
                               );
                             }}
                             className="-skew-x-12 px-4 py-2 bg-[#facc15] hover:bg-[#fde047] text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"

@@ -406,7 +406,13 @@ export function evaluateMerchantItemQuote(
   }
 
   const buyPrice = Math.max(1, Math.round(item.basePrice * multiplier));
-  const sellbackPrice = Math.max(1, Math.round(buyPrice * 0.65));
+  // RESPITE buybacks settle on-chain at a fixed 65% of the catalog base
+  // price (the contract's buyback ceiling), so the quote must show exactly
+  // that figure; CYON items keep the dynamic 65%-of-quote sellback.
+  const sellbackPrice =
+    item.currency === 'RESPITE'
+      ? Math.max(1, Math.floor(item.basePrice * 65 / 100))
+      : Math.max(1, Math.round(buyPrice * 0.65));
 
   const pctDiff = Math.round((buyPrice / item.basePrice - 1) * 100);
   const pctLabel = pctDiff > 0 ? `+${pctDiff}%` : `${pctDiff}%`;

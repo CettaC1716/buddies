@@ -1056,6 +1056,77 @@ impl BuddiesMarketContract {
         U128(next)
     }
 
+    /// Sell a merchant NEP-245 item back to the merchant. Atomically moves
+    /// `amount` of the item from the seller back into the merchant's stock
+    /// and `price_respite` RESPITE from the merchant (master_account) to
+    /// the seller: the buyback is a real on-chain payment, never a cache
+    /// credit.
+    ///
+    /// The client quotes the buyback at a fixed 65% of the catalog base
+    /// price, so the contract enforces that same figure as a ceiling: any
+    /// quote a legitimate client can produce passes, while a forged client
+    /// cannot drain the merchant by naming an inflated buyback price.
+    pub fn sell_merchant_item(
+        &mut self,
+        token_id: String,
+        amount: U128,
+        price_respite: U128,
+    ) -> U128 {
+        let seller = env::predecessor_account_id();
+        let clean_token = token_id.trim().to_string();
+        require!(amount.0 > 0, "Amount must be positive");
+        require!(
+            seller != self.master_account,
+            "The merchant cannot sell items to itself"
+        );
+        let base = Self::merchant_item_base_price_respite(&clean_token)
+            .expect("Unknown merchant item token_id");
+        let ceiling_total = base * 65 / 100 * amount.0;
+        require!(price_respite.0 > 0, "Price must be positive");
+        require!(
+            price_respite.0 <= ceiling_total,
+            "Price above the merchant buyback ceiling for this item"
+        );
+
+        let seller_key = Self::mt_key(&seller, &clean_token);
+        let seller_bal = *self.mt_balances.get(&seller_key).unwrap_or(&0);
+        require!(
+            seller_bal >= amount.0,
+            "Seller does not hold enough of this item"
+        );
+
+        // Pay the seller from the merchant's RESPITE (panics on
+        // insufficient merchant balance), then restock the item.
+        let merchant = self.master_account.clone();
+        self.internal_transfer_respite(
+            &merchant,
+            &seller,
+            price_respite.0,
+            Some("sell_merchant_item".to_string()),
+        );
+        let remaining = seller_bal - amount.0;
+        self.mt_balances.insert(seller_key, remaining);
+        let stock_key = Self::mt_key(&merchant, &clean_token);
+        let stock = *self.mt_balances.get(&stock_key).unwrap_or(&0);
+        let next_stock = stock
+            .checked_add(amount.0)
+            .expect("NEP-245 balance overflow");
+        self.mt_balances.insert(stock_key, next_stock);
+
+        Self::emit_nep_event(
+            "nep245",
+            "mt_transfer",
+            json!([{
+                "old_owner_id": seller,
+                "new_owner_id": merchant,
+                "token_ids": [clean_token],
+                "amounts": [amount.0.to_string()],
+                "memo": "sell_merchant_item"
+            }]),
+        );
+        U128(remaining)
+    }
+
     #[payable]
     pub fn mt_transfer(
         &mut self,
@@ -1105,7 +1176,7 @@ impl BuddiesMarketContract {
 
     pub fn get_contract_overview(&self) -> ContractOverview {
         ContractOverview {
-            contract_version: "1.1.0".to_string(),
+            contract_version: "1.2.0".to_string(),
             master_account: self.master_account.clone(),
             respite_per_near_rate: (1_000_000_000_000_000_000_000_000 / YOCTO_PER_RESPITE) as u64,
             house_price_respite: U128(HOUSE_OWNERSHIP_PRICE_RESPITE),
@@ -1652,6 +1723,129 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn test_sell_merchant_item_roundtrip_restock_and_payment() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        // Merchant stocks 10 tatami tea tables (base 8, buyback ceiling 5)
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(10),
+        );
+
+        // Alice swaps 0.1 NEAR -> 40 RESPITE, buys one table at 8
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        let bal = contract.swap_near_for_respite();
+        assert_eq!(bal.0, 40);
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(8),
+        );
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 32);
+
+        // She sells it back at the fixed buyback rate (65% of base 8 = 5)
+        let remaining = contract.sell_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(5),
+        );
+        assert_eq!(remaining.0, 0);
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 37);
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("alice.testnet"),
+                    "nep245:furniture:tatami_tea_table".to_string()
+                )
+                .0,
+            0
+        );
+        // The item restocked with the merchant, who kept the 8 - 5 spread
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("buddiesblitz.testnet"),
+                    "nep245:furniture:tatami_tea_table".to_string()
+                )
+                .0,
+            10
+        );
+        assert_eq!(contract.ft_balance_of(acct("buddiesblitz.testnet")).0, 50_003);
+    }
+
+    #[test]
+    #[should_panic(expected = "Price above the merchant buyback ceiling for this item")]
+    fn test_sell_merchant_item_rejects_above_ceiling() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+        );
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(8),
+        );
+        // Ceiling for tatami is floor(8 * 65 / 100) = 5; 6 must revert
+        contract.sell_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(6),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Seller does not hold enough of this item")]
+    fn test_sell_merchant_item_rejects_unheld_item() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        set_ctx("alice.testnet", 0);
+        contract.sell_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(5),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown merchant item token_id")]
+    fn test_sell_merchant_item_rejects_unknown_token() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        set_ctx("alice.testnet", 0);
+        contract.sell_merchant_item(
+            "nep245:furniture:does_not_exist".to_string(),
+            U128(1),
+            U128(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "The merchant cannot sell items to itself")]
+    fn test_sell_merchant_item_merchant_cannot_sell() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.mint_merchant_item(
+            None,
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+        );
+        contract.sell_merchant_item(
+            "nep245:furniture:tatami_tea_table".to_string(),
+            U128(1),
+            U128(5),
+        );
+    }
+
     fn test_buy_merchant_item_converted_furniture() {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
