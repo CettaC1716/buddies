@@ -2077,11 +2077,11 @@ export function createBlitzMeadowGrassSystem(
   // Leaf spray texture for the trial tree crowns: leaf shapes in white on
   // black — red channel is each leaf's painted brightness, green is the mask.
   const leafCanvas = document.createElement('canvas');
-  leafCanvas.width = 256;
-  leafCanvas.height = 256;
+  leafCanvas.width = 512;
+  leafCanvas.height = 512;
   const lctx = leafCanvas.getContext('2d')!;
   lctx.fillStyle = '#000';
-  lctx.fillRect(0, 0, 256, 256);
+  lctx.fillRect(0, 0, 512, 512);
   let lSeed = 777001;
   const lRand = () => {
     lSeed = (Math.imul(lSeed, 1103515245) + 12345) & 0x7fffffff;
@@ -2100,13 +2100,17 @@ export function createBlitzMeadowGrassSystem(
     lctx.fill();
     lctx.restore();
   };
-  for (let i = 0; i < 30; i++) {
-    const a = (i / 30) * Math.PI * 4 + lRand() * 0.6;
-    const d = 22 + lRand() * 78;
-    drawLeaf(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, a + (lRand() - 0.5) * 1.5, 26 + lRand() * 22);
-  }
-  for (let i = 0; i < 8; i++) {
-    drawLeaf(128 + (lRand() - 0.5) * 60, 128 + (lRand() - 0.5) * 60, lRand() * Math.PI * 2, 28 + lRand() * 18);
+  // Dense small leaflets: hundreds of tiny leaves packed into a disc, so a
+  // crown card reads as fine bush foliage instead of a few big sprays.
+  for (let i = 0; i < 950; i++) {
+    const a = lRand() * Math.PI * 2;
+    const d = Math.sqrt(lRand()) * 225;
+    drawLeaf(
+      256 + Math.cos(a) * d,
+      256 + Math.sin(a) * d,
+      a + (lRand() - 0.5) * 1.8,
+      9 + lRand() * 12,
+    );
   }
   const leafTex = new THREE.CanvasTexture(leafCanvas);
   leafTex.magFilter = THREE.LinearFilter;
@@ -2623,7 +2627,7 @@ export function createBlitzMeadowGrassSystem(
       treeCx: number,
       treeCz: number,
     ) => {
-      const cards = 5;
+      const cards = 9;
       for (let k = 0; k < cards; k++) {
         const ox = (gRand() - 0.5) * clumpR * 0.76;
         const oy = (gRand() - 0.5) * clumpR * 0.76;
@@ -2634,7 +2638,7 @@ export function createBlitzMeadowGrassSystem(
         const yaw = Math.atan2(px - treeCx, pz - treeCz) + (gRand() - 0.5) * 0.9;
         euler.set((gRand() - 0.5) * 0.7, yaw, (gRand() - 0.5) * 0.4);
         quat.setFromEuler(euler);
-        const cardScale = clumpR * (1.5 + gRand() * 0.6);
+        const cardScale = clumpR * (1.05 + gRand() * 0.45);
         m4.compose(new THREE.Vector3(px, py, pz), quat, new THREE.Vector3(cardScale, cardScale, cardScale));
         cardMatrices.push(m4.clone());
         cardClumps.push(cx, cy, cz);
@@ -2740,7 +2744,7 @@ export function createBlitzMeadowGrassSystem(
           else if (vKind > 0.5) col = mix(col, vec3(0.34, 0.19, 0.40), 0.55);
 
           col *= 0.45 + tex.r * 0.75;
-          col *= 0.92 + vSeed * 0.16;
+          col *= 0.85 + vSeed * 0.35;
 
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
