@@ -638,10 +638,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       group.visible = false;
       const geo = new THREE.ConeGeometry(0.22, 0.42, 4);
       geo.rotateX(Math.PI);
-      const cone = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#38bdf8', fog: false }));
+      const cone = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({ color: '#38bdf8', fog: false, depthTest: false, transparent: true }),
+      );
+      cone.renderOrder = 999;
       cone.raycast = () => {};
       const stroke = createBlitzStrokeMesh(geo, 0.015, '#ffffff');
       if (stroke) {
+        stroke.renderOrder = 998;
         stroke.raycast = () => {};
         cone.add(stroke);
       }
@@ -657,7 +662,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       prep_food: { x: 1.01, y: CAFE_ORIGIN_Y + 1.75, z: -2.07 },
       serve_customer: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
       order_counter: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
-      rota_board: { x: 3.45, y: CAFE_ORIGIN_Y + 2.25, z: -4.48 },
+      rota_board: { x: 3.45, y: CAFE_ORIGIN_Y + 2.6, z: -4.48 },
       atm_machine: { x: -5.45, y: CAFE_ORIGIN_Y + 2.0, z: -4.18 },
       exit_door: { x: 0, y: CAFE_ORIGIN_Y + 2.3, z: 4.55 },
     };
@@ -6421,6 +6426,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (!propertyPinpointActive) markerGuideAnchor = null;
     };
     window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
+    ensureInteractMarker();
 
     // Kai's local tutorial markers: his exclamation plus a floating pinpoint
     // whose target (Kai himself, or the shoreline cast point) is set by App.
