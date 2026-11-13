@@ -80,8 +80,6 @@ export interface CafeInteriorSceneHandle {
   setCustomerOrderSign: (visible: boolean, label: string, accentHex: string) => void;
   setRotaBoard: (state: { status: string; workerName: string | null; queueNames: string[] }) => void;
   setApronRackWorking: (working: boolean) => void;
-  prepGlowCoffee: THREE.Mesh;
-  prepGlowFood: THREE.Mesh;
 }
 
 function makeHanaToonMesh(
@@ -811,23 +809,6 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     if (rackAprons[2]) rackAprons[2].visible = !working;
   };
 
-  // 4c. Station glows (the pastry prep station is the curved bakery case
-  // that already sits on the espresso bar counter — no extra case needed).
-  const makePrepGlow = (colorHex: string, x: number, z: number) => {
-    const glow = new THREE.Mesh(
-      new THREE.RingGeometry(0.42, 0.62, 24),
-      new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
-    );
-    glow.rotation.x = -Math.PI / 2;
-    glow.position.set(x, 0.058, z);
-    glow.visible = false;
-    glow.raycast = () => {};
-    root.add(glow);
-    return glow;
-  };
-  const prepGlowCoffee = makePrepGlow('#f59e0b', CAFE_INTERIOR_BOUNDS.prepCoffeeX, CAFE_INTERIOR_BOUNDS.prepCoffeeZ);
-  const prepGlowFood = makePrepGlow('#4ade80', CAFE_INTERIOR_BOUNDS.prepFoodX, CAFE_INTERIOR_BOUNDS.prepFoodZ);
-
   // 5. STANDARD BANK CASH ATM TERMINAL (1:1 Industrial 4-View Model Sheet: 1.75m height, illuminated ATM // CASH canopy, CCTV dome, angled screen + 8 FDK keys, green LED card slot, shielded PIN pad + NFC, cash shutter & rear vault door)
   const atmStand = buildStandardBankCashAtm(styler, CAFE_GLOBAL_SCALE_SPEC.interiorAtmScale);
   atmStand.position.set(-5.45, 0.02, -4.18);
@@ -951,11 +932,6 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     }
   }
 
-  // 8. Glowing Exit Floor Arrow Pad at South Courtyard Entrance Door
-  const exitPad = buildGlowingDoorFloorArrowPad();
-  exitPad.group.position.set(CAFE_INTERIOR_BOUNDS.exitDoorX, 0.03, CAFE_INTERIOR_BOUNDS.exitDoorZ);
-  root.add(exitPad.group);
-
   // 9. Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (proportioned cleanly over 0.475m chair seats!)
   const makeCompactSeatIndicatorCoin = (
     radius: number,
@@ -1028,9 +1004,6 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   const setCustomerOrderSign = (_visible: boolean, _label: string, _accentHex: string) => {};
 
   const updateVisuals = (timeSec: number, isWorking: boolean) => {
-    exitPad.pulseMat.opacity = 0.55 + Math.sin(timeSec * 3.8) * 0.25;
-    exitPad.chevronArrow.position.y = 0.65 + Math.sin(timeSec * 3.5) * 0.12;
-    exitPad.chevronArrow.rotation.y = timeSec * 1.4;
     baristaReadyGlow.visible = isWorking;
     if (isWorking) {
       baristaReadyGlow.scale.setScalar(1.0 + Math.sin(timeSec * 4.0) * 0.08);
@@ -1052,7 +1025,5 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     setCustomerOrderSign,
     setRotaBoard: (state) => drawRotaBoard(state.status, state.workerName, state.queueNames),
     setApronRackWorking,
-    prepGlowCoffee,
-    prepGlowFood,
   };
 }

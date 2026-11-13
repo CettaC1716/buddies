@@ -316,7 +316,6 @@ import {
 import {
   CAFE_INTERIOR_COLLIDERS,
   buildBotanicalGlasshouseCafeInterior,
-  buildGlowingDoorFloorArrowPad,
 } from './buddiesCafeInteriorBuilder';
 import {
   NAMEPLATE_SCREEN_SPEC,
@@ -625,6 +624,54 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         fixedPromptKeyEl.textContent = bestKey;
       }
       if (fixedPromptBtn.style.display !== 'inline-flex') fixedPromptBtn.style.display = 'inline-flex';
+    };
+
+    // ONE small triangle marker in the 3D world (vivid blue, white edge — the
+    // old door-pad chevron, minus its floor ring) anchored just above the
+    // object the current interaction belongs to: kiosk, ATM, shift board,
+    // doors, and the cafe prep stations while an order is being worked.
+    let interactMarkerGroup: THREE.Group | null = null;
+    const ensureInteractMarker = (): THREE.Group => {
+      if (interactMarkerGroup) return interactMarkerGroup;
+      const group = new THREE.Group();
+      group.name = 'InteractTriangleMarker3D';
+      group.visible = false;
+      const geo = new THREE.ConeGeometry(0.22, 0.42, 4);
+      geo.rotateX(Math.PI);
+      const cone = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#38bdf8', fog: false }));
+      cone.raycast = () => {};
+      const stroke = createBlitzStrokeMesh(geo, 0.015, '#ffffff');
+      if (stroke) {
+        stroke.raycast = () => {};
+        cone.add(stroke);
+      }
+      group.add(cone);
+      scene.add(group);
+      interactMarkerGroup = group;
+      return group;
+    };
+    let markerGuideAnchor: { x: number; y: number; z: number } | null = null;
+    let markerPromptAnchor: { x: number; y: number; z: number } | null = null;
+    const CAFE_MARKER_ANCHORS: Record<string, { x: number; y: number; z: number }> = {
+      prep_coffee: { x: -1.75, y: CAFE_ORIGIN_Y + 1.8, z: -4.63 },
+      prep_food: { x: 1.01, y: CAFE_ORIGIN_Y + 1.75, z: -2.07 },
+      serve_customer: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
+      order_counter: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
+      rota_board: { x: 3.45, y: CAFE_ORIGIN_Y + 2.25, z: -4.48 },
+      atm_machine: { x: -5.45, y: CAFE_ORIGIN_Y + 2.0, z: -4.18 },
+      exit_door: { x: 0, y: CAFE_ORIGIN_Y + 2.3, z: 4.55 },
+    };
+    const syncInteractMarker = () => {
+      const a = markerPromptAnchor ?? markerGuideAnchor;
+      if (!a) {
+        if (interactMarkerGroup) interactMarkerGroup.visible = false;
+        return;
+      }
+      const group = ensureInteractMarker();
+      const nowSec = performance.now() * 0.001;
+      group.visible = true;
+      group.position.set(a.x, a.y + Math.sin(nowSec * 2.4) * 0.05, a.z);
+      group.rotation.y = nowSec * 0.9;
     };
 
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
@@ -3295,14 +3342,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // =========================================================================
     // BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") EXTERIOR DOOR PAD & 3D INTERIOR
     // =========================================================================
-    const cafeExteriorDoorPad = buildGlowingDoorFloorArrowPad();
-    cafeExteriorDoorPad.group.position.set(
-      CAFE_EXTERIOR_DOOR_TRIGGER.x,
-      CAFE_EXTERIOR_DOOR_TRIGGER.deckY + 0.04,
-      CAFE_EXTERIOR_DOOR_TRIGGER.z,
-    );
-    scene.add(cafeExteriorDoorPad.group);
-
     const cafeInterior = buildBotanicalGlasshouseCafeInterior();
     scene.add(cafeInterior.root);
 
@@ -6376,50 +6415,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // who owns no property has not met Hana's property pitch yet. This is the
     // floating explainer marker for the property-discovery tutorial beat.
     let propertyPinpointActive = false;
-    const propertyPinpointGroup = new THREE.Group();
-    propertyPinpointGroup.name = 'PropertyDiscoveryPinpoint3D';
-    propertyPinpointGroup.visible = false;
-    scene.add(propertyPinpointGroup);
-    const propertyPinMat = new THREE.MeshBasicMaterial({ color: '#b8ff3c', fog: false });
-    const propertyPinHead = new THREE.Mesh(
-      new THREE.SphereGeometry(0.34, 20, 16),
-      propertyPinMat,
-    );
-    propertyPinHead.position.y = 0.55;
-    const propertyPinTipGeo = new THREE.ConeGeometry(0.24, 0.62, 20);
-    propertyPinTipGeo.rotateX(Math.PI);
-    const propertyPinTip = new THREE.Mesh(propertyPinTipGeo, propertyPinMat);
-    propertyPinTip.position.y = 0.12;
-    const propertyPinDot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.15, 14, 12),
-      new THREE.MeshBasicMaterial({ color: '#0d0f12', fog: false }),
-    );
-    propertyPinDot.position.y = 0.55;
-    const propertyPinRingGeo = new THREE.RingGeometry(0.5, 0.72, 32);
-    propertyPinRingGeo.rotateX(-Math.PI / 2);
-    const propertyPinRingMat = new THREE.MeshBasicMaterial({
-      color: '#38bdf8',
-      transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      fog: false,
-    });
-    const propertyPinRing = new THREE.Mesh(propertyPinRingGeo, propertyPinRingMat);
-    propertyPinRing.position.y = -0.28;
-    propertyPinRing.renderOrder = 18;
-    propertyPinpointGroup.add(
-      propertyPinHead,
-      propertyPinTip,
-      propertyPinDot,
-      propertyPinRing,
-    );
     const onSetPropertyPinpoint = (ev: Event) => {
       const detail = (ev as CustomEvent<{ active?: boolean }>).detail;
       propertyPinpointActive = Boolean(detail?.active);
-      if (!propertyPinpointActive) {
-        propertyPinpointGroup.visible = false;
-      }
+      if (!propertyPinpointActive) markerGuideAnchor = null;
     };
     window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
 
@@ -21226,10 +21225,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           cafePreparingUntilMs = 0;
           window.dispatchEvent(new CustomEvent('cafe-prepare-done'));
         }
-        cafeInterior.prepGlowCoffee.visible =
-          cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared && cafeOrderCategory === 'drink';
-        cafeInterior.prepGlowFood.visible =
-          cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared && cafeOrderCategory === 'pastry';
         if (cafeCustomerNpcRoot.visible) {
           const customerCharGltf = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
           if (customerCharGltf && !cafeCustomerGlbUpgraded) {
@@ -21381,17 +21376,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             pinY = scratchLiveObjPos.y;
             pinZ = scratchLiveObjPos.z;
           }
-          propertyPinpointGroup.visible = true;
-          propertyPinpointGroup.position.set(
-            pinX,
-            pinY + 4.35 + Math.sin(timeSec * 2.6) * 0.18,
-            pinZ,
-          );
-          propertyPinpointGroup.rotation.y = timeSec * 0.9;
-          propertyPinRing.scale.setScalar(1 + Math.sin(timeSec * 4.5) * 0.15);
-          propertyPinRingMat.opacity = 0.55 + Math.sin(timeSec * 4.5) * 0.25;
-        } else if (propertyPinpointGroup.visible) {
-          propertyPinpointGroup.visible = false;
+          markerGuideAnchor = { x: pinX, y: pinY + 2.5, z: pinZ };
+        } else {
+          markerGuideAnchor = null;
         }
 
         // Update 3D Guided Tutorial Waypoint Chevron Path (`hana` or `kiosk`)
@@ -24280,6 +24267,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       Boolean(new URLSearchParams(window.location.search).get('buildingview'));
 
     updateDirectDomPrompts = () => {
+      markerPromptAnchor = null;
       if (promptOverlay) {
         promptOverlay.setAttribute('data-city-arena-mode', cityArenaMode);
         promptOverlay.setAttribute('data-world-mode', worldModeRef.current);
@@ -24309,6 +24297,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         exitHouseRoomPromptBtn.style.display = 'none';
         enterCafePromptBtn.style.display = 'none';
         cafeStationPromptBtn.style.display = 'none';
+        if (interactMarkerGroup) interactMarkerGroup.visible = false;
         socialSpeechBubbleEl.style.display = 'none';
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
@@ -24330,29 +24319,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         CAFE_EXTERIOR_DOOR_TRIGGER.x,
         CAFE_EXTERIOR_DOOR_TRIGGER.z,
       );
-      const showCafeDoorPad =
-        worldModeRef.current !== 'warzone' && npcCameraMode === 'none' && distToCafeDoor <= 42;
-      cafeExteriorDoorPad.group.visible = showCafeDoorPad;
-      if (showCafeDoorPad) {
-        const doorTerrainY = getTerrainElevation(
-          CAFE_EXTERIOR_DOOR_TRIGGER.x,
-          CAFE_EXTERIOR_DOOR_TRIGGER.z,
-        );
-        applyPlanetCurvatureToObject(
-          cafeExteriorDoorPad.group,
-          CAFE_EXTERIOR_DOOR_TRIGGER.x,
-          doorTerrainY + 0.03,
-          CAFE_EXTERIOR_DOOR_TRIGGER.z,
-          camFollowPos.x,
-          camFollowPos.z,
-          0,
-          PLANET_CURVATURE_STRENGTH,
-        );
-        const pulseNow = performance.now() * 0.001;
-        cafeExteriorDoorPad.pulseMat.opacity = 0.58 + Math.sin(pulseNow * 3.8) * 0.25;
-        cafeExteriorDoorPad.chevronArrow.position.y = 0.65 + Math.sin(pulseNow * 3.5) * 0.12;
-        cafeExteriorDoorPad.chevronArrow.rotation.y = pulseNow * 1.6;
+      const doorTerrainY = getTerrainElevation(
+        CAFE_EXTERIOR_DOOR_TRIGGER.x,
+        CAFE_EXTERIOR_DOOR_TRIGGER.z,
+      );
+      if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
         if (!isKioskModalOpenCanvas && distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius) {
+          markerPromptAnchor = {
+            x: CAFE_EXTERIOR_DOOR_TRIGGER.x,
+            y: doorTerrainY + 2.5,
+            z: CAFE_EXTERIOR_DOOR_TRIGGER.z,
+          };
           const proj = projectWorldToScreenPixels(
             CAFE_EXTERIOR_DOOR_TRIGGER.x,
             doorTerrainY + 2.35,
@@ -24444,6 +24421,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.55), 64, Math.max(64, h - 64));
           cafeStationPromptBtn.style.display = 'block';
           cafeStationPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
+          const stationAnchor = CAFE_MARKER_ANCHORS[station.kind];
+          if (stationAnchor) markerPromptAnchor = stationAnchor;
         } else {
           cafeStationPromptBtn.style.display = 'none';
         }
@@ -24462,6 +24441,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.65), 64, Math.max(64, h - 64));
         exitHouseRoomPromptBtn.style.display = 'block';
         exitHouseRoomPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
+        markerPromptAnchor = { x: 0, y: HOUSE_ORIGIN_Y + 2.3, z: 3.35 };
       } else {
         exitHouseRoomPromptBtn.style.display = 'none';
       }
@@ -24633,6 +24613,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const sy = proj.visible ? proj.y : clamp(proj.y, 64, Math.max(64, h - 64));
         enterHousePromptBtn.style.display = 'block';
         enterHousePromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
+        markerPromptAnchor = {
+          x: nearClaimedHouseDoorPos.x,
+          y: getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z) + 2.9,
+          z: nearClaimedHouseDoorPos.z,
+        };
       } else {
         enterHousePromptBtn.style.display = 'none';
       }
@@ -24666,6 +24651,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       currentNearTeleportKiosk = nearProximityKiosk;
 
       if (nearProximityKiosk !== 'none') {
+        markerPromptAnchor = {
+          x: nearKioskWorldX,
+          y: getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 2.35,
+          z: nearKioskWorldZ,
+        };
         const ky = getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 1.85;
         const proj = projectWorldToScreenPixels(nearKioskWorldX, ky, nearKioskWorldZ);
         if (proj.visible) {
@@ -24976,6 +24966,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         padDepositPromptBtn.style.display = 'none';
       }
       syncFixedInteractionPrompt();
+      syncInteractMarker();
     };
 
     const buildHudSnapshot = (outcome: 'victory' | 'defeat' | null): HudSnapshot => {
