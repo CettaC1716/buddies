@@ -668,14 +668,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     const syncInteractMarker = () => {
       const a = markerPromptAnchor ?? markerGuideAnchor;
-      if (!a) {
-        if (interactMarkerGroup) interactMarkerGroup.visible = false;
-        return;
-      }
       const group = ensureInteractMarker();
       const nowSec = performance.now() * 0.001;
       group.visible = true;
-      group.position.set(a.x, a.y + Math.sin(nowSec * 2.4) * 0.05, a.z);
+      if (a) {
+        group.position.set(a.x, a.y + Math.sin(nowSec * 2.4) * 0.05, a.z);
+      } else if (playerUnit) {
+        group.position.set(
+          playerUnit.x,
+          playerUnit.root.position.y + 3.7 + Math.sin(nowSec * 2.4) * 0.05,
+          playerUnit.z,
+        );
+      } else {
+        group.visible = false;
+        return;
+      }
       group.rotation.y = nowSec * 0.9;
     };
 
