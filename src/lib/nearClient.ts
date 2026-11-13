@@ -610,6 +610,29 @@ export async function fetchBuddiesMarketFishListings(): Promise<OnChainFishNftLi
   return Array.isArray(list) ? list : [];
 }
 
+/** Escrowed property-market listing as stored by contract v1.3.0+. */
+export interface OnChainPropertyListing {
+  listing_id: string;
+  seller_id: string;
+  /** 'deed' (house deed NFT) or 'furniture' (NEP-245 catalog item). */
+  asset_kind: 'deed' | 'furniture';
+  token_id: string;
+  amount: string;
+  price_respite: string;
+  listed_at_ms: number;
+}
+
+export async function fetchBuddiesMarketPropertyListings(): Promise<
+  OnChainPropertyListing[]
+> {
+  const list = await callNearContractViewMethod<OnChainPropertyListing[]>({
+    contractId: NEAR_CONFIG.marketContractId,
+    methodName: 'get_property_listings',
+    args: {},
+  });
+  return Array.isArray(list) ? list : [];
+}
+
 export interface OnChainHouseDeed {
   owner_id: string;
   deed_token_id: string;
@@ -1766,6 +1789,10 @@ export type BuddiesMarketMethodName =
   | 'buy_fish_nft'
   | 'buy_merchant_item'
   | 'sell_merchant_item'
+  | 'list_property_deed'
+  | 'list_property_furniture'
+  | 'buy_property'
+  | 'cancel_property_listing'
   | 'unlist_fish_nft'
   | 'ft_transfer'
   | 'nft_transfer'

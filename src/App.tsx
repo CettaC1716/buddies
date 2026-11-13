@@ -136,6 +136,7 @@ import {
   executeNearTestnetAndRespiteSwap,
   fetchBuddiesMarketEstate,
   fetchBuddiesMarketFishListings,
+  fetchBuddiesMarketPropertyListings,
   fetchHanaTreasuryStatus,
   fetchNearAccountView,
   fetchNearNetworkStatus,
@@ -167,7 +168,6 @@ import {
   saveNpcTreasuryLedgerToSupabase,
   fetchOrCreatePlayerProfile,
   fetchPlayerProfileByEmail,
-  fetchPropertyListingsFromSupabase,
   fetchRecentSocialMessages,
   insertSocialMessageToSupabase,
   createLetterForAccount,
@@ -183,7 +183,6 @@ import {
   syncHouseInteriorToSupabase,
   syncNpcMerchantToSupabase,
   syncPlayerBalancesToSupabase,
-  upsertPropertyListingToSupabase,
   type DbMarketTransactionRow,
   type DbPropertyListingRow,
   type FishNftMarketSalesStats,
@@ -870,44 +869,37 @@ export default function App() {
   const [propertyListings, setPropertyListings] = useState<DbPropertyListingRow[]>([]);
   const [busyPropertyListingId, setBusyPropertyListingId] = useState<string | null>(null);
 
-  // Property marketplace board (Hana): rows live in Supabase; settlement is
-  // on-chain. The refresh also settles local ownership for assets this
-  // account bought once the seller's transfer lands (status -> 'sold').
+  // Property marketplace board (Hana): since contract v1.3.0 the board's
+  // source of truth is the escrow contract itself — every row shown is an
+  // asset the contract is physically holding, and buying settles payment
+  // and delivery in one on-chain call (no Supabase rows, no second step).
   const refreshPropertyListings = useCallback(async () => {
-    const rows = await fetchPropertyListingsFromSupabase();
+    const chainListings = await fetchBuddiesMarketPropertyListings().catch(
+      () => [] as Awaited<ReturnType<typeof fetchBuddiesMarketPropertyListings>>,
+    );
+    const rows: DbPropertyListingRow[] = chainListings.map((l) => {
+      const isDeed = l.asset_kind === 'deed';
+      const catalogItem = isDeed
+        ? undefined
+        : MERCHANT_CATALOG_ITEMS.find((i) => i.tokenId === l.token_id);
+      const listedAtIso = new Date(Number(l.listed_at_ms) || Date.now()).toISOString();
+      return {
+        id: l.listing_id,
+        seller_account: l.seller_id,
+        seller_name: null,
+        asset_kind: isDeed ? 'house' : 'furniture',
+        asset_id: isDeed ? l.token_id : (catalogItem?.id ?? l.token_id),
+        asset_label: isDeed ? 'Private House Deed' : (catalogItem?.name ?? l.token_id),
+        price_respite: Math.max(0, Number(l.price_respite) || 0),
+        status: 'active',
+        buyer_account: null,
+        payment_tx: null,
+        created_at: listedAtIso,
+        updated_at: listedAtIso,
+      };
+    });
     setPropertyListings(rows);
-    const me = (hud.nearWalletId || '').toLowerCase();
-    if (!me) return;
-    let processed: string[] = [];
-    try {
-      processed = JSON.parse(localStorage.getItem('bb_property_received_v1') || '[]');
-    } catch {
-      processed = [];
-    }
-    const processedSet = new Set<string>(Array.isArray(processed) ? processed : []);
-    let changed = false;
-    for (const row of rows) {
-      if (row.status !== 'sold') continue;
-      if ((row.buyer_account || '').toLowerCase() !== me) continue;
-      if (processedSet.has(row.id)) continue;
-      processedSet.add(row.id);
-      changed = true;
-      if (row.asset_kind === 'house') {
-        setHasHouseOwnership(true);
-      } else {
-        setOwnedMerchantItemIds((prev) =>
-          prev.includes(row.asset_id) ? prev : [...prev, row.asset_id],
-        );
-      }
-    }
-    if (changed) {
-      try {
-        localStorage.setItem('bb_property_received_v1', JSON.stringify([...processedSet]));
-      } catch {
-        /* storage unavailable */
-      }
-    }
-  }, [hud.nearWalletId]);
+  }, []);
 
   useEffect(() => {
     void refreshPropertyListings();
@@ -7005,42 +6997,63 @@ export default function App() {
         recruitedFamilyMembers={recruitedFamilyMembers}
         propertyListings={propertyListings}
         busyPropertyListingId={busyPropertyListingId}
-        onCreatePropertyListing={async ({ assetKind, assetId, assetLabel, priceRespite }) => {
+        onCreatePropertyListing={async ({ assetKind, assetId, priceRespite }) => {
           const seller = hud.nearWalletId || '';
           if (!seller) return false;
           const price = Math.floor(Number(priceRespite) || 0);
           if (price < 1 || price > 100000) return false;
-          let resolvedAssetId = assetId;
-          let resolvedLabel = assetLabel;
           if (assetKind === 'house') {
             const estate = await fetchBuddiesMarketEstate(seller).catch(() => null);
             const deedId = estate?.house_deed?.deed_token_id || '';
             if (!deedId) return false;
-            resolvedAssetId = deedId;
-            resolvedLabel = 'Private House Deed';
+            // The deed NFT itself moves into contract escrow.
+            const res = await executeMarketContractCallOnChain({
+              signerAccountId: seller,
+              methodName: 'list_property_deed',
+              args: { token_id: deedId, price_respite: String(price) },
+            });
+            if (!res.ok) return false;
+            setHasHouseOwnership(false);
+          } else {
+            const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === assetId);
+            if (!item?.tokenId) return false;
+            // One copy moves into contract escrow, out of the seller's bag.
+            const res = await executeMarketContractCallOnChain({
+              signerAccountId: seller,
+              methodName: 'list_property_furniture',
+              args: { token_id: item.tokenId, amount: '1', price_respite: String(price) },
+            });
+            if (!res.ok) return false;
+            setOwnedMerchantItemIds((prev) => {
+              const idx = prev.indexOf(assetId);
+              return idx < 0 ? prev : prev.filter((_, i) => i !== idx);
+            });
           }
-          const ok = await upsertPropertyListingToSupabase({
-            id: `prop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            seller_account: seller,
-            seller_name: playerDisplayName || null,
-            asset_kind: assetKind,
-            asset_id: resolvedAssetId,
-            asset_label: resolvedLabel,
-            price_respite: price,
-            status: 'active',
-            buyer_account: null,
-            payment_tx: null,
-          });
-          if (ok) await refreshPropertyListings();
-          return ok;
+          await refreshPropertyListings();
+          return true;
         }}
         onCancelPropertyListing={async (listingId) => {
           const listing = propertyListings.find((l) => l.id === listingId);
           if (!listing || listing.status !== 'active') return;
-          if (listing.seller_account.toLowerCase() !== (hud.nearWalletId || '').toLowerCase()) return;
-          const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
-          await upsertPropertyListingToSupabase({ ...rest, status: 'cancelled' });
-          await refreshPropertyListings();
+          const seller = hud.nearWalletId || '';
+          if (!seller || listing.seller_account.toLowerCase() !== seller.toLowerCase()) return;
+          setBusyPropertyListingId(listing.id);
+          try {
+            const res = await executeMarketContractCallOnChain({
+              signerAccountId: seller,
+              methodName: 'cancel_property_listing',
+              args: { listing_id: listing.id },
+            });
+            if (!res.ok) return;
+            if (listing.asset_kind === 'house') {
+              setHasHouseOwnership(true);
+            } else {
+              setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
+            }
+            await refreshPropertyListings();
+          } finally {
+            setBusyPropertyListingId(null);
+          }
         }}
         onBuyPropertyListing={async (listing) => {
           const buyer = hud.nearWalletId || '';
@@ -7048,56 +7061,16 @@ export default function App() {
           if (listing.seller_account.toLowerCase() === buyer.toLowerCase()) return false;
           setBusyPropertyListingId(listing.id);
           try {
-            const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
-            // Re-verify against the shared board, then CLAIM the listing
-            // (status -> 'paid', no payment tx yet) BEFORE any money moves:
-            // a second buyer now sees it as taken instead of both paying
-            // for the same asset. A claim left behind by a crashed attempt
-            // (paid, same buyer, no tx) can be resumed by that buyer.
-            const freshRows = await fetchPropertyListingsFromSupabase();
-            const fresh = freshRows.find((r) => r.id === listing.id);
-            const resumable =
-              fresh?.status === 'paid' &&
-              (fresh.buyer_account || '').toLowerCase() === buyer.toLowerCase() &&
-              !fresh.payment_tx;
-            if (!fresh || (fresh.status !== 'active' && !resumable)) return false;
-            if (!resumable) {
-              const claimed = await upsertPropertyListingToSupabase({
-                ...rest,
-                status: 'paid',
-                buyer_account: buyer,
-                payment_tx: null,
-              });
-              if (!claimed) return false;
-            }
+            // Escrow settlement (contract v1.3.0): ONE on-chain call moves
+            // the RESPITE to the seller and the escrowed asset to the
+            // buyer. There is no claim step and no delivery step — a failed
+            // call reverts both legs together.
             const res = await executeMarketContractCallOnChain({
               signerAccountId: buyer,
-              methodName: 'ft_transfer',
-              args: {
-                receiver_id: listing.seller_account,
-                amount: String(listing.price_respite),
-                memo: 'Buddies Blitz Property Market purchase',
-              },
+              methodName: 'buy_property',
+              args: { listing_id: listing.id },
             });
-            if (!res.ok || !res.txHash) {
-              // Payment failed: release the claim so the listing can sell.
-              if (!resumable) {
-                await upsertPropertyListingToSupabase({
-                  ...rest,
-                  status: 'active',
-                  buyer_account: null,
-                  payment_tx: null,
-                });
-              }
-              await refreshPropertyListings();
-              return false;
-            }
-            await upsertPropertyListingToSupabase({
-              ...rest,
-              status: 'paid',
-              buyer_account: buyer,
-              payment_tx: res.txHash,
-            });
+            if (!res.ok || !res.txHash) return false;
             const liveBal = await fetchNep141Balance(
               NEAR_CONFIG.nep141RespiteContractId,
               buyer,
@@ -7107,62 +7080,26 @@ export default function App() {
             } else {
               setRespiteBalance((prev) => Math.max(0, prev - listing.price_respite));
             }
-            await refreshPropertyListings();
-            return true;
-          } finally {
-            setBusyPropertyListingId(null);
-          }
-        }}
-        onCompletePropertyTransfer={async (listing) => {
-          const seller = hud.nearWalletId || '';
-          if (!seller || listing.status !== 'paid' || !listing.buyer_account || !listing.payment_tx) return false;
-          if (listing.seller_account.toLowerCase() !== seller.toLowerCase()) return false;
-          setBusyPropertyListingId(listing.id);
-          try {
-            let res;
             if (listing.asset_kind === 'house') {
-              res = await executeMarketContractCallOnChain({
-                signerAccountId: seller,
-                methodName: 'nft_transfer',
-                args: {
-                  receiver_id: listing.buyer_account,
-                  token_id: listing.asset_id,
-                  approval_id: null,
-                  memo: 'Buddies Blitz Property Market deed sale',
-                },
-              });
+              setHasHouseOwnership(true);
             } else {
-              const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id);
-              if (!item?.tokenId) return false;
-              res = await executeMarketContractCallOnChain({
-                signerAccountId: seller,
-                methodName: 'mt_transfer',
-                args: {
-                  receiver_id: listing.buyer_account,
-                  token_id: item.tokenId,
-                  amount: '1',
-                  approval: null,
-                  memo: 'Buddies Blitz Property Market furniture sale',
-                },
-              });
+              setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
             }
-            if (!res.ok) return false;
-            const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
-            await upsertPropertyListingToSupabase({ ...rest, status: 'sold' });
             void createLetterForAccount({
-              recipientAccount: listing.buyer_account,
+              recipientAccount: buyer,
               kind: listing.asset_kind === 'house' ? 'property_purchase' : 'item_purchase',
               title:
                 listing.asset_kind === 'house'
                   ? 'Real Estate Sales Contract — House Deed'
                   : 'Certificate of Ownership — Furniture NFT',
               payload: {
-                buyerAccount: listing.buyer_account,
+                buyerAccount: buyer,
                 sellerAccount: listing.seller_account,
                 itemName:
                   listing.asset_kind === 'house'
                     ? 'House Ownership Certificate'
-                    : (MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.name ?? listing.asset_id),
+                    : (MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.name ??
+                      listing.asset_id),
                 itemId: listing.asset_id,
                 tokenId:
                   listing.asset_kind === 'house'
@@ -7173,20 +7110,22 @@ export default function App() {
                 priceAmount: listing.price_respite,
                 priceCurrency: 'RESPITE',
                 settlementContract: NEAR_CONFIG.marketContractId,
-                paymentTx: listing.payment_tx ?? undefined,
+                paymentTx: res.txHash,
               },
               txHash: res.txHash,
             });
-            if (listing.asset_kind === 'house') {
-              setHasHouseOwnership(false);
-            } else {
-              setOwnedMerchantItemIds((prev) => prev.filter((id) => id !== listing.asset_id));
-            }
             await refreshPropertyListings();
             return true;
           } finally {
             setBusyPropertyListingId(null);
           }
+        }}
+        onCompletePropertyTransfer={async () => {
+          // Escrow listings settle atomically inside buy_property — there
+          // is no seller delivery step anymore. This callback remains only
+          // for the modal's legacy 'paid' rows, which the contract board
+          // never produces.
+          return false;
         }}
         onRecruitFamilyMember={async (planId) => {
           const plan =
