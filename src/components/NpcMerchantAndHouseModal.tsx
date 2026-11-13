@@ -475,6 +475,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
     'furniture',
   );
+  const [furnitureMovePending, setFurnitureMovePending] = useState(false);
+  useEffect(() => {
+    const onPending = () => setFurnitureMovePending(true);
+    const onCleared = () => setFurnitureMovePending(false);
+    window.addEventListener('house-furniture-move-pending', onPending);
+    window.addEventListener('house-furniture-move-cleared', onCleared);
+    return () => {
+      window.removeEventListener('house-furniture-move-pending', onPending);
+      window.removeEventListener('house-furniture-move-cleared', onCleared);
+    };
+  }, []);
   const [daylightHour, setDaylightHour] = useState<number>(13.0);
   const [floorSwatchId, setFloorSwatchId] = useState<string>('floor_tatami_oak');
   const [wallSwatchId, setWallSwatchId] = useState<string>('wall_limewash');
@@ -1224,6 +1235,34 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 >
                   STORE
                 </button>
+                {furnitureMovePending && (
+                  <>
+                    <button
+                      type="button"
+                      data-confirm-furniture-move="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setFurnitureMovePending(false);
+                        dispatchHouseStudioPatch({ confirmFurnitureMove: true });
+                      }}
+                      className="px-2 py-0.5 bg-[#b8ff3c] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
+                    >
+                      ✓ CONFIRM MOVE
+                    </button>
+                    <button
+                      type="button"
+                      data-cancel-furniture-move="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setFurnitureMovePending(false);
+                        dispatchHouseStudioPatch({ cancelFurnitureMove: true });
+                      }}
+                      className="px-2 py-0.5 bg-[#f4f6f8] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
+                    >
+                      ✕ CANCEL
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

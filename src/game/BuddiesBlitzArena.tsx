@@ -5679,6 +5679,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const houseFurnitureMeshMap = new Map<string, THREE.Group>();
     let selectedHouseFurnitureId: string | null = housePlacedItems[0]?.instanceId ?? null;
     let draggingHouseFurnitureId: string | null = null;
+    // A furniture move (drag / rotate) stays provisional until the player
+    // confirms it in the studio dock: while pending, state emitted to the UI
+    // still carries the pre-move transform, so nothing persists early.
+    let pendingFurnitureMove: {
+      instanceId: string;
+      prevX: number;
+      prevZ: number;
+      prevRy: number;
+    } | null = null;
     let isOrbitingHouseCamera = false;
     let isPanningHouseCamera = false;
     let houseOrbitDragStart = { x: 0, y: 0, yaw: -0.58, pitch: 0.48, tx: -0.4, tz: -0.2 };
@@ -5700,11 +5709,51 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.dispatchEvent(
         new CustomEvent('house-interior-state-updated', {
           detail: {
-            placedItems: housePlacedItems.map((it) => ({ ...it })),
+            placedItems: housePlacedItems.map((it) =>
+              pendingFurnitureMove && it.instanceId === pendingFurnitureMove.instanceId
+                ? {
+                    ...it,
+                    x: pendingFurnitureMove.prevX,
+                    z: pendingFurnitureMove.prevZ,
+                    ry: pendingFurnitureMove.prevRy,
+                  }
+                : { ...it },
+            ),
             selectedInstanceId: selectedHouseFurnitureId,
           },
         }),
       );
+    };
+
+    const beginPendingFurnitureMove = (item: PlacedHouseFurnitureItem) => {
+      if (pendingFurnitureMove) {
+        if (pendingFurnitureMove.instanceId === item.instanceId) return;
+        resolvePendingFurnitureMove(false);
+      }
+      pendingFurnitureMove = {
+        instanceId: item.instanceId,
+        prevX: item.x,
+        prevZ: item.z,
+        prevRy: item.ry,
+      };
+      window.dispatchEvent(new CustomEvent('house-furniture-move-pending'));
+    };
+
+    const resolvePendingFurnitureMove = (commit: boolean) => {
+      if (!pendingFurnitureMove) return;
+      const pending = pendingFurnitureMove;
+      pendingFurnitureMove = null;
+      if (!commit) {
+        const item = housePlacedItems.find((it) => it.instanceId === pending.instanceId);
+        if (item) {
+          item.x = pending.prevX;
+          item.z = pending.prevZ;
+          item.ry = pending.prevRy;
+          syncFootprintOutlines(null, 0, 0, 0, true, false);
+        }
+      }
+      window.dispatchEvent(new CustomEvent('house-furniture-move-cleared'));
+      emitHouseInteriorStateToUi();
     };
 
     let sampleHouseZonesGrp: THREE.Group | null = null;
@@ -5943,6 +5992,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             ry: number;
           }>;
           rotateSelectedDelta?: number;
+          confirmFurnitureMove?: boolean;
+          cancelFurnitureMove?: boolean;
           removeSelected?: boolean;
           resetCamera?: boolean;
           placement?: {
@@ -6034,6 +6085,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const wasCafeMode = npcCameraMode === 'cafe_interior';
         const isCafeMode = detail.mode === 'cafe_interior';
         const prevMode = npcCameraMode;
+        if (pendingFurnitureMove && detail.mode !== 'house_interior') {
+          resolvePendingFurnitureMove(false);
+        }
         npcCameraMode = detail.mode;
         if (detail.mode === 'fly_to_plaza') {
           const nextSid = detail.flySessionId ?? flySessionId + 1;
@@ -6248,9 +6302,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         emitHouseInteriorStateToUi();
       }
       // Rotate selected furniture by 45° (`Math.PI / 4`)
+      if (detail.confirmFurnitureMove) {
+        resolvePendingFurnitureMove(true);
+      }
+      if (detail.cancelFurnitureMove) {
+        resolvePendingFurnitureMove(false);
+      }
       if (typeof detail.rotateSelectedDelta === 'number' && selectedHouseFurnitureId) {
         const sel = housePlacedItems.find((it) => it.instanceId === selectedHouseFurnitureId);
         if (sel) {
+          beginPendingFurnitureMove(sel);
           const nextRy = sel.ry + detail.rotateSelectedDelta * (Math.PI / 4);
           const solved = solveFurnitureFreePlacement(
             sel.instanceId,
@@ -6270,6 +6331,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       // Remove selected furniture back to inventory tray
       if (detail.removeSelected && selectedHouseFurnitureId) {
+        if (pendingFurnitureMove?.instanceId === selectedHouseFurnitureId) {
+          pendingFurnitureMove = null;
+          window.dispatchEvent(new CustomEvent('house-furniture-move-cleared'));
+        }
         housePlacedItems = housePlacedItems.filter(
           (it) => it.instanceId !== selectedHouseFurnitureId,
         );
@@ -6295,9 +6360,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const ry = ((rots[slotKey] ?? 0) * Math.PI) / 2;
           const existing = housePlacedItems.find((p) => p.instanceId === `slot_${slotKey}`);
           if (existing && existing.catalogId === cid) {
-            existing.x = sx;
-            existing.z = sz;
-            existing.ry = ry;
+            // Slot membership only: a placed item keeps the transform the
+            // player gave it (dragging must survive mode re-syncs).
             nextList.push(existing);
           } else {
             const solved = solveFurnitureFreePlacement(
@@ -6319,6 +6383,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               ),
             );
           }
+        }
+        // Free-placed items (spawned from the studio dock) are not managed
+        // by the slot system and always survive this sync untouched.
+        for (const it of housePlacedItems) {
+          if (!it.instanceId.startsWith('slot_')) nextList.push(it);
         }
         housePlacedItems = nextList;
         if (!housePlacedItems.some((p) => p.instanceId === selectedHouseFurnitureId)) {
@@ -13141,6 +13210,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               soundEngine.playUiClick();
               selectedHouseFurnitureId = hitInstId;
               draggingHouseFurnitureId = hitInstId;
+              beginPendingFurnitureMove(hitItem);
               hitItem.lift = 0.16;
               syncFootprintOutlines(hitItem.catalogId, hitItem.x, hitItem.z, hitItem.ry, true, true);
               emitHouseInteriorStateToUi();
@@ -13557,6 +13627,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (droppedItem) {
             droppedItem.lift = 0;
             soundEngine.playPickup();
+            if (
+              pendingFurnitureMove &&
+              pendingFurnitureMove.instanceId === droppedItem.instanceId &&
+              Math.abs(droppedItem.x - pendingFurnitureMove.prevX) < 0.001 &&
+              Math.abs(droppedItem.z - pendingFurnitureMove.prevZ) < 0.001 &&
+              Math.abs(droppedItem.ry - pendingFurnitureMove.prevRy) < 0.001
+            ) {
+              pendingFurnitureMove = null;
+              window.dispatchEvent(new CustomEvent('house-furniture-move-cleared'));
+            }
           }
           draggingHouseFurnitureId = null;
           emitHouseInteriorStateToUi();
@@ -13592,6 +13672,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const targetId = draggingHouseFurnitureId ?? selectedHouseFurnitureId;
           const item = housePlacedItems.find((it) => it.instanceId === targetId);
           if (item) {
+            beginPendingFurnitureMove(item);
             const stepDir = e.deltaY > 0 ? 1 : -1;
             const nextRy = item.ry + stepDir * (Math.PI / 4);
             const solved = solveFurnitureFreePlacement(

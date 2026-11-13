@@ -783,6 +783,8 @@ export default function App() {
       activeThemeId: housePersistRef.current.theme,
       daylightHour: 14.5,
       placedFurniture: pieces,
+    }).then((ok) => {
+      if (!ok) console.warn('[buddies] house interior persist failed (sync returned false)');
     });
   }, []);
 
