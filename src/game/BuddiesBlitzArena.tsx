@@ -2710,6 +2710,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       // 3. Spawn all trees & props from layout
       layout.props.forEach((p) => spawnSingleMapProp(p));
+      // Meadow trial (?grass=pv): hide the GLB trees and grow painted card
+      // trees at the very same spots, from the tree registry just built.
+      if (meadowGrassTrial && meadowGrassSystem) {
+        trees.forEach((t) => {
+          t.mesh.visible = false;
+        });
+        meadowGrassSystem.setTrees(
+          trees.map((t) => ({
+            x: t.x,
+            z: t.z,
+            y: t.mesh.position.y,
+            scale: t.scale,
+            isPurple: t.isPurple,
+          })),
+        );
+      }
       scene.userData.__staticWorldAligned = false;
       navGridDirty = true;
     };

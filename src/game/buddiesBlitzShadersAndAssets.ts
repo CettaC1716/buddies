@@ -2058,6 +2058,61 @@ export function createBlitzMeadowGrassSystem(
   strokesTex.wrapS = THREE.RepeatWrapping;
   strokesTex.wrapT = THREE.RepeatWrapping;
 
+  // Tree shade spots shared with the painted ground patch: (x, z, radius,
+  // strength), filled by setTrees() once the arena's tree registry is known.
+  const treeShadeArr = Array.from({ length: 64 }, () => new THREE.Vector4(0, 0, 0, 0));
+
+  // CPU twin of the sculpt-map height formula, for placing trial trees.
+  const sculptTexForCpu = getOrCreateSharedSculptTexture();
+  const sculptData = sculptTexForCpu.image.data as unknown as Uint8Array;
+  const sculptSize = sculptTexForCpu.image.width;
+  const sampleSculptHeight = (x: number, z: number) => {
+    const cx = Math.min(130, Math.max(-130, x));
+    const cz = Math.min(130, Math.max(-130, z));
+    const ix = Math.min(sculptSize - 1, Math.max(0, Math.floor(((cx + 130) / 260) * sculptSize)));
+    const iy = Math.min(sculptSize - 1, Math.max(0, Math.floor(((cz + 130) / 260) * sculptSize)));
+    return (sculptData[(iy * sculptSize + ix) * 4] - 128) * 0.0625;
+  };
+
+  // Leaf spray texture for the trial tree crowns: leaf shapes in white on
+  // black — red channel is each leaf's painted brightness, green is the mask.
+  const leafCanvas = document.createElement('canvas');
+  leafCanvas.width = 256;
+  leafCanvas.height = 256;
+  const lctx = leafCanvas.getContext('2d')!;
+  lctx.fillStyle = '#000';
+  lctx.fillRect(0, 0, 256, 256);
+  let lSeed = 777001;
+  const lRand = () => {
+    lSeed = (Math.imul(lSeed, 1103515245) + 12345) & 0x7fffffff;
+    return lSeed / 0x7fffffff;
+  };
+  const drawLeaf = (x: number, y: number, angle: number, len: number) => {
+    const wid = len * (0.34 + lRand() * 0.16);
+    lctx.fillStyle = `rgb(${130 + Math.floor(lRand() * 125)},255,0)`;
+    lctx.save();
+    lctx.translate(x, y);
+    lctx.rotate(angle);
+    lctx.beginPath();
+    lctx.moveTo(-len / 2, 0);
+    lctx.quadraticCurveTo(-len * 0.05, -wid, len / 2, 0);
+    lctx.quadraticCurveTo(-len * 0.05, wid, -len / 2, 0);
+    lctx.fill();
+    lctx.restore();
+  };
+  for (let i = 0; i < 30; i++) {
+    const a = (i / 30) * Math.PI * 4 + lRand() * 0.6;
+    const d = 22 + lRand() * 78;
+    drawLeaf(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, a + (lRand() - 0.5) * 1.5, 26 + lRand() * 22);
+  }
+  for (let i = 0; i < 8; i++) {
+    drawLeaf(128 + (lRand() - 0.5) * 60, 128 + (lRand() - 0.5) * 60, lRand() * Math.PI * 2, 28 + lRand() * 18);
+  }
+  const leafTex = new THREE.CanvasTexture(leafCanvas);
+  leafTex.magFilter = THREE.LinearFilter;
+  leafTex.minFilter = THREE.LinearMipmapLinearFilter;
+  leafTex.anisotropy = 4;
+
   // Blade strip: 4 rows x 2 columns, position.y is 0..1 along the blade.
   const bladeRows = 4;
   const positions = new Float32Array(bladeRows * 2 * 3);
@@ -2275,6 +2330,7 @@ export function createBlitzMeadowGrassSystem(
       uViewPos,
       uSculptMap,
       uStrokesTex: { value: strokesTex },
+      uTreeShade: { value: treeShadeArr },
     },
     vertexShader: /* glsl */ `
       uniform vec3 uViewPos;
@@ -2306,6 +2362,8 @@ export function createBlitzMeadowGrassSystem(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform vec4 uTreeShade[64];
+
       varying float vAlpha;
       varying float vDab1;
       varying float vDab2;
@@ -2322,6 +2380,15 @@ export function createBlitzMeadowGrassSystem(
         vec3 col = meadowRamp(t) * 0.92;
         vec3 speckCol = mix(vec3(0.93, 0.88, 0.8), vec3(0.85, 0.62, 0.1), step(0.6, vDab2));
         col = mix(col, speckCol, vSpeck * 0.55);
+
+        // Tree shade, the way a painted ground receives it: a soft dark
+        // pool under each crown, strongest at its heart.
+        for (int i = 0; i < 64; i++) {
+          vec4 sp = uTreeShade[i];
+          if (sp.z <= 0.0) continue;
+          float d = distance(vWp, sp.xy);
+          col *= 1.0 - sp.w * (1.0 - smoothstep(sp.z * 0.35, sp.z, d));
+        }
 
         gl_FragColor = vec4(col, vAlpha * 0.96);
         #include <tonemapping_fragment>
@@ -2482,13 +2549,227 @@ export function createBlitzMeadowGrassSystem(
   trialGroup.add(flowerMesh);
   scene.add(trialGroup);
 
+  // =========================================================================
+  // PAINTED TRIAL TREES
+  // Grown at the arena's own tree spots (setTrees is called from the map
+  // layout rebuild): a plain tapered trunk, and a crown built the painted
+  // way — clumps of leaf-spray cards, each clump lit as a ball: light on
+  // the sun side, deep blue-green on the other. Purple and gold trees keep
+  // their kind tint. Their shade pools are written into the ground patch
+  // through treeShadeArr above.
+  // =========================================================================
+  let treeGroup: THREE.Group | null = null;
+  const disposeTreeGroup = () => {
+    if (!treeGroup) return;
+    treeGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else if (mat) mat.dispose();
+    });
+    trialGroup.remove(treeGroup);
+    treeGroup = null;
+  };
+
+  const setTrees = (
+    items: ReadonlyArray<{ x: number; z: number; y: number; scale: number; isPurple: boolean }>,
+  ) => {
+    disposeTreeGroup();
+    for (const v of treeShadeArr) v.set(0, 0, 0, 0);
+    items.forEach((t, i) => {
+      if (i < 64) treeShadeArr[i].set(t.x, t.z, 3.1 * t.scale, 0.38);
+    });
+    if (items.length === 0) return;
+
+    treeGroup = new THREE.Group();
+    treeGroup.name = 'MeadowTrees';
+
+    // Trunks: one instanced tapered cylinder for every tree.
+    const trunkGeo = new THREE.CylinderGeometry(0.6, 1.0, 1, 7);
+    trunkGeo.translate(0, 0.5, 0);
+    const trunkMat = new THREE.MeshToonMaterial({ color: '#7d5c3e' });
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, items.length);
+    trunks.name = 'MeadowTrunks';
+    trunks.frustumCulled = false;
+    const m4 = new THREE.Matrix4();
+    const quat = new THREE.Quaternion();
+    const euler = new THREE.Euler();
+    items.forEach((t, i) => {
+      const groundY = t.y + sampleSculptHeight(t.x, t.z);
+      euler.set(0, (i * 2.399963) % Math.PI, 0);
+      quat.setFromEuler(euler);
+      m4.compose(
+        new THREE.Vector3(t.x, groundY - 0.15, t.z),
+        quat,
+        new THREE.Vector3(0.52 * t.scale, 4.6 * t.scale, 0.52 * t.scale),
+      );
+      trunks.setMatrixAt(i, m4);
+    });
+    trunks.instanceMatrix.needsUpdate = true;
+    treeGroup.add(trunks);
+
+    // Crown cards: clumps arranged as a dome plus a ring of limb ends.
+    const cardMatrices: THREE.Matrix4[] = [];
+    const cardClumps: number[] = [];
+    const cardKinds: number[] = [];
+    const cardSeeds: number[] = [];
+    const pushClump = (
+      cx: number,
+      cy: number,
+      cz: number,
+      clumpR: number,
+      kind: number,
+      treeCx: number,
+      treeCz: number,
+    ) => {
+      const cards = 5;
+      for (let k = 0; k < cards; k++) {
+        const ox = (gRand() - 0.5) * clumpR * 0.76;
+        const oy = (gRand() - 0.5) * clumpR * 0.76;
+        const oz = (gRand() - 0.5) * clumpR * 0.76;
+        const px = cx + ox;
+        const py = cy + oy;
+        const pz = cz + oz;
+        const yaw = Math.atan2(px - treeCx, pz - treeCz) + (gRand() - 0.5) * 0.9;
+        euler.set((gRand() - 0.5) * 0.7, yaw, (gRand() - 0.5) * 0.4);
+        quat.setFromEuler(euler);
+        const cardScale = clumpR * (1.5 + gRand() * 0.6);
+        m4.compose(new THREE.Vector3(px, py, pz), quat, new THREE.Vector3(cardScale, cardScale, cardScale));
+        cardMatrices.push(m4.clone());
+        cardClumps.push(cx, cy, cz);
+        cardKinds.push(kind);
+        cardSeeds.push(gRand());
+      }
+    };
+    items.forEach((t) => {
+      const s = t.scale;
+      const groundY = t.y + sampleSculptHeight(t.x, t.z);
+      const crownY = groundY + 7.4 * s;
+      const crownR = 2.9 * s;
+      const clumpR = 1.45 * s;
+      const kind = t.isPurple ? 1 : 2;
+      pushClump(t.x, crownY + crownR * 0.25, t.z, clumpR * 1.15, kind, t.x, t.z);
+      for (let k = 0; k < 8; k++) {
+        const ang = (k / 8) * Math.PI * 2 + gRand() * 0.6;
+        const up = gRand() * 0.9 - 0.15;
+        const ring = Math.sqrt(Math.max(0, 1 - up * up));
+        pushClump(
+          t.x + Math.cos(ang) * ring * crownR * 0.62,
+          crownY + up * crownR * 0.55,
+          t.z + Math.sin(ang) * ring * crownR * 0.62,
+          clumpR * (0.85 + gRand() * 0.4),
+          kind,
+          t.x,
+          t.z,
+        );
+      }
+      for (let k = 0; k < 5; k++) {
+        const ang = (k / 5) * Math.PI * 2 + gRand() * 0.8;
+        pushClump(
+          t.x + Math.cos(ang) * crownR * 0.95,
+          crownY - crownR * 0.38,
+          t.z + Math.sin(ang) * crownR * 0.95,
+          clumpR * (0.85 + gRand() * 0.4),
+          kind,
+          t.x,
+          t.z,
+        );
+      }
+    });
+
+    const cardGeo = new THREE.PlaneGeometry(1, 1);
+    const cardCount = cardMatrices.length;
+    const clumpAttr = new Float32Array(cardCount * 3);
+    const kindAttr = new Float32Array(cardCount);
+    const seedAttr = new Float32Array(cardCount);
+    for (let i = 0; i < cardCount; i++) {
+      clumpAttr[i * 3] = cardClumps[i * 3];
+      clumpAttr[i * 3 + 1] = cardClumps[i * 3 + 1];
+      clumpAttr[i * 3 + 2] = cardClumps[i * 3 + 2];
+      kindAttr[i] = cardKinds[i];
+      seedAttr[i] = cardSeeds[i];
+    }
+    cardGeo.setAttribute('aClump', new THREE.InstancedBufferAttribute(clumpAttr, 3));
+    cardGeo.setAttribute('aKind', new THREE.InstancedBufferAttribute(kindAttr, 1));
+    cardGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seedAttr, 1));
+    const crownMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uLeafTex: { value: leafTex },
+        uSunDir: { value: getBlitzDefaultLightDirection() },
+      },
+      vertexShader: /* glsl */ `
+        attribute vec3 aClump;
+        attribute float aKind;
+        attribute float aSeed;
+
+        varying vec2 vUv;
+        varying vec3 vDir;
+        varying float vKind;
+        varying float vSeed;
+
+        void main() {
+          vUv = uv;
+          vec4 center4 = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          vec3 center = (modelMatrix * center4).xyz;
+          vec4 world4 = instanceMatrix * vec4(position, 1.0);
+          vec3 world = (modelMatrix * world4).xyz;
+          vDir = center - aClump;
+          vKind = aKind;
+          vSeed = aSeed;
+          gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uLeafTex;
+        uniform vec3 uSunDir;
+
+        varying vec2 vUv;
+        varying vec3 vDir;
+        varying float vKind;
+        varying float vSeed;
+
+        void main() {
+          vec4 tex = texture2D(uLeafTex, vUv);
+          if (tex.g < 0.05) discard;
+
+          // The clump is lit as a ball: sun side bright, far side deep.
+          float light = clamp(dot(normalize(vDir), uSunDir) * 0.5 + 0.55, 0.0, 1.0);
+          vec3 col = mix(vec3(0.035, 0.15, 0.09), vec3(0.30, 0.52, 0.13), light);
+          if (vKind > 1.5) col = mix(col, vec3(0.52, 0.42, 0.10), 0.50);
+          else if (vKind > 0.5) col = mix(col, vec3(0.34, 0.19, 0.40), 0.55);
+
+          col *= 0.45 + tex.r * 0.75;
+          col *= 0.92 + vSeed * 0.16;
+
+          gl_FragColor = vec4(col, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+      side: THREE.DoubleSide,
+    });
+    const crowns = new THREE.InstancedMesh(cardGeo, crownMat, cardCount);
+    crowns.name = 'MeadowCrowns';
+    crowns.frustumCulled = false;
+    for (let i = 0; i < cardCount; i++) {
+      crowns.setMatrixAt(i, cardMatrices[i]);
+    }
+    crowns.instanceMatrix.needsUpdate = true;
+    treeGroup.add(crowns);
+
+    trialGroup.add(treeGroup);
+  };
+
   return {
     grassMesh: trialGroup,
+    setTrees,
     update(_playerX: number, _playerZ: number, viewX = _playerX, viewZ = _playerZ) {
       uViewPos.value.set(viewX, 0, viewZ);
       uTime.value = performance.now() / 1000;
     },
     dispose() {
+      disposeTreeGroup();
       scene.remove(trialGroup);
       bladeGeo.dispose();
       meadowMaterial.dispose();
@@ -2498,6 +2779,7 @@ export function createBlitzMeadowGrassSystem(
       flowerMaterial.dispose();
       windNoiseTex.dispose();
       strokesTex.dispose();
+      leafTex.dispose();
     },
   };
 }
