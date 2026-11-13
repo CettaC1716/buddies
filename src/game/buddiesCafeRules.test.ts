@@ -5,7 +5,6 @@ import {
   CAFE_GLOBAL_SCALE_SPEC,
   CAFE_INTERIOR_BOUNDS,
   CAFE_MENU_ITEMS,
-  CAFE_SHIFT_COMPLETION_BONUS_BUCKS,
   CAFE_SHIFT_COMPLETION_BONUS_XP,
   CAFE_SHIFT_MAX_ORDERS,
   applyPlayerXpGain,
@@ -15,8 +14,9 @@ import {
   computeLevelProgress,
   createInitialCafeWorkShiftState,
   detectNearestCafeStation,
-  exchangeCafeBucksToLul,
   purchaseCafeMenuItem,
+  purchaseCafeMenuItemWithCyon,
+  cafeCyonPurchaseXpForItem,
   serveActiveCafeOrder,
   startCafeWorkShift,
   xpRequiredForLevelStep,
@@ -27,14 +27,14 @@ import {
   isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
 
-test('Botanical Glasshouse Cafe menu contains 9 distinct food & drink items matching PESAN SESUATU', () => {
+test('Botanical Glasshouse Cafe menu contains 9 distinct food & drink items matching ORDER SOMETHING', () => {
   assert.equal(CAFE_MENU_ITEMS.length, 9);
   const ids = new Set(CAFE_MENU_ITEMS.map((i) => i.id));
   assert.equal(ids.size, 9);
   for (const item of CAFE_MENU_ITEMS) {
     assert.ok(item.priceLul > 0);
     assert.ok(item.xpReward > 0);
-    assert.ok(item.shiftBucksReward > 0);
+    assert.ok(item.priceCyon > 0);
   }
 });
 
@@ -61,7 +61,7 @@ test('Level and XP progression computes level-ups accurately and monotonically',
   assert.equal(gainMulti.leveledUp, true);
 });
 
-test('Barista Work Shift (Pelayan) lifecycle spawns AI orders, rewards XP + Shift Bucks, and grants shift completion bonus', () => {
+test('Barista Work Shift lifecycle spawns AI orders, rewards XP only (no Bucks, no LUL), and grants shift completion bonus', () => {
   const init = createInitialCafeWorkShiftState(0);
   assert.equal(init.isWorking, false);
   assert.equal(init.activeOrder, null);
@@ -76,7 +76,6 @@ test('Barista Work Shift (Pelayan) lifecycle spawns AI orders, rewards XP + Shif
   assert.equal(r1.served, true);
   assert.equal(r1.shiftCompleted, false);
   assert.ok(r1.xpGained > 0);
-  assert.ok(r1.bucksEarned > 0);
   shift = r1.nextShiftState;
   assert.equal(shift.isWorking, true);
   assert.equal(shift.ordersCompletedInShift, 1);
@@ -93,37 +92,38 @@ test('Barista Work Shift (Pelayan) lifecycle spawns AI orders, rewards XP + Shif
   assert.equal(r3.served, true);
   assert.equal(r3.shiftCompleted, true);
   assert.equal(r3.xpGained, finalItem.xpReward + 15 + CAFE_SHIFT_COMPLETION_BONUS_XP);
-  assert.equal(r3.bucksEarned, finalItem.shiftBucksReward + CAFE_SHIFT_COMPLETION_BONUS_BUCKS);
   assert.equal(r3.nextShiftState.isWorking, false);
   assert.equal(r3.nextShiftState.activeOrder, null);
   assert.equal(r3.nextShiftState.totalOrdersServedEver, CAFE_SHIFT_MAX_ORDERS);
 });
 
-test('Cafe ATM exchanges Shift Bucks to LUL and Food Purchase deducts LUL while granting XP', () => {
-  const noCash = exchangeCafeBucksToLul(10, 0, 5);
-  assert.equal(noCash.exchanged, false);
-  assert.equal(noCash.nextLul, 5);
-
-  const cashOut = exchangeCafeBucksToLul(40, 65, 2);
-  assert.equal(cashOut.exchanged, true);
-  assert.equal(cashOut.bucksSpent, 40);
-  assert.equal(cashOut.lulReceived, 40);
-  assert.equal(cashOut.nextBucks, 25);
-  assert.equal(cashOut.nextLul, 42);
-
+test('Food Purchase deducts LUL for base XP, or CYON for 2.5x the work XP', () => {
   const failBuy = purchaseCafeMenuItem('latte', 5);
   assert.equal(failBuy.purchased, false);
   assert.equal(failBuy.reason, 'insufficient_lul');
 
-  const okBuy = purchaseCafeMenuItem('latte', cashOut.nextLul);
+  const okBuy = purchaseCafeMenuItem('latte', 42);
   assert.equal(okBuy.purchased, true);
   assert.equal(okBuy.nextLul, 32);
   assert.equal(okBuy.xpGained, 35);
+
+  const latte = CAFE_MENU_ITEMS.find((i) => i.id === 'latte')!;
+  const failCyon = purchaseCafeMenuItemWithCyon('latte', 5);
+  assert.equal(failCyon.purchased, false);
+  assert.equal(failCyon.reason, 'insufficient_cyon');
+  assert.equal(failCyon.nextCyon, 5);
+
+  const okCyon = purchaseCafeMenuItemWithCyon('latte', 42);
+  assert.equal(okCyon.purchased, true);
+  assert.equal(okCyon.nextCyon, 32);
+  // CYON purchase XP = 2.5 x work (serve) XP for the same item: (35 + 15) * 2.5 = 125
+  assert.equal(okCyon.xpGained, cafeCyonPurchaseXpForItem(latte));
+  assert.equal(okCyon.xpGained, 125);
 });
 
-test('Cafe interior station proximity detector identifies Rota, Counter/Serve, ATM, and Exit Door cleanly', () => {
+test('Cafe interior station proximity detector identifies Rota, Counter/Serve, and Exit Door cleanly (ATM is decor only)', () => {
   assert.equal(detectNearestCafeStation(0.0, 4.4, false).kind, 'exit_door');
-  assert.equal(detectNearestCafeStation(-5.1, -3.5, false).kind, 'atm_machine');
+  assert.equal(detectNearestCafeStation(-5.1, -3.5, false).kind, null);
   assert.equal(detectNearestCafeStation(3.2, -3.7, false).kind, 'rota_board');
   assert.equal(detectNearestCafeStation(-0.2, -1.2, false).kind, 'order_counter');
   assert.equal(detectNearestCafeStation(-0.2, -3.38, true).kind, 'serve_customer');

@@ -746,7 +746,7 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   rotaStand.add(rotaCrown);
   const rotaScreen = new THREE.Mesh(
     new THREE.PlaneGeometry(0.98, 0.88),
-    createCanvasSignMaterial('#141b26', '#b8ff3c', 'ROTA SHIFT', 'KERJA PELAYAN', '#b8ff3c'),
+    createCanvasSignMaterial('#141b26', '#b8ff3c', 'SHIFT BOARD', 'WORK AS WAITER', '#b8ff3c'),
   );
   rotaScreen.position.set(0, 1.38, 0.16);
   rotaScreen.raycast = () => {};
@@ -992,7 +992,7 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
       ctx.fillStyle = accentHex;
       ctx.font = '900 20px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('PESANAN PELANGGAN', 160, 44);
+      ctx.fillText('CUSTOMER ORDER', 160, 44);
       ctx.fillStyle = '#ffffff';
       ctx.font = '900 28px sans-serif';
       ctx.fillText(label.toUpperCase().slice(0, 20), 160, 82);

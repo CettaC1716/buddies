@@ -1,6 +1,6 @@
 /**
  * Pure gameplay rules, XP/Level progression, Barista Work Shift state machine,
- * Food & Drink Order Catalog, ATM Salary Exchange, and Glasshouse Cafe geometry constants.
+ * Food & Drink Order Catalog (paid in LUL or CYON) and Glasshouse Cafe geometry constants.
  */
 
 export interface CafeMenuItemSpec {
@@ -17,8 +17,8 @@ export interface CafeMenuItemSpec {
   name: string;
   category: 'drink' | 'pastry';
   priceLul: number;
+  priceCyon: number;
   xpReward: number;
-  shiftBucksReward: number;
   prepHint: string;
   accentHex: string;
 }
@@ -29,9 +29,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Caramel Latte',
     category: 'drink',
     priceLul: 10,
+    priceCyon: 10,
     xpReward: 35,
-    shiftBucksReward: 24,
-    prepHint: 'Latte art susu hangat',
+    prepHint: 'Warm milk latte art',
     accentHex: '#f59e0b',
   },
   {
@@ -39,9 +39,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Butter Croissant',
     category: 'pastry',
     priceLul: 3,
+    priceCyon: 3,
     xpReward: 12,
-    shiftBucksReward: 12,
-    prepHint: 'Pastry renyah mentega',
+    prepHint: 'Crispy butter pastry',
     accentHex: '#fbbf24',
   },
   {
@@ -49,9 +49,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Club Sandwich',
     category: 'pastry',
     priceLul: 10,
+    priceCyon: 10,
     xpReward: 35,
-    shiftBucksReward: 24,
-    prepHint: 'Roti lapis segar botani',
+    prepHint: 'Fresh layered garden sandwich',
     accentHex: '#4ade80',
   },
   {
@@ -59,9 +59,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Double Espresso',
     category: 'drink',
     priceLul: 3,
+    priceCyon: 3,
     xpReward: 12,
-    shiftBucksReward: 12,
-    prepHint: 'Kopi pekat klasik',
+    prepHint: 'Classic strong coffee',
     accentHex: '#92400e',
   },
   {
@@ -69,9 +69,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Cinnamon Roll',
     category: 'pastry',
     priceLul: 6,
+    priceCyon: 6,
     xpReward: 22,
-    shiftBucksReward: 16,
-    prepHint: 'Gulung kayu manis',
+    prepHint: 'Cinnamon swirl roll',
     accentHex: '#d97706',
   },
   {
@@ -79,9 +79,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Glazed Donut',
     category: 'pastry',
     priceLul: 2,
+    priceCyon: 2,
     xpReward: 8,
-    shiftBucksReward: 10,
-    prepHint: 'Donat glasir manis',
+    prepHint: 'Sweet glazed donut',
     accentHex: '#f472b6',
   },
   {
@@ -89,9 +89,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Blueberry Muffin',
     category: 'pastry',
     priceLul: 4,
+    priceCyon: 4,
     xpReward: 16,
-    shiftBucksReward: 14,
-    prepHint: 'Muffin beri lembut',
+    prepHint: 'Soft berry muffin',
     accentHex: '#60a5fa',
   },
   {
@@ -99,9 +99,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Botanical Iced Latte',
     category: 'drink',
     priceLul: 3,
+    priceCyon: 3,
     xpReward: 14,
-    shiftBucksReward: 12,
-    prepHint: 'Es kopi susu dingin',
+    prepHint: 'Chilled iced milk coffee',
     accentHex: '#38bdf8',
   },
   {
@@ -109,9 +109,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Hot Choco Mocha',
     category: 'drink',
     priceLul: 6,
+    priceCyon: 6,
     xpReward: 24,
-    shiftBucksReward: 18,
-    prepHint: 'Moka cokelat hangat',
+    prepHint: 'Warm chocolate mocha',
     accentHex: '#f87171',
   },
 ];
@@ -225,8 +225,18 @@ export const CAFE_INTERIOR_SEAT_SPOTS: ReadonlyArray<CafeInteriorSeatSpot> = [
 
 export const CAFE_SHIFT_MAX_ORDERS = 3;
 export const CAFE_SHIFT_COMPLETION_BONUS_XP = 30;
-export const CAFE_SHIFT_COMPLETION_BONUS_BUCKS = 25;
-export const CAFE_BUCKS_TO_LUL_RATE = 1; // 1 Shift Buck = 1 LUL
+export const CAFE_SERVE_XP_BONUS = 15;
+export const CAFE_CYON_XP_MULTIPLIER = 2.5;
+
+/** XP a working waiter earns for serving this item. Working earns XP only — no Bucks, no LUL. */
+export function cafeWorkXpForItem(item: CafeMenuItemSpec): number {
+  return item.xpReward + CAFE_SERVE_XP_BONUS;
+}
+
+/** XP for buying this item with CYON: 2.5x the XP of working (serving) the same item. */
+export function cafeCyonPurchaseXpForItem(item: CafeMenuItemSpec): number {
+  return Math.round(cafeWorkXpForItem(item) * CAFE_CYON_XP_MULTIPLIER);
+}
 
 export interface PlayerLevelProgress {
   level: number;
@@ -363,7 +373,6 @@ export interface ServeCafeOrderResult {
   servedItem: CafeMenuItemSpec | null;
   customerName: string | null;
   xpGained: number;
-  bucksEarned: number;
   shiftCompleted: boolean;
   nextShiftState: CafeWorkShiftState;
 }
@@ -378,7 +387,6 @@ export function serveActiveCafeOrder(
       servedItem: null,
       customerName: null,
       xpGained: 0,
-      bucksEarned: 0,
       shiftCompleted: false,
       nextShiftState: prev,
     };
@@ -386,10 +394,9 @@ export function serveActiveCafeOrder(
   const servedOrder = prev.activeOrder;
   const completedCount = prev.ordersCompletedInShift + 1;
   const shiftCompleted = completedCount >= prev.maxOrdersInShift;
-  const baseXp = servedOrder.item.xpReward + 15;
-  const baseBucks = servedOrder.item.shiftBucksReward;
-  const xpGained = baseXp + (shiftCompleted ? CAFE_SHIFT_COMPLETION_BONUS_XP : 0);
-  const bucksEarned = baseBucks + (shiftCompleted ? CAFE_SHIFT_COMPLETION_BONUS_BUCKS : 0);
+  const xpGained =
+    cafeWorkXpForItem(servedOrder.item) +
+    (shiftCompleted ? CAFE_SHIFT_COMPLETION_BONUS_XP : 0);
 
   const nextShiftState: CafeWorkShiftState = shiftCompleted
     ? {
@@ -412,7 +419,6 @@ export function serveActiveCafeOrder(
     servedItem: servedOrder.item,
     customerName: servedOrder.customerName,
     xpGained,
-    bucksEarned,
     shiftCompleted,
     nextShiftState,
   };
@@ -457,39 +463,42 @@ export function purchaseCafeMenuItem(
   };
 }
 
-export interface ExchangeCafeBucksResult {
-  exchanged: boolean;
-  bucksSpent: number;
-  lulReceived: number;
-  nextBucks: number;
-  nextLul: number;
+export interface PurchaseCafeFoodCyonResult {
+  purchased: boolean;
+  reason?: 'insufficient_cyon' | 'item_not_found';
+  item: CafeMenuItemSpec | null;
+  nextCyon: number;
+  xpGained: number;
 }
 
-export function exchangeCafeBucksToLul(
-  requestedBucks: number,
-  currentBucks: number,
-  currentLul: number,
-): ExchangeCafeBucksResult {
-  const cleanBucks = Math.min(
-    Math.max(0, Math.floor(requestedBucks)),
-    Math.max(0, Math.floor(currentBucks)),
-  );
-  if (cleanBucks <= 0) {
+export function purchaseCafeMenuItemWithCyon(
+  itemId: CafeMenuItemSpec['id'],
+  currentCyon: number,
+): PurchaseCafeFoodCyonResult {
+  const item = CAFE_MENU_ITEMS.find((m) => m.id === itemId) ?? null;
+  if (!item) {
     return {
-      exchanged: false,
-      bucksSpent: 0,
-      lulReceived: 0,
-      nextBucks: currentBucks,
-      nextLul: currentLul,
+      purchased: false,
+      reason: 'item_not_found',
+      item: null,
+      nextCyon: currentCyon,
+      xpGained: 0,
     };
   }
-  const lulReceived = cleanBucks * CAFE_BUCKS_TO_LUL_RATE;
+  if (currentCyon < item.priceCyon) {
+    return {
+      purchased: false,
+      reason: 'insufficient_cyon',
+      item,
+      nextCyon: currentCyon,
+      xpGained: 0,
+    };
+  }
   return {
-    exchanged: true,
-    bucksSpent: cleanBucks,
-    lulReceived,
-    nextBucks: currentBucks - cleanBucks,
-    nextLul: currentLul + lulReceived,
+    purchased: true,
+    item,
+    nextCyon: currentCyon - item.priceCyon,
+    xpGained: cafeCyonPurchaseXpForItem(item),
   };
 }
 
@@ -497,8 +506,7 @@ export type CafeStationInteractionKind =
   | 'exit_door'
   | 'serve_customer'
   | 'order_counter'
-  | 'rota_board'
-  | 'atm_machine';
+  | 'rota_board';
 
 export function detectNearestCafeStation(
   px: number,
@@ -511,12 +519,6 @@ export function detectNearestCafeStation(
       x: CAFE_INTERIOR_BOUNDS.exitDoorX,
       z: CAFE_INTERIOR_BOUNDS.exitDoorZ,
       radius: 1.9,
-    },
-    {
-      kind: 'atm_machine',
-      x: CAFE_INTERIOR_BOUNDS.atmMachineX,
-      z: CAFE_INTERIOR_BOUNDS.atmMachineZ,
-      radius: 2.1,
     },
     {
       kind: 'rota_board',

@@ -88,15 +88,14 @@ import {
   applyPlayerXpGain,
   computeLevelProgress,
   createInitialCafeWorkShiftState,
-  exchangeCafeBucksToLul,
   purchaseCafeMenuItem,
+  purchaseCafeMenuItemWithCyon,
   serveActiveCafeOrder,
   startCafeWorkShift,
   type CafeMenuItemSpec,
   type CafeWorkShiftState,
 } from './game/buddiesCafeRules';
 import {
-  GlasshouseCafeAtmModal,
   GlasshouseCafeOrderModal,
   XpGainCelebrationBanner,
 } from './components/GlasshouseCafeModal';
@@ -576,18 +575,10 @@ export default function App() {
   >('none');
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
-  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order' | 'atm'>('none');
+  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order'>('none');
   const [playerTotalXp, setPlayerTotalXp] = useState<number>(() => {
     try {
       const saved = Number(window.localStorage.getItem('bb_player_total_xp_v1') || '0');
-      return Number.isFinite(saved) && saved > 0 ? Math.floor(saved) : 0;
-    } catch {
-      return 0;
-    }
-  });
-  const [cafeShiftBucks, setCafeShiftBucks] = useState<number>(() => {
-    try {
-      const saved = Number(window.localStorage.getItem('bb_cafe_shift_bucks_v1') || '0');
       return Number.isFinite(saved) && saved > 0 ? Math.floor(saved) : 0;
     } catch {
       return 0;
@@ -599,7 +590,6 @@ export default function App() {
   const [xpCelebrationBanner, setXpCelebrationBanner] = useState<{
     id: number;
     xpGained: number;
-    bucksGained?: number;
     leveledUpTo: number | null;
     label: string;
   } | null>(null);
@@ -1526,9 +1516,6 @@ export default function App() {
     const onOpenCafeOrderModal = () => {
       setActiveCafeModal('order');
     };
-    const onOpenCafeAtmModal = () => {
-      setActiveCafeModal('atm');
-    };
     const onStartCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
     };
@@ -1648,7 +1635,6 @@ export default function App() {
     window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
     window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
     window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
-    window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
     window.addEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
     window.addEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
     window.addEventListener('open-character-profile-modal', onOpenCharacterProfile);
@@ -1669,7 +1655,6 @@ export default function App() {
       window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
       window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
       window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
-      window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
       window.removeEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
       window.removeEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
       window.removeEventListener('open-character-profile-modal', onOpenCharacterProfile);
@@ -1873,7 +1858,7 @@ export default function App() {
     };
   }, [onboardingStep, subWalletHandleDraft]);
 
-  const grantPlayerXp = useCallback((xpDelta: number, label: string, bucksGained?: number) => {
+  const grantPlayerXp = useCallback((xpDelta: number, label: string) => {
     setPlayerTotalXp((prevXp) => {
       const res = applyPlayerXpGain(prevXp, xpDelta);
       try {
@@ -1887,7 +1872,6 @@ export default function App() {
       setXpCelebrationBanner({
         id: Date.now(),
         xpGained: res.xpAdded,
-        bucksGained,
         leveledUpTo: res.leveledUp ? res.newLevel : null,
         label,
       });
@@ -1905,7 +1889,7 @@ export default function App() {
       const next = startCafeWorkShift(prev, Date.now());
       if (next.activeOrder) {
         dispatchBuddyAction(
-          `socialTalk:Mulai shift pelayan! Pesanan: ${next.activeOrder.item.name}`,
+          `socialTalk:Waiter shift started! Order: ${next.activeOrder.item.name}`,
         );
       }
       return next;
@@ -1917,24 +1901,14 @@ export default function App() {
       const res = serveActiveCafeOrder(prev, Date.now());
       if (!res.served || !res.servedItem) return prev;
       soundEngine.playPowerCore();
-      setCafeShiftBucks((b) => {
-        const nextBucks = b + res.bucksEarned;
-        try {
-          window.localStorage.setItem('bb_cafe_shift_bucks_v1', String(nextBucks));
-        } catch {
-          // ignore
-        }
-        return nextBucks;
-      });
       grantPlayerXp(
         res.xpGained,
-        res.shiftCompleted ? `SHIFT SELESAI!` : `${res.servedItem.name} DISAJIKAN`,
-        res.bucksEarned,
+        res.shiftCompleted ? `SHIFT COMPLETE!` : `${res.servedItem.name} SERVED`,
       );
       dispatchBuddyAction(
         res.shiftCompleted
-          ? `Shift selesai! +${res.xpGained} XP & +${res.bucksEarned} BUCKS!`
-          : `Pesanan ${res.servedItem.name} disajikan!`,
+          ? `Shift complete! +${res.xpGained} XP!`
+          : `Served ${res.servedItem.name} to the customer!`,
       );
       return res.nextShiftState;
     });
@@ -1947,43 +1921,42 @@ export default function App() {
         soundEngine.playHit();
         return {
           ok: false,
-          message: `LUL kurang! Butuh ${item.priceLul} LUL (kerja dulu atau tukar di ATM).`,
+          message: `Not enough LUL! You need ${item.priceLul} LUL — sell fish to Kai to earn LUL.`,
         };
       }
       soundEngine.playPickup();
       dispatchBuddyAction(`adjustPlayerLul:${-res.item.priceLul}`);
       setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.item!.priceLul) }));
-      grantPlayerXp(res.xpGained, `PESAN ${res.item.name.toUpperCase()}`);
-      dispatchBuddyAction(`socialTalk:Menikmati ${res.item.name} (+${res.xpGained} XP!)`);
+      grantPlayerXp(res.xpGained, `ORDER ${res.item.name.toUpperCase()}`);
+      dispatchBuddyAction(`socialTalk:Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
       return {
         ok: true,
-        message: `Berhasil pesan ${res.item.name}! +${res.xpGained} XP`,
+        message: `Ordered ${res.item.name}! +${res.xpGained} XP`,
       };
     },
     [dispatchBuddyAction, grantPlayerXp],
   );
 
-  const handleExchangeCafeBucks = useCallback(
-    (amount: number) => {
-      setCafeShiftBucks((prevBucks) => {
-        const ex = exchangeCafeBucksToLul(amount, prevBucks, hudRef.current.gold);
-        if (!ex.exchanged) {
-          soundEngine.playHit();
-          return prevBucks;
-        }
-        soundEngine.playPowerCore();
-        try {
-          window.localStorage.setItem('bb_cafe_shift_bucks_v1', String(ex.nextBucks));
-        } catch {
-          // ignore
-        }
-        dispatchBuddyAction(`adjustPlayerLul:${ex.lulReceived}`);
-        setHud((prev) => ({ ...prev, gold: prev.gold + ex.lulReceived }));
-        dispatchBuddyAction(`socialTalk:Tukar ${ex.bucksSpent} BUCKS -> +${ex.lulReceived} LUL!`);
-        return ex.nextBucks;
-      });
+  const handlePurchaseCafeItemWithCyon = useCallback(
+    (item: CafeMenuItemSpec): { ok: boolean; message: string } => {
+      const res = purchaseCafeMenuItemWithCyon(item.id, cyonBalance);
+      if (!res.purchased || !res.item) {
+        soundEngine.playHit();
+        return {
+          ok: false,
+          message: `Not enough CYON! You need ${item.priceCyon} CYON — swap LUL for CYON at the Exchange kiosk.`,
+        };
+      }
+      soundEngine.playPickup();
+      setCyonBalance(res.nextCyon);
+      grantPlayerXp(res.xpGained, `ORDER ${res.item.name.toUpperCase()} · CYON 2.5X XP`);
+      dispatchBuddyAction(`socialTalk:Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
+      return {
+        ok: true,
+        message: `Ordered ${res.item.name} with CYON! +${res.xpGained} XP (2.5x)`,
+      };
     },
-    [dispatchBuddyAction],
+    [cyonBalance, dispatchBuddyAction, grantPlayerXp],
   );
 
   useEffect(() => {
@@ -9074,20 +9047,15 @@ export default function App() {
       {/* 14. 3D FISH PREVIEW MODAL (WALLET + BAG) */}
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
 
-      {/* 15. BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") ORDER & ATM MODALS + XP BANNER */}
+      {/* 15. BOTANICAL GLASSHOUSE CAFE ORDER MODAL (LUL or CYON) + XP BANNER */}
       <GlasshouseCafeOrderModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'order'}
         onClose={() => setActiveCafeModal('none')}
         lulBalance={hud.gold}
+        cyonBalance={cyonBalance}
         levelProgress={levelProgress}
         onPurchaseItem={handlePurchaseCafeItem}
-      />
-      <GlasshouseCafeAtmModal
-        isOpen={isInsideGlasshouseCafe && activeCafeModal === 'atm'}
-        onClose={() => setActiveCafeModal('none')}
-        shiftBucks={cafeShiftBucks}
-        lulBalance={hud.gold}
-        onExchangeBucks={handleExchangeCafeBucks}
+        onPurchaseItemWithCyon={handlePurchaseCafeItemWithCyon}
       />
       <XpGainCelebrationBanner banner={xpCelebrationBanner} />
     </main>

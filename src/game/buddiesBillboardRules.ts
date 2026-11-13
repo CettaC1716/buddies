@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /**
  * Screen-space proportions (in CSS pixels) and head-clearance anchors for 3D character
  * nametag quads and overhead prompt billboards, calibrated to match the game's
- * contextual HUD prompts (`KELUAR CAFE [E]`, `PESAN MENU [E]`, ~140-150px x 32-34px).
+ * contextual HUD prompts (`EXIT CAFE [E]`, `ORDER MENU [E]`, ~140-150px x 32-34px).
  */
 export const NAMEPLATE_SCREEN_SPEC = {
   playerAndPeerWidthPx: 146,

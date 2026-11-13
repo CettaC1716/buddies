@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Sparkles, Star, Coins, Banknote, CheckCircle2, X } from 'lucide-react';
+import { Sparkles, Star, Coins, CheckCircle2, X } from 'lucide-react';
 import {
   CAFE_MENU_ITEMS,
+  cafeCyonPurchaseXpForItem,
   type CafeMenuItemSpec,
   type PlayerLevelProgress,
 } from '../game/buddiesCafeRules';
@@ -11,16 +12,20 @@ export interface GlasshouseCafeOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
   lulBalance: number;
+  cyonBalance: number;
   levelProgress: PlayerLevelProgress;
   onPurchaseItem: (item: CafeMenuItemSpec) => { ok: boolean; message: string };
+  onPurchaseItemWithCyon: (item: CafeMenuItemSpec) => { ok: boolean; message: string };
 }
 
 export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> = ({
   isOpen,
   onClose,
   lulBalance,
+  cyonBalance,
   levelProgress,
   onPurchaseItem,
+  onPurchaseItemWithCyon,
 }) => {
   const [selectedId, setSelectedId] = useState<CafeMenuItemSpec['id'] | null>(null);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
@@ -33,7 +38,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="PESAN SESUATU"
+      aria-label="ORDER SOMETHING"
       data-cafe-order-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/65 pointer-events-auto"
     >
@@ -45,7 +50,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
               LV {levelProgress.level}
             </span>
             <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white">
-              PESAN SESUATU
+              ORDER SOMETHING
             </h2>
           </div>
 
@@ -54,6 +59,10 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
               <Coins className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
               {lulBalance} LUL
             </div>
+            <div className="px-2.5 py-1 bg-[#38bdf8] text-[#0f172a] border-2 border-black font-mono-tabular font-black text-xs flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+              {cyonBalance} CYON
+            </div>
             <button
               type="button"
               data-cafe-order-close-btn="true"
@@ -61,7 +70,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                 setFeedback(null);
                 onClose();
               }}
-              aria-label="Tutup Menu Pesanan"
+              aria-label="Close Order Menu"
               className="w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
             >
               <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
@@ -109,7 +118,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
               <div className="my-auto px-2 space-y-2">
                 <Sparkles className="w-8 h-8 text-[#b8ff3c] mx-auto" aria-hidden="true" />
                 <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                  Pilih item untuk melihat informasi XP &amp; membelinya
+                  Pick an item to see its XP info and buy it
                 </p>
               </div>
             ) : (
@@ -158,8 +167,23 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                   }}
                   className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
                 >
-                  PESAN ({selectedItem.priceLul} LUL)
+                  ORDER ({selectedItem.priceLul} LUL)
                 </button>
+
+                <button
+                  type="button"
+                  data-cafe-buy-selected-cyon-btn="true"
+                  onClick={() => {
+                    const res = onPurchaseItemWithCyon(selectedItem);
+                    setFeedback({ ok: res.ok, text: res.message });
+                  }}
+                  className="w-full mt-2 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                >
+                  ORDER WITH CYON ({selectedItem.priceCyon} CYON) · +{cafeCyonPurchaseXpForItem(selectedItem)} XP
+                </button>
+                <p className="mt-2 text-[10px] font-bold text-slate-400 leading-snug">
+                  CYON orders grant 2.5x the XP of working a shift. Working earns XP only.
+                </p>
               </>
             )}
           </div>
@@ -169,102 +193,8 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
   );
 };
 
-export interface GlasshouseCafeAtmModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  shiftBucks: number;
-  lulBalance: number;
-  onExchangeBucks: (amount: number) => void;
-}
-
-export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
-  isOpen,
-  onClose,
-  shiftBucks,
-  lulBalance,
-  onExchangeBucks,
-}) => {
-  if (!isOpen) return null;
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="ATM CAFE TUKAR GAJI"
-      data-cafe-atm-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 pointer-events-auto"
-    >
-      <div className="w-full max-w-sm bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
-          <div className="flex items-center gap-2">
-            <Banknote className="w-4 h-4 text-[#facc15]" aria-hidden="true" />
-            <h2 className="text-sm font-black uppercase tracking-wider">CAFE ATM · TUKAR GAJI</h2>
-          </div>
-          <button
-            type="button"
-            data-cafe-atm-close-btn="true"
-            onClick={onClose}
-            aria-label="Tutup ATM"
-            className="w-7 h-7 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
-          >
-            <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="p-2.5 bg-[#1b1f29] border-2 border-black rounded-xl text-center">
-              <div className="text-[9.5px] font-black uppercase text-emerald-400">SHIFT BUCKS</div>
-              <div
-                data-atm-bucks-balance="true"
-                className="text-xl font-black font-mono-tabular text-white mt-0.5"
-              >
-                {shiftBucks}
-              </div>
-            </div>
-            <div className="p-2.5 bg-[#1b1f29] border-2 border-black rounded-xl text-center">
-              <div className="text-[9.5px] font-black uppercase text-[#fec83e]">SALDO LUL</div>
-              <div
-                data-atm-lul-balance="true"
-                className="text-xl font-black font-mono-tabular text-[#fec83e] mt-0.5"
-              >
-                {lulBalance}
-              </div>
-            </div>
-          </div>
-
-          <div className="text-center text-[11px] font-bold text-slate-300">
-            Kurs Tukar: <span className="text-[#b8ff3c] font-black">1 BUCKS = 1 LUL</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={shiftBucks < 25}
-              data-atm-exchange-25-btn="true"
-              onClick={() => onExchangeBucks(25)}
-              className="py-2 bg-[#38bdf8] disabled:bg-slate-700 disabled:text-slate-400 hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-xs uppercase cursor-pointer disabled:cursor-not-allowed"
-            >
-              TUKAR 25
-            </button>
-            <button
-              type="button"
-              disabled={shiftBucks <= 0}
-              data-atm-exchange-all-btn="true"
-              onClick={() => onExchangeBucks(shiftBucks)}
-              className="py-2 bg-[#b8ff3c] disabled:bg-slate-700 disabled:text-slate-400 hover:bg-[#d9f99d] text-[#14161d] border-2 border-black font-black text-xs uppercase cursor-pointer disabled:cursor-not-allowed"
-            >
-              TUKAR SEMUA
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export const XpGainCelebrationBanner: React.FC<{
-  banner: { id: number; xpGained: number; bucksGained?: number; leveledUpTo: number | null; label: string } | null;
+  banner: { id: number; xpGained: number; leveledUpTo: number | null; label: string } | null;
 }> = ({ banner }) => {
   if (!banner) return null;
   return (
@@ -280,10 +210,8 @@ export const XpGainCelebrationBanner: React.FC<{
         )}
         <span className="text-xs font-black uppercase tracking-wider">
           {banner.leveledUpTo
-            ? `LEVEL UP! SEKARANG LV ${banner.leveledUpTo} (+${banner.xpGained} XP)`
-            : `${banner.label} · +${banner.xpGained} XP${
-                banner.bucksGained ? ` · +${banner.bucksGained} BUCKS` : ''
-              }`}
+            ? `LEVEL UP! NOW LV ${banner.leveledUpTo} (+${banner.xpGained} XP)`
+            : `${banner.label} · +${banner.xpGained} XP`}
         </span>
       </div>
     </div>

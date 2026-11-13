@@ -643,10 +643,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     exitHouseRoomPromptBtn.setAttribute('data-exit-house-room-floating-btn', 'true');
 
-    const ENTER_CAFE_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:#38bdf8; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 16px rgba(56,189,248,0.85); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">MASUK CAFE [E]</span></span>`;
+    const ENTER_CAFE_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:#38bdf8; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 16px rgba(56,189,248,0.85); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">ENTER CAFE [E]</span></span>`;
     const enterCafePromptBtn = createPromptButton(
       ENTER_CAFE_BTN_HTML,
-      'MASUK CAFE [E]',
+      'ENTER CAFE [E]',
       'enterGlasshouseCafe',
     );
     enterCafePromptBtn.setAttribute('data-enter-cafe-floating-btn', 'true');
@@ -654,8 +654,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const getCafeStationBtnHtml = (label: string, bgHex = '#b8ff3c', fgHex = '#14161d') =>
       `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:${bgHex}; color:${fgHex}; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(184,255,60,0.65); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">${label}</span></span>`;
     const cafeStationPromptBtn = createPromptButton(
-      getCafeStationBtnHtml('PESAN MENU [E]'),
-      'INTERAKSI CAFE [E]',
+      getCafeStationBtnHtml('ORDER MENU [E]'),
+      'CAFE STATION [E]',
       'cafeStationInteract',
     );
     cafeStationPromptBtn.setAttribute('data-cafe-station-floating-btn', 'true');
@@ -5855,7 +5855,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (playerUnit?.nameplate?.updatePlate) {
         playerUnit.nameplate.updatePlate(
           playerCustomDisplayName,
-          cafeWorkShiftActive ? 'PELAYAN CAFE' : '',
+          cafeWorkShiftActive ? 'CAFE WAITER' : '',
         );
       }
       if (typeof detail.isSampleHouse === 'boolean') {
@@ -11755,7 +11755,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         if (wasFishingRod) {
           playerUnit.saluteTimer = 1.6;
-          playerUnit.saluteSign.updateText('JORAN DISIMPAN', 'MASUK KE DALAM TAS', '#94a3b8', 1);
+          playerUnit.saluteSign.updateText('ROD STORED', 'INTO THE BAG', '#94a3b8', 1);
           playerUnit.saluteSign.sprite.visible = true;
           emitHudImmediately();
         }
@@ -12579,11 +12579,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (station.kind === 'rota_board') {
             soundEngine.playUiClick();
             window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
-            return;
-          }
-          if (station.kind === 'atm_machine') {
-            soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
             return;
           }
         }
@@ -14218,8 +14213,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
         } else if (st.kind === 'rota_board') {
           window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
-        } else if (st.kind === 'atm_machine') {
-          window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
         }
       } else if (act.startsWith('adjustPlayerLul:')) {
         const delta = Number(act.slice('adjustPlayerLul:'.length));
@@ -24157,44 +24150,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           let tx = 0;
           let ty = CAFE_ORIGIN_Y + 1.95;
           let tz = 0;
-          let label = 'PESAN MENU [E]';
+          let label = 'ORDER MENU [E]';
           let bgHex = '#38bdf8';
           let fgHex = '#0f172a';
           if (station.kind === 'exit_door') {
             tx = CAFE_INTERIOR_BOUNDS.exitDoorX;
             tz = CAFE_INTERIOR_BOUNDS.exitDoorZ;
             ty = CAFE_ORIGIN_Y + 1.45;
-            label = 'KELUAR CAFE [E]';
+            label = 'EXIT CAFE [E]';
             bgHex = '#ef4444';
             fgHex = '#ffffff';
           } else if (station.kind === 'serve_customer') {
             tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
             tz = -2.05;
             ty = CAFE_ORIGIN_Y + 1.16;
-            label = 'SAJIKAN [E]';
+            label = 'SERVE [E]';
             bgHex = '#b8ff3c';
             fgHex = '#14161d';
           } else if (station.kind === 'order_counter') {
             tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
             tz = CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ;
             ty = CAFE_ORIGIN_Y + 1.75;
-            label = 'PESAN MENU [E]';
+            label = 'ORDER MENU [E]';
             bgHex = '#38bdf8';
             fgHex = '#0f172a';
           } else if (station.kind === 'rota_board') {
             tx = CAFE_INTERIOR_BOUNDS.rotaBoardX;
             tz = CAFE_INTERIOR_BOUNDS.rotaBoardZ;
             ty = CAFE_ORIGIN_Y + 2.05;
-            label = cafeWorkShiftActive ? 'SHIFT AKTIF' : 'KERJA PELAYAN [E]';
+            label = cafeWorkShiftActive ? 'SHIFT ACTIVE' : 'WORK AS WAITER [E]';
             bgHex = '#4ade80';
             fgHex = '#052e16';
-          } else if (station.kind === 'atm_machine') {
-            tx = -5.45;
-            tz = -4.18;
-            ty = CAFE_ORIGIN_Y + 1.94;
-            label = 'ATM TUKAR GAJI [E]';
-            bgHex = '#facc15';
-            fgHex = '#14161d';
           }
           cafeStationPromptBtn.innerHTML = getCafeStationBtnHtml(label, bgHex, fgHex);
           const proj = projectFlatRoomToScreenPixels(tx, ty, tz);
