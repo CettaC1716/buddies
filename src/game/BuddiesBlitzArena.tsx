@@ -12665,7 +12665,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       plazaFlyPhase = 'fly';
     };
     window.addEventListener('buddies-fly-to-plaza', onFlyToPlaza);
-    let titleAvatarHidden = false;
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
@@ -18411,19 +18410,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Landing stage: until onboarding completes, the avatar waits at the
       // Central Oasis Lake shore — the same spot the avatar picker uses.
       if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
-        // The landing is a clean scenic shot: the avatar waits at the
-        // lakeside stage for the picker, but stays hidden on the title
-        // screen itself.
-        playerUnit.x = -31.0;
-        playerUnit.z = 13.8;
+        // The landing shot is the empty lakeside view; the avatar waits at
+        // the Central Plaza spawn, where PLAY flies the camera to.
+        playerUnit.x = -63.4;
+        playerUnit.z = 0.0;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
-        playerUnit.yaw = -0.54;
-        playerUnit.root.visible = false;
-        titleAvatarHidden = true;
-      } else if (titleAvatarHidden && playerUnit) {
-        playerUnit.root.visible = true;
-        titleAvatarHidden = false;
+        playerUnit.yaw = Math.PI;
       }
 
       // Character-select cinematic phase transitions (see the
