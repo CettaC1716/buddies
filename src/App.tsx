@@ -85,6 +85,8 @@ import {
   evaluateNpcPurchase,
   recordNpcPurchase,
   getNpcMemoryFinalOffer,
+  quickDealBonusLul,
+  NPC_TREASURY_RULES,
   type NpcTreasuryLedger,
   type NpcPurchaseRefusal,
   countOwnedMerchantItems,
@@ -4243,13 +4245,37 @@ export default function App() {
   // Chat-negotiated variant (F1 pilot): Kai pays the price agreed in the
   // chat negotiation instead of the standard formula price. The price was
   // produced by the negotiation envelope, so it is only clamped for sanity.
-  /** Kai's remembered final offer for this player+species (24h, plan 13.4). */
-  const getKaiLastFinalOffer = useCallback(
-    (speciesId: string): number | null => {
-      const ledger = kaiLedgerRef.current;
-      if (!ledger) return null;
+  /**
+   * Kai's haggling context for a fish (plan Bagian 13.4 + patience design):
+   * the remembered final price for this player+species (24h), and how much
+   * patience Kai has today — repeat haggling shortens it, a stressed
+   * treasury shortens it further, so grinding to the ceiling stops early.
+   */
+  const getKaiTradeContext = useCallback(
+    (fish: CaughtFishItem): { memoryFinalPrice: number | null; patience: number } => {
       const playerKey = hudRef.current.nearWalletId || playerUid || 'guest';
-      return getNpcMemoryFinalOffer(ledger, playerKey, speciesId, Date.now());
+      const ledger = kaiLedgerRef.current;
+      if (!ledger) return { memoryFinalPrice: null, patience: 3 };
+      const memoryFinalPrice = getNpcMemoryFinalOffer(
+        ledger,
+        playerKey,
+        fish.speciesId,
+        Date.now(),
+      );
+      let patience = memoryFinalPrice != null ? 2 : 3;
+      const poolNow = Math.max(0, Math.round(marketStateRef.current.treasuryLulPool));
+      const dayKey = new Date().toISOString().slice(0, 10);
+      const rolled = rollNpcTreasuryDay(ledger, dayKey, poolNow);
+      const dailyBudget = Math.floor(
+        rolled.poolStartOfDay * NPC_TREASURY_RULES.dailyVelocityPct,
+      );
+      if (
+        rolled.breakerTripped ||
+        (dailyBudget > 0 && dailyBudget - rolled.spentToday <= dailyBudget * 0.25)
+      ) {
+        patience = 1;
+      }
+      return { memoryFinalPrice, patience };
     },
     [playerUid],
   );
@@ -4258,14 +4284,18 @@ export default function App() {
     (
       fish: CaughtFishItem,
       agreedPriceLul: number,
+      roundsUsed: number = 99,
     ): { ok: true } | { ok: false; reason: NpcPurchaseRefusal } => {
       const actorAccount = hudRef.current.nearWalletId || playerUid;
       const standardLul = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
       // Defense in depth: whatever reached this handler, a negotiated price
-      // never settles above the negotiation ceiling for this fish.
+      // never settles above the negotiation ceiling for this fish. Accepting
+      // the first offer untouched earns the quick-deal bonus inside it.
+      const envelope = evaluateNegotiationEnvelope(standardLul);
       const earnedLul = Math.min(
-        evaluateNegotiationEnvelope(standardLul).ceiling,
-        Math.max(1, Math.round(agreedPriceLul)),
+        envelope.ceiling,
+        Math.max(1, Math.round(agreedPriceLul)) +
+          quickDealBonusLul(standardLul, roundsUsed),
       );
       // Treasury discipline (plan Bagian 13): Kai pays out of his LUL pool,
       // inside the daily velocity budget, per-player cap, locked reserve,
@@ -4323,7 +4353,7 @@ export default function App() {
           currency: 'LUL',
           amount: earnedLul,
           unit_price: earnedLul,
-          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL), paid from Kai's treasury pool under the daily discipline caps.`,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL), paid from Kai's treasury pool under the daily discipline caps.${quickDealBonusLul(standardLul, roundsUsed) > 0 ? ' Includes the quick-deal bonus for accepting the first offer.' : ''}`,
         });
       }
       return { ok: true };
@@ -7749,7 +7779,7 @@ export default function App() {
         playerNearAccount={hud.nearWalletId || playerUid || ''}
         onSellCaughtFish={handleSellRawFishForLul}
         onSellCaughtFishNegotiated={handleSellRawFishNegotiated}
-        getKaiLastFinalOffer={getKaiLastFinalOffer}
+        getKaiTradeContext={getKaiTradeContext}
         onReleaseCaughtFish={(fish: CaughtFishItem) => {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);

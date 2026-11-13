@@ -11,6 +11,7 @@ import {
   parseTradeChatIntent,
   countOwnedMerchantItems,
   createNegotiationSessionWithMemory,
+  quickDealBonusLul,
   createNpcTreasuryLedger,
   rollNpcTreasuryDay,
   evaluateNpcPurchase,
@@ -206,6 +207,46 @@ test('treasury memory: final offers resume for 24h, then expire; sessions anchor
   assert.equal(resumed.currentOffer, 100);
   const fresh = createNegotiationSessionWithMemory(100, null);
   assert.equal(fresh.currentOffer, 80);
+});
+
+test('patience: grinding past the final offer makes the NPC close the order', () => {
+  let s = createNegotiationSession(100, 1); // an impatient Kai: one raise tolerated
+  s = negotiateRaise(s);
+  assert.equal(s.currentOffer, 87);
+  assert.equal(s.isFinalOffer, true);
+  assert.equal(s.closedByNpc, false);
+  // One more push: Kai closes the order himself.
+  s = negotiateRaise(s);
+  assert.equal(s.closed, 'walked_away');
+  assert.equal(s.closedByNpc, true);
+  // And a late acceptance cannot revive an NPC-closed order.
+  const revived = negotiateAccept(s);
+  assert.equal(revived.agreedPrice, null);
+});
+
+test('patience: default sessions keep the classic three-raise ladder', () => {
+  let s = createNegotiationSession(100);
+  assert.equal(s.patience, 3);
+  s = negotiateRaise(s);
+  s = negotiateRaise(s);
+  assert.equal(s.isFinalOffer, false);
+  s = negotiateRaise(s);
+  assert.equal(s.isFinalOffer, true);
+  assert.equal(s.closedByNpc, false);
+});
+
+test('patience: a player walk-away can still be taken back, an NPC closing cannot', () => {
+  let s = createNegotiationSession(100);
+  s = negotiateWalkAway(s);
+  const taken = negotiateAccept(s);
+  assert.equal(taken.agreedPrice, 80);
+});
+
+test('quick-deal bonus: only for accepting the first offer untouched', () => {
+  assert.equal(quickDealBonusLul(100, 0), 2);
+  assert.equal(quickDealBonusLul(100, 1), 0);
+  assert.equal(quickDealBonusLul(1000, 0), 3); // capped small
+  assert.equal(quickDealBonusLul(10, 0), 1); // never zero when it applies
 });
 
 test('owned item counts: the ownership list is a multiset', () => {

@@ -34,6 +34,7 @@ import {
   negotiateAccept,
   negotiateWalkAway,
   clampNegotiationOffer,
+  quickDealBonusLul,
   parseTradeChatIntent,
   countOwnedMerchantItems,
   type NegotiationSession,
@@ -134,8 +135,13 @@ interface NpcMerchantAndHouseModalProps {
   onSellCaughtFishNegotiated?: (
     fish: CaughtFishItem,
     agreedPriceLul: number,
+    roundsUsed?: number,
   ) => { ok: true } | { ok: false; reason: NpcPurchaseRefusal };
-  getKaiLastFinalOffer?: (speciesId: string) => number | null;
+  /** Kai's haggling context for a fish: remembered final price + patience. */
+  getKaiTradeContext?: (fish: CaughtFishItem) => {
+    memoryFinalPrice: number | null;
+    patience: number;
+  };
   onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseAllCommonFish?: () => void;
   onMintFishAsNft?: (fish: CaughtFishItem) => Promise<boolean> | boolean | void;
@@ -193,7 +199,8 @@ const TRADE_LINES: Record<
     | 'reasonFair'
     | 'treasuryBreaker'
     | 'treasuryBudget'
-    | 'treasuryPool',
+    | 'treasuryPool'
+    | 'patienceOut',
     string
   >
 > = {
@@ -214,6 +221,7 @@ const TRADE_LINES: Record<
     treasuryBreaker: 'Rough day at the market. My purse is closed until tomorrow.',
     treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
     treasuryPool: 'My purse cannot cover that today, friend.',
+    patienceOut: 'That is enough for this catch. Come back tomorrow.',
   },
   id: {
     pick: 'Pick the fish you want to sell.',
@@ -232,6 +240,7 @@ const TRADE_LINES: Record<
     treasuryBreaker: 'Rough day at the market. My purse is closed until tomorrow.',
     treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
     treasuryPool: 'My purse cannot cover that today, friend.',
+    patienceOut: 'That is enough for this catch. Come back tomorrow.',
   },
 };
 const TRADE_LABELS: Record<
@@ -370,7 +379,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   playerNearAccount = '',
   onSellCaughtFish,
   onSellCaughtFishNegotiated,
-  getKaiLastFinalOffer,
+  getKaiTradeContext,
   onReleaseCaughtFish,
   onReleaseAllCommonFish,
   onMintFishAsNft,
@@ -671,16 +680,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     soundEngine.playUiClick();
     const value = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
     // Treasury memory (plan Bagian 13.4): a fresh session for the same
-    // species within 24h resumes at the last final offer, not the opener.
+    // species within 24h resumes at the last final offer, not the opener,
+    // and Kai's patience for the session comes from the same context.
+    const ctx = getKaiTradeContext?.(fish);
     syncTrade(
-      createNegotiationSessionWithMemory(value, getKaiLastFinalOffer?.(fish.speciesId)),
+      createNegotiationSessionWithMemory(value, ctx?.memoryFinalPrice, ctx?.patience),
       'offering',
       fish.id,
     );
     triggerNpcSpeech(tradeLine('open'));
   };
 
+  /** Kai ran out of patience and closed the order himself: the trade ends. */
+  const closeTradeByNpc = () => {
+    endTrade();
+    triggerNpcSpeech(tradeLine('patienceOut'));
+  };
+
   const applyRaisedSession = (next: NegotiationSession) => {
+    if (next.closedByNpc) {
+      closeTradeByNpc();
+      return;
+    }
     syncTrade(next, 'offering', tradeFishId);
     if (next.isFinalOffer) {
       triggerNpcSpeech(tradeLine('final'));
@@ -731,7 +752,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     const fish = tradeFish;
     if (!s || s.agreedPrice == null || !fish) return;
     soundEngine.playUiClick();
-    const result = onSellCaughtFishNegotiated?.(fish, s.agreedPrice);
+    const result = onSellCaughtFishNegotiated?.(fish, s.agreedPrice, s.roundsUsed);
     if (result && !result.ok) {
       // Kai's treasury refused the payment (plan Bagian 13 caps/breaker):
       // no fish changes hands, the session ends, and Kai says why.
@@ -747,7 +768,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       );
       return;
     }
-    setTradeDoneInfo({ name: fish.speciesName, price: s.agreedPrice });
+    // The done card shows what Kai actually pays: the agreed price plus
+    // the quick-deal bonus when the first offer was taken without haggling.
+    setTradeDoneInfo({
+      name: fish.speciesName,
+      price: Math.min(
+        s.ceiling,
+        s.agreedPrice + quickDealBonusLul(s.baseValue, s.roundsUsed),
+      ),
+    });
     syncTrade(null, 'done', null);
     triggerNpcSpeech(tradeLine('done'));
   };
@@ -847,6 +876,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         if (outcome === 'agreed') {
           syncTrade(next, 'agreed', tradeFishId);
           finishLocal(tradeLine('acceptCounter'));
+        } else if (next.closedByNpc) {
+          syncTrade(null, null, null);
+          finishLocal(tradeLine('patienceOut'));
         } else {
           syncTrade(next, 'offering', tradeFishId);
           finishLocal(
@@ -868,6 +900,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       }
       if (intent.kind === 'raise') {
         const next = negotiateRaise(s);
+        if (next.closedByNpc) {
+          syncTrade(null, null, null);
+          finishLocal(tradeLine('patienceOut'));
+          return;
+        }
         syncTrade(next, 'offering', tradeFishId);
         finishLocal(
           next.isFinalOffer
@@ -1019,7 +1056,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               if (outcome === 'agreed') syncTrade(next, 'agreed', tradeFishId);
             } else if (move.moveType === 'offer' && move.price != null) {
               const clamped = clampNegotiationOffer(sNow, move.price);
-              if (clamped > sNow.currentOffer) {
+              if (clamped > sNow.currentOffer && !sNow.isFinalOffer) {
                 const roundsUsed = sNow.roundsUsed + 1;
                 syncTrade(
                   {
@@ -1027,7 +1064,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     currentOffer: clamped,
                     roundsUsed,
                     isFinalOffer:
-                      roundsUsed >= sNow.maxRounds || clamped >= sNow.ceiling,
+                      roundsUsed >= sNow.patience ||
+                      roundsUsed >= sNow.maxRounds ||
+                      clamped >= sNow.ceiling,
                   },
                   'offering',
                   tradeFishId,

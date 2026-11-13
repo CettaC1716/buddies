@@ -711,13 +711,25 @@ export interface NegotiationSession {
   currentOffer: number;
   roundsUsed: number;
   maxRounds: number;
+  /**
+   * Raise rounds the NPC tolerates this session (1-3), set from context —
+   * treasury stress and repeat haggling shrink it. When patience runs out
+   * the current offer becomes final; one more push and the NPC closes the
+   * order himself, so grinding to the ceiling is no longer free.
+   */
+  patience: number;
   /** True once the current offer is the NPC's last one. */
   isFinalOffer: boolean;
   agreedPrice: number | null;
   closed: 'agreed' | 'walked_away' | null;
+  /** True when the NPC ended the session (patience out), not the player. */
+  closedByNpc: boolean;
 }
 
-export function createNegotiationSession(baseValue: number): NegotiationSession {
+export function createNegotiationSession(
+  baseValue: number,
+  patience: number = 3,
+): NegotiationSession {
   const env = evaluateNegotiationEnvelope(baseValue);
   return {
     baseValue: env.baseValue,
@@ -725,15 +737,22 @@ export function createNegotiationSession(baseValue: number): NegotiationSession 
     currentOffer: env.openOffer,
     roundsUsed: 0,
     maxRounds: env.stepPcts.length,
+    patience: Math.max(1, Math.min(env.stepPcts.length, Math.round(patience) || 1)),
     isFinalOffer: false,
     agreedPrice: null,
     closed: null,
+    closedByNpc: false,
   };
 }
 
 /** NPC raises its offer by the next shrinking step, clamped to the ceiling. */
 export function negotiateRaise(session: NegotiationSession): NegotiationSession {
   if (session.closed || session.agreedPrice !== null) return session;
+  if (session.isFinalOffer) {
+    // Patience is gone: the NPC closes the order. Unlike a player
+    // walk-away, this ending cannot be revived by accepting afterwards.
+    return { ...session, closed: 'walked_away', closedByNpc: true };
+  }
   const env = evaluateNegotiationEnvelope(session.baseValue);
   if (session.roundsUsed >= session.maxRounds || session.currentOffer >= session.ceiling) {
     return { ...session, isFinalOffer: true };
@@ -748,7 +767,10 @@ export function negotiateRaise(session: NegotiationSession): NegotiationSession 
     ...session,
     currentOffer: nextOffer,
     roundsUsed,
-    isFinalOffer: roundsUsed >= session.maxRounds || nextOffer >= session.ceiling,
+    isFinalOffer:
+      roundsUsed >= session.patience ||
+      roundsUsed >= session.maxRounds ||
+      nextOffer >= session.ceiling,
   };
 }
 
@@ -782,7 +804,20 @@ export function negotiatePlayerCounter(
  */
 export function negotiateAccept(session: NegotiationSession): NegotiationSession {
   if (session.agreedPrice !== null) return session;
+  // An order the NPC closed himself stays closed — no late acceptance.
+  if (session.closedByNpc) return session;
   return { ...session, agreedPrice: session.currentOffer, closed: 'agreed' };
+}
+
+/**
+ * Small goodwill bonus for accepting the NPC's first offer without a
+ * single raise round — the counterweight that makes "take it now" a real
+ * choice instead of the lazy one. Paid from the same treasury pool and
+ * still inside the negotiation ceiling at settlement.
+ */
+export function quickDealBonusLul(baseValue: number, roundsUsed: number): number {
+  if (roundsUsed > 0) return 0;
+  return Math.max(1, Math.min(3, Math.round(Math.max(1, baseValue) * 0.02)));
 }
 
 /** Session ends without a deal; the last offer stays readable on the card. */
@@ -873,8 +908,9 @@ export function clampNegotiationOffer(session: NegotiationSession, price: number
 export function createNegotiationSessionWithMemory(
   baseValue: number,
   memoryFinalPrice?: number | null,
+  patience?: number,
 ): NegotiationSession {
-  const session = createNegotiationSession(baseValue);
+  const session = createNegotiationSession(baseValue, patience ?? 3);
   if (memoryFinalPrice == null || !Number.isFinite(memoryFinalPrice)) return session;
   const anchored = Math.max(
     session.currentOffer,
