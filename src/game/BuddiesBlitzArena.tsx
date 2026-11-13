@@ -666,25 +666,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       atm_machine: { x: -5.45, y: CAFE_ORIGIN_Y + 2.0, z: -4.18 },
       exit_door: { x: 0, y: CAFE_ORIGIN_Y + 2.3, z: 4.55 },
     };
-    const syncInteractMarker = () => {
-      const a = markerPromptAnchor ?? markerGuideAnchor;
-      const group = ensureInteractMarker();
-      const nowSec = performance.now() * 0.001;
-      group.visible = true;
-      if (a) {
-        group.position.set(a.x, a.y + Math.sin(nowSec * 2.4) * 0.05, a.z);
-      } else if (playerUnit) {
-        group.position.set(
-          playerUnit.x,
-          playerUnit.root.position.y + 3.7 + Math.sin(nowSec * 2.4) * 0.05,
-          playerUnit.z,
-        );
-      } else {
-        group.visible = false;
-        return;
-      }
-      group.rotation.y = nowSec * 0.9;
-    };
 
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
     const HAND_ICON_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; background:#facc15; color:#14161d; font-family:'Barlow',sans-serif; font-weight:900; font-size:10px; border:2px solid #14161d; box-shadow:2px 2px 0 #14161d; user-select:none; pointer-events:none;">E</span>`;
@@ -24205,6 +24186,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
+      // Position the ONE triangle marker: the prompt anchor wins, then the
+      // property guide anchor; with neither, it hovers above the player's
+      // own head so it can never silently vanish.
+      {
+        const ma = markerPromptAnchor ?? markerGuideAnchor;
+        const mg = ensureInteractMarker();
+        if (ma) {
+          mg.visible = true;
+          mg.position.set(ma.x, ma.y + Math.sin(timeSec * 2.4) * 0.05, ma.z);
+          mg.rotation.y = timeSec * 0.9;
+        } else if (playerUnit && playerUnit.alive && worldModeRef.current !== 'warzone') {
+          const baseY =
+            npcCameraMode === 'cafe_interior'
+              ? CAFE_ORIGIN_Y
+              : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
+                ? HOUSE_ORIGIN_Y
+                : getTerrainElevation(playerUnit.x, playerUnit.z);
+          mg.visible = true;
+          mg.position.set(
+            playerUnit.x,
+            baseY + 3.7 + Math.sin(timeSec * 2.4) * 0.05,
+            playerUnit.z,
+          );
+          mg.rotation.y = timeSec * 0.9;
+        } else {
+          mg.visible = false;
+        }
+      }
+
       // Update 2D DOM floating prompt buttons with pixel-perfect Math.round() & Hysteresis at 60 FPS
       updateDirectDomPrompts();
 
@@ -25001,7 +25011,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
       syncFixedInteractionPrompt();
-      syncInteractMarker();
     };
 
     const buildHudSnapshot = (outcome: 'victory' | 'defeat' | null): HudSnapshot => {
