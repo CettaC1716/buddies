@@ -865,6 +865,179 @@ export function clampNegotiationOffer(session: NegotiationSession, price: number
   return Math.max(session.currentOffer, Math.min(session.ceiling, p));
 }
 
+/**
+ * Opens a session anchored on the final offer this player reached for the
+ * same species within the memory window (plan Bagian 13.4): re-rolling a
+ * fresh session must not reset the NPC back to its opening price.
+ */
+export function createNegotiationSessionWithMemory(
+  baseValue: number,
+  memoryFinalPrice?: number | null,
+): NegotiationSession {
+  const session = createNegotiationSession(baseValue);
+  if (memoryFinalPrice == null || !Number.isFinite(memoryFinalPrice)) return session;
+  const anchored = Math.max(
+    session.currentOffer,
+    Math.min(session.ceiling, Math.round(memoryFinalPrice)),
+  );
+  return {
+    ...session,
+    currentOffer: anchored,
+    isFinalOffer: anchored >= session.ceiling,
+  };
+}
+
+/* ============================================================================
+ * NPC TREASURY DISCIPLINE (plan Bagian 13, Fase 1 scope: Kai's LUL pool)
+ * The negotiation envelope decides what Kai may OFFER; this ledger decides
+ * what his treasury may actually PAY. Enforced at settlement, where the
+ * money moves: daily velocity cap, per-player daily cap, a locked profit
+ * reserve that can only grow, a circuit breaker on a bad day, and a 24h
+ * memory of final offers per player+species. The RESPITE treasury of
+ * Fase 2 reuses the same rules with its own decided caps (250 per
+ * transaction / 1,000 per day / 500 reserve — plan Bagian 12 decision 2).
+ * ==========================================================================*/
+
+export const NPC_TREASURY_RULES = {
+  /** Total NPC spend per day may not exceed this share of the day-start pool. */
+  dailyVelocityPct: 0.2,
+  /** One player may not take more than this share of the daily spend budget. */
+  playerDailyShareOfBudget: 0.4,
+  /** Pool drop within a day that trips the circuit breaker. */
+  breakerDropPct: 0.1,
+  /** Share of the realized spread locked away as untouchable reserve. */
+  profitLockPct: 0.5,
+  /** How long a final offer is remembered per player+species. */
+  memoryWindowMs: 24 * 60 * 60 * 1000,
+} as const;
+
+export interface NpcTreasuryLedger {
+  /** UTC calendar day (YYYY-MM-DD) the daily counters belong to. */
+  dayKey: string;
+  /** Pool size when the day began — the breaker's reference point. */
+  poolStartOfDay: number;
+  /** LUL the NPC has paid out in purchases today. */
+  spentToday: number;
+  /** Ratcheted profit share. Spendable pool = pool - lockedReserve. */
+  lockedReserve: number;
+  /** True once the pool fell past the breaker threshold today. */
+  breakerTripped: boolean;
+  /** LUL sold TO the NPC per player today (anti-sybil cap input). */
+  playerSoldToday: Record<string, number>;
+  /** Last agreed final price per `${player}|${speciesId}`, ISO timestamped. */
+  lastFinalOffers: Record<string, { price: number; atIso: string }>;
+}
+
+export function createNpcTreasuryLedger(dayKey: string, poolNow: number): NpcTreasuryLedger {
+  return {
+    dayKey,
+    poolStartOfDay: Math.max(0, Math.round(poolNow)),
+    spentToday: 0,
+    lockedReserve: 0,
+    breakerTripped: false,
+    playerSoldToday: {},
+    lastFinalOffers: {},
+  };
+}
+
+/** Rolls the daily counters when the UTC day changes; reserve and memory persist. */
+export function rollNpcTreasuryDay(
+  ledger: NpcTreasuryLedger,
+  dayKey: string,
+  poolNow: number,
+): NpcTreasuryLedger {
+  if (ledger.dayKey === dayKey) return ledger;
+  return {
+    ...ledger,
+    dayKey,
+    poolStartOfDay: Math.max(0, Math.round(poolNow)),
+    spentToday: 0,
+    breakerTripped: false,
+    playerSoldToday: {},
+  };
+}
+
+export type NpcPurchaseRefusal = 'breaker' | 'budget' | 'player_cap' | 'pool';
+
+export interface NpcPurchaseInput {
+  playerKey: string;
+  price: number;
+  dayKey: string;
+  nowIso: string;
+}
+
+/**
+ * Decides whether the treasury may pay `price` right now. Pure: pass the
+ * day-rolled ledger (see rollNpcTreasuryDay) and the current pool.
+ */
+export function evaluateNpcPurchase(
+  ledger: NpcTreasuryLedger,
+  poolNow: number,
+  input: NpcPurchaseInput,
+): { allowed: boolean; reason?: NpcPurchaseRefusal; dailyBudget: number; remainingBudget: number } {
+  const dailyBudget = Math.floor(ledger.poolStartOfDay * NPC_TREASURY_RULES.dailyVelocityPct);
+  const remainingBudget = Math.max(0, dailyBudget - ledger.spentToday);
+  const price = Math.max(0, Math.round(input.price));
+  if (ledger.breakerTripped) return { allowed: false, reason: 'breaker', dailyBudget, remainingBudget };
+  if (price > remainingBudget) return { allowed: false, reason: 'budget', dailyBudget, remainingBudget };
+  const playerCap = Math.floor(dailyBudget * NPC_TREASURY_RULES.playerDailyShareOfBudget);
+  if ((ledger.playerSoldToday[input.playerKey] ?? 0) + price > playerCap) {
+    return { allowed: false, reason: 'player_cap', dailyBudget, remainingBudget };
+  }
+  if (price > Math.max(0, Math.round(poolNow) - ledger.lockedReserve)) {
+    return { allowed: false, reason: 'pool', dailyBudget, remainingBudget };
+  }
+  return { allowed: true, dailyBudget, remainingBudget };
+}
+
+/**
+ * Records a settled purchase: spend counters, the anti-re-roll memory, the
+ * profit ratchet (half the captured spread locks away), and the breaker
+ * check against the pool AFTER this payment.
+ */
+export function recordNpcPurchase(
+  ledger: NpcTreasuryLedger,
+  poolAfter: number,
+  input: NpcPurchaseInput & { speciesId: string; baseValue: number },
+): NpcTreasuryLedger {
+  const price = Math.max(0, Math.round(input.price));
+  const spread = Math.max(0, Math.round(input.baseValue) - price);
+  const lockedReserve =
+    ledger.lockedReserve + Math.floor(spread * NPC_TREASURY_RULES.profitLockPct);
+  const breakerTripped =
+    ledger.breakerTripped ||
+    Math.round(poolAfter) <
+      Math.floor(ledger.poolStartOfDay * (1 - NPC_TREASURY_RULES.breakerDropPct));
+  return {
+    ...ledger,
+    spentToday: ledger.spentToday + price,
+    lockedReserve,
+    breakerTripped,
+    playerSoldToday: {
+      ...ledger.playerSoldToday,
+      [input.playerKey]: (ledger.playerSoldToday[input.playerKey] ?? 0) + price,
+    },
+    lastFinalOffers: {
+      ...ledger.lastFinalOffers,
+      [`${input.playerKey}|${input.speciesId}`]: { price, atIso: input.nowIso },
+    },
+  };
+}
+
+/** The remembered final offer for this player+species, or null once stale. */
+export function getNpcMemoryFinalOffer(
+  ledger: NpcTreasuryLedger,
+  playerKey: string,
+  speciesId: string,
+  nowMs: number,
+): number | null {
+  const entry = ledger.lastFinalOffers[`${playerKey}|${speciesId}`];
+  if (!entry) return null;
+  const at = Date.parse(entry.atIso);
+  if (!Number.isFinite(at) || nowMs - at > NPC_TREASURY_RULES.memoryWindowMs) return null;
+  return entry.price;
+}
+
 export interface NpcConciergeLiveContext {
   playerNearAccount?: string;
   nearBalance?: number;

@@ -27,7 +27,8 @@ import {
   PlacedHouseFurnitureItem,
   evaluateLulToCyonExchangeQuote,
   evaluateMerchantItemQuote,
-  createNegotiationSession,
+  createNegotiationSessionWithMemory,
+  type NpcPurchaseRefusal,
   negotiateRaise,
   negotiatePlayerCounter,
   negotiateAccept,
@@ -130,7 +131,11 @@ interface NpcMerchantAndHouseModalProps {
   fishSalesStats?: FishNftMarketSalesStats | null;
   playerNearAccount?: string;
   onSellCaughtFish?: (fish: CaughtFishItem) => void;
-  onSellCaughtFishNegotiated?: (fish: CaughtFishItem, agreedPriceLul: number) => void;
+  onSellCaughtFishNegotiated?: (
+    fish: CaughtFishItem,
+    agreedPriceLul: number,
+  ) => { ok: true } | { ok: false; reason: NpcPurchaseRefusal };
+  getKaiLastFinalOffer?: (speciesId: string) => number | null;
   onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseAllCommonFish?: () => void;
   onMintFishAsNft?: (fish: CaughtFishItem) => Promise<boolean> | boolean | void;
@@ -185,7 +190,10 @@ const TRADE_LINES: Record<
     | 'reasonRare'
     | 'reasonDemand'
     | 'reasonStock'
-    | 'reasonFair',
+    | 'reasonFair'
+    | 'treasuryBreaker'
+    | 'treasuryBudget'
+    | 'treasuryPool',
     string
   >
 > = {
@@ -203,6 +211,9 @@ const TRADE_LINES: Record<
     reasonDemand: 'Market demand is strong, so I can stretch my price.',
     reasonStock: 'I still hold plenty of this kind, so I buy lower.',
     reasonFair: 'A fair trade price. I resell it at the fish market.',
+    treasuryBreaker: 'Rough day at the market. My purse is closed until tomorrow.',
+    treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
+    treasuryPool: 'My purse cannot cover that today, friend.',
   },
   id: {
     pick: 'Pick the fish you want to sell.',
@@ -218,6 +229,9 @@ const TRADE_LINES: Record<
     reasonDemand: 'Market demand is strong, so my price can go up.',
     reasonStock: 'I still hold plenty of this kind, so I buy it cheaper.',
     reasonFair: 'A fair price. I will resell it at the fish market.',
+    treasuryBreaker: 'Rough day at the market. My purse is closed until tomorrow.',
+    treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
+    treasuryPool: 'My purse cannot cover that today, friend.',
   },
 };
 const TRADE_LABELS: Record<
@@ -356,6 +370,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   playerNearAccount = '',
   onSellCaughtFish,
   onSellCaughtFishNegotiated,
+  getKaiLastFinalOffer,
   onReleaseCaughtFish,
   onReleaseAllCommonFish,
   onMintFishAsNft,
@@ -655,7 +670,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const chooseTradeFish = (fish: CaughtFishItem) => {
     soundEngine.playUiClick();
     const value = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
-    syncTrade(createNegotiationSession(value), 'offering', fish.id);
+    // Treasury memory (plan Bagian 13.4): a fresh session for the same
+    // species within 24h resumes at the last final offer, not the opener.
+    syncTrade(
+      createNegotiationSessionWithMemory(value, getKaiLastFinalOffer?.(fish.speciesId)),
+      'offering',
+      fish.id,
+    );
     triggerNpcSpeech(tradeLine('open'));
   };
 
@@ -710,7 +731,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     const fish = tradeFish;
     if (!s || s.agreedPrice == null || !fish) return;
     soundEngine.playUiClick();
-    onSellCaughtFishNegotiated?.(fish, s.agreedPrice);
+    const result = onSellCaughtFishNegotiated?.(fish, s.agreedPrice);
+    if (result && !result.ok) {
+      // Kai's treasury refused the payment (plan Bagian 13 caps/breaker):
+      // no fish changes hands, the session ends, and Kai says why.
+      endTrade();
+      triggerNpcSpeech(
+        tradeLine(
+          result.reason === 'breaker'
+            ? 'treasuryBreaker'
+            : result.reason === 'pool'
+              ? 'treasuryPool'
+              : 'treasuryBudget',
+        ),
+      );
+      return;
+    }
     setTradeDoneInfo({ name: fish.speciesName, price: s.agreedPrice });
     syncTrade(null, 'done', null);
     triggerNpcSpeech(tradeLine('done'));

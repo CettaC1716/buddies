@@ -80,6 +80,13 @@ import {
   executeLulToCyonExchangePackets,
   evaluateLulToCyonExchangeQuote,
   evaluateNegotiationEnvelope,
+  createNpcTreasuryLedger,
+  rollNpcTreasuryDay,
+  evaluateNpcPurchase,
+  recordNpcPurchase,
+  getNpcMemoryFinalOffer,
+  type NpcTreasuryLedger,
+  type NpcPurchaseRefusal,
   countOwnedMerchantItems,
   investInMerchantShop,
   stepFastForwardEconomyTick,
@@ -154,6 +161,8 @@ import {
   fetchHouseInteriorFromSupabase,
   fetchMarketTransactionsFromSupabase,
   fetchNpcMerchantsFromSupabase,
+  fetchNpcTreasuryLedgerFromSupabase,
+  saveNpcTreasuryLedgerToSupabase,
   fetchOrCreatePlayerProfile,
   fetchPlayerProfileByEmail,
   fetchPropertyListingsFromSupabase,
@@ -669,6 +678,22 @@ export default function App() {
   const levelProgress = computeLevelProgress(playerTotalXp);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
+  const marketStateRef = useRef(marketState);
+  useEffect(() => {
+    marketStateRef.current = marketState;
+  }, [marketState]);
+  // Kai's treasury discipline ledger (plan Bagian 13, Fase 1): persisted in
+  // bb_npc_treasury; the LUL pool itself stays in the merchant market state.
+  const kaiLedgerRef = useRef<NpcTreasuryLedger | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchNpcTreasuryLedgerFromSupabase('beach_house').then((ledger) => {
+      if (!cancelled && ledger) kaiLedgerRef.current = ledger;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const cafeExchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
   const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
   const [cyonBalance, setCyonBalance] = useState<number>(0);
@@ -4218,9 +4243,22 @@ export default function App() {
   // Chat-negotiated variant (F1 pilot): Kai pays the price agreed in the
   // chat negotiation instead of the standard formula price. The price was
   // produced by the negotiation envelope, so it is only clamped for sanity.
+  /** Kai's remembered final offer for this player+species (24h, plan 13.4). */
+  const getKaiLastFinalOffer = useCallback(
+    (speciesId: string): number | null => {
+      const ledger = kaiLedgerRef.current;
+      if (!ledger) return null;
+      const playerKey = hudRef.current.nearWalletId || playerUid || 'guest';
+      return getNpcMemoryFinalOffer(ledger, playerKey, speciesId, Date.now());
+    },
+    [playerUid],
+  );
+
   const handleSellRawFishNegotiated = useCallback(
-    (fish: CaughtFishItem, agreedPriceLul: number) => {
-      soundEngine.playPickup();
+    (
+      fish: CaughtFishItem,
+      agreedPriceLul: number,
+    ): { ok: true } | { ok: false; reason: NpcPurchaseRefusal } => {
       const actorAccount = hudRef.current.nearWalletId || playerUid;
       const standardLul = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
       // Defense in depth: whatever reached this handler, a negotiated price
@@ -4229,6 +4267,43 @@ export default function App() {
         evaluateNegotiationEnvelope(standardLul).ceiling,
         Math.max(1, Math.round(agreedPriceLul)),
       );
+      // Treasury discipline (plan Bagian 13): Kai pays out of his LUL pool,
+      // inside the daily velocity budget, per-player cap, locked reserve,
+      // and circuit breaker. A refusal changes nothing — the player keeps
+      // the fish and Kai says why, in character.
+      const poolNow = Math.max(0, Math.round(marketStateRef.current.treasuryLulPool));
+      const dayKey = new Date().toISOString().slice(0, 10);
+      const nowIso = new Date().toISOString();
+      const playerKey = actorAccount || 'guest';
+      const rolled = rollNpcTreasuryDay(
+        kaiLedgerRef.current ?? createNpcTreasuryLedger(dayKey, poolNow),
+        dayKey,
+        poolNow,
+      );
+      const verdict = evaluateNpcPurchase(rolled, poolNow, {
+        playerKey,
+        price: earnedLul,
+        dayKey,
+        nowIso,
+      });
+      kaiLedgerRef.current = rolled;
+      if (!verdict.allowed) {
+        void saveNpcTreasuryLedgerToSupabase('beach_house', rolled);
+        return { ok: false, reason: verdict.reason ?? 'pool' };
+      }
+      soundEngine.playPickup();
+      const poolAfter = Math.max(0, poolNow - earnedLul);
+      const recorded = recordNpcPurchase(rolled, poolAfter, {
+        playerKey,
+        price: earnedLul,
+        dayKey,
+        nowIso,
+        speciesId: fish.speciesId,
+        baseValue: standardLul,
+      });
+      kaiLedgerRef.current = recorded;
+      void saveNpcTreasuryLedgerToSupabase('beach_house', recorded);
+      setMarketState((prev) => ({ ...prev, treasuryLulPool: poolAfter }));
       setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
       setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
       const nextLul = Math.max(0, (hudRef.current.gold ?? 0) + earnedLul);
@@ -4248,9 +4323,10 @@ export default function App() {
           currency: 'LUL',
           amount: earnedLul,
           unit_price: earnedLul,
-          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL).`,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL), paid from Kai's treasury pool under the daily discipline caps.`,
         });
       }
+      return { ok: true };
     },
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
   );
@@ -7673,6 +7749,7 @@ export default function App() {
         playerNearAccount={hud.nearWalletId || playerUid || ''}
         onSellCaughtFish={handleSellRawFishForLul}
         onSellCaughtFishNegotiated={handleSellRawFishNegotiated}
+        getKaiLastFinalOffer={getKaiLastFinalOffer}
         onReleaseCaughtFish={(fish: CaughtFishItem) => {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);

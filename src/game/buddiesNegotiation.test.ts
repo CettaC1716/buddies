@@ -10,6 +10,12 @@ import {
   clampNegotiationOffer,
   parseTradeChatIntent,
   countOwnedMerchantItems,
+  createNegotiationSessionWithMemory,
+  createNpcTreasuryLedger,
+  rollNpcTreasuryDay,
+  evaluateNpcPurchase,
+  recordNpcPurchase,
+  getNpcMemoryFinalOffer,
 } from './buddiesMerchantPricing';
 
 test('negotiation envelope: opens at 80% and caps at 115% of formula value', () => {
@@ -108,6 +114,98 @@ test('chat intent: ordinary words cannot kill or sign a deal by accident', () =>
   assert.deepEqual(parseTradeChatIntent('tidak jadi'), { kind: 'walkaway' });
   assert.deepEqual(parseTradeChatIntent('berhenti'), { kind: 'walkaway' });
   assert.equal(parseTradeChatIntent('kenapa murah sekali').kind, 'why');
+});
+
+test('treasury discipline: daily velocity budget caps NPC spending', () => {
+  const day = '2026-11-14';
+  const ledger = createNpcTreasuryLedger(day, 5000); // budget = 20% = 1000
+  const input = { playerKey: 'alice', dayKey: day, nowIso: '2026-11-14T00:00:00.000Z' };
+  assert.equal(evaluateNpcPurchase(ledger, 5000, { ...input, price: 300 }).allowed, true);
+  const after = recordNpcPurchase(ledger, 4700, {
+    ...input,
+    price: 300,
+    speciesId: 'sardine',
+    baseValue: 320,
+  });
+  // 300 of the 1000 budget spent; 700 remains. A 400 ask from another
+  // player fits both the remaining budget and the per-player cap.
+  assert.equal(
+    evaluateNpcPurchase(after, 4700, { ...input, playerKey: 'bob', price: 400 }).allowed,
+    true,
+  );
+  const over = evaluateNpcPurchase(after, 4700, { ...input, playerKey: 'carol', price: 701 });
+  assert.equal(over.allowed, false);
+  assert.equal(over.reason, 'budget');
+});
+
+test('treasury discipline: one player cannot drain the daily budget alone', () => {
+  const day = '2026-11-14';
+  const ledger = createNpcTreasuryLedger(day, 5000); // player cap = 40% of 1000 = 400
+  const input = { playerKey: 'whale', dayKey: day, nowIso: '2026-11-14T00:00:00.000Z' };
+  const over = evaluateNpcPurchase(ledger, 5000, { ...input, price: 401 });
+  assert.equal(over.allowed, false);
+  assert.equal(over.reason, 'player_cap');
+  assert.equal(evaluateNpcPurchase(ledger, 5000, { ...input, price: 400 }).allowed, true);
+});
+
+test('treasury discipline: locked reserve is untouchable and only grows', () => {
+  const day = '2026-11-14';
+  let ledger = createNpcTreasuryLedger(day, 5000);
+  const input = { playerKey: 'alice', dayKey: day, nowIso: '2026-11-14T00:00:00.000Z' };
+  // Bought at 80 against a formula value of 100: spread 20, half (10) locks.
+  ledger = recordNpcPurchase(ledger, 4920, {
+    ...input,
+    price: 80,
+    speciesId: 'sardine',
+    baseValue: 100,
+  });
+  assert.equal(ledger.lockedReserve, 10);
+  const broke = { ...ledger, poolStartOfDay: 5000 };
+  // Pool of 50 with 10 locked: only 40 is spendable.
+  assert.equal(evaluateNpcPurchase(broke, 50, { ...input, price: 41 }).reason, 'pool');
+});
+
+test('treasury discipline: circuit breaker trips on a 10% pool drop and resets next day', () => {
+  const day = '2026-11-14';
+  let ledger = createNpcTreasuryLedger(day, 5000);
+  const input = { playerKey: 'alice', dayKey: day, nowIso: '2026-11-14T00:00:00.000Z' };
+  ledger = recordNpcPurchase(ledger, 4499, {
+    ...input,
+    price: 400,
+    speciesId: 'tuna',
+    baseValue: 400,
+  });
+  assert.equal(ledger.breakerTripped, true);
+  assert.equal(
+    evaluateNpcPurchase(ledger, 4499, { ...input, price: 10 }).reason,
+    'breaker',
+  );
+  const rolled = rollNpcTreasuryDay(ledger, '2026-11-15', 4499);
+  assert.equal(rolled.breakerTripped, false);
+  assert.equal(rolled.spentToday, 0);
+  assert.equal(rolled.lockedReserve, ledger.lockedReserve); // ratchet survives the roll
+});
+
+test('treasury memory: final offers resume for 24h, then expire; sessions anchor on them', () => {
+  const day = '2026-11-14';
+  let ledger = createNpcTreasuryLedger(day, 5000);
+  const t0 = Date.parse('2026-11-14T00:00:00.000Z');
+  ledger = recordNpcPurchase(ledger, 4900, {
+    playerKey: 'alice',
+    dayKey: day,
+    nowIso: new Date(t0).toISOString(),
+    price: 100,
+    speciesId: 'sardine',
+    baseValue: 100,
+  });
+  assert.equal(getNpcMemoryFinalOffer(ledger, 'alice', 'sardine', t0 + 3600_000), 100);
+  assert.equal(getNpcMemoryFinalOffer(ledger, 'alice', 'sardine', t0 + 25 * 3600_000), null);
+  assert.equal(getNpcMemoryFinalOffer(ledger, 'bob', 'sardine', t0 + 3600_000), null);
+  // A new session for a 100-value fish resumes at 100, not the 80 opener.
+  const resumed = createNegotiationSessionWithMemory(100, 100);
+  assert.equal(resumed.currentOffer, 100);
+  const fresh = createNegotiationSessionWithMemory(100, null);
+  assert.equal(fresh.currentOffer, 80);
 });
 
 test('owned item counts: the ownership list is a multiset', () => {

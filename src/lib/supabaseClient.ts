@@ -20,6 +20,7 @@ import {
   type FishNftMarketplaceListing,
   type FishingWaterZoneId,
 } from '../game/buddiesFishingMarket';
+import type { NpcTreasuryLedger } from '../game/buddiesMerchantPricing';
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
@@ -486,6 +487,51 @@ export async function syncNpcMerchantToSupabase(params: {
     const { error } = await supabase
       .from('bb_npc_merchants')
       .upsert(payload, { onConflict: 'merchant_id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Loads the NPC treasury discipline ledger (`bb_npc_treasury`) for one
+ * merchant location. The ledger is the rules engine's memory for purchase
+ * caps, the circuit breaker, the profit ratchet, and final-offer recall.
+ */
+export async function fetchNpcTreasuryLedgerFromSupabase(
+  merchantLocation: string,
+): Promise<NpcTreasuryLedger | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('bb_npc_treasury')
+      .select('ledger')
+      .eq('merchant_location', merchantLocation)
+      .maybeSingle();
+    if (error || !data) return null;
+    const ledger = (data as { ledger?: unknown }).ledger;
+    if (!ledger || typeof ledger !== 'object') return null;
+    return ledger as NpcTreasuryLedger;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists the NPC treasury discipline ledger for one merchant location. */
+export async function saveNpcTreasuryLedgerToSupabase(
+  merchantLocation: string,
+  ledger: NpcTreasuryLedger,
+): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from('bb_npc_treasury').upsert(
+      {
+        merchant_location: merchantLocation,
+        ledger,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'merchant_location' },
+    );
     return !error;
   } catch {
     return false;
