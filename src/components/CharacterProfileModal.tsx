@@ -93,6 +93,8 @@ export interface CharacterProfileModalProps {
   mintedFishNftCount?: number;
   recruitedFamilyCount?: number;
   activeHarvesterCount?: number;
+  playerLevel?: number;
+  playerXpLabel?: string;
   onChangePlayerName?: (newName: string) => void;
   onStartWhisper?: (user: NearbyEntityUser) => void;
 }
@@ -111,6 +113,8 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   mintedFishNftCount = 0,
   recruitedFamilyCount = 0,
   activeHarvesterCount = 0,
+  playerLevel = 1,
+  playerXpLabel,
   onChangePlayerName,
   onStartWhisper,
 }) => {
@@ -303,12 +307,13 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       role="dialog"
       aria-modal="false"
       aria-hidden={!isOpen || !targetUser}
+      inert={(!isOpen || !targetUser) || undefined}
       aria-label="Character Profile"
       data-character-profile-modal="true"
       className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
         isOpen && targetUser
-          ? 'translate-x-0 opacity-100 pointer-events-auto'
-          : '-translate-x-[120%] opacity-0 pointer-events-none'
+          ? 'translate-x-0 opacity-100 visible pointer-events-auto'
+          : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
       }`}
     >
       <div className="relative bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black flex flex-col max-h-full overflow-hidden">
@@ -351,6 +356,18 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                 {isNpcProfile ? 'MERCHANT NPC' : `${effectiveTeam.toUpperCase()} TEAM`}
               </span>
             </div>
+
+            {isSelfProfile && (
+              <div
+                data-profile-level-badge="true"
+                className="-skew-x-6 inline-block px-2.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase tracking-wider"
+              >
+                <span className="skew-x-6 inline-block">
+                  LV {playerLevel}
+                  {playerXpLabel ? ` · ${playerXpLabel}` : ''}
+                </span>
+              </div>
+            )}
           </div>
 
           <button

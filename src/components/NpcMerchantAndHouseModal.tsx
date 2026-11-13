@@ -1,5 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowRightLeft,
+  Check,
+  Coins,
+  Eye,
+  Gift,
+  Home,
+  LogIn,
+  MapPin,
+  PackageOpen,
+  Plus,
+  ShoppingBag,
+  Sofa,
+  Sparkles,
+  Store,
+  Tag,
+  User,
+} from 'lucide-react';
+import {
   MERCHANT_CATALOG_ITEMS,
   MerchantAgentMarketState,
   MerchantCatalogItem,
@@ -33,8 +51,10 @@ import {
 } from './Fish3dPreviewModal';
 import { Furniture3dThumbnail } from './Furniture3dThumbnail';
 import {
-  FAMILY_MEMBER_CONTRACT_PLANS,
-  FAMILY_MEMBER_ORDER_SPECS,
+  Furniture3dPreviewModal,
+  type Furniture3dPreviewSpec,
+} from './Furniture3dPreviewModal';
+import {
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   RESPITE_NEP141_METADATA,
   getLastNearTransactionError,
@@ -132,7 +152,9 @@ interface NpcMerchantAndHouseModalProps {
   }>;
   onFinishHanaTutorialAndGuideKiosk?: () => void;
   hanaPitchOrigin?: 'kiosk' | 'browse' | null;
-  onViewModelHouse?: () => void;
+  onViewModelHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
+  houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
+  onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
   onOpenTeleportKioskFromPitch?: () => void;
   kaiTutorialStage?: 'meet' | 'equip' | 'to_water' | 'catch' | 'sell' | 'done' | null;
   kaiCardDismissed?: boolean;
@@ -286,12 +308,6 @@ function detectTradeLang(text: string): TradeLang | null {
   return idHits >= enHits ? 'id' : 'en';
 }
 
-/* Family Member recruitment is fully built (plans, orders, agents) but
- * hidden from Hana's catalog for now: players met the card without any
- * explanation of what a companion does, which made the catalog confusing.
- * Flip to true to re-list it. */
-const FAMILY_MEMBER_CATALOG_VISIBLE = false;
-
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
   activeModalMode,
   merchantLocation,
@@ -311,8 +327,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onCancelPropertyListing,
   onBuyPropertyListing,
   onCompletePropertyTransfer,
-  onRecruitFamilyMember,
-  onCommandFamilyMember,
+  onRecruitFamilyMember: _onRecruitFamilyMember,
+  onCommandFamilyMember: _onCommandFamilyMember,
   ownedItemIds,
   activeHouseThemeId,
   interiorPlacement: _interiorPlacement,
@@ -349,6 +365,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onFinishHanaTutorialAndGuideKiosk,
   hanaPitchOrigin = null,
   onViewModelHouse,
+  houseArchitectureStyle = 'plaza_manor',
+  onSelectHouseArchitectureStyle,
   onOpenTeleportKioskFromPitch,
   kaiTutorialStage = null,
   kaiCardDismissed = false,
@@ -369,7 +387,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [, setLastPlayerMessage] = useState<string>('');
-  const [chatInputDraft, setChatInputDraft] = useState<string>('');
   const [isNpcThinking, setIsNpcThinking] = useState<boolean>(false);
   const activeNpcRequestIdRef = useRef<number>(0);
   const [chatHistory, setChatHistory] = useState<
@@ -402,16 +419,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     ok: boolean;
     text: string;
   } | null>(null);
-  const [selectedFamilyPlanId, setSelectedFamilyPlanId] =
-    useState<FamilyMemberContractPlanId>('1_week');
-  const [hanaCatalogSlide, setHanaCatalogSlide] = useState<'house' | 'family'>('house');
-  const [houseCardView, setHouseCardView] = useState<'exterior' | 'interior'>('exterior');
+  const [houseCardView] = useState<'exterior' | 'interior'>('exterior');
   const [kaiCatalogPage, setKaiCatalogPage] = useState<number>(0);
   const [selectedKaiFishingId, setSelectedKaiFishingId] = useState<string>(
     'fishing_rod_carbon_pro',
   );
   const [listingPriceByFishId, setListingPriceByFishId] = useState<Record<string, string>>({});
   const [preview3dFish, setPreview3dFish] = useState<Fish3dPreviewSpec | null>(null);
+  const [preview3dFurniture, setPreview3dFurniture] = useState<Furniture3dPreviewSpec | null>(
+    null,
+  );
 
   useEffect(() => {
     const onOpenFishTab = () => {
@@ -432,7 +449,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   useEffect(() => {
     const onOpenCatalogHouse = () => {
       setActiveTab('katalog');
-      setHanaCatalogSlide('house');
+      setHanaCatalogTab('house');
     };
     window.addEventListener('open-npc-catalog-house', onOpenCatalogHouse);
     return () => window.removeEventListener('open-npc-catalog-house', onOpenCatalogHouse);
@@ -452,7 +469,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
     'furniture',
   );
-  const [daylightHour, setDaylightHour] = useState<number>(18.5);
+  const [daylightHour, setDaylightHour] = useState<number>(13.0);
   const [floorSwatchId, setFloorSwatchId] = useState<string>('floor_tatami_oak');
   const [wallSwatchId, setWallSwatchId] = useState<string>('wall_limewash');
   const [slatsSwatchId, setSlatsSwatchId] = useState<string>('slats_walnut');
@@ -519,7 +536,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       setPitchViewBoth('full');
       setLastPlayerMessage('');
       setChatHistory([]);
-      setChatInputDraft('');
       setIsNpcThinking(false);
       activeNpcRequestIdRef.current += 1;
     }
@@ -589,11 +605,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const openPitchCatalog = () => {
     soundEngine.playUiClick();
     setActiveTab('katalog');
-    setHanaCatalogSlide('house');
     setHanaCatalogTab('house');
-    triggerNpcSpeech(
-      'Here is the property catalog. The Private House Deed is listed first \u2014 once it is yours, the Teleport Kiosk takes you straight home.',
-    );
+    triggerNpcSpeech('Pick a house style below or preview inside first.');
   };
 
   const syncTrade = (
@@ -985,15 +998,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     })();
   };
 
-  const handleSubmitInlineChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = chatInputDraft.trim();
-    if (!trimmed) return;
-    soundEngine.playUiClick();
-    setChatInputDraft('');
-    submitPlayerQuestion(trimmed);
-  };
-
   // Receive player chat messages submitted via the bottom-left TALK input bar
   useEffect(() => {
     if (activeModalMode !== 'npc_merchant') return;
@@ -1225,27 +1229,45 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           {studioDockTab === 'furniture' && (
             <div className="pt-2.5">
               {ownedFurniture.length === 0 ? (
-                <div className="py-4 text-center text-xs font-bold text-slate-600">
-                  NO FURNITURE IN BAG YET. VISIT MERCHANT HANA&apos;S CATALOG TO ACQUIRE HOUSE FURNITURE.
+                <div className="py-4 text-center text-xs font-bold text-slate-600 flex items-center justify-center gap-2">
+                  <Sofa className="w-4 h-4 text-slate-500" aria-hidden="true" />
+                  <span>NO FURNITURE YET — CHECK HANA&apos;S CATALOG</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
                   {ownedFurniture.map((item) => (
                     <div
                       key={item.id}
-                      className="min-w-[170px] p-2 bg-[#f4f6f8] border-2 border-[#0d0f12] flex flex-col justify-between gap-1.5 shrink-0"
+                      className="w-[148px] p-1.5 bg-[#f4f6f8] border-2 border-[#0d0f12] flex flex-col justify-between gap-1.5 shrink-0"
                     >
-                      <div>
+                      <div className="relative">
+                        <Furniture3dThumbnail
+                          catalogId={item.id}
+                          name={item.name}
+                          iconEmoji={item.iconEmoji}
+                          compact
+                          onInspect={() =>
+                            setPreview3dFurniture({
+                              catalogId: item.id,
+                              name: item.name,
+                              description: item.description,
+                              isNft: item.isNft,
+                              currency: item.currency,
+                              priceLabel: `${item.basePrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`,
+                              isOwned: true,
+                            })
+                          }
+                        />
                         <span
-                          className={`px-1.5 py-0.5 text-[8px] font-black uppercase border border-[#0d0f12] ${
+                          className={`absolute top-1 left-1 px-1 py-0.2 text-[7.5px] font-black uppercase border border-[#0d0f12] z-20 ${
                             item.isNft ? 'bg-[#38bdf8] text-black' : 'bg-[#a7f3d0] text-black'
                           }`}
                         >
-                          {item.isNft ? 'NFT ITEM' : 'CYON ITEM'}
+                          {item.isNft ? 'NFT' : 'CYON'}
                         </span>
-                        <div className="text-[10px] font-black uppercase truncate mt-1">
-                          {item.name}
-                        </div>
+                      </div>
+                      <div className="text-[9.5px] font-black uppercase truncate">
+                        {item.name}
                       </div>
                       <button
                         type="button"
@@ -1254,9 +1276,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           soundEngine.playUiClick();
                           dispatchHouseStudioPatch({ spawnCatalogId: item.id });
                         }}
-                        className="w-full py-1 bg-[#b8ff3c] hover:bg-[#d2ff7a] border-[1.5px] border-[#0d0f12] text-[9.5px] font-black uppercase cursor-pointer"
+                        className="w-full py-1 bg-[#b8ff3c] hover:bg-[#d2ff7a] border-[1.5px] border-[#0d0f12] text-[9px] font-black uppercase cursor-pointer inline-flex items-center justify-center gap-1"
                       >
-                        + PLACE ON FLOOR
+                        <Plus className="w-3 h-3" aria-hidden="true" />
+                        <span>PLACE</span>
                       </button>
                     </div>
                   ))}
@@ -1609,23 +1632,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
                   <p className="text-xs sm:text-[13px] font-bold leading-relaxed text-[#f8fafc] min-h-[54px]">
                     {isNpcThinking ? (
-                      <span className="text-slate-400 animate-pulse">Typing...</span>
+                      <span className="text-slate-400">Typing...</span>
                     ) : (
                       <>
                         {npcTypedText}
                         {npcTypedText.length < npcFullText.length && (
-                          <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5 animate-pulse" />
+                          <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5" />
                         )}
                       </>
                     )}
                   </p>
                 </div>
 
-                {/* Guest Sign-In Callout (Simple 1-line) */}
+                {/* Guest Sign-In Callout (Compact 1-row pill) */}
                 {!walletConnected && onConnectWallet && (
-                  <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2.5 flex-wrap">
-                    <span className="text-[11px] font-bold text-slate-200">
-                      Sign in to unlock currency exchange and item purchases.
+                  <div className="px-3 py-2 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-slate-200 truncate">
+                      <LogIn className="w-3.5 h-3.5 text-[#b8ff3c] shrink-0" aria-hidden="true" />
+                      <span>Sign in to buy &amp; exchange</span>
                     </span>
                     <button
                       type="button"
@@ -1634,32 +1658,30 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onConnectWallet();
                       }}
-                      className="px-3.5 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer shrink-0"
+                      className="px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10.5px] uppercase cursor-pointer shrink-0"
                     >
                       SIGN IN
                     </button>
                   </div>
                 )}
 
-                {/* Kai Fishing Lesson Card (his local tutorial, first meeting) */}
+                {/* Kai Fishing Lesson Card (Compact) */}
                 {merchantLocation === 'beach_house' &&
                   kaiTutorialStage === 'meet' &&
                   !kaiCardDismissed && (
                     <div
                       data-kai-tutorial-card="true"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                          KAI'S FISHING LESSON
+                          KAI&apos;S FISHING LESSON
                         </span>
-                        <span className="text-[10.5px] font-black text-white">2 MINUTES</span>
+                        <span className="px-1.5 py-0.5 bg-black/50 text-[9px] font-black text-white">
+                          2 MIN
+                        </span>
                       </div>
-                      <p className="text-[11px] font-bold text-slate-300">
-                        The loop is simple: cast from the shore, reel something in, and I'll
-                        weigh it and pay you on the spot. Want a quick lesson?
-                      </p>
-                      <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           data-kai-start-lesson-btn="true"
@@ -1667,7 +1689,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             onKaiTutorialStart?.();
                           }}
-                          className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                          className="py-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer active:translate-y-0.5 transition-all"
                         >
                           SHOW ME HOW
                         </button>
@@ -1678,7 +1700,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             onKaiTutorialLater?.();
                           }}
-                          className="w-full py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                          className="py-2 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer active:translate-y-0.5 transition-all"
                         >
                           LATER
                         </button>
@@ -1928,39 +1950,30 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
                   )}
 
-                {/* Hana Property Pitch Card (players who do not own a home yet) */}
+                {/* Hana Property Pitch Card (Compact icon-first action card) */}
                 {merchantLocation === 'lobby_cafe' &&
                   !hasHouseOwnership &&
                   !isTutorialHanaActive &&
                   pitchView === 'full' && (
                     <div
                       data-hana-property-pitch="true"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                          NO PROPERTY YET
+                        <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#38bdf8]">
+                          <Home className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>YOUR FIRST HOME</span>
                         </span>
-                        <span className="flex items-center gap-2">
-                          <span className="text-[10.5px] font-black text-white">
-                            YOUR FIRST HOME
-                          </span>
-                          <button
-                            type="button"
-                            aria-label="Dismiss property offer for now"
-                            onClick={() => setPitchViewBoth('hidden')}
-                            className="w-5 h-5 leading-none bg-[#1e293b] hover:bg-[#334155] text-white border border-black font-black text-[10px] cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </span>
+                        <button
+                          type="button"
+                          aria-label="Dismiss property offer for now"
+                          onClick={() => setPitchViewBoth('hidden')}
+                          className="w-5 h-5 leading-none bg-[#1e293b] hover:bg-[#334155] text-white border border-black font-black text-[10px] cursor-pointer"
+                        >
+                          ✕
+                        </button>
                       </div>
-                      <p className="text-[11px] font-bold text-slate-300">
-                        You don't own a home in this city yet. Step inside our fully furnished
-                        model house to see what awaits \u2014 or browse the catalog and make one
-                        yours.
-                      </p>
-                      <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {onViewModelHouse && (
                           <button
                             type="button"
@@ -1969,55 +1982,58 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               soundEngine.playUiClick();
                               onViewModelHouse();
                             }}
-                            className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                            className="py-2 px-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10.5px] uppercase cursor-pointer active:translate-y-0.5 transition-all inline-flex items-center justify-center gap-1.5"
                           >
-                            VIEW MODEL HOUSE
+                            <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            <span>MODEL HOUSE</span>
                           </button>
                         )}
                         <button
                           type="button"
                           data-hana-view-catalog-btn="true"
                           onClick={openPitchCatalog}
-                          className="w-full py-2.5 bg-white hover:bg-slate-100 text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                          className="py-2 px-2 bg-white hover:bg-slate-100 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10.5px] uppercase cursor-pointer active:translate-y-0.5 transition-all inline-flex items-center justify-center gap-1.5"
                         >
-                          VIEW CATALOG
+                          <Store className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>VIEW CATALOG</span>
                         </button>
-                        {hanaPitchOrigin === 'kiosk' && onOpenTeleportKioskFromPitch && (
-                          <button
-                            type="button"
-                            data-hana-open-kiosk-btn="true"
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              onOpenTeleportKioskFromPitch();
-                            }}
-                            className="w-full py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
-                          >
-                            OPEN TELEPORT KIOSK
-                          </button>
-                        )}
                       </div>
+                      {hanaPitchOrigin === 'kiosk' && onOpenTeleportKioskFromPitch && (
+                        <button
+                          type="button"
+                          data-hana-open-kiosk-btn="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            onOpenTeleportKioskFromPitch();
+                          }}
+                          className="w-full py-1.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer inline-flex items-center justify-center gap-1.5"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-[#38bdf8]" aria-hidden="true" />
+                          <span>OPEN TELEPORT KIOSK</span>
+                        </button>
+                      )}
                     </div>
                   )}
 
-                {/* Hana Welcome Bonus Card (Clean, Simple, Zero Jargon) */}
+                {/* Hana Welcome Bonus Card (Compact 1-line) */}
                 {merchantLocation === 'lobby_cafe' &&
                   walletConnected &&
                   (isTutorialHanaActive || !hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
                     <div
                       data-hana-onboarding-tutorial-box="true"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
                         <>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                              WELCOME BONUS
+                            <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                              <Gift className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>STARTER BONUS</span>
                             </span>
-                            <span className="text-[10.5px] font-black text-white">0.30 NEAR</span>
+                            <span className="px-2 py-0.5 bg-black/50 border border-white/20 text-[10px] font-black text-white">
+                              0.30 NEAR
+                            </span>
                           </div>
-                          <p className="text-[11px] font-bold text-slate-300">
-                            Claim your one-time starter NEAR to begin exploring and trading.
-                          </p>
                           {hanaClaimResult?.error && (
                             <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold">
                               {hanaClaimResult.error}
@@ -2038,7 +2054,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 if (res.ok) {
                                   soundEngine.playPickup();
                                   triggerNpcSpeech(
-                                    `${res.amountNear.toFixed(2)} NEAR has been added to your wallet. Follow the blue path outside to the Transit Kiosk whenever you are ready to explore.`,
+                                    `${res.amountNear.toFixed(2)} NEAR added! Head outside to the Transit Kiosk.`,
                                   );
                                 } else {
                                   soundEngine.playHit();
@@ -2047,7 +2063,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 setIsClaimingHanaNear(false);
                               }
                             }}
-                            className={`w-full py-2.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider transition-all ${
+                            className={`w-full py-2 border-2 border-black shadow-[2px_2px_0px_#000] font-black text-xs uppercase tracking-wider transition-all ${
                               isClaimingHanaNear
                                 ? 'bg-slate-600 text-slate-200 cursor-wait'
                                 : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer active:translate-y-0.5'
@@ -2095,8 +2111,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 <div ref={chatScrollEndRef} />
               </div>
 
-              {/* Quick Question Chips + Direct Inline Chat Input */}
-              <div className="pt-2 border-t-2 border-black space-y-2 shrink-0 bg-white">
+              {/* Quick Question Chips (messages sent via bottom-left chat input bar) */}
+              <div className="pt-2 border-t-2 border-black shrink-0 bg-white">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
                     [
@@ -2118,29 +2134,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </button>
                   ))}
                 </div>
-
-                <form
-                  data-npc-inline-chat-form="true"
-                  onSubmit={handleSubmitInlineChat}
-                  className="flex items-stretch gap-1.5"
-                >
-                  <input
-                    type="text"
-                    data-npc-inline-chat-input="true"
-                    value={chatInputDraft}
-                    onChange={(e) => setChatInputDraft(e.target.value)}
-                    placeholder={`Ask ${npcShortName === 'HANA' ? 'Hana' : 'Kai'} anything about the game...`}
-                    className="flex-1 min-w-0 px-3 py-2 bg-slate-50 text-black font-bold text-xs border-2 border-black focus:outline-none focus:bg-white"
-                  />
-                  <button
-                    type="submit"
-                    data-npc-inline-chat-send="true"
-                    disabled={!chatInputDraft.trim()}
-                    className="px-4 py-2 bg-[#facc15] hover:bg-[#fde047] disabled:bg-slate-200 disabled:text-slate-500 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-xs uppercase cursor-pointer shrink-0"
-                  >
-                    SEND
-                  </button>
-                </form>
               </div>
             </div>
           )}
@@ -2778,15 +2771,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               );
             }
 
-            const selectedFamilyPlan =
-              FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === selectedFamilyPlanId) ||
-              FAMILY_MEMBER_CONTRACT_PLANS[0];
             const isHouseOwned = Boolean(walletConnected && hasHouseOwnership);
             const canAffordHouse =
               walletConnected && respiteBalance >= HOUSE_OWNERSHIP_PRICE_RESPITE;
-            const canAffordFamilyMember =
-              walletConnected && respiteBalance >= selectedFamilyPlan.priceRespite;
-            const isHouseSlide = hanaCatalogSlide === 'house';
             const myPropertyListings = propertyListings.filter(
               (l) =>
                 l.seller_account.toLowerCase() === playerNearAccount.toLowerCase() &&
@@ -2808,23 +2795,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             return (
               <div className="space-y-2.5" data-catalog-house-and-family-panel="true">
-                {/* Top RESPITE Balance & Kiosk Slide Switcher Bar */}
-                <div className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
+                {/* Top Balance / Sign-In Strip (Compact icon-first) */}
+                <div className="px-3 py-2 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Store className="w-4 h-4 text-[#d8b4fe] shrink-0" aria-hidden="true" />
+                    <span className="text-[10.5px] font-black uppercase text-white truncate">
                       {walletConnected
-                        ? FAMILY_MEMBER_CATALOG_VISIBLE
-                          ? 'HOUSE & FAMILY MEMBER KIOSK'
-                          : 'PROPERTY CATALOG'
-                        : 'REGISTRATION REQUIRED FOR CATALOG'}
-                    </div>
-                    <div className="text-[9.5px] font-bold text-white/85">
-                      {walletConnected
-                        ? `Balance: ${respiteBalance.toLocaleString()} RESPITE`
-                        : FAMILY_MEMBER_CATALOG_VISIBLE
-                          ? 'Register your account to unlock House & Family Member.'
-                          : 'Register your account to unlock the House catalog.'}
-                    </div>
+                        ? `${respiteBalance.toLocaleString()} RESPITE`
+                        : 'SIGN IN TO BUY'}
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -2839,7 +2818,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     }`}
                   >
                     <span className="skew-x-6 inline-block">
-                      {walletConnected ? 'WALLET' : 'REGISTER'}
+                      {walletConnected ? 'WALLET' : 'SIGN IN'}
                     </span>
                   </button>
                 </div>
@@ -2848,14 +2827,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 <div className="grid grid-cols-3 gap-1.5" data-hana-catalog-tabs="true">
                   {(
                     [
-                      { id: 'house', label: 'House' },
-                      { id: 'furniture', label: 'Furniture' },
+                      { id: 'house', label: 'House', Icon: Home },
+                      { id: 'furniture', label: 'Furniture', Icon: Sofa },
                       {
                         id: 'market',
                         label:
                           boardListings.length > 0
-                            ? `Property Market (${boardListings.length})`
-                            : 'Property Market',
+                            ? `Market (${boardListings.length})`
+                            : 'Market',
+                        Icon: Tag,
                       },
                     ] as const
                   ).map((tab) => (
@@ -2867,591 +2847,397 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         setHanaCatalogTab(tab.id);
                       }}
-                      className={`px-2 py-1.5 border-2 border-black text-[9.5px] font-black uppercase cursor-pointer ${
+                      className={`px-2 py-1.5 border-2 border-black text-[9.5px] font-black uppercase cursor-pointer inline-flex items-center justify-center gap-1.5 ${
                         hanaCatalogTab === tab.id
                           ? 'bg-[#38bdf8] text-black shadow-[2px_2px_0px_#000]'
-                          : 'bg-[#1e293b] text-white/60 hover:text-white'
+                          : 'bg-[#1e293b] text-white/75 hover:text-white'
                       }`}
                     >
-                      {tab.label}
+                      <tab.Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{tab.label}</span>
                     </button>
                   ))}
                 </div>
 
-                {hanaCatalogTab === 'house' && (
-                  <>
-                {/* Tactical Kiosk-Style Selectable Cards: [01] HOUSE & [02] FAMILY MEMBER */}
-                <div
-                  className={`grid ${FAMILY_MEMBER_CATALOG_VISIBLE ? 'grid-cols-2' : 'grid-cols-1'} gap-2.5 ${
-                    !walletConnected ? 'opacity-70 pointer-events-none select-none' : ''
-                  }`}
-                >
-                  {/* Card 1: HOUSE (Slide 01 / 02) */}
-                  <button
-                    type="button"
-                    data-katalog-card="buddies_house_ownership"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setHanaCatalogSlide('house');
-                    }}
-                    className={`group relative h-[248px] sm:h-[272px] text-left select-none transition-transform duration-100 cursor-pointer ${
-                      isHouseSlide
-                        ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
-                        : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
-                    }`}
-                  >
-                    <div className="relative h-full border-[2px] border-[#0d0f12] overflow-hidden bg-[#e9e2d4]">
-                      <img
-                        src={houseCardView === 'exterior' ? '/assets/kiosk/house_exterior.jpg' : '/assets/kiosk/house_interior.jpg'}
-                        alt="Private House Ownership"
-                        draggable={false}
-                        className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                      />
-                      {isHouseSlide && (
-                        <div
-                          className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-20"
-                          style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
-                        >
-                          <span className="text-[9px] font-black text-[#0d0f12] leading-none">
-                            ✓
-                          </span>
-                        </div>
-                      )}
-                      <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/50 via-black/20 to-transparent px-2.5 pt-2 pb-6">
-                        <div className="flex items-start justify-between gap-1 pr-4">
-                          <div>
-                            <div
-                              className="text-[12.5px] sm:text-[13.5px] font-black uppercase tracking-tight leading-[1.1] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
-                              style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-                            >
-                              HOUSE
-                            </div>
-                            <div className="text-[8.5px] sm:text-[9px] font-extrabold uppercase tracking-tight text-white/90 mt-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                              PRIVATE HOME
-                            </div>
-                          </div>
-                          <span
-                            className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0 ${
-                              isHouseOwned
-                                ? 'bg-[#b8ff3c] text-[#0d0f12]'
-                                : 'bg-[#d8b4fe] text-[#0d0f12]'
-                            }`}
-                          >
-                            {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/65 via-black/30 to-transparent px-2.5 pb-2 pt-7">
-                        <div className="flex items-end justify-between gap-2">
-                          <div className="text-[9px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                            Unlocks Private House &amp; Plot
-                          </div>
-                          <div className="flex gap-1 shrink-0">
-                            <span
-                              role="button"
-                              aria-label="Show house exterior"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setHouseCardView('exterior');
-                              }}
-                              className={`px-1.5 py-0.5 border text-[8px] font-black uppercase cursor-pointer ${
-                                houseCardView === 'exterior'
-                                  ? 'bg-white text-[#0d0f12] border-[#0d0f12]'
-                                  : 'bg-black/45 text-white border-white/50'
+                {hanaCatalogTab === 'house' && (() => {
+                  const handleBuyDeed = async (style: 'plaza_manor' | 'japanese_pavilion') => {
+                    soundEngine.playUiClick();
+                    onSelectHouseArchitectureStyle?.(style);
+                    if (isHouseOwned) {
+                      triggerNpcSpeech('You already own your House! Open Transit Kiosk → MY HOUSE.');
+                      return;
+                    }
+                    setCatalogActionFeedback(null);
+                    setIsBuyingCatalogAsset(true);
+                    try {
+                      const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
+                      if (ok) {
+                        const msg = `House Deed minted! Open Transit Kiosk → MY HOUSE.`;
+                        setCatalogActionFeedback({ ok: true, text: msg });
+                        triggerNpcSpeech(msg);
+                      } else {
+                        const detail =
+                          getLastNearTransactionError() ||
+                          'House purchase requires a confirmed NEAR wallet transaction.';
+                        setCatalogActionFeedback({ ok: false, text: detail });
+                        triggerNpcSpeech(detail);
+                      }
+                    } finally {
+                      setIsBuyingCatalogAsset(false);
+                    }
+                  };
+
+                  const houseCatalogCards = [
+                    {
+                      id: 'plaza_manor' as const,
+                      katalogCardId: 'buddies_house_ownership',
+                      title: 'CLASSIC PLAZA MANOR',
+                      badge: 'MODEL HOUSE',
+                      badgeBg: 'bg-[#b8ff3c]',
+                      location: 'CENTRAL PLAZA',
+                      imageSrc:
+                        houseCardView === 'exterior'
+                          ? '/assets/kiosk/plaza_manor_exterior.jpg'
+                          : '/assets/kiosk/house_interior.jpg',
+                      previewBtnAttr: 'view_model',
+                      previewLabel: 'VIEW MODEL HOUSE',
+                    },
+                    {
+                      id: 'japanese_pavilion' as const,
+                      katalogCardId: 'buddies_japanese_pavilion',
+                      title: 'JAPANESE PAVILION',
+                      badge: 'CATALOG SERIES',
+                      badgeBg: 'bg-[#38bdf8]',
+                      location: 'KUMA CEDAR & SHOJI',
+                      imageSrc:
+                        houseCardView === 'exterior'
+                          ? '/assets/kiosk/house_exterior.jpg'
+                          : '/assets/kiosk/house_interior.jpg',
+                      previewBtnAttr: 'preview_pavilion',
+                      previewLabel: 'PREVIEW HOUSE',
+                    },
+                  ];
+
+                  return (
+                    <>
+                      {/* Single-Column Full-Width Scrollable House Cards */}
+                      <div
+                        className="flex flex-col gap-3"
+                        data-hana-house-architecture-grid="true"
+                      >
+                        {houseCatalogCards.map((card) => {
+                          const isSelected = houseArchitectureStyle === card.id;
+                          return (
+                            <article
+                              key={card.id}
+                              data-buy-house-section={isSelected ? 'true' : undefined}
+                              className={`relative select-none transition-transform duration-100 ${
+                                isSelected
+                                  ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_4px_0_#0d0f12]'
+                                  : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12]'
                               }`}
                             >
-                              Exterior
-                            </span>
-                            <span
-                              role="button"
-                              aria-label="Show house interior"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setHouseCardView('interior');
-                              }}
-                              className={`px-1.5 py-0.5 border text-[8px] font-black uppercase cursor-pointer ${
-                                houseCardView === 'interior'
-                                  ? 'bg-white text-[#0d0f12] border-[#0d0f12]'
-                                  : 'bg-black/45 text-white border-white/50'
-                              }`}
-                            >
-                              Interior
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
+                              <div className="bg-white border-[2px] border-[#0d0f12] overflow-hidden">
+                                {/* Full-Width Hero Image */}
+                                <button
+                                  type="button"
+                                  data-katalog-card={card.katalogCardId}
+                                  data-house-style-card={card.id}
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    onSelectHouseArchitectureStyle?.(card.id);
+                                  }}
+                                  className="relative block w-full h-44 sm:h-48 text-left cursor-pointer bg-[#e9e2d4] overflow-hidden"
+                                >
+                                  <img
+                                    src={card.imageSrc}
+                                    alt={card.title}
+                                    draggable={false}
+                                    className="w-full h-full object-cover select-none pointer-events-none"
+                                  />
+                                  {isSelected && (
+                                    <div
+                                      className="absolute top-0 right-0 w-8 h-8 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-1 z-20"
+                                      style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
+                                    >
+                                      <Check className="w-3.5 h-3.5 text-[#0d0f12] stroke-[3]" aria-hidden="true" />
+                                    </div>
+                                  )}
+                                  <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/60 via-black/20 to-transparent p-2.5 flex items-center justify-between gap-2 pr-8">
+                                    <span
+                                      className={`px-2 py-0.5 ${card.badgeBg} text-[#0d0f12] border border-[#0d0f12] text-[8.5px] font-black uppercase`}
+                                    >
+                                      {card.badge}
+                                    </span>
+                                    <span
+                                      className={`px-2 py-0.5 border border-[#0d0f12] text-[9px] font-black uppercase inline-flex items-center gap-1 ${
+                                        isHouseOwned
+                                          ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                                          : 'bg-[#d8b4fe] text-[#0d0f12]'
+                                      }`}
+                                    >
+                                      <Sparkles className="w-3 h-3" aria-hidden="true" />
+                                      <span>
+                                        {isHouseOwned
+                                          ? 'OWNED'
+                                          : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-2.5 pt-8">
+                                    <div className="text-sm sm:text-[15px] font-black uppercase tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                                      {card.title}
+                                    </div>
+                                    <div className="inline-flex items-center gap-1 text-[9.5px] font-extrabold uppercase text-white/90 mt-0.5">
+                                      <MapPin className="w-3 h-3 text-[#b8ff3c]" aria-hidden="true" />
+                                      <span>{card.location}</span>
+                                    </div>
+                                  </div>
+                                </button>
 
-                  {/* Card 2: FAMILY MEMBER (Slide 02 / 02) */}
-                  {FAMILY_MEMBER_CATALOG_VISIBLE && (
-                  <button
-                    type="button"
-                    data-katalog-card="buddies_family_member_agent"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setHanaCatalogSlide('family');
-                    }}
-                    className={`group relative h-[154px] sm:h-[164px] text-left select-none transition-transform duration-100 cursor-pointer ${
-                      !isHouseSlide
-                        ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
-                        : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
-                    }`}
-                  >
-                    <div className="relative h-full flex flex-col justify-between bg-white border-[2px] border-[#0d0f12] p-2.5 overflow-hidden">
-                      {!isHouseSlide && (
+                                {/* Icon-First Spec Strip + Direct Actions */}
+                                <div className="p-2.5 bg-[#f4f6f8] border-t-[2px] border-[#0d0f12] space-y-2">
+                                  <div className="flex items-center justify-between gap-2 text-[9px] font-black uppercase text-[#1c2026]">
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-black">
+                                      <Home className="w-3 h-3 text-[#0d9488]" aria-hidden="true" />
+                                      <span>NFT DEED</span>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-black">
+                                      <Sofa className="w-3 h-3 text-[#0d9488]" aria-hidden="true" />
+                                      <span>DECOR STUDIO</span>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-black">
+                                      <MapPin className="w-3 h-3 text-[#0d9488]" aria-hidden="true" />
+                                      <span>PRIVATE PLOT</span>
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {onViewModelHouse && (
+                                      <button
+                                        type="button"
+                                        data-catalog-view-model-house-btn={
+                                          card.previewBtnAttr === 'view_model' ? 'true' : undefined
+                                        }
+                                        data-catalog-preview-pavilion-btn={
+                                          card.previewBtnAttr === 'preview_pavilion'
+                                            ? 'true'
+                                            : undefined
+                                        }
+                                        onClick={() => {
+                                          soundEngine.playUiClick();
+                                          onViewModelHouse(card.id);
+                                        }}
+                                        className="py-2 px-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[2px_2px_0_#0d0f12] text-[10px] font-black uppercase cursor-pointer inline-flex items-center justify-center gap-1.5"
+                                      >
+                                        <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                        <span className="truncate">{card.previewLabel}</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      data-buy-house-btn={isSelected ? 'true' : undefined}
+                                      disabled={
+                                        !walletConnected ||
+                                        isBuyingCatalogAsset ||
+                                        (!isHouseOwned && !canAffordHouse)
+                                      }
+                                      onClick={() => handleBuyDeed(card.id)}
+                                      className={`py-2 px-2 border-2 border-[#0d0f12] shadow-[2px_2px_0_#0d0f12] text-[10px] font-black uppercase inline-flex items-center justify-center gap-1.5 transition-all ${
+                                        isHouseOwned
+                                          ? 'bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                                          : walletConnected && canAffordHouse && !isBuyingCatalogAsset
+                                            ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                                            : 'bg-slate-400 text-slate-700 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      {isHouseOwned ? (
+                                        <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                      ) : (
+                                        <ShoppingBag
+                                          className="w-3.5 h-3.5 shrink-0"
+                                          aria-hidden="true"
+                                        />
+                                      )}
+                                      <span className="truncate">
+                                        {isBuyingCatalogAsset
+                                          ? 'SIGNING...'
+                                          : isHouseOwned
+                                            ? 'OWNED'
+                                            : `BUY ${HOUSE_OWNERSHIP_PRICE_RESPITE} R`}
+                                      </span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+
+                      {catalogActionFeedback && (
                         <div
-                          className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-10"
-                          style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
+                          className={`p-2 border-2 border-black text-[10px] font-bold ${
+                            catalogActionFeedback.ok
+                              ? 'bg-[#ecfdf5] text-[#065f46]'
+                              : 'bg-[#fef2f2] text-[#991b1b]'
+                          }`}
                         >
-                          <span className="text-[9px] font-black text-[#0d0f12] leading-none">
-                            ✓
-                          </span>
+                          {catalogActionFeedback.text}
                         </div>
                       )}
+                    </>
+                  );
+                })()}
 
-                      <div className="flex items-start justify-between gap-1 pr-4">
-                        <div>
-                          <div
-                            className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12]"
-                            style={{ fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif" }}
-                          >
-                            FAMILY MEMBER
-                          </div>
-                          <div className="text-[8.5px] sm:text-[9px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5">
-                            COMPANION HELPER
-                          </div>
-                        </div>
-                        <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-[#0d0f12] border border-[#0d0f12] text-[8.5px] font-black uppercase shrink-0">
-                          {selectedFamilyPlan.priceRespite} RESPITE
+                {hanaCatalogTab === 'furniture' && (
+                  <div
+                    className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5"
+                    data-catalog-hana-furniture-panel="true"
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#38bdf8]">
+                        <Sofa className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>FURNITURE &amp; THEMES</span>
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase">
+                          <Coins className="w-3 h-3" aria-hidden="true" />
+                          <span>{cyonBalance.toLocaleString()} CYON</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
+                          <Sparkles className="w-3 h-3" aria-hidden="true" />
+                          <span>{respiteBalance.toLocaleString()} R</span>
                         </span>
                       </div>
-
-                      <div className="my-0.5 flex items-center justify-center gap-1.5 h-[80px] sm:h-[86px]">
-                        <img
-                          src="/assets/kiosk/family_member_female.jpg"
-                          alt="Female Family Member Companion"
-                          draggable={false}
-                          className="h-[74px] sm:h-[80px] w-[47%] object-cover object-top rounded-sm border border-[#0d0f12] select-none pointer-events-none"
-                        />
-                        <img
-                          src="/assets/kiosk/family_member_male.jpg"
-                          alt="Male Family Member Companion"
-                          draggable={false}
-                          className="h-[74px] sm:h-[80px] w-[47%] object-cover object-top rounded-sm border border-[#0d0f12] select-none pointer-events-none"
-                        />
-                      </div>
-
-                      <div className="text-[8.5px] font-bold text-[#1c2026] truncate">
-                        Collect Boxes, Fish, or Attack
-                      </div>
-                    </div>
-                  </button>
-                  )}
-                </div>
-
-                {/* ===========================================================
-                     ACTIVE SLIDE CONFIGURATION PANEL (ONLY 1 SHOWN AT A TIME)
-                    =========================================================== */}
-                {isHouseSlide || !FAMILY_MEMBER_CATALOG_VISIBLE ? (
-                  <div
-                    data-buy-house-section="true"
-                    className={`p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] ${
-                      !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-black uppercase tracking-tight text-[#0d0f12]">
-                          PRIVATE HOUSE
-                        </div>
-                        <div className="text-[9.5px] font-bold text-[#1c2026]/85">
-                          Claim a residential city plot and decorate your private interior.
-                        </div>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[9.5px] font-black uppercase shadow-[0_1.5px_0_#0d0f12] shrink-0 ${
-                          isHouseOwned
-                            ? 'bg-[#b8ff3c] text-[#0d0f12]'
-                            : 'bg-[#d8b4fe] text-[#0d0f12]'
-                        }`}
-                      >
-                        {isHouseOwned ? 'OWNED' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 space-y-0.5">
-                      <div className="text-[9.5px] font-bold text-[#1c2026]/85">
-                        ✓ On-chain deed (NFT) — this house is truly yours
-                      </div>
-                      <div className="text-[9.5px] font-bold text-[#1c2026]/85">
-                        ✓ Private plot + interior studio to decorate with furniture
-                      </div>
-                      <div className="text-[9.5px] font-bold text-[#1c2026]/85">
-                        ✓ Sell the deed later — its access keys rotate to the buyer
-                      </div>
-                      <div className="text-[9.5px] font-black text-[#0d0f12] pt-0.5">
-                        {isHouseOwned
-                          ? 'You own this house — enter it anytime from the Teleport Kiosk (MY HOUSE).'
-                          : canAffordHouse
-                            ? `Your balance covers it: ${respiteBalance.toLocaleString()} RESPITE.`
-                            : `You need ${HOUSE_OWNERSHIP_PRICE_RESPITE - respiteBalance} more RESPITE — swap NEAR in the Exchange tab.`}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    data-recruit-family-member-section="true"
-                    className={`p-2.5 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2 ${
-                      !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] font-black uppercase tracking-wider text-[#facc15]">
-                        SELECT DURATION
-                      </div>
-                      <span className="px-1.5 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase shrink-0">
-                        ACTIVE: {recruitedFamilyMembers.length}
-                      </span>
                     </div>
 
-                    {/* Contract Duration Options: 1 Week, 1 Month, 1 Year */}
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {FAMILY_MEMBER_CONTRACT_PLANS.map((plan) => {
-                        const isSelected = plan.id === selectedFamilyPlan.id;
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {MERCHANT_CATALOG_ITEMS.filter(
+                        (item) => item.category !== 'fishing_gear',
+                      ).map((item) => {
+                        const quote = evaluateMerchantItemQuote(marketState, item);
+                        const isOwned = ownedItemIds.includes(item.id);
+                        const balance =
+                          item.currency === 'CYON' ? cyonBalance : respiteBalance;
+                        const canBuy =
+                          !isOwned &&
+                          quote.stock > 0 &&
+                          balance >= quote.buyPrice &&
+                          (item.currency === 'CYON' || walletConnected);
                         return (
-                          <button
-                            key={plan.id}
-                            type="button"
-                            data-family-contract-plan={plan.id}
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              setSelectedFamilyPlanId(plan.id);
-                            }}
-                            className={`py-1.5 px-2 text-center border-2 border-black transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-[#facc15] text-black shadow-[2px_2px_0_#000]'
-                                : 'bg-[#1e293b] hover:bg-[#334155] text-white'
-                            }`}
+                          <div
+                            key={item.id}
+                            className="bg-[#1e293b] border-2 border-black shadow-[2px_2px_0px_#000] flex flex-col overflow-hidden"
+                            data-catalog-furniture-card={item.id}
                           >
-                            <div className="text-[9.5px] font-black uppercase">
-                              {plan.shortLabel}
+                            {/* Image-First Hero Showcase */}
+                            <div className="relative">
+                              <Furniture3dThumbnail
+                                catalogId={item.id}
+                                name={item.name}
+                                iconEmoji={item.iconEmoji}
+                                size="hero"
+                                onInspect={() =>
+                                  setPreview3dFurniture({
+                                    catalogId: item.id,
+                                    name: item.name,
+                                    description: item.description,
+                                    isNft: item.isNft,
+                                    currency: item.currency,
+                                    priceLabel: `${quote.buyPrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`,
+                                    stock: quote.stock,
+                                    isOwned,
+                                    canBuy,
+                                    onBuy: () => {
+                                      onBuyMerchantItem(item, quote.buyPrice);
+                                      setCatalogActionFeedback({
+                                        ok: true,
+                                        text: `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`,
+                                      });
+                                      triggerNpcSpeech(
+                                        `Bought ${item.name}! Place it in your house studio.`,
+                                      );
+                                    },
+                                  })
+                                }
+                              />
+                              <span
+                                className={`absolute top-1.5 left-1.5 z-20 px-1.5 py-0.5 border border-black text-[8px] font-black uppercase ${
+                                  item.isNft
+                                    ? 'bg-[#38bdf8] text-black'
+                                    : 'bg-[#a7f3d0] text-black'
+                                }`}
+                              >
+                                {item.isNft ? 'NFT' : 'CYON'}
+                              </span>
+                              <span className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 bg-black/80 text-white border border-white/25 text-[8px] font-black uppercase">
+                                ×{quote.stock}
+                              </span>
                             </div>
-                            <div
-                              className={`text-[10.5px] font-black ${
-                                isSelected ? 'text-black' : 'text-[#d8b4fe]'
-                              }`}
-                            >
-                              {plan.priceRespite} RESPITE
+
+                            {/* Minimal Name + Price + Action Footer (No prose paragraphs) */}
+                            <div className="p-2 flex flex-col gap-1.5 flex-1">
+                              <div className="text-[10.5px] font-black uppercase leading-tight text-white truncate">
+                                {item.name}
+                              </div>
+                              <div className="mt-auto flex items-center justify-between gap-1.5 pt-1 border-t border-white/15">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-black ${
+                                    item.currency === 'CYON'
+                                      ? 'text-[#38bdf8]'
+                                      : 'text-[#d8b4fe]'
+                                  }`}
+                                >
+                                  {item.currency === 'CYON' ? (
+                                    <Coins className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                  ) : (
+                                    <Sparkles className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                  )}
+                                  <span>
+                                    {quote.buyPrice}{' '}
+                                    {item.currency === 'RESPITE' ? 'R' : item.currency}
+                                  </span>
+                                </span>
+                                {isOwned ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
+                                    <Check className="w-3 h-3" aria-hidden="true" />
+                                    <span>Owned</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    data-buy-furniture-btn={item.id}
+                                    disabled={!canBuy}
+                                    onClick={() => {
+                                      if (!canBuy) return;
+                                      soundEngine.playPickup();
+                                      onBuyMerchantItem(item, quote.buyPrice);
+                                      setCatalogActionFeedback({
+                                        ok: true,
+                                        text: `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`,
+                                      });
+                                      triggerNpcSpeech(
+                                        `Bought ${item.name}! Place it in your house studio.`,
+                                      );
+                                    }}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 border border-black text-[9px] font-black uppercase ${
+                                      canBuy
+                                        ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-black cursor-pointer'
+                                        : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    <ShoppingBag className="w-3 h-3" aria-hidden="true" />
+                                    <span>{quote.stock <= 0 ? 'Out' : 'Buy'}</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
-
-                    {/* Active Family Member Orders (Compact) */}
-                    {recruitedFamilyMembers.length > 0 && (
-                      <div className="pt-1.5 border-t border-white/15 space-y-1.5 max-h-28 overflow-y-auto pr-1">
-                        {recruitedFamilyMembers.map((member) => (
-                          <div
-                            key={member.agentId}
-                            data-family-member-item={member.agentId}
-                            className="p-1.5 bg-[#1e293b] border border-black flex items-center justify-between gap-1.5 flex-wrap"
-                          >
-                            <span className="text-[9.5px] font-black uppercase text-white truncate">
-                              {member.name}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              {FAMILY_MEMBER_ORDER_SPECS.map((orderSpec) => {
-                                const isOrderActive = member.activeOrder === orderSpec.id;
-                                return (
-                                  <button
-                                    key={orderSpec.id}
-                                    type="button"
-                                    data-family-order-btn={`${member.agentId}-${orderSpec.id}`}
-                                    onClick={() => {
-                                      soundEngine.playUiClick();
-                                      onCommandFamilyMember?.(member.agentId, orderSpec.id);
-                                      triggerNpcSpeech(
-                                        `Order confirmed for ${member.name}: ${orderSpec.label}.`,
-                                      );
-                                    }}
-                                    className={`px-1.5 py-0.5 border border-black text-[8px] font-black uppercase cursor-pointer ${
-                                      isOrderActive
-                                        ? 'bg-[#b8ff3c] text-black'
-                                        : 'bg-[#0f172a] hover:bg-black text-white'
-                                    }`}
-                                  >
-                                    {orderSpec.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                )}
-
-                {/* ===========================================================
-                     TACTICAL KIOSK FOOTER: [<] [>] 01 / 02 + SKEWED CTA BUTTON
-                    =========================================================== */}
-                <div
-                  className={`pt-1 flex items-center justify-between gap-2 ${
-                    !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
-                  }`}
-                >
-                  {/* Bottom-Left Pagination Controls (like Tactical Kiosk) */}
-                  {FAMILY_MEMBER_CATALOG_VISIBLE && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      data-catalog-prev-slide="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setHanaCatalogSlide((prev) => (prev === 'house' ? 'family' : 'house'));
-                      }}
-                      className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
-                      title="Previous Item"
-                    >
-                      &lt;
-                    </button>
-                    <button
-                      type="button"
-                      data-catalog-next-slide="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setHanaCatalogSlide((prev) => (prev === 'house' ? 'family' : 'house'));
-                      }}
-                      className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
-                      title="Next Item"
-                    >
-                      &gt;
-                    </button>
-                    <span className="ml-1 text-[11px] font-black tracking-wider text-[#0d0f12]">
-                      {isHouseSlide ? '01 / 02' : '02 / 02'}
-                    </span>
-                  </div>
-                  )}
-
-                  {/* Bottom-Right Skewed Kiosk Action Button */}
-                  {isHouseSlide || !FAMILY_MEMBER_CATALOG_VISIBLE ? (
-                    <button
-                      type="button"
-                      data-buy-house-btn="true"
-                      disabled={isBuyingCatalogAsset || (!isHouseOwned && !canAffordHouse)}
-                      onClick={async () => {
-                        soundEngine.playUiClick();
-                        if (isHouseOwned) {
-                          triggerNpcSpeech(
-                            'You already own your House. You can enter your Private House anytime.',
-                          );
-                          return;
-                        }
-                        setCatalogActionFeedback(null);
-                        setIsBuyingCatalogAsset(true);
-                        try {
-                          const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
-                          if (ok) {
-                            const msg = `House Deed minted on NEAR Testnet for ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE! Open the Teleport Kiosk and choose MY HOUSE to step inside.`;
-                            setCatalogActionFeedback({ ok: true, text: msg });
-                            triggerNpcSpeech(msg);
-                          } else {
-                            const detail =
-                              getLastNearTransactionError() ||
-                              'House purchase requires a confirmed NEAR wallet transaction.';
-                            setCatalogActionFeedback({ ok: false, text: detail });
-                            triggerNpcSpeech(detail);
-                          }
-                        } finally {
-                          setIsBuyingCatalogAsset(false);
-                        }
-                      }}
-                      className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] font-black text-[11px] uppercase tracking-wider shadow-[0_3px_0_#0d0f12] transition-all ${
-                        isHouseOwned
-                          ? 'bg-[#b8ff3c] text-[#0d0f12] cursor-pointer'
-                          : canAffordHouse && !isBuyingCatalogAsset
-                            ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
-                            : 'bg-slate-400 text-slate-700 cursor-not-allowed'
-                      }`}
-                    >
-                      <span className="inline-block skew-x-12">
-                        {isBuyingCatalogAsset
-                          ? 'SIGNING ON NEAR...'
-                          : isHouseOwned
-                            ? 'HOUSE OWNED'
-                            : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE)`}
-                      </span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      data-recruit-family-member-btn="true"
-                      disabled={isBuyingCatalogAsset || !canAffordFamilyMember}
-                      onClick={async () => {
-                        if (!canAffordFamilyMember) return;
-                        soundEngine.playUiClick();
-                        setCatalogActionFeedback(null);
-                        setIsBuyingCatalogAsset(true);
-                        try {
-                          const recruited = await onRecruitFamilyMember?.(selectedFamilyPlan.id);
-                          if (recruited) {
-                            const msg = `Recruited ${recruited.name} (${selectedFamilyPlan.shortLabel}) on NEAR for ${selectedFamilyPlan.priceRespite} RESPITE!`;
-                            setCatalogActionFeedback({ ok: true, text: msg });
-                            triggerNpcSpeech(msg);
-                          } else {
-                            const detail =
-                              getLastNearTransactionError() ||
-                              'Family Member recruitment requires a confirmed NEAR wallet transaction.';
-                            setCatalogActionFeedback({ ok: false, text: detail });
-                            triggerNpcSpeech(detail);
-                          }
-                        } finally {
-                          setIsBuyingCatalogAsset(false);
-                        }
-                      }}
-                      className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] font-black text-[11px] uppercase tracking-wider shadow-[0_3px_0_#0d0f12] transition-all ${
-                        canAffordFamilyMember && !isBuyingCatalogAsset
-                          ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
-                          : 'bg-slate-400 text-slate-700 cursor-not-allowed'
-                      }`}
-                    >
-                      <span className="inline-block skew-x-12">
-                        {isBuyingCatalogAsset
-                          ? 'SIGNING ON NEAR...'
-                          : `RECRUIT (${selectedFamilyPlan.shortLabel} · ${selectedFamilyPlan.priceRespite} RESPITE)`}
-                      </span>
-                    </button>
-                  )}
-                </div>
-
-                {catalogActionFeedback && (
-                  <div
-                    className={`p-2 border-2 border-black text-[10px] font-bold ${
-                      catalogActionFeedback.ok
-                        ? 'bg-[#ecfdf5] text-[#065f46]'
-                        : 'bg-[#fef2f2] text-[#991b1b]'
-                    }`}
-                  >
-                    {catalogActionFeedback.text}
-                  </div>
-                )}
-
-                  </>
-                )}
-
-                {hanaCatalogTab === 'furniture' && (
-                <>
-                {/* House furniture & themes: the special catalog. CYON pieces are
-                    regular game items; NFT pieces are minted on NEAR (NEP-245).
-                    This is the purchase surface the house studio points to. */}
-                <div
-                  className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2"
-                  data-catalog-hana-furniture-panel="true"
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                      House Furniture &amp; Themes
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase">
-                        {cyonBalance.toLocaleString()} CYON
-                      </span>
-                      <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
-                        {respiteBalance.toLocaleString()} RESPITE
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[9.5px] font-bold text-slate-300 leading-snug">
-                    Buy a piece, then place it from your house studio. NFT pieces are
-                    minted to your wallet on NEAR (NEP-245). Prices move with stock
-                    and demand.
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {MERCHANT_CATALOG_ITEMS.filter(
-                      (item) => item.category !== 'fishing_gear',
-                    ).map((item) => {
-                      const quote = evaluateMerchantItemQuote(marketState, item);
-                      const isOwned = ownedItemIds.includes(item.id);
-                      const balance =
-                        item.currency === 'CYON' ? cyonBalance : respiteBalance;
-                      const canBuy =
-                        !isOwned &&
-                        quote.stock > 0 &&
-                        balance >= quote.buyPrice &&
-                        (item.currency === 'CYON' || walletConnected);
-                      return (
-                        <div
-                          key={item.id}
-                          className="p-2 bg-[#1e293b] border-2 border-black flex flex-col gap-1.5"
-                          data-catalog-furniture-card={item.id}
-                        >
-                          <Furniture3dThumbnail
-                            catalogId={item.id}
-                            name={item.name}
-                            iconEmoji={item.iconEmoji}
-                          />
-                          <div className="flex items-start justify-between gap-1.5">
-                            <span className="text-[10px] font-black uppercase leading-tight">
-                              {item.name}
-                            </span>
-                            <span
-                              className={`px-1.5 py-0.5 border border-black text-[8px] font-black uppercase shrink-0 ${
-                                item.isNft
-                                  ? 'bg-[#38bdf8] text-black'
-                                  : 'bg-[#a7f3d0] text-black'
-                              }`}
-                            >
-                              {item.isNft ? 'NFT' : 'CYON'}
-                            </span>
-                          </div>
-                          <p className="text-[9px] font-bold text-slate-300 leading-snug">
-                            {item.description}
-                          </p>
-                          <div className="mt-auto flex items-end justify-between gap-1.5">
-                            <span className="text-[9.5px] font-black text-[#d8b4fe]">
-                              {quote.buyPrice} {item.currency}
-                              <span className="block text-[8px] font-bold text-slate-400">
-                                Stock {quote.stock}
-                              </span>
-                            </span>
-                            {isOwned ? (
-                              <span className="px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase">
-                                Owned
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                data-buy-furniture-btn={item.id}
-                                disabled={!canBuy}
-                                onClick={() => {
-                                  if (!canBuy) return;
-                                  soundEngine.playPickup();
-                                  onBuyMerchantItem(item, quote.buyPrice);
-                                  setCatalogActionFeedback({
-                                    ok: true,
-                                    text: `Purchased ${item.name} for ${quote.buyPrice} ${item.currency}.`,
-                                  });
-                                  triggerNpcSpeech(
-                                    `Purchased ${item.name}! It is in your bag — place it from your house studio.`,
-                                  );
-                                }}
-                                className={`px-2.5 py-1 border border-black text-[9px] font-black uppercase ${
-                                  canBuy
-                                    ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-black cursor-pointer'
-                                    : 'bg-slate-500 text-slate-300 cursor-not-allowed'
-                                }`}
-                              >
-                                {quote.stock <= 0 ? 'Sold out' : 'Buy'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                </>
                 )}
 
                 {hanaCatalogTab === 'market' && (
@@ -3460,18 +3246,27 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     data-property-market-panel="true"
                   >
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-[10.5px] font-black uppercase text-[#d8b4fe]">
-                        Property Marketplace
+                      <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#d8b4fe]">
+                        <Store className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>PROPERTY MARKET</span>
                       </span>
-                      <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
-                        {respiteBalance.toLocaleString()} RESPITE
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 bg-[#1e293b] border border-white/20 text-[8.5px] font-black uppercase text-slate-300">
+                          <Tag className="w-2.5 h-2.5 text-[#38bdf8]" aria-hidden="true" />
+                          <span>LIST</span>
+                          <span className="text-slate-500">→</span>
+                          <Coins className="w-2.5 h-2.5 text-[#b8ff3c]" aria-hidden="true" />
+                          <span>PAY</span>
+                          <span className="text-slate-500">→</span>
+                          <ArrowRightLeft className="w-2.5 h-2.5 text-[#d8b4fe]" aria-hidden="true" />
+                          <span>DEED</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
+                          <Sparkles className="w-3 h-3" aria-hidden="true" />
+                          <span>{respiteBalance.toLocaleString()} R</span>
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-[9.5px] font-bold text-slate-300 leading-snug">
-                      List your house deed or NFT furniture for RESPITE. The buyer pays
-                      on-chain first, then you transfer the asset — deed keys rotate to
-                      the new owner automatically.
-                    </p>
 
                     {marketActionFeedback && (
                       <div
@@ -3485,122 +3280,143 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </div>
                     )}
 
+                    {/* SELL YOURS (Image-First) */}
                     <div className="space-y-1.5">
-                      <div className="text-[9.5px] font-black uppercase text-[#38bdf8]">
-                        Sell yours
+                      <div className="inline-flex items-center gap-1 text-[9.5px] font-black uppercase text-[#38bdf8]">
+                        <Tag className="w-3 h-3" aria-hidden="true" />
+                        <span>SELL YOUR ASSETS</span>
                       </div>
                       {!walletConnected ? (
-                        <p className="text-[9.5px] font-bold text-slate-400">
-                          Sign in to list or buy property.
-                        </p>
+                        <div className="p-2.5 bg-[#1e293b] border border-black flex items-center gap-2 text-[9.5px] font-bold text-slate-300">
+                          <LogIn className="w-3.5 h-3.5 text-[#b8ff3c] shrink-0" aria-hidden="true" />
+                          <span>Sign in to list or buy property</span>
+                        </div>
                       ) : (
                         <>
                           {hasHouseOwnership && !myHouseListing && (
                             <div
-                              className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2"
+                              className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2.5"
                               data-property-list-house="true"
                             >
-                              <img
-                                src="/assets/kiosk/house_exterior.jpg"
-                                alt="Private House"
-                                className="w-12 h-9 object-cover shrink-0"
-                                draggable={false}
-                              />
+                              <div className="relative w-16 h-12 shrink-0 border border-black overflow-hidden">
+                                <img
+                                  src="/assets/kiosk/house_exterior.jpg"
+                                  alt="Private House"
+                                  className="w-full h-full object-cover"
+                                  draggable={false}
+                                />
+                                <span className="absolute bottom-0.5 left-0.5 px-1 bg-black/80 text-[#b8ff3c] text-[7px] font-black uppercase">
+                                  DEED
+                                </span>
+                              </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-[10px] font-black uppercase">
+                                <div className="text-[10.5px] font-black uppercase truncate">
                                   Private House Deed
                                 </div>
-                                <div className="text-[8.5px] font-bold text-slate-400">
-                                  Your deed, at your price
-                                </div>
                               </div>
-                              <input
-                                value={houseListPrice}
-                                onChange={(e) =>
-                                  setHouseListPrice(e.target.value.replace(/[^0-9]/g, ''))
-                                }
-                                inputMode="numeric"
-                                aria-label="House listing price in RESPITE"
-                                className="w-16 px-1.5 py-1 bg-black/50 border border-black text-[10px] font-black text-white text-right"
-                              />
-                              <button
-                                type="button"
-                                disabled={busyPropertyListingId !== null}
-                                onClick={async () => {
-                                  const price = parseInt(houseListPrice || '0', 10);
-                                  if (!Number.isFinite(price) || price < 1) {
-                                    setMarketActionFeedback({
-                                      ok: false,
-                                      text: 'Enter a listing price of at least 1 RESPITE.',
+                              <div className="flex items-center gap-1 shrink-0">
+                                <input
+                                  value={houseListPrice}
+                                  onChange={(e) =>
+                                    setHouseListPrice(e.target.value.replace(/[^0-9]/g, ''))
+                                  }
+                                  inputMode="numeric"
+                                  aria-label="House listing price in RESPITE"
+                                  className="w-14 px-1.5 py-1 bg-black/60 border border-white/30 text-[10px] font-black text-white text-right"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={busyPropertyListingId !== null}
+                                  onClick={async () => {
+                                    const price = parseInt(houseListPrice || '0', 10);
+                                    if (!Number.isFinite(price) || price < 1) {
+                                      setMarketActionFeedback({
+                                        ok: false,
+                                        text: 'Enter a price ≥ 1 RESPITE.',
+                                      });
+                                      return;
+                                    }
+                                    const ok = await onCreatePropertyListing?.({
+                                      assetKind: 'house',
+                                      assetId: '',
+                                      assetLabel: 'Private House Deed',
+                                      priceRespite: price,
                                     });
-                                    return;
-                                  }
-                                  const ok = await onCreatePropertyListing?.({
-                                    assetKind: 'house',
-                                    assetId: '',
-                                    assetLabel: 'Private House Deed',
-                                    priceRespite: price,
-                                  });
-                                  setMarketActionFeedback(
-                                    ok
-                                      ? {
-                                          ok: true,
-                                          text: `House listed for ${price} RESPITE.`,
-                                        }
-                                      : {
-                                          ok: false,
-                                          text: 'Could not list your house. Make sure your wallet is connected and the deed is yours.',
-                                        },
-                                  );
-                                  if (ok) {
-                                    triggerNpcSpeech(
-                                      'Your house is on the market. Buyers check the board here.',
+                                    setMarketActionFeedback(
+                                      ok
+                                        ? {
+                                            ok: true,
+                                            text: `House listed for ${price} RESPITE.`,
+                                          }
+                                        : {
+                                            ok: false,
+                                            text: 'Could not list your house.',
+                                          },
                                     );
-                                  }
-                                }}
-                                className="px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
-                              >
-                                List
-                              </button>
+                                    if (ok) {
+                                      triggerNpcSpeech('Your house is now listed on the board!');
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300"
+                                >
+                                  <Tag className="w-3 h-3" aria-hidden="true" />
+                                  <span>List</span>
+                                </button>
+                              </div>
                             </div>
                           )}
                           {hasHouseOwnership && myHouseListing && (
-                            <p className="text-[9.5px] font-bold text-[#b8ff3c]">
-                              {myHouseListing.status === 'paid'
-                                ? 'Your house is paid — transfer it from the board below.'
-                                : `Your house is listed for ${myHouseListing.price_respite} RESPITE.`}
-                            </p>
+                            <div className="px-2.5 py-1.5 bg-[#1e293b] border border-[#b8ff3c] text-[9.5px] font-black text-[#b8ff3c] flex items-center gap-1.5">
+                              <Home className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                              <span>
+                                {myHouseListing.status === 'paid'
+                                  ? 'House paid — click Transfer below'
+                                  : `House listed · ${myHouseListing.price_respite} RESPITE`}
+                              </span>
+                            </div>
                           )}
                           {listableNftFurniture.map((item) => {
                             const listed = listedFurnitureIds.has(item.id);
                             return (
                               <div
                                 key={item.id}
-                                className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2"
+                                className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2.5"
                                 data-property-list-furniture={item.id}
                               >
-                                <div className="w-14 shrink-0">
+                                <div className="w-16 shrink-0">
                                   <Furniture3dThumbnail
                                     catalogId={item.id}
                                     name={item.name}
                                     iconEmoji={item.iconEmoji}
                                     compact
+                                    onInspect={() =>
+                                      setPreview3dFurniture({
+                                        catalogId: item.id,
+                                        name: item.name,
+                                        description: item.description,
+                                        isNft: item.isNft,
+                                        currency: item.currency,
+                                        priceLabel: `${item.basePrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`,
+                                        isOwned: true,
+                                      })
+                                    }
                                   />
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="text-[10px] font-black uppercase truncate">
                                     {item.name}
                                   </div>
-                                  <div className="text-[8.5px] font-bold text-slate-400">
-                                    NFT furniture (NEP-245)
-                                  </div>
+                                  <span className="inline-block mt-0.5 px-1 bg-black/60 text-[#38bdf8] text-[7.5px] font-black uppercase">
+                                    NFT
+                                  </span>
                                 </div>
                                 {listed ? (
-                                  <span className="px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase">
-                                    Listed
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase">
+                                    <Check className="w-3 h-3" aria-hidden="true" />
+                                    <span>Listed</span>
                                   </span>
                                 ) : (
-                                  <>
+                                  <div className="flex items-center gap-1 shrink-0">
                                     <input
                                       value={furnitureListPrices[item.id] ?? '20'}
                                       onChange={(e) =>
@@ -3611,7 +3427,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       }
                                       inputMode="numeric"
                                       aria-label={`Listing price for ${item.name} in RESPITE`}
-                                      className="w-14 px-1.5 py-1 bg-black/50 border border-black text-[10px] font-black text-white text-right"
+                                      className="w-14 px-1.5 py-1 bg-black/60 border border-white/30 text-[10px] font-black text-white text-right"
                                     />
                                     <button
                                       type="button"
@@ -3624,7 +3440,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                         if (!Number.isFinite(price) || price < 1) {
                                           setMarketActionFeedback({
                                             ok: false,
-                                            text: 'Enter a listing price of at least 1 RESPITE.',
+                                            text: 'Enter a price ≥ 1 RESPITE.',
                                           });
                                           return;
                                         }
@@ -3638,183 +3454,202 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                           ok
                                             ? {
                                                 ok: true,
-                                                text: `${item.name} listed for ${price} RESPITE.`,
+                                                text: `${item.name} listed (${price} R).`,
                                               }
                                             : {
                                                 ok: false,
-                                                text: 'Could not create the listing. Try again.',
+                                                text: 'Could not create listing.',
                                               },
                                         );
                                       }}
-                                      className="px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300"
                                     >
-                                      List
+                                      <Tag className="w-3 h-3" aria-hidden="true" />
+                                      <span>List</span>
                                     </button>
-                                  </>
+                                  </div>
                                 )}
                               </div>
                             );
                           })}
                           {!hasHouseOwnership && listableNftFurniture.length === 0 && (
-                            <p className="text-[9.5px] font-bold text-slate-400">
-                              You own no house deed or NFT furniture yet — see the House
-                              and Furniture tabs first.
-                            </p>
+                            <div className="p-2.5 bg-[#1e293b]/70 border border-dashed border-slate-600 flex items-center gap-2 text-[9.5px] font-bold text-slate-400">
+                              <PackageOpen className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                              <span>No House Deed or NFT Furniture owned yet</span>
+                            </div>
                           )}
                         </>
                       )}
                     </div>
 
+                    {/* MARKET BOARD LISTINGS (Image-First 2-Column Visual Cards) */}
                     <div className="space-y-1.5">
-                      <div className="text-[9.5px] font-black uppercase text-[#38bdf8]">
-                        Listings ({boardListings.length})
+                      <div className="inline-flex items-center gap-1 text-[9.5px] font-black uppercase text-[#38bdf8]">
+                        <Store className="w-3 h-3" aria-hidden="true" />
+                        <span>LISTINGS ({boardListings.length})</span>
                       </div>
                       {boardListings.length === 0 ? (
-                        <p className="text-[9.5px] font-bold text-slate-400">
-                          No property listings yet. Be the first to list above.
-                        </p>
+                        <div className="py-4 px-3 bg-[#1e293b]/70 border border-dashed border-slate-600 flex flex-col items-center justify-center gap-1 text-center text-[9.5px] font-bold text-slate-400">
+                          <Store className="w-5 h-5 text-slate-500" aria-hidden="true" />
+                          <span>No active listings</span>
+                        </div>
                       ) : (
-                        boardListings.map((listing) => {
-                          const isMine =
-                            listing.seller_account.toLowerCase() ===
-                            playerNearAccount.toLowerCase();
-                          const isBusy = busyPropertyListingId === listing.id;
-                          const canBuy =
-                            walletConnected &&
-                            !isMine &&
-                            listing.status === 'active' &&
-                            busyPropertyListingId === null &&
-                            respiteBalance >= listing.price_respite;
-                          const isMyPurchase =
-                            (listing.buyer_account || '').toLowerCase() ===
-                            playerNearAccount.toLowerCase();
-                          return (
-                            <div
-                              key={listing.id}
-                              className="p-2 bg-[#1e293b] border-2 border-black flex items-center gap-2"
-                              data-property-listing={listing.id}
-                            >
-                              {listing.asset_kind === 'house' ? (
-                                <img
-                                  src="/assets/kiosk/house_exterior.jpg"
-                                  alt={listing.asset_label}
-                                  className="w-14 h-11 object-cover shrink-0"
-                                  draggable={false}
-                                />
-                              ) : (
-                                <div className="w-14 shrink-0">
-                                  <Furniture3dThumbnail
-                                    catalogId={listing.asset_id}
-                                    name={listing.asset_label}
-                                    compact
-                                  />
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[10px] font-black uppercase truncate">
-                                    {listing.asset_label}
-                                  </span>
-                                  <span className="px-1 py-0.5 bg-black/50 text-[#b8ff3c] text-[8px] font-black uppercase">
-                                    {listing.asset_kind === 'house' ? 'Deed' : 'NFT'}
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {boardListings.map((listing) => {
+                            const isMine =
+                              listing.seller_account.toLowerCase() ===
+                              playerNearAccount.toLowerCase();
+                            const isBusy = busyPropertyListingId === listing.id;
+                            const canBuy =
+                              walletConnected &&
+                              !isMine &&
+                              listing.status === 'active' &&
+                              busyPropertyListingId === null &&
+                              respiteBalance >= listing.price_respite;
+                            const isMyPurchase =
+                              (listing.buyer_account || '').toLowerCase() ===
+                              playerNearAccount.toLowerCase();
+                            return (
+                              <div
+                                key={listing.id}
+                                className="bg-[#1e293b] border-2 border-black shadow-[2px_2px_0px_#000] flex flex-col overflow-hidden"
+                                data-property-listing={listing.id}
+                              >
+                                {/* Visual Hero Thumbnail */}
+                                <div className="relative">
+                                  {listing.asset_kind === 'house' ? (
+                                    <div className="w-full h-24 border-b-2 border-black overflow-hidden bg-[#0f172a]">
+                                      <img
+                                        src="/assets/kiosk/house_exterior.jpg"
+                                        alt={listing.asset_label}
+                                        className="w-full h-full object-cover"
+                                        draggable={false}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <Furniture3dThumbnail
+                                      catalogId={listing.asset_id}
+                                      name={listing.asset_label}
+                                      size="normal"
+                                      onInspect={() =>
+                                        setPreview3dFurniture({
+                                          catalogId: listing.asset_id,
+                                          name: listing.asset_label,
+                                          isNft: true,
+                                          currency: 'RESPITE',
+                                          priceLabel: `${listing.price_respite} R`,
+                                        })
+                                      }
+                                    />
+                                  )}
+                                  <span className="absolute top-1.5 left-1.5 z-20 px-1.5 py-0.5 bg-black/85 text-[#b8ff3c] border border-white/25 text-[7.5px] font-black uppercase">
+                                    {listing.asset_kind === 'house' ? 'DEED' : 'NFT'}
                                   </span>
                                   {listing.status === 'paid' && (
-                                    <span className="px-1 py-0.5 bg-[#facc15] text-black text-[8px] font-black uppercase">
-                                      Paid
+                                    <span className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[7.5px] font-black uppercase">
+                                      PAID
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[8.5px] font-bold text-slate-400 truncate">
-                                  Seller: {listing.seller_name || listing.seller_account}
+
+                                <div className="p-2 flex flex-col gap-1.5 flex-1">
+                                  <div className="text-[10px] font-black uppercase truncate text-white">
+                                    {listing.asset_label}
+                                  </div>
+                                  <div className="inline-flex items-center gap-1 text-[8.5px] font-bold text-slate-400 truncate">
+                                    <User className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                                    <span className="truncate">
+                                      {listing.seller_name || listing.seller_account}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-auto pt-1 border-t border-white/15 flex items-center justify-between gap-1.5">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#d8b4fe]">
+                                      <Sparkles className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                      <span>{listing.price_respite} R</span>
+                                    </span>
+
+                                    {listing.status === 'paid' ? (
+                                      isMine ? (
+                                        <button
+                                          type="button"
+                                          disabled={isBusy}
+                                          onClick={async () => {
+                                            const ok =
+                                              await onCompletePropertyTransfer?.(listing);
+                                            setMarketActionFeedback(
+                                              ok
+                                                ? {
+                                                    ok: true,
+                                                    text: `${listing.asset_label} transferred!`,
+                                                  }
+                                                : {
+                                                    ok: false,
+                                                    text: 'Transfer failed — try again.',
+                                                  },
+                                            );
+                                            if (ok) {
+                                              triggerNpcSpeech('Transfer complete!');
+                                            }
+                                          }}
+                                          className="inline-flex items-center gap-1 px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border border-black text-[8.5px] font-black uppercase cursor-pointer disabled:bg-slate-500"
+                                        >
+                                          <ArrowRightLeft className="w-2.5 h-2.5" aria-hidden="true" />
+                                          <span>{isBusy ? '...' : 'Transfer'}</span>
+                                        </button>
+                                      ) : (
+                                        <span className="text-[8px] font-black uppercase text-[#facc15]">
+                                          {isMyPurchase ? 'Pending' : 'Sold'}
+                                        </span>
+                                      )
+                                    ) : isMine ? (
+                                      <button
+                                        type="button"
+                                        disabled={isBusy}
+                                        onClick={async () => {
+                                          await onCancelPropertyListing?.(listing.id);
+                                          setMarketActionFeedback({
+                                            ok: true,
+                                            text: 'Listing cancelled.',
+                                          });
+                                        }}
+                                        className="px-2 py-1 bg-slate-500 hover:bg-slate-400 text-black border border-black text-[8.5px] font-black uppercase cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={!canBuy}
+                                        onClick={async () => {
+                                          const ok = await onBuyPropertyListing?.(listing);
+                                          setMarketActionFeedback(
+                                            ok
+                                              ? {
+                                                  ok: true,
+                                                  text: `Paid ${listing.price_respite} R — awaiting seller transfer.`,
+                                                }
+                                              : {
+                                                  ok: false,
+                                                  text: 'Payment failed — check RESPITE balance.',
+                                                },
+                                          );
+                                          if (ok) {
+                                            triggerNpcSpeech('Payment confirmed on-chain!');
+                                          }
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[8.5px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
+                                      >
+                                        <ShoppingBag className="w-2.5 h-2.5" aria-hidden="true" />
+                                        <span>{isBusy ? '...' : 'Buy'}</span>
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                              <span className="text-[10px] font-black text-[#d8b4fe] shrink-0">
-                                {listing.price_respite} R
-                              </span>
-                              {listing.status === 'paid' ? (
-                                isMine ? (
-                                  <button
-                                    type="button"
-                                    disabled={isBusy}
-                                    onClick={async () => {
-                                      const ok =
-                                        await onCompletePropertyTransfer?.(listing);
-                                      setMarketActionFeedback(
-                                        ok
-                                          ? {
-                                              ok: true,
-                                              text: `${listing.asset_label} transferred to the buyer. Sale complete.`,
-                                            }
-                                          : {
-                                              ok: false,
-                                              text: 'Transfer failed. The payment stays yours; try the transfer again.',
-                                            },
-                                      );
-                                      if (ok) {
-                                        triggerNpcSpeech(
-                                          'Transfer complete. A pleasure doing business.',
-                                        );
-                                      }
-                                    }}
-                                    className="px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300"
-                                  >
-                                    {isBusy ? '...' : 'Transfer'}
-                                  </button>
-                                ) : isMyPurchase ? (
-                                  <span className="text-[8.5px] font-black uppercase text-[#facc15]">
-                                    Awaiting transfer
-                                  </span>
-                                ) : (
-                                  <span className="text-[8.5px] font-black uppercase text-slate-400">
-                                    Sale pending
-                                  </span>
-                                )
-                              ) : isMine ? (
-                                <button
-                                  type="button"
-                                  disabled={isBusy}
-                                  onClick={async () => {
-                                    await onCancelPropertyListing?.(listing.id);
-                                    setMarketActionFeedback({
-                                      ok: true,
-                                      text: 'Listing cancelled.',
-                                    });
-                                  }}
-                                  className="px-2.5 py-1 bg-slate-500 hover:bg-slate-400 text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:cursor-not-allowed"
-                                >
-                                  Cancel
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={!canBuy}
-                                  onClick={async () => {
-                                    const ok = await onBuyPropertyListing?.(listing);
-                                    setMarketActionFeedback(
-                                      ok
-                                        ? {
-                                            ok: true,
-                                            text: `Paid ${listing.price_respite} RESPITE. The seller transfers the asset next — watch this board.`,
-                                          }
-                                        : {
-                                            ok: false,
-                                            text: 'Payment failed or was rejected. Check your RESPITE balance and wallet.',
-                                          },
-                                    );
-                                    if (ok) {
-                                      triggerNpcSpeech(
-                                        'Payment received on-chain. The seller completes the transfer here.',
-                                      );
-                                    }
-                                  }}
-                                  className="px-2.5 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"
-                                >
-                                  {isBusy ? '...' : 'Buy'}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -3939,7 +3774,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     data-kai-sell-guide="true"
                     className="p-2.5 mb-2 bg-[#0f172a] text-white border-2 border-black text-[11px] font-bold"
                   >
-                    KAI: Let's weigh your catch \u2014 tap the glowing SELL button below.
+                    KAI: Let's weigh your catch — tap the glowing SELL button below.
                     Weight is money here; mint a fish as an NFT later and it can sell for
                     RESPITE.
                   </div>
@@ -4063,7 +3898,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab.`,
                                   );
                                 }}
-                                className={`flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer ${kaiTutorialStage === 'sell' ? 'animate-pulse ring-4 ring-[#b8ff3c]' : ''}`}
+                                className={`flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer ${kaiTutorialStage === 'sell' ? 'ring-4 ring-[#b8ff3c]' : ''}`}
                               >
                                 SELL (+{lulValue} LUL)
                               </button>
@@ -4364,6 +4199,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       </div>
       </aside>
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
+      <Furniture3dPreviewModal
+        item={preview3dFurniture}
+        onClose={() => setPreview3dFurniture(null)}
+      />
     </>
   );
 };

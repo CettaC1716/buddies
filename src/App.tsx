@@ -11,6 +11,11 @@ import {
   ArrowLeft,
   Backpack,
   Package,
+  Play,
+  Volume2,
+  VolumeX,
+  LogIn,
+  X,
 } from 'lucide-react';
 import {
   BuddiesBlitzArena,
@@ -35,6 +40,7 @@ import {
   type CityTransitDestinationSpec,
   getCityTransitDestinationById,
   isIntactModelEstateBasePlot,
+  resolveOnboardingAccountEntry,
 } from './game/buddiesBlitzRules';
 import { soundEngine } from './game/audio';
 import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
@@ -78,6 +84,24 @@ import {
   HouseInteriorSlotId,
   MERCHANT_CATALOG_ITEMS,
 } from './game/buddiesMerchantPricing';
+import {
+  applyPlayerXpGain,
+  computeLevelProgress,
+  createInitialCafeWorkShiftState,
+  exchangeCafeBucksToLul,
+  purchaseCafeMenuItem,
+  serveActiveCafeOrder,
+  startCafeWorkShift,
+  type CafeMenuItemSpec,
+  type CafeWorkShiftState,
+} from './game/buddiesCafeRules';
+import {
+  CafeInteriorTopHudBar,
+  GlasshouseCafeAtmModal,
+  GlasshouseCafeOrderModal,
+  PlayerLevelXpBadge,
+  XpGainCelebrationBanner,
+} from './components/GlasshouseCafeModal';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
@@ -284,40 +308,30 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('title') === '1') {
-        return 'title';
-      }
-      // Direct-entry links keep booting straight into the world: diagnostic
-      // overview views, skip-onboarding links, and non-lobby world links
-      // (mirrors the onboarding initializer's own bypass set).
+      const isOAuthReturn =
+        Boolean(params.get('account_id')) ||
+        window.location.search.includes('privy_oauth_') ||
+        window.sessionStorage.getItem('bb_pending_privy_google_login') === '1';
       if (
         params.get('skipOnboarding') === '1' ||
         params.get('fullmap') === '1' ||
         params.get('planeview') ||
         params.get('skyshieldview') ||
         params.get('buildingview') ||
-        (params.get('world') && params.get('world') !== 'lobby')
+        (params.get('world') && params.get('world') !== 'lobby') ||
+        isOAuthReturn
       ) {
         return 'playing';
       }
-      // A Privy Google login returning from its redirect continues in place
-      // instead of detouring through the landing page.
-      if (
-        window.location.search.includes('privy_oauth_') ||
-        window.sessionStorage.getItem('bb_pending_privy_google_login') === '1'
-      ) {
-        return 'playing';
-      }
-      // Everyone else lands on the landing page first.
-      return 'title';
     }
-    return 'playing';
+    return 'title';
   });
 
   const [playMode, setPlayMode] = useState<PlayMode>('sandbox');
   const [characterGender, setCharacterGender] = useState<'female' | 'male'>('male');
   const [onboardingStep, setOnboardingStep] = useState<
     | 'auth_choice'
+    | 'fly_to_plaza'
     | 'guest_character_select'
     | 'subwallet_naming'
     | 'provisioning_subwallet'
@@ -341,29 +355,24 @@ export default function App() {
         params.get('skipOnboarding') === '1' ||
         params.get('fullmap') === '1' ||
         params.get('planeview') ||
+        params.get('skyshieldview') ||
+        params.get('buildingview') ||
         (params.get('world') && params.get('world') !== 'lobby')
       ) {
         return 'completed';
       }
-      try {
-        const lastId = window.localStorage.getItem('bb_last_connected_wallet_id_v2');
-        const explicitlyLoggedOut =
-          window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
-        if (
-          lastId &&
-          !explicitlyLoggedOut &&
-          !lastId.toLowerCase().startsWith('player1.') &&
-          !lastId.toLowerCase().startsWith('guest') &&
-          !lastId.toLowerCase().endsWith('.buddiesblitz-master.testnet')
-        ) {
-          return 'completed';
-        }
-      } catch {
-        // ignore storage errors
-      }
     }
     return 'auth_choice';
   });
+  const [connectedExternalWalletId, setConnectedExternalWalletId] = useState<string>('');
+  const [plazaFlyTargetMode, setPlazaFlyTargetMode] = useState<'character_select' | 'gameplay'>(
+    'character_select',
+  );
+  const plazaFlySessionIdRef = useRef<number>(0);
+  const pendingPlazaFlightRef = useRef<{
+    sessionId: number;
+    nextStep: 'guest_character_select' | 'completed';
+  } | null>(null);
   const [playerDisplayName, setPlayerDisplayName] = useState<string>('Buddy Male');
   const [playerUid, setPlayerUid] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -537,6 +546,10 @@ export default function App() {
   useEffect(() => {
     hudRef.current = hud;
   }, [hud]);
+  const onboardingStepRef = useRef(onboardingStep);
+  useEffect(() => {
+    onboardingStepRef.current = onboardingStep;
+  }, [onboardingStep]);
   const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('day');
   const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'ortho18'>('webgl35');
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -564,6 +577,36 @@ export default function App() {
     'none' | 'npc_merchant' | 'house_interior'
   >('none');
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
+  const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
+  const [activeCafeModal, setActiveCafeModal] = useState<'none' | 'order' | 'atm'>('none');
+  const [playerTotalXp, setPlayerTotalXp] = useState<number>(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('bb_player_total_xp_v1') || '0');
+      return Number.isFinite(saved) && saved > 0 ? Math.floor(saved) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [cafeShiftBucks, setCafeShiftBucks] = useState<number>(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('bb_cafe_shift_bucks_v1') || '0');
+      return Number.isFinite(saved) && saved > 0 ? Math.floor(saved) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [cafeShiftState, setCafeShiftState] = useState<CafeWorkShiftState>(() =>
+    createInitialCafeWorkShiftState(),
+  );
+  const [xpCelebrationBanner, setXpCelebrationBanner] = useState<{
+    id: number;
+    xpGained: number;
+    bucksGained?: number;
+    leveledUpTo: number | null;
+    label: string;
+  } | null>(null);
+  const xpBannerTimerRef = useRef<number | null>(null);
+  const levelProgress = computeLevelProgress(playerTotalXp);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
   const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
@@ -572,6 +615,9 @@ export default function App() {
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(0);
   const [personalWalletTab, setPersonalWalletTab] = useState<'wallet' | 'assets' | 'history'>('wallet');
   const [isSampleHouseView, setIsSampleHouseView] = useState<boolean>(false);
+  const [houseArchitectureStyle, setHouseArchitectureStyle] = useState<
+    'plaza_manor' | 'japanese_pavilion'
+  >('plaza_manor');
   const [isHouseFriendInviteOpen, setIsHouseFriendInviteOpen] = useState<boolean>(false);
   const [houseInviteFriendInput, setHouseInviteFriendInput] = useState<string>('');
   const [houseInviteFeedback, setHouseInviteFeedback] = useState<string | null>(null);
@@ -1267,28 +1313,52 @@ export default function App() {
     if (shouldReset) {
       setResetTrigger((prev) => prev + 1);
     }
+    setOnboardingStep((prev) => (prev === 'completed' ? 'completed' : 'auth_choice'));
     document.body.dataset.state = 'playing';
     setGameState('playing');
   }, []);
 
-  // Landing page PLAY / LOG IN: enter immediately once assets are ready;
-  // otherwise the landing swaps to its own loading bar until preload lands.
-  const [landingPlayPressed, setLandingPlayPressed] = useState<boolean>(false);
-  const handleLandingPlay = useCallback(() => {
-    soundEngine.playUiClick();
-    if (isPreloadComplete) {
-      handleStartGame(false);
-    } else {
-      setLandingPlayPressed(true);
-    }
-  }, [isPreloadComplete, handleStartGame]);
+  const beginPlazaFlyToOnboarding = useCallback(
+    (targetMode: 'character_select' | 'gameplay', nextStep: 'guest_character_select' | 'completed') => {
+      const nextSid = plazaFlySessionIdRef.current + 1;
+      plazaFlySessionIdRef.current = nextSid;
+      pendingPlazaFlightRef.current = {
+        sessionId: nextSid,
+        nextStep,
+      };
+      setPlazaFlyTargetMode(targetMode);
+      setOnboardingStep('fly_to_plaza');
+      document.body.dataset.state = 'playing';
+      setGameState('playing');
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (landingPlayPressed && isPreloadComplete) {
-      setLandingPlayPressed(false);
-      handleStartGame(false);
+    const completePlazaFlight = (sid?: number) => {
+      const pending = pendingPlazaFlightRef.current;
+      if (!pending) return;
+      if (typeof sid === 'number' && sid !== pending.sessionId) return;
+      pendingPlazaFlightRef.current = null;
+      setOnboardingStep(pending.nextStep);
+    };
+    const onFlyComplete = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ flySessionId?: number }>).detail;
+      completePlazaFlight(detail?.flySessionId);
+    };
+    window.addEventListener('plaza-fly-to-complete', onFlyComplete);
+    let fallbackTimer: number | undefined;
+    if (onboardingStep === 'fly_to_plaza' && pendingPlazaFlightRef.current) {
+      const sid = pendingPlazaFlightRef.current.sessionId;
+      fallbackTimer = window.setTimeout(() => completePlazaFlight(sid), 2300);
     }
-  }, [landingPlayPressed, isPreloadComplete, handleStartGame]);
+    return () => {
+      window.removeEventListener('plaza-fly-to-complete', onFlyComplete);
+      if (fallbackTimer !== undefined) {
+        window.clearTimeout(fallbackTimer);
+      }
+    };
+  }, [onboardingStep]);
 
   const handleSwitchPlayMode = useCallback((nextMode: PlayMode) => {
     soundEngine.playUiClick();
@@ -1438,6 +1508,35 @@ export default function App() {
       setIsHouseFriendInviteOpen(false);
       setActiveSpecialModal('none');
     };
+    const onEnterGlasshouseCafe = () => {
+      setIsKioskModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsProfileModalOpen(false);
+      setActiveTeleportKioskModal('none');
+      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+      setActiveSpecialModal('none');
+      setIsInsidePrivateHouse(false);
+      setActiveCafeModal('none');
+      setIsInsideGlasshouseCafe(true);
+    };
+    const onExitGlasshouseCafe = () => {
+      setIsInsideGlasshouseCafe(false);
+      setActiveCafeModal('none');
+      setCafeShiftState((prev) => ({ ...prev, isWorking: false, activeOrder: null }));
+    };
+    const onOpenCafeOrderModal = () => {
+      setActiveCafeModal('order');
+    };
+    const onOpenCafeAtmModal = () => {
+      setActiveCafeModal('atm');
+    };
+    const onStartCafeWorkShiftEvent = () => {
+      window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
+    };
+    const onServeCafeActiveOrderEvent = () => {
+      window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'serve_order' }));
+    };
     const onOpenCharacterProfile = (e: Event) => {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
       if (customEv.detail?.user) {
@@ -1548,6 +1647,12 @@ export default function App() {
     window.addEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
     window.addEventListener('open-house-interior-ui', onOpenHouseInterior);
     window.addEventListener('exit-house-interior-ui', onExitHouseInterior);
+    window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
+    window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
+    window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
+    window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
+    window.addEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
+    window.addEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
     window.addEventListener('open-character-profile-modal', onOpenCharacterProfile);
     window.addEventListener('close-character-profile-modal', onCloseCharacterProfile);
     window.addEventListener('open-social-chat-whisper', onOpenSocialChatWhisper);
@@ -1563,6 +1668,12 @@ export default function App() {
       window.removeEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
       window.removeEventListener('open-house-interior-ui', onOpenHouseInterior);
       window.removeEventListener('exit-house-interior-ui', onExitHouseInterior);
+      window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
+      window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
+      window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
+      window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
+      window.removeEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
+      window.removeEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
       window.removeEventListener('open-character-profile-modal', onOpenCharacterProfile);
       window.removeEventListener('close-character-profile-modal', onCloseCharacterProfile);
       window.removeEventListener('open-social-chat-whisper', onOpenSocialChatWhisper);
@@ -1764,18 +1875,169 @@ export default function App() {
     };
   }, [onboardingStep, subWalletHandleDraft]);
 
+  const grantPlayerXp = useCallback((xpDelta: number, label: string, bucksGained?: number) => {
+    setPlayerTotalXp((prevXp) => {
+      const res = applyPlayerXpGain(prevXp, xpDelta);
+      try {
+        window.localStorage.setItem('bb_player_total_xp_v1', String(res.progress.totalXp));
+      } catch {
+        // ignore
+      }
+      if (xpBannerTimerRef.current !== null) {
+        window.clearTimeout(xpBannerTimerRef.current);
+      }
+      setXpCelebrationBanner({
+        id: Date.now(),
+        xpGained: res.xpAdded,
+        bucksGained,
+        leveledUpTo: res.leveledUp ? res.newLevel : null,
+        label,
+      });
+      xpBannerTimerRef.current = window.setTimeout(() => {
+        setXpCelebrationBanner(null);
+      }, 3200);
+      return res.progress.totalXp;
+    });
+  }, []);
+
+  const handleStartCafeWorkShift = useCallback(() => {
+    soundEngine.playPickup();
+    setActiveCafeModal('none');
+    setCafeShiftState((prev) => {
+      const next = startCafeWorkShift(prev, Date.now());
+      if (next.activeOrder) {
+        dispatchBuddyAction(
+          `socialTalk:Mulai shift pelayan! Pesanan: ${next.activeOrder.item.name}`,
+        );
+      }
+      return next;
+    });
+  }, [dispatchBuddyAction]);
+
+  const handleStopCafeWorkShift = useCallback(() => {
+    soundEngine.playUiClick();
+    setCafeShiftState((prev) => ({ ...prev, isWorking: false, activeOrder: null }));
+  }, []);
+
+  const handleServeActiveCafeOrder = useCallback(() => {
+    setCafeShiftState((prev) => {
+      const res = serveActiveCafeOrder(prev, Date.now());
+      if (!res.served || !res.servedItem) return prev;
+      soundEngine.playPowerCore();
+      setCafeShiftBucks((b) => {
+        const nextBucks = b + res.bucksEarned;
+        try {
+          window.localStorage.setItem('bb_cafe_shift_bucks_v1', String(nextBucks));
+        } catch {
+          // ignore
+        }
+        return nextBucks;
+      });
+      grantPlayerXp(
+        res.xpGained,
+        res.shiftCompleted ? `SHIFT SELESAI!` : `${res.servedItem.name} DISAJIKAN`,
+        res.bucksEarned,
+      );
+      dispatchBuddyAction(
+        res.shiftCompleted
+          ? `Shift selesai! +${res.xpGained} XP & +${res.bucksEarned} BUCKS!`
+          : `Pesanan ${res.servedItem.name} disajikan!`,
+      );
+      return res.nextShiftState;
+    });
+  }, [dispatchBuddyAction, grantPlayerXp]);
+
+  const handlePurchaseCafeItem = useCallback(
+    (item: CafeMenuItemSpec): { ok: boolean; message: string } => {
+      const res = purchaseCafeMenuItem(item.id, hudRef.current.gold);
+      if (!res.purchased || !res.item) {
+        soundEngine.playHit();
+        return {
+          ok: false,
+          message: `LUL kurang! Butuh ${item.priceLul} LUL (kerja dulu atau tukar di ATM).`,
+        };
+      }
+      soundEngine.playPickup();
+      dispatchBuddyAction(`adjustPlayerLul:${-res.item.priceLul}`);
+      setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.item!.priceLul) }));
+      grantPlayerXp(res.xpGained, `PESAN ${res.item.name.toUpperCase()}`);
+      dispatchBuddyAction(`socialTalk:Menikmati ${res.item.name} (+${res.xpGained} XP!)`);
+      return {
+        ok: true,
+        message: `Berhasil pesan ${res.item.name}! +${res.xpGained} XP`,
+      };
+    },
+    [dispatchBuddyAction, grantPlayerXp],
+  );
+
+  const handleExchangeCafeBucks = useCallback(
+    (amount: number) => {
+      setCafeShiftBucks((prevBucks) => {
+        const ex = exchangeCafeBucksToLul(amount, prevBucks, hudRef.current.gold);
+        if (!ex.exchanged) {
+          soundEngine.playHit();
+          return prevBucks;
+        }
+        soundEngine.playPowerCore();
+        try {
+          window.localStorage.setItem('bb_cafe_shift_bucks_v1', String(ex.nextBucks));
+        } catch {
+          // ignore
+        }
+        dispatchBuddyAction(`adjustPlayerLul:${ex.lulReceived}`);
+        setHud((prev) => ({ ...prev, gold: prev.gold + ex.lulReceived }));
+        dispatchBuddyAction(`socialTalk:Tukar ${ex.bucksSpent} BUCKS -> +${ex.lulReceived} LUL!`);
+        return ex.nextBucks;
+      });
+    },
+    [dispatchBuddyAction],
+  );
+
+  useEffect(() => {
+    const onAppCafeAction = (ev: Event) => {
+      const act = (ev as CustomEvent<string>).detail;
+      if (act === 'start_shift') handleStartCafeWorkShift();
+      else if (act === 'serve_order') handleServeActiveCafeOrder();
+    };
+    window.addEventListener('app-cafe-action', onAppCafeAction);
+    return () => window.removeEventListener('app-cafe-action', onAppCafeAction);
+  }, [handleStartCafeWorkShift, handleServeActiveCafeOrder]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.body.dataset.playerLevel = String(levelProgress.level);
+      document.body.dataset.playerXp = String(levelProgress.totalXp);
+      document.body.dataset.cafeInterior = String(isInsideGlasshouseCafe);
+      document.body.dataset.cafeShiftWorking = String(cafeShiftState.isWorking);
+    }
+  }, [levelProgress.level, levelProgress.totalXp, isInsideGlasshouseCafe, cafeShiftState.isWorking]);
+
   useEffect(() => {
     const effectiveMode =
-      onboardingStep === 'guest_character_select'
-        ? 'character_select'
-        : activeSpecialModal === 'none' && isInsidePrivateHouse
-          ? 'house_visit'
-          : activeSpecialModal;
+      gameState === 'title' || onboardingStep === 'auth_choice'
+        ? 'landing_tour'
+        : onboardingStep === 'fly_to_plaza'
+          ? 'fly_to_plaza'
+          : onboardingStep === 'guest_character_select' ||
+              onboardingStep === 'subwallet_naming' ||
+              onboardingStep === 'provisioning_subwallet'
+            ? 'character_select'
+            : activeSpecialModal === 'none' && isInsideGlasshouseCafe
+              ? 'cafe_interior'
+              : activeSpecialModal === 'none' && isInsidePrivateHouse
+                ? 'house_visit'
+                : activeSpecialModal;
     const syncDetail = {
       mode: effectiveMode,
+      flyTargetMode: plazaFlyTargetMode,
+      flySessionId: plazaFlySessionIdRef.current,
       location: merchantLocation,
       themeId: activeHouseThemeId,
       isSampleHouse: isSampleHouseView,
+      isWorkingCafeShift: cafeShiftState.isWorking,
+      activeCafeOrderLabel: cafeShiftState.activeOrder?.item.name ?? '',
+      activeCafeOrderAccent: cafeShiftState.activeOrder?.item.accentHex ?? '#b8ff3c',
+      houseArchitectureStyle,
       placement: interiorPlacement,
       onboardingCompleted: onboardingStep === 'completed',
       characterGender,
@@ -1796,10 +2058,16 @@ export default function App() {
       }),
     );
   }, [
+    gameState,
     onboardingStep,
+    plazaFlyTargetMode,
     activeSpecialModal,
+    isInsideGlasshouseCafe,
     isInsidePrivateHouse,
     isSampleHouseView,
+    cafeShiftState.isWorking,
+    cafeShiftState.activeOrder,
+    houseArchitectureStyle,
     merchantLocation,
     activeHouseThemeId,
     interiorPlacement,
@@ -1957,17 +2225,43 @@ export default function App() {
         Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0,
       );
 
-      const [onChainRespiteRaw, onChainEstate, gamepassVerify, hanaStatus] = await Promise.all([
-        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet),
-        fetchBuddiesMarketEstate(normalizedWallet),
-        verifyNep171GamepassOwnership(normalizedWallet),
-        fetchHanaTreasuryStatus(normalizedWallet),
-      ]);
+      const normalizedDefaultName = normalizedWallet.split('.')[0].toUpperCase();
+      let savedLocalProfile: { displayName: string; gender: 'male' | 'female' } | null = null;
+      if (typeof window !== 'undefined') {
+        try {
+          const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v2');
+          if (rawMap) {
+            const parsed = JSON.parse(rawMap) as Record<
+              string,
+              { displayName: string; gender: 'male' | 'female' }
+            >;
+            if (parsed[normalizedWallet]) {
+              savedLocalProfile = parsed[normalizedWallet];
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const [onChainRespiteRaw, onChainEstate, gamepassVerify, hanaStatus, remoteProfile] =
+        await Promise.all([
+          fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet),
+          fetchBuddiesMarketEstate(normalizedWallet),
+          verifyNep171GamepassOwnership(normalizedWallet),
+          fetchHanaTreasuryStatus(normalizedWallet),
+          fetchOrCreatePlayerProfile({
+            nearAccountId: normalizedWallet,
+            displayName: savedLocalProfile?.displayName || normalizedDefaultName,
+            authMode: isCitizenInvisible ? 'social_invisible' : 'wallet_selector',
+            email: resolvedEmail || undefined,
+          }),
+        ]);
       setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
       const hasAuthoritativeOnChainBalance =
         Boolean(accountView) || onChainRespiteRaw !== null || onChainEstate !== null;
       const estateRespite = Number(onChainEstate?.respite_balance || '0') || 0;
-      const onChainRespite = Math.max(0, Number(onChainRespiteRaw || '0') || 0, estateRespite);
+      const onChainRespite = Math.max(0, Number(onChainEstate?.respite_balance || '0') || 0, estateRespite, Number(onChainRespiteRaw || '0') || 0);
       if (hasAuthoritativeOnChainBalance) {
         setRespiteBalance(onChainRespite);
       }
@@ -1998,51 +2292,45 @@ export default function App() {
         gamepassVerify.token?.tokenId ?? onChainEstate?.house_deed?.deed_token_id ?? null;
       setIsVerifyingNearWallet(false);
 
-      let restoredGender: 'male' | 'female' = characterGender;
-      let restoredName = normalizedWallet.split('.')[0].toUpperCase();
-      if (typeof window !== 'undefined') {
-        try {
-          const rawMap = window.localStorage.getItem('bb_saved_wallet_profiles_v2');
-          if (rawMap) {
-            const parsed = JSON.parse(rawMap) as Record<
-              string,
-              { displayName: string; gender: 'male' | 'female' }
-            >;
-            const saved = parsed[normalizedWallet];
-            if (saved) {
-              restoredGender = saved.gender;
-              restoredName = saved.displayName;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
+      const dbGenderTag = remoteProfile?.unlocked_skins?.find(
+        (s) => s === 'gender:male' || s === 'gender:female',
+      );
+      const hasSavedAvatar = Boolean(savedLocalProfile || dbGenderTag);
+      const savedGender: 'male' | 'female' =
+        dbGenderTag === 'gender:female'
+          ? 'female'
+          : dbGenderTag === 'gender:male'
+            ? 'male'
+            : savedLocalProfile?.gender === 'female'
+              ? 'female'
+              : 'male';
+      const savedName =
+        remoteProfile?.display_name || savedLocalProfile?.displayName || normalizedDefaultName;
+
+      const entryDecision = resolveOnboardingAccountEntry({
+        authKind: isCitizenInvisible ? 'google' : 'external_wallet',
+        hasSavedAvatarProfile: hasSavedAvatar,
+        savedGender,
+        savedDisplayName: savedName,
+      });
+
+      const finalGender = entryDecision.restoredGender;
+      const finalName = entryDecision.restoredDisplayName || savedName;
 
       setPlayerUid(normalizedWallet);
+      setConnectedExternalWalletId(normalizedWallet);
       setWalletConnectInput(normalizedWallet);
-      setCharacterGender(restoredGender);
-      setPlayerDisplayName(restoredName);
-      setWalletUsernameDraft(restoredName);
+      setCharacterGender(finalGender);
+      setPlayerDisplayName(finalName);
+      setWalletUsernameDraft(finalName);
       setOnboardingAuthMode('wallet');
-      setOnboardingStep('completed');
-      setGameState('playing');
-      // First entry on this device gets Hana's guided intro, once.
-      try {
-        if (!window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
-          window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
-          setTutorialStage('welcome_modal');
-        }
-      } catch {
-        // ignore
-      }
       setHasHouseOwnership(ownsHouseVerified);
 
       dispatchBuddyAction(
         `nearSyncWalletSession:${normalizedWallet}:${ownsHouseVerified ? '1' : '0'}:${verifiedTokenId || ''}`,
       );
-      dispatchBuddyAction(`setCharacterGender:${restoredGender}`);
-      dispatchBuddyAction(`setPlayerDisplayName:${restoredName}`);
+      dispatchBuddyAction(`setCharacterGender:${finalGender}`);
+      dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
       setHud((prev) => ({
         ...prev,
         nearWalletConnected: true,
@@ -2050,7 +2338,46 @@ export default function App() {
         nearHasGamepassNft: ownsHouseVerified,
         nearGamepassTokenId: verifiedTokenId,
       }));
-      persistWalletProfileLocally(normalizedWallet, restoredName, restoredGender, resolvedEmail);
+
+      if (remoteProfile) {
+        setSupabaseConnected(true);
+        setCyonBalance(remoteProfile.cyon_balance);
+        if (!hasAuthoritativeOnChainBalance) {
+          setRespiteBalance(remoteProfile.respite_balance);
+        } else if (remoteProfile.respite_balance !== onChainRespite) {
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: normalizedWallet,
+            lulBalance: remoteProfile.lul_balance,
+            cyonBalance: remoteProfile.cyon_balance,
+            respiteBalance: onChainRespite,
+          });
+        }
+        if (Array.isArray(remoteProfile.owned_token_ids)) {
+          setOwnedMerchantItemIds(remoteProfile.owned_token_ids);
+        }
+      }
+
+      if (entryDecision.isReturningUser) {
+        persistWalletProfileLocally(normalizedWallet, finalName, finalGender, resolvedEmail);
+        // First entry on this device gets Hana's guided intro, once.
+        try {
+          if (!window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
+            window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
+            setTutorialStage('welcome_modal');
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      setIsNearWalletSelectorOpen(false);
+      if (onboardingStepRef.current !== 'completed') {
+        // Fly camera smoothly from live city tour into Central Plaza!
+        beginPlazaFlyToOnboarding(entryDecision.flyTargetMode, entryDecision.nextStepAfterFly);
+      } else {
+        setOnboardingStep('completed');
+        setGameState('playing');
+      }
 
       void fetchGamepassNftLedgerFromSupabase(verifiedTokenId || undefined).then(
         (remoteLedger) => {
@@ -2081,49 +2408,13 @@ export default function App() {
           }));
         }
       });
-
-      void fetchOrCreatePlayerProfile({
-        nearAccountId: normalizedWallet,
-        displayName: restoredName,
-        authMode: isCitizenInvisible ? 'social_invisible' : 'wallet_selector',
-        email: resolvedEmail || undefined,
-      }).then((profile) => {
-        if (profile) {
-          setSupabaseConnected(true);
-          setCyonBalance(profile.cyon_balance);
-          if (!hasAuthoritativeOnChainBalance) {
-            setRespiteBalance(profile.respite_balance);
-          } else if (profile.respite_balance !== onChainRespite) {
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: normalizedWallet,
-              lulBalance: profile.lul_balance,
-              cyonBalance: profile.cyon_balance,
-              respiteBalance: onChainRespite,
-            });
-          }
-          if (Array.isArray(profile.owned_token_ids)) {
-            setOwnedMerchantItemIds(profile.owned_token_ids);
-          }
-          const dbGenderTag = profile.unlocked_skins?.find(
-            (s) => s === 'gender:male' || s === 'gender:female',
-          );
-          const finalGender: 'male' | 'female' =
-            dbGenderTag === 'gender:female'
-              ? 'female'
-              : dbGenderTag === 'gender:male'
-                ? 'male'
-                : restoredGender;
-          const finalName = profile.display_name || restoredName;
-          setCharacterGender(finalGender);
-          setPlayerDisplayName(finalName);
-          setWalletUsernameDraft(finalName);
-          dispatchBuddyAction(`setCharacterGender:${finalGender}`);
-          dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
-          persistWalletProfileLocally(normalizedWallet, finalName, finalGender, resolvedEmail);
-        }
-      });
     },
-    [characterGender, dispatchBuddyAction, persistWalletProfileLocally, walletNetworkChoice],
+    [
+      beginPlazaFlyToOnboarding,
+      dispatchBuddyAction,
+      persistWalletProfileLocally,
+      walletNetworkChoice,
+    ],
   );
 
   const {
@@ -2151,8 +2442,25 @@ export default function App() {
           await handleConnectWalletAndEnterLobby(remoteProfile.near_account_id, {
             silentRestore: true,
             googleEmail: cleanEmail,
+            onboardingMode: 'social_invisible',
           });
           return true;
+        }
+
+        try {
+          const rawEmailMap = window.localStorage.getItem('bb_wallet_by_google_email_v2');
+          const emailMap: Record<string, string> = rawEmailMap ? JSON.parse(rawEmailMap) : {};
+          const localMappedWallet = emailMap[cleanEmail];
+          if (localMappedWallet) {
+            await handleConnectWalletAndEnterLobby(localMappedWallet, {
+              silentRestore: true,
+              googleEmail: cleanEmail,
+              onboardingMode: 'social_invisible',
+            });
+            return true;
+          }
+        } catch {
+          // ignore
         }
 
         const suggestedCitizenName = cleanEmail
@@ -2173,11 +2481,13 @@ export default function App() {
         }
       }
 
+      // New Google user: fly camera to Central Plaza and choose avatar!
+      setConnectedExternalWalletId('');
       setOnboardingAuthMode('wallet');
-      setOnboardingStep('guest_character_select');
+      beginPlazaFlyToOnboarding('character_select', 'guest_character_select');
       return false;
     },
-    [handleConnectWalletAndEnterLobby, isCustomGuestNameEdited],
+    [beginPlazaFlyToOnboarding, handleConnectWalletAndEnterLobby, isCustomGuestNameEdited],
   );
 
   const {
@@ -2320,35 +2630,23 @@ export default function App() {
             return;
           }
 
+          // Keep Live Landing Page visible on fresh visit; only verify signer state quietly
           const explicitlyLoggedOut =
             window.localStorage.getItem('bb_explicit_logged_out_v1') === '1';
           if (explicitlyLoggedOut) return;
 
-          // 1. Prefer restoring an active @hot-labs/near-connect signing wallet session first
           const restoredSigner = await restoreConnectedNearSigningWallet('testnet');
           if (!cancelled && restoredSigner?.accountId) {
-            await handleConnectWalletAndEnterLobby(restoredSigner.accountId, {
-              silentRestore: true,
-              preverifiedResult: restoredSigner,
-            });
-            return;
-          }
-
-          // 2. Fallback to saved Citizen / Wallet handle, strictly excluding root faucet 'testnet' / 'testnet.near'
-          const lastId = window.localStorage.getItem('bb_last_connected_wallet_id_v2');
-          const lowerLast = (lastId || '').trim().toLowerCase();
-          if (lowerLast === 'testnet' || lowerLast === 'testnet.near') {
-            window.localStorage.removeItem('bb_last_connected_wallet_id_v2');
-            return;
-          }
-          if (
-            !cancelled &&
-            lastId &&
-            !lowerLast.startsWith('player1.') &&
-            !lowerLast.startsWith('guest') &&
-            !lowerLast.endsWith('.buddiesblitz-master.testnet')
-          ) {
-            await handleConnectWalletAndEnterLobby(lastId, { silentRestore: true });
+            const acc = restoredSigner.accountId.trim().toLowerCase();
+            setSavedWalletSummary((prev) =>
+              prev && prev.walletId === acc
+                ? prev
+                : {
+                    walletId: acc,
+                    displayName: acc.split('.')[0].toUpperCase(),
+                    gender: 'male',
+                  },
+            );
           }
         } catch {
           // ignore
@@ -2357,7 +2655,15 @@ export default function App() {
     }
     const unsubGoogle = subscribeToSupabaseAuthUser((user) => {
       if (user?.email) {
-        void resolveAndRestoreExistingGoogleWallet(user.email);
+        const hasPendingRedirect =
+          typeof window !== 'undefined' &&
+          (window.sessionStorage.getItem('bb_pending_privy_google_login') === '1' ||
+            window.location.search.includes('privy_oauth_'));
+        if (hasPendingRedirect) {
+          void resolveAndRestoreExistingGoogleWallet(user.email);
+        } else {
+          setConnectedGoogleEmail(user.email);
+        }
       }
     });
     return () => {
@@ -2446,6 +2752,29 @@ export default function App() {
     setPlayerDisplayName(cleanGuestName);
     setWalletUsernameDraft(cleanGuestName);
 
+    // New External Wallet User: already connected wallet, save chosen avatar & enter plaza!
+    if (onboardingAuthMode === 'wallet' && connectedExternalWalletId) {
+      persistWalletProfileLocally(
+        connectedExternalWalletId,
+        cleanGuestName,
+        characterGender,
+        connectedGoogleEmail,
+      );
+      dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+      dispatchBuddyAction(`setPlayerDisplayName:${cleanGuestName}`);
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: connectedExternalWalletId,
+        displayName: cleanGuestName,
+        lulBalance: hudRef.current.gold,
+        cyonBalance,
+        respiteBalance,
+        unlockedSkins: ['default', `gender:${characterGender}`],
+      });
+      setOnboardingLoadingProgress(10);
+      setOnboardingStep('entering_lobby');
+      return;
+    }
+
     // Linear Google Login Flow: Step 1 (Character + Name) -> Step 2 (Sub-Wallet Handle `xyz.buddiesblitz.testnet`)
     if (onboardingAuthMode === 'wallet') {
       if (!subWalletHandleDraft.trim()) {
@@ -2484,9 +2813,14 @@ export default function App() {
     }));
   }, [
     characterGender,
+    connectedExternalWalletId,
+    connectedGoogleEmail,
+    cyonBalance,
     dispatchBuddyAction,
     onboardingAuthMode,
+    persistWalletProfileLocally,
     playerDisplayName,
+    respiteBalance,
     subWalletHandleDraft,
   ]);
 
@@ -2761,7 +3095,7 @@ export default function App() {
 
       if (gameState === 'title' && (e.code === 'Enter' || e.code === 'Space')) {
         e.preventDefault();
-        handleLandingPlay();
+        handleStartGame(false);
         return;
       }
 
@@ -2802,7 +3136,6 @@ export default function App() {
     isKioskModalOpen,
     dispatchBuddyAction,
     handleStartGame,
-    handleLandingPlay,
     handleToggleAudio,
     handleCycleLighting,
     handleToggleFovMode,
@@ -3430,10 +3763,8 @@ export default function App() {
         onPreloadSceneReady={handlePreloadSceneReady}
       />
 
-      {/* Unified Blocking Preload Gate (0% to 100%). Suppressed on the title
-          screen: the landing page is the front door and carries its own
-          loading state once PLAY is pressed. */}
-      {!isPreloadComplete && gameState !== 'title' && (
+      {/* Unified Blocking Preload Gate (0% to 100%) */}
+      {!isPreloadComplete && (
         <div
           role="status"
           aria-live="polite"
@@ -3473,7 +3804,7 @@ export default function App() {
           className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-[#0b0e16] text-white pointer-events-auto select-none"
         >
           <div className="flex flex-col items-center gap-3">
-            <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase animate-pulse">
+            <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase">
               <span className="skew-x-12 inline-block">LOADING...</span>
             </div>
             <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-[#00d2ff]">
@@ -3483,9 +3814,9 @@ export default function App() {
                 ? 'ENTERING CENTRAL PLAZA'
                 : `ENTERING WARZONE (${worldInitialTeam.toUpperCase()} TEAM)`}
             </div>
-            {/* Animated Loading Bar */}
+            {/* Loading Bar */}
             <div className="w-56 sm:w-64 h-2.5 bg-[#14161d] border-2 border-white/70 rounded-full overflow-hidden mt-1 shadow-[2px_2px_0_#000]">
-              <div className="h-full bg-[#b8ff3c] animate-pulse w-full" />
+              <div className="h-full bg-[#b8ff3c] w-full" />
             </div>
             <div className="text-[10px] font-bold text-white/60 tracking-wider">
               Preparing area &amp; syncing map...
@@ -3505,143 +3836,278 @@ export default function App() {
       />
 
       {/* =====================================================================
-          2. LANDING PAGE: bright Pudgy-style front door over the live world.
-             One PLAY NOW (or LOG IN) press hands over to the START GAME card.
+          2. LIVE 3D LANDING PAGE (NO-AVATAR CITY TOUR + NEW NEO-COMIC LOGO)
          ===================================================================== */}
-      {gameState === 'title' && (
+      {isPreloadComplete && gameState === 'title' && (
         <section
-          aria-label="Buddies Blitz Landing"
-          className="fixed inset-0 z-20 flex flex-col pointer-events-none"
+          aria-label="Buddies Blitz Live Landing Page"
+          data-live-landing="true"
+          className="fixed inset-0 z-20 flex flex-col justify-between pointer-events-none select-none"
         >
-          {/* Looping gameplay video backdrop (pond fishing scene) */}
-          <video
-            className="absolute inset-0 w-full h-full object-cover"
-            src="/assets/landing-loop.mp4"
-            autoPlay
-            muted
-            loop
-            playsInline
+          {/* Subtle atmospheric edge vignette keeping the live 3D City Tour crystal-clear */}
+          <div
             aria-hidden="true"
+            className="fixed inset-0 bg-gradient-to-b from-black/55 via-black/15 to-black/70 pointer-events-none"
           />
-          {/* Light sky wash so the logo and buttons stay readable */}
-          <div className="absolute inset-0 bg-gradient-to-b from-sky-400/35 via-transparent to-sky-900/25" />
 
-          {/* Top banner */}
-          <div className="relative z-10 bg-[#60a5fa] text-white text-center font-black uppercase tracking-[0.18em] text-[10px] sm:text-xs py-2 px-3 border-b-2 border-black/60">
-            Free to Play · No Download · A Social World on NEAR Testnet
-          </div>
-
-          {/* Header row: wordmark chip + sound + log in */}
-          <div className="relative z-10 flex items-start justify-between px-4 sm:px-8 pt-4">
-            <div className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
-              <span className="skew-x-6 inline-block">Buddies Blitz</span>
+          {/* Compact Neo-Comic Top Navigation Bar */}
+          <header className="relative z-10 flex items-center justify-between px-4 sm:px-8 pt-4 sm:pt-6">
+            <div className="flex items-center gap-2.5 pointer-events-auto">
+              <div className="-skew-x-6 px-3.5 py-1.5 bg-[#b8ff3c] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-widest">
+                <span className="skew-x-6 inline-block">BUDDIES BLITZ</span>
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-[#14161d]/90 text-white border-2 border-black shadow-[3px_3px_0_#000] text-[10px] font-black uppercase tracking-widest">
+                <span className="w-2 h-2 rounded-full bg-[#b8ff3c] animate-pulse" />
+                <span>LIVE WORLD</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 pointer-events-auto">
+
+            <div className="flex items-center gap-2.5 pointer-events-auto">
               <button
                 type="button"
                 onClick={(e) => {
                   e.currentTarget.blur();
                   handleToggleAudio();
                 }}
-                aria-label={isMuted ? 'Sound Muted' : 'Sound Active'}
-                className="px-3 py-2 bg-white hover:bg-[#fec83e] text-[#11121a] font-black text-[10px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+                className="-skew-x-6 w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
               >
-                {isMuted ? 'Muted' : 'Sound'}
+                <span className="skew-x-6 flex items-center justify-center">
+                  {isMuted ? (
+                    <VolumeX className="w-4 h-4 text-slate-300" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-[#b8ff3c]" />
+                  )}
+                </span>
               </button>
+
               <button
                 type="button"
-                onClick={handleLandingPlay}
-                className="px-4 py-2 bg-[#4285f4] hover:bg-[#5b96f7] text-white font-black text-[11px] uppercase tracking-wider border-2 border-black rounded-full shadow-[2px_2px_0_#000] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                data-landing-login-btn="true"
+                onClick={() => handleStartGame(false)}
+                className="-skew-x-6 px-4 py-2 bg-white hover:bg-slate-100 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
               >
-                Log In
+                <span className="skew-x-6 inline-flex items-center gap-1.5">
+                  <LogIn className="w-3.5 h-3.5 stroke-[2.6]" aria-hidden="true" />
+                  <span>LOG IN</span>
+                </span>
               </button>
             </div>
-          </div>
+          </header>
 
-          {/* Center: logo, feature chips, PLAY NOW */}
-          <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 pb-2">
-            <img
-              src="/assets/logo-buddies-blitz.png"
-              alt="Buddies Blitz"
-              draggable={false}
-              className="w-[min(520px,82vw)] drop-shadow-[0_10px_24px_rgba(2,32,71,0.45)] animate-bounce [animation-duration:2.8s]"
-            />
-            <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-              {['AI Merchants', 'Fish NFTs', 'Your Own House', '10v10 Warzone'].map((chip) => (
-                <span
-                  key={chip}
-                  className="px-2 py-0.5 bg-white/90 text-black border-2 border-black text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0_#000]"
-                >
-                  {chip}
-                </span>
-              ))}
-            </div>
-            {landingPlayPressed ? (
-              <div className="pointer-events-auto mt-5 w-[min(420px,80vw)] -rotate-1 bg-[#14161d]/90 border-3 border-black ring-2 ring-white shadow-[6px_6px_0_#000] px-5 py-4 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-widest text-white">
-                  <span>Loading World</span>
-                  <span className="font-mono">{preloadProgress}%</span>
-                </div>
-                <div className="w-full h-2.5 bg-[#181b26] border border-white/25 overflow-hidden">
-                  <div
-                    className="h-full bg-[#b8ff3c] transition-[width] duration-150 ease-out"
-                    style={{ width: `${preloadProgress}%` }}
+          {/* Center Hero: Brand-New Geometric Neo-Comic Logo + PLAY NOW CTA */}
+          <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 text-center">
+            <div className="pointer-events-auto flex flex-col items-center gap-6 max-w-xl w-full">
+              {/* Brand-New Custom BUDDIES BLITZ Comic Vector Emblem */}
+              <svg
+                viewBox="0 0 640 250"
+                className="w-full max-w-[540px] drop-shadow-[0_14px_24px_rgba(0,0,0,0.6)]"
+                role="img"
+                aria-label="BUDDIES BLITZ"
+              >
+                <defs>
+                  <linearGradient id="bb-lime-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#d9ff66" />
+                    <stop offset="100%" stopColor="#a3ff1e" />
+                  </linearGradient>
+                  <linearGradient id="bb-cyan-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#38bdf8" />
+                    <stop offset="100%" stopColor="#22d3ee" />
+                  </linearGradient>
+                </defs>
+
+                {/* Top Skewed Eyebrow Ribbon */}
+                <g transform="translate(185, 8) skewX(-10)">
+                  <rect x="4" y="4" width="268" height="30" fill="#000000" />
+                  <rect
+                    x="0"
+                    y="0"
+                    width="268"
+                    height="30"
+                    fill="#14161d"
+                    stroke="#ffffff"
+                    strokeWidth="2.5"
                   />
-                </div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/60">
-                  Preparing the plaza, the beach &amp; your buddies...
-                </div>
-              </div>
-            ) : (
+                  <text
+                    x="134"
+                    y="20"
+                    textAnchor="middle"
+                    fontFamily="'Barlow', sans-serif"
+                    fontWeight="900"
+                    fontSize="13"
+                    letterSpacing="3.5"
+                    fill="#38bdf8"
+                  >
+                    3D SOCIAL ARENA
+                  </text>
+                </g>
+
+                {/* Upper Plate: BUDDIES (Crisp White + Heavy Comic Drop Block) */}
+                <g transform="translate(52, 46) skewX(-8)">
+                  <rect x="10" y="10" width="530" height="88" fill="#000000" />
+                  <rect
+                    x="0"
+                    y="0"
+                    width="530"
+                    height="88"
+                    fill="#14161d"
+                    stroke="#ffffff"
+                    strokeWidth="5"
+                  />
+                  <rect x="8" y="8" width="12" height="72" fill="url(#bb-cyan-grad)" />
+                  <text
+                    x="276"
+                    y="67"
+                    textAnchor="middle"
+                    fontFamily="'Barlow', sans-serif"
+                    fontWeight="900"
+                    fontStyle="italic"
+                    fontSize="74"
+                    letterSpacing="6"
+                    fill="#ffffff"
+                    stroke="#000000"
+                    strokeWidth="12"
+                    paintOrder="stroke fill"
+                  >
+                    BUDDIES
+                  </text>
+                </g>
+
+                {/* Lower Plate: BLITZ (Neon Lime Power Plate + Twin Lightning Cut) */}
+                <g transform="translate(116, 134) skewX(-10)">
+                  <rect x="10" y="10" width="420" height="82" fill="#000000" />
+                  <rect
+                    x="0"
+                    y="0"
+                    width="420"
+                    height="82"
+                    fill="url(#bb-lime-grad)"
+                    stroke="#000000"
+                    strokeWidth="6"
+                  />
+                  <rect
+                    x="5"
+                    y="5"
+                    width="410"
+                    height="72"
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth="2.5"
+                    strokeOpacity="0.65"
+                  />
+                  <text
+                    x="230"
+                    y="63"
+                    textAnchor="middle"
+                    fontFamily="'Barlow', sans-serif"
+                    fontWeight="900"
+                    fontStyle="italic"
+                    fontSize="66"
+                    letterSpacing="9"
+                    fill="#14161d"
+                  >
+                    BLITZ
+                  </text>
+
+                  {/* Left Twin Lightning Emblem */}
+                  <polygon
+                    points="38,14 66,14 52,38 72,38 34,70 46,44 26,44"
+                    fill="#14161d"
+                    stroke="#ffffff"
+                    strokeWidth="2.5"
+                    strokeLinejoin="round"
+                  />
+                </g>
+              </svg>
+
+              {/* Single Bold Primary CTA */}
               <button
                 type="button"
                 data-start="true"
-                onClick={handleLandingPlay}
-                aria-label="Play Now"
-                className="pointer-events-auto mt-5 -rotate-2 hover:-rotate-3 hover:scale-105 active:scale-95 px-10 py-4 bg-[#b4ff39] hover:bg-[#c7ff72] text-[#11121a] font-black text-2xl sm:text-3xl tracking-wider rounded-full border-4 border-[#11121a] ring-4 ring-white shadow-[6px_6px_0_#000] transition-all duration-150 cursor-pointer whitespace-nowrap"
+                onClick={() => handleStartGame(false)}
+                aria-label="PLAY NOW"
+                className="-skew-x-6 px-10 sm:px-12 py-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] font-black text-xl sm:text-2xl uppercase tracking-widest cursor-pointer hover:-translate-y-0.5 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none transition-all"
               >
-                PLAY NOW
+                <span className="skew-x-6 inline-flex items-center gap-3">
+                  <Play className="w-6 h-6 fill-black stroke-[2.5]" aria-hidden="true" />
+                  <span>PLAY NOW</span>
+                </span>
               </button>
-            )}
+            </div>
           </div>
 
-          <div className="relative z-10 pb-5 px-6 text-center text-xs sm:text-sm font-bold tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
-            WASD Run &nbsp;·&nbsp; [E] Talk / Interact &nbsp;·&nbsp; [F] Fishing &nbsp;·&nbsp;
-            Chat with Kai &amp; Hana to trade
-          </div>
+          {/* Ultra-Clean Minimal Footer */}
+          <footer className="relative z-10 pb-5 px-4 flex justify-center">
+            <div className="px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em]">
+              SOCIAL CITY &nbsp;•&nbsp; NEAR TESTNET &nbsp;•&nbsp; LIVE PLAZA
+            </div>
+          </footer>
         </section>
       )}
 
       {/* =====================================================================
           2B. UNIFIED SINGLE 'START GAME' MODAL CARD:
-              All onboarding states (Headless Google OAuth, Loading/Authenticating,
-              OAuth Error Messages, 3D Character Selection, Citizen Username Setup,
-              and Entering Lobby progress) stay inside this single START GAME card
-              without ever stacking a second modal overlay.
+              All onboarding states stay inside this single START GAME card
+              without ever stacking a second modal overlay. Hidden cleanly during
+              'fly_to_plaza' so the camera swoop to Central Plaza is unobstructed.
          ===================================================================== */}
       {isPreloadComplete &&
         gameState === 'playing' &&
         !isFullMapOverview &&
-        onboardingStep !== 'completed' && (
+        onboardingStep === 'fly_to_plaza' && (
+          <div
+            aria-label="Flying to Central Plaza"
+            data-onboarding-step="fly_to_plaza"
+            className="fixed inset-x-0 bottom-7 z-40 flex justify-center pointer-events-none select-none"
+          >
+            <div className="-skew-x-6 px-5 py-2 bg-[#14161d]/95 text-white border-3 border-black ring-2 ring-white shadow-[5px_5px_0_#000] text-xs font-black uppercase tracking-widest">
+              <span className="skew-x-6 inline-flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#b8ff3c] animate-ping" />
+                <span>FLYING TO CENTRAL PLAZA...</span>
+              </span>
+            </div>
+          </div>
+        )}
+
+      {isPreloadComplete &&
+        gameState === 'playing' &&
+        !isFullMapOverview &&
+        onboardingStep !== 'completed' &&
+        onboardingStep !== 'fly_to_plaza' && (
           <section
             aria-label="Buddies Blitz Login & Onboarding"
             data-onboarding-step={onboardingStep}
             className={`fixed inset-0 z-50 flex flex-col ${
               onboardingStep === 'guest_character_select'
                 ? 'justify-end items-center py-6 px-4 pointer-events-none'
-                : 'items-center justify-center p-4 bg-black/60 backdrop-blur-[3px] pointer-events-auto'
+                : 'items-center justify-center p-4 bg-black/70 pointer-events-auto'
             } select-none`}
           >
             <div
               data-start-game-card="true"
-              className="pointer-events-auto w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-5 space-y-4"
+              className="relative pointer-events-auto w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-4"
             >
+              {onboardingStep === 'auth_choice' && (
+                <button
+                  type="button"
+                  aria-label="Close login modal"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    document.body.dataset.state = 'title';
+                    setGameState('title');
+                  }}
+                  className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white border border-white/20 cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+
               {/* Compact Game Title Header (Always in the Single START GAME Card) */}
-              <div className="text-center space-y-1 border-b-2 border-white/15 pb-3">
+              <div className="text-center space-y-1 border-b border-white/15 pb-3.5">
                 <div className="inline-block -skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
                   <span className="skew-x-12 inline-block">BUDDIES BLITZ</span>
                 </div>
-                <h1 className="text-2xl font-black uppercase tracking-wide text-white pt-0.5">
+                <h1 className="text-2xl font-black uppercase tracking-wide text-white pt-1">
                   START GAME
                 </h1>
                 {connectedGoogleEmail && (
@@ -3653,8 +4119,8 @@ export default function App() {
 
               {onboardingStep === 'auth_choice' && (
                 <>
-                  {/* 1. Headless Google OAuth Login */}
-                  <div className="space-y-2.5">
+                  {/* 1. Primary CTAs: Google OAuth & Play as Guest */}
+                  <div className="space-y-3">
                     {savedWalletSummary &&
                       savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' &&
                       savedWalletSummary.walletId !== 'testnet' &&
@@ -3683,7 +4149,7 @@ export default function App() {
                         </div>
                       )}
 
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <button
                         type="button"
                         data-connect-wallet-enter-btn="true"
@@ -3691,7 +4157,7 @@ export default function App() {
                         onClick={() => void handleStartGoogleLoginAndOpenWalletNaming()}
                         className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
                       >
-                        <span className="skew-x-6 flex items-center justify-center gap-2">
+                        <span className="skew-x-6 flex items-center justify-center gap-2.5">
                           <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
                             <path
                               fill="#4285F4"
@@ -3718,30 +4184,49 @@ export default function App() {
                         </span>
                       </button>
 
+                      <button
+                        type="button"
+                        data-login-guest-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setWalletConnectError(null);
+                          setConnectedExternalWalletId('');
+                          setOnboardingAuthMode('guest');
+                          setConnectedGoogleEmail('');
+                          setCharacterGender('male');
+                          setIsCustomGuestNameEdited(false);
+                          setPlayerDisplayName('Buddy Male');
+                          dispatchBuddyAction('setCharacterGender:male');
+                          beginPlazaFlyToOnboarding('character_select', 'guest_character_select');
+                        }}
+                        className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                      >
+                        <span className="skew-x-6 inline-block">PLAY AS GUEST</span>
+                      </button>
                     </div>
 
+                    {walletConnectError && (
+                      <div
+                        data-wallet-connect-error="true"
+                        className="p-2.5 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold space-y-2"
+                      >
+                        <div>{walletConnectError}</div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setWalletConnectError(null);
+                            setConnectedExternalWalletId('');
+                            setOnboardingAuthMode('wallet');
+                            beginPlazaFlyToOnboarding('character_select', 'guest_character_select');
+                          }}
+                          className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
+                        >
+                          CREATE WALLET
+                        </button>
+                      </div>
+                    )}
                   </div>
-
-                  {/* 2. Second Primary Action: Play as Guest */}
-                  <button
-                    type="button"
-                    data-login-guest-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setWalletConnectError(null);
-                      setOnboardingAuthMode('guest');
-                      setConnectedGoogleEmail('');
-                      setCharacterGender('male');
-                      if (!isCustomGuestNameEdited) {
-                        setPlayerDisplayName('Buddy Male');
-                      }
-                      dispatchBuddyAction('setCharacterGender:male');
-                      setOnboardingStep('guest_character_select');
-                    }}
-                    className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                  >
-                    <span className="skew-x-6 inline-block">PLAY AS GUEST</span>
-                  </button>
 
                   {/* Divider */}
                   <div className="flex items-center gap-3">
@@ -3752,8 +4237,8 @@ export default function App() {
                     <div className="flex-1 h-px bg-white/15" />
                   </div>
 
-                  {/* 3. Demoted: external NEAR wallet as a small link */}
-                  <div className="text-center space-y-2">
+                  {/* 2. External NEAR Wallet Link */}
+                  <div className="pt-0.5 pb-1 text-center">
                     <button
                       type="button"
                       data-open-near-wallet-selector-start-btn="true"
@@ -3763,32 +4248,13 @@ export default function App() {
                         setWalletConnectError(null);
                         setIsNearWalletSelectorOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-300 underline underline-offset-2 hover:text-white disabled:opacity-60 cursor-pointer"
+                      className="inline-flex items-center justify-center gap-2 text-xs font-bold text-slate-200 hover:text-white disabled:opacity-60 cursor-pointer transition-colors"
                     >
-                      <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>Have a NEAR wallet? Connect it here</span>
+                      <Wallet className="w-4 h-4 text-slate-300 shrink-0" aria-hidden="true" />
+                      <span className="underline underline-offset-4">
+                        Have a NEAR wallet? Connect it here
+                      </span>
                     </button>
-
-                    {walletConnectError && (
-                      <div
-                        data-wallet-connect-error="true"
-                        className="p-2.5 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold space-y-2 text-left"
-                      >
-                        <div>{walletConnectError}</div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setWalletConnectError(null);
-                            setOnboardingAuthMode('wallet');
-                            setOnboardingStep('guest_character_select');
-                          }}
-                          className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
-                        >
-                          CREATE WALLET
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </>
               )}
@@ -3901,7 +4367,7 @@ export default function App() {
                       className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                     >
                       <span className="skew-x-6 inline-block">
-                        {onboardingAuthMode === 'wallet' ? 'NEXT' : 'PLAY'}
+                        {onboardingAuthMode === 'wallet' && !connectedExternalWalletId ? 'NEXT' : 'PLAY'}
                       </span>
                     </button>
                   </div>
@@ -4025,7 +4491,7 @@ export default function App() {
                   data-provisioning-subwallet-state="true"
                   className="flex flex-col items-center gap-3 text-center py-3"
                 >
-                  <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase animate-pulse">
+                  <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase">
                     <span className="skew-x-12 inline-block">CREATING WALLET...</span>
                   </div>
 
@@ -4081,7 +4547,7 @@ export default function App() {
             aria-modal="true"
             aria-label="Welcome to Buddies Blitz"
             data-citizen-welcome-modal="true"
-            className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs pointer-events-auto select-none"
+            className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/75 pointer-events-auto select-none"
           >
             <div className="w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-[#b8ff3c] shadow-[10px_10px_0_#000] p-5 space-y-3.5">
               <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2.5">
@@ -4294,6 +4760,7 @@ export default function App() {
         gameState === 'playing' &&
         !isFullMapOverview &&
         onboardingStep === 'completed' &&
+        tutorialStage !== 'welcome_modal' &&
         !tramRideCutsceneUi?.active && (
         <div className="fixed inset-0 z-20 pointer-events-none">
           {/* =================================================================
@@ -4361,11 +4828,23 @@ export default function App() {
           </div>
 
           {/* =================================================================
-              3B. TOP-LEFT: COMPACT RADAR/MINIMAP + [Q: 1x1x2] PAD STATUS
+              3B. TOP-LEFT: AVAKIN-STYLE LEVEL/XP BADGE + MINIMAP + STATUS
              ================================================================= */}
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
-            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room and Private House interior) */}
+            {/* Always-On Player Level, XP Progress Bar, LUL & Shift Bucks Badge */}
+            {playMode !== 'editor' && activeSpecialModal !== 'npc_merchant' && (
+              <PlayerLevelXpBadge
+                levelProgress={levelProgress}
+                playerName={playerDisplayName || 'CITIZEN'}
+                lulBalance={hud.gold}
+                shiftBucks={cafeShiftBucks}
+                isWorkingShift={cafeShiftState.isWorking}
+              />
+            )}
+
+            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House & Glasshouse Cafe interior) */}
             {!isInsidePrivateHouse &&
+              !isInsideGlasshouseCafe &&
               activeSpecialModal !== 'npc_merchant' &&
               peacefulUiState.minimapRadarVisible &&
               (() => {
@@ -4468,7 +4947,7 @@ export default function App() {
                   {hud.radarDots.map((dot) => {
                     const { leftPct, topPct } = worldCoordToRadarPercent(dot.x, dot.z);
   if (dot.kind === 'supply_drop') {
-                      // Blinking Dynamic Supply Drop Beacon Signal (Central Oasis / Harbor Dock)
+                      // Supply Drop Beacon Signal (Central Oasis / Harbor Dock)
                       return (
                         <span
                           key={dot.id}
@@ -4476,13 +4955,13 @@ export default function App() {
                           style={{ left: `${leftPct}%`, top: `${topPct}%` }}
                           className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center z-30 pointer-events-none"
                         >
-                          <span className="absolute inset-0 rounded-full bg-[#facc15]/80 animate-ping" />
-                          <span className="relative w-3 h-3 rounded-full bg-[#facc15] border-2 border-[#1a1a1a] shadow-[0_0_10px_#facc15] animate-pulse" />
+                          <span className="absolute inset-0 rounded-full border border-[#facc15]/80" />
+                          <span className="relative w-3 h-3 rounded-full bg-[#facc15] border-2 border-[#1a1a1a] shadow-[0_0_8px_#facc15]" />
                         </span>
                       );
                     }
                     if (dot.kind === 'tank_red') {
-                      // Enemy Heavy Vehicle (Tank, Heavy Truck, Aircraft): LARGE PROMINENT BLINKING RED CIRCLE DOT
+                      // Enemy Heavy Vehicle (Tank, Heavy Truck, Aircraft): LARGE PROMINENT RED CIRCLE DOT
                       return (
                         <span
                           key={dot.id}
@@ -4490,19 +4969,19 @@ export default function App() {
                           style={{ left: `${leftPct}%`, top: `${topPct}%` }}
                           className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center z-30 pointer-events-none"
                         >
-                          <span className="absolute inset-0 rounded-full bg-[#ff1e27]/75 animate-ping" />
-                          <span className="relative w-3.5 h-3.5 rounded-full bg-[#ff1e27] border-2 border-[#ffe066] shadow-[0_0_10px_#ff1e27] animate-pulse" />
+                          <span className="absolute inset-0 rounded-full border border-[#ff1e27]/80" />
+                          <span className="relative w-3.5 h-3.5 rounded-full bg-[#ff1e27] border-2 border-[#ffe066] shadow-[0_0_8px_#ff1e27]" />
                         </span>
                       );
                     }
                     if (dot.kind === 'enemy') {
-                      // Enemy Infantry / Pedestrian Attacker: SMALL BLINKING RED DOT
+                      // Enemy Infantry / Pedestrian Attacker: SMALL RED DOT
                       return (
                         <span
                           key={dot.id}
                           data-radar-dot="enemy-infantry"
                           style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff3b30] ring-1 ring-[#ff9aa8] shadow-[0_0_6px_#ff3b30] animate-pulse z-20 pointer-events-none"
+                          className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff3b30] ring-1 ring-[#ff9aa8] shadow-[0_0_6px_#ff3b30] z-20 pointer-events-none"
                         />
                       );
                     }
@@ -4575,7 +5054,7 @@ export default function App() {
                 <div
                   data-top-lul-badge="true"
                   title="LUL (Lulling) Session Currency"
-                  className="-skew-x-12 px-2.5 py-1 bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-black text-[11px]"
+                  className="-skew-x-12 px-2.5 py-1 bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-mono-tabular font-bold text-[11px]"
                 >
                   <span className="skew-x-12 inline-block">
                     {hud.gold} LUL
@@ -4585,7 +5064,7 @@ export default function App() {
                 <div
                   data-top-cyon-badge="true"
                   title="CYON — Shop currency exchanged from LUL"
-                  className="-skew-x-12 px-2 py-1 bg-[#38bdf8] text-[#0f172a] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] font-black text-[10px]"
+                  className="-skew-x-12 px-2 py-1 bg-[#38bdf8] text-[#0f172a] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] font-mono-tabular font-bold text-[10px]"
                 >
                   <span className="skew-x-12 inline-block">{cyonBalance} CYON</span>
                 </div>
@@ -4593,7 +5072,7 @@ export default function App() {
                 <div
                   data-top-respite-badge="true"
                   title="RESPITE — Token for houses, companions, and Fish Market"
-                  className="-skew-x-12 px-2 py-1 bg-[#d8b4fe] text-[#1e1b4b] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] font-black text-[10px]"
+                  className="-skew-x-12 px-2 py-1 bg-[#d8b4fe] text-[#1e1b4b] border-2 border-[#1a1a1a] shadow-[2px_2px_0_#1a1a1a] font-mono-tabular font-bold text-[10px]"
                 >
                   <span className="skew-x-12 inline-block">{respiteBalance} RESPITE</span>
                 </div>
@@ -4759,6 +5238,31 @@ export default function App() {
           )}
 
           {/* =================================================================
+              3C-1B. BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") TOP HUD BAR
+             ================================================================= */}
+          {isInsideGlasshouseCafe && activeSpecialModal === 'none' && !isInsidePrivateHouse && (
+            <CafeInteriorTopHudBar
+              shiftState={cafeShiftState}
+              shiftBucks={cafeShiftBucks}
+              onStartWorkShift={handleStartCafeWorkShift}
+              onStopWorkShift={handleStopCafeWorkShift}
+              onServeActiveOrder={handleServeActiveCafeOrder}
+              onOpenOrderModal={() => {
+                soundEngine.playUiClick();
+                setActiveCafeModal('order');
+              }}
+              onOpenAtmModal={() => {
+                soundEngine.playUiClick();
+                setActiveCafeModal('atm');
+              }}
+              onExitCafe={() => {
+                soundEngine.playUiClick();
+                dispatchBuddyAction('exitGlasshouseCafe');
+              }}
+            />
+          )}
+
+          {/* =================================================================
               3C-2. PRIVATE HOUSE WALK-IN TOP HUD BAR (DECORATE, INVITE FRIEND, EXIT ROOM)
              ================================================================= */}
           {isInsidePrivateHouse && activeSpecialModal === 'none' && (
@@ -4768,11 +5272,29 @@ export default function App() {
             >
               <div className="flex flex-wrap items-center gap-2 bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[4px_4px_0_#000] px-3.5 py-2">
                 <span className="px-2 py-0.5 bg-[#b8ff3c] text-black border border-black text-[10px] font-black uppercase tracking-wider">
-                  {isSampleHouseView ? 'MODEL PAVILION' : 'MY PRIVATE HOUSE'}
+                  {isSampleHouseView ? 'MODEL HOUSE' : 'MY PRIVATE HOUSE'}
                 </span>
                 <span className="text-[11px] font-black uppercase tracking-wide text-slate-200 hidden sm:inline">
-                  MODERN JAPANESE WOODEN PAVILION
+                  {houseArchitectureStyle === 'plaza_manor'
+                    ? 'CLASSIC PLAZA MANOR'
+                    : 'MODERN JAPANESE WOODEN PAVILION'}
                 </span>
+                <button
+                  type="button"
+                  data-house-switch-style-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setHouseArchitectureStyle((prev) =>
+                      prev === 'plaza_manor' ? 'japanese_pavilion' : 'plaza_manor',
+                    );
+                  }}
+                  className="px-2.5 py-1 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+                  title="Switch between Classic Plaza Manor & Modern Japanese Wooden Pavilion"
+                >
+                  {houseArchitectureStyle === 'plaza_manor'
+                    ? 'PREVIEW PAVILION'
+                    : 'VIEW PLAZA MANOR'}
+                </button>
 
                 {!isSampleHouseView && (
                   <>
@@ -4942,7 +5464,7 @@ export default function App() {
               data-supply-drop-banner="true"
               className="fixed top-14 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
             >
-              <div className="-skew-x-12 px-4 py-1.5 bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] font-black text-xs sm:text-sm tracking-wider uppercase animate-pulse">
+              <div className="-skew-x-12 px-4 py-1.5 bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] font-black text-xs sm:text-sm tracking-wider uppercase">
                 <span className="skew-x-12 inline-block">{hud.supplyDropBanner}</span>
               </div>
             </div>
@@ -5233,7 +5755,7 @@ export default function App() {
                       }`}
                     >
                       <span className="skew-x-12 flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 bg-[#1a1a1a] text-white text-[10px] font-black">
+                        <span className="px-1.5 py-0.5 bg-[#1a1a1a] text-white text-[10px] font-mono-tabular font-bold">
                           [{w.ammoCount}]
                         </span>
                         <span>{w.label}</span>
@@ -5302,7 +5824,7 @@ export default function App() {
             <div className="fixed inset-x-0 bottom-24 z-40 flex justify-center px-3 pointer-events-none">
               <div
                 data-kai-incoming-call="true"
-                className="pointer-events-auto w-full max-w-[320px] bg-white text-black border-[3px] border-black shadow-[5px_5px_0px_#000] p-3 animate-pulse"
+                className="pointer-events-auto w-full max-w-[320px] bg-white text-black border-[3px] border-black shadow-[5px_5px_0px_#000] p-3"
               >
                 <div className="flex items-center justify-between gap-2 border-b-2 border-black pb-1.5 mb-2">
                   <span className="px-1.5 py-0.5 bg-[#0284c7] text-white border border-black text-[9px] font-black uppercase tracking-wider">
@@ -5356,7 +5878,7 @@ export default function App() {
               3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR + PRIVATE NOTIFICATION TOAST
              ================================================================= */}
           {playMode !== 'editor' && (
-            <div className="fixed bottom-3 left-3 z-30 pointer-events-auto flex flex-col items-end">
+            <div className="fixed bottom-3 left-4 z-30 w-[calc(100vw-2rem)] max-w-lg pointer-events-auto flex flex-col items-end">
               {/* Incoming Private Chat Notification Popup (Anchored Above Yellow CHAT Button) */}
               {activePrivateNotificationToast && (
                 <button
@@ -5459,7 +5981,7 @@ export default function App() {
                     setSocialChatText('');
                   }
                 }}
-                className="flex items-center gap-1.5 bg-[#14161d]/95 border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-2.5 py-1.5 rounded-lg"
+                className="w-full flex items-center gap-1.5 bg-[#14161d]/95 border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-2.5 py-1.5 rounded-lg"
               >
                 <input
                   type="text"
@@ -5469,7 +5991,7 @@ export default function App() {
                   onChange={(e) => setSocialChatText(e.target.value)}
                   onKeyDown={(e) => e.stopPropagation()}
                   placeholder="Type a short message..."
-                  className="w-40 sm:w-56 px-2 py-1 bg-white text-[#14161d] font-bold text-xs rounded border-2 border-[#14161d] focus:outline-none focus:ring-2 focus:ring-[#10b981]"
+                  className="flex-1 min-w-0 px-2.5 py-1 bg-white text-[#14161d] font-bold text-xs rounded border-2 border-[#14161d] focus:outline-none focus:ring-2 focus:ring-[#10b981]"
                 />
                 <button
                   type="submit"
@@ -5483,7 +6005,7 @@ export default function App() {
                   data-open-social-chat-btn="true"
                   onClick={() => {
                     soundEngine.playUiClick();
-                    if (unreadPrivateCount > 0 && lastUnreadPrivateSender) {
+                    if (!isSocialChatModalOpen && unreadPrivateCount > 0 && lastUnreadPrivateSender) {
                       setIsKioskModalOpen(false);
                       setIsProfileModalOpen(false);
                       setIsPersonalWalletModalOpen(false);
@@ -5509,18 +6031,28 @@ export default function App() {
                       return next;
                     });
                   }}
-                  className="-skew-x-12 relative px-3 py-1 bg-[#facc15] hover:bg-[#fde047] text-black font-black text-xs uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer active:scale-95 ml-1"
-                  title="Open Social Chat"
+                  className={`-skew-x-12 relative px-3 py-1 font-black text-xs uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer active:scale-95 ml-1 transition-colors ${
+                    isSocialChatModalOpen
+                      ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
+                      : 'bg-[#facc15] hover:bg-[#fde047] text-black'
+                  }`}
+                  title={isSocialChatModalOpen ? 'Close Social Chat' : 'Open Social Chat'}
                 >
-                  <span className="skew-x-12 inline-flex items-center gap-1">
-                    <span>WORLD</span>
-                    {unreadPrivateCount > 0 && (
-                      <span
-                        data-chat-unread-private-badge="true"
-                        className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
-                      >
-                        {unreadPrivateCount}
-                      </span>
+                  <span className="skew-x-12 inline-flex items-center justify-center gap-1 min-w-[18px]">
+                    {isSocialChatModalOpen ? (
+                      <span>X</span>
+                    ) : (
+                      <>
+                        <span>WORLD</span>
+                        {unreadPrivateCount > 0 && (
+                          <span
+                            data-chat-unread-private-badge="true"
+                            className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
+                          >
+                            {unreadPrivateCount}
+                          </span>
+                        )}
+                      </>
                     )}
                   </span>
                 </button>
@@ -5628,8 +6160,14 @@ export default function App() {
           advanceKaiTutorial(kaiTutorialStage, true);
         }}
         hanaPitchOrigin={hanaPitchOrigin}
-        onViewModelHouse={() => {
+        houseArchitectureStyle={houseArchitectureStyle}
+        onSelectHouseArchitectureStyle={(style) => {
+          setHouseArchitectureStyle(style);
+        }}
+        onViewModelHouse={(requestedStyle) => {
           soundEngine.playUiClick();
+          const targetStyle = requestedStyle ?? 'plaza_manor';
+          setHouseArchitectureStyle(targetStyle);
           setActiveSpecialModal('none');
           setHanaPitchOrigin(null);
           setIsKioskModalOpen(false);
@@ -6851,12 +7389,13 @@ export default function App() {
         role="dialog"
         aria-modal="false"
         aria-hidden={!isPersonalWalletModalOpen}
+        inert={!isPersonalWalletModalOpen || undefined}
         aria-label="Personal Wallet"
         data-personal-wallet-modal="true"
         className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
           isPersonalWalletModalOpen
-            ? 'translate-x-0 opacity-100 pointer-events-auto'
-            : '-translate-x-[120%] opacity-0 pointer-events-none'
+            ? 'translate-x-0 opacity-100 visible pointer-events-auto'
+            : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
         }`}
       >
         <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
@@ -7701,12 +8240,13 @@ export default function App() {
         role="dialog"
         aria-modal="false"
         aria-hidden={!isPersonalBagModalOpen}
+        inert={!isPersonalBagModalOpen || undefined}
         aria-label="Personal Bag"
         data-personal-bag-modal="true"
         className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-md flex flex-col select-none transition-all duration-300 ease-out transform ${
           isPersonalBagModalOpen
-            ? 'translate-x-0 opacity-100 pointer-events-auto'
-            : '-translate-x-[120%] opacity-0 pointer-events-none'
+            ? 'translate-x-0 opacity-100 visible pointer-events-auto'
+            : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
         }`}
       >
         <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
@@ -8324,9 +8864,8 @@ export default function App() {
               }
             }}
             style={{
-              background: 'rgba(38, 32, 28, 0.88)',
-              backdropFilter: 'blur(8px)',
-              border: '1.5px solid rgba(255, 255, 255, 0.75)',
+              background: 'rgba(20, 22, 29, 0.94)',
+              border: '1.5px solid rgba(255, 255, 255, 0.85)',
               boxShadow: '0 6px 18px rgba(0, 0, 0, 0.45)',
             }}
             className="inline-flex items-center h-[42px] min-w-[210px] rounded-full px-1.5 text-white cursor-pointer hover:brightness-110 transition-all select-none"
@@ -8407,6 +8946,8 @@ export default function App() {
           hud.nearActiveHarvesterSubAccounts?.length ||
           (hud.harvesterContractStage === 'CONTRACT_ACTIVE' ? 2 : 0)
         }
+        playerLevel={levelProgress.level}
+        playerXpLabel={`${levelProgress.currentLevelXp}/${levelProgress.xpForNextLevel} XP`}
         onChangePlayerName={handleUpdatePlayerUsername}
         onStartWhisper={(user) => {
           if (user.isNpc) return;
@@ -8428,6 +8969,7 @@ export default function App() {
           gameState === 'playing' &&
           !isFullMapOverview &&
           onboardingStep === 'completed' &&
+          tutorialStage !== 'welcome_modal' &&
           playMode !== 'editor'
         }
         isModalBlocking={
@@ -8526,7 +9068,7 @@ export default function App() {
           aria-modal="true"
           aria-label="Private House Entry"
           data-house-entry-scan-modal="true"
-          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs pointer-events-auto select-none"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 pointer-events-auto select-none"
         >
           <div className="relative w-full max-w-sm bg-[#0f172a] border-[3.5px] border-black shadow-[8px_8px_0px_#000] p-5 text-white space-y-3">
             <div className="flex items-center justify-between border-b border-white/20 pb-2.5">
@@ -8546,12 +9088,12 @@ export default function App() {
 
             {houseEntryScanState === 'scanning' ? (
               <div className="p-3 bg-[#1e293b] border border-[#00f0ff]/50 text-center space-y-2">
-                <div className="text-xs font-black uppercase text-[#00f0ff] tracking-wider animate-pulse">
+                <div className="text-xs font-black uppercase text-[#00f0ff] tracking-wider">
                   Checking house access...
                 </div>
                 <div className="w-full h-1.5 bg-black/50 overflow-hidden">
                   <div
-                    className="h-full bg-[#00f0ff] animate-[pulse_1s_infinite]"
+                    className="h-full bg-[#00f0ff]"
                     style={{ width: '85%' }}
                   />
                 </div>
@@ -8572,6 +9114,23 @@ export default function App() {
 
       {/* 14. 3D FISH PREVIEW MODAL (WALLET + BAG) */}
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
+
+      {/* 15. BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") ORDER & ATM MODALS + XP BANNER */}
+      <GlasshouseCafeOrderModal
+        isOpen={isInsideGlasshouseCafe && activeCafeModal === 'order'}
+        onClose={() => setActiveCafeModal('none')}
+        lulBalance={hud.gold}
+        levelProgress={levelProgress}
+        onPurchaseItem={handlePurchaseCafeItem}
+      />
+      <GlasshouseCafeAtmModal
+        isOpen={isInsideGlasshouseCafe && activeCafeModal === 'atm'}
+        onClose={() => setActiveCafeModal('none')}
+        shiftBucks={cafeShiftBucks}
+        lulBalance={hud.gold}
+        onExchangeBucks={handleExchangeCafeBucks}
+      />
+      <XpGainCelebrationBanner banner={xpCelebrationBanner} />
     </main>
   );
 }

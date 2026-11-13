@@ -446,11 +446,11 @@ export interface BuddyUnit {
   overheadCrateGroup: THREE.Group;
   overheadCrateBox: THREE.Mesh;
   saluteSign: {
-    sprite: THREE.Sprite;
+    sprite: THREE.Mesh | THREE.Sprite;
     updateText: (title: string, subtitle: string, accentHex: string, progressRatio?: number) => void;
   };
   nameplate?: {
-    sprite: THREE.Sprite;
+    sprite: THREE.Mesh | THREE.Sprite;
     updatePlate: (name: string, sub: string, emblemType?: 'npc' | 'player_rookie' | 'player_veteran') => void;
   };
   teamRing: THREE.Mesh;

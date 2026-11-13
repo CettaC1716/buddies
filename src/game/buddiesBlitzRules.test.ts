@@ -4904,12 +4904,12 @@ test('3-Currency Economy (LUL, CYON, RESPITE), NPC Merchant Dynamic Pricing, Ban
 });
 
 test('Cutaway House Studio: 10cm Grid + 25cm Wall Snap, 2D SAT OBB Collision, Spiral Free-Spot Search, 120Hz Spring-Wobble, Daylight Arc, and Softmax Mood Meter', () => {
-  // 1. Cutaway room bounds match 10.6m x 7.4m x 2.75m studio floorplan
+  // 1. Cutaway room bounds match 10.6m x 7.4m x 4.0m studio floorplan
   assert.equal(CUTAWAY_ROOM_BOUNDS.minX, -5.3);
   assert.equal(CUTAWAY_ROOM_BOUNDS.maxX, 5.3);
   assert.equal(CUTAWAY_ROOM_BOUNDS.minZ, -3.7);
   assert.equal(CUTAWAY_ROOM_BOUNDS.maxZ, 3.7);
-  assert.equal(CUTAWAY_ROOM_BOUNDS.fullWallHeight, 2.75);
+  assert.equal(CUTAWAY_ROOM_BOUNDS.fullWallHeight, 4.0);
 
   // 2. 2D Separating Axis Theorem (SAT) OBB overlap check (Qs)
   const obbA = { x: 0, z: 0, hw: 0.8, hd: 0.5, a: 0 };
@@ -5782,6 +5782,134 @@ test('World multiplayer session ID isolates separate tabs/devices while persisti
   }
 });
 
+test('Stacking pad geometry aligns flush under crates and tree base collar predicate isolates low floating rings', async () => {
+  const {
+    STACKING_PAD_SPEC,
+    UNIFIED_WORLD_CRATE_SIZE,
+    computeStackingPadSlotY,
+    getStackingPadChevronOutlinePoints,
+    shouldStripDetachedTreeBaseCollar,
+  } = await import('./buddiesBlitzRules');
 
+  // Layer 0 crate bottom must rest flush on bayTopY without floating or sinking
+  const layer0CenterY = computeStackingPadSlotY(0);
+  assert.equal(layer0CenterY, 0.93);
+  assert.equal(
+    Number((layer0CenterY - UNIFIED_WORLD_CRATE_SIZE * 0.5).toFixed(4)),
+    STACKING_PAD_SPEC.bayTopY,
+  );
+  assert.equal(
+    Number((computeStackingPadSlotY(1) - layer0CenterY).toFixed(4)),
+    UNIFIED_WORLD_CRATE_SIZE,
+  );
 
+  // Sculpted chevron polygon has 8 mirrored points
+  const chevronPts = getStackingPadChevronOutlinePoints();
+  assert.equal(chevronPts.length, 8);
+  assert.deepEqual(chevronPts[0], [0, 0.46]);
+
+  // Tree collar predicate strips 60-vert 0..0.412m detached ring when trunk >=2.5m exists, keeps main trunk
+  assert.equal(
+    shouldStripDetachedTreeBaseCollar({ minY: 0, maxY: 0.412, vertexCount: 60 }, true),
+    true,
+  );
+  assert.equal(
+    shouldStripDetachedTreeBaseCollar({ minY: 0, maxY: 10.41, vertexCount: 683 }, true),
+    false,
+  );
+  assert.equal(
+    shouldStripDetachedTreeBaseCollar({ minY: 0, maxY: 0.412, vertexCount: 60 }, false),
+    false,
+  );
+});
+
+test('Live Landing Tour glides smoothly across city districts and Fly-To Plaza lands cleanly with New vs Returning user branching', async () => {
+  const {
+    LANDING_TOUR_WAYPOINTS,
+    computeLandingCityTourPose,
+    computePlazaFlyToPose,
+    resolveOnboardingAccountEntry,
+  } = await import('./buddiesBlitzRules');
+
+  assert.ok(LANDING_TOUR_WAYPOINTS.length >= 4);
+  const p0 = computeLandingCityTourPose(0);
+  const p4 = computeLandingCityTourPose(4);
+  const p12 = computeLandingCityTourPose(12);
+  assert.ok(
+    Number.isFinite(p0.cameraPos.x) &&
+      Number.isFinite(p0.cameraPos.y) &&
+      Number.isFinite(p0.cameraPos.z),
+  );
+  assert.notEqual(Math.round(p0.lookAtPos.x), Math.round(p12.lookAtPos.x));
+  assert.ok(p4.cameraPos.y > p4.lookAtPos.y + 4, 'Tour camera stays elevated above terrain');
+
+  const flyStart = computePlazaFlyToPose({
+    startCamPos: p4.cameraPos,
+    startLookAtPos: p4.lookAtPos,
+    startFov: p4.fov,
+    targetCamPos: { x: -79.15, y: 2.32, z: 0 },
+    targetLookAtPos: { x: -85.5, y: 1.82, z: 0 },
+    targetFov: 38,
+    progress01: 0,
+  });
+  assert.equal(flyStart.isComplete, false);
+  assert.equal(flyStart.cameraPos.x, p4.cameraPos.x);
+
+  const flyMid = computePlazaFlyToPose({
+    startCamPos: p4.cameraPos,
+    startLookAtPos: p4.lookAtPos,
+    startFov: p4.fov,
+    targetCamPos: { x: -79.15, y: 2.32, z: 0 },
+    targetLookAtPos: { x: -85.5, y: 1.82, z: 0 },
+    targetFov: 38,
+    progress01: 0.5,
+  });
+  const linearMidY = (p4.cameraPos.y + 2.32) * 0.5;
+  assert.ok(flyMid.cameraPos.y > linearMidY + 2.0, 'Mid-flight camera lifts smoothly in an arc');
+
+  const flyEnd = computePlazaFlyToPose({
+    startCamPos: p4.cameraPos,
+    startLookAtPos: p4.lookAtPos,
+    startFov: p4.fov,
+    targetCamPos: { x: -79.15, y: 2.32, z: 0 },
+    targetLookAtPos: { x: -85.5, y: 1.82, z: 0 },
+    targetFov: 38,
+    progress01: 1,
+  });
+  assert.equal(flyEnd.isComplete, true);
+  assert.equal(flyEnd.cameraPos.x, -79.15);
+  assert.equal(flyEnd.fov, 38);
+
+  // Guest ALWAYS picks a new avatar regardless of local saved state
+  const guestRes = resolveOnboardingAccountEntry({
+    authKind: 'guest',
+    hasSavedAvatarProfile: true,
+    savedGender: 'female',
+    savedDisplayName: 'OLD_NAME',
+  });
+  assert.equal(guestRes.isReturningUser, false);
+  assert.equal(guestRes.flyTargetMode, 'character_select');
+  assert.equal(guestRes.nextStepAfterFly, 'guest_character_select');
+
+  // New Google/Wallet user chooses avatar at Plaza after fly-to
+  const newGoogleRes = resolveOnboardingAccountEntry({
+    authKind: 'google',
+    hasSavedAvatarProfile: false,
+  });
+  assert.equal(newGoogleRes.isReturningUser, false);
+  assert.equal(newGoogleRes.flyTargetMode, 'character_select');
+
+  // Returning Google/Wallet user skips avatar picker and keeps saved avatar
+  const returningRes = resolveOnboardingAccountEntry({
+    authKind: 'google',
+    hasSavedAvatarProfile: true,
+    savedGender: 'female',
+    savedDisplayName: 'SAKURA',
+  });
+  assert.equal(returningRes.isReturningUser, true);
+  assert.equal(returningRes.flyTargetMode, 'gameplay');
+  assert.equal(returningRes.nextStepAfterFly, 'completed');
+  assert.equal(returningRes.restoredGender, 'female');
+  assert.equal(returningRes.restoredDisplayName, 'SAKURA');
+});
 

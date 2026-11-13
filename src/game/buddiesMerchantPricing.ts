@@ -1030,7 +1030,7 @@ export const CUTAWAY_ROOM_BOUNDS = {
   minZ: -3.7, // T = -3.7
   maxZ: 3.7, // N = 3.7 (7.4m depth)
   wallThickness: 0.22, // L = 0.22
-  fullWallHeight: 2.75, // ee = 2.75 (Left & Back walls)
+  fullWallHeight: 4.0, // ee = 4.0 (Tall 4.0m manor/pavilion ceiling height)
   cutawayWallHeight: 0.45, // Yn = 0.45 (Front & Right cutaway walls)
   partitionWallHeight: 1.3, // _a = 1.3 (Interior divider wall)
   partitionX: 1.45, // fe = 1.45
@@ -1165,40 +1165,7 @@ function isObbInsideCutawayRoom(obb: OrientedFootprint2D): boolean {
   );
 }
 
-const makeAxisAlignedObb = (x0: number, x1: number, z0: number, z1: number): OrientedFootprint2D => ({
-  x: (x0 + x1) / 2,
-  z: (z0 + z1) / 2,
-  hw: (x1 - x0) / 2,
-  hd: (z1 - z0) / 2,
-  a: 0,
-});
-
-const PARTITION_WALL_OBBS: readonly OrientedFootprint2D[] = [
-  makeAxisAlignedObb(
-    CUTAWAY_ROOM_BOUNDS.partitionX - CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.partitionX + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.minZ,
-    CUTAWAY_ROOM_BOUNDS.doorPassZ.z0,
-  ),
-  makeAxisAlignedObb(
-    CUTAWAY_ROOM_BOUNDS.partitionX - CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.partitionX + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.doorPassZ.z1,
-    CUTAWAY_ROOM_BOUNDS.maxZ,
-  ),
-  makeAxisAlignedObb(
-    CUTAWAY_ROOM_BOUNDS.partitionX + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.doorPassX.x0,
-    CUTAWAY_ROOM_BOUNDS.partitionZ - CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.partitionZ + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-  ),
-  makeAxisAlignedObb(
-    CUTAWAY_ROOM_BOUNDS.doorPassX.x1,
-    CUTAWAY_ROOM_BOUNDS.maxX,
-    CUTAWAY_ROOM_BOUNDS.partitionZ - CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    CUTAWAY_ROOM_BOUNDS.partitionZ + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-  ),
-];
+const PARTITION_WALL_OBBS: readonly OrientedFootprint2D[] = [];
 
 const MAGNET_WALL_PLANES = [
   {
@@ -1217,39 +1184,7 @@ const MAGNET_WALL_PLANES = [
     a1: CUTAWAY_ROOM_BOUNDS.maxX,
     pad: () => 0.004,
   },
-  {
-    ax: 'x' as const,
-    p: CUTAWAY_ROOM_BOUNDS.partitionX - CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    s: -1,
-    a0: CUTAWAY_ROOM_BOUNDS.minZ,
-    a1: CUTAWAY_ROOM_BOUNDS.maxZ,
-  },
-  {
-    ax: 'x' as const,
-    p: CUTAWAY_ROOM_ROOM_PART_X_PLUS(),
-    s: 1,
-    a0: CUTAWAY_ROOM_BOUNDS.minZ,
-    a1: CUTAWAY_ROOM_BOUNDS.maxZ,
-  },
-  {
-    ax: 'z' as const,
-    p: CUTAWAY_ROOM_BOUNDS.partitionZ - CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    s: -1,
-    a0: CUTAWAY_ROOM_BOUNDS.partitionX,
-    a1: CUTAWAY_ROOM_BOUNDS.maxX,
-  },
-  {
-    ax: 'z' as const,
-    p: CUTAWAY_ROOM_BOUNDS.partitionZ + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2,
-    s: 1,
-    a0: CUTAWAY_ROOM_BOUNDS.partitionX,
-    a1: CUTAWAY_ROOM_BOUNDS.maxX,
-  },
 ];
-
-function CUTAWAY_ROOM_ROOM_PART_X_PLUS(): number {
-  return CUTAWAY_ROOM_BOUNDS.partitionX + CUTAWAY_ROOM_BOUNDS.partitionThickness / 2;
-}
 
 /**
  * 10cm (`0.1m`) grid rounding + 25cm (`0.25m`) magnetic wall snap (`ti`, `#L495`).

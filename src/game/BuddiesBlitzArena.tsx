@@ -183,6 +183,8 @@ import {
   LobbyGoldExchangeItemId,
   redeemLobbyGoldExchangeItem,
   evaluateOpenWarzonePopulationBar,
+  computeLandingCityTourPose,
+  computePlazaFlyToPose,
   PUBLIC_PAD_SHIELD_RADIUS,
   evaluatePublicPadShieldZone,
   isUnitWeaponTriggerLockedInSafeShield,
@@ -198,6 +200,9 @@ import {
   evaluateCitySafezoneModeRules,
   findCityTramLeadDistanceNearHalte,
   evaluatePlayerGhostMovementGuard,
+  STACKING_PAD_SPEC,
+  computeStackingPadSlotY,
+  getStackingPadChevronOutlinePoints,
 } from './buddiesBlitzRules';
 import {
   evaluateOuterEmbankmentSdf,
@@ -276,6 +281,11 @@ import {
   buildProceduralNuclearMissileMesh,
   buildProceduralNuclearLauncherTurret,
   NuclearLauncherTurretRig,
+  getMilitaryWindowPaneTexture,
+  getMilitaryLouverTexture,
+  getLv1SlateZincRoofTexture,
+  getLv1HorizontalTimberCladdingTexture,
+  getLv1AndoPlasterWallTexture,
 } from './buddiesBlitzShadersAndAssets';
 import {
   buildOriginalBuddiesCatalogFurnitureMesh,
@@ -294,6 +304,25 @@ import {
   stepFurnitureSpringWobblePhysics,
   evaluateRoomDaylightState,
 } from './buddiesMerchantPricing';
+import {
+  CAFE_EXTERIOR_DOOR_TRIGGER,
+  CAFE_INTERIOR_BOUNDS,
+  CAFE_INTERIOR_SEAT_SPOTS,
+  CAFE_ORIGIN_Y,
+  clampCafeInteriorPosition,
+  detectNearestCafeStation,
+  type CafeInteriorSeatSpot,
+} from './buddiesCafeRules';
+import {
+  CAFE_INTERIOR_COLLIDERS,
+  buildBotanicalGlasshouseCafeInterior,
+  buildGlowingDoorFloorArrowPad,
+} from './buddiesCafeInteriorBuilder';
+import {
+  NAMEPLATE_SCREEN_SPEC,
+  syncScreenSpaceBillboardQuad,
+  syncUprightCylindricalBillboard,
+} from './buddiesBillboardRules';
 import {
   GameState,
   PlayMode,
@@ -349,6 +378,7 @@ import {
   createBillboardSign,
   createGlassmorphicNameplate,
   buildStaticWorldStructuresList,
+  isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
 
 export type {
@@ -613,6 +643,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     exitHouseRoomPromptBtn.setAttribute('data-exit-house-room-floating-btn', 'true');
 
+    const ENTER_CAFE_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:#38bdf8; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 16px rgba(56,189,248,0.85); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">MASUK CAFE [E]</span></span>`;
+    const enterCafePromptBtn = createPromptButton(
+      ENTER_CAFE_BTN_HTML,
+      'MASUK CAFE [E]',
+      'enterGlasshouseCafe',
+    );
+    enterCafePromptBtn.setAttribute('data-enter-cafe-floating-btn', 'true');
+
+    const getCafeStationBtnHtml = (label: string, bgHex = '#b8ff3c', fgHex = '#14161d') =>
+      `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:${bgHex}; color:${fgHex}; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(184,255,60,0.65); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">${label}</span></span>`;
+    const cafeStationPromptBtn = createPromptButton(
+      getCafeStationBtnHtml('PESAN MENU [E]'),
+      'INTERAKSI CAFE [E]',
+      'cafeStationInteract',
+    );
+    cafeStationPromptBtn.setAttribute('data-cafe-station-floating-btn', 'true');
+
     // Green Holographic Ground Selection Ring for Clicked Character (#22c55e)
     const characterSelectionRing = new THREE.Mesh(
       new THREE.RingGeometry(0.70, 0.96, 36),
@@ -635,7 +682,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       team: 'blue' | 'red';
       status: string;
       root: THREE.Object3D;
-      nameplate?: { sprite: THREE.Sprite } | null;
+      nameplate?: { sprite: THREE.Object3D } | null;
       isSelf?: boolean;
       nearAccountId?: string | null;
     } | null = null;
@@ -812,15 +859,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     }
 
     const LOBBY_SEAT_SPOTS: readonly LobbySeatSpot[] = [
-      // 5 Integrated Concrete Planter Benches + 2 Aligned Vintage Park Benches along East-North Promenade
+      // North-East Integrated Concrete Planter Benches + Aligned Vintage Park Benches along East-North Promenade
       { id: 'lobby_bench_en_1', x: -78.98, z: -24.85, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
       { id: 'lobby_bench_en_2', x: -78.98, z: -23.25, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
-      { id: 'lobby_bench_es_1', x: -82.54, z: 23.85, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_es_2', x: -82.54, z: 25.75, yaw: Math.PI, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_ws_1', x: -98.26, z: 23.85, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_ws_2', x: -98.26, z: 25.75, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_s_1', x: -91.52, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
-      { id: 'lobby_bench_s_2', x: -89.48, z: 31.24, yaw: Math.PI / 2, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       // Municipal Hall & Clock Tower Cast-Iron Promenade Bench
       { id: 'lobby_civic_bench_side', x: -83.99, z: -30.41, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
       // Vintage Park Bench & Planter Box next to East-North Vintage Lamppost
@@ -883,8 +924,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       wakeZ: number;
     };
     const HOUSE_BED_SLEEP_SPOTS: BedSleepSpot[] = [
-      { id: 'bed_left', x: 2.96, z: -2.2, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 2.96, indicatorZ: -2.45, indicatorHeightY: 1.02, wakeX: 2.96, wakeZ: -0.45 },
-      { id: 'bed_right', x: 3.84, z: -2.2, yaw: Math.PI, sleepLiftY: 1.16, indicatorX: 3.84, indicatorZ: -2.45, indicatorHeightY: 1.02, wakeX: 3.84, wakeZ: -0.45 },
+      { id: 'bed_left', x: 2.83, z: -2.02, yaw: Math.PI, sleepLiftY: 1.22, indicatorX: 2.83, indicatorZ: -2.32, indicatorHeightY: 1.06, wakeX: 2.83, wakeZ: -0.25 },
+      { id: 'bed_right', x: 3.87, z: -2.02, yaw: Math.PI, sleepLiftY: 1.22, indicatorX: 3.87, indicatorZ: -2.32, indicatorHeightY: 1.06, wakeX: 3.87, wakeZ: -0.25 },
     ];
     let activeSleepSpot: BedSleepSpot | null = null;
     let currentNearestSleepSpot: BedSleepSpot | null = null;
@@ -904,12 +945,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const CHAIR_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M7 4v9h10"/><path d="M7 13v7"/><path d="M17 13v7"/><path d="M7 16h10"/></svg>`;
     const MOON_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff" style="display:block;"><path d="M20 13.2A8.5 8.5 0 1 1 10.8 4a7 7 0 0 0 9.2 9.2z"/></svg>`;
     const getSleepDiscHtml = (near: boolean) =>
-      `<span style="display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background:${near ? 'rgba(146,110,32,0.88)' : 'rgba(38,32,52,0.82)'}; border:1.5px solid rgba(255,255,255,0.85); box-shadow:0 6px 18px rgba(0,0,0,0.45); pointer-events:none; user-select:none;">${MOON_SVG_ICON}</span>`;
+      `<span style="display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background:${near ? 'rgba(146,110,32,0.92)' : 'rgba(38,32,52,0.92)'}; border:1.5px solid rgba(255,255,255,0.85); box-shadow:0 6px 18px rgba(0,0,0,0.45); pointer-events:none; user-select:none;">${MOON_SVG_ICON}</span>`;
     const getSleepBarHtml = (label: string) =>
-      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,52,0.86); backdrop-filter:blur(8px); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${MOON_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
+      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,52,0.94); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${MOON_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
 
     const getSitBarHtml = (label: string) =>
-      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,28,0.82); backdrop-filter:blur(8px); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${CHAIR_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
+      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,28,0.94); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${CHAIR_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
 
     // Final seated position for a spot. Park benches: spawnRealBlitzPropFromGlb recenters
     // every prop on its bounding-box center, so the spot point is the bench's CENTER.
@@ -1073,6 +1114,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     bottomSitActionBtn.onclick = (e) => {
       e.stopPropagation();
+      if (npcCameraMode === 'cafe_interior' && playerUnit) {
+        if (playerUnit.isSitting && activeCafeSeatedSpot) {
+          activeCafeSeatedSpot = null;
+          playerUnit.isSitting = false;
+          soundEngine.playUiClick();
+          emitHudImmediately();
+        } else if (currentNearestCafeSeat) {
+          soundEngine.playUiClick();
+          resetAllPlayerMovementInputs();
+          activeCafeSeatedSpot = currentNearestCafeSeat;
+          playerUnit.x = currentNearestCafeSeat.x;
+          playerUnit.z = currentNearestCafeSeat.z;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = currentNearestCafeSeat.yaw;
+          playerUnit.isSitting = true;
+          emitHudImmediately();
+        }
+        return;
+      }
       if (playerUnit?.isSitting && activeSeatedSpot) {
         standUpFromLobbySeat();
       } else if (currentNearestLobbySeat) {
@@ -1175,11 +1236,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               __bb_multiplayer_app_sync?: {
                 mode?:
                   | 'none'
+                  | 'landing_tour'
+                  | 'fly_to_plaza'
                   | 'npc_merchant'
                   | 'house_interior'
                   | 'house_visit'
+                  | 'cafe_interior'
                   | 'character_select';
+                flyTargetMode?: 'character_select' | 'gameplay';
+                flySessionId?: number;
                 isSampleHouse?: boolean;
+                isWorkingCafeShift?: boolean;
+                activeCafeOrderLabel?: string;
+                activeCafeOrderAccent?: string;
                 onboardingCompleted?: boolean;
                 characterGender?: CharacterGender;
                 playerDisplayName?: string;
@@ -1991,6 +2060,125 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // 5. TWO 1:1 SYMMETRIC 4-PLOT BASE COMPLEXES (BLUE SOUTH vs RED NORTH)
     //    + COMPACT 4-COLUMN (2x2) STACKING PAD IN EACH INDIVIDUAL BASE PLOT
     // =========================================================================
+    // Shared sculpted geometries for all Commander & Public Stacking Pads
+    const padDeckGeo = (() => {
+      const hs = STACKING_PAD_SPEC.deckHalfSize;
+      const ch = STACKING_PAD_SPEC.deckChamfer;
+      const shape = new THREE.Shape();
+      shape.moveTo(-hs + ch, -hs);
+      shape.lineTo(hs - ch, -hs);
+      shape.lineTo(hs, -hs + ch);
+      shape.lineTo(hs, hs - ch);
+      shape.lineTo(hs - ch, hs);
+      shape.lineTo(-hs + ch, hs);
+      shape.lineTo(-hs, hs - ch);
+      shape.lineTo(-hs, -hs + ch);
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: STACKING_PAD_SPEC.deckHeight - 0.02,
+        bevelEnabled: true,
+        bevelThickness: 0.02,
+        bevelSize: 0.02,
+        bevelSegments: 1,
+      });
+      geo.rotateX(-Math.PI / 2);
+      geo.computeBoundingBox();
+      if (geo.boundingBox) {
+        geo.translate(0, -geo.boundingBox.min.y, 0);
+      }
+      return geo;
+    })();
+
+    const padChevronGeo = (() => {
+      const pts = getStackingPadChevronOutlinePoints();
+      const shape = new THREE.Shape();
+      pts.forEach(([x, y], idx) => {
+        if (idx === 0) shape.moveTo(x, y);
+        else shape.lineTo(x, y);
+      });
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: 0.022,
+        bevelEnabled: false,
+      });
+      geo.rotateX(-Math.PI / 2);
+      geo.computeBoundingBox();
+      if (geo.boundingBox) {
+        geo.translate(0, -geo.boundingBox.min.y, 0);
+      }
+      return geo;
+    })();
+
+    const matPadRecess = makeToonMat('#12151e');
+    const padSocketGeo = new THREE.BoxGeometry(
+      STACKING_PAD_SPEC.socketSize,
+      STACKING_PAD_SPEC.socketHeight,
+      STACKING_PAD_SPEC.socketSize,
+    );
+    const padTileGeo = new THREE.BoxGeometry(
+      STACKING_PAD_SPEC.bayTileSize,
+      STACKING_PAD_SPEC.bayTileHeight,
+      STACKING_PAD_SPEC.bayTileSize,
+    );
+    const padRailHGeo = new THREE.BoxGeometry(2.55, 0.08, 0.11);
+    const padRailVGeo = new THREE.BoxGeometry(0.11, 0.08, 2.55);
+    const padPylonBodyGeo = new THREE.CylinderGeometry(0.11, 0.16, 0.32, 6);
+    const padPylonCapGeo = new THREE.CylinderGeometry(0.085, 0.105, 0.075, 6);
+
+    const buildCompositeStackingPadBase = (
+      padStaticGroup: THREE.Group,
+      teamMat: THREE.Material,
+    ): [number, number][] => {
+      const o = STACKING_PAD_SPEC.bayOffset;
+      const tileOffsets: [number, number][] = [
+        [-o, -o],
+        [o, -o],
+        [-o, o],
+        [o, o],
+      ];
+
+      addOutlinedPart(padStaticGroup, padDeckGeo, matDarkSteel, [0, 0, 0], [0, 0, 0], 1.03, false);
+
+      const bayTileCenterY = STACKING_PAD_SPEC.bayTopY - STACKING_PAD_SPEC.bayTileHeight * 0.5;
+      tileOffsets.forEach(([tx, tz]) => {
+        const socketMesh = new THREE.Mesh(padSocketGeo, matPadRecess);
+        socketMesh.position.set(tx, 0.205, tz);
+        socketMesh.receiveShadow = true;
+        padStaticGroup.add(socketMesh);
+
+        const tileMesh = new THREE.Mesh(padTileGeo, teamMat);
+        tileMesh.position.set(tx, bayTileCenterY, tz);
+        tileMesh.receiveShadow = true;
+        padStaticGroup.add(tileMesh);
+
+        const chevronMesh = new THREE.Mesh(padChevronGeo, matWhite);
+        chevronMesh.position.set(tx, STACKING_PAD_SPEC.bayTopY + 0.001, tz);
+        chevronMesh.receiveShadow = true;
+        padStaticGroup.add(chevronMesh);
+      });
+
+      // Perimeter safety rails
+      addOutlinedPart(padStaticGroup, padRailHGeo, matPadRecess, [0, 0.22, -2.06], [0, 0, 0], 1.06, false);
+      addOutlinedPart(padStaticGroup, padRailHGeo, matPadRecess, [0, 0.22, 2.06], [0, 0, 0], 1.06, false);
+      addOutlinedPart(padStaticGroup, padRailVGeo, matPadRecess, [-2.06, 0.22, 0], [0, 0, 0], 1.06, false);
+      addOutlinedPart(padStaticGroup, padRailVGeo, matPadRecess, [2.06, 0.22, 0], [0, 0, 0], 1.06, false);
+
+      // Four corner armored emitter pylons
+      const po = STACKING_PAD_SPEC.pylonOffset;
+      const pylonCorners: [number, number][] = [
+        [-po, -po],
+        [po, -po],
+        [-po, po],
+        [po, po],
+      ];
+      pylonCorners.forEach(([px, pz]) => {
+        addOutlinedPart(padStaticGroup, padPylonBodyGeo, matDarkSteel, [px, 0.34, pz], [0, 0, 0], 1.08, false);
+        addOutlinedPart(padStaticGroup, padPylonCapGeo, teamMat, [px, 0.535, pz], [0, 0, 0], 1.08, false);
+      });
+
+      return tileOffsets;
+    };
+
     const buildSingleStackingPadMesh = (
       team: 'blue' | 'red',
       padX: number,
@@ -2006,27 +2194,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       padGroup.visible = true;
       scene.add(padGroup);
 
-      // Compact 4.2m x 4.2m 4-Column (2x2) Stacking Pad — visible when plot is Model Estate or Claimed via NEAR Gamepass
+      // Composite 4-Column (2x2) Industrial Stacking Pad — visible when plot is Model Estate or Claimed via NEAR Gamepass
       const padStaticGroup = new THREE.Group();
       padStaticGroup.visible = isModelEstate;
-      const tileOffsets: [number, number][] = [
-        [-0.95, -0.95],
-        [0.95, -0.95],
-        [-0.95, 0.95],
-        [0.95, 0.95],
-      ];
       padGroup.add(padStaticGroup);
-      addOutlinedPart(padStaticGroup, new THREE.BoxGeometry(4.2, 0.18, 4.2), matDarkSteel, [0, 0.09, 0], [0, 0, 0], 1.05, false);
-
-      tileOffsets.forEach(([tx, tz]) => {
-        const tile = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 1.7), teamMat);
-        tile.position.set(tx, 0.24, tz);
-        padStaticGroup.add(tile);
-        const arrow = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.08, 0.85), matWhite);
-        arrow.position.set(tx, 0.28, tz);
-        padStaticGroup.add(arrow);
-      });
-
+      const tileOffsets = buildCompositeStackingPadBase(padStaticGroup, teamMat);
       bakeStaticGroupMeshes(padStaticGroup);
 
       // Self-Service Tactical Kiosk placed on ALL 8 Base Plots (1 Model Estate + 7 Empty Grass Plots) at identical local coordinates!
@@ -2037,19 +2209,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       padGroup.add(kioskMesh);
       padGroup.updateMatrixWorld(true);
 
-      const mergedCage = new THREE.Mesh(
-        new THREE.BoxGeometry(3.85, 2.95, 3.85),
-        new THREE.MeshBasicMaterial({ color: 0xb4ff39, wireframe: true, transparent: true, opacity: 0.7 }),
+      const mergedCage = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(3.85, 2.95, 3.85)),
+        new THREE.LineBasicMaterial({ color: 0xb4ff39, transparent: true, opacity: 0.78 }),
       );
       mergedCage.position.set(0, 1.65, 0);
       mergedCage.visible = false;
       padGroup.add(mergedCage);
 
-      const ghostPatternBox = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 1, 1),
-        new THREE.MeshBasicMaterial({
+      const ghostPatternBox = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+        new THREE.LineBasicMaterial({
           color: 0x00d2ff,
-          wireframe: true,
           transparent: true,
           opacity: 0.85,
         }),
@@ -2058,7 +2229,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       padGroup.add(ghostPatternBox);
 
       const slotMeshes: THREE.Group[] = [];
-      const ghostSlotMeshes: THREE.Mesh[] = [];
+      const ghostSlotMeshes: THREE.LineSegments[] = [];
       const slotGeo = new THREE.BoxGeometry(
         UNIFIED_WORLD_CRATE_SIZE,
         UNIFIED_WORLD_CRATE_SIZE,
@@ -2069,6 +2240,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         UNIFIED_WORLD_CRATE_SIZE,
         UNIFIED_WORLD_CRATE_SIZE,
       );
+      const ghostSlotEdgesGeo = new THREE.EdgesGeometry(ghostSlotGeo);
       const ghostCoreGeo = new THREE.BoxGeometry(
         UNIFIED_WORLD_CRATE_SIZE - 0.08,
         UNIFIED_WORLD_CRATE_SIZE - 0.08,
@@ -2078,7 +2250,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       for (let i = 0; i < 8; i++) {
         const layer = i < 4 ? 0 : 1;
         const [tx, tz] = tileOffsets[i % 4];
-        const slotY = 0.93 + layer * UNIFIED_WORLD_CRATE_SIZE;
+        const slotY = computeStackingPadSlotY(layer);
         const slotGrp = new THREE.Group();
         slotGrp.position.set(tx, slotY, tz);
         slotGrp.visible = false;
@@ -2094,19 +2266,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         padGroup.add(slotGrp);
         slotMeshes.push(slotGrp);
 
-        const slotWireMat = new THREE.MeshBasicMaterial({
+        const slotWireMat = new THREE.LineBasicMaterial({
           color: 0xff4d3d,
-          wireframe: true,
           transparent: true,
-          opacity: 0.88,
+          opacity: 0.9,
         });
         const slotCoreMat = new THREE.MeshBasicMaterial({
           color: 0xff4d3d,
           transparent: true,
-          opacity: 0.22,
+          opacity: 0.18,
           depthWrite: false,
         });
-        const gm = new THREE.Mesh(ghostSlotGeo, slotWireMat);
+        const gm = new THREE.LineSegments(ghostSlotEdgesGeo, slotWireMat);
         gm.position.set(tx, slotY, tz);
         gm.visible = false;
         const coreMesh = new THREE.Mesh(ghostCoreGeo, slotCoreMat);
@@ -2195,29 +2366,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const padStaticGroup = new THREE.Group();
       padGroup.add(padStaticGroup);
-      addOutlinedPart(
-        padStaticGroup,
-        new THREE.BoxGeometry(4.2, 0.18, 4.2),
-        matDarkSteel,
-        [0, 0.09, 0],
-        [0, 0, 0],
-        1.05,
-        false,
-      );
-      const tileOffsets: [number, number][] = [
-        [-0.95, -0.95],
-        [0.95, -0.95],
-        [-0.95, 0.95],
-        [0.95, 0.95],
-      ];
-      tileOffsets.forEach(([tx, tz]) => {
-        const tile = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 1.7), teamMat);
-        tile.position.set(tx, 0.24, tz);
-        padStaticGroup.add(tile);
-        const arrow = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.08, 0.85), matWhite);
-        arrow.position.set(tx, 0.28, tz);
-        padStaticGroup.add(arrow);
-      });
+      const tileOffsets = buildCompositeStackingPadBase(padStaticGroup, teamMat);
       bakeStaticGroupMeshes(padStaticGroup);
 
       // Safe Shield Floor Ring & Thin Cylindrical Light Curtain (100% on Grass Island Corner)
@@ -2404,26 +2553,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             Math.hypot(prop.x - pad.x, prop.z - pad.z) <
             (pad.shieldRadius ?? PUBLIC_PAD_SHIELD_RADIUS) + 1.1,
         );
-        // Prevent any default tree/prop from spawning inside the widened East Halte Trem platform deck or its 2 LOBBY return pads
+        // Prevent any default tree/prop from spawning inside the widened East Halte Trem platform deck or inside the South Plaza L-Shaped Glasshouse Cafe
         const overlapsHaltePlatform =
           prop.x >= -65.3 && prop.x <= -57.9 && Math.abs(prop.z) <= 9.6;
-        if (overlapsPublicShieldPad || overlapsHaltePlatform) {
+        const overlapsGlasshouseCafe =
+          prop.id === 491 || isInsideSouthPlazaGlasshouseFootprint(prop.x, prop.z);
+        if (overlapsPublicShieldPad || overlapsHaltePlatform || overlapsGlasshouseCafe) {
           return;
         }
       }
       if (prop.kind === 'tree_purple' || prop.kind === 'tree_gold') {
         const isPurple = prop.kind === 'tree_purple';
-        const isPlanterTree = prop.id === 491;
         const grp = new THREE.Group();
-        grp.position.set(prop.x, isPlanterTree ? 0.88 : 0, prop.z);
+        grp.position.set(prop.x, 0, prop.z);
         grp.rotation.y = prop.rotY;
         grp.userData.baseRotY = prop.rotY;
-        grp.userData.extraLiftY = isPlanterTree ? 0.88 : 0;
+        grp.userData.extraLiftY = 0;
         const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
         shadow.name = 'ContactShadowDisc';
         shadow.position.y = 0.02;
         shadow.scale.setScalar(2.35 * prop.scale);
-        shadow.visible = !isPlanterTree;
         grp.add(shadow);
         scene.add(grp);
 
@@ -2815,7 +2964,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         '',
         false,
       );
-      nameplate.sprite.position.set(0, 4.35, 0);
+      nameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
       nameplate.sprite.visible = false;
       root.add(nameplate.sprite);
 
@@ -2983,7 +3132,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         '',
         true,
       );
-      npcNameplate.sprite.position.set(0, 4.38, 0);
+      npcNameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.npcHeadAnchorLocalY, 0);
       npcNameplate.sprite.visible = false;
       npcGrp.add(npcNameplate.sprite);
 
@@ -3071,6 +3220,43 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     beachHouseNpc.npcRig.idleClipOverrideName = 'kai_idle.001';
 
     // =========================================================================
+    // BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") EXTERIOR DOOR PAD & 3D INTERIOR
+    // =========================================================================
+    const cafeExteriorDoorPad = buildGlowingDoorFloorArrowPad();
+    cafeExteriorDoorPad.group.position.set(
+      CAFE_EXTERIOR_DOOR_TRIGGER.x,
+      CAFE_EXTERIOR_DOOR_TRIGGER.deckY + 0.04,
+      CAFE_EXTERIOR_DOOR_TRIGGER.z,
+    );
+    scene.add(cafeExteriorDoorPad.group);
+
+    const cafeInterior = buildBotanicalGlasshouseCafeInterior();
+    scene.add(cafeInterior.root);
+
+    // AI City Citizen Customer NPC inside the Glasshouse Cafe (stands in front of counter during Work Shift)
+    const cafeCustomerNpcRoot = new THREE.Group();
+    cafeCustomerNpcRoot.position.set(
+      CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
+      0,
+      CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
+    );
+    cafeCustomerNpcRoot.scale.setScalar(0.55);
+    cafeCustomerNpcRoot.visible = false;
+    const cafeCustomerBodyGroup = new THREE.Group();
+    cafeCustomerBodyGroup.rotation.y = Math.PI; // face -Z toward barista counter
+    cafeCustomerBodyGroup.scale.setScalar(0.98);
+    cafeCustomerNpcRoot.add(cafeCustomerBodyGroup);
+    const cafeCustomerRig = buildProceduralBuddyAvatar(
+      cafeCustomerBodyGroup,
+      'blue',
+      windUniforms,
+      isSoftwareGl,
+      false,
+    );
+    let cafeCustomerGlbUpgraded = false;
+    cafeInterior.root.add(cafeCustomerNpcRoot);
+
+    // =========================================================================
     // 3D PRIVATE HOUSE INTERIOR CUTAWAY STUDIO
     // World Origin: (0, 145, 0) | Cutaway Plinth: 10.6m x 7.4m x 2.75m
     // =========================================================================
@@ -3094,14 +3280,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     houseSkyBackdropDome.raycast = () => {};
     houseInteriorRoomGrp.add(houseSkyBackdropDome);
 
-    // Procedural Canvas Texture Generator for Floor (Plank Wood / Tatami / Marble) & Wall Art
+    // Procedural Canvas Texture Generator for Floor (Rich Staggered Hardwood Oak Planks / Marble) & Wall Stucco Plaster
     const floorCanvas = document.createElement('canvas');
     floorCanvas.width = 512;
     floorCanvas.height = 512;
     const floorCanvasTex = new THREE.CanvasTexture(floorCanvas);
+    floorCanvasTex.colorSpace = THREE.SRGBColorSpace;
     floorCanvasTex.wrapS = THREE.RepeatWrapping;
     floorCanvasTex.wrapT = THREE.RepeatWrapping;
-    floorCanvasTex.repeat.set(4, 3);
+    floorCanvasTex.repeat.set(5, 4);
 
     const redrawFloorTexture = (primaryHex: string, secondaryHex: string, isMarbleOrSlate = false) => {
       const ctx = floorCanvas.getContext('2d');
@@ -3110,52 +3297,182 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       ctx.fillRect(0, 0, 512, 512);
       if (isMarbleOrSlate) {
         ctx.strokeStyle = secondaryHex;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
         for (let i = 0; i < 4; i++) {
           const p = i * 128;
           ctx.strokeRect(p + 2, 2, 124, 508);
           ctx.strokeRect(2, p + 2, 508, 124);
         }
+        // Subtle marble veining
+        ctx.strokeStyle = secondaryHex;
+        ctx.globalAlpha = 0.25;
+        ctx.lineWidth = 2;
+        for (let v = 0; v < 10; v++) {
+          ctx.beginPath();
+          ctx.moveTo(0, v * 52 + 12);
+          ctx.bezierCurveTo(170, v * 52 + 38, 340, v * 52 - 18, 512, v * 52 + 24);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1.0;
       } else {
-        // Staggered timber planks + tatami weave grain
+        // Rich Staggered Hardwood Planks with distinct plank seams, bevels, and wood grain striations
         const rows = 8;
         const rowH = 512 / rows;
+        const plankShades = ['#c8985e', '#bc8a50', '#d1a36b', '#b58248'];
         for (let r = 0; r < rows; r++) {
           const y = r * rowH;
-          ctx.fillStyle = r % 2 === 0 ? primaryHex : secondaryHex;
-          ctx.globalAlpha = 0.16;
-          ctx.fillRect(0, y, 512, rowH - 3);
-          ctx.globalAlpha = 0.45;
-          ctx.fillStyle = secondaryHex;
-          ctx.fillRect(0, y + rowH - 3, 512, 3);
-          const staggerX = ((r * 173) % 240) + 60;
-          ctx.fillRect(staggerX, y, 3, rowH);
-          ctx.fillRect((staggerX + 240) % 512, y, 3, rowH);
-          ctx.globalAlpha = 0.07;
-          ctx.fillStyle = secondaryHex;
-          for (let gLine = 0; gLine < 5; gLine++) {
-            const gy = y + 5 + ((r * 37 + gLine * 13) % Math.max(8, rowH - 10));
-            ctx.fillRect(0, gy, 512, 1);
+          const staggerX = ((r * 173) % 220) + 48;
+          const joints = [0, staggerX, (staggerX + 236) % 512, 512].sort((a, b) => a - b);
+          for (let j = 0; j < joints.length - 1; j++) {
+            const x0 = joints[j];
+            const pw = joints[j + 1] - x0;
+            ctx.fillStyle = plankShades[(r * 3 + j) % plankShades.length];
+            ctx.globalAlpha = 0.38;
+            ctx.fillRect(x0, y, pw, rowH);
           }
+          // Subtle wood grain waves & fiber lines along each plank row
+          ctx.globalAlpha = 0.24;
+          ctx.fillStyle = secondaryHex;
+          for (let gLine = 0; gLine < 11; gLine++) {
+            const gy = y + 4 + ((r * 31 + gLine * 7) % Math.max(8, rowH - 8));
+            ctx.fillRect(0, gy, 512, gLine % 3 === 0 ? 2 : 1);
+          }
+          ctx.strokeStyle = '#6e4924';
+          ctx.globalAlpha = 0.22;
+          ctx.lineWidth = 1.5;
+          for (let wv = 0; wv < 3; wv++) {
+            const wy = y + 14 + wv * 18;
+            ctx.beginPath();
+            ctx.moveTo(0, wy);
+            ctx.bezierCurveTo(160, wy + (r % 2 === 0 ? 6 : -6), 350, wy + (r % 2 === 0 ? -5 : 5), 512, wy);
+            ctx.stroke();
+          }
+          // Crisp dark-walnut horizontal plank seam + warm top bevel highlight
+          ctx.globalAlpha = 0.78;
+          ctx.fillStyle = '#5e3d1e';
+          ctx.fillRect(0, y + rowH - 3.5, 512, 3.5);
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = '#ebcfa8';
+          ctx.fillRect(0, y, 512, 1.5);
+          // Staggered vertical plank end-joints
+          ctx.globalAlpha = 0.75;
+          ctx.fillStyle = '#5e3d1e';
+          ctx.fillRect(staggerX, y, 3.5, rowH);
+          ctx.fillRect((staggerX + 236) % 512, y, 3.5, rowH);
         }
         ctx.globalAlpha = 1.0;
       }
       floorCanvasTex.needsUpdate = true;
     };
-    redrawFloorTexture('#dcbd8f', '#b28c5a', false);
+    redrawFloorTexture('#c99a62', '#8f5e2c', false);
+
+    // Procedural Warm Stucco / Plaster & Architectural Ashlar Texture for Interior Walls
+    const wallStuccoCanvas = document.createElement('canvas');
+    wallStuccoCanvas.width = 512;
+    wallStuccoCanvas.height = 512;
+    const wallCtx = wallStuccoCanvas.getContext('2d');
+    if (wallCtx) {
+      wallCtx.fillStyle = '#dfd1b8';
+      wallCtx.fillRect(0, 0, 512, 512);
+      // Warm Venetian plaster / travertine sponge mottling
+      for (let i = 0; i < 420; i++) {
+        const rx = (i * 137) % 512;
+        const ry = (i * 293) % 512;
+        const rw = 24 + ((i * 43) % 56);
+        const rh = 14 + ((i * 29) % 34);
+        wallCtx.fillStyle = i % 2 === 0 ? 'rgba(186, 165, 134, 0.22)' : 'rgba(244, 234, 216, 0.22)';
+        wallCtx.fillRect(rx, ry, rw, rh);
+      }
+      // Subtle horizontal plaster coursing & fine mineral grain
+      for (let row = 0; row < 8; row++) {
+        const y = row * 64;
+        wallCtx.fillStyle = 'rgba(162, 142, 114, 0.34)';
+        wallCtx.fillRect(0, y + 62, 512, 2);
+        wallCtx.fillStyle = 'rgba(248, 240, 226, 0.32)';
+        wallCtx.fillRect(0, y, 512, 1.5);
+        const jointX = ((row * 197) % 360) + 64;
+        wallCtx.fillStyle = 'rgba(162, 142, 114, 0.24)';
+        wallCtx.fillRect(jointX, y, 2, 64);
+      }
+      // Vertical fine linen/plaster micro-striations
+      wallCtx.fillStyle = 'rgba(168, 148, 120, 0.12)';
+      for (let x = 0; x < 512; x += 6) {
+        wallCtx.fillRect(x, 0, 2, 512);
+      }
+    }
+    const wallStuccoCanvasTex = new THREE.CanvasTexture(wallStuccoCanvas);
+    wallStuccoCanvasTex.colorSpace = THREE.SRGBColorSpace;
+    wallStuccoCanvasTex.wrapS = THREE.RepeatWrapping;
+    wallStuccoCanvasTex.wrapT = THREE.RepeatWrapping;
+
+    const scaleBoxUvsToWorldMeters = (
+      geo: THREE.BoxGeometry,
+      w: number,
+      h: number,
+      d: number,
+      tileMeters = 1.8,
+    ) => {
+      const uv = geo.attributes.uv;
+      if (!uv) return geo;
+      for (let i = 0; i < uv.count; i++) {
+        const u0 = uv.getX(i);
+        const v0 = uv.getY(i);
+        if (i < 8) {
+          uv.setXY(i, (u0 * d) / tileMeters, (v0 * h) / tileMeters);
+        } else if (i < 16) {
+          uv.setXY(i, (u0 * w) / tileMeters, (v0 * d) / tileMeters);
+        } else {
+          uv.setXY(i, (u0 * w) / tileMeters, (v0 * h) / tileMeters);
+        }
+      }
+      uv.needsUpdate = true;
+      return geo;
+    };
 
     const interiorWallMat = new THREE.MeshStandardMaterial({
-      color: '#ece5d8',
-      roughness: 0.85,
+      color: '#f2eadc',
+      map: wallStuccoCanvasTex,
+      bumpMap: wallStuccoCanvasTex,
+      bumpScale: 0.012,
+      roughness: 0.86,
     });
     const interiorTrimMat = new THREE.MeshStandardMaterial({
-      color: '#a97e50',
+      color: '#c28a54',
       roughness: 0.55,
     });
-    const interiorFloorMat = new THREE.MeshStandardMaterial({
-      color: '#ffffff',
-      map: floorCanvasTex,
+    const kumaCedarDarkMat = new THREE.MeshStandardMaterial({
+      color: '#7e522b',
       roughness: 0.58,
+    });
+    const kumaSoffitMat = new THREE.MeshStandardMaterial({
+      color: '#cc955e',
+      roughness: 0.6,
+    });
+    const shojiWarmMat = new THREE.MeshStandardMaterial({
+      color: '#ede3ce',
+      roughness: 0.78,
+    });
+    const basaltDarkMat = new THREE.MeshStandardMaterial({
+      color: '#3a3d44',
+      roughness: 0.55,
+      metalness: 0.25,
+    });
+    const basaltPlinthMat = new THREE.MeshStandardMaterial({
+      color: '#5c6068',
+      roughness: 0.58,
+      metalness: 0.2,
+    });
+    const serviceDoorLeafMat = new THREE.MeshStandardMaterial({
+      color: '#7b8088',
+      roughness: 0.48,
+      metalness: 0.35,
+    });
+    const interiorFloorMat = new THREE.MeshStandardMaterial({
+      color: '#f3e7d3',
+      map: floorCanvasTex,
+      bumpMap: floorCanvasTex,
+      bumpScale: 0.016,
+      roughness: 0.65,
     });
     const darkPlinthMat = new THREE.MeshStandardMaterial({
       color: '#23272e',
@@ -3163,13 +3480,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       metalness: 0.4,
     });
     const capWallMat = new THREE.MeshStandardMaterial({
-      color: '#2d333e',
-      roughness: 0.6,
+      color: '#4e5662',
+      roughness: 0.55,
     });
     const mullionDarkMat = new THREE.MeshStandardMaterial({
-      color: '#1b1c1f',
-      roughness: 0.4,
-      metalness: 0.5,
+      color: '#4e5662',
+      roughness: 0.48,
+      metalness: 0.25,
     });
     const plinthGlowMat = new THREE.MeshBasicMaterial({
       color: '#ffb468',
@@ -3180,21 +3497,88 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       fog: false,
     });
 
-    // Dedicated Interior Hemisphere & Sun/Lamp Lights inside houseInteriorRoomGrp
-    const houseHemiLight = new THREE.HemisphereLight('#97a8d6', '#3d3026', 0.65);
+    // Helper: attach Plaza-style thin black toon outline stroke (`#12121e`) matching `addLobbyPart`
+    // Automatically skips thin mullions/slats/floor slabs (`minDim < 0.045`) and caps stroke width at `0.0052`
+    // so indoor camera proximity (~3.5m) renders with the exact same crisp line weight as outdoor Plaza buildings!
+    const attachHouseToonStroke = (mesh: THREE.Mesh, strokeWidth = 0.0048) => {
+      if (!mesh.geometry.boundingBox) {
+        mesh.geometry.computeBoundingBox();
+      }
+      const bb = mesh.geometry.boundingBox;
+      const minDim = bb
+        ? Math.min(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z)
+        : 1;
+      if (strokeWidth > 0 && minDim >= 0.045) {
+        const fineStrokeW = Math.min(strokeWidth, 0.0052);
+        const stroke = createBlitzStrokeMesh(mesh.geometry, fineStrokeW, '#12121e');
+        if (stroke) {
+          stroke.raycast = () => {};
+          mesh.add(stroke);
+        }
+      }
+      return mesh;
+    };
+
+    const addHouseArchPart = (
+      parent: THREE.Object3D,
+      geo: THREE.BufferGeometry,
+      mat: THREE.Material,
+      pos: readonly [number, number, number],
+      strokeWidth = 0.0048,
+      rot?: readonly [number, number, number],
+    ) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(pos[0], pos[1], pos[2]);
+      if (rot) {
+        m.rotation.set(rot[0], rot[1], rot[2]);
+      }
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.raycast = () => {};
+      if (strokeWidth > 0) {
+        attachHouseToonStroke(m, strokeWidth);
+      }
+      parent.add(m);
+      return m;
+    };
+
+    // Dedicated Interior Multi-Zone Lighting Rig inside houseInteriorRoomGrp
+    // Calibrated alongside the global scene lights so the room is naturally warm & well-lit without washing out textures
+    const houseAmbientLight = new THREE.AmbientLight('#fff8eb', 0.25);
+    houseInteriorRoomGrp.add(houseAmbientLight);
+
+    const houseHemiLight = new THREE.HemisphereLight('#fffaf0', '#cbb694', 0.48);
     houseHemiLight.position.set(0, 6.0, 0);
     houseInteriorRoomGrp.add(houseHemiLight);
 
-    const houseSunLight = new THREE.DirectionalLight('#ffb46c', 1.65);
-    houseSunLight.position.set(-8.0, 7.5, -5.0);
+    const houseSunLight = new THREE.DirectionalLight('#fff2da', 0.55);
+    houseSunLight.position.set(-8.0, 12.5, -5.0);
     houseInteriorRoomGrp.add(houseSunLight);
     houseInteriorRoomGrp.add(houseSunLight.target);
 
-    const houseWarmLampPointLight = new THREE.PointLight('#ffc27a', 0.8, 12.0);
-    houseWarmLampPointLight.position.set(-1.5, 2.1, -1.2);
+    const houseCounterFillDirLight = new THREE.DirectionalLight('#eef4ff', 0.28);
+    houseCounterFillDirLight.position.set(8.5, 9.5, 6.5);
+    houseInteriorRoomGrp.add(houseCounterFillDirLight);
+    houseInteriorRoomGrp.add(houseCounterFillDirLight.target);
+
+    const houseCeilingLights = (
+      [
+        [-2.9, 3.65, -0.2, 0.42],
+        [0.0, 3.65, 0.85, 0.36],
+        [2.9, 3.65, -0.2, 0.42],
+      ] as const
+    ).map(([lx, ly, lz, baseInt]) => {
+      const pt = new THREE.PointLight('#ffe8bc', baseInt, 14.0, 1.15);
+      pt.position.set(lx, ly, lz);
+      houseInteriorRoomGrp.add(pt);
+      return pt;
+    });
+
+    const houseWarmLampPointLight = new THREE.PointLight('#ffc882', 0.38, 11.0, 1.15);
+    houseWarmLampPointLight.position.set(-1.5, 2.2, -1.2);
     houseInteriorRoomGrp.add(houseWarmLampPointLight);
 
-    // 1. Cutaway Studio Plinth + Warm Underglow Strips (`#L351-L352`)
+    // 1. Cutaway Studio Plinth + Main Room Floor (10.6m x 7.4m)
     const {
       minX: A,
       maxX: J,
@@ -3203,27 +3587,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       wallThickness: L,
       fullWallHeight: ee,
       cutawayWallHeight: Yn,
-      partitionWallHeight: _a,
-      partitionX: fe,
-      partitionZ: lt,
-      partitionThickness: U,
       slatEndZ: ko,
       windowLeft: winL,
       windowBack: winB,
-      doorPassX: Ia,
     } = CUTAWAY_ROOM_BOUNDS;
 
-    const plinthUpper = new THREE.Mesh(
-      new THREE.BoxGeometry(J - A + 1.35, 0.24, N - T + 1.35),
-      capWallMat,
+    const plinthUpper = attachHouseToonStroke(
+      new THREE.Mesh(new THREE.BoxGeometry(J - A + 1.35, 0.24, N - T + 1.35), basaltPlinthMat),
+      0.0052,
     );
     plinthUpper.position.set(0, -0.14, 0);
     plinthUpper.raycast = () => {};
     houseInteriorRoomGrp.add(plinthUpper);
 
-    const plinthLower = new THREE.Mesh(
-      new THREE.BoxGeometry(J - A + 0.68, 0.42, N - T + 0.68),
-      darkPlinthMat,
+    const plinthLower = attachHouseToonStroke(
+      new THREE.Mesh(new THREE.BoxGeometry(J - A + 0.68, 0.42, N - T + 0.68), darkPlinthMat),
+      0.0052,
     );
     plinthLower.position.set(0, -0.46, 0);
     plinthLower.raycast = () => {};
@@ -3245,97 +3624,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // Main Room Floor (10.6m x 7.4m)
     const roomFloor = new THREE.Mesh(new THREE.BoxGeometry(J - A, 0.04, N - T), interiorFloorMat);
     roomFloor.position.set(0, -0.02, 0);
+    roomFloor.receiveShadow = true;
     houseInteriorRoomGrp.add(roomFloor);
 
-    // Helper to add a box wall segment with dark top coping
-    const addCutawayWallSegment = (
-      x0: number,
-      x1: number,
-      y0: number,
-      y1: number,
-      z0: number,
-      z1: number,
-      mat: THREE.Material = interiorWallMat,
-    ) => {
-      const w = x1 - x0;
-      const h = y1 - y0;
-      const d = z1 - z0;
-      const wallMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      wallMesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      wallMesh.raycast = () => {};
-      houseInteriorRoomGrp.add(wallMesh);
+    const windowGlassMat = new THREE.MeshBasicMaterial({
+      color: '#bfe3ff',
+      transparent: true,
+      opacity: 0.28,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
 
-      const capMesh = new THREE.Mesh(new THREE.BoxGeometry(w + 0.01, 0.025, d + 0.01), capWallMat);
-      capMesh.position.set((x0 + x1) / 2, y1 + 0.012, (z0 + z1) / 2);
-      capMesh.raycast = () => {};
-      houseInteriorRoomGrp.add(capMesh);
-    };
-
-    // Left Wall (`wallL`, height `ee = 2.75m`) with Left Shoji Window Aperture (`winL`)
-    addCutawayWallSegment(A - L, A, 0, ee, T, winL.z0);
-    addCutawayWallSegment(A - L, A, 0, ee, winL.z1, N);
-    addCutawayWallSegment(A - L, A, 0, winL.y0, winL.z0, winL.z1);
-    addCutawayWallSegment(A - L, A, winL.y1, ee, winL.z0, winL.z1);
-
-    // Back Wall (`wallB`, height `ee = 2.75m`) with Panoramic Shoji Window Aperture (`winB`)
-    addCutawayWallSegment(A - L, winB.x0, 0, ee, T - L, T);
-    addCutawayWallSegment(winB.x1, J + L, 0, ee, T - L, T);
-    addCutawayWallSegment(winB.x0, winB.x1, 0, winB.y0, T - L, T);
-    addCutawayWallSegment(winB.x0, winB.x1, winB.y1, ee, T - L, T);
-
-    // Low Cutaway Front & Right Walls (`Yn = 0.45m`) so camera has an unobstructed isometric view
-    addCutawayWallSegment(A - L, -0.65, 0, Yn, N, N + L);
-    addCutawayWallSegment(0.65, J + L, 0, Yn, N, N + L);
-    addCutawayWallSegment(J, J + L, 0, Yn, T, N);
-
-    // Full-height wall completions, visible ONLY in `house_visit` mode: they raise
-    // the front & right cutaway stubs to full height so walking inside feels like a
-    // real enclosed room. Edit mode (`house_interior`) keeps the open cutaway.
-    const houseVisitWallGrp = new THREE.Group();
-    houseVisitWallGrp.name = 'HouseVisitFullWalls';
-    const addVisitWall = (
-      x0: number,
-      x1: number,
-      y0: number,
-      y1: number,
-      z0: number,
-      z1: number,
-    ) => {
-      const m = new THREE.Mesh(
-        new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0),
-        interiorWallMat,
-      );
-      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      m.raycast = () => {};
-      houseVisitWallGrp.add(m);
-      const cap = new THREE.Mesh(
-        new THREE.BoxGeometry(x1 - x0 + 0.01, 0.025, z1 - z0 + 0.01),
-        capWallMat,
-      );
-      cap.position.set((x0 + x1) / 2, y1 + 0.012, (z0 + z1) / 2);
-      cap.raycast = () => {};
-      houseVisitWallGrp.add(cap);
-    };
-    addVisitWall(A - L, -0.65, Yn, ee, N, N + L); // front wall, left of the exit door
-    addVisitWall(0.65, J + L, Yn, ee, N, N + L); // front wall, right of the exit door
-    addVisitWall(-0.65, 0.65, 2.42, ee, N, N + L); // transom above the exit door (EXIT sign glows below it)
-    addVisitWall(J, J + L, Yn, ee, T, N); // right wall
-    // Interior partitions raised to full height (visit only): top sections over
-    // the half-height dividers plus headers above their doorway passages, so the
-    // bedroom and study read as real enclosed rooms while walking inside.
-    addVisitWall(fe + U / 2, Ia.x0, _a, ee, lt - U / 2, lt + U / 2);
-    addVisitWall(Ia.x1, J, _a, ee, lt - U / 2, lt + U / 2);
-    addVisitWall(Ia.x0, Ia.x1, 2.15, ee, lt - U / 2, lt + U / 2); // header over the study doorway
-    // Ceiling (visit only) so the camera can never see over the wall tops.
-    const visitCeiling = new THREE.Mesh(
-      new THREE.BoxGeometry(J - A + 0.3, 0.08, N - T + 0.3),
-      interiorWallMat,
-    );
-    visitCeiling.position.set(0, ee + 0.04, 0);
-    visitCeiling.raycast = () => {};
-    houseVisitWallGrp.add(visitCeiling);
-    // Soft garden backdrops behind the window apertures and outside the front
-    // door (visit only): without them the openings look onto blank sky.
+    // Shared sunny garden & plaza sky backdrop outside window & door apertures
     const backdropCanvas = document.createElement('canvas');
     backdropCanvas.width = 256;
     backdropCanvas.height = 256;
@@ -3375,257 +3675,1675 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       map: new THREE.CanvasTexture(backdropCanvas),
       fog: false,
     });
-    const backBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 3.4), backdropMat);
-    backBackdrop.position.set(-0.8, 1.45, T - 0.85);
-    backBackdrop.raycast = () => {};
-    houseVisitWallGrp.add(backBackdrop);
-    const leftBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.4), backdropMat);
-    leftBackdrop.rotation.y = Math.PI / 2;
-    leftBackdrop.position.set(A - 0.85, 1.45, 2.05);
-    leftBackdrop.raycast = () => {};
-    houseVisitWallGrp.add(leftBackdrop);
-    const frontBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 3.6), backdropMat);
-    frontBackdrop.rotation.y = Math.PI;
-    frontBackdrop.position.set(0, 1.5, N + 3.4);
-    frontBackdrop.raycast = () => {};
-    houseVisitWallGrp.add(frontBackdrop);
-    // Small wooden porch deck just outside the entrance (visit only).
-    const visitPorch = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.07, 1.5), interiorTrimMat);
-    visitPorch.position.set(0, -0.035, N + 0.95);
-    visitPorch.raycast = () => {};
-    houseVisitWallGrp.add(visitPorch);
-    houseVisitWallGrp.visible = false;
-    houseInteriorRoomGrp.add(houseVisitWallGrp);
 
-    // 3D Exit Door Frame, Wooden Door Panel, Gold Handle & Glowing Exit Mat at Front Doorway (x = 0, z = N = 3.7)
-    const houseExitDoorGrp = new THREE.Group();
-    houseExitDoorGrp.position.set(0, 0, N);
-    const doorFrameMat = new THREE.MeshStandardMaterial({
-      color: '#2b2118',
-      roughness: 0.55,
-    });
-    // Procedural oak texture for the door leaf (vertical planks, grain
-    // streaks, two inset panels) so it no longer reads as a flat slab.
-    const doorCanvas = document.createElement('canvas');
-    doorCanvas.width = 256;
-    doorCanvas.height = 464;
-    const doorCtx = doorCanvas.getContext('2d');
-    if (doorCtx) {
-      doorCtx.fillStyle = '#7c5833';
-      doorCtx.fillRect(0, 0, 256, 464);
-      let doorSeed = 4177;
-      const doorRand = () => {
-        doorSeed = (doorSeed * 16807) % 2147483647;
-        return doorSeed / 2147483647;
-      };
-      for (let s = 0; s < 130; s++) {
-        const gx = doorRand() * 256;
-        doorCtx.strokeStyle =
-          doorRand() > 0.5 ? 'rgba(46, 30, 16, 0.16)' : 'rgba(214, 178, 128, 0.13)';
-        doorCtx.lineWidth = 1 + doorRand() * 1.6;
-        doorCtx.beginPath();
-        doorCtx.moveTo(gx, 0);
-        doorCtx.bezierCurveTo(
-          gx + 5 - doorRand() * 10,
-          150,
-          gx + 5 - doorRand() * 10,
-          310,
-          gx + 3 - doorRand() * 6,
-          464,
+    // =========================================================================
+    // ARCHITECTURE STYLE A: MODERN JAPANESE WOODEN PAVILION (`japanese_pavilion`)
+    // Preserved as a Catalog House Product (`TroopQuartersFieldBarracks` 1:1)
+    // =========================================================================
+    const japanesePavilionArchGrp = new THREE.Group();
+    japanesePavilionArchGrp.name = 'JapanesePavilionArchGrp';
+    houseInteriorRoomGrp.add(japanesePavilionArchGrp);
+
+    const addCutawayWallSegment = (
+      x0: number,
+      x1: number,
+      y0: number,
+      y1: number,
+      z0: number,
+      z1: number,
+      mat: THREE.Material = interiorWallMat,
+      targetGrp: THREE.Object3D = japanesePavilionArchGrp,
+      copingMat: THREE.Material = capWallMat,
+    ) => {
+      const w = x1 - x0;
+      const h = y1 - y0;
+      const d = z1 - z0;
+      const wallMesh = attachHouseToonStroke(
+        new THREE.Mesh(scaleBoxUvsToWorldMeters(new THREE.BoxGeometry(w, h, d), w, h, d), mat),
+        0.005,
+      );
+      wallMesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      wallMesh.castShadow = false;
+      wallMesh.receiveShadow = true;
+      wallMesh.raycast = () => {};
+      targetGrp.add(wallMesh);
+
+      const capMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w + 0.012, 0.03, d + 0.012),
+        copingMat,
+      );
+      capMesh.position.set((x0 + x1) / 2, y1 + 0.015, (z0 + z1) / 2);
+      capMesh.raycast = () => {};
+      targetGrp.add(capMesh);
+    };
+
+    // Left Wall (`wallL`, height `ee = 4.0m`) with Left Koushi Timber Window Bay (`winL: z in [1.3, 2.8]`)
+    addCutawayWallSegment(A - L, A, 0, ee, T, winL.z0);
+    addCutawayWallSegment(A - L, A, 0, ee, winL.z1, N);
+    addCutawayWallSegment(A - L, A, 0, winL.y0, winL.z0, winL.z1);
+    addCutawayWallSegment(A - L, A, winL.y1, ee, winL.z0, winL.z1);
+
+    // Back Wall (`wallB`, height `ee = 4.0m`) with Panoramic Glazed Sliding Shoji Window Bay (`winB: x in [-2.35, 0.75]`)
+    addCutawayWallSegment(A - L, winB.x0, 0, ee, T - L, T);
+    addCutawayWallSegment(winB.x1, J + L, 0, ee, T - L, T);
+    addCutawayWallSegment(winB.x0, winB.x1, 0, winB.y0, T - L, T);
+    addCutawayWallSegment(winB.x0, winB.x1, winB.y1, ee, T - L, T);
+
+    // Low Cutaway Front & Right Walls (`Yn = 0.45m`) leaving the 2.64m Twin Sliding Entrance Door bay open (`x in [-1.32, +1.32]`)
+    addCutawayWallSegment(A - L, -1.32, 0, Yn, N, N + L);
+    addCutawayWallSegment(1.32, J + L, 0, Yn, N, N + L);
+    addCutawayWallSegment(J, J + L, 0, Yn, T, N);
+
+    // 1. Structural Dark Cedar Columns (`COL_KUMA_CEDAR_DARK`) + Basalt Base Shoes (`tsuka-ishi`) along Back & Left Full Walls
+    for (const [cx, cz] of [
+      [A + 0.05, T + 0.05],
+      [winB.x0 - 0.06, T + 0.05],
+      [winB.x1 + 0.06, T + 0.05],
+      [J - 0.05, T + 0.05],
+      [A + 0.05, winL.z0 - 0.06],
+      [A + 0.05, winL.z1 + 0.06],
+      [A + 0.05, N - 0.05],
+    ] as const) {
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.14, ee, 0.14),
+        kumaCedarDarkMat,
+        [cx, ee / 2, cz],
+        0.0048,
+      );
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.19, 0.08, 0.19),
+        basaltDarkMat,
+        [cx, 0.04, cz],
+        0.0045,
+      );
+    }
+
+    // 2. Continuous Horizontal Dark Cedar Nageshi Tie-Beams (`y = 2.52`, `y = 3.28`, and `y = ee - 0.12 = 3.88`)
+    for (const beamY of [2.52, 3.28, ee - 0.12] as const) {
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(J - A, 0.09, 0.11),
+        kumaCedarDarkMat,
+        [0, beamY, T + 0.048],
+        0.0048,
+      );
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.11, 0.09, N - T),
+        kumaCedarDarkMat,
+        [A + 0.048, beamY, 0],
+        0.0048,
+      );
+    }
+
+    // 3. Upper 4-Pane Transom / Clerestory Ribbon Window Band on Back Wall (`y = 2.90`)
+    for (const [bayX0, bayX1] of [
+      [-5.02, -2.52],
+      [0.94, 5.02],
+    ] as const) {
+      const bayW = bayX1 - bayX0;
+      const bayCx = (bayX0 + bayX1) / 2;
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(bayW, 0.56, 0.09),
+        mullionDarkMat,
+        [bayCx, 2.9, T + 0.035],
+        0.0045,
+      );
+      const paneW = (bayW - 0.18) / 2;
+      for (const side of [-1, 1] as const) {
+        const px = bayCx + side * (paneW / 2 + 0.025);
+        const glassPane = new THREE.Mesh(new THREE.BoxGeometry(paneW, 0.42, 0.04), windowGlassMat);
+        glassPane.position.set(px, 2.9, T + 0.045);
+        glassPane.raycast = () => {};
+        japanesePavilionArchGrp.add(glassPane);
+        addHouseArchPart(
+          japanesePavilionArchGrp,
+          new THREE.BoxGeometry(0.03, 0.44, 0.06),
+          shojiWarmMat,
+          [px, 2.9, T + 0.05],
+          0,
         );
-        doorCtx.stroke();
       }
-      doorCtx.fillStyle = 'rgba(40, 25, 12, 0.5)';
-      doorCtx.fillRect(84, 0, 2, 464);
-      doorCtx.fillRect(170, 0, 2, 464);
-      const doorPanelRect = (px: number, py: number, pw: number, ph: number) => {
-        doorCtx.fillStyle = 'rgba(52, 34, 18, 0.55)';
-        doorCtx.fillRect(px, py, pw, ph);
-        doorCtx.fillStyle = '#86643c';
-        doorCtx.fillRect(px + 5, py + 5, pw - 10, ph - 10);
-        doorCtx.strokeStyle = 'rgba(226, 192, 140, 0.5)';
-        doorCtx.lineWidth = 2;
-        doorCtx.strokeRect(px + 5, py + 5, pw - 10, ph - 10);
-        doorCtx.strokeStyle = 'rgba(30, 19, 9, 0.6)';
-        doorCtx.strokeRect(px, py, pw, ph);
-      };
-      doorPanelRect(38, 36, 180, 190);
-      doorPanelRect(38, 262, 180, 150);
     }
-    const doorPanelMat = new THREE.MeshStandardMaterial({
-      map: new THREE.CanvasTexture(doorCanvas),
-      roughness: 0.55,
-    });
-    const doorHandleMat = new THREE.MeshStandardMaterial({
-      color: '#facc15',
-      roughness: 0.25,
-      metalness: 0.85,
-    });
-    const exitSignGlowMat = new THREE.MeshBasicMaterial({
-      color: '#10b981',
-      fog: false,
-    });
-    const leftJamb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.15, 0.18), doorFrameMat);
-    leftJamb.position.set(-0.62, 1.075, 0.04);
-    const rightJamb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.15, 0.18), doorFrameMat);
-    rightJamb.position.set(0.62, 1.075, 0.04);
-    const topLintel = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.12, 0.2), doorFrameMat);
-    topLintel.position.set(0, 2.18, 0.04);
-    // Hinged pivot at the left jamb: the leaf swings open into the room
-    // when the player approaches (animated in the house_visit camera block).
-    const houseExitDoorPivot = new THREE.Group();
-    houseExitDoorPivot.position.set(-0.57, 0, 0.04);
-    const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.14, 2.08, 0.055), doorPanelMat);
-    doorLeaf.position.set(0.57, 1.05, 0);
-    houseExitDoorPivot.add(doorLeaf);
-    const doorBackplate = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.34, 0.016),
-      doorFrameMat,
-    );
-    doorBackplate.position.set(0.99, 1.02, -0.036);
-    houseExitDoorPivot.add(doorBackplate);
-    const doorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.24, 0.05), doorHandleMat);
-    doorHandle.position.set(0.99, 1.02, -0.068);
-    houseExitDoorPivot.add(doorHandle);
-    for (const mountY of [0.93, 1.11]) {
-      const doorHandleMount = new THREE.Mesh(
-        new THREE.BoxGeometry(0.03, 0.03, 0.03),
-        doorHandleMat,
+
+    // 4. Horizontal Kuma Cedar Shiplap Timber Cladding on Back Left Wall Pier (`x in [-5.1, -2.48]`, `y in [0.12, 2.1]`)
+    for (let row = 0; row < 8; row++) {
+      const py = 0.2 + row * 0.24;
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(2.6, 0.18, 0.045),
+        row % 2 === 0 ? interiorTrimMat : kumaSoffitMat,
+        [-3.78, py, T + 0.022],
+        0.0045,
       );
-      doorHandleMount.position.set(0.99, mountY, -0.048);
-      houseExitDoorPivot.add(doorHandleMount);
     }
-    const exitSignBoard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.16, 0.08), exitSignGlowMat);
-    exitSignBoard.position.set(0, 2.32, 0.02);
-    const exitFloorMat = new THREE.Mesh(
-      new THREE.BoxGeometry(1.32, 0.018, 0.68),
-      new THREE.MeshStandardMaterial({
-        color: '#0f766e',
-        emissive: '#0d9488',
-        emissiveIntensity: 0.35,
-        roughness: 0.75,
-      }),
-    );
-    exitFloorMat.position.set(0, 0.01, -0.42);
-    houseExitDoorGrp.add(
-      leftJamb,
-      rightJamb,
-      topLintel,
-      houseExitDoorPivot,
-      exitSignBoard,
-      exitFloorMat,
-    );
-    houseExitDoorGrp.traverse((c) => {
-      c.raycast = () => {};
-    });
-    houseInteriorRoomGrp.add(houseExitDoorGrp);
-    let houseDoorSwing = 0;
-    let houseDoorSwingPrevT = 0;
 
-    // Interior Half-Height Partition Walls (`_a = 1.3m`) with Doorway Passages (`Da`, `Ia`)
-    // The vertical partition beside the bed was removed at the user's request:
-    // it squeezed the bedroom into a narrow strip. Only the study divider stays.
-    addCutawayWallSegment(fe + U / 2, Ia.x0, 0, _a, lt - U / 2, lt + U / 2);
-    addCutawayWallSegment(Ia.x1, J, 0, _a, lt - U / 2, lt + U / 2);
-
-    // Vertical Wooden Slat Wall (`slats`, `#L364`) along Left Wall from z = T to z = ko (0.95)
-    const slatCount = 54;
-    const slatSpan = ko - (T + 0.02);
-    const slatStep = slatSpan / slatCount;
-    for (let d = 0; d < slatCount; d++) {
-      const sz = T + 0.02 + slatStep * (d + 0.5);
-      const slat = new THREE.Mesh(
-        new THREE.BoxGeometry(0.036, ee - 0.02, 0.042),
-        interiorTrimMat,
+    // 5. Back Panoramic Glazed Sliding Shoji Window Bay (`winB: x in [-2.35, 0.75], y in [0.1, 2.5]`)
+    const winBW = winB.x1 - winB.x0;
+    const winBH = winB.y1 - winB.y0;
+    const winBCx = (winB.x0 + winB.x1) / 2;
+    const winBCy = (winB.y0 + winB.y1) / 2;
+    addHouseArchPart(
+      japanesePavilionArchGrp,
+      new THREE.BoxGeometry(winBW + 0.08, 0.08, 0.26),
+      mullionDarkMat,
+      [winBCx, winB.y0 + 0.03, T - L / 2],
+      0.0048,
+    );
+    addHouseArchPart(
+      japanesePavilionArchGrp,
+      new THREE.BoxGeometry(winBW + 0.08, 0.08, 0.26),
+      mullionDarkMat,
+      [winBCx, winB.y1 - 0.03, T - L / 2],
+      0.0048,
+    );
+    for (const sx of [winB.x0 + 0.03, winB.x1 - 0.03]) {
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.08, winBH, 0.26),
+        mullionDarkMat,
+        [sx, winBCy, T - L / 2],
+        0.0048,
       );
-      slat.position.set(A + 0.022, ee / 2, sz);
-      slat.raycast = () => {};
-      houseInteriorRoomGrp.add(slat);
+    }
+    const backGlass = new THREE.Mesh(
+      new THREE.PlaneGeometry(winBW - 0.08, winBH - 0.08),
+      windowGlassMat,
+    );
+    backGlass.position.set(winBCx, winBCy, T - L / 2);
+    backGlass.raycast = () => {};
+    japanesePavilionArchGrp.add(backGlass);
+
+    // 2 Large Sliding Glass & Shoji Kumiko Panels inside `winB`
+    const slidePaneW = winBW / 2 + 0.03;
+    const slidePaneH = winBH - 0.12;
+    for (const [pIdx, paneCx, zOff] of [
+      [0, winB.x0 + slidePaneW / 2 + 0.02, T - L / 2 + 0.025],
+      [1, winB.x1 - slidePaneW / 2 - 0.02, T - L / 2 - 0.02],
+    ] as const) {
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(slidePaneW, 0.06, 0.05),
+        mullionDarkMat,
+        [paneCx, winB.y0 + 0.08, zOff],
+        0.0045,
+      );
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(slidePaneW, 0.06, 0.05),
+        mullionDarkMat,
+        [paneCx, winB.y1 - 0.08, zOff],
+        0.0045,
+      );
+      for (const stileX of [paneCx - slidePaneW / 2 + 0.03, paneCx + slidePaneW / 2 - 0.03]) {
+        addHouseArchPart(
+          japanesePavilionArchGrp,
+          new THREE.BoxGeometry(0.06, slidePaneH, 0.05),
+          mullionDarkMat,
+          [stileX, winBCy, zOff],
+          0.0045,
+        );
+      }
+      // Warm interior shoji kumiko lattice strips (no black stroke on delicate 2.8cm strips!)
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.028, slidePaneH - 0.1, 0.032),
+        shojiWarmMat,
+        [paneCx, winBCy, zOff],
+        0,
+      );
+      for (const kumikoY of [0.72, 1.32, 1.92]) {
+        addHouseArchPart(
+          japanesePavilionArchGrp,
+          new THREE.BoxGeometry(slidePaneW - 0.1, 0.028, 0.032),
+          shojiWarmMat,
+          [paneCx, kumikoY, zOff],
+          0,
+        );
+      }
+      const kickSign = pIdx === 0 ? 1 : -1;
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.02, 0.22, 0.035),
+        mullionDarkMat,
+        [paneCx + kickSign * (slidePaneW / 2 - 0.09), 1.15, zOff + 0.025],
+        0,
+      );
     }
 
-    // Window Mullions, Glass Panes, & Sine-Wave Pleated Sheer Curtains (`Bs` & `mr`, `#L360-L363`)
-    const windowGlassMat = new THREE.MeshBasicMaterial({
-      color: '#cfe9ff',
-      transparent: true,
-      opacity: 0.14,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
+    // 6. Left Wall Recessed Cedar Timber & Koushi Window Bay (`winL: z in [1.3, 2.8], y in [0.55, 2.4]`)
+    const winLW = winL.z1 - winL.z0;
+    const winLH = winL.y1 - winL.y0;
+    const winLCz = (winL.z0 + winL.z1) / 2;
+    const winLCy = (winL.y0 + winL.y1) / 2;
+    addHouseArchPart(
+      japanesePavilionArchGrp,
+      new THREE.BoxGeometry(0.26, 0.08, winLW + 0.08),
+      kumaCedarDarkMat,
+      [A - L / 2, winL.y0 + 0.03, winLCz],
+      0.0048,
+    );
+    addHouseArchPart(
+      japanesePavilionArchGrp,
+      new THREE.BoxGeometry(0.28, 0.09, winLW + 0.14),
+      mullionDarkMat,
+      [A - L / 2, winL.y1 - 0.03, winLCz],
+      0.0048,
+    );
+    for (const sz of [winL.z0 + 0.03, winL.z1 - 0.03, winLCz]) {
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.24, winLH, 0.065),
+        kumaCedarDarkMat,
+        [A - L / 2, winLCy, sz],
+        0.0048,
+      );
+    }
     const leftGlass = new THREE.Mesh(
-      new THREE.PlaneGeometry(winL.z1 - winL.z0 - 0.04, winL.y1 - winL.y0 - 0.04),
+      new THREE.PlaneGeometry(winLW - 0.06, winLH - 0.06),
       windowGlassMat,
     );
     leftGlass.rotation.y = Math.PI / 2;
-    leftGlass.position.set(A - L / 2, (winL.y0 + winL.y1) / 2, (winL.z0 + winL.z1) / 2);
+    leftGlass.position.set(A - L / 2, winLCy, winLCz);
     leftGlass.raycast = () => {};
-    houseInteriorRoomGrp.add(leftGlass);
+    japanesePavilionArchGrp.add(leftGlass);
 
-    const backGlass = new THREE.Mesh(
-      new THREE.PlaneGeometry(winB.x1 - winB.x0 - 0.04, winB.y1 - winB.y0 - 0.04),
-      windowGlassMat,
-    );
-    backGlass.position.set((winB.x0 + winB.x1) / 2, (winB.y0 + winB.y1) / 2, T - L / 2);
-    backGlass.raycast = () => {};
-    houseInteriorRoomGrp.add(backGlass);
-
-    // Back Window Shoji Mullion Bars
-    for (let s = 0; s <= 4; s++) {
-      const mx = winB.x0 + ((winB.x1 - winB.x0) * s) / 4;
-      const bar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.03, winB.y1 - winB.y0, 0.06),
-        mullionDarkMat,
+    for (let i = 0; i < 6; i++) {
+      const lz = winL.z0 + 0.12 + i * 0.11;
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.06, winLH - 0.12, 0.042),
+        interiorTrimMat,
+        [A - 0.03, winLCy, lz],
+        0,
       );
-      bar.position.set(mx, (winB.y0 + winB.y1) / 2, T - L / 2);
-      bar.raycast = () => {};
-      houseInteriorRoomGrp.add(bar);
+    }
+    for (let j = 0; j < 7; j++) {
+      const ly = winL.y0 + 0.18 + j * 0.23;
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.06, 0.048, winLW / 2 - 0.08),
+        interiorTrimMat,
+        [A - 0.03, ly, winLCz + winLW * 0.25],
+        0,
+      );
     }
 
-    // Sine-Wave Pleated Sheer Curtain Builder
-    const sheerCurtainMat = new THREE.MeshStandardMaterial({
-      color: '#f4efe6',
-      roughness: 0.9,
-      transparent: true,
-      opacity: 0.84,
-      side: THREE.DoubleSide,
-    });
-    const addSineWaveSheerCurtain = (
-      width: number,
-      height: number,
-      posX: number,
-      posZ: number,
-      rotY: number,
-      folds = 9,
-      phase = 0,
-    ) => {
-      const geo = new THREE.PlaneGeometry(width, height, 36, 1);
-      const posAttr = geo.attributes.position;
-      for (let i = 0; i < posAttr.count; i++) {
-        const f = posAttr.getX(i) / width + 0.5;
-        posAttr.setZ(i, Math.sin(f * Math.PI * folds + phase) * 0.032 * (0.6 + 0.4 * f));
-      }
-      geo.computeVertexNormals();
-      const mesh = new THREE.Mesh(geo, sheerCurtainMat);
-      mesh.rotation.y = rotY;
-      mesh.position.set(posX, height / 2 + 0.04, posZ);
-      mesh.raycast = () => {};
-      houseInteriorRoomGrp.add(mesh);
-    };
-    addSineWaveSheerCurtain(0.52, 2.48, A + 0.1, winL.z0 + 0.02, Math.PI / 2, 9, 0);
-    addSineWaveSheerCurtain(0.56, 2.5, winB.x0 - 0.05, T + 0.1, 0, 10, 1.0);
-    addSineWaveSheerCurtain(0.56, 2.5, winB.x1 + 0.05, T + 0.1, 0, 10, 2.2);
+    // Vertical Wooden Koushi Slat Feature Wall (`slats`) along Left Wall from z = T to z = ko (0.95)
+    const slatCount = 34;
+    const slatSpan = ko - (T + 0.08);
+    const slatStep = slatSpan / slatCount;
+    for (let d = 0; d < slatCount; d++) {
+      const sz = T + 0.08 + slatStep * (d + 0.5);
+      addHouseArchPart(
+        japanesePavilionArchGrp,
+        new THREE.BoxGeometry(0.042, ee - 0.14, 0.046),
+        interiorTrimMat,
+        [A + 0.024, ee / 2 - 0.04, sz],
+        0,
+      );
+    }
 
-    // Framed Dynamic Wall Art on Back Wall
+    // Full-Height Wall Completions for `japanese_pavilion` in `house_visit` mode
+    const japaneseVisitWallGrp = new THREE.Group();
+    japaneseVisitWallGrp.name = 'JapanesePavilionVisitWalls';
+    const addVisitWall = (
+      x0: number,
+      x1: number,
+      y0: number,
+      y1: number,
+      z0: number,
+      z1: number,
+      mat: THREE.Material = interiorWallMat,
+      targetGrp: THREE.Object3D = japaneseVisitWallGrp,
+      copingMat: THREE.Material = capWallMat,
+    ) => {
+      const w = x1 - x0;
+      const h = y1 - y0;
+      const d = z1 - z0;
+      const m = attachHouseToonStroke(
+        new THREE.Mesh(scaleBoxUvsToWorldMeters(new THREE.BoxGeometry(w, h, d), w, h, d), mat),
+        0.005,
+      );
+      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      m.castShadow = false;
+      m.receiveShadow = true;
+      m.raycast = () => {};
+      targetGrp.add(m);
+      const cap = new THREE.Mesh(
+        new THREE.BoxGeometry(x1 - x0 + 0.012, 0.03, z1 - z0 + 0.012),
+        copingMat,
+      );
+      cap.position.set((x0 + x1) / 2, y1 + 0.015, (z0 + z1) / 2);
+      cap.raycast = () => {};
+      targetGrp.add(cap);
+    };
+
+    addVisitWall(A - L, -3.35, Yn, ee, N, N + L);
+    addVisitWall(-3.35, -1.75, Yn, 0.55, N, N + L);
+    addVisitWall(-3.35, -1.75, 2.22, ee, N, N + L);
+    addVisitWall(-1.75, -1.32, Yn, ee, N, N + L);
+    addVisitWall(1.32, J + L, Yn, ee, N, N + L);
+    addVisitWall(-1.32, 1.32, 2.22, ee, N, N + L);
+
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(1.64, 0.08, 0.26),
+      mullionDarkMat,
+      [-2.55, 0.57, N + L / 2],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(1.64, 0.08, 0.26),
+      mullionDarkMat,
+      [-2.55, 2.2, N + L / 2],
+      0.0048,
+    );
+    const frontKoushiGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 1.62), windowGlassMat);
+    frontKoushiGlass.position.set(-2.55, 1.385, N + L / 2);
+    frontKoushiGlass.raycast = () => {};
+    japaneseVisitWallGrp.add(frontKoushiGlass);
+    for (let i = 0; i < 11; i++) {
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.052, 1.6, 0.08),
+        interiorTrimMat,
+        [-3.22 + i * 0.134, 1.385, N + 0.03],
+        0,
+      );
+    }
+
+    addVisitWall(J, J + L, Yn, ee, T, -2.65);
+    addVisitWall(J, J + L, Yn, 0.55, -2.65, -1.15);
+    addVisitWall(J, J + L, 2.22, ee, -2.65, -1.15);
+    addVisitWall(J, J + L, Yn, ee, -1.15, N);
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(0.26, 0.08, 1.54),
+      mullionDarkMat,
+      [J + L / 2, 0.57, -1.9],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(0.26, 0.08, 1.54),
+      mullionDarkMat,
+      [J + L / 2, 2.2, -1.9],
+      0.0048,
+    );
+    const rightKoushiGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.46, 1.62), windowGlassMat);
+    rightKoushiGlass.rotation.y = Math.PI / 2;
+    rightKoushiGlass.position.set(J + L / 2, 1.385, -1.9);
+    rightKoushiGlass.raycast = () => {};
+    japaneseVisitWallGrp.add(rightKoushiGlass);
+    for (let i = 0; i < 9; i++) {
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.08, 1.6, 0.052),
+        interiorTrimMat,
+        [J - 0.02, 1.385, -2.52 + i * 0.155],
+        0,
+      );
+    }
+
+    // Secondary Flush Service Door on Front-Right Wall
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(1.02, 2.08, 0.07),
+      mullionDarkMat,
+      [3.35, 1.04, N - 0.02],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(0.88, 1.96, 0.085),
+      serviceDoorLeafMat,
+      [3.35, 1.02, N - 0.03],
+      0.0045,
+    );
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(0.72, 1.72, 0.095),
+      basaltPlinthMat,
+      [3.35, 1.04, N - 0.036],
+      0.0045,
+    );
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(0.14, 0.04, 0.06),
+      mullionDarkMat,
+      [3.02, 1.02, N - 0.065],
+      0,
+    );
+
+    for (const [cx, cz] of [
+      [-3.38, N - 0.05],
+      [-1.72, N - 0.05],
+      [1.42, N - 0.05],
+      [J - 0.05, N - 0.05],
+      [J - 0.05, -2.68],
+      [J - 0.05, -1.12],
+      [J - 0.05, 1.15],
+    ] as const) {
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.14, ee, 0.14),
+        kumaCedarDarkMat,
+        [cx, ee / 2, cz],
+        0.0048,
+      );
+    }
+    for (const beamY of [2.52, 3.28, ee - 0.12] as const) {
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(J - A, 0.09, 0.1),
+        kumaCedarDarkMat,
+        [0, beamY, N - 0.045],
+        0.0048,
+      );
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.1, 0.09, N - T),
+        kumaCedarDarkMat,
+        [J - 0.045, beamY, 0],
+        0.0048,
+      );
+    }
+
+    const visitCeiling = new THREE.Mesh(
+      new THREE.BoxGeometry(J - A + 0.3, 0.08, N - T + 0.3),
+      interiorWallMat,
+    );
+    visitCeiling.position.set(0, ee + 0.04, 0);
+    visitCeiling.castShadow = false;
+    visitCeiling.receiveShadow = false;
+    visitCeiling.raycast = () => {};
+    japaneseVisitWallGrp.add(visitCeiling);
+    for (let rx = -4.2; rx <= 4.21; rx += 1.68) {
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.14, 0.12, N - T - 0.1),
+        kumaCedarDarkMat,
+        [rx, ee - 0.05, 0],
+        0.0048,
+      );
+    }
+    // 3 Warm Japanese Andon Ceiling Lanterns under the 4.0m Pavilion Ceiling
+    for (const lx of [-2.9, 0.0, 2.9] as const) {
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.64, 0.08, 0.64),
+        kumaCedarDarkMat,
+        [lx, ee - 0.06, 0],
+        0.0045,
+      );
+      addHouseArchPart(
+        japaneseVisitWallGrp,
+        new THREE.BoxGeometry(0.52, 0.12, 0.52),
+        lampWarmEmissiveMat,
+        [lx, ee - 0.12, 0],
+        0,
+      );
+    }
+
+    const backBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(8.2, 4.8), backdropMat);
+    backBackdrop.position.set(-0.8, 2.1, T - 0.85);
+    backBackdrop.raycast = () => {};
+    japaneseVisitWallGrp.add(backBackdrop);
+    const leftBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.8), backdropMat);
+    leftBackdrop.rotation.y = Math.PI / 2;
+    leftBackdrop.position.set(A - 0.85, 2.1, 2.05);
+    leftBackdrop.raycast = () => {};
+    japaneseVisitWallGrp.add(leftBackdrop);
+    const frontBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(9.2, 4.8), backdropMat);
+    frontBackdrop.rotation.y = Math.PI;
+    frontBackdrop.position.set(0, 2.1, N + 3.4);
+    frontBackdrop.raycast = () => {};
+    japaneseVisitWallGrp.add(frontBackdrop);
+
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(3.6, 0.1, 1.35),
+      interiorTrimMat,
+      [0, -0.04, N + 0.78],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseVisitWallGrp,
+      new THREE.BoxGeometry(1.6, 0.12, 0.55),
+      basaltPlinthMat,
+      [0, -0.1, N + 1.62],
+      0.0048,
+    );
+
+    // Japanese Pavilion Twin Sliding Entrance Doors (`z = N = 3.7`)
+    const japaneseExitDoorGrp = new THREE.Group();
+    japaneseExitDoorGrp.position.set(0, 0, N);
+    const doorHandleMat = new THREE.MeshStandardMaterial({
+      color: '#d4af37',
+      roughness: 0.28,
+      metalness: 0.85,
+    });
+
+    addHouseArchPart(
+      japaneseExitDoorGrp,
+      new THREE.BoxGeometry(0.12, 2.22, 0.24),
+      mullionDarkMat,
+      [-1.3, 1.11, 0.04],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseExitDoorGrp,
+      new THREE.BoxGeometry(0.12, 2.22, 0.24),
+      mullionDarkMat,
+      [1.3, 1.11, 0.04],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseExitDoorGrp,
+      new THREE.BoxGeometry(2.74, 0.12, 0.26),
+      mullionDarkMat,
+      [0, 2.2, 0.04],
+      0.0048,
+    );
+    addHouseArchPart(
+      japaneseExitDoorGrp,
+      new THREE.BoxGeometry(2.74, 0.44, 0.16),
+      mullionDarkMat,
+      [0, 2.48, 0.04],
+      0.0048,
+    );
+    for (const cwX of [-0.84, 0, 0.84]) {
+      const cwGlass = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.3, 0.18), windowGlassMat);
+      cwGlass.position.set(cwX, 2.48, 0.04);
+      cwGlass.raycast = () => {};
+      japaneseExitDoorGrp.add(cwGlass);
+    }
+    for (const sconceX of [-1.52, 1.52]) {
+      addHouseArchPart(
+        japaneseExitDoorGrp,
+        new THREE.BoxGeometry(0.16, 0.36, 0.12),
+        mullionDarkMat,
+        [sconceX, 1.68, -0.02],
+        0.0045,
+      );
+      addHouseArchPart(
+        japaneseExitDoorGrp,
+        new THREE.BoxGeometry(0.11, 0.24, 0.13),
+        lampWarmEmissiveMat,
+        [sconceX, 1.68, -0.03],
+        0,
+      );
+    }
+
+    const buildSlidingEntranceLeaf = (sideSign: -1 | 1) => {
+      const leafGrp = new THREE.Group();
+      const leafW = 1.24;
+      const leafH = 2.12;
+      addHouseArchPart(leafGrp, new THREE.BoxGeometry(leafW, 0.07, 0.055), mullionDarkMat, [0, 0.035, 0], 0.0045);
+      addHouseArchPart(leafGrp, new THREE.BoxGeometry(leafW, 0.07, 0.055), mullionDarkMat, [0, leafH - 0.035, 0], 0.0045);
+      addHouseArchPart(
+        leafGrp,
+        new THREE.BoxGeometry(0.07, leafH, 0.055),
+        mullionDarkMat,
+        [-leafW / 2 + 0.035, leafH / 2, 0],
+        0.0045,
+      );
+      addHouseArchPart(
+        leafGrp,
+        new THREE.BoxGeometry(0.07, leafH, 0.055),
+        mullionDarkMat,
+        [leafW / 2 - 0.035, leafH / 2, 0],
+        0.0045,
+      );
+      const leafGlass = new THREE.Mesh(
+        new THREE.BoxGeometry(leafW - 0.12, leafH - 0.12, 0.024),
+        windowGlassMat,
+      );
+      leafGlass.position.set(0, leafH / 2, 0);
+      leafGlass.raycast = () => {};
+      leafGrp.add(leafGlass);
+      addHouseArchPart(
+        leafGrp,
+        new THREE.BoxGeometry(0.03, leafH - 0.14, 0.036),
+        shojiWarmMat,
+        [0, leafH / 2, 0],
+        0,
+      );
+      for (const ky of [0.62, 1.18, 1.68]) {
+        addHouseArchPart(
+          leafGrp,
+          new THREE.BoxGeometry(leafW - 0.14, 0.03, 0.036),
+          shojiWarmMat,
+          [0, ky, 0],
+          0,
+        );
+      }
+      const handleX = -sideSign * (leafW / 2 - 0.11);
+      addHouseArchPart(
+        leafGrp,
+        new THREE.BoxGeometry(0.032, 0.28, 0.075),
+        doorHandleMat,
+        [handleX, 1.05, -0.025],
+        0,
+      );
+      return leafGrp;
+    };
+
+    const houseExitDoorLeftSlide = buildSlidingEntranceLeaf(-1);
+    houseExitDoorLeftSlide.position.set(-0.62, 0, 0.025);
+    const houseExitDoorRightSlide = buildSlidingEntranceLeaf(1);
+    houseExitDoorRightSlide.position.set(0.62, 0, 0.055);
+    const houseExitDoorPivot = new THREE.Group();
+    houseExitDoorPivot.add(houseExitDoorLeftSlide, houseExitDoorRightSlide);
+
+    const exitFloorMat = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.022, 0.68), basaltDarkMat);
+    exitFloorMat.position.set(0, 0.011, -0.38);
+    japaneseExitDoorGrp.add(houseExitDoorPivot, exitFloorMat);
+    japaneseExitDoorGrp.traverse((c) => {
+      c.raycast = () => {};
+    });
+    japanesePavilionArchGrp.add(japaneseExitDoorGrp);
+
+    // =========================================================================
+    // ARCHITECTURE STYLE B: CLASSIC PLAZA MANOR (`plaza_manor` — BUILDING BEHIND HANA)
+    // Default Model House (`VIEW MODEL HOUSE`) & Catalog House Option
+    // 1:1 with `LobbyMunicipalClockTowerHall` (`src/game/buddiesBlitzShadersAndAssets.ts` lines 16271-16940):
+    // - Cream-Stucco Walls (`#ede2ce` + `getLv1AndoPlasterWallTexture()`)
+    // - Stepped Limestone Plinths/Lintels/Sills & Classical Doric Columns (`#d6cebe`, `#b5ad9e`, `#e8dec9`)
+    // - Sage-Green Molded Eaves Cornice/Frieze (`#6b8c76` & `#4f6b58`) + Standing-Seam Slate Roof Border (`#667782` + `getLv1SlateZincRoofTexture()`)
+    // - Exposed Terracotta Brick Corner Quoins, Stepped Upper-Wall Brick Patches & Rear Fireplace (`#c48768` & `#ab6f52`)
+    // - 6 Mullioned White-Framed 6-Pane Windows (`#f5f1e6` frame, `#96bcc7` + `getMilitaryWindowPaneTexture(1, 1, false)` glass, `#6b8c76` + `getMilitaryLouverTexture(false)` shutters)
+    // - Arched Double Wooden Entrance Doors (`#9c7148` + `getLv1HorizontalTimberCladdingTexture()` & `#6e4c2c`), Semicircular `#6b8c76` Arch with Solid `#a8cbd4` Fanlight, & 2 Coach Lanterns (`#2b3036` + `#ffe896`)
+    // =========================================================================
+    const makePlazaToonMat = (
+      colorHex: string,
+      mapTex?: THREE.Texture,
+      uvScaleX = 1.0,
+      uvScaleY = 1.0,
+    ): THREE.ShaderMaterial => {
+      const baseColor = new THREE.Color(colorHex);
+      const luma = 0.2126 * baseColor.r + 0.7152 * baseColor.g + 0.0722 * baseColor.b;
+      if (mapTex) {
+        mapTex.colorSpace = THREE.SRGBColorSpace;
+        // 1:1 with `addLobbyPart` (lines 13475-13481): prevent double-darkening in linear space
+        // so `lobbyTimberTex` (`#9c7148`) and `lobbyLouverTex` (`#6b8c76`) render at their true golden-ochre & olive-green colors!
+        if (luma < 0.28) {
+          baseColor.set('#ffffff');
+        } else {
+          baseColor.lerp(new THREE.Color('#ffffff'), 0.65);
+        }
+      } else if (luma < 0.08) {
+        baseColor.lerp(new THREE.Color('#5a6575'), 0.48);
+      }
+      return new THREE.ShaderMaterial({
+        uniforms: {
+          uMap: { value: mapTex ?? null },
+          uHasMap: { value: mapTex ? 1.0 : 0.0 },
+          uUvScale: { value: new THREE.Vector2(uvScaleX, uvScaleY) },
+          uBaseColor: { value: baseColor },
+          uLightColor: { value: new THREE.Color('#fff4d2') },
+          uShadowColor: { value: new THREE.Color('#3b404e') },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          varying vec3 vWorldNormal;
+          void main() {
+            vUv = uv;
+            mat4 worldMat = modelMatrix;
+            vec4 worldPosition = worldMat * vec4(position, 1.0);
+            vWorldNormal = normalize(mat3(worldMat) * normal);
+            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform sampler2D uMap;
+          uniform float uHasMap;
+          uniform vec2 uUvScale;
+          uniform vec3 uBaseColor;
+          uniform vec3 uLightColor;
+          uniform vec3 uShadowColor;
+          varying vec2 vUv;
+          varying vec3 vWorldNormal;
+
+          float blitzHalftone(vec2 coord, float scale, float radius) {
+            float c = cos(0.785398);
+            float s = sin(0.785398);
+            vec2 rot = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c) * scale;
+            float dist = length(fract(rot) - 0.5);
+            float r = radius * 0.7071;
+            return smoothstep(r - 0.08, r + 0.08, dist);
+          }
+
+          void main() {
+            vec3 albedo = uBaseColor;
+            if (uHasMap > 0.5) {
+              vec4 texCol = texture2D(uMap, vUv * uUvScale);
+              albedo *= texCol.rgb;
+            }
+            vec3 N = normalize(vWorldNormal);
+            vec3 L1 = normalize(vec3(0.35, 0.85, 0.48));
+            vec3 L2 = normalize(vec3(-0.35, 0.78, -0.48));
+            float ndl = max(dot(N, L1), dot(N, L2) * 0.92);
+            float litFactor = clamp((ndl - 0.12) / 0.48, 0.0, 1.0);
+            float shadowFactor = 1.0 - litFactor;
+
+            vec2 screenCoord = gl_FragCoord.xy * 0.0045;
+            float dots = blitzHalftone(screenCoord, 34.0, shadowFactor * 0.45);
+            float shadowBlend = clamp(shadowFactor * (1.0 - dots * 0.06), 0.0, 1.0) * 0.34;
+
+            vec3 litColor = albedo * mix(vec3(1.0), uLightColor, 0.42) * (0.94 + 0.06 * litFactor);
+            vec3 shadedColor = albedo * mix(vec3(0.76, 0.76, 0.80), uShadowColor * 1.45, 0.38);
+            vec3 finalRgb = mix(litColor, shadedColor, shadowBlend);
+
+            gl_FragColor = vec4(finalRgb, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `,
+        side: THREE.DoubleSide,
+      });
+    };
+
+    // Exact Exterior Procedural Textures from `LobbyMunicipalClockTowerHall`
+    const plazaConcreteTex = getLv1AndoPlasterWallTexture().clone();
+    plazaConcreteTex.wrapS = THREE.RepeatWrapping;
+    plazaConcreteTex.wrapT = THREE.RepeatWrapping;
+    plazaConcreteTex.colorSpace = THREE.SRGBColorSpace;
+    plazaConcreteTex.needsUpdate = true;
+
+    const plazaLouverTex = getMilitaryLouverTexture(false);
+    const plazaWindowTex = getMilitaryWindowPaneTexture(1, 1, false);
+
+    const plazaTimberTex = getLv1HorizontalTimberCladdingTexture().clone();
+    plazaTimberTex.wrapS = THREE.RepeatWrapping;
+    plazaTimberTex.wrapT = THREE.RepeatWrapping;
+    plazaTimberTex.colorSpace = THREE.SRGBColorSpace;
+    plazaTimberTex.needsUpdate = true;
+
+    const plazaSlateTex = getLv1SlateZincRoofTexture().clone();
+    plazaSlateTex.wrapS = THREE.RepeatWrapping;
+    plazaSlateTex.wrapT = THREE.RepeatWrapping;
+    plazaSlateTex.colorSpace = THREE.SRGBColorSpace;
+    plazaSlateTex.needsUpdate = true;
+
+    // Plaza Travertine Stone Paver & Fan-Pattern Porphyry Floor Textures (matching the Plaza ground in the screenshot)
+    const plazaTravertineFloorTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#e6dfd1';
+        ctx.fillRect(0, 0, 512, 512);
+        const courseH = 64;
+        const paverTones = ['#eae3d5', '#dfd7c7', '#ece6d9', '#dad1c0', '#e4dccd'];
+        for (let r = 0; r < 8; r++) {
+          const y = r * courseH;
+          const shift = (r % 2) * 64;
+          for (let col = -1; col < 5; col++) {
+            const x = col * 128 + shift;
+            ctx.fillStyle = paverTones[(r * 3 + col + 5) % paverTones.length];
+            ctx.fillRect(x, y, 128, courseH);
+            // Subtle warm stone mottling inside each slab
+            ctx.fillStyle = (r + col) % 2 === 0 ? 'rgba(176, 164, 146, 0.14)' : 'rgba(255, 252, 244, 0.16)';
+            ctx.fillRect(x + 10, y + 8, 108, courseH - 16);
+            // Crisp bevel highlight + warm taupe stone mortar joints
+            ctx.fillStyle = 'rgba(255, 253, 246, 0.45)';
+            ctx.fillRect(x + 3, y + 3, 122, 2);
+            ctx.fillStyle = '#b0a695';
+            ctx.fillRect(x, y + courseH - 3.5, 128, 3.5);
+            ctx.fillRect(x + 124.5, y, 3.5, courseH);
+          }
+        }
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = THREE.RepeatWrapping;
+      return t;
+    })();
+
+    const plazaPorphyryFanTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#a8948b';
+        ctx.fillRect(0, 0, 512, 512);
+        const fanCols = ['#b8a399', '#9e8980', '#c2aea4', '#8f7b72'];
+        const spacingX = 128;
+        const spacingY = 86;
+        for (let row = -1; row <= 7; row++) {
+          const cy = row * spacingY;
+          const xShift = (row % 2) * (spacingX * 0.5);
+          for (let col = -1; col <= 5; col++) {
+            const cx = col * spacingX + xShift;
+            for (let ring = 4; ring >= 1; ring--) {
+              const rOuter = ring * 18;
+              ctx.beginPath();
+              ctx.arc(cx, cy, rOuter, Math.PI * 1.12, Math.PI * 1.88);
+              ctx.strokeStyle = fanCols[(row + col + ring + 8) % fanCols.length];
+              ctx.lineWidth = 14;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.arc(cx, cy, rOuter + 7, Math.PI * 1.1, Math.PI * 1.9);
+              ctx.strokeStyle = '#6e5f58';
+              ctx.lineWidth = 2.2;
+              ctx.stroke();
+            }
+            ctx.strokeStyle = '#6e5f58';
+            ctx.lineWidth = 2;
+            for (let a = 0; a <= 8; a++) {
+              const ang = Math.PI * (1.12 + (a / 8) * 0.76);
+              ctx.beginPath();
+              ctx.moveTo(cx + Math.cos(ang) * 14, cy + Math.sin(ang) * 14);
+              ctx.lineTo(cx + Math.cos(ang) * 76, cy + Math.sin(ang) * 76);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = THREE.RepeatWrapping;
+      return t;
+    })();
+
+    const plazaStuccoMat = makePlazaToonMat('#ede2ce', plazaConcreteTex, 0.65, 0.65);
+    const plazaCeilingMat = makePlazaToonMat('#ede2ce', plazaConcreteTex, 3.5, 2.5);
+    const plazaStoneMat = makePlazaToonMat('#d6cebe', plazaConcreteTex, 1.0, 1.0);
+    const plazaStoneDarkMat = makePlazaToonMat('#b5ad9e', plazaConcreteTex, 1.0, 1.0);
+    const plazaColumnShaftMat = makePlazaToonMat('#e8dec9');
+    const plazaSageMat = makePlazaToonMat('#6b8c76');
+    const plazaSageDarkMat = makePlazaToonMat('#4f6b58');
+    const plazaShutterLouverMat = makePlazaToonMat('#6b8c76', plazaLouverTex);
+    const plazaWindowPaneMat = makePlazaToonMat('#96bcc7', plazaWindowTex);
+    const plazaDoorPaneMat = makePlazaToonMat('#9ec2cc', plazaWindowTex);
+    const plazaFanlightMat = makePlazaToonMat('#a8cbd4');
+    const plazaBrickMat = makePlazaToonMat('#c48768');
+    const plazaBrickDarkMat = makePlazaToonMat('#ab6f52');
+    const plazaWoodMat = makePlazaToonMat('#9c7148', plazaTimberTex, 0.48, 1.44);
+    const plazaWoodDarkMat = makePlazaToonMat('#6e4c2c');
+    const plazaSlateRoofMat = makePlazaToonMat('#667782', plazaSlateTex, 5.0, 1.0);
+    const plazaFrameWhiteMat = makePlazaToonMat('#f5f1e6');
+    const plazaGoldMat = makePlazaToonMat('#d9a636');
+    const plazaIronDarkMat = makePlazaToonMat('#2b3036');
+    const plazaLeafGreenMat = makePlazaToonMat('#5c8d46');
+    const plazaHydrangeaPinkMat = makePlazaToonMat('#f0a3b0');
+    const plazaTravertineFloorMat = makePlazaToonMat('#e6dfd1', plazaTravertineFloorTex, 4.5, 3.2);
+    const plazaPorphyryFloorMat = makePlazaToonMat('#c4b4aa', plazaPorphyryFanTex, 2.2, 1.2);
+    const plazaLanternGlowMat = new THREE.MeshBasicMaterial({
+      color: '#ffe896',
+      fog: false,
+    });
+
+    const plazaManorArchGrp = new THREE.Group();
+    plazaManorArchGrp.name = 'PlazaManorArchGrp';
+    houseInteriorRoomGrp.add(plazaManorArchGrp);
+
+    // Dedicated Plaza Manor Travertine Stone Floor & Entrance Fan-Pattern Porphyry Promenade Inlay
+    const plazaManorFloorMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(J - A, 0.042, N - T),
+      plazaTravertineFloorMat,
+    );
+    plazaManorFloorMesh.position.set(0, -0.019, 0);
+    plazaManorFloorMesh.receiveShadow = true;
+    plazaManorArchGrp.add(plazaManorFloorMesh);
+
+    // Fan-Pattern Porphyry Cobblestone Entrance Foyer Mat (`#a8948b`) right inside the Double Entrance Doors
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(3.16, 0.014, 1.48),
+      plazaPorphyryFloorMat,
+      [0, 0.007, N - 0.82],
+      0.0042,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(3.32, 0.01, 1.64),
+      plazaStoneDarkMat,
+      [0, 0.004, N - 0.82],
+      0,
+    );
+
+    const plazaManorVisitWallGrp = new THREE.Group();
+    plazaManorVisitWallGrp.name = 'PlazaManorVisitWalls';
+
+    // Helper: 1:1 Plaza Mullioned 6-Pane Window with White Frame, Stone Lintel/Sill, Slate-Teal Glass (`lobbyWindowTex`),
+    // Sage-Green Louvered Shutters (`lobbyLouverTex`) & Exterior Blooming Window Box (`buildCivicShutteredWindow`)
+    const buildPlazaShutteredWindowBay = (
+      parent: THREE.Object3D,
+      cx: number,
+      cy: number,
+      cz: number,
+      rotY: number,
+      winW = 1.18,
+      winH = 1.48,
+    ) => {
+      const wGrp = new THREE.Group();
+      wGrp.position.set(cx, cy, cz);
+      wGrp.rotation.y = rotY;
+
+      // Projecting Stone Lintel Header & Sill (`COL_CH_STONE = #d6cebe` & `COL_CH_STONE_DARK = #b5ad9e`, 1:1 with line 16899)
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(winW + 0.24, 0.14, 0.28),
+        plazaStoneMat,
+        [0, winH / 2 + 0.06, 0],
+        0.0048,
+      );
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(winW + 0.22, 0.1, 0.28),
+        plazaStoneMat,
+        [0, -winH / 2 - 0.04, 0],
+        0.0045,
+      );
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(winW + 0.26, 0.05, 0.3),
+        plazaStoneDarkMat,
+        [0, -winH / 2 - 0.08, 0],
+        0,
+      );
+
+      // Crisp White Outer Window Frame (`#f5f1e6`, 1:1 with line 16900)
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(winW, winH, 0.18),
+        plazaFrameWhiteMat,
+        [0, 0, 0],
+        0.0048,
+      );
+
+      // Deep Slate-Teal Reflective Glass Pane with Dark Olive-Steel Inner Frame (`#96bcc7` + `lobbyWindowTex`, 1:1 with line 16901)
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(winW - 0.14, winH - 0.14, 0.2),
+        plazaWindowPaneMat,
+        [0, 0, 0],
+        0.0042,
+      );
+
+      // 6-Pane Crisp White Mullion Crossbars (`#f5f1e6`, 1 vertical, 2 horizontal — 1:1 with lines 16902-16905)
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(0.052, winH - 0.14, 0.22),
+        plazaFrameWhiteMat,
+        [0, 0, 0],
+        0,
+      );
+      for (const my of [-winH * 0.165, winH * 0.165]) {
+        addHouseArchPart(
+          wGrp,
+          new THREE.BoxGeometry(winW - 0.14, 0.046, 0.22),
+          plazaFrameWhiteMat,
+          [0, my, 0],
+          0,
+        );
+      }
+
+      // Left & Right Sage-Green Louvered Wooden Shutters (`COL_CH_SAGE = #6b8c76` + `lobbyLouverTex`, 1:1 with lines 16908-16919)
+      const shutterW = 0.38;
+      for (const sSide of [-1, 1] as const) {
+        const shX = sSide * (winW / 2 + shutterW / 2 + 0.03);
+        // Mounted on both interior (+z) and exterior (-z) wall faces so the iconic olive-green slatted shutters are always visible!
+        for (const zFace of [-0.09, 0.09] as const) {
+          addHouseArchPart(
+            wGrp,
+            new THREE.BoxGeometry(shutterW, winH - 0.04, 0.06),
+            plazaShutterLouverMat,
+            [shX, 0, zFace],
+            0.0045,
+          );
+        }
+      }
+
+      // Wooden Window Flower Box + 3 Green & Pink Hydrangea Blooms on the Exterior Sill (`#9c7148` + `lobbyTimberTex`, 1:1 with lines 16922-16928)
+      addHouseArchPart(
+        wGrp,
+        new THREE.BoxGeometry(winW - 0.04, 0.22, 0.26),
+        plazaWoodMat,
+        [0, -winH / 2 - 0.16, -0.18],
+        0.0045,
+      );
+      for (const bx of [-0.34, 0.0, 0.34] as const) {
+        const bushG = new THREE.DodecahedronGeometry(0.15, 1);
+        bushG.scale(1.15, 0.8, 1.05);
+        addHouseArchPart(wGrp, bushG, plazaLeafGreenMat, [bx, -winH / 2 - 0.02, -0.19], 0.0042);
+        addHouseArchPart(
+          wGrp,
+          new THREE.DodecahedronGeometry(0.1, 0),
+          plazaHydrangeaPinkMat,
+          [bx, -winH / 2 + 0.07, -0.21],
+          0.004,
+        );
+      }
+
+      parent.add(wGrp);
+    };
+
+    // Helper: Alternating Exposed Terracotta Brick Corner Quoins (`COL_CH_BRICK = #c48768` & `#ab6f52`, 1:1 with lines 16743-16765)
+    const buildPlazaCornerQuoins = (
+      parent: THREE.Object3D,
+      cornerX: number,
+      cornerZ: number,
+      maxHeight = ee,
+    ) => {
+      const quoinCount = Math.floor((maxHeight - 0.32) / 0.34);
+      for (let q = 0; q < quoinCount; q++) {
+        const qy = 0.36 + q * 0.34;
+        const isLongX = q % 2 === 0;
+        const qw = isLongX ? 0.42 : 0.26;
+        const qd = isLongX ? 0.26 : 0.42;
+        const mat = q % 3 === 0 ? plazaBrickDarkMat : plazaBrickMat;
+        addHouseArchPart(
+          parent,
+          new THREE.BoxGeometry(qw, 0.25, qd),
+          mat,
+          [cornerX, qy, cornerZ],
+          0.0045,
+        );
+      }
+    };
+
+    // Helper: Stepped Rustic Exposed Terracotta Brick Wall Patches under the Eaves (1:1 with lines 16767-16773 in the screenshot!)
+    const addPlazaSteppedBrickPatch = (
+      parent: THREE.Object3D,
+      px: number,
+      py: number,
+      pz: number,
+      rotY: number,
+    ) => {
+      const pGrp = new THREE.Group();
+      pGrp.position.set(px, py, pz);
+      pGrp.rotation.y = rotY;
+      addHouseArchPart(
+        pGrp,
+        new THREE.BoxGeometry(0.86, 0.24, 0.06),
+        plazaBrickMat,
+        [-0.14, 0.13, 0],
+        0.0045,
+      );
+      addHouseArchPart(
+        pGrp,
+        new THREE.BoxGeometry(0.54, 0.2, 0.06),
+        plazaBrickDarkMat,
+        [0.14, -0.11, 0],
+        0.0045,
+      );
+      parent.add(pGrp);
+    };
+
+    // 1. Plaza Manor Left Wall (`x = A = -5.3`, full height `ee = 4.0m`) with 2 Mullioned Shuttered Windows (`z = -2.1` & `z = 2.05`)
+    addCutawayWallSegment(A - L, A, 0, ee, T, -2.7, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(A - L, A, 0, 0.82, -2.7, -1.5, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(A - L, A, 2.5, ee, -2.7, -1.5, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(A - L, A, 0, ee, -1.5, 1.45, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(A - L, A, 0, 0.82, 1.45, 2.65, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(A - L, A, 2.5, ee, 1.45, 2.65, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(A - L, A, 0, ee, 2.65, N, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+
+    buildPlazaShutteredWindowBay(plazaManorArchGrp, A - L / 2, 1.66, -2.1, Math.PI / 2, 1.18, 1.68);
+    buildPlazaShutteredWindowBay(plazaManorArchGrp, A - L / 2, 1.66, 2.05, Math.PI / 2, 1.18, 1.68);
+    // Stepped Terracotta Brick Patches above the Left Wall Windows
+    addPlazaSteppedBrickPatch(plazaManorArchGrp, A + 0.02, 3.12, -2.05, Math.PI / 2);
+    addPlazaSteppedBrickPatch(plazaManorArchGrp, A + 0.02, 3.12, 2.1, Math.PI / 2);
+
+    // 2. Plaza Manor Back Wall (`z = T = -3.7`, full height `ee = 4.0m`) with Twin Mullioned Shuttered Windows (`winB: x in [-2.35, 0.75]`)
+    addCutawayWallSegment(A - L, winB.x0, 0, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(winB.x1, J + L, 0, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(winB.x0, winB.x1, 0, 0.82, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(winB.x0, winB.x1, 2.5, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(-1.02, -0.58, 0.82, 2.5, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+
+    buildPlazaShutteredWindowBay(plazaManorArchGrp, -1.68, 1.66, T - L / 2, 0, 1.18, 1.68);
+    buildPlazaShutteredWindowBay(plazaManorArchGrp, 0.08, 1.66, T - L / 2, 0, 1.18, 1.68);
+    // Stepped Terracotta Brick Patches above the Back Wall Windows
+    addPlazaSteppedBrickPatch(plazaManorArchGrp, -3.55, 3.12, T + 0.02, 0);
+    addPlazaSteppedBrickPatch(plazaManorArchGrp, 3.25, 3.12, T + 0.02, 0);
+
+    // 3. Plaza Manor Low Cutaway Front & Right Walls (`Yn = 0.45m`) in Studio Mode
+    addCutawayWallSegment(A - L, -1.32, 0, Yn, N, N + L, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(1.32, J + L, 0, Yn, N, N + L, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+    addCutawayWallSegment(J, J + L, 0, Yn, T, N, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
+
+    // 4. Stepped Grey-Stone Foundation Plinth (`COL_CH_STONE_DARK = #b5ad9e` & `COL_CH_STONE = #d6cebe`) & Upper Molded Sage-Green Eaves Cornice + Slate Roof Border on Back & Left Walls
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(J - A, 0.22, 0.08),
+      plazaStoneDarkMat,
+      [0, 0.11, T + 0.04],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(J - A, 0.06, 0.095),
+      plazaStoneMat,
+      [0, 0.24, T + 0.045],
+      0,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.08, 0.22, N - T),
+      plazaStoneDarkMat,
+      [A + 0.04, 0.11, 0],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.095, 0.06, N - T),
+      plazaStoneMat,
+      [A + 0.045, 0.24, 0],
+      0,
+    );
+
+    // Molded Sage-Green Upper Cornice, Dark-Sage Frieze Lip & Standing-Seam Slate Roof Border (`y = ee - 0.30 .. ee`)
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(J - A, 0.2, 0.12),
+      plazaSageMat,
+      [0, ee - 0.28, T + 0.055],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(J - A, 0.08, 0.16),
+      plazaSageDarkMat,
+      [0, ee - 0.14, T + 0.07],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(J - A, 0.12, 0.24),
+      plazaSlateRoofMat,
+      [0, ee - 0.04, T + 0.11],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.12, 0.2, N - T),
+      plazaSageMat,
+      [A + 0.055, ee - 0.28, 0],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.16, 0.08, N - T),
+      plazaSageDarkMat,
+      [A + 0.07, ee - 0.14, 0],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.24, 0.12, N - T),
+      plazaSlateRoofMat,
+      [A + 0.11, ee - 0.04, 0],
+      0.0045,
+    );
+
+    // 5. Exposed Terracotta Red-Brick Corner Quoins at the Room Corners (`COL_CH_BRICK`)
+    buildPlazaCornerQuoins(plazaManorArchGrp, A + 0.06, T + 0.06, ee);
+    buildPlazaCornerQuoins(plazaManorArchGrp, J - 0.06, T + 0.06, ee);
+    buildPlazaCornerQuoins(plazaManorArchGrp, A + 0.06, N - 0.06, ee);
+
+    // 6. Sculpted Terracotta Red-Brick Chimney Breast & Classical Limestone Fireplace Mantel on Rear Wall (`x = 1.18`, matching exterior chimney stack!)
+    const chimneyX = 1.18;
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.76, ee - 0.18, 0.24),
+      plazaBrickMat,
+      [chimneyX, (ee - 0.18) / 2, T + 0.12],
+      0.0048,
+    );
+    for (let cyRow = 0; cyRow < 11; cyRow++) {
+      addHouseArchPart(
+        plazaManorArchGrp,
+        new THREE.BoxGeometry(0.8, 0.14, 0.26),
+        cyRow % 2 === 0 ? plazaBrickDarkMat : plazaBrickMat,
+        [chimneyX, 1.28 + cyRow * 0.22, T + 0.12],
+        0,
+      );
+    }
+    // Limestone Fireplace Mantel Surround & Warm Hearth Glow
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.92, 0.1, 0.32),
+      plazaStoneMat,
+      [chimneyX, 1.08, T + 0.15],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.14, 0.98, 0.28),
+      plazaStoneMat,
+      [chimneyX - 0.34, 0.54, T + 0.14],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.14, 0.98, 0.28),
+      plazaStoneMat,
+      [chimneyX + 0.34, 0.54, T + 0.14],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.54, 0.78, 0.22),
+      plazaIronDarkMat,
+      [chimneyX, 0.44, T + 0.14],
+      0,
+    );
+    addHouseArchPart(
+      plazaManorArchGrp,
+      new THREE.BoxGeometry(0.38, 0.22, 0.24),
+      plazaLanternGlowMat,
+      [chimneyX, 0.22, T + 0.15],
+      0,
+    );
+
+    // 7. Full-Height Wall Completions for `plaza_manor` in `house_visit` mode
+    // Front Wall (`z = N`) with 2 Front Mullioned Shuttered Windows (`x = -3.25` and `x = +3.25`) flanking the Arched Double Entrance Doors
+    addVisitWall(A - L, -3.84, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(-3.84, -2.66, Yn, 0.82, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(-3.84, -2.66, 2.5, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(-2.66, -1.32, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(-1.32, 1.32, 2.28, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(1.32, 2.66, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(2.66, 3.84, Yn, 0.82, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(2.66, 3.84, 2.5, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(3.84, J + L, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+
+    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, -3.25, 1.66, N + L / 2, Math.PI, 1.18, 1.68);
+    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, 3.25, 1.66, N + L / 2, Math.PI, 1.18, 1.68);
+    // Stepped Exposed Terracotta Brick Patches above the Front Wall Windows (1:1 with the screenshot!)
+    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, -3.25, 3.12, N - 0.02, Math.PI);
+    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, 3.25, 3.12, N - 0.02, Math.PI);
+    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, -3.25, 3.12, N + L + 0.02, 0);
+    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, 3.25, 3.12, N + L + 0.02, 0);
+
+    // Right Wall (`x = J = +5.3`) with 2 Mullioned Shuttered Windows (`z = -1.9` & `z = 1.55`, matching the 2 East-elevation windows)
+    addVisitWall(J, J + L, Yn, ee, T, -2.49, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(J, J + L, Yn, 0.82, -2.49, -1.31, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(J, J + L, 2.5, ee, -2.49, -1.31, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(J, J + L, Yn, ee, -1.31, 0.96, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(J, J + L, Yn, 0.82, 0.96, 2.14, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(J, J + L, 2.5, ee, 0.96, 2.14, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+    addVisitWall(J, J + L, Yn, ee, 2.14, N, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
+
+    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, J + L / 2, 1.66, -1.9, -Math.PI / 2, 1.18, 1.68);
+    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, J + L / 2, 1.66, 1.55, -Math.PI / 2, 1.18, 1.68);
+    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, J - 0.02, 3.12, -1.85, -Math.PI / 2);
+    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, J - 0.02, 3.12, 1.6, -Math.PI / 2);
+    buildPlazaCornerQuoins(plazaManorVisitWallGrp, J - 0.06, N - 0.06, ee);
+
+    // Stepped Grey-Stone Foundation Plinth + Molded Sage-Green Upper Cornice, Frieze & Standing-Seam Slate Roof Border on Front & Right Visit Walls
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(0.08, 0.22, N - T),
+      plazaStoneDarkMat,
+      [J - 0.04, 0.11, 0],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(J - A, 0.2, 0.12),
+      plazaSageMat,
+      [0, ee - 0.28, N - 0.055],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(J - A, 0.08, 0.16),
+      plazaSageDarkMat,
+      [0, ee - 0.14, N - 0.07],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(J - A, 0.12, 0.24),
+      plazaSlateRoofMat,
+      [0, ee - 0.04, N - 0.11],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(0.12, 0.2, N - T),
+      plazaSageMat,
+      [J - 0.055, ee - 0.28, 0],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(0.16, 0.08, N - T),
+      plazaSageDarkMat,
+      [J - 0.07, ee - 0.14, 0],
+      0.0045,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(0.24, 0.12, N - T),
+      plazaSlateRoofMat,
+      [J - 0.11, ee - 0.04, 0],
+      0.0045,
+    );
+
+    // Plaza Manor High Coffered Cream-Plaster Ceiling (`y = ee = 4.0m`) with Horizontal-Plank Timber Beams & 3 Classic Brass Ceiling Luminaires
+    const plazaVisitCeiling = new THREE.Mesh(
+      new THREE.BoxGeometry(J - A + 0.3, 0.08, N - T + 0.3),
+      plazaCeilingMat,
+    );
+    plazaVisitCeiling.position.set(0, ee + 0.04, 0);
+    plazaVisitCeiling.castShadow = false;
+    plazaVisitCeiling.receiveShadow = false;
+    plazaVisitCeiling.raycast = () => {};
+    plazaManorVisitWallGrp.add(plazaVisitCeiling);
+    for (let rx = -4.2; rx <= 4.21; rx += 1.68) {
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.BoxGeometry(0.16, 0.12, N - T - 0.1),
+        plazaWoodMat,
+        [rx, ee - 0.05, 0],
+        0.0048,
+      );
+    }
+    // 3 Classic Brass & Warm Milk-Glass Ceiling Plafond Luminaires along the 4.0m Ceiling Centerline
+    for (const lx of [-2.9, 0.0, 2.9] as const) {
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.CylinderGeometry(0.36, 0.38, 0.06, 20),
+        plazaGoldMat,
+        [lx, ee - 0.04, 0],
+        0.0042,
+      );
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.CylinderGeometry(0.31, 0.24, 0.14, 20),
+        plazaLanternGlowMat,
+        [lx, ee - 0.12, 0],
+        0,
+      );
+    }
+
+    // Sunny Plaza Garden Backdrops outside all 4 walls for Plaza Manor
+    const plazaBackBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(8.8, 4.8), backdropMat);
+    plazaBackBackdrop.position.set(-0.6, 2.1, T - 0.85);
+    plazaBackBackdrop.raycast = () => {};
+    plazaManorVisitWallGrp.add(plazaBackBackdrop);
+    const plazaLeftBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 4.8), backdropMat);
+    plazaLeftBackdrop.rotation.y = Math.PI / 2;
+    plazaLeftBackdrop.position.set(A - 0.85, 2.1, 0);
+    plazaLeftBackdrop.raycast = () => {};
+    plazaManorVisitWallGrp.add(plazaLeftBackdrop);
+    const plazaRightBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 4.8), backdropMat);
+    plazaRightBackdrop.rotation.y = -Math.PI / 2;
+    plazaRightBackdrop.position.set(J + 0.85, 2.1, 0);
+    plazaRightBackdrop.raycast = () => {};
+    plazaManorVisitWallGrp.add(plazaRightBackdrop);
+    const plazaFrontBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 4.8), backdropMat);
+    plazaFrontBackdrop.rotation.y = Math.PI;
+    plazaFrontBackdrop.position.set(0, 2.1, N + 3.4);
+    plazaFrontBackdrop.raycast = () => {};
+    plazaManorVisitWallGrp.add(plazaFrontBackdrop);
+
+    // Stepped Limestone Entrance Steps & Fan-Pattern Porphyry Promenade outside the Plaza Manor Front Door
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(3.72, 0.12, 1.35),
+      plazaStoneMat,
+      [0, -0.04, N + 0.72],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorVisitWallGrp,
+      new THREE.BoxGeometry(3.96, 0.12, 1.65),
+      plazaPorphyryFloorMat,
+      [0, -0.11, N + 1.58],
+      0.0048,
+    );
+
+    // 8. Plaza Manor Arched Double Wooden Entrance Doors, Semicircular Fanlight, 2 Coach Lanterns & 2 Classical Fluted Doric Stone Columns (`z = N = 3.7`)
+    // 1:1 with `LobbyMunicipalClockTowerHall` lines 16804-16885 in `screenshot_3_a4ff8f1c.png`!
+    const plazaManorExitDoorGrp = new THREE.Group();
+    plazaManorExitDoorGrp.position.set(0, 0, N);
+
+    // Cream-Stone Portal Surround Frame (`COL_CH_STONE = #d6cebe`, 1:1 with line 16859 in `screenshot_3_a4ff8f1c.png`)
+    addHouseArchPart(
+      plazaManorExitDoorGrp,
+      new THREE.BoxGeometry(0.18, 2.26, 0.3),
+      plazaStoneMat,
+      [-1.28, 1.13, 0.08],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorExitDoorGrp,
+      new THREE.BoxGeometry(0.18, 2.26, 0.3),
+      plazaStoneMat,
+      [1.28, 1.13, 0.08],
+      0.0048,
+    );
+    addHouseArchPart(
+      plazaManorExitDoorGrp,
+      new THREE.BoxGeometry(2.74, 0.16, 0.32),
+      plazaStoneMat,
+      [0, 2.2, 0.08],
+      0.0048,
+    );
+
+    // 2 Classical Fluted Doric/Tuscan Cream-Stone Columns (`#e8dec9` shaft, `#d6cebe` pedestal/capital, `#b5ad9e` torus/abacus — 1:1 with lines 16805-16814)
+    for (const colSide of [-1, 1] as const) {
+      const cx = colSide * 1.92;
+      const cz = -0.14;
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.BoxGeometry(0.46, 0.42, 0.46),
+        plazaStoneMat,
+        [cx, 0.21, N + cz],
+        0.0048,
+      );
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.CylinderGeometry(0.2, 0.22, 0.1, 12),
+        plazaStoneDarkMat,
+        [cx, 0.47, N + cz],
+        0.0045,
+      );
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.CylinderGeometry(0.16, 0.19, 2.86, 12),
+        plazaColumnShaftMat,
+        [cx, 1.95, N + cz],
+        0.0048,
+      );
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.CylinderGeometry(0.22, 0.17, 0.12, 12),
+        plazaStoneMat,
+        [cx, 3.44, N + cz],
+        0.0045,
+      );
+      addHouseArchPart(
+        plazaManorVisitWallGrp,
+        new THREE.BoxGeometry(0.46, 0.1, 0.46),
+        plazaStoneDarkMat,
+        [cx, 3.55, N + cz],
+        0.0045,
+      );
+    }
+
+    // Semicircular Sage-Green Arch & Solid Soft Dusty-Aqua Fanlight Transom above the Double Doors (`#6b8c76` & `#a8cbd4`, 1:1 with lines 16870-16877)
+    // Protrudes proudly on both the interior (`z = -0.05`) and exterior (`z = +0.27`) wall faces so it is 100% visible above the stone lintel!
+    const fanlightArchOuterGeo = new THREE.CylinderGeometry(1.16, 1.16, 0.3, 24, 1, false, 0, Math.PI);
+    fanlightArchOuterGeo.rotateZ(Math.PI / 2);
+    fanlightArchOuterGeo.rotateY(Math.PI / 2);
+    addHouseArchPart(
+      plazaManorExitDoorGrp,
+      fanlightArchOuterGeo,
+      plazaSageMat,
+      [0, 2.26, 0.1],
+      0.0048,
+    );
+
+    const fanlightGlassGeo = new THREE.CylinderGeometry(0.96, 0.96, 0.33, 24, 1, false, 0, Math.PI);
+    fanlightGlassGeo.rotateZ(Math.PI / 2);
+    fanlightGlassGeo.rotateY(Math.PI / 2);
+    addHouseArchPart(
+      plazaManorExitDoorGrp,
+      fanlightGlassGeo,
+      plazaFanlightMat,
+      [0, 2.26, 0.1],
+      0.0042,
+    );
+
+    // 2 Vintage Coach Wall Lanterns flanking the Entrance Door (`#2b3036` dark iron bracket/cap + `#ffe896` 4-sided tapered lantern glass — 1:1 with lines 16880-16885)
+    for (const lx of [-1.54, 1.54] as const) {
+      addHouseArchPart(
+        plazaManorExitDoorGrp,
+        new THREE.BoxGeometry(0.09, 0.22, 0.14),
+        plazaIronDarkMat,
+        [lx, 1.72, -0.04],
+        0.004,
+      );
+      addHouseArchPart(
+        plazaManorExitDoorGrp,
+        new THREE.CylinderGeometry(0.12, 0.08, 0.26, 4),
+        plazaLanternGlowMat,
+        [lx, 1.72, -0.14],
+        0.0042,
+        [0, Math.PI / 4, 0],
+      );
+      addHouseArchPart(
+        plazaManorExitDoorGrp,
+        new THREE.ConeGeometry(0.15, 0.12, 4),
+        plazaIronDarkMat,
+        [lx, 1.9, -0.14],
+        0.004,
+        [0, Math.PI / 4, 0],
+      );
+    }
+
+    // Build Hinged Double Wooden Entrance Door Leaves (`#9c7148` + `lobbyTimberTex` with `#ffffff` base tint so planks are bright golden-ochre,
+    // cream-stone outer border trim `#d6cebe`, upper `#9ec2cc` + `lobbyWindowTex` dark-framed glass pane, lower `#6e4c2c` recessed brown panel, and `#d9a636` round gold knob — 1:1 with `screenshot_3_a4ff8f1c.png`!)
+    const buildPlazaTimberDoorLeaf = (sideSign: -1 | 1) => {
+      const pivotGrp = new THREE.Group();
+      const leafW = 1.14;
+      const leafH = 2.12;
+      const offsetX = -sideSign * (leafW / 2 + 0.02);
+
+      // Cream-stone inner meeting/astragal edge strip (`#d6cebe`) matching the vertical cream-stone center strip in `screenshot_3_a4ff8f1c.png`
+      addHouseArchPart(
+        pivotGrp,
+        new THREE.BoxGeometry(0.045, leafH, 0.1),
+        plazaStoneMat,
+        [-sideSign * (leafW + 0.02), leafH / 2, 0],
+        0,
+      );
+
+      // Main warm golden-ochre horizontal-plank timber door leaf (`COL_CH_WOOD = #9c7148` + `lobbyTimberTex`)
+      addHouseArchPart(
+        pivotGrp,
+        new THREE.BoxGeometry(leafW, leafH, 0.085),
+        plazaWoodMat,
+        [offsetX, leafH / 2, 0],
+        0.0048,
+      );
+      // Upper glazed window inset with dark olive-charcoal frame & diagonal sky reflection (`#9ec2cc` + `lobbyWindowTex`, 1:1 with line 16864)
+      addHouseArchPart(
+        pivotGrp,
+        new THREE.BoxGeometry(leafW - 0.32, 0.82, 0.115),
+        plazaDoorPaneMat,
+        [offsetX, 1.48, 0],
+        0.0042,
+      );
+      // Lower recessed warm brown wood panel (`COL_CH_WOOD_DARK = #6e4c2c`, 1:1 with line 16865)
+      addHouseArchPart(
+        pivotGrp,
+        new THREE.BoxGeometry(leafW - 0.32, 0.72, 0.115),
+        plazaWoodDarkMat,
+        [offsetX, 0.54, 0],
+        0.0042,
+      );
+      // Round Gold/Brass Door Knob (`COL_CH_GOLD = #d9a636`, 1:1 with line 16867 in `screenshot_3_a4ff8f1c.png`)
+      for (const zKnob of [-0.075, 0.075] as const) {
+        addHouseArchPart(
+          pivotGrp,
+          new THREE.SphereGeometry(0.048, 10, 10),
+          plazaGoldMat,
+          [offsetX - sideSign * (leafW * 0.36), 0.99, zKnob],
+          0.0042,
+        );
+      }
+      return pivotGrp;
+    };
+
+    const plazaDoorLeftPivot = buildPlazaTimberDoorLeaf(-1);
+    plazaDoorLeftPivot.position.set(-1.17, 0, 0.04);
+    const plazaDoorRightPivot = buildPlazaTimberDoorLeaf(1);
+    plazaDoorRightPivot.position.set(1.17, 0, 0.04);
+
+    const plazaThresholdMat = new THREE.Mesh(
+      new THREE.BoxGeometry(2.56, 0.026, 0.52),
+      plazaStoneMat,
+    );
+    plazaThresholdMat.position.set(0, 0.013, -0.22);
+    plazaManorExitDoorGrp.add(plazaDoorLeftPivot, plazaDoorRightPivot, plazaThresholdMat);
+    plazaManorExitDoorGrp.traverse((c) => {
+      c.raycast = () => {};
+    });
+    plazaManorArchGrp.add(plazaManorExitDoorGrp);
+
+    // Master Visit-Wall Container holding both architecture styles' visit walls
+    const houseVisitWallGrp = new THREE.Group();
+    houseVisitWallGrp.name = 'HouseVisitFullWalls';
+    houseVisitWallGrp.add(plazaManorVisitWallGrp, japaneseVisitWallGrp);
+    houseVisitWallGrp.visible = false;
+    houseInteriorRoomGrp.add(houseVisitWallGrp);
+
+    let currentHouseArchStyle: 'plaza_manor' | 'japanese_pavilion' = 'plaza_manor';
+    const syncHouseArchitectureStyle = (style: 'plaza_manor' | 'japanese_pavilion') => {
+      currentHouseArchStyle = style;
+      const isPlaza = style === 'plaza_manor';
+      plazaManorArchGrp.visible = isPlaza;
+      plazaManorVisitWallGrp.visible = isPlaza;
+      roomFloor.visible = !isPlaza;
+      japanesePavilionArchGrp.visible = !isPlaza;
+      japaneseVisitWallGrp.visible = !isPlaza;
+    };
+    syncHouseArchitectureStyle('plaza_manor');
+
+    const syncHouseSlidingEntranceDoors = (swingFrac: number) => {
+      // Japanese Pavilion sliding glass/shoji doors
+      const slideOffset = swingFrac * 0.98;
+      houseExitDoorLeftSlide.position.x = -0.62 - slideOffset;
+      houseExitDoorRightSlide.position.x = 0.62 + slideOffset;
+      // Classic Plaza Manor hinged double timber doors
+      const swingAngle = swingFrac * 1.18;
+      plazaDoorLeftPivot.rotation.y = -swingAngle;
+      plazaDoorRightPivot.rotation.y = swingAngle;
+    };
+
+    let houseDoorSwing = 0;
+    let houseDoorSwingPrevT = 0;
+
+    // Framed Dynamic Wall Art on Back Wall above the bed headboard (`y = 1.78`, cleanly above headboard top `y = 1.34` and below beam `y = 2.15`, zero z-fighting!)
     const wallArtCanvas = document.createElement('canvas');
-    wallArtCanvas.width = 256;
-    wallArtCanvas.height = 340;
+    wallArtCanvas.width = 340;
+    wallArtCanvas.height = 240;
     const wallArtTex = new THREE.CanvasTexture(wallArtCanvas);
     const redrawWallArtCanvas = (palette: readonly string[]) => {
       const ctx = wallArtCanvas.getContext('2d');
       if (!ctx) return;
       ctx.fillStyle = palette[0] ?? '#ece5d8';
-      ctx.fillRect(0, 0, 256, 340);
+      ctx.fillRect(0, 0, 340, 240);
       ctx.fillStyle = palette[1] ?? '#c99a62';
-      ctx.fillRect(0, 198, 256, 142);
+      ctx.fillRect(0, 142, 340, 98);
       const drawOrganicBlob = (cx: number, cy: number, rx: number, ry: number, col: string, ph: number) => {
         ctx.fillStyle = col;
         ctx.beginPath();
@@ -3639,27 +5357,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         ctx.fill();
       };
-      drawOrganicBlob(92, 105, 68, 48, palette[2] ?? '#b5613d', 1);
-      drawOrganicBlob(176, 210, 62, 54, palette[3] ?? '#24334c', 2);
-      drawOrganicBlob(74, 248, 48, 36, palette[4] ?? '#c48d2f', 3);
+      drawOrganicBlob(112, 84, 64, 42, palette[2] ?? '#b5613d', 1);
+      drawOrganicBlob(228, 144, 58, 46, palette[3] ?? '#24334c', 2);
+      drawOrganicBlob(104, 174, 48, 32, palette[4] ?? '#c48d2f', 3);
       wallArtTex.needsUpdate = true;
     };
     redrawWallArtCanvas(['#ece5d8', '#d4bf9e', '#b5613d', '#24334c', '#c48d2f']);
 
     const wallArtFrame = new THREE.Group();
-    const frameBox = new THREE.Mesh(new THREE.BoxGeometry(0.98, 1.24, 0.04), interiorTrimMat);
+    const frameBox = attachHouseToonStroke(
+      new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.72, 0.04), kumaCedarDarkMat),
+      0.012,
+    );
     const artPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.76, 1.02),
-      new THREE.MeshBasicMaterial({ map: wallArtTex }),
+      new THREE.PlaneGeometry(1.06, 0.56),
+      new THREE.MeshBasicMaterial({
+        map: wallArtTex,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      }),
     );
-    artPlane.position.z = 0.024;
-    const pictureLight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.44, 0.025, 0.08),
-      lampWarmEmissiveMat,
+    artPlane.position.z = 0.026;
+    const pictureLight = attachHouseToonStroke(
+      new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.025, 0.08), lampWarmEmissiveMat),
+      0.008,
     );
-    pictureLight.position.set(0, 0.68, 0.06);
+    pictureLight.position.set(0, 0.42, 0.05);
     wallArtFrame.add(frameBox, artPlane, pictureLight);
-    wallArtFrame.position.set(3.4, 1.68, T + 0.03);
+    // Positioned at y = 1.94 above the bed headboard (`y = 1.34`) on the 4.0m wall so zero z-fighting!
+    wallArtFrame.position.set(3.35, 1.94, T + 0.065);
     wallArtFrame.traverse((c) => {
       c.raycast = () => {};
     });
@@ -3692,7 +5419,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       radialWipeRingMesh.visible = true;
     };
 
-    // 3. 3D Solar/Lunar Orbital Arc + Volumetric Window God-Rays & Dust Motes (`si`, `Kc`, `#L527-L551`)
+    // 3. 3D Solar/Lunar Orbital Arc (`Kc`, `#L527-L551`)
     const sunArcGroup = new THREE.Group();
     houseInteriorRoomGrp.add(sunArcGroup);
     const SUN_ARC_RADIUS = 8.6;
@@ -3742,54 +5469,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     });
     sunArcGroup.add(sunOrbGroup);
 
-    // Volumetric Window Light Shafts + Drifting Dust/Sakura Motes (`si`, `#L527`)
+    // Keep references valid with zero distracting cone/square artifacts over the toon interior
     const godRayBeamMat = new THREE.MeshBasicMaterial({
       color: '#ffe0b0',
       transparent: true,
-      opacity: 0.16,
-      blending: THREE.AdditiveBlending,
+      opacity: 0,
       depthWrite: false,
-      side: THREE.DoubleSide,
     });
-    const leftWindowBeamMesh = new THREE.Mesh(
-      new THREE.ConeGeometry(1.35, 4.8, 16, 1, true),
-      godRayBeamMat,
-    );
-    leftWindowBeamMesh.position.set(A + 1.8, 1.25, (winL.z0 + winL.z1) / 2);
-    leftWindowBeamMesh.rotation.z = -Math.PI / 3;
-    leftWindowBeamMesh.raycast = () => {};
-    houseInteriorRoomGrp.add(leftWindowBeamMesh);
-
-    const backWindowBeamMesh = new THREE.Mesh(
-      new THREE.ConeGeometry(1.75, 5.2, 16, 1, true),
-      godRayBeamMat,
-    );
-    backWindowBeamMesh.position.set((winB.x0 + winB.x1) / 2, 1.25, T + 2.1);
-    backWindowBeamMesh.rotation.x = Math.PI / 3;
-    backWindowBeamMesh.raycast = () => {};
-    houseInteriorRoomGrp.add(backWindowBeamMesh);
-
-    const DUST_MOTE_COUNT = 110;
-    const dustPositions = new Float32Array(DUST_MOTE_COUNT * 3);
-    const dustSeeds = Array.from({ length: DUST_MOTE_COUNT }, (_, idx) => ({
-      rx: ((idx * 73) % 100) / 100,
-      ry: ((idx * 41) % 100) / 100,
-      rz: ((idx * 89) % 100) / 100,
-      sp: 0.4 + ((idx * 29) % 60) / 100,
-    }));
+    const leftWindowBeamMesh = new THREE.Mesh(new THREE.BufferGeometry(), godRayBeamMat);
+    leftWindowBeamMesh.visible = false;
+    const backWindowBeamMesh = new THREE.Mesh(new THREE.BufferGeometry(), godRayBeamMat);
+    backWindowBeamMesh.visible = false;
+    const dustPositions = new Float32Array(3);
     const dustGeo = new THREE.BufferGeometry();
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-    const dustMat = new THREE.PointsMaterial({
-      color: '#ffe6b8',
-      size: 0.085,
-      transparent: true,
-      opacity: 0.65,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const dustPoints = new THREE.Points(dustGeo, dustMat);
-    dustPoints.raycast = () => {};
-    houseInteriorRoomGrp.add(dustPoints);
+    const dustPoints = new THREE.Points(
+      dustGeo,
+      new THREE.PointsMaterial({ size: 0.01, transparent: true, opacity: 0, depthWrite: false }),
+    );
+    dustPoints.visible = false;
 
     // 4. 3D Floor Footprint Outline Indicators (`ui`, `#L552-L556`: Cyan when valid, Red/Orange when blocked)
     const footprintOutlineMeshes = [0, 1].map(() => {
@@ -3968,18 +5666,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     const resolveHouseVisitCollisions = () => {
       if (!playerUnit) return;
-      const B = CUTAWAY_ROOM_BOUNDS;
-      const px = B.partitionX;
-      const pz = B.partitionZ;
-      const pt = B.partitionThickness / 2;
-      pushPlayerOutOfHouseObb(
-        (px + pt + B.doorPassX.x0) / 2,
-        pz,
-        (B.doorPassX.x0 - px - pt) / 2,
-        pt,
-        0,
-      );
-      pushPlayerOutOfHouseObb((B.doorPassX.x1 + B.maxX) / 2, pz, (B.maxX - B.doorPassX.x1) / 2, pt, 0);
       if (sampleHouseZonesGrp && sampleHouseZonesGrp.visible) {
         for (const c of BUDDIES_ZONE_COLLIDERS) {
           pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
@@ -3992,23 +5678,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
 
-    // Daylight State (`5.5 .. 23.5`, default `18.5` Golden Hour)
-    let houseTargetDaylightHour = 18.5;
-    let houseCurrentDaylightHour = 18.5;
+    // Daylight State (`5.5 .. 23.5`, default `13.0` Bright Sunny Midday matching Central Plaza)
+    let houseTargetDaylightHour = 13.0;
+    let houseCurrentDaylightHour = 13.0;
 
-    const applyHouseDaylightVisuals = (hour: number, timeSec: number) => {
+    const applyHouseDaylightVisuals = (hour: number, _timeSec: number) => {
       const dl = evaluateRoomDaylightState(hour);
       houseSkyBackdropMat.color.set(dl.skyTopHex);
-      houseHemiLight.color.set(dl.hemiSkyHex);
-      houseHemiLight.groundColor.set(dl.hemiGroundHex);
-      houseHemiLight.intensity = dl.hemiIntensity * 1.65;
+      houseAmbientLight.intensity = 0.2 + dl.dayFactor * 0.1;
+      houseHemiLight.color.set('#fffaf0');
+      houseHemiLight.groundColor.set('#cbb694');
+      houseHemiLight.intensity = 0.36 + dl.dayFactor * 0.22;
 
       houseSunLight.color.set(dl.sunColorHex);
-      houseSunLight.intensity = Math.max(0.25, dl.sunIntensity * 0.72);
+      houseSunLight.intensity = Math.max(0.2, dl.sunIntensity * 0.24);
       houseSunLight.position.set(
-        dl.sunDir.x * 16,
-        Math.max(2.5, dl.sunDir.y * 16),
-        dl.sunDir.z * 16,
+        dl.sunDir.x * 12,
+        Math.max(11.5, dl.sunDir.y * 18),
+        dl.sunDir.z * 12,
       );
 
       // Update 3D Sun Orb along the tilted orbital arc (`Kc`, `#L551`)
@@ -4019,50 +5706,64 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       sunOrbGroup.position.copy(orbPos);
       sunOrbMat.color.set(dl.sunColorHex);
 
-      // Update Interior Lamps & Plinth Underglow (`uo = dl.lampIntensity`)
-      houseWarmLampPointLight.intensity = 0.25 + dl.lampIntensity * 1.45;
+      // Update Interior Ceiling Luminaires & Lamps (`uo = dl.lampIntensity`)
+      const ceilingBoost = 0.36 + dl.lampIntensity * 0.72;
+      houseCeilingLights.forEach((pt, idx) => {
+        pt.intensity = idx === 1 ? ceilingBoost * 0.88 : ceilingBoost;
+      });
+      houseWarmLampPointLight.intensity = 0.32 + dl.lampIntensity * 0.85;
       lampWarmEmissiveMat.color
-        .set('#d8cfbf')
+        .set('#f5e1b8')
         .lerp(new THREE.Color('#ffcf98'), dl.lampIntensity);
 
-      // Update Volumetric Window God-Rays & Floating Dust Motes (`si`, `#L527`)
-      const maxBeam = Math.max(dl.beamIntensityLeft, dl.beamIntensityBack);
-      leftWindowBeamMesh.visible = dl.beamIntensityLeft > 0.02;
-      backWindowBeamMesh.visible = dl.beamIntensityBack > 0.02;
-      godRayBeamMat.color.set(dl.sunColorHex);
-      godRayBeamMat.opacity = Math.min(0.26, maxBeam * 0.22);
-
-      dustPoints.visible = maxBeam > 0.02;
-      if (dustPoints.visible) {
-        const posAttr = dustGeo.attributes.position as THREE.BufferAttribute;
-        for (let i = 0; i < DUST_MOTE_COUNT; i++) {
-          const s = dustSeeds[i];
-          const px = A + 0.6 + ((s.rx + Math.sin(timeSec * 0.15 + i) * 0.08 + 1) % 1) * (J - A - 1.2);
-          const py = 0.2 + ((s.ry + timeSec * 0.02 * (s.sp - 0.5) + 1) % 1) * 2.3;
-          const pz = T + 0.5 + ((s.rz + Math.cos(timeSec * 0.12 + i) * 0.08 + 1) % 1) * (N - T - 1.0);
-          posAttr.setXYZ(i, px, py, pz);
-        }
-        posAttr.needsUpdate = true;
-      }
+      leftWindowBeamMesh.visible = false;
+      backWindowBeamMesh.visible = false;
+      dustPoints.visible = false;
     };
     applyHouseDaylightVisuals(houseCurrentDaylightHour, 0);
 
     let npcCameraMode:
       | 'none'
+      | 'landing_tour'
+      | 'fly_to_plaza'
       | 'npc_merchant'
       | 'house_interior'
       | 'house_visit'
-      | 'character_select' = initialMpAppSync?.mode ?? 'none';
+      | 'cafe_interior'
+      | 'character_select' = initialMpAppSync?.mode ?? 'landing_tour';
     let npcCameraLocation: 'lobby_cafe' | 'beach_house' = 'lobby_cafe';
     let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
+    let savedOutdoorCafePos: { x: number; z: number; yaw: number } | null = null;
+    let cafeWorkShiftActive = Boolean(initialMpAppSync?.isWorkingCafeShift);
+    let activeCafeOrderLabel = initialMpAppSync?.activeCafeOrderLabel ?? '';
+    let activeCafeOrderAccent = initialMpAppSync?.activeCafeOrderAccent ?? '#b8ff3c';
+    let cafeVisitCamYaw = 0.0;
+    let cafeVisitCamPitch = 0.34;
+    let cafeVisitCamDist = 3.65;
+    let isOrbitingCafeVisitCamera = false;
+    let cafeVisitOrbitDragStart = { x: 0, y: 0, yaw: 0.0, pitch: 0.34 };
+    let activeCafeSeatedSpot: CafeInteriorSeatSpot | null = null;
+    let currentNearestCafeSeat: CafeInteriorSeatSpot | null = null;
     let mpOnboardingCompleted = initialMpAppSync?.onboardingCompleted ?? false;
     let mpLocalGender: CharacterGender =
       initialMpAppSync?.characterGender ?? getDefaultCharacterGender();
     let mpIsSampleHouse = Boolean(initialMpAppSync?.isSampleHouse);
     let mpHouseOwnerKey = initialMpAppSync?.houseOwnerKey ?? 'sample';
     let mpNearWalletId: string | null = initialMpAppSync?.nearWalletId ?? null;
+    let flyTargetMode: 'character_select' | 'gameplay' =
+      initialMpAppSync?.flyTargetMode ?? 'character_select';
+    let flySessionId = initialMpAppSync?.flySessionId ?? 0;
+    let flyDispatchedSessionId = -1;
+    let flyStartTimeMs = performance.now();
+    let flyStartCamPos: Vec3 = { x: -64, y: 12.8, z: 16 };
+    let flyStartLookAtPos: Vec3 = { x: -75, y: 1.6, z: 0 };
+    let flyStartFov = 44;
+    let lastLandingCameraPose = computeLandingCityTourPose(0);
 
     const getLocalMultiplayerZoneKey = (): string => {
+      if (npcCameraMode === 'cafe_interior') {
+        return 'cafe:glasshouse';
+      }
       if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
         return mpIsSampleHouse ? 'house:sample' : `house:${mpHouseOwnerKey || 'private'}`;
       }
@@ -4077,13 +5778,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         ev as CustomEvent<{
           mode?:
             | 'none'
+            | 'landing_tour'
+            | 'fly_to_plaza'
             | 'npc_merchant'
             | 'house_interior'
             | 'house_visit'
+            | 'cafe_interior'
             | 'character_select';
+          flyTargetMode?: 'character_select' | 'gameplay';
+          flySessionId?: number;
           location?: 'lobby_cafe' | 'beach_house';
           themeId?: string;
           isSampleHouse?: boolean;
+          isWorkingCafeShift?: boolean;
+          activeCafeOrderLabel?: string;
+          activeCafeOrderAccent?: string;
+          houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
           onboardingCompleted?: boolean;
           characterGender?: CharacterGender;
           playerDisplayName?: string;
@@ -4117,8 +5827,47 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (typeof detail.playerDisplayName === 'string' && detail.playerDisplayName.trim()) {
         playerCustomDisplayName = detail.playerDisplayName.trim();
       }
+      if (typeof detail.isWorkingCafeShift === 'boolean') {
+        const wasWorkingShift = cafeWorkShiftActive;
+        cafeWorkShiftActive = detail.isWorkingCafeShift;
+        if (!wasWorkingShift && cafeWorkShiftActive && npcCameraMode === 'cafe_interior' && playerUnit) {
+          activeCafeSeatedSpot = null;
+          playerUnit.isSitting = false;
+          playerUnit.x = CAFE_INTERIOR_BOUNDS.baristaCounterStandX;
+          playerUnit.z = CAFE_INTERIOR_BOUNDS.baristaCounterStandZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = -Math.PI / 2;
+          cafeVisitCamYaw = -0.58;
+          cafeVisitCamPitch = 0.36;
+          cafeVisitCamDist = 3.65;
+        }
+      }
+      if (typeof detail.activeCafeOrderLabel === 'string') {
+        activeCafeOrderLabel = detail.activeCafeOrderLabel;
+      }
+      if (typeof detail.activeCafeOrderAccent === 'string') {
+        activeCafeOrderAccent = detail.activeCafeOrderAccent;
+      }
+      const showCafeCustomer = Boolean(cafeWorkShiftActive && activeCafeOrderLabel);
+      cafeCustomerNpcRoot.visible = showCafeCustomer;
+      cafeInterior.setCustomerOrderSign(showCafeCustomer, activeCafeOrderLabel, activeCafeOrderAccent);
+      if (playerUnit?.nameplate?.updatePlate) {
+        playerUnit.nameplate.updatePlate(
+          playerCustomDisplayName,
+          cafeWorkShiftActive ? 'PELAYAN CAFE' : '',
+        );
+      }
       if (typeof detail.isSampleHouse === 'boolean') {
         mpIsSampleHouse = detail.isSampleHouse;
+      }
+      if (
+        detail.houseArchitectureStyle === 'plaza_manor' ||
+        detail.houseArchitectureStyle === 'japanese_pavilion'
+      ) {
+        syncHouseArchitectureStyle(detail.houseArchitectureStyle);
+      } else if (detail.isSampleHouse === true && currentHouseArchStyle !== 'plaza_manor') {
+        syncHouseArchitectureStyle('plaza_manor');
       }
       if (typeof detail.houseOwnerKey === 'string' && detail.houseOwnerKey) {
         mpHouseOwnerKey = detail.houseOwnerKey;
@@ -4131,7 +5880,63 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
         const isHouseMode =
           detail.mode === 'house_interior' || detail.mode === 'house_visit';
+        const wasCafeMode = npcCameraMode === 'cafe_interior';
+        const isCafeMode = detail.mode === 'cafe_interior';
+        const prevMode = npcCameraMode;
         npcCameraMode = detail.mode;
+        if (detail.mode === 'fly_to_plaza') {
+          const nextSid = detail.flySessionId ?? flySessionId + 1;
+          if (prevMode !== 'fly_to_plaza' || nextSid !== flySessionId) {
+            flyTargetMode = detail.flyTargetMode ?? 'character_select';
+            flySessionId = nextSid;
+            flyDispatchedSessionId = -1;
+            flyStartTimeMs = performance.now();
+            flyStartCamPos = {
+              x: camera.position.x,
+              y: camera.position.y,
+              z: camera.position.z,
+            };
+            flyStartLookAtPos = { ...lastLandingCameraPose.lookAtPos };
+            flyStartFov = camera.fov || 44;
+            if (playerUnit) {
+              playerUnit.x = LOBBY_SAFEZONE_BOUNDS.spawnX;
+              playerUnit.z = LOBBY_SAFEZONE_BOUNDS.spawnZ;
+              playerUnit.vx = 0;
+              playerUnit.vz = 0;
+              playerUnit.vy = 0;
+              playerUnit.yaw = 0;
+            }
+          }
+        }
+        cafeInterior.root.visible = isCafeMode;
+        if (isCafeMode && !wasCafeMode && playerUnit) {
+          savedOutdoorCafePos = {
+            x: CAFE_EXTERIOR_DOOR_TRIGGER.exitSpawnX,
+            z: CAFE_EXTERIOR_DOOR_TRIGGER.exitSpawnZ,
+            yaw: CAFE_EXTERIOR_DOOR_TRIGGER.exitSpawnYaw,
+          };
+          activeCafeSeatedSpot = null;
+          playerUnit.isSitting = false;
+          playerUnit.isSleeping = false;
+          playerUnit.x = CAFE_INTERIOR_BOUNDS.spawnX;
+          playerUnit.z = CAFE_INTERIOR_BOUNDS.spawnZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = CAFE_INTERIOR_BOUNDS.spawnYaw;
+          cafeVisitCamYaw = 0.28;
+          cafeVisitCamPitch = 0.36;
+          cafeVisitCamDist = 2.75;
+        } else if (wasCafeMode && !isCafeMode && playerUnit) {
+          activeCafeSeatedSpot = null;
+          playerUnit.isSitting = false;
+          playerUnit.root.scale.setScalar(1.0);
+          if (savedOutdoorCafePos) {
+            playerUnit.x = savedOutdoorCafePos.x;
+            playerUnit.z = savedOutdoorCafePos.z;
+            playerUnit.yaw = savedOutdoorCafePos.yaw;
+            savedOutdoorCafePos = null;
+          }
+        }
         houseInteriorRoomGrp.visible = isHouseMode;
         if (isHouseMode) {
           syncHousePlacedFurnitureMeshes();
@@ -4141,7 +5946,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           houseVisitWallGrp.visible = detail.mode === 'house_visit';
           if (detail.mode !== 'house_visit') {
             houseDoorSwing = 0;
-            houseExitDoorPivot.rotation.y = 0;
+            syncHouseSlidingEntranceDoors(0);
           }
           if (!wasHouseMode && playerUnit) {
             savedOutdoorHousePos = {
@@ -5074,7 +6879,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ghostMesh.visible = isAllowedInPattern;
           if (isAllowedInPattern) {
             const holoHex = getHologramSlotHexColor(requiredSlotKind);
-            (ghostMesh.material as THREE.MeshBasicMaterial).color.setHex(holoHex);
+            (ghostMesh.material as THREE.LineBasicMaterial).color.setHex(holoHex);
             const coreMat = ghostMesh.userData.coreMat as THREE.MeshBasicMaterial | undefined;
             if (coreMat) {
               coreMat.color.setHex(holoHex);
@@ -5149,7 +6954,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             holoTurntable: THREE.Group;
             holoModels: Record<KioskSideHologramModelKind, THREE.Group>;
             holoSolidMat: THREE.MeshBasicMaterial;
-            holoWireMat: THREE.MeshBasicMaterial;
+            holoWireMat: THREE.LineBasicMaterial;
             holoRingMat: THREE.MeshBasicMaterial;
             holoBeamMat: THREE.MeshBasicMaterial;
             activeModelKind: KioskSideHologramModelKind;
@@ -5826,7 +7631,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
 
       const nameplate = createGlassmorphicNameplate(2.8, 0.72, peer.displayName, '', false);
-      nameplate.sprite.position.set(0, 4.35, 0);
+      nameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
       nameplate.sprite.visible = true;
       nameplate.updatePlate(
         peer.displayName,
@@ -5836,7 +7641,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       root.add(nameplate.sprite);
 
       const saluteSign = createBillboardSign(3.4, 0.92);
-      saluteSign.sprite.position.set(0, 5.15, 0);
+      saluteSign.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY + 0.62, 0);
       saluteSign.sprite.visible = false;
       root.add(saluteSign.sprite);
 
@@ -5872,10 +7677,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       av.teamRing.geometry.dispose();
       av.ringMat.dispose();
       av.innerFootDiscMat.dispose();
-      const npMat = av.nameplate.sprite.material as THREE.SpriteMaterial;
+      const npMat = av.nameplate.sprite.material as THREE.MeshBasicMaterial;
       npMat.map?.dispose();
       npMat.dispose();
-      const signMat = av.saluteSign.sprite.material as THREE.SpriteMaterial;
+      const signMat = av.saluteSign.sprite.material as THREE.MeshBasicMaterial;
       signMat.map?.dispose();
       signMat.dispose();
     };
@@ -10750,6 +12555,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (e.code === 'KeyE') {
         e.preventDefault();
         if (activeTramRideCutscene?.active) return;
+        if (npcCameraMode === 'cafe_interior' && playerUnit) {
+          const station = detectNearestCafeStation(
+            playerUnit.x,
+            playerUnit.z,
+            cafeWorkShiftActive,
+          );
+          if (station.kind === 'exit_door') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
+            return;
+          }
+          if (station.kind === 'serve_customer') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('serve-cafe-active-order'));
+            return;
+          }
+          if (station.kind === 'order_counter') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
+            return;
+          }
+          if (station.kind === 'rota_board') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
+            return;
+          }
+          if (station.kind === 'atm_machine') {
+            soundEngine.playUiClick();
+            window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
+            return;
+          }
+        }
         if (npcCameraMode === 'house_visit' && playerUnit) {
           const distToExitDoor = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
           if (distToExitDoor <= 1.85) {
@@ -10760,6 +12597,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         const actorX = mountedTank ? mountedTank.x : playerUnit.x;
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
+
+        // 0B. Botanical Glasshouse Conservatory Cafe Entrance in Central Plaza
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          getPlanetShortestDistance(
+            actorX,
+            actorZ,
+            CAFE_EXTERIOR_DOOR_TRIGGER.x,
+            CAFE_EXTERIOR_DOOR_TRIGGER.z,
+          ) <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius
+        ) {
+          soundEngine.playUiClick();
+          window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
+          return;
+        }
 
         // 1. Black City Transit Kiosk & Merchant NPCs (Strictly disabled inside Warzone!)
         if (worldModeRef.current !== 'warzone') {
@@ -10948,6 +12801,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const onPointerMove = (e: PointerEvent) => {
       updateMouseWorldAim(e.clientX, e.clientY);
+      if (npcCameraMode === 'cafe_interior') {
+        if (isOrbitingCafeVisitCamera) {
+          const dx = e.clientX - cafeVisitOrbitDragStart.x;
+          const dy = e.clientY - cafeVisitOrbitDragStart.y;
+          cafeVisitCamYaw = cafeVisitOrbitDragStart.yaw - dx * 0.007;
+          cafeVisitCamPitch = clamp(cafeVisitOrbitDragStart.pitch + dy * 0.0055, 0.12, 0.86);
+        }
+        return;
+      }
+
       if (npcCameraMode === 'house_visit') {
         if (isOrbitingHouseVisitCamera) {
           const dx = e.clientX - houseVisitOrbitDragStart.x;
@@ -11047,6 +12910,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const onPointerDown = (e: PointerEvent) => {
       if (gameStateRef.current !== 'playing') return;
       updateMouseWorldAim(e.clientX, e.clientY);
+
+      if (npcCameraMode === 'cafe_interior') {
+        isOrbitingCafeVisitCamera = true;
+        cafeVisitOrbitDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          yaw: cafeVisitCamYaw,
+          pitch: cafeVisitCamPitch,
+        };
+        return;
+      }
 
       if (npcCameraMode === 'house_visit') {
         if (e.button === 0) {
@@ -11313,7 +13187,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           team: 'blue' | 'red';
           status: string;
           root: THREE.Object3D;
-          nameplate?: { sprite: THREE.Sprite } | null;
+          nameplate?: { sprite: THREE.Object3D } | null;
           isSelf?: boolean;
           nearAccountId?: string;
         } | null = null;
@@ -11485,6 +13359,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      if (npcCameraMode === 'cafe_interior') {
+        isOrbitingCafeVisitCamera = false;
+        isPointerDown = false;
+        return;
+      }
       if (npcCameraMode === 'house_visit') {
         isOrbitingHouseVisitCamera = false;
         isPointerDown = false;
@@ -11520,6 +13399,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onWheel = (e: WheelEvent) => {
+      if (npcCameraMode === 'cafe_interior') {
+        cafeVisitCamDist = clamp(cafeVisitCamDist + Math.sign(e.deltaY) * 0.3, 2.0, 5.4);
+        return;
+      }
       if (npcCameraMode === 'house_visit') {
         houseVisitCamDist = clamp(houseVisitCamDist + Math.sign(e.deltaY) * 0.3, 1.9, 5.2);
         return;
@@ -12318,6 +14201,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (act === 'exitPrivateHouseInterior') {
         soundEngine.playUiClick();
         window.dispatchEvent(new CustomEvent('exit-house-interior-ui'));
+      } else if (act === 'enterGlasshouseCafe') {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
+      } else if (act === 'exitGlasshouseCafe') {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
+      } else if (act === 'cafeStationInteract' && playerUnit) {
+        soundEngine.playUiClick();
+        const st = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive);
+        if (st.kind === 'exit_door') {
+          window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
+        } else if (st.kind === 'serve_customer') {
+          window.dispatchEvent(new CustomEvent('serve-cafe-active-order'));
+        } else if (st.kind === 'order_counter') {
+          window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
+        } else if (st.kind === 'rota_board') {
+          window.dispatchEvent(new CustomEvent('start-cafe-work-shift'));
+        } else if (st.kind === 'atm_machine') {
+          window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
+        }
       } else if (act.startsWith('adjustPlayerLul:')) {
         const delta = Number(act.slice('adjustPlayerLul:'.length));
         if (!Number.isNaN(delta)) {
@@ -14016,12 +15919,78 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       const activeFocusUnit = mountedTank ? mountedTank : playerUnit;
+      const tourPoseNow = computeLandingCityTourPose(timeSec);
+      const flyDurationMs = 1550;
+      const flyProgress01 =
+        npcCameraMode === 'fly_to_plaza'
+          ? clamp((now - flyStartTimeMs) / flyDurationMs, 0, 1)
+          : 0;
+      const plazaSpawnX = LOBBY_SAFEZONE_BOUNDS.spawnX;
+      const plazaSpawnZ = LOBBY_SAFEZONE_BOUNDS.spawnZ;
+      const plazaSpawnY = getTerrainElevation(plazaSpawnX, plazaSpawnZ);
+      const plazaGameplayCamTarget = (() => {
+        const desiredPlayFov =
+          cameraFovModeRef.current === 'ortho18'
+            ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov
+            : BUDDIES_CONSTANTS.camera.fov;
+        const mirrorPose = computeTeamMirrorCameraPose({
+          playerTeam: playerUnit?.team ?? 'blue',
+          focusX: plazaSpawnX,
+          focusY: plazaSpawnY + 1.0,
+          focusZ: plazaSpawnZ,
+          baseOffset: { x: 0, y: 13.6, z: 16.2 },
+          flipView: false,
+          fovScale: cameraFovModeRef.current === 'ortho18' ? 1.85 : 1.0,
+          visualPlaneAlt: 0,
+          isEditorOrTitle: true,
+        });
+        const lockStep = 0.845;
+        return {
+          camPos: {
+            x: plazaSpawnX + (mirrorPose.cameraPos.x - plazaSpawnX) * lockStep,
+            y: plazaSpawnY + (mirrorPose.cameraPos.y - plazaSpawnY) * lockStep,
+            z: plazaSpawnZ + (mirrorPose.cameraPos.z - plazaSpawnZ) * lockStep,
+          },
+          lookAtPos: {
+            x: plazaSpawnX + (mirrorPose.lookAtPos.x - plazaSpawnX) * lockStep,
+            y: plazaSpawnY + (mirrorPose.lookAtPos.y - plazaSpawnY) * lockStep,
+            z: plazaSpawnZ + (mirrorPose.lookAtPos.z - plazaSpawnZ) * lockStep,
+          },
+          fov: desiredPlayFov,
+        };
+      })();
+      const activeFlyPose =
+        npcCameraMode === 'fly_to_plaza'
+          ? computePlazaFlyToPose({
+              startCamPos: flyStartCamPos,
+              startLookAtPos: flyStartLookAtPos,
+              startFov: flyStartFov,
+              targetCamPos:
+                flyTargetMode === 'character_select'
+                  ? { x: plazaSpawnX + 6.35, y: plazaSpawnY + 2.32, z: plazaSpawnZ }
+                  : plazaGameplayCamTarget.camPos,
+              targetLookAtPos:
+                flyTargetMode === 'character_select'
+                  ? { x: plazaSpawnX, y: plazaSpawnY + 1.82, z: plazaSpawnZ }
+                  : plazaGameplayCamTarget.lookAtPos,
+              targetFov:
+                flyTargetMode === 'character_select' ? 38 : plazaGameplayCamTarget.fov,
+              progress01: flyProgress01,
+            })
+          : null;
+      if (npcCameraMode === 'landing_tour') {
+        lastLandingCameraPose = tourPoseNow;
+      }
       const nukePrePose =
         nukeStrikeState.phase !== 'idle'
           ? computeNuclearStrikeCameraPose(nukeStrikeState)
           : null;
       const viewCenterX =
-        npcCameraMode === 'npc_merchant'
+        npcCameraMode === 'landing_tour'
+          ? tourPoseNow.lookAtPos.x
+          : activeFlyPose
+          ? activeFlyPose.lookAtPos.x
+          : npcCameraMode === 'npc_merchant'
           ? npcCameraLocation === 'beach_house'
             ? 85.8
             : -91.3
@@ -14033,7 +16002,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ? activeFocusUnit.x
           : 0;
       const viewCenterZ =
-        npcCameraMode === 'npc_merchant'
+        npcCameraMode === 'landing_tour'
+          ? tourPoseNow.lookAtPos.z
+          : activeFlyPose
+          ? activeFlyPose.lookAtPos.z
+          : npcCameraMode === 'npc_merchant'
           ? npcCameraLocation === 'beach_house'
             ? 60.0
             : -24.26
@@ -14045,8 +16018,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ? activeFocusUnit.z
           : 0;
       blitzGrassSystem.update(
-        nukePrePose ? nukePrePose.focusPivotPos.x : activeFocusUnit ? activeFocusUnit.x : 0,
-        nukePrePose ? nukePrePose.focusPivotPos.z : activeFocusUnit ? activeFocusUnit.z : 0,
+        npcCameraMode === 'landing_tour' || activeFlyPose
+          ? viewCenterX
+          : nukePrePose
+          ? nukePrePose.focusPivotPos.x
+          : activeFocusUnit
+          ? activeFocusUnit.x
+          : 0,
+        npcCameraMode === 'landing_tour' || activeFlyPose
+          ? viewCenterZ
+          : nukePrePose
+          ? nukePrePose.focusPivotPos.z
+          : activeFocusUnit
+          ? activeFocusUnit.z
+          : 0,
         viewCenterX,
         viewCenterZ,
       );
@@ -14104,8 +16089,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             x: p.worldX,
             z: p.worldZ,
             yaw: 0,
-            halfLen: 2.15,
-            halfWidth: 2.15,
+            halfLen: 2.55,
+            halfWidth: 2.55,
           });
         }
       }
@@ -14185,7 +16170,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       editorCursorGroup.visible = false;
 
       // Pulse the [Q] Ghost Wireframe opacity gently
-      const ghostMat = blueBase.ghostPatternBox.material as THREE.MeshBasicMaterial;
+      const ghostMat = blueBase.ghostPatternBox.material as THREE.LineBasicMaterial;
       ghostMat.opacity = 0.65 + Math.sin(timeSec * 4.0) * 0.22;
 
       // 3. Gameplay Simulation Step
@@ -14215,7 +16200,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           keysPressed: keys,
           isWindowBlurred: false,
           isTalkInputFocused: isTextInputFocused,
-          isFloatingButtonOrModalOpen: npcCameraMode === 'character_select',
+          isFloatingButtonOrModalOpen:
+            npcCameraMode === 'character_select' ||
+            npcCameraMode === 'landing_tour' ||
+            npcCameraMode === 'fly_to_plaza',
           moveSpeed: 1,
           playerTeam: playerUnit?.team ?? 'blue',
           isEditorOrPeacefulCamera,
@@ -14233,7 +16221,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         let moveX = ghostGuard.vx;
         let moveZ = ghostGuard.vz;
         const joyMag = Math.hypot(mobileJoyRight, mobileJoyForward);
-        if (!ghostGuard.shouldClearKeys && joyMag > 0.06 && npcCameraMode !== 'house_visit' && npcCameraMode !== 'house_interior') {
+        if (
+          !ghostGuard.shouldClearKeys &&
+          joyMag > 0.06 &&
+          npcCameraMode !== 'house_visit' &&
+          npcCameraMode !== 'house_interior' &&
+          npcCameraMode !== 'cafe_interior'
+        ) {
           const mirrorSign =
             (!isEditorOrPeacefulCamera && (playerUnit?.team ?? 'blue') === 'red' ? -1 : 1) *
             (cameraViewFlipped &&
@@ -14244,11 +16238,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           moveX = mobileJoyRight * mirrorSign;
           moveZ = -mobileJoyForward * mirrorSign;
         }
-        if (npcCameraMode === 'house_visit') {
+        if (npcCameraMode === 'house_visit' || npcCameraMode === 'cafe_interior') {
           if (isTextInputFocused) {
             moveX = 0;
             moveZ = 0;
           } else {
+            const activeYaw = npcCameraMode === 'cafe_interior' ? cafeVisitCamYaw : houseVisitCamYaw;
             const inFwd =
               joyMag > 0.06
                 ? mobileJoyForward
@@ -14259,10 +16254,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 ? mobileJoyRight
                 : (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) -
                   (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
-            const fwdX = -Math.sin(houseVisitCamYaw);
-            const fwdZ = -Math.cos(houseVisitCamYaw);
-            const rightX = Math.cos(houseVisitCamYaw);
-            const rightZ = -Math.sin(houseVisitCamYaw);
+            const fwdX = -Math.sin(activeYaw);
+            const fwdZ = -Math.cos(activeYaw);
+            const rightX = Math.cos(activeYaw);
+            const rightZ = -Math.sin(activeYaw);
             moveX = inFwd * fwdX + inRight * rightX;
             moveZ = inFwd * fwdZ + inRight * rightZ;
           }
@@ -15521,7 +17516,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const spec = BUDDY_CLASSES[playerUnit.classId];
             const playerRoadBoost = evaluateRoadSurfaceSpeedBoost(playerUnit.x, playerUnit.z);
             const moveSpeed =
-              npcCameraMode === 'house_visit'
+              npcCameraMode === 'house_visit' || npcCameraMode === 'cafe_interior'
                 ? isBoosting
                   ? 4.4
                   : 3.0
@@ -15542,6 +17537,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 playerUnit.yaw = shorelineFishingSync.castOriginYaw;
               }
             } else if (inputLen > 0.01) {
+              if (activeCafeSeatedSpot) {
+                activeCafeSeatedSpot = null;
+                playerUnit.isSitting = false;
+              }
               if (playerUnit.isSleeping && activeSleepSpot) {
                 playerUnit.x = activeSleepSpot.wakeX;
                 playerUnit.z = activeSleepSpot.wakeZ;
@@ -15566,6 +17565,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             } else {
               playerUnit.vx = 0;
               playerUnit.vz = 0;
+              if (playerUnit.isSitting && activeCafeSeatedSpot) {
+                playerUnit.x = activeCafeSeatedSpot.x;
+                playerUnit.z = activeCafeSeatedSpot.z;
+                playerUnit.yaw = activeCafeSeatedSpot.yaw;
+              }
               if (playerUnit.isSitting && activeSeatedSpot) {
                 // Pin to the seated ANCHOR (same computation as sitOnLobbySeat) — pinning
                 // to the raw spot coords previously stomped the seated placement every
@@ -15582,8 +17586,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               }
             }
 
-            // Resolve character collision against solid buildings/pipes/trees and pushable props/crates (skip when seated on a bench or inside elevated private house)
-            if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+            // Resolve character collision against solid buildings/pipes/trees and pushable props/crates (skip when seated on a bench or inside elevated private house / glasshouse cafe)
+            if (npcCameraMode === 'cafe_interior') {
+              const clampedPos = clampCafeInteriorPosition(playerUnit.x, playerUnit.z);
+              playerUnit.x = clampedPos.x;
+              playerUnit.z = clampedPos.z;
+              if (!playerUnit.isSitting) {
+                for (const c of CAFE_INTERIOR_COLLIDERS) {
+                  pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
+                }
+              }
+            } else if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
               playerUnit.x = clamp(
                 playerUnit.x,
                 CUTAWAY_ROOM_BOUNDS.minX + 0.55,
@@ -15689,7 +17702,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               if (shorelineFishingSync.hasLockedCastYaw) {
                 playerUnit.yaw = shorelineFishingSync.castOriginYaw;
               }
-            } else if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+            } else if (
+              npcCameraMode === 'house_visit' ||
+              npcCameraMode === 'house_interior' ||
+              npcCameraMode === 'cafe_interior'
+            ) {
               if (inputLen > 0.01) {
                 playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
               }
@@ -16875,16 +18892,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const isPlayerInHouseNow =
               b.isPlayer &&
               (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior');
-            b.root.position.set(b.x, isPlayerInHouseNow ? HOUSE_ORIGIN_Y : terrainY, b.z);
+            const isPlayerInCafeNow = b.isPlayer && npcCameraMode === 'cafe_interior';
+            b.root.position.set(
+              b.x,
+              isPlayerInCafeNow ? CAFE_ORIGIN_Y : isPlayerInHouseNow ? HOUSE_ORIGIN_Y : terrainY,
+              b.z,
+            );
             if (b.isPlayer) {
-              b.root.scale.setScalar(isPlayerInHouseNow ? 0.54 : 1.0);
+              b.root.scale.setScalar(isPlayerInCafeNow || isPlayerInHouseNow ? 0.55 : 1.0);
             }
             const seatLift =
-              b.isPlayer && b.isSitting && activeSeatedSpot
-                ? activeSeatedSpot.seatLiftY + 0.178
-                : b.isPlayer && b.isSleeping && activeSleepSpot
-                  ? activeSleepSpot.sleepLiftY
-                  : 0;
+              b.isPlayer && b.isSitting && activeCafeSeatedSpot
+                ? activeCafeSeatedSpot.seatLiftY
+                : b.isPlayer && b.isSitting && activeSeatedSpot
+                  ? activeSeatedSpot.seatLiftY + 0.178
+                  : b.isPlayer && b.isSleeping && activeSleepSpot
+                    ? activeSleepSpot.sleepLiftY
+                    : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
             // Soften the facing snap just slightly: the visual facing chases the unit yaw
@@ -18849,6 +20873,75 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.lookAt(npcX - lateralShiftZ, npcY + 2.70, npcZ);
         }
         camera.updateMatrixWorld();
+      } else if (npcCameraMode === 'landing_tour') {
+        if (playerUnit) {
+          playerUnit.root.visible = false;
+          if (playerUnit.nameplate?.sprite) {
+            playerUnit.nameplate.sprite.visible = false;
+          }
+        }
+        if (camera.fov !== tourPoseNow.fov) {
+          camera.fov = tourPoseNow.fov;
+          camera.updateProjectionMatrix();
+        }
+        camera.up.set(0, 1, 0);
+        camera.position.set(
+          tourPoseNow.cameraPos.x,
+          tourPoseNow.cameraPos.y,
+          tourPoseNow.cameraPos.z,
+        );
+        camera.lookAt(
+          tourPoseNow.lookAtPos.x,
+          tourPoseNow.lookAtPos.y,
+          tourPoseNow.lookAtPos.z,
+        );
+        camera.updateMatrixWorld();
+      } else if (npcCameraMode === 'fly_to_plaza' && activeFlyPose) {
+        if (playerUnit) {
+          playerUnit.x = plazaSpawnX;
+          playerUnit.z = plazaSpawnZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.root.visible = flyProgress01 >= 0.72;
+          if (flyTargetMode === 'character_select') {
+            playerUnit.yaw = 0;
+            playerUnit.bodyGroup.rotation.set(0, Math.PI / 2, 0);
+            updateCharacterWeaponStance(playerUnit.rig, 'unarmed', 0, false, false, 0, 0);
+            playerUnit.rig.weaponRigGroup.visible = false;
+          }
+          if (playerUnit.nameplate?.sprite) {
+            playerUnit.nameplate.sprite.visible = false;
+          }
+        }
+        if (Math.abs(camera.fov - activeFlyPose.fov) > 0.05) {
+          camera.fov = activeFlyPose.fov;
+          camera.updateProjectionMatrix();
+        }
+        camera.up.set(0, 1, 0);
+        camera.position.set(
+          activeFlyPose.cameraPos.x,
+          activeFlyPose.cameraPos.y,
+          activeFlyPose.cameraPos.z,
+        );
+        camera.lookAt(
+          activeFlyPose.lookAtPos.x,
+          activeFlyPose.lookAtPos.y,
+          activeFlyPose.lookAtPos.z,
+        );
+        camera.updateMatrixWorld();
+        if (activeFlyPose.isComplete && flyDispatchedSessionId !== flySessionId) {
+          flyDispatchedSessionId = flySessionId;
+          camFollowPos = { x: plazaSpawnX, y: plazaSpawnY + 1.0, z: plazaSpawnZ };
+          camFollowVel = { x: 0, y: 0, z: 0 };
+          window.dispatchEvent(
+            new CustomEvent('plaza-fly-to-complete', {
+              detail: {
+                flySessionId,
+                targetMode: flyTargetMode,
+              },
+            }),
+          );
+        }
       } else if (npcCameraMode === 'character_select') {
         if (playerUnit) {
           playerUnit.root.visible = true;
@@ -18960,11 +21053,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             camera.updateProjectionMatrix();
           }
           const lookX = playerUnit.x;
-          const lookY = HOUSE_ORIGIN_Y + 0.92;
+          const lookY = HOUSE_ORIGIN_Y + 1.05;
           const lookZ = playerUnit.z;
           const cosPitch = Math.cos(houseVisitCamPitch);
           const sinPitch = Math.sin(houseVisitCamPitch);
-          // Contain the visit camera inside the fully walled room so it can
+          // Contain the visit camera inside the fully walled 4.0m-tall room so it can
           // never slip outside and capture the exterior.
           const camX = clamp(
             lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
@@ -18973,8 +21066,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           );
           const camY = clamp(
             lookY + sinPitch * houseVisitCamDist,
-            HOUSE_ORIGIN_Y + 0.3,
-            HOUSE_ORIGIN_Y + 2.35,
+            HOUSE_ORIGIN_Y + 0.35,
+            HOUSE_ORIGIN_Y + 3.45,
           );
           const camZ = clamp(
             lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
@@ -18985,14 +21078,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.position.set(camX, camY, camZ);
           camera.lookAt(lookX, lookY, lookZ);
           camera.updateMatrixWorld();
-          // Swing the entrance door open as the player approaches it and let
-          // it ease shut again once they walk away.
+          // Slide the twin shoji/glass entrance doors apart as the player approaches
           const doorDt = clamp(timeSec - houseDoorSwingPrevT, 0, 0.05);
           houseDoorSwingPrevT = timeSec;
           const distToDoor = Math.hypot(playerUnit.x, playerUnit.z - 3.35);
-          const doorTarget = distToDoor <= 2.1 ? 1 : 0;
+          const doorTarget = distToDoor <= 2.2 ? 1 : 0;
           houseDoorSwing += (doorTarget - houseDoorSwing) * Math.min(1, doorDt * 5.5);
-          houseExitDoorPivot.rotation.y = houseDoorSwing * 1.85;
+          syncHouseSlidingEntranceDoors(houseDoorSwing);
         } else {
           const targetEditFov = 34;
           if (camera.fov !== targetEditFov) {
@@ -19013,6 +21105,54 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             HOUSE_ORIGIN_Y + houseCamTarget.y,
             focusZ,
           );
+          camera.updateMatrixWorld();
+        }
+      } else if (npcCameraMode === 'cafe_interior') {
+        cafeInterior.root.visible = true;
+        cafeInterior.updateVisuals(timeSec, cafeWorkShiftActive);
+        if (cafeCustomerNpcRoot.visible) {
+          const customerCharGltf = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
+          if (customerCharGltf && !cafeCustomerGlbUpgraded) {
+            upgradeBuddyRigWithCharBuddiesGlb(
+              cafeCustomerRig,
+              customerCharGltf,
+              loadedBlitzAssets?.ar99AssaultGltf,
+            );
+            cafeCustomerGlbUpgraded = true;
+          }
+          cafeCustomerRig.rightArmPivot.rotation.x = -0.35 + Math.sin(timeSec * 2.8) * 0.12;
+          updateCharacterWeaponStance(cafeCustomerRig, 'unarmed', 0, false, false, 0, 0);
+        }
+        if (playerUnit) {
+          playerUnit.root.visible = true;
+          const targetCafeFov = 56;
+          if (camera.fov !== targetCafeFov) {
+            camera.fov = targetCafeFov;
+            camera.updateProjectionMatrix();
+          }
+          const lookX = cafeWorkShiftActive ? CAFE_INTERIOR_BOUNDS.baristaCounterFrontX : playerUnit.x;
+          const lookY = CAFE_ORIGIN_Y + 0.94;
+          const lookZ = cafeWorkShiftActive ? -2.25 : playerUnit.z;
+          const cosPitch = Math.cos(cafeVisitCamPitch);
+          const sinPitch = Math.sin(cafeVisitCamPitch);
+          const camX = clamp(
+            lookX + Math.sin(cafeVisitCamYaw) * cosPitch * cafeVisitCamDist,
+            CAFE_INTERIOR_BOUNDS.minX + 0.15,
+            CAFE_INTERIOR_BOUNDS.maxX - 0.15,
+          );
+          const camY = clamp(
+            lookY + sinPitch * cafeVisitCamDist,
+            CAFE_ORIGIN_Y + 0.45,
+            CAFE_ORIGIN_Y + 4.35,
+          );
+          const camZ = clamp(
+            lookZ + Math.cos(cafeVisitCamYaw) * cosPitch * cafeVisitCamDist,
+            CAFE_INTERIOR_BOUNDS.minZ + 0.15,
+            CAFE_INTERIOR_BOUNDS.maxZ + 0.2,
+          );
+          camera.up.set(0, 1, 0);
+          camera.position.set(camX, camY, camZ);
+          camera.lookAt(lookX, lookY, lookZ);
           camera.updateMatrixWorld();
         }
       } else {
@@ -19062,13 +21202,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           beachHouseNpc.npcRig.customGlbController.lastStepTimeMs = now;
         }
 
-        // Animate Floating 3D Exclamation Mark Indicator (bobbing Y + gentle rotation facing camera)
+        // Animate Floating 3D Exclamation Mark Indicator (bobbing Y; world-Y cylindrical billboard synced pre-render)
         const excBob = Math.sin(timeSec * 3.2) * 0.08;
-        const excRot = Math.sin(timeSec * 1.5) * 0.22;
         lobbyCafeNpc.exclamationGroup.position.y = 3.25 + excBob;
         beachHouseNpc.exclamationGroup.position.y = 3.25 + excBob;
-        lobbyCafeNpc.exclamationGroup.rotation.y = excRot;
-        beachHouseNpc.exclamationGroup.rotation.y = excRot;
         const hasActiveEvent = activeTutorialWaypointTarget === 'hana';
         lobbyCafeNpc.exclamationGroup.visible =
           hasActiveEvent && worldModeRef.current !== 'warzone';
@@ -19524,7 +21661,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           // poses bracketing that moment, on the LOCAL receive-time timeline — immune to
           // sender clock skew and to per-packet jitter. If packets run late, dead-reckon
           // briefly (<=150ms) from the newest pose instead of freezing.
-          const peerInHouse = localZoneKey.startsWith('house:');
+          const peerInHouse =
+            localZoneKey.startsWith('house:') || localZoneKey.startsWith('cafe:');
           const poseHist = peerPoseHistory.get(peer.sessionId);
           let sampleX = peer.x;
           let sampleZ = peer.z;
@@ -19711,10 +21849,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         cachedCityTransitNetworkGroup.visible = true;
       }
 
-      // Update Glassmorphic Nametag Proximity Visibility (Show when player approaches within 8.5m or when selected)
+      // Update Glassmorphic Nametag Proximity Visibility (Show when player approaches within 8.5m, when selected, or working Cafe Shift)
       if (playerUnit?.nameplate?.sprite) {
         playerUnit.nameplate.sprite.visible = Boolean(
-          selectedCharacterTarget && String(selectedCharacterTarget.id) === String(playerUnit.id),
+          cafeWorkShiftActive ||
+            (selectedCharacterTarget && String(selectedCharacterTarget.id) === String(playerUnit.id)),
         );
       }
       if (lobbyCafeNpc?.npcNameplate?.sprite) {
@@ -20469,6 +22608,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.isPlayer,
         );
         const localY = getTerrainElevation(b.x, b.z);
+        if (b.isPlayer && npcCameraMode === 'cafe_interior') {
+          const seatLiftCafe = b.isSitting && activeCafeSeatedSpot ? activeCafeSeatedSpot.seatLiftY : 0;
+          b.bodyGroup.position.y = (floatY + b.jumpOffset + bHitPose.hopY) * 0.55 + seatLiftCafe;
+          b.root.position.set(b.x, CAFE_ORIGIN_Y, b.z);
+          b.root.rotation.set(0, 0, 0);
+          b.root.scale.setScalar(0.55);
+          continue;
+        }
         if (b.isPlayer && (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')) {
           const sleepLiftY =
             b.isSleeping && activeSleepSpot ? activeSleepSpot.sleepLiftY : 0;
@@ -20486,12 +22633,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
       }
 
-      // Align Real-Time Online Remote Player Avatars onto Curved Planet Surface (or House Floor)
+      // Align Real-Time Online Remote Player Avatars onto Curved Planet Surface (or House/Cafe Floor)
       const isLocalInHouseAlign =
         npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
+      const isLocalInCafeAlign = npcCameraMode === 'cafe_interior';
       for (const av of remotePlayerAvatars.values()) {
         if (!av.root.visible) continue;
-        if (isLocalInHouseAlign) {
+        if (isLocalInCafeAlign) {
+          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
+          av.root.position.set(av.renderX, CAFE_ORIGIN_Y, av.renderZ);
+          av.root.rotation.set(0, 0, 0);
+          av.root.scale.setScalar(0.55);
+        } else if (isLocalInHouseAlign) {
           av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
           av.root.position.set(av.renderX, HOUSE_ORIGIN_Y, av.renderZ);
           av.root.rotation.set(0, 0, 0);
@@ -20518,7 +22671,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // matches the rendered 3D rod front guide eyelet (`Bone010_09`) to 0.000m at all camera angles!
       shorelineFishingSync.nibblePulse = Math.max(0, shorelineFishingSync.nibblePulse - dt * 2.1);
       const isPlayerInHouseVisual =
-        npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
+        npcCameraMode === 'house_visit' ||
+        npcCameraMode === 'house_interior' ||
+        npcCameraMode === 'cafe_interior';
       const playerRodGrp = playerUnit?.rig.fishingRodGroup;
       const playerRodTipAnchor = playerRodGrp?.userData.rodTipAnchor as THREE.Object3D | undefined;
       const landingElapsedMs = performance.now() - shorelineFishingSync.landingStartWallMs;
@@ -21363,8 +23518,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isFullMapOverview ||
         Boolean(skyshieldViewMode || buildingViewMode || planeViewMode) ||
         nukeStrikeState.phase !== 'idle';
-      const fogGrassCenterX = activeFocusUnit ? activeFocusUnit.x : playerUnit.x;
-      const fogGrassCenterZ = activeFocusUnit ? activeFocusUnit.z : playerUnit.z;
+      const fogGrassCenterX =
+        npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
+          ? viewCenterX
+          : activeFocusUnit
+          ? activeFocusUnit.x
+          : playerUnit.x;
+      const fogGrassCenterZ =
+        npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
+          ? viewCenterZ
+          : activeFocusUnit
+          ? activeFocusUnit.z
+          : playerUnit.z;
       applyGrassChunkSyncedFogOfWar3D({
         viewerX: fogGrassCenterX,
         viewerZ: fogGrassCenterZ,
@@ -21379,8 +23544,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         worldMode: worldModeRef.current,
         playerTeam: playerUnit.team,
       });
-      if (npcCameraMode === 'npc_merchant' || npcCameraMode === 'house_interior' || mountedTank) {
+      if (
+        npcCameraMode === 'landing_tour' ||
+        npcCameraMode === 'npc_merchant' ||
+        npcCameraMode === 'house_interior' ||
+        mountedTank
+      ) {
         playerUnit.root.visible = false;
+      } else if (npcCameraMode === 'fly_to_plaza') {
+        playerUnit.root.visible = flyProgress01 >= 0.72;
       }
 
       // Crate Pads dynamic chunk culling (commander base stacking pads & public warzone crate pads)
@@ -21781,6 +23953,107 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, w, h);
       } else {
+        // Sync all visible nametag/sign quad billboards to camera world rotation & constant screen-space pixel size,
+        // and rotate upright markers strictly around world Y so they remain vertical.
+        camera.updateMatrixWorld();
+        const vpH = renderer.domElement.clientHeight || window.innerHeight || 900;
+        for (let bi = 0; bi < buddyUnits.length; bi++) {
+          const bu = buddyUnits[bi];
+          if (!bu.root.visible) continue;
+          if (bu.nameplate?.sprite?.visible) {
+            bu.nameplate.sprite.position.y = bu.isSitting
+              ? NAMEPLATE_SCREEN_SPEC.sittingHeadAnchorLocalY
+              : NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY;
+            syncScreenSpaceBillboardQuad(
+              bu.nameplate.sprite,
+              camera,
+              vpH,
+              NAMEPLATE_SCREEN_SPEC.playerAndPeerWidthPx,
+              NAMEPLATE_SCREEN_SPEC.playerAndPeerHeightPx,
+            );
+          }
+          if (bu.saluteSign?.sprite?.visible) {
+            syncScreenSpaceBillboardQuad(
+              bu.saluteSign.sprite,
+              camera,
+              vpH,
+              NAMEPLATE_SCREEN_SPEC.overheadSignWidthPx,
+              NAMEPLATE_SCREEN_SPEC.overheadSignHeightPx,
+            );
+          }
+        }
+        for (const av of remotePlayerAvatars.values()) {
+          if (!av.root.visible) continue;
+          const anchorY = av.peer.isSitting
+            ? NAMEPLATE_SCREEN_SPEC.sittingHeadAnchorLocalY
+            : NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY;
+          if (av.nameplate.sprite.visible) {
+            av.nameplate.sprite.position.y = anchorY;
+            syncScreenSpaceBillboardQuad(
+              av.nameplate.sprite,
+              camera,
+              vpH,
+              NAMEPLATE_SCREEN_SPEC.playerAndPeerWidthPx,
+              NAMEPLATE_SCREEN_SPEC.playerAndPeerHeightPx,
+            );
+          }
+          if (av.saluteSign.sprite.visible) {
+            av.saluteSign.sprite.position.y = anchorY + 0.62;
+            syncScreenSpaceBillboardQuad(
+              av.saluteSign.sprite,
+              camera,
+              vpH,
+              NAMEPLATE_SCREEN_SPEC.overheadSignWidthPx,
+              NAMEPLATE_SCREEN_SPEC.overheadSignHeightPx,
+            );
+          }
+        }
+        if (lobbyCafeNpc?.npcGrp.visible) {
+          if (lobbyCafeNpc.npcNameplate?.sprite?.visible) {
+            syncScreenSpaceBillboardQuad(
+              lobbyCafeNpc.npcNameplate.sprite,
+              camera,
+              vpH,
+              NAMEPLATE_SCREEN_SPEC.npcMerchantWidthPx,
+              NAMEPLATE_SCREEN_SPEC.npcMerchantHeightPx,
+            );
+          }
+          if (lobbyCafeNpc.exclamationGroup.visible) {
+            syncUprightCylindricalBillboard(
+              lobbyCafeNpc.exclamationGroup,
+              camera,
+              Math.sin(windUniforms.uTime.value * 1.5) * 0.18,
+            );
+          }
+        }
+        if (beachHouseNpc?.npcGrp.visible) {
+          if (beachHouseNpc.npcNameplate?.sprite?.visible) {
+            syncScreenSpaceBillboardQuad(
+              beachHouseNpc.npcNameplate.sprite,
+              camera,
+              vpH,
+              NAMEPLATE_SCREEN_SPEC.npcMerchantWidthPx,
+              NAMEPLATE_SCREEN_SPEC.npcMerchantHeightPx,
+            );
+          }
+          if (beachHouseNpc.exclamationGroup.visible) {
+            syncUprightCylindricalBillboard(
+              beachHouseNpc.exclamationGroup,
+              camera,
+              Math.sin(windUniforms.uTime.value * 1.5) * 0.18,
+            );
+          }
+        }
+        if (npcCameraMode === 'cafe_interior' && cafeInterior.customerBubbleGroup.visible) {
+          syncScreenSpaceBillboardQuad(
+            cafeInterior.customerBubbleQuad,
+            camera,
+            vpH,
+            NAMEPLATE_SCREEN_SPEC.cafeOrderSignWidthPx,
+            NAMEPLATE_SCREEN_SPEC.cafeOrderSignHeightPx,
+          );
+        }
+
         renderer.render(scene, camera);
       }
 
@@ -21928,6 +24201,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcMerchantPromptBtn.style.display = 'none';
         enterHousePromptBtn.style.display = 'none';
         exitHouseRoomPromptBtn.style.display = 'none';
+        enterCafePromptBtn.style.display = 'none';
+        cafeStationPromptBtn.style.display = 'none';
         socialSpeechBubbleEl.style.display = 'none';
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
@@ -21941,6 +24216,111 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
       const w = window.innerWidth;
       const h = window.innerHeight;
+
+      // Animate & project Botanical Glasshouse Conservatory exterior doorway beacon + [E] MASUK CAFE prompt
+      const distToCafeDoor = getPlanetShortestDistance(
+        actorX,
+        actorZ,
+        CAFE_EXTERIOR_DOOR_TRIGGER.x,
+        CAFE_EXTERIOR_DOOR_TRIGGER.z,
+      );
+      const showCafeDoorPad =
+        worldModeRef.current !== 'warzone' && npcCameraMode === 'none' && distToCafeDoor <= 42;
+      cafeExteriorDoorPad.group.visible = showCafeDoorPad;
+      if (showCafeDoorPad) {
+        const doorTerrainY = getTerrainElevation(
+          CAFE_EXTERIOR_DOOR_TRIGGER.x,
+          CAFE_EXTERIOR_DOOR_TRIGGER.z,
+        );
+        applyPlanetCurvatureToObject(
+          cafeExteriorDoorPad.group,
+          CAFE_EXTERIOR_DOOR_TRIGGER.x,
+          doorTerrainY + 0.03,
+          CAFE_EXTERIOR_DOOR_TRIGGER.z,
+          camFollowPos.x,
+          camFollowPos.z,
+          0,
+          PLANET_CURVATURE_STRENGTH,
+        );
+        const pulseNow = performance.now() * 0.001;
+        cafeExteriorDoorPad.pulseMat.opacity = 0.58 + Math.sin(pulseNow * 3.8) * 0.25;
+        cafeExteriorDoorPad.chevronArrow.position.y = 0.65 + Math.sin(pulseNow * 3.5) * 0.12;
+        cafeExteriorDoorPad.chevronArrow.rotation.y = pulseNow * 1.6;
+        if (!isKioskModalOpenCanvas && distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius) {
+          const proj = projectWorldToScreenPixels(
+            CAFE_EXTERIOR_DOOR_TRIGGER.x,
+            doorTerrainY + 2.35,
+            CAFE_EXTERIOR_DOOR_TRIGGER.z,
+          );
+          const sx = proj.visible ? proj.x : clamp(proj.x || Math.round(w * 0.5), 96, Math.max(96, w - 96));
+          const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.55), 64, Math.max(64, h - 64));
+          enterCafePromptBtn.style.display = 'block';
+          enterCafePromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
+        } else {
+          enterCafePromptBtn.style.display = 'none';
+        }
+      } else {
+        enterCafePromptBtn.style.display = 'none';
+      }
+
+      // Floating Station Prompt inside Botanical Glasshouse Cafe ('cafe_interior')
+      if (npcCameraMode === 'cafe_interior' && !isKioskModalOpenCanvas) {
+        const station = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive);
+        if (station.kind) {
+          let tx = 0;
+          let ty = CAFE_ORIGIN_Y + 1.95;
+          let tz = 0;
+          let label = 'PESAN MENU [E]';
+          let bgHex = '#38bdf8';
+          let fgHex = '#0f172a';
+          if (station.kind === 'exit_door') {
+            tx = CAFE_INTERIOR_BOUNDS.exitDoorX;
+            tz = CAFE_INTERIOR_BOUNDS.exitDoorZ;
+            ty = CAFE_ORIGIN_Y + 1.45;
+            label = 'KELUAR CAFE [E]';
+            bgHex = '#ef4444';
+            fgHex = '#ffffff';
+          } else if (station.kind === 'serve_customer') {
+            tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
+            tz = -2.05;
+            ty = CAFE_ORIGIN_Y + 1.16;
+            label = 'SAJIKAN [E]';
+            bgHex = '#b8ff3c';
+            fgHex = '#14161d';
+          } else if (station.kind === 'order_counter') {
+            tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
+            tz = CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ;
+            ty = CAFE_ORIGIN_Y + 1.75;
+            label = 'PESAN MENU [E]';
+            bgHex = '#38bdf8';
+            fgHex = '#0f172a';
+          } else if (station.kind === 'rota_board') {
+            tx = CAFE_INTERIOR_BOUNDS.rotaBoardX;
+            tz = CAFE_INTERIOR_BOUNDS.rotaBoardZ;
+            ty = CAFE_ORIGIN_Y + 2.05;
+            label = cafeWorkShiftActive ? 'SHIFT AKTIF' : 'KERJA PELAYAN [E]';
+            bgHex = '#4ade80';
+            fgHex = '#052e16';
+          } else if (station.kind === 'atm_machine') {
+            tx = -5.45;
+            tz = -4.18;
+            ty = CAFE_ORIGIN_Y + 1.94;
+            label = 'ATM TUKAR GAJI [E]';
+            bgHex = '#facc15';
+            fgHex = '#14161d';
+          }
+          cafeStationPromptBtn.innerHTML = getCafeStationBtnHtml(label, bgHex, fgHex);
+          const proj = projectFlatRoomToScreenPixels(tx, ty, tz);
+          const sx = proj.visible ? proj.x : clamp(proj.x || Math.round(w * 0.5), 96, Math.max(96, w - 96));
+          const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.55), 64, Math.max(64, h - 64));
+          cafeStationPromptBtn.style.display = 'block';
+          cafeStationPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
+        } else {
+          cafeStationPromptBtn.style.display = 'none';
+        }
+      } else {
+        cafeStationPromptBtn.style.display = 'none';
+      }
 
       // 0A-00. Floating "EXIT ROOM [E]" at the Exit Door inside Private House ('house_visit')
       if (
@@ -22255,7 +24635,45 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else {
           bottomSitActionBtn.style.display = 'none';
         }
+      } else if (npcCameraMode === 'cafe_interior' && !isKioskModalOpenCanvas) {
+        for (let si = 0; si < seatIndicatorBtns.length; si++) {
+          seatIndicatorBtns[si].btn.style.display = 'none';
+          if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
+        }
+        currentNearestCafeSeat = null;
+        let bestCafeSeatIdx = -1;
+        let bestCafeSeatDist = 1.85;
+        for (let ci = 0; ci < CAFE_INTERIOR_SEAT_SPOTS.length; ci++) {
+          const sp = CAFE_INTERIOR_SEAT_SPOTS[ci];
+          const d = Math.hypot(playerUnit.x - sp.x, playerUnit.z - sp.z);
+          if (d <= bestCafeSeatDist) {
+            bestCafeSeatDist = d;
+            bestCafeSeatIdx = ci;
+          }
+          const ind = cafeInterior.floorSpotIndicators[ci];
+          if (ind) {
+            const isActiveHere = Boolean(playerUnit.isSitting && activeCafeSeatedSpot?.id === sp.id);
+            ind.coinRoot.visible = !isActiveHere;
+            ind.greenCoin.visible = ci === bestCafeSeatIdx;
+            ind.blueCoin.visible = ci !== bestCafeSeatIdx;
+          }
+        }
+        if (bestCafeSeatIdx !== -1) {
+          currentNearestCafeSeat = CAFE_INTERIOR_SEAT_SPOTS[bestCafeSeatIdx];
+        }
+        if (playerUnit.isSitting && activeCafeSeatedSpot) {
+          bottomSitActionBtn.innerHTML = getSitBarHtml('Berdiri');
+          bottomSitActionBtn.style.display = 'block';
+          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+        } else if (currentNearestCafeSeat && !cafeWorkShiftActive) {
+          bottomSitActionBtn.innerHTML = getSitBarHtml('Duduk');
+          bottomSitActionBtn.style.display = 'block';
+          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+        } else {
+          bottomSitActionBtn.style.display = 'none';
+        }
       } else {
+        currentNearestCafeSeat = null;
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
           seatIndicatorBtns[si].btn.style.display = 'none';
@@ -22306,13 +24724,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const bx = playerUnit.x;
         const bz = playerUnit.z;
         const proj =
-          npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
-            ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
-            : projectWorldToScreenPixels(
-                bx,
-                getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95),
-                bz,
-              );
+          npcCameraMode === 'cafe_interior'
+            ? projectFlatRoomToScreenPixels(bx, CAFE_ORIGIN_Y + 1.65, bz)
+            : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
+              ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
+              : projectWorldToScreenPixels(
+                  bx,
+                  getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95),
+                  bz,
+                );
         const sx = proj.visible ? proj.x : Math.round(w * 0.5);
         const sy = proj.visible ? proj.y : Math.round(h * 0.38);
         socialSpeechBubbleEl.style.display = 'block';

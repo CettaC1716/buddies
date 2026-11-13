@@ -119,7 +119,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 598, kind: 'river_rock', x: 48.0, z: -8.5, rotY: 0.7, scale: 1.35 },
     { id: 599, kind: 'river_rock', x: 48.0, z: 8.5, rotY: -0.7, scale: 1.35 },
 
-    { id: 491, kind: 'tree_gold', x: -99.9, z: 25.4, rotY: 1.32, scale: 0.78 },
+    // Tree 491 removed from South Plaza L-Shaped Glasshouse Cafe interior ("hapus pohon yang di dadlam cafe kaca")
 
     // Wind turbines removed from West Ring Road ("hapus windfarm yang ada di jalan ini")
 
@@ -200,12 +200,25 @@ export function cloneDefaultLayout(): ArenaMapLayout {
   return JSON.parse(JSON.stringify(DEFAULT_ARENA_MAP_LAYOUT));
 }
 
+/**
+ * Returns true if world (x, z) falls inside the South Plaza L-Shaped Glasshouse Cafe footprint
+ * (Main Hall: x in [-103.6, -77.4], z in [22.9, 37.1]; West L-Wing: x in [-103.6, -92.6], z in [13.7, 23.2]).
+ */
+export function isInsideSouthPlazaGlasshouseFootprint(x: number, z: number): boolean {
+  const inMainHall = x >= -103.6 && x <= -77.4 && z >= 22.9 && z <= 37.1;
+  const inWestWing = x >= -103.6 && x <= -92.6 && z >= 13.7 && z <= 23.2;
+  return inMainHall || inWestWing;
+}
+
 export function loadSavedArenaLayout(): ArenaMapLayout {
   try {
     const raw = localStorage.getItem(MAP_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as ArenaMapLayout;
       if (parsed && Array.isArray(parsed.props) && parsed.blueHq && parsed.redHq) {
+        parsed.props = parsed.props.filter(
+          (p) => p.id !== 491 && !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z),
+        );
         if (Array.isArray(parsed.sculptData) && parsed.sculptData.length > 0) {
           restoreTerrainSculptGrid(parsed.sculptData);
         }
@@ -302,6 +315,8 @@ export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
   }
 }
 
+const SHARED_BILLBOARD_QUAD_GEO = new THREE.PlaneGeometry(1, 1);
+
 export function createBillboardSign(widthWorld: number, heightWorld: number) {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -309,10 +324,22 @@ export function createBillboardSign(widthWorld: number, heightWorld: number) {
   const ctx = canvas.getContext('2d')!;
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-  const sprite = new THREE.Sprite(mat);
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    fog: false,
+  });
+  const sprite = new THREE.Mesh(SHARED_BILLBOARD_QUAD_GEO, mat);
   sprite.scale.set(widthWorld, heightWorld, 1);
   sprite.renderOrder = 10;
+  sprite.castShadow = false;
+  sprite.receiveShadow = false;
+  sprite.raycast = () => {};
 
   const updateText = (title: string, subtitle: string, accentHex: string, ratio = 1) => {
     ctx.clearRect(0, 0, 512, 128);
@@ -346,8 +373,8 @@ export function createBillboardSign(widthWorld: number, heightWorld: number) {
 }
 
 /**
- * Creates an MMORPG Glassmorphism Nameplate with Custom Emblem (Diamond Crown / Shield / Star)
- * Inspired by modern stylized games (e.g. Avakin / Genshin / Anime MMOs).
+ * Creates an MMORPG Glassmorphism Nameplate Quad Billboard with Custom Emblem (Crown / Shield)
+ * Sized in constant screen-space pixels each frame so it stays crisp and proportional like UI prompts.
  */
 export function createGlassmorphicNameplate(
   widthWorld = 2.8,
@@ -358,70 +385,75 @@ export function createGlassmorphicNameplate(
 ) {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
-  canvas.height = 112;
+  canvas.height = 116;
   const ctx = canvas.getContext('2d')!;
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-  const sprite = new THREE.Sprite(mat);
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    fog: false,
+  });
+  const sprite = new THREE.Mesh(SHARED_BILLBOARD_QUAD_GEO, mat);
   sprite.scale.set(widthWorld, heightWorld, 1);
   sprite.renderOrder = 11;
+  sprite.castShadow = false;
+  sprite.receiveShadow = false;
+  sprite.raycast = () => {};
 
   const updatePlate = (name: string, _sub = '', emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie') => {
-    ctx.clearRect(0, 0, 512, 112);
+    ctx.clearRect(0, 0, 512, 116);
 
-    // 1. Crystal-Clear Translucent Frosted Glassmorphism Background ("Bening")
-    const bgGrad = ctx.createLinearGradient(0, 0, 0, 112);
-    bgGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
-    bgGrad.addColorStop(0.3, 'rgba(15, 23, 42, 0.40)');
-    bgGrad.addColorStop(1, 'rgba(2, 6, 23, 0.60)');
+    // 1. Crisp High-Contrast Frosted Dark Slate Backing matching UI Prompts
+    const bgGrad = ctx.createLinearGradient(0, 8, 0, 108);
+    bgGrad.addColorStop(0, 'rgba(20, 27, 45, 0.88)');
+    bgGrad.addColorStop(0.45, 'rgba(15, 23, 42, 0.90)');
+    bgGrad.addColorStop(1, 'rgba(8, 12, 24, 0.94)');
 
     ctx.save();
-    ctx.shadowColor = emblemType === 'npc' ? 'rgba(250, 204, 21, 0.6)' : 'rgba(56, 189, 248, 0.6)';
-    ctx.shadowBlur = 14;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
 
     ctx.fillStyle = bgGrad;
     ctx.beginPath();
-    ctx.roundRect(10, 10, 492, 92, 22);
+    ctx.roundRect(10, 10, 492, 96, 20);
     ctx.fill();
     ctx.restore();
 
-    // 2. Translucent Glass Glossy Top Highlight Reflection
-    const glossGrad = ctx.createLinearGradient(0, 10, 0, 50);
-    glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.65)');
-    glossGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
+    // 2. Subtle Top Specular Sheen
+    const glossGrad = ctx.createLinearGradient(0, 10, 0, 48);
+    glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
     glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
     ctx.fillStyle = glossGrad;
     ctx.beginPath();
-    ctx.roundRect(12, 12, 488, 42, [20, 20, 0, 0]);
+    ctx.roundRect(12, 12, 488, 36, [18, 18, 0, 0]);
     ctx.fill();
 
-    // 3. Cybernetic Neon Glass Border
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = emblemType === 'npc' ? 'rgba(250, 204, 21, 0.95)' : 'rgba(56, 189, 248, 0.95)';
+    // 3. Crisp Accent Border matching UI Prompt stroke weight
+    ctx.lineWidth = 4.0;
+    ctx.strokeStyle = emblemType === 'npc' ? '#facc15' : '#38bdf8';
     ctx.beginPath();
-    ctx.roundRect(10, 10, 492, 92, 22);
-    ctx.stroke();
-
-    // 3b. Inner crystal reflection line for authentic glassmorphism
-    ctx.lineWidth = 1.0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.42)';
-    ctx.beginPath();
-    ctx.roundRect(13, 13, 486, 86, 19);
+    ctx.roundRect(10, 10, 492, 96, 20);
     ctx.stroke();
 
     // 4. Render Emblem (Left badge circle/shield)
     ctx.save();
-    const cx = 58;
-    const cy = 56;
+    const cx = 60;
+    const cy = 58;
 
     if (emblemType === 'npc') {
       // NPC Emblem: Royal Golden Crown & Star Crest
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 3.0;
       ctx.strokeStyle = '#facc15';
       ctx.stroke();
 
@@ -450,9 +482,9 @@ export function createGlassmorphicNameplate(
       // Player Default Rookie Emblem: Blue Tactical Shield with Wing/Chevron
       ctx.fillStyle = '#0284c7';
       ctx.beginPath();
-      ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 3.0;
       ctx.strokeStyle = '#38bdf8';
       ctx.stroke();
 
@@ -481,24 +513,24 @@ export function createGlassmorphicNameplate(
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = '900 13px "Barlow", sans-serif';
+      ctx.font = '900 14px "Barlow", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('1', cx, cy + 2);
     }
     ctx.restore();
 
-    // 5. Player / NPC Name Text (Bold, modern typography with shadow, centered in nameplate tag)
+    // 5. Player / NPC Name Text (Bold, legible at compact 146x33px constant screen size)
     ctx.save();
     ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 4;
     ctx.shadowOffsetX = 1.5;
     ctx.shadowOffsetY = 1.5;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
-    ctx.font = '900 32px "Barlow", sans-serif';
-    ctx.fillText(name.toUpperCase(), 294, 56);
+    ctx.font = '900 36px "Barlow", sans-serif';
+    ctx.fillText(name.toUpperCase(), 292, 58, 372);
     ctx.restore();
 
     tex.needsUpdate = true;
@@ -539,19 +571,15 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'west_wall_east_n', x: -76.45, z: -24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
     { id: 'west_wall_east_s', x: -76.45, z: 24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
 
-    // Central Plaza Botanical Glasshouse Conservatory (Walk-in Perimeter Wall Colliders leaving the 2.38m-wide East entrance doorway & 4.5m x 4.8m interior room open!), Modern Coffee & Gelato Kiosk, Parasol Tables & 5 Integrated Concrete Planter Benches (+2.50m Plaza Level)
-    { id: 'lobby_glasshouse_wall_west', x: -102.81, z: 12.20, halfX: 0.55, halfZ: 4.07, rotY: 0, heightY: 8.3, mat: 'metal' },
-    { id: 'lobby_glasshouse_wall_north', x: -100.40, z: 8.96, halfX: 2.89, halfZ: 0.85, rotY: 0, heightY: 8.3, mat: 'metal' },
-    { id: 'lobby_glasshouse_wall_south', x: -100.40, z: 15.44, halfX: 2.89, halfZ: 0.85, rotY: 0, heightY: 8.3, mat: 'metal' },
-    { id: 'lobby_glasshouse_wall_east_n', x: -97.51, z: 9.57, halfX: 0.24, halfZ: 1.44, rotY: 0, heightY: 8.3, mat: 'metal' },
-    { id: 'lobby_glasshouse_wall_east_s', x: -97.51, z: 14.83, halfX: 0.24, halfZ: 1.44, rotY: 0, heightY: 8.3, mat: 'metal' },
+    // South Plaza Grand L-Shaped Botanical Glasshouse Cafe (+2.50m Plaza Level, spanning West-to-East fence & West wing, clear of East Parasol Cafe Tables), Modern Coffee & Gelato Kiosks
+    { id: 'lobby_glasshouse_l_main', x: -90.50, z: 30.00, halfX: 12.85, halfZ: 6.85, rotY: 0, heightY: 9.6, mat: 'metal' },
+    { id: 'lobby_glasshouse_l_wing', x: -98.10, z: 18.60, halfX: 5.25, halfZ: 4.65, rotY: 0, heightY: 9.6, mat: 'metal' },
     { id: 'lobby_gelato_kiosk_body', x: -100.55, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
     { id: 'lobby_gelato_kiosk_stools', x: -97.56, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 3.7, mat: 'wood' },
     { id: 'lobby_fashion_kiosk_body', x: -100.55, z: -1.2, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
     { id: 'lobby_fashion_kiosk_sign', x: -97.68, z: -3.21, halfX: 0.42, halfZ: 0.42, rotY: 0, heightY: 3.8, mat: 'wood' },
     { id: 'npc_merchant_hana', x: -91.3, z: -24.26, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
     { id: 'npc_merchant_kai', x: 85.8, z: 60.0, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
-    { id: 'lobby_civic_fountain_basin', x: -90.4, z: 24.8, halfX: 5.45, halfZ: 2.95, rotY: 0, heightY: 3.1, mat: 'concrete' },
     { id: 'lobby_parasol_table_n', x: -81.7, z: 13.31, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
     { id: 'lobby_parasol_table_s', x: -81.7, z: 19.09, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
     // Grand Neoclassical Municipal Hall & Clock Tower on North Central Plaza (world center x = -91.3, z = -29.2, scale = 1.42)
@@ -560,18 +588,15 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'lobby_civic_hall_balustrade_e', x: -85.70, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
     { id: 'lobby_civic_hall_kiosk_w', x: -98.61, z: -27.99, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
     { id: 'lobby_civic_hall_kiosk_e', x: -83.99, z: -28.42, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
-    { id: 'lobby_planter_bench_s', x: -90.5, z: 32.78, halfX: 3.48, halfZ: 1.72, rotY: 0, heightY: 5.6, mat: 'concrete' },
-    { id: 'lobby_planter_bench_ws', x: -99.7, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
-    { id: 'lobby_planter_bench_es', x: -81.1, z: 24.8, halfX: 1.62, halfZ: 3.25, rotY: 0, heightY: 5.6, mat: 'concrete' },
     // 8 Vintage Park Lampposts with Flower Baskets along West & East Central Plaza Promenade (+2.50m Plaza Level + 4.30m height = 6.80m)
     { id: 'lobby_vintage_lamppost_w1', x: -102.7, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_w2', x: -96.1, z: -9.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_w3', x: -96.1, z: 9.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_w4', x: -102.7, z: 28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w3', x: -93.3, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w4', x: -102.9, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_e1', x: -78.3, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_e2', x: -78.3, z: -12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_e3', x: -78.3, z: 12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e4', x: -78.3, z: 28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e4', x: -78.1, z: 21.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     // 2 Aligned Vintage Park Benches & Planter Boxes along East-North Plaza Promenade
     { id: 'lobby_vintage_bench_planter_en', x: -78.60, z: -16.40, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
     { id: 'lobby_vintage_bench_planter_en_2', x: -78.60, z: -23.60, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },

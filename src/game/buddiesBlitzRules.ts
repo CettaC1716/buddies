@@ -13341,4 +13341,215 @@ export function evaluateTramRideTransitionStep(params: {
   };
 }
 
+export const STACKING_PAD_SPEC = {
+  deckHalfSize: 2.18,
+  deckChamfer: 0.24,
+  deckHeight: 0.18,
+  bayOffset: 0.95,
+  socketSize: 1.76,
+  socketHeight: 0.04,
+  bayTileSize: 1.64,
+  bayTileHeight: 0.06,
+  /** Top of bay tile aligns strictly with UNIFIED_WORLD_CRATE_SIZE * 0.5 below slotY=0.93 (0.93 - 0.66 = 0.27) */
+  bayTopY: 0.27,
+  pylonOffset: 1.94,
+  pylonHeight: 0.42,
+} as const;
+
+export function computeStackingPadSlotY(layer: number): number {
+  const safeLayer = Math.max(0, Math.floor(layer));
+  return Number((STACKING_PAD_SPEC.bayTopY + UNIFIED_WORLD_CRATE_SIZE * (0.5 + safeLayer)).toFixed(4));
+}
+
+export function getStackingPadChevronOutlinePoints(): ReadonlyArray<readonly [number, number]> {
+  return [
+    [0, 0.46],
+    [0.36, 0.1],
+    [0.18, 0.1],
+    [0.18, -0.34],
+    [0, -0.18],
+    [-0.18, -0.34],
+    [-0.18, 0.1],
+    [-0.36, 0.1],
+  ];
+}
+
+export function shouldStripDetachedTreeBaseCollar(
+  componentBounds: { minY: number; maxY: number; vertexCount: number },
+  tallMainTrunkExists: boolean,
+): boolean {
+  if (!tallMainTrunkExists) return false;
+  return componentBounds.maxY < 1.2 && componentBounds.vertexCount < 180;
+}
+
+export interface LandingTourWaypoint {
+  id: string;
+  lookAt: Vec3;
+  orbitRadius: number;
+  cameraHeight: number;
+  baseOrbitYaw: number;
+}
+
+export const LANDING_TOUR_WAYPOINTS: readonly LandingTourWaypoint[] = [
+  {
+    id: 'central_plaza_promenade',
+    lookAt: { x: -75.0, y: 1.6, z: 0.0 },
+    orbitRadius: 21.0,
+    cameraHeight: 11.2,
+    baseOrbitYaw: 0.65,
+  },
+  {
+    id: 'nw_fishing_lake',
+    lookAt: { x: -34.0, y: 1.1, z: -8.0 },
+    orbitRadius: 17.5,
+    cameraHeight: 8.8,
+    baseOrbitYaw: 1.9,
+  },
+  {
+    id: 'north_residence_boulevard',
+    lookAt: { x: 4.0, y: 1.6, z: -34.0 },
+    orbitRadius: 20.5,
+    cameraHeight: 10.6,
+    baseOrbitYaw: 3.1,
+  },
+  {
+    id: 'south_residence_tram_corridor',
+    lookAt: { x: -24.0, y: 1.6, z: 36.0 },
+    orbitRadius: 21.5,
+    cameraHeight: 11.4,
+    baseOrbitYaw: 4.4,
+  },
+  {
+    id: 'plaza_information_center',
+    lookAt: { x: -84.0, y: 1.8, z: -12.0 },
+    orbitRadius: 19.0,
+    cameraHeight: 10.2,
+    baseOrbitYaw: 5.5,
+  },
+];
+
+export function computeLandingCityTourPose(timeSec: number): {
+  cameraPos: Vec3;
+  lookAtPos: Vec3;
+  fov: number;
+} {
+  const safeTime = Number.isFinite(timeSec) ? Math.max(0, timeSec) : 0;
+  const count = LANDING_TOUR_WAYPOINTS.length;
+  const secondsPerStop = 8.0;
+  const cyclePos = (safeTime / secondsPerStop) % count;
+  const idxA = Math.floor(cyclePos) % count;
+  const idxB = (idxA + 1) % count;
+  const frac = cyclePos - Math.floor(cyclePos);
+  // Smoothstep cubic S-curve so transitions between city districts glide cleanly
+  const alpha = frac * frac * (3 - 2 * frac);
+
+  const wpA = LANDING_TOUR_WAYPOINTS[idxA];
+  const wpB = LANDING_TOUR_WAYPOINTS[idxB];
+
+  const lookAtX = wpA.lookAt.x + (wpB.lookAt.x - wpA.lookAt.x) * alpha;
+  const lookAtY = wpA.lookAt.y + (wpB.lookAt.y - wpA.lookAt.y) * alpha;
+  const lookAtZ = wpA.lookAt.z + (wpB.lookAt.z - wpA.lookAt.z) * alpha;
+
+  const radius = wpA.orbitRadius + (wpB.orbitRadius - wpA.orbitRadius) * alpha;
+  const height = wpA.cameraHeight + (wpB.cameraHeight - wpA.cameraHeight) * alpha;
+  const orbitYaw =
+    wpA.baseOrbitYaw +
+    Math.atan2(
+      Math.sin(wpB.baseOrbitYaw - wpA.baseOrbitYaw),
+      Math.cos(wpB.baseOrbitYaw - wpA.baseOrbitYaw),
+    ) *
+      alpha +
+    safeTime * 0.14;
+
+  const cameraPos: Vec3 = {
+    x: lookAtX + Math.sin(orbitYaw) * radius,
+    y: lookAtY + height,
+    z: lookAtZ + Math.cos(orbitYaw) * radius,
+  };
+
+  return {
+    cameraPos,
+    lookAtPos: { x: lookAtX, y: lookAtY, z: lookAtZ },
+    fov: 44,
+  };
+}
+
+export function computePlazaFlyToPose(params: {
+  startCamPos: Vec3;
+  startLookAtPos: Vec3;
+  startFov: number;
+  targetCamPos: Vec3;
+  targetLookAtPos: Vec3;
+  targetFov: number;
+  progress01: number;
+}): {
+  cameraPos: Vec3;
+  lookAtPos: Vec3;
+  fov: number;
+  eased01: number;
+  isComplete: boolean;
+} {
+  const progress01 = Math.max(0, Math.min(1, Number.isFinite(params.progress01) ? params.progress01 : 0));
+  const eased01 =
+    progress01 < 0.5
+      ? 4 * progress01 * progress01 * progress01
+      : 1 - Math.pow(-2 * progress01 + 2, 3) / 2;
+
+  const distXZ = Math.hypot(
+    params.targetLookAtPos.x - params.startLookAtPos.x,
+    params.targetLookAtPos.z - params.startLookAtPos.z,
+  );
+  const arcLift = Math.sin(eased01 * Math.PI) * Math.min(9.5, 2.5 + distXZ * 0.08);
+
+  const cameraPos: Vec3 = {
+    x: params.startCamPos.x + (params.targetCamPos.x - params.startCamPos.x) * eased01,
+    y: params.startCamPos.y + (params.targetCamPos.y - params.startCamPos.y) * eased01 + arcLift,
+    z: params.startCamPos.z + (params.targetCamPos.z - params.startCamPos.z) * eased01,
+  };
+
+  const lookAtPos: Vec3 = {
+    x: params.startLookAtPos.x + (params.targetLookAtPos.x - params.startLookAtPos.x) * eased01,
+    y: params.startLookAtPos.y + (params.targetLookAtPos.y - params.startLookAtPos.y) * eased01,
+    z: params.startLookAtPos.z + (params.targetLookAtPos.z - params.startLookAtPos.z) * eased01,
+  };
+
+  const fov = params.startFov + (params.targetFov - params.startFov) * eased01;
+
+  return {
+    cameraPos,
+    lookAtPos,
+    fov,
+    eased01,
+    isComplete: progress01 >= 1,
+  };
+}
+
+export function resolveOnboardingAccountEntry(params: {
+  authKind: 'guest' | 'google' | 'external_wallet';
+  hasSavedAvatarProfile: boolean;
+  savedGender?: 'male' | 'female';
+  savedDisplayName?: string;
+}): {
+  isReturningUser: boolean;
+  flyTargetMode: 'character_select' | 'gameplay';
+  nextStepAfterFly: 'guest_character_select' | 'completed';
+  restoredGender: 'male' | 'female';
+  restoredDisplayName?: string;
+} {
+  if (params.authKind === 'guest' || !params.hasSavedAvatarProfile) {
+    return {
+      isReturningUser: false,
+      flyTargetMode: 'character_select',
+      nextStepAfterFly: 'guest_character_select',
+      restoredGender: 'male',
+    };
+  }
+  return {
+    isReturningUser: true,
+    flyTargetMode: 'gameplay',
+    nextStepAfterFly: 'completed',
+    restoredGender: params.savedGender === 'female' ? 'female' : 'male',
+    restoredDisplayName: params.savedDisplayName,
+  };
+}
 
