@@ -33,6 +33,7 @@ import {
   negotiateAccept,
   negotiateWalkAway,
   clampNegotiationOffer,
+  parseTradeChatIntent,
   type NegotiationSession,
   generateNpcMerchantReply,
   formatDaylightHour,
@@ -772,7 +773,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       tradeSessionRef.current
     ) {
       const s = tradeSessionRef.current;
-      const lower = text.toLowerCase();
       const finishLocal = (line: string) => {
         setIsNpcThinking(false);
         triggerNpcSpeech(line);
@@ -780,15 +780,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }, 40);
       };
-      if (/tidak jadi|batal|cancel|stop|sudah/.test(lower)) {
+      const intent = parseTradeChatIntent(text);
+      if (intent.kind === 'walkaway') {
         syncTrade(negotiateWalkAway(s), 'walkaway', tradeFishId);
         finishLocal(tradeLine('walkaway'));
         return;
       }
-      const askMatch = lower.match(/\d+/);
-      if (askMatch) {
-        const ask = parseInt(askMatch[0], 10);
-        const { session: next, outcome } = negotiatePlayerCounter(s, ask);
+      if (intent.kind === 'counter') {
+        const { session: next, outcome } = negotiatePlayerCounter(s, intent.ask);
         if (outcome === 'agreed') {
           syncTrade(next, 'agreed', tradeFishId);
           finishLocal(tradeLine('acceptCounter'));
@@ -802,19 +801,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         }
         return;
       }
-      if (
-        /(kenapa|mengapa|why|alasan|reason)/.test(lower) &&
-        !/(naik|tambah|more|higher|lagi)/.test(lower)
-      ) {
+      if (intent.kind === 'why') {
         finishLocal(tradeLine(getTradeReasonKey(s)));
         return;
       }
-      if (/\b(terima|setuju|deal|oke|ok|ya|yes|accept|baiklah|boleh)\b/.test(lower)) {
+      if (intent.kind === 'accept') {
         syncTrade(negotiateAccept(s), 'agreed', tradeFishId);
         finishLocal(tradeLine('agreed'));
         return;
       }
-      if (/mahal|murah|naik|tambah|kurang|tidak|nggak|enggak|higher|more|cheap|lagi/.test(lower)) {
+      if (intent.kind === 'raise') {
         const next = negotiateRaise(s);
         syncTrade(next, 'offering', tradeFishId);
         finishLocal(
@@ -2147,7 +2143,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const rateLul = exchangeQuote.lulCostFor10Cyon;
             const rateCyon = exchangeQuote.cyonGranted;
             const parsedLul = Math.max(0, Math.floor(Number(exchangeLulAmountStr) || 0));
-            const calculatedCyon = Math.floor((parsedLul / rateLul) * rateCyon);
+            const exchangePackets = rateLul > 0 ? Math.floor(parsedLul / rateLul) : 0;
+            const exchangeLulSpent = exchangePackets * rateLul;
+            const calculatedCyon = exchangePackets * rateCyon;
             const canPerformExchange =
               walletConnected &&
               exchangeQuote.canExchange &&
@@ -2297,9 +2295,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       onClick={() => {
                         if (!canPerformExchange) return;
                         soundEngine.playUiClick();
-                        onExchangeLulToCyon(parsedLul, calculatedCyon);
+                        onExchangeLulToCyon(exchangeLulSpent, calculatedCyon);
                         triggerNpcSpeech(
-                          `Exchanged ${parsedLul} LUL for +${calculatedCyon} CYON.`,
+                          `Exchanged ${exchangeLulSpent} LUL for +${calculatedCyon} CYON.`,
                         );
                       }}
                       className={`-skew-x-6 min-w-[180px] py-2 px-6 border-2 border-black text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${

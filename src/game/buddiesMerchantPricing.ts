@@ -769,9 +769,13 @@ export function negotiatePlayerCounter(
   return { session: raised, outcome: raised.isFinalOffer ? 'final' : 'raised' };
 }
 
-/** Player accepts the NPC's current offer. */
+/**
+ * Player accepts the NPC's current offer. A session the player walked away
+ * from can still be accepted (the walkaway card's TAKE IT button): the deal
+ * revives at the last offer that was on the table.
+ */
 export function negotiateAccept(session: NegotiationSession): NegotiationSession {
-  if (session.closed || session.agreedPrice !== null) return session;
+  if (session.agreedPrice !== null) return session;
   return { ...session, agreedPrice: session.currentOffer, closed: 'agreed' };
 }
 
@@ -779,6 +783,59 @@ export function negotiateAccept(session: NegotiationSession): NegotiationSession
 export function negotiateWalkAway(session: NegotiationSession): NegotiationSession {
   if (session.closed) return session;
   return { ...session, closed: 'walked_away' };
+}
+
+export type TradeChatIntent =
+  | { kind: 'walkaway' }
+  | { kind: 'counter'; ask: number }
+  | { kind: 'why' }
+  | { kind: 'accept' }
+  | { kind: 'raise' }
+  | { kind: 'none' };
+
+/**
+ * Classifies a player's chat line while a negotiation is live. Deliberately
+ * strict, because a match here moves money without any AI in the loop:
+ * - walking away needs an explicit cancel phrase as a whole word — an
+ *   ordinary word like "sudah" must never kill a negotiation;
+ * - a number counts as a counter-offer only when the message is basically
+ *   the number itself ("50", "50k", "50 LUL") or pairs it with an offer
+ *   verb ("tawar 45") — a number inside a normal sentence is not an ask;
+ * - accepting requires the whole message to be the agreement ("ya",
+ *   "oke", "deal") — "ya, mahal sekali" is a complaint, not a signature.
+ * Anything unclear returns 'none' and falls through to the AI, whose
+ * proposals are still clamped to the session envelope before they apply.
+ */
+export function parseTradeChatIntent(text: string): TradeChatIntent {
+  const lower = text.toLowerCase().trim();
+  if (!lower) return { kind: 'none' };
+  if (/\b(tidak jadi|nggak jadi|enggak jadi|ga jadi|batal|cancel|berhenti|stop)\b/.test(lower)) {
+    return { kind: 'walkaway' };
+  }
+  const suffixMul = (s?: string) => (s === 'k' || s === 'rb' || s === 'ribu' ? 1000 : 1);
+  const bareMatch = lower.match(/^(\d[\d.]*)\s*(k|rb|ribu|lul)?$/);
+  const verbMatch = bareMatch
+    ? null
+    : lower.match(/(?:tawar|minta|harga|jadi|angkut|ambil|deal)\D{0,12}?(\d[\d.]*)\s*(k|rb|ribu|lul)?/);
+  const numRaw = bareMatch ? bareMatch[1] : verbMatch ? verbMatch[1] : null;
+  const numSuffix = bareMatch ? bareMatch[2] : verbMatch ? verbMatch[2] : undefined;
+  if (numRaw !== null) {
+    const ask = Math.round(parseFloat(numRaw.replace(/\./g, '')) * suffixMul(numSuffix));
+    if (Number.isFinite(ask) && ask >= 1) return { kind: 'counter', ask };
+  }
+  if (
+    /(kenapa|mengapa|why|alasan|reason)/.test(lower) &&
+    !/(naik|tambah|more|higher|lagi)/.test(lower)
+  ) {
+    return { kind: 'why' };
+  }
+  if (/^(ya|iya|oke|ok|deal|setuju|terima|baiklah|boleh|yes|accept|siap|gas|angkut|ambil)[\s!.]*$/.test(lower)) {
+    return { kind: 'accept' };
+  }
+  if (/mahal|murah|naik|tambah|kurang|tidak|nggak|enggak|higher|more|cheap|lagi/.test(lower)) {
+    return { kind: 'raise' };
+  }
+  return { kind: 'none' };
 }
 
 /** Clamps any externally proposed price (e.g. an LLM move) into the envelope. */

@@ -79,6 +79,7 @@ import {
   executeLulToCyonExchange,
   executeLulToCyonExchangePackets,
   evaluateLulToCyonExchangeQuote,
+  evaluateNegotiationEnvelope,
   investInMerchantShop,
   stepFastForwardEconomyTick,
   MerchantLocationId,
@@ -807,22 +808,34 @@ export default function App() {
   useEffect(() => {
     if (!isFastForwardRunning || activeSpecialModal !== 'npc_merchant') return;
     const timer = window.setInterval(() => {
-      setMarketState((prev) => {
-        const next = stepFastForwardEconomyTick(prev, prev.dayCounter);
-        void syncNpcMerchantToSupabase({
-          merchant_id: merchantLocation,
-          cyon_treasury: next.treasuryCyon,
-          is_bankrupt: next.isShopBroke,
-          simulated_day: next.dayCounter,
-          stock_by_item: next.stockByItemId,
-          recent_demand_by_item: next.demandByItemId,
-          last_headline: next.lastMarketHeadline,
-        });
-        return next;
-      });
+      setMarketState((prev) => stepFastForwardEconomyTick(prev, prev.dayCounter));
     }, 1100);
     return () => window.clearInterval(timer);
   }, [isFastForwardRunning, activeSpecialModal, merchantLocation]);
+
+  // When Fast-Forward stops, snap the local simulation back to the shared
+  // merchant row — FF must never leak its simulated treasury/stock (incl.
+  // the forced-broke day) into the state other players trade against.
+  const prevFastForwardRef = useRef(false);
+  useEffect(() => {
+    if (prevFastForwardRef.current && !isFastForwardRunning) {
+      void fetchNpcMerchantsFromSupabase().then((rows) => {
+        if (rows.length === 0) return;
+        const activeRow = rows.find((r) => r.merchant_id === merchantLocation) || rows[0];
+        if (!activeRow) return;
+        setMarketState((prev) => ({
+          ...prev,
+          treasuryCyon: activeRow.cyon_treasury,
+          isShopBroke: activeRow.is_bankrupt,
+          dayCounter: activeRow.simulated_day,
+          lastMarketHeadline: activeRow.last_headline || prev.lastMarketHeadline,
+          stockByItemId: { ...prev.stockByItemId, ...activeRow.stock_by_item },
+          demandByItemId: { ...prev.demandByItemId, ...activeRow.recent_demand_by_item },
+        }));
+      });
+    }
+    prevFastForwardRef.current = isFastForwardRunning;
+  }, [isFastForwardRunning, merchantLocation]);
 
   const activeFishBucketStorageKey = `bb_caught_fish_bucket_v2:${(
     hud.nearWalletId || 'guest'
@@ -1362,6 +1375,18 @@ export default function App() {
   const dispatchBuddyAction = useCallback((actionName: string) => {
     window.dispatchEvent(new CustomEvent('buddy-action', { detail: actionName }));
   }, []);
+
+  // LUL lives in the Arena as gold and can only be adjusted by delta, so a
+  // stored profile balance is restored by dispatching the difference once.
+  const restoreLulFromProfile = useCallback(
+    (storedLul: number) => {
+      const target = Math.max(0, Math.min(1_000_000, Math.floor(storedLul || 0)));
+      const current = Math.max(0, Math.floor(hudRef.current?.gold ?? 0));
+      const delta = target - current;
+      if (delta !== 0) dispatchBuddyAction(`adjustPlayerLul:${delta}`);
+    },
+    [dispatchBuddyAction],
+  );
 
   const handleStartGame = useCallback((shouldReset = false) => {
     soundEngine.playUiClick();
@@ -2014,6 +2039,15 @@ export default function App() {
       soundEngine.playPickup();
       dispatchBuddyAction(`adjustPlayerLul:${-res.item.priceLul}`);
       setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.item!.priceLul) }));
+      const lulBuyerAccount = hudRef.current.nearWalletId || '';
+      if (lulBuyerAccount) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: lulBuyerAccount,
+          lulBalance: Math.max(0, hudRef.current.gold - res.item.priceLul),
+          cyonBalance,
+          respiteBalance,
+        });
+      }
       grantPlayerXp(res.xpGained, `ORDER ${res.item.name.toUpperCase()}`);
       const worker = cafePresenceRef.current;
       if (worker.workerUid && worker.workerUid !== playerUid && cafeChannelRef.current) {
@@ -2038,7 +2072,7 @@ export default function App() {
         message: `Ordered ${res.item.name}! +${res.xpGained} XP`,
       };
     },
-    [dispatchBuddyAction, grantPlayerXp],
+    [dispatchBuddyAction, grantPlayerXp, cyonBalance, respiteBalance],
   );
 
   const handlePurchaseCafeItemWithCyon = useCallback(
@@ -2053,6 +2087,15 @@ export default function App() {
       }
       soundEngine.playPickup();
       setCyonBalance(res.nextCyon);
+      const cyonBuyerAccount = hudRef.current.nearWalletId || '';
+      if (cyonBuyerAccount) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: cyonBuyerAccount,
+          lulBalance: hudRef.current.gold,
+          cyonBalance: res.nextCyon,
+          respiteBalance,
+        });
+      }
       grantPlayerXp(res.xpGained, `ORDER ${res.item.name.toUpperCase()} · CYON 2.5X XP`);
       const worker = cafePresenceRef.current;
       if (worker.workerUid && worker.workerUid !== playerUid && cafeChannelRef.current) {
@@ -2077,7 +2120,7 @@ export default function App() {
         message: `Ordered ${res.item.name} with CYON! +${res.xpGained} XP (2.5x)`,
       };
     },
-    [cyonBalance, dispatchBuddyAction, grantPlayerXp],
+    [cyonBalance, dispatchBuddyAction, grantPlayerXp, respiteBalance],
   );
 
   const handleCafeExchangeLulToCyonPackets = useCallback(
@@ -2093,13 +2136,16 @@ export default function App() {
       setCyonBalance(res.updatedCyon);
       setMarketState(res.updatedState);
       const actorAccount = hudRef.current.nearWalletId || playerUid;
+      // The merchant treasury is shared: its row is debited for every
+      // exchange, including guests, or the same CYON could be farmed again
+      // next session from a restored treasury.
+      void syncNpcMerchantToSupabase({
+        merchant_id: merchantLocation,
+        cyon_treasury: res.updatedState.treasuryCyon,
+        is_bankrupt: res.updatedState.isShopBroke,
+        last_headline: res.updatedState.lastMarketHeadline,
+      });
       if (actorAccount) {
-        void syncNpcMerchantToSupabase({
-          merchant_id: merchantLocation,
-          cyon_treasury: res.updatedState.treasuryCyon,
-          is_bankrupt: res.updatedState.isShopBroke,
-          last_headline: res.updatedState.lastMarketHeadline,
-        });
         void logMarketTransactionToSupabase({
           merchant_id: merchantLocation,
           actor_near_account: actorAccount,
@@ -2796,6 +2842,7 @@ export default function App() {
       if (remoteProfile) {
         setSupabaseConnected(true);
         setCyonBalance(remoteProfile.cyon_balance);
+        restoreLulFromProfile(remoteProfile.lul_balance);
         if (!hasAuthoritativeOnChainBalance) {
           setRespiteBalance(remoteProfile.respite_balance);
         } else if (remoteProfile.respite_balance !== onChainRespite) {
@@ -3361,12 +3408,16 @@ export default function App() {
     }).then((profile) => {
       if (profile) {
         setSupabaseConnected(true);
+        // Restore the stored balances locally and write back the SAME
+        // values: signing in on a new browser must never wipe LUL/CYON.
+        setCyonBalance(profile.cyon_balance);
+        restoreLulFromProfile(profile.lul_balance);
         void syncPlayerBalancesToSupabase({
           nearAccountId: walletId,
           displayName: cleanCitizenName,
-          lulBalance: 0,
-          cyonBalance: 0,
-          respiteBalance: 0,
+          lulBalance: profile.lul_balance,
+          cyonBalance: profile.cyon_balance,
+          respiteBalance: profile.respite_balance,
           unlockedSkins: ['default', `gender:${characterGender}`],
         });
       }
@@ -4036,7 +4087,12 @@ export default function App() {
       soundEngine.playPickup();
       const actorAccount = hudRef.current.nearWalletId || playerUid;
       const standardLul = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
-      const earnedLul = Math.max(1, Math.round(agreedPriceLul));
+      // Defense in depth: whatever reached this handler, a negotiated price
+      // never settles above the negotiation ceiling for this fish.
+      const earnedLul = Math.min(
+        evaluateNegotiationEnvelope(standardLul).ceiling,
+        Math.max(1, Math.round(agreedPriceLul)),
+      );
       setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
       setLastCaughtFishToast((prev) => (prev?.id === fish.id ? null : prev));
       const nextLul = Math.max(0, (hudRef.current.gold ?? 0) + earnedLul);
@@ -6733,6 +6789,28 @@ export default function App() {
           if (listing.seller_account.toLowerCase() === buyer.toLowerCase()) return false;
           setBusyPropertyListingId(listing.id);
           try {
+            const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
+            // Re-verify against the shared board, then CLAIM the listing
+            // (status -> 'paid', no payment tx yet) BEFORE any money moves:
+            // a second buyer now sees it as taken instead of both paying
+            // for the same asset. A claim left behind by a crashed attempt
+            // (paid, same buyer, no tx) can be resumed by that buyer.
+            const freshRows = await fetchPropertyListingsFromSupabase();
+            const fresh = freshRows.find((r) => r.id === listing.id);
+            const resumable =
+              fresh?.status === 'paid' &&
+              (fresh.buyer_account || '').toLowerCase() === buyer.toLowerCase() &&
+              !fresh.payment_tx;
+            if (!fresh || (fresh.status !== 'active' && !resumable)) return false;
+            if (!resumable) {
+              const claimed = await upsertPropertyListingToSupabase({
+                ...rest,
+                status: 'paid',
+                buyer_account: buyer,
+                payment_tx: null,
+              });
+              if (!claimed) return false;
+            }
             const res = await executeMarketContractCallOnChain({
               signerAccountId: buyer,
               methodName: 'ft_transfer',
@@ -6742,9 +6820,20 @@ export default function App() {
                 memo: 'Buddies Blitz Property Market purchase',
               },
             });
-            if (!res.ok || !res.txHash) return false;
-            const { created_at: _createdAt, updated_at: _updatedAt, ...rest } = listing;
-            const ok = await upsertPropertyListingToSupabase({
+            if (!res.ok || !res.txHash) {
+              // Payment failed: release the claim so the listing can sell.
+              if (!resumable) {
+                await upsertPropertyListingToSupabase({
+                  ...rest,
+                  status: 'active',
+                  buyer_account: null,
+                  payment_tx: null,
+                });
+              }
+              await refreshPropertyListings();
+              return false;
+            }
+            await upsertPropertyListingToSupabase({
               ...rest,
               status: 'paid',
               buyer_account: buyer,
@@ -6760,14 +6849,14 @@ export default function App() {
               setRespiteBalance((prev) => Math.max(0, prev - listing.price_respite));
             }
             await refreshPropertyListings();
-            return ok;
+            return true;
           } finally {
             setBusyPropertyListingId(null);
           }
         }}
         onCompletePropertyTransfer={async (listing) => {
           const seller = hud.nearWalletId || '';
-          if (!seller || listing.status !== 'paid' || !listing.buyer_account) return false;
+          if (!seller || listing.status !== 'paid' || !listing.buyer_account || !listing.payment_tx) return false;
           if (listing.seller_account.toLowerCase() !== seller.toLowerCase()) return false;
           setBusyPropertyListingId(listing.id);
           try {
@@ -6931,32 +7020,46 @@ export default function App() {
             typeof customLulSpent === 'number' &&
             typeof customCyonGranted === 'number' &&
             customLulSpent > 0 &&
-            customCyonGranted > 0 &&
-            hud.gold >= customLulSpent
+            customCyonGranted > 0
           ) {
-            dispatchBuddyAction(`adjustPlayerLul:${-customLulSpent}`);
-            const nextCyon = cyonBalance + customCyonGranted;
-            setCyonBalance(nextCyon);
-            if (actorAccount) {
-              void syncNpcMerchantToSupabase({
-                merchant_id: merchantLocation,
-                cyon_treasury: Math.max(0, marketState.treasuryCyon - customCyonGranted),
-              });
-              void logMarketTransactionToSupabase({
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'exchange_lul_cyon',
-                currency: 'CYON',
-                amount: customCyonGranted,
-                unit_price: Number((customLulSpent / customCyonGranted).toFixed(2)),
-                reasoning_summary: `Exchanged ${customLulSpent} LUL for ${customCyonGranted} CYON at ${merchantLocation}`,
-              });
-              void syncPlayerBalancesToSupabase({
-                nearAccountId: actorAccount,
-                lulBalance: Math.max(0, hud.gold - customLulSpent),
-                cyonBalance: nextCyon,
-                respiteBalance,
-              });
+            // Custom-amount exchange runs through the SAME packet engine as
+            // the cafe ATM: whole packets at the current quote, treasury and
+            // shop-broke state enforced, local market state always updated.
+            // The amounts the modal computed are a preview only.
+            const quoteNow = evaluateLulToCyonExchangeQuote(marketState);
+            const packets = Math.floor(customLulSpent / Math.max(1, quoteNow.lulCostFor10Cyon));
+            if (packets >= 1) {
+              const res = executeLulToCyonExchangePackets(marketState, hud.gold, cyonBalance, packets);
+              if (res.ok) {
+                const lulSpent = Math.max(0, hud.gold - res.updatedLul);
+                const cyonGranted = res.updatedCyon - cyonBalance;
+                dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
+                setCyonBalance(res.updatedCyon);
+                setMarketState(res.updatedState);
+                void syncNpcMerchantToSupabase({
+                  merchant_id: merchantLocation,
+                  cyon_treasury: res.updatedState.treasuryCyon,
+                  is_bankrupt: res.updatedState.isShopBroke,
+                  last_headline: res.updatedState.lastMarketHeadline,
+                });
+                if (actorAccount) {
+                  void logMarketTransactionToSupabase({
+                    merchant_id: merchantLocation,
+                    actor_near_account: actorAccount,
+                    action_type: 'exchange_lul_cyon',
+                    currency: 'CYON',
+                    amount: cyonGranted,
+                    unit_price: Number((lulSpent / Math.max(1, cyonGranted)).toFixed(2)),
+                    reasoning_summary: `Exchanged ${lulSpent} LUL for ${cyonGranted} CYON at ${merchantLocation}`,
+                  });
+                  void syncPlayerBalancesToSupabase({
+                    nearAccountId: actorAccount,
+                    lulBalance: res.updatedLul,
+                    cyonBalance: res.updatedCyon,
+                    respiteBalance,
+                  });
+                }
+              }
             }
             return;
           }
