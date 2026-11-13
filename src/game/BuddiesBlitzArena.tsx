@@ -12665,6 +12665,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       plazaFlyPhase = 'fly';
     };
     window.addEventListener('buddies-fly-to-plaza', onFlyToPlaza);
+    let titleAvatarHidden = false;
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
@@ -18410,11 +18411,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Landing stage: until onboarding completes, the avatar waits at the
       // Central Oasis Lake shore — the same spot the avatar picker uses.
       if (state === 'title' && !mpOnboardingCompleted && playerUnit) {
-        playerUnit.x = -33.5;
-        playerUnit.z = -14.3;
+        // The landing is a clean scenic shot: the avatar waits at the
+        // lakeside stage for the picker, but stays hidden on the title
+        // screen itself.
+        playerUnit.x = -31.0;
+        playerUnit.z = 13.8;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
-        playerUnit.yaw = -Math.PI / 2;
+        playerUnit.yaw = -0.54;
+        playerUnit.root.visible = false;
+        titleAvatarHidden = true;
+      } else if (titleAvatarHidden && playerUnit) {
+        playerUnit.root.visible = true;
+        titleAvatarHidden = false;
       }
 
       // Character-select cinematic phase transitions (see the
@@ -18470,7 +18479,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         activePlaneAlt <= 4.0 ? activePlaneAlt : 4.0 + (activePlaneAlt - 4.0) * 0.35;
       const activeTerrainY =
         state === 'title'
-          ? getTerrainElevation(-33.5, -14.3)
+          ? getTerrainElevation(-31.0, 13.8)
           : currentPlayMode === 'editor'
           ? getTerrainElevation(editorPan.x, editorPan.z)
           : mountedTank
@@ -18479,7 +18488,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const focusTarget: Vec3 =
         state === 'title'
-          ? { x: -33.5, y: activeTerrainY + 0.9, z: -14.3 }
+          ? { x: -31.0, y: activeTerrainY + 0.9, z: 13.8 }
           : currentPlayMode === 'editor'
           ? { x: editorPan.x, y: activeTerrainY + 0.5, z: editorPan.z }
           : mountedTank
@@ -18570,7 +18579,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const zoomMult = state === 'title' ? 1.0 : cameraZoom * planeAltZoom;
       const camOffset =
         state === 'title'
-          ? { x: 0.5, y: 11.5, z: 13.5 }
+          ? { x: 5.2, y: 3.0, z: 8.6 }
           : currentPlayMode === 'editor'
           ? { x: 0, y: 54.0 * editorZoom, z: 22.0 * editorZoom }
           : { x: 0, y: 13.6 * zoomMult, z: 16.2 * zoomMult };
