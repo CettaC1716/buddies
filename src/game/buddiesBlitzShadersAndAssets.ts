@@ -4457,6 +4457,24 @@ export async function loadAllRealBlitzAssets(
           const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
           if (!raw) return null;
           raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
+          // This take's Hips track rides on its dropped ParentNode, so its
+          // absolute Y values are negative — passed through raw, the template
+          // sanitizer clamps them all to 0.06 and the barista sinks to the
+          // floor while preparing. Rebase: the slice start stands at the
+          // rig's hips height (0.54, the sleeping take's convention) and the
+          // performer's relative motion is kept, cm -> rig units.
+          for (const t of raw.tracks) {
+            if (/Hips\.position$/i.test(t.name)) {
+              const vals = t.values;
+              const baseIdx = Math.min(30, t.times.length - 1);
+              const baseY = vals[baseIdx * 3 + 1];
+              for (let i = 0; i < vals.length; i += 3) {
+                vals[i + 1] = 0.54 + (vals[i + 1] - baseY) * 0.01;
+                vals[i] = 0;
+                vals[i + 2] = 0;
+              }
+            }
+          }
           const slice = THREE.AnimationUtils.subclip(raw, 'bartending.001', 30, 126, 30);
           return slice;
         } catch (err) {
