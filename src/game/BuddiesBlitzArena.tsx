@@ -19491,6 +19491,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
+      // Title screen: the whole camera chain is locked to the avatar, so the
+      // landing shot is applied as a hard override after all of it — a fixed
+      // scenic framing of the lakeside, independent of where the avatar is.
+      if (state === 'title') {
+        const titleGroundY = getTerrainElevation(-31.0, 13.8);
+        camera.position.set(-25.8, titleGroundY + 3.9, 22.4);
+        camera.lookAt(-31.0, titleGroundY + 0.75, 11.3);
+        camera.updateMatrixWorld();
+      }
+
       // =======================================================================
       // REAL-TIME CROSS-DEVICE MULTIPLAYER SYNC (City, Houses & Warzone)
       // =======================================================================
