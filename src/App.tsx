@@ -8698,7 +8698,13 @@ export default function App() {
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
         isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
 
-        guideDestinationId={homeTour.done && !homeTour.kioskIntroDone ? 'kai_fish_market' : null}
+        guideDestinationId={
+          homeTour.done && !homeTour.kioskIntroDone
+            ? 'kai_fish_market'
+            : kaiTutorialStage === 'meet' || kaiTutorialStage === 'sell'
+              ? 'kai_fish_market'
+              : null
+        }
         onCompleteTutorialTour={() => {
           setTutorialStage('none');
           setCityHighlights((prev) => ({ ...prev, active: true }));
