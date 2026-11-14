@@ -601,7 +601,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
     <aside
       aria-label="Cafe Work Shift"
       data-cafe-giliran-kerja-dock="true"
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1.5 pointer-events-auto select-none"
+      className="fixed bottom-[70px] left-1/2 -translate-x-1/2 lg:bottom-3 lg:left-[542px] lg:translate-x-0 z-40 flex flex-col items-center lg:items-start gap-1.5 pointer-events-auto select-none"
     >
       {/* Upward Expanded Action Stack */}
       {isExpanded && (
@@ -611,8 +611,8 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         >
           {/* Active Worker Status Strip when someone else is working */}
           {shiftState.otherActiveWorker && (
-            <div className="-skew-x-6 min-w-[228px] px-2.5 py-1 bg-[#0b0d13] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] text-center">
-              <div className="skew-x-6 flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider">
+            <div className="rounded-[10px] min-w-[228px] px-2.5 py-1 bg-[#0b0d13] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] text-center">
+              <div className="flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider">
                 <span className="text-[#38bdf8] truncate">
                   WORKING: {shiftState.otherActiveWorker.name}
                 </span>
@@ -628,9 +628,9 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             type="button"
             data-cafe-rota-lihat-giliran-btn="true"
             onClick={onOpenRotaModal}
-            className="-skew-x-6 min-w-[228px] h-9 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-white shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-white shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
           >
-            <div className="skew-x-6 flex items-center gap-2.5 w-full">
+            <div className="flex items-center gap-2.5 w-full">
               <span className="w-6 h-6 bg-white text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                 <ClipboardList className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
               </span>
@@ -644,9 +644,9 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-cafe-rota-mulai-kerja-btn="true"
               onClick={onStartOrQueueShift}
-              className="-skew-x-6 min-w-[228px] h-9 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#b8ff3c] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#b8ff3c] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
             >
-              <div className="skew-x-6 flex items-center gap-2.5 w-full">
+              <div className="flex items-center gap-2.5 w-full">
                 <span className="w-6 h-6 bg-[#b8ff3c] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                   <UserCheck className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </span>
@@ -661,9 +661,9 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-cafe-rota-ikut-antrian-btn="true"
               onClick={onStartOrQueueShift}
-              className="-skew-x-6 min-w-[228px] h-9 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
             >
-              <div className="skew-x-6 flex items-center gap-2.5 w-full">
+              <div className="flex items-center gap-2.5 w-full">
                 <span className="w-6 h-6 bg-[#38bdf8] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                   <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </span>
@@ -678,9 +678,9 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-cafe-rota-keluar-antrian-btn="true"
               onClick={onLeaveShiftQueue}
-              className="-skew-x-6 min-w-[228px] h-9 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
             >
-              <div className="skew-x-6 flex items-center gap-2.5 w-full">
+              <div className="flex items-center gap-2.5 w-full">
                 <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                   <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </span>
@@ -696,9 +696,9 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             type="button"
             data-cafe-rota-atm-btn="true"
             onClick={onOpenAtmModal}
-            className="-skew-x-6 min-w-[228px] h-9 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-white shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-white shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
           >
-            <div className="skew-x-6 flex items-center gap-2.5 w-full">
+            <div className="flex items-center gap-2.5 w-full">
               <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                 <Zap className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
               </span>
@@ -713,10 +713,10 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         type="button"
         data-cafe-giliran-kerja-bar="true"
         onClick={onToggleExpand}
-        className="-skew-x-10 inline-flex items-center h-10 min-w-[236px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
+        className="rounded-[10px] inline-flex items-center h-11 min-w-[236px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
       >
-        <div className="skew-x-10 flex items-center justify-between gap-2.5 w-full">
-          <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
+        <div className="flex items-center justify-between gap-2.5 w-full">
+          <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
             <ClipboardList className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
           </span>
 
@@ -725,7 +725,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             {isSelfInQueue ? ` (#${selfQueueNumber})` : ''}
           </span>
 
-          <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+          <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
             {isExpanded ? '▾' : '▸'}
           </span>
         </div>
