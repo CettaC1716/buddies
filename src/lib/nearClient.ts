@@ -342,6 +342,18 @@ export async function checkCitizenSubAccountAvailability(handle: string): Promis
 }
 
 /**
+ * The game is mirrored on GitHub Pages (static hosting, no serverless API).
+ * From there, API calls go to the production deployment that hosts them;
+ * everywhere else they stay same-origin relative.
+ */
+export function resolveApiUrl(path: string): string {
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
+    return `https://buddies-rouge.vercel.app${path}`;
+  }
+  return path;
+}
+
+/**
  * Provisions or resolves `<handle>.buddiesblitz.testnet` via `/api/near-relayer` with a browser
  * self-custodial Ed25519 key isolated strictly to `<handle>.buddiesblitz.testnet`.
  */
@@ -377,7 +389,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
   const subAccountId = `${cleanHandle}.${NEAR_CONFIG.masterAccountId}`;
 
   try {
-    const resp = await fetch('/api/near-relayer', {
+    const resp = await fetch(resolveApiUrl('/api/near-relayer'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -411,15 +423,21 @@ export async function spawnSubAccountOnChainViaMaster(params: {
       };
     }
   } catch {
-    // Offline or static preview fallback
+    return {
+      ok: false,
+      subAccountId,
+      sessionPublicKey,
+      custodyMode: 'session_key_ready',
+      error: 'Wallet service unreachable. Check your connection and try again.',
+    };
   }
 
-  setActiveWalletAuthKind('citizen-subaccount');
   return {
-    ok: true,
+    ok: false,
     subAccountId,
     sessionPublicKey,
     custodyMode: 'session_key_ready',
+    error: 'Wallet service returned an unexpected response. Please try again.',
   };
 }
 

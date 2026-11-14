@@ -436,7 +436,23 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
   };
 }
 
+const RELAYER_ALLOWED_ORIGINS = [
+  'https://cettac1716.github.io',
+  'https://buddies-rouge.vercel.app',
+];
+
 export default async function handler(req: any, res: any): Promise<void> {
+  const requestOrigin = String(req.headers?.origin || '');
+  if (RELAYER_ALLOWED_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).end();
+    return;
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     return;

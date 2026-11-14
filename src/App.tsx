@@ -152,6 +152,7 @@ import {
   type NearWalletConnectionResult,
   type Nep171GamepassSubAccountLedger,
   type RecruitedFamilyMemberAgent,
+  resolveApiUrl,
 } from './lib/nearClient';
 import {
   mirrorRecipientOnChainRespiteCacheInSupabase,
@@ -447,6 +448,7 @@ export default function App() {
   const [homeTour, setHomeTour] = useState<{
     done: boolean;
     metHana: boolean;
+    kioskIntroDone: boolean;
     txs: Record<string, { txHash: string; explorerUrl: string }>;
   }>(() => {
     try {
@@ -455,23 +457,26 @@ export default function App() {
         const parsed = JSON.parse(raw) as {
           done?: boolean;
           metHana?: boolean;
+          kioskIntroDone?: boolean;
           txs?: Record<string, { txHash: string; explorerUrl: string }>;
         };
         return {
           done: Boolean(parsed.done),
           metHana: Boolean(parsed.metHana),
+          kioskIntroDone: Boolean(parsed.kioskIntroDone),
           txs: parsed.txs ?? {},
         };
       }
     } catch {
       // ignore
     }
-    return { done: false, metHana: false, txs: {} };
+    return { done: false, metHana: false, kioskIntroDone: false, txs: {} };
   });
   const homeTourRef = useRef<{ active: boolean; step: string }>({ active: false, step: 'done' });
   const persistHomeTour = (next: {
     done: boolean;
     metHana: boolean;
+    kioskIntroDone: boolean;
     txs: Record<string, { txHash: string; explorerUrl: string }>;
   }) => {
     setHomeTour(next);
@@ -1898,6 +1903,16 @@ export default function App() {
     };
     const onOpenTeleportKioskModal = (e: Event) => {
       if (hudRef.current.worldMode === 'warzone') return;
+      setHomeTour((prev) => {
+        if (!prev.done || prev.kioskIntroDone) return prev;
+        const next = { ...prev, kioskIntroDone: true };
+        try {
+          window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
       if (homeTourRef.current.active && homeTourRef.current.step !== 'go_home') return;
       const customEv = e as CustomEvent<{
         kind:
@@ -2057,6 +2072,16 @@ export default function App() {
     homeTourRef.current = { active: homeTourActive, step: homeTourStep };
   }, [homeTourActive, homeTourStep]);
 
+  // After FIRST HOME: exiting the house drops the player back in front of
+  // Hana (entry position is restored), then a waypoint leads to the transit
+  // kiosk beside her until they open it once (city tour bridge).
+  const postTourKioskGuideActive =
+    homeTour.done &&
+    !homeTour.kioskIntroDone &&
+    !isInsidePrivateHouse &&
+    !isInsideGlasshouseCafe &&
+    Boolean(hud.nearWalletId);
+
   useEffect(() => {
     if (homeTourStep === 'done' && !homeTour.done) {
       persistHomeTour({ ...homeTour, done: true });
@@ -2090,21 +2115,35 @@ export default function App() {
         new CustomEvent('set-tutorial-waypoint', { detail: { target: 'hana' } }),
       );
     } else if (homeTourStep === 'go_home') {
-      const destId = hud.playerTeam === 'red' ? 'south_residence' : 'north_residence';
-      const dest = CITY_TRANSIT_DESTINATIONS.find((d) => d.id === destId);
-      if (dest) {
-        window.dispatchEvent(
-          new CustomEvent('set-tutorial-waypoint', {
-            detail: { target: 'coord', x: dest.kioskX, z: dest.kioskZ, color: '#b8ff3c' },
-          }),
-        );
-      }
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', {
+          detail: { target: 'hana', color: '#38bdf8' },
+        }),
+      );
     } else {
       window.dispatchEvent(
         new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
       );
     }
   }, [homeTourActive, homeTourStep, hud.playerTeam]);
+
+  useEffect(() => {
+    if (!postTourKioskGuideActive) return;
+    const fire = () =>
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', {
+          detail: { target: 'coord', x: -86.85, z: -21.85, color: '#38bdf8' },
+        }),
+      );
+    fire();
+    const timer = window.setInterval(fire, 5000);
+    return () => {
+      window.clearInterval(timer);
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
+      );
+    };
+  }, [postTourKioskGuideActive]);
 
   const homeTourGuide: {
     step: string;
@@ -2158,7 +2197,15 @@ export default function App() {
                       line: 'Swap 0.02 NEAR into 8 RESPITE first, just enough for your first furniture.',
                       walletLabel: hud.nearWalletId || '',
                     }
-                : null
+                : homeTourStep === 'go_home'
+                  ? {
+                      step: homeTourStep,
+                      tab: 'katalog',
+                      katalogTab: 'house',
+                      line: 'Your home is ready. Tap GO TO YOUR HOUSE to step right inside!',
+                      walletLabel: hud.nearWalletId || '',
+                    }
+                  : null
       : null;
 
   const homeTourObjectiveText: Record<string, string> = {
@@ -2168,7 +2215,7 @@ export default function App() {
     swap: "In Hana's EXCHANGE tab, swap 0.25 NEAR into 100 RESPITE.",
     buy_house: "In Hana's CATALOG, buy your first home deed.",
     buy_furniture: "In Hana's CATALOG, buy one piece of furniture.",
-    go_home: 'Head home: ride the transit to your Residence and step inside.',
+    go_home: "Tap GO TO YOUR HOUSE in Hana's CATALOG to step right inside.",
     decor: 'Place your furniture inside, then press CONFIRM MOVE.',
   };
   const homeTourStepList = [
@@ -2184,7 +2231,7 @@ export default function App() {
   const homeTourStepNumber = Math.max(1, homeTourStepList.indexOf(homeTourStep) + 1);
 
   useEffect(() => {
-    if (homeTourRef.current.active) return;
+    if (homeTourRef.current.active || postTourKioskGuideActive) return;
     const target: 'none' | 'hana' | 'kiosk' =
       tutorialStage === 'go_to_hana'
         ? 'hana'
@@ -2196,7 +2243,7 @@ export default function App() {
         detail: { target },
       }),
     );
-  }, [tutorialStage]);
+  }, [tutorialStage, postTourKioskGuideActive]);
 
   // Floating pinpoint over the nearest Teleport Kiosk while a player who owns
   // no property has not met Hana's property pitch yet.
@@ -3189,6 +3236,23 @@ export default function App() {
 
         const remoteProfile = await fetchPlayerProfileByEmail(cleanEmail);
         if (remoteProfile && remoteProfile.near_account_id) {
+          if (remoteProfile.near_account_id.endsWith('.buddiesblitz.testnet')) {
+            // Heal the invisible-wallet key for this browser/origin: the
+            // relayer co-key registers the current session key as FullAccess
+            // when it is missing, so signing never detours to an external
+            // wallet. Fast no-op when the key is already registered.
+            try {
+              await Promise.race([
+                spawnSubAccountOnChainViaMaster({
+                  handle: remoteProfile.near_account_id.split('.')[0],
+                  email: cleanEmail,
+                }),
+                new Promise((resolve) => window.setTimeout(resolve, 4000)),
+              ]);
+            } catch {
+              // ignore — restore continues regardless
+            }
+          }
           await handleConnectWalletAndEnterLobby(remoteProfile.near_account_id, {
             silentRestore: true,
             googleEmail: cleanEmail,
@@ -4365,7 +4429,7 @@ export default function App() {
         return { ok: false as const, reason: 'not_configured' };
       }
       try {
-        const resp = await fetch('/api/npc-trade', {
+        const resp = await fetch(resolveApiUrl('/api/npc-trade'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4432,7 +4496,7 @@ export default function App() {
         }).catch(() => null);
       };
       try {
-        const resp = await fetch('/api/npc-trade', {
+        const resp = await fetch(resolveApiUrl('/api/npc-trade'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4595,7 +4659,7 @@ export default function App() {
       let attestation: { signatureHex: string; issuedAtMs: number } | null = null;
       if (actorAccount) {
         try {
-          const attestResp = await fetch('/api/fish-attest', {
+          const attestResp = await fetch(resolveApiUrl('/api/fish-attest'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -5685,6 +5749,26 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {postTourKioskGuideActive &&
+          activeSpecialModal === 'none' &&
+          !isKioskModalOpen &&
+          !isSocialChatModalOpen && (
+            <div
+              data-city-tour-kiosk-card="true"
+              className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-none select-none"
+            >
+              <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center gap-3">
+                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#38bdf8] text-black">
+                  CITY TOUR
+                </span>
+                <span className="text-[11px] font-bold text-slate-100">
+                  First Home complete! Head to the transit kiosk beside Hana and press E —
+                  Kai's fish market and the Cafe are waiting.
+                </span>
+              </div>
+            </div>
+          )}
 
       {/* =====================================================================
           3. PLAYING HUD: STYLIZED TACTICAL ARCADE OVERHAUL

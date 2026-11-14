@@ -69,6 +69,7 @@ import {
   type FamilyMemberOrderId,
   type NearRespiteSwapReceipt,
   type RecruitedFamilyMemberAgent,
+  resolveApiUrl,
 } from '../lib/nearClient';
 
 export interface HouseInteriorPlacementState {
@@ -1105,7 +1106,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
     void (async () => {
       try {
-        const res = await fetch('/api/npc-agent', {
+        const res = await fetch(resolveApiUrl('/api/npc-agent'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
