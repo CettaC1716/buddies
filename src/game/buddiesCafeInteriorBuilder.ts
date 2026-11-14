@@ -52,18 +52,25 @@ export const CAFE_INTERIOR_COLLIDERS: ReadonlyArray<CafeInteriorObbCollider> = [
   { id: 'cafe_rota_board', x: 3.04, z: -4.72, hw: 1.02, hd: 0.50, ry: 0 },
   // Standard Bank Cash ATM Terminal (flush against rear wall at z = -4.95, rotation.y = 0, zero rear gap)
   { id: 'cafe_atm_terminal', x: -4.25, z: -4.95, hw: 0.42, hd: 0.36, ry: 0 },
-  // Standalone Arcade Cabinet Machine (flush against East conservatory wall at x = 6.50, z = 4.33, zero rear gap)
-  { id: 'cafe_arcade_cabinet', x: 6.50, z: 4.33, hw: 0.38, hd: 0.42, ry: 0 },
-  // Bistro Tables (East & West windows, 0.96x 1:1 human posture scale)
+  // Standalone Arcade Cabinet Machine (shifted forward to x = 6.32 so rear clears East conservatory plinth at x = 6.66 without wall clipping)
+  { id: 'cafe_arcade_cabinet', x: 6.32, z: 4.33, hw: 0.38, hd: 0.42, ry: 0 },
+  // Bistro Tables & Solid Chair Colliders (skipped automatically while player is sitting)
   { id: 'cafe_table_e1', x: 5.28, z: -0.85, hw: 0.53, hd: 0.53, ry: 0 },
+  { id: 'cafe_chair_e1', x: 4.46, z: -0.85, hw: 0.27, hd: 0.27, ry: 0 },
   { id: 'cafe_table_e2', x: 5.28, z: 1.55, hw: 0.53, hd: 0.53, ry: 0 },
+  { id: 'cafe_chair_e2', x: 4.46, z: 1.55, hw: 0.27, hd: 0.27, ry: 0 },
   { id: 'cafe_table_w1', x: -5.45, z: -0.65, hw: 0.53, hd: 0.53, ry: 0 },
+  { id: 'cafe_chair_w1', x: -4.62, z: -0.65, hw: 0.27, hd: 0.27, ry: 0 },
+  { id: 'cafe_chair_w1_window', x: -6.26, z: -0.65, hw: 0.27, hd: 0.27, ry: 0 },
   { id: 'cafe_table_w2', x: -5.45, z: 1.85, hw: 0.53, hd: 0.53, ry: 0 },
+  { id: 'cafe_chair_w2', x: -4.62, z: 1.85, hw: 0.27, hd: 0.27, ry: 0 },
+  { id: 'cafe_chair_w2_window', x: -6.26, z: 1.85, hw: 0.27, hd: 0.27, ry: 0 },
   // East Tufted Leather Banquette Alcove
   { id: 'cafe_banquette_e', x: 6.22, z: 0.35, hw: 0.34, hd: 1.18, ry: 0 },
-  // Projecting Left (+X) L-Wing Lounge (Banquette + Bistro Table + Wing Corner Planters)
+  // Projecting Left (+X) L-Wing Lounge (Banquette + Bistro Table + Armchair + Wing Corner Planters)
   { id: 'cafe_wing_banquette', x: 6.22, z: 7.45, hw: 0.34, hd: 1.10, ry: 0 },
   { id: 'cafe_wing_table', x: 5.28, z: 7.45, hw: 0.53, hd: 0.53, ry: 0 },
+  { id: 'cafe_wing_chair', x: 4.46, z: 7.45, hw: 0.27, hd: 0.27, ry: 0 },
   { id: 'cafe_planter_wing_se', x: 6.02, z: 9.02, hw: 0.38, hd: 0.38, ry: 0 },
   { id: 'cafe_planter_wing_sw', x: 2.35, z: 9.02, hw: 0.38, hd: 0.38, ry: 0 },
   // Main Hall Corner Decorative Monstera Stands (leaving +X L-Wing entrance wide open!)
@@ -94,6 +101,7 @@ export interface CafeInteriorSceneHandle {
     orderPosRegister: CompactInteractiveChevronMarker;
     drinkEspressoMachine: CompactInteractiveChevronMarker;
     pastryDisplayCase: CompactInteractiveChevronMarker;
+    arcadeSlot: CompactInteractiveChevronMarker;
   };
   updateVisuals: (
     timeSec: number,
@@ -102,6 +110,194 @@ export interface CafeInteriorSceneHandle {
     activeStationKind?: CafeStationInteractionKind | null,
   ) => void;
   setCustomerOrderSign: (visible: boolean, label: string, accentHex: string) => void;
+  dispose: () => void;
+}
+
+const CAFE_BLACK_COLOR = new THREE.Color(0x000000);
+const CAFE_WHITE_COLOR = new THREE.Color(0xffffff);
+
+function createBakedVertexColorGeometry(
+  srcGeo: THREE.BufferGeometry,
+  tintColor: THREE.Color,
+): THREE.BufferGeometry {
+  const cloned = srcGeo.clone();
+  const pos = cloned.getAttribute('position');
+  if (!pos || pos.count === 0) return cloned;
+  const existing = cloned.getAttribute('color');
+  const colArr = new Float32Array(pos.count * 3);
+  const tr = tintColor.r;
+  const tg = tintColor.g;
+  const tb = tintColor.b;
+  if (existing && existing.itemSize >= 3) {
+    for (let i = 0; i < pos.count; i++) {
+      const idx = i * 3;
+      colArr[idx] = existing.getX(i) * tr;
+      colArr[idx + 1] = existing.getY(i) * tg;
+      colArr[idx + 2] = existing.getZ(i) * tb;
+    }
+  } else {
+    for (let i = 0; i < pos.count; i++) {
+      const idx = i * 3;
+      colArr[idx] = tr;
+      colArr[idx + 1] = tg;
+      colArr[idx + 2] = tb;
+    }
+  }
+  cloned.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+  return cloned;
+}
+
+/**
+ * Consolidates opaque PBR materials inside a cafe static group before geometry baking:
+ * bakes per-mesh albedo tint into vertex colors (`vertexColors: true`) and quantizes
+ * roughness/metalness tiers so differently colored props share one draw call per PBR tier.
+ */
+function consolidateCafeStaticGroupMaterials(
+  group: THREE.Object3D,
+  options?: { disableCastShadow?: boolean; foldLightClearcoat?: boolean },
+): void {
+  const consolidatedMatCache = new Map<string, THREE.Material>();
+  const bakedGeoCache = new Map<string, THREE.BufferGeometry>();
+  const disableCastShadow = options?.disableCastShadow ?? true;
+  const foldLightClearcoat = options?.foldLightClearcoat ?? true;
+
+  group.traverse((obj) => {
+    if (
+      !(obj instanceof THREE.Mesh) ||
+      obj instanceof THREE.InstancedMesh ||
+      obj.userData?.isModelStroke ||
+      obj.userData?.isBlurShell ||
+      !obj.geometry ||
+      Array.isArray(obj.material)
+    ) {
+      return;
+    }
+    if (disableCastShadow) {
+      obj.castShadow = false;
+    }
+    const m = obj.material;
+    if (!(m instanceof THREE.MeshStandardMaterial) || m.transparent) {
+      return;
+    }
+
+    const hasEmissive = Boolean(
+      m.emissive && !m.emissive.equals(CAFE_BLACK_COLOR) && (m.emissiveIntensity ?? 1) > 0.001,
+    );
+    // Merge solid untextured self-illuminated strips/LEDs/bulbs into a single unlit vertex-colored batch
+    if (!m.map && !m.bumpMap && hasEmissive) {
+      const ei = Math.max(0.1, m.emissiveIntensity ?? 1);
+      const baseCol = m.color ?? CAFE_WHITE_COLOR;
+      const neonColor = new THREE.Color(
+        Math.min(1.35, baseCol.r * 0.45 + m.emissive.r * ei),
+        Math.min(1.35, baseCol.g * 0.45 + m.emissive.g * ei),
+        Math.min(1.35, baseCol.b * 0.45 + m.emissive.b * ei),
+      );
+      const geoKey = `${obj.geometry.uuid}_neon_${neonColor.getHexString()}`;
+      let neonGeo = bakedGeoCache.get(geoKey);
+      if (!neonGeo) {
+        neonGeo = createBakedVertexColorGeometry(obj.geometry, neonColor);
+        bakedGeoCache.set(geoKey, neonGeo);
+      }
+      obj.geometry = neonGeo;
+      const neonKey = `B|neon|${String(m.side)}`;
+      let sharedNeonMat = consolidatedMatCache.get(neonKey);
+      if (!sharedNeonMat) {
+        sharedNeonMat = new THREE.MeshBasicMaterial({
+          color: '#ffffff',
+          vertexColors: true,
+          side: m.side,
+          fog: false,
+        });
+        consolidatedMatCache.set(neonKey, sharedNeonMat);
+      }
+      obj.material = sharedNeonMat;
+      return;
+    }
+
+    const rRaw = Math.min(1, Math.max(0.05, m.roughness ?? 0.58));
+    const qRough = rRaw <= 0.35 ? 0.25 : rRaw <= 0.72 ? 0.55 : 0.85;
+    const mRaw = Math.min(1, Math.max(0, m.metalness ?? 0.05));
+    const qMetal = mRaw < 0.18 ? 0 : mRaw < 0.6 ? 0.45 : 0.8;
+    const rawClearcoat = m instanceof THREE.MeshPhysicalMaterial ? (m.clearcoat ?? 0) : 0;
+    const rawSheen = m instanceof THREE.MeshPhysicalMaterial ? (m.sheen ?? 0) : 0;
+    const qClearcoat = foldLightClearcoat
+      ? rawClearcoat >= 0.45
+        ? 0.6
+        : 0
+      : Math.round(rawClearcoat * 4) / 4;
+    const qSheen = rawSheen >= 0.3 ? 0.5 : 0;
+    const usePhysical = qMetal >= 0.45 || qClearcoat > 0 || qSheen > 0;
+    const emissiveHex = hasEmissive ? m.emissive.getHexString() : '000000';
+    const qEmissiveInt = hasEmissive
+      ? (Math.round((m.emissiveIntensity ?? 1) * 5) / 5).toFixed(2)
+      : '0.00';
+    const bumpUuid = m.bumpMap?.uuid ?? '';
+    const bumpScaleStr = m.bumpMap ? (m.bumpScale ?? 0.008).toFixed(2) : '0.00';
+    const sheenColHex =
+      usePhysical && qSheen > 0 && m instanceof THREE.MeshPhysicalMaterial
+        ? m.sheenColor?.getHexString?.() ?? 'fff7eb'
+        : 'none';
+
+    const tint = m.color ?? CAFE_WHITE_COLOR;
+    const tintHex = tint.getHexString();
+    const srcGeo = obj.geometry;
+    const geoKey = `${srcGeo.uuid}_${tintHex}`;
+    let coloredGeo = bakedGeoCache.get(geoKey);
+    if (!coloredGeo) {
+      coloredGeo = createBakedVertexColorGeometry(srcGeo, tint);
+      bakedGeoCache.set(geoKey, coloredGeo);
+    }
+    obj.geometry = coloredGeo;
+
+    const bucketKey = [
+      usePhysical ? 'P' : 'S',
+      m.map?.uuid ?? '',
+      bumpUuid,
+      bumpScaleStr,
+      qRough.toFixed(2),
+      qMetal.toFixed(2),
+      qClearcoat.toFixed(2),
+      qSheen.toFixed(2),
+      sheenColHex,
+      m.flatShading ? '1' : '0',
+      String(m.side),
+      emissiveHex,
+      qEmissiveInt,
+    ].join('|');
+
+    let sharedMat = consolidatedMatCache.get(bucketKey);
+    if (!sharedMat) {
+      const commonParams: THREE.MeshPhysicalMaterialParameters = {
+        color: '#ffffff',
+        vertexColors: true,
+        map: m.map ?? null,
+        bumpMap: m.bumpMap ?? null,
+        bumpScale: m.bumpMap ? Number(bumpScaleStr) : 0,
+        roughness: qRough,
+        metalness: qMetal,
+        flatShading: m.flatShading ?? false,
+        side: m.side,
+        emissive: hasEmissive ? new THREE.Color(`#${emissiveHex}`) : new THREE.Color(0x000000),
+        emissiveIntensity: hasEmissive ? Number(qEmissiveInt) : 0,
+        fog: false,
+      };
+      if (usePhysical) {
+        commonParams.clearcoat = qClearcoat;
+        commonParams.clearcoatRoughness = qClearcoat > 0 ? 0.22 : 0.24;
+        commonParams.envMapIntensity = 0.85;
+        if (qSheen > 0) {
+          commonParams.sheen = qSheen;
+          commonParams.sheenRoughness = 0.48;
+          commonParams.sheenColor = new THREE.Color(`#${sheenColHex}`);
+        }
+        sharedMat = new THREE.MeshPhysicalMaterial(commonParams);
+      } else {
+        sharedMat = new THREE.MeshStandardMaterial(commonParams);
+      }
+      consolidatedMatCache.set(bucketKey, sharedMat);
+    }
+    obj.material = sharedMat;
+  });
 }
 
 function makeHanaToonMesh(
@@ -289,7 +485,7 @@ function applyExteriorBackdropSoftMist(backdropGroup: THREE.Object3D): void {
     if (!(obj instanceof THREE.Mesh)) return;
     if (obj.userData.skipExteriorMistShader) return;
     const srcMat = obj.material;
-    if (Array.isArray(srcMat) || !(srcMat instanceof THREE.MeshStandardMaterial)) return;
+    if (Array.isArray(srcMat) || !(srcMat instanceof THREE.MeshStandardMaterial) || srcMat.transparent) return;
 
     let mistMat = patchedMaterials.get(srcMat);
     if (!mistMat) {
@@ -343,10 +539,10 @@ varying vec3 vExtMistWorldPos;`,
   });
 }
 
-function createSoftFocusBlurShellMaterial(baseColor: THREE.Color, inflateMeters: number, opacity: number): THREE.MeshBasicMaterial {
-  const haloColor = baseColor.clone().lerp(new THREE.Color('#eaf5fb'), 0.44);
+function createSoftFocusBlurShellMaterial(inflateMeters: number, opacity: number): THREE.MeshBasicMaterial {
   const mat = new THREE.MeshBasicMaterial({
-    color: haloColor,
+    color: '#ffffff',
+    vertexColors: true,
     transparent: true,
     opacity,
     depthWrite: false,
@@ -380,21 +576,31 @@ function addSoftFocusBlurShells(targetRoot: THREE.Object3D, shellConfigs: Readon
   });
 
   const matCache = new Map<string, THREE.MeshBasicMaterial>();
+  const haloGeoCache = new Map<string, THREE.BufferGeometry>();
+  const mistBlendColor = new THREE.Color('#eaf5fb');
+  const fallbackColor = new THREE.Color('#dbeaf2');
+
   for (const src of sourceMeshes) {
     const baseCol =
       src.material instanceof THREE.MeshStandardMaterial || src.material instanceof THREE.MeshBasicMaterial
         ? src.material.color
-        : new THREE.Color('#dbeaf2');
-    const hexKey = baseCol.getHexString();
+        : fallbackColor;
+    const haloColor = baseCol.clone().lerp(mistBlendColor, 0.44);
+    const geoKey = `${src.geometry.uuid}_${haloColor.getHexString()}`;
+    let haloGeo = haloGeoCache.get(geoKey);
+    if (!haloGeo) {
+      haloGeo = createBakedVertexColorGeometry(src.geometry, haloColor);
+      haloGeoCache.set(geoKey, haloGeo);
+    }
 
     for (const [inflate, opacity] of shellConfigs) {
-      const key = `${hexKey}_${inflate.toFixed(3)}_${opacity.toFixed(2)}`;
+      const key = `${inflate.toFixed(3)}_${opacity.toFixed(2)}`;
       let haloMat = matCache.get(key);
       if (!haloMat) {
-        haloMat = createSoftFocusBlurShellMaterial(baseCol, inflate, opacity);
+        haloMat = createSoftFocusBlurShellMaterial(inflate, opacity);
         matCache.set(key, haloMat);
       }
-      const shell = new THREE.Mesh(src.geometry, haloMat);
+      const shell = new THREE.Mesh(haloGeo, haloMat);
       shell.userData.isBlurShell = true;
       shell.userData.skipExteriorMistShader = true;
       shell.renderOrder = 1;
@@ -501,10 +707,11 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   outdoorBackdropGroup.name = 'CafeOutdoorSoftMistBackdrop';
   root.add(outdoorBackdropGroup);
 
+  const skyDomeTex = createMistyConservatorySkyTexture();
   const skyDome = new THREE.Mesh(
     new THREE.SphereGeometry(62, 24, 16),
     new THREE.MeshBasicMaterial({
-      map: createMistyConservatorySkyTexture(),
+      map: skyDomeTex,
       side: THREE.BackSide,
       fog: false,
     }),
@@ -625,16 +832,16 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     // South beyond Left (+X) L-Wing gable end
     { x: 4.25, y: 2.15, z: 10.65, w: 9.5, h: 4.8, ry: Math.PI, opacity: 0.14 },
   ];
+  const sharedMistVeilMat = new THREE.MeshBasicMaterial({
+    map: mistVeilTex,
+    transparent: true,
+    opacity: 0.14,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
   for (const mv of mistVeilPlacements) {
-    const veilMat = new THREE.MeshBasicMaterial({
-      map: mistVeilTex,
-      transparent: true,
-      opacity: mv.opacity,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      fog: false,
-    });
-    const veil = new THREE.Mesh(new THREE.PlaneGeometry(mv.w, mv.h), veilMat);
+    const veil = new THREE.Mesh(new THREE.PlaneGeometry(mv.w, mv.h), sharedMistVeilMat);
     veil.position.set(mv.x, mv.y, mv.z);
     veil.rotation.y = mv.ry;
     veil.renderOrder = 1;
@@ -696,8 +903,13 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     parquetTex: herringboneTex,
   });
 
-  // Apply distance-graded soft mist shader across all outdoor surfaces (including courtyard patio flagstones!)
+  // Consolidate backdrop PBR materials, apply soft mist shader, then bake ~720 backdrop meshes into ~15 draw calls
+  consolidateCafeStaticGroupMaterials(outdoorBackdropGroup, {
+    disableCastShadow: true,
+    foldLightClearcoat: true,
+  });
   applyExteriorBackdropSoftMist(outdoorBackdropGroup);
+  bakeStaticGroupMeshes(outdoorBackdropGroup, { minShadowCasterSpan: 999 });
 
   // Dark walnut barista deck spanning under both the bartender bar and the joined Work Shift Board cabinet
   const baristaDeck = makeHanaToonMesh(
@@ -762,9 +974,9 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   atmStand.rotation.y = 0;
   staticIndoorGroup.add(atmStand);
 
-  // 5b. 1:1 STANDALONE ARCADE CABINET MACHINE ("NEO-STRIKE ARCADE" - flush against the East conservatory wall between the two banquettes with zero rear gap)
+  // 5b. 1:1 STANDALONE ARCADE CABINET MACHINE ("NEO-STRIKE SLOTS" - shifted forward to x = 6.32 in front of East conservatory plinth)
   const arcadeCabinet = buildStandaloneArcadeCabinet(styler, CAFE_GLOBAL_SCALE_SPEC.interiorAtmScale);
-  arcadeCabinet.position.set(6.50, 0.02, 4.33);
+  arcadeCabinet.position.set(6.32, 0.02, 4.33);
   arcadeCabinet.rotation.y = -Math.PI / 2;
   staticIndoorGroup.add(arcadeCabinet);
 
@@ -877,8 +1089,12 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     staticIndoorGroup.add(wisteria);
   }
 
-  // Bake all ~2,200 static indoor meshes + ~900 outlines + frosted conservatory glass panes into ~22 static draw calls!
-  bakeStaticGroupMeshes(staticIndoorGroup, { minShadowCasterSpan: 0.35 });
+  // Consolidate PBR materials via vertex colors + quantized tiers, then bake static indoor meshes & glass into minimal draw calls
+  consolidateCafeStaticGroupMaterials(staticIndoorGroup, {
+    disableCastShadow: true,
+    foldLightClearcoat: true,
+  });
+  bakeStaticGroupMeshes(staticIndoorGroup, { minShadowCasterSpan: 999 });
   for (const child of staticIndoorGroup.children) {
     if (child instanceof THREE.Mesh && child.material === styler.frostedGlassMat) {
       child.renderOrder = 2;
@@ -907,6 +1123,7 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     orderPosRegister: buildCompactInteractiveChevronMarker(0.090, 0.18, '#38bdf8'),
     drinkEspressoMachine: buildCompactInteractiveChevronMarker(0.090, 0.18, '#38bdf8'),
     pastryDisplayCase: buildCompactInteractiveChevronMarker(0.090, 0.18, '#38bdf8'),
+    arcadeSlot: buildCompactInteractiveChevronMarker(0.095, 0.19, '#22d3ee'),
   };
   interactiveMarkers.atm.group.position.set(
     CAFE_APPLIANCE_TARGETS.atmMachine.x,
@@ -935,6 +1152,11 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     CAFE_APPLIANCE_TARGETS.pastryDisplayCase.z,
   );
   interactiveMarkers.pastryDisplayCase.group.visible = false;
+  interactiveMarkers.arcadeSlot.group.position.set(
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.x,
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.markerY,
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.z,
+  );
 
   root.add(
     interactiveMarkers.atm.group,
@@ -942,9 +1164,19 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     interactiveMarkers.orderPosRegister.group,
     interactiveMarkers.drinkEspressoMachine.group,
     interactiveMarkers.pastryDisplayCase.group,
+    interactiveMarkers.arcadeSlot.group,
   );
 
-  // 9. Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (proportioned cleanly over 0.475m chair seats!)
+  // 9. Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (shared geometry & material per variant)
+  const coinResourceCache = new Map<
+    string,
+    {
+      outerGeo: THREE.CylinderGeometry;
+      outerMat: THREE.MeshBasicMaterial;
+      innerGeo: THREE.CylinderGeometry;
+      innerMat: THREE.MeshBasicMaterial;
+    }
+  >();
   const makeCompactSeatIndicatorCoin = (
     radius: number,
     thickness: number,
@@ -952,31 +1184,36 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     innerHex: string,
     opacity: number,
   ): THREE.Group => {
+    const cacheKey = `${radius}_${thickness}_${outerHex}_${innerHex}_${opacity}`;
+    let res = coinResourceCache.get(cacheKey);
+    if (!res) {
+      res = {
+        outerGeo: new THREE.CylinderGeometry(radius, radius, thickness, 24),
+        outerMat: new THREE.MeshBasicMaterial({
+          color: outerHex,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          fog: false,
+        }),
+        innerGeo: new THREE.CylinderGeometry(radius * 0.68, radius * 0.68, thickness + 0.003, 20),
+        innerMat: new THREE.MeshBasicMaterial({
+          color: innerHex,
+          transparent: true,
+          opacity: Math.min(0.95, opacity + 0.12),
+          depthWrite: false,
+          fog: false,
+        }),
+      };
+      coinResourceCache.set(cacheKey, res);
+    }
     const g = new THREE.Group();
-    const outerMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius, thickness, 24),
-      new THREE.MeshBasicMaterial({
-        color: outerHex,
-        transparent: true,
-        opacity,
-        depthWrite: false,
-        fog: false,
-      }),
-    );
+    const outerMesh = new THREE.Mesh(res.outerGeo, res.outerMat);
     outerMesh.rotation.x = Math.PI / 2;
     outerMesh.raycast = () => {};
     g.add(outerMesh);
 
-    const innerMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius * 0.68, radius * 0.68, thickness + 0.003, 20),
-      new THREE.MeshBasicMaterial({
-        color: innerHex,
-        transparent: true,
-        opacity: Math.min(0.95, opacity + 0.12),
-        depthWrite: false,
-        fog: false,
-      }),
-    );
+    const innerMesh = new THREE.Mesh(res.innerGeo, res.innerMat);
     innerMesh.rotation.x = Math.PI / 2;
     innerMesh.raycast = () => {};
     g.add(innerMesh);
@@ -1104,6 +1341,7 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     interactiveMarkers.atm.group.visible = true;
     interactiveMarkers.workShiftBoard.group.visible = !isWorking;
     interactiveMarkers.orderPosRegister.group.visible = !isWorking;
+    interactiveMarkers.arcadeSlot.group.visible = !isWorking;
     interactiveMarkers.drinkEspressoMachine.group.visible =
       isWorking && activeOrderCategory === 'drink';
     interactiveMarkers.pastryDisplayCase.group.visible =
@@ -1117,6 +1355,10 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     applyChevronProximityFeedback(
       interactiveMarkers.orderPosRegister,
       activeStationKind === 'order_counter',
+    );
+    applyChevronProximityFeedback(
+      interactiveMarkers.arcadeSlot,
+      !isWorking && activeStationKind === 'arcade_slot',
     );
     applyChevronProximityFeedback(
       interactiveMarkers.drinkEspressoMachine,
@@ -1137,6 +1379,9 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     interactiveMarkers.orderPosRegister.chevronArrow.position.y =
       Math.sin(timeSec * 3.6 + 1.6) * 0.035;
     interactiveMarkers.orderPosRegister.chevronArrow.rotation.y = spin + 1.0;
+    interactiveMarkers.arcadeSlot.chevronArrow.position.y =
+      Math.sin(timeSec * 3.6 + 2.2) * 0.038;
+    interactiveMarkers.arcadeSlot.chevronArrow.rotation.y = spin + 1.5;
     interactiveMarkers.drinkEspressoMachine.chevronArrow.position.y =
       Math.sin(timeSec * 4.2) * 0.036;
     interactiveMarkers.drinkEspressoMachine.chevronArrow.rotation.y = timeSec * 2.0;
@@ -1151,6 +1396,43 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     });
   };
 
+  const ownedTextures: THREE.Texture[] = [
+    skyDomeTex,
+    mistVeilTex,
+    herringboneTex,
+    flutedTex,
+    marbleTex,
+    rattanTex,
+    menuTex,
+    oakTex,
+    plazaTileTex,
+    customerBubbleTex,
+  ];
+
+  const dispose = () => {
+    const disposedGeos = new Set<THREE.BufferGeometry>();
+    const disposedMats = new Set<THREE.Material>();
+    root.traverse((obj) => {
+      const m = obj as THREE.Mesh;
+      if (m.geometry && !disposedGeos.has(m.geometry)) {
+        disposedGeos.add(m.geometry);
+        m.geometry.dispose();
+      }
+      if (m.material) {
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+          if (!disposedMats.has(mat)) {
+            disposedMats.add(mat);
+            mat.dispose();
+          }
+        }
+      }
+    });
+    for (const tex of ownedTextures) {
+      tex.dispose();
+    }
+  };
+
   return {
     root,
     floorSpotIndicators,
@@ -1160,5 +1442,6 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     interactiveMarkers,
     updateVisuals,
     setCustomerOrderSign,
+    dispose,
   };
 }

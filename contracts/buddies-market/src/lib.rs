@@ -1085,11 +1085,20 @@ impl BuddiesMarketContract {
                     !self.house_deeds.contains_key(&caller),
                     "Citizen already owns a Private House Deed"
                 );
+                let house_style = match plan_id.as_deref().map(str::trim) {
+                    Some("japanese_pavilion") => "japanese_pavilion",
+                    _ => "plaza_manor",
+                };
+                let house_style_label = if house_style == "japanese_pavilion" {
+                    "Japanese Pavilion"
+                } else {
+                    "Classic Plaza Manor"
+                };
                 self.internal_transfer_respite(
                     &caller,
                     &self.master_account.clone(),
                     HOUSE_OWNERSHIP_PRICE_RESPITE,
-                    Some("purchase:house_ownership".to_string()),
+                    Some(format!("purchase:house_ownership:{}", house_style)),
                 );
 
                 self.total_houses_minted = self.total_houses_minted.saturating_add(1);
@@ -1114,18 +1123,19 @@ impl BuddiesMarketContract {
                     owner_id: caller.clone(),
                     metadata: Some(TokenMetadata {
                         title: Some(format!(
-                            "Safezone Citizen House Deed #{}",
-                            self.total_houses_minted
+                            "Safezone Citizen House Deed #{} ({})",
+                            self.total_houses_minted, house_style_label
                         )),
                         description: Some(format!(
-                            "Controls sub-account {} and unlocks 3D cutaway house interior & NEP-245 furnishings.",
-                            sub_account_id
+                            "Controls sub-account {} and unlocks {} 3D private residence & NEP-245 furnishings.",
+                            sub_account_id, house_style_label
                         )),
                         media: None,
                         copies: Some(1),
                         extra: Some(
                             json!({
                                 "kind": "house_deed",
+                                "house_style": house_style,
                                 "sub_account_id": sub_account_id,
                                 "key_epoch": 1
                             })
@@ -3265,4 +3275,35 @@ mod tests {
         contract.claim_deed_payout(deed_id, 1);
     }
 
+    #[test]
+    fn test_purchase_house_ownership_encodes_plan_id_style_in_metadata() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        set_ctx("alice.testnet", 500_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        contract.purchase_citizen_asset(
+            "house_ownership".to_string(),
+            Some("japanese_pavilion".to_string()),
+            None,
+        );
+        let alice_tokens = contract.nft_tokens_for_owner(acct("alice.testnet"), None, None);
+        let alice_meta = alice_tokens[0].metadata.as_ref().expect("metadata");
+        assert!(alice_meta.title.as_deref().unwrap_or("").contains("Japanese Pavilion"));
+        assert!(alice_meta.extra.as_deref().unwrap_or("").contains("\"house_style\":\"japanese_pavilion\""));
+
+        set_ctx("bob.testnet", 500_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("bob.testnet", 0);
+        contract.purchase_citizen_asset(
+            "house_ownership".to_string(),
+            Some("plaza_manor".to_string()),
+            None,
+        );
+        let bob_tokens = contract.nft_tokens_for_owner(acct("bob.testnet"), None, None);
+        let bob_meta = bob_tokens[0].metadata.as_ref().expect("metadata");
+        assert!(bob_meta.title.as_deref().unwrap_or("").contains("Classic Plaza Manor"));
+        assert!(bob_meta.extra.as_deref().unwrap_or("").contains("\"house_style\":\"plaza_manor\""));
+    }
 }

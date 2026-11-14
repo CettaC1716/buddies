@@ -62,7 +62,7 @@ interface SocialChatModalProps {
   onMeetKai?: () => void;
 }
 
-type SocialChatSubTab = 'online' | 'public' | 'private' | 'kai' | 'settings';
+type SocialChatSubTab = 'online' | 'public' | 'private' | 'letters' | 'kai' | 'settings';
 
 const BUBBLE_COLOR_SWATCHES: { bg: string; text: string; label: string }[] = [
   { bg: '#ffffff', text: '#0f172a', label: 'Pure White' },
@@ -296,7 +296,6 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   const [letters, setLetters] = useState<BuddiesLetter[]>([]);
   const [openLetter, setOpenLetter] = useState<BuddiesLetter | null>(null);
   const lettersUnreadCount = letters.filter((l) => !l.isRead).length;
-  const privateBadgeCount = unreadPrivateCount + lettersUnreadCount;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -312,7 +311,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   }, [isOpen, playerUid, activeTab]);
 
   useEffect(() => {
-    if (activeTab !== 'private') setOpenLetter(null);
+    if (activeTab !== 'letters') setOpenLetter(null);
   }, [activeTab]);
   const publicEndRef = useRef<HTMLDivElement | null>(null);
   const privateEndRef = useRef<HTMLDivElement | null>(null);
@@ -393,7 +392,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
       aria-hidden={!isOpen}
       aria-label="Social Chat Room"
       data-social-chat-modal="true"
-      className={`fixed left-3 bottom-24 z-40 w-[min(372px,94vw)] h-[min(724px,calc(100dvh-11.5rem))] select-none transition-all duration-300 ease-out transform ${
+      className={`fixed left-3 bottom-24 z-40 w-[min(512px,95vw)] h-[min(724px,calc(100dvh-11.5rem))] select-none transition-all duration-300 ease-out transform ${
         isOpen
           ? 'translate-x-0 opacity-100 pointer-events-auto'
           : '-translate-x-[120%] opacity-0 pointer-events-none'
@@ -409,6 +408,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 { id: 'online', label: 'ONLINE' },
                 { id: 'public', label: 'PUBLIC' },
                 { id: 'private', label: 'PRIVATE' },
+                { id: 'letters', label: 'LETTERS' },
                 { id: 'settings', label: 'SETTINGS' },
               ] as { id: SocialChatSubTab; label: string }[]
             ).map((tab) => {
@@ -425,19 +425,27 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                       onClearUnreadPrivate?.();
                     }
                   }}
-                  className={`relative -skew-x-6 px-3 py-1.5 border-2 border-black font-black uppercase text-[10px] tracking-wide cursor-pointer transition-colors ${
+                  className={`relative -skew-x-6 px-2.5 py-1.5 border-2 border-black font-black uppercase text-[10px] tracking-wide cursor-pointer transition-colors ${
                     active
                       ? 'bg-[#b8ff3c] text-black shadow-[3px_3px_0px_#000]'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   <span className="skew-x-6 inline-block">{tab.label}</span>
-                  {tab.id === 'private' && privateBadgeCount > 0 && (
+                  {tab.id === 'private' && unreadPrivateCount > 0 && (
                     <span
                       data-private-tab-unread-dot="true"
                       className="absolute -top-2 -right-2 min-w-4 h-4 px-0.5 rounded-full bg-[#ff3b30] border border-black text-white text-[8px] font-black flex items-center justify-center"
                     >
-                      {privateBadgeCount}
+                      {unreadPrivateCount}
+                    </span>
+                  )}
+                  {tab.id === 'letters' && lettersUnreadCount > 0 && (
+                    <span
+                      data-letters-tab-unread-dot="true"
+                      className="absolute -top-2 -right-2 min-w-4 h-4 px-0.5 rounded-full bg-[#ff3b30] border border-black text-white text-[8px] font-black flex items-center justify-center"
+                    >
+                      {lettersUnreadCount}
                     </span>
                   )}
                 </button>
@@ -459,9 +467,9 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
         <div className="mx-3 mt-2.5 border-b-[3px] border-black shrink-0" />
 
         {/* SUB-TAB BODY CONTENT */}
-        <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden px-3 pt-3">
-          {/* LETTER CERTIFICATE OVERLAY (opened from the PRIVATE tab inbox) */}
-          {openLetter && activeTab === 'private' && (
+        <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden px-3 py-3">
+          {/* LETTER CERTIFICATE OVERLAY (opened from the LETTERS tab inbox) */}
+          {openLetter && activeTab === 'letters' && (
             <div
               data-letter-certificate="true"
               className="absolute inset-0 z-20 flex flex-col bg-[#fdfcf8] px-4 py-3 overflow-y-auto"
@@ -707,69 +715,6 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           {/* 3. PRIVATE / WHISPER CHAT SUB-TAB (Real Connected Human Players Only) */}
           {activeTab === 'private' && (
             <div className="flex-1 flex flex-col min-h-0">
-              {/* LETTERS INBOX — purchase certificates delivered in-world */}
-              <div
-                data-letters-inbox="true"
-                className="mb-2 border-2 border-black bg-[#fffdf5] shrink-0"
-              >
-                <div className="px-2.5 py-1.5 flex items-center justify-between bg-[#fef3c7] border-b-2 border-black">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-800">
-                    Letters
-                  </span>
-                  {lettersUnreadCount > 0 && (
-                    <span className="px-1.5 py-0.5 bg-[#ff3b30] text-white border border-black text-[8.5px] font-black uppercase">
-                      {lettersUnreadCount} NEW
-                    </span>
-                  )}
-                </div>
-                {letters.length === 0 ? (
-                  <div className="px-2.5 py-2 text-[10px] font-bold text-slate-500">
-                    No letters yet. Property &amp; NFT purchase certificates will arrive here.
-                  </div>
-                ) : (
-                  <div className="max-h-32 overflow-y-auto divide-y divide-slate-200">
-                    {letters.map((letter) => (
-                      <button
-                        key={letter.id}
-                        type="button"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setOpenLetter(letter);
-                          if (!letter.isRead) {
-                            setLetters((prev) =>
-                              prev.map((l) => (l.id === letter.id ? { ...l, isRead: true } : l)),
-                            );
-                            void markLetterRead(letter.id);
-                          }
-                        }}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-amber-50 cursor-pointer"
-                      >
-                        <span
-                          className={`w-2 h-2 rounded-full border border-black shrink-0 ${
-                            letter.isRead ? 'bg-slate-300' : 'bg-[#ff3b30]'
-                          }`}
-                        />
-                        <span className="flex-1 min-w-0">
-                          <span className="block truncate text-[10.5px] font-black text-slate-800">
-                            {letter.title}
-                          </span>
-                          <span className="block text-[8.5px] font-bold text-slate-400">
-                            {new Date(letter.createdAt).toLocaleDateString('en-GB', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                            {letter.payload.priceAmount != null &&
-                              ` · ${letter.payload.priceAmount} ${letter.payload.priceCurrency || 'RESPITE'}`}
-                          </span>
-                        </span>
-                        <span className="text-[9px] font-black text-slate-400 shrink-0">OPEN &rarr;</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-black uppercase tracking-wider text-slate-600">
                 <span className="truncate">
                   {validSelectedPrivateUser
@@ -881,6 +826,82 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                   })
                 )}
                 <div ref={privateEndRef} />
+              </div>
+            </div>
+          )}
+
+          {/* 3A. LETTERS SUB-TAB (Purchase & Ownership Certificates Inbox) */}
+          {activeTab === 'letters' && (
+            <div className="flex-1 flex flex-col min-h-0" data-letters-inbox="true">
+              <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-black uppercase tracking-wider text-slate-600">
+                <span>OWNERSHIP CERTIFICATES &amp; INBOX</span>
+                {lettersUnreadCount > 0 && (
+                  <span className="px-1.5 py-0.5 bg-[#ff3b30] text-white border border-black text-[9px] font-black uppercase">
+                    {lettersUnreadCount} NEW
+                  </span>
+                )}
+              </div>
+
+              <div className="flex-1 flex flex-col min-h-0 border-2 border-black bg-[#fffdf5] shadow-[3px_3px_0px_#000] overflow-hidden">
+                <div className="px-3 py-2 flex items-center justify-between bg-[#fef3c7] border-b-2 border-black shrink-0">
+                  <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-900">
+                    LETTERS ({letters.length})
+                  </span>
+                  {lettersUnreadCount > 0 && (
+                    <span className="text-[9.5px] font-black uppercase text-[#991b1b]">
+                      {lettersUnreadCount} UNREAD
+                    </span>
+                  )}
+                </div>
+
+                {letters.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-xs font-bold text-slate-500">
+                    No letters yet. Property &amp; NFT purchase certificates will arrive here.
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto divide-y divide-slate-200">
+                    {letters.map((letter) => (
+                      <button
+                        key={letter.id}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setOpenLetter(letter);
+                          if (!letter.isRead) {
+                            setLetters((prev) =>
+                              prev.map((l) => (l.id === letter.id ? { ...l, isRead: true } : l)),
+                            );
+                            void markLetterRead(letter.id);
+                          }
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-amber-50 cursor-pointer transition-colors"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full border border-black shrink-0 ${
+                            letter.isRead ? 'bg-slate-300' : 'bg-[#ff3b30]'
+                          }`}
+                        />
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate text-xs font-black text-slate-900">
+                            {letter.title}
+                          </span>
+                          <span className="block text-[10px] font-bold text-slate-500 mt-0.5">
+                            {new Date(letter.createdAt).toLocaleDateString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                            {letter.payload.priceAmount != null &&
+                              ` · ${letter.payload.priceAmount} ${letter.payload.priceCurrency || 'RESPITE'}`}
+                          </span>
+                        </span>
+                        <span className="text-[10px] font-black text-slate-500 shrink-0">
+                          OPEN &rarr;
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1067,9 +1088,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                   </button>
                 </div>
                 <p className="text-[11px] font-bold text-slate-600">
-                  Show the touch joystick and the camera flip button on desktop, so you
-                  can move without WASD. The camera flip is available on the main map
-                  only, never in Warzone.
+                  Show the touch joystick on desktop, so you can move without WASD.
                 </p>
               </div>
 

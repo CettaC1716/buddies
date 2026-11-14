@@ -5849,10 +5849,102 @@ export interface IndividualCommanderBaseState {
   /** Connected .near account ID of the online session owner (or null if unclaimed grass lot) */
   claimedByNearAccount?: string | null;
   claimedByNearWallet?: string | null;
+  /** Safezone House Architecture Style matching the plot owner's House NFT Deed */
+  houseStyle?: HouseArchitectureStyle;
   /** Safezone City plot gate access mode ('PUBLIC' | 'FRIENDS_ONLY' | 'PRIVATE') */
   safezoneAccessMode?: SafezonePlotAccessMode;
   /** Allowed friend wallet/IDs when safezoneAccessMode === 'FRIENDS_ONLY' */
   safezoneAllowedFriends?: string[];
+}
+
+export type HouseArchitectureStyle = 'plaza_manor' | 'japanese_pavilion';
+
+/**
+ * Parses an optional house architecture identifier, returning `null` if unknown.
+ */
+export function parseOptionalHouseArchitectureStyle(
+  raw: unknown,
+): HouseArchitectureStyle | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+  if (
+    s === 'japanese_pavilion' ||
+    s === 'house_style:japanese_pavilion' ||
+    s === 'house_ownership:japanese_pavilion' ||
+    s.includes('japanese pavilion') ||
+    s.includes('japanese_pavilion')
+  ) {
+    return 'japanese_pavilion';
+  }
+  if (
+    s === 'plaza_manor' ||
+    s === 'house_style:plaza_manor' ||
+    s === 'house_ownership:plaza_manor' ||
+    s.includes('plaza manor') ||
+    s.includes('plaza_manor')
+  ) {
+    return 'plaza_manor';
+  }
+  return null;
+}
+
+/**
+ * Normalizes any house style value to a supported `HouseArchitectureStyle`.
+ */
+export function normalizeHouseArchitectureStyle(
+  raw: unknown,
+  fallback: HouseArchitectureStyle = 'plaza_manor',
+): HouseArchitectureStyle {
+  return parseOptionalHouseArchitectureStyle(raw) ?? fallback;
+}
+
+/**
+ * Resolves the authoritative House NFT architecture style from on-chain metadata,
+ * persisted Supabase profile skin tags / market transactions, and local storage.
+ */
+export function resolveOwnedHouseStyle(params: {
+  onChainHouseStyle?: HouseArchitectureStyle | null;
+  unlockedSkins?: ReadonlyArray<string> | null;
+  marketTransactions?: ReadonlyArray<{
+    item_id?: string | null;
+    action_type?: string | null;
+    reasoning_summary?: string | null;
+  }> | null;
+  localSavedStyle?: string | null;
+}): {
+  resolvedStyle: HouseArchitectureStyle;
+  isOnChainLocked: boolean;
+} {
+  if (params.onChainHouseStyle) {
+    return { resolvedStyle: params.onChainHouseStyle, isOnChainLocked: true };
+  }
+  const skinStyle = params.unlockedSkins
+    ? params.unlockedSkins
+        .map((tag) => parseOptionalHouseArchitectureStyle(tag))
+        .find((s): s is HouseArchitectureStyle => s !== null) ?? null
+    : null;
+  if (skinStyle) {
+    return { resolvedStyle: skinStyle, isOnChainLocked: false };
+  }
+  if (params.marketTransactions) {
+    for (const tx of params.marketTransactions) {
+      const fromItem = parseOptionalHouseArchitectureStyle(tx.item_id);
+      if (fromItem) return { resolvedStyle: fromItem, isOnChainLocked: false };
+      if (
+        (tx.item_id && tx.item_id.startsWith('house_ownership')) ||
+        tx.action_type === 'BUY_HOUSE'
+      ) {
+        const fromSummary = parseOptionalHouseArchitectureStyle(tx.reasoning_summary);
+        if (fromSummary) return { resolvedStyle: fromSummary, isOnChainLocked: false };
+      }
+    }
+  }
+  const localStyle = parseOptionalHouseArchitectureStyle(params.localSavedStyle);
+  return {
+    resolvedStyle: localStyle ?? 'plaza_manor',
+    isOnChainLocked: false,
+  };
 }
 
 export type SafezonePlotAccessMode = 'PUBLIC' | 'FRIENDS_ONLY' | 'PRIVATE';
@@ -5937,6 +6029,7 @@ export function createIndividualCommanderBasesState(
       isClaimedOnlineSession: isModelEstate,
       claimedByNearAccount: isModelEstate ? 'model-estate.buddiesblitz.near' : null,
       claimedByNearWallet: isModelEstate ? 'model-estate.buddiesblitz.near' : null,
+      houseStyle: isModelEstate ? 'japanese_pavilion' : 'plaza_manor',
       safezoneAccessMode: 'PUBLIC',
       safezoneAllowedFriends: [],
     };
@@ -11865,6 +11958,7 @@ export interface NearGamepassSessionState {
   walletId: string | null;
   hasGamepassNft: boolean;
   tokenId: string | null;
+  houseStyle: HouseArchitectureStyle | null;
   contractId: string;
   claimedTeam: 'blue' | 'red' | null;
   claimedPlotIndex: number | null;
@@ -11879,6 +11973,7 @@ export function createInitialNearGamepassSessionState(): NearGamepassSessionStat
     walletId: null,
     hasGamepassNft: false,
     tokenId: null,
+    houseStyle: null,
     contractId: LOBBY_NEAR_TERMINAL_SPEC.contractId,
     claimedTeam: null,
     claimedPlotIndex: null,
@@ -11890,6 +11985,7 @@ export function createInitialNearGamepassSessionState(): NearGamepassSessionStat
 export function connectNearWalletAndMintGamepass(
   state: NearGamepassSessionState,
   customAccountId?: string,
+  houseStyle?: HouseArchitectureStyle | null,
 ): NearGamepassSessionState {
   const trimmed = (customAccountId ?? '').trim().toLowerCase();
   if (!trimmed) {
@@ -11900,6 +11996,7 @@ export function connectNearWalletAndMintGamepass(
       walletId: null,
       hasGamepassNft: false,
       tokenId: null,
+      houseStyle: null,
       sessionStatusBanner:
         'Connect or register a NEAR Wallet first to verify NEP-171 House ownership.',
     };
@@ -11912,6 +12009,8 @@ export function connectNearWalletAndMintGamepass(
       ? trimmed
       : `${trimmed}.near`;
   const tokenId = `nep171-gamepass-${cleanAccount.replace(/[^a-z0-9]/g, '-')}-01`;
+  const resolvedStyle =
+    parseOptionalHouseArchitectureStyle(houseStyle) ?? state.houseStyle ?? 'plaza_manor';
   return {
     ...state,
     walletConnected: true,
@@ -11919,6 +12018,7 @@ export function connectNearWalletAndMintGamepass(
     walletId: cleanAccount,
     hasGamepassNft: true,
     tokenId,
+    houseStyle: resolvedStyle,
     sessionStatusBanner: `NEP-171 GAMEPASS MINTED (${cleanAccount} · ${tokenId})! Visit a Kiosk on an empty grass plot to Claim Base.`,
   };
 }
@@ -11932,6 +12032,7 @@ export function syncNearWalletSessionOwnership(
   customAccountId: string | undefined,
   ownsHouse: boolean,
   houseTokenId?: string | null,
+  houseStyle?: HouseArchitectureStyle | null,
 ): NearGamepassSessionState {
   const trimmed = (customAccountId ?? '').trim().toLowerCase();
   if (!trimmed) {
@@ -11947,6 +12048,10 @@ export function syncNearWalletSessionOwnership(
   const resolvedTokenId = ownsHouse
     ? (houseTokenId && houseTokenId.trim() ? houseTokenId.trim() : 'house-deed-0001')
     : null;
+  const parsedStyle = parseOptionalHouseArchitectureStyle(houseStyle);
+  const resolvedStyle = ownsHouse
+    ? parsedStyle ?? state.houseStyle ?? null
+    : parsedStyle ?? null;
   return {
     ...state,
     walletConnected: true,
@@ -11954,6 +12059,7 @@ export function syncNearWalletSessionOwnership(
     walletId: cleanAccount,
     hasGamepassNft: Boolean(ownsHouse),
     tokenId: resolvedTokenId,
+    houseStyle: resolvedStyle,
     claimedTeam: ownsHouse ? state.claimedTeam : null,
     claimedPlotIndex: ownsHouse ? state.claimedPlotIndex : null,
     sessionStatusBanner: ownsHouse
@@ -11995,7 +12101,7 @@ export function claimEmptyBasePlotWithNearGamepass(
   redBasesOrPlayerTeam: IndividualCommanderBaseState[] | ('blue' | 'red'),
   playerTeamOrTargetTeam: 'blue' | 'red',
   targetPlotIndex: number,
-  options?: { isSafezoneMode?: boolean },
+  options?: { isSafezoneMode?: boolean; houseStyle?: HouseArchitectureStyle | null },
 ): {
   success: boolean;
   claimed: boolean;
@@ -12063,6 +12169,12 @@ export function claimEmptyBasePlotWithNearGamepass(
   plot.isClaimedOnlineSession = true;
   plot.claimedByNearAccount = activeSession.accountId;
   plot.claimedByNearWallet = activeSession.accountId;
+  const resolvedHouseStyle =
+    parseOptionalHouseArchitectureStyle(options?.houseStyle) ??
+    parseOptionalHouseArchitectureStyle(activeSession.houseStyle) ??
+    plot.houseStyle ??
+    'plaza_manor';
+  plot.houseStyle = resolvedHouseStyle;
   plot.destroyed = false;
   plot.buildingHp = plot.buildingMaxHp;
   plot.fenceHp = plot.fenceMaxHp;
@@ -12089,6 +12201,7 @@ export function claimEmptyBasePlotWithNearGamepass(
 
   const updatedSession: NearGamepassSessionState = {
     ...activeSession,
+    houseStyle: resolvedHouseStyle,
     claimedTeam: playerTeam,
     claimedPlotIndex: effectiveIdx,
     activeHarvesterSubAccounts: subAccounts,
@@ -12930,6 +13043,7 @@ export function evaluateBasePlotProximityTriggers(params: {
       if (isPeacefulCityMode && isPlotActive && isHouseVisible) {
         const doorCandidates: ReadonlyArray<{ x: number; z: number }> = [
           { x: pwx, z: hqZ + sign * 1.85 },
+          { x: pwx, z: hqZ - sign * 0.55 },
           { x: pwx - sign * 1.15, z: hqZ - sign * 0.55 },
           { x: pwx + sign * 2.38, z: hqZ + sign * 9.35 },
         ];
@@ -13632,4 +13746,382 @@ export function resolveOnboardingAccountEntry(params: {
     restoredDisplayName: params.savedDisplayName,
   };
 }
+
+export type BottomChatSubmitTarget = 'npc_merchant' | 'public_chat' | 'private_chat';
+
+/**
+ * Resolves exclusive routing for the bottom-left chat bar so NPC dialogue
+ * submissions never leak into public world chat or private whispers.
+ */
+export function resolveBottomChatSubmitTarget(params: {
+  activeSpecialModal: 'none' | 'npc_merchant' | 'house_interior';
+  isSocialChatModalOpen: boolean;
+  hasSelectedPrivateUser: boolean;
+  hasDomNpcDialogOpen?: boolean;
+}): BottomChatSubmitTarget {
+  if (params.activeSpecialModal === 'npc_merchant' || params.hasDomNpcDialogOpen) {
+    return 'npc_merchant';
+  }
+  if (params.isSocialChatModalOpen && params.hasSelectedPrivateUser) {
+    return 'private_chat';
+  }
+  return 'public_chat';
+}
+
+// ============================================================================
+// WARZONE HOSTILE AVATAR RAIDERS & BUSTLING CITY ACTIVITY NPC SCHEDULING
+// ============================================================================
+
+export type AvatarGlbGender = 'male' | 'female';
+
+export interface WarzoneRaiderSpawnSpec {
+  id: string;
+  codename: string;
+  classId: BuddyClassId;
+  avatarGender: AvatarGlbGender;
+  weaponId: 'pistol' | 'rifle' | 'bazooka';
+  weaponName: string;
+  ammo: number;
+  maxHp: number;
+  team: 'blue' | 'red';
+  ownerCommanderId: number;
+  x: number;
+  z: number;
+  yaw: number;
+}
+
+const WARZONE_RAIDER_TEMPLATES: ReadonlyArray<{
+  id: string;
+  codename: string;
+  classId: BuddyClassId;
+  avatarGender: AvatarGlbGender;
+  weaponId: 'pistol' | 'rifle' | 'bazooka';
+  weaponName: string;
+  ammo: number;
+  maxHp: number;
+  baseX: number;
+  baseZ: number;
+}> = [
+  {
+    id: 'raider_viper',
+    codename: 'VIPER',
+    classId: 'Infuntry',
+    avatarGender: 'male',
+    weaponId: 'rifle',
+    weaponName: 'Blitz Assault Rifle',
+    ammo: 180,
+    maxHp: 115,
+    baseX: -18.0,
+    baseZ: -20.0,
+  },
+  {
+    id: 'raider_nova',
+    codename: 'NOVA',
+    classId: 'Infuntry',
+    avatarGender: 'female',
+    weaponId: 'pistol',
+    weaponName: 'Blitz Pistol',
+    ammo: 180,
+    maxHp: 100,
+    baseX: 16.0,
+    baseZ: -18.0,
+  },
+  {
+    id: 'raider_titan',
+    codename: 'TITAN',
+    classId: 'Infuntry',
+    avatarGender: 'male',
+    weaponId: 'bazooka',
+    weaponName: 'Blitz Bazooka',
+    ammo: 24,
+    maxHp: 135,
+    baseX: 34.0,
+    baseZ: 0.0,
+  },
+  {
+    id: 'raider_kestrel',
+    codename: 'KESTREL',
+    classId: 'Infuntry',
+    avatarGender: 'female',
+    weaponId: 'rifle',
+    weaponName: 'Blitz Assault Rifle',
+    ammo: 180,
+    maxHp: 115,
+    baseX: -12.0,
+    baseZ: 22.0,
+  },
+  {
+    id: 'raider_apex',
+    codename: 'APEX',
+    classId: 'Infuntry',
+    avatarGender: 'male',
+    weaponId: 'rifle',
+    weaponName: 'Blitz Assault Rifle',
+    ammo: 180,
+    maxHp: 115,
+    baseX: 28.0,
+    baseZ: 18.0,
+  },
+  {
+    id: 'raider_falcon',
+    codename: 'FALCON',
+    classId: 'Infuntry',
+    avatarGender: 'female',
+    weaponId: 'pistol',
+    weaponName: 'Blitz Pistol',
+    ammo: 180,
+    maxHp: 105,
+    baseX: 4.0,
+    baseZ: -4.0,
+  },
+];
+
+/**
+ * Generates the initial hostile AI squad for Warzone mini-game combat so the player
+ * faces active armed enemies on the opposing team using the shared humanoid avatar GLBs.
+ */
+export function buildWarzoneRaiderSpawnPlan(
+  playerTeam: 'blue' | 'red',
+): WarzoneRaiderSpawnSpec[] {
+  const enemyTeam: 'blue' | 'red' = playerTeam === 'blue' ? 'red' : 'blue';
+  const zMirror = enemyTeam === 'blue' ? -1 : 1;
+  return WARZONE_RAIDER_TEMPLATES.map((tpl, idx) => {
+    const x = tpl.baseX;
+    const z = Number((tpl.baseZ * zMirror).toFixed(2));
+    return {
+      id: tpl.id,
+      codename: tpl.codename,
+      classId: tpl.classId,
+      avatarGender: tpl.avatarGender,
+      weaponId: tpl.weaponId,
+      weaponName: tpl.weaponName,
+      ammo: tpl.ammo,
+      maxHp: tpl.maxHp,
+      team: enemyTeam,
+      ownerCommanderId: (idx % 3) + 1,
+      x,
+      z,
+      yaw: enemyTeam === 'red' ? -Math.PI / 2 : Math.PI / 2,
+    };
+  });
+}
+
+/**
+ * Picks a safe open Warzone flank coordinate at least `minDistFromPlayerM` away from the player
+ * (falling back cleanly to candidate flanks outside Oasis Lake).
+ */
+export function pickWarzoneRaiderRespawnCoord(params: {
+  playerX: number;
+  playerZ: number;
+  enemyTeam: 'blue' | 'red';
+  seedIndex: number;
+  minDistFromPlayerM?: number;
+}): { x: number; z: number } {
+  const minDist = params.minDistFromPlayerM ?? 18.0;
+  const plan = buildWarzoneRaiderSpawnPlan(params.enemyTeam === 'red' ? 'blue' : 'red');
+  for (let offset = 0; offset < plan.length; offset++) {
+    const candidate = plan[(params.seedIndex + offset) % plan.length];
+    const dist = Math.hypot(candidate.x - params.playerX, candidate.z - params.playerZ);
+    if (dist >= minDist) {
+      return { x: candidate.x, z: candidate.z };
+    }
+  }
+  const fallback = plan[Math.abs(params.seedIndex) % plan.length];
+  return { x: fallback.x, z: fallback.z };
+}
+
+export type CityAmbientNpcActivity =
+  | 'walk_patrol'
+  | 'jog_exercise'
+  | 'fishing'
+  | 'sit_relax'
+  | 'cafe_hangout'
+  | 'sightseeing';
+
+export interface CityAmbientNpcWaypoint {
+  x: number;
+  z: number;
+  yaw?: number;
+}
+
+export interface CityAmbientNpcPreset {
+  id: string;
+  displayName: string;
+  activityLabel: string;
+  gender: AvatarGlbGender;
+  teamTint: 'blue' | 'red';
+  activity: CityAmbientNpcActivity;
+  speedMps: number;
+  pauseSecAtWaypoint: number;
+  seatLiftY?: number;
+  waypoints: readonly CityAmbientNpcWaypoint[];
+}
+
+export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
+  // Strictly 2 Central Plaza ambient citizens (keeps city lightweight when multiplayer fills)
+  {
+    id: 'city_plaza_raka',
+    displayName: 'Raka',
+    activityLabel: 'PLAZA STROLL',
+    gender: 'male',
+    teamTint: 'blue',
+    activity: 'walk_patrol',
+    speedMps: 2.35,
+    pauseSecAtWaypoint: 1.8,
+    waypoints: [
+      { x: -75.25, z: -28.0 },
+      { x: -75.25, z: -6.0 },
+      { x: -75.25, z: 18.0 },
+      { x: -75.25, z: -6.0 },
+    ],
+  },
+  {
+    id: 'city_plaza_nadia',
+    displayName: 'Nadia',
+    activityLabel: 'PLAZA STROLL',
+    gender: 'female',
+    teamTint: 'red',
+    activity: 'walk_patrol',
+    speedMps: 2.2,
+    pauseSecAtWaypoint: 2.2,
+    waypoints: [
+      { x: -92.0, z: -21.2 },
+      { x: -81.5, z: -21.2 },
+      { x: -81.5, z: -18.6 },
+      { x: -92.0, z: -18.6 },
+    ],
+  },
+];
+
+export interface CityAmbientNpcStepInput {
+  preset: CityAmbientNpcPreset;
+  x: number;
+  z: number;
+  yaw: number;
+  waypointIdx: number;
+  pauseTimer: number;
+  elapsedSec: number;
+  dt: number;
+}
+
+export interface CityAmbientNpcStepResult {
+  x: number;
+  z: number;
+  yaw: number;
+  speedMps: number;
+  isMoving: boolean;
+  isSitting: boolean;
+  waypointIdx: number;
+  pauseTimer: number;
+}
+
+function normalizeRadiansSigned(angle: number): number {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+/**
+ * Advances one ambient city citizen along their patrol/jog/fishing/bench schedule.
+ */
+export function stepCityAmbientNpcSchedule(
+  input: CityAmbientNpcStepInput,
+): CityAmbientNpcStepResult {
+  const { preset, elapsedSec } = input;
+  const dt = Math.max(0, Math.min(0.25, Number.isFinite(input.dt) ? input.dt : 0));
+  const waypoints = preset.waypoints;
+  if (waypoints.length === 0) {
+    return {
+      x: input.x,
+      z: input.z,
+      yaw: input.yaw,
+      speedMps: 0,
+      isMoving: false,
+      isSitting: preset.activity === 'sit_relax',
+      waypointIdx: 0,
+      pauseTimer: 0,
+    };
+  }
+
+  const safeIdx =
+    ((input.waypointIdx % waypoints.length) + waypoints.length) % waypoints.length;
+  const targetWp = waypoints[safeIdx];
+
+  if (waypoints.length === 1 || preset.speedMps <= 0.01) {
+    const baseYaw = targetWp.yaw ?? input.yaw;
+    const gazeOffset =
+      preset.activity === 'sit_relax'
+        ? Math.sin(elapsedSec * 0.55) * 0.14
+        : preset.activity === 'fishing'
+          ? Math.sin(elapsedSec * 0.45) * 0.08
+          : 0;
+    return {
+      x: targetWp.x,
+      z: targetWp.z,
+      yaw: baseYaw + gazeOffset,
+      speedMps: 0,
+      isMoving: false,
+      isSitting: preset.activity === 'sit_relax',
+      waypointIdx: 0,
+      pauseTimer: 0,
+    };
+  }
+
+  if (input.pauseTimer > 0) {
+    const nextPause = Math.max(0, input.pauseTimer - dt);
+    const prevWp = waypoints[(safeIdx - 1 + waypoints.length) % waypoints.length];
+    const desiredYaw =
+      prevWp.yaw !== undefined
+        ? prevWp.yaw + Math.sin(elapsedSec * 0.9) * 0.18
+        : input.yaw + Math.sin(elapsedSec * 0.7) * 0.004;
+    return {
+      x: input.x,
+      z: input.z,
+      yaw: desiredYaw,
+      speedMps: 0,
+      isMoving: false,
+      isSitting: false,
+      waypointIdx: safeIdx,
+      pauseTimer: nextPause,
+    };
+  }
+
+  const dx = targetWp.x - input.x;
+  const dz = targetWp.z - input.z;
+  const dist = Math.hypot(dx, dz);
+  const stepDist = preset.speedMps * dt;
+
+  if (dist <= Math.max(0.22, stepDist)) {
+    const nextIdx = (safeIdx + 1) % waypoints.length;
+    return {
+      x: targetWp.x,
+      z: targetWp.z,
+      yaw: targetWp.yaw ?? input.yaw,
+      speedMps: 0,
+      isMoving: false,
+      isSitting: false,
+      waypointIdx: nextIdx,
+      pauseTimer: preset.pauseSecAtWaypoint,
+    };
+  }
+
+  const targetYaw = Math.atan2(-dz, dx);
+  const dYaw = normalizeRadiansSigned(targetYaw - input.yaw);
+  const maxTurnStep = 7.5 * dt;
+  const nextYaw = input.yaw + Math.max(-maxTurnStep, Math.min(maxTurnStep, dYaw));
+  const invDist = 1.0 / dist;
+
+  return {
+    x: input.x + dx * invDist * stepDist,
+    z: input.z + dz * invDist * stepDist,
+    yaw: nextYaw,
+    speedMps: preset.speedMps,
+    isMoving: true,
+    isSitting: false,
+    waypointIdx: safeIdx,
+    pauseTimer: 0,
+  };
+}
+
 

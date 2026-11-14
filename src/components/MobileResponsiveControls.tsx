@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpDown, X } from 'lucide-react';
+import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import type { FishingPhaseState } from '../game/buddiesFishingMarket';
 
@@ -14,7 +14,7 @@ interface MobileResponsiveControlsProps {
   onTriggerBuddyAction: (action: string) => void;
   /** Force the touch controls to show on desktop (Settings toggle) */
   forceShowJoystick?: boolean;
-  /** True while the player is in the Warzone map - the camera flip is main-map only */
+  /** True while the player is in the Warzone map */
   isWarzoneActive?: boolean;
   /** Fishing context: while the player can fish, the round JUMP button becomes the fishing action (CAST / STRIKE / REEL) */
   canFish?: boolean;
@@ -257,10 +257,9 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
     !isModalBlocking &&
     (viewport.hasTouch || viewport.formFactor !== 'desktop' || viewport.width <= 1024 || Boolean(forceShowJoystick));
 
-  // The controls layer is on for all of gameplay: on desktop the round button
-  // (JUMP, or CAST near water) and the VIEW flip must exist even when the
-  // joystick pad itself is hidden and the player is far from water.
-  const showControlsLayer = isGameplayActive && !isModalBlocking;
+  // Render touch controls during active gameplay whenever the joystick pad is visible
+  // (mobile/tablet/desktop toggle) or the player is near shoreline fishing water (Cast button).
+  const showControlsLayer = isGameplayActive && !isModalBlocking && (showMobileJoystick || canFish);
 
   const isCompactLandscape = viewport.height <= 460;
 
@@ -335,121 +334,77 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           data-device-form-factor={viewport.formFactor}
           className="fixed inset-0 pointer-events-none z-[25] select-none overflow-hidden"
         >
-          <div
-            className={`pointer-events-auto fixed ${
-              !showMobileJoystick
-                ? 'bottom-[64px] left-3'
-                : isCompactLandscape
+          {showMobileJoystick && (
+            <div
+              className={`pointer-events-auto fixed ${
+                isCompactLandscape
                   ? 'bottom-[64px] left-3.5'
                   : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
-            } flex flex-col items-center gap-1 touch-none transition-opacity duration-150 ${
-              !showMobileJoystick
-                ? 'opacity-95'
-                : isJoystickActive
-                  ? 'opacity-90'
-                  : 'opacity-65 hover:opacity-85'
-            }`}
-          >
-            {/* Camera View Flip (main map only): instant 180-degree side swap, not a rotation */}
-            {!isWarzoneActive && (
-              <button
-                type="button"
-                data-camera-flip-btn="true"
-                aria-label="Flip camera view"
-                title="Flip camera view (North <-> South)"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  soundEngine.playUiClick();
-                  window.dispatchEvent(new CustomEvent('camera-flip-view'));
-                }}
-                className={
-                  showMobileJoystick
-                    ? `${
-                        isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
-                      } rounded-full bg-[#14161d]/85 hover:bg-[#1e293b] active:scale-90 border-2 border-white/60 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[2px_2px_0_#0d0f12]`
-                    : '-skew-x-12 px-2.5 h-8 bg-[#14161d]/92 hover:bg-[#1e293b] active:scale-95 border-2 border-[#0d0f12] ring-1 ring-white/75 text-white flex items-center justify-center cursor-pointer transition-all shadow-[3px_3px_0_#0d0f12]'
-                }
-              >
-                {showMobileJoystick ? (
-                  <>
-                    <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
-                    <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
-                      View
-                    </span>
-                  </>
-                ) : (
-                  <span className="skew-x-12 flex items-center gap-1.5">
-                    <ArrowUpDown className="w-3.5 h-3.5 text-[#38bdf8]" aria-hidden="true" />
-                    <span className="text-[10px] font-black uppercase tracking-wider leading-none">
-                      VIEW
-                    </span>
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Circular Semi-Transparent Joystick Touch Pad */}
-            {showMobileJoystick && (
-            <div
-              ref={joystickBaseRef}
-              role="application"
-              aria-label="Virtual Movement Joystick"
-              data-mobile-joystick="true"
-              onPointerDown={handleJoystickPointerDown}
-              onPointerMove={handleJoystickPointerMove}
-              onPointerUp={handleJoystickPointerUpOrCancel}
-              onPointerCancel={handleJoystickPointerUpOrCancel}
-              style={{ touchAction: 'none' }}
-              className={`relative ${
-                isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'
-              } rounded-full border-2 ${
-                isSprinting
-                  ? 'bg-[#14161d]/75 border-[#facc15] shadow-[0_0_12px_rgba(250,204,21,0.35)]'
-                  : isJoystickActive
-                    ? 'bg-[#14161d]/70 border-[#b8ff3c] shadow-[0_0_10px_rgba(184,255,60,0.3)]'
-                    : 'bg-[#14161d]/60 border-white/50'
-              } flex items-center justify-center cursor-grab active:cursor-grabbing transition-all`}
+              } flex flex-col items-center gap-1 touch-none transition-opacity duration-150 ${
+                isJoystickActive ? 'opacity-90' : 'opacity-65 hover:opacity-85'
+              }`}
             >
-              {/* Inner Crosshair Ring & Cardinal Direction Indicators */}
-              <div className="absolute inset-3 rounded-full border border-dashed border-white/20 pointer-events-none" />
-              <ArrowUp
-                className="w-3 h-3 text-white/40 absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
-                aria-hidden="true"
-              />
-              <ArrowDown
-                className="w-3 h-3 text-white/40 absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
-                aria-hidden="true"
-              />
-              <ArrowLeft
-                className="w-3 h-3 text-white/40 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                aria-hidden="true"
-              />
-              <ArrowRight
-                className="w-3 h-3 text-white/40 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                aria-hidden="true"
-              />
-
-              {/* Semi-Transparent Draggable Thumb Stick Knob */}
+              {/* Circular Semi-Transparent Joystick Touch Pad */}
               <div
-                data-mobile-joystick-knob="true"
-                style={{
-                  transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
-                }}
-                className={`${
-                  isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11 sm:w-12 sm:h-12'
-                } rounded-full ${
+                ref={joystickBaseRef}
+                role="application"
+                aria-label="Virtual Movement Joystick"
+                data-mobile-joystick="true"
+                onPointerDown={handleJoystickPointerDown}
+                onPointerMove={handleJoystickPointerMove}
+                onPointerUp={handleJoystickPointerUpOrCancel}
+                onPointerCancel={handleJoystickPointerUpOrCancel}
+                style={{ touchAction: 'none' }}
+                className={`relative ${
+                  isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'
+                } rounded-full border-2 ${
                   isSprinting
-                    ? 'bg-[#facc15]/85 text-black border-2 border-white'
+                    ? 'bg-[#14161d]/75 border-[#facc15] shadow-[0_0_12px_rgba(250,204,21,0.35)]'
                     : isJoystickActive
-                      ? 'bg-[#b8ff3c]/85 text-black border-2 border-white'
-                      : 'bg-white/35 text-white border-2 border-white/65'
-                } flex items-center justify-center font-black text-[8.5px] uppercase tracking-tighter pointer-events-none transition-colors`}
+                      ? 'bg-[#14161d]/70 border-[#b8ff3c] shadow-[0_0_10px_rgba(184,255,60,0.3)]'
+                      : 'bg-[#14161d]/60 border-white/50'
+                } flex items-center justify-center cursor-grab active:cursor-grabbing transition-all`}
               >
-                {isSprinting ? 'RUN' : 'MOVE'}
+                {/* Inner Crosshair Ring & Cardinal Direction Indicators */}
+                <div className="absolute inset-3 rounded-full border border-dashed border-white/20 pointer-events-none" />
+                <ArrowUp
+                  className="w-3 h-3 text-white/40 absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <ArrowDown
+                  className="w-3 h-3 text-white/40 absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <ArrowLeft
+                  className="w-3 h-3 text-white/40 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <ArrowRight
+                  className="w-3 h-3 text-white/40 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+
+                {/* Semi-Transparent Draggable Thumb Stick Knob */}
+                <div
+                  data-mobile-joystick-knob="true"
+                  style={{
+                    transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
+                  }}
+                  className={`${
+                    isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11 sm:w-12 sm:h-12'
+                  } rounded-full ${
+                    isSprinting
+                      ? 'bg-[#facc15]/85 text-black border-2 border-white'
+                      : isJoystickActive
+                        ? 'bg-[#b8ff3c]/85 text-black border-2 border-white'
+                        : 'bg-white/35 text-white border-2 border-white/65'
+                  } flex items-center justify-center font-black text-[8.5px] uppercase tracking-tighter pointer-events-none transition-colors`}
+                >
+                  {isSprinting ? 'RUN' : 'MOVE'}
+                </div>
               </div>
             </div>
-            )}
-          </div>
+          )}
 
           {/* BOTTOM-RIGHT: Mobile Touch Action Buttons (and Cast button when near water on any device) */}
           {(showMobileJoystick || canFish) && (

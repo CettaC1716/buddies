@@ -25,13 +25,6 @@ export interface CityTransitKioskModalProps {
   /** Live cafe job status peeked from the shift channel (null = unknown). */
   cafeJobStatus?: { workerName: string | null; queueCount: number } | null;
   onEnterGlasshouseCafe?: () => void;
-  isTutorialTourActive?: boolean;
-  /** After the Kai tutorial: Hana explains the remaining kiosk menus in place. */
-  isMenusTourActive?: boolean;
-  onCompleteTutorialTour?: () => void;
-  /** Guided destination (city-tour bridge): TRAVEL & DISTRICTS and this
-   * destination card stand out while every other card dims, unclickable. */
-  guideDestinationId?: CityTransitStationId | null;
 }
 
 const RECENT_STATIONS_STORAGE_KEY = 'buddies_blitz_recent_transit_stations_v1';
@@ -50,10 +43,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   onOpenShopAndExchange,
   cafeJobStatus = null,
   onEnterGlasshouseCafe,
-  isTutorialTourActive = false,
-  isMenusTourActive = false,
-  onCompleteTutorialTour,
-  guideDestinationId = null,
 }) => {
   const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect' | 'jobs'>('grid');
   const [kioskThumbnails, setKioskThumbnails] = useState<Record<string, string>>(() => {
@@ -109,81 +98,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     }
   }, [isOpen]);
 
-  // Hana's interactive kiosk tour: she explains each menu while a spotlight
-  // ring steps across the cards.
-  const KIOSK_TOUR_STEPS = [
-    {
-      card: 'travel_districts',
-      text: "This is TRAVEL & DISTRICTS \u2014 how you get around the city. Pick a district and the tram takes you straight there, no long walks.",
-    },
-    {
-      card: 'my_house',
-      text: 'This is MY HOUSE \u2014 your home in the city. If you do not own one yet, this is where the catalog and our model house come in.',
-    },
-    {
-      card: 'shop_exchange',
-      text: 'This is SHOP & EXCHANGE \u2014 trade LUL, CYON and RESPITE here, and browse items, outfits and furniture.',
-    },
-    {
-      card: 'warzone_arena',
-      text: 'And this is the WARZONE ARENA \u2014 the optional Red vs Blue combat game. Jump in whenever you feel like it, totally up to you.',
-    },
-  ] as const;
-  // Menus tour (after the Kai tutorial): Hana explains the menus that are
-  // left — house, shop, jobs, warzone — in place, one at a time.
-  const MENUS_TOUR_STEPS = [
-    {
-      card: 'my_house',
-      text: 'This is MY HOUSE \u2014 your home in the city. Step inside, decorate with furniture from your BAG, and visit model homes.',
-    },
-    {
-      card: 'shop_exchange',
-      text: 'This is SHOP & EXCHANGE \u2014 trade LUL, CYON and RESPITE here, and browse items, outfits and furniture.',
-    },
-    {
-      card: 'jobs',
-      text: 'This is JOBS \u2014 take a barista shift at the Glasshouse Cafe: prepare and serve 3 orders to earn XP and LUL.',
-    },
-    {
-      card: 'warzone_arena',
-      text: 'And this is the WARZONE ARENA \u2014 the optional Red vs Blue combat game. Jump in whenever you feel like it, totally up to you.',
-    },
-  ] as const;
-  // Explain-one-then-do-one: while a guide steers the player to Kai, the
-  // tour collapses to a single Travel step — the instruction is to click
-  // the card and ride, not to page through a slideshow.
-  const guidedToKai = guideDestinationId === 'kai_fish_market';
-  const activeTourSteps = guidedToKai
-    ? ([
-        {
-          card: 'travel_districts',
-          text: "This is TRAVEL & DISTRICTS \u2014 how you get around the city. Let's go meet Kai: open this card, pick KAI FISH MARKET, and the tram takes you straight to him.",
-        },
-      ] as const)
-    : isMenusTourActive
-      ? MENUS_TOUR_STEPS
-      : KIOSK_TOUR_STEPS;
-  const tourActive = guidedToKai || isMenusTourActive || isTutorialTourActive;
-  const [tourStep, setTourStep] = useState<number>(0);
-  const [guideBannerDismissed, setGuideBannerDismissed] = useState<boolean>(false);
-  useEffect(() => {
-    if (tourActive) {
-      setTourStep(0);
-      setGuideBannerDismissed(false);
-    }
-  }, [tourActive, isOpen]);
-  const guideCardClass = (card: string): string => {
-    if (!guideDestinationId || levelView !== 'grid') return '';
-    return card === 'travel_districts'
-      ? ' ring-4 ring-[#38bdf8] z-20 brightness-110 bb-attention-wiggle'
-      : ' opacity-40 saturate-50 pointer-events-none';
-  };
-  const tourCardClass = (card: string): string => {
-    if (!tourActive || guidedToKai || levelView !== 'grid') return '';
-    return activeTourSteps[tourStep]?.card === card
-      ? ' ring-4 ring-[#b8ff3c] scale-[1.015] z-20 brightness-110'
-      : ' opacity-60 saturate-50';
-  };
   const [browserSectionTitle, setBrowserSectionTitle] = useState<string>('TRAVEL & DISTRICTS');
   const [selectedStationId, setSelectedStationId] = useState<CityTransitStationId>('central_plaza');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -217,11 +131,10 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       setSearchQuery('');
       setShowRecentOnly(false);
       const defaultTarget: CityTransitStationId =
-        guideDestinationId ??
-        (activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza');
+        activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza';
       setSelectedStationId(defaultTarget);
     }
-  }, [isOpen, activeOriginId, guideDestinationId]);
+  }, [isOpen, activeOriginId]);
 
   const recordRecentStation = (stationId: CityTransitStationId) => {
     setRecentStationIds((prev) => {
@@ -282,8 +195,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     setSearchQuery('');
     setShowRecentOnly(false);
     const defaultDistrict: CityTransitStationId =
-      guideDestinationId ??
-      (activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza');
+      activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza';
     setSelectedStationId(defaultDistrict);
     setLevelView('browser');
   };
@@ -455,97 +367,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
           </div>
         ) : levelView === 'grid' ? (
           <div className="p-4 sm:p-6 bg-[#f1f5f9]">
-            {tourActive && !(guidedToKai && guideBannerDismissed) && (
-              <div
-                data-kiosk-tutorial-tour-banner="true"
-                data-kiosk-hana-tour="true"
-                className="mb-4 bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] flex gap-3 p-3"
-              >
-                <img
-                  src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
-                  alt="Hana"
-                  className="w-14 h-14 sm:w-16 sm:h-16 object-cover border-2 border-black shrink-0"
-                />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                      HANA · {guidedToKai ? 'CITY TOUR' : 'KIOSK TOUR'} {tourStep + 1}/
-                      {activeTourSteps.length}
-                    </span>
-                    <button
-                      type="button"
-                      data-kiosk-skip-tour-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        if (guidedToKai) {
-                          setGuideBannerDismissed(true);
-                          onCompleteTutorialTour?.();
-                        } else {
-                          onCompleteTutorialTour?.();
-                        }
-                      }}
-                      className="text-[9.5px] font-black uppercase text-slate-400 hover:text-white underline cursor-pointer shrink-0"
-                    >
-                      {guidedToKai ? 'GOT IT' : 'SKIP TOUR'}
-                    </button>
-                  </div>
-                  <p className="text-xs font-bold text-slate-100 leading-snug">
-                    {activeTourSteps[tourStep].text}
-                  </p>
-                  {!guidedToKai && (
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <button
-                      type="button"
-                      data-kiosk-tour-back-btn="true"
-                      disabled={tourStep === 0}
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setTourStep((s) => Math.max(0, s - 1));
-                      }}
-                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-white border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
-                    >
-                      BACK
-                    </button>
-                    {tourStep < activeTourSteps.length - 1 ? (
-                      <button
-                        type="button"
-                        data-kiosk-tour-next-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setTourStep((s) =>
-                            Math.min(activeTourSteps.length - 1, s + 1),
-                          );
-                        }}
-                        className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
-                      >
-                        NEXT
-                      </button>
-                    ) : (
-                      onCompleteTutorialTour && (
-                        <button
-                          type="button"
-                          data-kiosk-complete-tutorial-btn="true"
-                          onClick={() => {
-                            soundEngine.playPickup();
-                            onCompleteTutorialTour();
-                          }}
-                          className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
-                        >
-                          GOT IT
-                        </button>
-                      )
-                    )}
-                    {tourStep === activeTourSteps.length - 1 && (
-                      <span className="text-[10px] font-bold text-slate-400">
-                        That's the kiosk \u2014 where would you like to go first?
-                      </span>
-                    )}
-                  </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-black uppercase tracking-wider text-slate-700">
                 SELECT DESTINATION OR CITIZEN SERVICE
@@ -562,7 +383,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="travel_districts"
                 data-teleport-option="safezone"
                 onClick={handleOpenTravelBrowser}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('travel_districts')}${guideCardClass('travel_districts')}`}
+                className="group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.travel_districts || '/docs/hero-2-tram-station.jpg'}
@@ -598,7 +419,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="warzone_arena"
                 data-teleport-option="warzone"
                 onClick={handleOpenWarzoneBrowser}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('warzone_arena')}${guideCardClass('warzone_arena')}`}
+                className="group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.warzone_arena || '/docs/hero-7-crate-stacking-pad.jpg'}
@@ -644,7 +465,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="my_house"
                 onClick={handleClickMyHouse}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('my_house')}${guideCardClass('my_house')}`}
+                className="group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.my_house || '/docs/hero-3-house-interior.jpg'}
@@ -681,7 +502,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="shop_exchange"
                 onClick={handleClickShopExchange}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('shop_exchange')}${guideCardClass('shop_exchange')}`}
+                className="group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
@@ -716,7 +537,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="jobs"
                 onClick={handleOpenJobsBrowser}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('jobs')}${guideCardClass('jobs')}`}
+                className="group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={
@@ -935,8 +756,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   filteredDestinations.map((dest) => {
                     const isSelected = dest.id === selectedDestination.id;
                     const isHere = dest.id === activeOriginId;
-                    const isGuideTarget = guideDestinationId === dest.id;
-                    const isGuideDimmed = Boolean(guideDestinationId) && !isGuideTarget;
 
                     return (
                       <button
@@ -951,7 +770,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                           isSelected
                             ? 'bg-[#facc15] border-[3px] border-black shadow-[3px_3px_0px_#000] -translate-y-0.5'
                             : 'bg-white hover:bg-slate-100 border-[2.5px] border-black shadow-[2px_2px_0px_#000]'
-                        }${isGuideDimmed ? ' opacity-40 saturate-50 pointer-events-none' : ''}${isGuideTarget ? ' ring-4 ring-[#38bdf8] brightness-110' : ''}`}
+                        }`}
                       >
                         <img
                           src={kioskThumbnails[dest.id] || dest.heroImageUrl}

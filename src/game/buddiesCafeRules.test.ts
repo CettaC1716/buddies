@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import {
   CAFE_GLOBAL_SCALE_SPEC,
   CAFE_INTERIOR_BOUNDS,
+  CAFE_INTERIOR_SEAT_SPOTS,
   CAFE_MENU_ITEMS,
   CAFE_SHIFT_COMPLETION_BONUS_BUCKS,
   CAFE_SHIFT_COMPLETION_BONUS_XP,
@@ -12,6 +13,7 @@ import {
   clampCafeInteriorPosition,
   computeCafeExteriorDistance,
   computeCafeExteriorMistFactor,
+  computeCafeSeatStandUpPosition,
   computeLevelProgress,
   createInitialCafeWorkShiftState,
   detectNearestCafeStation,
@@ -419,6 +421,15 @@ test('Cafe interior seat indicators are compact (<=0.20m diameter, <45% of old 0
       spot.indicatorHeightY >= 0.65 && spot.indicatorHeightY <= 0.76,
       `Expected compact seat indicator height in [0.65, 0.76], got ${spot.indicatorHeightY}`,
     );
+
+    // Character facing forward (cos yaw, -sin yaw) must face toward its bistro table:
+    // East / left-wing chairs (x > 0, tableX = 5.28) face +X; west chairs (x < 0, tableX = -5.45) face -X.
+    const fwdX = Math.cos(spot.yaw);
+    if (spot.x > 0) {
+      assert.ok(fwdX > 0.9, `Expected east cafe seat ${spot.id} to face table (+X), got fwdX=${fwdX}`);
+    } else {
+      assert.ok(fwdX < -0.9, `Expected west cafe seat ${spot.id} to face table (-X), got fwdX=${fwdX}`);
+    }
   }
 });
 
@@ -791,6 +802,251 @@ test('Door pads keep floor ring + triangle while interactive item & contextual p
       CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.x < -0.7,
     'Pastry display marker (+X right showcase) and Drink machine marker (-X left espresso machine) sit directly over their respective appliances',
   );
+});
+
+test('buildBentwoodRattanChair connects all 4 legs continuously through mid-height stretcher, seat hoop, and backrest T-joins', async () => {
+  const cafeAssetsMod = await import('./buddiesLShapedCafeAssets');
+  const clearGlassMat = new THREE.MeshBasicMaterial();
+  const simpleStyler: import('./buddiesLShapedCafeAssets').CafeAssetStyler = {
+    clearGlassMat,
+    preserveTextures: false,
+    styleOpaque: (mesh, _geo, colorHex) => {
+      mesh.material = new THREE.MeshStandardMaterial({ color: colorHex });
+      return mesh;
+    },
+  };
+
+  const chair = cafeAssetsMod.buildBentwoodRattanChair(simpleStyler, null, 1.0);
+  chair.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(chair);
+  assert.ok(Math.abs(box.min.y) <= 0.006, `Chair floor base min.y=${box.min.y} must rest on y=0`);
+  assert.ok(box.max.y >= 0.91 && box.max.y <= 0.935, `Chair backrest height=${box.max.y} must stay in calibrated 0.91..0.935m`);
+
+  const worldVerts: THREE.Vector3[] = [];
+  const tmp = new THREE.Vector3();
+  let torusMeshCount = 0;
+  let tubeMeshCount = 0;
+  chair.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.geometry) {
+      if (obj.geometry instanceof THREE.TorusGeometry) torusMeshCount++;
+      if (obj.geometry instanceof THREE.TubeGeometry) tubeMeshCount++;
+      const pos = obj.geometry.getAttribute('position');
+      if (pos) {
+        for (let i = 0; i < pos.count; i++) {
+          tmp.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld);
+          worldVerts.push(tmp.clone());
+        }
+      }
+    }
+  });
+
+  // Backrest arch + 2 continuous leg/arm splines (+ possible stroke duplicate meshes)
+  assert.ok(tubeMeshCount >= 3, `Expected >=3 continuous TubeGeometry rails, got ${tubeMeshCount}`);
+  assert.ok(torusMeshCount >= 1, `Expected continuous mid-height TorusGeometry stretcher hoop`);
+
+  // Every leg quadrant (++, +-, -+, --) must pass through the y=0.26 stretcher band at r in [0.255, 0.305]
+  const stretcherQuadrants = new Set<string>();
+  for (const v of worldVerts) {
+    if (v.y >= 0.24 && v.y <= 0.28) {
+      const r = Math.hypot(v.x, v.z);
+      if (r >= 0.255 && r <= 0.305 && Math.abs(v.x) > 0.14 && Math.abs(v.z) > 0.14) {
+        stretcherQuadrants.add(`${v.x > 0 ? '+' : '-'}${v.z > 0 ? '+' : '-'}`);
+      }
+    }
+  }
+  assert.equal(stretcherQuadrants.size, 4, 'All 4 legs must intersect the mid-height circular stretcher hoop cleanly');
+
+  // At seat hoop height (y=0.43..0.45), all 4 leg quadrant tubes must sit inside seat outer rim (r <= 0.285)
+  const seatJoinQuadrants = new Set<string>();
+  for (const v of worldVerts) {
+    if (v.y >= 0.43 && v.y <= 0.448 && Math.abs(v.x) > 0.14 && Math.abs(v.z) > 0.14) {
+      const r = Math.hypot(v.x, v.z);
+      if (r <= 0.292) {
+        seatJoinQuadrants.add(`${v.x > 0 ? '+' : '-'}${v.z > 0 ? '+' : '-'}`);
+      }
+    }
+  }
+  assert.equal(seatJoinQuadrants.size, 4, 'All 4 legs must join smoothly inside the timber seat hoop without outer gap');
+
+  // Armrest-to-backrest T-join must unite symmetrically near (+/-0.212, 0.64, -0.212)
+  for (const side of [-1, 1]) {
+    const nearTJoin = worldVerts.filter(
+      (v) => Math.hypot(v.x - side * 0.212, v.y - 0.64, v.z + 0.212) <= 0.032,
+    );
+    assert.ok(nearTJoin.length >= 6, `Expected fused arm-to-backrest T-join on side ${side}`);
+  }
+});
+
+test('CAFE_INTERIOR_COLLIDERS covers all cafe chairs without overlapping tables and computeCafeSeatStandUpPosition clears both chair and table', async () => {
+  const { CAFE_INTERIOR_COLLIDERS } = await import('./buddiesCafeInteriorBuilder');
+  const playerRadius = 0.34;
+  const requiredChairIds = [
+    'cafe_chair_e1',
+    'cafe_chair_e2',
+    'cafe_chair_w1',
+    'cafe_chair_w1_window',
+    'cafe_chair_w2',
+    'cafe_chair_w2_window',
+    'cafe_wing_chair',
+  ];
+
+  const chairCols = requiredChairIds.map((id) => {
+    const col = CAFE_INTERIOR_COLLIDERS.find((c) => c.id === id);
+    assert.ok(col, `Missing solid chair collider ${id}`);
+    assert.ok(col.hw >= 0.25 && col.hd >= 0.25, `Chair collider ${id} half-extents too small`);
+    return col;
+  });
+
+  // Verify no chair collider overlaps any table, banquette, counter, or planter collider
+  const otherCols = CAFE_INTERIOR_COLLIDERS.filter((c) => !requiredChairIds.includes(c.id));
+  for (const chairCol of chairCols) {
+    for (const other of otherCols) {
+      const overlapX = chairCol.hw + other.hw - Math.abs(chairCol.x - other.x);
+      const overlapZ = chairCol.hd + other.hd - Math.abs(chairCol.z - other.z);
+      assert.ok(
+        !(overlapX > 0 && overlapZ > 0),
+        `Chair collider ${chairCol.id} must not overlap ${other.id}`,
+      );
+    }
+  }
+
+  // Every interactive seat spot must map inside one solid chair collider
+  for (const spot of CAFE_INTERIOR_SEAT_SPOTS) {
+    const covering = chairCols.find(
+      (c) => Math.abs(spot.x - c.x) <= c.hw && Math.abs(spot.z - c.z) <= c.hd,
+    );
+    assert.ok(covering, `Interactive cafe seat spot ${spot.id} is not backed by a chair collider`);
+  }
+
+  // Stand-up coordinates (dock click + 8 WASD directions) must clear EVERY collider with playerRadius=0.34
+  const moveInputs: ReadonlyArray<readonly [number, number]> = [
+    [0, 0],
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [-1, 1],
+    [1, -1],
+    [-1, -1],
+  ];
+
+  for (const spot of CAFE_INTERIOR_SEAT_SPOTS) {
+    for (const [mx, mz] of moveInputs) {
+      const exit = computeCafeSeatStandUpPosition(spot, mx, mz);
+      for (const col of CAFE_INTERIOR_COLLIDERS) {
+        const clampedX = Math.max(col.x - col.hw, Math.min(col.x + col.hw, exit.x));
+        const clampedZ = Math.max(col.z - col.hd, Math.min(col.z + col.hd, exit.z));
+        const dist = Math.hypot(exit.x - clampedX, exit.z - clampedZ);
+        assert.ok(
+          dist >= playerRadius - 0.001,
+          `Stand-up from ${spot.id} with input (${mx},${mz}) clipped collider ${col.id}: dist=${dist.toFixed(4)} < ${playerRadius}`,
+        );
+      }
+    }
+  }
+});
+
+test('Cafe arcade cabinet sits cleanly in front of East wall plinth without wall penetration and registers arcade_slot station', async () => {
+  const cafeAssetsMod = await import('./buddiesLShapedCafeAssets');
+  const { CAFE_INTERIOR_COLLIDERS } = await import('./buddiesCafeInteriorBuilder');
+  const { CAFE_APPLIANCE_TARGETS } = await import('./buddiesCafeRules');
+
+  const clearGlassMat = new THREE.MeshBasicMaterial();
+  const simpleStyler: import('./buddiesLShapedCafeAssets').CafeAssetStyler = {
+    clearGlassMat,
+    preserveTextures: false,
+    styleOpaque: (mesh, _geo, colorHex) => {
+      mesh.material = new THREE.MeshStandardMaterial({ color: colorHex });
+      return mesh;
+    },
+  };
+
+  const arcadeCol = CAFE_INTERIOR_COLLIDERS.find((c) => c.id === 'cafe_arcade_cabinet');
+  assert.ok(arcadeCol, 'Expected cafe_arcade_cabinet collider');
+  assert.equal(arcadeCol.x, CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.x);
+  assert.equal(arcadeCol.z, CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.z);
+
+  const cab = cafeAssetsMod.buildStandaloneArcadeCabinet(
+    simpleStyler,
+    CAFE_GLOBAL_SCALE_SPEC.interiorAtmScale,
+  );
+  cab.position.set(arcadeCol.x, 0.02, arcadeCol.z);
+  cab.rotation.y = -Math.PI / 2;
+  cab.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(cab);
+  const eastWallInnerPlinthX = CAFE_INTERIOR_BOUNDS.maxX - 0.14;
+  assert.ok(
+    box.max.x < eastWallInnerPlinthX,
+    `Expected arcade rear max.x=${box.max.x.toFixed(4)} to stay in front of East wall plinth x=${eastWallInnerPlinthX}`,
+  );
+
+  // Player standing in front of cabinet detects arcade_slot outside work shift, not during work shift
+  const near = detectNearestCafeStation(
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.standX,
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.standZ,
+    false,
+  );
+  assert.equal(near.kind, 'arcade_slot');
+
+  const whileWorking = detectNearestCafeStation(
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.standX,
+    CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.standZ,
+    true,
+  );
+  assert.notEqual(whileWorking.kind, 'arcade_slot');
+});
+
+test('Neo-Strike Slot Machine paytable, deterministic RNG outcomes, balance checks, and 32^3 theoretical RTP', async () => {
+  const {
+    ARCADE_SLOT_MIN_BET_LUL,
+    ARCADE_SLOT_STRIP,
+    computeArcadeSlotTheoreticalRtp,
+    evaluateArcadeSlotCombination,
+    spinArcadeSlotReels,
+  } = await import('./buddiesArcadeSlots');
+
+  assert.equal(ARCADE_SLOT_STRIP.length, 32);
+
+  const rtp = computeArcadeSlotTheoreticalRtp();
+  assert.ok(rtp > 0.90 && rtp < 0.96, `Expected fair 90%..96% RTP, got ${(rtp * 100).toFixed(2)}%`);
+
+  const jackpot = evaluateArcadeSlotCombination(['seven', 'seven', 'seven'], 10);
+  assert.equal(jackpot.outcomeKind, 'jackpot');
+  assert.equal(jackpot.multiplier, 50);
+  assert.equal(jackpot.payoutLul, 500);
+  assert.equal(jackpot.netDeltaLul, 490);
+  assert.equal(jackpot.xpGained, 25);
+
+  const tripleDiamond = evaluateArcadeSlotCombination(['diamond', 'diamond', 'diamond'], 5);
+  assert.equal(tripleDiamond.outcomeKind, 'triple');
+  assert.equal(tripleDiamond.payoutLul, 100);
+
+  const pairBell = evaluateArcadeSlotCombination(['bell', 'cherry', 'bell'], 5);
+  assert.equal(pairBell.outcomeKind, 'pair_win');
+  assert.equal(pairBell.multiplier, 2);
+  assert.equal(pairBell.payoutLul, 10);
+
+  const pushCherry = evaluateArcadeSlotCombination(['cherry', 'star', 'cherry'], 5);
+  assert.equal(pushCherry.outcomeKind, 'push');
+  assert.equal(pushCherry.payoutLul, 5);
+  assert.equal(pushCherry.netDeltaLul, 0);
+
+  const miss = evaluateArcadeSlotCombination(['seven', 'bell', 'cherry'], 5);
+  assert.equal(miss.outcomeKind, 'miss');
+  assert.equal(miss.payoutLul, 0);
+  assert.equal(miss.netDeltaLul, -5);
+
+  assert.equal(spinArcadeSlotReels(ARCADE_SLOT_MIN_BET_LUL - 1, 50).ok, false);
+  assert.equal(spinArcadeSlotReels(10, 5).reason, 'insufficient_lul');
+
+  // Index 0..1 on strip is 'seven', so roll 0.0 picks 'seven' across all 3 reels -> 777 Jackpot!
+  const deterministicJackpot = spinArcadeSlotReels(5, 20, [0.0, 0.0, 0.0]);
+  assert.equal(deterministicJackpot.ok, true);
+  assert.deepEqual(deterministicJackpot.evaluation?.reels, ['seven', 'seven', 'seven']);
+  assert.equal(deterministicJackpot.updatedLulBalance, 20 - 5 + 250);
 });
 
 

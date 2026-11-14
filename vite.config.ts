@@ -166,6 +166,9 @@ export default defineConfig(({ command, mode }) => {
     optimizeDeps: {
       noDiscovery: true,
       holdUntilCrawlEnd: false,
+      rolldownOptions: {
+        plugins: [privyUnusedOptionalPeerStubPlugin({ stubInactivePrivyInDev })],
+      },
       include: [
         'react',
         'react-dom',

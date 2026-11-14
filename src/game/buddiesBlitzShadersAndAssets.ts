@@ -1092,6 +1092,7 @@ export function bakeStaticGroupMeshes(
       material: THREE.Material;
       castShadow: boolean;
       receiveShadow: boolean;
+      renderOrder: number;
       geos: THREE.BufferGeometry[];
     }
   >();
@@ -1239,6 +1240,7 @@ export function bakeStaticGroupMeshes(
             }
           }
           g.applyMatrix4(relMatrix);
+          const renderOrder = node.renderOrder || 0;
           const key = `${mat.uuid}_${castShadow ? 1 : 0}_${node.receiveShadow ? 1 : 0}`;
           let bucket = materialBuckets.get(key);
           if (!bucket) {
@@ -1246,9 +1248,12 @@ export function bakeStaticGroupMeshes(
               material: mat,
               castShadow,
               receiveShadow: node.receiveShadow,
+              renderOrder,
               geos: [],
             };
             materialBuckets.set(key, bucket);
+          } else if (renderOrder > bucket.renderOrder) {
+            bucket.renderOrder = renderOrder;
           }
           bucket.geos.push(g);
           meshesToRemove.push(node);
@@ -1277,6 +1282,7 @@ export function bakeStaticGroupMeshes(
     bakedMesh.name = 'BlitzBakedStaticMesh';
     bakedMesh.castShadow = bucket.castShadow;
     bakedMesh.receiveShadow = bucket.receiveShadow;
+    bakedMesh.renderOrder = bucket.renderOrder;
     bakedMesh.frustumCulled = true;
     bakedMesh.matrixAutoUpdate = false;
     bakedMesh.updateMatrix();
@@ -27361,6 +27367,230 @@ export function buildMilitaryBaseMasterplan(
   checkpointGroup.visible = false;
 
   // =========================================================================
+  // 7b. RESIDENTIAL PLOT HOUSE VARIANT: CLASSIC PLAZA MANOR TEMPLATE
+  //     2-story European Cream Stucco, Terracotta Brick Quoins, Sage Louvered
+  //     Shutters, 2-Column Classical Pediment Portico, Twin Dormers & Chimneys.
+  //     Matches Local Plot Orientation: Front (+X), Rear (-X), Left (+Z), Right (-Z)
+  // =========================================================================
+  const plazaManorPlotTemplate = new THREE.Group();
+  plazaManorPlotTemplate.name = 'ResidentialPlotPlazaManorTemplate';
+  plazaManorPlotTemplate.visible = false;
+  masterRoot.add(plazaManorPlotTemplate);
+
+  const PM_STUCCO = '#ede2ce';
+  const PM_STONE = '#d6cebe';
+  const PM_STONE_DARK = '#b5ad9e';
+  const PM_BRICK = '#c48768';
+  const PM_BRICK_DARK = '#ab6f52';
+  const PM_SAGE = '#6b8c76';
+  const PM_SAGE_DARK = '#4f6b58';
+  const PM_SLATE = '#667782';
+  const PM_SLATE_DARK = '#4e5d66';
+  const PM_WOOD = '#9c7148';
+  const PM_WOOD_DARK = '#6e4c2c';
+  const PM_GOLD = '#d4a536';
+  const PM_FLOWER_PINK = '#ef95b8';
+  const PM_FLOWER_BLUE = '#7fb4d8';
+  const PM_LEAF_DARK = '#376d3f';
+  const PM_LEAF_LIGHT = '#4f8f54';
+
+  // 1. Stone Foundation Plinth, Front Classical Porch Landing & 3 Entrance Steps (+X Front)
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.64, 0.12, 6.24), PM_STONE_DARK, [0.0, 0.06, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.48, 0.28, 6.08), PM_STONE, [0.0, 0.24, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.96, 0.38, 2.38), PM_STONE, [2.56, 0.19, 0.0], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.30, 0.28, 2.18), PM_STONE, [3.08, 0.14, 0.0], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.30, 0.18, 2.28), PM_STONE, [3.32, 0.09, 0.0], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.28, 0.09, 2.38), PM_STONE_DARK, [3.54, 0.045, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1BasaltPlinthTex);
+
+  // 2. Two-Story Cream Stucco Body + Mid-Floor Stone Belt Course + Sage Eaves Cornice
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.28, 3.72, 5.88), PM_STUCCO, [0.0, 2.24, 0.0], [0, 0, 0], [1, 1, 1], 0.022, lv1AndoPlasterTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.40, 0.12, 6.00), PM_STONE, [0.0, 2.28, 0.0], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.50, 0.15, 6.10), PM_SAGE, [0.0, 4.13, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.58, 0.07, 6.18), PM_SAGE_DARK, [0.0, 4.22, 0.0], [0, 0, 0], [1, 1, 1], 0.010);
+
+  // 3. Alternating Terracotta Brick Corner Quoins along all 4 Corners (2 Stories)
+  for (const cxSign of [-1, 1]) {
+    for (const czSign of [-1, 1]) {
+      const qxCorner = cxSign * 2.13;
+      const qzCorner = czSign * 2.93;
+      for (let q = 0; q < 11; q++) {
+        const isLongX = q % 2 === 0;
+        const qw = isLongX ? 0.34 : 0.22;
+        const qd = isLongX ? 0.22 : 0.34;
+        const qy = 0.56 + q * 0.32;
+        addBasePart(
+          plazaManorPlotTemplate,
+          new THREE.BoxGeometry(qw, 0.24, qd),
+          q % 3 === 0 ? PM_BRICK_DARK : PM_BRICK,
+          [qxCorner - cxSign * (qw * 0.5 - 0.03), qy, qzCorner - czSign * (qd * 0.5 - 0.03)],
+          [0, 0, 0],
+          [1, 1, 1],
+          0.008,
+        );
+      }
+    }
+  }
+
+  // 4. Front (+X) Projecting Classical 2-Column Pediment Portico, Arched Double Doors & Coach Lanterns
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.10, 1.88, 1.38), PM_STONE, [2.15, 1.32, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
+  for (const dSide of [-1, 1]) {
+    const dz = dSide * 0.31;
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.08, 1.50, 0.54), PM_SAGE_DARK, [2.18, 1.13, dz], [0, 0, 0], [1, 1, 1], 0.010);
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.09, 0.58, 0.38), PM_WOOD, [2.19, 0.80, dz], [0, 0, 0], [1, 1, 1], 0.006, lv1HorizTimberTex);
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.09, 0.58, 0.38), '#9ec2cc', [2.19, 1.48, dz], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    addBasePart(plazaManorPlotTemplate, new THREE.SphereGeometry(0.032, 6, 6), PM_GOLD, [2.24, 1.08, dSide * 0.08], [0, 0, 0], [1, 1, 1], 0);
+  }
+  // Semicircular Arched Fanlight Transom Frame + Glazing above Double Doors
+  const pmFanFrameShape = new THREE.Shape();
+  pmFanFrameShape.absarc(0, 0, 0.62, 0, Math.PI, false);
+  pmFanFrameShape.closePath();
+  const pmFanFrameGeo = new THREE.ExtrudeGeometry(pmFanFrameShape, { depth: 0.10, bevelEnabled: false });
+  pmFanFrameGeo.rotateY(Math.PI / 2);
+  addBasePart(plazaManorPlotTemplate, pmFanFrameGeo, PM_SAGE, [2.14, 1.88, 0.0], [0, 0, 0], [1, 1, 1], 0.009);
+  const pmFanGlassShape = new THREE.Shape();
+  pmFanGlassShape.absarc(0, 0, 0.50, 0, Math.PI, false);
+  pmFanGlassShape.closePath();
+  const pmFanGlassGeo = new THREE.ExtrudeGeometry(pmFanGlassShape, { depth: 0.11, bevelEnabled: false });
+  pmFanGlassGeo.rotateY(Math.PI / 2);
+  addBasePart(plazaManorPlotTemplate, pmFanGlassGeo, '#a8cbd4', [2.15, 1.88, 0.0], [0, 0, 0], [1, 1, 1], 0);
+
+  // Twin Classical Stone Portico Columns
+  for (const colSide of [-1, 1]) {
+    const cz = colSide * 0.98;
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.36, 0.34, 0.36), PM_STONE, [2.82, 0.55, cz], [0, 0, 0], [1, 1, 1], 0.010, lv1BasaltPlinthTex);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.16, 0.18, 0.09, 10), PM_STONE_DARK, [2.82, 0.76, cz], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.125, 0.15, 2.02, 10), '#e8dec9', [2.82, 1.81, cz], [0, 0, 0], [1, 1, 1], 0.012);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.18, 0.13, 0.10, 10), PM_STONE, [2.82, 2.86, cz], [0, 0, 0], [1, 1, 1], 0.009);
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.36, 0.08, 0.36), PM_STONE_DARK, [2.82, 2.95, cz], [0, 0, 0], [1, 1, 1], 0.008);
+  }
+  // Portico Entablature, Triangular Pediment & Slate Portico Roof
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.86, 0.18, 2.48), PM_SAGE, [2.56, 3.07, 0.0], [0, 0, 0], [1, 1, 1], 0.011);
+  const pmPorticoPedShape = new THREE.Shape();
+  pmPorticoPedShape.moveTo(-1.24, 0.0);
+  pmPorticoPedShape.lineTo(1.24, 0.0);
+  pmPorticoPedShape.lineTo(0.0, 0.70);
+  pmPorticoPedShape.closePath();
+  const pmPorticoPedGeo = new THREE.ExtrudeGeometry(pmPorticoPedShape, { depth: 0.84, bevelEnabled: false });
+  pmPorticoPedGeo.rotateY(Math.PI / 2);
+  addBasePart(plazaManorPlotTemplate, pmPorticoPedGeo, PM_STUCCO, [2.14, 3.16, 0.0], [0, 0, 0], [1, 1, 1], 0.011, lv1AndoPlasterTex);
+  for (const rSide of [-1, 1]) {
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.92, 0.10, 1.44), PM_SAGE, [2.56, 3.53, rSide * 0.63], [-rSide * 0.52, 0, 0], [1, 1, 1], 0.009);
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.96, 0.07, 1.48), PM_SLATE, [2.56, 3.60, rSide * 0.63], [-rSide * 0.52, 0, 0], [1, 1, 1], 0.009, lv1SlateRoofTex);
+  }
+  // Gold Crest Emblem in Portico Tympanum + Twin Coach Wall Lanterns
+  addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.18, 0.18, 0.06, 12), PM_GOLD, [3.00, 3.44, 0.0], [0, 0, Math.PI / 2], [1, 1, 1], 0.006);
+  for (const lSide of [-1, 1]) {
+    const lz = lSide * 0.82;
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.10, 0.18, 0.07), '#2b3036', [2.19, 1.56, lz], [0, 0, 0], [1, 1, 1], 0.006);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.085, 0.06, 0.20, 4), '#ffe896', [2.25, 1.56, lz], [0, Math.PI / 4, 0], [1, 1, 1], 0.006);
+    addBasePart(plazaManorPlotTemplate, new THREE.ConeGeometry(0.11, 0.09, 4), '#2b3036', [2.25, 1.69, lz], [0, Math.PI / 4, 0], [1, 1, 1], 0.006);
+  }
+
+  // Twin Classical Stone Planters flanking the Front Steps
+  for (const uSide of [-1, 1]) {
+    const uz = uSide * 1.45;
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.46, 0.34, 0.46), PM_STONE_DARK, [3.34, 0.17, uz], [0, 0, 0], [1, 1, 1], 0.009, lv1BasaltPlinthTex);
+    addBasePart(plazaManorPlotTemplate, new THREE.DodecahedronGeometry(0.28, 1), PM_LEAF_DARK, [3.34, 0.46, uz], [0, 0.4, 0], [1.1, 0.9, 1.1], 0.008);
+    addBasePart(plazaManorPlotTemplate, new THREE.DodecahedronGeometry(0.17, 0), uSide > 0 ? PM_FLOWER_PINK : PM_FLOWER_BLUE, [3.34, 0.64, uz], [0, 0, 0], [1, 1, 1], 0.006);
+  }
+
+  // 5. Shuttered Mullioned Windows Helper (Cream Frames, 6-Pane Crossbars, Sage Louvered Shutters, Flower Boxes)
+  const addManorShutteredWindow = (
+    wx: number,
+    wy: number,
+    wz: number,
+    rotY: number,
+    withFlowerBox: boolean,
+  ) => {
+    const wGrp = new THREE.Group();
+    wGrp.position.set(wx, wy, wz);
+    wGrp.rotation.y = rotY;
+    plazaManorPlotTemplate.add(wGrp);
+
+    addBasePart(wGrp, new THREE.BoxGeometry(0.84, 0.10, 0.10), PM_STONE, [0, 0.56, 0.02], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(wGrp, new THREE.BoxGeometry(0.76, 0.96, 0.07), '#f5f1e6', [0, 0.03, 0.01], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(wGrp, new THREE.BoxGeometry(0.64, 0.84, 0.08), '#8fb9c4', [0, 0.03, 0.015], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    addBasePart(wGrp, new THREE.BoxGeometry(0.04, 0.84, 0.095), '#f5f1e6', [0, 0.03, 0.02], [0, 0, 0], [1, 1, 1], 0);
+    for (const my of [-0.14, 0.20]) {
+      addBasePart(wGrp, new THREE.BoxGeometry(0.64, 0.04, 0.095), '#f5f1e6', [0, my, 0.02], [0, 0, 0], [1, 1, 1], 0);
+    }
+    for (const sSide of [-1, 1]) {
+      addBasePart(wGrp, new THREE.BoxGeometry(0.28, 0.92, 0.055), PM_SAGE, [sSide * 0.54, 0.03, 0.02], [0, 0, 0], [1, 1, 1], 0.007, louverTex);
+    }
+    if (withFlowerBox) {
+      addBasePart(wGrp, new THREE.BoxGeometry(0.84, 0.16, 0.20), PM_WOOD_DARK, [0, -0.50, 0.08], [0, 0, 0], [1, 1, 1], 0.007, lv1HorizTimberTex);
+      for (const fx of [-0.24, 0.0, 0.24]) {
+        addBasePart(wGrp, new THREE.DodecahedronGeometry(0.11, 1), PM_LEAF_LIGHT, [fx, -0.37, 0.10], [0, fx * 2, 0], [1.1, 0.8, 1.0], 0.005);
+        addBasePart(wGrp, new THREE.DodecahedronGeometry(0.075, 0), fx === 0 ? PM_FLOWER_BLUE : PM_FLOWER_PINK, [fx, -0.30, 0.12], [0, 0, 0], [1, 1, 1], 0.004);
+      }
+    } else {
+      addBasePart(wGrp, new THREE.BoxGeometry(0.84, 0.08, 0.12), PM_STONE_DARK, [0, -0.47, 0.04], [0, 0, 0], [1, 1, 1], 0.006);
+    }
+  };
+
+  // Front (+X) 1st & 2nd Floor Windows
+  addManorShutteredWindow(2.14, 1.38, -2.02, Math.PI / 2, true);
+  addManorShutteredWindow(2.14, 1.38, 2.02, Math.PI / 2, true);
+  addManorShutteredWindow(2.14, 3.22, -2.02, Math.PI / 2, true);
+  addManorShutteredWindow(2.14, 3.36, 0.0, Math.PI / 2, false);
+  addManorShutteredWindow(2.14, 3.22, 2.02, Math.PI / 2, true);
+
+  // Side (+Z Left & -Z Right) & Rear (-X) Windows
+  for (const sZ of [-2.94, 2.94]) {
+    const ry = sZ > 0 ? 0 : Math.PI;
+    addManorShutteredWindow(-1.05, 1.38, sZ, ry, false);
+    addManorShutteredWindow(1.05, 1.38, sZ, ry, false);
+    addManorShutteredWindow(-1.05, 3.22, sZ, ry, false);
+    addManorShutteredWindow(1.05, 3.22, sZ, ry, false);
+  }
+  for (const rZ of [-1.62, 1.62]) {
+    addManorShutteredWindow(-2.14, 1.38, rZ, -Math.PI / 2, false);
+    addManorShutteredWindow(-2.14, 3.22, rZ, -Math.PI / 2, false);
+  }
+
+  // 6. Pitched Charcoal-Slate Gable Roof, Twin Front Dormers & Symmetrical Brick Chimneys
+  const pmGableShape = new THREE.Shape();
+  pmGableShape.moveTo(-2.16, 0.0);
+  pmGableShape.lineTo(2.16, 0.0);
+  pmGableShape.lineTo(0.0, 1.36);
+  pmGableShape.closePath();
+  const pmGableGeo = new THREE.ExtrudeGeometry(pmGableShape, { depth: 5.88, bevelEnabled: false });
+  addBasePart(plazaManorPlotTemplate, pmGableGeo, PM_STUCCO, [0.0, 4.22, -2.94], [0, 0, 0], [1, 1, 1], 0.014, lv1AndoPlasterTex);
+
+  for (const xSide of [-1, 1]) {
+    const slopeX = xSide * 1.15;
+    const slopeRotZ = -xSide * 0.56;
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(2.86, 0.13, 6.26), PM_SLATE, [slopeX, 4.86, 0.0], [0, 0, slopeRotZ], [1, 1, 1], 0.016, lv1SlateRoofTex);
+    for (const zEnd of [-3.06, 3.06]) {
+      addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(2.88, 0.15, 0.14), PM_SAGE_DARK, [slopeX, 4.84, zEnd], [0, 0, slopeRotZ], [1, 1, 1], 0.008);
+    }
+  }
+  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.24, 0.14, 6.32), PM_SLATE_DARK, [0.0, 5.58, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
+
+  // Twin Front Gable Dormer Windows on Front (+X) Roof Slope
+  for (const dZ of [-1.42, 1.42]) {
+    const dGrp = new THREE.Group();
+    dGrp.position.set(1.36, 4.46, dZ);
+    plazaManorPlotTemplate.add(dGrp);
+    addBasePart(dGrp, new THREE.BoxGeometry(0.88, 0.72, 0.84), PM_STUCCO, [-0.14, 0.36, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1AndoPlasterTex);
+    addBasePart(dGrp, new THREE.BoxGeometry(0.08, 0.52, 0.58), '#f5f1e6', [0.31, 0.38, 0.0], [0, 0, 0], [1, 1, 1], 0.007);
+    addBasePart(dGrp, new THREE.BoxGeometry(0.09, 0.42, 0.46), '#8fb9c4', [0.32, 0.38, 0.0], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    for (const rZ of [-1, 1]) {
+      addBasePart(dGrp, new THREE.BoxGeometry(1.06, 0.08, 0.58), PM_SLATE_DARK, [-0.12, 0.82, rZ * 0.23], [-rZ * 0.56, 0, 0], [1, 1, 1], 0.008, lv1SlateRoofTex);
+    }
+  }
+
+  // Twin Symmetrical Terracotta Brick Chimneys on Left & Right Ends
+  for (const cZ of [-2.46, 2.46]) {
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.56, 1.42, 0.56), PM_BRICK, [-0.36, 5.18, cZ], [0, 0, 0], [1, 1, 1], 0.012);
+    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.66, 0.11, 0.66), PM_STONE, [-0.36, 5.92, cZ], [0, 0, 0], [1, 1, 1], 0.009);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.11, 0.13, 0.28, 8), PM_BRICK_DARK, [-0.36, 6.10, cZ], [0, 0, 0], [1, 1, 1], 0.008);
+  }
+
+  bakeStaticGroupMeshes(plazaManorPlotTemplate, { minShadowCasterSpan: 0.45 });
+  plazaManorPlotTemplate.visible = false;
+
+  // =========================================================================
   // 8. INSTANTIATE 4 INDIVIDUAL COMMANDER BASE PLOTS (Plot 0..3 at plotZ = -45, -15, +15, +45)
   //    Each plot has:
   //    - 1 Upgradeable Main Building (Lv1 = Barracks, Lv2 = HQ, Lv3 = Hangar Command Center, + Rubble)
@@ -27374,6 +27604,7 @@ export function buildMilitaryBaseMasterplan(
     lv1Building: THREE.Group;
     lv2Building: THREE.Group;
     lv3Building: THREE.Group;
+    plazaManorBuilding: THREE.Group;
     rubbleGroup: THREE.Group;
     fenceLv1Group: THREE.Group;
     fenceLv2Group: THREE.Group;
@@ -27449,6 +27680,13 @@ export function buildMilitaryBaseMasterplan(
     lv3Building.scale.setScalar(1.48);
     lv3Building.visible = false;
     plotRoot.add(lv3Building);
+
+    const plazaManorBuilding = plazaManorPlotTemplate.clone(true);
+    plazaManorBuilding.name = `Plot_${pIdx}_Building_PlazaManor`;
+    plazaManorBuilding.position.set(-4.8, 0, 0);
+    plazaManorBuilding.scale.setScalar(1.66);
+    plazaManorBuilding.visible = false;
+    plotRoot.add(plazaManorBuilding);
 
     // Destroyed Rubble Group when base HP reaches 0
     const rubbleGroup = new THREE.Group();
@@ -28243,6 +28481,7 @@ export function buildMilitaryBaseMasterplan(
       lv1Building,
       lv2Building,
       lv3Building,
+      plazaManorBuilding,
       rubbleGroup,
       fenceLv1Group,
       fenceLv2Group,
@@ -28275,6 +28514,7 @@ export function buildMilitaryBaseMasterplan(
   hangarGroup.visible = false;
   barracksGroup.visible = false;
   checkpointGroup.visible = false;
+  plazaManorPlotTemplate.visible = false;
 
   Object.defineProperty(baseGroup, '__plotControllers', {
     value: plotControllers,
@@ -28296,6 +28536,7 @@ export function buildMilitaryBaseMasterplan(
       hangarGroup,
       barracksGroup,
       checkpointGroup,
+      plazaManorPlotTemplate,
       ...plotPlazaFloorGroups,
       ...plotBastionGroups,
       ...plotControllers.map((pc) => pc.plotRoot),
@@ -28411,6 +28652,7 @@ export function syncMilitaryBasePlotsVisuals(
     hasParkingBay: boolean;
     skinTheme: string;
     gardenPreset: string;
+    houseStyle?: 'plaza_manor' | 'japanese_pavilion';
     isModelEstate?: boolean;
     isClaimedOnlineSession?: boolean;
   }>,
@@ -28427,6 +28669,7 @@ export function syncMilitaryBasePlotsVisuals(
         lv1Building: THREE.Group;
         lv2Building: THREE.Group;
         lv3Building: THREE.Group;
+        plazaManorBuilding?: THREE.Group;
         rubbleGroup: THREE.Group;
         fenceLv1Group: THREE.Group;
         fenceLv2Group: THREE.Group;
@@ -28465,13 +28708,20 @@ export function syncMilitaryBasePlotsVisuals(
         pc.skyTurret.hp > 0;
     }
 
-    if (!isActivePlot) continue;
+    if (!isActivePlot) {
+      if (pc.plazaManorBuilding) pc.plazaManorBuilding.visible = false;
+      continue;
+    }
 
     if (isSafezoneMode) {
-      // Safezone Mode: Private House & Japanese Sakura Garden plot (shows house building, perimeter fence, automatic sliding gate, sakura trees, & garden lamps without military turrets)
-      pc.lv1Building.visible = st.buildingLevel === 1;
-      pc.lv2Building.visible = st.buildingLevel === 2;
-      pc.lv3Building.visible = st.buildingLevel >= 3;
+      // Safezone Mode: Private House & Garden plot matching the owner's House NFT style
+      const usePlazaManor = st.houseStyle === 'plaza_manor';
+      if (pc.plazaManorBuilding) {
+        pc.plazaManorBuilding.visible = usePlazaManor;
+      }
+      pc.lv1Building.visible = !usePlazaManor && st.buildingLevel === 1;
+      pc.lv2Building.visible = !usePlazaManor && st.buildingLevel === 2;
+      pc.lv3Building.visible = !usePlazaManor && st.buildingLevel >= 3;
       pc.rubbleGroup.visible = false;
 
       pc.fenceLv1Group.visible = st.fenceLevel === 1;
@@ -28493,6 +28743,7 @@ export function syncMilitaryBasePlotsVisuals(
       continue;
     }
 
+    if (pc.plazaManorBuilding) pc.plazaManorBuilding.visible = false;
     const destroyed = Boolean(st.destroyed || st.isDestroyed || st.buildingHp <= 0);
 
     pc.lv1Building.visible = !destroyed && st.buildingLevel === 1;

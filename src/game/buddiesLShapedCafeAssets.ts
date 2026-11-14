@@ -248,6 +248,7 @@ export function createDefaultCafeAssetStyler(): CafeAssetStyler {
     color: '#12121e',
     side: THREE.BackSide,
   });
+  const matCache = new Map<string, THREE.Material>();
 
   return {
     clearGlassMat,
@@ -256,30 +257,54 @@ export function createDefaultCafeAssetStyler(): CafeAssetStyler {
     styleOpaque: (mesh, geo, colorHex, strokeW = 0.005, opts) => {
       const usePhysical =
         (opts?.clearcoat ?? 0) > 0 || (opts?.sheen ?? 0) > 0 || (opts?.metalness ?? 0) > 0.15;
-      const matParams: THREE.MeshPhysicalMaterialParameters = {
-        color: opts?.tex && !opts?.tintTex ? '#ffffff' : colorHex,
-        map: opts?.tex ?? null,
-        bumpMap: opts?.bumpMap ?? null,
-        bumpScale: opts?.bumpScale ?? 0.008,
-        roughness: opts?.roughness ?? 0.62,
-        metalness: opts?.metalness ?? 0.05,
-        flatShading: opts?.flatShading ?? false,
-        side: opts?.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
-        emissive: opts?.emissiveHex ? new THREE.Color(opts.emissiveHex) : new THREE.Color(0x000000),
-        emissiveIntensity: opts?.emissiveIntensity ?? 0,
-      };
-      if (usePhysical) {
-        matParams.clearcoat = opts?.clearcoat ?? 0.28;
-        matParams.clearcoatRoughness = opts?.clearcoatRoughness ?? 0.24;
-        if (opts?.sheen) {
-          matParams.sheen = opts.sheen;
-          matParams.sheenRoughness = opts.sheenRoughness ?? 0.48;
-          matParams.sheenColor = new THREE.Color('#fff7eb');
+      const effectiveColor = opts?.tex && !opts?.tintTex ? '#ffffff' : colorHex;
+      const cacheKey = [
+        usePhysical ? 'P' : 'S',
+        effectiveColor.toLowerCase(),
+        opts?.tex?.uuid ?? '',
+        opts?.bumpMap?.uuid ?? '',
+        (opts?.bumpScale ?? 0.008).toFixed(3),
+        (opts?.roughness ?? 0.62).toFixed(2),
+        (opts?.metalness ?? 0.05).toFixed(2),
+        (opts?.clearcoat ?? 0.28).toFixed(2),
+        (opts?.clearcoatRoughness ?? 0.24).toFixed(2),
+        (opts?.sheen ?? 0).toFixed(2),
+        (opts?.sheenRoughness ?? 0.48).toFixed(2),
+        opts?.flatShading ? '1' : '0',
+        opts?.doubleSided ? '1' : '0',
+        (opts?.emissiveHex ?? '').toLowerCase(),
+        (opts?.emissiveIntensity ?? 0).toFixed(2),
+      ].join('|');
+
+      let sharedMat = matCache.get(cacheKey);
+      if (!sharedMat) {
+        const matParams: THREE.MeshPhysicalMaterialParameters = {
+          color: effectiveColor,
+          map: opts?.tex ?? null,
+          bumpMap: opts?.bumpMap ?? null,
+          bumpScale: opts?.bumpScale ?? 0.008,
+          roughness: opts?.roughness ?? 0.62,
+          metalness: opts?.metalness ?? 0.05,
+          flatShading: opts?.flatShading ?? false,
+          side: opts?.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+          emissive: opts?.emissiveHex ? new THREE.Color(opts.emissiveHex) : new THREE.Color(0x000000),
+          emissiveIntensity: opts?.emissiveIntensity ?? 0,
+        };
+        if (usePhysical) {
+          matParams.clearcoat = opts?.clearcoat ?? 0.28;
+          matParams.clearcoatRoughness = opts?.clearcoatRoughness ?? 0.24;
+          if (opts?.sheen) {
+            matParams.sheen = opts.sheen;
+            matParams.sheenRoughness = opts.sheenRoughness ?? 0.48;
+            matParams.sheenColor = new THREE.Color('#fff7eb');
+          }
+          sharedMat = new THREE.MeshPhysicalMaterial(matParams);
+        } else {
+          sharedMat = new THREE.MeshStandardMaterial(matParams);
         }
-        mesh.material = new THREE.MeshPhysicalMaterial(matParams);
-      } else {
-        mesh.material = new THREE.MeshStandardMaterial(matParams);
+        matCache.set(cacheKey, sharedMat);
       }
+      mesh.material = sharedMat;
       mesh.castShadow = opts?.castShadow ?? false;
       mesh.receiveShadow = opts?.receiveShadow ?? true;
       mesh.raycast = () => {};
@@ -1470,7 +1495,7 @@ export function buildHangingChalkboardMenu(
   return g;
 }
 
-/** Bentwood Rattan Cane Armchair with Bullnose Seat, Curved Cane Panel & Swept Arched Tubes */
+/** Bentwood Rattan Cane Armchair with Continuous Floor-to-Backrest & Armrest Joinery */
 export function buildBentwoodRattanChair(
   styler: CafeAssetStyler,
   rattanTex: THREE.Texture | null,
@@ -1479,21 +1504,9 @@ export function buildBentwoodRattanChair(
   const g = new THREE.Group();
   const woodHex = '#b57f48';
   const { oak } = getSharedTextures();
+  const tubeRadius = 0.021;
 
-  // 4 turned tapered oak legs with gentle splay
-  for (const [lx, lz] of [
-    [-0.22, -0.22],
-    [0.22, -0.22],
-    [-0.23, 0.22],
-    [0.23, 0.22],
-  ]) {
-    addPart(g, styler, new THREE.CylinderGeometry(0.023, 0.016, 0.44, 12), woodHex, [lx, 0.22, lz], [0, 0, 0], 0.003, {
-      tex: oak,
-      roughness: 0.52,
-      clearcoat: 0.2,
-    });
-  }
-  // Lathe bullnose timber seat hoop + woven cane inset pad
+  // 1. Lathe bullnose timber seat hoop (r = 0.245..0.275, y = 0.415..0.463) + woven cane inset pad
   addPart(
     g,
     styler,
@@ -1515,36 +1528,112 @@ export function buildBentwoodRattanChair(
     { tex: rattanTex, roughness: 0.72 },
   );
 
-  // Smooth sweeping arched bentwood backrest hoop + curved rattan backrest pad
-  const backCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.23, 0.44, -0.20),
-    new THREE.Vector3(-0.22, 0.78, -0.24),
-    new THREE.Vector3(0.0, 0.90, -0.25),
-    new THREE.Vector3(0.22, 0.78, -0.24),
-    new THREE.Vector3(0.23, 0.44, -0.20),
-  ]);
-  addPart(g, styler, new THREE.TubeGeometry(backCurve, 22, 0.022, 10, false), woodHex, [0, 0, 0], [0, 0, 0], 0.004, {
+  // 2. One continuous bentwood tube from left rear foot -> seat hoop rim -> arched backrest -> right rear foot
+  const backArchCurve = new THREE.CatmullRomCurve3(
+    [
+      new THREE.Vector3(-0.215, 0.012, -0.220),
+      new THREE.Vector3(-0.203, 0.26, -0.195),
+      new THREE.Vector3(-0.195, 0.438, -0.182),
+      new THREE.Vector3(-0.205, 0.56, -0.199),
+      new THREE.Vector3(-0.212, 0.64, -0.212),
+      new THREE.Vector3(-0.178, 0.83, -0.238),
+      new THREE.Vector3(0.0, 0.901, -0.248),
+      new THREE.Vector3(0.178, 0.83, -0.238),
+      new THREE.Vector3(0.212, 0.64, -0.212),
+      new THREE.Vector3(0.205, 0.56, -0.199),
+      new THREE.Vector3(0.195, 0.438, -0.182),
+      new THREE.Vector3(0.203, 0.26, -0.195),
+      new THREE.Vector3(0.215, 0.012, -0.220),
+    ],
+    false,
+    'centripetal',
+    0.35,
+  );
+  addPart(g, styler, new THREE.TubeGeometry(backArchCurve, 52, tubeRadius, 10, false), woodHex, [0, 0, 0], [0, 0, 0], 0.004, {
     tex: oak,
     roughness: 0.52,
     clearcoat: 0.2,
   });
-  addPart(g, styler, makeRoundedBoxGeo(0.34, 0.32, 0.032, 0.014, 3), '#d9b57d', [0, 0.69, -0.23], [0.06, 0, 0], 0.003, {
+
+  // 3. Continuous front leg -> seat hoop rim -> curved armrest -> exact T-join on backrest tube
+  for (const side of [-1, 1]) {
+    const legArmCurve = new THREE.CatmullRomCurve3(
+      [
+        new THREE.Vector3(side * 0.218, 0.012, 0.210),
+        new THREE.Vector3(side * 0.203, 0.26, 0.186),
+        new THREE.Vector3(side * 0.192, 0.438, 0.168),
+        new THREE.Vector3(side * 0.226, 0.58, 0.138),
+        new THREE.Vector3(side * 0.248, 0.64, 0.02),
+        new THREE.Vector3(side * 0.232, 0.64, -0.11),
+        new THREE.Vector3(side * 0.212, 0.64, -0.212),
+      ],
+      false,
+      'centripetal',
+      0.35,
+    );
+    addPart(g, styler, new THREE.TubeGeometry(legArmCurve, 34, 0.0195, 10, false), woodHex, [0, 0, 0], [0, 0, 0], 0.003, {
+      tex: oak,
+      roughness: 0.52,
+      clearcoat: 0.18,
+    });
+  }
+
+  // 4. Mid-height continuous circular bentwood stretcher hoop intersecting all 4 legs cleanly at y = 0.26
+  addPart(
+    g,
+    styler,
+    new THREE.TorusGeometry(0.278, 0.0155, 10, 28),
+    woodHex,
+    [0, 0.26, 0],
+    [Math.PI / 2, 0, 0],
+    0.003,
+    { tex: oak, roughness: 0.52, clearcoat: 0.18 },
+  );
+
+  // 5. Horizontal mid-rail & contoured arched rattan backrest pad seated flush inside backrest hoop
+  addPart(
+    g,
+    styler,
+    new THREE.CylinderGeometry(0.015, 0.015, 0.41, 10),
+    woodHex,
+    [0, 0.56, -0.199],
+    [0, 0, Math.PI / 2],
+    0.003,
+    { tex: oak, roughness: 0.52 },
+  );
+  const backPadShape = new THREE.Shape();
+  backPadShape.moveTo(-0.194, -0.08);
+  backPadShape.lineTo(0.194, -0.08);
+  backPadShape.quadraticCurveTo(0.205, 0.0, 0.195, 0.08);
+  backPadShape.bezierCurveTo(0.178, 0.185, 0.10, 0.248, 0, 0.248);
+  backPadShape.bezierCurveTo(-0.10, 0.248, -0.178, 0.185, -0.195, 0.08);
+  backPadShape.quadraticCurveTo(-0.205, 0.0, -0.194, -0.08);
+  const backPadGeo = new THREE.ExtrudeGeometry(backPadShape, {
+    depth: 0.022,
+    bevelEnabled: true,
+    bevelThickness: 0.004,
+    bevelSize: 0.004,
+    bevelSegments: 2,
+    curveSegments: 16,
+  });
+  backPadGeo.translate(0, 0, -0.011);
+  addPart(g, styler, backPadGeo, '#d9b57d', [0, 0.64, -0.212], [-0.14, 0, 0], 0.003, {
     tex: rattanTex,
     roughness: 0.72,
   });
 
-  // Bentwood sweeping armrests
-  for (const side of [-1, 1]) {
-    const armCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.22, 0.66, -0.22),
-      new THREE.Vector3(side * 0.28, 0.63, 0.04),
-      new THREE.Vector3(side * 0.24, 0.44, 0.16),
-    ]);
-    addPart(g, styler, new THREE.TubeGeometry(armCurve, 14, 0.018, 9, false), woodHex, [0, 0, 0], [0, 0, 0], 0.003, {
-      tex: oak,
-      roughness: 0.52,
+  // 6. Flush floor caps sealing all 4 open tube bottoms onto y = 0
+  for (const [fx, fz] of [
+    [-0.215, -0.220],
+    [0.215, -0.220],
+    [-0.218, 0.210],
+    [0.218, 0.210],
+  ]) {
+    addPart(g, styler, new THREE.CylinderGeometry(0.021, 0.023, 0.024, 12), '#334155', [fx, 0.012, fz], [0, 0, 0], 0.002, {
+      roughness: 0.78,
     });
   }
+
   g.scale.setScalar(scale);
   return g;
 }
@@ -2686,12 +2775,12 @@ function createArcadeHeaderMarqueeTexture(): THREE.CanvasTexture | null {
     ctx.shadowBlur = 14;
     ctx.fillText('NEO-STRIKE', 256, 54);
 
-    // Glowing Magenta/Pink "ARCADE" subtitle
+    // Glowing Magenta/Pink "SLOTS ARCADE" subtitle
     ctx.fillStyle = '#f9a8d4';
-    ctx.font = '900 32px "Barlow", "Arial Black", sans-serif';
+    ctx.font = '900 30px "Barlow", "Arial Black", sans-serif';
     ctx.shadowColor = '#ec4899';
     ctx.shadowBlur = 12;
-    ctx.fillText('ARCADE', 256, 102);
+    ctx.fillText('SLOTS ARCADE', 256, 102);
     ctx.shadowBlur = 0;
   }
   const tex = new THREE.CanvasTexture(c);
@@ -2707,24 +2796,55 @@ function createArcadeMonitorScreenTexture(): THREE.CanvasTexture | null {
   c.height = 384;
   const ctx = c.getContext('2d');
   if (ctx) {
-    // Illuminated CRT / Curved LCD ice-cyan phosphor glow matching the 4-view model sheet
+    // Deep arcade CRT screen backdrop with crisp 3-reel 7-7-7 Slot Machine HUD
     const bg = ctx.createLinearGradient(0, 0, 512, 384);
-    bg.addColorStop(0, '#5ea8c8');
-    bg.addColorStop(0.45, '#99d5ea');
-    bg.addColorStop(0.75, '#72bbd8');
-    bg.addColorStop(1, '#4d92b4');
+    bg.addColorStop(0, '#0f172a');
+    bg.addColorStop(0.5, '#172554');
+    bg.addColorStop(1, '#091529');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, 512, 384);
 
-    // Subtle CRT scanlines
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.08)';
+    // Top marquee banner inside CRT screen
+    ctx.fillStyle = '#22d3ee';
+    ctx.font = '900 26px "Barlow", "Arial Black", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('NEO-STRIKE 777 SLOTS', 256, 48);
+
+    // 3 bright cream reel boxes
+    const reelW = 118;
+    const reelH = 166;
+    const gap = 22;
+    const startX = 256 - (reelW * 3 + gap * 2) / 2;
+    const reelY = 98;
+    const glyphs = ['7', '7', '7'];
+    for (let i = 0; i < 3; i++) {
+      const rx = startX + i * (reelW + gap);
+      ctx.fillStyle = '#fefce8';
+      ctx.fillRect(rx, reelY, reelW, reelH);
+      ctx.strokeStyle = i === 1 ? '#facc15' : '#22d3ee';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(rx, reelY, reelW, reelH);
+
+      ctx.fillStyle = '#ef4444';
+      ctx.font = '900 94px "Barlow", "Arial Black", sans-serif';
+      ctx.fillText(glyphs[i], rx + reelW / 2, reelY + reelH / 2 + 4);
+    }
+
+    // Center payline bar + stake footer
+    ctx.fillStyle = 'rgba(236, 72, 153, 0.35)';
+    ctx.fillRect(startX - 12, reelY + reelH / 2 - 4, reelW * 3 + gap * 2 + 24, 8);
+    ctx.fillStyle = '#facc15';
+    ctx.font = '900 22px "Barlow", "Arial Black", sans-serif';
+    ctx.fillText('WIN UP TO 50X LUL', 256, 326);
+
+    // Subtle CRT scanlines + diagonal glass sheen
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.14)';
     for (let y = 0; y < 384; y += 6) {
       ctx.fillRect(0, y, 512, 2);
     }
-
-    // Crisp diagonal glass reflection bands matching the 4-view reference sheet
     ctx.save();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
     ctx.beginPath();
     ctx.moveTo(130, 0);
     ctx.lineTo(255, 0);
@@ -2732,19 +2852,9 @@ function createArcadeMonitorScreenTexture(): THREE.CanvasTexture | null {
     ctx.lineTo(-45, 384);
     ctx.closePath();
     ctx.fill();
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-    ctx.beginPath();
-    ctx.moveTo(290, 0);
-    ctx.lineTo(355, 0);
-    ctx.lineTo(180, 384);
-    ctx.lineTo(115, 384);
-    ctx.closePath();
-    ctx.fill();
     ctx.restore();
 
-    // Rounded dark CRT mask border
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.72)';
+    ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
     ctx.lineWidth = 10;
     ctx.strokeRect(5, 5, 502, 374);
   }
@@ -4081,9 +4191,9 @@ export function buildSouthPlazaLShapedGlasshouseCafe(styler: CafeAssetStyler): T
   exteriorAtm.rotation.y = Math.PI;
   root.add(exteriorAtm);
 
-  // Matching 1:1 Standalone Arcade Cabinet Machine flush against West (+X interior equivalent) conservatory wall
+  // Matching 1:1 Standalone Arcade Cabinet Machine shifted cleanly in front of West conservatory plinth (-12.06)
   const exteriorArcade = buildStandaloneArcadeCabinet(styler, CAFE_GLOBAL_SCALE_SPEC.exteriorAtmScale);
-  exteriorArcade.position.set(-12.22, 0.06, 24.50);
+  exteriorArcade.position.set(-12.06, 0.06, 24.50);
   exteriorArcade.rotation.y = Math.PI / 2;
   root.add(exteriorArcade);
 

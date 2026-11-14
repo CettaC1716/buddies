@@ -355,7 +355,7 @@ export function resolveApiUrl(path: string): string {
 
 /**
  * Provisions or resolves `<handle>.buddiesblitz.testnet` via `/api/near-relayer` with a browser
- * self-custodial Ed25519 key isolated strictly to `<handle>.buddiesblitz.testnet`.
+ * session key scoped strictly to `<handle>.buddiesblitz.testnet`.
  */
 export async function spawnSubAccountOnChainViaMaster(params: {
   handle: string;
@@ -367,6 +367,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
   sessionPublicKey: string;
   custodyMode: 'onchain_provisioned' | 'onchain_existing' | 'session_key_ready';
   txHash?: string;
+  code?: string;
   error?: string;
 }> {
   const cleanHandle = params.handle
@@ -381,7 +382,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
       subAccountId: '',
       sessionPublicKey: '',
       custodyMode: 'session_key_ready',
-      error: 'Wallet username must be at least 2 characters.',
+      error: 'Player ID must be at least 2 letters or numbers.',
     };
   }
 
@@ -407,8 +408,9 @@ export async function spawnSubAccountOnChainViaMaster(params: {
         subAccountId,
         sessionPublicKey,
         custodyMode: 'session_key_ready',
+        code: json?.code ? String(json.code) : undefined,
         error: String(
-          json?.error || `Could not create wallet ${subAccountId}. Try another name.`,
+          json?.error || `Could not create account ${subAccountId}. Try another name.`,
         ),
       };
     }
@@ -428,7 +430,7 @@ export async function spawnSubAccountOnChainViaMaster(params: {
       subAccountId,
       sessionPublicKey,
       custodyMode: 'session_key_ready',
-      error: 'Wallet service unreachable. Check your connection and try again.',
+      error: 'Account service unreachable. Check your connection and try again.',
     };
   }
 
@@ -437,7 +439,118 @@ export async function spawnSubAccountOnChainViaMaster(params: {
     subAccountId,
     sessionPublicKey,
     custodyMode: 'session_key_ready',
-    error: 'Wallet service returned an unexpected response. Please try again.',
+    error: 'Account service returned an unexpected response. Please try again.',
+  };
+}
+
+const RESERVED_CITIZEN_HANDLES = new Set([
+  'market',
+  'admin',
+  'treasury',
+  'guest',
+  'player1',
+  'testnet',
+]);
+
+function normalizeHandleCandidate(raw: string): string {
+  const sanitized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, 24);
+  if (sanitized.length < 2 || RESERVED_CITIZEN_HANDLES.has(sanitized)) {
+    return '';
+  }
+  return sanitized;
+}
+
+/**
+ * Derives a valid lowercase sub-account base handle from a player's display name
+ * (falling back to their email local-part or `buddy`) for zero-friction onboarding.
+ */
+export function deriveBaseCitizenHandle(displayName: string, email?: string): string {
+  const fromName = normalizeHandleCandidate(displayName || '');
+  if (fromName) return fromName;
+  const emailLocal = (email || '').split('@')[0] || '';
+  const fromEmail = normalizeHandleCandidate(emailLocal);
+  if (fromEmail) return fromEmail;
+  return 'buddy';
+}
+
+function defaultHandleSuffix(): string {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let out = '';
+  for (let i = 0; i < 4; i++) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+/**
+ * Automatically chooses an unused handle from Display Name and provisions the
+ * `<handle>.buddiesblitz.testnet` account without requiring a manual wallet-naming step.
+ */
+export async function provisionUniqueCitizenSubAccount(params: {
+  displayName: string;
+  email?: string;
+  preferredHandle?: string;
+  checkAvailability?: typeof checkCitizenSubAccountAvailability;
+  spawnSubAccount?: typeof spawnSubAccountOnChainViaMaster;
+  suffixGenerator?: () => string;
+}): Promise<Awaited<ReturnType<typeof spawnSubAccountOnChainViaMaster>>> {
+  const checkAvail = params.checkAvailability ?? checkCitizenSubAccountAvailability;
+  const spawnFn = params.spawnSubAccount ?? spawnSubAccountOnChainViaMaster;
+  const nextSuffix = params.suffixGenerator ?? defaultHandleSuffix;
+
+  const base =
+    normalizeHandleCandidate(params.preferredHandle || '') ||
+    deriveBaseCitizenHandle(params.displayName, params.email);
+
+  const tried = new Set<string>();
+  let candidate = base;
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    // Pick an unused candidate when an availability check finds a taken name.
+    while (tried.has(candidate)) {
+      candidate = `${base.slice(0, 22)}-${nextSuffix()}`;
+    }
+    tried.add(candidate);
+
+    try {
+      const avail = await checkAvail(candidate);
+      if (!avail.validFormat || !avail.available || avail.ownedByCurrentDevice) {
+        candidate = `${base.slice(0, 22)}-${nextSuffix()}`;
+        continue;
+      }
+    } catch {
+      // Proceed to relayer check even if optimistic pre-check hits a transient network glitch
+    }
+
+    const res = await spawnFn({
+      handle: candidate,
+      email: params.email,
+      strictUniqueHandle: true,
+    });
+    if (res.ok) {
+      return res;
+    }
+
+    const isCollision =
+      res.code === 'HANDLE_TAKEN' ||
+      /already registered|HANDLE_TAKEN|already taken/i.test(res.error || '');
+    if (!isCollision) {
+      return res;
+    }
+    candidate = `${base.slice(0, 22)}-${nextSuffix()}`;
+  }
+
+  return {
+    ok: false,
+    subAccountId: `${candidate}.${NEAR_CONFIG.masterAccountId}`,
+    sessionPublicKey: '',
+    custodyMode: 'session_key_ready',
+    error: 'Could not reserve a unique player ID right now. Please try again.',
   };
 }
 
@@ -456,6 +569,7 @@ export interface NearGamepassNftMetadata {
   title: string;
   description: string;
   tier: 'Commander Genesis Pass';
+  houseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
   issuedAt: string;
   perks: string[];
 }
@@ -749,6 +863,59 @@ export async function fetchNep141Balance(
 }
 
 /**
+ * Extracts house architecture style ('plaza_manor' | 'japanese_pavilion') from
+ * NEP-171 House Deed token metadata (`extra` JSON or `title`/`description`), or
+ * returns `null` when a legacy deed does not encode an architecture style yet.
+ */
+export function extractHouseStyleFromNftMetadata(
+  metadata?: {
+    title?: string | null;
+    description?: string | null;
+    extra?: string | null;
+  } | null,
+): 'plaza_manor' | 'japanese_pavilion' | null {
+  if (!metadata) return null;
+  const parseStyleText = (raw: unknown): 'plaza_manor' | 'japanese_pavilion' | null => {
+    if (typeof raw !== 'string') return null;
+    const s = raw.trim().toLowerCase();
+    if (!s) return null;
+    if (s === 'japanese_pavilion' || s.includes('japanese pavilion') || s.includes('pavilion')) {
+      return 'japanese_pavilion';
+    }
+    if (s === 'plaza_manor' || s.includes('plaza manor') || s.includes('manor')) {
+      return 'plaza_manor';
+    }
+    return null;
+  };
+  const rawExtra = typeof metadata.extra === 'string' ? metadata.extra.trim() : '';
+  if (rawExtra.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawExtra) as Record<string, unknown>;
+      const fromField =
+        parseStyleText(parsed.house_style) ??
+        parseStyleText(parsed.houseStyle) ??
+        parseStyleText(parsed.architecture_style) ??
+        parseStyleText(parsed.style) ??
+        parseStyleText(parsed.plan_id);
+      if (fromField) return fromField;
+    } catch {
+      // ignore malformed extra JSON
+    }
+  } else {
+    const fromRaw = parseStyleText(rawExtra);
+    if (fromRaw) return fromRaw;
+  }
+  const normalizedTitle =
+    typeof metadata.title === 'string' ? metadata.title.trim().toLowerCase() : '';
+  // Legacy contract deeds before per-style metadata used "Modern Japanese Wooden Pavilion Deed #N"
+  // as a generic title for all houses; treat that legacy title as unspecified unless extra says otherwise.
+  if (normalizedTitle.startsWith('modern japanese wooden pavilion deed')) {
+    return parseStyleText(metadata.description);
+  }
+  return parseStyleText(metadata.title) ?? parseStyleText(metadata.description);
+}
+
+/**
  * Queries NEP-171 `nft_tokens_for_owner` on `market.buddiesblitz.testnet` via NEAR RPC
  * and strictly filters for House Ownership Deeds (`house-deed-*` / `house_deed`),
  * never falsely unlocking the house when a citizen owns a Fish NFT (`nep171-fish-*`).
@@ -756,11 +923,12 @@ export async function fetchNep141Balance(
 export async function verifyNep171GamepassOwnership(accountId: string): Promise<{
   verified: boolean;
   token: NearGamepassNftMetadata | null;
+  houseStyle: 'plaza_manor' | 'japanese_pavilion' | null;
   source: 'near-rpc';
 }> {
   const cleanId = accountId.trim();
   if (!cleanId) {
-    return { verified: false, source: 'near-rpc', token: null };
+    return { verified: false, source: 'near-rpc', token: null, houseStyle: null };
   }
 
   const parsed = await callNearContractViewMethod<
@@ -788,9 +956,11 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
     });
 
     if (deedToken) {
+      const houseStyle = extractHouseStyleFromNftMetadata(deedToken.metadata);
       return {
         verified: true,
         source: 'near-rpc',
+        houseStyle,
         token: {
           tokenId: String(deedToken.token_id || 'house-deed-0001'),
           ownerId: cleanId,
@@ -800,6 +970,7 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
               'NEP-171 Base Commander Ownership & Safezone Plot Pass',
           ),
           tier: 'Commander Genesis Pass',
+          houseStyle,
           issuedAt: new Date().toISOString(),
           perks: [
             'Claim & Customize Safezone / Warzone Plot',
@@ -815,6 +986,7 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
     verified: false,
     source: 'near-rpc',
     token: null,
+    houseStyle: null,
   };
 }
 

@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { BaseGardenPresetId, BaseSkinThemeId } from './buddiesBlitzRules';
+import { BaseGardenPresetId, BaseSkinThemeId, CityTransitStationId } from './buddiesBlitzRules';
 
 export type MerchantLocationId = 'lobby_cafe' | 'beach_house';
 
@@ -1406,37 +1406,56 @@ export function generateNpcMerchantReply(
   }
 
   // 5. Specific Place & Direction Queries ("Where is...", "Dimana...", "How do I get to...")
+  const isAskingLocationIndo =
+    /\b(dimana|di mana|lokasi|arah|kemana|ke mana|tempat|pantai|laut|pelabuhan|danau|kolam|kafe|perang|tempur|rumah|kavling|mancing|memancing|ikan|cara ke|mau ke|pergi ke)\b/.test(
+      q,
+    );
   const isAskingLocation =
-    /\b(where|how to get|how do i get|find|direction|directions|go to|dimana|di mana|lokasi|arah|kemana|ke mana|tempat)\b/.test(
+    isAskingLocationIndo ||
+    /\b(where|how to get|how do i get|find|direction|directions|go to|teleport|warp|fast travel)\b/.test(
       q,
     );
 
   if (isAskingLocation && /\b(kai|beach|harbor|ocean|sea|coast|pantai|laut|pelabuhan)\b/.test(q)) {
-    return `Merchant Kai and the ocean fishing dock are at Beachfront Harbor in the southeast. Open any black Transit Kiosk (press B), choose Travel and Districts, and take the tram to Beachfront Harbor.`;
+    return isAskingLocationIndo
+      ? `Merchant Kai dan pantai tempat memancing laut ada di Beachfront Harbor sebelah tenggara. Kamu bisa klik kotak lokasi di bawah chat ini untuk konfirmasi teleport ke sana, atau lewat Transit Kiosk.`
+      : `Merchant Kai and the ocean fishing dock are at Beachfront Harbor in the southeast. Click the location card below to confirm teleporting there, or use any black Transit Kiosk (press B).`;
   }
 
   if (isAskingLocation && /\b(lake|oasis|freshwater|pond|danau|kolam)\b/.test(q)) {
-    return `The freshwater fishing spot is NW Fishing Lake in the northwest corner of the city. Open any black Transit Kiosk (press B) and travel to NW Fishing Lake, or walk northwest from Central Plaza.`;
+    return isAskingLocationIndo
+      ? `Danau air tawar ada di NW Fishing Lake di sudut barat laut kota. Klik kartu lokasi di bawah untuk langsung teleport ke NW Fishing Lake, atau naik tram dari Transit Kiosk.`
+      : `The freshwater fishing spot is NW Fishing Lake in the northwest corner of the city. Click the location card below to teleport straight there, or use any black Transit Kiosk (press B).`;
   }
 
   if (isAskingLocation && /\b(hana|cafe|plaza|center|kafe|tengah)\b/.test(q)) {
-    return `Merchant Hana is at Central Plaza Cafe right in the heart of the city. Use any black Transit Kiosk and pick Central Plaza to return directly to the cafe.`;
+    return isAskingLocationIndo
+      ? `Merchant Hana berada di Central Plaza Cafe tepat di pusat kota. Klik kartu Central Plaza di bawah bila ingin kembali teleport ke kafe.`
+      : `Merchant Hana is at Central Plaza Cafe right in the heart of the city. Click the Central Plaza card below anytime to teleport back to the cafe.`;
   }
 
   if (isAskingLocation && /\b(warzone|arena|combat|battle|fight|perang|tempur)\b/.test(q)) {
-    return `To enter the Warzone Arena, open any black Transit Kiosk (press B), select Warzone Arena, and pick Blue Team or Red Team to ride the tram into battle.`;
+    return isAskingLocationIndo
+      ? `Untuk masuk Warzone Arena, kamu bisa klik kartu Warzone Arena di bawah untuk teleport atau buka black Transit Kiosk (tekan B) dan pilih Blue Team atau Red Team.`
+      : `To enter the Warzone Arena, open any black Transit Kiosk (press B), select Warzone Arena, and pick Blue Team or Red Team—or click the Warzone card below to deploy.`;
   }
 
   if (isAskingLocation && /\b(house|home|plot|residential|sample|model|rumah|kavling)\b/.test(q)) {
-    return `Residential house plots line the North and South avenues of the city, and you can tour an open Model House on the southwest plot. Once you own a house, you can also enter straight from any Transit Kiosk via My House.`;
+    return isAskingLocationIndo
+      ? `Kavling perumahan ada di North Residence dan South Residence, sedangkan Model House terbuka di sisi barat daya. Pilih kartu lokasi di bawah untuk langsung teleport ke area perumahan.`
+      : `Residential house plots line North Residence and South Residence, and you can tour an open Model House on the southwest plot. Pick a location card below to teleport right there.`;
   }
 
   if (isAskingLocation && /\b(fish|fishing|mancing|memancing|ikan)\b/.test(q)) {
-    return `There are two fishing spots: Beachfront Harbor in the southeast for saltwater fish (also where Kai's shop is) and NW Fishing Lake in the northwest for freshwater fish. Use any black Transit Kiosk (press B) to travel to either spot.`;
+    return isAskingLocationIndo
+      ? `Ada dua spot memancing: Beachfront Harbor di tenggara untuk ikan laut (sekalian toko Kai) dan NW Fishing Lake di barat laut untuk ikan air tawar. Pilih kartu lokasinya di bawah untuk langsung teleport.`
+      : `There are two fishing spots: Beachfront Harbor in the southeast for saltwater fish (also where Kai's shop is) and NW Fishing Lake in the northwest for freshwater fish. Click either card below to teleport.`;
   }
 
   if (/\b(kiosk|teleport|portal|tram|train|station|halte|kereta)\b/.test(q)) {
-    return `Black Transit Kiosks stand beside every tram shelter across the city. Walk up to a kiosk and press B (or click it) to ride the tram between districts, deploy to the Warzone Arena, enter My House, or open the Shop.`;
+    return isAskingLocationIndo
+      ? `Kamu bisa langsung pilih tujuan dari kartu teleport di bawah chat ini, atau gunakan black Transit Kiosk (tekan B) di setiap halte tram untuk berpindah distrik dan masuk Warzone Arena.`
+      : `Black Transit Kiosks stand beside every tram shelter across the city. Walk up to a kiosk and press B (or click a location card right in chat) to ride the tram between districts or deploy to the Warzone Arena.`;
   }
 
   // 6. Controls & Keybindings
@@ -1471,7 +1490,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `Earn LUL in the Warzone or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 400 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House, Family Member companions, and collector items. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
+    return `Earn LUL at Glasshouse Cafe shifts, in the Warzone, or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 400 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House (100 RESPITE) and collector items. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
   }
 
   // 9. Family Member Companions
@@ -1530,7 +1549,25 @@ export function generateNpcMerchantReply(
     return `We are on Market Day ${state.dayCounter} with ${state.treasuryCyon} CYON in shop reserve, and the current rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. Catalog prices adjust dynamically with item stock and player demand.${discountNote}${guestNotice}`;
   }
 
-  // 14. Where am I / Who are you / City Overview
+  // 14. About the Game & What Players Can Do
+  if (
+    /\b(what is this game|what game is this|what kind of game|about this game|about buddies blitz|game apa ini|ini game apa)\b/.test(
+      q,
+    )
+  ) {
+    return `Buddies Blitz is a 3D open-city social economy and tactical arena game on NEAR. Explore Central Plaza and coastal districts, talk and haggle with AI merchants Hana and Kai, catch and mint Fish NFTs, own a customizable 3D Private House, or join 4v4 Warzone Arena matches.${guestNotice}`;
+  }
+
+  // 15. General How to Play / Activities / Beginner Guide
+  if (
+    /\b(what can i do|what is there to do|what to do|activities|things to do|how to play|guide|help|hint|tips|tutorial|start|objective|apa yang bisa dilakukan|apa yang bisa di lakukan|bisa ngapain|petunjuk|cara main|mulai|bantuan)\b/.test(
+      q,
+    )
+  ) {
+    return `In Buddies Blitz, you can claim a starter pack (0.30 NEAR + 100 LUL + 20 CYON) from Hana, fish at Beachfront Harbor or NW Fishing Lake and haggle or mint Fish NFTs with Kai, work barista shifts at Glasshouse Cafe, buy and decorate a 3D Private House, or enter 4v4 Warzone Arena matches via any Transit Kiosk.${guestNotice}`;
+  }
+
+  // 16. Where am I / Who are you / City Overview
   if (
     /\b(where am i|where is this|what is this|what place|who are you|location|lobby|city|map|apa ini|siapa kamu)\b/.test(
       q,
@@ -1539,13 +1576,17 @@ export function generateNpcMerchantReply(
     return `You are at ${locName} in Buddies Blitz, and I am ${npcName}. From here you can explore the peaceful city, fish at Beachfront Harbor or NW Fishing Lake, decorate a Private House, or ride the tram into the Warzone Arena.${guestNotice}`;
   }
 
-  // 15. General How to Play / Beginner Guide
+  // 16b. Casual small-talk & open invitation when Gemini is offline
   if (
-    /\b(how to play|guide|help|hint|tips|tutorial|what to do|start|objective|petunjuk|cara main|mulai|bantuan)\b/.test(
+    /\b(how are you|whats up|what's up|apa kabar|kabar|gimana kabar|thank|thanks|makasih|terima kasih)\b/.test(
       q,
     )
   ) {
-    return `Start by claiming your 0.30 NEAR welcome bonus from Hana at Central Plaza Cafe, then use any black Transit Kiosk (press B) to explore. Earn LUL by fishing or fighting in the Warzone, exchange LUL for CYON to buy gear, and use RESPITE (from NEAR swaps or selling Fish NFTs at Kai's harbor) to own a Private House.${guestNotice}`;
+    const isIndo = /\b(apa kabar|kabar|gimana|makasih|terima kasih)\b/.test(q);
+    if (isIndo) {
+      return `Kabar baik di ${locName}, Buddy! Aku ${npcName}. Silakan tanya apa saja soal dunia Buddies Blitz atau ngobrol santai kapan saja.`;
+    }
+    return `Doing great here at ${locName}, Buddy! I am ${npcName}—feel free to ask me anything about Buddies Blitz or chat anytime.`;
   }
 
   // 16. Greetings
@@ -1554,14 +1595,24 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    if (!balances.walletConnected) {
-      return `Hi Buddy, welcome to ${locName}. You are in Guest Mode right now—feel free to explore and ask me anything about places, fishing, Fish NFT records, currencies, houses, or the Warzone.`;
+    if (/^(halo|hallo|pagi|siang|sore|malam|selamat)\b/.test(q)) {
+      return `Halo Buddy, selamat datang di ${locName}! Aku ${npcName}. Kamu bisa tanya apa saja ke aku, baik soal cara main, lokasi kota, ekonomi, maupun obrolan santai.`;
     }
-    return `Hi Buddy, welcome to ${locName}. I am ${npcName}—ask me where anything is, which Fish NFT sold for the highest price, how currencies work, or what to do next.`;
+    if (!balances.walletConnected) {
+      return `Hi Buddy, welcome to ${locName}. You are in Guest Mode right now—feel free to explore and ask me anything about places, fishing, Fish NFT records, currencies, houses, the Warzone, or anything else on your mind.`;
+    }
+    return `Hi Buddy, welcome to ${locName}. I am ${npcName}—ask me anything at all about the city, Fish NFTs, currencies, your next move, or just chat.`;
   }
 
   // 17. Friendly Concierge Fallback
-  return `I can help with anything in Buddies Blitz. Try asking where Kai or the fishing lake is, what the most expensive Fish NFT sold for, how LUL, CYON, and RESPITE work, or how to get a Private House.`;
+  const looksIndonesian =
+    /\b(apa|bagaimana|gimana|kenapa|mengapa|siapa|dimana|di mana|kapan|berapa|bisa|tolong|kasih|cerita|rekomendasi|menurut|kamu|aku|saya|tentang)\b/.test(
+      q,
+    );
+  if (looksIndonesian) {
+    return `Aku ${npcName} di ${locName} selalu siap ngobrol. Saat koneksi AI sedang offline, aku tetap bisa langsung jawab pertanyaan soal tempat, ikan termahal, cara tukar LUL dan CYON, rumah, atau Warzone—coba sambungkan kembali atau tanya topik apa saja.`;
+  }
+  return `I am ${npcName} at ${locName} and happy to chat about anything! While live AI is offline right now, I can still answer everything about locations, Fish NFT records, how LUL, CYON, and RESPITE work, or how to get a Private House.`;
 }
 
 /**
@@ -2303,5 +2354,247 @@ export function evaluateRoomMoodScores(params: {
     dominantMood,
     explanationText,
   };
+}
+
+export type NpcChatTransactionIntent =
+  | { kind: 'exchange_lul_cyon'; suggestedLulAmount: number | null }
+  | { kind: 'swap_near_respite'; suggestedNearAmount: number | null }
+  | { kind: 'buy_house'; style?: 'plaza_manor' | 'japanese_pavilion' }
+  | { kind: 'buy_catalog_item'; itemId: string }
+  | { kind: 'browse_catalog'; scope: 'house' | 'furniture' | 'fishing_gear' }
+  | { kind: 'invest_shop' }
+  | { kind: 'claim_welcome' }
+  | { kind: 'teleport_places'; focusStationId: CityTransitStationId | null };
+
+const CATALOG_ITEM_CHAT_ALIASES: ReadonlyArray<{
+  itemId: string;
+  keywords: readonly string[];
+}> = [
+  { itemId: 'tatami_tea_table', keywords: ['chabudai', 'tatami', 'tea table', 'meja teh', 'meja'] },
+  { itemId: 'sakura_bonsai_pot', keywords: ['sakura bonsai', 'bonsai', 'tanaman', 'pohon hias', 'plant'] },
+  { itemId: 'shoji_floor_lamp', keywords: ['andon', 'shoji', 'floor lamp', 'arc lamp', 'lampu', 'lamp'] },
+  { itemId: 'tactical_sofa_lounge', keywords: ['sectional', 'sofa', 'couch', 'lounge', 'kursi'] },
+  { itemId: 'arcade_blitz_cab', keywords: ['arcade', 'cabinet', 'mesin game'] },
+  { itemId: 'theme_japanese_zen', keywords: ['sakura style', 'japanese zen', 'tema sakura', 'tema jepang'] },
+  { itemId: 'theme_cyber_neon', keywords: ['cyber neon', 'shinjuku', 'cyber', 'neon'] },
+  { itemId: 'theme_royal_gold', keywords: ['royal gold', 'golden shogun', 'shogun theme', 'tema emas'] },
+  { itemId: 'nft_golden_katana_rack', keywords: ['katana', 'credenza', 'pedang'] },
+  { itemId: 'nft_holo_command_globe', keywords: ['projection table', 'command globe', 'globe', 'hologram'] },
+  { itemId: 'nft_golden_poseidon_rod', keywords: ['poseidon', 'kraken', 'golden rod', 'joran emas'] },
+  { itemId: 'nft_sonar_fishfinder_pro', keywords: ['fishfinder', 'sonar', 'radar ikan'] },
+  { itemId: 'fishing_reel_twinpower', keywords: ['twinpower', 'twin-drag', 'saltwater reel', 'reel', 'gulungan'] },
+  { itemId: 'fishing_lure_luminous_minnow', keywords: ['minnow', 'lure', 'umpan', 'kail'] },
+  { itemId: 'fishing_cooler_icebox', keywords: ['cooler', 'icebox', 'kotak es', 'pendingin'] },
+  { itemId: 'fishing_rod_carbon_pro', keywords: ['carbon pro', 'carbon rod', 'fishing rod', 'pancingan', 'pancing', 'joran', 'rod'] },
+];
+
+function extractPositiveDecimal(text: string): number | null {
+  const match = text.match(/(\d+(?:[.,]\d+)?)/);
+  if (!match) return null;
+  const parsed = Number(match[1].replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function escapeRegExp(raw: string): string {
+  return raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Parses natural-language player chat (English or Indonesian) into a concrete
+ * in-chat transaction intent so players can transact directly inside Chat Session.
+ */
+export function parseNpcChatTransactionIntent(
+  userMessage: string,
+  location: MerchantLocationId,
+): NpcChatTransactionIntent | null {
+  const q = userMessage.trim().toLowerCase();
+  if (!q) return null;
+
+  const hasActionVerb =
+    /\b(buy|beli|purchase|order|mau|pengen|ingin|want|get|ambil|checkout|tukar|tuker|exchange|convert|swap|topup|top up|deposit|invest|support|suntik|modal|claim|klaim|open|buka|lihat|show|browse|pilih)\b/.test(
+      q,
+    );
+  const amount = extractPositiveDecimal(q);
+
+  if (
+    /\b(claim|klaim|ambil)\b/.test(q) &&
+    /\b(bonus|starter|welcome|hadiah|0\.30|0,30)\b/.test(q)
+  ) {
+    return { kind: 'claim_welcome' };
+  }
+
+  if (
+    /\b(invest|bailout|suntik|support shop|support the shop|bantu toko|modal toko)\b/.test(q)
+  ) {
+    return { kind: 'invest_shop' };
+  }
+
+  const mentionsExchangeVerb = /\b(tukar|tuker|exchange|convert|swap|top ?up|deposit|isi|buy|beli|mau|pengen)\b/.test(
+    q,
+  );
+  if (mentionsExchangeVerb && /\b(near|respite)\b/.test(q) && !/\b(house|rumah|furniture|theme|tema|rod|joran|pancing|ikan|fish)\b/.test(q)) {
+    let nearAmt: number | null = amount;
+    if (nearAmt != null && /\brespite\b/.test(q) && !/\bnear\b/.test(q)) {
+      nearAmt = Math.max(0.0025, Math.ceil((nearAmt / 400) * 10000) / 10000);
+    }
+    return { kind: 'swap_near_respite', suggestedNearAmount: nearAmt };
+  }
+
+  if (mentionsExchangeVerb && /\b(lul|cyon)\b/.test(q)) {
+    return {
+      kind: 'exchange_lul_cyon',
+      suggestedLulAmount: amount != null ? Math.floor(amount) : null,
+    };
+  }
+
+  // Match specific catalog item when player expresses purchase/interest intent
+  for (const entry of CATALOG_ITEM_CHAT_ALIASES) {
+    const matchedKeyword = entry.keywords.some((kw) =>
+      new RegExp(`\\b${escapeRegExp(kw)}\\b`, 'i').test(q),
+    );
+    if (!matchedKeyword) continue;
+    const item = MERCHANT_CATALOG_ITEMS.find((it) => it.id === entry.itemId);
+    if (!item) continue;
+    if (hasActionVerb || /\b(price|harga|berapa|stock|stok|info|detail)\b/.test(q)) {
+      return { kind: 'buy_catalog_item', itemId: item.id };
+    }
+  }
+
+  if (
+    (hasActionVerb && /\b(house|home|rumah|deed|sertifikat|properti|property)\b/.test(q)) ||
+    /\b(plaza manor|japanese pavilion|model house)\b/.test(q)
+  ) {
+    const style = /\b(pavilion|japanese|kuma|jepang)\b/.test(q)
+      ? 'japanese_pavilion'
+      : 'plaza_manor';
+    return { kind: 'buy_house', style };
+  }
+
+  if (
+    hasActionVerb &&
+    /\b(catalog|katalog|shop|toko|transaksi|transaction|furniture|furnitur|perabot|tema|themes|gear|tackle|alat pancing|items|item|barang)\b/.test(
+      q,
+    )
+  ) {
+    const scope =
+      location === 'beach_house' || /\b(gear|tackle|pancing|fishing)\b/.test(q)
+        ? 'fishing_gear'
+        : /\b(house|rumah|property|properti)\b/.test(q)
+          ? 'house'
+          : 'furniture';
+    return { kind: 'browse_catalog', scope };
+  }
+
+  // Location / navigation / teleport queries (e.g. "dimana pantai", "where is the beach", "go to warzone")
+  const asksLocationOrTeleport =
+    /\b(where|dimana|di mana|lokasi|arah|kemana|ke mana|teleport|warp|fast travel|transit|map|peta|district|districts|distrik|how to get|how do i get|cara ke|go to|mau ke|pergi ke|ingin ke|take me)\b/.test(
+      q,
+    ) ||
+    /^(pantai|beach|harbor|pelabuhan|danau|lake|kai|fish market|pasar ikan|plaza|central plaza|warzone|north residence|south residence)\??$/.test(
+      q,
+    );
+
+  if (asksLocationOrTeleport) {
+    let focusStationId: CityTransitStationId | null = null;
+    if (/\b(beachfront|beach|harbor|ocean|sea|coast|pantai|laut|pelabuhan)\b/.test(q)) {
+      focusStationId = 'beachfront_harbor';
+    } else if (/\b(fish market|pasar ikan|kai)\b/.test(q)) {
+      focusStationId = 'kai_fish_market';
+    } else if (/\b(lake|oasis|freshwater|pond|danau|kolam)\b/.test(q)) {
+      focusStationId = 'nw_fishing_lake';
+    } else if (/\b(north residence|north|utara)\b/.test(q)) {
+      focusStationId = 'north_residence';
+    } else if (/\b(south residence|south|selatan|model house|model estate)\b/.test(q)) {
+      focusStationId = 'south_residence';
+    } else if (/\b(warzone|arena|battle|combat|perang|tempur|pvp)\b/.test(q)) {
+      focusStationId = 'warzone_arena';
+    } else if (/\b(central plaza|plaza|hana|cafe|kafe|tengah)\b/.test(q)) {
+      focusStationId = 'central_plaza';
+    } else if (/\b(house|home|plot|residential|rumah|kavling)\b/.test(q)) {
+      focusStationId = 'north_residence';
+    } else if (/\b(fish|fishing|mancing|memancing)\b/.test(q)) {
+      focusStationId = 'beachfront_harbor';
+    }
+    return { kind: 'teleport_places', focusStationId };
+  }
+
+  return null;
+}
+
+/**
+ * Generates an immediate bilingual confirmation line for detected in-chat
+ * transaction cards when live AI is offline or omitted an action reply.
+ */
+export function buildOfflineChatTransactionAck(
+  intent: NpcChatTransactionIntent,
+  userMessage: string,
+  location: MerchantLocationId,
+  state: MerchantAgentMarketState,
+): string {
+  const isIndo =
+    /\b(apa|mau|ingin|pengen|beli|tukar|tuker|bisa|tolong|kasih|lihat|buka|rumah|meja|kursi|lampu|pancing|berapa|halo|hai|klaim|suntik|modal|dimana|di mana|pantai|pelabuhan|danau|lokasi|tempat|peta|kemana|ke mana|kesana|kafe|kavling|perang|mancing)\b/i.test(
+      userMessage,
+    );
+  const npcName = location === 'lobby_cafe' ? 'Hana' : 'Kai';
+  const quote = evaluateLulToCyonExchangeQuote(state);
+
+  switch (intent.kind) {
+    case 'exchange_lul_cyon':
+      return isIndo
+        ? `Siap! Kurs saat ini ${quote.lulCostFor10Cyon} LUL untuk ${quote.cyonGranted} CYON. Aku sudah buka kartu tukar di bawah chat, tinggal pilih jumlah dan klik CONFIRM EXCHANGE.`
+        : `Sure! Today's rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. I opened the quick exchange card right below—pick your amount and confirm.`;
+    case 'swap_near_respite':
+      return isIndo
+        ? `Oke! Kurs tetap 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Kartu swap sudah muncul di bawah chat, kamu bisa langsung konfirmasi di sini.`
+        : `Got it! The rate is 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Use the quick swap card right below to confirm cleanly.`;
+    case 'buy_house':
+      return isIndo
+        ? `Aku siapkan penawaran Private House (100 RESPITE) langsung di kartu bawah chat. Kamu juga bisa intip Model House atau swap RESPITE langsung dari kartu itu.`
+        : `I pulled up the Private House offer (100 RESPITE) right below in chat. You can preview the Model House or buy straight from the card.`;
+    case 'buy_catalog_item': {
+      const item = MERCHANT_CATALOG_ITEMS.find((it) => it.id === intent.itemId);
+      const p = item ? evaluateMerchantItemQuote(state, item) : null;
+      if (item && p) {
+        return isIndo
+          ? `Ini kartu transaksi untuk ${item.name} (${p.buyPrice} ${item.currency}, stok ${p.stock}). Kamu bisa langsung beli dari kartu di bawah tanpa pindah tab.`
+          : `Here is the quick card for ${item.name} (${p.buyPrice} ${item.currency}, stock ${p.stock}). You can buy it right below without switching tabs.`;
+      }
+      return isIndo
+        ? `Aku siapkan kartu transaksi katalog di bawah chat, silakan cek dan klik untuk membeli.`
+        : `I opened the catalog quick card right below in chat—check the details and buy when ready.`;
+    }
+    case 'browse_catalog':
+      return isIndo
+        ? `Siap, ${npcName} buka toko cepat langsung di sesi chat ini supaya kamu bisa pilih dan transaksi di sini tanpa pindah tab.`
+        : `Opening the Quick Shop modal right inside this chat so you can pick and check out without leaving the conversation.`;
+    case 'invest_shop':
+      return isIndo
+        ? `Kamu bisa bantu isi cadangan toko dengan 300 LUL untuk dapat bonus +45 CYON dan diskon 15%. Kartu aksinya ada di bawah chat.`
+        : `You can support the shop reserve with 300 LUL for a +45 CYON bonus and a 15% catalog discount. Confirm on the card below.`;
+    case 'claim_welcome':
+      return isIndo
+        ? `Kartu klaim starter pack (0.30 NEAR + 100 LUL + 20 CYON) siap dipakai langsung di bawah chat.`
+        : `Your starter pack claim card (0.30 NEAR + 100 LUL + 20 CYON) is ready right below in chat.`;
+    case 'teleport_places': {
+      const targetNameMap: Record<CityTransitStationId, string> = {
+        central_plaza: 'Central Plaza',
+        beachfront_harbor: 'Beachfront Harbor',
+        kai_fish_market: 'Kai Fish Market',
+        nw_fishing_lake: 'NW Fishing Lake',
+        north_residence: 'North Residence',
+        south_residence: 'South Residence',
+        warzone_arena: 'Warzone Arena',
+      };
+      const focusName = intent.focusStationId ? targetNameMap[intent.focusStationId] : null;
+      if (focusName) {
+        return isIndo
+          ? `Lokasi ${focusName} sudah aku tampilkan di kotak bawah chat. Klik kotaknya lalu pilih YES untuk langsung teleport ke sana!`
+          : `I pulled up ${focusName} right below in chat. Click the destination box and press YES to teleport straight there!`;
+      }
+      return isIndo
+        ? `Ini daftar lokasi kota yang bisa kamu kunjungi. Klik kotak mana saja di bawah lalu pilih YES untuk langsung teleport!`
+        : `Here are the city destinations you can travel to. Click any location box below and press YES to teleport!`;
+    }
+  }
 }
 

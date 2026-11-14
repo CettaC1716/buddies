@@ -10,28 +10,38 @@ import { soundEngine } from '../game/audio';
  */
 
 const METHOD_LABELS: Record<string, string> = {
-  swap_near_for_respite: 'Swap NEAR → RESPITE',
-  claim_hana_welcome_near: 'Claim welcome NEAR from Hana',
-  claim_hana_welcome_near_attested: 'Claim welcome NEAR from Hana (Google verified)',
-  buy_merchant_item: 'Buy item from the merchant shop',
-  sell_merchant_item: 'Sell item back to the merchant',
-  purchase_citizen_asset: 'Buy citizen asset',
-  list_property_deed: 'List house deed for sale',
-  list_property_furniture: 'List furniture for sale',
+  swap_near_for_respite: 'Swap NEAR -> RESPITE',
+  claim_hana_welcome_near: 'Claim Starter Pack from Hana',
+  claim_hana_welcome_near_attested: 'Claim Starter Pack from Hana (Google verified)',
+  buy_merchant_item: 'Buy item from Merchant Shop',
+  sell_merchant_item: 'Sell item back to Merchant',
+  purchase_citizen_asset: 'Buy House or Companion',
+  list_property_deed: 'List House Deed for sale',
+  list_property_furniture: 'List Furniture NFT for sale',
   buy_property: 'Buy listed property',
   cancel_property_listing: 'Cancel property listing',
-  mint_fish_nft: 'Mint fish NFT',
-  mint_fish_nft_attested: 'Mint fish NFT',
-  list_fish_nft: 'List fish for sale',
-  buy_fish_nft: 'Buy fish',
-  unlist_fish_nft: 'Remove fish listing',
+  mint_fish_nft: 'Mint Fish NFT',
+  mint_fish_nft_attested: 'Mint Fish NFT',
+  list_fish_nft: 'List Fish NFT for sale',
+  buy_fish_nft: 'Buy Fish NFT',
+  unlist_fish_nft: 'Remove Fish NFT listing',
   ft_transfer: 'Transfer RESPITE',
   nft_transfer: 'Transfer NFT',
-  mt_transfer: 'Transfer item',
-  fund_deed_royalty: 'Fund deed treasury royalty',
-  claim_deed_payout: 'Claim deed payout',
-  authorize_deed_session_key: 'Authorize deed session key',
-  mint_merchant_item: 'Mint merchant item',
+  mt_transfer: 'Transfer Collectible Item',
+  fund_deed_royalty: 'Add funds to House treasury',
+  claim_deed_payout: 'Claim House treasury payout',
+  authorize_deed_session_key: 'Authorize House access key',
+  mint_merchant_item: 'Mint Merchant Item',
+};
+
+const DETAIL_KEY_LABELS: Record<string, string> = {
+  catalog_id: 'Item',
+  token_id: 'Token ID',
+  listing_id: 'Listing',
+  item_id: 'Item',
+  amount: 'Amount',
+  price: 'Price',
+  receiver_id: 'Recipient',
 };
 
 function humanizeMethod(methodName: string): string {
@@ -60,7 +70,7 @@ function detailRows(request: LocalTxConfirmRequest): Array<[string, string]> {
   for (const key of interesting) {
     const value = args[key];
     if (typeof value === 'string' || typeof value === 'number') {
-      rows.push([key.replace(/_/g, ' '), String(value)]);
+      rows.push([DETAIL_KEY_LABELS[key] ?? key.replace(/_/g, ' '), String(value)]);
     }
   }
   return rows.slice(0, 3);
@@ -81,7 +91,6 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
 
   const depositNear = formatNearFromYocto(request.depositYocto);
   const hasDeposit = depositNear !== '0';
-  const gasTgas = Math.round(Number(request.gas || '0') / 1e12);
   const details = detailRows(request);
 
   return (
@@ -113,7 +122,7 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
             </span>
           </div>
           <div className="flex items-start justify-between gap-3">
-            <span className="font-black uppercase tracking-wider text-slate-500">Contract</span>
+            <span className="font-black uppercase tracking-wider text-slate-500">App</span>
             <span className="font-mono font-bold text-right truncate max-w-[210px]">
               {request.receiverId}
             </span>
@@ -132,7 +141,7 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
           )}
           <div className="flex items-start justify-between gap-3">
             <span className="font-black uppercase tracking-wider text-slate-500">Network fee</span>
-            <span className="font-bold text-right">up to {gasTgas} TGas, paid from your balance</span>
+            <span className="font-bold text-right">Tiny fee (&lt; 0.01 NEAR, from balance)</span>
           </div>
         </div>
 
@@ -146,7 +155,7 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
             }}
             className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider cursor-pointer"
           >
-            Reject
+            Cancel
           </button>
           <button
             type="button"
@@ -157,12 +166,12 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
             }}
             className="flex-1 py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider cursor-pointer"
           >
-            Approve &amp; Sign
+            Approve
           </button>
         </div>
 
         <p className="mt-3 text-[10px] font-bold text-slate-500 text-center leading-snug">
-          Signed locally by your in-game wallet. Nothing is sent until you approve.
+          Confirmed safely by your in-game wallet. Nothing is sent until you approve.
         </p>
       </div>
     </div>

@@ -54,7 +54,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
   const handleOpenNearConnectorPopup = async () => {
     soundEngine.playUiClick();
     setErrorMessage(null);
-    setStatusBanner('Opening NEAR Testnet Wallet Selector (Meteor Web, MyNearWallet, Intear)...');
+    setStatusBanner('Opening NEAR Wallet menu (Meteor, MyNearWallet, Intear)...');
     setIsConnecting(true);
     try {
       const result = await connectWithNearConnectorModal('testnet');
@@ -78,7 +78,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     e.preventDefault();
     soundEngine.playUiClick();
     setErrorMessage(null);
-    setStatusBanner('Preparing your <handle>.buddiesblitz.testnet wallet & FunctionCall key...');
+    setStatusBanner('Creating your in-game wallet...');
     setIsConnecting(true);
     try {
       const res = await spawnSubAccountOnChainViaMaster({
@@ -246,7 +246,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
             <p className="text-[11px] font-bold text-[#334155] leading-snug">
               {hasCitizenWallet
                 ? 'Your wallet name was set when you created it and can\'t be changed.'
-                : 'Sign in with Google or choose a wallet username below.'}
+                : 'Continue with Google for automatic setup, or pick a wallet username below.'}
             </p>
 
             {!hasCitizenWallet && onSelectGoogleAutoRegister && (

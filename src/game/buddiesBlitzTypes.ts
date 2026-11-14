@@ -23,6 +23,7 @@ import {
 import {
   BuddyCharacterRig,
   BlitzWeaponId,
+  CharacterGender,
 } from './buddiesBlitzShadersAndAssets';
 
 export type GameState = 'title' | 'playing' | 'paused' | 'gameover';
@@ -499,6 +500,9 @@ export interface BuddyUnit {
   respawnTimer: number;
   assignedRole?: TeamCommandMode;
   hasIndividualRoleAssigned?: boolean;
+  avatarGender?: CharacterGender;
+  isWarzoneRaider?: boolean;
+  raiderCodename?: string;
   followerReactionTimer?: number;
   followerIdleLookTimer?: number;
   followerIdleLookYaw?: number;

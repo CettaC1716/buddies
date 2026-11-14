@@ -1790,6 +1790,7 @@ export interface BuddiesLetterPayload {
   itemId?: string;
   tokenId?: string;
   assetKind?: string;
+  houseStyle?: string;
   deedTokenId?: string;
   estateAccount?: string;
   priceAmount?: number;

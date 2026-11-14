@@ -5,6 +5,7 @@ import {
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   NEAR_CONFIG,
   RESPITE_NEP141_METADATA,
+  deriveBaseCitizenHandle,
   executeNearTestnetAndRespiteSwap,
   fetchHanaTreasuryStatus,
   fetchNearAccountView,
@@ -15,16 +16,23 @@ import {
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
   getOrCreateCitizenSessionPublicKey,
+  provisionUniqueCitizenSubAccount,
   resolveNearRpcUrl,
   resolvePostClaimNearBalance,
   shouldAttemptAttestedHanaClaim,
+  extractHouseStyleFromNftMetadata,
   verifyNep171GamepassOwnership,
 } from './nearClient';
 import { handleNearRelayerRequest } from '../../api/near-relayer';
 import { handleFishAttestRequest } from '../../api/fish-attest';
-import { buildNpcSystemInstruction, handleNpcAgentRequest } from '../../api/npc-agent';
+import {
+  buildNpcSystemInstruction,
+  extractAndStripNpcChatAction,
+  handleNpcAgentRequest,
+} from '../../api/npc-agent';
 import {
   MERCHANT_CATALOG_ITEMS,
+  buildOfflineChatTransactionAck,
   createInitialMerchantMarketState,
   createInitialPlacedHouseFurniture,
   formatHouseDeedBadgeLabel,
@@ -33,6 +41,7 @@ import {
   generateNpcMerchantReply,
   getHouseStyleDisplaySpec,
   mergeOwnedCatalogWithChainNep245,
+  parseNpcChatTransactionIntent,
   resolveTutorialFurnitureTarget,
 } from '../game/buddiesMerchantPricing';
 import {
@@ -401,14 +410,51 @@ test('Hana and Kai live chat concierge answers Fish NFT sales records, locations
   assert.match(whereWarzoneReply, /Transit Kiosk/i);
   assert.match(whereWarzoneReply, /Warzone/i);
 
+  const whatGameReply = generateNpcMerchantReply(
+    'What is this game?',
+    'lobby_cafe',
+    state,
+    balances,
+  );
+  assert.match(whatGameReply, /Buddies Blitz/i);
+  assert.match(whatGameReply, /NEAR/i);
+
+  const whatDoReply = generateNpcMerchantReply(
+    'What can I do in this game?',
+    'lobby_cafe',
+    state,
+    balances,
+  );
+  assert.match(whatDoReply, /starter pack/i);
+  assert.match(whatDoReply, /Private House/i);
+  assert.match(whatDoReply, /Warzone/i);
+
+  const currencyReply = generateNpcMerchantReply(
+    'How do currencies work?',
+    'lobby_cafe',
+    state,
+    balances,
+  );
+  assert.match(currencyReply, /LUL/i);
+  assert.match(currencyReply, /CYON/i);
+  assert.match(currencyReply, /RESPITE/i);
+
   // 4. Zero developer jargon & zero emojis in concierge replies
-  for (const reply of [topSaleReply, activeListingReply, whereFishingReply, whereWarzoneReply]) {
+  for (const reply of [
+    topSaleReply,
+    activeListingReply,
+    whereFishingReply,
+    whereWarzoneReply,
+    whatGameReply,
+    whatDoReply,
+    currencyReply,
+  ]) {
     assert.doesNotMatch(reply, /NEP-171|NEP-245|NEP-141|sub-wallet|Ed25519/i);
     assert.doesNotMatch(reply, /[\u{1F300}-\u{1FAFF}]/u);
   }
 });
 
-test('api/npc-agent enforces multilingual in-game guardrails, injects live Fish NFT records, and sanitizes Gemini output', async () => {
+test('api/npc-agent supports open-topic multilingual NPC chat, injects live Fish NFT records, and sanitizes Gemini output', async () => {
   const sysPrompt = buildNpcSystemInstruction('lobby_cafe', {
     citizenDisplayName: 'Raka',
     playerNearAccount: 'india0x69.buddiesblitz.testnet',
@@ -430,7 +476,7 @@ test('api/npc-agent enforces multilingual in-game guardrails, injects live Fish 
     },
   });
 
-  assert.match(sysPrompt, /IN-GAME TOPICS ONLY/);
+  assert.match(sysPrompt, /OPEN CONVERSATION ON ANY TOPIC/);
   assert.match(sysPrompt, /MATCH PLAYER LANGUAGE/);
   assert.match(sysPrompt, /Ancient Coelacanth \(29\.40 kg\) for 140 RESPITE/);
 
@@ -1014,5 +1060,287 @@ test('fish-attest rejects inflated weights above 1.05x species max and enforces 
   } finally {
     if (savedFishKey === undefined) delete process.env.FISH_ATTESTER_PRIVATE_KEY;
     else process.env.FISH_ATTESTER_PRIVATE_KEY = savedFishKey;
+  }
+});
+
+test('deriveBaseCitizenHandle and provisionUniqueCitizenSubAccount automatically pick an unused handle from Display Name', async () => {
+  assert.equal(deriveBaseCitizenHandle('Sakura Chan'), 'sakurachan');
+  assert.equal(deriveBaseCitizenHandle('Buddy Male'), 'buddymale');
+  assert.equal(deriveBaseCitizenHandle('market', 'player.nine@example.com'), 'playernine');
+  assert.equal(deriveBaseCitizenHandle('?', ''), 'buddy');
+
+  const checked: string[] = [];
+  const spawned: string[] = [];
+  let suffixIdx = 0;
+  const suffixes = ['k7m2', 'p4q8', 'x9z3'];
+
+  const res = await provisionUniqueCitizenSubAccount({
+    displayName: 'Alex Gamer',
+    email: 'alex@example.com',
+    suffixGenerator: () => suffixes[suffixIdx++] || '99aa',
+    checkAvailability: async (handle) => {
+      checked.push(handle);
+      if (handle === 'alexgamer') {
+        return {
+          cleanHandle: handle,
+          subAccountId: `${handle}.buddiesblitz.testnet`,
+          validFormat: true,
+          available: false,
+          ownedByCurrentDevice: false,
+        };
+      }
+      return {
+        cleanHandle: handle,
+        subAccountId: `${handle}.buddiesblitz.testnet`,
+        validFormat: true,
+        available: true,
+        ownedByCurrentDevice: false,
+      };
+    },
+    spawnSubAccount: async ({ handle }) => {
+      spawned.push(handle);
+      if (handle === 'alexgamer-k7m2') {
+        return {
+          ok: false,
+          subAccountId: `${handle}.buddiesblitz.testnet`,
+          sessionPublicKey: 'ed25519:test',
+          custodyMode: 'session_key_ready',
+          code: 'HANDLE_TAKEN',
+          error: 'already registered',
+        };
+      }
+      return {
+        ok: true,
+        subAccountId: `${handle}.buddiesblitz.testnet`,
+        sessionPublicKey: 'ed25519:test',
+        custodyMode: 'onchain_provisioned',
+      };
+    },
+  });
+
+  assert.equal(res.ok, true);
+  assert.equal(res.subAccountId, 'alexgamer-p4q8.buddiesblitz.testnet');
+  assert.deepEqual(checked, ['alexgamer', 'alexgamer-k7m2', 'alexgamer-p4q8']);
+  assert.deepEqual(spawned, ['alexgamer-k7m2', 'alexgamer-p4q8']);
+
+  // Non-collision errors fail immediately instead of burning attempts
+  let errAttempts = 0;
+  const errRes = await provisionUniqueCitizenSubAccount({
+    displayName: 'NewUser',
+    checkAvailability: async (handle) => ({
+      cleanHandle: handle,
+      subAccountId: `${handle}.buddiesblitz.testnet`,
+      validFormat: true,
+      available: true,
+      ownedByCurrentDevice: false,
+    }),
+    spawnSubAccount: async ({ handle }) => {
+      errAttempts += 1;
+      return {
+        ok: false,
+        subAccountId: `${handle}.buddiesblitz.testnet`,
+        sessionPublicKey: '',
+        custodyMode: 'session_key_ready',
+        error: 'Account service unreachable.',
+      };
+    },
+  });
+  assert.equal(errRes.ok, false);
+  assert.equal(errAttempts, 1);
+});
+
+test('extractAndStripNpcChatAction parses whitelisted chat actions and strips action tags from reply', async () => {
+  const whitelist = new Set(['tatami_tea_table', 'arcade_blitz_cab']);
+
+  const parsedSwap = extractAndStripNpcChatAction(
+    'Sure, I opened the exchange card for you! [[ACTION:exchange_lul_cyon|120]]',
+    whitelist,
+  );
+  assert.equal(parsedSwap.reply, 'Sure, I opened the exchange card for you!');
+  assert.deepEqual(parsedSwap.action, { type: 'exchange_lul_cyon', amount: 120 });
+
+  const parsedItem = extractAndStripNpcChatAction(
+    'Ini meja teh yang cocok untuk rumahmu. [[ACTION:buy_item|tatami_tea_table]]',
+    whitelist,
+  );
+  assert.equal(parsedItem.reply, 'Ini meja teh yang cocok untuk rumahmu.');
+  assert.deepEqual(parsedItem.action, { type: 'buy_catalog_item', itemId: 'tatami_tea_table' });
+
+  const rejectedUnknown = extractAndStripNpcChatAction(
+    'Coba cek item spesial ini. [[ACTION:buy_item|hacked_item_999]]',
+    whitelist,
+  );
+  assert.equal(rejectedUnknown.reply, 'Coba cek item spesial ini.');
+  assert.equal(rejectedUnknown.action, null);
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: 'Meja teh ini sangat pas! [[ACTION:buy_item|tatami_tea_table]]',
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as Response) as typeof fetch;
+
+    const agentRes = await handleNpcAgentRequest(
+      {
+        userMessage: 'mau beli meja tatami',
+        merchantLocation: 'lobby_cafe',
+        liveState: {
+          catalogSnapshot: [
+            {
+              id: 'tatami_tea_table',
+              name: 'Chabudai Low Tea Table',
+              category: 'furniture',
+              currency: 'RESPITE',
+              buyPrice: 11,
+              stock: 3,
+            },
+          ],
+        },
+      },
+      'test-gemini-key',
+    );
+    assert.equal(agentRes.status, 200);
+    assert.equal(agentRes.payload.ok, true);
+    assert.equal(agentRes.payload.reply, 'Meja teh ini sangat pas!');
+    assert.deepEqual(agentRes.payload.action, {
+      type: 'buy_catalog_item',
+      itemId: 'tatami_tea_table',
+    });
+    assert.doesNotMatch(agentRes.payload.reply || '', /\[\[ACTION:/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('parseNpcChatTransactionIntent and buildOfflineChatTransactionAck detect Indonesian and English chat deals', () => {
+  const market = createInitialMerchantMarketState();
+
+  const exIntent = parseNpcChatTransactionIntent('tukar 100 lul ke cyon', 'lobby_cafe');
+  assert.deepEqual(exIntent, { kind: 'exchange_lul_cyon', suggestedLulAmount: 100 });
+  const exAck = buildOfflineChatTransactionAck(exIntent!, 'tukar 100 lul ke cyon', 'lobby_cafe', market);
+  assert.match(exAck, /LUL/i);
+  assert.match(exAck, /CYON/i);
+
+  const swapIntent = parseNpcChatTransactionIntent('swap 0.25 near ke respite', 'lobby_cafe');
+  assert.deepEqual(swapIntent, { kind: 'swap_near_respite', suggestedNearAmount: 0.25 });
+
+  const houseIntent = parseNpcChatTransactionIntent('beli rumah japanese pavilion dong', 'lobby_cafe');
+  assert.deepEqual(houseIntent, { kind: 'buy_house', style: 'japanese_pavilion' });
+
+  const tableIntent = parseNpcChatTransactionIntent('mau beli meja tatami', 'lobby_cafe');
+  assert.deepEqual(tableIntent, { kind: 'buy_catalog_item', itemId: 'tatami_tea_table' });
+
+  const sonarIntent = parseNpcChatTransactionIntent('buy sonar fishfinder', 'beach_house');
+  assert.deepEqual(sonarIntent, { kind: 'buy_catalog_item', itemId: 'nft_sonar_fishfinder_pro' });
+
+  const casualQuestion = parseNpcChatTransactionIntent('halo hana siapa nama kamu?', 'lobby_cafe');
+  assert.equal(casualQuestion, null);
+
+  // Location / teleport queries emit teleport_places intent without breaking buy_house
+  const beachIntent = parseNpcChatTransactionIntent('dimana pantai?', 'lobby_cafe');
+  assert.deepEqual(beachIntent, { kind: 'teleport_places', focusStationId: 'beachfront_harbor' });
+  const beachAck = buildOfflineChatTransactionAck(beachIntent!, 'dimana pantai?', 'lobby_cafe', market);
+  assert.match(beachAck, /Beachfront Harbor/i);
+  assert.match(beachAck, /YES/i);
+
+  const lakeIntent = parseNpcChatTransactionIntent('where is the fishing lake?', 'lobby_cafe');
+  assert.deepEqual(lakeIntent, { kind: 'teleport_places', focusStationId: 'nw_fishing_lake' });
+
+  const warzoneIntent = parseNpcChatTransactionIntent('teleport ke warzone', 'lobby_cafe');
+  assert.deepEqual(warzoneIntent, { kind: 'teleport_places', focusStationId: 'warzone_arena' });
+
+  const allPlacesIntent = parseNpcChatTransactionIntent('mau teleport kemana saja?', 'lobby_cafe');
+  assert.deepEqual(allPlacesIntent, { kind: 'teleport_places', focusStationId: null });
+
+  const aiTeleport = extractAndStripNpcChatAction(
+    'Pantai ada di tenggara! [[ACTION:teleport_places|beachfront_harbor]]',
+  );
+  assert.equal(aiTeleport.reply, 'Pantai ada di tenggara!');
+  assert.deepEqual(aiTeleport.action, {
+    type: 'teleport_places',
+    focusStationId: 'beachfront_harbor',
+  });
+
+  const aiTeleportAll = extractAndStripNpcChatAction(
+    'Pick a spot on the list below. [[ACTION:teleport_places|all]]',
+  );
+  assert.deepEqual(aiTeleportAll.action, {
+    type: 'teleport_places',
+    focusStationId: null,
+  });
+});
+
+test('extractHouseStyleFromNftMetadata and verifyNep171GamepassOwnership resolve explicit house_style without locking legacy deeds', async () => {
+  assert.equal(
+    extractHouseStyleFromNftMetadata({
+      title: 'Buddies Blitz Classic Plaza Manor Deed #2',
+      extra: JSON.stringify({ kind: 'house_deed', house_style: 'plaza_manor' }),
+    }),
+    'plaza_manor',
+  );
+  assert.equal(
+    extractHouseStyleFromNftMetadata({
+      title: 'Buddies Blitz Japanese Pavilion Deed #3',
+      extra: JSON.stringify({ kind: 'house_deed', house_style: 'japanese_pavilion' }),
+    }),
+    'japanese_pavilion',
+  );
+  // Pre-upgrade contract deeds titled "Modern Japanese Wooden Pavilion Deed #N" without
+  // extra.house_style must remain null so legacy owners keep their chosen/Supabase style.
+  assert.equal(
+    extractHouseStyleFromNftMetadata({
+      title: 'Modern Japanese Wooden Pavilion Deed #1',
+      description: 'Private House Sub-Account Deed',
+      extra: JSON.stringify({ kind: 'house_deed', sub_account_id: 'estate-0001.buddiesblitz.testnet' }),
+    }),
+    null,
+  );
+
+  const originalFetch = globalThis.fetch;
+  try {
+    const plazaTokens = [
+      {
+        token_id: 'house-deed-0007',
+        metadata: {
+          title: 'Buddies Blitz Classic Plaza Manor Deed #7',
+          description: 'Classic Plaza Manor',
+          extra: JSON.stringify({
+            kind: 'house_deed',
+            house_style: 'plaza_manor',
+            sub_account_id: 'estate-0007.buddiesblitz.testnet',
+          }),
+        },
+      },
+    ];
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          result: {
+            result: Array.from(new TextEncoder().encode(JSON.stringify(plazaTokens))),
+          },
+        }),
+      }) as Response) as typeof fetch;
+
+    const verifiedPlaza = await verifyNep171GamepassOwnership('manorowner.testnet');
+    assert.equal(verifiedPlaza.verified, true);
+    assert.equal(verifiedPlaza.houseStyle, 'plaza_manor');
+    assert.equal(verifiedPlaza.token?.houseStyle, 'plaza_manor');
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

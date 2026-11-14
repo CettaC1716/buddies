@@ -16,6 +16,7 @@ import {
   VolumeX,
   LogIn,
   X,
+  ClipboardList,
 } from 'lucide-react';
 import {
   BuddiesBlitzArena,
@@ -42,6 +43,10 @@ import {
   getCityTransitDestinationById,
   isIntactModelEstateBasePlot,
   resolveOnboardingAccountEntry,
+  resolveBottomChatSubmitTarget,
+  type HouseArchitectureStyle,
+  parseOptionalHouseArchitectureStyle,
+  resolveOwnedHouseStyle,
 } from './game/buddiesBlitzRules';
 import { soundEngine } from './game/audio';
 import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
@@ -88,7 +93,6 @@ import {
   formatWalletHistoryAmountDisplay,
   getHouseStyleDisplaySpec,
   mergeOwnedCatalogWithChainNep245,
-  resolveTutorialFurnitureTarget,
   evaluateNegotiationEnvelope,
   createNpcTreasuryLedger,
   rollNpcTreasuryDay,
@@ -101,7 +105,6 @@ import {
   type NpcPurchaseRefusal,
   countOwnedMerchantItems,
   investInMerchantShop,
-  stepFastForwardEconomyTick,
   MerchantLocationId,
   MerchantCatalogItem,
   HouseInteriorSlotId,
@@ -131,12 +134,26 @@ import {
   GlasshouseCafeRotaModal,
   XpGainCelebrationBanner,
 } from './components/GlasshouseCafeModal';
+import { GlasshouseCafeSlotModal } from './components/GlasshouseCafeSlotModal';
+import type { ArcadeSlotEvaluation } from './game/buddiesArcadeSlots';
+import { DailyMissionsModal } from './components/DailyMissionsModal';
+import {
+  claimDailyAllClearBonus,
+  claimDailyMissionReward,
+  createInitialDailyMissionsState,
+  getDailyMissionsStorageKey,
+  getLocalDailyDateKey,
+  recordDailyMissionProgress,
+  sanitizeDailyMissionsState,
+  summarizeDailyMissions,
+  type DailyMissionId,
+  type DailyMissionsState,
+} from './game/buddiesDailyMissions';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   NEAR_CONFIG,
-  RESPITE_NEP141_METADATA,
   checkCitizenSubAccountAvailability,
   claimHanaWelcomeNearOnChain,
   claimHanaWelcomeNearAttestedOnChain,
@@ -157,6 +174,7 @@ import {
   getNearBlocksTxUrl,
   isActiveWalletReadOnlyObserver,
   onNearSigningWalletConnected,
+  provisionUniqueCitizenSubAccount,
   restoreConnectedNearSigningWallet,
   spawnSubAccountOnChainViaMaster,
   verifyNep171GamepassOwnership,
@@ -454,107 +472,10 @@ export default function App() {
     subAccountId: '',
   });
   const [subWalletProvisionStageLabel, setSubWalletProvisionStageLabel] = useState<string>(
-    'Generating browser self-custody Ed25519 key...',
+    'Creating your player account...',
   );
-  const [provisionedSubWalletTxHash, setProvisionedSubWalletTxHash] = useState<string>('');
-  const [tutorialStage, setTutorialStage] = useState<
-    'none' | 'welcome_modal' | 'go_to_hana' | 'go_to_kiosk'
-  >('none');
+  const [tutorialStage, setTutorialStage] = useState<'none' | 'go_to_hana'>('none');
   const [hanaWelcomeNearClaimed, setHanaWelcomeNearClaimed] = useState<boolean>(false);
-
-  // FIRST HOME forced tour (hard gate, rifallah 14 Nov): persisted progress
-  // and the on-chain proof captured from each completed purchase step.
-  // Tutorial progress is scoped PER WALLET: each wallet is its own player,
-  // so First Home and Kai tutorial state live under keys namespaced by the
-  // active account ('guest' while signed out). The legacy device-wide keys
-  // migrate once into the first wallet scope that loads after this change.
-  const tourScopeRef = useRef<string>('');
-  const tourKey = (base: string): string =>
-    `${base}::${tourScopeRef.current || 'guest'}`;
-  const readScopedTourJson = (base: string): Record<string, unknown> | null => {
-    try {
-      const scopedRaw = window.localStorage.getItem(tourKey(base));
-      if (scopedRaw) return JSON.parse(scopedRaw) as Record<string, unknown>;
-      const legacyRaw = window.localStorage.getItem(base);
-      const migratedFlag = `bb_tour_scope_migrated_v1:${base}`;
-      if (legacyRaw && window.localStorage.getItem(migratedFlag) !== '1') {
-        window.localStorage.setItem(migratedFlag, '1');
-        window.localStorage.setItem(tourKey(base), legacyRaw);
-        return JSON.parse(legacyRaw) as Record<string, unknown>;
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  };
-
-  const [homeTour, setHomeTour] = useState<{
-    done: boolean;
-    metHana: boolean;
-    kioskIntroDone: boolean;
-    menusTourDone: boolean;
-    txs: Record<string, { txHash: string; explorerUrl: string }>;
-  }>(() => {
-    try {
-      const raw = window.localStorage.getItem('bb_home_tour_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          done?: boolean;
-          metHana?: boolean;
-          kioskIntroDone?: boolean;
-          menusTourDone?: boolean;
-          txs?: Record<string, { txHash: string; explorerUrl: string }>;
-        };
-        return {
-          done: Boolean(parsed.done),
-          metHana: Boolean(parsed.metHana),
-          kioskIntroDone: Boolean(parsed.kioskIntroDone),
-          menusTourDone: Boolean(parsed.menusTourDone),
-          txs: parsed.txs ?? {},
-        };
-      }
-    } catch {
-      // ignore
-    }
-    return { done: false, metHana: false, kioskIntroDone: false, menusTourDone: false, txs: {} };
-  });
-  const homeTourRef = useRef<{ active: boolean; step: string }>({ active: false, step: 'done' });
-  const persistHomeTour = (next: {
-    done: boolean;
-    metHana: boolean;
-    kioskIntroDone: boolean;
-    menusTourDone?: boolean;
-    txs: Record<string, { txHash: string; explorerUrl: string }>;
-  }) => {
-    setHomeTour({ ...next, menusTourDone: Boolean(next.menusTourDone) });
-    try {
-      window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
-    } catch {
-      // ignore
-    }
-  };
-  const recordHomeTourTx = (kind: string, txHash?: string, explorerUrl?: string) => {
-    if (!txHash) return;
-    setHomeTour((prev) => {
-      const next = {
-        ...prev,
-        txs: {
-          ...prev.txs,
-          [kind]: {
-            txHash,
-            explorerUrl: explorerUrl || `https://testnet.nearblocks.io/txns/${txHash}`,
-          },
-        },
-      };
-      try {
-        window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  };
-  const [propertyPitchSeen, setPropertyPitchSeen] = useState<boolean>(false);
   const [hanaPitchOrigin, setHanaPitchOrigin] = useState<'kiosk' | 'browse' | null>(null);
   const [pendingPitchKioskStation, setPendingPitchKioskStation] =
     useState<CityTransitStationId>('central_plaza');
@@ -713,10 +634,19 @@ export default function App() {
   const [activeSpecialModal, setActiveSpecialModal] = useState<
     'none' | 'npc_merchant' | 'house_interior'
   >('none');
+  const activeSpecialModalRef = useRef(activeSpecialModal);
+  activeSpecialModalRef.current = activeSpecialModal;
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
   const [activeCafeModal, setActiveCafeModal] = useState<
-    'none' | 'order' | 'atm' | 'rota' | 'order_notification' | 'prep_pastry' | 'prep_drink'
+    | 'none'
+    | 'order'
+    | 'atm'
+    | 'arcade_slot'
+    | 'rota'
+    | 'order_notification'
+    | 'prep_pastry'
+    | 'prep_drink'
   >('none');
   const [isNearCafeRotaBoard, setIsNearCafeRotaBoard] = useState<boolean>(false);
   const [isCafeRotaMenuExpanded, setIsCafeRotaMenuExpanded] = useState<boolean>(false);
@@ -744,6 +674,56 @@ export default function App() {
   const xpBannerTimerRef = useRef<number | null>(null);
   const levelProgress = computeLevelProgress(playerTotalXp);
   const [merchantLocation, setMerchantLocation] = useState<MerchantLocationId>('lobby_cafe');
+  const [npcOpenSeq, setNpcOpenSeq] = useState<number>(0);
+  const openMerchantInChatSession = useCallback((loc: MerchantLocationId) => {
+    activeSpecialModalRef.current = 'npc_merchant';
+    setMerchantLocation(loc);
+    setNpcOpenSeq((prev) => prev + 1);
+    setIsSocialChatModalOpen(false);
+    setIsDailyMissionsModalOpen(false);
+    setSocialChatText('');
+    setActiveSpecialModal('npc_merchant');
+  }, []);
+  const dailyMissionsAccountKey =
+    (hud.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
+  const dailyMissionsAccountRef = useRef<string>(dailyMissionsAccountKey);
+  dailyMissionsAccountRef.current = dailyMissionsAccountKey;
+
+  const loadDailyMissionsFromStorage = useCallback((acctKey: string): DailyMissionsState => {
+    const todayKey = getLocalDailyDateKey();
+    if (typeof window === 'undefined') {
+      return createInitialDailyMissionsState(todayKey);
+    }
+    try {
+      const raw = window.localStorage.getItem(getDailyMissionsStorageKey(acctKey));
+      if (!raw) return createInitialDailyMissionsState(todayKey);
+      return sanitizeDailyMissionsState(JSON.parse(raw), todayKey);
+    } catch {
+      return createInitialDailyMissionsState(todayKey);
+    }
+  }, []);
+
+  const [dailyMissionsState, setDailyMissionsState] = useState<DailyMissionsState>(() =>
+    loadDailyMissionsFromStorage('guest'),
+  );
+  const dailyMissionsStateRef = useRef<DailyMissionsState>(dailyMissionsState);
+  useEffect(() => {
+    dailyMissionsStateRef.current = dailyMissionsState;
+  }, [dailyMissionsState]);
+  const [isDailyMissionsModalOpen, setIsDailyMissionsModalOpen] = useState<boolean>(false);
+  const lastEnteredHousePlotRef = useRef<{
+    team: 'blue' | 'red' | null;
+    plotIndex: number | null;
+    viaStudio?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const loaded = loadDailyMissionsFromStorage(dailyMissionsAccountKey);
+    dailyMissionsStateRef.current = loaded;
+    setDailyMissionsState(loaded);
+  }, [dailyMissionsAccountKey, loadDailyMissionsFromStorage]);
+
+  const dailyMissionsSummary = summarizeDailyMissions(dailyMissionsState);
   const [marketState, setMarketState] = useState(() => createInitialMerchantMarketState());
   const marketStateRef = useRef(marketState);
   useEffect(() => {
@@ -762,7 +742,6 @@ export default function App() {
     };
   }, []);
   const cafeExchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
-  const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
   const [cyonBalance, setCyonBalance] = useState<number>(0);
   const cyonBalanceRef = useRef<number>(0);
   useEffect(() => {
@@ -785,25 +764,67 @@ export default function App() {
   } | null>(null);
   const [personalWalletTab, setPersonalWalletTab] = useState<'wallet' | 'assets' | 'history'>('wallet');
   const [isSampleHouseView, setIsSampleHouseView] = useState<boolean>(false);
-  const [houseArchitectureStyle, setHouseArchitectureStyle] = useState<
-    'plaza_manor' | 'japanese_pavilion'
-  >('plaza_manor');
-  const setAndPersistHouseArchitectureStyle = useCallback(
-    (style: 'plaza_manor' | 'japanese_pavilion', accountOverride?: string) => {
-      setHouseArchitectureStyle(style);
+  const persistHouseStyleLocally = useCallback(
+    (accountId: string, style: HouseArchitectureStyle) => {
       if (typeof window === 'undefined') return;
-      const acct = (accountOverride || hudRef.current.nearWalletId || playerUid || '')
-        .trim()
-        .toLowerCase();
-      if (!acct) return;
+      const cleanAcct = accountId.trim().toLowerCase();
+      if (!cleanAcct) return;
       try {
-        window.localStorage.setItem(`bb_house_arch_style_v1:${acct}`, style);
+        window.localStorage.setItem(`bb_house_arch_style_v1:${cleanAcct}`, style);
       } catch {
         // ignore storage failures
       }
     },
-    [playerUid],
+    [],
   );
+
+  const readHouseStyleLocally = useCallback((accountId: string): HouseArchitectureStyle | null => {
+    if (typeof window === 'undefined') return null;
+    const cleanAcct = accountId.trim().toLowerCase();
+    if (!cleanAcct) return null;
+    try {
+      return parseOptionalHouseArchitectureStyle(
+        window.localStorage.getItem(`bb_house_arch_style_v1:${cleanAcct}`),
+      );
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const buildProfileUnlockedSkins = useCallback(
+    (
+      gender: 'male' | 'female',
+      ownedStyle: HouseArchitectureStyle | null,
+      existingSkins?: ReadonlyArray<string> | null,
+    ): string[] => {
+      const skins = ['default', `gender:${gender}`];
+      const existingTag = existingSkins?.find(
+        (s) => s === 'house_style:plaza_manor' || s === 'house_style:japanese_pavilion',
+      );
+      const resolvedStyle =
+        ownedStyle ??
+        (existingTag
+          ? parseOptionalHouseArchitectureStyle(existingTag.replace('house_style:', ''))
+          : null);
+      if (resolvedStyle) {
+        skins.push(`house_style:${resolvedStyle}`);
+      }
+      return skins;
+    },
+    [],
+  );
+
+  const [houseArchitectureStyle, setHouseArchitectureStyle] =
+    useState<HouseArchitectureStyle>('plaza_manor');
+  const [ownedHouseStyle, setOwnedHouseStyle] = useState<HouseArchitectureStyle | null>(null);
+  const [isOnChainHouseStyleLocked, setIsOnChainHouseStyleLocked] = useState<boolean>(false);
+  const houseArchitectureStyleRef = useRef<HouseArchitectureStyle>(houseArchitectureStyle);
+  houseArchitectureStyleRef.current = houseArchitectureStyle;
+  const ownedHouseStyleRef = useRef<HouseArchitectureStyle | null>(ownedHouseStyle);
+  ownedHouseStyleRef.current = ownedHouseStyle;
+  const isOnChainHouseStyleLockedRef = useRef<boolean>(isOnChainHouseStyleLocked);
+  isOnChainHouseStyleLockedRef.current = isOnChainHouseStyleLocked;
+  const hasHouseOwnershipRef = useRef<boolean>(false);
   const [isHouseFriendInviteOpen, setIsHouseFriendInviteOpen] = useState<boolean>(false);
   const [houseInviteFriendInput, setHouseInviteFriendInput] = useState<string>('');
   const [houseInviteFeedback, setHouseInviteFeedback] = useState<string | null>(null);
@@ -836,6 +857,7 @@ export default function App() {
     return () => setLocalTxConfirmHandler(null);
   }, []);
   const [hasHouseOwnership, setHasHouseOwnership] = useState<boolean>(false);
+  hasHouseOwnershipRef.current = hasHouseOwnership;
   const [houseEntryScanState, setHouseEntryScanState] = useState<'idle' | 'scanning' | 'verified'>(
     'idle',
   );
@@ -1042,6 +1064,14 @@ export default function App() {
   });
   const [resetTrigger, setResetTrigger] = useState<number>(0);
   const [socialChatText, setSocialChatText] = useState<string>('');
+  const prevNpcChatActiveRef = useRef<boolean>(false);
+  useEffect(() => {
+    const isNpcNow = activeSpecialModal === 'npc_merchant';
+    if (prevNpcChatActiveRef.current !== isNpcNow) {
+      prevNpcChatActiveRef.current = isNpcNow;
+      setSocialChatText('');
+    }
+  }, [activeSpecialModal]);
   const [chatBubbleBgColor, setChatBubbleBgColor] = useState<string>('#ffffff');
   const [chatBubbleTextColor, setChatBubbleTextColor] = useState<string>('#0f172a');
   const [isSocialChatModalOpen, setIsSocialChatModalOpen] = useState<boolean>(false);
@@ -1089,39 +1119,6 @@ export default function App() {
   const [fishingMinigame, setFishingMinigame] = useState<ShorelineMinigameState | null>(null);
   const [isHoldingReel, setIsHoldingReel] = useState<boolean>(false);
   const [lastCaughtFishToast, setLastCaughtFishToast] = useState<CaughtFishItem | null>(null);
-
-  // Fast-Forward Economy Simulation (`09-games` Track: 1.1s per simulated day so judges watch dynamic pricing & bankruptcy live)
-  useEffect(() => {
-    if (!isFastForwardRunning || activeSpecialModal !== 'npc_merchant') return;
-    const timer = window.setInterval(() => {
-      setMarketState((prev) => stepFastForwardEconomyTick(prev, prev.dayCounter));
-    }, 1100);
-    return () => window.clearInterval(timer);
-  }, [isFastForwardRunning, activeSpecialModal, merchantLocation]);
-
-  // When Fast-Forward stops, snap the local simulation back to the shared
-  // merchant row — FF must never leak its simulated treasury/stock (incl.
-  // the forced-broke day) into the state other players trade against.
-  const prevFastForwardRef = useRef(false);
-  useEffect(() => {
-    if (prevFastForwardRef.current && !isFastForwardRunning) {
-      void fetchNpcMerchantsFromSupabase().then((rows) => {
-        if (rows.length === 0) return;
-        const activeRow = rows.find((r) => r.merchant_id === merchantLocation) || rows[0];
-        if (!activeRow) return;
-        setMarketState((prev) => ({
-          ...prev,
-          treasuryCyon: activeRow.cyon_treasury,
-          isShopBroke: activeRow.is_bankrupt,
-          dayCounter: activeRow.simulated_day,
-          lastMarketHeadline: activeRow.last_headline || prev.lastMarketHeadline,
-          stockByItemId: { ...prev.stockByItemId, ...activeRow.stock_by_item },
-          demandByItemId: { ...prev.demandByItemId, ...activeRow.recent_demand_by_item },
-        }));
-      });
-    }
-    prevFastForwardRef.current = isFastForwardRunning;
-  }, [isFastForwardRunning, merchantLocation]);
 
   const activeFishBucketStorageKey = `bb_caught_fish_bucket_v2:${(
     hud.nearWalletId || 'guest'
@@ -1538,6 +1535,8 @@ export default function App() {
   const [worldInitialTeam, setWorldInitialTeam] = useState<'blue' | 'red'>('blue');
   const [worldTransitionCount, setWorldTransitionCount] = useState<number>(0);
   const [isWorldLoading, setIsWorldLoading] = useState<boolean>(false);
+  const [isCafeInteriorLoading, setIsCafeInteriorLoading] = useState<boolean>(false);
+  const cafeLoadingTimeoutRef = useRef<number | null>(null);
   const [loadingTargetMode, setLoadingTargetMode] = useState<WorldMode | null>(null);
   const loadingTimeoutRef = useRef<number | null>(null);
   const loadingCommitTimeoutRef = useRef<number | null>(null);
@@ -1661,6 +1660,45 @@ export default function App() {
   const dispatchBuddyAction = useCallback((actionName: string) => {
     window.dispatchEvent(new CustomEvent('buddy-action', { detail: actionName }));
   }, []);
+
+  const setAndPersistHouseArchitectureStyle = useCallback(
+    (style: HouseArchitectureStyle, accountOverride?: string) => {
+      setHouseArchitectureStyle(style);
+      const acct = (accountOverride || hudRef.current.nearWalletId || playerUid || '')
+        .trim()
+        .toLowerCase();
+      const ownsHouseNow = Boolean(hasHouseOwnershipRef.current || hudRef.current.nearHasGamepassNft);
+      if (!ownsHouseNow || !isOnChainHouseStyleLockedRef.current) {
+        if (ownsHouseNow) {
+          setOwnedHouseStyle(style);
+          if (acct) {
+            dispatchBuddyAction(
+              `nearSyncWalletSession:${acct}:1:${hudRef.current.nearGamepassTokenId || ''}:${style}`,
+            );
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: acct,
+              lulBalance: hudRef.current.gold,
+              cyonBalance,
+              respiteBalance,
+              unlockedSkins: buildProfileUnlockedSkins(characterGender, style),
+            });
+          }
+        }
+        if (acct) {
+          persistHouseStyleLocally(acct, style);
+        }
+      }
+    },
+    [
+      buildProfileUnlockedSkins,
+      characterGender,
+      cyonBalance,
+      dispatchBuddyAction,
+      persistHouseStyleLocally,
+      playerUid,
+      respiteBalance,
+    ],
+  );
 
   // LUL lives in the Arena as gold and can only be adjusted by delta, so a
   // stored profile balance is restored by dispatching the difference once.
@@ -1828,7 +1866,6 @@ export default function App() {
 
   useEffect(() => {
     const onToggleKiosk = () => {
-      if (homeTourRef.current.active) return;
       setIsKioskModalOpen((prev) => {
         const next = !prev;
         if (next) {
@@ -1850,13 +1887,11 @@ export default function App() {
       ).detail;
       const rawLoc = detail?.location ?? detail?.locationId;
       const loc: MerchantLocationId = rawLoc === 'beach_house' ? 'beach_house' : 'lobby_cafe';
-      if (homeTourRef.current.active && loc === 'beach_house') return;
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-      setMerchantLocation(loc);
-      setActiveSpecialModal('npc_merchant');
+      openMerchantInChatSession(loc);
     };
     const onOpenHouseInterior = (ev: Event) => {
       // The permanent Model Estate showcase plot is registered as claimed by a
@@ -1867,6 +1902,7 @@ export default function App() {
         ev as CustomEvent<{
           team?: 'blue' | 'red' | null;
           commanderIdx?: number | null;
+          houseStyle?: HouseArchitectureStyle | null;
         }>
       ).detail;
       const isSampleEntry = Boolean(
@@ -1874,13 +1910,20 @@ export default function App() {
           typeof entryDetail?.commanderIdx === 'number' &&
           isIntactModelEstateBasePlot(entryDetail.team, entryDetail.commanderIdx),
       );
-      if (homeTourRef.current.active) {
-        const tourStep = homeTourRef.current.step;
-        if (isSampleEntry) return;
-        if (tourStep !== 'go_home' && tourStep !== 'decor') return;
-      }
+      const requestedInteriorStyle = parseOptionalHouseArchitectureStyle(entryDetail?.houseStyle);
+      const targetInteriorStyle: HouseArchitectureStyle = isSampleEntry
+        ? 'japanese_pavilion'
+        : requestedInteriorStyle ??
+          ownedHouseStyleRef.current ??
+          houseArchitectureStyleRef.current;
+      lastEnteredHousePlotRef.current = {
+        team: entryDetail?.team ?? null,
+        plotIndex: typeof entryDetail?.commanderIdx === 'number' ? entryDetail.commanderIdx : null,
+        viaStudio: false,
+      };
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setHouseEntryScanState('scanning');
@@ -1889,6 +1932,7 @@ export default function App() {
         setHouseEntryScanState('verified');
         window.setTimeout(() => {
           setHouseEntryScanState('idle');
+          setHouseArchitectureStyle(targetInteriorStyle);
           setIsInsidePrivateHouse(true);
           setIsSampleHouseView(isSampleEntry);
           setActiveSpecialModal('none');
@@ -1896,24 +1940,41 @@ export default function App() {
       }, 700);
     };
     const onExitHouseInterior = () => {
+      lastEnteredHousePlotRef.current = null;
       setIsInsidePrivateHouse(false);
       setIsHouseFriendInviteOpen(false);
       setActiveSpecialModal('none');
+      if (ownedHouseStyleRef.current) {
+        setHouseArchitectureStyle(ownedHouseStyleRef.current);
+      }
     };
     const onEnterGlasshouseCafe = () => {
-      if (homeTourRef.current.active) return;
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setIsPersonalWalletModalOpen(false);
       setIsProfileModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setActiveSpecialModal('none');
       setIsInsidePrivateHouse(false);
       setActiveCafeModal('none');
+      if (cafeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(cafeLoadingTimeoutRef.current);
+      }
+      setIsCafeInteriorLoading(true);
+      cafeLoadingTimeoutRef.current = window.setTimeout(() => {
+        cafeLoadingTimeoutRef.current = null;
+        setIsCafeInteriorLoading(false);
+      }, 4000);
       setIsInsideGlasshouseCafe(true);
     };
     const onExitGlasshouseCafe = () => {
+      if (cafeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(cafeLoadingTimeoutRef.current);
+        cafeLoadingTimeoutRef.current = null;
+      }
+      setIsCafeInteriorLoading(false);
       setIsInsideGlasshouseCafe(false);
       setActiveCafeModal('none');
       setIsNearCafeRotaBoard(false);
@@ -1930,6 +1991,10 @@ export default function App() {
     const onOpenCafeAtmModal = () => {
       setIsCafeRotaMenuExpanded(false);
       setActiveCafeModal('atm');
+    };
+    const onOpenCafeArcadeSlotModal = () => {
+      setIsCafeRotaMenuExpanded(false);
+      setActiveCafeModal('arcade_slot');
     };
     const onOpenCafePrepModal = (e: Event) => {
       const cat = (e as CustomEvent<{ category?: 'pastry' | 'drink' }>).detail?.category;
@@ -1997,7 +2062,6 @@ export default function App() {
     };
     const onOpenTeleportKioskModal = (e: Event) => {
       if (hudRef.current.worldMode === 'warzone') return;
-      if (homeTourRef.current.active && homeTourRef.current.step !== 'go_home') return;
       const customEv = e as CustomEvent<{
         kind:
           | CityTransitStationId
@@ -2038,21 +2102,6 @@ export default function App() {
       }
     };
     const onCityTramRideComplete = (e: Event) => {
-      const rideDetail = (
-        e as CustomEvent<{ destinationStationId?: CityTransitStationId }>
-      ).detail;
-      if (rideDetail?.destinationStationId === 'kai_fish_market') {
-        setHomeTour((prev) => {
-          if (!prev.done || prev.kioskIntroDone) return prev;
-          const next = { ...prev, kioskIntroDone: true };
-          try {
-            window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
-          } catch {
-            // ignore
-          }
-          return next;
-        });
-      }
       const detail = (
         e as CustomEvent<{
           destinationStationId: CityTransitStationId;
@@ -2080,10 +2129,19 @@ export default function App() {
     window.addEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
     window.addEventListener('open-house-interior-ui', onOpenHouseInterior);
     window.addEventListener('exit-house-interior-ui', onExitHouseInterior);
+    const onCafeInteriorReady = () => {
+      if (cafeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(cafeLoadingTimeoutRef.current);
+        cafeLoadingTimeoutRef.current = null;
+      }
+      setIsCafeInteriorLoading(false);
+    };
     window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
     window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
+    window.addEventListener('cafe-interior-ready', onCafeInteriorReady);
     window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
     window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
+    window.addEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
     window.addEventListener('open-cafe-prep-modal', onOpenCafePrepModal);
     window.addEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
     window.addEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
@@ -2105,10 +2163,16 @@ export default function App() {
       window.removeEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
       window.removeEventListener('open-house-interior-ui', onOpenHouseInterior);
       window.removeEventListener('exit-house-interior-ui', onExitHouseInterior);
+      if (cafeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(cafeLoadingTimeoutRef.current);
+        cafeLoadingTimeoutRef.current = null;
+      }
       window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
       window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
+      window.removeEventListener('cafe-interior-ready', onCafeInteriorReady);
       window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
       window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
+      window.removeEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
       window.removeEventListener('open-cafe-prep-modal', onOpenCafePrepModal);
       window.removeEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
       window.removeEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
@@ -2125,543 +2189,25 @@ export default function App() {
       window.removeEventListener('city-tram-ride-progress', onCityTramRideProgress);
       window.removeEventListener('city-tram-ride-complete', onCityTramRideComplete);
     };
-  }, []);
-
-  // FIRST HOME tour: the current step is DERIVED from real state every
-  // render, so fulfilled steps skip themselves and a reload resumes in place.
-  const ownsTourFurniture = ownedMerchantItemIds.some((id) => {
-    const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === id);
-    return item?.category === 'nft_collector_furniture';
-  });
-  const placedTourFurnitureCount = Object.values(placedFurnitureCounts).reduce(
-    (acc, n) => acc + n,
-    0,
-  );
-  const homeTourStep:
-    | 'connect'
-    | 'go_hana'
-    | 'claim'
-    | 'swap'
-    | 'buy_house'
-    | 'buy_furniture'
-    | 'go_home'
-    | 'decor'
-    | 'done' = homeTour.done
-    ? 'done'
-    : !hud.nearWalletId
-      ? 'connect'
-      : !homeTour.metHana && !hanaWelcomeNearClaimed
-        ? 'go_hana'
-        : !hanaWelcomeNearClaimed
-          ? 'claim'
-          : !(respiteBalance >= 100 || hasHouseOwnership)
-            ? 'swap'
-            : !hasHouseOwnership
-              ? 'buy_house'
-              : !ownsTourFurniture
-                ? 'buy_furniture'
-                : placedTourFurnitureCount > 0
-                  ? 'done'
-                  : isInsidePrivateHouse && !isSampleHouseView
-                    ? 'decor'
-                    : 'go_home';
-  const homeTourActive = !homeTour.done && homeTourStep !== 'done';
+  }, [openMerchantInChatSession]);
 
   useEffect(() => {
-    homeTourRef.current = { active: homeTourActive, step: homeTourStep };
-  }, [homeTourActive, homeTourStep]);
+    window.dispatchEvent(
+      new CustomEvent('set-tutorial-waypoint', {
+        detail: { target: tutorialStage === 'go_to_hana' ? 'hana' : 'none' },
+      }),
+    );
+  }, [tutorialStage]);
 
-  // After FIRST HOME: exiting the house drops the player back in front of
-  // Hana (entry position is restored), then a waypoint leads to the transit
-  // kiosk beside her until they open it once (city tour bridge).
-  const postTourKioskGuideActive =
-    homeTour.done &&
-    !homeTour.kioskIntroDone &&
-    !isInsidePrivateHouse &&
-    !isInsideGlasshouseCafe &&
-    Boolean(hud.nearWalletId);
-  // The city-tour bridge ends the moment the player reaches Kai — the tram
-  // arrival is one way (handled by the ride-complete listener), but walking
-  // there or arriving via another station must end it too: talking to Kai
-  // completes the bridge, so the guide can never drag the player back to
-  // Hana after they have already found him.
   useEffect(() => {
-    // A leftover welcome-tour kiosk stage also ends when the player reaches
-    // Kai — the guided Travel step has done its job by then.
     if (
-      tutorialStage === 'go_to_kiosk' &&
+      tutorialStage === 'go_to_hana' &&
       activeSpecialModal === 'npc_merchant' &&
-      merchantLocation === 'beach_house'
+      merchantLocation === 'lobby_cafe'
     ) {
       setTutorialStage('none');
     }
-    if (!postTourKioskGuideActive) return;
-    if (activeSpecialModal !== 'npc_merchant' || merchantLocation !== 'beach_house') return;
-    setHomeTour((prev) => {
-      if (!prev.done || prev.kioskIntroDone) return prev;
-      const next = { ...prev, kioskIntroDone: true };
-      try {
-        window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, [postTourKioskGuideActive, activeSpecialModal, merchantLocation]);
-
-  // Same rule for the bridge's other destination: stepping into the
-  // Glasshouse Cafe also completes the city-tour bridge.
-  useEffect(() => {
-    if (!postTourKioskGuideActive || !isInsideGlasshouseCafe) return;
-    setHomeTour((prev) => {
-      if (!prev.done || prev.kioskIntroDone) return prev;
-      const next = { ...prev, kioskIntroDone: true };
-      try {
-        window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, [postTourKioskGuideActive, isInsideGlasshouseCafe]);
-
-  // Connect step: spotlight the WALLET button, dim PROFILE/BAG beside it.
-  const tourConnectAttention = homeTourActive && homeTourStep === 'connect';
-
-  useEffect(() => {
-    if (homeTourStep === 'done' && !homeTour.done) {
-      persistHomeTour({ ...homeTour, done: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [homeTourStep, homeTour.done]);
-
-  useEffect(() => {
-    if (
-      activeSpecialModal === 'npc_merchant' &&
-      merchantLocation === 'lobby_cafe' &&
-      !homeTour.metHana
-    ) {
-      persistHomeTour({ ...homeTour, metHana: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSpecialModal, merchantLocation, homeTour.metHana]);
-
-  // The tour drives the waypoint while it is active (bold chevron path):
-  // Hana for every Hana step, the player's own residence kiosk for go_home.
-  useEffect(() => {
-    if (!homeTourActive) return;
-    if (
-      homeTourStep === 'go_hana' ||
-      homeTourStep === 'claim' ||
-      homeTourStep === 'swap' ||
-      homeTourStep === 'buy_house' ||
-      homeTourStep === 'buy_furniture'
-    ) {
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'hana' } }),
-      );
-    } else if (homeTourStep === 'go_home') {
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', {
-          detail: { target: 'hana', color: '#38bdf8' },
-        }),
-      );
-    } else {
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
-      );
-    }
-  }, [homeTourActive, homeTourStep, hud.playerTeam]);
-
-  useEffect(() => {
-    if (!postTourKioskGuideActive) return;
-    const fire = () =>
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', {
-          detail: { target: 'coord', x: -86.85, z: -21.85, color: '#38bdf8' },
-        }),
-      );
-    fire();
-    const timer = window.setInterval(fire, 5000);
-    return () => {
-      window.clearInterval(timer);
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
-      );
-    };
-  }, [postTourKioskGuideActive]);
-
-  const tutorialFurnitureTarget = resolveTutorialFurnitureTarget(
-    marketState,
-    respiteBalance,
-    RESPITE_NEP141_METADATA.rateRespitePerNear,
-  );
-  const tutorialFurnitureReady =
-    !tutorialFurnitureTarget || respiteBalance >= tutorialFurnitureTarget.buyPriceRespite;
-
-  const homeTourGuide: {
-    step: string;
-    tab: 'sesi_chat' | 'transaksi' | 'katalog';
-    katalogTab?: 'house' | 'furniture';
-    prefillSwapAmount?: string;
-    allowExchangeTab?: boolean;
-    line: string;
-    walletLabel: string;
-  } | null =
-    homeTourActive && merchantLocation === 'lobby_cafe'
-      ? homeTourStep === 'connect'
-        ? {
-            step: homeTourStep,
-            tab: 'sesi_chat',
-            line: "Let's get you connected first. A wallet lets you truly own your home.",
-            walletLabel: '',
-          }
-        : homeTourStep === 'claim'
-          ? {
-              step: homeTourStep,
-              tab: 'sesi_chat',
-              line: 'Welcome! Claim your starter pack: 0.30 NEAR + 100 LUL + 20 CYON.',
-              walletLabel: hud.nearWalletId || '',
-            }
-          : homeTourStep === 'swap'
-            ? {
-                step: homeTourStep,
-                tab: 'transaksi',
-                prefillSwapAmount: '0.25',
-                line: 'Swap 0.25 NEAR into 100 RESPITE. That is your house fund.',
-                walletLabel: hud.nearWalletId || '',
-              }
-            : homeTourStep === 'buy_house'
-              ? {
-                  step: homeTourStep,
-                  tab: 'katalog',
-                  katalogTab: 'house',
-                  line: "Let's buy your first home!",
-                  walletLabel: hud.nearWalletId || '',
-                }
-              : homeTourStep === 'buy_furniture'
-                ? tutorialFurnitureReady
-                  ? {
-                      step: homeTourStep,
-                      tab: 'katalog',
-                      katalogTab: 'furniture',
-                      allowExchangeTab: true,
-                      line:
-                        tutorialFurnitureTarget && tutorialFurnitureTarget.item.id !== 'tatami_tea_table'
-                          ? `Pick a piece of furniture for your new home. ${tutorialFurnitureTarget.item.name} is ${tutorialFurnitureTarget.buyPriceRespite} RESPITE right now.`
-                          : 'Pick a piece of furniture for your new home. The Chabudai tea table is a lovely start.',
-                      walletLabel: hud.nearWalletId || '',
-                    }
-                  : {
-                      step: homeTourStep,
-                      tab: 'transaksi',
-                      prefillSwapAmount: tutorialFurnitureTarget.recommendedTopUpNear.toFixed(2),
-                      line: `Swap ${tutorialFurnitureTarget.recommendedTopUpNear.toFixed(2)} NEAR into ${tutorialFurnitureTarget.recommendedTopUpRespite} RESPITE first — ${tutorialFurnitureTarget.item.name} currently costs ${tutorialFurnitureTarget.buyPriceRespite} RESPITE.`,
-                      walletLabel: hud.nearWalletId || '',
-                    }
-                : homeTourStep === 'go_home'
-                  ? {
-                      step: homeTourStep,
-                      tab: 'katalog',
-                      katalogTab: 'house',
-                      line: 'Your home is ready. Tap GO TO YOUR HOUSE to step right inside!',
-                      walletLabel: hud.nearWalletId || '',
-                    }
-                  : null
-      : null;
-
-  const homeTourObjectiveText: Record<string, string> = {
-    connect: 'Connect your wallet or Google account. Owning a home needs an account.',
-    go_hana: 'Talk to Hana at Central Plaza. She will set you up with a home.',
-    claim: "Open Hana's chat and claim your starter pack.",
-    swap: "In Hana's EXCHANGE tab, swap 0.25 NEAR into 100 RESPITE.",
-    buy_house: "In Hana's CATALOG, buy your first home deed.",
-    buy_furniture:
-      tutorialFurnitureReady || !tutorialFurnitureTarget
-        ? "In Hana's CATALOG, buy one piece of furniture."
-        : `In Hana's EXCHANGE tab, swap ${tutorialFurnitureTarget.recommendedTopUpNear.toFixed(2)} NEAR into ${tutorialFurnitureTarget.recommendedTopUpRespite} RESPITE (${tutorialFurnitureTarget.item.name} costs ${tutorialFurnitureTarget.buyPriceRespite} RESPITE).`,
-    go_home: "Tap GO TO YOUR HOUSE in Hana's CATALOG to step right inside.",
-    decor: 'Place your furniture inside, then press CONFIRM MOVE.',
-  };
-  const homeTourStepList = [
-    'connect',
-    'go_hana',
-    'claim',
-    'swap',
-    'buy_house',
-    'buy_furniture',
-    'go_home',
-    'decor',
-  ].filter((stepId) => stepId !== 'connect' || !hud.nearWalletId);
-  const homeTourStepNumber = Math.max(1, homeTourStepList.indexOf(homeTourStep) + 1);
-
-  useEffect(() => {
-    if (homeTourRef.current.active || postTourKioskGuideActive) return;
-    const target: 'none' | 'hana' | 'kiosk' =
-      tutorialStage === 'go_to_hana'
-        ? 'hana'
-        : tutorialStage === 'go_to_kiosk'
-          ? 'kiosk'
-          : 'none';
-    window.dispatchEvent(
-      new CustomEvent('set-tutorial-waypoint', {
-        detail: { target },
-      }),
-    );
-  }, [tutorialStage, postTourKioskGuideActive]);
-
-  // Floating pinpoint over the nearest Teleport Kiosk while a player who owns
-  // no property has not met Hana's property pitch yet.
-  useEffect(() => {
-    const active =
-      !homeTourActive &&
-      !(hasHouseOwnership || hud.nearHasGamepassNft) &&
-      !propertyPitchSeen &&
-      tutorialStage === 'none' &&
-      activeSpecialModal === 'none' &&
-      activeTeleportKioskModal === 'none' &&
-      !isInsidePrivateHouse &&
-      hud.worldMode !== 'warzone';
-    window.dispatchEvent(
-      new CustomEvent('set-property-pinpoint', {
-        detail: { active },
-      }),
-    );
-  }, [
-    homeTourActive,
-    hasHouseOwnership,
-    hud.nearHasGamepassNft,
-    propertyPitchSeen,
-    tutorialStage,
-    activeSpecialModal,
-    activeTeleportKioskModal,
-    isInsidePrivateHouse,
-    hud.worldMode,
-  ]);
-
-  // Kai's local fishing tutorial (Beachfront Harbor):
-  // meet -> equip -> to_water -> catch -> sell -> done. Persisted per device.
-  type KaiTutorialStage =
-    | 'off'
-    | 'meet'
-    | 'equip'
-    | 'to_water'
-    | 'catch'
-    | 'mint'
-    | 'sell'
-    | 'done';
-  const [kaiTutorialStage, setKaiTutorialStage] = useState<KaiTutorialStage>(() => {
-    try {
-      const raw = window.localStorage.getItem('bb_kai_tutorial_v1');
-      if (raw && (JSON.parse(raw) as { stage?: string }).stage === 'done') return 'done';
-    } catch {
-      // ignore
-    }
-    return 'off';
-  });
-  const [kaiCardDismissed, setKaiCardDismissed] = useState<boolean>(() => {
-    try {
-      const raw = window.localStorage.getItem('bb_kai_tutorial_v1');
-      if (raw) return Boolean((JSON.parse(raw) as { cardDismissed?: boolean }).cardDismissed);
-    } catch {
-      // ignore
-    }
-    return false;
-  });
-  const kaiTutorialStageRef = useRef<KaiTutorialStage>(kaiTutorialStage);
-
-  // Reload tutorial state whenever the active wallet changes: the incoming
-  // wallet's own progress replaces whatever the previous wallet had.
-  useEffect(() => {
-    const scope = hud.nearWalletId ?? 'guest';
-    if (tourScopeRef.current === scope) return;
-    tourScopeRef.current = scope;
-    const home = readScopedTourJson('bb_home_tour_v1');
-    setHomeTour({
-      done: Boolean(home?.done),
-      metHana: Boolean(home?.metHana),
-      kioskIntroDone: Boolean(home?.kioskIntroDone),
-      menusTourDone: Boolean(home?.menusTourDone),
-      txs:
-        (home?.txs as Record<string, { txHash: string; explorerUrl: string }>) ?? {},
-    });
-    const kai = readScopedTourJson('bb_kai_tutorial_v1');
-    const stage: KaiTutorialStage = kai?.stage === 'done' ? 'done' : 'off';
-    kaiTutorialStageRef.current = stage;
-    setKaiTutorialStage(stage);
-    setKaiCardDismissed(Boolean(kai?.cardDismissed));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hud.nearWalletId]);
-  const kaiTutorialAssistRef = useRef<boolean>(false);
-  const advanceKaiTutorial = (next: KaiTutorialStage, cardDismissed?: boolean) => {
-    kaiTutorialStageRef.current = next;
-    setKaiTutorialStage(next);
-    if (cardDismissed !== undefined) setKaiCardDismissed(cardDismissed);
-    try {
-      window.localStorage.setItem(
-        tourKey('bb_kai_tutorial_v1'),
-        JSON.stringify({
-          stage: next,
-          cardDismissed: cardDismissed ?? kaiCardDismissed,
-        }),
-      );
-    } catch {
-      // ignore
-    }
-  };
-
-  // Kai's exclamation + pinpoint in the 3D world follow the tutorial stage:
-  // the pin floats over Kai (meet/sell) or over the cast point (to_water).
-  useEffect(() => {
-    const pin =
-      kaiTutorialStage === 'meet' || kaiTutorialStage === 'sell'
-        ? { x: 85.8, z: 60 }
-        : kaiTutorialStage === 'to_water'
-          ? { x: 103, z: 60 }
-          : null;
-    window.dispatchEvent(
-      new CustomEvent('set-kai-tutorial', {
-        detail: {
-          exclamation: ['meet', 'equip', 'to_water', 'catch', 'sell'].includes(
-            kaiTutorialStage,
-          ),
-          pin,
-        },
-      }),
-    );
-  }, [kaiTutorialStage]);
-
-  // After the Kai tutorial: Hana still owes the player the other kiosk
-  // menus. Until that menus tour is done, an objective card + waypoint lead
-  // to the nearest kiosk (Kai's own, right at the Fish Market).
-  const menusTourGuideActive =
-    kaiTutorialStage === 'done' &&
-    homeTour.done &&
-    !homeTour.menusTourDone &&
-    !isInsidePrivateHouse &&
-    !isInsideGlasshouseCafe &&
-    Boolean(hud.nearWalletId);
-
-  useEffect(() => {
-    if (!menusTourGuideActive) return;
-    const fire = () =>
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', {
-          detail: { target: 'coord', x: 84.85, z: 65.65, color: '#38bdf8' },
-        }),
-      );
-    fire();
-    const timer = window.setInterval(fire, 5000);
-    return () => {
-      window.clearInterval(timer);
-      window.dispatchEvent(
-        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
-      );
-    };
-  }, [menusTourGuideActive]);
-
-  // City Highlights: Hana's discovery checklist, handed over when the kiosk
-  // tour ends. Six stops that between them touch every system in the city;
-  // each completes from a real in-game event, the card can be dismissed
-  // forever, and nothing is ever gated behind it.
-  type CityHighlightKey = 'fish' | 'haggle' | 'nft' | 'house' | 'cafe' | 'warzone';
-  interface CityHighlightsState {
-    active: boolean;
-    dismissed: boolean;
-    done: Record<CityHighlightKey, boolean>;
-  }
-  const CITY_HIGHLIGHTS_FRESH: CityHighlightsState = {
-    active: false,
-    dismissed: false,
-    done: { fish: false, haggle: false, nft: false, house: false, cafe: false, warzone: false },
-  };
-  // City Highlights is hidden for now (rifallah, 14 Nov): the forced First
-  // Home tour replaces it as the new-player guide. State, persistence and
-  // markCityHighlight calls stay intact - flip this constant to bring it back.
-  const CITY_HIGHLIGHTS_ENABLED = false;
-  const [cityHighlights, setCityHighlights] = useState<CityHighlightsState>(() => {
-    try {
-      const raw = window.localStorage.getItem('bb_city_highlights_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<CityHighlightsState>;
-        return {
-          active: Boolean(parsed.active),
-          dismissed: Boolean(parsed.dismissed),
-          done: { ...CITY_HIGHLIGHTS_FRESH.done, ...(parsed.done ?? {}) },
-        };
-      }
-      // Players who already finished the tour before this card existed get
-      // it right away — the checklist is discovery help, not a reward gate.
-      if (window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
-        return { ...CITY_HIGHLIGHTS_FRESH, active: true };
-      }
-    } catch {
-      // ignore
-    }
-    return CITY_HIGHLIGHTS_FRESH;
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('bb_city_highlights_v1', JSON.stringify(cityHighlights));
-    } catch {
-      // ignore
-    }
-  }, [cityHighlights]);
-  const markCityHighlight = useCallback((key: CityHighlightKey) => {
-    setCityHighlights((prev) =>
-      prev.done[key] ? prev : { ...prev, done: { ...prev.done, [key]: true } },
-    );
-  }, []);
-  useEffect(() => {
-    if (caughtFishBucket.length > 0) markCityHighlight('fish');
-  }, [caughtFishBucket.length, markCityHighlight]);
-  useEffect(() => {
-    if (hasHouseOwnership) markCityHighlight('house');
-  }, [hasHouseOwnership, markCityHighlight]);
-  useEffect(() => {
-    if (hud.worldMode === 'warzone') markCityHighlight('warzone');
-  }, [hud.worldMode, markCityHighlight]);
-  const handleHighlightGo = useCallback(
-    (key: CityHighlightKey) => {
-      soundEngine.playUiClick();
-      if (key === 'fish') {
-        if (kaiTutorialStage === 'done') {
-          window.dispatchEvent(
-            new CustomEvent('set-kai-tutorial', {
-              detail: { exclamation: true, pin: { x: 85.8, z: 60 } },
-            }),
-          );
-        }
-        return;
-      }
-      if (key === 'haggle' || key === 'nft') {
-        window.dispatchEvent(
-          new CustomEvent('open-npc-merchant-ui', { detail: { location: 'beach_house' } }),
-        );
-        return;
-      }
-      if (key === 'house') {
-        if (hasHouseOwnership) {
-          window.dispatchEvent(
-            new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: 'central_plaza' } }),
-          );
-        } else {
-          window.dispatchEvent(
-            new CustomEvent('open-npc-merchant-ui', { detail: { location: 'lobby_cafe' } }),
-          );
-        }
-        return;
-      }
-      if (key === 'cafe') {
-        window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
-        return;
-      }
-      window.dispatchEvent(
-        new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: 'central_plaza' } }),
-      );
-    },
-    [kaiTutorialStage, hasHouseOwnership],
-  );
+  }, [tutorialStage, activeSpecialModal, merchantLocation]);
 
   // Kai phone contact: Kai is reachable through the player's phone (social
   // modal), so the chat-haggling feature can be discovered without walking to
@@ -2693,11 +2239,11 @@ export default function App() {
     setKaiIncomingCall(false);
     setIsKioskModalOpen(false);
     setIsSocialChatModalOpen(false);
+    setIsDailyMissionsModalOpen(false);
     setActiveTeleportKioskModal('none');
     window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-    setMerchantLocation('beach_house');
-    setActiveSpecialModal('npc_merchant');
-  }, []);
+    openMerchantInChatSession('beach_house');
+  }, [openMerchantInChatSession]);
 
   useEffect(() => {
     if (onboardingStep !== 'subwallet_naming') return;
@@ -2766,6 +2312,100 @@ export default function App() {
       return res.progress.totalXp;
     });
   }, []);
+
+  const saveDailyMissions = useCallback((nextState: DailyMissionsState) => {
+    dailyMissionsStateRef.current = nextState;
+    setDailyMissionsState(nextState);
+    try {
+      window.localStorage.setItem(
+        getDailyMissionsStorageKey(dailyMissionsAccountRef.current),
+        JSON.stringify(nextState),
+      );
+    } catch {
+      // ignore storage unavailability
+    }
+  }, []);
+
+  const completeDailyMission = useCallback(
+    (missionId: DailyMissionId) => {
+      const todayKey = getLocalDailyDateKey();
+      const res = recordDailyMissionProgress(
+        dailyMissionsStateRef.current,
+        missionId,
+        1,
+        todayKey,
+      );
+      if (!res.changed) return;
+      saveDailyMissions(res.nextState);
+      if (res.newlyCompleted) {
+        soundEngine.playPickup();
+        dispatchBuddyAction(`socialTalk:Daily Mission Ready: ${res.definition.title}!`);
+      }
+    },
+    [dispatchBuddyAction, saveDailyMissions],
+  );
+
+  const handleClaimDailyMission = useCallback(
+    (missionId: DailyMissionId) => {
+      const todayKey = getLocalDailyDateKey();
+      const res = claimDailyMissionReward(dailyMissionsStateRef.current, missionId, todayKey);
+      if (!res.claimed) return;
+      soundEngine.playPowerCore();
+      saveDailyMissions(res.nextState);
+      dispatchBuddyAction(`adjustPlayerLul:${res.rewardLul}`);
+      grantPlayerXp(res.rewardXp, `${res.definition.title} (+${res.rewardLul} LUL)`);
+      dispatchBuddyAction(
+        `socialTalk:Claimed ${res.definition.title}! +${res.rewardLul} LUL & +${res.rewardXp} XP`,
+      );
+    },
+    [dispatchBuddyAction, grantPlayerXp, saveDailyMissions],
+  );
+
+  const handleClaimDailyAllClearBonus = useCallback(() => {
+    const todayKey = getLocalDailyDateKey();
+    const res = claimDailyAllClearBonus(dailyMissionsStateRef.current, todayKey);
+    if (!res.claimed) return;
+    soundEngine.playPowerCore();
+    saveDailyMissions(res.nextState);
+    dispatchBuddyAction(`adjustPlayerLul:${res.rewardLul}`);
+    grantPlayerXp(res.rewardXp, `ALL-CLEAR DAILY BONUS (+${res.rewardLul} LUL)`);
+    dispatchBuddyAction(
+      `socialTalk:Claimed Daily All-Clear Bonus! +${res.rewardLul} LUL & +${res.rewardXp} XP`,
+    );
+  }, [dispatchBuddyAction, grantPlayerXp, saveDailyMissions]);
+
+  const prevCafeOrdersServedRef = useRef<number>(cafeShiftState.totalOrdersServedEver);
+  useEffect(() => {
+    if (cafeShiftState.totalOrdersServedEver > prevCafeOrdersServedRef.current) {
+      completeDailyMission('work_cafe');
+    }
+    prevCafeOrdersServedRef.current = cafeShiftState.totalOrdersServedEver;
+  }, [cafeShiftState.totalOrdersServedEver, completeDailyMission]);
+
+  useEffect(() => {
+    if (!isInsidePrivateHouse || isSampleHouseView) return;
+    if (!hud.nearClaimedTeam || hud.nearClaimedPlotIndex == null) return;
+    const entered = lastEnteredHousePlotRef.current;
+    const matchesClaimedPlot =
+      !entered ||
+      entered.viaStudio ||
+      (entered.team === hud.nearClaimedTeam && entered.plotIndex === hud.nearClaimedPlotIndex);
+    if (matchesClaimedPlot) {
+      completeDailyMission('visit_claimed_house');
+    }
+  }, [
+    isInsidePrivateHouse,
+    isSampleHouseView,
+    hud.nearClaimedTeam,
+    hud.nearClaimedPlotIndex,
+    completeDailyMission,
+  ]);
+
+  useEffect(() => {
+    if (hud.worldMode === 'warzone') {
+      setIsDailyMissionsModalOpen(false);
+    }
+  }, [hud.worldMode]);
 
   const handleStartCafeWorkShift = useCallback(() => {
     soundEngine.playUiConfirm();
@@ -2918,7 +2558,6 @@ export default function App() {
           ? `Shift complete! +${res.xpGained} XP!`
           : `Served ${res.servedItem.name}!`,
       );
-      if (res.shiftCompleted) markCityHighlight('cafe');
       return res.nextShiftState;
     });
   }, [dispatchBuddyAction, grantPlayerXp]);
@@ -3016,6 +2655,55 @@ export default function App() {
     [marketState, cyonBalance, merchantLocation, playerUid, respiteBalance, dispatchBuddyAction],
   );
 
+  const handleArcadeSlotDebitStake = useCallback(
+    (betLul: number): { ok: boolean; message: string } => {
+      const safeBet = Math.max(0, Math.floor(betLul));
+      if (safeBet < 2 || hudRef.current.gold < safeBet) {
+        return { ok: false, message: `Need ${safeBet} LUL to spin.` };
+      }
+      const nextLul = Math.max(0, hudRef.current.gold - safeBet);
+      dispatchBuddyAction(`adjustPlayerLul:${-safeBet}`);
+      setHud((prev) => ({ ...prev, gold: nextLul }));
+      const account = hudRef.current.nearWalletId || '';
+      if (account) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: account,
+          lulBalance: nextLul,
+          cyonBalance,
+          respiteBalance,
+        });
+      }
+      return { ok: true, message: `Staked ${safeBet} LUL` };
+    },
+    [dispatchBuddyAction, cyonBalance, respiteBalance],
+  );
+
+  const handleArcadeSlotSettleSpin = useCallback(
+    (evaluation: ArcadeSlotEvaluation) => {
+      if (evaluation.payoutLul > 0) {
+        const nextLul = hudRef.current.gold + evaluation.payoutLul;
+        dispatchBuddyAction(`adjustPlayerLul:${evaluation.payoutLul}`);
+        setHud((prev) => ({ ...prev, gold: nextLul }));
+        const account = hudRef.current.nearWalletId || '';
+        if (account) {
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: account,
+            lulBalance: nextLul,
+            cyonBalance,
+            respiteBalance,
+          });
+        }
+        if (evaluation.outcomeKind === 'jackpot' || evaluation.outcomeKind === 'triple') {
+          dispatchBuddyAction(`socialTalk:${evaluation.headline}!`);
+        }
+      }
+      if (evaluation.xpGained > 0) {
+        grantPlayerXp(evaluation.xpGained, 'ARCADE SLOTS');
+      }
+    },
+    [dispatchBuddyAction, grantPlayerXp, cyonBalance, respiteBalance],
+  );
+
   useEffect(() => {
     const onAppCafeAction = (ev: Event) => {
       const act = (ev as CustomEvent<string>).detail;
@@ -3063,6 +2751,7 @@ export default function App() {
       activeCafeOrderAccent: cafeShiftState.activeOrder?.item.accentHex ?? '#b8ff3c',
       activeCafeOrderCategory: cafeShiftState.activeOrder?.item.category ?? null,
       houseArchitectureStyle,
+      ownedHouseStyle,
       placement: interiorPlacement,
       onboardingCompleted: onboardingStep === 'completed',
       characterGender,
@@ -3093,6 +2782,7 @@ export default function App() {
     cafeShiftState.isWorking,
     cafeShiftState.activeOrder,
     houseArchitectureStyle,
+    ownedHouseStyle,
     merchantLocation,
     activeHouseThemeId,
     interiorPlacement,
@@ -3197,14 +2887,21 @@ export default function App() {
       const nep245Ids = MERCHANT_CATALOG_ITEMS.filter((i) => i.tokenId.startsWith('nep245:')).map(
         (i) => i.tokenId,
       );
-      const [accountView, liveRespiteStr, hanaStatus, liveEstate, nep245Counts] =
-        await Promise.all([
-          fetchNearAccountView(targetAccount, 'optimistic'),
-          fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, targetAccount, 'optimistic'),
-          fetchHanaTreasuryStatus(targetAccount, 'optimistic'),
-          fetchBuddiesMarketEstate(targetAccount, 'optimistic').catch(() => null),
-          fetchOwnedNep245CatalogCounts(targetAccount, nep245Ids, 'optimistic').catch(() => null),
-        ]);
+      const [
+        accountView,
+        liveRespiteStr,
+        hanaStatus,
+        liveEstate,
+        nep245Counts,
+        liveGamepassVerify,
+      ] = await Promise.all([
+        fetchNearAccountView(targetAccount, 'optimistic'),
+        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, targetAccount, 'optimistic'),
+        fetchHanaTreasuryStatus(targetAccount, 'optimistic'),
+        fetchBuddiesMarketEstate(targetAccount, 'optimistic').catch(() => null),
+        fetchOwnedNep245CatalogCounts(targetAccount, nep245Ids, 'optimistic').catch(() => null),
+        verifyNep171GamepassOwnership(targetAccount).catch(() => null),
+      ]);
 
       const floor = pendingPostClaimFloorRef.current;
       const floorActive =
@@ -3244,9 +2941,20 @@ export default function App() {
 
       const activeWalletNow = (hudRef.current.nearWalletId || '').trim().toLowerCase();
       if (activeWalletNow && activeWalletNow === targetAccount) {
-        const deedTokenId = liveEstate?.house_deed?.deed_token_id || null;
-        if (liveEstate?.owns_house || deedTokenId) {
+        const deedTokenId =
+          liveGamepassVerify?.token?.tokenId || liveEstate?.house_deed?.deed_token_id || null;
+        if (liveGamepassVerify?.verified || liveEstate?.owns_house || deedTokenId) {
           setHasHouseOwnership(true);
+          const { resolvedStyle, isOnChainLocked } = resolveOwnedHouseStyle({
+            onChainHouseStyle: liveGamepassVerify?.houseStyle ?? null,
+            localSavedStyle: ownedHouseStyleRef.current ?? readHouseStyleLocally(targetAccount),
+          });
+          setOwnedHouseStyle(resolvedStyle);
+          setIsOnChainHouseStyleLocked(isOnChainLocked);
+          if (isOnChainLocked || !ownedHouseStyleRef.current) {
+            setHouseArchitectureStyle(resolvedStyle);
+          }
+          persistHouseStyleLocally(targetAccount, resolvedStyle);
           if (deedTokenId) {
             setHud((prev) =>
               prev.nearHasGamepassNft && prev.nearGamepassTokenId === deedTokenId
@@ -3254,6 +2962,9 @@ export default function App() {
                 : { ...prev, nearHasGamepassNft: true, nearGamepassTokenId: deedTokenId },
             );
           }
+          dispatchBuddyAction(
+            `nearSyncWalletSession:${targetAccount}:1:${deedTokenId || ''}:${resolvedStyle}`,
+          );
         }
         if (nep245Counts) {
           setOwnedMerchantItemIds((prev) => {
@@ -3265,7 +2976,7 @@ export default function App() {
         }
       }
     },
-    [playerUid],
+    [dispatchBuddyAction, persistHouseStyleLocally, playerUid, readHouseStyleLocally],
   );
 
   useEffect(() => {
@@ -3439,6 +3150,7 @@ export default function App() {
         hanaStatus,
         remoteProfile,
         onChainNep245Counts,
+        loginMarketTxs,
       ] = await Promise.all([
         fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet, 'optimistic'),
         fetchBuddiesMarketEstate(normalizedWallet, 'optimistic'),
@@ -3453,6 +3165,7 @@ export default function App() {
         fetchOwnedNep245CatalogCounts(normalizedWallet, nep245TokenIds, 'optimistic').catch(
           () => null,
         ),
+        fetchMarketTransactionsFromSupabase(normalizedWallet, 30).catch(() => []),
       ]);
       setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
       const hasAuthoritativeOnChainBalance =
@@ -3523,23 +3236,20 @@ export default function App() {
       setOnboardingAuthMode('wallet');
       setHasHouseOwnership(ownsHouseVerified);
 
-      let restoredHouseStyle: 'plaza_manor' | 'japanese_pavilion' = 'plaza_manor';
-      if (typeof window !== 'undefined') {
-        try {
-          const savedStyle = window.localStorage.getItem(
-            `bb_house_arch_style_v1:${normalizedWallet}`,
-          );
-          if (savedStyle === 'japanese_pavilion' || savedStyle === 'plaza_manor') {
-            restoredHouseStyle = savedStyle;
-          }
-        } catch {
-          // ignore
-        }
-      }
+      const { resolvedStyle: restoredHouseStyle, isOnChainLocked: isHouseStyleOnChainLocked } =
+        resolveOwnedHouseStyle({
+          onChainHouseStyle: gamepassVerify.houseStyle,
+          unlockedSkins: remoteProfile?.unlocked_skins,
+          marketTransactions: loginMarketTxs,
+          localSavedStyle: readHouseStyleLocally(normalizedWallet),
+        });
+      persistHouseStyleLocally(normalizedWallet, restoredHouseStyle);
       setHouseArchitectureStyle(restoredHouseStyle);
+      setOwnedHouseStyle(ownsHouseVerified ? restoredHouseStyle : null);
+      setIsOnChainHouseStyleLocked(Boolean(ownsHouseVerified && isHouseStyleOnChainLocked));
 
       dispatchBuddyAction(
-        `nearSyncWalletSession:${normalizedWallet}:${ownsHouseVerified ? '1' : '0'}:${verifiedTokenId || ''}`,
+        `nearSyncWalletSession:${normalizedWallet}:${ownsHouseVerified ? '1' : '0'}:${verifiedTokenId || ''}:${ownsHouseVerified ? restoredHouseStyle : ''}`,
       );
       dispatchBuddyAction(`setCharacterGender:${finalGender}`);
       dispatchBuddyAction(`setPlayerDisplayName:${finalName}`);
@@ -3559,14 +3269,24 @@ export default function App() {
         setSupabaseConnected(true);
         setCyonBalance(remoteProfile.cyon_balance);
         restoreLulFromProfile(remoteProfile.lul_balance);
+        const expectedHouseSkinTag = ownsHouseVerified ? `house_style:${restoredHouseStyle}` : null;
+        const needsHouseSkinSync = Boolean(
+          expectedHouseSkinTag &&
+            (!Array.isArray(remoteProfile.unlocked_skins) ||
+              !remoteProfile.unlocked_skins.includes(expectedHouseSkinTag)),
+        );
         if (!hasAuthoritativeOnChainBalance) {
           setRespiteBalance(remoteProfile.respite_balance);
-        } else if (remoteProfile.respite_balance !== onChainRespite) {
+        }
+        if ((hasAuthoritativeOnChainBalance && remoteProfile.respite_balance !== onChainRespite) || needsHouseSkinSync) {
           void syncPlayerBalancesToSupabase({
             nearAccountId: normalizedWallet,
             lulBalance: remoteProfile.lul_balance,
             cyonBalance: remoteProfile.cyon_balance,
-            respiteBalance: onChainRespite,
+            respiteBalance: hasAuthoritativeOnChainBalance ? onChainRespite : remoteProfile.respite_balance,
+            unlockedSkins: needsHouseSkinSync
+              ? buildProfileUnlockedSkins(finalGender, restoredHouseStyle, remoteProfile.unlocked_skins)
+              : undefined,
           });
         }
         setOwnedMerchantItemIds(reconciledOwnedIds);
@@ -3576,15 +3296,6 @@ export default function App() {
 
       if (entryDecision.isReturningUser) {
         persistWalletProfileLocally(normalizedWallet, finalName, finalGender, resolvedEmail);
-        // First entry on this device gets Hana's guided intro, once.
-        try {
-          if (!window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
-            window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
-            setTutorialStage('welcome_modal');
-          }
-        } catch {
-          // ignore
-        }
       }
 
       setIsNearWalletSelectorOpen(false);
@@ -3614,8 +3325,11 @@ export default function App() {
     },
     [
       beginPlazaFlyToOnboarding,
+      buildProfileUnlockedSkins,
       dispatchBuddyAction,
+      persistHouseStyleLocally,
       persistWalletProfileLocally,
+      readHouseStyleLocally,
       refreshOnChainBalances,
       walletNetworkChoice,
     ],
@@ -3949,11 +3663,12 @@ export default function App() {
           lulBalance: hudRef.current.gold,
           cyonBalance,
           respiteBalance,
-          unlockedSkins: ['default', `gender:${characterGender}`],
+          unlockedSkins: buildProfileUnlockedSkins(characterGender, ownedHouseStyleRef.current),
         });
       }
     },
     [
+      buildProfileUnlockedSkins,
       characterGender,
       cyonBalance,
       dispatchBuddyAction,
@@ -3962,6 +3677,151 @@ export default function App() {
       playerDisplayName,
       playerUid,
       respiteBalance,
+    ],
+  );
+
+  const handleProvisionSubWalletAndShowWelcome = useCallback(
+    async (options?: { autoFromDisplayName?: boolean; displayNameOverride?: string }) => {
+      soundEngine.playUiClick();
+      setWalletConnectError(null);
+      const isAutoProvision = Boolean(options?.autoFromDisplayName);
+      const cleanCitizenName =
+        (options?.displayNameOverride ?? playerDisplayName).trim() ||
+        (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
+      const activeEmail = connectedGoogleEmail.trim().toLowerCase();
+
+      let cleanHandle = subWalletHandleDraft
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '')
+        .slice(0, 32);
+
+      if (!isAutoProvision && cleanHandle.length < 2) {
+        setWalletConnectError('Player ID must be at least 2 characters.');
+        return;
+      }
+
+      if (isAutoProvision) {
+        setSubWalletHandleDraft('');
+      }
+      setOnboardingStep('provisioning_subwallet');
+      setOnboardingLoadingProgress(22);
+      setSubWalletProvisionStageLabel('Creating your player account...');
+
+      const stageTimer1 = window.setTimeout(() => {
+        setOnboardingLoadingProgress(56);
+        setSubWalletProvisionStageLabel(
+          isAutoProvision || !cleanHandle
+            ? 'Activating your player account...'
+            : `Activating ${cleanHandle}.${NEAR_CONFIG.masterAccountId}...`,
+        );
+      }, 380);
+
+      const provisioned = isAutoProvision
+        ? await provisionUniqueCitizenSubAccount({
+            displayName: cleanCitizenName,
+            email: activeEmail || undefined,
+          })
+        : await spawnSubAccountOnChainViaMaster({
+            handle: cleanHandle,
+            email: activeEmail || undefined,
+            strictUniqueHandle: true,
+          });
+      window.clearTimeout(stageTimer1);
+
+      if (!provisioned.ok || !provisioned.subAccountId) {
+        soundEngine.playHit();
+        setOnboardingStep(isAutoProvision ? 'guest_character_select' : 'subwallet_naming');
+        setWalletConnectError(
+          provisioned.error ||
+            'Could not finish setting up your account. Please try again.',
+        );
+        return;
+      }
+
+      const walletId = provisioned.subAccountId.toLowerCase();
+      cleanHandle = walletId.split('.')[0] || cleanHandle;
+      setSubWalletHandleDraft(cleanHandle);
+      pendingPostClaimFloorRef.current = null;
+      setOnboardingLoadingProgress(85);
+      setSubWalletProvisionStageLabel('Loading Central Plaza...');
+
+      const [accountView, hanaStatus] = await Promise.all([
+        fetchNearAccountView(walletId, 'optimistic'),
+        fetchHanaTreasuryStatus(walletId, 'optimistic'),
+      ]);
+      const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0.08;
+      const resolvedInitialNear = Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0.08;
+      nearTestnetBalanceRef.current = resolvedInitialNear;
+      setNearTestnetBalance(resolvedInitialNear);
+      setRespiteBalance(0);
+      setCyonBalance(0);
+      setHasHouseOwnership(false);
+      setOwnedHouseStyle(null);
+      setIsOnChainHouseStyleLocked(false);
+      setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
+
+      window.setTimeout(() => {
+        void refreshOnChainBalances(walletId);
+      }, 2000);
+
+      setPlayerUid(walletId);
+      setWalletConnectInput(walletId);
+      persistWalletProfileLocally(walletId, cleanCitizenName, characterGender, activeEmail);
+      dispatchBuddyAction(`nearSyncWalletSession:${walletId}:0:`);
+      dispatchBuddyAction(`setCharacterGender:${characterGender}`);
+      dispatchBuddyAction(`setPlayerDisplayName:${cleanCitizenName}`);
+      setHud((prev) => ({
+        ...prev,
+        nearWalletConnected: true,
+        nearWalletId: walletId,
+        nearHasGamepassNft: false,
+        nearGamepassTokenId: null,
+      }));
+
+      void fetchOrCreatePlayerProfile({
+        nearAccountId: walletId,
+        displayName: cleanCitizenName,
+        authMode: 'social_invisible',
+        email: activeEmail || undefined,
+      }).then((profile) => {
+        if (profile) {
+          setSupabaseConnected(true);
+          // Restore the stored balances locally and write back the SAME
+          // values: signing in on a new browser must never wipe LUL/CYON.
+          setCyonBalance(profile.cyon_balance);
+          restoreLulFromProfile(profile.lul_balance);
+          void loadSavedHouseInterior(walletId, profile.owned_token_ids ?? []);
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: walletId,
+            displayName: cleanCitizenName,
+            lulBalance: profile.lul_balance,
+            cyonBalance: profile.cyon_balance,
+            respiteBalance: profile.respite_balance,
+            unlockedSkins: buildProfileUnlockedSkins(
+              characterGender,
+              ownedHouseStyleRef.current,
+              profile.unlocked_skins,
+            ),
+          });
+        }
+      });
+
+      setOnboardingLoadingProgress(100);
+      soundEngine.playPickup();
+      setOnboardingStep('completed');
+      setGameState('playing');
+      setTutorialStage('go_to_hana');
+    },
+    [
+      buildProfileUnlockedSkins,
+      characterGender,
+      connectedGoogleEmail,
+      dispatchBuddyAction,
+      persistWalletProfileLocally,
+      playerDisplayName,
+      refreshOnChainBalances,
+      subWalletHandleDraft,
     ],
   );
 
@@ -3989,23 +3849,19 @@ export default function App() {
         lulBalance: hudRef.current.gold,
         cyonBalance,
         respiteBalance,
-        unlockedSkins: ['default', `gender:${characterGender}`],
+        unlockedSkins: buildProfileUnlockedSkins(characterGender, ownedHouseStyleRef.current),
       });
       setOnboardingLoadingProgress(10);
       setOnboardingStep('entering_lobby');
       return;
     }
 
-    // Linear Google Login Flow: Step 1 (Character + Name) -> Step 2 (Sub-Wallet Handle `xyz.buddiesblitz.testnet`)
+    // Google Login Flow: automatically provision `<displayName>.buddiesblitz.testnet` behind the scenes
     if (onboardingAuthMode === 'wallet') {
-      if (!subWalletHandleDraft.trim()) {
-        const candidateHandle = cleanGuestName
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]/g, '')
-          .slice(0, 24);
-        setSubWalletHandleDraft(candidateHandle.length >= 2 ? candidateHandle : '');
-      }
-      setOnboardingStep('subwallet_naming');
+      void handleProvisionSubWalletAndShowWelcome({
+        autoFromDisplayName: true,
+        displayNameOverride: cleanGuestName,
+      });
       return;
     }
 
@@ -4015,6 +3871,8 @@ export default function App() {
     setCyonBalance(0);
     setNearTestnetBalance(0);
     setHasHouseOwnership(false);
+    setOwnedHouseStyle(null);
+    setIsOnChainHouseStyleLocked(false);
     setHanaWelcomeNearClaimed(false);
     setTutorialStage('none');
     setOnboardingAuthMode('guest');
@@ -4033,142 +3891,17 @@ export default function App() {
       nearGamepassTokenId: null,
     }));
   }, [
+    buildProfileUnlockedSkins,
     characterGender,
     connectedExternalWalletId,
     connectedGoogleEmail,
     cyonBalance,
     dispatchBuddyAction,
+    handleProvisionSubWalletAndShowWelcome,
     onboardingAuthMode,
     persistWalletProfileLocally,
     playerDisplayName,
     respiteBalance,
-    subWalletHandleDraft,
-  ]);
-
-  const handleProvisionSubWalletAndShowWelcome = useCallback(async () => {
-    soundEngine.playUiClick();
-    setWalletConnectError(null);
-    const cleanHandle = subWalletHandleDraft
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, '')
-      .slice(0, 32);
-    if (cleanHandle.length < 2) {
-      setWalletConnectError('Wallet username must be at least 2 characters.');
-      return;
-    }
-
-    const cleanCitizenName =
-      playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female');
-    const activeEmail = connectedGoogleEmail.trim().toLowerCase();
-
-    setOnboardingStep('provisioning_subwallet');
-    setOnboardingLoadingProgress(22);
-    setSubWalletProvisionStageLabel('Creating your wallet...');
-
-    const stageTimer1 = window.setTimeout(() => {
-      setOnboardingLoadingProgress(56);
-      setSubWalletProvisionStageLabel(
-        `Registering ${cleanHandle}.${NEAR_CONFIG.masterAccountId}...`,
-      );
-    }, 380);
-
-    const provisioned = await spawnSubAccountOnChainViaMaster({
-      handle: cleanHandle,
-      email: activeEmail || undefined,
-      strictUniqueHandle: true,
-    });
-    window.clearTimeout(stageTimer1);
-
-    if (!provisioned.ok || !provisioned.subAccountId) {
-      soundEngine.playHit();
-      setOnboardingStep('subwallet_naming');
-      setWalletConnectError(
-        provisioned.error ||
-          `Could not register ${cleanHandle}.${NEAR_CONFIG.masterAccountId}. Try another name.`,
-      );
-      return;
-    }
-
-    const walletId = provisioned.subAccountId.toLowerCase();
-    pendingPostClaimFloorRef.current = null;
-    setOnboardingLoadingProgress(85);
-    setSubWalletProvisionStageLabel('Loading Central Plaza...');
-    setProvisionedSubWalletTxHash(provisioned.txHash || '');
-
-    const [accountView, hanaStatus] = await Promise.all([
-      fetchNearAccountView(walletId, 'optimistic'),
-      fetchHanaTreasuryStatus(walletId, 'optimistic'),
-    ]);
-    const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0.08;
-    const resolvedInitialNear = Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0.08;
-    nearTestnetBalanceRef.current = resolvedInitialNear;
-    setNearTestnetBalance(resolvedInitialNear);
-    setRespiteBalance(0);
-    setCyonBalance(0);
-    setHasHouseOwnership(false);
-    setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
-
-    window.setTimeout(() => {
-      void refreshOnChainBalances(walletId);
-    }, 2000);
-
-    setPlayerUid(walletId);
-    setWalletConnectInput(walletId);
-    persistWalletProfileLocally(walletId, cleanCitizenName, characterGender, activeEmail);
-    dispatchBuddyAction(`nearSyncWalletSession:${walletId}:0:`);
-    dispatchBuddyAction(`setCharacterGender:${characterGender}`);
-    dispatchBuddyAction(`setPlayerDisplayName:${cleanCitizenName}`);
-    setHud((prev) => ({
-      ...prev,
-      nearWalletConnected: true,
-      nearWalletId: walletId,
-      nearHasGamepassNft: false,
-      nearGamepassTokenId: null,
-    }));
-
-    void fetchOrCreatePlayerProfile({
-      nearAccountId: walletId,
-      displayName: cleanCitizenName,
-      authMode: 'social_invisible',
-      email: activeEmail || undefined,
-    }).then((profile) => {
-      if (profile) {
-        setSupabaseConnected(true);
-        // Restore the stored balances locally and write back the SAME
-        // values: signing in on a new browser must never wipe LUL/CYON.
-        setCyonBalance(profile.cyon_balance);
-        restoreLulFromProfile(profile.lul_balance);
-        void loadSavedHouseInterior(walletId, profile.owned_token_ids ?? []);
-        void syncPlayerBalancesToSupabase({
-          nearAccountId: walletId,
-          displayName: cleanCitizenName,
-          lulBalance: profile.lul_balance,
-          cyonBalance: profile.cyon_balance,
-          respiteBalance: profile.respite_balance,
-          unlockedSkins: ['default', `gender:${characterGender}`],
-        });
-      }
-    });
-
-    setOnboardingLoadingProgress(100);
-    soundEngine.playPickup();
-    setOnboardingStep('completed');
-    setGameState('playing');
-    try {
-      window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
-    } catch {
-      // ignore
-    }
-    setTutorialStage('welcome_modal');
-  }, [
-    characterGender,
-    connectedGoogleEmail,
-    dispatchBuddyAction,
-    persistWalletProfileLocally,
-    playerDisplayName,
-    refreshOnChainBalances,
-    subWalletHandleDraft,
   ]);
 
   const handleClaimHanaWelcomeNear = useCallback(async () => {
@@ -4179,7 +3912,7 @@ export default function App() {
         txHash: '',
         explorerUrl: '',
         amountNear: 0,
-        error: 'Wallet is not connected yet. Please register or connect first.',
+        error: 'Please sign in first to claim your starter pack.',
       };
     }
 
@@ -4222,7 +3955,6 @@ export default function App() {
     }
 
     setHanaWelcomeNearClaimed(true);
-    recordHomeTourTx('claim', claimRes.txHash, claimRes.explorerUrl);
     const updatedView = await fetchNearAccountView(actorAccount, 'optimistic');
     const observedNear =
       updatedView && Number.isFinite(Number(updatedView.amount) / 1e24)
@@ -4291,15 +4023,7 @@ export default function App() {
     const doneTimer = window.setTimeout(() => {
       setOnboardingLoadingProgress(100);
       setOnboardingStep('completed');
-      // Guests join Hana's guided intro too, once per device.
-      try {
-        if (!window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
-          window.localStorage.setItem('bb_hana_tour_welcomed_v1', '1');
-          setTutorialStage('welcome_modal');
-        }
-      } catch {
-        // ignore
-      }
+      setTutorialStage('go_to_hana');
     }, 1150);
     return () => {
       window.clearInterval(interval);
@@ -4452,73 +4176,19 @@ export default function App() {
       ? { ...rawWaterZone, canFish: false, zoneId: null, zoneLabel: null }
       : rawWaterZone;
 
-  const prevBucketLenRef = useRef<number>(caughtFishBucket.length);
-
-  // Kai tutorial: arm the meeting when the player first comes near Kai.
-  useEffect(() => {
-    if (kaiTutorialStage !== 'off') return;
-    if (onboardingStep !== 'completed' || gameState !== 'playing') return;
-    if (hud.worldMode === 'warzone' || !playerRadarDot) return;
-    const distToKai = Math.hypot(playerRadarDot.x - 85.8, playerRadarDot.z - 60);
-    if (distToKai > 42) return;
-    advanceKaiTutorial(
-      caughtFishBucket.some((f) => f.isMintedNft)
-        ? 'sell'
-        : caughtFishBucket.length > 0
-          ? 'mint'
-          : 'meet',
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    kaiTutorialStage,
-    onboardingStep,
-    gameState,
-    hud.worldMode,
-    playerRadarDot,
-    caughtFishBucket.length,
-  ]);
-
-  // Kai tutorial: advance steps from live game state.
-  useEffect(() => {
-    kaiTutorialAssistRef.current =
-      kaiTutorialStage === 'to_water' || kaiTutorialStage === 'catch';
-    if (kaiTutorialStage === 'equip' && hud.equippedWeapon === 'Joran Fishing') {
-      advanceKaiTutorial('to_water');
-    } else if (
-      kaiTutorialStage === 'to_water' &&
-      nearbyWaterZone.canFish &&
-      nearbyWaterZone.zoneId === 'east_beach'
-    ) {
-      advanceKaiTutorial('catch');
-    } else if (
-      kaiTutorialStage === 'catch' &&
-      caughtFishBucket.length > prevBucketLenRef.current
-    ) {
-      advanceKaiTutorial('mint');
-    } else if (
-      kaiTutorialStage === 'mint' &&
-      caughtFishBucket.some((f) => f.isMintedNft)
-    ) {
-      advanceKaiTutorial('sell');
-    }
-    prevBucketLenRef.current = caughtFishBucket.length;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kaiTutorialStage, hud.equippedWeapon, nearbyWaterZone, caughtFishBucket.length]);
-
   // Kai phone: opening Kai's merchant chat (in person or by phone) counts as
-  // having met him, and silences any ringing call.
+  // having met him today, completes the daily Kai mission, and silences calls.
   useEffect(() => {
-    if (
-      activeSpecialModal === 'npc_merchant' &&
-      merchantLocation === 'beach_house' &&
-      !kaiPhoneState.met
-    ) {
-      persistKaiPhoneState({ ...kaiPhoneState, met: true });
-      setKaiIncomingCall(false);
-      soundEngine.stopPhoneRing();
+    if (activeSpecialModal === 'npc_merchant' && merchantLocation === 'beach_house') {
+      completeDailyMission('meet_kai');
+      if (!kaiPhoneState.met) {
+        persistKaiPhoneState({ ...kaiPhoneState, met: true });
+        setKaiIncomingCall(false);
+        soundEngine.stopPhoneRing();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSpecialModal, merchantLocation, kaiPhoneState.met]);
+  }, [activeSpecialModal, merchantLocation, kaiPhoneState.met, completeDailyMission]);
 
   // Kai phone: once the player first has a fish to sell, Kai calls — once per
   // device, and only when no other UI is in the way.
@@ -4655,6 +4325,7 @@ export default function App() {
         specificSpecies: fishingMinigame.species,
       });
       setCaughtFishBucket((prev) => [caught, ...prev].slice(0, 20));
+      completeDailyMission('go_fishing');
       setFishingHintMessage(null);
       window.dispatchEvent(
         new CustomEvent('shoreline-fishing-landed', {
@@ -4678,7 +4349,13 @@ export default function App() {
     setIsHoldingReel(false);
     setFishingMinigame(null);
     setFishingPhase('idle');
-  }, [fishingPhase, fishingMinigame, lightingPreset, nep171Ledger.ownerNearAccount]);
+  }, [
+    fishingPhase,
+    fishingMinigame,
+    lightingPreset,
+    nep171Ledger.ownerNearAccount,
+    completeDailyMission,
+  ]);
 
   const ensureFishingRodEquipped = useCallback(() => {
     if (hudRef.current.equippedWeapon !== 'Joran Fishing') {
@@ -4708,26 +4385,11 @@ export default function App() {
       soundEngine.playPickup();
       const clampedPower = Math.max(0.2, Math.min(1.0, powerToUse));
       setFishingCastPower(clampedPower);
-      let schedule = createShorelineBiteSchedule({
+      const schedule = createShorelineBiteSchedule({
         waterZone: activeZone,
         lightingPreset,
         castPower: clampedPower,
       });
-      if (kaiTutorialAssistRef.current) {
-        // Tutorial catch assist: the first lesson fish bites fast, is a
-        // common species, and gives a generous strike window.
-        const commonSpecies = FISH_SPECIES_CATALOG.find(
-          (s) => s.waterZone === activeZone && s.rarity === 'Common',
-        );
-        schedule = {
-          ...schedule,
-          initialWaitSec: Math.min(schedule.initialWaitSec, 1.2),
-          nibbleIntervalSec: Math.min(schedule.nibbleIntervalSec, 0.9),
-          nibblesTotal: Math.min(schedule.nibblesTotal, 1),
-          strikeWindowSec: Math.max(schedule.strikeWindowSec, 6),
-          ...(commonSpecies ? { species: commonSpecies } : {}),
-        };
-      }
       setFishingBiteSchedule(schedule);
       setFishingHintMessage(null);
       setLastCaughtFishToast(null);
@@ -4878,9 +4540,6 @@ export default function App() {
           reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedLul} LUL (convertible to CYON at Exchange).`,
         });
       }
-      if (kaiTutorialStageRef.current === 'sell') {
-        advanceKaiTutorial('done');
-      }
     },
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
   );
@@ -5005,10 +4664,6 @@ export default function App() {
       if (liveRespiteStr !== null) {
         setRespiteBalance(Math.max(0, Number(liveRespiteStr) || 0));
       }
-      markCityHighlight('nft');
-      if (kaiTutorialStageRef.current === 'sell') {
-        advanceKaiTutorial('done');
-      }
       return { ok: true as const };
     },
     [playerUid],
@@ -5119,7 +4774,6 @@ export default function App() {
           reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL), paid from Kai's treasury pool under the daily discipline caps.${quickDealBonusLul(standardLul, roundsUsed) > 0 ? ' Includes the quick-deal bonus for accepting the first offer.' : ''}`,
         });
       }
-      markCityHighlight('haggle');
       return { ok: true };
     },
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
@@ -5299,6 +4953,39 @@ export default function App() {
     cityArenaMode: hud.cityArenaMode,
   });
 
+  const handleStartCityTransitTravel = (
+    destination: CityTransitDestinationSpec,
+    originStationId: CityTransitStationId,
+    team?: 'blue' | 'red',
+  ) => {
+    soundEngine.playUiClick();
+    setActiveTeleportKioskModal('none');
+    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+    setActiveSpecialModal('none');
+    setHanaPitchOrigin(null);
+    setIsKioskModalOpen(false);
+    setIsSocialChatModalOpen(false);
+    setIsDailyMissionsModalOpen(false);
+    if (tutorialStage === 'go_to_hana') {
+      setTutorialStage('none');
+    }
+    setTramRideCutsceneUi({
+      active: true,
+      originStationId,
+      destinationStationId: destination.id,
+      progress01: 0,
+    });
+    window.dispatchEvent(
+      new CustomEvent('start-city-tram-ride-transition', {
+        detail: {
+          originStationId,
+          destinationStationId: destination.id,
+          team,
+        },
+      }),
+    );
+  };
+
   return (
     <main className="relative w-screen h-screen overflow-hidden select-none">
       {/* 1. 60FPS 3D Buddies Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
@@ -5348,6 +5035,21 @@ export default function App() {
               </span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Glasshouse Cafe Lazy-Loading Overlay */}
+      {isPreloadComplete && !isWorldLoading && isCafeInteriorLoading && (
+        <div
+          data-cafe-loading="true"
+          className="fixed inset-0 z-[140] bg-[#0b0d12] flex flex-col items-center justify-center gap-4 select-none pointer-events-auto"
+        >
+          <div className="-skew-x-12 px-8 py-4 bg-[#b8ff3c] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase">
+            <span className="skew-x-12 inline-block">ENTERING CAFE...</span>
+          </div>
+          <p className="text-xs sm:text-sm font-black tracking-widest uppercase text-white/85">
+            Preparing Glasshouse Cafe Interior
+          </p>
         </div>
       )}
 
@@ -5778,7 +5480,7 @@ export default function App() {
                           }}
                           className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
                         >
-                          CREATE WALLET
+                          CHOOSE CHARACTER &amp; PLAY
                         </button>
                       </div>
                     )}
@@ -5823,10 +5525,21 @@ export default function App() {
                     </div>
                     <div className="text-[10.5px] font-bold text-slate-300">
                       {onboardingAuthMode === 'wallet'
-                        ? 'Pick your character and display name.'
+                        ? connectedExternalWalletId
+                          ? 'Pick your character and display name.'
+                          : 'Pick your character and display name — your account sets up automatically.'
                         : 'Explore freely. Sign in later to unlock trading.'}
                     </div>
                   </div>
+
+                  {walletConnectError && (
+                    <div
+                      data-character-select-error="true"
+                      className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
+                    >
+                      {walletConnectError}
+                    </div>
+                  )}
 
                   {/* Row 1: Direct Citizen / Guest Name Input */}
                   <div className="space-y-1">
@@ -5922,9 +5635,7 @@ export default function App() {
                       onClick={handleConfirmGuestCharacterAndEnterLobby}
                       className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
                     >
-                      <span className="skew-x-6 inline-block">
-                        {onboardingAuthMode === 'wallet' && !connectedExternalWalletId ? 'NEXT' : 'PLAY'}
-                      </span>
+                      <span className="skew-x-6 inline-block">PLAY</span>
                     </button>
                   </div>
                 </div>
@@ -6048,11 +5759,13 @@ export default function App() {
                   className="flex flex-col items-center gap-3 text-center py-3"
                 >
                   <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase">
-                    <span className="skew-x-12 inline-block">CREATING WALLET...</span>
+                    <span className="skew-x-12 inline-block">SETTING UP ACCOUNT...</span>
                   </div>
 
                   <div className="w-full p-2.5 bg-[#0f172a] border border-white/20 font-mono text-xs font-bold text-[#b8ff3c] break-all">
-                    {subWalletHandleDraft}.{NEAR_CONFIG.masterAccountId}
+                    {subWalletHandleDraft
+                      ? `${subWalletHandleDraft}.${NEAR_CONFIG.masterAccountId}`
+                      : playerDisplayName.trim() || 'Preparing your player ID...'}
                   </div>
 
                   <div className="text-[11px] font-bold text-slate-200">
@@ -6093,79 +5806,11 @@ export default function App() {
         )}
 
       {/* =====================================================================
-          2B. WELCOME MODAL & GUIDED TUTORIAL OBJECTIVE HUD BANNER
+          2B. HANA WAYPOINT OBJECTIVE HUD BANNER
          ===================================================================== */}
       {isPreloadComplete &&
         onboardingStep === 'completed' &&
-        tutorialStage === 'welcome_modal' && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Welcome to Buddies Blitz"
-            data-citizen-welcome-modal="true"
-            className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/75 pointer-events-auto select-none"
-          >
-            <div className="w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-[#b8ff3c] shadow-[10px_10px_0_#000] p-5 space-y-3.5">
-              <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2.5">
-                <span className="-skew-x-12 px-2.5 py-0.5 bg-[#b8ff3c] text-black border-2 border-black font-black text-[10px] uppercase tracking-widest">
-                  <span className="skew-x-12 inline-block">WELCOME</span>
-                </span>
-                <span className="text-[10px] font-mono font-bold text-[#38bdf8]">READY</span>
-              </div>
-
-              <div>
-                <h2 className="text-xl font-black uppercase tracking-tight text-white">
-                  Welcome, {playerDisplayName}
-                </h2>
-                <p className="text-xs font-bold text-slate-300 mt-1">
-                  {hud.nearWalletConnected
-                    ? 'Visit Hana \u2014 your property agent & city guide at Central Plaza \u2014 to claim your 0.30 NEAR welcome bonus.'
-                    : 'Meet Hana \u2014 your property agent & city guide at Central Plaza. She will show you around the city. You are in Guest Mode, so trading unlocks after you sign in.'}
-                </p>
-              </div>
-
-              {hud.nearWalletConnected && (
-              <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[9.5px] font-black uppercase text-slate-400">
-                    YOUR WALLET
-                  </span>
-                  {provisionedSubWalletTxHash && (
-                    <a
-                      href={getNearBlocksTxUrl(provisionedSubWalletTxHash, 'testnet')}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-mono font-bold text-[#38bdf8] underline"
-                    >
-                      Receipt
-                    </a>
-                  )}
-                </div>
-                <div className="font-mono text-xs font-black text-[#b8ff3c] break-all">
-                  {hud.nearWalletId || playerUid}
-                </div>
-              </div>
-              )}
-
-              <button
-                type="button"
-                data-welcome-go-to-hana-btn="true"
-                onClick={() => {
-                  soundEngine.playPickup();
-                  setTutorialStage('go_to_hana');
-                }}
-                className="-skew-x-6 w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
-              >
-                <span className="skew-x-6 inline-block">START</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-      {isPreloadComplete &&
-        onboardingStep === 'completed' &&
-        !homeTourActive &&
-        (tutorialStage === 'go_to_hana' || tutorialStage === 'go_to_kiosk') &&
+        tutorialStage === 'go_to_hana' &&
         !isInsideGlasshouseCafe &&
         !isInsidePrivateHouse &&
         activeSpecialModal === 'none' &&
@@ -6177,19 +5822,11 @@ export default function App() {
           >
             <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <span
-                  className={`px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 ${
-                    tutorialStage === 'go_to_hana'
-                      ? 'bg-[#b8ff3c] text-black'
-                      : 'bg-[#38bdf8] text-black'
-                  }`}
-                >
-                  NEXT
+                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#b8ff3c] text-black">
+                  HANA
                 </span>
                 <span className="text-[11px] font-bold text-slate-100 truncate">
-                  {tutorialStage === 'go_to_hana'
-                    ? 'Talk to Hana, your city guide at Central Plaza, to claim 0.30 NEAR.'
-                    : 'Follow the blue path to the Transit Kiosk.'}
+                  Follow the blue path to Hana at Central Plaza — opens straight in Chat Session.
                 </span>
               </div>
               <button
@@ -6202,140 +5839,6 @@ export default function App() {
               >
                 SKIP
               </button>
-            </div>
-          </div>
-        )}
-
-      {isPreloadComplete &&
-        onboardingStep === 'completed' &&
-        homeTourActive &&
-        activeSpecialModal === 'none' &&
-        activeTeleportKioskModal === 'none' &&
-        !isInsideGlasshouseCafe &&
-        (!isInsidePrivateHouse || homeTourStep === 'decor') &&
-        !tramRideCutsceneUi?.active && (
-          <div
-            data-home-tour-objective="true"
-            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-none select-none"
-          >
-            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center gap-3">
-              <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#b8ff3c] text-black">
-                FIRST HOME {homeTourStepNumber}/{homeTourStepList.length}
-              </span>
-              <span className="text-[11px] font-bold text-slate-100">
-                {homeTourObjectiveText[homeTourStep]}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {postTourKioskGuideActive &&
-          activeSpecialModal === 'none' &&
-          !isKioskModalOpen &&
-          !isSocialChatModalOpen && (
-            <div
-              data-city-tour-kiosk-card="true"
-              className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-none select-none"
-            >
-              <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center gap-3">
-                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#38bdf8] text-black">
-                  CITY TOUR
-                </span>
-                <span className="text-[11px] font-bold text-slate-100">
-                  First Home complete! Head to the transit kiosk beside Hana and press E —
-                  Kai's fish market and the Cafe are waiting.
-                </span>
-              </div>
-            </div>
-          )}
-
-        {menusTourGuideActive &&
-          activeSpecialModal === 'none' &&
-          !isKioskModalOpen &&
-          !isSocialChatModalOpen && (
-            <div
-              data-menus-tour-card="true"
-              className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-none select-none"
-            >
-              <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center gap-3">
-                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#38bdf8] text-black">
-                  CITY TOUR
-                </span>
-                <span className="text-[11px] font-bold text-slate-100">
-                  Kai's lessons complete! Open the transit kiosk here at the Fish Market —
-                  Hana will walk you through the other menus.
-                </span>
-              </div>
-            </div>
-          )}
-
-      {/* =====================================================================
-          3. PLAYING HUD: STYLIZED TACTICAL ARCADE OVERHAUL
-             - Top-Left: Compact Radar/Minimap + [Q: 1x1x2] Pad Badge
-             - Top-Center: Skewed Arcade Health/Score Bar ("BLUE 2000 vs RED 2000")
-             - Top-Right: Prominent [RUN MATCH] (prep mode) + Skewed [⚙] Dev Drawer
-             - Viewport: 3D-to-2D Contextual Hexagonal Floating Prompts ([E] AMBIL, [F] RAKIT, [G] NAIK, [B] KIOSK)
-             - Bottom-Right: Compact 3 Weapon Slots ([1] Pistol, [2] Rifle, [3] Bazooka)
-         ===================================================================== */}
-      {onboardingStep === 'completed' &&
-        tutorialStage === 'none' &&
-        activeSpecialModal === 'none' &&
-        activeTeleportKioskModal === 'none' &&
-        (kaiTutorialStage === 'meet' ||
-          kaiTutorialStage === 'equip' ||
-          kaiTutorialStage === 'to_water' ||
-          kaiTutorialStage === 'catch' ||
-          kaiTutorialStage === 'mint' ||
-          kaiTutorialStage === 'sell') && (
-          <div
-            data-kai-tutorial-objective="true"
-            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-auto select-none"
-          >
-            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#38bdf8] text-black">
-                  KAI
-                </span>
-                <span className="text-[11px] font-bold text-slate-100 truncate">
-                  {kaiTutorialStage === 'meet'
-                    ? 'Meet Kai at the Fish Market \u2014 follow the marker.'
-                    : kaiTutorialStage === 'equip'
-                      ? 'Equip your Fishing Rod.'
-                      : kaiTutorialStage === 'to_water'
-                        ? 'Stand by the water east of Kai.'
-                        : kaiTutorialStage === 'catch'
-                          ? 'Hold [F] to cast \u2014 wait for the plunge, then reel it in!'
-                          : kaiTutorialStage === 'mint'
-                            ? 'Open your BAG \u2192 FISH tab \u2192 MINT your catch into an NFT.'
-                            : 'Take your fish NFT back to Kai \u2014 he pays RESPITE for NFTs.'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {kaiTutorialStage === 'equip' &&
-                  hud.equippedWeapon !== 'Joran Fishing' && (
-                    <button
-                      type="button"
-                      data-kai-equip-rod-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        ensureFishingRodEquipped();
-                      }}
-                      className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] border border-black text-[9.5px] font-black uppercase text-black cursor-pointer"
-                    >
-                      EQUIP ROD
-                    </button>
-                  )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    advanceKaiTutorial('done');
-                  }}
-                  className="px-2 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-[9.5px] font-black uppercase text-slate-300 cursor-pointer"
-                >
-                  SKIP
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -6385,7 +5888,6 @@ export default function App() {
         gameState === 'playing' &&
         !isFullMapOverview &&
         onboardingStep === 'completed' &&
-        tutorialStage !== 'welcome_modal' &&
         !tramRideCutsceneUi?.active && (
         <div className="fixed inset-0 z-20 pointer-events-none">
           {/* =================================================================
@@ -7181,6 +6683,7 @@ export default function App() {
                       setIsSocialChatModalOpen(false);
                       setIsPersonalWalletModalOpen(false);
                       setIsPersonalBagModalOpen(false);
+                      setIsDailyMissionsModalOpen(false);
                       setActiveSpecialModal('none');
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -7196,7 +6699,7 @@ export default function App() {
                       });
                       setIsProfileModalOpen(true);
                     }}
-                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${tourConnectAttention ? ' opacity-40 saturate-50' : ''}`}
+                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
                     title="View Your Profile"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
@@ -7216,6 +6719,7 @@ export default function App() {
                       setIsKioskModalOpen(false);
                       setIsSocialChatModalOpen(false);
                       setIsPersonalWalletModalOpen(false);
+                      setIsDailyMissionsModalOpen(false);
                       setActiveSpecialModal('none');
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -7226,7 +6730,7 @@ export default function App() {
                       hud.equippedWeapon === 'Joran Fishing'
                         ? 'bg-[#4ade80] hover:bg-[#86efac]'
                         : 'bg-[#b8ff3c] hover:bg-[#d9f99d]'
-                    } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${tourConnectAttention ? ' opacity-40 saturate-50' : ''}`}
+                    } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
                     title="Open Personal Bag (Joran & Items)"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
@@ -7249,18 +6753,55 @@ export default function App() {
                       setIsKioskModalOpen(false);
                       setIsSocialChatModalOpen(false);
                       setIsPersonalBagModalOpen(false);
+                      setIsDailyMissionsModalOpen(false);
                       setActiveSpecialModal('none');
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
                       setIsPersonalWalletModalOpen(true);
                     }}
-                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${tourConnectAttention ? ' bb-attention-wiggle ring-4 ring-[#38bdf8] brightness-110' : ''}`}
+                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
                     title="Open Your Personal Citizen Wallet"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
                       <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                       <span>WALLET</span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-top-daily-missions-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setSelectedTargetUser(null);
+                      setIsProfileModalOpen(false);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalBagModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsDailyMissionsModalOpen((prev) => !prev);
+                    }}
+                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#c084fc] hover:bg-[#d8b4fe] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    title="Open Daily Missions"
+                  >
+                    <span className="skew-x-12 flex items-center gap-1.5">
+                      <ClipboardList className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                      <span>MISSIONS</span>
+                      <span className="px-1 py-0.2 bg-white border border-[#1a1a1a] text-[10px] leading-tight">
+                        {dailyMissionsSummary.completedCount}/{dailyMissionsSummary.totalCount}
+                      </span>
+                      {dailyMissionsSummary.actionableCount > 0 && (
+                        <span
+                          data-top-daily-missions-badge="true"
+                          className="w-2.5 h-2.5 rounded-full bg-[#22c55e] border border-[#1a1a1a] animate-pulse"
+                        />
+                      )}
                     </span>
                   </button>
                 </>
@@ -7526,9 +7067,9 @@ export default function App() {
               3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR + PRIVATE NOTIFICATION TOAST
              ================================================================= */}
           {playMode !== 'editor' && (
-            <div className="fixed bottom-3 left-4 z-30 w-[calc(100vw-2rem)] max-w-lg pointer-events-auto flex flex-col items-end">
-              {/* Incoming Private Chat Notification Popup (Anchored Above Yellow CHAT Button) */}
-              {activePrivateNotificationToast && (
+            <div className="fixed bottom-3 left-4 z-30 w-[calc(100vw-2rem)] max-w-[540px] pointer-events-auto flex flex-col items-end">
+              {/* Incoming Private Chat Notification Popup (Hidden during active NPC Dialogue) */}
+              {activeSpecialModal !== 'npc_merchant' && activePrivateNotificationToast && (
                 <button
                   type="button"
                   data-private-chat-toast="true"
@@ -7564,151 +7105,198 @@ export default function App() {
               )}
 
               <form
-                aria-label="Social Talk Chat Input"
+                aria-label={
+                  activeSpecialModal === 'npc_merchant'
+                    ? 'NPC Merchant Chat Input'
+                    : 'Social Talk Chat Input'
+                }
                 data-social-talk-bar="true"
+                data-chat-route={
+                  activeSpecialModal === 'npc_merchant' ? 'npc_merchant' : 'social_world'
+                }
                 onSubmit={(e) => {
                   e.preventDefault();
                   const trimmed = socialChatText.trim();
-                  if (trimmed.length > 0) {
-                    if (activeSpecialModal === 'npc_merchant') {
-                      // Talking to an NPC (Hana/Kai modal open): the bottom bar
-                      // routes ONLY into the NPC session. It must never fall
-                      // through to the public world feed.
-                      window.dispatchEvent(
-                        new CustomEvent('npc-merchant-user-chat', {
-                          detail: { text: trimmed },
-                        }),
-                      );
-                      setSocialChatText('');
-                      return;
-                    }
+                  if (!trimmed) return;
+                  const isNpcDomOpen =
+                    typeof document !== 'undefined' &&
+                    document.querySelector(
+                      '[data-npc-merchant-modal="true"][aria-hidden="false"]',
+                    ) !== null;
+                  const target = resolveBottomChatSubmitTarget({
+                    activeSpecialModal:
+                      activeSpecialModal === 'npc_merchant' ||
+                      activeSpecialModalRef.current === 'npc_merchant'
+                        ? 'npc_merchant'
+                        : activeSpecialModal,
+                    isSocialChatModalOpen,
+                    hasSelectedPrivateUser: Boolean(selectedPrivateUser),
+                    hasDomNpcDialogOpen: isNpcDomOpen,
+                  });
 
-                    const nowStr = new Date().toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    });
-
-                    const senderLabel = playerDisplayName || 'YOU';
-                    const senderAccount = hud.nearWalletId || playerUid || undefined;
-                    if (isSocialChatModalOpen && selectedPrivateUser) {
-                      const newPrivateMsg: ChatMessage = {
-                        id: `priv-${Date.now()}`,
-                        senderId: senderAccount,
-                        senderName: senderLabel,
-                        recipientName: selectedPrivateUser.name,
-                        recipientId: String(selectedPrivateUser.id),
-                        isSelf: true,
-                        text: trimmed,
-                        timestamp: nowStr,
-                        type: 'private',
-                      };
-                      setChatMessages((prev) => [...prev, newPrivateMsg]);
-                      void insertSocialMessageToSupabase({
-                        sender_name: senderLabel,
-                        sender_near_account: senderAccount,
-                        recipient_name: selectedPrivateUser.name,
-                        message: trimmed,
-                        bubble_color: chatBubbleBgColor,
-                        room_id: worldMode,
-                      });
-                    } else {
-                      const newMsg: ChatMessage = {
-                        id: `pub-${Date.now()}`,
-                        senderId: senderAccount,
-                        senderName: senderLabel,
-                        isSelf: true,
-                        text: trimmed,
-                        timestamp: nowStr,
-                        type: 'public',
-                      };
-                      setChatMessages((prev) => [...prev, newMsg]);
-                      dispatchBuddyAction(`socialTalk:${trimmed}`);
-                      void insertSocialMessageToSupabase({
-                        sender_name: senderLabel,
-                        sender_near_account: senderAccount,
-                        message: trimmed,
-                        bubble_color: chatBubbleBgColor,
-                        room_id: worldMode,
-                      });
-                    }
+                  if (target === 'npc_merchant') {
+                    // Strictly route ONLY to Hana/Kai dialogue; never publish to world chat or speech bubbles.
+                    window.dispatchEvent(
+                      new CustomEvent('npc-merchant-user-chat', {
+                        detail: { text: trimmed },
+                      }),
+                    );
                     setSocialChatText('');
+                    return;
                   }
+
+                  const nowStr = new Date().toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  const senderLabel = playerDisplayName || 'YOU';
+                  const senderAccount = hud.nearWalletId || playerUid || undefined;
+                  if (target === 'private_chat' && selectedPrivateUser) {
+                    const newPrivateMsg: ChatMessage = {
+                      id: `priv-${Date.now()}`,
+                      senderId: senderAccount,
+                      senderName: senderLabel,
+                      recipientName: selectedPrivateUser.name,
+                      recipientId: String(selectedPrivateUser.id),
+                      isSelf: true,
+                      text: trimmed,
+                      timestamp: nowStr,
+                      type: 'private',
+                    };
+                    setChatMessages((prev) => [...prev, newPrivateMsg]);
+                    void insertSocialMessageToSupabase({
+                      sender_name: senderLabel,
+                      sender_near_account: senderAccount,
+                      recipient_name: selectedPrivateUser.name,
+                      message: trimmed,
+                      bubble_color: chatBubbleBgColor,
+                      room_id: worldMode,
+                    });
+                  } else {
+                    const newMsg: ChatMessage = {
+                      id: `pub-${Date.now()}`,
+                      senderId: senderAccount,
+                      senderName: senderLabel,
+                      isSelf: true,
+                      text: trimmed,
+                      timestamp: nowStr,
+                      type: 'public',
+                    };
+                    setChatMessages((prev) => [...prev, newMsg]);
+                    dispatchBuddyAction(`socialTalk:${trimmed}`);
+                    void insertSocialMessageToSupabase({
+                      sender_name: senderLabel,
+                      sender_near_account: senderAccount,
+                      message: trimmed,
+                      bubble_color: chatBubbleBgColor,
+                      room_id: worldMode,
+                    });
+                  }
+                  setSocialChatText('');
                 }}
                 className="w-full flex items-center gap-1.5 bg-[#14161d]/95 border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-2.5 py-1.5 rounded-lg"
               >
+                {activeSpecialModal === 'npc_merchant' && (
+                  <span
+                    data-social-chat-mode="npc"
+                    className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[10px] font-black uppercase shrink-0"
+                  >
+                    {merchantLocation === 'lobby_cafe' ? 'HANA' : 'KAI'}
+                  </span>
+                )}
                 <input
                   type="text"
                   data-social-chat-input="true"
-                  maxLength={64}
+                  maxLength={activeSpecialModal === 'npc_merchant' ? 220 : 64}
                   value={socialChatText}
                   onChange={(e) => setSocialChatText(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder="Type a short message..."
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Escape') {
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  placeholder={
+                    activeSpecialModal === 'npc_merchant'
+                      ? `Ask ${merchantLocation === 'lobby_cafe' ? 'Hana' : 'Kai'} anything (or type buy / exchange)...`
+                      : isSocialChatModalOpen && selectedPrivateUser
+                        ? `Whisper @${selectedPrivateUser.name}...`
+                        : 'Type a short message...'
+                  }
                   className="flex-1 min-w-0 px-2.5 py-1 bg-white text-[#14161d] font-bold text-xs rounded border-2 border-[#14161d] focus:outline-none focus:ring-2 focus:ring-[#10b981]"
                 />
                 <button
                   type="submit"
                   data-social-chat-send="true"
-                  className="-skew-x-12 px-3 py-1 bg-[#10b981] hover:bg-[#34d399] text-[#0f172a] font-black text-xs uppercase border-2 border-[#14161d] shadow-[2px_2px_0_#14161d] cursor-pointer active:scale-95"
+                  className={`-skew-x-12 px-3 py-1 font-black text-xs uppercase border-2 border-[#14161d] shadow-[2px_2px_0_#14161d] cursor-pointer active:scale-95 ${
+                    activeSpecialModal === 'npc_merchant'
+                      ? 'bg-[#facc15] hover:bg-[#fde047] text-black'
+                      : 'bg-[#10b981] hover:bg-[#34d399] text-[#0f172a]'
+                  }`}
                 >
-                  <span className="skew-x-12 inline-block">SEND</span>
+                  <span className="skew-x-12 inline-block">
+                    {activeSpecialModal === 'npc_merchant' ? 'ASK' : 'SEND'}
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  data-open-social-chat-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    if (!isSocialChatModalOpen && unreadPrivateCount > 0 && lastUnreadPrivateSender) {
-                      setIsKioskModalOpen(false);
-                      setIsProfileModalOpen(false);
-                      setIsPersonalWalletModalOpen(false);
-                      setActiveSpecialModal('none');
-                      setActiveTeleportKioskModal('none');
-                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-                      setSelectedPrivateUser(lastUnreadPrivateSender);
-                      setIsSocialChatModalOpen(true);
-                      setUnreadPrivateCount(0);
-                      setActivePrivateNotificationToast(null);
-                      return;
-                    }
-                    setIsSocialChatModalOpen((prev) => {
-                      const next = !prev;
-                      if (next) {
+                {activeSpecialModal !== 'npc_merchant' && (
+                  <button
+                    type="button"
+                    data-open-social-chat-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      if (!isSocialChatModalOpen && unreadPrivateCount > 0 && lastUnreadPrivateSender) {
                         setIsKioskModalOpen(false);
+                        setIsProfileModalOpen(false);
+                        setIsPersonalWalletModalOpen(false);
                         setActiveSpecialModal('none');
                         setActiveTeleportKioskModal('none');
                         window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                         window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                        setSelectedPrivateUser(lastUnreadPrivateSender);
+                        setIsSocialChatModalOpen(true);
+                        setUnreadPrivateCount(0);
+                        setActivePrivateNotificationToast(null);
+                        return;
                       }
-                      return next;
-                    });
-                  }}
-                  className={`-skew-x-12 relative px-3 py-1 font-black text-xs uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer active:scale-95 ml-1 transition-colors ${
-                    isSocialChatModalOpen
-                      ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
-                      : 'bg-[#facc15] hover:bg-[#fde047] text-black'
-                  }`}
-                  title={isSocialChatModalOpen ? 'Close Social Chat' : 'Open Social Chat'}
-                >
-                  <span className="skew-x-12 inline-flex items-center justify-center gap-1 min-w-[18px]">
-                    {isSocialChatModalOpen ? (
-                      <span>X</span>
-                    ) : (
-                      <>
-                        <span>WORLD</span>
-                        {unreadPrivateCount > 0 && (
-                          <span
-                            data-chat-unread-private-badge="true"
-                            className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
-                          >
-                            {unreadPrivateCount}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </span>
-                </button>
+                      setIsSocialChatModalOpen((prev) => {
+                        const next = !prev;
+                        if (next) {
+                          setIsKioskModalOpen(false);
+                          setActiveSpecialModal('none');
+                          setActiveTeleportKioskModal('none');
+                          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                          window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                        }
+                        return next;
+                      });
+                    }}
+                    className={`-skew-x-12 relative px-3 py-1 font-black text-xs uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer active:scale-95 ml-1 transition-colors ${
+                      isSocialChatModalOpen
+                        ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
+                        : 'bg-[#facc15] hover:bg-[#fde047] text-black'
+                    }`}
+                    title={isSocialChatModalOpen ? 'Close Social Chat' : 'Open Social Chat'}
+                  >
+                    <span className="skew-x-12 inline-flex items-center justify-center gap-1 min-w-[18px]">
+                      {isSocialChatModalOpen ? (
+                        <span>X</span>
+                      ) : (
+                        <>
+                          <span>WORLD</span>
+                          {unreadPrivateCount > 0 && (
+                            <span
+                              data-chat-unread-private-badge="true"
+                              className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
+                            >
+                              {unreadPrivateCount}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  </button>
+                )}
               </form>
             </div>
           )}
@@ -7792,6 +7380,7 @@ export default function App() {
       <NpcMerchantAndHouseModal
         activeModalMode={activeSpecialModal}
         merchantLocation={merchantLocation}
+        npcOpenSeq={npcOpenSeq}
         isSampleHouseView={isSampleHouseView}
         marketState={marketState}
         lulBalance={hud.gold}
@@ -7801,19 +7390,10 @@ export default function App() {
         walletConnected={Boolean(hud.nearWalletConnected)}
         hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
         citizenDisplayName={playerDisplayName}
-        kaiTutorialStage={kaiTutorialStage === 'off' ? null : kaiTutorialStage}
-        kaiCardDismissed={kaiCardDismissed}
-        onKaiTutorialStart={() => {
-          soundEngine.playUiClick();
-          setActiveSpecialModal('none');
-          advanceKaiTutorial('equip');
-        }}
-        onKaiTutorialLater={() => {
-          soundEngine.playUiClick();
-          advanceKaiTutorial(kaiTutorialStage, true);
-        }}
         hanaPitchOrigin={hanaPitchOrigin}
         houseArchitectureStyle={houseArchitectureStyle}
+        ownedHouseStyle={ownedHouseStyle}
+        onChainHouseStyleLocked={isOnChainHouseStyleLocked}
         onSelectHouseArchitectureStyle={(style) => {
           setAndPersistHouseArchitectureStyle(style);
         }}
@@ -7838,8 +7418,15 @@ export default function App() {
         }}
         onEnterOwnHouse={(requestedStyle) => {
           soundEngine.playUiClick();
-          const targetStyle = requestedStyle ?? houseArchitectureStyle;
-          setAndPersistHouseArchitectureStyle(targetStyle);
+          const targetStyle =
+            isOnChainHouseStyleLockedRef.current && ownedHouseStyleRef.current
+              ? ownedHouseStyleRef.current
+              : requestedStyle ?? ownedHouseStyleRef.current ?? houseArchitectureStyleRef.current;
+          if (!isOnChainHouseStyleLockedRef.current) {
+            setAndPersistHouseArchitectureStyle(targetStyle);
+          } else {
+            setHouseArchitectureStyle(targetStyle);
+          }
           setActiveSpecialModal('none');
           setHanaPitchOrigin(null);
           setIsKioskModalOpen(false);
@@ -7865,35 +7452,24 @@ export default function App() {
               }
             : undefined
         }
-        isTutorialHanaActive={tutorialStage === 'go_to_hana'}
         hanaWelcomeNearClaimed={hanaWelcomeNearClaimed}
         onClaimHanaWelcomeNear={handleClaimHanaWelcomeNear}
-        homeTourGuide={homeTourGuide}
-        homeTourTxs={homeTour.txs}
-        onFinishHanaTutorialAndGuideKiosk={() => {
-          setActiveSpecialModal('none');
-          setTutorialStage('go_to_kiosk');
-        }}
-        isFastForwardRunning={isFastForwardRunning}
-        onToggleFastForward={() => {
-          soundEngine.playUiClick();
-          setIsFastForwardRunning((prev) => !prev);
-        }}
-        onBuyHouseWithRespite={async () => {
+        onBuyHouseWithRespite={async (_priceRespite, requestedStyle) => {
           const priceRespite = HOUSE_OWNERSHIP_PRICE_RESPITE;
           if (respiteBalance < priceRespite) return false;
+          const chosenStyle: HouseArchitectureStyle =
+            requestedStyle ?? houseArchitectureStyleRef.current;
           const actorAccount = hud.nearWalletId || playerUid;
           const res = await executeMarketContractCallOnChain({
             signerAccountId: actorAccount || undefined,
             methodName: 'purchase_citizen_asset',
             args: {
               asset_id: 'house_ownership',
-              plan_id: null,
+              plan_id: chosenStyle,
               order_id: null,
             },
           });
           if (!res.ok || !res.txHash) return false;
-          recordHomeTourTx('house', res.txHash);
           const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
           let nextRespite = Math.max(0, respiteBalance - priceRespite);
           let deedTokenId = 'nep171:house:ownership';
@@ -7911,7 +7487,11 @@ export default function App() {
           }
           setRespiteBalance(nextRespite);
           setHasHouseOwnership(true);
+          setOwnedHouseStyle(chosenStyle);
+          setIsOnChainHouseStyleLocked(true);
+          setHouseArchitectureStyle(chosenStyle);
           if (resolvedActor) {
+            persistHouseStyleLocally(resolvedActor, chosenStyle);
             void createLetterForAccount({
               recipientAccount: resolvedActor,
               kind: 'property_purchase',
@@ -7922,6 +7502,7 @@ export default function App() {
                 sellerAccount: 'buddiesblitz.testnet',
                 itemName: 'House Ownership Certificate',
                 assetKind: 'house',
+                houseStyle: chosenStyle,
                 deedTokenId,
                 priceAmount: priceRespite,
                 priceCurrency: 'RESPITE',
@@ -7931,7 +7512,9 @@ export default function App() {
             });
           }
           if (resolvedActor) {
-            dispatchBuddyAction(`nearSyncWalletSession:${resolvedActor}:1:${deedTokenId}`);
+            dispatchBuddyAction(
+              `nearSyncWalletSession:${resolvedActor}:1:${deedTokenId}:${chosenStyle}`,
+            );
           }
           setHud((prev) => ({
             ...prev,
@@ -7945,17 +7528,18 @@ export default function App() {
               cyonBalance,
               respiteBalance: nextRespite,
               ownedTokenIds: [...ownedMerchantItemIds, deedTokenId],
+              unlockedSkins: buildProfileUnlockedSkins(characterGender, chosenStyle),
             });
             void logMarketTransactionToSupabase({
               merchant_id: merchantLocation,
               actor_near_account: resolvedActor,
               action_type: 'buy_item',
-              item_id: 'house_ownership',
+              item_id: `house_ownership:${chosenStyle}`,
               nep245_token_id: deedTokenId,
               currency: 'RESPITE',
               amount: 1,
               unit_price: priceRespite,
-              reasoning_summary: `Purchased Private House Sub-Account Deed (${deedTokenId}) for ${priceRespite} RESPITE.`,
+              reasoning_summary: `Purchased Private House Sub-Account Deed (${deedTokenId} · ${chosenStyle}) for ${priceRespite} RESPITE.`,
               near_tx_hash: res.txHash,
             });
           }
@@ -7981,6 +7565,8 @@ export default function App() {
             });
             if (!res.ok) return false;
             setHasHouseOwnership(false);
+            setOwnedHouseStyle(null);
+            setIsOnChainHouseStyleLocked(false);
           } else {
             const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === assetId);
             if (!item?.tokenId) return false;
@@ -8014,6 +7600,7 @@ export default function App() {
             if (!res.ok) return;
             if (listing.asset_kind === 'house') {
               setHasHouseOwnership(true);
+              void refreshOnChainBalances(seller);
             } else {
               setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
             }
@@ -8049,6 +7636,7 @@ export default function App() {
             }
             if (listing.asset_kind === 'house') {
               setHasHouseOwnership(true);
+              void refreshOnChainBalances(buyer);
             } else {
               setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
             }
@@ -8197,11 +7785,12 @@ export default function App() {
           soundEngine.playUiClick();
           setActiveSpecialModal('none');
           setHanaPitchOrigin(null);
-          // Guests cannot claim the welcome NEAR, so meeting Hana completes
-          // the beat: point them onward to the Transit Kiosk tour.
-          if (tutorialStage === 'go_to_hana' && !hud.nearWalletConnected) {
-            setTutorialStage('go_to_kiosk');
+          if (tutorialStage === 'go_to_hana') {
+            setTutorialStage('none');
           }
+        }}
+        onTeleportToDestination={(destination, originStationId) => {
+          handleStartCityTransitTravel(destination, originStationId);
         }}
         onEarnSafezoneLul={(amount: number) => {
           soundEngine.playUiClick();
@@ -8452,7 +8041,6 @@ export default function App() {
               ownedTokenIds: nextOwned,
             });
           }
-          recordHomeTourTx('furniture', onChainBuyReceipt.txHash, onChainBuyReceipt.explorerUrl);
           return { ok: true, ...onChainBuyReceipt };
         }}
         onSellMerchantItem={async (item: MerchantCatalogItem, refund: number) => {
@@ -8639,10 +8227,6 @@ export default function App() {
             networkId: walletNetworkChoice,
           });
           if (!receipt || !receipt.txHash) return null;
-          recordHomeTourTx(
-            direction === 'near_to_respite' && inputAmount >= 0.2 ? 'swap' : 'swap_small',
-            receipt.txHash,
-          );
           const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
           pendingPostClaimFloorRef.current = null;
 
@@ -8978,10 +8562,21 @@ export default function App() {
         onEnterPrivateHouseInterior={() => {
           soundEngine.playUiClick();
           setIsKioskModalOpen(false);
+          setIsDailyMissionsModalOpen(false);
           window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
           const isSample =
             hud.nearKioskPlotTeam === 'blue' &&
             (hud.nearKioskPlotIndex === 0 || hud.nearKioskPlotIndex === null);
+          setHouseArchitectureStyle(
+            isSample
+              ? 'japanese_pavilion'
+              : ownedHouseStyleRef.current ?? houseArchitectureStyleRef.current,
+          );
+          lastEnteredHousePlotRef.current = {
+            team: hud.nearKioskPlotTeam ?? null,
+            plotIndex: hud.nearKioskPlotIndex ?? null,
+            viaStudio: false,
+          };
           setIsSampleHouseView(isSample);
           setIsInsidePrivateHouse(true);
           setActiveSpecialModal('none');
@@ -8990,9 +8585,7 @@ export default function App() {
           soundEngine.playUiClick();
           setIsKioskModalOpen(false);
           window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-          setMerchantLocation('lobby_cafe');
-          setActiveSpecialModal('npc_merchant');
-          setPropertyPitchSeen(true);
+          openMerchantInChatSession('lobby_cafe');
           setHanaPitchOrigin('browse');
         }}
         onOpenPersonalWallet={() => {
@@ -9026,7 +8619,6 @@ export default function App() {
         onCallKai={openKaiChatFromPhone}
         onMeetKai={() => {
           soundEngine.playUiClick();
-          if (kaiTutorialStage === 'off') advanceKaiTutorial('meet');
           setIsSocialChatModalOpen(false);
         }}
         playerBubbleBgColor={chatBubbleBgColor}
@@ -9129,29 +8721,6 @@ export default function App() {
         hasOwnedHouse={Boolean(hasHouseOwnership || hud.nearHasGamepassNft)}
         blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
-        isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
-        isMenusTourActive={
-          kaiTutorialStage === 'done' && homeTour.done && !homeTour.menusTourDone
-        }
-
-        guideDestinationId={
-          homeTour.done && !homeTour.kioskIntroDone
-            ? 'kai_fish_market'
-            : tutorialStage === 'go_to_kiosk'
-              ? 'kai_fish_market'
-              : kaiTutorialStage === 'meet' || kaiTutorialStage === 'sell'
-                ? 'kai_fish_market'
-                : null
-        }
-        onCompleteTutorialTour={() => {
-          if (tutorialStage !== 'go_to_kiosk' && kaiTutorialStage === 'done' && homeTour.done) {
-            // Menus tour finished (or skipped): Hana has explained the rest.
-            persistHomeTour({ ...homeTour, menusTourDone: true });
-            return;
-          }
-          setTutorialStage('none');
-          setCityHighlights((prev) => ({ ...prev, active: true }));
-        }}
         onClose={() => {
           soundEngine.playUiClick();
           setActiveTeleportKioskModal('none');
@@ -9161,38 +8730,13 @@ export default function App() {
           destination: CityTransitDestinationSpec,
           team?: 'blue' | 'red',
         ) => {
-          soundEngine.playUiClick();
-          if (homeTourRef.current.active) {
-            const isResidenceDest =
-              destination.id === 'north_residence' || destination.id === 'south_residence';
-            if (homeTourRef.current.step !== 'go_home' || !isResidenceDest) {
-              soundEngine.playHit();
-              return;
-            }
-          }
           const originStationId: CityTransitStationId =
             activeTeleportKioskModal !== 'none'
               ? activeTeleportKioskModal
               : hud.worldMode === 'warzone'
                 ? 'warzone_arena'
                 : 'central_plaza';
-          setActiveTeleportKioskModal('none');
-          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-          setTramRideCutsceneUi({
-            active: true,
-            originStationId,
-            destinationStationId: destination.id,
-            progress01: 0,
-          });
-          window.dispatchEvent(
-            new CustomEvent('start-city-tram-ride-transition', {
-              detail: {
-                originStationId,
-                destinationStationId: destination.id,
-                team,
-              },
-            }),
-          );
+          handleStartCityTransitTravel(destination, originStationId, team);
         }}
         onEnterMyHouseStudio={() => {
           soundEngine.playUiClick();
@@ -9200,6 +8744,12 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
           setIsKioskModalOpen(false);
           setIsSocialChatModalOpen(false);
+          setIsDailyMissionsModalOpen(false);
+          lastEnteredHousePlotRef.current = {
+            team: hud.nearClaimedTeam ?? null,
+            plotIndex: hud.nearClaimedPlotIndex ?? null,
+            viaStudio: true,
+          };
           setHouseEntryScanState('scanning');
           window.setTimeout(() => {
             soundEngine.playPickup();
@@ -9217,13 +8767,11 @@ export default function App() {
           setPendingPitchKioskStation(
             activeTeleportKioskModal !== 'none' ? activeTeleportKioskModal : 'central_plaza',
           );
-          setPropertyPitchSeen(true);
           setActiveTeleportKioskModal('none');
           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
           setIsKioskModalOpen(false);
           setIsSocialChatModalOpen(false);
-          setMerchantLocation('lobby_cafe');
-          setActiveSpecialModal('npc_merchant');
+          openMerchantInChatSession('lobby_cafe');
           setHanaPitchOrigin('kiosk');
         }}
         onOpenShopAndExchange={() => {
@@ -9234,10 +8782,9 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
           setIsKioskModalOpen(false);
           setIsSocialChatModalOpen(false);
-          setMerchantLocation(
+          openMerchantInChatSession(
             originStation === 'beachfront_harbor' ? 'beach_house' : 'lobby_cafe',
           );
-          setActiveSpecialModal('npc_merchant');
         }}
         onEnterGlasshouseCafe={() => {
           soundEngine.playUiConfirm();
@@ -9365,6 +8912,8 @@ export default function App() {
                     setNearTestnetBalance(0);
                     setRespiteBalance(0);
                     setHasHouseOwnership(false);
+                    setOwnedHouseStyle(null);
+                    setIsOnChainHouseStyleLocked(false);
                     setHud((prev) => ({
                       ...prev,
                       nearWalletConnected: false,
@@ -9690,7 +9239,8 @@ export default function App() {
             </div>
               </>
             ) : personalWalletTab === 'assets' ? (() => {
-              const houseDisplay = getHouseStyleDisplaySpec(houseArchitectureStyle);
+              const ownedWalletHouseStyle = ownedHouseStyle ?? houseArchitectureStyle;
+              const houseDisplay = getHouseStyleDisplaySpec(ownedWalletHouseStyle);
               const deedBadgeLabel = formatHouseDeedBadgeLabel(hud.nearGamepassTokenId);
               const walletCatalogCounts = countOwnedMerchantItems(ownedMerchantItemIds);
               const walletCatalogItems = MERCHANT_CATALOG_ITEMS.filter(
@@ -9732,7 +9282,7 @@ export default function App() {
                   {/* 1. HOUSE DEED CARD */}
                   {hasHouseOwnership && (
                     <div
-                      data-wallet-house-card={houseArchitectureStyle}
+                      data-wallet-house-card={ownedWalletHouseStyle}
                       className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
                     >
                       <div className="relative w-full h-28 bg-slate-900 border-2 border-black overflow-hidden flex items-center justify-center">
@@ -11134,7 +10684,6 @@ export default function App() {
           gameState === 'playing' &&
           !isFullMapOverview &&
           onboardingStep === 'completed' &&
-          tutorialStage !== 'welcome_modal' &&
           playMode !== 'editor'
         }
         isModalBlocking={
@@ -11212,6 +10761,8 @@ export default function App() {
           setNearTestnetBalance(0);
           setRespiteBalance(0);
           setHasHouseOwnership(false);
+          setOwnedHouseStyle(null);
+          setIsOnChainHouseStyleLocked(false);
           setPlayerUid('');
           setHud((prev) => ({
             ...prev,
@@ -11290,106 +10841,6 @@ export default function App() {
 
       {/* 14. 3D FISH PREVIEW MODAL (WALLET + BAG) */}
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
-
-      {/* CITY HIGHLIGHTS — Hana's post-tour discovery checklist */}
-      {CITY_HIGHLIGHTS_ENABLED &&
-        cityHighlights.active &&
-        !cityHighlights.dismissed &&
-        gameState === 'playing' &&
-        activeSpecialModal === 'none' &&
-        !isInsidePrivateHouse &&
-        !isInsideGlasshouseCafe &&
-        (() => {
-          const stops: {
-            key: CityHighlightKey;
-            title: string;
-            hint: string;
-          }[] = [
-            { key: 'fish', title: 'Catch your first fish', hint: 'Meet Kai at East Beach — follow the pin, he will teach you.' },
-            { key: 'haggle', title: 'Haggle with Kai in chat', hint: 'Sell him a raw fish and talk the price up — he has a patience limit.' },
-            { key: 'nft', title: 'Sell Kai a minted fish NFT', hint: 'Mint a catch in your BAG, then haggle — Kai pays real RESPITE from his own treasury.' },
-            {
-              key: 'house',
-              title: 'Buy & decorate your house',
-              hint: hud.nearWalletConnected
-                ? 'Claim 0.30 NEAR from Hana, swap 0.25 NEAR for 100 RESPITE, buy the deed, place furniture from your BAG.'
-                : 'Sign in first — Hana\'s 0.30 NEAR claim and the Exchange need an account.',
-            },
-            { key: 'cafe', title: 'Work a Glasshouse Cafe shift', hint: 'Take the rota at the cafe and finish all 3 orders in time.' },
-            { key: 'warzone', title: 'Enter the Warzone (optional)', hint: 'Red vs Blue crate combat — from any transit kiosk.' },
-          ];
-          const doneCount = stops.filter((stop) => cityHighlights.done[stop.key]).length;
-          if (doneCount >= stops.length) return null;
-          return (
-            <div className="fixed left-3 bottom-28 z-30 w-[292px] max-w-[86vw] bg-white border-[3px] border-black shadow-[5px_5px_0_#000] text-black select-none">
-              <div className="flex items-center justify-between bg-[#b8ff3c] border-b-[3px] border-black px-2.5 py-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wider">
-                  Hana · City Highlights
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="px-1.5 py-0.5 bg-black text-white text-[9px] font-black">
-                    {doneCount}/6
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Dismiss city highlights"
-                    onClick={() => {
-                      soundEngine.playUiCancel();
-                      if (kaiTutorialStage === 'done') {
-                        window.dispatchEvent(
-                          new CustomEvent('set-kai-tutorial', {
-                            detail: { exclamation: false, pin: null },
-                          }),
-                        );
-                      }
-                      setCityHighlights((prev) => ({ ...prev, dismissed: true }));
-                    }}
-                    className="w-5 h-5 bg-white border-2 border-black text-[11px] font-black leading-none flex items-center justify-center cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                </span>
-              </div>
-              <p className="px-2.5 pt-2 text-[10px] font-bold text-slate-600 leading-snug">
-                Six stops to feel the whole city — any order, nothing is locked behind them.
-              </p>
-              <div className="p-2 flex flex-col gap-1.5">
-                {stops.map((stop) => {
-                  const isDone = cityHighlights.done[stop.key];
-                  return (
-                    <div
-                      key={stop.key}
-                      className={`flex items-start gap-2 border-2 border-black px-2 py-1.5 ${isDone ? 'bg-[#e7f9c8]' : 'bg-[#fdfbf6]'}`}
-                    >
-                      <span
-                        className={`mt-0.5 w-4 h-4 shrink-0 border-2 border-black flex items-center justify-center text-[10px] font-black ${isDone ? 'bg-[#b8ff3c]' : 'bg-white'}`}
-                      >
-                        {isDone ? '✓' : ''}
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-[10.5px] font-black uppercase tracking-wide leading-tight">
-                          {stop.title}
-                        </span>
-                        <span className="block text-[9.5px] font-semibold text-slate-600 leading-snug">
-                          {stop.hint}
-                        </span>
-                      </span>
-                      {!isDone && (
-                        <button
-                          type="button"
-                          onClick={() => handleHighlightGo(stop.key)}
-                          className="shrink-0 px-2 py-1 bg-black text-white text-[9px] font-black uppercase tracking-wider cursor-pointer hover:bg-[#1f4d3a]"
-                        >
-                          Go
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
 
       {/* 15. BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") DOCK, ORDER, ROTA & ATM MODALS + XP BANNER */}
       <CafeOrderSlideBanner
@@ -11470,6 +10921,46 @@ export default function App() {
         lulCostFor10Cyon={cafeExchangeQuote.lulCostFor10Cyon}
         treasuryCyon={marketState.treasuryCyon}
         onExchangePackets={handleCafeExchangeLulToCyonPackets}
+      />
+      <GlasshouseCafeSlotModal
+        isOpen={isInsideGlasshouseCafe && activeCafeModal === 'arcade_slot'}
+        onClose={() => setActiveCafeModal('none')}
+        lulBalance={hud.gold}
+        levelProgress={levelProgress}
+        onDebitStake={handleArcadeSlotDebitStake}
+        onSettleSpin={handleArcadeSlotSettleSpin}
+      />
+      <DailyMissionsModal
+        isOpen={isDailyMissionsModalOpen && hud.worldMode !== 'warzone'}
+        onClose={() => {
+          soundEngine.playUiClick();
+          setIsDailyMissionsModalOpen(false);
+        }}
+        missionsState={dailyMissionsState}
+        claimedPlotSummary={{
+          hasClaimedPlot: Boolean(hud.nearClaimedTeam && hud.nearClaimedPlotIndex != null),
+          team: hud.nearClaimedTeam ?? null,
+          plotIndex: hud.nearClaimedPlotIndex ?? null,
+        }}
+        onClaimMission={handleClaimDailyMission}
+        onClaimAllClearBonus={handleClaimDailyAllClearBonus}
+        onShortcutTravel={(missionId, stationId) => {
+          soundEngine.playUiClick();
+          setIsDailyMissionsModalOpen(false);
+          if (isInsidePrivateHouse) {
+            dispatchBuddyAction('exitPrivateHouseInterior');
+          }
+          if (missionId === 'work_cafe' && hud.worldMode === 'lobby' && !isInsideGlasshouseCafe) {
+            window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
+            return;
+          }
+          if (isInsideGlasshouseCafe) {
+            dispatchBuddyAction('exitGlasshouseCafe');
+          }
+          const originStationId: CityTransitStationId =
+            hud.worldMode === 'lobby' ? 'central_plaza' : 'beachfront_harbor';
+          handleStartCityTransitTravel(getCityTransitDestinationById(stationId), originStationId);
+        }}
       />
       <XpGainCelebrationBanner banner={xpCelebrationBanner} />
     </main>

@@ -197,6 +197,7 @@ import {
   createInitialNearGamepassSessionState,
   connectNearWalletAndMintGamepass,
   claimEmptyBasePlotWithNearGamepass,
+  syncNearWalletSessionOwnership,
   releaseClaimedOnlineSessionBase,
   PLAYER_WARZONE_MAX_HP,
   PLAYER_WARZONE_MAX_LIVES,
@@ -231,16 +232,27 @@ import {
   DYNAMIC_CHUNK_CULLING_FADE_START_RADIUS,
   PLAYER_SPAWN_BLINK_DURATION_SEC,
   evaluateChunkSynced3DFogOfWar,
+  resolveBottomChatSubmitTarget,
+  resolveOwnedHouseStyle,
+  evaluateBasePlotProximityTriggers,
+  buildWarzoneRaiderSpawnPlan,
+  pickWarzoneRaiderRespawnCoord,
+  CITY_AMBIENT_NPC_PRESETS,
+  stepCityAmbientNpcSchedule,
 } from './buddiesBlitzRules';
 import { applyGrassChunkSyncedFogOfWar3D } from './buddiesBlitzMinimap';
 import {
   buildStaticWorldStructuresList,
   getPropBaseHeight,
   HALTE_GOLDEN_SCALE_CONFIG,
+  isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
 import {
   evaluateRoadNetworkSdf,
   evaluateBlitzGrassMask,
+  evaluateNwLakeSdf,
+  evaluateSeHarborSdf,
+  evaluateOuterEmbankmentSdf,
   isPointOnAsphaltRoadOrZebraCross,
   getBaseProceduralGroundElevation,
 } from './buddiesPlanetCurvature';
@@ -5916,4 +5928,296 @@ test('Live Landing Tour glides smoothly across city districts and Fly-To Plaza l
   assert.equal(returningRes.restoredGender, 'female');
   assert.equal(returningRes.restoredDisplayName, 'SAKURA');
 });
+
+test('resolveBottomChatSubmitTarget strictly isolates NPC dialogue from public and private chat', () => {
+  assert.equal(
+    resolveBottomChatSubmitTarget({
+      activeSpecialModal: 'npc_merchant',
+      isSocialChatModalOpen: false,
+      hasSelectedPrivateUser: false,
+    }),
+    'npc_merchant',
+  );
+
+  // Even if social modal/private flags were stale, NPC mode wins unconditionally
+  assert.equal(
+    resolveBottomChatSubmitTarget({
+      activeSpecialModal: 'npc_merchant',
+      isSocialChatModalOpen: true,
+      hasSelectedPrivateUser: true,
+    }),
+    'npc_merchant',
+  );
+
+  // DOM fallback guard protects the transition frame while NPC modal is still visible
+  assert.equal(
+    resolveBottomChatSubmitTarget({
+      activeSpecialModal: 'none',
+      isSocialChatModalOpen: true,
+      hasSelectedPrivateUser: false,
+      hasDomNpcDialogOpen: true,
+    }),
+    'npc_merchant',
+  );
+
+  assert.equal(
+    resolveBottomChatSubmitTarget({
+      activeSpecialModal: 'none',
+      isSocialChatModalOpen: true,
+      hasSelectedPrivateUser: true,
+      hasDomNpcDialogOpen: false,
+    }),
+    'private_chat',
+  );
+
+  assert.equal(
+    resolveBottomChatSubmitTarget({
+      activeSpecialModal: 'none',
+      isSocialChatModalOpen: false,
+      hasSelectedPrivateUser: false,
+      hasDomNpcDialogOpen: false,
+    }),
+    'public_chat',
+  );
+});
+
+test('resolveOwnedHouseStyle, claimEmptyBasePlotWithNearGamepass, and syncMilitaryBasePlotsVisuals honor Plaza Manor vs Japanese Pavilion NFT styles', async () => {
+  // 1. Authoritative on-chain NFT house_style overrides Supabase/localStorage and locks
+  const onChainManor = resolveOwnedHouseStyle({
+    onChainHouseStyle: 'plaza_manor',
+    unlockedSkins: ['default', 'house_style:japanese_pavilion'],
+    marketTransactions: [{ item_id: 'house_ownership:japanese_pavilion', action_type: 'buy_item' }],
+    localSavedStyle: 'japanese_pavilion',
+  });
+  assert.deepEqual(onChainManor, { resolvedStyle: 'plaza_manor', isOnChainLocked: true });
+
+  // 2. Legacy deeds without on-chain metadata fall back cleanly: unlockedSkins -> tx -> local -> default
+  const fromSkins = resolveOwnedHouseStyle({
+    onChainHouseStyle: null,
+    unlockedSkins: ['default', 'gender:female', 'house_style:japanese_pavilion'],
+    localSavedStyle: 'plaza_manor',
+  });
+  assert.deepEqual(fromSkins, { resolvedStyle: 'japanese_pavilion', isOnChainLocked: false });
+
+  const fromTx = resolveOwnedHouseStyle({
+    onChainHouseStyle: null,
+    unlockedSkins: ['default'],
+    marketTransactions: [{ item_id: 'house_ownership:japanese_pavilion', action_type: 'buy_item' }],
+    localSavedStyle: 'plaza_manor',
+  });
+  assert.deepEqual(fromTx, { resolvedStyle: 'japanese_pavilion', isOnChainLocked: false });
+
+  // 3. Model Estate (blue_0) remains permanently Japanese Pavilion; claimed plots inherit owned style
+  const bluePlots = createIndividualCommanderBasesState('blue');
+  assert.equal(bluePlots[0].houseStyle, 'japanese_pavilion');
+  assert.equal(bluePlots[1].houseStyle, 'plaza_manor');
+
+  const manorSession = syncNearWalletSessionOwnership(
+    createInitialNearGamepassSessionState(),
+    'manor.buddiesblitz.testnet',
+    true,
+    'house-deed-0010',
+    'plaza_manor',
+  );
+  const claimManorRes = claimEmptyBasePlotWithNearGamepass(manorSession, bluePlots, 'blue', 'blue', 1);
+  assert.equal(claimManorRes.success, true);
+  assert.equal(bluePlots[1].houseStyle, 'plaza_manor');
+  assert.equal(claimManorRes.updatedSession.houseStyle, 'plaza_manor');
+
+  const pavilionSession = syncNearWalletSessionOwnership(
+    createInitialNearGamepassSessionState(),
+    'pavilion.buddiesblitz.testnet',
+    true,
+    'house-deed-0011',
+    'japanese_pavilion',
+  );
+  const claimPavilionRes = claimEmptyBasePlotWithNearGamepass(
+    pavilionSession,
+    bluePlots,
+    'blue',
+    'blue',
+    2,
+  );
+  assert.equal(claimPavilionRes.success, true);
+  assert.equal(bluePlots[2].houseStyle, 'japanese_pavilion');
+  assert.equal(claimPavilionRes.updatedSession.houseStyle, 'japanese_pavilion');
+
+  // 4. Classic Plaza Manor centered portico steps (z = hqZ - sign * 0.55) trigger house door entry
+  const manorPlot = bluePlots[1];
+  const manorDoorTrigger = evaluateBasePlotProximityTriggers({
+    actorX: manorPlot.plotCenterX,
+    actorZ: 74.0 - 0.55,
+    worldMode: 'safezone',
+    blueCommanderBases: bluePlots,
+    redCommanderBases: createIndividualCommanderBasesState('red'),
+  });
+  assert.equal(manorDoorTrigger.canTriggerEnterHouseDoor, true);
+  assert.equal(manorDoorTrigger.nearestHouseDoorPlotIndex, 1);
+  assert.equal(manorDoorTrigger.nearestHouseDoorTeam, 'blue');
+
+  // 5. Visual sync switches between plazaManorBuilding and lv1Building strictly per plot houseStyle
+  const { syncMilitaryBasePlotsVisuals } = await import('./buddiesBlitzShadersAndAssets');
+  const mockGroup = new THREE.Group();
+  const makePlotCtrl = () => ({
+    plotRoot: new THREE.Group(),
+    plazaFloorGroup: new THREE.Group(),
+    bastionGroup: new THREE.Group(),
+    skyTurret: { root: new THREE.Group(), isBuilt: false, hp: 100 },
+    lv1Building: new THREE.Group(),
+    lv2Building: new THREE.Group(),
+    lv3Building: new THREE.Group(),
+    plazaManorBuilding: new THREE.Group(),
+    rubbleGroup: new THREE.Group(),
+    fenceLv1Group: new THREE.Group(),
+    fenceLv2Group: new THREE.Group(),
+    fenceLv3Group: new THREE.Group(),
+    helipadBlueprintGroup: new THREE.Group(),
+    helipadBuiltGroup: new THREE.Group(),
+    parkingBlueprintGroup: new THREE.Group(),
+    parkingBuiltGroup: new THREE.Group(),
+    gardenGroups: { sakura_grove: new THREE.Group() },
+    skinAccentMat: new THREE.MeshBasicMaterial(),
+  });
+  const ctrls = [makePlotCtrl(), makePlotCtrl(), makePlotCtrl(), makePlotCtrl()];
+  (mockGroup as unknown as { __plotControllers: typeof ctrls }).__plotControllers = ctrls;
+
+  syncMilitaryBasePlotsVisuals(mockGroup, bluePlots, 'blue', true);
+  // blue_0 Model Estate -> Japanese Pavilion
+  assert.equal(ctrls[0].plazaManorBuilding.visible, false);
+  assert.equal(ctrls[0].lv1Building.visible, true);
+  // blue_1 claimed Plaza Manor -> Plaza Manor exterior
+  assert.equal(ctrls[1].plazaManorBuilding.visible, true);
+  assert.equal(ctrls[1].lv1Building.visible, false);
+  // blue_2 claimed Japanese Pavilion -> Japanese Pavilion exterior
+  assert.equal(ctrls[2].plazaManorBuilding.visible, false);
+  assert.equal(ctrls[2].lv1Building.visible, true);
+  // blue_3 unclaimed -> hidden
+  assert.equal(ctrls[3].plotRoot.visible, false);
+  assert.equal(ctrls[3].plazaManorBuilding.visible, false);
+});
+
+test('Warzone hostile Raider squad spawns on opposing team with mixed humanoid avatar genders outside Oasis Lake and base shields', () => {
+  for (const playerTeam of ['blue', 'red'] as const) {
+    const plan = buildWarzoneRaiderSpawnPlan(playerTeam);
+    assert.ok(plan.length >= 6);
+    const enemyTeam = playerTeam === 'blue' ? 'red' : 'blue';
+    const genders = new Set(plan.map((p) => p.avatarGender));
+    const weapons = new Set(plan.map((p) => p.weaponId));
+    assert.ok(genders.has('male') && genders.has('female'), 'Should mix male & female humanoid GLB avatars');
+    assert.ok(weapons.has('rifle') && weapons.has('pistol') && weapons.has('bazooka'), 'Should vary ranged weapons');
+
+    for (const r of plan) {
+      assert.equal(r.team, enemyTeam);
+      assert.ok(r.ammo > 0 && r.maxHp >= 100);
+      assert.ok(evaluateNwLakeSdf(r.x, r.z) >= 2.0, `Raider ${r.codename} too close to Oasis Lake (${r.x}, ${r.z})`);
+      assert.ok(evaluateOuterEmbankmentSdf(r.x, r.z) < -2.0, `Raider ${r.codename} outside arena (${r.x}, ${r.z})`);
+      const barrier = resolveEnemyPublicPadShieldBarrier2D(r.x, r.z, r.team, 0.7);
+      assert.equal(barrier.blocked, false, `Raider ${r.codename} spawned inside enemy shield (${r.x}, ${r.z})`);
+    }
+  }
+
+  const respawnFar = pickWarzoneRaiderRespawnCoord({
+    playerX: -18,
+    playerZ: -20,
+    enemyTeam: 'red',
+    seedIndex: 0,
+    minDistFromPlayerM: 18,
+  });
+  assert.ok(Math.hypot(respawnFar.x - -18, respawnFar.z - -20) >= 18);
+});
+
+test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on safe unobstructed walkways', () => {
+  assert.equal(CITY_AMBIENT_NPC_PRESETS.length, 2);
+  const genders = new Set(CITY_AMBIENT_NPC_PRESETS.map((p) => p.gender));
+  assert.ok(genders.has('male') && genders.has('female'));
+  for (const preset of CITY_AMBIENT_NPC_PRESETS) {
+    assert.ok(preset.waypoints.every((wp) => wp.x <= -74 && wp.z >= -30 && wp.z <= 22));
+  }
+
+  const staticStructures = buildStaticWorldStructuresList({
+    blueBase: { hqX: 0, hqZ: 86, baseGroup: new THREE.Group() },
+    redBase: { hqX: 0, hqZ: -86, baseGroup: new THREE.Group() },
+    blueCommanderBases: [],
+    redCommanderBases: [],
+    isSafezoneMode: true,
+  });
+
+  for (const preset of CITY_AMBIENT_NPC_PRESETS) {
+    assert.ok(preset.waypoints.length >= 1, `${preset.id} missing waypoints`);
+    for (const wp of preset.waypoints) {
+      assert.ok(evaluateOuterEmbankmentSdf(wp.x, wp.z) < -1.0, `${preset.id} outside playable embankment (${wp.x}, ${wp.z})`);
+      assert.ok(evaluateNwLakeSdf(wp.x, wp.z) >= 0.85, `${preset.id} inside NW Lake slope (${wp.x}, ${wp.z}) sdf=${evaluateNwLakeSdf(wp.x, wp.z).toFixed(2)}`);
+      assert.ok(evaluateSeHarborSdf(wp.x, wp.z).waterSdf >= 0.5, `${preset.id} inside East Ocean (${wp.x}, ${wp.z})`);
+      assert.equal(isInsideSouthPlazaGlasshouseFootprint(wp.x, wp.z), false, `${preset.id} inside Glasshouse footprint (${wp.x}, ${wp.z})`);
+      assert.ok(evaluateRoadNetworkSdf(wp.x, wp.z) > 0.25, `${preset.id} on Tram/Asphalt road (${wp.x}, ${wp.z}) sdf=${evaluateRoadNetworkSdf(wp.x, wp.z).toFixed(2)}`);
+
+      if (preset.activity !== 'sit_relax') {
+        for (const st of staticStructures) {
+          if (pointInObb2D(wp.x, wp.z, st.x, st.z, st.halfX + 0.35, st.halfZ + 0.35, st.rotY)) {
+            assert.fail(`${preset.id} waypoint (${wp.x}, ${wp.z}) overlaps static structure ${st.id}`);
+          }
+        }
+      }
+    }
+    // Check interpolated path points along closed loop to ensure patrol paths don't cut through walls or water
+    if (preset.waypoints.length > 1) {
+      for (let i = 0; i < preset.waypoints.length; i++) {
+        const a = preset.waypoints[i];
+        const b = preset.waypoints[(i + 1) % preset.waypoints.length];
+        for (const t of [0.25, 0.5, 0.75]) {
+          const sx = a.x + (b.x - a.x) * t;
+          const sz = a.z + (b.z - a.z) * t;
+          assert.ok(evaluateNwLakeSdf(sx, sz) >= 0.85, `${preset.id} path sample (${sx}, ${sz}) hits NW Lake`);
+          assert.ok(evaluateSeHarborSdf(sx, sz).waterSdf >= 0.5, `${preset.id} path sample (${sx}, ${sz}) hits Ocean`);
+          assert.equal(isInsideSouthPlazaGlasshouseFootprint(sx, sz), false, `${preset.id} path sample (${sx}, ${sz}) hits Glasshouse`);
+          for (const st of staticStructures) {
+            if (pointInObb2D(sx, sz, st.x, st.z, st.halfX + 0.2, st.halfZ + 0.2, st.rotY)) {
+              assert.fail(`${preset.id} path sample (${sx}, ${sz}) hits static structure ${st.id}`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Verify pure schedule stepping for moving walker, jogger, and stationary sitter/angler
+  const walker = CITY_AMBIENT_NPC_PRESETS.find((p) => p.activity === 'walk_patrol')!;
+  const step1 = stepCityAmbientNpcSchedule({
+    preset: walker,
+    x: walker.waypoints[0].x,
+    z: walker.waypoints[0].z,
+    yaw: 0,
+    waypointIdx: 1,
+    pauseTimer: 0,
+    elapsedSec: 1.0,
+    dt: 0.5,
+  });
+  assert.equal(step1.isMoving, true);
+  assert.ok(step1.speedMps > 0);
+  assert.ok(Number.isFinite(step1.x) && Number.isFinite(step1.z) && Number.isFinite(step1.yaw));
+
+  const sitStep = stepCityAmbientNpcSchedule({
+    preset: {
+      id: 'test_sitter',
+      displayName: 'Test',
+      activityLabel: 'BENCH',
+      gender: 'male',
+      teamTint: 'blue',
+      activity: 'sit_relax',
+      speedMps: 0,
+      pauseSecAtWaypoint: 0,
+      waypoints: [{ x: 2.0, z: -29.5, yaw: -Math.PI / 2 }],
+    },
+    x: 2.0,
+    z: -29.5,
+    yaw: 0,
+    waypointIdx: 0,
+    pauseTimer: 0,
+    elapsedSec: 2.0,
+    dt: 0.016,
+  });
+  assert.equal(sitStep.isSitting, true);
+  assert.equal(sitStep.isMoving, false);
+});
+
 

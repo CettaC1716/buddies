@@ -496,7 +496,12 @@ export function evaluateSquadAiUnitPerceptionAndDecision(params: {
     carryingCrate: b.carryingCrate !== 'none',
     hp: b.hp,
     maxHp: b.maxHp,
-    commandMode: b.team === 'blue' && ownerIdx === 0 ? (b.assignedRole ?? teamCommand) : 'HARVEST',
+    commandMode:
+      b.isWarzoneRaider && b.assignedRole
+        ? b.assignedRole
+        : b.team === 'blue' && ownerIdx === 0
+          ? (b.assignedRole ?? teamCommand)
+          : 'HARVEST',
     ownerBuildOrder: b.team === 'blue' && ownerIdx === 0 ? buildOrder : 'AUTO',
     ownerPadHasSpace: padHasMatchingSpace,
     ownerPadReadyToCraft:

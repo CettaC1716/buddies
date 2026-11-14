@@ -177,6 +177,14 @@ export const CAFE_APPLIANCE_TARGETS = {
     standX: 0.96,
     standZ: -2.95,
   },
+  arcadeSlotMachine: {
+    x: 6.32,
+    markerY: 2.04,
+    promptY: 2.24,
+    z: 4.33,
+    standX: 5.50,
+    standZ: 4.33,
+  },
 } as const;
 
 /**
@@ -266,13 +274,66 @@ export interface CafeInteriorSeatSpot {
   indicatorHeightY: number;
 }
 
+// Character facing follows fwd = (cos yaw, -sin yaw) while Bentwood Rattan Chairs open
+// along local +Z, so a chair rotated by chairYaw opens at yaw = chairYaw - Math.PI / 2:
+// east/left-wing chairs (x=4.46, chairYaw=+PI/2 -> table at x=5.28) face +X (yaw=0);
+// west chairs (x=-4.62, chairYaw=-PI/2 -> table at x=-5.45) face -X (yaw=Math.PI).
 export const CAFE_INTERIOR_SEAT_SPOTS: ReadonlyArray<CafeInteriorSeatSpot> = [
-  { id: 'cafe_east_bistro_1', x: 4.46, z: -0.85, yaw: Math.PI, seatLiftY: 0.19, indicatorHeightY: 0.73 },
-  { id: 'cafe_east_bistro_2', x: 4.46, z: 1.55, yaw: Math.PI, seatLiftY: 0.19, indicatorHeightY: 0.73 },
-  { id: 'cafe_west_bistro_1', x: -4.62, z: -0.65, yaw: 0, seatLiftY: 0.19, indicatorHeightY: 0.73 },
-  { id: 'cafe_west_bistro_2', x: -4.62, z: 1.85, yaw: 0, seatLiftY: 0.19, indicatorHeightY: 0.73 },
-  { id: 'cafe_left_wing_1', x: 4.46, z: 7.45, yaw: Math.PI, seatLiftY: 0.19, indicatorHeightY: 0.73 },
+  { id: 'cafe_east_bistro_1', x: 4.46, z: -0.85, yaw: 0, seatLiftY: 0.19, indicatorHeightY: 0.73 },
+  { id: 'cafe_east_bistro_2', x: 4.46, z: 1.55, yaw: 0, seatLiftY: 0.19, indicatorHeightY: 0.73 },
+  { id: 'cafe_west_bistro_1', x: -4.62, z: -0.65, yaw: Math.PI, seatLiftY: 0.19, indicatorHeightY: 0.73 },
+  { id: 'cafe_west_bistro_2', x: -4.62, z: 1.85, yaw: Math.PI, seatLiftY: 0.19, indicatorHeightY: 0.73 },
+  { id: 'cafe_left_wing_1', x: 4.46, z: 7.45, yaw: 0, seatLiftY: 0.19, indicatorHeightY: 0.73 },
 ];
+
+export const CAFE_CHAIR_STAND_UP_STEP_M = 0.74;
+
+/**
+ * Computes a pinch-free stand-up coordinate outside both the solid chair collider
+ * and adjacent bistro table collider. When WASD points into or parallel to the table,
+ * the exit vector is biased aisleward while preserving lateral movement direction.
+ */
+export function computeCafeSeatStandUpPosition(
+  spot: CafeInteriorSeatSpot,
+  moveDirX = 0,
+  moveDirZ = 0,
+): { x: number; z: number } {
+  const tableDirX = Math.cos(spot.yaw);
+  const tableDirZ = -Math.sin(spot.yaw);
+  const aisleDirX = -tableDirX;
+  const aisleDirZ = -tableDirZ;
+
+  const inputLen = Math.hypot(moveDirX, moveDirZ);
+  let dirX = aisleDirX;
+  let dirZ = aisleDirZ;
+
+  if (inputLen > 0.01) {
+    const nx = moveDirX / inputLen;
+    const nz = moveDirZ / inputLen;
+    const aisleDot = nx * aisleDirX + nz * aisleDirZ;
+    if (aisleDot >= 0.45) {
+      dirX = nx;
+      dirZ = nz;
+    } else {
+      const latAxisX = -tableDirZ;
+      const latAxisZ = tableDirX;
+      const latProj = nx * latAxisX + nz * latAxisZ;
+      if (Math.abs(latProj) > 0.2) {
+        const latSign = latProj >= 0 ? 1 : -1;
+        const rawX = aisleDirX * 0.55 + latAxisX * latSign * 0.835;
+        const rawZ = aisleDirZ * 0.55 + latAxisZ * latSign * 0.835;
+        const rawLen = Math.hypot(rawX, rawZ) || 1;
+        dirX = rawX / rawLen;
+        dirZ = rawZ / rawLen;
+      }
+    }
+  }
+
+  return clampCafeInteriorPosition(
+    spot.x + dirX * CAFE_CHAIR_STAND_UP_STEP_M,
+    spot.z + dirZ * CAFE_CHAIR_STAND_UP_STEP_M,
+  );
+}
 
 export const CAFE_SHIFT_MAX_ORDERS = 3;
 export const CAFE_SHIFT_COMPLETION_BONUS_XP = 30;
@@ -751,7 +812,8 @@ export type CafeStationInteractionKind =
   | 'serve_customer'
   | 'order_counter'
   | 'rota_board'
-  | 'atm_machine';
+  | 'atm_machine'
+  | 'arcade_slot';
 
 export function detectNearestCafeStation(
   px: number,
@@ -826,6 +888,12 @@ export function detectNearestCafeStation(
             x: CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
             z: CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
             radius: 2.4,
+          },
+          {
+            kind: 'arcade_slot' as const,
+            x: CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.standX,
+            z: CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.standZ,
+            radius: 1.95,
           },
         ]),
   ];

@@ -15,6 +15,7 @@ import {
   Sparkles,
   Store,
   Tag,
+  Trash2,
   User,
 } from 'lucide-react';
 import {
@@ -42,8 +43,15 @@ import {
   generateNpcMerchantReply,
   formatDaylightHour,
   evaluateRoomMoodScores,
+  parseNpcChatTransactionIntent,
+  buildOfflineChatTransactionAck,
+  type NpcChatTransactionIntent,
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
+import type {
+  CityTransitDestinationSpec,
+  CityTransitStationId,
+} from '../game/buddiesBlitzRules';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
 import type {
   DbPropertyListingRow,
@@ -59,6 +67,12 @@ import {
   Furniture3dPreviewModal,
   type Furniture3dPreviewSpec,
 } from './Furniture3dPreviewModal';
+import {
+  ChatActionCard,
+  QuickShopChatModal,
+  type ChatTxSharedProps,
+} from './ChatTransactionWidgets';
+import type { NpcAgentChatAction } from '../../api/npc-agent';
 import {
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   RESPITE_NEP141_METADATA,
@@ -85,6 +99,7 @@ export interface HouseInteriorPlacementState {
 interface NpcMerchantAndHouseModalProps {
   activeModalMode: 'none' | 'npc_merchant' | 'house_interior';
   merchantLocation: MerchantLocationId;
+  npcOpenSeq?: number;
   marketState: MerchantAgentMarketState;
   lulBalance: number;
   cyonBalance: number;
@@ -92,7 +107,10 @@ interface NpcMerchantAndHouseModalProps {
   nearTestnetBalance?: number;
   walletConnected: boolean;
   hasHouseOwnership?: boolean;
-  onBuyHouseWithRespite?: (priceRespite: number) => Promise<boolean> | boolean | void;
+  onBuyHouseWithRespite?: (
+    priceRespite: number,
+    style?: 'plaza_manor' | 'japanese_pavilion',
+  ) => Promise<boolean> | boolean | void;
   recruitedFamilyMembers?: RecruitedFamilyMemberAgent[];
   propertyListings?: DbPropertyListingRow[];
   busyPropertyListingId?: string | null;
@@ -112,7 +130,6 @@ interface NpcMerchantAndHouseModalProps {
   ownedItemIds: string[];
   activeHouseThemeId: string;
   interiorPlacement: HouseInteriorPlacementState;
-  isFastForwardRunning?: boolean;
   onClose: () => void;
   onEarnSafezoneLul: (amount: number, reason: string) => void;
   onExchangeLulToCyon: (customLulSpent?: number, customCyonGranted?: number) => void;
@@ -123,7 +140,6 @@ interface NpcMerchantAndHouseModalProps {
   onInvestInMerchant: () => void;
   onBuyMerchantItem: (item: MerchantCatalogItem, price: number) => Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }>;
   onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => Promise<boolean>;
-  onToggleFastForward?: () => void;
   onSelectHouseTheme: (themeItem: MerchantCatalogItem) => void;
   onAssignInteriorSlot: (slot: HouseInteriorSlotId, itemId: string | null) => void;
   onRotateInteriorSlot: (slot: HouseInteriorSlotId) => void;
@@ -179,18 +195,7 @@ interface NpcMerchantAndHouseModalProps {
   ) => Promise<boolean> | boolean | void;
   isSampleHouseView?: boolean;
   citizenDisplayName?: string;
-  isTutorialHanaActive?: boolean;
   hanaWelcomeNearClaimed?: boolean;
-  homeTourGuide?: {
-    step: string;
-    tab: 'sesi_chat' | 'transaksi' | 'katalog';
-    katalogTab?: 'house' | 'furniture';
-    prefillSwapAmount?: string;
-    allowExchangeTab?: boolean;
-    line: string;
-    walletLabel: string;
-  } | null;
-  homeTourTxs?: Record<string, { txHash: string; explorerUrl: string }>;
   onClaimHanaWelcomeNear?: () => Promise<{
     ok: boolean;
     txHash: string;
@@ -198,17 +203,18 @@ interface NpcMerchantAndHouseModalProps {
     amountNear: number;
     error?: string;
   }>;
-  onFinishHanaTutorialAndGuideKiosk?: () => void;
   hanaPitchOrigin?: 'kiosk' | 'browse' | null;
   onViewModelHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
   onEnterOwnHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
   houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
+  ownedHouseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+  onChainHouseStyleLocked?: boolean;
   onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
   onOpenTeleportKioskFromPitch?: () => void;
-  kaiTutorialStage?: 'meet' | 'equip' | 'to_water' | 'catch' | 'mint' | 'sell' | 'done' | null;
-  kaiCardDismissed?: boolean;
-  onKaiTutorialStart?: () => void;
-  onKaiTutorialLater?: () => void;
+  onTeleportToDestination?: (
+    destination: CityTransitDestinationSpec,
+    originStationId: CityTransitStationId,
+  ) => void;
 }
 
 /* Kai chat-trade language pack: the card and Kai's short scripted lines
@@ -368,6 +374,7 @@ function detectTradeLang(_text: string): TradeLang | null {
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({
   activeModalMode,
   merchantLocation,
+  npcOpenSeq = 0,
   isSampleHouseView = false,
   marketState,
   lulBalance,
@@ -389,7 +396,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   ownedItemIds,
   activeHouseThemeId,
   interiorPlacement: _interiorPlacement,
-  isFastForwardRunning = false,
   onClose,
   onEarnSafezoneLul: _onEarnSafezoneLul,
   onExchangeLulToCyon,
@@ -397,7 +403,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onInvestInMerchant,
   onBuyMerchantItem,
   onSellMerchantItem,
-  onToggleFastForward,
   onSelectHouseTheme,
   onAssignInteriorSlot: _onAssignInteriorSlot,
   onRotateInteriorSlot: _onRotateInteriorSlot,
@@ -419,22 +424,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onListFishNftOnMarket,
   onBuyFishNftFromMarket,
   citizenDisplayName = '',
-  isTutorialHanaActive = false,
   hanaWelcomeNearClaimed = false,
   onClaimHanaWelcomeNear,
-  homeTourGuide,
-  homeTourTxs,
-  onFinishHanaTutorialAndGuideKiosk,
   hanaPitchOrigin = null,
   onViewModelHouse,
   onEnterOwnHouse,
   houseArchitectureStyle = 'plaza_manor',
+  ownedHouseStyle = null,
+  onChainHouseStyleLocked = false,
   onSelectHouseArchitectureStyle,
   onOpenTeleportKioskFromPitch,
-  kaiTutorialStage = null,
-  kaiCardDismissed = false,
-  onKaiTutorialStart,
-  onKaiTutorialLater,
+  onTeleportToDestination,
 }) => {
   const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market'>(
     'sesi_chat',
@@ -497,89 +497,30 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     null,
   );
 
-  useEffect(() => {
-    const onOpenFishTab = () => {
-      if (merchantLocation === 'beach_house') {
-        setActiveTab('fish_market');
-      }
-    };
-    window.addEventListener('open-npc-fish-market', onOpenFishTab);
-    return () => window.removeEventListener('open-npc-fish-market', onOpenFishTab);
-  }, [merchantLocation]);
+  // Always reset to CHAT SESSION when opening, closing, or switching merchants so no stale tab cache carries over.
+  const [activeChatTxIntent, setActiveChatTxIntent] = useState<NpcChatTransactionIntent | null>(
+    null,
+  );
+  const [isQuickTxModalOpen, setIsQuickTxModalOpen] = useState<boolean>(false);
+  const [quickTxModalTab, setQuickTxModalTab] = useState<'exchange' | 'house' | 'items'>(
+    'exchange',
+  );
 
   useEffect(() => {
-    if (merchantLocation !== 'beach_house' && activeTab === 'fish_market') {
+    setActiveTab('sesi_chat');
+    setActiveChatTxIntent(null);
+    setIsQuickTxModalOpen(false);
+  }, [activeModalMode, merchantLocation, npcOpenSeq]);
+
+  useEffect(() => {
+    const onOpenMerchantResetTab = () => {
       setActiveTab('sesi_chat');
-    }
-  }, [merchantLocation, activeTab]);
-
-  useEffect(() => {
-    const onOpenCatalogHouse = () => {
-      setActiveTab('katalog');
-      setHanaCatalogTab('house');
+      setActiveChatTxIntent(null);
+      setIsQuickTxModalOpen(false);
     };
-    window.addEventListener('open-npc-catalog-house', onOpenCatalogHouse);
-    return () => window.removeEventListener('open-npc-catalog-house', onOpenCatalogHouse);
+    window.addEventListener('open-npc-merchant-ui', onOpenMerchantResetTab);
+    return () => window.removeEventListener('open-npc-merchant-ui', onOpenMerchantResetTab);
   }, []);
-
-  useEffect(() => {
-    if (
-      activeModalMode === 'npc_merchant' &&
-      merchantLocation === 'beach_house' &&
-      kaiTutorialStage === 'sell'
-    ) {
-      setActiveTab('fish_market');
-    }
-  }, [activeModalMode, merchantLocation, kaiTutorialStage]);
-
-  // FIRST HOME guide mode: while App drives a guided step, this modal stays
-  // pinned to that step's tab (and catalog sub-tab); the tab buttons for the
-  // other tabs are disabled below so the player cannot wander off the step.
-  // When allowExchangeTab is set (e.g. buy_furniture with >= min price),
-  // switching guide step/tab still redirects automatically once, while manual
-  // trips to EXCHANGE remain unlocked.
-  const prevGuideTabKeyRef = React.useRef<string>('');
-  useEffect(() => {
-    if (!homeTourGuide) {
-      prevGuideTabKeyRef.current = '';
-      return;
-    }
-    const guideKey = `${homeTourGuide.step}:${homeTourGuide.tab}:${homeTourGuide.katalogTab ?? ''}`;
-    const guideTransitioned = prevGuideTabKeyRef.current !== guideKey;
-    prevGuideTabKeyRef.current = guideKey;
-
-    const canStayInExchange =
-      Boolean(homeTourGuide.allowExchangeTab) && activeTab === 'transaksi';
-    if (
-      activeTab !== homeTourGuide.tab &&
-      (guideTransitioned || !canStayInExchange)
-    ) {
-      setActiveTab(homeTourGuide.tab);
-    }
-    if (homeTourGuide.katalogTab && hanaCatalogTab !== homeTourGuide.katalogTab) {
-      setHanaCatalogTab(homeTourGuide.katalogTab);
-    }
-  }, [homeTourGuide, activeTab, hanaCatalogTab]);
-
-  // FIRST HOME guide: on exchange steps, prefill the swap field with the
-  // exact amount the guide asks for (0.25 for the house fund, or dynamic
-  // top-up NEAR for furniture) — once per step, so manual edits are not fought.
-  const guidePrefillKeyRef = React.useRef<string>('');
-  useEffect(() => {
-    if (!homeTourGuide || homeTourGuide.tab !== 'transaksi') return;
-    const amount =
-      homeTourGuide.prefillSwapAmount ??
-      (homeTourGuide.step === 'swap'
-        ? '0.25'
-        : homeTourGuide.step === 'buy_furniture'
-          ? '0.02'
-          : null);
-    if (!amount) return;
-    const key = `${homeTourGuide.step}:${amount}`;
-    if (guidePrefillKeyRef.current === key) return;
-    guidePrefillKeyRef.current = key;
-    setCryptoSwapInputStr(amount);
-  }, [homeTourGuide]);
 
   // Cutaway Interior Studio State
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
@@ -635,44 +576,54 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   const npcShortName = merchantLocation === 'lobby_cafe' ? 'HANA' : 'KAI';
 
+  const buildInitialNpcGreeting = (): string => {
+    const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza' : 'Beachfront Harbor';
+    const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
+    if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
+      return `Hi ${displayCitizen}, I'm Hana \u2014 the city's property & housing agent, and your guide around town. I help citizens find their homes and exchange currency. It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like. You can also ask me anything at all \u2014 about the game or anything else on your mind!`;
+    }
+    if (
+      merchantLocation === 'lobby_cafe' &&
+      walletConnected &&
+      !hanaWelcomeNearClaimed
+    ) {
+      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your starter pack below (0.30 NEAR + 100 LUL + 20 CYON) to get started. Ask me anything at all \u2014 about Buddies Blitz or any topic you want!`;
+    }
+    if (!walletConnected && merchantLocation === 'beach_house') {
+      return `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and ask me anything at all, whether about fishing or anything else!`;
+    }
+    if (!walletConnected) {
+      return `Hi there, I'm Hana \u2014 the city's property & housing agent and city guide. I help citizens find homes, browse the property catalog, and exchange currency. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and you can ask me anything at all right here in chat!`;
+    }
+    if (merchantLocation === 'beach_house') {
+      return `Ahoy, ${displayCitizen}! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. Show me what you caught \u2014 and feel free to ask me anything at all, about the ocean, the market, or anything on your mind!`;
+    }
+    return `Welcome back, ${displayCitizen} \u2014 Hana here, your property & housing agent and city guide. City homes, the catalog, and currency exchange are my desk \u2014 ask me anything at all, about the city or any topic you are curious about!`;
+  };
+
+  const resetChatToGreeting = () => {
+    setNpcFullText(buildInitialNpcGreeting());
+    setNpcTypedText('');
+    setPitchViewBoth('full');
+    setLastPlayerMessage('');
+    setChatHistory([]);
+    setActiveChatTxIntent(null);
+    setIsQuickTxModalOpen(false);
+    setIsNpcThinking(false);
+    activeNpcRequestIdRef.current += 1;
+  };
+
   // Initial greeting when NPC modal opens
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
-      const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza' : 'Beachfront Harbor';
-      const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
-      let greeting = '';
-      if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
-        setActiveTab('sesi_chat');
-        greeting = `Hi ${displayCitizen}, I'm Hana \u2014 the city's property & housing agent, and your guide around town. I help citizens find their homes and exchange currency. It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like. And feel free to ask me anything \u2014 I reply right away!`;
-      } else if (
-        merchantLocation === 'lobby_cafe' &&
-        walletConnected &&
-        (isTutorialHanaActive || !hanaWelcomeNearClaimed)
-      ) {
-        setActiveTab('sesi_chat');
-        greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your starter pack below (0.30 NEAR + 100 LUL + 20 CYON) to get started. And feel free to ask me anything \u2014 I reply right away!`;
-      } else if (!walletConnected && merchantLocation === 'beach_house') {
-        greeting = `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and feel free to ask me anything about fishing and the market!`;
-      } else if (!walletConnected) {
-        greeting = `Hi there, I'm Hana \u2014 the city's property & housing agent and city guide. I help citizens find homes, browse the property catalog, and exchange currency. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and feel free to ask me anything about the city!`;
-      } else if (merchantLocation === 'beach_house') {
-        greeting = `Ahoy, ${displayCitizen}! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. Show me what you caught \u2014 and feel free to ask me anything about fishing and the market!`;
-      } else {
-        greeting = `Welcome back, ${displayCitizen} \u2014 Hana here, your property & housing agent and city guide. City homes, the catalog, and currency exchange are my desk \u2014 feel free to ask me anything about the game!`;
-      }
-      setNpcFullText(greeting);
-      setNpcTypedText('');
-      setPitchViewBoth('full');
-      setLastPlayerMessage('');
-      setChatHistory([]);
-      setIsNpcThinking(false);
-      activeNpcRequestIdRef.current += 1;
+      setActiveTab('sesi_chat');
+      resetChatToGreeting();
     }
   }, [
     activeModalMode,
     merchantLocation,
+    npcOpenSeq,
     walletConnected,
-    isTutorialHanaActive,
     hanaWelcomeNearClaimed,
     citizenDisplayName,
     playerNearAccount,
@@ -762,6 +713,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     setTradeServerSessionId(null);
     setTradeBusy(false);
     syncTrade(null, null, null);
+  };
+
+  const handleClearChat = () => {
+    soundEngine.playUiClick();
+    if (!tradeBusy && tradePhaseRef.current !== null) {
+      endTrade();
+      setTradeDoneInfo(null);
+    }
+    resetChatToGreeting();
   };
 
   const startTradePick = () => {
@@ -1017,7 +977,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     if (merchantLocation === 'lobby_cafe' && !hasHouseOwnership) {
       const lowered = text.toLowerCase();
       const propertyTopic =
-        /(rumah|properti|property|home|house|housing|deed|model house|tempat tinggal|kiosk|teleport|pulang)/.test(
+        /(rumah|properti|property|home|house|housing|deed|model house|tempat tinggal|pulang)/.test(
           lowered,
         );
       const greetingOnly =
@@ -1114,6 +1074,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     const catalogSnapshot = MERCHANT_CATALOG_ITEMS.map((item) => {
       const p = evaluateMerchantItemQuote(marketState, item);
       return {
+        id: item.id,
         name: item.name,
         category: item.category,
         currency: item.currency,
@@ -1121,6 +1082,88 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         stock: p.stock,
       };
     });
+
+    const localTxIntent =
+      merchantLocation === 'beach_house' && tradePhaseRef.current === 'offering'
+        ? null
+        : parseNpcChatTransactionIntent(text, merchantLocation);
+
+    const resolveAndOpenChatTx = (
+      aiAction: NpcAgentChatAction | null | undefined,
+    ): NpcChatTransactionIntent | null => {
+      if (merchantLocation === 'beach_house' && tradePhaseRef.current === 'offering') {
+        return null;
+      }
+      let mapped: NpcChatTransactionIntent | null = null;
+      if (aiAction) {
+        switch (aiAction.type) {
+          case 'exchange_lul_cyon':
+            mapped = {
+              kind: 'exchange_lul_cyon',
+              suggestedLulAmount:
+                typeof aiAction.amount === 'number' && aiAction.amount > 0
+                  ? Math.floor(aiAction.amount)
+                  : null,
+            };
+            break;
+          case 'swap_near_respite':
+            mapped = {
+              kind: 'swap_near_respite',
+              suggestedNearAmount:
+                typeof aiAction.amount === 'number' && aiAction.amount > 0
+                  ? aiAction.amount
+                  : null,
+            };
+            break;
+          case 'buy_house':
+            mapped = { kind: 'buy_house', style: aiAction.style };
+            break;
+          case 'buy_catalog_item': {
+            const validId =
+              typeof aiAction.itemId === 'string'
+                ? MERCHANT_CATALOG_ITEMS.find(
+                    (it) => it.id === aiAction.itemId!.trim().toLowerCase(),
+                  )?.id
+                : undefined;
+            mapped = validId ? { kind: 'buy_catalog_item', itemId: validId } : null;
+            break;
+          }
+          case 'browse_catalog':
+            mapped = {
+              kind: 'browse_catalog',
+              scope:
+                aiAction.scope ??
+                (merchantLocation === 'beach_house' ? 'fishing_gear' : 'furniture'),
+            };
+            break;
+          case 'invest_shop':
+            mapped = { kind: 'invest_shop' };
+            break;
+          case 'claim_welcome':
+            mapped = { kind: 'claim_welcome' };
+            break;
+          case 'teleport_places':
+            mapped = {
+              kind: 'teleport_places',
+              focusStationId: aiAction.focusStationId ?? null,
+            };
+            break;
+        }
+      }
+      const resolved = mapped ?? localTxIntent;
+      if (!resolved) return null;
+      if (resolved.kind === 'teleport_places') {
+        setPitchViewBoth('hidden');
+      }
+      setActiveChatTxIntent(resolved);
+      if (resolved.kind === 'browse_catalog') {
+        setQuickTxModalTab(
+          resolved.scope === 'house' && merchantLocation === 'lobby_cafe' ? 'house' : 'items',
+        );
+        setIsQuickTxModalOpen(true);
+      }
+      return resolved;
+    };
 
     const fallbackReply = () =>
       generateNpcMerchantReply(
@@ -1232,6 +1275,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           ok?: boolean;
           reply?: string;
           trade?: { moveType?: string; price?: number | null } | null;
+          action?: NpcAgentChatAction | null;
         };
         if (activeNpcRequestIdRef.current !== reqId) return;
         setIsNpcThinking(false);
@@ -1266,14 +1310,27 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               }
             }
           }
+          if (!move) {
+            resolveAndOpenChatTx(data.action);
+          }
           triggerNpcSpeech(data.reply.trim());
         } else {
-          triggerNpcSpeech(fallbackReply());
+          const resolved = resolveAndOpenChatTx(null);
+          triggerNpcSpeech(
+            resolved
+              ? buildOfflineChatTransactionAck(resolved, text, merchantLocation, marketState)
+              : fallbackReply(),
+          );
         }
       } catch {
         if (activeNpcRequestIdRef.current !== reqId) return;
         setIsNpcThinking(false);
-        triggerNpcSpeech(fallbackReply());
+        const resolved = resolveAndOpenChatTx(null);
+        triggerNpcSpeech(
+          resolved
+            ? buildOfflineChatTransactionAck(resolved, text, merchantLocation, marketState)
+            : fallbackReply(),
+        );
       }
       window.setTimeout(() => {
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1281,35 +1338,21 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     })();
   };
 
-  // Receive player chat messages submitted via the bottom-left TALK input bar
+  // Receive player chat messages submitted via the unified bottom-left chat bar.
+  // Ref keeps the latest submitPlayerQuestion closure across multi-turn chats.
+  const submitPlayerQuestionRef = useRef(submitPlayerQuestion);
+  submitPlayerQuestionRef.current = submitPlayerQuestion;
+
   useEffect(() => {
     if (activeModalMode !== 'npc_merchant') return;
     const onUserChat = (ev: Event) => {
       const text = (ev as CustomEvent<{ text?: string }>).detail?.text?.trim();
       if (!text) return;
-      submitPlayerQuestion(text);
+      submitPlayerQuestionRef.current(text);
     };
     window.addEventListener('npc-merchant-user-chat', onUserChat);
     return () => window.removeEventListener('npc-merchant-user-chat', onUserChat);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeModalMode,
-    merchantLocation,
-    marketState,
-    lulBalance,
-    cyonBalance,
-    respiteBalance,
-    nearTestnetBalance,
-    walletConnected,
-    hasHouseOwnership,
-    hanaWelcomeNearClaimed,
-    hanaClaimResult,
-    caughtFishBucket.length,
-    recruitedFamilyMembers.length,
-    fishMarketListings,
-    fishSalesStats,
-    npcFullText,
-  ]);
+  }, [activeModalMode]);
 
   const exchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
 
@@ -1792,39 +1835,74 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     );
   }
 
-  const isNpcOpen = activeModalMode === 'npc_merchant';
+  const chatTxSharedProps: ChatTxSharedProps = {
+    merchantLocation,
+    marketState,
+    lulBalance,
+    cyonBalance,
+    respiteBalance,
+    nearTestnetBalance,
+    walletConnected,
+    hasHouseOwnership,
+    hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
+    ownedItemIds,
+    playerNearAccount,
+    houseArchitectureStyle,
+    ownedHouseStyle,
+    onChainHouseStyleLocked,
+    onSelectHouseArchitectureStyle,
+    onConnectWallet,
+    onViewModelHouse,
+    onEnterOwnHouse,
+    onExchangeLulToCyon,
+    onSwapNearAndRespite,
+    onInvestInMerchant,
+    onBuyMerchantItem,
+    onSellMerchantItem,
+    onBuyHouseWithRespite,
+    onClaimHanaWelcomeNear: onClaimHanaWelcomeNear
+      ? async () => {
+          const claimRes = await onClaimHanaWelcomeNear();
+          if (claimRes.ok) {
+            setHanaClaimResult(claimRes);
+          }
+          return claimRes;
+        }
+      : undefined,
+    onInspectFurniture: (item) => {
+      const quote = evaluateMerchantItemQuote(marketState, item);
+      const isOwned = ownedItemIds.includes(item.id);
+      const bal = item.currency === 'CYON' ? cyonBalance : respiteBalance;
+      const needsHouse = item.category === 'nft_collector_furniture' && !hasHouseOwnership;
+      const canBuy =
+        walletConnected &&
+        quote.stock > 0 &&
+        bal >= quote.buyPrice &&
+        !needsHouse &&
+        (!isOwned || Boolean(item.interiorSlot));
+      setPreview3dFurniture({
+        catalogId: item.id,
+        name: item.name,
+        description: item.description,
+        isNft: item.isNft,
+        currency: item.currency,
+        priceLabel: `${quote.buyPrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`,
+        stock: quote.stock,
+        isOwned,
+        canBuy,
+        onBuy: async () => {
+          const buyRes = await onBuyMerchantItem(item, quote.buyPrice);
+          if (buyRes.ok) {
+            triggerNpcSpeech(`Bought ${item.name} (${quote.buyPrice} ${item.currency}).`);
+          }
+        },
+      });
+    },
+    onTeleportToDestination,
+    onNotifySpeech: triggerNpcSpeech,
+  };
 
-  const renderEconomySimBar = (barId: string) =>
-    onToggleFastForward ? (
-      <div
-        data-economy-sim-bar={barId}
-        className="px-3 py-2 bg-slate-100 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2 flex-wrap"
-      >
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="text-[9.5px] font-black uppercase text-black truncate">
-            SIM DAY #{marketState.dayCounter} · RESERVE {marketState.treasuryCyon} CYON
-            {marketState.isShopBroke ? ' · LOW RESERVE' : ''}
-          </div>
-          <div className="text-[9px] font-bold text-slate-600 truncate">
-            {marketState.lastMarketHeadline}
-          </div>
-        </div>
-        <button
-          type="button"
-          data-merchant-fast-forward-btn="true"
-          onClick={() => onToggleFastForward()}
-          className={`-skew-x-6 px-2.5 py-1 border-2 border-black text-[9.5px] font-black uppercase shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
-            isFastForwardRunning
-              ? 'bg-[#facc15] hover:bg-[#fde047] text-black'
-              : 'bg-[#1e293b] hover:bg-[#334155] text-[#b8ff3c]'
-          }`}
-        >
-          <span className="skew-x-6 inline-block">
-            {isFastForwardRunning ? 'PAUSE SIM' : 'FAST-FORWARD SIM'}
-          </span>
-        </button>
-      </div>
-    ) : null;
+  const isNpcOpen = activeModalMode === 'npc_merchant';
 
   return (
     <>
@@ -1835,7 +1913,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         aria-label="MMORPG AI Merchant Dialogue & Exchange"
         data-npc-merchant-modal="true"
         data-lobby-gold-exchange-modal="true"
-        className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
+        className={`fixed left-4 top-16 bottom-20 z-40 w-[calc(100vw-2rem)] max-w-[540px] flex flex-col select-none transition-all duration-300 ease-out transform ${
           isNpcOpen
             ? 'translate-x-0 opacity-100 pointer-events-auto'
             : '-translate-x-[120%] opacity-0 pointer-events-none'
@@ -1848,7 +1926,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             <button
               type="button"
               data-gold-exchange-balance="true"
-              disabled={Boolean(homeTourGuide) && homeTourGuide?.tab !== 'sesi_chat'}
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('sesi_chat');
@@ -1864,11 +1941,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             <button
               type="button"
-              disabled={
-                Boolean(homeTourGuide) &&
-                homeTourGuide?.tab !== 'transaksi' &&
-                !homeTourGuide?.allowExchangeTab
-              }
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('transaksi');
@@ -1884,7 +1956,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             <button
               type="button"
-              disabled={Boolean(homeTourGuide) && homeTourGuide?.tab !== 'katalog'}
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('katalog');
@@ -1932,56 +2003,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             <span className="skew-x-6 inline-block">X</span>
           </button>
         </div>
-
-        {homeTourGuide && (
-          <div
-            data-home-tour-guide="true"
-            className="mt-3 shrink-0 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] px-3 py-2"
-          >
-            <div className="flex items-center gap-2">
-              <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase shrink-0">
-                Hana Guide
-              </span>
-              <span className="text-[11px] font-bold">{homeTourGuide.line}</span>
-            </div>
-            {homeTourGuide.walletLabel && (
-              <div className="mt-1 text-[9.5px] font-bold text-slate-300">
-                Wallet: {homeTourGuide.walletLabel}
-              </div>
-            )}
-            {homeTourTxs && Object.keys(homeTourTxs).length > 0 && (
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[9px] font-black uppercase text-slate-300">
-                  On-chain proof:
-                </span>
-                {(['claim', 'swap', 'house', 'swap_small', 'furniture'] as const)
-                  .filter((k) => homeTourTxs[k])
-                  .map((k) => (
-                    <a
-                      key={k}
-                      href={homeTourTxs[k].explorerUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-1.5 py-0.5 bg-white/10 hover:bg-white/20 border border-white/30 text-[9px] font-black uppercase text-[#b8ff3c]"
-                    >
-                      {
-                        (
-                          {
-                            claim: 'Claim',
-                            swap: 'Swap 0.25',
-                            house: 'Home deed',
-                            swap_small: 'Top-Up Swap',
-                            furniture: 'Furniture',
-                          } as Record<string, string>
-                        )[k]
-                      }{' '}
-                      - {homeTourTxs[k].txHash.slice(0, 8)}...
-                    </a>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Tab Content Viewport */}
         <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-1 space-y-3 min-h-0">
@@ -2076,49 +2097,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </button>
                   </div>
                 )}
-
-                {/* Kai Fishing Lesson Card (Compact) */}
-                {merchantLocation === 'beach_house' &&
-                  kaiTutorialStage === 'meet' &&
-                  !kaiCardDismissed && (
-                    <div
-                      data-kai-tutorial-card="true"
-                      className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                          KAI&apos;S FISHING LESSON
-                        </span>
-                        <span className="px-1.5 py-0.5 bg-black/50 text-[9px] font-black text-white">
-                          2 MIN
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          data-kai-start-lesson-btn="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            onKaiTutorialStart?.();
-                          }}
-                          className="py-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer active:translate-y-0.5 transition-all"
-                        >
-                          SHOW ME HOW
-                        </button>
-                        <button
-                          type="button"
-                          data-kai-later-btn="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            onKaiTutorialLater?.();
-                          }}
-                          className="py-2 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer active:translate-y-0.5 transition-all"
-                        >
-                          LATER
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                 {/* Kai Chat Trade (F1 pilot): one mutating card, buttons only */}
                 {merchantLocation === 'beach_house' && !tradePhase &&
@@ -2366,7 +2344,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {/* Hana Property Pitch Card (Compact icon-first action card) */}
                 {merchantLocation === 'lobby_cafe' &&
                   !hasHouseOwnership &&
-                  !isTutorialHanaActive &&
                   pitchView === 'full' && (
                     <div
                       data-hana-property-pitch="true"
@@ -2431,7 +2408,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {/* Hana Welcome Bonus Card (Compact 1-line) */}
                 {merchantLocation === 'lobby_cafe' &&
                   walletConnected &&
-                  (isTutorialHanaActive || !hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
+                  (!hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
                     <div
                       data-hana-onboarding-tutorial-box="true"
                       className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
@@ -2467,7 +2444,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 if (res.ok) {
                                   soundEngine.playPickup();
                                   triggerNpcSpeech(
-                                    `${res.amountNear.toFixed(2)} NEAR added! Head outside to the Transit Kiosk.`,
+                                    `${res.amountNear.toFixed(2)} NEAR + 100 LUL + 20 CYON added! Feel free to explore the city or ask me anything.`,
                                   );
                                 } else {
                                   soundEngine.playHit();
@@ -2503,34 +2480,142 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               </a>
                             )}
                           </div>
-                          {onFinishHanaTutorialAndGuideKiosk && (
-                            <button
-                              type="button"
-                              data-hana-go-to-kiosk-btn="true"
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                onFinishHanaTutorialAndGuideKiosk();
-                              }}
-                              className="w-full py-2 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
-                            >
-                              CONTINUE
-                            </button>
-                          )}
                         </div>
                       )}
                     </div>
                   )}
 
+                {activeChatTxIntent && (
+                  <ChatActionCard
+                    {...chatTxSharedProps}
+                    intent={activeChatTxIntent}
+                    onChangeIntent={setActiveChatTxIntent}
+                    onOpenQuickModal={(initialTab) => {
+                      setQuickTxModalTab(initialTab);
+                      setIsQuickTxModalOpen(true);
+                    }}
+                  />
+                )}
+
                 <div ref={chatScrollEndRef} />
               </div>
 
-              {/* Quick Question Chips (messages sent via bottom-left chat input bar) */}
-              <div className="pt-2 border-t-2 border-black shrink-0 bg-white">
+              {/* In-Chat Quick Services + Quick Question Chips */}
+              <div className="pt-2 border-t-2 border-black shrink-0 bg-white space-y-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    data-chat-quick-shop-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setQuickTxModalTab('items');
+                      setIsQuickTxModalOpen(true);
+                    }}
+                    className="px-2 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Store className="w-3 h-3" aria-hidden="true" />
+                    <span>QUICK SHOP</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-chat-quick-exchange-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setActiveChatTxIntent({
+                        kind: 'exchange_lul_cyon',
+                        suggestedLulAmount: null,
+                      });
+                      window.setTimeout(
+                        () => chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
+                        30,
+                      );
+                    }}
+                    className="px-2 py-1 bg-[#d1fae5] hover:bg-[#a7f3d0] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Coins className="w-3 h-3" aria-hidden="true" />
+                    <span>EXCHANGE LUL</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-chat-quick-swap-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setActiveChatTxIntent({
+                        kind: 'swap_near_respite',
+                        suggestedNearAmount: 0.25,
+                      });
+                      window.setTimeout(
+                        () => chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
+                        30,
+                      );
+                    }}
+                    className="px-2 py-1 bg-[#ede9fe] hover:bg-[#ddd6fe] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" aria-hidden="true" />
+                    <span>SWAP NEAR</span>
+                  </button>
+                  {merchantLocation === 'lobby_cafe' ? (
+                    <button
+                      type="button"
+                      data-chat-quick-house-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setActiveChatTxIntent({
+                          kind: 'buy_house',
+                          style: houseArchitectureStyle,
+                        });
+                        window.setTimeout(
+                          () => chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
+                          30,
+                        );
+                      }}
+                      className="px-2 py-1 bg-[#e0f2fe] hover:bg-[#bae6fd] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors"
+                    >
+                      <Home className="w-3 h-3" aria-hidden="true" />
+                      <span>BUY HOUSE</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-chat-quick-gear-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setQuickTxModalTab('items');
+                        setIsQuickTxModalOpen(true);
+                      }}
+                      className="px-2 py-1 bg-[#fef08a] hover:bg-[#fde047] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors"
+                    >
+                      <ShoppingBag className="w-3 h-3" aria-hidden="true" />
+                      <span>FISHING GEAR</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-chat-quick-teleport-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setPitchViewBoth('hidden');
+                      setActiveChatTxIntent({
+                        kind: 'teleport_places',
+                        focusStationId: null,
+                      });
+                      window.setTimeout(
+                        () => chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
+                        30,
+                      );
+                    }}
+                    className="px-2 py-1 bg-[#cffafe] hover:bg-[#a5f3fc] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors"
+                  >
+                    <MapPin className="w-3 h-3" aria-hidden="true" />
+                    <span>TELEPORT</span>
+                  </button>
+                </div>
+
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
                     [
-                      'Where can I fish?',
-                      'Most expensive Fish NFT sold?',
+                      'What is this game?',
+                      'What can I do in this game?',
                       'How do currencies work?',
                     ] as const
                   ).map((prompt) => (
@@ -2546,6 +2631,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       {prompt}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    data-chat-clear-btn="true"
+                    onClick={handleClearChat}
+                    className="ml-auto px-2 py-1 bg-[#fee2e2] hover:bg-[#fecaca] text-[#991b1b] border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
+                  >
+                    <Trash2 className="w-3 h-3" aria-hidden="true" />
+                    <span>CLEAR CHAT</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2626,7 +2720,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   )}
                 </div>
 
-                {renderEconomySimBar('exchange')}
+                {/* Beginner-Friendly Currency Guide */}
+                <div className="px-3 py-2 bg-[#f8fafc] border-2 border-black text-[10.5px] font-bold text-slate-700 leading-snug">
+                  Swap <span className="font-black text-[#6d28d9]">NEAR -&gt; RESPITE</span> for Houses, NFT Furniture &amp; Fish Market, or{' '}
+                  <span className="font-black text-[#0369a1]">LUL -&gt; CYON</span> for Fishing Gear &amp; Cafe items.
+                </div>
 
                 {marketState.isShopBroke && (
                   <div className="p-2.5 bg-[#1e293b] text-white border-2 border-black flex items-center justify-between gap-2 flex-wrap">
@@ -2663,11 +2761,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                   }`}
                 >
-                  <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2">
-                    <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase">
-                      <span className="skew-x-6 inline-block">NEAR TO RESPITE</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-300">
+                  <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
+                        <span className="skew-x-6 inline-block">NEAR TO RESPITE</span>
+                      </span>
+                      <span className="text-[9.5px] font-bold text-slate-300">
+                        For Houses (100 R) &amp; Fish Market
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-[#d8b4fe]">
                       1 NEAR = {respitePerNearRate} RESPITE
                     </span>
                   </div>
@@ -2759,15 +2862,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                     {isReadOnlyWallet && (
                       <div className="p-2 bg-[#fef3c7] text-[#78350f] border border-black text-[10px] font-black text-center">
-                        View-only observer active ({playerNearAccount}). Clicking SWAP below will
-                        open the NEAR Wallet Selector so you can connect your signing wallet!
+                        View-only mode is active ({playerNearAccount}). Open Wallet and switch to your own account to swap.
                       </div>
                     )}
 
                     {exceedsKnownSignerBalance && (
                       <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold text-center">
-                        Amount exceeds wallet balance ({nearTestnetBalance.toFixed(2)} NEAR). Lower
-                        amount or switch to a funded Testnet wallet.
+                        Not enough NEAR ({nearTestnetBalance.toFixed(2)} NEAR available). Choose a smaller amount.
                       </div>
                     )}
 
@@ -2805,7 +2906,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           } else {
                             const detail =
                               getLastNearTransactionError() ||
-                              'Swap failed or was rejected by your NEAR wallet signer.';
+                              'Swap failed or was cancelled.';
                             setSwapErrorText(detail);
                             triggerNpcSpeech(detail);
                           }
@@ -2859,11 +2960,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                   }`}
                 >
-                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2">
-                    <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase">
-                      <span className="skew-x-6 inline-block">LUL TO CYON</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-300">
+                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
+                        <span className="skew-x-6 inline-block">LUL TO CYON</span>
+                      </span>
+                      <span className="text-[9.5px] font-bold text-slate-300">
+                        For Fishing Gear &amp; Cafe Items
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-[#38bdf8]">
                       {rateLul} LUL = {rateCyon} CYON
                     </span>
                   </div>
@@ -3008,8 +3114,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       </button>
                     )}
                   </div>
-
-                  {renderEconomySimBar('kai-shop')}
 
                   {/* Tactical Kiosk-Style 2x2 Selectable Card Grid */}
                   <div
@@ -3270,8 +3374,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </button>
                 </div>
 
-                {renderEconomySimBar('catalog')}
-
                 {/* Catalog tabs: House | Furniture | Property Market */}
                 <div className="grid grid-cols-3 gap-1.5" data-hana-catalog-tabs="true">
                   {(
@@ -3292,9 +3394,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       key={tab.id}
                       type="button"
                       data-hana-catalog-tab={tab.id}
-                      disabled={
-                        Boolean(homeTourGuide?.katalogTab) && tab.id !== homeTourGuide?.katalogTab
-                      }
                       onClick={() => {
                         soundEngine.playUiClick();
                         setHanaCatalogTab(tab.id);
@@ -3303,10 +3402,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         hanaCatalogTab === tab.id
                           ? 'bg-[#38bdf8] text-black shadow-[2px_2px_0px_#000]'
                           : 'bg-[#1e293b] text-white/75 hover:text-white'
-                      } ${
-                        homeTourGuide?.katalogTab && tab.id !== homeTourGuide.katalogTab
-                          ? 'opacity-40 cursor-not-allowed'
-                          : ''
                       }`}
                     >
                       <tab.Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -3316,17 +3411,37 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
 
                 {hanaCatalogTab === 'house' && (() => {
+                  const effectiveOwnedStyle = isHouseOwned
+                    ? ownedHouseStyle ?? houseArchitectureStyle
+                    : null;
                   const handleBuyDeed = async (style: 'plaza_manor' | 'japanese_pavilion') => {
                     soundEngine.playUiClick();
-                    onSelectHouseArchitectureStyle?.(style);
                     if (isHouseOwned) {
-                      triggerNpcSpeech('You already own your House! Tap GO TO YOUR HOUSE to walk in.');
+                      if (!onChainHouseStyleLocked) {
+                        onSelectHouseArchitectureStyle?.(style);
+                        triggerNpcSpeech(
+                          `Updated your deed plot style to ${
+                            style === 'japanese_pavilion'
+                              ? 'Japanese Pavilion'
+                              : 'Classic Plaza Manor'
+                          }.`,
+                        );
+                      } else {
+                        const ownedLabel =
+                          effectiveOwnedStyle === 'japanese_pavilion'
+                            ? 'Japanese Pavilion'
+                            : 'Classic Plaza Manor';
+                        triggerNpcSpeech(
+                          `You already own your ${ownedLabel} NFT Deed! Tap GO TO YOUR HOUSE to walk in.`,
+                        );
+                      }
                       return;
                     }
+                    onSelectHouseArchitectureStyle?.(style);
                     setCatalogActionFeedback(null);
                     setIsBuyingCatalogAsset(true);
                     try {
-                      const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE);
+                      const ok = await onBuyHouseWithRespite?.(HOUSE_OWNERSHIP_PRICE_RESPITE, style);
                       if (ok) {
                         const msg = `House Deed minted! Tap GO TO YOUR HOUSE to walk in.`;
                         setCatalogActionFeedback({ ok: true, text: msg });
@@ -3334,7 +3449,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       } else {
                         const detail =
                           getLastNearTransactionError() ||
-                          'House purchase requires a confirmed NEAR wallet transaction.';
+                          'Could not buy House. Make sure you have 100 RESPITE and confirmed the wallet prompt.';
                         setCatalogActionFeedback({ ok: false, text: detail });
                         triggerNpcSpeech(detail);
                       }
@@ -3376,13 +3491,44 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                   return (
                     <>
+                      {walletConnected && !isHouseOwned && !canAffordHouse && (
+                        <div
+                          data-house-exchange-hint="true"
+                          className="p-2.5 bg-[#faf5ff] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-between gap-2 flex-wrap"
+                        >
+                          <span className="text-[10.5px] font-bold text-[#3b0764] leading-snug">
+                            {nearTestnetBalance >= 0.25
+                              ? `Need ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE to buy a House. Swap 0.25 NEAR in the Exchange tab.`
+                              : `Need ${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE to buy a House. Trade NEAR or Fish NFTs for RESPITE in Exchange / Fish Market.`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setActiveTab('transaksi');
+                            }}
+                            className="px-2.5 py-1 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black text-[9.5px] font-black uppercase cursor-pointer shrink-0"
+                          >
+                            GO TO EXCHANGE
+                          </button>
+                        </div>
+                      )}
+
                       {/* Single-Column Full-Width Scrollable House Cards */}
                       <div
                         className="flex flex-col gap-3"
                         data-hana-house-architecture-grid="true"
                       >
                         {houseCatalogCards.map((card) => {
-                          const isSelected = houseArchitectureStyle === card.id;
+                          const isCardOwnedDeed = Boolean(
+                            isHouseOwned && effectiveOwnedStyle === card.id,
+                          );
+                          const isCardLockedOther = Boolean(
+                            isHouseOwned && onChainHouseStyleLocked && !isCardOwnedDeed,
+                          );
+                          const isSelected = isHouseOwned
+                            ? isCardOwnedDeed
+                            : houseArchitectureStyle === card.id;
                           return (
                             <article
                               key={card.id}
@@ -3401,7 +3547,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   data-house-style-card={card.id}
                                   onClick={() => {
                                     soundEngine.playUiClick();
-                                    onSelectHouseArchitectureStyle?.(card.id);
+                                    if (!isCardLockedOther) {
+                                      onSelectHouseArchitectureStyle?.(card.id);
+                                    }
                                   }}
                                   className="relative block w-full h-44 sm:h-48 text-left cursor-pointer bg-[#e9e2d4] overflow-hidden"
                                 >
@@ -3421,22 +3569,30 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   )}
                                   <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/60 via-black/20 to-transparent p-2.5 flex items-center justify-between gap-2 pr-8">
                                     <span
-                                      className={`px-2 py-0.5 ${card.badgeBg} text-[#0d0f12] border border-[#0d0f12] text-[8.5px] font-black uppercase`}
+                                      className={`px-2 py-0.5 ${
+                                        isCardOwnedDeed ? 'bg-[#b8ff3c]' : card.badgeBg
+                                      } text-[#0d0f12] border border-[#0d0f12] text-[8.5px] font-black uppercase`}
                                     >
-                                      {card.badge}
+                                      {isCardOwnedDeed ? 'OWNED NFT DEED' : card.badge}
                                     </span>
                                     <span
                                       className={`px-2 py-0.5 border border-[#0d0f12] text-[9px] font-black uppercase inline-flex items-center gap-1 ${
-                                        isHouseOwned
+                                        isCardOwnedDeed
                                           ? 'bg-[#b8ff3c] text-[#0d0f12]'
-                                          : 'bg-[#d8b4fe] text-[#0d0f12]'
+                                          : isHouseOwned
+                                            ? 'bg-slate-200 text-[#0d0f12]'
+                                            : 'bg-[#d8b4fe] text-[#0d0f12]'
                                       }`}
                                     >
                                       <Sparkles className="w-3 h-3" aria-hidden="true" />
                                       <span>
-                                        {isHouseOwned
+                                        {isCardOwnedDeed
                                           ? 'OWNED'
-                                          : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                                          : isHouseOwned
+                                            ? isCardLockedOther
+                                              ? 'OTHER SERIES'
+                                              : 'LEGACY SWITCH'
+                                            : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
                                       </span>
                                     </span>
                                   </div>
@@ -3469,7 +3625,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   </div>
 
                                   <div className="grid grid-cols-2 gap-2">
-                                    {isHouseOwned && onEnterOwnHouse ? (
+                                    {isCardOwnedDeed && onEnterOwnHouse ? (
                                       <button
                                         type="button"
                                         data-catalog-go-your-house-btn="true"
@@ -3509,18 +3665,23 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       disabled={
                                         !walletConnected ||
                                         isBuyingCatalogAsset ||
+                                        isCardLockedOther ||
                                         (!isHouseOwned && !canAffordHouse)
                                       }
                                       onClick={() => handleBuyDeed(card.id)}
                                       className={`py-2 px-2 border-2 border-[#0d0f12] shadow-[2px_2px_0_#0d0f12] text-[10px] font-black uppercase inline-flex items-center justify-center gap-1.5 transition-all ${
-                                        isHouseOwned
+                                        isCardOwnedDeed
                                           ? 'bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
-                                          : walletConnected && canAffordHouse && !isBuyingCatalogAsset
-                                            ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
-                                            : 'bg-slate-400 text-slate-700 cursor-not-allowed'
+                                          : isCardLockedOther
+                                            ? 'bg-slate-300 text-slate-600 cursor-not-allowed'
+                                            : isHouseOwned
+                                              ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0d0f12] cursor-pointer'
+                                              : walletConnected && canAffordHouse && !isBuyingCatalogAsset
+                                                ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
+                                                : 'bg-slate-400 text-slate-700 cursor-not-allowed'
                                       }`}
                                     >
-                                      {isHouseOwned ? (
+                                      {isCardOwnedDeed ? (
                                         <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                       ) : (
                                         <ShoppingBag
@@ -3531,9 +3692,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       <span className="truncate">
                                         {isBuyingCatalogAsset
                                           ? 'SIGNING...'
-                                          : isHouseOwned
+                                          : isCardOwnedDeed
                                             ? 'OWNED'
-                                            : `BUY ${HOUSE_OWNERSHIP_PRICE_RESPITE} R`}
+                                            : isCardLockedOther
+                                              ? '1 DEED OWNED'
+                                              : isHouseOwned
+                                                ? 'SELECT STYLE'
+                                                : `BUY ${HOUSE_OWNERSHIP_PRICE_RESPITE} R`}
                                       </span>
                                     </button>
                                   </div>
@@ -4323,16 +4488,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
                 </div>
 
-                {kaiTutorialStage === 'sell' && (
-                  <div
-                    data-kai-sell-guide="true"
-                    className="p-2.5 mb-2 bg-[#0f172a] text-white border-2 border-black text-[11px] font-bold"
-                  >
-                    KAI: Let's weigh your catch — tap the glowing SELL button below.
-                    Weight is money here; mint a fish as an NFT later and it can sell for
-                    RESPITE.
-                  </div>
-                )}
                 {caughtFishBucket.length === 0 ? (
                   <div className="py-4 px-3 bg-white border-2 border-dashed border-slate-400 text-center text-[11px] font-bold text-slate-600">
                     Your Fish Bucket is empty. Walk to the East Beach shoreline or the Central Oasis Lake and press [F] CAST ROD to catch fish.
@@ -4452,7 +4607,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab.`,
                                   );
                                 }}
-                                className={`flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer ${kaiTutorialStage === 'sell' ? 'ring-4 ring-[#b8ff3c]' : ''}`}
+                                className="flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer"
                               >
                                 SELL (+{lulValue} LUL)
                               </button>
@@ -4752,6 +4907,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         </div>
       </div>
       </aside>
+      <QuickShopChatModal
+        {...chatTxSharedProps}
+        isOpen={isQuickTxModalOpen}
+        initialTab={quickTxModalTab}
+        onClose={() => setIsQuickTxModalOpen(false)}
+      />
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
       <Furniture3dPreviewModal
         item={preview3dFurniture}

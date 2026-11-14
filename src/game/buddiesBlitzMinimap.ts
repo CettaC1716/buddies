@@ -257,6 +257,7 @@ export function applyGrassChunkSyncedFogOfWar3D(params: {
   activeMapProps?: ReadonlyArray<ActiveMapPropPhysics>;
   worldMode?: WorldMode;
   playerTeam?: 'blue' | 'red';
+  hideOutdoorEntities?: boolean;
 }): void {
   const {
     viewerX,
@@ -271,7 +272,36 @@ export function applyGrassChunkSyncedFogOfWar3D(params: {
     activeMapProps = [],
     worldMode = 'warzone',
     playerTeam = 'blue',
+    hideOutdoorEntities = false,
   } = params;
+
+  if (hideOutdoorEntities) {
+    for (let i = 0; i < worldCrates.length; i++) {
+      worldCrates[i].mesh.visible = false;
+    }
+    for (let i = 0; i < worldPickups.length; i++) {
+      worldPickups[i].mesh.visible = false;
+    }
+    for (let i = 0; i < activeMapProps.length; i++) {
+      if (activeMapProps[i].kind === 'explosive_barrel') {
+        activeMapProps[i].wrapper.visible = false;
+      }
+    }
+    for (let i = 0; i < activeOrdnanceDevices.length; i++) {
+      activeOrdnanceDevices[i].mesh.visible = false;
+    }
+    for (let i = 0; i < buddyUnits.length; i++) {
+      const b = buddyUnits[i];
+      if (!b.isPlayer) {
+        b.root.visible = false;
+        b.saluteSign.sprite.visible = false;
+      }
+    }
+    for (let i = 0; i < tanks.length; i++) {
+      tanks[i].root.visible = false;
+    }
+    return;
+  }
 
   const isMapPreview = playMode === 'editor' || bypassFogOfWar;
 
@@ -361,10 +391,10 @@ export function applyGrassChunkSyncedFogOfWar3D(params: {
     }
   }
 
-  // 5. Buddy Units (Characters) — friendly always visible; enemy smoothly scales at 21.5m..26m
+  // 5. Buddy Units (Characters) — friendly always visible in warzone; hidden outside warzone
   for (let i = 0; i < buddyUnits.length; i++) {
     const b = buddyUnits[i];
-    if (!b.alive) {
+    if (!b.alive || (!b.isPlayer && worldMode !== 'warzone')) {
       b.root.visible = false;
       continue;
     }
