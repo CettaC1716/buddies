@@ -493,6 +493,128 @@ export function resolveTutorialFurnitureTarget(
   };
 }
 
+export function formatHouseDeedBadgeLabel(deedTokenId?: string | null): string {
+  const raw = String(deedTokenId || '').trim();
+  const match = raw.match(/house-deed-0*(\d+)$/i);
+  if (match?.[1]) {
+    return `DEED #${match[1].padStart(3, '0')}`;
+  }
+  if (raw) {
+    return raw.length <= 16 ? raw.toUpperCase() : 'HOUSE DEED';
+  }
+  return 'HOUSE DEED';
+}
+
+export function getHouseStyleDisplaySpec(style: 'plaza_manor' | 'japanese_pavilion'): {
+  title: string;
+  imageSrc: string;
+  description: string;
+} {
+  if (style === 'japanese_pavilion') {
+    return {
+      title: 'JAPANESE PAVILION HOUSE',
+      imageSrc: '/assets/kiosk/house_exterior.jpg',
+      description: 'Japanese Pavilion house deed — unlocks residential plots and interior customization.',
+    };
+  }
+  return {
+    title: 'CLASSIC PLAZA MANOR',
+    imageSrc: '/assets/kiosk/plaza_manor_exterior.jpg',
+    description: 'Classic Plaza Manor house deed — unlocks residential plots and interior customization.',
+  };
+}
+
+export function formatWalletHistoryActionLabel(actionType?: string | null): string {
+  const clean = String(actionType || '')
+    .trim()
+    .toUpperCase();
+  if (!clean) return 'TX';
+  if (clean === 'EXCHANGE_LUL_CYON' || clean === 'EXCHANGE') {
+    return 'EXCHANGE';
+  }
+  return clean.replace(/_/g, ' ');
+}
+
+export function formatWalletHistoryAmountDisplay(tx: {
+  action_type: string;
+  item_id?: string | null;
+  currency: string;
+  amount: number;
+  unit_price: number;
+}): {
+  amountText: string;
+  badgeCurrency: 'LUL' | 'CYON' | 'RESPITE' | 'NEAR';
+} {
+  const action = String(tx.action_type || '').toUpperCase();
+  const rawCurrency = String(tx.currency || 'LUL').toUpperCase();
+  const normalizedCurrency: 'LUL' | 'CYON' | 'RESPITE' | 'NEAR' =
+    rawCurrency === 'CYON'
+      ? 'CYON'
+      : rawCurrency === 'RESPITE'
+        ? 'RESPITE'
+        : rawCurrency === 'NEAR'
+          ? 'NEAR'
+          : 'LUL';
+  const amount = Math.max(0, Number(tx.amount) || 0);
+  const unitPrice = Math.max(0, Number(tx.unit_price) || 0);
+
+  if (action === 'CLAIM_STARTER_NEAR') {
+    if (normalizedCurrency === 'NEAR' || tx.item_id === 'hana_welcome_near_0_30') {
+      const nearAmt = normalizedCurrency === 'NEAR' && amount > 0 ? amount : 0.3;
+      return {
+        amountText: `${nearAmt.toFixed(2)} NEAR`,
+        badgeCurrency: 'NEAR',
+      };
+    }
+  }
+
+  if (action === 'BUY_ITEM' || action === 'SELL_ITEM') {
+    const total = unitPrice > 0 ? (amount > 0 ? amount * unitPrice : unitPrice) : amount;
+    const formatted = Number.isInteger(total) ? String(total) : String(Number(total.toFixed(4)));
+    return {
+      amountText: `${formatted} ${normalizedCurrency}`,
+      badgeCurrency: normalizedCurrency,
+    };
+  }
+
+  const formatted = Number.isInteger(amount) ? String(amount) : String(Number(amount.toFixed(4)));
+  return {
+    amountText: `${formatted} ${normalizedCurrency}`,
+    badgeCurrency: normalizedCurrency,
+  };
+}
+
+/**
+ * Reconciles cached/profile item IDs against authoritative on-chain NEP-245 balances.
+ * Non-NEP-245 entries (off-chain fishing gear, fish NFT IDs) are preserved intact while
+ * every catalog item backed by a `nep245:*` token matches its live on-chain count.
+ */
+export function mergeOwnedCatalogWithChainNep245(
+  currentOwnedIds: readonly string[],
+  onChainNep245Counts: Record<string, number> | null,
+): string[] {
+  if (!onChainNep245Counts) return [...currentOwnedIds];
+  const nep245ItemByTokenId = new Map<string, MerchantCatalogItem>();
+  const nep245CatalogItemIds = new Set<string>();
+  for (const item of MERCHANT_CATALOG_ITEMS) {
+    if (item.tokenId.startsWith('nep245:')) {
+      nep245ItemByTokenId.set(item.tokenId, item);
+      nep245CatalogItemIds.add(item.id);
+    }
+  }
+  const preserved = currentOwnedIds.filter((id) => !nep245CatalogItemIds.has(id));
+  const reconciled: string[] = [];
+  for (const [tokenId, count] of Object.entries(onChainNep245Counts)) {
+    const item = nep245ItemByTokenId.get(tokenId);
+    if (!item) continue;
+    const copies = Math.max(0, Math.floor(Number(count) || 0));
+    for (let i = 0; i < copies; i += 1) {
+      reconciled.push(item.id);
+    }
+  }
+  return [...preserved, ...reconciled];
+}
+
 /**
  * Exchange LUL -> CYON at the NPC Merchant.
  * If NPC runs out of CYON (< 20 CYON), the merchant goes broke until someone invests!

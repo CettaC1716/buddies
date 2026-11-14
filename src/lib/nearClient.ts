@@ -686,13 +686,44 @@ export interface OnChainCitizenEstateSummary {
 
 export async function fetchBuddiesMarketEstate(
   accountId: string,
+  finality: 'final' | 'optimistic' = 'final',
 ): Promise<OnChainCitizenEstateSummary | null> {
   if (!accountId || !accountId.trim()) return null;
   return callNearContractViewMethod<OnChainCitizenEstateSummary>({
     contractId: NEAR_CONFIG.marketContractId,
     methodName: 'get_player_estate',
     args: { account_id: accountId.trim() },
+    finality,
   });
+}
+
+/**
+ * Queries NEP-245 `mt_batch_balance_of` on `market.buddiesblitz.testnet` to return
+ * authoritative on-chain quantities per tokenId (furniture, themes, collector rods).
+ * Returns `null` when RPC is unreachable so callers can safely keep local cache.
+ */
+export async function fetchOwnedNep245CatalogCounts(
+  accountId: string,
+  tokenIds: readonly string[],
+  finality: 'final' | 'optimistic' = 'optimistic',
+): Promise<Record<string, number> | null> {
+  const cleanAccount = accountId.trim();
+  const cleanIds = tokenIds.map((t) => t.trim()).filter((t) => t.startsWith('nep245:'));
+  if (!cleanAccount || cleanIds.length === 0) return null;
+  const raw = await callNearContractViewMethod<Array<string | number>>({
+    contractId: NEAR_CONFIG.nep245MultiTokenContractId,
+    methodName: 'mt_batch_balance_of',
+    args: { account_id: cleanAccount, token_ids: cleanIds },
+    networkOrAccount: cleanAccount,
+    finality,
+  });
+  if (!Array.isArray(raw) || raw.length !== cleanIds.length) return null;
+  const counts: Record<string, number> = {};
+  cleanIds.forEach((id, idx) => {
+    const qty = Math.max(0, Math.floor(Number(raw[idx] ?? 0) || 0));
+    if (qty > 0) counts[id] = qty;
+  });
+  return counts;
 }
 
 /**

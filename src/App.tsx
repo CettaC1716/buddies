@@ -76,11 +76,18 @@ import {
   Fish3dThumbnail,
   type Fish3dPreviewSpec,
 } from './components/Fish3dPreviewModal';
+import { Furniture3dThumbnail } from './components/Furniture3dThumbnail';
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
   executeLulToCyonExchangePackets,
   evaluateLulToCyonExchangeQuote,
+  evaluateMerchantItemQuote,
+  formatHouseDeedBadgeLabel,
+  formatWalletHistoryActionLabel,
+  formatWalletHistoryAmountDisplay,
+  getHouseStyleDisplaySpec,
+  mergeOwnedCatalogWithChainNep245,
   resolveTutorialFurnitureTarget,
   evaluateNegotiationEnvelope,
   createNpcTreasuryLedger,
@@ -145,6 +152,7 @@ import {
   fetchNearNetworkStatus,
   fetchNep141Balance,
   fetchOwnedFishNftsFromChain,
+  fetchOwnedNep245CatalogCounts,
   getNearBlocksTxUrl,
   isActiveWalletReadOnlyObserver,
   onNearSigningWalletConnected,
@@ -778,11 +786,27 @@ export default function App() {
   const [houseArchitectureStyle, setHouseArchitectureStyle] = useState<
     'plaza_manor' | 'japanese_pavilion'
   >('plaza_manor');
+  const setAndPersistHouseArchitectureStyle = useCallback(
+    (style: 'plaza_manor' | 'japanese_pavilion', accountOverride?: string) => {
+      setHouseArchitectureStyle(style);
+      if (typeof window === 'undefined') return;
+      const acct = (accountOverride || hudRef.current.nearWalletId || playerUid || '')
+        .trim()
+        .toLowerCase();
+      if (!acct) return;
+      try {
+        window.localStorage.setItem(`bb_house_arch_style_v1:${acct}`, style);
+      } catch {
+        // ignore storage failures
+      }
+    },
+    [playerUid],
+  );
   const [isHouseFriendInviteOpen, setIsHouseFriendInviteOpen] = useState<boolean>(false);
   const [houseInviteFriendInput, setHouseInviteFriendInput] = useState<string>('');
   const [houseInviteFeedback, setHouseInviteFeedback] = useState<string | null>(null);
   const [walletHistoryFilter, setWalletHistoryFilter] = useState<
-    'ALL' | 'LUL' | 'CYON' | 'RESPITE'
+    'ALL' | 'LUL' | 'CYON' | 'RESPITE' | 'NEAR'
   >('ALL');
   const [walletTransactions, setWalletTransactions] = useState<DbMarketTransactionRow[]>([]);
   const [isLoadingWalletTransactions, setIsLoadingWalletTransactions] = useState<boolean>(false);
@@ -2964,7 +2988,7 @@ export default function App() {
         void logMarketTransactionToSupabase({
           merchant_id: merchantLocation,
           actor_near_account: actorAccount,
-          action_type: 'exchange_lul_cyon',
+          action_type: 'exchange',
           currency: 'CYON',
           amount: res.updatedCyon - cyonBalance,
           unit_price: lulSpent,
@@ -3143,11 +3167,17 @@ export default function App() {
         .toLowerCase();
       if (!targetAccount) return;
 
-      const [accountView, liveRespiteStr, hanaStatus] = await Promise.all([
-        fetchNearAccountView(targetAccount, 'optimistic'),
-        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, targetAccount, 'optimistic'),
-        fetchHanaTreasuryStatus(targetAccount, 'optimistic'),
-      ]);
+      const nep245Ids = MERCHANT_CATALOG_ITEMS.filter((i) => i.tokenId.startsWith('nep245:')).map(
+        (i) => i.tokenId,
+      );
+      const [accountView, liveRespiteStr, hanaStatus, liveEstate, nep245Counts] =
+        await Promise.all([
+          fetchNearAccountView(targetAccount, 'optimistic'),
+          fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, targetAccount, 'optimistic'),
+          fetchHanaTreasuryStatus(targetAccount, 'optimistic'),
+          fetchBuddiesMarketEstate(targetAccount, 'optimistic').catch(() => null),
+          fetchOwnedNep245CatalogCounts(targetAccount, nep245Ids, 'optimistic').catch(() => null),
+        ]);
 
       const floor = pendingPostClaimFloorRef.current;
       const floorActive =
@@ -3182,6 +3212,29 @@ export default function App() {
           setHanaWelcomeNearClaimed(true);
         } else if (!floorActive) {
           setHanaWelcomeNearClaimed(false);
+        }
+      }
+
+      const activeWalletNow = (hudRef.current.nearWalletId || '').trim().toLowerCase();
+      if (activeWalletNow && activeWalletNow === targetAccount) {
+        const deedTokenId = liveEstate?.house_deed?.deed_token_id || null;
+        if (liveEstate?.owns_house || deedTokenId) {
+          setHasHouseOwnership(true);
+          if (deedTokenId) {
+            setHud((prev) =>
+              prev.nearHasGamepassNft && prev.nearGamepassTokenId === deedTokenId
+                ? prev
+                : { ...prev, nearHasGamepassNft: true, nearGamepassTokenId: deedTokenId },
+            );
+          }
+        }
+        if (nep245Counts) {
+          setOwnedMerchantItemIds((prev) => {
+            const next = mergeOwnedCatalogWithChainNep245(prev, nep245Counts);
+            return next.length === prev.length && next.every((v, i) => v === prev[i])
+              ? prev
+              : next;
+          });
         }
       }
     },
@@ -3340,19 +3393,31 @@ export default function App() {
         }
       }
 
-      const [onChainRespiteRaw, onChainEstate, gamepassVerify, hanaStatus, remoteProfile] =
-        await Promise.all([
-          fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet, 'optimistic'),
-          fetchBuddiesMarketEstate(normalizedWallet),
-          verifyNep171GamepassOwnership(normalizedWallet),
-          fetchHanaTreasuryStatus(normalizedWallet, 'optimistic'),
-          fetchOrCreatePlayerProfile({
-            nearAccountId: normalizedWallet,
-            displayName: savedLocalProfile?.displayName || normalizedDefaultName,
-            authMode: isCitizenInvisible ? 'social_invisible' : 'wallet_selector',
-            email: resolvedEmail || undefined,
-          }),
-        ]);
+      const nep245TokenIds = MERCHANT_CATALOG_ITEMS.filter((i) =>
+        i.tokenId.startsWith('nep245:'),
+      ).map((i) => i.tokenId);
+      const [
+        onChainRespiteRaw,
+        onChainEstate,
+        gamepassVerify,
+        hanaStatus,
+        remoteProfile,
+        onChainNep245Counts,
+      ] = await Promise.all([
+        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet, 'optimistic'),
+        fetchBuddiesMarketEstate(normalizedWallet, 'optimistic'),
+        verifyNep171GamepassOwnership(normalizedWallet),
+        fetchHanaTreasuryStatus(normalizedWallet, 'optimistic'),
+        fetchOrCreatePlayerProfile({
+          nearAccountId: normalizedWallet,
+          displayName: savedLocalProfile?.displayName || normalizedDefaultName,
+          authMode: isCitizenInvisible ? 'social_invisible' : 'wallet_selector',
+          email: resolvedEmail || undefined,
+        }),
+        fetchOwnedNep245CatalogCounts(normalizedWallet, nep245TokenIds, 'optimistic').catch(
+          () => null,
+        ),
+      ]);
       setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
       const hasAuthoritativeOnChainBalance =
         Boolean(accountView) || onChainRespiteRaw !== null || onChainEstate !== null;
@@ -3422,6 +3487,21 @@ export default function App() {
       setOnboardingAuthMode('wallet');
       setHasHouseOwnership(ownsHouseVerified);
 
+      let restoredHouseStyle: 'plaza_manor' | 'japanese_pavilion' = 'plaza_manor';
+      if (typeof window !== 'undefined') {
+        try {
+          const savedStyle = window.localStorage.getItem(
+            `bb_house_arch_style_v1:${normalizedWallet}`,
+          );
+          if (savedStyle === 'japanese_pavilion' || savedStyle === 'plaza_manor') {
+            restoredHouseStyle = savedStyle;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      setHouseArchitectureStyle(restoredHouseStyle);
+
       dispatchBuddyAction(
         `nearSyncWalletSession:${normalizedWallet}:${ownsHouseVerified ? '1' : '0'}:${verifiedTokenId || ''}`,
       );
@@ -3435,6 +3515,10 @@ export default function App() {
         nearGamepassTokenId: verifiedTokenId,
       }));
 
+      const reconciledOwnedIds = mergeOwnedCatalogWithChainNep245(
+        Array.isArray(remoteProfile?.owned_token_ids) ? remoteProfile.owned_token_ids : [],
+        onChainNep245Counts,
+      );
       if (remoteProfile) {
         setSupabaseConnected(true);
         setCyonBalance(remoteProfile.cyon_balance);
@@ -3449,9 +3533,9 @@ export default function App() {
             respiteBalance: onChainRespite,
           });
         }
-        if (Array.isArray(remoteProfile.owned_token_ids)) {
-          setOwnedMerchantItemIds(remoteProfile.owned_token_ids);
-        }
+        setOwnedMerchantItemIds(reconciledOwnedIds);
+      } else if (onChainNep245Counts) {
+        setOwnedMerchantItemIds(reconciledOwnedIds);
       }
 
       if (entryDecision.isReturningUser) {
@@ -3490,10 +3574,7 @@ export default function App() {
         },
       );
 
-      void loadSavedHouseInterior(
-        normalizedWallet,
-        remoteProfile?.owned_token_ids ?? [],
-      );
+      void loadSavedHouseInterior(normalizedWallet, reconciledOwnedIds);
     },
     [
       beginPlazaFlyToOnboarding,
@@ -4126,9 +4207,9 @@ export default function App() {
       actor_near_account: actorAccount,
       action_type: 'claim_starter_near',
       item_id: 'hana_welcome_near_0_30',
-      currency: 'RESPITE',
-      amount: 1,
-      unit_price: 0,
+      currency: 'NEAR',
+      amount: 0.3,
+      unit_price: 1,
       reasoning_summary: `Claimed +0.30 NEAR starter grant from Hana Smart Contract Treasury (${NEAR_CONFIG.marketContractId}).`,
       near_tx_hash: claimRes.txHash,
     });
@@ -7686,7 +7767,7 @@ export default function App() {
         hanaPitchOrigin={hanaPitchOrigin}
         houseArchitectureStyle={houseArchitectureStyle}
         onSelectHouseArchitectureStyle={(style) => {
-          setHouseArchitectureStyle(style);
+          setAndPersistHouseArchitectureStyle(style);
         }}
         onViewModelHouse={(requestedStyle) => {
           soundEngine.playUiClick();
@@ -7710,7 +7791,7 @@ export default function App() {
         onEnterOwnHouse={(requestedStyle) => {
           soundEngine.playUiClick();
           const targetStyle = requestedStyle ?? houseArchitectureStyle;
-          setHouseArchitectureStyle(targetStyle);
+          setAndPersistHouseArchitectureStyle(targetStyle);
           setActiveSpecialModal('none');
           setHanaPitchOrigin(null);
           setIsKioskModalOpen(false);
@@ -8111,7 +8192,7 @@ export default function App() {
                   void logMarketTransactionToSupabase({
                     merchant_id: merchantLocation,
                     actor_near_account: actorAccount,
-                    action_type: 'exchange_lul_cyon',
+                    action_type: 'exchange',
                     currency: 'CYON',
                     amount: cyonGranted,
                     unit_price: Number((lulSpent / Math.max(1, cyonGranted)).toFixed(2)),
@@ -8144,7 +8225,7 @@ export default function App() {
               void logMarketTransactionToSupabase({
                 merchant_id: merchantLocation,
                 actor_near_account: actorAccount,
-                action_type: 'exchange_lul_cyon',
+                action_type: 'exchange',
                 currency: 'CYON',
                 amount: res.updatedCyon - cyonBalance,
                 unit_price: lulSpent,
@@ -8302,6 +8383,7 @@ export default function App() {
                 amount: 1,
                 unit_price: finalPrice,
                 reasoning_summary: headline,
+                near_tx_hash: onChainBuyReceipt.txHash,
               });
             }
 
@@ -8335,6 +8417,7 @@ export default function App() {
           if (ownedCount - placedCount < 1) return false;
           let nextCyon = cyonBalance;
           let nextRespite = respiteBalance;
+          let sellTxHash: string | undefined;
           if (item.currency === 'CYON') {
             nextCyon = cyonBalance + refund;
             setCyonBalance(nextCyon);
@@ -8353,11 +8436,13 @@ export default function App() {
               },
             });
             if (!res.ok) return false;
+            sellTxHash = res.txHash || undefined;
             const resolvedActor = res.signerAccountId || actorAccount;
             nextRespite = respiteBalance + refund;
             const liveRespiteStr = await fetchNep141Balance(
               NEAR_CONFIG.nep141RespiteContractId,
               resolvedActor,
+              'optimistic',
             ).catch(() => null);
             if (liveRespiteStr !== null) {
               nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
@@ -8413,6 +8498,7 @@ export default function App() {
               amount: 1,
               unit_price: refund,
               reasoning_summary: headline,
+              near_tx_hash: sellTxHash,
             });
 
             return {
@@ -8554,7 +8640,7 @@ export default function App() {
             void logMarketTransactionToSupabase({
               merchant_id: merchantLocation,
               actor_near_account: resolvedActor,
-              action_type: 'exchange_lul_cyon',
+              action_type: 'exchange',
               nep245_token_id: receipt.tokenContractId,
               currency: 'RESPITE',
               amount: receipt.respiteAmount,
@@ -9555,7 +9641,30 @@ export default function App() {
               )}
             </div>
               </>
-            ) : personalWalletTab === 'assets' ? (
+            ) : personalWalletTab === 'assets' ? (() => {
+              const houseDisplay = getHouseStyleDisplaySpec(houseArchitectureStyle);
+              const deedBadgeLabel = formatHouseDeedBadgeLabel(hud.nearGamepassTokenId);
+              const walletCatalogCounts = countOwnedMerchantItems(ownedMerchantItemIds);
+              const walletCatalogItems = MERCHANT_CATALOG_ITEMS.filter(
+                (item) => (walletCatalogCounts[item.id] ?? 0) > 0,
+              );
+              const walletCatalogTotalCount = walletCatalogItems.reduce(
+                (sum, item) => sum + (walletCatalogCounts[item.id] ?? 0),
+                0,
+              );
+              const walletMintedFish = caughtFishBucket.filter((f) => f.isMintedNft);
+              const walletListedFish = fishMarketListings.filter(
+                (l) =>
+                  Boolean(hud.nearWalletId) &&
+                  l.sellerNearAccount.toLowerCase() === (hud.nearWalletId || '').toLowerCase(),
+              );
+              const totalOwnedWalletItems =
+                (hasHouseOwnership ? 1 : 0) +
+                walletCatalogTotalCount +
+                walletMintedFish.length +
+                recruitedFamilyMembers.length +
+                walletListedFish.length;
+              return (
               <div data-wallet-assets-panel="true" className="space-y-3">
                 <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                   <div>
@@ -9567,18 +9676,21 @@ export default function App() {
                     </div>
                   </div>
                   <div className="px-2.5 py-1 bg-[#0f172a] border border-white/20 text-[10px] font-mono font-bold text-[#b8ff3c]">
-                    {(hasHouseOwnership ? 1 : 0) + caughtFishBucket.filter((f) => f.isMintedNft).length + recruitedFamilyMembers.length} OWNED
+                    {totalOwnedWalletItems} OWNED
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* 1. HOUSE DEED CARD */}
                   {hasHouseOwnership && (
-                    <div className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
+                    <div
+                      data-wallet-house-card={houseArchitectureStyle}
+                      className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+                    >
                       <div className="relative w-full h-28 bg-slate-900 border-2 border-black overflow-hidden flex items-center justify-center">
                         <img
-                          src="/assets/kiosk/private_house_isometric.jpg"
-                          alt="Private House"
+                          src={houseDisplay.imageSrc}
+                          alt={houseDisplay.title}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
@@ -9588,16 +9700,21 @@ export default function App() {
                           HOUSE
                         </div>
                         <div className="absolute bottom-1.5 right-1.5 px-2 py-0.5 bg-black/80 text-[#38bdf8] font-mono text-[9px]">
-                          DEED #001
+                          {deedBadgeLabel}
                         </div>
                       </div>
                       <div>
                         <div className="text-xs font-black uppercase text-black">
-                          JAPANESE PAVILION HOUSE
+                          {houseDisplay.title}
                         </div>
                         <div className="text-[10px] font-bold text-slate-600">
-                          Unlocks residential plots and interior customization.
+                          {houseDisplay.description}
                         </div>
+                        {hud.nearGamepassTokenId && (
+                          <div className="text-[9.5px] font-mono text-slate-500 mt-0.5 truncate">
+                            {hud.nearGamepassTokenId}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
                         <span className="text-emerald-600 font-bold">OWNED</span>
@@ -9605,6 +9722,58 @@ export default function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* 1B. OWNED FURNITURE, HOUSE THEMES & COLLECTOR GEAR */}
+                  {walletCatalogItems.map((item) => {
+                    const qty = walletCatalogCounts[item.id] ?? 1;
+                    const placedQty = placedFurnitureCounts[item.id] ?? 0;
+                    const quote = evaluateMerchantItemQuote(marketState, item);
+                    const categoryLabel =
+                      item.category === 'nft_collector_furniture'
+                        ? 'FURNITURE'
+                        : item.category === 'nft_house_theme'
+                          ? 'THEME'
+                          : 'GEAR';
+                    return (
+                      <div
+                        key={item.id}
+                        data-wallet-catalog-item={item.id}
+                        className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+                      >
+                        <div className="relative">
+                          <Furniture3dThumbnail
+                            catalogId={item.id}
+                            name={item.name}
+                            iconEmoji={item.iconEmoji}
+                            size="normal"
+                          />
+                          <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black font-black text-[9px] uppercase pointer-events-none">
+                            {categoryLabel}
+                          </div>
+                          <div className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 bg-[#0f172a]/90 text-[#b8ff3c] border border-black font-mono font-bold text-[9px] pointer-events-none">
+                            {item.isNft ? 'NFT' : 'ITEM'}
+                            {qty > 1 ? ` ×${qty}` : ''}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-black uppercase text-black truncate">
+                            {item.name}
+                          </div>
+                          <div className="text-[9.5px] font-mono text-slate-500 truncate">
+                            {item.tokenId}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                          <span className="text-emerald-600 font-bold">
+                            {placedQty > 0 ? `OWNED · IN ROOM ×${placedQty}` : 'OWNED'}
+                          </span>
+                          <span className="text-slate-500">
+                            {quote.buyPrice} {item.currency}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
 
                   {/* 2. RECRUITED FAMILY MEMBERS */}
                   {recruitedFamilyMembers.map((m) => (
@@ -9779,25 +9948,18 @@ export default function App() {
                       );
                     })}
 
-                  {!hasHouseOwnership &&
-                    recruitedFamilyMembers.length === 0 &&
-                    caughtFishBucket.filter((f) => f.isMintedNft).length === 0 &&
-                    fishMarketListings.filter(
-                      (l) =>
-                        Boolean(hud.nearWalletId) &&
-                        l.sellerNearAccount.toLowerCase() ===
-                          (hud.nearWalletId || '').toLowerCase(),
-                    ).length === 0 && (
+                  {totalOwnedWalletItems === 0 && (
                       <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 text-xs font-bold space-y-1">
                         <div>NO ITEMS YET</div>
                         <div className="text-[10.5px] text-slate-400">
-                          Buy a house, recruit a companion, or mint caught fish into NFTs.
+                          Buy a house, furniture, recruit a companion, or mint caught fish into NFTs.
                         </div>
                       </div>
                     )}
                 </div>
               </div>
-            ) : (
+              );
+            })() : (
               <div data-wallet-history-panel="true" className="space-y-3">
                 {/* HEADER & CURRENCY FILTER PILLS */}
                 <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5">
@@ -9826,7 +9988,7 @@ export default function App() {
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-white/15">
-                    {(['ALL', 'LUL', 'CYON', 'RESPITE'] as const).map((filterKey) => (
+                    {(['ALL', 'LUL', 'CYON', 'RESPITE', 'NEAR'] as const).map((filterKey) => (
                       <button
                         key={filterKey}
                         type="button"
@@ -9851,10 +10013,8 @@ export default function App() {
                 {(() => {
                   const filteredTxs = walletTransactions.filter((tx) => {
                     if (walletHistoryFilter === 'ALL') return true;
-                    if (walletHistoryFilter === 'LUL') {
-                      return tx.currency === 'LUL' || tx.currency === 'GOLD';
-                    }
-                    return tx.currency === walletHistoryFilter;
+                    const displayAmount = formatWalletHistoryAmountDisplay(tx);
+                    return displayAmount.badgeCurrency === walletHistoryFilter;
                   });
 
                   if (isLoadingWalletTransactions && filteredTxs.length === 0) {
@@ -9884,12 +10044,16 @@ export default function App() {
                   return (
                     <div className="space-y-2">
                       {filteredTxs.map((tx) => {
+                        const displayAmount = formatWalletHistoryAmountDisplay(tx);
+                        const actionLabel = formatWalletHistoryActionLabel(tx.action_type);
                         const badgeBg =
-                          tx.currency === 'CYON'
+                          displayAmount.badgeCurrency === 'CYON'
                             ? 'bg-[#38bdf8]'
-                            : tx.currency === 'RESPITE'
+                            : displayAmount.badgeCurrency === 'RESPITE'
                               ? 'bg-[#d8b4fe]'
-                              : 'bg-[#fec83e]';
+                              : displayAmount.badgeCurrency === 'NEAR'
+                                ? 'bg-[#b8ff3c]'
+                                : 'bg-[#fec83e]';
                         const formattedDate = (() => {
                           try {
                             const d = new Date(tx.created_at);
@@ -9915,7 +10079,7 @@ export default function App() {
                               <div className="min-w-0 space-y-0.5">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="px-1.5 py-0.5 bg-[#1e293b] text-[#b8ff3c] border border-black text-[9px] font-black uppercase tracking-wider">
-                                    {tx.action_type.replace(/_/g, ' ')}
+                                    {actionLabel}
                                   </span>
                                   <span className="text-[10px] font-bold text-slate-500">
                                     {formattedDate}
@@ -9930,7 +10094,7 @@ export default function App() {
                                 className={`-skew-x-6 px-2.5 py-1 ${badgeBg} text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs shrink-0`}
                               >
                                 <span className="skew-x-6 inline-block">
-                                  {tx.amount} {tx.currency === 'GOLD' ? 'LUL' : tx.currency}
+                                  {displayAmount.amountText}
                                 </span>
                               </div>
                             </div>

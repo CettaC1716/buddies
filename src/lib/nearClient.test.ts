@@ -10,6 +10,7 @@ import {
   fetchNearAccountView,
   fetchNep141Balance,
   fetchOwnedFishNftsFromChain,
+  fetchOwnedNep245CatalogCounts,
   getMyNearWalletLoginUrl,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
@@ -25,7 +26,12 @@ import {
   MERCHANT_CATALOG_ITEMS,
   createInitialMerchantMarketState,
   createInitialPlacedHouseFurniture,
+  formatHouseDeedBadgeLabel,
+  formatWalletHistoryActionLabel,
+  formatWalletHistoryAmountDisplay,
   generateNpcMerchantReply,
+  getHouseStyleDisplaySpec,
+  mergeOwnedCatalogWithChainNep245,
   resolveTutorialFurnitureTarget,
 } from '../game/buddiesMerchantPricing';
 import {
@@ -746,4 +752,161 @@ test('resolveTutorialFurnitureTarget computes live minimum price and exact NEAR 
   assert.notEqual(nextCheapest.item.id, 'tatami_tea_table');
   assert.ok(nextCheapest.stock > 0);
   assert.ok(nextCheapest.buyPriceRespite >= 10);
+});
+
+test('wallet MY ITEMS house formatting reflects chosen style and real deed token ID', () => {
+  assert.equal(formatHouseDeedBadgeLabel('house-deed-0007'), 'DEED #007');
+  assert.equal(formatHouseDeedBadgeLabel('house-deed-0001'), 'DEED #001');
+  assert.equal(formatHouseDeedBadgeLabel(null), 'HOUSE DEED');
+
+  const plaza = getHouseStyleDisplaySpec('plaza_manor');
+  assert.equal(plaza.title, 'CLASSIC PLAZA MANOR');
+  assert.equal(plaza.imageSrc, '/assets/kiosk/plaza_manor_exterior.jpg');
+
+  const pavilion = getHouseStyleDisplaySpec('japanese_pavilion');
+  assert.equal(pavilion.title, 'JAPANESE PAVILION HOUSE');
+  assert.equal(pavilion.imageSrc, '/assets/kiosk/house_exterior.jpg');
+});
+
+test('wallet HISTORY formatting normalizes EXCHANGE label and real item/starter amounts', () => {
+  assert.equal(formatWalletHistoryActionLabel('EXCHANGE_LUL_CYON'), 'EXCHANGE');
+  assert.equal(formatWalletHistoryActionLabel('exchange'), 'EXCHANGE');
+  assert.equal(formatWalletHistoryActionLabel('BUY_ITEM'), 'BUY ITEM');
+
+  assert.deepEqual(
+    formatWalletHistoryAmountDisplay({
+      action_type: 'buy_item',
+      item_id: 'tatami_tea_table',
+      currency: 'RESPITE',
+      amount: 1,
+      unit_price: 11,
+    }),
+    { amountText: '11 RESPITE', badgeCurrency: 'RESPITE' }
+  );
+
+  assert.deepEqual(
+    formatWalletHistoryAmountDisplay({
+      action_type: 'buy_item',
+      item_id: 'nep171_house_ownership_deed',
+      currency: 'RESPITE',
+      amount: 1,
+      unit_price: 100,
+    }),
+    { amountText: '100 RESPITE', badgeCurrency: 'RESPITE' }
+  );
+
+  assert.deepEqual(
+    formatWalletHistoryAmountDisplay({
+      action_type: 'claim_starter_near',
+      item_id: 'hana_welcome_near_0_30',
+      currency: 'RESPITE',
+      amount: 1,
+      unit_price: 0,
+    }),
+    { amountText: '0.30 NEAR', badgeCurrency: 'NEAR' }
+  );
+
+  assert.deepEqual(
+    formatWalletHistoryAmountDisplay({
+      action_type: 'claim_starter_near',
+      item_id: 'hana_welcome_near_0_30',
+      currency: 'NEAR',
+      amount: 0.3,
+      unit_price: 1,
+    }),
+    { amountText: '0.30 NEAR', badgeCurrency: 'NEAR' }
+  );
+
+  assert.deepEqual(
+    formatWalletHistoryAmountDisplay({
+      action_type: 'sell_fish',
+      item_id: 'fish_1',
+      currency: 'LUL',
+      amount: 25,
+      unit_price: 25,
+    }),
+    { amountText: '25 LUL', badgeCurrency: 'LUL' }
+  );
+
+  assert.deepEqual(
+    formatWalletHistoryAmountDisplay({
+      action_type: 'exchange_lul_cyon',
+      item_id: 'near_to_respite_0_03',
+      currency: 'RESPITE',
+      amount: 12,
+      unit_price: 0.03,
+    }),
+    { amountText: '12 RESPITE', badgeCurrency: 'RESPITE' }
+  );
+});
+
+test('mergeOwnedCatalogWithChainNep245 reconciles NEP-245 furniture while keeping non-NEP-245 items', () => {
+  const merged = mergeOwnedCatalogWithChainNep245(
+    ['nep171:house:ownership', 'fishing_rod_carbon_pro', 'sakura_bonsai_pot'],
+    {
+      'nep245:furniture:tatami_tea_table': 1,
+      'nep245:theme:cyber_neon': 2,
+    }
+  );
+
+  assert.equal(merged.includes('nep171:house:ownership'), true);
+  assert.equal(merged.includes('fishing_rod_carbon_pro'), true);
+  assert.equal(merged.includes('tatami_tea_table'), true);
+  assert.equal(merged.includes('sakura_bonsai_pot'), false);
+  assert.equal(merged.filter((id) => id === 'theme_cyber_neon').length, 2);
+
+  // Null RPC response preserves existing local ownership list without dropping anything
+  assert.deepEqual(
+    mergeOwnedCatalogWithChainNep245(['sakura_bonsai_pot', 'fishing_rod_carbon_pro'], null),
+    ['sakura_bonsai_pot', 'fishing_rod_carbon_pro']
+  );
+});
+
+test('fetchOwnedNep245CatalogCounts queries mt_batch_balance_of and maps token counts', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedMethod = '';
+  let capturedFinality = '';
+  let capturedTokenIds: string[] = [];
+
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body ?? '{}'));
+    capturedMethod = parsed.params?.method_name ?? '';
+    capturedFinality = parsed.params?.finality ?? '';
+    const decodedArgs = JSON.parse(
+      Buffer.from(String(parsed.params?.args_base64 ?? ''), 'base64').toString('utf8')
+    );
+    capturedTokenIds = decodedArgs.token_ids ?? [];
+    const counts = capturedTokenIds.map((id) =>
+      id === 'nep245:furniture:tatami_tea_table' ? '1' : '0'
+    );
+    return new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: '1',
+        result: {
+          result: Array.from(Buffer.from(JSON.stringify(counts), 'utf8')),
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as typeof fetch;
+
+  try {
+    const counts = await fetchOwnedNep245CatalogCounts(
+      '0xzet5.buddiesblitz.testnet',
+      ['nep245:furniture:tatami_tea_table', 'nep245:furniture:sakura_bonsai_pot'],
+      'optimistic'
+    );
+    assert.equal(capturedMethod, 'mt_batch_balance_of');
+    assert.equal(capturedFinality, 'optimistic');
+    assert.deepEqual(capturedTokenIds, [
+      'nep245:furniture:tatami_tea_table',
+      'nep245:furniture:sakura_bonsai_pot',
+    ]);
+    assert.deepEqual(counts, {
+      'nep245:furniture:tatami_tea_table': 1,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
