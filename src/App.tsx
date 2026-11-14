@@ -452,6 +452,7 @@ export default function App() {
     done: boolean;
     metHana: boolean;
     kioskIntroDone: boolean;
+    menusTourDone: boolean;
     txs: Record<string, { txHash: string; explorerUrl: string }>;
   }>(() => {
     try {
@@ -461,28 +462,31 @@ export default function App() {
           done?: boolean;
           metHana?: boolean;
           kioskIntroDone?: boolean;
+          menusTourDone?: boolean;
           txs?: Record<string, { txHash: string; explorerUrl: string }>;
         };
         return {
           done: Boolean(parsed.done),
           metHana: Boolean(parsed.metHana),
           kioskIntroDone: Boolean(parsed.kioskIntroDone),
+          menusTourDone: Boolean(parsed.menusTourDone),
           txs: parsed.txs ?? {},
         };
       }
     } catch {
       // ignore
     }
-    return { done: false, metHana: false, kioskIntroDone: false, txs: {} };
+    return { done: false, metHana: false, kioskIntroDone: false, menusTourDone: false, txs: {} };
   });
   const homeTourRef = useRef<{ active: boolean; step: string }>({ active: false, step: 'done' });
   const persistHomeTour = (next: {
     done: boolean;
     metHana: boolean;
     kioskIntroDone: boolean;
+    menusTourDone?: boolean;
     txs: Record<string, { txHash: string; explorerUrl: string }>;
   }) => {
-    setHomeTour(next);
+    setHomeTour({ ...next, menusTourDone: Boolean(next.menusTourDone) });
     try {
       window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
     } catch {
@@ -2402,6 +2406,35 @@ export default function App() {
       }),
     );
   }, [kaiTutorialStage]);
+
+  // After the Kai tutorial: Hana still owes the player the other kiosk
+  // menus. Until that menus tour is done, an objective card + waypoint lead
+  // to the nearest kiosk (Kai's own, right at the Fish Market).
+  const menusTourGuideActive =
+    kaiTutorialStage === 'done' &&
+    homeTour.done &&
+    !homeTour.menusTourDone &&
+    !isInsidePrivateHouse &&
+    !isInsideGlasshouseCafe &&
+    Boolean(hud.nearWalletId);
+
+  useEffect(() => {
+    if (!menusTourGuideActive) return;
+    const fire = () =>
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', {
+          detail: { target: 'coord', x: 84.85, z: 65.65, color: '#38bdf8' },
+        }),
+      );
+    fire();
+    const timer = window.setInterval(fire, 5000);
+    return () => {
+      window.clearInterval(timer);
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
+      );
+    };
+  }, [menusTourGuideActive]);
 
   // City Highlights: Hana's discovery checklist, handed over when the kiosk
   // tour ends. Six stops that between them touch every system in the city;
@@ -5845,6 +5878,26 @@ export default function App() {
             </div>
           )}
 
+        {menusTourGuideActive &&
+          activeSpecialModal === 'none' &&
+          !isKioskModalOpen &&
+          !isSocialChatModalOpen && (
+            <div
+              data-menus-tour-card="true"
+              className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-none select-none"
+            >
+              <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center gap-3">
+                <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#38bdf8] text-black">
+                  CITY TOUR
+                </span>
+                <span className="text-[11px] font-bold text-slate-100">
+                  Kai's lessons complete! Open the transit kiosk here at the Fish Market —
+                  Hana will walk you through the other menus.
+                </span>
+              </div>
+            </div>
+          )}
+
       {/* =====================================================================
           3. PLAYING HUD: STYLIZED TACTICAL ARCADE OVERHAUL
              - Top-Left: Compact Radar/Minimap + [Q: 1x1x2] Pad Badge
@@ -8697,6 +8750,9 @@ export default function App() {
         blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
         isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
+        isMenusTourActive={
+          kaiTutorialStage === 'done' && homeTour.done && !homeTour.menusTourDone
+        }
 
         guideDestinationId={
           homeTour.done && !homeTour.kioskIntroDone
@@ -8706,6 +8762,11 @@ export default function App() {
               : null
         }
         onCompleteTutorialTour={() => {
+          if (tutorialStage !== 'go_to_kiosk' && kaiTutorialStage === 'done' && homeTour.done) {
+            // Menus tour finished (or skipped): Hana has explained the rest.
+            persistHomeTour({ ...homeTour, menusTourDone: true });
+            return;
+          }
           setTutorialStage('none');
           setCityHighlights((prev) => ({ ...prev, active: true }));
         }}

@@ -26,6 +26,8 @@ export interface CityTransitKioskModalProps {
   cafeJobStatus?: { workerName: string | null; queueCount: number } | null;
   onEnterGlasshouseCafe?: () => void;
   isTutorialTourActive?: boolean;
+  /** After the Kai tutorial: Hana explains the remaining kiosk menus in place. */
+  isMenusTourActive?: boolean;
   onCompleteTutorialTour?: () => void;
   /** Guided destination (city-tour bridge): TRAVEL & DISTRICTS and this
    * destination card stand out while every other card dims, unclickable. */
@@ -49,6 +51,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   cafeJobStatus = null,
   onEnterGlasshouseCafe,
   isTutorialTourActive = false,
+  isMenusTourActive = false,
   onCompleteTutorialTour,
   guideDestinationId = null,
 }) => {
@@ -126,12 +129,49 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       text: 'And this is the WARZONE ARENA \u2014 the optional Red vs Blue combat game. Jump in whenever you feel like it, totally up to you.',
     },
   ] as const;
+  // Menus tour (after the Kai tutorial): Hana explains the menus that are
+  // left — house, shop, jobs, warzone — in place, one at a time.
+  const MENUS_TOUR_STEPS = [
+    {
+      card: 'my_house',
+      text: 'This is MY HOUSE \u2014 your home in the city. Step inside, decorate with furniture from your BAG, and visit model homes.',
+    },
+    {
+      card: 'shop_exchange',
+      text: 'This is SHOP & EXCHANGE \u2014 trade LUL, CYON and RESPITE here, and browse items, outfits and furniture.',
+    },
+    {
+      card: 'jobs',
+      text: 'This is JOBS \u2014 take a barista shift at the Glasshouse Cafe: prepare and serve 3 orders to earn XP and LUL.',
+    },
+    {
+      card: 'warzone_arena',
+      text: 'And this is the WARZONE ARENA \u2014 the optional Red vs Blue combat game. Jump in whenever you feel like it, totally up to you.',
+    },
+  ] as const;
+  // Explain-one-then-do-one: while a guide steers the player to Kai, the
+  // tour collapses to a single Travel step — the instruction is to click
+  // the card and ride, not to page through a slideshow.
+  const guidedToKai = guideDestinationId === 'kai_fish_market';
+  const activeTourSteps = guidedToKai
+    ? ([
+        {
+          card: 'travel_districts',
+          text: "This is TRAVEL & DISTRICTS \u2014 how you get around the city. Let's go meet Kai: open this card, pick KAI FISH MARKET, and the tram takes you straight to him.",
+        },
+      ] as const)
+    : isMenusTourActive
+      ? MENUS_TOUR_STEPS
+      : KIOSK_TOUR_STEPS;
+  const tourActive = guidedToKai || isMenusTourActive || isTutorialTourActive;
   const [tourStep, setTourStep] = useState<number>(0);
+  const [guideBannerDismissed, setGuideBannerDismissed] = useState<boolean>(false);
   useEffect(() => {
-    if (isTutorialTourActive) {
+    if (tourActive) {
       setTourStep(0);
+      setGuideBannerDismissed(false);
     }
-  }, [isTutorialTourActive, isOpen]);
+  }, [tourActive, isOpen]);
   const guideCardClass = (card: string): string => {
     if (!guideDestinationId || levelView !== 'grid') return '';
     return card === 'travel_districts'
@@ -139,8 +179,8 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       : ' opacity-40 saturate-50 pointer-events-none';
   };
   const tourCardClass = (card: string): string => {
-    if (!isTutorialTourActive || levelView !== 'grid') return '';
-    return KIOSK_TOUR_STEPS[tourStep]?.card === card
+    if (!tourActive || guidedToKai || levelView !== 'grid') return '';
+    return activeTourSteps[tourStep]?.card === card
       ? ' ring-4 ring-[#b8ff3c] scale-[1.015] z-20 brightness-110'
       : ' opacity-60 saturate-50';
   };
@@ -415,7 +455,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
           </div>
         ) : levelView === 'grid' ? (
           <div className="p-4 sm:p-6 bg-[#f1f5f9]">
-            {isTutorialTourActive && (
+            {tourActive && !(guidedToKai && guideBannerDismissed) && (
               <div
                 data-kiosk-tutorial-tour-banner="true"
                 data-kiosk-hana-tour="true"
@@ -429,23 +469,29 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                      HANA · KIOSK TOUR {tourStep + 1}/{KIOSK_TOUR_STEPS.length}
+                      HANA · {guidedToKai ? 'CITY TOUR' : 'KIOSK TOUR'} {tourStep + 1}/
+                      {activeTourSteps.length}
                     </span>
                     <button
                       type="button"
                       data-kiosk-skip-tour-btn="true"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        onCompleteTutorialTour?.();
+                        if (guidedToKai) {
+                          setGuideBannerDismissed(true);
+                        } else {
+                          onCompleteTutorialTour?.();
+                        }
                       }}
                       className="text-[9.5px] font-black uppercase text-slate-400 hover:text-white underline cursor-pointer shrink-0"
                     >
-                      SKIP TOUR
+                      {guidedToKai ? 'GOT IT' : 'SKIP TOUR'}
                     </button>
                   </div>
                   <p className="text-xs font-bold text-slate-100 leading-snug">
-                    {KIOSK_TOUR_STEPS[tourStep].text}
+                    {activeTourSteps[tourStep].text}
                   </p>
+                  {!guidedToKai && (
                   <div className="flex items-center gap-2 pt-0.5">
                     <button
                       type="button"
@@ -459,14 +505,14 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     >
                       BACK
                     </button>
-                    {tourStep < KIOSK_TOUR_STEPS.length - 1 ? (
+                    {tourStep < activeTourSteps.length - 1 ? (
                       <button
                         type="button"
                         data-kiosk-tour-next-btn="true"
                         onClick={() => {
                           soundEngine.playUiClick();
                           setTourStep((s) =>
-                            Math.min(KIOSK_TOUR_STEPS.length - 1, s + 1),
+                            Math.min(activeTourSteps.length - 1, s + 1),
                           );
                         }}
                         className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer"
@@ -488,12 +534,13 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                         </button>
                       )
                     )}
-                    {tourStep === KIOSK_TOUR_STEPS.length - 1 && (
+                    {tourStep === activeTourSteps.length - 1 && (
                       <span className="text-[10px] font-bold text-slate-400">
                         That's the kiosk \u2014 where would you like to go first?
                       </span>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             )}
