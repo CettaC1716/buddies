@@ -47,6 +47,9 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     Boolean(currentWalletId) &&
     isActiveWalletReadOnlyObserver() &&
     !isCitizenSubAccountId(currentWalletId ?? '');
+  // A citizen wallet's name is fixed at creation (rifallah's rule): once the
+  // player has one, this modal must not offer creating another name.
+  const hasCitizenWallet = isCitizenSubAccountId(currentWalletId ?? '');
 
   const handleOpenNearConnectorPopup = async () => {
     soundEngine.playUiClick();
@@ -224,17 +227,19 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
           <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
-                CREATE WALLET
+                {hasCitizenWallet ? 'IN-GAME WALLET' : 'CREATE WALLET'}
               </span>
               <span className="px-1.5 py-0.5 bg-[#b8ff3c] border border-[#0d0f12] text-[9px] font-black uppercase">
-                RECOMMENDED
+                {hasCitizenWallet ? 'PERMANENT' : 'RECOMMENDED'}
               </span>
             </div>
             <p className="text-[11px] font-bold text-[#334155] leading-snug">
-              Sign in with Google or choose a wallet username below.
+              {hasCitizenWallet
+                ? 'Your wallet name was set when you created it and can\'t be changed.'
+                : 'Sign in with Google or choose a wallet username below.'}
             </p>
 
-            {onSelectGoogleAutoRegister && (
+            {!hasCitizenWallet && onSelectGoogleAutoRegister && (
               <button
                 type="button"
                 data-wallet-option="google-auto-register"
@@ -250,6 +255,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               </button>
             )}
 
+            {!hasCitizenWallet && (
             <form onSubmit={handleProvisionCitizenSubAccount} className="space-y-1.5 pt-1">
               <label className="block text-[10px] font-black uppercase tracking-wider text-[#0d0f12]">
                 WALLET USERNAME
@@ -290,6 +296,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 </div>
               )}
             </form>
+            )}
           </div>
 
           {/* Option 2: External NEAR Wallet (secondary, optional) */}
