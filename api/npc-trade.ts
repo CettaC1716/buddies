@@ -176,9 +176,9 @@ async function viewFunction<T>(methodName: string, args: Record<string, unknown>
 function supabaseConfig(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
   const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     '';
   if (!url || !key) return null;
   return { url: url.replace(/\/$/, ''), key };
@@ -682,7 +682,25 @@ export async function handleNpcTradeRequest(body: Record<string, unknown>): Prom
   }
 }
 
+const TRADE_ALLOWED_ORIGINS = [
+  'https://cettac1716.github.io',
+  'https://buddies-rouge.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+
 export default async function handler(req: any, res: any): Promise<void> {
+  const requestOrigin = String(req.headers?.origin || '');
+  if (TRADE_ALLOWED_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).end();
+    return;
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     return;

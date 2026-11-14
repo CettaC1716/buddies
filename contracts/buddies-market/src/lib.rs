@@ -227,6 +227,31 @@ pub struct BuddiesMarketContract {
     pub property_listings: IterableMap<String, PropertyListing>,
     pub total_property_listings: u64,
     pub fish_attester_pubkey: Option<Vec<u8>>,
+    pub hana_attester_pubkey: Option<Vec<u8>>,
+    pub claimed_hana_email_hashes: LookupMap<Vec<u8>, AccountId>,
+}
+
+/// The v1.4.0 state layout, kept so `migrate_v140_to_v150` can upgrade live state in place.
+#[near(serializers = [borsh])]
+pub struct OldBuddiesMarketContractV140 {
+    pub master_account: AccountId,
+    pub total_respite_supply: u128,
+    pub respite_balances: LookupMap<AccountId, u128>,
+    pub storage_deposits: LookupMap<AccountId, u128>,
+    pub nft_tokens_by_id: IterableMap<String, NftToken>,
+    pub fish_nfts: LookupMap<String, FishNftToken>,
+    pub market_listings: IterableMap<String, FishMarketListing>,
+    pub active_listing_by_token: LookupMap<String, String>,
+    pub nft_subaccount_ledgers: LookupMap<String, NftSubAccountLedger>,
+    pub house_deeds: LookupMap<AccountId, OnChainHouseDeed>,
+    pub family_contracts_by_owner: LookupMap<AccountId, Vec<OnChainFamilyMemberContract>>,
+    pub mt_balances: LookupMap<String, u128>,
+    pub total_houses_minted: u64,
+    pub total_family_contracts: u64,
+    pub total_fish_nfts_minted: u64,
+    pub property_listings: IterableMap<String, PropertyListing>,
+    pub total_property_listings: u64,
+    pub fish_attester_pubkey: Option<Vec<u8>>,
 }
 
 /// The v1.3.0 state layout, kept only so `migrate` can read it. Field
@@ -282,13 +307,14 @@ impl BuddiesMarketContract {
             property_listings: IterableMap::new(b"p"),
             total_property_listings: 0,
             fish_attester_pubkey: None,
+            hana_attester_pubkey: None,
+            claimed_hana_email_hashes: LookupMap::new(b"e"),
         }
     }
 
-    /// One-time state migration v1.3.0 -> v1.4.0: carries every existing
+    /// One-time state migration v1.3.0 -> v1.5.0: carries every existing
     /// field across untouched and optionally installs the fish attester
-    /// public key (hex, 32 bytes) in the same step. Deploy the new code
-    /// WITHOUT an init call, then call this once as the contract account.
+    /// public key (hex, 32 bytes) in the same step.
     #[init(ignore_state)]
     pub fn migrate(fish_attester_pubkey_hex: Option<String>) -> Self {
         // Only the contract account itself may run the migration.
@@ -322,6 +348,48 @@ impl BuddiesMarketContract {
             property_listings: old.property_listings,
             total_property_listings: old.total_property_listings,
             fish_attester_pubkey,
+            hana_attester_pubkey: None,
+            claimed_hana_email_hashes: LookupMap::new(b"e"),
+        }
+    }
+
+    /// One-time state migration v1.4.0 -> v1.5.0: preserves every live v1.4.0
+    /// balance, deed, fish NFT, listing, and `fish_attester_pubkey`, and
+    /// initializes Hana claim attestation state.
+    #[init(ignore_state)]
+    pub fn migrate_v140_to_v150(hana_attester_pubkey_hex: Option<String>) -> Self {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Migration can only be called by the contract account"
+        );
+        let old: OldBuddiesMarketContractV140 =
+            env::state_read().expect("Cannot read the v1.4.0 contract state");
+        let hana_attester_pubkey = hana_attester_pubkey_hex.map(|hex| {
+            let bytes = Self::hex_decode(&hex);
+            require!(bytes.len() == 32, "Attester public key must be 32 bytes");
+            bytes
+        });
+        Self {
+            master_account: old.master_account,
+            total_respite_supply: old.total_respite_supply,
+            respite_balances: old.respite_balances,
+            storage_deposits: old.storage_deposits,
+            nft_tokens_by_id: old.nft_tokens_by_id,
+            fish_nfts: old.fish_nfts,
+            market_listings: old.market_listings,
+            active_listing_by_token: old.active_listing_by_token,
+            nft_subaccount_ledgers: old.nft_subaccount_ledgers,
+            house_deeds: old.house_deeds,
+            family_contracts_by_owner: old.family_contracts_by_owner,
+            mt_balances: old.mt_balances,
+            total_houses_minted: old.total_houses_minted,
+            total_family_contracts: old.total_family_contracts,
+            total_fish_nfts_minted: old.total_fish_nfts_minted,
+            property_listings: old.property_listings,
+            total_property_listings: old.total_property_listings,
+            fish_attester_pubkey: old.fish_attester_pubkey,
+            hana_attester_pubkey,
+            claimed_hana_email_hashes: LookupMap::new(b"e"),
         }
     }
 
@@ -1712,7 +1780,7 @@ impl BuddiesMarketContract {
 
     pub fn get_contract_overview(&self) -> ContractOverview {
         ContractOverview {
-            contract_version: "1.4.0".to_string(),
+            contract_version: "1.5.0".to_string(),
             master_account: self.master_account.clone(),
             respite_per_near_rate: (1_000_000_000_000_000_000_000_000 / YOCTO_PER_RESPITE) as u64,
             house_price_respite: U128(HOUSE_OWNERSHIP_PRICE_RESPITE),
@@ -1893,6 +1961,64 @@ impl BuddiesMarketContract {
         env::storage_has_key(&Self::hana_welcome_storage_key(&account_id))
     }
 
+    pub fn has_claimed_hana_email(&self, email_hash_hex: String) -> bool {
+        let clean = email_hash_hex.trim().trim_start_matches("0x").to_lowercase();
+        let hash_bytes = Self::hex_decode(&clean);
+        self.claimed_hana_email_hashes.contains_key(&hash_bytes)
+    }
+
+    /// Master-only: configures or rotates a dedicated ed25519 public key for
+    /// `/api/hana-claim-attest`. When unset, `claim_hana_welcome_near_attested`
+    /// falls back to `fish_attester_pubkey` with strict domain separation.
+    pub fn set_hana_attester_pubkey(&mut self, pubkey_hex: String) -> bool {
+        let caller = env::predecessor_account_id();
+        require!(caller == self.master_account, "Only the master can set the attester key");
+        let bytes = Self::hex_decode(&pubkey_hex);
+        require!(bytes.len() == 32, "Attester public key must be 32 bytes");
+        self.hana_attester_pubkey = Some(bytes);
+        true
+    }
+
+    fn hana_claim_attestation_message(
+        account_id: &AccountId,
+        email_hash_hex: &str,
+        issued_at_ms: u64,
+    ) -> String {
+        format!(
+            "buddies-hana-claim-v1|{}|{}|{}",
+            account_id, email_hash_hex, issued_at_ms
+        )
+    }
+
+    fn internal_payout_hana_welcome_near(&mut self, caller: &AccountId, mode: &str) -> Promise {
+        let key = Self::hana_welcome_storage_key(caller);
+        // Record claim before checking storage usage so its trie cost is accounted for
+        env::storage_write(&key, &[1u8]);
+        if !self.storage_deposits.contains_key(caller) {
+            self.storage_deposits
+                .insert(caller.clone(), MIN_STORAGE_DEPOSIT_YOCTO);
+        }
+
+        let liquid = self.compute_liquid_treasury_yocto();
+        require!(
+            liquid >= HANA_WELCOME_GRANT_YOCTO,
+            "Hana smart contract treasury has insufficient liquid NEAR"
+        );
+
+        Self::emit_nep_event(
+            "buddies_hana_treasury",
+            "welcome_near_claimed",
+            json!([{
+                "citizen_id": caller,
+                "amount_yocto": HANA_WELCOME_GRANT_YOCTO.to_string(),
+                "amount_near": "0.30",
+                "mode": mode
+            }]),
+        );
+
+        Promise::new(caller.clone()).transfer(NearToken::from_yoctonear(HANA_WELCOME_GRANT_YOCTO))
+    }
+
     pub fn get_hana_treasury_status(&self, account_id: Option<AccountId>) -> HanaTreasuryStatus {
         let claimed = account_id
             .as_ref()
@@ -1933,31 +2059,70 @@ impl BuddiesMarketContract {
             !env::storage_has_key(&key),
             "Citizen has already claimed Hana's welcome NEAR grant"
         );
+        self.internal_payout_hana_welcome_near(&caller, "account")
+    }
 
-        // Record claim before checking storage usage so its trie cost is accounted for
-        env::storage_write(&key, &[1u8]);
-        if !self.storage_deposits.contains_key(&caller) {
-            self.storage_deposits
-                .insert(caller.clone(), MIN_STORAGE_DEPOSIT_YOCTO);
-        }
-
-        let liquid = self.compute_liquid_treasury_yocto();
+    /// Google-identity attested starter grant (`0.30 NEAR`): enforces one grant
+    /// per Google email hash AND per NEAR account across wallets via an ed25519
+    /// server attestation matching `/api/hana-claim-attest`.
+    pub fn claim_hana_welcome_near_attested(
+        &mut self,
+        email_hash_hex: String,
+        issued_at_ms: u64,
+        signature_hex: String,
+    ) -> Promise {
+        let caller = env::predecessor_account_id();
+        let key = Self::hana_welcome_storage_key(&caller);
         require!(
-            liquid >= HANA_WELCOME_GRANT_YOCTO,
-            "Hana smart contract treasury has insufficient liquid NEAR"
+            !env::storage_has_key(&key),
+            "Citizen has already claimed Hana's welcome NEAR grant"
         );
 
-        Self::emit_nep_event(
-            "buddies_hana_treasury",
-            "welcome_near_claimed",
-            json!([{
-                "citizen_id": caller,
-                "amount_yocto": HANA_WELCOME_GRANT_YOCTO.to_string(),
-                "amount_near": "0.30"
-            }]),
+        let clean_email_hash = email_hash_hex
+            .trim()
+            .trim_start_matches("0x")
+            .to_lowercase();
+        let hash_bytes = Self::hex_decode(&clean_email_hash);
+        require!(hash_bytes.len() == 32, "Email hash must be 32 bytes");
+        require!(
+            !self.claimed_hana_email_hashes.contains_key(&hash_bytes),
+            "Google account has already claimed Hana's welcome NEAR grant"
         );
 
-        Promise::new(caller).transfer(NearToken::from_yoctonear(HANA_WELCOME_GRANT_YOCTO))
+        let pubkey = self
+            .hana_attester_pubkey
+            .clone()
+            .or_else(|| self.fish_attester_pubkey.clone())
+            .expect("Hana claim attestation is not configured");
+        require!(pubkey.len() == 32, "Stored attester key is malformed");
+
+        let now_ms = env::block_timestamp_ms();
+        require!(
+            issued_at_ms <= now_ms.saturating_add(60_000),
+            "Attestation issued in the future"
+        );
+        require!(
+            now_ms.saturating_sub(issued_at_ms) <= 600_000,
+            "Attestation expired"
+        );
+
+        let sig_bytes = Self::hex_decode(&signature_hex);
+        require!(sig_bytes.len() == 64, "Attestation signature must be 64 bytes");
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&sig_bytes);
+        let mut pk = [0u8; 32];
+        pk.copy_from_slice(&pubkey);
+
+        let message =
+            Self::hana_claim_attestation_message(&caller, &clean_email_hash, issued_at_ms);
+        require!(
+            env::ed25519_verify(&sig, message.as_bytes(), &pk),
+            "Invalid Hana claim attestation"
+        );
+
+        self.claimed_hana_email_hashes
+            .insert(hash_bytes, caller.clone());
+        self.internal_payout_hana_welcome_near(&caller, "attested_google")
     }
 
     fn emit_nep_event(standard: &str, event: &str, data: near_sdk::serde_json::Value) {
@@ -2111,7 +2276,7 @@ mod tests {
         let migrated =
             BuddiesMarketContract::migrate(Some(ATTESTER_PUBKEY_HEX.to_string()));
         let overview = migrated.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.4.0");
+        assert_eq!(overview.contract_version, "1.5.0");
         assert_eq!(overview.total_respite_supply.0, 777);
         assert_eq!(migrated.ft_balance_of("alice.testnet".parse().unwrap()).0, 777);
         assert_eq!(overview.active_property_listings, 0);
@@ -2422,7 +2587,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn test_sell_merchant_item_roundtrip_restock_and_payment() {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
@@ -2545,6 +2709,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn test_buy_merchant_item_converted_furniture() {
         set_ctx("buddiesblitz.testnet", 0);
         let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
@@ -2894,12 +3059,210 @@ mod tests {
         drop(old);
         let contract = BuddiesMarketContract::migrate(None);
         let overview = contract.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.4.0");
+        assert_eq!(overview.contract_version, "1.5.0");
         assert_eq!(overview.total_respite_supply.0, 50_777);
         assert_eq!(overview.total_houses_minted, 4);
         assert_eq!(overview.active_property_listings, 0);
         assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 777);
         assert_eq!(contract.get_property_listings().len(), 0);
+    }
+
+    #[test]
+    fn test_migrate_v140_to_v150_preserves_state() {
+        let mut builder = VMContextBuilder::new();
+        builder
+            .current_account_id(acct("market.buddiesblitz.testnet"))
+            .predecessor_account_id(acct("market.buddiesblitz.testnet"))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+
+        let mut respite_balances = LookupMap::new(b"r");
+        respite_balances.insert(acct("buddiesblitz.testnet"), 50_000u128);
+        respite_balances.insert(acct("0xzet5.buddiesblitz.testnet"), 9u128);
+        let old = OldBuddiesMarketContractV140 {
+            master_account: acct("buddiesblitz.testnet"),
+            total_respite_supply: 51_645,
+            respite_balances,
+            storage_deposits: LookupMap::new(b"s"),
+            nft_tokens_by_id: IterableMap::new(b"t"),
+            fish_nfts: LookupMap::new(b"f"),
+            market_listings: IterableMap::new(b"m"),
+            active_listing_by_token: LookupMap::new(b"l"),
+            nft_subaccount_ledgers: LookupMap::new(b"d"),
+            house_deeds: LookupMap::new(b"h"),
+            family_contracts_by_owner: LookupMap::new(b"c"),
+            mt_balances: LookupMap::new(b"b"),
+            total_houses_minted: 7,
+            total_family_contracts: 1,
+            total_fish_nfts_minted: 14,
+            property_listings: IterableMap::new(b"p"),
+            total_property_listings: 0,
+            fish_attester_pubkey: Some(BuddiesMarketContract::hex_decode(ATTESTER_PUBKEY_HEX)),
+        };
+        env::state_write(&old);
+        drop(old);
+
+        let migrated = BuddiesMarketContract::migrate_v140_to_v150(None);
+        let overview = migrated.get_contract_overview();
+        assert_eq!(overview.contract_version, "1.5.0");
+        assert_eq!(overview.total_respite_supply.0, 51_645);
+        assert_eq!(overview.total_houses_minted, 7);
+        assert_eq!(overview.total_fish_nfts_minted, 14);
+        assert_eq!(migrated.ft_balance_of(acct("0xzet5.buddiesblitz.testnet")).0, 9);
+        assert_eq!(migrated.fish_attester_pubkey.as_ref().map(|k| k.len()), Some(32));
+        assert!(migrated.hana_attester_pubkey.is_none());
+    }
+
+    const HANA_EMAIL_HASH_HEX: &str =
+        "02667dad870e837ba9297c4c605522898d4245ba3bb56fe5670ca84dd14ad14d";
+    const HANA_SIG_ALICE_HEX: &str =
+        "4f2248fabfbfa1cf7626986282d23842b562f5cdbf64b945265c02d00bd30f6c1d69f4d694cc1ed02c644d6c72930e9ec53712d53786cfaeb77cdd432d726e04";
+    const HANA_SIG_ALICE2_HEX: &str =
+        "9a36063023dbdf5461a0ff610dd65c795c0e6efd0244807dea9bfe2e4c2af5e8c5eeec552c1e6494ec0be57f1db8f0a87d75b1899b87edaf7b8f7e597b457809";
+
+    fn funded_contract_with_attester() -> BuddiesMarketContract {
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("buddiesblitz.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+        let mut c = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        assert!(c.set_fish_attester_pubkey(ATTESTER_PUBKEY_HEX.to_string()));
+        c
+    }
+
+    #[test]
+    fn test_claim_hana_welcome_near_attested_allows_first_claim() {
+        let mut contract = funded_contract_with_attester();
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("alice.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+
+        let _ = contract.claim_hana_welcome_near_attested(
+            HANA_EMAIL_HASH_HEX.to_string(),
+            1_762_800_000_000,
+            HANA_SIG_ALICE_HEX.to_string(),
+        );
+        assert!(contract.has_claimed_hana_welcome(acct("alice.testnet")));
+        assert!(contract.has_claimed_hana_email(HANA_EMAIL_HASH_HEX.to_string()));
+    }
+
+    #[test]
+    #[should_panic(expected = "Google account has already claimed Hana's welcome NEAR grant")]
+    fn test_claim_hana_welcome_near_attested_blocks_second_wallet_for_same_email() {
+        let mut contract = funded_contract_with_attester();
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("alice.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+        let _ = contract.claim_hana_welcome_near_attested(
+            HANA_EMAIL_HASH_HEX.to_string(),
+            1_762_800_000_000,
+            HANA_SIG_ALICE_HEX.to_string(),
+        );
+
+        builder.predecessor_account_id(acct("alice2.testnet"));
+        testing_env!(builder.build());
+        let _ = contract.claim_hana_welcome_near_attested(
+            HANA_EMAIL_HASH_HEX.to_string(),
+            1_762_800_000_000,
+            HANA_SIG_ALICE2_HEX.to_string(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid Hana claim attestation")]
+    fn test_claim_hana_welcome_near_attested_rejects_cross_account_signature() {
+        let mut contract = funded_contract_with_attester();
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("alice2.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+        let _ = contract.claim_hana_welcome_near_attested(
+            HANA_EMAIL_HASH_HEX.to_string(),
+            1_762_800_000_000,
+            HANA_SIG_ALICE_HEX.to_string(),
+        );
+    }
+
+    #[test]
+    fn test_escrow_deed_sale_mid_payout_rotates_epoch_and_revokes_seller() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        // Alice swaps 0.5 NEAR -> 200 RESPITE, buys house deed #1 (100 RESPITE), funds 25 RESPITE royalty.
+        set_ctx("alice.testnet", 500_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        let estate = contract.purchase_citizen_asset("house_ownership".to_string(), None, None);
+        let deed_id = estate.house_deed.expect("deed").deed_token_id;
+        contract.authorize_deed_session_key(
+            deed_id.clone(),
+            "ed25519:SellerSessionKey111111111111111111111111".to_string(),
+        );
+        contract.fund_deed_royalty(deed_id.clone(), U128(25));
+
+        // Seller escrows the deed in Property Market (epoch rotates 1 -> 2, sub-account moves to contract escrow).
+        let listing = contract.list_property_deed(deed_id.clone(), U128(90));
+        let escrowed_ledger = contract.get_nft_ledger_history(deed_id.clone()).expect("ledger");
+        assert_eq!(escrowed_ledger.key_epoch, 2);
+
+        // Additional royalty arrives while the deed is escrowed mid-payout.
+        set_ctx("buddiesblitz.testnet", 0);
+        contract.fund_deed_royalty(deed_id.clone(), U128(10));
+
+        // Bob swaps 0.25 NEAR -> 100 RESPITE and settles the escrowed purchase (epoch rotates 2 -> 3).
+        set_ctx("bob.testnet", 250_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("bob.testnet", 0);
+        contract.buy_property(listing.listing_id);
+
+        let buyer_ledger = contract.get_nft_ledger_history(deed_id.clone()).expect("ledger");
+        assert_eq!(buyer_ledger.owner_id, acct("bob.testnet"));
+        assert_eq!(buyer_ledger.key_epoch, 3);
+        assert!(buyer_ledger.active_session_key.is_empty());
+        assert_eq!(buyer_ledger.pending_payout_respite.0, 35);
+        assert_eq!(buyer_ledger.ownership_history.len(), 2);
+
+        // New holder Bob claims full accumulated 35 RESPITE payout with rotated key_epoch 3.
+        let claimed = contract.claim_deed_payout(deed_id.clone(), 3);
+        assert_eq!(claimed.0, 35);
+        assert_eq!(contract.ft_balance_of(acct("bob.testnet")).0, 45);
+    }
+
+    #[test]
+    #[should_panic(expected = "Access denied: NFT ownership has moved to another account")]
+    fn test_escrow_deed_sale_seller_cannot_claim_mid_payout_after_buy() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        set_ctx("alice.testnet", 500_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        let estate = contract.purchase_citizen_asset("house_ownership".to_string(), None, None);
+        let deed_id = estate.house_deed.expect("deed").deed_token_id;
+        contract.fund_deed_royalty(deed_id.clone(), U128(25));
+        let listing = contract.list_property_deed(deed_id.clone(), U128(90));
+
+        set_ctx("bob.testnet", 250_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("bob.testnet", 0);
+        contract.buy_property(listing.listing_id);
+
+        set_ctx("alice.testnet", 0);
+        contract.claim_deed_payout(deed_id, 1);
     }
 
 }

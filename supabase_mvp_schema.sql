@@ -384,3 +384,51 @@ DROP POLICY IF EXISTS "bb_relayer_spawn_log_insert" ON public.bb_relayer_spawn_l
 CREATE POLICY "bb_relayer_spawn_log_insert" ON public.bb_relayer_spawn_log
   FOR INSERT TO anon, authenticated
   WITH CHECK (char_length(ip_hash) = 64 AND char_length(sub_account_id) BETWEEN 3 AND 64);
+
+-- 11. Kai P2P Fish NFT Autonomous Trade Sessions & Treasury Ledger (`api/npc-trade.ts`)
+CREATE TABLE IF NOT EXISTS public.bb_npc_treasury (
+  merchant_location text PRIMARY KEY CHECK (char_length(merchant_location) BETWEEN 1 AND 64),
+  ledger jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.bb_npc_treasury ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "bb_npc_treasury_select" ON public.bb_npc_treasury;
+CREATE POLICY "bb_npc_treasury_select" ON public.bb_npc_treasury FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "bb_npc_treasury_insert" ON public.bb_npc_treasury;
+CREATE POLICY "bb_npc_treasury_insert" ON public.bb_npc_treasury FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "bb_npc_treasury_update" ON public.bb_npc_treasury;
+CREATE POLICY "bb_npc_treasury_update" ON public.bb_npc_treasury FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.bb_trade_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  npc text NOT NULL DEFAULT 'kai',
+  player_account text NOT NULL CHECK (char_length(player_account) BETWEEN 2 AND 64),
+  token_id text NOT NULL CHECK (char_length(token_id) BETWEEN 1 AND 96),
+  species_id text NOT NULL CHECK (char_length(species_id) BETWEEN 1 AND 64),
+  rarity text NOT NULL,
+  weight_kg_x100 integer NOT NULL CHECK (weight_kg_x100 > 0),
+  base_value_respite integer NOT NULL CHECK (base_value_respite > 0),
+  ceiling_respite integer NOT NULL CHECK (ceiling_respite > 0),
+  agreed_price_respite integer,
+  listing_id text,
+  tx_hash text,
+  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'expired', 'failed', 'settled')),
+  expires_at timestamptz NOT NULL,
+  settled_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS bb_trade_sessions_player_created_idx
+  ON public.bb_trade_sessions (player_account, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS bb_trade_sessions_status_settled_idx
+  ON public.bb_trade_sessions (status, settled_at DESC);
+
+ALTER TABLE public.bb_trade_sessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "bb_trade_sessions_select" ON public.bb_trade_sessions;
+CREATE POLICY "bb_trade_sessions_select" ON public.bb_trade_sessions FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "bb_trade_sessions_insert" ON public.bb_trade_sessions;
+CREATE POLICY "bb_trade_sessions_insert" ON public.bb_trade_sessions FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "bb_trade_sessions_update" ON public.bb_trade_sessions;
+CREATE POLICY "bb_trade_sessions_update" ON public.bb_trade_sessions FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);

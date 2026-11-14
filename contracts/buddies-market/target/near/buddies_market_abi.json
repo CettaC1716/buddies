@@ -7,7 +7,7 @@
       "compiler": "rustc 1.99.1",
       "builder": "cargo-near cargo-near-build 0.11.5"
     },
-    "wasm_hash": "Ddjxj3JZrRWY2dWCpYXBVNiEbTDzwyCmLs7noaBvygPv"
+    "wasm_hash": "6fbD9tVEkmJguNMc6SL7uGwu6hurX8iHtCkhUQ5WwRtg"
   },
   "body": {
     "functions": [
@@ -63,6 +63,84 @@
         }
       },
       {
+        "name": "buy_merchant_item",
+        "doc": " Buy a merchant NEP-245 item from the merchant's pre-minted stock.\n Atomically moves `price_respite` RESPITE from the buyer to the\n merchant (master_account) and `amount` of the item from the\n merchant's stock to the buyer, who then holds it in their bag.\n\n The price is quoted by the client (dynamic stock/demand pricing,\n 0.55x-2.15x of base with an investor discount down to ~0.47x), so the\n contract enforces only a floor of 45% of the catalog base price: any\n quote a legitimate client can produce passes, while a forged client\n cannot name a near-zero price for real stock.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "amount",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "price_respite",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "buy_property",
+        "doc": " Buys an escrowed property listing: the buyer's RESPITE moves to\n the seller and the escrowed asset moves to the buyer in this one\n call. Any failed check reverts the whole transaction, so neither\n side can end up paid-but-undelivered or delivered-but-unpaid.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "listing_id",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PropertyListing"
+          }
+        }
+      },
+      {
+        "name": "cancel_property_listing",
+        "doc": " Cancels a listing and returns the escrowed asset to the seller.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "listing_id",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PropertyListing"
+          }
+        }
+      },
+      {
         "name": "claim_deed_payout",
         "doc": " Claim pending payouts from an NFT's sub-account (`10-nfts.md`).\n Enforces BOTH current `owner_id` AND `expected_key_epoch` so a seller attempting to claim\n mid-transfer or with a stale key is strictly rejected.",
         "kind": "call",
@@ -89,6 +167,53 @@
           "serialization_type": "json",
           "type_schema": {
             "type": "string"
+          }
+        }
+      },
+      {
+        "name": "claim_hana_welcome_near",
+        "doc": " One-time onboarding grant distributed directly from Hana's smart contract treasury\n (`0.30 NEAR`) after a new citizen finishes Hana's Central Plaza Cafe tutorial chat.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/Promise"
+          }
+        }
+      },
+      {
+        "name": "claim_hana_welcome_near_attested",
+        "doc": " Google-identity attested starter grant (`0.30 NEAR`): enforces one grant\n per Google email hash AND per NEAR account across wallets via an ed25519\n server attestation matching `/api/hana-claim-attest`.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "email_hash_hex",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "issued_at_ms",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            {
+              "name": "signature_hex",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/Promise"
           }
         }
       },
@@ -202,6 +327,20 @@
         }
       },
       {
+        "name": "fund_hana_welcome_treasury",
+        "doc": " Allows Master/Developer treasury to top up Hana's on-chain NEAR starter grant pool.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "string"
+          }
+        }
+      },
+      {
         "name": "get_citizen_account",
         "kind": "view",
         "params": {
@@ -257,6 +396,31 @@
         }
       },
       {
+        "name": "get_hana_treasury_status",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/HanaTreasuryStatus"
+          }
+        }
+      },
+      {
         "name": "get_nft_ledger_history",
         "kind": "view",
         "params": {
@@ -303,6 +467,90 @@
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/CitizenEstateSummary"
+          }
+        }
+      },
+      {
+        "name": "get_property_listing",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "listing_id",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PropertyListing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "get_property_listings",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PropertyListing"
+            }
+          }
+        }
+      },
+      {
+        "name": "has_claimed_hana_email",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "email_hash_hex",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
+        }
+      },
+      {
+        "name": "has_claimed_hana_welcome",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
           }
         }
       },
@@ -359,7 +607,114 @@
         }
       },
       {
+        "name": "list_property_deed",
+        "doc": " Lists a house deed for sale, escrowing the deed NFT with the\n contract until it sells or the listing is cancelled.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "price_respite",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PropertyListing"
+          }
+        }
+      },
+      {
+        "name": "list_property_furniture",
+        "doc": " Lists furniture copies for sale, escrowing the NEP-245 balance\n with the contract until they sell or the listing is cancelled.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "amount",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "price_respite",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PropertyListing"
+          }
+        }
+      },
+      {
+        "name": "migrate",
+        "doc": " One-time state migration v1.3.0 -> v1.5.0: carries every existing\n field across untouched and optionally installs the fish attester\n public key (hex, 32 bytes) in the same step.",
+        "kind": "call",
+        "modifiers": [
+          "init"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "fish_attester_pubkey_hex",
+              "type_schema": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "migrate_v140_to_v150",
+        "doc": " One-time state migration v1.4.0 -> v1.5.0: preserves every live v1.4.0\n balance, deed, fish NFT, listing, and `fish_attester_pubkey`, and\n initializes Hana claim attestation state.",
+        "kind": "call",
+        "modifiers": [
+          "init"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "hana_attester_pubkey_hex",
+              "type_schema": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
         "name": "mint_fish_nft",
+        "doc": " Legacy direct mint — restricted to the master account since\n v1.4.0. Players mint through `mint_fish_nft_attested`, so a fish\n NFT can only come into existence with the game server's signature\n over the catch (see `api/fish-attest`).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -399,6 +754,74 @@
               "type_schema": {
                 "type": "integer",
                 "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/FishNftToken"
+          }
+        }
+      },
+      {
+        "name": "mint_fish_nft_attested",
+        "doc": " Mints a fish NFT for the caller when the game server has attested\n the catch: an ed25519 signature over the canonical message, issued\n at most 10 minutes ago, verified against the configured attester\n public key. The token id is inside the signed message, so an\n attestation cannot be replayed for a different fish.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "species_id",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "species_name",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "water_zone",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "rarity",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "weight_kg_x100",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            {
+              "name": "signature_hex",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "issued_at_ms",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint64",
                 "minimum": 0.0
               }
             }
@@ -811,6 +1234,84 @@
         }
       },
       {
+        "name": "sell_merchant_item",
+        "doc": " Sell a merchant NEP-245 item back to the merchant. Atomically moves\n `amount` of the item from the seller back into the merchant's stock\n and `price_respite` RESPITE from the merchant (master_account) to\n the seller: the buyback is a real on-chain payment, never a cache\n credit.\n\n The client quotes the buyback at a fixed 65% of the catalog base\n price, so the contract enforces that same figure as a ceiling: any\n quote a legitimate client can produce passes, while a forged client\n cannot drain the merchant by naming an inflated buyback price.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "amount",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "price_respite",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "set_fish_attester_pubkey",
+        "doc": " Master-only: installs or rotates the fish attester public key\n (hex, 32 bytes). The matching private key lives only in the game\n server's environment, never on-chain.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "pubkey_hex",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
+        }
+      },
+      {
+        "name": "set_hana_attester_pubkey",
+        "doc": " Master-only: configures or rotates a dedicated ed25519 public key for\n `/api/hana-claim-attest`. When unset, `claim_hana_welcome_near_attested`\n falls back to `fish_attester_pubkey` with strict domain separation.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "pubkey_hex",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
+        }
+      },
+      {
         "name": "storage_balance_of",
         "kind": "view",
         "params": {
@@ -878,7 +1379,7 @@
       },
       {
         "name": "swap_near_for_respite",
-        "doc": " Swap native NEAR -> RESPITE (`1 NEAR = 100 RESPITE`), refunding any fractional yoctoNEAR dust.",
+        "doc": " Swap native NEAR -> RESPITE (`1 NEAR = 400 RESPITE`), refunding any fractional yoctoNEAR dust.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -996,6 +1497,7 @@
           "type": "object",
           "required": [
             "active_fish_listings",
+            "active_property_listings",
             "contract_version",
             "house_price_respite",
             "master_account",
@@ -1007,6 +1509,11 @@
           ],
           "properties": {
             "active_fish_listings": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "active_property_listings": {
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1186,6 +1693,25 @@
               "type": "string"
             },
             "symbol": {
+              "type": "string"
+            }
+          }
+        },
+        "HanaTreasuryStatus": {
+          "type": "object",
+          "required": [
+            "caller_already_claimed",
+            "grant_amount_yocto",
+            "liquid_treasury_yocto"
+          ],
+          "properties": {
+            "caller_already_claimed": {
+              "type": "boolean"
+            },
+            "grant_amount_yocto": {
+              "type": "string"
+            },
+            "liquid_treasury_yocto": {
               "type": "string"
             }
           }
@@ -1395,6 +1921,58 @@
           }
         },
         "Promise": true,
+        "PropertyListing": {
+          "description": "A property-market listing whose asset is HELD BY THE CONTRACT while listed (true escrow). Deeds move their NFT ownership to the contract account and stash the owner-index record (`house_deeds` is keyed by owner and can hold only one deed per account, so it cannot point at the contract for several escrowed deeds at once) inside the listing; furniture moves its NEP-245 balance to the contract account. Buying settles payment and delivery in this single call — no two-step trust.",
+          "type": "object",
+          "required": [
+            "amount",
+            "asset_kind",
+            "listed_at_ms",
+            "listing_id",
+            "price_respite",
+            "seller_id",
+            "token_id"
+          ],
+          "properties": {
+            "amount": {
+              "description": "Copies escrowed: always 1 for deeds, the listed amount for furniture.",
+              "type": "string"
+            },
+            "asset_kind": {
+              "description": "\"deed\" (NEP-171 house deed) or \"furniture\" (NEP-245 catalog item).",
+              "type": "string"
+            },
+            "deed": {
+              "description": "The escrowed deed's owner-index record (deed listings only).",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/OnChainHouseDeed"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "listed_at_ms": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "listing_id": {
+              "type": "string"
+            },
+            "price_respite": {
+              "type": "string"
+            },
+            "seller_id": {
+              "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+              "type": "string"
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        },
         "StorageBalance": {
           "type": "object",
           "required": [

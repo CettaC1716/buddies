@@ -86,10 +86,9 @@ function loadAttesterKey(rawSecret: string): AttesterKey {
 }
 
 // Species plausibility bounds, mirrored from FISH_SPECIES_CATALOG in
-// src/game/buddiesFishingMarket.ts (maxWeightKg). The attestation bound
-// allows 2x the catalog maximum so a legitimate trophy catch can never be
-// rejected, while absurd weights (a 500 kg sardine) are refused. The
-// contract additionally enforces its own absolute cap of 500 kg.
+// src/game/buddiesFishingMarket.ts (maxWeightKg). A tight 1.05x envelope
+// accommodates floating-point rounding near trophy weight without allowing
+// artificially inflated fish weights.
 const SPECIES_MAX_WEIGHT_KG: Record<string, number> = {
   coral_sardine: 1.8,
   striped_mackerel: 3.4,
@@ -107,7 +106,27 @@ const RARITY_TIERS = new Set(['Common', 'Uncommon', 'Rare', 'Epic', 'Mythic', 'L
 const ACCOUNT_ID_RE = /^[a-z0-9._-]+(\.testnet|\.near)$/;
 const TOKEN_ID_RE = /^nep171-fish-[a-z0-9_]+-\d{4}$/;
 
-export async function handleFishAttestRequest(body: Record<string, unknown>): Promise<{
+const FISH_ATTEST_RATE_WINDOW_MS = 60_000;
+const FISH_ATTEST_MAX_PER_WINDOW = 30;
+const fishAttestBuckets = new Map<string, number[]>();
+
+function isRateLimited(bucketKey: string): boolean {
+  const now = Date.now();
+  const prev = fishAttestBuckets.get(bucketKey) ?? [];
+  const recent = prev.filter((ts) => now - ts < FISH_ATTEST_RATE_WINDOW_MS);
+  if (recent.length >= FISH_ATTEST_MAX_PER_WINDOW) {
+    fishAttestBuckets.set(bucketKey, recent);
+    return true;
+  }
+  recent.push(now);
+  fishAttestBuckets.set(bucketKey, recent);
+  return false;
+}
+
+export async function handleFishAttestRequest(
+  body: Record<string, unknown>,
+  clientKey = '',
+): Promise<{
   status: number;
   payload: Record<string, unknown>;
 }> {
@@ -130,6 +149,12 @@ export async function handleFishAttestRequest(body: Record<string, unknown>): Pr
   if (!ACCOUNT_ID_RE.test(playerAccount) || playerAccount.length > 64) {
     return { status: 400, payload: { ok: false, error: 'Invalid player account.' } };
   }
+  if (isRateLimited(`acct:${playerAccount}`) || (clientKey && isRateLimited(`ip:${clientKey}`))) {
+    return {
+      status: 429,
+      payload: { ok: false, error: 'Too many fish mint attestations requested. Please wait a moment.' },
+    };
+  }
   if (!TOKEN_ID_RE.test(tokenId)) {
     return { status: 400, payload: { ok: false, error: 'Invalid fish token id.' } };
   }
@@ -146,7 +171,7 @@ export async function handleFishAttestRequest(body: Record<string, unknown>): Pr
   if (!waterZone || waterZone.length > 48) {
     return { status: 400, payload: { ok: false, error: 'Invalid water zone.' } };
   }
-  const maxWeightX100 = Math.ceil(speciesMaxKg * 100 * 2);
+  const maxWeightX100 = Math.ceil(speciesMaxKg * 100 * 1.05);
   if (!Number.isFinite(weightKgX100) || weightKgX100 < 1 || weightKgX100 > maxWeightX100) {
     return { status: 400, payload: { ok: false, error: 'Fish weight out of plausible bounds.' } };
   }
@@ -187,12 +212,32 @@ export async function handleFishAttestRequest(body: Record<string, unknown>): Pr
   };
 }
 
+const FISH_ATTEST_ALLOWED_ORIGINS = [
+  'https://cettac1716.github.io',
+  'https://buddies-rouge.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+
 export default async function handler(req: any, res: any): Promise<void> {
+  const requestOrigin = String(req.headers?.origin || '');
+  if (FISH_ATTEST_ALLOWED_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).end();
+    return;
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     return;
   }
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-  const result = await handleFishAttestRequest(body);
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  const clientIp = forwarded || String(req.socket?.remoteAddress || '');
+  const result = await handleFishAttestRequest(body, clientIp);
   res.status(result.status).json(result.payload);
 }

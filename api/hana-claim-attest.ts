@@ -74,9 +74,9 @@ function loadAttesterKey(rawSecret: string): { keyObject: crypto.KeyObject } {
 function supabaseConfig(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
   const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     '';
   if (!url || !key) return null;
   return { url: url.replace(/\/$/, ''), key };
@@ -212,6 +212,8 @@ export async function handleHanaClaimAttestRequest(
 const ATTEST_ALLOWED_ORIGINS = [
   'https://cettac1716.github.io',
   'https://buddies-rouge.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
 ];
 
 export default async function handler(req: any, res: any): Promise<void> {

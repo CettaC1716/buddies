@@ -197,9 +197,10 @@ export function buildNpcSystemInstruction(
     '- Four Currencies:',
     '  * LUL: Earned by selling raw fish to Kai or fighting in the Warzone Arena.',
     '  * CYON: Shop currency exchanged from LUL in the EXCHANGE tab (used for outfits, fishing tackle, and basic furniture). If shop CYON reserve runs low, players can support the shop with 300 LUL to get a 45 CYON bonus and 15% catalog discount.',
-    '  * NEAR: Wallet balance (0.30 NEAR free welcome bonus from Hana for signed-in players). Swaps into RESPITE at 0.02 NEAR per 1 RESPITE in EXCHANGE (one-way swap to keep the game economy fair).',
-    '  * RESPITE: Token used to buy a Private House (50 RESPITE), recruit Family Member companions (25 / 60 / 150 RESPITE for 7-Day, 30-Day, or Permanent), unlock premium house themes/furniture, trade Fish NFTs on Kai\'s Fish Market, or send directly to friends from the Wallet menu.',
-    '- Private House & Residential Plots: 8 plots surround the city. Bottom-left Blue Plot #0 is an open Model House anyone can enter to preview 3D interior decorating. Buying a Private House (50 RESPITE in Catalog) lets a player claim an empty plot at its kiosk and customize furniture, themes, floor/wall finishes, lighting, and room mood in the 3D Studio.',
+    '  * NEAR: Wallet balance (0.30 NEAR free welcome bonus from Hana for signed-in players). Swaps into RESPITE at 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE, minimum 0.0025 NEAR = 1 RESPITE) in EXCHANGE (one-way swap to keep the game economy fair).',
+    '  * RESPITE: Token used to buy a Private House (100 RESPITE), recruit Family Member companions (15 / 45 / 180 RESPITE for 1-Week, 1-Month, or 1-Year), fund or claim House Deed treasuries, buy or list houses and furniture on the Property Market, trade Fish NFTs on Kai\'s Fish Market, or send directly to friends from the Wallet menu.',
+    '- Private House & Residential Plots: 8 plots surround the city. Bottom-left Blue Plot #0 is an open Model House anyone can enter to preview 3D interior decorating. Buying a Private House (100 RESPITE in Catalog) lets a player claim an empty plot at its kiosk and customize furniture, themes, floor/wall finishes, lighting, and room mood in the 3D Studio.',
+    '- Glasshouse Cafe Job: Players can visit the Glasshouse Cafe in Central Plaza to start a 3-order Barista shift and earn +12 LUL per served order.',
     '- Family Member Companions: Recruited in the CATALOG tab using RESPITE; players can give them orders like Follow Me, Patrol Yard, Relax at Home, or Guard Base.',
     '- Warzone Arena: 4v4 Blue vs Red tactical mode entered via any Transit Kiosk. Players carry and stack crates (1 to 8 crates) on team pads to craft weapons, buddies, tanks, dump trucks, Skyshield turrets, and fighter planes, earning LUL.',
     '- Controls: WASD or Arrow keys to walk, Shift to sprint, Space to jump, click NPCs or kiosks to interact, and open Bag or Wallet from the HUD.',
@@ -449,7 +450,25 @@ export async function handleNpcAgentRequest(
   };
 }
 
+const NPC_AGENT_ALLOWED_ORIGINS = [
+  'https://cettac1716.github.io',
+  'https://buddies-rouge.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+
 export default async function handler(req: any, res: any): Promise<void> {
+  const requestOrigin = String(req.headers?.origin || '');
+  if (NPC_AGENT_ALLOWED_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).end();
+    return;
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     return;

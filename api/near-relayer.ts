@@ -138,6 +138,7 @@ async function nearRpcCall(rpcUrl: string, method: string, params: unknown): Pro
 
 const SPAWN_LIMIT_PER_IP_PER_DAY = 5;
 const SPAWN_LIMIT_GLOBAL_PER_DAY = 40;
+const RELAYER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function relayerSupabaseConfig(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -148,6 +149,30 @@ function relayerSupabaseConfig(): { url: string; key: string } | null {
     '';
   if (!url || !key) return null;
   return { url: url.replace(/\/$/, ''), key };
+}
+
+async function lookupBoundAccountForEmail(email: string): Promise<{ configured: boolean; accountId: string | null }> {
+  const cfg = relayerSupabaseConfig();
+  if (!cfg) return { configured: false, accountId: null };
+  try {
+    const resp = await fetch(`${cfg.url}/rest/v1/rpc/bb_lookup_account_by_email`, {
+      method: 'POST',
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_email: email }),
+    });
+    if (!resp.ok) return { configured: true, accountId: null };
+    const data = (await resp.json().catch(() => null)) as unknown;
+    return {
+      configured: true,
+      accountId: typeof data === 'string' && data ? data.trim().toLowerCase() : null,
+    };
+  } catch {
+    return { configured: true, accountId: null };
+  }
 }
 
 async function spawnLogCount(query: string): Promise<number | null> {
@@ -331,6 +356,46 @@ export async function handleNearRelayerRequest(
             code: 'HANDLE_TAKEN',
             subAccountId,
             error: `Address ${subAccountId} is already registered by another citizen. Please choose a different wallet prefix.`,
+          },
+        };
+      }
+
+      // Security invariant: never attach a new FullAccess session key onto an
+      // existing citizen sub-account unless the caller supplies an email whose
+      // verified `bb_lookup_account_by_email` binding matches `subAccountId`.
+      const callerEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      if (!callerEmail || !RELAYER_EMAIL_RE.test(callerEmail)) {
+        return {
+          status: 409,
+          payload: {
+            ok: false,
+            code: 'HANDLE_TAKEN',
+            subAccountId,
+            error: `Address ${subAccountId} is already registered. Sign in with its linked Google account to recover session access or choose a new wallet prefix.`,
+          },
+        };
+      }
+
+      const binding = await lookupBoundAccountForEmail(callerEmail);
+      if (!binding.configured) {
+        return {
+          status: 503,
+          payload: {
+            ok: false,
+            code: 'IDENTITY_LOOKUP_UNAVAILABLE',
+            subAccountId,
+            error: `Cannot verify ownership of existing wallet ${subAccountId} right now.`,
+          },
+        };
+      }
+      if (binding.accountId !== subAccountId) {
+        return {
+          status: 403,
+          payload: {
+            ok: false,
+            code: 'EMAIL_NOT_BOUND',
+            subAccountId,
+            error: `The signed-in Google account is not linked to ${subAccountId}.`,
           },
         };
       }
@@ -551,6 +616,8 @@ export async function handleNearRelayerRequest(
 const RELAYER_ALLOWED_ORIGINS = [
   'https://cettac1716.github.io',
   'https://buddies-rouge.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
 ];
 
 export default async function handler(req: any, res: any): Promise<void> {
