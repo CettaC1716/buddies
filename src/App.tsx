@@ -29,6 +29,7 @@ import {
   evaluateCommandCenterRadarSpec,
   worldCoordToRadarPercent,
   COMMANDER_PLOT_OFFSETS_X,
+  CITY_TRANSIT_DESTINATIONS,
   LOBBY_FACTION_PORTALS,
   LOBBY_TRAM_SHELTER_SPEC,
   PUBLIC_WARZONE_CRATE_PADS,
@@ -650,7 +651,15 @@ export default function App() {
   const cafeExchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
   const [isFastForwardRunning, setIsFastForwardRunning] = useState<boolean>(false);
   const [cyonBalance, setCyonBalance] = useState<number>(0);
+  const cyonBalanceRef = useRef<number>(0);
+  useEffect(() => {
+    cyonBalanceRef.current = cyonBalance;
+  }, [cyonBalance]);
   const [respiteBalance, setRespiteBalance] = useState<number>(0);
+  const respiteBalanceRef = useRef<number>(0);
+  useEffect(() => {
+    respiteBalanceRef.current = respiteBalance;
+  }, [respiteBalance]);
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(0);
   const [personalWalletTab, setPersonalWalletTab] = useState<'wallet' | 'assets' | 'history'>('wallet');
   const [isSampleHouseView, setIsSampleHouseView] = useState<boolean>(false);
@@ -3480,6 +3489,21 @@ export default function App() {
       near_tx_hash: claimRes.txHash,
     });
 
+    // Starter pack: the Hana welcome claim also seeds the off-chain city
+    // currencies, so a new citizen can immediately eat at the cafe (LUL)
+    // and use CYON services. The claim itself is once-per-account on-chain,
+    // so this grant can only ever run once for the same account.
+    const starterLul = 100;
+    const starterCyon = 20;
+    setHud((prev) => ({ ...prev, gold: prev.gold + starterLul }));
+    setCyonBalance((prev) => prev + starterCyon);
+    void syncPlayerBalancesToSupabase({
+      nearAccountId: actorAccount,
+      lulBalance: hudRef.current.gold + starterLul,
+      cyonBalance: cyonBalanceRef.current + starterCyon,
+      respiteBalance: respiteBalanceRef.current,
+    });
+
     return claimRes;
   }, [playerUid]);
 
@@ -5584,6 +5608,7 @@ export default function App() {
             {!isInsidePrivateHouse &&
               !isInsideGlasshouseCafe &&
               activeSpecialModal !== 'npc_merchant' &&
+              !isSocialChatModalOpen &&
               peacefulUiState.minimapRadarVisible &&
               (() => {
                 const ccLevel = hud.commandCenterLevel ?? hud.baseBuildingLevel;
@@ -5597,15 +5622,32 @@ export default function App() {
                     className="pointer-events-auto relative w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 bg-[#070a0f] border-3 border-[#1a1a1a] ring-2 ring-white rounded-xl overflow-hidden shadow-[4px_4px_0_#1a1a1a] shrink-0"
                   >
                   {/* 1:1 Orthographic Top-Down Map of the Current 3-Part Mirrored Arena ([-125, +125]) */}
-                  <img
-                    src="/assets/kiosk/radar_arena_map.png"
-                    alt="Arena Radar Map"
-                    draggable={false}
-                    className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                  />
+                  <span className="absolute top-1 left-1 z-40 px-1 py-px bg-black/60 border border-white/40 rounded-sm text-[7px] font-black tracking-widest text-white pointer-events-none">
+                    {worldMode === 'warzone' ? 'WARZONE' : 'CITY MAP'}
+                  </span>
+                  {worldMode === 'warzone' ? (
+                    <img
+                      src="/assets/kiosk/radar_arena_map.png"
+                      alt="Arena Radar Map"
+                      draggable={false}
+                      className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+                    />
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 select-none pointer-events-none"
+                      style={{
+                        backgroundColor: '#0a1512',
+                        backgroundImage:
+                          'linear-gradient(rgba(184,255,60,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(184,255,60,0.08) 1px, transparent 1px)',
+                        backgroundSize: '12.5% 12.5%',
+                      }}
+                    />
+                  )}
 
                   {/* Dynamic Building Indicators for All Active Commander Base Plots (Model Estate Plot 0 + Any Claimed NEAR Session Base) */}
-                  {(hud.activeBluePlotIndices ?? [0]).map((plotIdx) => {
+                  {worldMode === 'warzone' &&
+                    (hud.activeBluePlotIndices ?? [0]).map((plotIdx) => {
                     const pos = worldCoordToRadarPercent(
                       COMMANDER_PLOT_OFFSETS_X[plotIdx] ?? -45.0,
                       81.7,
@@ -5622,7 +5664,8 @@ export default function App() {
                       />
                     );
                   })}
-                  {(hud.activeRedPlotIndices ?? []).map((plotIdx) => {
+                  {worldMode === 'warzone' &&
+                    (hud.activeRedPlotIndices ?? []).map((plotIdx) => {
                     const pos = worldCoordToRadarPercent(
                       COMMANDER_PLOT_OFFSETS_X[plotIdx] ?? -45.0,
                       -81.7,
@@ -5641,7 +5684,8 @@ export default function App() {
                   })}
 
                   {/* Lobby Faction Portals (North Red & South Blue) + Halte Trem Return Pad + 4 Public Warzone Crate Pads */}
-                  {LOBBY_FACTION_PORTALS.map((portal) => {
+                  {worldMode === 'warzone' &&
+                    LOBBY_FACTION_PORTALS.map((portal) => {
                     const pos = worldCoordToRadarPercent(portal.x, portal.z);
                     return (
                       <span
@@ -5654,7 +5698,8 @@ export default function App() {
                       />
                     );
                   })}
-                  {(() => {
+                  {worldMode === 'warzone' &&
+                    (() => {
                     const tramShelterPos = worldCoordToRadarPercent(
                       LOBBY_TRAM_SHELTER_SPEC.returnPadX,
                       LOBBY_TRAM_SHELTER_SPEC.returnPadZ,
@@ -5667,7 +5712,8 @@ export default function App() {
                       />
                     );
                   })()}
-                  {PUBLIC_WARZONE_CRATE_PADS.map((pubPad) => {
+                  {worldMode === 'warzone' &&
+                    PUBLIC_WARZONE_CRATE_PADS.map((pubPad) => {
                     const pos = worldCoordToRadarPercent(pubPad.worldX, pubPad.worldZ);
                     return (
                       <span
@@ -5678,6 +5724,48 @@ export default function App() {
                       />
                     );
                   })}
+
+                  {/* CITY MAP landmarks - city mode only (warzone uses the radar overlays above) */}
+                  {worldMode !== 'warzone' && (
+                    <>
+                      {CITY_TRANSIT_DESTINATIONS.map((dest) => {
+                        const pos = worldCoordToRadarPercent(dest.kioskX, dest.kioskZ);
+                        return (
+                          <span
+                            key={`city-station-${dest.id}`}
+                            data-radar-city-station={dest.id}
+                            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#38bdf8] border border-white pointer-events-none"
+                          />
+                        );
+                      })}
+                      {[
+                        { id: 'hana', label: 'HANA', x: -91.3, z: -24.26, cls: 'bg-[#b8ff3c]', side: 'right' },
+                        { id: 'cafe', label: 'CAFE', x: -88.3, z: 22.35, cls: 'bg-[#fb923c]', side: 'right' },
+                        { id: 'kai', label: 'KAI', x: 85.8, z: 60.0, cls: 'bg-[#facc15]', side: 'left' },
+                        { id: 'park', label: 'PARK', x: 101.0, z: -61.0, cls: 'bg-[#c084fc]', side: 'left' },
+                      ].map((poi) => {
+                        const pos = worldCoordToRadarPercent(poi.x, poi.z);
+                        return (
+                          <span
+                            key={`city-poi-${poi.id}`}
+                            data-radar-city-poi={poi.id}
+                            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20"
+                          >
+                            <span className={`block w-2 h-2 rounded-full border border-[#1a1a1a] ${poi.cls}`} />
+                            <span
+                              className={`absolute top-1/2 -translate-y-1/2 text-[7px] font-black tracking-wide text-white [text-shadow:0_1px_2px_#000,0_0_3px_#000] ${
+                                poi.side === 'left' ? 'right-[7px]' : 'left-[7px]'
+                              }`}
+                            >
+                              {poi.label}
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </>
+                  )}
 
                   {/* Always-On 100% Bright Minimap Radar (No Fog-of-War Mask) */}
 
@@ -6616,11 +6704,16 @@ export default function App() {
                   const trimmed = socialChatText.trim();
                   if (trimmed.length > 0) {
                     if (activeSpecialModal === 'npc_merchant') {
+                      // Talking to an NPC (Hana/Kai modal open): the bottom bar
+                      // routes ONLY into the NPC session. It must never fall
+                      // through to the public world feed.
                       window.dispatchEvent(
                         new CustomEvent('npc-merchant-user-chat', {
                           detail: { text: trimmed },
                         }),
                       );
+                      setSocialChatText('');
+                      return;
                     }
 
                     const nowStr = new Date().toLocaleTimeString([], {

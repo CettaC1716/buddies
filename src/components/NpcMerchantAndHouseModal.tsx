@@ -587,7 +587,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         (isTutorialHanaActive || !hanaWelcomeNearClaimed)
       ) {
         setActiveTab('sesi_chat');
-        greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your 0.30 NEAR welcome bonus below to get started. And feel free to ask me anything \u2014 I reply right away!`;
+        greeting = `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your starter pack below (0.30 NEAR + 100 LUL + 20 CYON) to get started. And feel free to ask me anything \u2014 I reply right away!`;
       } else if (!walletConnected && merchantLocation === 'beach_house') {
         greeting = `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and feel free to ask me anything about fishing and the market!`;
       } else if (!walletConnected) {
@@ -2330,13 +2330,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer active:translate-y-0.5'
                             }`}
                           >
-                            {isClaimingHanaNear ? 'CLAIMING...' : 'CLAIM 0.30 NEAR'}
+                            {isClaimingHanaNear ? 'CLAIMING...' : 'CLAIM STARTER PACK'}
                           </button>
                         </>
                       ) : (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-emerald-300">
-                            <span>0.30 NEAR added to your wallet.</span>
+                            <span>Starter pack added: 0.30 NEAR + 100 LUL + 20 CYON.</span>
                             {hanaClaimResult?.txHash && (
                               <a
                                 href={

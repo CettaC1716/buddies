@@ -11631,7 +11631,12 @@ export function evaluateLobbyAndSafezonePeacefulState(params: {
     populationAndLivesBarVisible: combatVisible,
     harvesterContractBadgeVisible: combatVisible,
     bottomRightWeaponAndHpHudVisible: combatVisible,
-    minimapRadarVisible: !isInsideLobby,
+    // The minimap belongs to the city/warzone, not to the lobby room. Keying
+    // it to the lobby-safezone BOUNDS made it flicker on/off while walking
+    // around Central Plaza (spawn + Hana + kiosk all sit inside that box);
+    // hide it only in the lobby room itself. Interiors and chat sessions
+    // gate it separately in App.
+    minimapRadarVisible: params.worldMode !== 'lobby',
     lobbyGoldExchangeButtonVisible: isInsideLobby,
     handWeaponMeshVisible: combatVisible,
     externalCombatObjectsVisible: combatVisible,

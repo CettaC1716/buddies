@@ -12824,6 +12824,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             return;
           }
         }
+        // 0C. City Tram - [E] is the universal interact key: exit while
+        // riding, board when the RIDE TRAM dock is the visible prompt.
+        if (ridingTramCarIdx !== null) {
+          disembarkFromCityTram();
+          emitHudImmediately();
+          return;
+        }
+        if (
+          !mountedTank &&
+          playerUnit &&
+          playerUnit.alive &&
+          worldModeRef.current !== 'warzone' &&
+          rideTramPromptBtn.style.display !== 'none'
+        ) {
+          const tramBoard = canUnitBoardCityTramAtAnyPoint(
+            playerUnit.x,
+            playerUnit.z,
+            cityTram.getState(),
+            8.5,
+          );
+          if (tramBoard.canBoard) {
+            soundEngine.playPickup();
+            ridingTramCarIdx = tramBoard.carIndex;
+            playerUnit.vx = 0;
+            playerUnit.vz = 0;
+            playerUnit.root.visible = true;
+            playerUnit.overheadCrateGroup.visible = false;
+            emitHudImmediately();
+            return;
+          }
+        }
+
         const actorX = mountedTank ? mountedTank.x : playerUnit.x;
         const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
 
@@ -12937,7 +12969,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           mountedTank.targetAltitude = Math.min(14.5, Math.max(12.2, (mountedTank.targetAltitude ?? 0) + 4.5));
           mountedTank.forwardSpeed = Math.max(mountedTank.forwardSpeed ?? 0, 8.5);
         } else {
+          const carryBefore = playerUnit ? playerUnit.carryingCrate : 'none';
           handlePlayerPickupOrThrowCrate();
+          if (
+            worldModeRef.current !== 'warzone' &&
+            !mountedTank &&
+            playerUnit &&
+            carryBefore === 'none' &&
+            playerUnit.carryingCrate === 'none' &&
+            ridingTramCarIdx === null
+          ) {
+            // Nothing to grab nearby: in the city [E] falls back to sit/stand.
+            handleToggleSitting(null);
+          }
         }
       } else if (e.code === 'KeyF') {
         e.preventDefault();
