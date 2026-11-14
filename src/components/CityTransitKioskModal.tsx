@@ -479,6 +479,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                         soundEngine.playUiClick();
                         if (guidedToKai) {
                           setGuideBannerDismissed(true);
+                          onCompleteTutorialTour?.();
                         } else {
                           onCompleteTutorialTour?.();
                         }

@@ -2113,6 +2113,15 @@ export default function App() {
   // completes the bridge, so the guide can never drag the player back to
   // Hana after they have already found him.
   useEffect(() => {
+    // A leftover welcome-tour kiosk stage also ends when the player reaches
+    // Kai — the guided Travel step has done its job by then.
+    if (
+      tutorialStage === 'go_to_kiosk' &&
+      activeSpecialModal === 'npc_merchant' &&
+      merchantLocation === 'beach_house'
+    ) {
+      setTutorialStage('none');
+    }
     if (!postTourKioskGuideActive) return;
     if (activeSpecialModal !== 'npc_merchant' || merchantLocation !== 'beach_house') return;
     setHomeTour((prev) => {
@@ -8757,9 +8766,11 @@ export default function App() {
         guideDestinationId={
           homeTour.done && !homeTour.kioskIntroDone
             ? 'kai_fish_market'
-            : kaiTutorialStage === 'meet' || kaiTutorialStage === 'sell'
+            : tutorialStage === 'go_to_kiosk'
               ? 'kai_fish_market'
-              : null
+              : kaiTutorialStage === 'meet' || kaiTutorialStage === 'sell'
+                ? 'kai_fish_market'
+                : null
         }
         onCompleteTutorialTour={() => {
           if (tutorialStage !== 'go_to_kiosk' && kaiTutorialStage === 'done' && homeTour.done) {
