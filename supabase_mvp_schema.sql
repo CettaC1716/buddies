@@ -359,3 +359,28 @@ DROP POLICY IF EXISTS "bb_base_plots_mvp_access" ON public.bb_base_plots;
 CREATE POLICY "bb_base_plots_select" ON public.bb_base_plots FOR SELECT TO anon, authenticated USING (true);
 CREATE POLICY "bb_base_plots_insert" ON public.bb_base_plots FOR INSERT TO anon, authenticated WITH CHECK (plot_key <> 'blue_0');
 CREATE POLICY "bb_base_plots_update" ON public.bb_base_plots FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (plot_key <> 'blue_0');
+
+-- Relayer sybil-throttle spawn log required by `api/near-relayer.ts`
+CREATE TABLE IF NOT EXISTS public.bb_relayer_spawn_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ip_hash text NOT NULL,
+  sub_account_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS bb_relayer_spawn_log_ip_created_idx
+  ON public.bb_relayer_spawn_log (ip_hash, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS bb_relayer_spawn_log_created_idx
+  ON public.bb_relayer_spawn_log (created_at DESC);
+
+ALTER TABLE public.bb_relayer_spawn_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "bb_relayer_spawn_log_select" ON public.bb_relayer_spawn_log;
+CREATE POLICY "bb_relayer_spawn_log_select" ON public.bb_relayer_spawn_log
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "bb_relayer_spawn_log_insert" ON public.bb_relayer_spawn_log;
+CREATE POLICY "bb_relayer_spawn_log_insert" ON public.bb_relayer_spawn_log
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (char_length(ip_hash) = 64 AND char_length(sub_account_id) BETWEEN 3 AND 64);

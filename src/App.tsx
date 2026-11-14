@@ -156,7 +156,9 @@ import {
   type Nep171GamepassSubAccountLedger,
   type RecruitedFamilyMemberAgent,
   resolveApiUrl,
+  resolvePostClaimNearBalance,
   setLocalTxConfirmHandler,
+  shouldAttemptAttestedHanaClaim,
   type LocalTxConfirmRequest,
 } from './lib/nearClient';
 import {
@@ -760,6 +762,15 @@ export default function App() {
     respiteBalanceRef.current = respiteBalance;
   }, [respiteBalance]);
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(0);
+  const nearTestnetBalanceRef = useRef<number>(0);
+  useEffect(() => {
+    nearTestnetBalanceRef.current = nearTestnetBalance;
+  }, [nearTestnetBalance]);
+  const pendingPostClaimFloorRef = useRef<{
+    accountId: string;
+    expectedMinNear: number;
+    expiresAtMs: number;
+  } | null>(null);
   const [personalWalletTab, setPersonalWalletTab] = useState<'wallet' | 'assets' | 'history'>('wallet');
   const [isSampleHouseView, setIsSampleHouseView] = useState<boolean>(false);
   const [houseArchitectureStyle, setHouseArchitectureStyle] = useState<
@@ -3104,6 +3115,58 @@ export default function App() {
     }
   }, [playerUid]);
 
+  const refreshOnChainBalances = useCallback(
+    async (accountOverride?: string) => {
+      const targetAccount = (accountOverride || hudRef.current.nearWalletId || playerUid || '')
+        .trim()
+        .toLowerCase();
+      if (!targetAccount) return;
+
+      const [accountView, liveRespiteStr, hanaStatus] = await Promise.all([
+        fetchNearAccountView(targetAccount, 'optimistic'),
+        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, targetAccount, 'optimistic'),
+        fetchHanaTreasuryStatus(targetAccount, 'optimistic'),
+      ]);
+
+      const floor = pendingPostClaimFloorRef.current;
+      const floorActive =
+        floor !== null &&
+        floor.accountId === targetAccount &&
+        Date.now() < floor.expiresAtMs;
+
+      if (accountView) {
+        const liveNear = Number(accountView.amount) / 1e24;
+        if (Number.isFinite(liveNear)) {
+          const roundedNear = Number(liveNear.toFixed(4));
+          if (floorActive && roundedNear < floor.expectedMinNear) {
+            // Asynchronous NEAR transfer receipt is still settling; keep optimistic display.
+          } else {
+            if (floor && floor.accountId === targetAccount && roundedNear >= floor.expectedMinNear) {
+              pendingPostClaimFloorRef.current = null;
+            }
+            setNearTestnetBalance(roundedNear);
+          }
+        }
+      }
+
+      if (liveRespiteStr !== null) {
+        const parsedRespite = Number(liveRespiteStr);
+        if (Number.isFinite(parsedRespite)) {
+          setRespiteBalance(parsedRespite);
+        }
+      }
+
+      if (hanaStatus.verified) {
+        if (hanaStatus.callerAlreadyClaimed) {
+          setHanaWelcomeNearClaimed(true);
+        } else if (!floorActive) {
+          setHanaWelcomeNearClaimed(false);
+        }
+      }
+    },
+    [playerUid],
+  );
+
   useEffect(() => {
     const unsub = subscribeToMarketTransactions(() => {
       void refreshWalletTransactions();
@@ -3116,28 +3179,53 @@ export default function App() {
   useEffect(() => {
     if (isPersonalWalletModalOpen) {
       void refreshWalletTransactions();
+      void refreshOnChainBalances();
     }
-  }, [isPersonalWalletModalOpen, personalWalletTab, refreshWalletTransactions]);
+  }, [isPersonalWalletModalOpen, personalWalletTab, refreshWalletTransactions, refreshOnChainBalances]);
 
   // Chain-truth refresh: after any in-game wallet transaction settles, and
   // whenever an NPC merchant modal opens, re-read balances and claim status
   // from chain so the numbers on screen never lag the ledger.
   useEffect(() => {
-    const onSettled = () => {
+    const timers: number[] = [];
+    const onSettled = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ signerAccountId?: string; methodName?: string }>).detail;
+      if (
+        detail?.methodName &&
+        detail.methodName !== 'claim_hana_welcome_near' &&
+        detail.methodName !== 'claim_hana_welcome_near_attested'
+      ) {
+        pendingPostClaimFloorRef.current = null;
+      }
+      const actor = detail?.signerAccountId;
       void refreshWalletTransactions();
-      window.setTimeout(() => {
-        void refreshWalletTransactions();
-      }, 2500);
+      void refreshOnChainBalances(actor);
+      for (const delayMs of [1200, 2800, 5000]) {
+        timers.push(
+          window.setTimeout(() => {
+            void refreshOnChainBalances(actor);
+          }, delayMs),
+        );
+      }
+      timers.push(
+        window.setTimeout(() => {
+          void refreshWalletTransactions();
+        }, 2500),
+      );
     };
     window.addEventListener('buddies:citizen-tx-settled', onSettled);
-    return () => window.removeEventListener('buddies:citizen-tx-settled', onSettled);
-  }, [refreshWalletTransactions]);
+    return () => {
+      window.removeEventListener('buddies:citizen-tx-settled', onSettled);
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [refreshWalletTransactions, refreshOnChainBalances]);
 
   useEffect(() => {
     if (activeSpecialModal === 'npc_merchant') {
       void refreshWalletTransactions();
+      void refreshOnChainBalances();
     }
-  }, [activeSpecialModal, refreshWalletTransactions]);
+  }, [activeSpecialModal, refreshWalletTransactions, refreshOnChainBalances]);
 
   const handleConnectWalletAndEnterLobby = useCallback(
     async (
@@ -3856,20 +3944,27 @@ export default function App() {
     }
 
     const walletId = provisioned.subAccountId.toLowerCase();
+    pendingPostClaimFloorRef.current = null;
     setOnboardingLoadingProgress(85);
     setSubWalletProvisionStageLabel('Loading Central Plaza...');
     setProvisionedSubWalletTxHash(provisioned.txHash || '');
 
     const [accountView, hanaStatus] = await Promise.all([
-      fetchNearAccountView(walletId),
-      fetchHanaTreasuryStatus(walletId),
+      fetchNearAccountView(walletId, 'optimistic'),
+      fetchHanaTreasuryStatus(walletId, 'optimistic'),
     ]);
-    const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0.06;
-    setNearTestnetBalance(Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0.06);
+    const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0.08;
+    const resolvedInitialNear = Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0.08;
+    nearTestnetBalanceRef.current = resolvedInitialNear;
+    setNearTestnetBalance(resolvedInitialNear);
     setRespiteBalance(0);
     setCyonBalance(0);
     setHasHouseOwnership(false);
     setHanaWelcomeNearClaimed(Boolean(hanaStatus.callerAlreadyClaimed));
+
+    window.setTimeout(() => {
+      void refreshOnChainBalances(walletId);
+    }, 2000);
 
     setPlayerUid(walletId);
     setWalletConnectInput(walletId);
@@ -3925,6 +4020,7 @@ export default function App() {
     dispatchBuddyAction,
     persistWalletProfileLocally,
     playerDisplayName,
+    refreshOnChainBalances,
     subWalletHandleDraft,
   ]);
 
@@ -3940,14 +4036,14 @@ export default function App() {
       };
     }
 
-    // v1.5.0 claim policy: the grant is bound to the player's Google
-    // identity. When an email is connected, claim through the server
-    // attestation; any failure falls back to the legacy method, which
-    // keeps working until the contract upgrade lands — and refuses with
-    // a clear message afterwards, so the fallback can never be farmed.
+    const preClaimNear = nearTestnetBalanceRef.current;
+
+    // Attested claim requires contract v1.5.0+ (`claim_hana_welcome_near_attested`)
+    // and is gated behind `shouldAttemptAttestedHanaClaim` while v1.4.0 is live so
+    // Google players do not hit an extra server attestation + failing popup cycle.
     let claimRes: Awaited<ReturnType<typeof claimHanaWelcomeNearOnChain>> | null = null;
     const claimEmail = (connectedGoogleEmail || '').trim().toLowerCase();
-    if (claimEmail) {
+    if (shouldAttemptAttestedHanaClaim(claimEmail)) {
       const att = await fetchHanaClaimAttestation(actorAccount, claimEmail);
       if (att.ok) {
         const attestedRes = await claimHanaWelcomeNearAttestedOnChain(
@@ -3968,15 +4064,32 @@ export default function App() {
 
     setHanaWelcomeNearClaimed(true);
     recordHomeTourTx('claim', claimRes.txHash, claimRes.explorerUrl);
-    const updatedView = await fetchNearAccountView(actorAccount);
-    if (updatedView) {
-      const nearTokens = Number(updatedView.amount) / 1e24;
-      if (Number.isFinite(nearTokens)) {
-        setNearTestnetBalance(Number(nearTokens.toFixed(4)));
+    const updatedView = await fetchNearAccountView(actorAccount, 'optimistic');
+    const observedNear =
+      updatedView && Number.isFinite(Number(updatedView.amount) / 1e24)
+        ? Number(updatedView.amount) / 1e24
+        : null;
+    const reconciled = resolvePostClaimNearBalance({
+      previousNearBalance: preClaimNear,
+      observedNearBalance: observedNear,
+      grantAmountNear: claimRes.amountNear,
+    });
+    if (!reconciled.receiptConfirmedOnChain) {
+      pendingPostClaimFloorRef.current = {
+        accountId: actorAccount,
+        expectedMinNear: reconciled.pendingFloorNear,
+        expiresAtMs: Date.now() + 12000,
+      };
+      for (const delayMs of [1200, 2800, 5000]) {
+        window.setTimeout(() => {
+          void refreshOnChainBalances(actorAccount);
+        }, delayMs);
       }
     } else {
-      setNearTestnetBalance((prev) => Number((prev + claimRes.amountNear).toFixed(4)));
+      pendingPostClaimFloorRef.current = null;
     }
+    nearTestnetBalanceRef.current = reconciled.nextNearBalance;
+    setNearTestnetBalance(reconciled.nextNearBalance);
 
     void logMarketTransactionToSupabase({
       merchant_id: 'lobby_cafe',
@@ -4006,7 +4119,7 @@ export default function App() {
     });
 
     return claimRes;
-  }, [playerUid, connectedGoogleEmail]);
+  }, [playerUid, connectedGoogleEmail, refreshOnChainBalances]);
 
   useEffect(() => {
     if (onboardingStep !== 'entering_lobby') return;
@@ -8365,6 +8478,7 @@ export default function App() {
             receipt.txHash,
           );
           const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
+          pendingPostClaimFloorRef.current = null;
 
           let nextNear =
             direction === 'near_to_respite'
@@ -8377,8 +8491,8 @@ export default function App() {
 
           if (resolvedActor) {
             const [liveAccountView, liveRespiteStr] = await Promise.all([
-              fetchNearAccountView(resolvedActor),
-              fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor),
+              fetchNearAccountView(resolvedActor, 'optimistic'),
+              fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor, 'optimistic'),
             ]);
             if (liveAccountView) {
               const liveNear = Number(liveAccountView.amount) / 1e24;
@@ -8394,6 +8508,7 @@ export default function App() {
             }
           }
 
+          nearTestnetBalanceRef.current = nextNear;
           setNearTestnetBalance(nextNear);
           setRespiteBalance(nextRespite);
 

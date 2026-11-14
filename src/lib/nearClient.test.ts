@@ -6,12 +6,17 @@ import {
   NEAR_CONFIG,
   RESPITE_NEP141_METADATA,
   executeNearTestnetAndRespiteSwap,
+  fetchHanaTreasuryStatus,
+  fetchNearAccountView,
+  fetchNep141Balance,
   fetchOwnedFishNftsFromChain,
   getMyNearWalletLoginUrl,
   getNearBlocksAccountUrl,
   getNearBlocksTxUrl,
   getOrCreateCitizenSessionPublicKey,
   resolveNearRpcUrl,
+  resolvePostClaimNearBalance,
+  shouldAttemptAttestedHanaClaim,
   verifyNep171GamepassOwnership,
 } from './nearClient';
 import { handleNearRelayerRequest } from '../../api/near-relayer';
@@ -570,4 +575,123 @@ test('Shoreline fishing enforces realistic calm-float + nibble wait and multi-se
     smartElapsedSec >= 5.0,
     `Expected realistic >= 5.0s fight duration, got ${smartElapsedSec.toFixed(2)}s`,
   );
+});
+
+test('resolvePostClaimNearBalance & shouldAttemptAttestedHanaClaim protect new players from post-claim balance lag and double prompts', () => {
+  // 1. Pre-receipt RPC read (~0.0794 NEAR right after Claim): projects 0.38 NEAR so Swap unlocks at once
+  const laggingReceipt = resolvePostClaimNearBalance({
+    previousNearBalance: 0.08,
+    observedNearBalance: 0.0794,
+    grantAmountNear: 0.3,
+  });
+  assert.equal(laggingReceipt.nextNearBalance, 0.38);
+  assert.equal(laggingReceipt.receiptConfirmedOnChain, false);
+  assert.equal(laggingReceipt.pendingFloorNear, 0.23);
+
+  // 2. Stale 0 balance in React state + pre-receipt RPC 0.0794 NEAR -> projects 0.3794 NEAR
+  const coldStateLagging = resolvePostClaimNearBalance({
+    previousNearBalance: 0,
+    observedNearBalance: 0.0794,
+    grantAmountNear: 0.3,
+  });
+  assert.equal(coldStateLagging.nextNearBalance, 0.3794);
+  assert.equal(coldStateLagging.receiptConfirmedOnChain, false);
+
+  // 3. Receipt already landed on-chain (~0.3794 NEAR): locks onto exact chain value
+  const settledReceipt = resolvePostClaimNearBalance({
+    previousNearBalance: 0.08,
+    observedNearBalance: 0.3794,
+    grantAmountNear: 0.3,
+  });
+  assert.equal(settledReceipt.nextNearBalance, 0.3794);
+  assert.equal(settledReceipt.receiptConfirmedOnChain, true);
+
+  // 4. Transient RPC failure (null): still unlocks Swap optimistically
+  const rpcMiss = resolvePostClaimNearBalance({
+    previousNearBalance: 0.08,
+    observedNearBalance: null,
+    grantAmountNear: 0.3,
+  });
+  assert.equal(rpcMiss.nextNearBalance, 0.38);
+  assert.equal(rpcMiss.receiptConfirmedOnChain, false);
+
+  // 5. Attested claim gated behind VITE_ENABLE_ATTESTED_HANA_CLAIM === 'true'
+  assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', undefined), false);
+  assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', 'false'), false);
+  assert.equal(shouldAttemptAttestedHanaClaim('', 'true'), false);
+  assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', 'true'), true);
+});
+
+test('NEAR balance and Hana treasury view helpers forward optimistic finality and report RPC verification status', async () => {
+  const originalFetch = globalThis.fetch;
+  const recordedFinalities: Array<{ requestType: string; methodName?: string; finality: string }> = [];
+
+  try {
+    globalThis.fetch = (async (_url, init) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      const params = body?.params ?? {};
+      recordedFinalities.push({
+        requestType: String(params.request_type || ''),
+        methodName: params.method_name,
+        finality: String(params.finality || ''),
+      });
+
+      if (params.request_type === 'view_account') {
+        return {
+          ok: true,
+          json: async () => ({
+            result: { amount: '380000000000000000000000', locked: '0', storage_usage: 500, block_height: 100, block_hash: 'H' },
+          }),
+        } as Response;
+      }
+
+      if (params.method_name === 'ft_balance_of') {
+        return {
+          ok: true,
+          json: async () => ({
+            result: { result: Array.from(new TextEncoder().encode(JSON.stringify('100'))) },
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            result: Array.from(
+              new TextEncoder().encode(
+                JSON.stringify({
+                  grant_amount_yocto: '300000000000000000000000',
+                  liquid_treasury_yocto: '5000000000000000000000000',
+                  caller_already_claimed: true,
+                }),
+              ),
+            ),
+          },
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    const acct = await fetchNearAccountView('raka.buddiesblitz.testnet', 'optimistic');
+    const resp = await fetchNep141Balance('market.buddiesblitz.testnet', 'raka.buddiesblitz.testnet', 'optimistic');
+    const hana = await fetchHanaTreasuryStatus('raka.buddiesblitz.testnet', 'optimistic');
+
+    assert.equal(acct?.amount, '380000000000000000000000');
+    assert.equal(resp, '100');
+    assert.equal(hana.callerAlreadyClaimed, true);
+    assert.equal(hana.verified, true);
+    assert.deepEqual(recordedFinalities, [
+      { requestType: 'view_account', methodName: undefined, finality: 'optimistic' },
+      { requestType: 'call_function', methodName: 'ft_balance_of', finality: 'optimistic' },
+      { requestType: 'call_function', methodName: 'get_hana_treasury_status', finality: 'optimistic' },
+    ]);
+
+    // RPC error returns verified: false so UI never falsely clears claimed state
+    globalThis.fetch = (async () => ({ ok: false, status: 503 }) as Response) as typeof fetch;
+    const failedHana = await fetchHanaTreasuryStatus('raka.buddiesblitz.testnet', 'optimistic');
+    assert.equal(failedHana.verified, false);
+    assert.equal(failedHana.callerAlreadyClaimed, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

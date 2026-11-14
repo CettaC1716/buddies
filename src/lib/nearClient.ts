@@ -518,7 +518,10 @@ export async function fetchNearNetworkStatus(): Promise<NearNetworkStatus> {
   };
 }
 
-export async function fetchNearAccountView(accountId: string): Promise<NearAccountView | null> {
+export async function fetchNearAccountView(
+  accountId: string,
+  finality: 'final' | 'optimistic' = 'final',
+): Promise<NearAccountView | null> {
   const cleanId = accountId.trim().toLowerCase();
   if (!cleanId) return null;
   const { rpcUrl } = resolveNearRpcUrl(cleanId);
@@ -535,7 +538,7 @@ export async function fetchNearAccountView(accountId: string): Promise<NearAccou
         method: 'query',
         params: {
           request_type: 'view_account',
-          finality: 'final',
+          finality,
           account_id: cleanId,
         },
       }),
@@ -568,6 +571,7 @@ async function callNearContractViewMethod<T = unknown>(params: {
   methodName: string;
   args?: Record<string, unknown>;
   networkOrAccount?: string;
+  finality?: 'final' | 'optimistic';
 }): Promise<T | null> {
   const argsJson = JSON.stringify(params.args ?? {});
   const argsBase64 = typeof btoa === 'function' ? btoa(argsJson) : '';
@@ -585,7 +589,7 @@ async function callNearContractViewMethod<T = unknown>(params: {
         method: 'query',
         params: {
           request_type: 'call_function',
-          finality: 'final',
+          finality: params.finality ?? 'final',
           account_id: params.contractId,
           method_name: params.methodName,
           args_base64: argsBase64,
@@ -697,6 +701,7 @@ export async function fetchBuddiesMarketEstate(
 export async function fetchNep141Balance(
   contractId: string,
   accountId: string,
+  finality: 'final' | 'optimistic' = 'final',
 ): Promise<string | null> {
   const cleanAccount = accountId.trim();
   if (!cleanAccount) return null;
@@ -705,6 +710,7 @@ export async function fetchNep141Balance(
     methodName: 'ft_balance_of',
     args: { account_id: cleanAccount },
     networkOrAccount: cleanAccount,
+    finality,
   });
   if (typeof res === 'string') return res;
   if (typeof res === 'number') return String(res);
@@ -1463,6 +1469,46 @@ function extractExecutionFailureMessage(outcome: unknown): string | null {
 }
 
 /**
+ * Queries `view_access_key` with `optimistic` finality so freshly spawned
+ * `<handle>.buddiesblitz.testnet` sub-accounts are immediately recognized,
+ * retrying once briefly if a newly created account is still propagating across RPC nodes.
+ */
+async function queryCitizenAccessKeyWithRetry(
+  rpcUrl: string,
+  cleanSigner: string,
+  publicKey: string,
+): Promise<any | null> {
+  const attempts = isCitizenSubAccountId(cleanSigner) && typeof window !== 'undefined' ? 2 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const akResp = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'check-fc-key',
+        method: 'query',
+        params: {
+          request_type: 'view_access_key',
+          finality: 'optimistic',
+          account_id: cleanSigner,
+          public_key: publicKey,
+        },
+      }),
+    });
+    if (akResp.ok) {
+      const akJson = await akResp.json();
+      if (!akJson?.error && akJson?.result?.block_hash) {
+        return akJson.result;
+      }
+    }
+    if (attempt + 1 < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, 650));
+    }
+  }
+  return null;
+}
+
+/**
  * Signs and broadcasts a FunctionCall directly via FastNEAR RPC when the browser's
  * persistent Ed25519 key (`bb_citizen_fc_keypair_v2`) is authorized on `signerAccountId`.
  * Supports both zero-deposit FunctionCall keys and attached-deposit calls when the browser key
@@ -1491,28 +1537,12 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
   const depositBigInt = BigInt(params.depositYocto || '0');
   const { rpcUrl } = resolveNearRpcUrl(cleanSigner);
   try {
-    const akResp = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'check-fc-key',
-        method: 'query',
-        params: {
-          request_type: 'view_access_key',
-          finality: 'optimistic',
-          account_id: cleanSigner,
-          public_key: publicKey,
-        },
-      }),
-    });
-    if (!akResp.ok) return null;
-    const akJson = await akResp.json();
-    if (akJson?.error || !akJson?.result?.block_hash) {
+    const akResult = await queryCitizenAccessKeyWithRetry(rpcUrl, cleanSigner, publicKey);
+    if (!akResult) {
       return null;
     }
 
-    const isFullAccess = akJson.result.permission === 'FullAccess';
+    const isFullAccess = akResult.permission === 'FullAccess';
     if (depositBigInt > 0n && !isFullAccess) {
       // Scoped FunctionCall keys cannot attach NEAR deposit > 0 on NEAR protocol
       return null;
@@ -1540,8 +1570,8 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
       }
     }
 
-    const nextNonce = BigInt(akJson.result.nonce) + 1n;
-    const blockHashBytes = decodeBase58(String(akJson.result.block_hash));
+    const nextNonce = BigInt(akResult.nonce) + 1n;
+    const blockHashBytes = decodeBase58(String(akResult.block_hash));
     const pubKeyBytes = decodeBase58(publicKey.replace(/^ed25519:/i, ''));
     if (pubKeyBytes.length !== 32 || blockHashBytes.length !== 32) {
       return null;
@@ -1622,7 +1652,11 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
     // Let the app re-read balances and claim status from chain right away —
     // the wallet principle is that the UI mirrors the chain, not a cache.
     try {
-      window.dispatchEvent(new CustomEvent('buddies:citizen-tx-settled'));
+      window.dispatchEvent(
+        new CustomEvent('buddies:citizen-tx-settled', {
+          detail: { signerAccountId: cleanSigner, methodName: params.methodName },
+        }),
+      );
     } catch {
       // ignore
     }
@@ -1939,6 +1973,7 @@ export interface HanaSmartContractTreasuryStatus {
   grantAmountNear: number;
   liquidTreasuryNear: number;
   callerAlreadyClaimed: boolean;
+  verified?: boolean;
 }
 
 function formatYoctoNearToNear(yocto: string): number {
@@ -1953,6 +1988,7 @@ function formatYoctoNearToNear(yocto: string): number {
 
 export async function fetchHanaTreasuryStatus(
   accountId?: string,
+  finality: 'final' | 'optimistic' = 'final',
 ): Promise<HanaSmartContractTreasuryStatus> {
   const cleanId = (accountId || '').trim().toLowerCase();
   const parsed = await callNearContractViewMethod<{
@@ -1964,6 +2000,7 @@ export async function fetchHanaTreasuryStatus(
     methodName: 'get_hana_treasury_status',
     args: cleanId ? { account_id: cleanId } : {},
     networkOrAccount: cleanId || NEAR_CONFIG.marketContractId,
+    finality,
   });
 
   if (!parsed) {
@@ -1971,6 +2008,7 @@ export async function fetchHanaTreasuryStatus(
       grantAmountNear: 0.3,
       liquidTreasuryNear: 0,
       callerAlreadyClaimed: false,
+      verified: false,
     };
   }
 
@@ -1978,6 +2016,7 @@ export async function fetchHanaTreasuryStatus(
     grantAmountNear: formatYoctoNearToNear(String(parsed.grant_amount_yocto || '300000000000000000000000')),
     liquidTreasuryNear: formatYoctoNearToNear(String(parsed.liquid_treasury_yocto || '0')),
     callerAlreadyClaimed: Boolean(parsed.caller_already_claimed),
+    verified: true,
   };
 }
 
@@ -2069,5 +2108,67 @@ export async function claimHanaWelcomeNearAttestedOnChain(
     explorerUrl: res.explorerUrl,
     amountNear: 0.3,
     error: res.error,
+  };
+}
+
+/**
+ * Attested Hana claim requires contract v1.5.0+ (`claim_hana_welcome_near_attested`).
+ * While live `market.buddiesblitz.testnet` runs v1.4.0, keep this opt-in behind
+ * `VITE_ENABLE_ATTESTED_HANA_CLAIM === 'true'` so Google players never trigger
+ * a failed attestation + fallback loop.
+ */
+export function shouldAttemptAttestedHanaClaim(
+  email?: string | null,
+  envFlag: string | undefined = metaEnv.VITE_ENABLE_ATTESTED_HANA_CLAIM,
+): boolean {
+  return envFlag === 'true' && Boolean((email || '').trim());
+}
+
+/**
+ * Reconciles UI NEAR balance immediately after `claim_hana_welcome_near` commits.
+ * Because `Promise::new(caller).transfer(0.30 NEAR)` settles 1-2 blocks after
+ * `broadcast_tx_commit` resolves, an immediate RPC query can return the pre-payout
+ * balance (~0.08 NEAR). In that case, project the expected post-grant balance at once
+ * while returning `receiptConfirmedOnChain: false` so background optimistic polls
+ * converge cleanly to the exact on-chain balance without regressing UI state.
+ */
+export function resolvePostClaimNearBalance(params: {
+  previousNearBalance: number;
+  observedNearBalance: number | null;
+  grantAmountNear: number;
+}): {
+  nextNearBalance: number;
+  receiptConfirmedOnChain: boolean;
+  pendingFloorNear: number;
+} {
+  const grant =
+    Number.isFinite(params.grantAmountNear) && params.grantAmountNear > 0
+      ? params.grantAmountNear
+      : 0.3;
+  const prev =
+    Number.isFinite(params.previousNearBalance) && params.previousNearBalance >= 0
+      ? params.previousNearBalance
+      : 0;
+  const obs =
+    params.observedNearBalance !== null &&
+    Number.isFinite(params.observedNearBalance) &&
+    params.observedNearBalance >= 0
+      ? params.observedNearBalance
+      : null;
+
+  const confirmThreshold = prev + grant * 0.5;
+  if (obs !== null && obs >= confirmThreshold) {
+    return {
+      nextNearBalance: Number(obs.toFixed(4)),
+      receiptConfirmedOnChain: true,
+      pendingFloorNear: confirmThreshold,
+    };
+  }
+
+  const baseNear = obs !== null ? Math.max(prev, obs) : prev;
+  return {
+    nextNearBalance: Number((baseNear + grant).toFixed(4)),
+    receiptConfirmedOnChain: false,
+    pendingFloorNear: Number((baseNear + grant * 0.5).toFixed(4)),
   };
 }
