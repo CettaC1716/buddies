@@ -12,6 +12,7 @@ import { soundEngine } from '../game/audio';
 const METHOD_LABELS: Record<string, string> = {
   swap_near_for_respite: 'Swap NEAR → RESPITE',
   claim_hana_welcome_near: 'Claim welcome NEAR from Hana',
+  claim_hana_welcome_near_attested: 'Claim welcome NEAR from Hana (Google verified)',
   buy_merchant_item: 'Buy item from the merchant shop',
   sell_merchant_item: 'Sell item back to the merchant',
   purchase_citizen_asset: 'Buy citizen asset',

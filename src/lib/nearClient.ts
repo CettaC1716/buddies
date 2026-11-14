@@ -1880,7 +1880,8 @@ export type BuddiesMarketMethodName =
   | 'claim_deed_payout'
   | 'mint_merchant_item'
   | 'mt_transfer'
-  | 'claim_hana_welcome_near';
+  | 'claim_hana_welcome_near'
+  | 'claim_hana_welcome_near_attested';
 
 const ONE_YOCTO_REQUIRED_METHODS: ReadonlySet<BuddiesMarketMethodName> = new Set([
   'ft_transfer',
@@ -1990,6 +1991,76 @@ export async function claimHanaWelcomeNearOnChain(signerAccountId: string): Prom
   const res = await executeMarketContractCallOnChain({
     methodName: 'claim_hana_welcome_near',
     args: {},
+    signerAccountId,
+  });
+  return {
+    ok: res.ok,
+    txHash: res.txHash,
+    explorerUrl: res.explorerUrl,
+    amountNear: 0.3,
+    error: res.error,
+  };
+}
+
+export interface HanaClaimAttestation {
+  emailHashHex: string;
+  issuedAtMs: number;
+  signatureHex: string;
+}
+
+/**
+ * Asks the game server to attest a starter-grant claim for the Google
+ * identity bound to this wallet. The contract (v1.5.0+) pays the grant
+ * only against this signature, one per Google account ever.
+ */
+export async function fetchHanaClaimAttestation(
+  accountId: string,
+  email: string,
+): Promise<{ ok: true; attestation: HanaClaimAttestation } | { ok: false; code?: string; error: string }> {
+  try {
+    const resp = await fetch(resolveApiUrl('/api/hana-claim-attest'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId, email }),
+    });
+    const data = (await resp.json().catch(() => null)) as any;
+    if (!resp.ok || !data?.ok) {
+      return {
+        ok: false,
+        code: typeof data?.code === 'string' ? data.code : undefined,
+        error: typeof data?.error === 'string' ? data.error : 'Claim attestation was refused.',
+      };
+    }
+    return {
+      ok: true,
+      attestation: {
+        emailHashHex: String(data.emailHashHex),
+        issuedAtMs: Number(data.issuedAtMs),
+        signatureHex: String(data.signatureHex),
+      },
+    };
+  } catch {
+    return { ok: false, error: 'Claim attestation service is unreachable.' };
+  }
+}
+
+export async function claimHanaWelcomeNearAttestedOnChain(
+  signerAccountId: string,
+  attestation: HanaClaimAttestation,
+): Promise<{
+  ok: boolean;
+  txHash: string;
+  explorerUrl: string;
+  amountNear: number;
+  error?: string;
+}> {
+  const res = await executeMarketContractCallOnChain({
+    methodName: 'claim_hana_welcome_near_attested',
+    args: {
+      email_hash_hex: attestation.emailHashHex,
+      issued_at_ms: attestation.issuedAtMs,
+      signature_hex: attestation.signatureHex,
+    },
     signerAccountId,
   });
   return {

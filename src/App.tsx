@@ -130,6 +130,8 @@ import {
   NEAR_CONFIG,
   checkCitizenSubAccountAvailability,
   claimHanaWelcomeNearOnChain,
+  claimHanaWelcomeNearAttestedOnChain,
+  fetchHanaClaimAttestation,
   disconnectNearWallet,
   executeMarketContractCallOnChain,
   executeNearTestnetAndRespiteSwap,
@@ -3123,6 +3125,9 @@ export default function App() {
   useEffect(() => {
     const onSettled = () => {
       void refreshWalletTransactions();
+      window.setTimeout(() => {
+        void refreshWalletTransactions();
+      }, 2500);
     };
     window.addEventListener('buddies:citizen-tx-settled', onSettled);
     return () => window.removeEventListener('buddies:citizen-tx-settled', onSettled);
@@ -3935,7 +3940,28 @@ export default function App() {
       };
     }
 
-    const claimRes = await claimHanaWelcomeNearOnChain(actorAccount);
+    // v1.5.0 claim policy: the grant is bound to the player's Google
+    // identity. When an email is connected, claim through the server
+    // attestation; any failure falls back to the legacy method, which
+    // keeps working until the contract upgrade lands — and refuses with
+    // a clear message afterwards, so the fallback can never be farmed.
+    let claimRes: Awaited<ReturnType<typeof claimHanaWelcomeNearOnChain>> | null = null;
+    const claimEmail = (connectedGoogleEmail || '').trim().toLowerCase();
+    if (claimEmail) {
+      const att = await fetchHanaClaimAttestation(actorAccount, claimEmail);
+      if (att.ok) {
+        const attestedRes = await claimHanaWelcomeNearAttestedOnChain(
+          actorAccount,
+          att.attestation,
+        );
+        if (attestedRes.ok) {
+          claimRes = attestedRes;
+        }
+      }
+    }
+    if (!claimRes) {
+      claimRes = await claimHanaWelcomeNearOnChain(actorAccount);
+    }
     if (!claimRes.ok) {
       return claimRes;
     }
@@ -3980,7 +4006,7 @@ export default function App() {
     });
 
     return claimRes;
-  }, [playerUid]);
+  }, [playerUid, connectedGoogleEmail]);
 
   useEffect(() => {
     if (onboardingStep !== 'entering_lobby') return;
