@@ -389,7 +389,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   ownedItemIds,
   activeHouseThemeId,
   interiorPlacement: _interiorPlacement,
-  isFastForwardRunning: _isFastForwardRunning = false,
+  isFastForwardRunning = false,
   onClose,
   onEarnSafezoneLul: _onEarnSafezoneLul,
   onExchangeLulToCyon,
@@ -397,7 +397,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onInvestInMerchant,
   onBuyMerchantItem,
   onSellMerchantItem,
-  onToggleFastForward: _onToggleFastForward,
+  onToggleFastForward,
   onSelectHouseTheme,
   onAssignInteriorSlot: _onAssignInteriorSlot,
   onRotateInteriorSlot: _onRotateInteriorSlot,
@@ -1794,6 +1794,38 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   const isNpcOpen = activeModalMode === 'npc_merchant';
 
+  const renderEconomySimBar = (barId: string) =>
+    onToggleFastForward ? (
+      <div
+        data-economy-sim-bar={barId}
+        className="px-3 py-2 bg-slate-100 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2 flex-wrap"
+      >
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="text-[9.5px] font-black uppercase text-black truncate">
+            SIM DAY #{marketState.dayCounter} · RESERVE {marketState.treasuryCyon} CYON
+            {marketState.isShopBroke ? ' · LOW RESERVE' : ''}
+          </div>
+          <div className="text-[9px] font-bold text-slate-600 truncate">
+            {marketState.lastMarketHeadline}
+          </div>
+        </div>
+        <button
+          type="button"
+          data-merchant-fast-forward-btn="true"
+          onClick={() => onToggleFastForward()}
+          className={`-skew-x-6 px-2.5 py-1 border-2 border-black text-[9.5px] font-black uppercase shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
+            isFastForwardRunning
+              ? 'bg-[#facc15] hover:bg-[#fde047] text-black'
+              : 'bg-[#1e293b] hover:bg-[#334155] text-[#b8ff3c]'
+          }`}
+        >
+          <span className="skew-x-6 inline-block">
+            {isFastForwardRunning ? 'PAUSE SIM' : 'FAST-FORWARD SIM'}
+          </span>
+        </button>
+      </div>
+    ) : null;
+
   return (
     <>
       <aside
@@ -2538,7 +2570,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               parsedLul <= lulBalance &&
               calculatedCyon > 0;
 
-            const respitePerNearRate = RESPITE_NEP141_METADATA.rateRespitePerNear; // 1 NEAR = 100 RESPITE
+            const respitePerNearRate = RESPITE_NEP141_METADATA.rateRespitePerNear; // 1 NEAR = 400 RESPITE
             const parsedCryptoInput = Math.max(0, Number(cryptoSwapInputStr) || 0);
             const isNearToRespite = true;
             const calculatedCryptoOutput = Math.floor(parsedCryptoInput * respitePerNearRate);
@@ -2555,7 +2587,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const canPerformCryptoSwap =
               walletConnected &&
               !isSwappingNear &&
-              parsedCryptoInput >= 0.01 &&
+              parsedCryptoInput >= 0.0025 &&
               calculatedCryptoOutput >= 1 &&
               !exceedsKnownSignerBalance;
 
@@ -2593,6 +2625,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </button>
                   )}
                 </div>
+
+                {renderEconomySimBar('exchange')}
 
                 {marketState.isShopBroke && (
                   <div className="p-2.5 bg-[#1e293b] text-white border-2 border-black flex items-center justify-between gap-2 flex-wrap">
@@ -2975,6 +3009,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     )}
                   </div>
 
+                  {renderEconomySimBar('kai-shop')}
+
                   {/* Tactical Kiosk-Style 2x2 Selectable Card Grid */}
                   <div
                     className={`grid grid-cols-2 gap-2.5 ${
@@ -3233,6 +3269,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </span>
                   </button>
                 </div>
+
+                {renderEconomySimBar('catalog')}
 
                 {/* Catalog tabs: House | Furniture | Property Market */}
                 <div className="grid grid-cols-3 gap-1.5" data-hana-catalog-tabs="true">

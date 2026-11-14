@@ -1873,7 +1873,7 @@ async function signAndSendNearTransaction(params: {
 
 /**
  * Executes a real `swap_near_for_respite` transaction on `market.buddiesblitz.testnet`
- * (`1 NEAR = 100 RESPITE`, minimum `0.01 NEAR`).
+ * (`1 NEAR = 400 RESPITE`, minimum `0.0025 NEAR = 1 RESPITE`).
  */
 export async function executeNearTestnetAndRespiteSwap(params: {
   direction: 'near_to_respite' | 'respite_to_near';
@@ -1890,14 +1890,14 @@ export async function executeNearTestnetAndRespiteSwap(params: {
 
   const rate = RESPITE_NEP141_METADATA.rateRespitePerNear;
   const cleanNearAmount = Math.max(0, Number(params.inputAmount) || 0);
-  if (cleanNearAmount < 0.01) {
-    lastNearTransactionError = 'Minimum swap deposit is 0.01 NEAR (= 1 RESPITE).';
+  if (cleanNearAmount < 0.0025) {
+    lastNearTransactionError = 'Minimum swap deposit is 0.0025 NEAR (= 1 RESPITE).';
     return null;
   }
 
   const requestedAccount = (params.accountId || params.signerAccountId || '').trim();
   const respiteAmount = Math.floor(cleanNearAmount * rate);
-  const depositYocto = `${BigInt(Math.max(1, Math.round(cleanNearAmount * 100))) * 10n ** 22n}`;
+  const depositYocto = `${BigInt(Math.max(25, Math.round(cleanNearAmount * 10_000))) * 10n ** 20n}`;
 
   const txResult = await signAndSendNearTransaction({
     signerAccountId: requestedAccount || undefined,
@@ -1942,6 +1942,7 @@ export type BuddiesMarketMethodName =
   | 'ft_transfer'
   | 'nft_transfer'
   | 'authorize_deed_session_key'
+  | 'fund_deed_royalty'
   | 'claim_deed_payout'
   | 'mint_merchant_item'
   | 'mt_transfer'
@@ -2142,17 +2143,54 @@ export async function claimHanaWelcomeNearAttestedOnChain(
   };
 }
 
+export interface OnChainNftSubAccountLedger {
+  token_id: string;
+  sub_account_id: string;
+  owner_id: string;
+  key_epoch: number;
+  active_session_key: string;
+  treasury_respite: string;
+  pending_payout_respite: string;
+  total_earned_respite: string;
+  total_paid_out_respite: string;
+  ownership_history: Array<{
+    from_owner: string;
+    to_owner: string;
+    transferred_treasury_respite: string;
+    new_key_epoch: number;
+    timestamp_ms: number;
+  }>;
+}
+
 /**
- * Attested Hana claim requires contract v1.5.0+ (`claim_hana_welcome_near_attested`).
- * While live `market.buddiesblitz.testnet` runs v1.4.0, keep this opt-in behind
- * `VITE_ENABLE_ATTESTED_HANA_CLAIM === 'true'` so Google players never trigger
- * a failed attestation + fallback loop.
+ * Fetches live on-chain Sub-Account Ledger history & treasury counters
+ * (`get_nft_ledger_history`) for an NEP-171 House Deed on `market.buddiesblitz.testnet`.
+ */
+export async function fetchNftSubAccountLedgerFromChain(
+  tokenId: string,
+  finality: 'final' | 'optimistic' = 'optimistic',
+): Promise<OnChainNftSubAccountLedger | null> {
+  const cleanId = tokenId.trim();
+  if (!cleanId) return null;
+  return await callNearContractViewMethod<OnChainNftSubAccountLedger>({
+    contractId: NEAR_CONFIG.marketContractId,
+    methodName: 'get_nft_ledger_history',
+    args: { token_id: cleanId },
+    networkOrAccount: cleanId,
+    finality,
+  });
+}
+
+/**
+ * Attested Hana claim runs on contract v1.5.0+ (`claim_hana_welcome_near_attested`)
+ * for Google-authenticated accounts unless explicitly opted out via
+ * `VITE_ENABLE_ATTESTED_HANA_CLAIM === 'false'`.
  */
 export function shouldAttemptAttestedHanaClaim(
   email?: string | null,
   envFlag: string | undefined = metaEnv.VITE_ENABLE_ATTESTED_HANA_CLAIM,
 ): boolean {
-  return envFlag === 'true' && Boolean((email || '').trim());
+  return envFlag !== 'false' && Boolean((email || '').trim());
 }
 
 /**

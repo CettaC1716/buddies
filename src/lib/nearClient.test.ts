@@ -21,6 +21,7 @@ import {
   verifyNep171GamepassOwnership,
 } from './nearClient';
 import { handleNearRelayerRequest } from '../../api/near-relayer';
+import { handleFishAttestRequest } from '../../api/fish-attest';
 import { buildNpcSystemInstruction, handleNpcAgentRequest } from '../../api/npc-agent';
 import {
   MERCHANT_CATALOG_ITEMS,
@@ -622,8 +623,8 @@ test('resolvePostClaimNearBalance & shouldAttemptAttestedHanaClaim protect new p
   assert.equal(rpcMiss.nextNearBalance, 0.38);
   assert.equal(rpcMiss.receiptConfirmedOnChain, false);
 
-  // 5. Attested claim gated behind VITE_ENABLE_ATTESTED_HANA_CLAIM === 'true'
-  assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', undefined), false);
+  // 5. Attested claim defaults ON in v1.5.0+ unless opted out via 'false'
+  assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', undefined), true);
   assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', 'false'), false);
   assert.equal(shouldAttemptAttestedHanaClaim('', 'true'), false);
   assert.equal(shouldAttemptAttestedHanaClaim('player@gmail.com', 'true'), true);
@@ -908,5 +909,110 @@ test('fetchOwnedNep245CatalogCounts queries mt_batch_balance_of and maps token c
     });
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('near-relayer rejects unauthenticated session-key healing on existing accounts even when strictUniqueHandle is false', async () => {
+  const validSessionKey = await getOrCreateCitizenSessionPublicKey();
+  const originalFetch = globalThis.fetch;
+  const savedMasterSecret = process.env.NEAR_MASTER_PRIVATE_KEY;
+  const savedSupaUrl = process.env.SUPABASE_URL;
+  const savedSupaRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.NEAR_MASTER_PRIVATE_KEY = '';
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+
+  try {
+    globalThis.fetch = (async (url, init) => {
+      const urlStr = String(url || '');
+      if (urlStr.includes('/rest/v1/rpc/bb_lookup_account_by_email')) {
+        return new Response(JSON.stringify('legitowner.buddiesblitz.testnet'), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const body = JSON.parse(String(init?.body || '{}'));
+      const reqType = body?.params?.request_type;
+      if (reqType === 'view_account') {
+        return new Response(
+          JSON.stringify({ result: { amount: '100000000000000000000000' } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: { message: 'Access key does not exist' } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    const noEmailRes = await handleNearRelayerRequest({
+      action: 'create_subaccount',
+      handle: 'taken',
+      sessionPublicKey: validSessionKey,
+      strictUniqueHandle: false,
+    });
+    assert.equal(noEmailRes.status, 409);
+    assert.equal(noEmailRes.payload.code, 'HANDLE_TAKEN');
+
+    const mismatchEmailRes = await handleNearRelayerRequest({
+      action: 'create_subaccount',
+      handle: 'taken',
+      email: 'attacker@example.com',
+      sessionPublicKey: validSessionKey,
+      strictUniqueHandle: false,
+    });
+    assert.equal(mismatchEmailRes.status, 403);
+    assert.equal(mismatchEmailRes.payload.code, 'EMAIL_NOT_BOUND');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (savedMasterSecret === undefined) delete process.env.NEAR_MASTER_PRIVATE_KEY;
+    else process.env.NEAR_MASTER_PRIVATE_KEY = savedMasterSecret;
+    if (savedSupaUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = savedSupaUrl;
+    if (savedSupaRole === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = savedSupaRole;
+  }
+});
+
+test('fish-attest rejects inflated weights above 1.05x species max and enforces sliding-window rate limits', async () => {
+  const savedFishKey = process.env.FISH_ATTESTER_PRIVATE_KEY;
+  // Valid 32-byte Ed25519 base58 test secret (used strictly inside unit test scope)
+  process.env.FISH_ATTESTER_PRIVATE_KEY = 'ed25519:11111111111111111111111111111111';
+
+  try {
+    // coral_sardine maxWeightKg = 1.8 -> 1.05x bound = ceil(189) = 189; 250 must fail with 400
+    const inflated = await handleFishAttestRequest(
+      {
+        playerAccount: 'angler01.buddiesblitz.testnet',
+        tokenId: 'nep171-fish-coral_sardine-0001',
+        speciesId: 'coral_sardine',
+        waterZone: 'kai_cove',
+        rarity: 'Common',
+        weightKgX100: 250,
+      },
+      '198.51.100.10',
+    );
+    assert.equal(inflated.status, 400);
+
+    // 31 rapid requests for the same player account must trip 429 on request #31
+    let lastStatus = 0;
+    for (let i = 0; i < 31; i += 1) {
+      const res = await handleFishAttestRequest(
+        {
+          playerAccount: 'ratelimit99.buddiesblitz.testnet',
+          tokenId: 'nep171-fish-coral_sardine-0001',
+          speciesId: 'coral_sardine',
+          waterZone: 'kai_cove',
+          rarity: 'Common',
+          weightKgX100: 150,
+        },
+        '198.51.100.11',
+      );
+      lastStatus = res.status;
+    }
+    assert.equal(lastStatus, 429);
+  } finally {
+    if (savedFishKey === undefined) delete process.env.FISH_ATTESTER_PRIVATE_KEY;
+    else process.env.FISH_ATTESTER_PRIVATE_KEY = savedFishKey;
   }
 });

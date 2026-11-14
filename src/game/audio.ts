@@ -2597,7 +2597,7 @@ class SoundEngine {
 
   /**
    * Creates a warm 1400Hz low-pass BiquadFilterNode routed directly to destination
-   * (bypassing the combat compressor) for "Warm Cozy Nintendo / Animal Crossing UI" SFX.
+   * (bypassing the combat compressor) for "Warm Cozy Plaza UI" SFX.
    */
   private createWarmUiLowpass(ctx: AudioContext, now: number): BiquadFilterNode {
     const lpf = ctx.createBiquadFilter();
@@ -2978,7 +2978,7 @@ class SoundEngine {
   }
 
   /**
-   * Team Buddies Character Jump Whoosh / Spring Hop SFX
+   * Buddies Blitz Character Jump Whoosh / Spring Hop SFX
    */
   public playJump(): void {
     this.playSample('release', 0.36, 1.18 + Math.random() * 0.08, 60);
@@ -2999,7 +2999,7 @@ class SoundEngine {
   }
 
   /**
-   * Team Buddies Unarmed Fist Punch Whoosh + Optional Flesh/Crate Impact Thud
+   * Buddies Blitz Unarmed Fist Punch Whoosh + Optional Flesh/Crate Impact Thud
    */
   public playPunch(hitTarget = false): void {
     if (hitTarget) {
@@ -3024,7 +3024,7 @@ class SoundEngine {
   }
 
   /**
-   * Team Buddies Heavy Boot Kick Swing + Impact Punt SFX
+   * Buddies Blitz Heavy Boot Kick Swing + Impact Punt SFX
    */
   public playKick(hitTarget = false): void {
     if (hitTarget) {

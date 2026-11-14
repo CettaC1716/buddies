@@ -151,6 +151,7 @@ import {
   fetchNearAccountView,
   fetchNearNetworkStatus,
   fetchNep141Balance,
+  fetchNftSubAccountLedgerFromChain,
   fetchOwnedFishNftsFromChain,
   fetchOwnedNep245CatalogCounts,
   getNearBlocksTxUrl,
@@ -164,6 +165,7 @@ import {
   type NearNetworkStatus,
   type NearWalletConnectionResult,
   type Nep171GamepassSubAccountLedger,
+  type OnChainNftSubAccountLedger,
   type RecruitedFamilyMemberAgent,
   resolveApiUrl,
   resolvePostClaimNearBalance,
@@ -810,6 +812,14 @@ export default function App() {
   >('ALL');
   const [walletTransactions, setWalletTransactions] = useState<DbMarketTransactionRow[]>([]);
   const [isLoadingWalletTransactions, setIsLoadingWalletTransactions] = useState<boolean>(false);
+  const [onChainDeedLedger, setOnChainDeedLedger] = useState<OnChainNftSubAccountLedger | null>(null);
+  const [isLoadingDeedLedger, setIsLoadingDeedLedger] = useState<boolean>(false);
+  const [isDeedLedgerTxBusy, setIsDeedLedgerTxBusy] = useState<boolean>(false);
+  const [deedLedgerActionFeedback, setDeedLedgerActionFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    txHash?: string;
+  } | null>(null);
   const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
   const [localTxConfirmState, setLocalTxConfirmState] = useState<{
     request: LocalTxConfirmRequest;
@@ -3160,6 +3170,23 @@ export default function App() {
     }
   }, [playerUid]);
 
+  const refreshOnChainDeedLedger = useCallback(async (tokenIdOverride?: string) => {
+    const cleanToken = (tokenIdOverride || hudRef.current.nearGamepassTokenId || '').trim();
+    if (!cleanToken) {
+      setOnChainDeedLedger(null);
+      return;
+    }
+    setIsLoadingDeedLedger(true);
+    try {
+      const ledger = await fetchNftSubAccountLedgerFromChain(cleanToken, 'optimistic');
+      if (ledger) {
+        setOnChainDeedLedger(ledger);
+      }
+    } finally {
+      setIsLoadingDeedLedger(false);
+    }
+  }, []);
+
   const refreshOnChainBalances = useCallback(
     async (accountOverride?: string) => {
       const targetAccount = (accountOverride || hudRef.current.nearWalletId || playerUid || '')
@@ -3254,8 +3281,15 @@ export default function App() {
     if (isPersonalWalletModalOpen) {
       void refreshWalletTransactions();
       void refreshOnChainBalances();
+      void refreshOnChainDeedLedger();
     }
-  }, [isPersonalWalletModalOpen, personalWalletTab, refreshWalletTransactions, refreshOnChainBalances]);
+  }, [
+    isPersonalWalletModalOpen,
+    personalWalletTab,
+    refreshWalletTransactions,
+    refreshOnChainBalances,
+    refreshOnChainDeedLedger,
+  ]);
 
   // Chain-truth refresh: after any in-game wallet transaction settles, and
   // whenever an NPC merchant modal opens, re-read balances and claim status
@@ -3274,6 +3308,7 @@ export default function App() {
       const actor = detail?.signerAccountId;
       void refreshWalletTransactions();
       void refreshOnChainBalances(actor);
+      void refreshOnChainDeedLedger();
       for (const delayMs of [1200, 2800, 5000]) {
         timers.push(
           window.setTimeout(() => {
@@ -3284,6 +3319,7 @@ export default function App() {
       timers.push(
         window.setTimeout(() => {
           void refreshWalletTransactions();
+          void refreshOnChainDeedLedger();
         }, 2500),
       );
     };
@@ -3292,7 +3328,7 @@ export default function App() {
       window.removeEventListener('buddies:citizen-tx-settled', onSettled);
       timers.forEach((id) => window.clearTimeout(id));
     };
-  }, [refreshWalletTransactions, refreshOnChainBalances]);
+  }, [refreshWalletTransactions, refreshOnChainBalances, refreshOnChainDeedLedger]);
 
   useEffect(() => {
     if (activeSpecialModal === 'npc_merchant') {
@@ -4149,9 +4185,8 @@ export default function App() {
 
     const preClaimNear = nearTestnetBalanceRef.current;
 
-    // Attested claim requires contract v1.5.0+ (`claim_hana_welcome_near_attested`)
-    // and is gated behind `shouldAttemptAttestedHanaClaim` while v1.4.0 is live so
-    // Google players do not hit an extra server attestation + failing popup cycle.
+    // Contract v1.5.0 enforces one welcome NEAR grant per Google email hash
+    // when attested claim is enabled; non-Google wallets use legacy 1x-per-account claim.
     let claimRes: Awaited<ReturnType<typeof claimHanaWelcomeNearOnChain>> | null = null;
     const claimEmail = (connectedGoogleEmail || '').trim().toLowerCase();
     if (shouldAttemptAttestedHanaClaim(claimEmail)) {
@@ -4163,7 +4198,20 @@ export default function App() {
         );
         if (attestedRes.ok) {
           claimRes = attestedRes;
+        } else if (
+          attestedRes.error &&
+          /already claimed|Invalid Hana claim attestation/i.test(attestedRes.error)
+        ) {
+          return attestedRes;
         }
+      } else if (att.code === 'ALREADY_CLAIMED' || att.code === 'EMAIL_NOT_BOUND') {
+        return {
+          ok: false,
+          txHash: '',
+          explorerUrl: '',
+          amountNear: 0,
+          error: att.error,
+        };
       }
     }
     if (!claimRes) {
@@ -5253,7 +5301,7 @@ export default function App() {
 
   return (
     <main className="relative w-screen h-screen overflow-hidden select-none">
-      {/* 1. 60FPS 3D Team Buddies x Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
+      {/* 1. 60FPS 3D Buddies Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
       <BuddiesBlitzArena
         key={`arena-${worldTransitionCount}`}
         gameState={gameState}
@@ -9719,6 +9767,226 @@ export default function App() {
                       <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
                         <span className="text-emerald-600 font-bold">OWNED</span>
                         <span className="text-slate-500">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</span>
+                      </div>
+
+                      {/* Sub-Account Ledger, Ownership Provenance & Royalty Payouts (Contract v1.5.0) */}
+                      <div
+                        data-wallet-deed-ledger="true"
+                        className="p-2 bg-[#0f172a] text-white border-2 border-black space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="text-[9px] font-black uppercase text-[#38bdf8] truncate">
+                            {onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId}
+                          </span>
+                          <span className="px-1.5 py-0.5 bg-[#1e293b] border border-white/20 text-[8.5px] font-mono font-bold text-[#b8ff3c] shrink-0">
+                            EPOCH #{onChainDeedLedger?.key_epoch ?? (nep171Ledger.ownershipHistory.length + 1)}
+                          </span>
+                        </div>
+
+                        {onChainDeedLedger ? (
+                          <>
+                            <div className="grid grid-cols-3 gap-1 text-[8.5px] font-mono">
+                              <div className="p-1 bg-[#1e293b] border border-white/10">
+                                <div className="text-slate-400">PENDING</div>
+                                <div className="text-[#b8ff3c] font-bold">
+                                  {onChainDeedLedger.pending_payout_respite} R
+                                </div>
+                              </div>
+                              <div className="p-1 bg-[#1e293b] border border-white/10">
+                                <div className="text-slate-400">EARNED</div>
+                                <div className="text-[#d8b4fe] font-bold">
+                                  {onChainDeedLedger.total_earned_respite} R
+                                </div>
+                              </div>
+                              <div className="p-1 bg-[#1e293b] border border-white/10">
+                                <div className="text-slate-400">PAID OUT</div>
+                                <div className="text-[#38bdf8] font-bold">
+                                  {onChainDeedLedger.total_paid_out_respite} R
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-[8.5px] font-mono text-slate-300 space-y-0.5 max-h-16 overflow-y-auto">
+                              {onChainDeedLedger.ownership_history.length === 0 ? (
+                                <div>Provenance: Genesis holder · 0 transfers</div>
+                              ) : (
+                                onChainDeedLedger.ownership_history.slice(-3).map((rec, idx) => (
+                                  <div key={`${rec.new_key_epoch}-${idx}`} className="truncate">
+                                    Epoch #{rec.new_key_epoch}: {rec.from_owner} -&gt; {rec.to_owner} ({rec.transferred_treasury_respite} R)
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 pt-0.5">
+                              <button
+                                type="button"
+                                data-deed-fund-btn="true"
+                                disabled={isDeedLedgerTxBusy || respiteBalance < 5}
+                                onClick={async () => {
+                                  const signer = hud.nearWalletId || playerUid || '';
+                                  const deedTokenId =
+                                    hud.nearGamepassTokenId || onChainDeedLedger.token_id;
+                                  if (!signer || !deedTokenId) return;
+                                  soundEngine.playUiClick();
+                                  setIsDeedLedgerTxBusy(true);
+                                  setDeedLedgerActionFeedback(null);
+                                  try {
+                                    const tx = await executeMarketContractCallOnChain({
+                                      signerAccountId: signer,
+                                      methodName: 'fund_deed_royalty',
+                                      args: { token_id: deedTokenId, amount: '5' },
+                                    });
+                                    if (!tx.ok) {
+                                      setDeedLedgerActionFeedback({
+                                        type: 'error',
+                                        text: tx.error || 'Could not fund deed treasury.',
+                                      });
+                                      return;
+                                    }
+                                    void logMarketTransactionToSupabase({
+                                      merchant_id: 'lobby_cafe',
+                                      actor_near_account: signer,
+                                      action_type: 'FUND_DEED_ROYALTY',
+                                      item_id: deedTokenId,
+                                      currency: 'RESPITE',
+                                      amount: 5,
+                                      unit_price: 1,
+                                      reasoning_summary: `Deposited +5 RESPITE royalty into ${onChainDeedLedger.sub_account_id}`,
+                                      near_tx_hash: tx.txHash,
+                                    });
+                                    setDeedLedgerActionFeedback({
+                                      type: 'success',
+                                      text: '+5 R funded to deed treasury',
+                                      txHash: tx.txHash,
+                                    });
+                                    await Promise.all([
+                                      refreshOnChainBalances(signer),
+                                      refreshOnChainDeedLedger(deedTokenId),
+                                    ]);
+                                  } finally {
+                                    setIsDeedLedgerTxBusy(false);
+                                  }
+                                }}
+                                className={`flex-1 py-1 border border-black text-[8.5px] font-black uppercase ${
+                                  !isDeedLedgerTxBusy && respiteBalance >= 5
+                                    ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
+                                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                {isDeedLedgerTxBusy ? 'WAIT...' : 'FUND +5 R'}
+                              </button>
+
+                              <button
+                                type="button"
+                                data-deed-claim-btn="true"
+                                disabled={
+                                  isDeedLedgerTxBusy ||
+                                  Number(onChainDeedLedger.pending_payout_respite || '0') <= 0
+                                }
+                                onClick={async () => {
+                                  const signer = hud.nearWalletId || playerUid || '';
+                                  const deedTokenId =
+                                    hud.nearGamepassTokenId || onChainDeedLedger.token_id;
+                                  if (!signer || !deedTokenId) return;
+                                  soundEngine.playUiClick();
+                                  setIsDeedLedgerTxBusy(true);
+                                  setDeedLedgerActionFeedback(null);
+                                  try {
+                                    const tx = await executeMarketContractCallOnChain({
+                                      signerAccountId: signer,
+                                      methodName: 'claim_deed_payout',
+                                      args: {
+                                        token_id: deedTokenId,
+                                        expected_key_epoch: onChainDeedLedger.key_epoch,
+                                      },
+                                    });
+                                    if (!tx.ok) {
+                                      setDeedLedgerActionFeedback({
+                                        type: 'error',
+                                        text: tx.error || 'Could not claim deed payout.',
+                                      });
+                                      return;
+                                    }
+                                    const payoutAmt = Number(
+                                      onChainDeedLedger.pending_payout_respite || '0',
+                                    );
+                                    void logMarketTransactionToSupabase({
+                                      merchant_id: 'lobby_cafe',
+                                      actor_near_account: signer,
+                                      action_type: 'CLAIM_DEED_PAYOUT',
+                                      item_id: deedTokenId,
+                                      currency: 'RESPITE',
+                                      amount: payoutAmt,
+                                      unit_price: 1,
+                                      reasoning_summary: `Claimed ${payoutAmt} RESPITE from ${onChainDeedLedger.sub_account_id} (Epoch #${onChainDeedLedger.key_epoch})`,
+                                      near_tx_hash: tx.txHash,
+                                    });
+                                    setDeedLedgerActionFeedback({
+                                      type: 'success',
+                                      text: `Claimed +${payoutAmt} R`,
+                                      txHash: tx.txHash,
+                                    });
+                                    await Promise.all([
+                                      refreshOnChainBalances(signer),
+                                      refreshOnChainDeedLedger(deedTokenId),
+                                    ]);
+                                  } finally {
+                                    setIsDeedLedgerTxBusy(false);
+                                  }
+                                }}
+                                className={`flex-1 py-1 border border-black text-[8.5px] font-black uppercase ${
+                                  !isDeedLedgerTxBusy &&
+                                  Number(onChainDeedLedger.pending_payout_respite || '0') > 0
+                                    ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
+                                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                CLAIM PAYOUT
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 text-[8.5px] font-mono text-slate-300">
+                            <span>
+                              {isLoadingDeedLedger
+                                ? 'Loading sub-account ledger...'
+                                : 'Sub-account ledger ready'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void refreshOnChainDeedLedger()}
+                              className="px-1.5 py-0.5 bg-[#38bdf8] text-black font-black uppercase cursor-pointer"
+                            >
+                              SYNC
+                            </button>
+                          </div>
+                        )}
+
+                        {deedLedgerActionFeedback && (
+                          <div
+                            className={`text-[8.5px] font-bold ${
+                              deedLedgerActionFeedback.type === 'success'
+                                ? 'text-[#b8ff3c]'
+                                : 'text-red-300'
+                            }`}
+                          >
+                            <span>{deedLedgerActionFeedback.text}</span>
+                            {deedLedgerActionFeedback.txHash && (
+                              <>
+                                {' '}
+                                <a
+                                  href={getNearBlocksTxUrl(deedLedgerActionFeedback.txHash)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="underline text-[#38bdf8]"
+                                >
+                                  Receipt
+                                </a>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

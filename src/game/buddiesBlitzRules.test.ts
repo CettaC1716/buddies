@@ -74,12 +74,12 @@ import {
   computeCityTramDisembarkPosition,
   canUnitEnterCommanderBaseGate,
   stepCommanderSlidingGate,
-  TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
-  TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC,
-  TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
-  TEAM_BUDDIES_STACKING_PATTERNS,
-  TEAM_BUDDIES_CRATE_SCHEMES,
-  evaluateTeamBuddiesDeathDrops,
+  BLITZ_WEAPON_DESPAWN_SEC,
+  BLITZ_DESPAWN_BLINK_WINDOW_SEC,
+  BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
+  BLITZ_STACKING_PATTERNS,
+  BLITZ_CRATE_SCHEMES,
+  evaluateBlitzDeathDrops,
   evaluateDroppedItemDespawnState,
   evaluateCrateDestructionDrop,
   evaluateSplashDamageOnDroppedItem,
@@ -90,7 +90,7 @@ import {
   canBuddyUnitRespawnAtBase,
   canPadSlotsBirthNewBuddy,
   isTeamEliminatedInDeathmatch,
-  evaluateTeamBuddiesDeathmatchWinCondition,
+  evaluateBlitzDeathmatchWinCondition,
   KIOSK_BUILD_PRIORITY_RECIPES,
   getHologramSlotHexColor,
   chooseNextPadSlotIndexForHologram,
@@ -371,7 +371,7 @@ test('evaluateStackingPadRecipe evaluates 1..8 crate stacks, Merged Crates, and 
   assert.equal(fullCubeSuperTank.outputName, 'Tyrant Tank');
 });
 
-test('BUDDY_CLASSES defines all 7 Team Buddies classes with Ninja Katana crate slicer', () => {
+test('BUDDY_CLASSES defines all 7 Buddies Blitz classes with Ninja Katana crate slicer', () => {
   assert.equal(Object.keys(BUDDY_CLASSES).length, 7);
   assert.equal(BUDDY_CLASSES.Ninja.canSliceMergedCrates, true);
   assert.equal(BUDDY_CLASSES.Cyborg.vehicleResistant, true);
@@ -697,7 +697,7 @@ test('stepBuddyJumpPhysics launches character upward on jump, scales with class/
   assert.equal(grounded, true);
 });
 
-test('evaluateBuddyMeleeStrike resolves Team Buddies unarmed punches and front kicks with knockback', () => {
+test('evaluateBuddyMeleeStrike resolves Buddies Blitz unarmed punches and front kicks with knockback', () => {
   // Character at (0, 0) facing East (yaw = 0 -> fwd = (+1, 0))
   // 1. Unarmed punch against enemy 1.8m in front
   const punchHit = evaluateBuddyMeleeStrike(0, 0, 0, 1.8, 0.2, 0.65, 'punch');
@@ -709,7 +709,7 @@ test('evaluateBuddyMeleeStrike resolves Team Buddies unarmed punches and front k
   const punchBehind = evaluateBuddyMeleeStrike(0, 0, 0, -1.6, 0, 0.65, 'punch');
   assert.equal(punchBehind.hit, false);
 
-  // 3. Team Buddies front kick punts crate 2.2m in front with strong forward velocity & upward hop
+  // 3. Buddies Blitz front kick punts crate 2.2m in front with strong forward velocity & upward hop
   const kickCrate = evaluateBuddyMeleeStrike(0, 0, 0, 2.2, 0, 0.65, 'kick');
   assert.equal(kickCrate.hit, true);
   assert.equal(kickCrate.damage, 14);
@@ -1696,9 +1696,9 @@ test('Commander Base Automatic Sliding Gate allows ONLY the plot owner and their
   assert.equal(slide, 0, 'Sliding gate closes completely when authorized unit leaves');
 });
 
-test('Team Buddies (PS1) death drop mechanics: primary weapon with remaining ammo, coins, carried items, and NO corpse medkits', () => {
+test('Buddies Blitz death drop mechanics: primary weapon with remaining ammo, coins, carried items, and NO corpse medkits', () => {
   // 1. Enemy killed while holding Bazooka ('rocket', 7 ammo left), carrying a blue ('super') crate overhead, a cluster bomb, and a time bomb
-  const drops = evaluateTeamBuddiesDeathDrops({
+  const drops = evaluateBlitzDeathDrops({
     weaponId: 'rocket',
     ammo: 7,
     carryingCrate: 'super',
@@ -1722,7 +1722,7 @@ test('Team Buddies (PS1) death drop mechanics: primary weapon with remaining amm
   assert.ok(weaponDrop, 'Primary weapon drops on death');
   assert.equal(weaponDrop.weaponId, 'rocket');
   assert.equal(weaponDrop.remainingAmmo, 7);
-  assert.equal(weaponDrop.despawnTimerSec, TEAM_BUDDIES_WEAPON_DESPAWN_SEC);
+  assert.equal(weaponDrop.despawnTimerSec, BLITZ_WEAPON_DESPAWN_SEC);
   assert.ok(weaponDrop.vy > 5, 'Primary weapon bounces upward into the air');
 
   // Enemy kill drops Gold and Silver Coins
@@ -1744,7 +1744,7 @@ test('Team Buddies (PS1) death drop mechanics: primary weapon with remaining amm
   assert.ok(missionDrop && missionDrop.missionItemId === 'time_bomb');
 
   // 2. If killed by a chain explosion, carried crate is destroyed instead of dropping intact
-  const chainDrops = evaluateTeamBuddiesDeathDrops({
+  const chainDrops = evaluateBlitzDeathDrops({
     weaponId: 'rifle',
     ammo: 19,
     carryingCrate: 'red',
@@ -1765,12 +1765,12 @@ test('Team Buddies (PS1) death drop mechanics: primary weapon with remaining amm
   );
 });
 
-test('Team Buddies (PS1) despawn timer blinks rapidly before disappearing, medical crates drop Medkits, and splash damage destroys drops', () => {
+test('Buddies Blitz despawn timer blinks rapidly before disappearing, medical crates drop Medkits, and splash damage destroys drops', () => {
   // 1. Despawn timer & rapid blink window
   const freshState = evaluateDroppedItemDespawnState(
     10.0,
-    TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
-    TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC,
+    BLITZ_WEAPON_DESPAWN_SEC,
+    BLITZ_DESPAWN_BLINK_WINDOW_SEC,
   );
   assert.equal(freshState.expired, false);
   assert.equal(freshState.isBlinking, false);
@@ -1778,16 +1778,16 @@ test('Team Buddies (PS1) despawn timer blinks rapidly before disappearing, medic
 
   const blinkingState = evaluateDroppedItemDespawnState(
     2.1,
-    TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
-    TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC,
+    BLITZ_WEAPON_DESPAWN_SEC,
+    BLITZ_DESPAWN_BLINK_WINDOW_SEC,
   );
   assert.equal(blinkingState.expired, false);
   assert.equal(blinkingState.isBlinking, true);
 
   const expiredState = evaluateDroppedItemDespawnState(
     0,
-    TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
-    TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC,
+    BLITZ_WEAPON_DESPAWN_SEC,
+    BLITZ_DESPAWN_BLINK_WINDOW_SEC,
   );
   assert.equal(expiredState.expired, true);
   assert.equal(expiredState.visible, false);
@@ -1808,16 +1808,16 @@ test('Team Buddies (PS1) despawn timer blinks rapidly before disappearing, medic
   assert.ok(Math.hypot(splashHit.knockbackVx, splashHit.knockbackVz) > 6.0);
 });
 
-test('Team Buddies (PS1) 2x2x2 Stacking Pad patterns, Crate Schemes, Color Upgrade Tiers, and Odd-Count Breakdown (3, 5, 7 crates)', () => {
+test('Buddies Blitz 2x2x2 Stacking Pad patterns, Crate Schemes, Color Upgrade Tiers, and Odd-Count Breakdown (3, 5, 7 crates)', () => {
   // 1. Verify all 6 canonical Stacking Pad pattern categories and 4 World Crate Schemes exist
-  assert.equal(Object.keys(TEAM_BUDDIES_STACKING_PATTERNS).length, 6);
-  assert.equal(Object.keys(TEAM_BUDDIES_CRATE_SCHEMES).length, 4);
-  assert.equal(TEAM_BUDDIES_STACKING_PATTERNS['1x1x1'].categoryLabel, 'Light Weapons (Tier 1)');
-  assert.equal(TEAM_BUDDIES_STACKING_PATTERNS['2x1x1'].categoryLabel, 'Medium Weapons (Tier 2)');
-  assert.equal(TEAM_BUDDIES_STACKING_PATTERNS['1x1x2'].categoryLabel, 'Squad Units (Buddy)');
-  assert.equal(TEAM_BUDDIES_STACKING_PATTERNS['2x2x1'].categoryLabel, 'Heavy Weapons / Turrets (Tier 3)');
-  assert.equal(TEAM_BUDDIES_STACKING_PATTERNS['2x1x2'].categoryLabel, 'Light Vehicles');
-  assert.equal(TEAM_BUDDIES_STACKING_PATTERNS['2x2x2'].categoryLabel, 'Heavy Vehicles & Aircraft');
+  assert.equal(Object.keys(BLITZ_STACKING_PATTERNS).length, 6);
+  assert.equal(Object.keys(BLITZ_CRATE_SCHEMES).length, 4);
+  assert.equal(BLITZ_STACKING_PATTERNS['1x1x1'].categoryLabel, 'Light Weapons (Tier 1)');
+  assert.equal(BLITZ_STACKING_PATTERNS['2x1x1'].categoryLabel, 'Medium Weapons (Tier 2)');
+  assert.equal(BLITZ_STACKING_PATTERNS['1x1x2'].categoryLabel, 'Squad Units (Buddy)');
+  assert.equal(BLITZ_STACKING_PATTERNS['2x2x1'].categoryLabel, 'Heavy Weapons / Turrets (Tier 3)');
+  assert.equal(BLITZ_STACKING_PATTERNS['2x1x2'].categoryLabel, 'Light Vehicles');
+  assert.equal(BLITZ_STACKING_PATTERNS['2x2x2'].categoryLabel, 'Heavy Vehicles & Aircraft');
 
   // 2. 1 Blue Crate ('super') -> Super Shotgun (Peluru Menyebar & Memantul) with hasBouncingSpread = true
   const oneBlue = evaluateStackingPadRecipe([
@@ -1913,7 +1913,7 @@ test('Team Buddies (PS1) 2x2x2 Stacking Pad patterns, Crate Schemes, Color Upgra
   assert.equal(oddSeven.leftoverWeaponDropsCount, 3);
 });
 
-test('Team Buddies (PS1) Crafted Ground Weapon Lifecycle: Physics Pop-out, AI Auto-Loot & Tier Upgrade, Enemy Stealing (No Team-Lock), 15-20s Despawn vs Permanent Vehicles/Buddies, and Splash Destruction', () => {
+test('Buddies Blitz Crafted Ground Weapon Lifecycle: Physics Pop-out, AI Auto-Loot & Tier Upgrade, Enemy Stealing (No Team-Lock), 15-20s Despawn vs Permanent Vehicles/Buddies, and Splash Destruction', () => {
   // 1. Physics Pop-out (`Terpental ke Sekitar Pad`): Weapon pops out of the 2x2 pad center and lands around the pad perimeter border (2.4m..3.4m)
   const pop = computeStackingPadWeaponPopOutTrajectory(-18, 62, 0, 1, 1);
   assert.ok(pop.vy > 5.5, 'Crafted weapon pops upward out of the Stacking Pad');
@@ -1977,7 +1977,7 @@ test('Team Buddies (PS1) Crafted Ground Weapon Lifecycle: Physics Pop-out, AI Au
 
   // 4. Despawn Timer (15–20s for Weapons) vs Permanent Vehicles & Buddies
   assert.ok(
-    TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC >= 15 && TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC <= 20,
+    BLITZ_CRAFTED_WEAPON_DESPAWN_SEC >= 15 && BLITZ_CRAFTED_WEAPON_DESPAWN_SEC <= 20,
     'Crafted weapon despawn timer is within 15–20 seconds (18.0s)',
   );
   assert.equal(doesCraftedEntityDespawnByTimer('weapon').despawnsByTime, true);
@@ -2001,7 +2001,7 @@ test('Team Buddies (PS1) Crafted Ground Weapon Lifecycle: Physics Pop-out, AI Au
   assert.equal(padSplash.destroyed, true, 'Idle crafted weapon beside pad explodes when hit by enemy splash damage');
 });
 
-test('Team Buddies (PS1) Deathmatch Win Conditions: Base/HQ Destruction & Total Squad Wipeout with No Respawn or Crates', () => {
+test('Buddies Blitz Deathmatch Win Conditions: Base/HQ Destruction & Total Squad Wipeout with No Respawn or Crates', () => {
   // 1. Starter unit vs Crafted Buddy respawn rules
   assert.equal(canBuddyUnitRespawnAtBase(true, false, 400), true, 'Starter unit can respawn while its base stands');
   assert.equal(canBuddyUnitRespawnAtBase(true, true, 0), false, 'Starter unit cannot respawn once its base is destroyed');
@@ -2034,7 +2034,7 @@ test('Team Buddies (PS1) Deathmatch Win Conditions: Base/HQ Destruction & Total 
     ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'] as const,
   ].map((arr) => [...arr]);
 
-  const baseDestroyedWin = evaluateTeamBuddiesDeathmatchWinCondition(
+  const baseDestroyedWin = evaluateBlitzDeathmatchWinCondition(
     {
       team: 'blue',
       baseHp: 1800,
@@ -2061,7 +2061,7 @@ test('Team Buddies (PS1) Deathmatch Win Conditions: Base/HQ Destruction & Total 
 
   // 4. Win Condition B (`squad_wiped_no_respawn_or_crates`): All enemy units wiped out, 0 respawnable units, and no crates to birth a new Buddy
   const intactRedBases = createIndividualCommanderBasesState('red');
-  const squadWipedWin = evaluateTeamBuddiesDeathmatchWinCondition(
+  const squadWipedWin = evaluateBlitzDeathmatchWinCondition(
     {
       team: 'blue',
       baseHp: 1500,

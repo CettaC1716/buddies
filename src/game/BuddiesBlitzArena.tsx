@@ -71,9 +71,9 @@ import {
   BuddySecondaryItemId,
   BuddyMissionItemId,
   WorldCrateKind,
-  TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
-  TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
-  evaluateTeamBuddiesDeathDrops,
+  BLITZ_WEAPON_DESPAWN_SEC,
+  BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
+  evaluateBlitzDeathDrops,
   evaluateDroppedItemDespawnState,
   evaluateCrateDestructionDrop,
   evaluateSplashDamageOnDroppedItem,
@@ -279,7 +279,7 @@ import {
   upgradeMeshToBlitzWorldMaterial,
   createBlitzStrokeMesh,
   buildCraftedWeaponPickupMesh,
-  buildTeamBuddiesDropPickupMesh,
+  buildBlitzDropPickupMesh,
   buildSelfServiceTacticalKioskMesh,
   buildProceduralNuclearMissileMesh,
   buildProceduralNuclearLauncherTurret,
@@ -2062,8 +2062,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const lobbySeatCoinMeshes = LOBBY_SEAT_SPOTS.map((spot) => {
       const coinRoot = new THREE.Group();
       coinRoot.scale.setScalar(0.58);
-      const blueCoin = buildTeamBuddiesDropPickupMesh('coin_blue', undefined, windUniforms, isSoftwareGl);
-      const greenCoin = buildTeamBuddiesDropPickupMesh('coin_green', undefined, windUniforms, isSoftwareGl);
+      const blueCoin = buildBlitzDropPickupMesh('coin_blue', undefined, windUniforms, isSoftwareGl);
+      const greenCoin = buildBlitzDropPickupMesh('coin_green', undefined, windUniforms, isSoftwareGl);
       greenCoin.scale.setScalar(1.12);
       greenCoin.visible = false;
       coinRoot.add(blueCoin, greenCoin);
@@ -2959,7 +2959,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     // =========================================================================
-    // 7. BUILDER FOR CHIBI/BLOCKY TEAM BUDDIES CHARACTERS & REAL .GLB BLITZ TANKS
+    // 7. BUILDER FOR CHIBI/BLOCKY BUDDIES BLITZ CHARACTERS & REAL .GLB BLITZ TANKS
     // =========================================================================
     const createBuddyCharacterUnit = (
       team: 'blue' | 'red',
@@ -7381,7 +7381,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         kind === 'health'
       ) {
         const subId = options?.secondaryId ?? options?.missionItemId;
-        const dropModel = buildTeamBuddiesDropPickupMesh(kind, subId, windUniforms, isSoftwareGl);
+        const dropModel = buildBlitzDropPickupMesh(kind, subId, windUniforms, isSoftwareGl);
         g.add(dropModel);
       } else if (kind === 'ammo') {
         addOutlinedPart(g, new THREE.BoxGeometry(0.75, 0.55, 0.55), matYellow, [0, 0, 0]);
@@ -7397,9 +7397,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const totalLife =
         options?.despawnTimerSec ??
         (options?.isFromDeathDrop
-          ? TEAM_BUDDIES_WEAPON_DESPAWN_SEC
+          ? BLITZ_WEAPON_DESPAWN_SEC
           : kind === 'weapon'
-          ? TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC
+          ? BLITZ_CRAFTED_WEAPON_DESPAWN_SEC
           : kind === 'coin_gold' || kind === 'coin_silver'
           ? 40.0
           : kind === 'ammo'
@@ -7560,7 +7560,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     /**
-     * Team Buddies (PS1) Battlefield Death Item Drop Handler:
+     * Buddies Blitz Battlefield Death Item Drop Handler:
      * - Drops held Primary Weapon with its exact `remainingAmmo` (bouncing onto the ground)
      * - Drops Gold / Silver Coins + Ammo Refill Pack when an enemy is killed
      * - Refills player's carried weapon ammo upon enemy defeat
@@ -7583,7 +7583,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         syncUnitFieldsFromLoadout(playerUnit);
       }
 
-      const drops = evaluateTeamBuddiesDeathDrops({
+      const drops = evaluateBlitzDeathDrops({
         weaponId:
           victim.weaponId === 'bazooka'
             ? 'rocket'
@@ -10631,7 +10631,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             vx: popSec.vx,
             vy: popSec.vy,
             vz: popSec.vz,
-            despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+            despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
           },
         );
         score += 180;
@@ -10655,7 +10655,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             vx: popSpecial.vx,
             vy: popSpecial.vy,
             vz: popSpecial.vz,
-            despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+            despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
           },
         );
         score += isGat ? 320 : 220;
@@ -10710,7 +10710,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           vx: pop3.vx,
           vy: pop3.vy,
           vz: pop3.vz,
-          despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+          despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
         });
         spawnBurstParticles(bayX, 2.0, bayZ, 18);
         if (isBlue) score += 280;
@@ -10755,7 +10755,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             vx: popSky.vx,
             vy: popSky.vy,
             vz: popSky.vz,
-            despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+            despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
           },
         );
         if (isBlue) score += 320;
@@ -10803,7 +10803,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             false,
             false,
           );
-          // Team Buddies Upgrade Tier: Vertical stack of 2 Blue ('super') crates births a Super Buddy with 2x HP (200+ HP)!
+          // Buddies Blitz Upgrade Tier: Vertical stack of 2 Blue ('super') crates births a Super Buddy with 2x HP (200+ HP)!
           if (padEval.isSuper) {
             const hpMult = padEval.buddyStatMultiplier?.hpMultiplier ?? 2.0;
             newBuddy.maxHp = Math.max(200, Math.round(100 * hpMult));
@@ -10835,7 +10835,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       } else {
         // 1x1x1 (Senjata Ringan Tier 1) or 2x1x1 (Senjata Menengah Tier 2):
-        // Team Buddies Physics Pop-out (`Terpental ke Sekitar Pad`): Weapon pops out from the Stacking Pad
+        // Buddies Blitz Physics Pop-out (`Terpental ke Sekitar Pad`): Weapon pops out from the Stacking Pad
         // and lands around the pad perimeter border so the pad is immediately free to stack crates again!
         const wName = padEval.crateSchemeVariantName || padEval.outputName;
         const mappedWeaponId: 'pistol' | 'rifle' | 'rocket' =
@@ -10857,12 +10857,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           vx: popMain.vx,
           vy: popMain.vy,
           vz: popMain.vz,
-          despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+          despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
         });
         if (isBlue) score += 140;
       }
 
-      // Team Buddies Odd-Stack Breakdown (`Catatan Mekanis: Jumlah Tanggung 3, 5, 6, atau 7 Peti`):
+      // Buddies Blitz Odd-Stack Breakdown (`Catatan Mekanis: Jumlah Tanggung 3, 5, 6, atau 7 Peti`):
       // Excess crates beyond the nearest valid lower pattern (1, 2, or 4 crates) pop out around the pad perimeter border!
       if (padEval.leftoverWeaponDrops && padEval.leftoverWeaponDrops.length > 0) {
         const totalPopCount = 1 + padEval.leftoverWeaponDrops.length;
@@ -10880,7 +10880,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             vx: popExtra.vx,
             vy: popExtra.vy,
             vz: popExtra.vz,
-            despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+            despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
           });
         });
         if (isPlayerAction && playerUnit) {
@@ -11022,7 +11022,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       let hitAny = false;
       let hitCrate = false;
 
-      // 1. Check Grounded Crates (Team Buddies Kick punts crates across the field; repeated hits smash open into pickups!)
+      // 1. Check Grounded Crates (Buddies Blitz Kick punts crates across the field; repeated hits smash open into pickups!)
       for (let ci = worldCrates.length - 1; ci >= 0; ci--) {
         const c = worldCrates[ci];
         if (c.state !== 'grounded') continue;
@@ -11385,7 +11385,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         vx: pop.vx,
         vy: pop.vy,
         vz: pop.vz,
-        despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+        despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
       });
       publicWarzonePadSlotsList[pubIdx] = createEmptyPadSlots();
       syncPublicWarzonePadVisual(pubIdx);
@@ -11451,7 +11451,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (!playerUnit || !playerUnit.alive) return;
 
-      // Always execute the Team Buddies Front Leg Kick on foot!
+      // Always execute the Buddies Blitz Front Leg Kick on foot!
       const hitTarget = performBuddyMeleeAttack(playerUnit, 'kick');
 
       // Kicking ([F]) stacked boxes on the Crate Pad cancels the build and shatters the boxes into small items (Pistol, Grenade, Medkit, etc.)!
@@ -12173,7 +12173,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const groundY = getTerrainElevation(plane.x, plane.z);
       const fwdX = Math.cos(plane.hullYaw);
       const fwdZ = -Math.sin(plane.hullYaw);
-      const mesh = buildTeamBuddiesDropPickupMesh(
+      const mesh = buildBlitzDropPickupMesh(
         'secondary',
         'cluster_bomb',
         windUniforms,
@@ -12233,7 +12233,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (chosenKind === 'hand_grenade') {
         soundEngine.playPickup();
-        const mesh = buildTeamBuddiesDropPickupMesh(
+        const mesh = buildBlitzDropPickupMesh(
           'secondary',
           'hand_grenade',
           windUniforms,
@@ -12257,7 +12257,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
       } else if (chosenKind === 'land_mine') {
         soundEngine.playPickup();
-        const mesh = buildTeamBuddiesDropPickupMesh(
+        const mesh = buildBlitzDropPickupMesh(
           'secondary',
           'land_mine',
           windUniforms,
@@ -13494,7 +13494,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 vx: (Math.random() - 0.5) * 2.2,
                 vy: 4.2,
                 vz: (Math.random() - 0.5) * 2.2,
-                despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+                despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
               });
             }
             playerUnit.saluteTimer = 1.65;
@@ -17123,7 +17123,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 c.vz *= damp;
                 c.rotVelY *= Math.exp(-7.0 * dt);
 
-                // Team Buddies Crate Kick Synergy:
+                // Buddies Blitz Crate Kick Synergy:
                 // 1) If a kicked/thrown crate slides into the intact Bottom-Left Stacking Pad (blue plot 0), automatically slot it in!
                 if (cSpeed > 1.2) {
                   const pad = blueBase.commanderPads[0];
@@ -17818,7 +17818,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               mountedTank.turretGroup.rotation.y = mountedTank.turretYaw;
             }
 
-            // Team Buddies Feature: Crate Run-Over / Low-Hover Scoop for Tanks & Low-Flying Planes ONLY
+            // Buddies Blitz Feature: Crate Run-Over / Low-Hover Scoop for Tanks & Low-Flying Planes ONLY
             // (Dump Truck NEVER auto-fills when driving over crates — the character must load crates into the truck one-by-one!)
             const isDumpingNow = isTruck && (mountedTank.dumpAnimTimer ?? 0) > 0;
             if (!isTruck && (!isPlane || (mountedTank.altitude ?? 0) < 3.2) && !isDumpingNow) {
@@ -18086,7 +18086,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               syncUnitFootRingTeamColor(playerUnit);
             }
 
-            // Step Team Buddies Vertical Jump & Gravity Arc with 0.1s Jump Input Buffer ([Space] on foot)
+            // Step Buddies Blitz Vertical Jump & Gravity Arc with 0.1s Jump Input Buffer ([Space] on foot)
             const jumpStep = stepBuddyJumpPhysicsWithBuffer(
               playerUnit.jumpOffset,
               playerUnit.vy,
@@ -19395,7 +19395,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const legSwing = walkSync.legSwingAngle;
 
             if (b.kickTimer > 0) {
-              // Team Buddies Front Boot Kick: right leg snaps high forward (-X Euler lifts leg toward +Z front!)
+              // Buddies Blitz Front Boot Kick: right leg snaps high forward (-X Euler lifts leg toward +Z front!)
               const kickPhase = Math.sin(Math.min(1, b.kickTimer / 0.34) * Math.PI);
               b.rightLegPivot.rotation.x = -1.48 * kickPhase;
               b.leftLegPivot.rotation.x = 0.26 * kickPhase;
@@ -20414,7 +20414,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
           }
 
-          // Update & Collect 3D Pickups (Ballistic Bounce Arc + Team Buddies Despawn Blink Timer + Player/AI Collection)
+          // Update & Collect 3D Pickups (Ballistic Bounce Arc + Buddies Blitz Despawn Blink Timer + Player/AI Collection)
           const collectorX = mountedTank ? mountedTank.x : playerUnit.x;
           const collectorZ = mountedTank ? mountedTank.z : playerUnit.z;
           for (let i = worldPickups.length - 1; i >= 0; i--) {
@@ -20470,7 +20470,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
             pk.mesh.position.set(pk.x, pk.y, pk.z);
 
-            // 2. Team Buddies Despawn Timer & Rapid Blinking (`Batas Waktu Hilang: mulai berkedip-kedip lalu menghilang`)
+            // 2. Buddies Blitz Despawn Timer & Rapid Blinking (`Batas Waktu Hilang: mulai berkedip-kedip lalu menghilang`)
             //    Crafted weapons sitting at a base Stacking Pad (`<= 9.0m` from pad) serve as Base Weapon Stock (`stock senjata`) and do not expire!
             const isBaseWeaponStock =
               pk.kind === 'weapon' &&

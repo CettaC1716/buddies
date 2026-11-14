@@ -8,7 +8,7 @@ import {
   TeamCommandMode,
   KioskBuildPriorityRecipeId,
   NuclearStrikePhase,
-  TeamBuddiesDropItemKind,
+  BlitzDropItemKind,
   BuddySecondaryItemId,
   BuddyMissionItemId,
   ColliderCategory,
@@ -128,7 +128,7 @@ export interface HudSnapshot {
   cameraFovMode: 'webgl35' | 'ortho18';
   outcome: 'victory' | 'defeat' | null;
   clearTimeSec: number;
-  // Team Buddies 3D World State
+  // Buddies Blitz 3D World State
   controlMode: 'buddy' | 'tank';
   activeClass: BuddyClassId;
   equippedWeapon: string;
@@ -287,7 +287,7 @@ export interface WorldCrate {
 
 export interface WorldPickup {
   id: number;
-  kind: Exclude<TeamBuddiesDropItemKind, 'crate'>;
+  kind: Exclude<BlitzDropItemKind, 'crate'>;
   weaponName: string;
   mesh: THREE.Group;
   x: number;

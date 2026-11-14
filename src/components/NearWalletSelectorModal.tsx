@@ -81,7 +81,10 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
     setStatusBanner('Preparing your <handle>.buddiesblitz.testnet wallet & FunctionCall key...');
     setIsConnecting(true);
     try {
-      const res = await spawnSubAccountOnChainViaMaster({ handle: citizenHandleInput });
+      const res = await spawnSubAccountOnChainViaMaster({
+        handle: citizenHandleInput,
+        strictUniqueHandle: true,
+      });
       if (!res.ok || !res.subAccountId) {
         setErrorMessage(res.error || 'Could not create Citizen Sub-Account.');
         setStatusBanner(null);

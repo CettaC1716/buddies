@@ -28,6 +28,7 @@ const METHOD_LABELS: Record<string, string> = {
   ft_transfer: 'Transfer RESPITE',
   nft_transfer: 'Transfer NFT',
   mt_transfer: 'Transfer item',
+  fund_deed_royalty: 'Fund deed treasury royalty',
   claim_deed_payout: 'Claim deed payout',
   authorize_deed_session_key: 'Authorize deed session key',
   mint_merchant_item: 'Mint merchant item',

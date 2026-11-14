@@ -397,7 +397,7 @@ export type RecipeCategory =
   | 'vehicle'
   | 'aircraft';
 
-export type TeamBuddiesCrateSchemeId =
+export type BlitzCrateSchemeId =
   | 'classic_military'
   | 'cyber_tech'
   | 'heavy_ordnance'
@@ -423,7 +423,7 @@ export interface PadEvaluationResult {
   isLegend: boolean;
   shapeKey: 'Empty' | '1x1x1' | '2x1x1' | '1x1x2' | '2x2x1' | '2x1x2' | '2x2x2' | 'Partial';
   category: RecipeCategory;
-  teamBuddiesCategoryLabel: string;
+  blitzCategoryLabel: string;
   outputName: string;
   crateSchemeVariantName: string;
   crateSchemeExamples: string[];
@@ -456,7 +456,7 @@ export interface PadEvaluationResult {
   leftoverWeaponDrops: LeftoverPadWeaponDropSpec[];
 }
 
-export interface TeamBuddiesStackingPatternCatalogEntry {
+export interface BlitzStackingPatternCatalogEntry {
   shapeKey: '1x1x1' | '2x1x1' | '1x1x2' | '2x2x1' | '2x1x2' | '2x2x2';
   crateCount: 1 | 2 | 4 | 8;
   patternTitle: string;
@@ -466,9 +466,9 @@ export interface TeamBuddiesStackingPatternCatalogEntry {
   specialPurpleOutputs: string[];
 }
 
-export const TEAM_BUDDIES_STACKING_PATTERNS: Record<
+export const BLITZ_STACKING_PATTERNS: Record<
   '1x1x1' | '2x1x1' | '1x1x2' | '2x2x1' | '2x1x2' | '2x2x2',
-  TeamBuddiesStackingPatternCatalogEntry
+  BlitzStackingPatternCatalogEntry
 > = {
   '1x1x1': {
     shapeKey: '1x1x1',
@@ -560,10 +560,10 @@ export const TEAM_BUDDIES_STACKING_PATTERNS: Record<
   },
 };
 
-export const TEAM_BUDDIES_CRATE_SCHEMES: Record<
-  TeamBuddiesCrateSchemeId,
+export const BLITZ_CRATE_SCHEMES: Record<
+  BlitzCrateSchemeId,
   {
-    id: TeamBuddiesCrateSchemeId;
+    id: BlitzCrateSchemeId;
     name: string;
     tier1Standard: string;
     tier1BlueSuper: string;
@@ -779,9 +779,9 @@ export type TeamCommandMode = 'FOLLOW' | 'HARVEST' | 'ATTACK' | 'DEFEND' | 'MOUN
  */
 export function buildLeftoverCrateWeaponDrop(
   crateKind: Exclude<CrateSlotType, 'empty'>,
-  schemeId: TeamBuddiesCrateSchemeId = 'classic_military',
+  schemeId: BlitzCrateSchemeId = 'classic_military',
 ): LeftoverPadWeaponDropSpec {
-  const scheme = TEAM_BUDDIES_CRATE_SCHEMES[schemeId] ?? TEAM_BUDDIES_CRATE_SCHEMES.classic_military;
+  const scheme = BLITZ_CRATE_SCHEMES[schemeId] ?? BLITZ_CRATE_SCHEMES.classic_military;
   if (crateKind === 'legend') {
     return {
       crateKind,
@@ -816,10 +816,10 @@ export function buildLeftoverCrateWeaponDrop(
 }
 
 /**
- * Pure Team Buddies 2x2x2 Stacking Pad Recipe Evaluator.
+ * Pure Buddies Blitz 2x2x2 Stacking Pad Recipe Evaluator.
  * Slots 0..3 represent bottom layer (2x2); slots 4..7 represent top layer (2x2).
  * Supports Standard Yellow/Orange ('red'), Upgrade Blue ('super'), and Special Purple ('legend') crate combinations
- * as well as World Crate Schemes (`TeamBuddiesCrateSchemeId`) and Odd-Count Breakdown (`3, 5, 6, or 7 crates`):
+ * as well as World Crate Schemes (`BlitzCrateSchemeId`) and Odd-Count Breakdown (`3, 5, 6, or 7 crates`):
  * - 1x1x1 (1 crate): Senjata Ringan (Tier 1) — Uzi/Shotgun/Pistol (Yellow), Super Shotgun Spread+Bounce / Plasma Gun (Blue), Nuclear Launcher / Supazooka (Purple)
  * - 2x1x1 (2 horizontal crates): Senjata Menengah (Tier 2) — Bazooka/Assault Rifle/Sniper/Shuriken (Yellow), Laser Gun / Skyshield 35mm Turret (Blue/Purple)
  * - 1x1x2 (2 vertical crates): Unit Pasukan (Buddy) — Infantry/Medic (Yellow, 1x HP & Speed), Super Buddy Commando/Robo-Buddy (Blue, 2x HP & 2x Speed), Ninja/Cyborg (Purple)
@@ -830,9 +830,9 @@ export function buildLeftoverCrateWeaponDrop(
  */
 export function evaluateStackingPadRecipe(
   slots: ReadonlyArray<CrateSlotType>,
-  schemeId: TeamBuddiesCrateSchemeId = 'classic_military',
+  schemeId: BlitzCrateSchemeId = 'classic_military',
 ): PadEvaluationResult {
-  const scheme = TEAM_BUDDIES_CRATE_SCHEMES[schemeId] ?? TEAM_BUDDIES_CRATE_SCHEMES.classic_military;
+  const scheme = BLITZ_CRATE_SCHEMES[schemeId] ?? BLITZ_CRATE_SCHEMES.classic_military;
   let redCount = 0;
   let superCount = 0;
   let legendCount = 0;
@@ -868,7 +868,7 @@ export function evaluateStackingPadRecipe(
       isLegend: false,
       shapeKey: 'Empty',
       category: 'none',
-      teamBuddiesCategoryLabel: 'Empty Pad',
+      blitzCategoryLabel: 'Empty Pad',
       outputName: 'Empty Pad',
       crateSchemeVariantName: 'Empty Pad',
       crateSchemeExamples: [],
@@ -891,7 +891,7 @@ export function evaluateStackingPadRecipe(
   };
 
   if (totalCrates === 8) {
-    const patternMeta = TEAM_BUDDIES_STACKING_PATTERNS['2x2x2'];
+    const patternMeta = BLITZ_STACKING_PATTERNS['2x2x2'];
     if (isLegend) {
       return {
         totalCrates,
@@ -903,7 +903,7 @@ export function evaluateStackingPadRecipe(
         isLegend,
         shapeKey: '2x2x2',
         category: 'aircraft',
-        teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+        blitzCategoryLabel: patternMeta.categoryLabel,
         outputName: 'Blitz Fighter Plane',
         crateSchemeVariantName: scheme.aircraftLegend,
         crateSchemeExamples: patternMeta.specialPurpleOutputs,
@@ -930,7 +930,7 @@ export function evaluateStackingPadRecipe(
       isLegend,
       shapeKey: '2x2x2',
       category: 'vehicle',
-      teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+      blitzCategoryLabel: patternMeta.categoryLabel,
       outputName: isSuper ? 'Tyrant Tank' : 'Blitz Tank',
       crateSchemeVariantName: isSuper ? scheme.heavyVehicleBlueSuper : scheme.heavyVehicleStandard,
       crateSchemeExamples: isSuper
@@ -955,7 +955,7 @@ export function evaluateStackingPadRecipe(
     const leftovers = computeLeftovers(4);
     const isOdd = totalCrates !== 4;
     if (isVerticalWall) {
-      const patternMeta = TEAM_BUDDIES_STACKING_PATTERNS['2x1x2'];
+      const patternMeta = BLITZ_STACKING_PATTERNS['2x1x2'];
       return {
         totalCrates,
         redCount,
@@ -966,7 +966,7 @@ export function evaluateStackingPadRecipe(
         isLegend,
         shapeKey: '2x1x2',
         category: 'buddy_t2',
-        teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+        blitzCategoryLabel: patternMeta.categoryLabel,
         outputName: isSuper ? 'Super Buddie' : 'Commando / Cyborg',
         crateSchemeVariantName: isSuper ? scheme.lightVehicleBlueSuper : scheme.lightVehicleStandard,
         crateSchemeExamples: isLegend
@@ -991,7 +991,7 @@ export function evaluateStackingPadRecipe(
         leftoverWeaponDrops: leftovers,
       };
     }
-    const patternMeta = TEAM_BUDDIES_STACKING_PATTERNS['2x2x1'];
+    const patternMeta = BLITZ_STACKING_PATTERNS['2x2x1'];
     return {
       totalCrates,
       redCount,
@@ -1002,7 +1002,7 @@ export function evaluateStackingPadRecipe(
       isLegend,
       shapeKey: '2x2x1',
       category: 'truck',
-      teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+      blitzCategoryLabel: patternMeta.categoryLabel,
       outputName: isSuper ? 'Heavy Dump Truck' : 'Blitz Dump Truck',
       crateSchemeVariantName: isSuper ? scheme.tier3HeavyBlueSuper : scheme.tier3HeavyStandard,
       crateSchemeExamples: isLegend
@@ -1023,7 +1023,7 @@ export function evaluateStackingPadRecipe(
     const leftovers = computeLeftovers(2);
     const isOdd = totalCrates !== 2;
     if (isVerticalColumn) {
-      const patternMeta = TEAM_BUDDIES_STACKING_PATTERNS['1x1x2'];
+      const patternMeta = BLITZ_STACKING_PATTERNS['1x1x2'];
       return {
         totalCrates,
         redCount,
@@ -1034,7 +1034,7 @@ export function evaluateStackingPadRecipe(
         isLegend,
         shapeKey: '1x1x2',
         category: 'buddy_t1',
-        teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+        blitzCategoryLabel: patternMeta.categoryLabel,
         outputName: isLegend
           ? 'Commando / Ninja'
           : isSuper
@@ -1061,7 +1061,7 @@ export function evaluateStackingPadRecipe(
         leftoverWeaponDrops: leftovers,
       };
     }
-    const patternMeta = TEAM_BUDDIES_STACKING_PATTERNS['2x1x1'];
+    const patternMeta = BLITZ_STACKING_PATTERNS['2x1x1'];
     if (isSuper || isLegend) {
       return {
         totalCrates,
@@ -1073,7 +1073,7 @@ export function evaluateStackingPadRecipe(
         isLegend,
         shapeKey: '2x1x1',
         category: 'skyshield',
-        teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+        blitzCategoryLabel: patternMeta.categoryLabel,
         outputName: 'Skyshield 35mm Turret',
         crateSchemeVariantName: scheme.tier2BlueSuper,
         crateSchemeExamples: isLegend
@@ -1097,7 +1097,7 @@ export function evaluateStackingPadRecipe(
       isLegend,
       shapeKey: '2x1x1',
       category: 'heavy_weapon',
-      teamBuddiesCategoryLabel: patternMeta.categoryLabel,
+      blitzCategoryLabel: patternMeta.categoryLabel,
       outputName: 'Bazooka / Grenade',
       crateSchemeVariantName: scheme.tier2Standard,
       crateSchemeExamples: patternMeta.standardYellowOrangeOutputs,
@@ -1110,7 +1110,7 @@ export function evaluateStackingPadRecipe(
     };
   }
 
-  const patternMeta1 = TEAM_BUDDIES_STACKING_PATTERNS['1x1x1'];
+  const patternMeta1 = BLITZ_STACKING_PATTERNS['1x1x1'];
   return {
     totalCrates: 1,
     redCount,
@@ -1121,7 +1121,7 @@ export function evaluateStackingPadRecipe(
     isLegend,
     shapeKey: '1x1x1',
     category: isLegend ? 'heavy_weapon' : 'lite_weapon',
-    teamBuddiesCategoryLabel: patternMeta1.categoryLabel,
+    blitzCategoryLabel: patternMeta1.categoryLabel,
     outputName: isLegend ? 'Supazooka' : isSuper ? 'Assault Rifle' : 'Pistol / Uzi',
     crateSchemeVariantName: isLegend
       ? scheme.purpleSuperWeapon
@@ -2831,7 +2831,7 @@ export function stepMilitaryBaseBoomBarrier(
 }
 
 // ============================================================================
-// TEAM BUDDIES CHARACTER JUMP PHYSICS, UNARMED PUNCH COMBO & FRONT KICK
+// BUDDIES BLITZ CHARACTER JUMP PHYSICS, UNARMED PUNCH COMBO & FRONT KICK
 // ============================================================================
 
 export const JUMP_BUFFER_DURATION_SEC = 0.1;
@@ -2850,7 +2850,7 @@ export interface BuddyBufferedJumpPhysicsState extends BuddyJumpPhysicsState {
 }
 
 /**
- * Pure vertical jump & gravity kinematics for Team Buddies on-foot characters:
+ * Pure vertical jump & gravity kinematics for Buddies Blitz on-foot characters:
  * - Launches upward from ground (`isGrounded === true`) when `jumpRequested` is true.
  * - Scales initial vertical impulse by `jumpMultiplier` (e.g. Ninja 1.4x, Tankie 0.85x)
  *   and applies a slight 0.86x load factor when carrying a crate overhead.
@@ -3109,7 +3109,7 @@ export interface BuddyMeleeStrikeResult {
 }
 
 /**
- * Evaluates a Team Buddies Unarmed Fist Punch (`'punch'`) or Heavy Boot Kick (`'kick'`)
+ * Evaluates a Buddies Blitz Unarmed Fist Punch (`'punch'`) or Heavy Boot Kick (`'kick'`)
  * from `(attackerX, attackerZ)` facing `attackerYaw` against a target at `(targetX, targetZ)`:
  * - `'punch'`: fast alternating left/right jab-hook (`reach = 2.55m`, forward cone `dot >= 0.15`,
  *   `damage = 8`, `knockbackSpeed = 7.8 m/s`).
@@ -3152,7 +3152,7 @@ export function evaluateBuddyMeleeStrike(
     };
   }
 
-  // Blend knockback direction mostly along character's facing direction (Team Buddies straight punt!)
+  // Blend knockback direction mostly along character's facing direction (Buddies Blitz straight punt!)
   // with slight radial outward push so kicked crates fly cleanly where the character is facing.
   const radialX = dist > 0.05 ? dx / dist : fwdX;
   const radialZ = dist > 0.05 ? dz / dist : fwdZ;
@@ -3179,7 +3179,7 @@ export function evaluateBuddyMeleeStrike(
 }
 
 // ============================================================================
-// TEAM BUDDIES 4V4 ONLINE MATCHMAKING, PERSONAL SQUAD SWAP & SMART BUDDY AI
+// BUDDIES BLITZ 4V4 ONLINE MATCHMAKING, PERSONAL SQUAD SWAP & SMART BUDDY AI
 // ============================================================================
 
 export const COMMANDERS_PER_TEAM = 4;
@@ -3473,7 +3473,7 @@ export function evaluateBuiltBuddySmartAiDecision(
     };
   }
 
-  // 5. Team Buddies Auto-Loot (`Diambil Otomatis oleh AI Tim & Rentan Dicuri Lawan`):
+  // 5. Buddies Blitz Auto-Loot (`Diambil Otomatis oleh AI Tim & Rentan Dicuri Lawan`):
   // Unarmed characters OR characters holding a lower-tier weapon automatically run to pick up a crafted/dropped weapon nearby!
   // For ATTACK role (`commandMode === 'ATTACK'`), an unarmed Attacker (`weaponId === 'unarmed'`) returns to base/field weapon stock at any distance!
   if (
@@ -6236,7 +6236,7 @@ export function stepCommanderSlidingGate(
 }
 
 // ============================================================================
-// TEAM BUDDIES (PS1) DEATH ITEM DROP, DESPAWN TIMER, MEDICAL CRATE & SPLASH VULNERABILITY
+// BUDDIES BLITZ DEATH ITEM DROP, DESPAWN TIMER, MEDICAL CRATE & SPLASH VULNERABILITY
 // ============================================================================
 
 export type BuddyPrimaryWeaponId = 'unarmed' | 'pistol' | 'rifle' | 'rocket';
@@ -6250,7 +6250,7 @@ export type WorldCrateKind =
   | 'silver_metallic'
   | 'gold_metallic';
 
-export type TeamBuddiesDropItemKind =
+export type BlitzDropItemKind =
   | 'weapon'
   | 'coin_gold'
   | 'coin_silver'
@@ -6273,8 +6273,8 @@ export interface BuddyDeathDropInputState {
   killedByChainExplosion?: boolean;
 }
 
-export interface TeamBuddiesSpawnedDropSpec {
-  kind: TeamBuddiesDropItemKind;
+export interface BlitzSpawnedDropSpec {
+  kind: BlitzDropItemKind;
   label: string;
   weaponId?: 'pistol' | 'rifle' | 'rocket';
   remainingAmmo?: number;
@@ -6292,11 +6292,11 @@ export interface TeamBuddiesSpawnedDropSpec {
   hp: number;
 }
 
-export const TEAM_BUDDIES_WEAPON_DESPAWN_SEC = 12.0;
-export const TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC = 4.0;
+export const BLITZ_WEAPON_DESPAWN_SEC = 12.0;
+export const BLITZ_DESPAWN_BLINK_WINDOW_SEC = 4.0;
 
 /**
- * Pure Team Buddies (PS1) Battlefield Death Item Drop Evaluator:
+ * Pure Buddies Blitz Battlefield Death Item Drop Evaluator:
  * 1. Primary Weapon (`weapon`): Any held primary weapon (`pistol` / Uzi, `rifle` / Shotgun-AR, `rocket` / Bazooka-Supazooka)
  *    bounces into the air (`vy = 6.8`) and falls to the ground retaining its exact `remainingAmmo` from right before death.
  * 2. Coins (`coin_gold` / `coin_silver`): Killing an enemy character drops Gold and/or Silver coins that add score when collected.
@@ -6308,10 +6308,10 @@ export const TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC = 4.0;
  * 6. NO Medkit Drop from Corpses: Dead characters NEVER drop a Health Pack / Medkit (`kind === 'health'`).
  *    Medkits are ONLY obtained by destroying white medical crates with a red cross (`kind === 'medical'`).
  */
-export function evaluateTeamBuddiesDeathDrops(
+export function evaluateBlitzDeathDrops(
   state: BuddyDeathDropInputState,
-): TeamBuddiesSpawnedDropSpec[] {
-  const drops: TeamBuddiesSpawnedDropSpec[] = [];
+): BlitzSpawnedDropSpec[] {
+  const drops: BlitzSpawnedDropSpec[] = [];
 
   // 1. Primary Weapon (Senjata Utama): Drops if holding a weapon with remaining ammo > 0
   if (state.weaponId !== 'unarmed' && state.ammo > 0) {
@@ -6333,7 +6333,7 @@ export function evaluateTeamBuddiesDeathDrops(
       vx: Math.cos(angle) * speed,
       vy: 6.8,
       vz: Math.sin(angle) * speed,
-      despawnTimerSec: TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
+      despawnTimerSec: BLITZ_WEAPON_DESPAWN_SEC,
       hp: 18,
     });
   }
@@ -6359,7 +6359,7 @@ export function evaluateTeamBuddiesDeathDrops(
       vx: Math.cos(coinAngle) * coinSpeed,
       vy: 6.4,
       vz: Math.sin(coinAngle) * coinSpeed,
-      despawnTimerSec: TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
+      despawnTimerSec: BLITZ_WEAPON_DESPAWN_SEC,
       hp: 15,
     });
 
@@ -6375,7 +6375,7 @@ export function evaluateTeamBuddiesDeathDrops(
         vx: Math.cos(bonusAngle) * 2.5,
         vy: 5.9,
         vz: Math.sin(bonusAngle) * 2.5,
-        despawnTimerSec: TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
+        despawnTimerSec: BLITZ_WEAPON_DESPAWN_SEC,
         hp: 15,
       });
     }
@@ -6427,7 +6427,7 @@ export function evaluateTeamBuddiesDeathDrops(
       vx: Math.cos(secAngle) * 3.0,
       vy: 6.1,
       vz: Math.sin(secAngle) * 3.0,
-      despawnTimerSec: TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
+      despawnTimerSec: BLITZ_WEAPON_DESPAWN_SEC,
       hp: 14,
     });
   }
@@ -6465,7 +6465,7 @@ export interface DroppedItemDespawnState {
 }
 
 /**
- * Evaluates the Team Buddies (PS1) despawn timer & rapid blinking warning for dropped weapons/items:
+ * Evaluates the Buddies Blitz despawn timer & rapid blinking warning for dropped weapons/items:
  * - Before the final `blinkWindowSec` (default 4.0s), the item stays solidly visible (`isBlinking = false, visible = true`).
  * - During the final `blinkWindowSec` (`0 < remainingSec <= blinkWindowSec`), `isBlinking = true` and `visible`
  *   alternates rapidly (accelerating from 6 Hz to 14 Hz as `remainingSec` approaches 0).
@@ -6473,8 +6473,8 @@ export interface DroppedItemDespawnState {
  */
 export function evaluateDroppedItemDespawnState(
   remainingSec: number,
-  totalDespawnSec = TEAM_BUDDIES_WEAPON_DESPAWN_SEC,
-  blinkWindowSec = TEAM_BUDDIES_DESPAWN_BLINK_WINDOW_SEC,
+  totalDespawnSec = BLITZ_WEAPON_DESPAWN_SEC,
+  blinkWindowSec = BLITZ_DESPAWN_BLINK_WINDOW_SEC,
 ): DroppedItemDespawnState {
   if (totalDespawnSec <= 0) {
     return { expired: false, isBlinking: false, visible: true };
@@ -6499,7 +6499,7 @@ export function evaluateDroppedItemDespawnState(
 }
 
 /**
- * Team Buddies (PS1) Crate Destruction / Open Drop Rule:
+ * Buddies Blitz Crate Destruction / Open Drop Rule:
  * - White Medical Crate (`crateKind === 'medical'`): Drops Health Pack / Medkit (`kind === 'health'`, `+35 HP`).
  * - Purple Special Crate (`crateKind === 'legend'`): Falls in the middle of the map mid-game and IMMEDIATELY
  *   yields a Mass-Destruction Super Weapon (`Nuclear Launcher / Airstrike Marker / Ion Cannon`, `dropKind === 'weapon'`) when opened!
@@ -6594,7 +6594,7 @@ export function evaluateSplashDamageOnDroppedItem(
 }
 
 // ============================================================================
-// TEAM BUDDIES (PS1) STACKING PAD CRAFTED WEAPON LIFECYCLE:
+// BUDDIES BLITZ STACKING PAD CRAFTED WEAPON LIFECYCLE:
 // 1. Physics Pop-out to Pad Border (`Terpental ke Sekitar Pad`)
 // 2. AI Auto-Loot & Tier Upgrade (`Diambil Otomatis oleh AI Tim`)
 // 3. No Team-Lock / Enemy Stealable (`Rentan Dicuri Lawan`)
@@ -6602,7 +6602,7 @@ export function evaluateSplashDamageOnDroppedItem(
 // 5. Splash Damage Destruction (`Hancur Terkena Serangan Area`)
 // ============================================================================
 
-export const TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC = 18.0; // Within the 15–20s Team Buddies window
+export const BLITZ_CRAFTED_WEAPON_DESPAWN_SEC = 18.0; // Within the 15–20s Buddies Blitz window
 
 export interface StackingPadWeaponPopOutTrajectory {
   startX: number;
@@ -6616,7 +6616,7 @@ export interface StackingPadWeaponPopOutTrajectory {
 }
 
 /**
- * Computes the Team Buddies Physics Pop-out trajectory (`Terpental ke Sekitar Pad`) when crates are broken
+ * Computes the Buddies Blitz Physics Pop-out trajectory (`Terpental ke Sekitar Pad`) when crates are broken
  * on a 2x2x2 Stacking Pad centered at `(padX, padZ)`:
  * - The crafted weapon (or leftover weapon drop) does NOT stay in the middle of the Stacking Pad.
  * - Instead, it launches from near the pad center (`r0 = 0.75m`) with an upward arc (`vy = 6.2 m/s`)
@@ -6746,8 +6746,8 @@ export function canUnitLootGroundWeapon(
 }
 
 /**
- * Team Buddies Despawn Rule Comparison:
- * - Crafted/dropped weapons & grenades (`'weapon' | 'grenade'`) have a 15–20s despawn timer (`TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC = 18.0s`),
+ * Buddies Blitz Despawn Rule Comparison:
+ * - Crafted/dropped weapons & grenades (`'weapon' | 'grenade'`) have a 15–20s despawn timer (`BLITZ_CRAFTED_WEAPON_DESPAWN_SEC = 18.0s`),
  *   blink rapidly at the end, and vanish permanently if uncollected (wasting the crates used).
  * - Built Vehicles (`'light_vehicle' | 'truck' | 'tank' | 'plane'`) and built Buddy Units (`'buddy'`) NEVER despawn by time (`despawnTimerSec === 0`),
  *   and are only destroyed when attacked until `hp <= 0`.
@@ -6758,7 +6758,7 @@ export function doesCraftedEntityDespawnByTimer(
   if (spawnType === 'weapon' || spawnType === 'grenade') {
     return {
       despawnsByTime: true,
-      despawnTimerSec: TEAM_BUDDIES_CRAFTED_WEAPON_DESPAWN_SEC,
+      despawnTimerSec: BLITZ_CRAFTED_WEAPON_DESPAWN_SEC,
     };
   }
   return {
@@ -6768,7 +6768,7 @@ export function doesCraftedEntityDespawnByTimer(
 }
 
 // ============================================================================
-// TEAM BUDDIES (PS1) DEATHMATCH (SKIRMISH / STANDAR) WIN CONDITIONS:
+// BUDDIES BLITZ DEATHMATCH (SKIRMISH / STANDAR) WIN CONDITIONS:
 // 1. Menghancurkan markas utama musuh (Base/HQ atau gerbang spawn mereka) hingga rata dengan tanah
 // 2. Menghabisi seluruh anggota tim lawan sampai mereka tidak bisa melakukan respawn lagi
 //    dan tidak punya peti untuk melahirkan Buddy baru di Stacking Pad
@@ -6779,7 +6779,7 @@ export type DeathmatchVictoryReason =
   | 'base_destroyed'
   | 'squad_wiped_no_respawn_or_crates';
 
-export interface TeamBuddiesDeathmatchTeamState {
+export interface BlitzDeathmatchTeamState {
   team: 'blue' | 'red';
   baseHp: number;
   commanderBases: ReadonlyArray<{ destroyed: boolean; buildingHp: number }>;
@@ -6789,7 +6789,7 @@ export interface TeamBuddiesDeathmatchTeamState {
   freeFieldCrateCount: number;
 }
 
-export interface TeamBuddiesDeathmatchResult {
+export interface BlitzDeathmatchResult {
   isGameOver: boolean;
   outcome: 'victory' | 'defeat' | null;
   winningTeam: 'blue' | 'red' | null;
@@ -6824,7 +6824,7 @@ export function canPadSlotsBirthNewBuddy(slots: ReadonlyArray<CrateSlotType>): b
 }
 
 /**
- * Evaluates whether a team in Team Buddies Deathmatch (Skirmish / Standar) has been completely eliminated:
+ * Evaluates whether a team in Buddies Blitz Deathmatch (Skirmish / Standar) has been completely eliminated:
  * - Condition A (`'base_destroyed'`): Their Main Base / HQ (`baseHp <= 0`) or all 4 Commander Bases/Spawn Gates
  *   (`commanderBases.every(b => b.destroyed || b.buildingHp <= 0)`) are flattened to the ground (`rata dengan tanah`).
  * - Condition B (`'squad_wiped_no_respawn_or_crates'`): Every member of the team has been killed (`aliveUnitCount <= 0`),
@@ -6832,7 +6832,7 @@ export function canPadSlotsBirthNewBuddy(slots: ReadonlyArray<CrateSlotType>): b
  *   (either they have no pad with >=2 crates OR no surviving unit left to strike the pad / harvest crates).
  */
 export function isTeamEliminatedInDeathmatch(
-  teamState: TeamBuddiesDeathmatchTeamState,
+  teamState: BlitzDeathmatchTeamState,
 ): { eliminated: boolean; reason: DeathmatchVictoryReason } {
   const allPlotsDestroyed =
     teamState.commanderBases.length > 0 &&
@@ -6863,13 +6863,13 @@ export function isTeamEliminatedInDeathmatch(
 }
 
 /**
- * Evaluates the full Team Buddies (PS1) Deathmatch (Skirmish / Standar) Win/Defeat Condition
+ * Evaluates the full Buddies Blitz Deathmatch (Skirmish / Standar) Win/Defeat Condition
  * from the perspective of the Blue Team (Player's team) vs Red Team (Enemy team).
  */
-export function evaluateTeamBuddiesDeathmatchWinCondition(
-  blueState: TeamBuddiesDeathmatchTeamState,
-  redState: TeamBuddiesDeathmatchTeamState,
-): TeamBuddiesDeathmatchResult {
+export function evaluateBlitzDeathmatchWinCondition(
+  blueState: BlitzDeathmatchTeamState,
+  redState: BlitzDeathmatchTeamState,
+): BlitzDeathmatchResult {
   const redCheck = isTeamEliminatedInDeathmatch(redState);
   if (redCheck.eliminated) {
     return {

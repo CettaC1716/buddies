@@ -9808,14 +9808,14 @@ export function buildProceduralNuclearLauncherTurret(
 }
 
 /**
- * Builds crisp 3D cel-shaded models for Team Buddies (PS1) battlefield item drops:
+ * Builds crisp 3D cel-shaded models for Buddies Blitz battlefield item drops:
  * - `'coin_gold'` / `'coin_silver'`: Bevelled 3D coin disc with raised rim & star emblem
  * - `'secondary'` (`hand_grenade` | `cluster_bomb` | `land_mine`): Segmented pineapple grenade,
  *   multi-warhead cluster bomb, or anti-personnel disc land mine
  * - `'mission_item'` (`time_bomb` | `team_flag` | `bombball`): C4/dynamite time bomb, team capture flag, or bombball
  * - `'health'`: White Medkit case with red cross emblem (dropped ONLY from destroyed white medical crates)
  */
-export function buildTeamBuddiesDropPickupMesh(
+export function buildBlitzDropPickupMesh(
   kind:
     | 'coin_gold'
     | 'coin_silver'
@@ -11972,7 +11972,7 @@ export function updateCharacterWeaponStance(
   }
 
   if (weaponId === 'unarmed' || punchTimer > 0) {
-    // 0. TEAM BUDDIES UNARMED PUGILIST / BRAWLER GUARD & ALTERNATING PUNCH COMBO:
+    // 0. BUDDIES BLITZ UNARMED PUGILIST / BRAWLER GUARD & ALTERNATING PUNCH COMBO:
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;
     rig.bazookaBackblastGroup.visible = false;
