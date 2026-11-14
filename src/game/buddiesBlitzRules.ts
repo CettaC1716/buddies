@@ -12986,6 +12986,7 @@ export function evaluateBasePlotProximityTriggers(params: {
 export type CityTransitStationId =
   | 'central_plaza'
   | 'beachfront_harbor'
+  | 'kai_fish_market'
   | 'nw_fishing_lake'
   | 'north_residence'
   | 'south_residence'
@@ -13078,6 +13079,29 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     shelterX: 77.5,
     shelterZ: 29.5,
     shelterRotY: -Math.PI / 2,
+    tramTrackDistance: 270.0,
+  },
+  {
+    id: 'kai_fish_market',
+    name: 'Kai Fish Market',
+    title: 'KAI FISH MARKET',
+    shortTitle: 'Kai Fish Market',
+    shortTag: 'FISH MARKET',
+    tag: 'FISH MARKET',
+    category: 'district',
+    targetWorldMode: 'safezone',
+    description:
+      'The eastern boardwalk of Kai, fisherman and beach keeper: sell your catch, trade fish, and ride the transit straight to his kiosk.',
+    heroImageUrl: '/docs/hero-1-beach-pier.jpg',
+    thumbnailUrl: '/docs/hero-1-beach-pier.jpg',
+    kioskX: 84.85,
+    kioskY: 0.82,
+    kioskZ: 65.65,
+    kioskRotY: Math.PI / 2,
+    spawnX: 86.85,
+    spawnZ: 65.65,
+    spawnYaw: -Math.PI / 2,
+    hasHalteShelter: false,
     tramTrackDistance: 270.0,
   },
   {
@@ -13208,7 +13232,7 @@ export const CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC = {
 } as const;
 
 export const BEACHFRONT_KAI_KIOSK_SPEC = {
-  stationId: 'beachfront_harbor' as CityTransitStationId,
+  stationId: 'kai_fish_market' as CityTransitStationId,
   kioskX: 84.85,
   kioskY: 0.82,
   kioskZ: 65.65,
@@ -13283,7 +13307,7 @@ export function evaluateNearestCityTransitKioskProximity(
     );
     if (dBeachKai < bestDist) {
       bestDist = dBeachKai;
-      bestStation = getCityTransitDestinationById('beachfront_harbor');
+      bestStation = getCityTransitDestinationById('kai_fish_market');
       bestKioskX = BEACHFRONT_KAI_KIOSK_SPEC.kioskX;
       bestKioskY = BEACHFRONT_KAI_KIOSK_SPEC.kioskY;
       bestKioskZ = BEACHFRONT_KAI_KIOSK_SPEC.kioskZ;

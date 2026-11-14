@@ -5485,7 +5485,7 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
     'north_residence',
     'south_residence',
   ]);
-  assert.deepEqual(withoutShelter, ['nw_fishing_lake', 'warzone_arena']);
+  assert.deepEqual(withoutShelter, ['kai_fish_market', 'nw_fishing_lake', 'warzone_arena']);
 
   const beachSpec = getCityTransitDestinationById('beachfront_harbor');
   assert.equal(beachSpec.shelterX, 77.5);

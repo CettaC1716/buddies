@@ -801,6 +801,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (
         key === 'central_plaza' ||
         key === 'beachfront_harbor' ||
+        key === 'kai_fish_market' ||
         key === 'nw_fishing_lake' ||
         key === 'north_residence' ||
         key === 'south_residence' ||
@@ -841,6 +842,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
         return halteBeachKiosk ?? kaiKiosk ?? null;
+      }
+      if (stationId === 'kai_fish_market') {
+        return scene.getObjectByName('CityTransitKiosk3D_beachfront_kai') ?? null;
       }
       if (stationId === 'warzone_arena') {
         return scene.getObjectByName('HalteLobbyTeleportKiosk3D') ?? null;
@@ -24868,7 +24872,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         },
         {
           mesh: scene.getObjectByName('CityTransitKiosk3D_beachfront_kai') ?? null,
-          stationId: 'beachfront_harbor',
+          stationId: 'kai_fish_market',
           kioskX: BEACHFRONT_KAI_KIOSK_SPEC.kioskX,
           kioskZ: BEACHFRONT_KAI_KIOSK_SPEC.kioskZ,
         },
@@ -24884,6 +24888,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (
           tSpec.id === 'central_plaza' ||
           tSpec.id === 'beachfront_harbor' ||
+          tSpec.id === 'kai_fish_market' ||
           tSpec.id === 'warzone_arena'
         ) {
           continue;
