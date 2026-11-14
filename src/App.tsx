@@ -3269,12 +3269,13 @@ export default function App() {
         ? options.preverifiedResult.accountId.trim().toLowerCase()
         : cleanInput;
 
+      pendingPostClaimFloorRef.current = null;
       setIsVerifyingNearWallet(true);
       const detectedNet: NearNetworkId = normalizedWallet.endsWith('.near')
         ? 'mainnet'
         : walletNetworkChoice;
       const isCitizenInvisible = options?.onboardingMode === 'social_invisible';
-      const accountView = await fetchNearAccountView(normalizedWallet);
+      const accountView = await fetchNearAccountView(normalizedWallet, 'optimistic');
       setNearOnChainAccountView(accountView);
 
       if (!accountView && !isCitizenInvisible) {
@@ -3287,10 +3288,17 @@ export default function App() {
         return;
       }
 
-      const nearTokens = accountView ? Number(accountView.amount) / 1e24 : 0;
-      setNearTestnetBalance(
-        Number.isFinite(nearTokens) ? Number(nearTokens.toFixed(4)) : 0,
-      );
+      const rawNearTokens = accountView ? Number(accountView.amount) / 1e24 : isCitizenInvisible ? 0.08 : 0;
+      const resolvedConnectNear = Number.isFinite(rawNearTokens) ? Number(rawNearTokens.toFixed(4)) : 0;
+      nearTestnetBalanceRef.current = resolvedConnectNear;
+      setNearTestnetBalance(resolvedConnectNear);
+      if (isCitizenInvisible && !accountView) {
+        for (const delayMs of [1500, 3200]) {
+          window.setTimeout(() => {
+            void refreshOnChainBalances(normalizedWallet);
+          }, delayMs);
+        }
+      }
 
       const normalizedDefaultName = normalizedWallet.split('.')[0].toUpperCase();
       let savedLocalProfile: { displayName: string; gender: 'male' | 'female' } | null = null;
@@ -3313,10 +3321,10 @@ export default function App() {
 
       const [onChainRespiteRaw, onChainEstate, gamepassVerify, hanaStatus, remoteProfile] =
         await Promise.all([
-          fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet),
+          fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, normalizedWallet, 'optimistic'),
           fetchBuddiesMarketEstate(normalizedWallet),
           verifyNep171GamepassOwnership(normalizedWallet),
-          fetchHanaTreasuryStatus(normalizedWallet),
+          fetchHanaTreasuryStatus(normalizedWallet, 'optimistic'),
           fetchOrCreatePlayerProfile({
             nearAccountId: normalizedWallet,
             displayName: savedLocalProfile?.displayName || normalizedDefaultName,
@@ -3470,6 +3478,7 @@ export default function App() {
       beginPlazaFlyToOnboarding,
       dispatchBuddyAction,
       persistWalletProfileLocally,
+      refreshOnChainBalances,
       walletNetworkChoice,
     ],
   );
