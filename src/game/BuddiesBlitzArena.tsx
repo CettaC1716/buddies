@@ -6111,7 +6111,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode = detail.mode;
         if (detail.mode === 'fly_to_plaza') {
           const nextSid = detail.flySessionId ?? flySessionId + 1;
-          if (prevMode !== 'fly_to_plaza' || nextSid !== flySessionId) {
+          if (prevMode === 'fly_to_plaza') {
+            // Already airborne: a duplicate fly request must NOT restart the
+            // swoop clock (repeated restarts kept flyProgress01 < 1 forever
+            // and the completion event never fired). Adopt the newest
+            // session id so the completion event matches the app's waiter.
+            flySessionId = nextSid;
+            flyTargetMode = detail.flyTargetMode ?? flyTargetMode;
+          } else if (nextSid !== flySessionId) {
             flyTargetMode = detail.flyTargetMode ?? 'character_select';
             flySessionId = nextSid;
             flyDispatchedSessionId = -1;

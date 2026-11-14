@@ -1521,6 +1521,11 @@ export default function App() {
 
   const beginPlazaFlyToOnboarding = useCallback(
     (targetMode: 'character_select' | 'gameplay', nextStep: 'guest_character_select' | 'completed') => {
+      // A second fly request while one is already pending (duplicate login /
+      // session-restore paths) must not replace the pending flight: the
+      // arena completion event would carry a session id the fallback timer
+      // no longer matches, deadlooking the player on the FLYING banner.
+      if (pendingPlazaFlightRef.current) return;
       const nextSid = plazaFlySessionIdRef.current + 1;
       plazaFlySessionIdRef.current = nextSid;
       pendingPlazaFlightRef.current = {
@@ -1550,8 +1555,10 @@ export default function App() {
     window.addEventListener('plaza-fly-to-complete', onFlyComplete);
     let fallbackTimer: number | undefined;
     if (onboardingStep === 'fly_to_plaza' && pendingPlazaFlightRef.current) {
-      const sid = pendingPlazaFlightRef.current.sessionId;
-      fallbackTimer = window.setTimeout(() => completePlazaFlight(sid), 2300);
+      // No session id on purpose: force-complete whatever flight is pending
+      // when the timer fires, so a session-id desync can never strand the
+      // player in fly_to_plaza with locked controls.
+      fallbackTimer = window.setTimeout(() => completePlazaFlight(), 3000);
     }
     return () => {
       window.removeEventListener('plaza-fly-to-complete', onFlyComplete);
@@ -2051,6 +2058,10 @@ export default function App() {
     dismissed: false,
     done: { fish: false, haggle: false, nft: false, house: false, cafe: false, warzone: false },
   };
+  // City Highlights is hidden for now (rifallah, 14 Nov): the forced First
+  // Home tour replaces it as the new-player guide. State, persistence and
+  // markCityHighlight calls stay intact - flip this constant to bring it back.
+  const CITY_HIGHLIGHTS_ENABLED = false;
   const [cityHighlights, setCityHighlights] = useState<CityHighlightsState>(() => {
     try {
       const raw = window.localStorage.getItem('bb_city_highlights_v1');
@@ -9960,7 +9971,8 @@ export default function App() {
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
 
       {/* CITY HIGHLIGHTS — Hana's post-tour discovery checklist */}
-      {cityHighlights.active &&
+      {CITY_HIGHLIGHTS_ENABLED &&
+        cityHighlights.active &&
         !cityHighlights.dismissed &&
         gameState === 'playing' &&
         activeSpecialModal === 'none' &&
