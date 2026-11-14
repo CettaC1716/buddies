@@ -24,6 +24,7 @@ export interface CityTransitKioskModalProps {
   onOpenShopAndExchange: () => void;
   /** Live cafe job status peeked from the shift channel (null = unknown). */
   cafeJobStatus?: { workerName: string | null; queueCount: number } | null;
+  onEnterGlasshouseCafe?: () => void;
   isTutorialTourActive?: boolean;
   onCompleteTutorialTour?: () => void;
 }
@@ -43,10 +44,64 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   onOpenHouseCatalog,
   onOpenShopAndExchange,
   cafeJobStatus = null,
+  onEnterGlasshouseCafe,
   isTutorialTourActive = false,
   onCompleteTutorialTour,
 }) => {
   const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect' | 'jobs'>('grid');
+  const [kioskThumbnails, setKioskThumbnails] = useState<Record<string, string>>(() => {
+    if (typeof window !== 'undefined') {
+      const winStore = window as unknown as {
+        __BUDDIES_KIOSK_THUMBNAILS__?: Record<string, string>;
+      };
+      return winStore.__BUDDIES_KIOSK_THUMBNAILS__ ?? {};
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncThumbnails = () => {
+      const winStore = window as unknown as {
+        __BUDDIES_KIOSK_THUMBNAILS__?: Record<string, string>;
+      };
+      if (winStore.__BUDDIES_KIOSK_THUMBNAILS__) {
+        setKioskThumbnails({ ...winStore.__BUDDIES_KIOSK_THUMBNAILS__ });
+      }
+    };
+    syncThumbnails();
+    window.addEventListener('kiosk-thumbnails-ready', syncThumbnails);
+    return () => {
+      window.removeEventListener('kiosk-thumbnails-ready', syncThumbnails);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && typeof window !== 'undefined') {
+      const winStore = window as unknown as {
+        __BUDDIES_KIOSK_THUMBNAILS__?: Record<string, string>;
+      };
+      const store = winStore.__BUDDIES_KIOSK_THUMBNAILS__;
+      const requiredDistrictKeys: CityTransitStationId[] = [
+        'central_plaza',
+        'beachfront_harbor',
+        'nw_fishing_lake',
+        'north_residence',
+        'south_residence',
+        'warzone_arena',
+      ];
+      const hasAllDistrictSnapshots =
+        Boolean(store?.travel_districts) &&
+        requiredDistrictKeys.every((key) => Boolean(store?.[key]));
+      if (!hasAllDistrictSnapshots) {
+        window.dispatchEvent(new CustomEvent('request-kiosk-thumbnails'));
+      }
+      if (store) {
+        setKioskThumbnails({ ...store });
+      }
+    }
+  }, [isOpen]);
+
   // Hana's interactive kiosk tour: she explains each menu while a spotlight
   // ring steps across the cards.
   const KIOSK_TOUR_STEPS = [
@@ -144,15 +199,24 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
         dest.tag.toLowerCase().includes(q) ||
         dest.description.toLowerCase().includes(q)
       );
+    }).map((dest) => {
+      const liveSnap = kioskThumbnails[dest.id];
+      return liveSnap
+        ? { ...dest, heroImageUrl: liveSnap, thumbnailUrl: liveSnap }
+        : dest;
     });
-  }, [searchQuery, showRecentOnly, recentStationIds]);
+  }, [searchQuery, showRecentOnly, recentStationIds, kioskThumbnails]);
 
   const selectedDestination: CityTransitDestinationSpec = useMemo(() => {
     const found = filteredDestinations.find((d) => d.id === selectedStationId);
     if (found) return found;
     if (filteredDestinations.length > 0) return filteredDestinations[0];
-    return getCityTransitDestinationById(selectedStationId);
-  }, [filteredDestinations, selectedStationId]);
+    const fallback = getCityTransitDestinationById(selectedStationId);
+    const liveSnap = kioskThumbnails[fallback.id];
+    return liveSnap
+      ? { ...fallback, heroImageUrl: liveSnap, thumbnailUrl: liveSnap }
+      : fallback;
+  }, [filteredDestinations, selectedStationId, kioskThumbnails]);
 
   if (!isOpen) return null;
 
@@ -172,11 +236,6 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     setLevelView('browser');
   };
 
-  const handleOpenJobs = () => {
-    soundEngine.playUiClick();
-    setBrowserSectionTitle('JOBS · WORK & EARN XP');
-    setLevelView('jobs');
-  };
 
   const handleOpenWarzoneBrowser = () => {
     soundEngine.playUiClick();
@@ -202,6 +261,22 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   const handleClickShopExchange = () => {
     soundEngine.playUiClick();
     onOpenShopAndExchange();
+  };
+
+  const handleOpenJobsBrowser = () => {
+    soundEngine.playUiClick();
+    setBrowserSectionTitle('JOBS · SELECT WORKPLACE');
+    setLevelView('jobs');
+  };
+
+  const handleEnterCafeGlasshouseJob = () => {
+    soundEngine.playUiConfirm();
+    if (onEnterGlasshouseCafe) {
+      onEnterGlasshouseCafe();
+    } else {
+      onClose();
+      window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
+    }
   };
 
   const handleConfirmEnter = () => {
@@ -263,7 +338,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
             type="button"
             data-teleport-kiosk-close="true"
             onClick={() => {
-              soundEngine.playUiClick();
+              soundEngine.playUiCancel();
               onClose();
             }}
             aria-label="Close City Transit Kiosk"
@@ -335,7 +410,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 className="mb-4 bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] flex gap-3 p-3"
               >
                 <img
-                  src="/docs/hero-4-hana-exchange.jpg"
+                  src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
                   alt="Hana"
                   className="w-14 h-14 sm:w-16 sm:h-16 object-cover border-2 border-black shrink-0"
                 />
@@ -420,23 +495,23 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {/* CARD 1: TRAVEL & DISTRICTS */}
               <button
                 type="button"
                 data-transit-card="travel_districts"
                 data-teleport-option="safezone"
                 onClick={handleOpenTravelBrowser}
-                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('travel_districts')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('travel_districts')}`}
               >
                 <img
-                  src="/docs/hero-2-tram-station.jpg"
+                  src={kioskThumbnails.travel_districts || '/docs/hero-2-tram-station.jpg'}
                   alt="Travel & Districts"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
 
-                <div className="relative z-10 p-3.5 flex items-center justify-between">
+                <div className="relative z-10 p-3 flex items-center justify-between">
                   <span className="px-2.5 py-0.5 bg-[#00f0ff] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
                     THE CITY NETWORK
                   </span>
@@ -445,7 +520,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </span>
                 </div>
 
-                <div className="relative z-10 p-4 pt-0">
+                <div className="relative z-10 p-3.5 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
                   >
@@ -463,16 +538,16 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="warzone_arena"
                 data-teleport-option="warzone"
                 onClick={handleOpenWarzoneBrowser}
-                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('warzone_arena')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('warzone_arena')}`}
               >
                 <img
-                  src="/docs/hero-7-crate-stacking-pad.jpg"
+                  src={kioskThumbnails.warzone_arena || '/docs/hero-7-crate-stacking-pad.jpg'}
                   alt="Warzone Arena"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
 
-                <div className="relative z-10 p-3.5 flex items-center justify-between gap-2">
+                <div className="relative z-10 p-3 flex items-center justify-between gap-2">
                   <span className="px-2.5 py-0.5 bg-[#facc15] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
                     MINI-GAME
                   </span>
@@ -492,7 +567,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </div>
                 </div>
 
-                <div className="relative z-10 p-4 pt-0">
+                <div className="relative z-10 p-3.5 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
                   >
@@ -509,16 +584,16 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="my_house"
                 onClick={handleClickMyHouse}
-                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('my_house')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('my_house')}`}
               >
                 <img
-                  src="/docs/hero-3-house-interior.jpg"
+                  src={kioskThumbnails.my_house || '/docs/hero-3-house-interior.jpg'}
                   alt="My House Interior"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
 
-                <div className="relative z-10 p-3.5 flex items-center justify-between">
+                <div className="relative z-10 p-3 flex items-center justify-between">
                   <span className="px-2.5 py-0.5 bg-[#a3e635] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
                     HOUSE
                   </span>
@@ -527,7 +602,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </span>
                 </div>
 
-                <div className="relative z-10 p-4 pt-0">
+                <div className="relative z-10 p-3.5 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
                   >
@@ -546,16 +621,16 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="shop_exchange"
                 onClick={handleClickShopExchange}
-                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('shop_exchange')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('shop_exchange')}`}
               >
                 <img
-                  src="/docs/hero-4-hana-exchange.jpg"
+                  src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
                   alt="Shop & Exchange"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
 
-                <div className="relative z-10 p-3.5 flex items-center justify-between">
+                <div className="relative z-10 p-3 flex items-center justify-between">
                   <span className="px-2.5 py-0.5 bg-[#c084fc] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
                     SHOP &amp; EXCHANGE
                   </span>
@@ -564,7 +639,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   </span>
                 </div>
 
-                <div className="relative z-10 p-4 pt-0">
+                <div className="relative z-10 p-3.5 pt-0">
                   <div
                     className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
                   >
@@ -580,12 +655,16 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               <button
                 type="button"
                 data-transit-card="jobs"
-                onClick={handleOpenJobs}
-                className={`group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('jobs')}`}
+                onClick={handleOpenJobsBrowser}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('jobs')}`}
               >
                 <img
-                  src="/docs/hero-4-hana-exchange.jpg"
-                  alt="Jobs"
+                  src={
+                    kioskThumbnails.jobs_cafe ||
+                    kioskThumbnails.cafe_glasshouse ||
+                    '/assets/aistudio/screenshot_7_5a2e994c.png'
+                  }
+                  alt="Citizen Jobs - Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
@@ -616,78 +695,57 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
           </div>
         ) : levelView === 'jobs' ? (
           /* =================================================================
-             JOBS VIEW — work shifts around the city
+             JOBS SUB-VIEW: SAME CARD LAYOUT WITH 1 JOB (CAFE GLASSHOUSE)
              ================================================================= */
           <div className="p-4 sm:p-6 bg-[#f1f5f9]">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-black uppercase tracking-wider text-slate-700">
-                AVAILABLE JOBS
+                SELECT A CITIZEN JOB TO START WORKING
               </div>
               <div className="px-2.5 py-1 bg-white border-[2.5px] border-black text-[11px] font-black uppercase tracking-wider text-black shadow-[2px_2px_0px_#000]">
-                EARN XP · NO WALLET NEEDED
+                1 AVAILABLE JOB
               </div>
             </div>
 
-            <div className="bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] overflow-hidden">
-              <div className="relative h-[150px] sm:h-[170px]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* JOB CARD 1: CAFE GLASSHOUSE */}
+              <button
+                type="button"
+                data-transit-job-card="cafe_glasshouse"
+                onClick={handleEnterCafeGlasshouseJob}
+                className="group relative h-[196px] sm:h-[214px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+              >
                 <img
-                  src="/docs/hero-4-hana-exchange.jpg"
-                  alt="Glasshouse Cafe"
-                  className="absolute inset-0 w-full h-full object-cover"
+                  src={
+                    kioskThumbnails.jobs_cafe ||
+                    kioskThumbnails.cafe_glasshouse ||
+                    '/assets/aistudio/screenshot_7_5a2e994c.png'
+                  }
+                  alt="Cafe Glasshouse"
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
-                <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
-                  <div className="text-lg sm:text-xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]">
-                    GLASSHOUSE CAFE — BARISTA
-                  </div>
-                  <span className="px-2 py-0.5 bg-[#35C26B] text-black border-[2px] border-black text-[10px] font-black uppercase shrink-0">
-                    CAFE JOB
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/15" />
+
+                <div className="relative z-10 p-3.5 flex items-center justify-between">
+                  <span className="px-2.5 py-0.5 bg-[#4ade80] text-black border-[2px] border-black text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000]">
+                    BARISTA SHIFT
+                  </span>
+                  <span className="px-2 py-0.5 bg-black/80 text-white border-[2px] border-white/80 text-[10px] font-black uppercase">
+                    BUCKS / LUL / XP
                   </span>
                 </div>
-              </div>
-              <div className="p-4 space-y-3">
-                <p className="text-xs font-bold text-slate-600 leading-relaxed">
-                  Work the counter at the Botanical Glasshouse Cafe in Central Plaza. Customers and other
-                  players place orders — prepare each one at the coffee machine or food display, then serve
-                  it at the counter. Finish 3 orders within the shift timer for a completion bonus.
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`px-2.5 py-1 border-[2px] border-black text-[10.5px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#000] ${
-                      cafeJobStatus?.workerName ? 'bg-[#facc15] text-black' : 'bg-[#b8ff3c] text-black'
-                    }`}
+
+                <div className="relative z-10 p-4 pt-0">
+                  <div
+                    className="text-xl sm:text-2xl font-black uppercase italic tracking-tight text-white drop-shadow-[0_2px_0_#000]"
                   >
-                    {cafeJobStatus
-                      ? cafeJobStatus.workerName
-                        ? `ON SHIFT: ${cafeJobStatus.workerName.toUpperCase()}`
-                        : 'OPEN — NO BARISTA ON SHIFT'
-                      : 'CHECKING SHIFT…'}
-                  </span>
-                  {cafeJobStatus && cafeJobStatus.queueCount > 0 ? (
-                    <span className="px-2.5 py-1 bg-white border-[2px] border-black text-[10.5px] font-black uppercase tracking-wider">
-                      {cafeJobStatus.queueCount} WAITING
-                    </span>
-                  ) : null}
-                  <span className="px-2.5 py-1 bg-white border-[2px] border-black text-[10.5px] font-black uppercase tracking-wider">
-                    CENTRAL PLAZA
-                  </span>
+                    CAFE GLASSHOUSE
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-slate-200 line-clamp-2">
+                    Register at the Work Rota board inside Cafe Glasshouse, prepare customer drinks and pastries, and cash out Shift Bucks for LUL.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  data-jobs-go-cafe-btn="true"
-                  onClick={() => {
-                    soundEngine.playPickup();
-                    onConfirmEnterDestination(getCityTransitDestinationById('central_plaza'));
-                  }}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-[#14161d] hover:bg-[#232936] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer"
-                >
-                  GO TO GLASSHOUSE CAFE →
-                </button>
-                <p className="text-[10.5px] font-bold text-slate-400">
-                  You arrive at Central Plaza — enter the Glasshouse Cafe and use the SHIFT BOARD inside to
-                  start working or join the waiting list.
-                </p>
-              </div>
+              </button>
             </div>
           </div>
         ) : levelView === 'warzoneTeamSelect' ? (
@@ -834,7 +892,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                         }`}
                       >
                         <img
-                          src={dest.heroImageUrl}
+                          src={kioskThumbnails[dest.id] || dest.heroImageUrl}
                           alt={dest.shortTitle}
                           className="w-11 h-11 object-cover border-[2px] border-black shrink-0 bg-slate-900"
                         />
@@ -869,7 +927,10 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               {/* RIGHT SHOWCASE PANEL (~72% WIDTH) */}
               <div className="w-full md:w-[72%] flex-1 relative bg-slate-950 overflow-hidden flex flex-col justify-between">
                 <img
-                  src={selectedDestination.heroImageUrl}
+                  src={
+                    kioskThumbnails[selectedDestination.id] ||
+                    selectedDestination.heroImageUrl
+                  }
                   alt={selectedDestination.title}
                   className="absolute inset-0 w-full h-full object-cover"
                 />

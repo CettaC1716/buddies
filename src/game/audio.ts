@@ -408,6 +408,28 @@ class SoundEngine {
   private bgmStepIndex = 0;
   private bgmUnlockBound = false;
 
+  private sessionMusicTrack: 'none' | 'landing' | 'ingame' = 'none';
+  private landingBgmAudio: HTMLAudioElement | null = null;
+  private ingameBgmAudio: HTMLAudioElement | null = null;
+  private sessionMusicUnlockBound = false;
+  private sessionLoopMonitorId: ReturnType<typeof setInterval> | null = null;
+  private sessionFadeRafId: number | null = null;
+  private sessionFadeMultiplier = 1.0;
+  private isSessionLoopFading = false;
+
+  // Web Audio BGM softening chain (9000Hz lowpass + high-shelf cut + gentle compressor)
+  private sessionBgmFilterChainReady = false;
+  private landingMediaSourceWired = false;
+  private ingameMediaSourceWired = false;
+  private sessionBgmInputGain: GainNode | null = null;
+
+  // Clean loop segments (excludes noisy/crowded mid-song brass & transition sections)
+  private static readonly LANDING_LOOP_START_SEC = 0.2;
+  private static readonly LANDING_LOOP_END_SEC = 48.2;
+  private static readonly INGAME_LOOP_START_SEC = 21.0;
+  private static readonly INGAME_LOOP_END_SEC = 60.8;
+  private static readonly LOOP_FADE_MS = 180;
+
   private _muted = false;
   private _masterVolume = 1.0;
 
@@ -441,6 +463,7 @@ class SoundEngine {
         this.ensureBgmSchedulerRunning();
       }
     }
+    this.syncSessionMusicPlayback();
   }
 
   public get masterVolume(): number {
@@ -462,6 +485,383 @@ class SoundEngine {
         0.05,
       );
     }
+    this.syncSessionMusicPlayback();
+  }
+
+  /**
+   * Builds a gentle Web Audio softening chain for HTMLAudioElement BGM tracks:
+   * High-Shelf (-3.5dB @ 6500Hz) -> Low-Pass (9000Hz, Q=0.65) -> Gentle Glue Compressor -> Destination.
+   * Only wires MediaElementAudioSourceNode once the AudioContext is actively running so playback is never blocked.
+   */
+  private ensureSessionBgmFilterChain(): void {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    if (
+      !this.sessionBgmFilterChainReady &&
+      typeof this.ctx.createBiquadFilter === 'function' &&
+      typeof this.ctx.createDynamicsCompressor === 'function'
+    ) {
+      const now = this.ctx.currentTime;
+      const inGain = this.ctx.createGain();
+      inGain.gain.setValueAtTime(1.0, now);
+
+      // Soften sharp upper-treble transients above 6.5kHz
+      const highShelf = this.ctx.createBiquadFilter();
+      highShelf.type = 'highshelf';
+      highShelf.frequency.setValueAtTime(6500, now);
+      highShelf.gain.setValueAtTime(-3.5, now);
+
+      // Warm 9000Hz Low-Pass Filter so high frequencies never pierce the ears
+      const lowpass = this.ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.setValueAtTime(9000, now);
+      lowpass.Q.setValueAtTime(0.65, now);
+
+      // Gentle dynamic smoothing so busy passages stay even and unobtrusive
+      const comp = this.ctx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-20, now);
+      comp.knee.setValueAtTime(14, now);
+      comp.ratio.setValueAtTime(2.6, now);
+      comp.attack.setValueAtTime(0.015, now);
+      comp.release.setValueAtTime(0.18, now);
+
+      inGain.connect(highShelf);
+      highShelf.connect(lowpass);
+      lowpass.connect(comp);
+      comp.connect(this.ctx.destination);
+
+      this.sessionBgmInputGain = inGain;
+      this.sessionBgmFilterChainReady = true;
+    }
+
+    if (
+      this.sessionBgmInputGain &&
+      typeof this.ctx.createMediaElementSource === 'function'
+    ) {
+      if (this.landingBgmAudio && !this.landingMediaSourceWired) {
+        try {
+          const src = this.ctx.createMediaElementSource(this.landingBgmAudio);
+          src.connect(this.sessionBgmInputGain);
+          this.landingMediaSourceWired = true;
+        } catch {
+          this.landingMediaSourceWired = true;
+        }
+      }
+      if (this.ingameBgmAudio && !this.ingameMediaSourceWired) {
+        try {
+          const src = this.ctx.createMediaElementSource(this.ingameBgmAudio);
+          src.connect(this.sessionBgmInputGain);
+          this.ingameMediaSourceWired = true;
+        } catch {
+          this.ingameMediaSourceWired = true;
+        }
+      }
+    }
+  }
+
+  private applySessionAudioVolumes(): void {
+    const baseVolume = this._muted
+      ? 0
+      : clamp(this.bgmVolume * this._masterVolume * 0.95, 0, 1);
+    const effectiveVolume = clamp(baseVolume * this.sessionFadeMultiplier, 0, 1);
+
+    if (this.landingBgmAudio) {
+      this.landingBgmAudio.muted = this._muted;
+      this.landingBgmAudio.volume = effectiveVolume;
+    }
+    if (this.ingameBgmAudio) {
+      this.ingameBgmAudio.muted = this._muted;
+      this.ingameBgmAudio.volume = effectiveVolume;
+    }
+  }
+
+  /**
+   * Performs a smooth ~180ms volume fade-out to near-zero, seeks to `loopStartSec`,
+   * and smoothly fades back in over ~180ms so loop boundaries never sound abrupt.
+   */
+  private triggerSmoothLoopJump(audio: HTMLAudioElement, loopStartSec: number): void {
+    if (this.isSessionLoopFading) return;
+    this.isSessionLoopFading = true;
+    if (this.sessionFadeRafId !== null && typeof window !== 'undefined') {
+      window.clearInterval(this.sessionFadeRafId);
+      this.sessionFadeRafId = null;
+    }
+
+    const fadeMs = SoundEngine.LOOP_FADE_MS;
+    const stepMs = 20;
+    const totalSteps = Math.max(4, Math.round(fadeMs / stepMs));
+    let step = 0;
+    let phase: 'out' | 'in' = 'out';
+
+    this.sessionFadeRafId = window.setInterval(() => {
+      step += 1;
+      const t = clamp(step / totalSteps, 0, 1);
+      if (phase === 'out') {
+        // Cosine-eased fade out (1.0 -> 0.03) over 180ms
+        this.sessionFadeMultiplier = 0.03 + 0.97 * (0.5 * (1 + Math.cos(Math.PI * t)));
+        this.applySessionAudioVolumes();
+        if (step >= totalSteps) {
+          try {
+            audio.currentTime = loopStartSec;
+          } catch {
+            // ignore seek error if not buffered yet
+          }
+          if (!this._muted && this.sessionMusicTrack !== 'none' && audio.paused) {
+            audio.play().catch(() => {});
+          }
+          phase = 'in';
+          step = 0;
+        }
+      } else {
+        // Cosine-eased fade in (0.03 -> 1.0) over 180ms
+        this.sessionFadeMultiplier = 0.03 + 0.97 * (0.5 * (1 - Math.cos(Math.PI * t)));
+        this.applySessionAudioVolumes();
+        if (step >= totalSteps) {
+          this.sessionFadeMultiplier = 1.0;
+          this.applySessionAudioVolumes();
+          this.isSessionLoopFading = false;
+          if (this.sessionFadeRafId !== null) {
+            window.clearInterval(this.sessionFadeRafId);
+            this.sessionFadeRafId = null;
+          }
+        }
+      }
+    }, stepMs) as unknown as number;
+  }
+
+  private startSessionLoopMonitor(): void {
+    if (this.sessionLoopMonitorId !== null || typeof window === 'undefined') return;
+    const fadeLeadSec = SoundEngine.LOOP_FADE_MS / 1000;
+    this.sessionLoopMonitorId = setInterval(() => {
+      if (this._muted || this.sessionMusicTrack === 'none') return;
+      this.ensureSessionBgmFilterChain();
+
+      if (this.sessionMusicTrack === 'landing' && this.landingBgmAudio && !this.landingBgmAudio.paused) {
+        const cur = this.landingBgmAudio.currentTime;
+        if (cur >= SoundEngine.LANDING_LOOP_END_SEC - fadeLeadSec) {
+          this.triggerSmoothLoopJump(this.landingBgmAudio, SoundEngine.LANDING_LOOP_START_SEC);
+        }
+      } else if (this.sessionMusicTrack === 'ingame' && this.ingameBgmAudio && !this.ingameBgmAudio.paused) {
+        const cur = this.ingameBgmAudio.currentTime;
+        if (cur < SoundEngine.INGAME_LOOP_START_SEC - 0.25 && !this.isSessionLoopFading) {
+          try {
+            this.ingameBgmAudio.currentTime = SoundEngine.INGAME_LOOP_START_SEC;
+          } catch {
+            // ignore
+          }
+        } else if (cur >= SoundEngine.INGAME_LOOP_END_SEC - fadeLeadSec) {
+          this.triggerSmoothLoopJump(this.ingameBgmAudio, SoundEngine.INGAME_LOOP_START_SEC);
+        }
+      }
+    }, 60);
+  }
+
+  private stopSessionLoopMonitor(): void {
+    if (this.sessionLoopMonitorId !== null) {
+      clearInterval(this.sessionLoopMonitorId);
+      this.sessionLoopMonitorId = null;
+    }
+    if (this.sessionFadeRafId !== null && typeof window !== 'undefined') {
+      window.clearInterval(this.sessionFadeRafId);
+      this.sessionFadeRafId = null;
+    }
+    this.isSessionLoopFading = false;
+    this.sessionFadeMultiplier = 1.0;
+  }
+
+  private ensureSessionMusicElements(): void {
+    if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
+    if (!this.landingBgmAudio) {
+      const landingAudio = new Audio('/assets/aistudio/Funkopolis_Game_Title_Soundtrack_5d70c7e1.mp3');
+      landingAudio.preload = 'none';
+      landingAudio.loop = true;
+      landingAudio.addEventListener('timeupdate', () => {
+        if (
+          landingAudio.currentTime >=
+          SoundEngine.LANDING_LOOP_END_SEC - SoundEngine.LOOP_FADE_MS / 1000
+        ) {
+          this.triggerSmoothLoopJump(landingAudio, SoundEngine.LANDING_LOOP_START_SEC);
+        }
+      });
+      this.landingBgmAudio = landingAudio;
+    }
+    if (!this.ingameBgmAudio) {
+      const ingameAudio = new Audio('/assets/aistudio/Sunny_Shibuya-Style_Urban_BGM_7f85cba2.mp3');
+      // Keep preload="none" initially so it never blocks initial 3D loading or landing screen
+      ingameAudio.preload = 'none';
+      ingameAudio.loop = true;
+      ingameAudio.addEventListener('loadedmetadata', () => {
+        if (ingameAudio.currentTime < SoundEngine.INGAME_LOOP_START_SEC) {
+          try {
+            ingameAudio.currentTime = SoundEngine.INGAME_LOOP_START_SEC;
+          } catch {
+            // ignore
+          }
+        }
+      });
+      ingameAudio.addEventListener('timeupdate', () => {
+        if (
+          ingameAudio.currentTime >=
+          SoundEngine.INGAME_LOOP_END_SEC - SoundEngine.LOOP_FADE_MS / 1000
+        ) {
+          this.triggerSmoothLoopJump(ingameAudio, SoundEngine.INGAME_LOOP_START_SEC);
+        }
+      });
+      this.ingameBgmAudio = ingameAudio;
+    }
+  }
+
+  /**
+   * Asynchronously warms up the in-game BGM audio element after the player leaves
+   * the landing screen / enters character creation, without blocking any UI or 3D load.
+   */
+  public preloadIngameBgmAsync(): void {
+    if (typeof window === 'undefined') return;
+    this.ensureSessionMusicElements();
+    if (this.ingameBgmAudio && this.ingameBgmAudio.preload === 'none') {
+      this.ingameBgmAudio.preload = 'auto';
+      try {
+        this.ingameBgmAudio.load();
+      } catch {
+        // Ignore background load errors
+      }
+    }
+  }
+
+  private bindSessionMusicUnlock(): void {
+    if (this.sessionMusicUnlockBound || typeof window === 'undefined') return;
+    this.sessionMusicUnlockBound = true;
+    const unlock = () => {
+      this.sessionMusicUnlockBound = false;
+      this.userInteracted = true;
+      window.removeEventListener('pointerdown', unlock, true);
+      window.removeEventListener('keydown', unlock, true);
+      this.ensureCtx();
+      this.ensureSessionBgmFilterChain();
+      this.syncSessionMusicPlayback();
+    };
+    window.addEventListener('pointerdown', unlock, { capture: true, once: true });
+    window.addEventListener('keydown', unlock, { capture: true, once: true });
+  }
+
+  private syncSessionMusicPlayback(): void {
+    if (typeof window === 'undefined') return;
+    if (this.sessionMusicTrack === 'none' && !this.landingBgmAudio && !this.ingameBgmAudio) {
+      return;
+    }
+    this.ensureSessionMusicElements();
+    this.ensureSessionBgmFilterChain();
+    this.applySessionAudioVolumes();
+
+    if (this._muted || this.sessionMusicTrack === 'none') {
+      this.stopSessionLoopMonitor();
+      if (this.landingBgmAudio && !this.landingBgmAudio.paused) {
+        this.landingBgmAudio.pause();
+      }
+      if (this.ingameBgmAudio && !this.ingameBgmAudio.paused) {
+        this.ingameBgmAudio.pause();
+      }
+      return;
+    }
+
+    this.startSessionLoopMonitor();
+
+    if (this.sessionMusicTrack === 'landing') {
+      if (this.ingameBgmAudio) {
+        if (!this.ingameBgmAudio.paused) {
+          this.ingameBgmAudio.pause();
+        }
+        try {
+          this.ingameBgmAudio.currentTime = SoundEngine.INGAME_LOOP_START_SEC;
+        } catch {
+          // ignore
+        }
+      }
+      if (this.landingBgmAudio) {
+        if (this.landingBgmAudio.preload === 'none') {
+          this.landingBgmAudio.preload = 'auto';
+        }
+        if (
+          this.landingBgmAudio.currentTime < SoundEngine.LANDING_LOOP_START_SEC ||
+          this.landingBgmAudio.currentTime >= SoundEngine.LANDING_LOOP_END_SEC
+        ) {
+          try {
+            this.landingBgmAudio.currentTime = SoundEngine.LANDING_LOOP_START_SEC;
+          } catch {
+            // ignore
+          }
+        }
+        if (this.landingBgmAudio.paused) {
+          this.landingBgmAudio.play().catch(() => {
+            this.bindSessionMusicUnlock();
+          });
+        }
+      }
+    } else if (this.sessionMusicTrack === 'ingame') {
+      if (this.landingBgmAudio) {
+        if (!this.landingBgmAudio.paused) {
+          this.landingBgmAudio.pause();
+        }
+        try {
+          this.landingBgmAudio.currentTime = SoundEngine.LANDING_LOOP_START_SEC;
+        } catch {
+          // ignore
+        }
+      }
+      if (this.ingameBgmAudio) {
+        if (this.ingameBgmAudio.preload === 'none') {
+          this.ingameBgmAudio.preload = 'auto';
+        }
+        if (
+          this.ingameBgmAudio.currentTime < SoundEngine.INGAME_LOOP_START_SEC ||
+          this.ingameBgmAudio.currentTime >= SoundEngine.INGAME_LOOP_END_SEC
+        ) {
+          try {
+            this.ingameBgmAudio.currentTime = SoundEngine.INGAME_LOOP_START_SEC;
+          } catch {
+            // ignore
+          }
+        }
+        if (this.ingameBgmAudio.paused) {
+          this.ingameBgmAudio.play().catch(() => {
+            this.bindSessionMusicUnlock();
+          });
+        }
+      }
+    }
+  }
+
+  public setSessionMusicTrack(track: 'none' | 'landing' | 'ingame'): void {
+    const prevTrack = this.sessionMusicTrack;
+    this.sessionMusicTrack = track;
+    if (prevTrack !== track) {
+      this.isSessionLoopFading = false;
+      this.sessionFadeMultiplier = 1.0;
+      if (track !== 'none') {
+        this.ensureSessionMusicElements();
+        if (track === 'landing' && this.landingBgmAudio) {
+          try {
+            this.landingBgmAudio.currentTime = SoundEngine.LANDING_LOOP_START_SEC;
+          } catch {
+            // ignore
+          }
+        } else if (track === 'ingame' && this.ingameBgmAudio) {
+          if (this.ingameBgmAudio.preload === 'none') {
+            this.ingameBgmAudio.preload = 'auto';
+          }
+          try {
+            this.ingameBgmAudio.currentTime = SoundEngine.INGAME_LOOP_START_SEC;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+    this.clearBgmScheduler();
+    this.syncSessionMusicPlayback();
+  }
+
+  public getSessionMusicTrack(): 'none' | 'landing' | 'ingame' {
+    return this.sessionMusicTrack;
   }
 
   public getBgmMode(): BgmMode {
@@ -472,7 +872,6 @@ class SoundEngine {
     const nextMode: BgmMode = mode === 'warzone' ? 'warzone' : 'city';
     if (this.bgmMode === nextMode) return;
     this.bgmMode = nextMode;
-    // Align transition cleanly to the start of the next musical bar so mode switches sound seamless
     const nextBarStep = Math.ceil(this.bgmStepIndex / 16) * 16;
     this.bgmStepIndex = nextBarStep % 128;
     if (this.bgmStarted && !this._muted) {
@@ -572,7 +971,7 @@ class SoundEngine {
           bgmGain.gain.setValueAtTime(
             this._muted ? 0 : this.bgmVolume * this._masterVolume,
             this.ctx.currentTime,
-          );
+            );
           bgmFilter.connect(bgmGain);
           bgmGain.connect(this.ctx.destination);
           this.bgmWarmFilter = bgmFilter;
@@ -607,51 +1006,29 @@ class SoundEngine {
   public stopBgm(): void {
     this.bgmStarted = false;
     this.clearBgmScheduler();
+    this.setSessionMusicTrack('none');
   }
 
   public startBgm(mode?: BgmMode): void {
     if (mode) {
       this.bgmMode = mode === 'warzone' ? 'warzone' : 'city';
     }
-    this.bgmStarted = true;
-    if (typeof window === 'undefined' || this._muted) return;
-    const ctx = this.ensureCtx();
-    if (ctx && ctx.state === 'running') {
-      this.startBgmSchedulerForCtx(ctx);
-      return;
-    }
-    if (!this.bgmUnlockBound) {
-      this.bgmUnlockBound = true;
-      const unlockBgm = () => {
-        this.bgmUnlockBound = false;
-        this.userInteracted = true;
-        window.removeEventListener('pointerdown', unlockBgm, true);
-        window.removeEventListener('keydown', unlockBgm, true);
-        if (this.bgmStarted && !this._muted) {
-          this.ensureBgmSchedulerRunning();
-        }
-      };
-      window.addEventListener('pointerdown', unlockBgm, { capture: true, once: true });
-      window.addEventListener('keydown', unlockBgm, { capture: true, once: true });
-    }
+    this.bgmStarted = false;
+    this.clearBgmScheduler();
+    this.syncSessionMusicPlayback();
   }
 
   private ensureBgmSchedulerRunning(): void {
-    if (typeof window === 'undefined' || this._muted || !this.bgmStarted) return;
-    if (this.bgmTimerId !== null && this.ctx) return;
-    const ctx = this.ctx ?? this.ensureCtx();
-    if (!ctx) return;
-    this.startBgmSchedulerForCtx(ctx);
+    this.clearBgmScheduler();
+    this.syncSessionMusicPlayback();
   }
 
   private startBgmSchedulerForCtx(ctx: AudioContext): void {
-    if (typeof window === 'undefined' || this._muted || !this.bgmStarted) return;
-    if (this.bgmBusGain) {
-      this.bgmBusGain.gain.setTargetAtTime(
-        this.bgmVolume * this._masterVolume,
-        ctx.currentTime,
-        0.08,
-      );
+    // Dedicated session MP3 soundtracks (Landing & In-Game) replace procedural synth BGM
+    this.clearBgmScheduler();
+    this.syncSessionMusicPlayback();
+    if (!this.bgmStarted || this._muted || this.sessionMusicTrack !== 'none' || this.bgmUnlockBound) {
+      return;
     }
     if (this.bgmTimerId !== null) return;
     this.bgmNextNoteTime = ctx.currentTime + 0.06;
@@ -2218,41 +2595,175 @@ class SoundEngine {
     brownNoise.start(now, Math.random() * 0.4, 0.21);
   }
 
-  public playUiClick(): void {
-    // Soft synth click only - the old 'button-click' sample (0.55s at 0.48 gain)
-    // sounded harsh and noisy on every UI press, so it is no longer used here.
-    const ctx = this.ensureCtx();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(this.pitchJitter(540), now);
-    osc.frequency.exponentialRampToValueAtTime(720, now + 0.05);
-    gain.gain.setValueAtTime(0.09, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-    osc.connect(gain);
-    gain.connect(this.getOutputNode(ctx));
-    osc.start(now);
-    osc.stop(now + 0.095);
+  /**
+   * Creates a warm 1400Hz low-pass BiquadFilterNode routed directly to destination
+   * (bypassing the combat compressor) for "Warm Cozy Nintendo / Animal Crossing UI" SFX.
+   */
+  private createWarmUiLowpass(ctx: AudioContext, now: number): BiquadFilterNode {
+    const lpf = ctx.createBiquadFilter();
+    lpf.type = 'lowpass';
+    lpf.frequency.setValueAtTime(1400, now);
+    lpf.Q.setValueAtTime(0.7, now);
+    lpf.connect(ctx.destination);
+    return lpf;
   }
 
-  /** Quiet synth-only tap for high-frequency action buttons (fishing) - no sample, low gain. */
-  public playSoftTap(): void {
+  /**
+   * 1. Warm Cozy UI Click: "soft wood/bubble tap"
+   * Pure sine 340Hz -> 180Hz, duration 35ms, peak gain 0.04 (scaled by masterVolume),
+   * 7ms soft linear attack + smooth exponential release through 1400Hz lowpass filter.
+   */
+  public playUiClick(): void {
     const ctx = this.ensureCtx();
-    if (!ctx) return;
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+
     const now = ctx.currentTime;
+    const dur = 0.035;
+    const attack = 0.006;
+    const peakGain = Math.max(0.0002, 0.04 * vol);
+
+    const lpf = this.createWarmUiLowpass(ctx, now);
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(420, now);
-    osc.frequency.exponentialRampToValueAtTime(300, now + 0.07);
-    gain.gain.setValueAtTime(0.06, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc.frequency.setValueAtTime(340, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + dur);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peakGain, now + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
     osc.connect(gain);
-    gain.connect(this.getOutputNode(ctx));
+    gain.connect(lpf);
     osc.start(now);
-    osc.stop(now + 0.085);
+    osc.stop(now + dur + 0.004);
+  }
+
+  /**
+   * 2. Warm Cozy UI Confirm: "warm marimba/rhodes chime" 2 soft ascending notes
+   * Pure sine 440Hz -> 587.33Hz [A4 -> D5], total duration ~110ms, peak gain 0.05,
+   * 7ms soft linear attack + smooth exponential release through 1400Hz lowpass filter.
+   */
+  public playUiConfirm(): void {
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    const peakGain = Math.max(0.0002, 0.05 * vol);
+
+    const notes: ReadonlyArray<{ freq: number; startOffset: number; dur: number }> = [
+      { freq: 440, startOffset: 0.0, dur: 0.055 }, // A4
+      { freq: 587.33, startOffset: 0.048, dur: 0.062 }, // D5 (total ~110ms)
+    ];
+
+    for (const n of notes) {
+      const t0 = now + n.startOffset;
+      const attack = 0.007;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(n.freq, t0);
+
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(peakGain, t0 + attack);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + n.dur);
+
+      osc.connect(gain);
+      gain.connect(lpf);
+      osc.start(t0);
+      osc.stop(t0 + n.dur + 0.005);
+    }
+  }
+
+  /**
+   * 3. Warm Cozy UI Cancel: "soft muted drop"
+   * Pure sine 300Hz -> 210Hz, duration 70ms, peak gain 0.035,
+   * 7ms soft linear attack + smooth exponential release through 1400Hz lowpass filter.
+   */
+  public playUiCancel(): void {
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+
+    const now = ctx.currentTime;
+    const dur = 0.07;
+    const attack = 0.007;
+    const peakGain = Math.max(0.0002, 0.035 * vol);
+
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(300, now);
+    osc.frequency.exponentialRampToValueAtTime(210, now + dur);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peakGain, now + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    osc.connect(gain);
+    gain.connect(lpf);
+    osc.start(now);
+    osc.stop(now + dur + 0.005);
+  }
+
+  /**
+   * 4. Warm Acoustic Cafe Chime: gentle two-harmonic sine bell
+   * Pure sine 784Hz [G5] + 1174.66Hz [D6] through 1400Hz lowpass filter,
+   * peak gain 0.045, 8ms soft linear attack, 400ms smooth exponential decay.
+   */
+  public playOrderBell(): void {
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+
+    const now = ctx.currentTime;
+    const dur = 0.4;
+    const attack = 0.008;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+
+    // Warm G5 fundamental (784Hz)
+    const fundPeak = Math.max(0.0002, 0.045 * vol);
+    const fundOsc = ctx.createOscillator();
+    const fundGain = ctx.createGain();
+    fundOsc.type = 'sine';
+    fundOsc.frequency.setValueAtTime(784, now);
+    fundGain.gain.setValueAtTime(0.0001, now);
+    fundGain.gain.linearRampToValueAtTime(fundPeak, now + attack);
+    fundGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    fundOsc.connect(fundGain);
+    fundGain.connect(lpf);
+    fundOsc.start(now);
+    fundOsc.stop(now + dur + 0.006);
+
+    // Soft fifth harmonic D6 (1174.66Hz)
+    const harmPeak = Math.max(0.0002, 0.022 * vol);
+    const harmOsc = ctx.createOscillator();
+    const harmGain = ctx.createGain();
+    harmOsc.type = 'sine';
+    harmOsc.frequency.setValueAtTime(1174.66, now);
+    harmGain.gain.setValueAtTime(0.0001, now);
+    harmGain.gain.linearRampToValueAtTime(harmPeak, now + attack);
+    harmGain.gain.exponentialRampToValueAtTime(0.0001, now + dur * 0.85);
+    harmOsc.connect(harmGain);
+    harmGain.connect(lpf);
+    harmOsc.start(now);
+    harmOsc.stop(now + dur);
+  }
+
+  /** Quiet synth-only tap for high-frequency action buttons (fishing) - warm sine + 1400Hz lowpass. */
+  public playSoftTap(): void {
+    this.playUiClick();
   }
 
   private phoneRingTimer: number | null = null;

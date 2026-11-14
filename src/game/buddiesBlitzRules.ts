@@ -13040,9 +13040,9 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     kioskY: 0.26,
     kioskZ: 0.0,
     kioskRotY: -Math.PI / 2,
-    spawnX: -63.4,
-    spawnZ: 0.0,
-    spawnYaw: Math.PI,
+    spawnX: -86.85,
+    spawnZ: -19.85,
+    spawnYaw: 0,
     hasHalteShelter: true,
     shelterX: -63.8,
     shelterZ: 0.0,
@@ -13194,6 +13194,25 @@ export interface CityTransitKioskProximityResult {
   kioskZ: number;
 }
 
+export const CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC = {
+  stationId: 'central_plaza' as CityTransitStationId,
+  kioskX: -86.85,
+  kioskY: 2.5,
+  kioskZ: -21.85,
+  kioskRotY: 0,
+} as const;
+
+export const BEACHFRONT_KAI_KIOSK_SPEC = {
+  stationId: 'beachfront_harbor' as CityTransitStationId,
+  kioskX: 84.85,
+  kioskY: 0.82,
+  kioskZ: 65.65,
+  kioskRotY: Math.PI / 2,
+  spawnX: 86.85,
+  spawnZ: 65.65,
+  spawnYaw: -Math.PI / 2,
+} as const;
+
 export function evaluateNearestCityTransitKioskProximity(
   actorXOrParams:
     | number
@@ -13224,6 +13243,9 @@ export function evaluateNearestCityTransitKioskProximity(
 
   let bestStation: CityTransitDestinationSpec | null = null;
   let bestDist = 9999;
+  let bestKioskX = 0;
+  let bestKioskY = 0;
+  let bestKioskZ = 0;
 
   for (let i = 0; i < candidates.length; i++) {
     const st = candidates[i];
@@ -13231,6 +13253,35 @@ export function evaluateNearestCityTransitKioskProximity(
     if (d < bestDist) {
       bestDist = d;
       bestStation = st;
+      bestKioskX = st.kioskX;
+      bestKioskY = st.kioskY;
+      bestKioskZ = st.kioskZ;
+    }
+  }
+
+  if (worldMode !== 'warzone') {
+    const dInfoCenter = Math.hypot(
+      actorX - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
+      actorZ - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
+    );
+    if (dInfoCenter < bestDist) {
+      bestDist = dInfoCenter;
+      bestStation = getCityTransitDestinationById('central_plaza');
+      bestKioskX = CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX;
+      bestKioskY = CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskY;
+      bestKioskZ = CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ;
+    }
+
+    const dBeachKai = Math.hypot(
+      actorX - BEACHFRONT_KAI_KIOSK_SPEC.kioskX,
+      actorZ - BEACHFRONT_KAI_KIOSK_SPEC.kioskZ,
+    );
+    if (dBeachKai < bestDist) {
+      bestDist = dBeachKai;
+      bestStation = getCityTransitDestinationById('beachfront_harbor');
+      bestKioskX = BEACHFRONT_KAI_KIOSK_SPEC.kioskX;
+      bestKioskY = BEACHFRONT_KAI_KIOSK_SPEC.kioskY;
+      bestKioskZ = BEACHFRONT_KAI_KIOSK_SPEC.kioskZ;
     }
   }
 
@@ -13242,9 +13293,9 @@ export function evaluateNearestCityTransitKioskProximity(
     stationId: isNear && bestStation ? bestStation.id : null,
     station: isNear ? bestStation : null,
     distance: bestDist,
-    kioskX: bestStation ? bestStation.kioskX : 0,
-    kioskY: bestStation ? bestStation.kioskY : 0,
-    kioskZ: bestStation ? bestStation.kioskZ : 0,
+    kioskX: bestStation ? bestKioskX : 0,
+    kioskY: bestStation ? bestKioskY : 0,
+    kioskZ: bestStation ? bestKioskZ : 0,
   };
 }
 

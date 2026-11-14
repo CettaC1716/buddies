@@ -349,18 +349,8 @@ const TRADE_LABELS: Record<
     fishMarket: 'FISH MARKET',
   },
 };
-function detectTradeLang(text: string): TradeLang | null {
-  const t = ` ${text.toLowerCase()} `;
-  const idHits =
-    t.match(
-      /\b(aku|saya|yang|tidak|nggak|enggak|mahal|murah|jual|ikan|harga|terima|kasih|bisa|mau|dengan|untuk|sudah|belum|lagi|naik|kurang|tambah|berapa|tolong|dong|sih|kok|deh)\b/g,
-    )?.length ?? 0;
-  const enHits =
-    t.match(
-      /\b(the|you|your|want|sell|selling|fish|price|too|expensive|cheap|please|thanks|thank|deal|more|higher|lower|this|that|with|have|will|can)\b/g,
-    )?.length ?? 0;
-  if (idHits === 0 && enHits === 0) return null;
-  return idHits >= enHits ? 'id' : 'en';
+function detectTradeLang(_text: string): TradeLang | null {
+  return 'en';
 }
 
 export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> = ({

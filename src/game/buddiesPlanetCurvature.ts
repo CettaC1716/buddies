@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import {
+  evaluateAmusementBoardwalkElevation,
+  isPointOnAmusementOverwaterPier,
+} from './buddiesAmusementParkRules';
 
 /**
  * Flat Ground Map (Original Buddies Blitz / Blitz World):
@@ -298,7 +302,9 @@ export function evaluateEmbankmentTierOffsets(
  */
 export function evaluateOuterEmbankmentSdf(worldX: number, worldZ: number): number {
   const { t1 } = evaluateEmbankmentTierOffsets(worldX, worldZ);
-  const eastOceanBarrier = worldX - 109.2;
+  const eastOceanBarrier = isPointOnAmusementOverwaterPier(worldX, worldZ)
+    ? -4.0
+    : worldX - 109.2;
   return Math.max(t1, eastOceanBarrier);
 }
 
@@ -681,8 +687,10 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
     lakeBasinDepression = lakeStep1 + lakeStep2 + lakeStep3;
   }
 
+  const neAmusementBoardwalkElev = evaluateAmusementBoardwalkElevation(worldX, worldZ);
   const baseArenaElev =
-    Math.max(westPlantElev, seBoardwalkElev, haltePlatformElev) - lakeBasinDepression;
+    Math.max(westPlantElev, seBoardwalkElev, neAmusementBoardwalkElev, haltePlatformElev) -
+    lakeBasinDepression;
   const { t1, t2, t3, t4 } = evaluateEmbankmentTierOffsets(worldX, worldZ);
   if (t1 <= -0.1) return baseArenaElev;
   const step1 = smoothstep(0.0, 1.45, t1) * 3.2;

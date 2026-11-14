@@ -216,6 +216,7 @@ import {
   type FishingPhaseState,
   type FishingWaterZoneId,
 } from './buddiesFishingMarket';
+import { isPointOnAmusementOverwaterPier } from './buddiesAmusementParkRules';
 import { buildShorelineProceduralFishGroup } from '../components/ShorelineCatchShowcaseModal';
 import {
   soundEngine,
@@ -15381,7 +15382,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
         const harborWaterSdf = evaluateSeHarborSdf(mover.x, mover.z).waterSdf;
-        if (harborWaterSdf < -0.1) {
+        if (harborWaterSdf < -0.1 && !isPointOnAmusementOverwaterPier(mover.x, mover.z)) {
           const nx = -1.0;
           const nz = 0.0;
           const pushOut = -0.1 - harborWaterSdf;

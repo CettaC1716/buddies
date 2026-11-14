@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSafePrivy, useSafePrivyLogin } from './lib/privyAuthBridge';
 import {
-  MessageSquare,
   User,
   MessageCircle,
+  MessageSquare,
   ChevronLeft,
   ChevronRight,
   Wallet,
@@ -343,6 +343,7 @@ export default function App() {
         params.get('planeview') ||
         params.get('skyshieldview') ||
         params.get('buildingview') ||
+        params.get('parkview') ||
         (params.get('world') && params.get('world') !== 'lobby') ||
         isOAuthReturn
       ) {
@@ -382,6 +383,7 @@ export default function App() {
         params.get('planeview') ||
         params.get('skyshieldview') ||
         params.get('buildingview') ||
+        params.get('parkview') ||
         (params.get('world') && params.get('world') !== 'lobby')
       ) {
         return 'completed';
@@ -1554,7 +1556,8 @@ export default function App() {
   );
 
   const handleStartGame = useCallback((shouldReset = false) => {
-    soundEngine.playUiClick();
+    soundEngine.playUiConfirm();
+    soundEngine.preloadIngameBgmAsync();
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -1622,10 +1625,18 @@ export default function App() {
   const activeBgmMode =
     worldMode === 'warzone' || hud.worldMode === 'warzone' ? 'warzone' : 'city';
 
+  const activeSessionMusicTrack: 'none' | 'landing' | 'ingame' = !isPreloadComplete
+    ? 'none'
+    : gameState === 'title'
+      ? 'landing'
+      : gameState === 'playing' && onboardingStep === 'completed'
+        ? 'ingame'
+        : 'none';
+
   useEffect(() => {
     soundEngine.setBgmMode(activeBgmMode);
-    soundEngine.startBgm(activeBgmMode);
-  }, [activeBgmMode]);
+    soundEngine.setSessionMusicTrack(activeSessionMusicTrack);
+  }, [activeBgmMode, activeSessionMusicTrack]);
 
   const handleToggleAudio = useCallback(() => {
     const nextMuted = !soundEngine.muted;
@@ -1773,6 +1784,9 @@ export default function App() {
       setActiveCafeModal('none');
       setCafeShiftState((prev) => ({ ...prev, isWorking: false, activeOrder: null }));
     };
+    const onStartCafeWorkShiftEvent = () => {
+      window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
+    };
     const onOpenCafeOrderModal = () => {
       if (cafePresenceRef.current.myRole === 'worker') return;
       if (cafePresenceRef.current.workerUid) {
@@ -1783,9 +1797,6 @@ export default function App() {
     };
     const onOpenCafeAtmModal = () => {
       setActiveCafeModal('atm');
-    };
-    const onStartCafeWorkShiftEvent = () => {
-      window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
     };
     const onServeCafeActiveOrderEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'serve_order' }));
@@ -2048,6 +2059,105 @@ export default function App() {
     );
   }, [kaiTutorialStage]);
 
+  // City Highlights: Hana's discovery checklist, handed over when the kiosk
+  // tour ends. Six stops that between them touch every system in the city;
+  // each completes from a real in-game event, the card can be dismissed
+  // forever, and nothing is ever gated behind it.
+  type CityHighlightKey = 'fish' | 'haggle' | 'nft' | 'house' | 'cafe' | 'warzone';
+  interface CityHighlightsState {
+    active: boolean;
+    dismissed: boolean;
+    done: Record<CityHighlightKey, boolean>;
+  }
+  const CITY_HIGHLIGHTS_FRESH: CityHighlightsState = {
+    active: false,
+    dismissed: false,
+    done: { fish: false, haggle: false, nft: false, house: false, cafe: false, warzone: false },
+  };
+  const [cityHighlights, setCityHighlights] = useState<CityHighlightsState>(() => {
+    try {
+      const raw = window.localStorage.getItem('bb_city_highlights_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<CityHighlightsState>;
+        return {
+          active: Boolean(parsed.active),
+          dismissed: Boolean(parsed.dismissed),
+          done: { ...CITY_HIGHLIGHTS_FRESH.done, ...(parsed.done ?? {}) },
+        };
+      }
+      // Players who already finished the tour before this card existed get
+      // it right away — the checklist is discovery help, not a reward gate.
+      if (window.localStorage.getItem('bb_hana_tour_welcomed_v1')) {
+        return { ...CITY_HIGHLIGHTS_FRESH, active: true };
+      }
+    } catch {
+      // ignore
+    }
+    return CITY_HIGHLIGHTS_FRESH;
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('bb_city_highlights_v1', JSON.stringify(cityHighlights));
+    } catch {
+      // ignore
+    }
+  }, [cityHighlights]);
+  const markCityHighlight = useCallback((key: CityHighlightKey) => {
+    setCityHighlights((prev) =>
+      prev.done[key] ? prev : { ...prev, done: { ...prev.done, [key]: true } },
+    );
+  }, []);
+  useEffect(() => {
+    if (caughtFishBucket.length > 0) markCityHighlight('fish');
+  }, [caughtFishBucket.length, markCityHighlight]);
+  useEffect(() => {
+    if (hasHouseOwnership) markCityHighlight('house');
+  }, [hasHouseOwnership, markCityHighlight]);
+  useEffect(() => {
+    if (hud.worldMode === 'warzone') markCityHighlight('warzone');
+  }, [hud.worldMode, markCityHighlight]);
+  const handleHighlightGo = useCallback(
+    (key: CityHighlightKey) => {
+      soundEngine.playUiClick();
+      if (key === 'fish') {
+        if (kaiTutorialStage === 'done') {
+          window.dispatchEvent(
+            new CustomEvent('set-kai-tutorial', {
+              detail: { exclamation: true, pin: { x: 85.8, z: 60 } },
+            }),
+          );
+        }
+        return;
+      }
+      if (key === 'haggle' || key === 'nft') {
+        window.dispatchEvent(
+          new CustomEvent('open-npc-merchant-ui', { detail: { location: 'beach_house' } }),
+        );
+        return;
+      }
+      if (key === 'house') {
+        if (hasHouseOwnership) {
+          window.dispatchEvent(
+            new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: 'central_plaza' } }),
+          );
+        } else {
+          window.dispatchEvent(
+            new CustomEvent('open-npc-merchant-ui', { detail: { location: 'lobby_cafe' } }),
+          );
+        }
+        return;
+      }
+      if (key === 'cafe') {
+        window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
+        return;
+      }
+      window.dispatchEvent(
+        new CustomEvent('open-teleport-kiosk-modal', { detail: { kind: 'central_plaza' } }),
+      );
+    },
+    [kaiTutorialStage, hasHouseOwnership],
+  );
+
   // Kai phone contact: Kai is reachable through the player's phone (social
   // modal), so the chat-haggling feature can be discovered without walking to
   // East Beach first. He also calls the player once — the first time they
@@ -2187,6 +2297,7 @@ export default function App() {
           ? `Shift complete! +${res.xpGained} XP!`
           : `Served ${res.servedItem.name} to the customer!`,
       );
+      if (res.shiftCompleted) markCityHighlight('cafe');
       return res.nextShiftState;
     });
   }, [dispatchBuddyAction, grantPlayerXp]);
@@ -2201,6 +2312,7 @@ export default function App() {
           message: `Not enough LUL! You need ${item.priceLul} LUL — sell fish to Kai to earn LUL.`,
         };
       }
+      soundEngine.playUiConfirm();
       soundEngine.playPickup();
       dispatchBuddyAction(`adjustPlayerLul:${-res.item.priceLul}`);
       setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.item!.priceLul) }));
@@ -4354,6 +4466,7 @@ export default function App() {
       if (liveRespiteStr !== null) {
         setRespiteBalance(Math.max(0, Number(liveRespiteStr) || 0));
       }
+      markCityHighlight('nft');
       return { ok: true as const };
     },
     [playerUid],
@@ -4464,6 +4577,7 @@ export default function App() {
           reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL), paid from Kai's treasury pool under the daily discipline caps.${quickDealBonusLul(standardLul, roundsUsed) > 0 ? ' Includes the quick-deal bonus for accepting the first offer.' : ''}`,
         });
       }
+      markCityHighlight('haggle');
       return { ok: true };
     },
     [cyonBalance, dispatchBuddyAction, playerUid, respiteBalance],
@@ -4635,7 +4749,8 @@ export default function App() {
     (new URLSearchParams(window.location.search).get('fullmap') === '1' ||
       Boolean(new URLSearchParams(window.location.search).get('planeview')) ||
       Boolean(new URLSearchParams(window.location.search).get('skyshieldview')) ||
-      Boolean(new URLSearchParams(window.location.search).get('buildingview')));
+      Boolean(new URLSearchParams(window.location.search).get('buildingview')) ||
+      Boolean(new URLSearchParams(window.location.search).get('parkview')));
   const peacefulUiState = evaluateLobbyAndSafezonePeacefulState({
     worldMode,
     isInsideLobbySafezone: Boolean(hud.isInsideLobbySafezone),
@@ -4837,7 +4952,7 @@ export default function App() {
                     letterSpacing="3.5"
                     fill="#38bdf8"
                   >
-                    3D SOCIAL ARENA
+                    3D SOCIAL CITY
                   </text>
                 </g>
 
@@ -4937,8 +5052,8 @@ export default function App() {
 
           {/* Ultra-Clean Minimal Footer */}
           <footer className="relative z-10 pb-5 px-4 flex justify-center">
-            <div className="px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em]">
-              SOCIAL CITY &nbsp;•&nbsp; NEAR TESTNET &nbsp;•&nbsp; LIVE PLAZA
+            <div className="px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-center">
+              EXPLORE THE CITY &nbsp;•&nbsp; OWN A HOME &nbsp;•&nbsp; MEET PEOPLE &nbsp;•&nbsp; TRADE &amp; GET RICH &nbsp;•&nbsp; NEAR TESTNET
             </div>
           </footer>
         </section>
@@ -5508,6 +5623,8 @@ export default function App() {
       {isPreloadComplete &&
         onboardingStep === 'completed' &&
         (tutorialStage === 'go_to_hana' || tutorialStage === 'go_to_kiosk') &&
+        !isInsideGlasshouseCafe &&
+        !isInsidePrivateHouse &&
         activeSpecialModal === 'none' &&
         activeTeleportKioskModal === 'none' &&
         !tramRideCutsceneUi?.active && (
@@ -5682,6 +5799,7 @@ export default function App() {
                   title={`${fp.actionLabel} [${fp.keyLabel}]`}
                   onClick={(e) => {
                     e.currentTarget.blur();
+                    soundEngine.playUiConfirm();
                     dispatchBuddyAction(fp.actionEvent);
                   }}
                   style={{
@@ -5727,7 +5845,7 @@ export default function App() {
           </div>
 
           {/* =================================================================
-              3B. TOP-LEFT: AVAKIN-STYLE LEVEL/XP BADGE + MINIMAP + STATUS
+              3B. TOP-LEFT: COMPACT MINIMAP RADAR (Player Identity/Level/XP lives in PROFILE)
              ================================================================= */}
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
 
@@ -8298,6 +8416,7 @@ export default function App() {
         isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
         onCompleteTutorialTour={() => {
           setTutorialStage('none');
+          setCityHighlights((prev) => ({ ...prev, active: true }));
         }}
         onClose={() => {
           soundEngine.playUiClick();
@@ -8377,6 +8496,10 @@ export default function App() {
             originStation === 'beachfront_harbor' ? 'beach_house' : 'lobby_cafe',
           );
           setActiveSpecialModal('npc_merchant');
+        }}
+        onEnterGlasshouseCafe={() => {
+          soundEngine.playUiConfirm();
+          window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
         }}
       />
 
@@ -8459,7 +8582,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                soundEngine.playUiClick();
+                soundEngine.playUiCancel();
                 setIsPersonalWalletModalOpen(false);
               }}
               className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95"
@@ -9311,7 +9434,7 @@ export default function App() {
               type="button"
               data-close-personal-bag-btn="true"
               onClick={() => {
-                soundEngine.playUiClick();
+                soundEngine.playUiCancel();
                 setIsPersonalBagModalOpen(false);
               }}
               className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
@@ -9775,43 +9898,6 @@ export default function App() {
                   onClick={() => {
                     soundEngine.playUiClick();
                     setIsTargetMenuExpanded(false);
-                    if (selectedTargetUser.isNpc) {
-                      setIsKioskModalOpen(false);
-                      setIsSocialChatModalOpen(false);
-                      setIsPersonalWalletModalOpen(false);
-                      setActiveTeleportKioskModal('none');
-                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                      window.dispatchEvent(
-                        new CustomEvent('open-npc-merchant-ui', {
-                          detail: {
-                            location:
-                              selectedTargetUser.id === 'npc_beach' || selectedTargetUser.id === 'npc_kai'
-                                ? 'beach_house'
-                                : 'lobby_cafe',
-                          },
-                        }),
-                      );
-                    } else {
-                      window.dispatchEvent(
-                        new CustomEvent('buddy-action', {
-                          detail: `socialTalk:Hello ${selectedTargetUser.name}!`,
-                        }),
-                      );
-                    }
-                  }}
-                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
-                >
-                  <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                    <MessageSquare className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                    <span>Talk</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsTargetMenuExpanded(false);
                     setIsKioskModalOpen(false);
                     setIsSocialChatModalOpen(false);
                     setIsPersonalWalletModalOpen(false);
@@ -9829,7 +9915,38 @@ export default function App() {
                   </div>
                 </button>
 
-                {!selectedTargetUser.isNpc && (
+{selectedTargetUser.isNpc && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(
+                        new CustomEvent('open-npc-merchant-ui', {
+                          detail: {
+                            location:
+                              selectedTargetUser.id === 'npc_beach' || selectedTargetUser.id === 'npc_kai'
+                                ? 'beach_house'
+                                : 'lobby_cafe',
+                          },
+                        }),
+                      );
+                    }}
+                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
+                  >
+                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
+                      <MessageSquare className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
+                      <span>Talk</span>
+                    </div>
+                  </button>
+                )}
+
+                                {!selectedTargetUser.isNpc && (
                   <button
                     type="button"
                     onClick={() => {
@@ -9856,7 +9973,7 @@ export default function App() {
             );
           })()}
 
-          {/* Unified Rounded Pill Bar (Aligned at bottom-3 level with chat input) */}
+          {/* Unified Game-Style Comic-Arcade Bottom Bar (Aligned at bottom-3 level with chat input) */}
           <div
             role="button"
             tabIndex={0}
@@ -9872,61 +9989,58 @@ export default function App() {
                 setIsTargetMenuExpanded((prev) => !prev);
               }
             }}
-            style={{
-              background: 'rgba(20, 22, 29, 0.94)',
-              border: '1.5px solid rgba(255, 255, 255, 0.85)',
-              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.45)',
-            }}
-            className="inline-flex items-center h-[42px] min-w-[210px] rounded-full px-1.5 text-white cursor-pointer hover:brightness-110 transition-all select-none"
+            className="-skew-x-10 inline-flex items-center h-10 min-w-[224px] bg-[#14161d] border-3 border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform select-none"
           >
-            {/* Avatar Icon */}
-            <div className="w-[34px] h-[34px] rounded-full bg-white/14 border-[1.5px] border-white/85 flex items-center justify-center overflow-hidden shrink-0 text-xs font-black text-white">
-              {selectedTargetUser.name.toLowerCase().includes('hana') ||
-              selectedTargetUser.name.toLowerCase().includes('nadia') ? (
-                <img src="/assets/avatar_nadia.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
-              ) : selectedTargetUser.isNpc ? (
-                <img src="/assets/avatar_hiro.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
-              ) : (
-                <span>{selectedTargetUser.name.slice(0, 1).toUpperCase()}</span>
-              )}
-            </div>
+            <div className="skew-x-10 flex items-center gap-2.5 w-full">
+              {/* Avatar Tile */}
+              <div className="w-7 h-7 bg-[#38bdf8] border-2 border-[#0b0d13] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center overflow-hidden shrink-0 text-xs font-black text-[#0f172a]">
+                {selectedTargetUser.name.toLowerCase().includes('hana') ||
+                selectedTargetUser.name.toLowerCase().includes('nadia') ? (
+                  <img src="/assets/avatar_nadia.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
+                ) : selectedTargetUser.isNpc ? (
+                  <img src="/assets/avatar_hiro.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span>{selectedTargetUser.name.slice(0, 1).toUpperCase()}</span>
+                )}
+              </div>
 
-            {/* Target Name */}
-            <span className="flex-1 text-center font-mono font-bold text-[15px] text-white tracking-wide px-3 uppercase truncate">
-              {selectedTargetUser.name.replace(/\s*\((ANDA|YOU)\)/i, '')}
-            </span>
+              {/* Target Name */}
+              <span className="flex-1 text-center font-black text-xs text-white tracking-wider px-1 uppercase truncate">
+                {selectedTargetUser.name.replace(/\s*\((ANDA|YOU)\)/i, '')}
+              </span>
 
-            {/* Cycle Target Chevron Button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                soundEngine.playUiClick();
-                const list =
-                  hud.nearbyRadiusUsers && hud.nearbyRadiusUsers.length > 0
-                    ? hud.nearbyRadiusUsers
-                    : [selectedTargetUser];
-                const currentIdx = list.findIndex(
-                  (u) => String(u.id) === String(selectedTargetUser.id),
-                );
-                const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % list.length : 0;
-                const nextUser = list[nextIdx];
-                if (nextUser) {
-                  setSelectedTargetUser(nextUser);
-                  setIsTargetMenuExpanded(false);
-                  window.dispatchEvent(
-                    new CustomEvent('select-character-by-id', {
-                      detail: { id: nextUser.id },
-                    }),
+              {/* Cycle Target Chevron Badge */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundEngine.playUiClick();
+                  const list =
+                    hud.nearbyRadiusUsers && hud.nearbyRadiusUsers.length > 0
+                      ? hud.nearbyRadiusUsers
+                      : [selectedTargetUser];
+                  const currentIdx = list.findIndex(
+                    (u) => String(u.id) === String(selectedTargetUser.id),
                   );
-                }
-              }}
-              title="Switch Target"
-              aria-label="Next Target"
-              className="w-6 h-6 flex items-center justify-center text-white/90 hover:text-white font-black text-base shrink-0"
-            >
-              &gt;
-            </button>
+                  const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % list.length : 0;
+                  const nextUser = list[nextIdx];
+                  if (nextUser) {
+                    setSelectedTargetUser(nextUser);
+                    setIsTargetMenuExpanded(false);
+                    window.dispatchEvent(
+                      new CustomEvent('select-character-by-id', {
+                        detail: { id: nextUser.id },
+                      }),
+                    );
+                  }
+                }}
+                title="Switch Target"
+                aria-label="Next Target"
+                className="px-1.5 py-0.5 bg-[#facc15] hover:bg-[#fde047] text-[#0f172a] border-2 border-[#0b0d13] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0 cursor-pointer"
+              >
+                &gt;
+              </button>
+            </div>
           </div>
         </aside>
       )}
@@ -9937,6 +10051,7 @@ export default function App() {
       <CharacterProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => {
+          soundEngine.playUiCancel();
           setIsProfileModalOpen(false);
           setProfileTargetUser(null);
           window.dispatchEvent(new CustomEvent('clear-character-selection'));
@@ -9957,6 +10072,7 @@ export default function App() {
         }
         playerLevel={levelProgress.level}
         playerXpLabel={`${levelProgress.currentLevelXp}/${levelProgress.xpForNextLevel} XP`}
+        lulBalance={hud.gold}
         onChangePlayerName={handleUpdatePlayerUsername}
         onStartWhisper={(user) => {
           if (user.isNpc) return;
@@ -10123,6 +10239,105 @@ export default function App() {
 
       {/* 14. 3D FISH PREVIEW MODAL (WALLET + BAG) */}
       <Fish3dPreviewModal fish={preview3dFish} onClose={() => setPreview3dFish(null)} />
+
+      {/* CITY HIGHLIGHTS — Hana's post-tour discovery checklist */}
+      {cityHighlights.active &&
+        !cityHighlights.dismissed &&
+        gameState === 'playing' &&
+        activeSpecialModal === 'none' &&
+        !isInsidePrivateHouse &&
+        !isInsideGlasshouseCafe &&
+        (() => {
+          const stops: {
+            key: CityHighlightKey;
+            title: string;
+            hint: string;
+          }[] = [
+            { key: 'fish', title: 'Catch your first fish', hint: 'Meet Kai at East Beach — follow the pin, he will teach you.' },
+            { key: 'haggle', title: 'Haggle with Kai in chat', hint: 'Sell him a raw fish and talk the price up — he has a patience limit.' },
+            { key: 'nft', title: 'Sell Kai a minted fish NFT', hint: 'Mint a catch in your BAG, then haggle — Kai pays real RESPITE from his own treasury.' },
+            {
+              key: 'house',
+              title: 'Buy & decorate your house',
+              hint: hud.nearWalletConnected
+                ? 'Claim 0.30 NEAR from Hana, swap 0.25 NEAR for 100 RESPITE, buy the deed, place furniture from your BAG.'
+                : 'Sign in first — Hana\'s 0.30 NEAR claim and the Exchange need an account.',
+            },
+            { key: 'cafe', title: 'Work a Glasshouse Cafe shift', hint: 'Take the rota at the cafe and finish all 3 orders in time.' },
+            { key: 'warzone', title: 'Enter the Warzone (optional)', hint: 'Red vs Blue crate combat — from any transit kiosk.' },
+          ];
+          const doneCount = stops.filter((stop) => cityHighlights.done[stop.key]).length;
+          if (doneCount >= stops.length) return null;
+          return (
+            <div className="fixed left-3 bottom-28 z-30 w-[292px] max-w-[86vw] bg-white border-[3px] border-black shadow-[5px_5px_0_#000] text-black select-none">
+              <div className="flex items-center justify-between bg-[#b8ff3c] border-b-[3px] border-black px-2.5 py-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider">
+                  Hana · City Highlights
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="px-1.5 py-0.5 bg-black text-white text-[9px] font-black">
+                    {doneCount}/6
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss city highlights"
+                    onClick={() => {
+                      soundEngine.playUiCancel();
+                      if (kaiTutorialStage === 'done') {
+                        window.dispatchEvent(
+                          new CustomEvent('set-kai-tutorial', {
+                            detail: { exclamation: false, pin: null },
+                          }),
+                        );
+                      }
+                      setCityHighlights((prev) => ({ ...prev, dismissed: true }));
+                    }}
+                    className="w-5 h-5 bg-white border-2 border-black text-[11px] font-black leading-none flex items-center justify-center cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+              <p className="px-2.5 pt-2 text-[10px] font-bold text-slate-600 leading-snug">
+                Six stops to feel the whole city — any order, nothing is locked behind them.
+              </p>
+              <div className="p-2 flex flex-col gap-1.5">
+                {stops.map((stop) => {
+                  const isDone = cityHighlights.done[stop.key];
+                  return (
+                    <div
+                      key={stop.key}
+                      className={`flex items-start gap-2 border-2 border-black px-2 py-1.5 ${isDone ? 'bg-[#e7f9c8]' : 'bg-[#fdfbf6]'}`}
+                    >
+                      <span
+                        className={`mt-0.5 w-4 h-4 shrink-0 border-2 border-black flex items-center justify-center text-[10px] font-black ${isDone ? 'bg-[#b8ff3c]' : 'bg-white'}`}
+                      >
+                        {isDone ? '✓' : ''}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[10.5px] font-black uppercase tracking-wide leading-tight">
+                          {stop.title}
+                        </span>
+                        <span className="block text-[9.5px] font-semibold text-slate-600 leading-snug">
+                          {stop.hint}
+                        </span>
+                      </span>
+                      {!isDone && (
+                        <button
+                          type="button"
+                          onClick={() => handleHighlightGo(stop.key)}
+                          className="shrink-0 px-2 py-1 bg-black text-white text-[9px] font-black uppercase tracking-wider cursor-pointer hover:bg-[#1f4d3a]"
+                        >
+                          Go
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
       {/* 15. BOTANICAL GLASSHOUSE CAFE ORDER MODAL (LUL or CYON) + XP BANNER */}
       <GlasshouseCafeOrderModal

@@ -3,6 +3,7 @@ import {
   IndividualCommanderBaseState,
   isCommanderBasePlotActive,
 } from './buddiesBlitzRules';
+import { getCoastalAmusementParkObstacles } from './buddiesAmusementParkRules';
 import {
   resetTerrainSculptGrid,
   restoreTerrainSculptGrid,
@@ -151,10 +152,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 337, kind: 'tree_purple', x: -68.5, z: 58.5, rotY: 0.3, scale: 1.12 },
 
     { id: 401, kind: 'crane', x: 105.8, z: 0.0, rotY: Math.PI / 2, scale: 1.38 },
-    { id: 430, kind: 'forklift', x: 88.5, z: -29.5, rotY: 0.0, scale: 1.18 },
     { id: 431, kind: 'forklift', x: 88.5, z: 29.5, rotY: Math.PI, scale: 1.18 },
-    { id: 432, kind: 'concrete_fence_1b', x: 98.5, z: -43.8, rotY: 0.0, scale: 1.18 },
-    { id: 433, kind: 'concrete_fence_1b', x: 103.0, z: -43.8, rotY: 0.0, scale: 1.18 },
 
     { id: 520, kind: 'bench', x: 2.0, z: -34.5, rotY: 0.0, scale: 1.35 },
     { id: 521, kind: 'bench', x: 2.0, z: -29.5, rotY: Math.PI, scale: 1.35 },
@@ -190,9 +188,6 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 541, kind: 'lamppost_1a', x: -64.8, z: 78.0, rotY: -Math.PI / 2, scale: 1.15 },
     { id: 542, kind: 'lamppost_1a', x: 64.8, z: -78.0, rotY: Math.PI / 2, scale: 1.15 },
     { id: 543, kind: 'lamppost_1a', x: 64.8, z: 78.0, rotY: Math.PI / 2, scale: 1.15 },
-
-    { id: 618, kind: 'barricade', x: 96.5, z: -63.5, rotY: Math.PI / 2, scale: 1.1 },
-    { id: 619, kind: 'barricade', x: 96.5, z: -80.5, rotY: Math.PI / 2, scale: 1.1 },
   ],
 };
 
@@ -210,6 +205,10 @@ export function isInsideSouthPlazaGlasshouseFootprint(x: number, z: number): boo
   return inMainHall || inWestWing;
 }
 
+export function isInsideCoastalAmusementParkFootprint(x: number, z: number): boolean {
+  return x >= 76.2 && x <= 126.0 && z >= -104.5 && z <= -18.5;
+}
+
 export function loadSavedArenaLayout(): ArenaMapLayout {
   try {
     const raw = localStorage.getItem(MAP_STORAGE_KEY);
@@ -217,7 +216,8 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
       const parsed = JSON.parse(raw) as ArenaMapLayout;
       if (parsed && Array.isArray(parsed.props) && parsed.blueHq && parsed.redHq) {
         parsed.props = parsed.props.filter(
-          (p) => p.id !== 491 && !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z),
+          (p) => p.id !== 491 && !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
+            !isInsideCoastalAmusementParkFootprint(p.x, p.z),
         );
         if (Array.isArray(parsed.sculptData) && parsed.sculptData.length > 0) {
           restoreTerrainSculptGrid(parsed.sculptData);
@@ -757,6 +757,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'cont_stack_harbor_sc', x: 94.15, z: 24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
     { id: 'cont_stack_harbor_ne', x: 101.5, z: -33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
     { id: 'cont_stack_harbor_se', x: 101.5, z: 33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
+    ...getCoastalAmusementParkObstacles(),
   ];
 
   const gardenCornersLocal: readonly [number, number][] = [

@@ -20,6 +20,7 @@ import {
   KioskSideHologramModelKind,
   shouldStripDetachedTreeBaseCollar,
 } from './buddiesBlitzRules';
+import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 import {
   PLANET_CURVATURE_STRENGTH,
   PLANET_HALF_EXTENT,
@@ -4152,7 +4153,6 @@ export interface LoadedBlitzAssets {
   sleepingClip: THREE.AnimationClip | null;
   jumpClip: THREE.AnimationClip | null;
   jumpIdleClip: THREE.AnimationClip | null;
-  bartendingClip: THREE.AnimationClip | null;
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
@@ -4443,53 +4443,6 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
-  // Bartending take (user-supplied Mixamo FBX, 13.6s, no scale tracks): the cafe
-  // barista plays a ~3.2s slice of it while preparing an order at a station.
-  const loadBartendingClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/bartending.fbx');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          // This take's Hips track rides on its dropped ParentNode, so its
-          // absolute Y values are negative — passed through raw, the template
-          // sanitizer clamps them all to 0.06 and the barista sinks to the
-          // floor while preparing. Rebase: the slice start stands at the
-          // rig's hips height (0.54, the sleeping take's convention) and the
-          // performer's relative motion is kept, cm -> rig units.
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              const baseIdx = Math.min(30, t.times.length - 1);
-              const baseY = vals[baseIdx * 3 + 1];
-              for (let i = 0; i < vals.length; i += 3) {
-                vals[i + 1] = 0.54 + (vals[i + 1] - baseY) * 0.01;
-                vals[i] = 0;
-                vals[i + 2] = 0;
-              }
-            }
-          }
-          const slice = THREE.AnimationUtils.subclip(raw, 'bartending.001', 30, 126, 30);
-          return slice;
-        } catch (err) {
-          console.warn('[PreloadGate] Bartending clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const bartendingClipPromise = loadBartendingClip();
-  bartendingClipPromise
-    .then((c) => {
-      loadedBartendingClip = c;
-    })
-    .catch(() => {});
-
   // Replacement idle: a user-supplied FBX take parsed at runtime. It is a true
   // in-place idle (its hip track barely moves: height -51.8..-51.7cm on Z, i.e.
   // ~0.52 in rig units — the same height the baked idle uses on Y). Remap the
@@ -4630,7 +4583,7 @@ export async function loadAllRealBlitzAssets(
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, bartendingClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4688,7 +4641,6 @@ export async function loadAllRealBlitzAssets(
     sleepingClipPromise,
     jumpClipPromise,
     jumpIdleClipPromise,
-    bartendingClipPromise,
     idleClipPromise,
     kaiIdleClipPromise,
     hanaIdleClipPromise,
@@ -4737,7 +4689,6 @@ export async function loadAllRealBlitzAssets(
       sleepingClip,
       jumpClip,
       jumpIdleClip,
-      bartendingClip,
       idleClip,
       kaiIdleClip,
       hanaIdleClip,
@@ -4788,7 +4739,6 @@ export async function loadAllRealBlitzAssets(
         sleepingClip,
         jumpClip,
         jumpIdleClip,
-      bartendingClip,
         idleClip,
         kaiIdleClip,
         hanaIdleClip,
@@ -4810,7 +4760,6 @@ let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
 let loadedSleepingClip: THREE.AnimationClip | null = null;
 let loadedJumpClip: THREE.AnimationClip | null = null;
 let loadedJumpIdleClip: THREE.AnimationClip | null = null;
-let loadedBartendingClip: THREE.AnimationClip | null = null;
 let loadedIdleClip: THREE.AnimationClip | null = null;
 let loadedKaiIdleClip: THREE.AnimationClip | null = null;
 let loadedHanaIdleClip: THREE.AnimationClip | null = null;
@@ -10465,31 +10414,6 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('unarmed_jump_idle.001', c);
   }
-  const bartendingClipSrc = loadedBartendingClip ?? cachedLoadedBlitzAssets?.bartendingClip;
-  if (bartendingClipSrc && !clips.has('bartending.001')) {
-    const c = bartendingClipSrc.clone();
-    c.name = 'bartending.001';
-    c.tracks = c.tracks.filter((track) => {
-      const dotIdx = track.name.indexOf('.');
-      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
-      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
-    });
-    for (const track of c.tracks) {
-      if (/Hips\.position$/i.test(track.name)) {
-        const vals = track.values;
-        for (let i = 0; i < vals.length; i += 3) {
-          vals[i] = hipsBindX;
-          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
-            vals[i + 1] = hipsBindY * 0.62;
-          } else if (vals[i + 1] < 0.05) {
-            vals[i + 1] = 0.06;
-          }
-          vals[i + 2] = hipsBindZ;
-        }
-      }
-    }
-    if (c.tracks.length) clips.set('bartending.001', c);
-  }
   // Swap in the replacement idle (runtime FBX take) over the baked idle.001,
   // with the same track filtering and root-motion lock. If the take failed to
   // load, the baked idle stays untouched.
@@ -12512,7 +12436,13 @@ export interface CurvedPlanetEnvironment {
   roadsGroup: THREE.Group;
   natureGroup: THREE.Group;
   sunbeamGroup: THREE.Group;
-  update(pivotX: number, pivotZ: number, cameraPos: THREE.Vector3, timeSec: number): void;
+  update(
+    pivotX: number,
+    pivotZ: number,
+    cameraPos: THREE.Vector3,
+    timeSec: number,
+    chunkCullRadius?: number,
+  ): void;
   dispose(): void;
 }
 
@@ -12795,8 +12725,13 @@ export function createCurvedPlanetEnvironment(
         float beachFeather = (soilNoise - 0.5) * 2.2;
         float seBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * (1.0 - smoothstep(109.2, 111.5, p.x))
                           * smoothstep(44.2, 47.5, p.y + beachFeather) * (1.0 - smoothstep(102.5, 105.2, p.y + beachFeather));
+        float neBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * (1.0 - smoothstep(109.2, 111.5, p.x))
+                          * smoothstep(-105.2, -102.5, p.y + beachFeather) * (1.0 - smoothstep(-47.5, -44.2, p.y + beachFeather));
+        float coastalBeachZone = max(seBeachZone, neBeachZone);
         float seBeachShoreline = smoothstep(45.2, 47.5, p.y) * (1.0 - smoothstep(102.5, 104.8, p.y));
-        float concreteMask = (1.0 - smoothstep(-0.35, 0.35, harborSdf.x)) * (1.0 - smoothstep(0.05, 0.45, seBeachZone));
+        float neBeachShoreline = smoothstep(-104.8, -102.5, p.y) * (1.0 - smoothstep(-47.5, -45.2, p.y));
+        float coastalBeachShoreline = max(seBeachShoreline, neBeachShoreline);
+        float concreteMask = (1.0 - smoothstep(-0.35, 0.35, harborSdf.x)) * (1.0 - smoothstep(0.05, 0.45, coastalBeachZone));
         float seaMask = 1.0 - smoothstep(-0.35, 0.25, harborSdf.y);
         float seaShoreMask = (1.0 - smoothstep(0.0, 1.8, harborSdf.y)) * (1.0 - concreteMask);
         if (seaShoreMask > 0.001) {
@@ -12834,19 +12769,19 @@ export function createCurvedPlanetEnvironment(
           float jacobianWhitecap = smoothstep(0.54, 0.86, c1 * 0.55 + c2 * 0.45);
 
           vec3 deepHarborCol = vec3(0.04, 0.22, 0.33);
-          vec3 midHarborCol = mix(vec3(0.11, 0.45, 0.60), vec3(0.14, 0.62, 0.74), seBeachShoreline);
+          vec3 midHarborCol = mix(vec3(0.11, 0.45, 0.60), vec3(0.14, 0.62, 0.74), coastalBeachShoreline);
           vec3 seaCol = mix(deepHarborCol, midHarborCol, smoothstep(-18.0, -1.2, harborSdf.y));
           seaCol = mix(seaCol, vec3(0.65, 0.88, 0.96), smoothstep(0.68, 0.92, ripple) * 0.26);
           seaCol = mix(seaCol, vec3(0.92, 0.98, 1.0), jacobianWhitecap * 0.28);
 
           // Submerged vertical concrete quay/seawall face & cast drop-shadow band along the East Seawall edge (x = 110.0)
-          // (Suppressed along the South-East sandy beach shoreline where gentle surf meets golden sand)
+          // (Suppressed along both North-East Taman Ria & South-East sandy beach shorelines where gentle surf meets golden sand)
           float quayDist = p.x - 110.0;
-          float submergedWallFace = (1.0 - smoothstep(0.05, 0.95, quayDist)) * (1.0 - seBeachShoreline);
+          float submergedWallFace = (1.0 - smoothstep(0.05, 0.95, quayDist)) * (1.0 - coastalBeachShoreline);
           vec3 wetConcreteWall = mix(vec3(0.20, 0.24, 0.29), vec3(0.32, 0.36, 0.41), 1.0 - smoothstep(0.1, 0.85, quayDist));
           seaCol = mix(seaCol, wetConcreteWall, submergedWallFace * 0.78);
 
-          float wallDropShadow = smoothstep(0.15, 0.85, quayDist) * (1.0 - smoothstep(0.85, 3.6, quayDist)) * (1.0 - seBeachShoreline);
+          float wallDropShadow = smoothstep(0.15, 0.85, quayDist) * (1.0 - smoothstep(0.85, 3.6, quayDist)) * (1.0 - coastalBeachShoreline);
           seaCol *= mix(1.0, 0.46, wallDropShadow);
 
           // Shoreline Depth-Gated Shore Swash & Stranded Voronoi Lace Foam (only evaluated within WATER_SHORE_DEEP < 26m)
@@ -12854,7 +12789,7 @@ export function createCurvedPlanetEnvironment(
             float foam = smoothstep(-2.25, -0.85, harborSdf.y) * (1.0 - smoothstep(-0.85, -0.15, harborSdf.y));
             float beachSurfWave = sin(p.x * 1.65 + uTime * 2.4 + sin(p.y * 0.28) * 1.8) * 0.5 + 0.5;
             float lacePattern = smoothstep(0.32, 0.78, n3 * 0.65 + c2 * 0.35);
-            float extraBeachFoam = seBeachShoreline * smoothstep(-4.2, -0.15, harborSdf.y) * smoothstep(0.52, 0.86, beachSurfWave) * (0.65 + 0.35 * lacePattern);
+            float extraBeachFoam = coastalBeachShoreline * smoothstep(-4.2, -0.15, harborSdf.y) * smoothstep(0.52, 0.86, beachSurfWave) * (0.65 + 0.35 * lacePattern);
             seaCol = mix(seaCol, vec3(0.93, 0.98, 1.0), clamp(foam * (0.72 + 0.22 * ripple) + extraBeachFoam * 0.88, 0.0, 1.0));
           }
           surfaceCol = mix(surfaceCol, seaCol, seaMask);
@@ -12881,23 +12816,8 @@ export function createCurvedPlanetEnvironment(
           surfaceCol = mix(surfaceCol, plantConcrete, westPlantMask);
         }
 
-        // 2C. North-East Compacted Dirt Construction Yard (z < -46) & South-East Coastal Beachfront Sand (z > +46)
-        float constYardSdf = evaluateEastConstructionYardSdf(p);
-        float constYardMask = (1.0 - smoothstep(-0.45, 0.85, constYardSdf)) * (1.0 - concreteMask);
-        if (constYardMask > 0.001 && p.y < 0.0) {
-          vec3 yardDirt = mix(uDirtDeep, uDirtMain, soilNoise);
-          yardDirt = mix(yardDirt, uDirtHighlight, warmPatch * 0.25);
-          // Subtle heavy-machinery tire/crawler tracks running North-South through the North construction yard
-          float trackLines = sin((p.x - 88.5) * 3.6) * 0.5 + 0.5;
-          float trackTread = step(0.45, fract(p.y * 1.4));
-          float trackBand = (1.0 - smoothstep(1.8, 5.8, abs(p.x - 88.5))) * smoothstep(0.65, 0.92, trackLines) * trackTread;
-          yardDirt = mix(yardDirt, uDirtDeep * 0.86, trackBand * 0.36);
-          // Compacted earth border rim
-          float yardRim = smoothstep(-1.35, -0.15, constYardSdf);
-          yardDirt = mix(yardDirt, uDirtDeep * 0.88, yardRim * 0.45);
-          surfaceCol = mix(surfaceCol, yardDirt, constYardMask);
-        }
-        if (seBeachZone > 0.001) {
+        // 2C. North-East Taman Ria Beachfront Sand (z < -46) & South-East Coastal Beachfront Sand (z > +46)
+        if (coastalBeachZone > 0.001) {
           // Warm sun-drenched Golden Coastal Beach Sand in Linear RGB (harmonized with Blitz's uDirtMain / uDirtHighlight palette!)
           float duneWave1 = sin(p.x * 0.95 + sin(p.y * 0.22) * 2.4 + n2 * 1.6) * 0.5 + 0.5;
           float duneWave2 = sin(p.x * 2.6 - p.y * 0.45 + n3 * 2.2) * 0.5 + 0.5;
@@ -12908,10 +12828,12 @@ export function createCurvedPlanetEnvironment(
           vec3 dryGoldenSand = mix(sandDeep, sandMain, smoothstep(0.18, 0.82, soilNoise));
           dryGoldenSand = mix(dryGoldenSand, sandBright, smoothstep(0.35, 0.92, duneRipple) * 0.44 + warmPatch * 0.22);
 
-          // Soft ambient occlusion shadow beneath the Elevated Timber Boardwalk & Seaward Stairs
-          float underBoardwalk = smoothstep(77.4, 79.0, p.x) * (1.0 - smoothstep(92.0, 94.2, p.x))
-                               * smoothstep(45.5, 47.2, p.y) * (1.0 - smoothstep(101.8, 103.5, p.y));
-          dryGoldenSand *= mix(1.0, 0.68, underBoardwalk);
+          // Soft ambient occlusion shadow beneath the Elevated Timber Boardwalks
+          float underSeBoardwalk = smoothstep(77.4, 79.0, p.x) * (1.0 - smoothstep(92.0, 94.2, p.x))
+                                 * smoothstep(45.5, 47.2, p.y) * (1.0 - smoothstep(101.8, 103.5, p.y));
+          float underNeBoardwalk = smoothstep(94.8, 96.4, p.x) * (1.0 - smoothstep(108.5, 110.2, p.x))
+                                 * smoothstep(-74.8, -73.2, p.y) * (1.0 - smoothstep(-47.0, -45.0, p.y));
+          dryGoldenSand *= mix(1.0, 0.68, max(underSeBoardwalk, underNeBoardwalk));
 
           // Wet tidal sand & shallow turquoise water lap along the East shoreline (x in [103.2..110.2])
           float wetSandFactor = smoothstep(102.8 + (n2 - 0.5) * 1.4, 108.6, p.x);
@@ -12922,7 +12844,7 @@ export function createCurvedPlanetEnvironment(
           float shoreFoamLine = smoothstep(105.8, 108.4, p.x) * (1.0 - smoothstep(108.9, 110.2, p.x)) * smoothstep(0.56, 0.86, shoreWave);
           vec3 beachCol = mix(dryGoldenSand, wetSandCol, wetSandFactor);
           beachCol = mix(beachCol, vec3(0.90, 0.97, 1.0), shoreFoamLine * 0.80);
-          surfaceCol = mix(surfaceCol, beachCol, seBeachZone * (1.0 - seaMask));
+          surfaceCol = mix(surfaceCol, beachCol, coastalBeachZone * (1.0 - seaMask));
         }
 
         // 3. Central-West Turquoise Oasis Lake & 3-Level Concave Basin Depression ("Level Cekungan Danau")
@@ -13148,10 +13070,11 @@ export function createCurvedPlanetEnvironment(
     if (ledgeStroke) tidalLedgeMesh.add(ledgeStroke);
     quayGroup.add(tidalLedgeMesh);
   };
-  addQuayWallSegment(216.2, 61.9, 70);
+  addQuayWallSegment(92.4, 0.0, 30);
+  addQuayWallSegment(65.8, 137.1, 22);
   addQuayWallSegment(65.8, -137.1, 22);
 
-  // 4. Heavy Cast-Iron Twin Mooring Bollards + Black Rubber Cylindrical Ship Fenders along the Harbor Dock (|z| <= 44m)
+  // 4. Heavy Cast-Iron Twin Mooring Bollards + Black Rubber Cylindrical Ship Fenders along the Central/South Harbor Dock (z in [-18..+44])
   const bollardPlinthGeo = new THREE.BoxGeometry(0.95, 0.22, 0.75);
   const bollardPostGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.58, 10);
   const bollardCapGeo = new THREE.CylinderGeometry(0.28, 0.24, 0.14, 10);
@@ -13207,24 +13130,22 @@ export function createCurvedPlanetEnvironment(
     }
   };
 
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 10; i++) {
     const bx = -41.6 + i * 6.4;
-    addQuayMooringBollard(bx, i < 13);
+    addQuayMooringBollard(bx, i < 9);
   }
 
-  // 5. North-East Coastal Concrete Seawall Promenade ("Beton Area Pesisir Laut") North (worldZ < -46, localX > +46):
-  //    Reinforced Concrete Wave-Deflector Parapet Blocks, Landward Curb Beams & Coastal Bollards
-  //    (South-East worldZ > +46 is left open for the Golden Sand Coastal Beachfront & Park!)
+  // 5. Far North Tail Coastal Concrete Seawall (worldZ < -105, localX > +105):
+  //    Leaves worldZ in [-104.5..-46.0] 100% open for the Golden Sand Taman Ria Beachfront & Surf!
   const seawallParapetGeo = new THREE.BoxGeometry(5.6, 0.92, 0.96);
   const seawallPillarGeo = new THREE.BoxGeometry(1.15, 1.18, 1.18);
-  const landwardCurbBeamGeo = new THREE.BoxGeometry(114.0, 0.38, 0.72);
+  const landwardCurbBeamGeo = new THREE.BoxGeometry(58.0, 0.38, 0.72);
   for (const zSign of [1] as const) {
-    // Landward concrete curb beam along x = 73.8 (local z = -8.2 in quayGroup)
     const landCurb = new THREE.Mesh(
       landwardCurbBeamGeo,
       new THREE.MeshStandardMaterial({ color: '#78808c', roughness: 0.82 }),
     );
-    landCurb.position.set(zSign * 104.0, 0.19, -8.2);
+    landCurb.position.set(zSign * 136.0, 0.19, -8.2);
     landCurb.castShadow = !isSoftwareGl;
     landCurb.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(landCurb, windUniforms, '#78808c');
@@ -13232,9 +13153,8 @@ export function createCurvedPlanetEnvironment(
     if (landCurbStroke) landCurb.add(landCurbStroke);
     quayGroup.add(landCurb);
 
-    // Segmented heavy concrete wave-deflector parapet walls & pillars along the coastal seawall edge
-    for (let seg = 0; seg < 14; seg++) {
-      const sx = zSign * (50.0 + seg * 7.6);
+    for (let seg = 0; seg < 7; seg++) {
+      const sx = zSign * (108.5 + seg * 7.6);
       const pillar = new THREE.Mesh(
         seawallPillarGeo,
         new THREE.MeshStandardMaterial({ color: '#68707c', roughness: 0.85 }),
@@ -14553,18 +14473,40 @@ export function createCurvedPlanetEnvironment(
   const COL_KIOSK_GLASS = '#7bc6e2';
   const COL_KIOSK_LED = '#ffefc2';
 
-  // 4A. Granite Plaza Paver Base (5.24m W x 4.04m D) & Dark Charcoal Steel Structural Frame (non-overlapping Y levels to prevent z-fighting)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(5.24, 0.08, 4.04), '#dcd9d0', [0, 0.05, 0], [0, 0, 0], 0.010, lobbyGranitePaverTex, 2.0);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.48, 0.10, 3.28), COL_KIOSK_STEEL, [0, 0.15, 0], [0, 0, 0], 0.010, lobbySteelRoofTex);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.12, 0.025, 2.94), '#dfd8c8', [0, 0.215, 0], [0, 0, 0], 0, lobbyGranitePaverTex, 1.4);
+  // 4A. Non-Overlapping 4-Sided Mitred Steel Perimeter Plinth & Solid Interior Floor Block (zero coplanar or stacked horizontal faces to prevent z-fighting)
+  const gkPerimeterCurbPath: [number, number][] = [
+    [-2.13, -1.53],
+    [2.13, -1.53],
+    [2.13, 1.53],
+    [-2.13, 1.53],
+  ];
+  addLobbyPart(
+    gelatoKioskGrp,
+    createMitredPolylineStripGeometry(gkPerimeterCurbPath, 0.22, 0.19, true),
+    COL_KIOSK_STEEL,
+    [0, 0.105, 0],
+    [0, 0, 0],
+    0.010,
+    lobbySteelRoofTex,
+  );
+  addLobbyPart(
+    gelatoKioskGrp,
+    new THREE.BoxGeometry(4.02, 0.19, 2.82),
+    '#dfd8c8',
+    [0, 0.115, 0],
+    [0, 0, 0],
+    0,
+    lobbyGranitePaverTex,
+    1.4,
+  );
 
   for (const cx of [-2.14, 2.14]) {
     for (const cz of [-1.54, 1.54]) {
-      addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.20, 2.62, 0.20), COL_KIOSK_STEEL, [cx, 1.51, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
+      addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.20, 2.60, 0.20), COL_KIOSK_STEEL, [cx, 1.51, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
     }
   }
   // Center Front Vertical Steel Mullion cleanly separating Left Service Counter Bar ([-2.04 .. +0.06]) from Right Gelato Vitrine ([+0.16 .. +2.04])
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.10, 2.62, 0.18), COL_KIOSK_STEEL, [0.11, 1.51, 1.54], [0, 0, 0], 0.010, lobbySteelRoofTex);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.10, 2.60, 0.18), COL_KIOSK_STEEL, [0.11, 1.51, 1.54], [0, 0, 0], 0.010, lobbySteelRoofTex);
 
   // 4B. Front Elevation (+Z): Left Service Counter Bar + 3x Timber Bar Stools & Right Artisanal Gelato Display Case
   // Left Lower Front Wall Base (Warm Timber Cladding spanning strictly x in [-2.04 .. +0.06], y in [0.21 .. 1.14], z = 1.51)
@@ -14572,10 +14514,10 @@ export function createCurvedPlanetEnvironment(
   // Projecting Warm Timber Service Counter Bar trimmed to fit strictly between Left Column (-2.04) and Center Divider (+0.06) without penetrating the Gelato Case!
   addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.10, 0.08, 0.54), COL_KIOSK_WOOD, [-0.99, 1.18, 1.71], [0, 0, 0], 0.011, lobbyTimberTex, 1.5);
 
-  // 3x Timber Bar Stools in front of Service Counter Bar ("3x Timber Bar Stools")
+  // 3x Timber Bar Stools in front of Service Counter Bar ("3x Timber Bar Stools") planted directly on the Plaza floor
   for (const sx of [-1.70, -0.99, -0.28]) {
     const stGrp = new THREE.Group();
-    stGrp.position.set(sx, 0.10, 2.12);
+    stGrp.position.set(sx, 0.01, 2.12);
     gelatoKioskGrp.add(stGrp);
     // Round warm teak stool seat
     addLobbyPart(stGrp, new THREE.CylinderGeometry(0.22, 0.21, 0.06, 14), COL_KIOSK_WOOD, [0, 0.76, 0], [0, 0, 0], 0.008, lobbyTimberTex);
@@ -14593,9 +14535,9 @@ export function createCurvedPlanetEnvironment(
   }
 
   // Artisanal Gelato Display Case ("Gelato Display" — Full-Depth Cabinet Base + Chilled Stainless Deck + 8 Gelato Tubs + Crystal-Clear Enclosed Glass Vitrine)
-  // 1) Full-depth cabinet base underneath the Gelato Display Case (x in [0.16 .. 2.04], y in [0.21 .. 0.93], z in [1.16 .. 1.78] — non-coplanar with steel base/columns to eliminate z-fighting)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.86, 0.72, 0.62), '#e5e7eb', [1.10, 0.57, 1.47], [0, 0, 0], 0.010, lobbyConcreteTex, 1.8);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.74, 0.54, 0.03), '#f3f4f6', [1.10, 0.58, 1.79], [0, 0, 0], 0.006, lobbyConcreteTex, 1.5);
+  // 1) Full-depth cabinet base underneath the Gelato Display Case (x in [0.16 .. 2.04], y in [0.22 .. 0.94], z in [1.16 .. 1.78] — non-coplanar with steel base/columns to eliminate z-fighting)
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.86, 0.72, 0.62), '#e5e7eb', [1.10, 0.58, 1.47], [0, 0, 0], 0.010, lobbyConcreteTex, 1.8);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.74, 0.54, 0.03), '#f3f4f6', [1.10, 0.58, 1.805], [0, 0, 0], 0.006, lobbyConcreteTex, 1.5);
   // 2) Chilled stainless-steel gelato well deck (y in [0.94 .. 1.01], z in [1.14 .. 1.80])
   addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.07, 0.66), '#cbd5e1', [1.10, 0.975, 1.47], [0, 0, 0], 0.009);
   // 3) 8 Colorful Artisanal Gelato Tubs (2 rows x 4 columns recessed cleanly inside the stainless well)
@@ -14657,19 +14599,19 @@ export function createCurvedPlanetEnvironment(
   }
 
   // 4C. Interior Work Counter, Commercial Espresso Machine, Grinder, POS Register, Shelves & Chalkboard Menu Board
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.06, 0.96, 0.82), '#383e47', [0, 0.62, 0.42], [0, 0, 0], 0.012, lobbySteelRoofTex);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.10, 0.06, 0.88), '#d6d3cb', [0, 1.13, 0.42], [0, 0, 0], 0.008, lobbyConcreteTex);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(3.98, 0.90, 0.82), '#383e47', [0, 0.67, 0.42], [0, 0, 0], 0.012, lobbySteelRoofTex);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.02, 0.06, 0.88), '#d6d3cb', [0, 1.15, 0.42], [0, 0, 0], 0.008, lobbyConcreteTex);
   // Commercial Espresso Machine ("Espresso Machine" — Chrome housing, group heads, top cup warmer)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.92, 0.52, 0.48), '#dce2e8', [-1.18, 1.42, 0.42], [0, 0, 0], 0.012);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.72, 0.16, 0.14), '#1e2228', [-1.18, 1.36, 0.68], [0, 0, 0], 0.006);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.92, 0.52, 0.48), '#dce2e8', [-1.18, 1.44, 0.42], [0, 0, 0], 0.012);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.72, 0.16, 0.14), '#1e2228', [-1.18, 1.38, 0.68], [0, 0, 0], 0.006);
   for (const cxCup of [-1.42, -1.18, -0.94]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.055, 0.048, 0.11, 8), '#ffffff', [cxCup, 1.73, 0.42], [0, 0, 0], 0.005);
+    addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.055, 0.048, 0.11, 8), '#ffffff', [cxCup, 1.75, 0.42], [0, 0, 0], 0.005);
   }
   // Coffee Grinder & POS Register
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.24, 0.36, 0.26), '#23272e', [-0.48, 1.34, 0.46], [0, 0, 0], 0.008);
-  addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.10, 0.07, 0.22, 8), '#d4a373', [-0.48, 1.62, 0.46], [0, 0, 0], 0.006);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.38, 0.20, 0.32), '#2b3038', [-0.04, 1.26, 0.52], [0, 0, 0], 0.008);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.30, 0.24, 0.05), '#0f172a', [-0.04, 1.44, 0.58], [-0.32, 0, 0], 0.006);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.24, 0.36, 0.26), '#23272e', [-0.48, 1.36, 0.46], [0, 0, 0], 0.008);
+  addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.10, 0.07, 0.22, 8), '#d4a373', [-0.48, 1.64, 0.46], [0, 0, 0], 0.006);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.38, 0.20, 0.32), '#2b3038', [-0.04, 1.28, 0.52], [0, 0, 0], 0.008);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.30, 0.24, 0.05), '#0f172a', [-0.04, 1.46, 0.58], [-0.32, 0, 0], 0.006);
 
   // Rear Interior Wall Upper Wooden Shelves with Jars & Framed Chalkboard Menu Board ("Menu Board")
   for (const sy of [1.86, 2.26]) {
@@ -14685,23 +14627,25 @@ export function createCurvedPlanetEnvironment(
   // 4D. Side Profile Elevations (±X): Panoramic Glass Wall & Side Service Door ("Panoramic Glass Wall" & "Side Service Door")
   for (const sideX of [-2.14, 2.14]) {
     // 2 Vertical Mullions dividing the Side Elevation into 2 Panoramic Glass Bays + 1 Side Service Door Bay
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 2.58, 0.12), COL_KIOSK_STEEL, [sideX, 1.48, 0.48], [0, 0, 0], 0.010);
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 2.58, 0.12), COL_KIOSK_STEEL, [sideX, 1.48, -0.52], [0, 0, 0], 0.010);
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 2.56, 0.12), COL_KIOSK_STEEL, [sideX, 1.49, 0.48], [0, 0, 0], 0.010);
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 2.56, 0.12), COL_KIOSK_STEEL, [sideX, 1.49, -0.52], [0, 0, 0], 0.010);
+    // Bottom steel glazing sill connecting the side glass wall cleanly to the steel perimeter plinth
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.12, 0.06, 2.86), COL_KIOSK_STEEL, [sideX, 0.23, 0.0], [0, 0, 0], 0.007);
     // Panoramic Glass Wall Panels
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.08, 2.48, 2.88), COL_KIOSK_GLASS, [sideX, 1.48, 0.0], [0, 0, 0], 0.008, lobbyWindowTex, 2.8);
-    // Side Service Door Frame & Stainless Lever Handle on Rear Bay (z in [-1.52..-0.52])
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.12, 2.38, 0.08), COL_KIOSK_STEEL, [sideX, 1.38, -1.44], [0, 0, 0], 0.008);
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.08, 2.46, 2.86), COL_KIOSK_GLASS, [sideX, 1.49, 0.0], [0, 0, 0], 0.008, lobbyWindowTex, 2.8);
+    // Side Service Door Frame & Stainless Lever Handle on Rear Bay (non-overlapping with corner column at z = -1.54)
+    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.12, 2.36, 0.08), COL_KIOSK_STEEL, [sideX, 1.44, -1.38], [0, 0, 0], 0.008);
     addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.18, 0.05, 0.16), '#cbd5e1', [sideX, 1.28, -0.66], [0, 0, 0], 0.005);
   }
 
   // 4E. Rear Elevation (-Z): Solid Vertical Timber Cladding, Rear Service Door, Exterior Ventilation Grille & Electrical Conduits
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.12, 2.58, 0.16), COL_KIOSK_WOOD, [0, 1.48, -1.52], [0, 0, 0], 0.014, lobbyVerticalTimberTex, 1.6);
-  // Rear Service Door ("Rear Service Door" on right rear -> x = -1.05 when viewed from rear)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.16, 2.18, 0.08), COL_KIOSK_STEEL, [-1.02, 1.28, -1.61], [0, 0, 0], 0.010);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.02, 2.06, 0.09), '#c8ccd2', [-1.02, 1.28, -1.62], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.08), '#2b3036', [-0.62, 1.22, -1.67], [0, 0, 0], 0.005);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.06, 2.56, 0.16), COL_KIOSK_WOOD, [0, 1.49, -1.52], [0, 0, 0], 0.014, lobbyVerticalTimberTex, 1.6);
+  // Rear Service Door ("Rear Service Door" on right rear -> x = -1.02, non-overlapping frame and leaf)
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.16, 2.16, 0.04), COL_KIOSK_STEEL, [-1.02, 1.29, -1.62], [0, 0, 0], 0.010);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.02, 2.04, 0.04), '#c8ccd2', [-1.02, 1.29, -1.66], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.06), '#2b3036', [-0.62, 1.22, -1.70], [0, 0, 0], 0.005);
   // Exterior Ventilation Grille ("Exterior Ventilation Grille" on lower-left rear -> x = +1.18)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.08), '#47505c', [1.18, 0.68, -1.62], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
+  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.06), '#47505c', [1.18, 0.68, -1.63], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
   // Surface-Mounted Electrical Utility Conduits & Twin Junction Boxes ("Electrical Utility Conduits")
   addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.024, 0.024, 2.36, 8), '#64748b', [0.32, 1.46, -1.63], [0, 0, 0], 0.005);
   addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.78, 8), '#64748b', [0.71, 0.30, -1.63], [0, 0, Math.PI / 2], 0.005);
@@ -14813,33 +14757,38 @@ export function createCurvedPlanetEnvironment(
     return t;
   })();
 
-  // 1) Granite Plaza Paver Base (5.24m W x 4.04m D) with Continuous 45° Mitred Curb & Dark Charcoal Steel Frame
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(5.24, 0.09, 4.04), '#dcd9d0', [0, 0.055, 0], [0, 0, 0], 0.011, lobbyGranitePaverTex, 2.0);
-  const fkApronPath: [number, number][] = [
-    [-2.62, -2.02],
-    [2.62, -2.02],
-    [2.62, 2.02],
-    [-2.62, 2.02],
+  // 1) Non-Overlapping 4-Sided Mitred Steel Perimeter Plinth & Solid Interior Floor Block (zero coplanar or stacked horizontal faces)
+  const fkPerimeterCurbPath: [number, number][] = [
+    [-2.13, -1.53],
+    [2.13, -1.53],
+    [2.13, 1.53],
+    [-2.13, 1.53],
   ];
   addFkToonPart(
     fashionKioskGrp,
-    createMitredPolylineStripGeometry(fkApronPath, 0.12, 0.10, true),
-    '#b8b3a8',
-    [0, 0.058, 0],
+    createMitredPolylineStripGeometry(fkPerimeterCurbPath, 0.22, 0.19, true),
+    COL_KIOSK_STEEL,
+    [0, 0.105, 0],
     [0, 0, 0],
-    0.008,
-    lobbyConcreteTex,
-    1.5,
+    0.011,
+    lobbySteelRoofTex,
+  );
+  addFkToonPart(
+    fashionKioskGrp,
+    new THREE.BoxGeometry(4.02, 0.19, 2.82),
+    '#e8dfd1',
+    [0, 0.115, 0],
+    [0, 0, 0],
+    0,
+    lobbyGranitePaverTex,
+    1.2,
     false,
   );
-  // Dark Charcoal Steel Structural Base Plinth & Warm Boutique Parquet/Stone Interior Floor
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.48, 0.12, 3.28), COL_KIOSK_STEEL, [0, 0.14, 0], [0, 0, 0], 0.011, lobbySteelRoofTex);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.12, 0.03, 2.94), '#e8dfd1', [0, 0.205, 0], [0, 0, 0], 0, lobbyGranitePaverTex, 1.2, false);
 
   // 4 Corner Dark Charcoal Steel Columns (x = ±2.14, z = ±1.54)
   for (const cx of [-2.14, 2.14]) {
     for (const cz of [-1.54, 1.54]) {
-      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.20, 2.68, 0.20), COL_KIOSK_STEEL, [cx, 1.48, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
+      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.20, 2.62, 0.20), COL_KIOSK_STEEL, [cx, 1.51, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
     }
   }
   // Continuous 45° Mitred Upper Steel Architrave / Header Ring (y = 2.74m)
@@ -14862,20 +14811,20 @@ export function createCurvedPlanetEnvironment(
   // 2) Front Elevation (+Z = +1.54): 2 Tempered Display Glass Bays (Left & Center) + Right Glass Entrance Door
   //    2 Vertical Mullions at x = -0.72 and x = +0.72 dividing Front into 3 equal bays
   for (const mx of [-0.72, 0.72]) {
-    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 2.56, 0.14), COL_KIOSK_STEEL, [mx, 1.46, 1.54], [0, 0, 0], 0.009, lobbySteelRoofTex);
+    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 2.54, 0.14), COL_KIOSK_STEEL, [mx, 1.48, 1.54], [0, 0, 0], 0.009, lobbySteelRoofTex);
   }
   // Bottom steel glazing sill along Left & Center display windows
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(2.86, 0.08, 0.12), COL_KIOSK_STEEL, [-0.71, 0.24, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(2.86, 0.06, 0.12), COL_KIOSK_STEEL, [-0.71, 0.24, 1.54], [0, 0, 0], 0.007);
   // Clear Tempered Display Glass Panes (Left & Center Bays)
   addFkGlassPane(fashionKioskGrp, 1.30, 2.40, [-1.43, 1.48, 1.54], [0, 0, 0]);
   addFkGlassPane(fashionKioskGrp, 1.32, 2.40, [0.0, 1.48, 1.54], [0, 0, 0]);
 
   // Right Bay: Framed Glass Entrance Door ("Glass Entrance Door" at x in [+0.78 .. +2.04])
   // Inner door frame stiles & top/bottom door rails
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.42, 0.08), '#3b424c', [0.82, 1.41, 1.54], [0, 0, 0], 0.007);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.42, 0.08), '#3b424c', [2.00, 1.41, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.08), '#3b424c', [0.82, 1.42, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.08), '#3b424c', [2.00, 1.42, 1.54], [0, 0, 0], 0.007);
   addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.09, 0.08), '#3b424c', [1.41, 2.58, 1.54], [0, 0, 0], 0.007);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.10, 0.08), '#3b424c', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.08, 0.08), '#3b424c', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
   addFkGlassPane(fashionKioskGrp, 1.10, 2.24, [1.41, 1.42, 1.54], [0, 0, 0]);
   // Brushed Stainless Lever Door Handle & Escutcheon Plate on Left Stile of Entrance Door
   addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.04, 0.22, 0.09), '#cbd5e1', [0.90, 1.18, 1.56], [0, 0, 0], 0.005, undefined, 1.0, false);
@@ -14884,20 +14833,20 @@ export function createCurvedPlanetEnvironment(
   // 3) Side Profile Elevations (±X = ±2.14): 3 Panoramic Glass Wall Bays ("Panoramic Glass Wall" & "Side Glazing Panel")
   for (const sideX of [-2.14, 2.14]) {
     for (const mz of [-0.52, 0.48]) {
-      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 2.56, 0.12), COL_KIOSK_STEEL, [sideX, 1.46, mz], [0, 0, 0], 0.009, lobbySteelRoofTex);
+      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 2.54, 0.12), COL_KIOSK_STEEL, [sideX, 1.48, mz], [0, 0, 0], 0.009, lobbySteelRoofTex);
     }
-    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 0.08, 2.88), COL_KIOSK_STEEL, [sideX, 0.24, 0.0], [0, 0, 0], 0.007);
-    addFkGlassPane(fashionKioskGrp, 2.88, 2.40, [sideX, 1.48, 0.0], [0, Math.PI / 2, 0]);
+    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 0.06, 2.86), COL_KIOSK_STEEL, [sideX, 0.24, 0.0], [0, 0, 0], 0.007);
+    addFkGlassPane(fashionKioskGrp, 2.86, 2.40, [sideX, 1.48, 0.0], [0, Math.PI / 2, 0]);
   }
 
   // 4) Rear Elevation (-Z = -1.52): Solid Vertical Timber Cladding, Rear Staff Door, Exterior Ventilation Grille & Conduits
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.12, 2.58, 0.16), COL_KIOSK_WOOD, [0, 1.48, -1.52], [0, 0, 0], 0.012, lobbyVerticalTimberTex, 1.6);
-  // Rear Staff Door ("Rear Staff Door" on right rear -> x = -1.02 when viewed from rear)
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.16, 2.18, 0.08), COL_KIOSK_STEEL, [-1.02, 1.28, -1.61], [0, 0, 0], 0.010);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.02, 2.06, 0.09), '#c8ccd2', [-1.02, 1.28, -1.62], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.08), '#2b3036', [-0.62, 1.22, -1.67], [0, 0, 0], 0.005);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.06, 2.56, 0.16), COL_KIOSK_WOOD, [0, 1.49, -1.52], [0, 0, 0], 0.012, lobbyVerticalTimberTex, 1.6);
+  // Rear Staff Door ("Rear Staff Door" on right rear -> x = -1.02, non-overlapping frame and leaf)
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.16, 2.16, 0.04), COL_KIOSK_STEEL, [-1.02, 1.29, -1.62], [0, 0, 0], 0.010);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.02, 2.04, 0.04), '#c8ccd2', [-1.02, 1.29, -1.66], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.06), '#2b3036', [-0.62, 1.22, -1.70], [0, 0, 0], 0.005);
   // Exterior Ventilation Grille ("Exterior Ventilation Grille" on lower-left rear -> x = +1.18)
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.08), '#47505c', [1.18, 0.68, -1.62], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
+  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.06), '#47505c', [1.18, 0.68, -1.63], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
   // Surface-Mounted Electrical Utility Conduits & Twin Junction Boxes ("Electrical Utility Conduits")
   addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.024, 0.024, 2.36, 8), '#64748b', [0.32, 1.46, -1.63], [0, 0, 0], 0.005, undefined, 1.0, false);
   addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.78, 8), '#64748b', [0.71, 0.30, -1.63], [0, 0, Math.PI / 2], 0.005, undefined, 1.0, false);
@@ -15121,9 +15070,9 @@ export function createCurvedPlanetEnvironment(
   addDesignerHandbag(shelfCabGrp, [0, 0.53, 0.02], -0.08, '#966842', '#4a301a');
 
   // 10) Outdoor Wooden A-Frame Sidewalk Sign ("Outdoor A-Frame Sign" / "A-Frame Sidewalk Sign")
-  //     Placed on the granite paver apron outside the front-right corner (x = +1.36, z = +2.06)
+  //     Placed directly on the Plaza floor outside the front-right corner (x = +1.36, z = +2.04)
   const fkSignGrp = new THREE.Group();
-  fkSignGrp.position.set(1.36, 0.10, 2.04);
+  fkSignGrp.position.set(1.36, 0.01, 2.04);
   fkSignGrp.rotation.y = 0.32;
   fashionKioskGrp.add(fkSignGrp);
 
@@ -15442,11 +15391,11 @@ export function createCurvedPlanetEnvironment(
   // --- PART 1: FAN-PATTERN PORPHYRY PROMENADE, MITRED GRANITE CURB & COMMEMORATIVE SEAL INLAY ---
   addChToonPart(
     civicHallGrp,
-    new THREE.BoxGeometry(12.20, 0.04, 8.80),
+    new THREE.BoxGeometry(12.12, 0.05, 8.72),
     '#ffffff',
-    [0, 0.02, 0],
+    [0, 0.035, 0],
     [0, 0, 0],
-    0.010,
+    0,
     chPorphyryFanTex,
     1.8,
     false,
@@ -15459,9 +15408,9 @@ export function createCurvedPlanetEnvironment(
   ];
   addChToonPart(
     civicHallGrp,
-    createMitredPolylineStripGeometry(chOuterCurbPath, 0.22, 0.065, true),
+    createMitredPolylineStripGeometry(chOuterCurbPath, 0.22, 0.07, true),
     COL_CH_STONE,
-    [0, 0.0325, 0],
+    [0, 0.045, 0],
     [0, 0, 0],
     0.009,
     lobbyConcreteTex,
@@ -15472,22 +15421,22 @@ export function createCurvedPlanetEnvironment(
   // Circular Bronze Commemorative Seal Inlay embedded in front entrance promenade ("Commemorative Seal Inlay")
   addChToonPart(
     civicHallGrp,
-    new THREE.CylinderGeometry(0.76, 0.78, 0.045, 20),
+    new THREE.CylinderGeometry(0.76, 0.78, 0.036, 20),
     COL_CH_STONE,
-    [0, 0.024, 3.48],
+    [0, 0.078, 3.48],
     [0, 0, 0],
-    0.007,
+    0,
     lobbyConcreteTex,
     1.2,
     false,
   );
   addChToonPart(
     civicHallGrp,
-    new THREE.CylinderGeometry(0.64, 0.64, 0.052, 20),
+    new THREE.CylinderGeometry(0.64, 0.64, 0.036, 20),
     '#ffffff',
-    [0, 0.028, 3.48],
+    [0, 0.098, 3.48],
     [0, 0, 0],
-    0.006,
+    0,
     chSealMedalTex,
     0.5,
     false,
@@ -15502,8 +15451,8 @@ export function createCurvedPlanetEnvironment(
     [-4.10, 3.85],
     [4.10, 3.85],
   ] as [number, number][]) {
-    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.11, 0.12, 0.05, 10), '#52493e', [ux, 0.026, uz], [0, 0, 0], 0.004, undefined, 1.0, false);
-    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.055, 10), '#ffe699', [ux, 0.029, uz], [0, 0, 0], 0, undefined, 1.0, false);
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.11, 0.12, 0.032, 10), '#52493e', [ux, 0.076, uz], [0, 0, 0], 0, undefined, 1.0, false);
+    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.032, 10), '#ffe699', [ux, 0.094, uz], [0, 0, 0], 0, undefined, 1.0, false);
   }
 
   // --- PART 2: STONE RETAINING BALUSTRADES, HYDRANGEA/LAVENDER PLANTERS & FRONT LAMPPOSTS ---
@@ -18193,6 +18142,10 @@ export function createCurvedPlanetEnvironment(
   );
   // 5) NW FISHING LAKE Standalone Black Transit Kiosk (-44.5, 0.0, -6.5, facing West -X toward lake boardwalk spawn pad)
   buildStandaloneCityTransitKioskEndpoint('nw_fishing_lake', -44.5, 0.0, -6.5, -Math.PI / 2);
+  // 6) CENTRAL PLAZA INFORMATION CENTER Standalone Black Transit Kiosk (-86.85, 2.50, -21.85, facing South +Z in front of the right balustrade)
+  buildStandaloneCityTransitKioskEndpoint('info_center', -86.85, 2.50, -21.85, 0);
+  // 7) BEACHFRONT HARBOR (NEAR KAI) Standalone Black Transit Kiosk (84.85, 0.82, 65.65, facing East +X beside Kai Fish Market Kiosk)
+  buildStandaloneCityTransitKioskEndpoint('beachfront_kai', 84.85, 0.82, 65.65, Math.PI / 2);
 
   // =========================================================================
   // 2A-EAST. 3D CONSTRUCTION EQUIPMENT & MATERIAL YARDS ("AREA TANAH ALAT-ALAT KONSTRUKSI")
@@ -18374,15 +18327,10 @@ export function createCurvedPlanetEnvironment(
     constructionYardGroup.add(palGrp);
   };
 
-  // Spawn Heavy Construction Equipment ONLY in the North-East Construction Yard (zSign = -1, z < 0)
-  for (const zSign of [-1] as const) {
-    // 1. Single Tracked Yellow Excavator in the center of the North-East Construction Yard
-    buildConstructionExcavator(92.0, zSign * 72.0, Math.PI + 0.35);
-    // 2. Single Structural Steel I-Beam Girder Stack
-    buildSteelGirderAndTimberStack(93.0, zSign * 55.0, 0.0);
-    // 3. Single Palletized Red Brick & Grey Cement Stack
-    buildPalletizedBrickAndCementStack(92.5, zSign * 89.0, 0.0);
-  }
+  // Northern Beachfront is now the 1:1 Taman Ria Dermaga & Boardwalk (keep builders referenced cleanly)
+  void buildConstructionExcavator;
+  void buildSteelGirderAndTimberStack;
+  void buildPalletizedBrickAndCementStack;
 
   // =========================================================================
   // 2A-SOUTH-EAST. COASTAL BEACHFRONT & PARK (1:1 5-SHEET ARCHITECTURAL MODEL)
@@ -20850,19 +20798,7 @@ export function createCurvedPlanetEnvironment(
   lakeSurfaceMesh.renderOrder = 2;
   roadsGroup.add(lakeSurfaceMesh);
 
-  // 2. Shifted Right-Side (East) Harbor Dock Colorful Shipping Container Terminal Stacks (x in [76..110], z in [-38..+38])
-  //    (Positioned at z = ±24.5 and z = ±34.5 so the Harbor Road Entrances at z = ±15.0 stay 100% open!)
-  // North Container Yard Rows (z = -34.5 & z = -24.5)
-  addShippingContainer(78.2, 0, -34.5, 0, '#e11d48');
-  addShippingContainer(82.1, 0, -34.5, 0, '#2563eb');
-  addShippingContainer(80.15, 2.58, -34.5, 0, '#16a34a');
-  addShippingContainer(78.2, 0, -24.5, 0, '#ea580c');
-  addShippingContainer(82.1, 0, -24.5, 0, '#eab308');
-
-  // North-East Quay Container Row (near x = 100..104, z = -35..-31)
-  addShippingContainer(101.5, 0, -35.4, Math.PI / 2, '#2563eb');
-  addShippingContainer(101.5, 0, -31.5, Math.PI / 2, '#e11d48');
-  addShippingContainer(101.5, 2.58, -33.45, Math.PI / 2, '#eab308');
+  // 2. Southern Dermaga Colorful Shipping Container Terminal Stacks (Northern Dermaga claimed by Taman Ria!)
 
   // South Container Yard Rows shifted East to x = 92.2..96.1 (near the South-East Quay containers) so Halte Beachfront Harbor sits at x = 77.5, z = 29.5
   addShippingContainer(92.2, 0, 24.5, 0, '#16a34a');
@@ -21087,6 +21023,15 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
+  const coastalAmusementPark = buildCoastalAmusementPark3D({
+    windUniforms,
+    isSoftwareGl,
+    upgradeMeshToBlitzWorldMaterial,
+    createBlitzStrokeMesh,
+    bakeStaticGroupMeshes,
+  });
+  roadsGroup.add(coastalAmusementPark.group);
+
   bakeStaticGroupMeshes(quayGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(westPlantGroup, {
     minShadowCasterSpan: 0.55,
@@ -21109,11 +21054,48 @@ export function createCurvedPlanetEnvironment(
     roadsGroup,
     natureGroup,
     sunbeamGroup,
-    update(pivotX: number, pivotZ: number, _cameraPos: THREE.Vector3, _timeSec: number) {
+    update(
+      pivotX: number,
+      pivotZ: number,
+      _cameraPos: THREE.Vector3,
+      timeSec: number,
+      chunkCullRadius = 0,
+    ) {
       getOrCreateSharedSculptTexture();
       uPlanetPivot.value.set(pivotX, 0, pivotZ);
+      const cullActive = chunkCullRadius > 0;
+      const rSq = chunkCullRadius * chunkCullRadius;
+
+      // 1. Central Plaza & Glasshouse Cafe District (x in [-106, -74], z in [-42, +42])
+      const dxWest = Math.max(-106 - pivotX, 0, pivotX - -74);
+      const dzWest = Math.max(-42 - pivotZ, 0, pivotZ - 42);
+      westPlantGroup.visible = !cullActive || dxWest * dxWest + dzWest * dzWest <= rSq;
+
+      // 2. NE Taman Ria Beachfront Amusement Park (x in [68, 122], z in [-106, -2])
+      const dxPark = Math.max(68 - pivotX, 0, pivotX - 122);
+      const dzPark = Math.max(-106 - pivotZ, 0, pivotZ - -2);
+      const parkVis = !cullActive || dxPark * dxPark + dzPark * dzPark <= rSq;
+      coastalAmusementPark.group.visible = parkVis;
+      if (parkVis) {
+        coastalAmusementPark.update(timeSec);
+      }
+
+      // 3. SE Beachfront Boardwalk & Kai Fish Market (x in [74, 112], z in [44, 105])
+      const dxSeBeach = Math.max(74 - pivotX, 0, pivotX - 112);
+      const dzSeBeach = Math.max(44 - pivotZ, 0, pivotZ - 105);
+      seBeachGroup.visible = !cullActive || dxSeBeach * dxSeBeach + dzSeBeach * dzSeBeach <= rSq;
+
+      // 4. East Harbor Quay Wall & Containers (x in [90, 114])
+      const dxQuay = Math.max(90 - pivotX, 0, pivotX - 114);
+      quayGroup.visible = !cullActive || dxQuay <= chunkCullRadius;
+
+      // 5. NW Oasis Fishing Lake Water Surface (x in [-52, -10], z in [-24, +24])
+      const dxLake = Math.max(-52 - pivotX, 0, pivotX - -10);
+      const dzLake = Math.max(-24 - pivotZ, 0, pivotZ - 24);
+      lakeSurfaceMesh.visible = !cullActive || dxLake * dxLake + dzLake * dzLake <= rSq;
     },
     dispose() {
+      coastalAmusementPark.dispose();
       scene.remove(groundMesh);
       scene.remove(roadsGroup);
       scene.remove(natureGroup);

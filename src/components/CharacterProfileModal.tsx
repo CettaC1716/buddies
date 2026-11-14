@@ -95,6 +95,7 @@ export interface CharacterProfileModalProps {
   activeHarvesterCount?: number;
   playerLevel?: number;
   playerXpLabel?: string;
+  lulBalance?: number;
   onChangePlayerName?: (newName: string) => void;
   onStartWhisper?: (user: NearbyEntityUser) => void;
 }
@@ -115,6 +116,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   activeHarvesterCount = 0,
   playerLevel = 1,
   playerXpLabel,
+  lulBalance = 0,
   onChangePlayerName,
   onStartWhisper,
 }) => {
@@ -579,6 +581,13 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                   <span className="px-2 py-0.5 bg-[#e2e8f0] border border-black text-[9.5px] font-black uppercase text-black">
                     TEAM: {effectiveTeam.toUpperCase()}
                   </span>
+                  {isSelfProfile && (
+                    <>
+                      <span className="px-2 py-0.5 bg-[#facc15] border border-black text-[9.5px] font-black uppercase text-black font-mono">
+                        LUL: {lulBalance}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

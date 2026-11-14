@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpDown, X, Martini, PersonStanding, Sparkles, Zap } from 'lucide-react';
+import { RotateCcw, Smartphone, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpDown, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import type { FishingPhaseState } from '../game/buddiesFishingMarket';
 
@@ -100,25 +100,6 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [actionsOpen, setActionsOpen] = useState<boolean>(false);
-  const [activeEmote, setActiveEmote] = useState<string | null>(null);
-
-  useEffect(() => {
-    const onCleared = () => setActiveEmote(null);
-    window.addEventListener('player-emote-cleared', onCleared);
-    return () => window.removeEventListener('player-emote-cleared', onCleared);
-  }, []);
-
-  const toggleEmote = (clip: string) => {
-    soundEngine.playUiClick();
-    if (activeEmote === clip) {
-      setActiveEmote(null);
-      window.dispatchEvent(new CustomEvent('set-player-emote', { detail: { clip: null } }));
-    } else {
-      setActiveEmote(clip);
-      window.dispatchEvent(new CustomEvent('set-player-emote', { detail: { clip } }));
-    }
-  };
   const [isJoystickActive, setIsJoystickActive] = useState(false);
   const [isSprinting, setIsSprinting] = useState(false);
 
@@ -356,9 +337,11 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
         >
           <div
             className={`pointer-events-auto fixed ${
-              isCompactLandscape
-                ? 'bottom-[64px] left-3.5'
-                : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
+              !showMobileJoystick
+                ? 'bottom-[64px] left-3'
+                : isCompactLandscape
+                  ? 'bottom-[64px] left-3.5'
+                  : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
             } flex flex-col items-center gap-1 touch-none transition-opacity duration-150 ${
               !showMobileJoystick
                 ? 'opacity-95'
@@ -367,75 +350,6 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   : 'opacity-65 hover:opacity-85'
             }`}
           >
-            {/* ACTIONS: pose / emote menu (poses loop until toggled off or the player moves) */}
-            {actionsOpen && (
-              <div
-                data-actions-panel="true"
-                className="mb-1 w-[168px] rounded-2xl border border-white/30 bg-[#14161d]/82 p-2 shadow-[0_10px_28px_rgba(8,12,20,0.45)] backdrop-blur-md"
-              >
-                <div className="px-1 pb-1 text-[8.5px] font-black uppercase tracking-widest text-white/50">
-                  Poses
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleEmote('kai_idle.001')}
-                    className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-white transition active:scale-95 ${
-                      activeEmote === 'kai_idle.001'
-                        ? 'border-[#b8ff3c] bg-[#b8ff3c]/25'
-                        : 'border-white/20 bg-white/10 hover:bg-white/20'
-                    }`}
-                  >
-                    <PersonStanding className="h-4 w-4" aria-hidden="true" />
-                    <span className="text-[8.5px] font-black uppercase leading-none">Fold Arms</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleEmote('bartending.001')}
-                    className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-white transition active:scale-95 ${
-                      activeEmote === 'bartending.001'
-                        ? 'border-[#b8ff3c] bg-[#b8ff3c]/25'
-                        : 'border-white/20 bg-white/10 hover:bg-white/20'
-                    }`}
-                  >
-                    <Martini className="h-4 w-4" aria-hidden="true" />
-                    <span className="text-[8.5px] font-black uppercase leading-none">Bartender</span>
-                  </button>
-                </div>
-                <div className="px-1 pb-1 pt-2 text-[8.5px] font-black uppercase tracking-widest text-white/50">
-                  Actions
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    window.dispatchEvent(new CustomEvent('player-emote-punch'));
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-2 py-2 text-white transition hover:bg-white/20 active:scale-95"
-                >
-                  <Zap className="h-4 w-4" aria-hidden="true" />
-                  <span className="text-[8.5px] font-black uppercase leading-none">Punch</span>
-                </button>
-              </div>
-            )}
-            <button
-              type="button"
-              data-actions-btn="true"
-              aria-label="Open actions menu"
-              title="Actions — poses & emotes"
-              onClick={(e) => {
-                e.stopPropagation();
-                soundEngine.playUiClick();
-                setActionsOpen((v) => !v);
-              }}
-              className={`${isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'} rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`}
-            >
-              <Sparkles className="w-4 h-4 text-[#b8ff3c]" aria-hidden="true" />
-              <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
-                Acts
-              </span>
-            </button>
-
             {/* Camera View Flip (main map only): instant 180-degree side swap, not a rotation */}
             {!isWarzoneActive && (
               <button
@@ -448,22 +362,30 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   soundEngine.playUiClick();
                   window.dispatchEvent(new CustomEvent('camera-flip-view'));
                 }}
-                className={`${isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'} rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md active:scale-90 border border-white/40 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[0_6px_18px_rgba(8,12,20,0.35)]`}
+                className={
+                  showMobileJoystick
+                    ? `${
+                        isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
+                      } rounded-full bg-[#14161d]/85 hover:bg-[#1e293b] active:scale-90 border-2 border-white/60 text-white flex flex-col items-center justify-center cursor-pointer transition-all shadow-[2px_2px_0_#0d0f12]`
+                    : '-skew-x-12 px-2.5 h-8 bg-[#14161d]/92 hover:bg-[#1e293b] active:scale-95 border-2 border-[#0d0f12] ring-1 ring-white/75 text-white flex items-center justify-center cursor-pointer transition-all shadow-[3px_3px_0_#0d0f12]'
+                }
               >
-                <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
-                <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
-                  View
-                </span>
+                {showMobileJoystick ? (
+                  <>
+                    <ArrowUpDown className="w-4 h-4" aria-hidden="true" />
+                    <span className="text-[6.5px] font-black uppercase tracking-wider leading-none mt-0.5">
+                      View
+                    </span>
+                  </>
+                ) : (
+                  <span className="skew-x-12 flex items-center gap-1.5">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-[#38bdf8]" aria-hidden="true" />
+                    <span className="text-[10px] font-black uppercase tracking-wider leading-none">
+                      VIEW
+                    </span>
+                  </span>
+                )}
               </button>
-            )}
-
-            {/* Without the joystick pad, an invisible spacer with the pad's
-                footprint keeps ACTS/VIEW at the exact same height. */}
-            {!showMobileJoystick && (
-              <div
-                aria-hidden="true"
-                className={isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'}
-              />
             )}
 
             {/* Circular Semi-Transparent Joystick Touch Pad */}
