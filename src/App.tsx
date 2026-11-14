@@ -7887,6 +7887,15 @@ export default function App() {
         }}
         onBuyMerchantItem={async (item: MerchantCatalogItem, finalPrice: number): Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }> => {
           soundEngine.playUiClick();
+          // No house, no furniture: a deed comes first, otherwise bought
+          // furniture has nowhere to go and confuses new players.
+          if (
+            item.category === 'nft_collector_furniture' &&
+            !hasHouseOwnership &&
+            !hud.nearHasGamepassNft
+          ) {
+            return { ok: false };
+          }
           // Furniture is owned per copy (one copy per house placement), so
           // it can be bought again while stock lasts; themes and gear are
           // unique and block a second purchase.

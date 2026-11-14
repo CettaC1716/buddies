@@ -3543,7 +3543,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         const isOwned = ownedItemIds.includes(item.id);
                         const balance =
                           item.currency === 'CYON' ? cyonBalance : respiteBalance;
+                        const needsHouse =
+                          item.category === 'nft_collector_furniture' && !hasHouseOwnership;
                         const canBuy =
+                          !needsHouse &&
                           (!isOwned || Boolean(item.interiorSlot)) &&
                           quote.stock > 0 &&
                           balance >= quote.buyPrice &&
@@ -3708,7 +3711,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     }`}
                                   >
                                     <ShoppingBag className="w-3 h-3" aria-hidden="true" />
-                                    <span>{quote.stock <= 0 ? 'Out' : 'Buy'}</span>
+                                    <span>
+                                      {needsHouse
+                                        ? 'Needs a house'
+                                        : quote.stock <= 0
+                                          ? 'Out'
+                                          : 'Buy'}
+                                    </span>
                                   </button>
                                 )}
                               </div>
