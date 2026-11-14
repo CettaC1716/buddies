@@ -86,3 +86,17 @@ body {
 .bb-attention-wiggle {
   animation: bb-attention-wiggle 0.9s ease-in-out infinite;
 }
+
+/* Cafe order bell: swings like a ringing bell while a fresh order waits. */
+@keyframes bb-bell-ring {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(16deg); }
+  30% { transform: rotate(-13deg); }
+  45% { transform: rotate(9deg); }
+  60% { transform: rotate(-6deg); }
+  75% { transform: rotate(3deg); }
+}
+.bb-bell-ring {
+  transform-origin: 50% 12%;
+  animation: bb-bell-ring 1.1s ease-in-out infinite;
+}

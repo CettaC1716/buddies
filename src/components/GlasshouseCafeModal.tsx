@@ -1062,10 +1062,13 @@ export const CafeOrderNotificationBellButton: React.FC<CafeOrderNotificationBell
             hasUnread ? 'ring-[#b8ff3c] animate-pulse' : 'ring-white'
           } shadow-[4px_4px_0_#0b0d13] rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform`}
         >
-          <Bell className="w-5 h-5 text-white fill-white/90 stroke-[2.2]" aria-hidden="true" />
+          <Bell
+            className={`w-5 h-5 text-white fill-white/90 stroke-[2.2] ${hasUnread ? 'bb-bell-ring' : ''}`}
+            aria-hidden="true"
+          />
           <span
             data-cafe-order-notif-badge="true"
-            className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-full font-mono-tabular font-black text-[10px] flex items-center justify-center shadow-[1px_1px_0_#000]"
+            className={`absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-full font-mono-tabular font-black text-[10px] flex items-center justify-center shadow-[1px_1px_0_#000] ${hasUnread ? 'animate-pulse' : ''}`}
           >
             1
           </span>

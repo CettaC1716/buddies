@@ -1903,16 +1903,6 @@ export default function App() {
     };
     const onOpenTeleportKioskModal = (e: Event) => {
       if (hudRef.current.worldMode === 'warzone') return;
-      setHomeTour((prev) => {
-        if (!prev.done || prev.kioskIntroDone) return prev;
-        const next = { ...prev, kioskIntroDone: true };
-        try {
-          window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
-        } catch {
-          // ignore
-        }
-        return next;
-      });
       if (homeTourRef.current.active && homeTourRef.current.step !== 'go_home') return;
       const customEv = e as CustomEvent<{
         kind:
@@ -1954,6 +1944,21 @@ export default function App() {
       }
     };
     const onCityTramRideComplete = (e: Event) => {
+      const rideDetail = (
+        e as CustomEvent<{ destinationStationId?: CityTransitStationId }>
+      ).detail;
+      if (rideDetail?.destinationStationId === 'kai_fish_market') {
+        setHomeTour((prev) => {
+          if (!prev.done || prev.kioskIntroDone) return prev;
+          const next = { ...prev, kioskIntroDone: true };
+          try {
+            window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+      }
       const detail = (
         e as CustomEvent<{
           destinationStationId: CityTransitStationId;
@@ -5991,9 +5996,9 @@ export default function App() {
                       aria-hidden="true"
                       className="absolute inset-0 select-none pointer-events-none"
                       style={{
-                        backgroundColor: '#0a1512',
+                        backgroundColor: '#a5dcf5',
                         backgroundImage:
-                          'linear-gradient(rgba(184,255,60,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(184,255,60,0.08) 1px, transparent 1px)',
+                          'linear-gradient(rgba(255,255,255,0.45) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.45) 1px, transparent 1px)',
                         backgroundSize: '12.5% 12.5%',
                       }}
                     />
@@ -6089,7 +6094,7 @@ export default function App() {
                             key={`city-station-${dest.id}`}
                             data-radar-city-station={dest.id}
                             style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
-                            className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#38bdf8] border border-white pointer-events-none"
+                            className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0284c7] border border-[#1a1a1a] pointer-events-none"
                           />
                         );
                       })}
@@ -6109,7 +6114,7 @@ export default function App() {
                           >
                             <span className={`block w-2 h-2 rounded-full border border-[#1a1a1a] ${poi.cls}`} />
                             <span
-                              className={`absolute top-1/2 -translate-y-1/2 text-[7px] font-black tracking-wide text-white [text-shadow:0_1px_2px_#000,0_0_3px_#000] ${
+                              className={`absolute top-1/2 -translate-y-1/2 text-[7px] font-black tracking-wide text-[#1a1a1a] [text-shadow:0_1px_2px_#fff,0_0_3px_#fff] ${
                                 poi.side === 'left' ? 'right-[7px]' : 'left-[7px]'
                               }`}
                             >
@@ -8599,6 +8604,8 @@ export default function App() {
         blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
         isTutorialTourActive={tutorialStage === 'go_to_kiosk'}
+
+        guideDestinationId={homeTour.done && !homeTour.kioskIntroDone ? 'kai_fish_market' : null}
         onCompleteTutorialTour={() => {
           setTutorialStage('none');
           setCityHighlights((prev) => ({ ...prev, active: true }));

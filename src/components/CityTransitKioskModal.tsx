@@ -27,6 +27,9 @@ export interface CityTransitKioskModalProps {
   onEnterGlasshouseCafe?: () => void;
   isTutorialTourActive?: boolean;
   onCompleteTutorialTour?: () => void;
+  /** Guided destination (city-tour bridge): TRAVEL & DISTRICTS and this
+   * destination card stand out while every other card dims, unclickable. */
+  guideDestinationId?: CityTransitStationId | null;
 }
 
 const RECENT_STATIONS_STORAGE_KEY = 'buddies_blitz_recent_transit_stations_v1';
@@ -47,6 +50,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   onEnterGlasshouseCafe,
   isTutorialTourActive = false,
   onCompleteTutorialTour,
+  guideDestinationId = null,
 }) => {
   const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect' | 'jobs'>('grid');
   const [kioskThumbnails, setKioskThumbnails] = useState<Record<string, string>>(() => {
@@ -128,6 +132,12 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       setTourStep(0);
     }
   }, [isTutorialTourActive, isOpen]);
+  const guideCardClass = (card: string): string => {
+    if (!guideDestinationId || levelView !== 'grid') return '';
+    return card === 'travel_districts'
+      ? ' ring-4 ring-[#38bdf8] z-20 brightness-110 bb-attention-wiggle'
+      : ' opacity-40 saturate-50 pointer-events-none';
+  };
   const tourCardClass = (card: string): string => {
     if (!isTutorialTourActive || levelView !== 'grid') return '';
     return KIOSK_TOUR_STEPS[tourStep]?.card === card
@@ -167,10 +177,11 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       setSearchQuery('');
       setShowRecentOnly(false);
       const defaultTarget: CityTransitStationId =
-        activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza';
+        guideDestinationId ??
+        (activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza');
       setSelectedStationId(defaultTarget);
     }
-  }, [isOpen, activeOriginId]);
+  }, [isOpen, activeOriginId, guideDestinationId]);
 
   const recordRecentStation = (stationId: CityTransitStationId) => {
     setRecentStationIds((prev) => {
@@ -231,7 +242,8 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     setSearchQuery('');
     setShowRecentOnly(false);
     const defaultDistrict: CityTransitStationId =
-      activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza';
+      guideDestinationId ??
+      (activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza');
     setSelectedStationId(defaultDistrict);
     setLevelView('browser');
   };
@@ -502,7 +514,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="travel_districts"
                 data-teleport-option="safezone"
                 onClick={handleOpenTravelBrowser}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('travel_districts')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('travel_districts')}${guideCardClass('travel_districts')}`}
               >
                 <img
                   src={kioskThumbnails.travel_districts || '/docs/hero-2-tram-station.jpg'}
@@ -538,7 +550,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="warzone_arena"
                 data-teleport-option="warzone"
                 onClick={handleOpenWarzoneBrowser}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('warzone_arena')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('warzone_arena')}${guideCardClass('warzone_arena')}`}
               >
                 <img
                   src={kioskThumbnails.warzone_arena || '/docs/hero-7-crate-stacking-pad.jpg'}
@@ -584,7 +596,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="my_house"
                 onClick={handleClickMyHouse}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('my_house')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('my_house')}${guideCardClass('my_house')}`}
               >
                 <img
                   src={kioskThumbnails.my_house || '/docs/hero-3-house-interior.jpg'}
@@ -621,7 +633,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="shop_exchange"
                 onClick={handleClickShopExchange}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('shop_exchange')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('shop_exchange')}${guideCardClass('shop_exchange')}`}
               >
                 <img
                   src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
@@ -656,7 +668,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="jobs"
                 onClick={handleOpenJobsBrowser}
-                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('jobs')}`}
+                className={`group relative h-[162px] sm:h-[172px] bg-white border-[3.5px] border-black shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer ${tourCardClass('jobs')}${guideCardClass('jobs')}`}
               >
                 <img
                   src={
@@ -875,6 +887,8 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   filteredDestinations.map((dest) => {
                     const isSelected = dest.id === selectedDestination.id;
                     const isHere = dest.id === activeOriginId;
+                    const isGuideTarget = guideDestinationId === dest.id;
+                    const isGuideDimmed = Boolean(guideDestinationId) && !isGuideTarget;
 
                     return (
                       <button
@@ -889,7 +903,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                           isSelected
                             ? 'bg-[#facc15] border-[3px] border-black shadow-[3px_3px_0px_#000] -translate-y-0.5'
                             : 'bg-white hover:bg-slate-100 border-[2.5px] border-black shadow-[2px_2px_0px_#000]'
-                        }`}
+                        }${isGuideDimmed ? ' opacity-40 saturate-50 pointer-events-none' : ''}${isGuideTarget ? ' ring-4 ring-[#38bdf8] brightness-110' : ''}`}
                       >
                         <img
                           src={kioskThumbnails[dest.id] || dest.heroImageUrl}
