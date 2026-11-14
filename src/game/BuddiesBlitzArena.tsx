@@ -6439,7 +6439,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // =========================================================================
     // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
     // =========================================================================
-    let activeTutorialWaypointTarget: 'none' | 'hana' | 'kiosk' = 'none';
+    let activeTutorialWaypointTarget: 'none' | 'hana' | 'kiosk' | 'coord' = 'none';
     const tutorialWaypointGroup = new THREE.Group();
     tutorialWaypointGroup.name = 'TutorialWaypointPathGroup3D';
     tutorialWaypointGroup.visible = false;
@@ -6456,27 +6456,39 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const tutorialChevronGeo = new THREE.ShapeGeometry(chevronShape);
     tutorialChevronGeo.rotateX(-Math.PI / 2);
 
-    const TUTORIAL_CHEVRON_COUNT = 16;
+    const TUTORIAL_CHEVRON_COUNT = 22;
     const tutorialChevronMeshes: Array<{
       mesh: THREE.Mesh;
       mat: THREE.MeshBasicMaterial;
+      outline: THREE.Mesh;
     }> = [];
     for (let i = 0; i < TUTORIAL_CHEVRON_COUNT; i++) {
       const mat = new THREE.MeshBasicMaterial({
         color: '#b8ff3c',
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.9,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
+      const outlineMat = new THREE.MeshBasicMaterial({
+        color: '#0b0d13',
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const outline = new THREE.Mesh(tutorialChevronGeo, outlineMat);
+      outline.visible = false;
+      outline.renderOrder = 17;
+      tutorialWaypointGroup.add(outline);
       const mesh = new THREE.Mesh(tutorialChevronGeo, mat);
       mesh.visible = false;
       mesh.renderOrder = 18;
       tutorialWaypointGroup.add(mesh);
-      tutorialChevronMeshes.push({ mesh, mat });
+      tutorialChevronMeshes.push({ mesh, mat, outline });
     }
 
-    const tutorialDestRingGeo = new THREE.RingGeometry(1.15, 1.55, 36);
+    const tutorialDestRingGeo = new THREE.RingGeometry(1.5, 2.05, 40);
     tutorialDestRingGeo.rotateX(-Math.PI / 2);
     const tutorialDestRingMat = new THREE.MeshBasicMaterial({
       color: '#b8ff3c',
@@ -6489,13 +6501,80 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     tutorialDestRingMesh.renderOrder = 18;
     tutorialWaypointGroup.add(tutorialDestRingMesh);
 
+    // Vertical beacon pillar + bobbing down-arrow so the destination is
+    // unmissable from anywhere in the city.
+    const tutorialBeaconMat = new THREE.MeshBasicMaterial({
+      color: '#b8ff3c',
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const tutorialBeaconMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 16, 10, 1, true),
+      tutorialBeaconMat,
+    );
+    tutorialBeaconMesh.renderOrder = 17;
+    tutorialWaypointGroup.add(tutorialBeaconMesh);
+
+    const tutorialArrowGeo = new THREE.ConeGeometry(0.55, 1.15, 20);
+    tutorialArrowGeo.rotateX(Math.PI);
+    const tutorialArrowOutlineMesh = new THREE.Mesh(
+      tutorialArrowGeo,
+      new THREE.MeshBasicMaterial({
+        color: '#0b0d13',
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      }),
+    );
+    tutorialArrowOutlineMesh.renderOrder = 17;
+    tutorialArrowOutlineMesh.scale.setScalar(1.22);
+    tutorialWaypointGroup.add(tutorialArrowOutlineMesh);
+    const tutorialArrowMat = new THREE.MeshBasicMaterial({
+      color: '#b8ff3c',
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+    });
+    const tutorialArrowMesh = new THREE.Mesh(tutorialArrowGeo, tutorialArrowMat);
+    tutorialArrowMesh.renderOrder = 18;
+    tutorialWaypointGroup.add(tutorialArrowMesh);
+
+    let tutorialWaypointCoord = { x: 0, z: 0 };
+
     const onSetTutorialWaypoint = (ev: Event) => {
-      const detail = (ev as CustomEvent<{ target?: 'none' | 'hana' | 'kiosk' }>).detail;
+      const detail = (
+        ev as CustomEvent<{
+          target?: 'none' | 'hana' | 'kiosk' | 'coord';
+          x?: number;
+          z?: number;
+          color?: string;
+        }>
+      ).detail;
       const nextTarget = detail?.target ?? 'none';
-      activeTutorialWaypointTarget =
-        nextTarget === 'hana' || nextTarget === 'kiosk' ? nextTarget : 'none';
-      const hex = activeTutorialWaypointTarget === 'kiosk' ? '#38bdf8' : '#b8ff3c';
+      if (
+        nextTarget === 'coord' &&
+        typeof detail?.x === 'number' &&
+        Number.isFinite(detail.x) &&
+        typeof detail?.z === 'number' &&
+        Number.isFinite(detail.z)
+      ) {
+        tutorialWaypointCoord = { x: detail.x, z: detail.z };
+        activeTutorialWaypointTarget = 'coord';
+      } else {
+        activeTutorialWaypointTarget =
+          nextTarget === 'hana' || nextTarget === 'kiosk' ? nextTarget : 'none';
+      }
+      const hex =
+        typeof detail?.color === 'string' && detail.color.length > 0
+          ? detail.color
+          : activeTutorialWaypointTarget === 'kiosk'
+            ? '#38bdf8'
+            : '#b8ff3c';
       tutorialDestRingMat.color.set(hex);
+      tutorialBeaconMat.color.set(hex);
+      tutorialArrowMat.color.set(hex);
       for (const item of tutorialChevronMeshes) {
         item.mat.color.set(hex);
       }
@@ -21607,7 +21686,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         ) {
           let targetX = lobbyCafeNpc.npcGrp.position.x;
           let targetZ = lobbyCafeNpc.npcGrp.position.z;
-          if (activeTutorialWaypointTarget === 'hana') {
+          if (activeTutorialWaypointTarget === 'coord') {
+            targetX = tutorialWaypointCoord.x;
+            targetZ = tutorialWaypointCoord.z;
+          } else if (activeTutorialWaypointTarget === 'hana') {
             lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
             targetX = scratchLiveObjPos.x;
             targetZ = scratchLiveObjPos.z;
@@ -21637,11 +21719,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           );
           tutorialDestRingMesh.scale.setScalar(ringScale);
           tutorialDestRingMat.opacity = 0.65 + Math.sin(timeSec * 4.5) * 0.25;
+          const destGroundY = getTerrainElevation(targetX, targetZ);
+          tutorialBeaconMesh.position.set(targetX, destGroundY + 8.0, targetZ);
+          const arrowY = destGroundY + 2.6 + Math.sin(timeSec * 3.2) * 0.35;
+          tutorialArrowMesh.position.set(targetX, arrowY, targetZ);
+          tutorialArrowOutlineMesh.position.set(targetX, arrowY, targetZ);
 
           const startOffset = 1.4;
           const endOffset = 1.6;
           const span = Math.max(0, dist - startOffset - endOffset);
-          const spacing = 2.1;
+          const spacing = 2.9;
           const neededCount = Math.min(
             TUTORIAL_CHEVRON_COUNT,
             span > 0.4 ? Math.max(1, Math.floor(span / spacing) + 1) : 0,
@@ -21651,6 +21738,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const item = tutorialChevronMeshes[ci];
             if (ci >= neededCount) {
               item.mesh.visible = false;
+              item.outline.visible = false;
               continue;
             }
             const frac = neededCount === 1 ? 0.5 : ci / neededCount;
@@ -21658,12 +21746,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const dAlong = startOffset + animatedFrac * span;
             const cx = playerUnit.x + (dx / Math.max(0.01, dist)) * dAlong;
             const cz = playerUnit.z + (dz / Math.max(0.01, dist)) * dAlong;
+            const chevY = getTerrainElevation(cx, cz) + 0.15;
             item.mesh.visible = true;
-            item.mesh.position.set(cx, getTerrainElevation(cx, cz) + 0.15, cz);
+            item.mesh.position.set(cx, chevY, cz);
             item.mesh.rotation.y = yaw;
             const pulse = 0.5 + 0.5 * Math.sin(timeSec * 6.5 - ci * 0.75);
-            item.mat.opacity = 0.38 + pulse * 0.56;
-            item.mesh.scale.setScalar(0.88 + pulse * 0.2);
+            item.mat.opacity = 0.8 + pulse * 0.2;
+            const chevScale = (0.88 + pulse * 0.2) * 1.9;
+            item.mesh.scale.setScalar(chevScale);
+            item.outline.visible = true;
+            item.outline.position.set(cx, chevY - 0.012, cz);
+            item.outline.rotation.y = yaw;
+            item.outline.scale.setScalar(chevScale * 1.22);
           }
         } else {
           tutorialWaypointGroup.visible = false;

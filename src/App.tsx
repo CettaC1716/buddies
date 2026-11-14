@@ -441,6 +441,67 @@ export default function App() {
     'none' | 'welcome_modal' | 'go_to_hana' | 'go_to_kiosk'
   >('none');
   const [hanaWelcomeNearClaimed, setHanaWelcomeNearClaimed] = useState<boolean>(false);
+
+  // FIRST HOME forced tour (hard gate, rifallah 14 Nov): persisted progress
+  // and the on-chain proof captured from each completed purchase step.
+  const [homeTour, setHomeTour] = useState<{
+    done: boolean;
+    metHana: boolean;
+    txs: Record<string, { txHash: string; explorerUrl: string }>;
+  }>(() => {
+    try {
+      const raw = window.localStorage.getItem('bb_home_tour_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          done?: boolean;
+          metHana?: boolean;
+          txs?: Record<string, { txHash: string; explorerUrl: string }>;
+        };
+        return {
+          done: Boolean(parsed.done),
+          metHana: Boolean(parsed.metHana),
+          txs: parsed.txs ?? {},
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { done: false, metHana: false, txs: {} };
+  });
+  const homeTourRef = useRef<{ active: boolean; step: string }>({ active: false, step: 'done' });
+  const persistHomeTour = (next: {
+    done: boolean;
+    metHana: boolean;
+    txs: Record<string, { txHash: string; explorerUrl: string }>;
+  }) => {
+    setHomeTour(next);
+    try {
+      window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+  const recordHomeTourTx = (kind: string, txHash?: string, explorerUrl?: string) => {
+    if (!txHash) return;
+    setHomeTour((prev) => {
+      const next = {
+        ...prev,
+        txs: {
+          ...prev.txs,
+          [kind]: {
+            txHash,
+            explorerUrl: explorerUrl || `https://testnet.nearblocks.io/txns/${txHash}`,
+          },
+        },
+      };
+      try {
+        window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
   const [propertyPitchSeen, setPropertyPitchSeen] = useState<boolean>(false);
   const [hanaPitchOrigin, setHanaPitchOrigin] = useState<'kiosk' | 'browse' | null>(null);
   const [pendingPitchKioskStation, setPendingPitchKioskStation] =
@@ -1668,6 +1729,7 @@ export default function App() {
 
   useEffect(() => {
     const onToggleKiosk = () => {
+      if (homeTourRef.current.active) return;
       setIsKioskModalOpen((prev) => {
         const next = !prev;
         if (next) {
@@ -1689,6 +1751,7 @@ export default function App() {
       ).detail;
       const rawLoc = detail?.location ?? detail?.locationId;
       const loc: MerchantLocationId = rawLoc === 'beach_house' ? 'beach_house' : 'lobby_cafe';
+      if (homeTourRef.current.active && loc === 'beach_house') return;
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
@@ -1712,6 +1775,11 @@ export default function App() {
           typeof entryDetail?.commanderIdx === 'number' &&
           isIntactModelEstateBasePlot(entryDetail.team, entryDetail.commanderIdx),
       );
+      if (homeTourRef.current.active) {
+        const tourStep = homeTourRef.current.step;
+        if (isSampleEntry) return;
+        if (tourStep !== 'go_home' && tourStep !== 'decor') return;
+      }
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
@@ -1734,6 +1802,7 @@ export default function App() {
       setActiveSpecialModal('none');
     };
     const onEnterGlasshouseCafe = () => {
+      if (homeTourRef.current.active) return;
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setIsPersonalWalletModalOpen(false);
@@ -1829,6 +1898,7 @@ export default function App() {
     };
     const onOpenTeleportKioskModal = (e: Event) => {
       if (hudRef.current.worldMode === 'warzone') return;
+      if (homeTourRef.current.active && homeTourRef.current.step !== 'go_home') return;
       const customEv = e as CustomEvent<{
         kind:
           | CityTransitStationId
@@ -1943,7 +2013,178 @@ export default function App() {
     };
   }, []);
 
+  // FIRST HOME tour: the current step is DERIVED from real state every
+  // render, so fulfilled steps skip themselves and a reload resumes in place.
+  const ownsTourFurniture = ownedMerchantItemIds.some((id) => {
+    const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === id);
+    return item?.category === 'nft_collector_furniture';
+  });
+  const placedTourFurnitureCount = Object.values(placedFurnitureCounts).reduce(
+    (acc, n) => acc + n,
+    0,
+  );
+  const homeTourStep:
+    | 'connect'
+    | 'go_hana'
+    | 'claim'
+    | 'swap'
+    | 'buy_house'
+    | 'buy_furniture'
+    | 'go_home'
+    | 'decor'
+    | 'done' = homeTour.done
+    ? 'done'
+    : !hud.nearWalletId
+      ? 'connect'
+      : !homeTour.metHana && !hanaWelcomeNearClaimed
+        ? 'go_hana'
+        : !hanaWelcomeNearClaimed
+          ? 'claim'
+          : !(respiteBalance >= 100 || hasHouseOwnership)
+            ? 'swap'
+            : !hasHouseOwnership
+              ? 'buy_house'
+              : !ownsTourFurniture
+                ? 'buy_furniture'
+                : placedTourFurnitureCount > 0
+                  ? 'done'
+                  : isInsidePrivateHouse && !isSampleHouseView
+                    ? 'decor'
+                    : 'go_home';
+  const homeTourActive = !homeTour.done && homeTourStep !== 'done';
+
   useEffect(() => {
+    homeTourRef.current = { active: homeTourActive, step: homeTourStep };
+  }, [homeTourActive, homeTourStep]);
+
+  useEffect(() => {
+    if (homeTourStep === 'done' && !homeTour.done) {
+      persistHomeTour({ ...homeTour, done: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeTourStep, homeTour.done]);
+
+  useEffect(() => {
+    if (
+      activeSpecialModal === 'npc_merchant' &&
+      merchantLocation === 'lobby_cafe' &&
+      !homeTour.metHana
+    ) {
+      persistHomeTour({ ...homeTour, metHana: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSpecialModal, merchantLocation, homeTour.metHana]);
+
+  // The tour drives the waypoint while it is active (bold chevron path):
+  // Hana for every Hana step, the player's own residence kiosk for go_home.
+  useEffect(() => {
+    if (!homeTourActive) return;
+    if (
+      homeTourStep === 'go_hana' ||
+      homeTourStep === 'claim' ||
+      homeTourStep === 'swap' ||
+      homeTourStep === 'buy_house' ||
+      homeTourStep === 'buy_furniture'
+    ) {
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'hana' } }),
+      );
+    } else if (homeTourStep === 'go_home') {
+      const destId = hud.playerTeam === 'red' ? 'south_residence' : 'north_residence';
+      const dest = CITY_TRANSIT_DESTINATIONS.find((d) => d.id === destId);
+      if (dest) {
+        window.dispatchEvent(
+          new CustomEvent('set-tutorial-waypoint', {
+            detail: { target: 'coord', x: dest.kioskX, z: dest.kioskZ, color: '#b8ff3c' },
+          }),
+        );
+      }
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
+      );
+    }
+  }, [homeTourActive, homeTourStep, hud.playerTeam]);
+
+  const homeTourGuide: {
+    step: string;
+    tab: 'sesi_chat' | 'transaksi' | 'katalog';
+    katalogTab?: 'house' | 'furniture';
+    line: string;
+    walletLabel: string;
+  } | null =
+    homeTourActive && merchantLocation === 'lobby_cafe'
+      ? homeTourStep === 'connect'
+        ? {
+            step: homeTourStep,
+            tab: 'sesi_chat',
+            line: "Let's get you connected first. A wallet lets you truly own your home.",
+            walletLabel: '',
+          }
+        : homeTourStep === 'claim'
+          ? {
+              step: homeTourStep,
+              tab: 'sesi_chat',
+              line: 'Welcome! Claim your starter pack: 0.30 NEAR + 100 LUL + 20 CYON.',
+              walletLabel: hud.nearWalletId || '',
+            }
+          : homeTourStep === 'swap'
+            ? {
+                step: homeTourStep,
+                tab: 'transaksi',
+                line: 'Swap 0.25 NEAR into 100 RESPITE. That is your house fund.',
+                walletLabel: hud.nearWalletId || '',
+              }
+            : homeTourStep === 'buy_house'
+              ? {
+                  step: homeTourStep,
+                  tab: 'katalog',
+                  katalogTab: 'house',
+                  line: "Let's buy your first home!",
+                  walletLabel: hud.nearWalletId || '',
+                }
+              : homeTourStep === 'buy_furniture'
+                ? respiteBalance >= 8
+                  ? {
+                      step: homeTourStep,
+                      tab: 'katalog',
+                      katalogTab: 'furniture',
+                      line: 'Pick a piece of furniture for your new home. The Chabudai tea table is a lovely start.',
+                      walletLabel: hud.nearWalletId || '',
+                    }
+                  : {
+                      step: homeTourStep,
+                      tab: 'transaksi',
+                      line: 'Swap 0.02 NEAR into 8 RESPITE first, just enough for your first furniture.',
+                      walletLabel: hud.nearWalletId || '',
+                    }
+                : null
+      : null;
+
+  const homeTourObjectiveText: Record<string, string> = {
+    connect: 'Connect your wallet or Google account. Owning a home needs an account.',
+    go_hana: 'Talk to Hana at Central Plaza. She will set you up with a home.',
+    claim: "Open Hana's chat and claim your starter pack.",
+    swap: "In Hana's EXCHANGE tab, swap 0.25 NEAR into 100 RESPITE.",
+    buy_house: "In Hana's CATALOG, buy your first home deed.",
+    buy_furniture: "In Hana's CATALOG, buy one piece of furniture.",
+    go_home: 'Head home: ride the transit to your Residence and step inside.',
+    decor: 'Place your furniture inside, then press CONFIRM MOVE.',
+  };
+  const homeTourStepList = [
+    'connect',
+    'go_hana',
+    'claim',
+    'swap',
+    'buy_house',
+    'buy_furniture',
+    'go_home',
+    'decor',
+  ].filter((stepId) => stepId !== 'connect' || !hud.nearWalletId);
+  const homeTourStepNumber = Math.max(1, homeTourStepList.indexOf(homeTourStep) + 1);
+
+  useEffect(() => {
+    if (homeTourRef.current.active) return;
     const target: 'none' | 'hana' | 'kiosk' =
       tutorialStage === 'go_to_hana'
         ? 'hana'
@@ -1961,6 +2202,7 @@ export default function App() {
   // no property has not met Hana's property pitch yet.
   useEffect(() => {
     const active =
+      !homeTourActive &&
       !(hasHouseOwnership || hud.nearHasGamepassNft) &&
       !propertyPitchSeen &&
       tutorialStage === 'none' &&
@@ -1974,6 +2216,7 @@ export default function App() {
       }),
     );
   }, [
+    homeTourActive,
     hasHouseOwnership,
     hud.nearHasGamepassNft,
     propertyPitchSeen,
@@ -3467,6 +3710,7 @@ export default function App() {
     }
 
     setHanaWelcomeNearClaimed(true);
+    recordHomeTourTx('claim', claimRes.txHash, claimRes.explorerUrl);
     const updatedView = await fetchNearAccountView(actorAccount);
     if (updatedView) {
       const nearTokens = Number(updatedView.amount) / 1e24;
@@ -5377,6 +5621,7 @@ export default function App() {
 
       {isPreloadComplete &&
         onboardingStep === 'completed' &&
+        !homeTourActive &&
         (tutorialStage === 'go_to_hana' || tutorialStage === 'go_to_kiosk') &&
         !isInsideGlasshouseCafe &&
         !isInsidePrivateHouse &&
@@ -5414,6 +5659,29 @@ export default function App() {
               >
                 SKIP
               </button>
+            </div>
+          </div>
+        )}
+
+      {isPreloadComplete &&
+        onboardingStep === 'completed' &&
+        homeTourActive &&
+        activeSpecialModal === 'none' &&
+        activeTeleportKioskModal === 'none' &&
+        !isInsideGlasshouseCafe &&
+        (!isInsidePrivateHouse || homeTourStep === 'decor') &&
+        !tramRideCutsceneUi?.active && (
+          <div
+            data-home-tour-objective="true"
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-none select-none"
+          >
+            <div className="bg-[#0f172a]/95 text-white border-[3px] border-black shadow-[5px_5px_0_#000] px-3.5 py-2 flex items-center gap-3">
+              <span className="px-2 py-0.5 border border-black text-[9.5px] font-black uppercase shrink-0 bg-[#b8ff3c] text-black">
+                FIRST HOME {homeTourStepNumber}/{homeTourStepList.length}
+              </span>
+              <span className="text-[11px] font-bold text-slate-100">
+                {homeTourObjectiveText[homeTourStep]}
+              </span>
             </div>
           </div>
         )}
@@ -7001,6 +7269,8 @@ export default function App() {
         isTutorialHanaActive={tutorialStage === 'go_to_hana'}
         hanaWelcomeNearClaimed={hanaWelcomeNearClaimed}
         onClaimHanaWelcomeNear={handleClaimHanaWelcomeNear}
+        homeTourGuide={homeTourGuide}
+        homeTourTxs={homeTour.txs}
         onFinishHanaTutorialAndGuideKiosk={() => {
           setActiveSpecialModal('none');
           setTutorialStage('go_to_kiosk');
@@ -7024,6 +7294,7 @@ export default function App() {
             },
           });
           if (!res.ok || !res.txHash) return false;
+          recordHomeTourTx('house', res.txHash);
           const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
           let nextRespite = Math.max(0, respiteBalance - priceRespite);
           let deedTokenId = 'nep171:house:ownership';
@@ -7570,6 +7841,7 @@ export default function App() {
               ownedTokenIds: nextOwned,
             });
           }
+          recordHomeTourTx('furniture', onChainBuyReceipt.txHash, onChainBuyReceipt.explorerUrl);
           return { ok: true, ...onChainBuyReceipt };
         }}
         onSellMerchantItem={async (item: MerchantCatalogItem, refund: number) => {
@@ -7752,6 +8024,10 @@ export default function App() {
             networkId: walletNetworkChoice,
           });
           if (!receipt || !receipt.txHash) return null;
+          recordHomeTourTx(
+            direction === 'near_to_respite' && inputAmount >= 0.2 ? 'swap' : 'swap_small',
+            receipt.txHash,
+          );
           const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
 
           let nextNear =
@@ -8251,6 +8527,14 @@ export default function App() {
           team?: 'blue' | 'red',
         ) => {
           soundEngine.playUiClick();
+          if (homeTourRef.current.active) {
+            const isResidenceDest =
+              destination.id === 'north_residence' || destination.id === 'south_residence';
+            if (homeTourRef.current.step !== 'go_home' || !isResidenceDest) {
+              soundEngine.playHit();
+              return;
+            }
+          }
           const originStationId: CityTransitStationId =
             activeTeleportKioskModal !== 'none'
               ? activeTeleportKioskModal

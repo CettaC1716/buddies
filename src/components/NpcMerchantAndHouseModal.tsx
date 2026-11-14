@@ -179,6 +179,14 @@ interface NpcMerchantAndHouseModalProps {
   citizenDisplayName?: string;
   isTutorialHanaActive?: boolean;
   hanaWelcomeNearClaimed?: boolean;
+  homeTourGuide?: {
+    step: string;
+    tab: 'sesi_chat' | 'transaksi' | 'katalog';
+    katalogTab?: 'house' | 'furniture';
+    line: string;
+    walletLabel: string;
+  } | null;
+  homeTourTxs?: Record<string, { txHash: string; explorerUrl: string }>;
   onClaimHanaWelcomeNear?: () => Promise<{
     ok: boolean;
     txHash: string;
@@ -410,6 +418,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   isTutorialHanaActive = false,
   hanaWelcomeNearClaimed = false,
   onClaimHanaWelcomeNear,
+  homeTourGuide,
+  homeTourTxs,
   onFinishHanaTutorialAndGuideKiosk,
   hanaPitchOrigin = null,
   onViewModelHouse,
@@ -517,6 +527,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       setActiveTab('fish_market');
     }
   }, [activeModalMode, merchantLocation, kaiTutorialStage]);
+
+  // FIRST HOME guide mode: while App drives a guided step, this modal stays
+  // pinned to that step's tab (and catalog sub-tab); the tab buttons for the
+  // other tabs are disabled below so the player cannot wander off the step.
+  useEffect(() => {
+    if (!homeTourGuide) return;
+    if (activeTab !== homeTourGuide.tab) setActiveTab(homeTourGuide.tab);
+    if (homeTourGuide.katalogTab && hanaCatalogTab !== homeTourGuide.katalogTab) {
+      setHanaCatalogTab(homeTourGuide.katalogTab);
+    }
+  }, [homeTourGuide, activeTab, hanaCatalogTab]);
 
   // Cutaway Interior Studio State
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
@@ -1749,10 +1770,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
         {/* Top Bar: 3 Navigation Tab Buttons (CHAT SESSION, EXCHANGE, CATALOG) + Close */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap [&_button:disabled]:opacity-40 [&_button:disabled]:cursor-not-allowed">
             <button
               type="button"
               data-gold-exchange-balance="true"
+              disabled={Boolean(homeTourGuide) && homeTourGuide?.tab !== 'sesi_chat'}
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('sesi_chat');
@@ -1768,6 +1790,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             <button
               type="button"
+              disabled={Boolean(homeTourGuide) && homeTourGuide?.tab !== 'transaksi'}
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('transaksi');
@@ -1783,6 +1806,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             <button
               type="button"
+              disabled={Boolean(homeTourGuide) && homeTourGuide?.tab !== 'katalog'}
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('katalog');
@@ -1830,6 +1854,56 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             <span className="skew-x-6 inline-block">X</span>
           </button>
         </div>
+
+        {homeTourGuide && (
+          <div
+            data-home-tour-guide="true"
+            className="mt-3 shrink-0 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] px-3 py-2"
+          >
+            <div className="flex items-center gap-2">
+              <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase shrink-0">
+                Hana Guide
+              </span>
+              <span className="text-[11px] font-bold">{homeTourGuide.line}</span>
+            </div>
+            {homeTourGuide.walletLabel && (
+              <div className="mt-1 text-[9.5px] font-bold text-slate-300">
+                Wallet: {homeTourGuide.walletLabel}
+              </div>
+            )}
+            {homeTourTxs && Object.keys(homeTourTxs).length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase text-slate-300">
+                  On-chain proof:
+                </span>
+                {(['claim', 'swap', 'house', 'swap_small', 'furniture'] as const)
+                  .filter((k) => homeTourTxs[k])
+                  .map((k) => (
+                    <a
+                      key={k}
+                      href={homeTourTxs[k].explorerUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-1.5 py-0.5 bg-white/10 hover:bg-white/20 border border-white/30 text-[9px] font-black uppercase text-[#b8ff3c]"
+                    >
+                      {
+                        (
+                          {
+                            claim: 'Claim',
+                            swap: 'Swap 0.25',
+                            house: 'Home deed',
+                            swap_small: 'Swap 0.02',
+                            furniture: 'Furniture',
+                          } as Record<string, string>
+                        )[k]
+                      }{' '}
+                      - {homeTourTxs[k].txHash.slice(0, 8)}...
+                    </a>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab Content Viewport */}
         <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-1 space-y-3 min-h-0">
@@ -3120,6 +3194,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       key={tab.id}
                       type="button"
                       data-hana-catalog-tab={tab.id}
+                      disabled={
+                        Boolean(homeTourGuide?.katalogTab) && tab.id !== homeTourGuide?.katalogTab
+                      }
                       onClick={() => {
                         soundEngine.playUiClick();
                         setHanaCatalogTab(tab.id);
@@ -3128,6 +3205,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         hanaCatalogTab === tab.id
                           ? 'bg-[#38bdf8] text-black shadow-[2px_2px_0px_#000]'
                           : 'bg-[#1e293b] text-white/75 hover:text-white'
+                      } ${
+                        homeTourGuide?.katalogTab && tab.id !== homeTourGuide.katalogTab
+                          ? 'opacity-40 cursor-not-allowed'
+                          : ''
                       }`}
                     >
                       <tab.Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
