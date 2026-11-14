@@ -203,7 +203,7 @@ interface NpcMerchantAndHouseModalProps {
   houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
   onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
   onOpenTeleportKioskFromPitch?: () => void;
-  kaiTutorialStage?: 'meet' | 'equip' | 'to_water' | 'catch' | 'sell' | 'done' | null;
+  kaiTutorialStage?: 'meet' | 'equip' | 'to_water' | 'catch' | 'mint' | 'sell' | 'done' | null;
   kaiCardDismissed?: boolean;
   onKaiTutorialStart?: () => void;
   onKaiTutorialLater?: () => void;

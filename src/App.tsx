@@ -2342,6 +2342,7 @@ export default function App() {
     | 'equip'
     | 'to_water'
     | 'catch'
+    | 'mint'
     | 'sell'
     | 'done';
   const [kaiTutorialStage, setKaiTutorialStage] = useState<KaiTutorialStage>(() => {
@@ -4056,7 +4057,13 @@ export default function App() {
     if (hud.worldMode === 'warzone' || !playerRadarDot) return;
     const distToKai = Math.hypot(playerRadarDot.x - 85.8, playerRadarDot.z - 60);
     if (distToKai > 42) return;
-    advanceKaiTutorial(caughtFishBucket.length > 0 ? 'sell' : 'meet');
+    advanceKaiTutorial(
+      caughtFishBucket.some((f) => f.isMintedNft)
+        ? 'sell'
+        : caughtFishBucket.length > 0
+          ? 'mint'
+          : 'meet',
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     kaiTutorialStage,
@@ -4082,6 +4089,11 @@ export default function App() {
     } else if (
       kaiTutorialStage === 'catch' &&
       caughtFishBucket.length > prevBucketLenRef.current
+    ) {
+      advanceKaiTutorial('mint');
+    } else if (
+      kaiTutorialStage === 'mint' &&
+      caughtFishBucket.some((f) => f.isMintedNft)
     ) {
       advanceKaiTutorial('sell');
     }
@@ -4590,6 +4602,9 @@ export default function App() {
         setRespiteBalance(Math.max(0, Number(liveRespiteStr) || 0));
       }
       markCityHighlight('nft');
+      if (kaiTutorialStageRef.current === 'sell') {
+        advanceKaiTutorial('done');
+      }
       return { ok: true as const };
     },
     [playerUid],
@@ -5846,6 +5861,7 @@ export default function App() {
           kaiTutorialStage === 'equip' ||
           kaiTutorialStage === 'to_water' ||
           kaiTutorialStage === 'catch' ||
+          kaiTutorialStage === 'mint' ||
           kaiTutorialStage === 'sell') && (
           <div
             data-kai-tutorial-objective="true"
@@ -5865,7 +5881,9 @@ export default function App() {
                         ? 'Stand by the water east of Kai.'
                         : kaiTutorialStage === 'catch'
                           ? 'Hold [F] to cast \u2014 wait for the plunge, then reel it in!'
-                          : 'Sell your catch to Kai at the Fish Market.'}
+                          : kaiTutorialStage === 'mint'
+                            ? 'Open your BAG \u2192 FISH tab \u2192 MINT your catch into an NFT.'
+                            : 'Take your fish NFT back to Kai \u2014 he pays RESPITE for NFTs.'}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
