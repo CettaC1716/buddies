@@ -22,7 +22,7 @@
 
 Traditional Web3 games break both immersion and tokenomics: they interrupt 60 FPS gameplay with wallet popups, and they mint P2E tokens out of thin air whenever bots grind repetitive tasks. **Buddies Blitz** solves both using native NEAR primitives and a strict player-to-player (`P2P`) real economy:
 
-1. **Seedless Dual-Key Citizen Sub-Accounts (`<handle>.buddiesblitz.testnet`)** — Citizens sign in with Google OAuth (via Privy) and pick a handle, provisioning a browser-scoped Ed25519 `FunctionCall` session key (`0.25 NEAR` gas allowance scoped strictly to `market.buddiesblitz.testnet`) via [`api/near-relayer.ts`](api/near-relayer.ts) while `buddiesblitz.testnet` retains recovery custody. External NEAR wallets (**Meteor Wallet** and **MyNearWallet Testnet**) are also supported with **NEP-413 `signMessage`** cryptographic ownership verification.
+1. **Seedless Dual-Key Citizen Sub-Accounts (`<handle>.buddiesblitz.testnet`)** — Citizens sign in with Google OAuth (via Privy) and pick a handle, provisioning a browser-scoped Ed25519 `FunctionCall` session key (`0.25 NEAR` gas allowance scoped strictly to `market.buddiesblitz.testnet`) via [`api/near-relayer.ts`](api/near-relayer.ts) while `buddiesblitz.testnet` retains recovery custody. External NEAR wallets (**Meteor Wallet** and **MyNearWallet Testnet**) are also supported with **NEP-413 `signMessage`** cryptographic ownership verification. Every transaction from an in-game sub-wallet first asks in an in-game confirmation popup (human-readable action, contract, NEAR deposit, gas) — Approve signs locally, Reject cancels without falling back to an external wallet selector.
 2. **Non-Ponzi P2P Real Economy (`Track 09-games`)** — Grinding Mini-Games (**Warzone**) or selling unminted fish to **Merchant Kai** yields off-chain **`LUL`**, whose **sole function** is converting into off-chain **`CYON`** to buy standard non-NFT items. On-chain **`RESPITE` (NEP-141)** is **never printed from gameplay grinding**: it enters circulation only when a player swaps `NEAR -> RESPITE` at **Merchant Hana's** ATM (`1 NEAR = 400 RESPITE`) and circulates **player-to-player** when citizens mint caught fish or rare items as **NEP-171 NFTs** and another player buys them on **Kai's P2P Marketplace**. If no player buys a listed NFT, zero `RESPITE` is created.
 3. **Functional Sub-Account Deeds & Autonomous NPC Merchants (`Track 10-nfts` & `09-games`)** — Purchasing the **Modern Japanese Wooden Pavilion House Certificate (`100 RESPITE`)** mints a **NEP-171 Sub-Account Deed** with atomic `key_epoch` session-key rotation on transfer, while NPC Merchants **Hana** (Central Plaza Cafe) and **Kai** (East Beach House) manage live treasuries, dynamic supply/demand pricing, and bankruptcy discipline — and Kai additionally holds a real on-chain RESPITE treasury account (`kai.buddiesblitz.testnet`) that buys minted Fish NFTs from players under hard caps, a daily circuit breaker, and a 50% profit lock.
 
@@ -37,9 +37,9 @@ Requires **Node.js 18+** and **npm** (plus **Rust `stable` + `cargo-near`** if r
 npm install
 npm run dev
 
-# 2. Run TypeScript static verification, 166 unit tests, and production WebGL bundle build
+# 2. Run TypeScript static verification, 173 unit tests, and production WebGL bundle build
 npm run lint     # tsc --noEmit (0 errors)
-npm test         # 166 unit tests (3-currency P2P invariants, negotiation & NPC treasury discipline, House Deed vs Fish NFT filter, NEAR client, audio & preloader)
+npm test         # 173 unit tests (3-currency P2P invariants, negotiation & NPC treasury discipline, House Deed vs Fish NFT filter, NEAR client, audio & preloader)
 npm run build    # Production Vite 8 build into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM binary (near-sdk 5.30.1)
@@ -131,7 +131,7 @@ ON-CHAIN P2P OWNERSHIP LAYER (NEAR Testnet: market.buddiesblitz.testnet)
 | Currency | Layer | How Earned / Acquired | Sole / Primary Usage | Anti-Bot & Anti-Ponzi Guarantee |
 |---|---|---|---|---|
 | **`LUL`** | Off-chain | **Warzone** mini-game performance/drops & selling **raw non-NFT fish** to Merchant Kai | **Single role**: Swap `LUL -> CYON` at the Exchange (cannot directly buy catalog items) | Never exists on-chain; ground drops despawn automatically (`40s`); subject to NPC treasury slippage |
-| **`CYON`** | Off-chain | Converted from `LUL` (`LUL -> CYON` Exchange) | Buys all regular non-NFT catalog items (standard outfits, basic furniture, fishing tackle) | Strictly isolated from `RESPITE` and `NEAR` — zero cash-out drain path |
+| **`CYON`** | Off-chain | Converted from `LUL` (`LUL -> CYON` Exchange) | Buys regular non-NFT catalog items (standard outfits, fishing tackle) — never furniture: every catalog furniture piece is an NFT bought with `RESPITE` | Strictly isolated from `RESPITE` and `NEAR` — zero cash-out drain path |
 | **`RESPITE`** | On-chain **NEP-141** | `NEAR -> RESPITE` swap at Hana's ATM (`1 NEAR = 400 RESPITE`) **or** selling minted **NEP-171 NFTs** to other players on Kai's P2P Market | Buys **House Ownership Certificate (`100 RESPITE`)**, **Family Member Contracts (`15 / 45 / 180 RESPITE`)**, exclusive NFT furniture/outfits, and P2P NFT listings | **Zero P2E inflation**: if no player buys a listed NFT, no `RESPITE` is minted; one-way `NEAR -> RESPITE` utility firewall |
 
 > **Authoritative Source-of-Truth Guarantee (Hybrid Architecture):**
@@ -160,7 +160,8 @@ In [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs),
 
 ### 1. Seedless Citizen Onboarding (`<handle>.buddiesblitz.testnet`) or External NEAR Wallet
 - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000`). Sign in with Google (or enter as Guest, talk to **Hana** at Central Plaza Cafe with `E`, and click **`REGISTER`**), pick a citizen handle (e.g. `judge01`), or connect **Meteor Wallet** / **MyNearWallet Testnet**.
-- **See:** `/api/near-relayer` provisions or resolves `judge01.buddiesblitz.testnet` with an `ed25519:` `FunctionCall` session key scoped to `market.buddiesblitz.testnet`, hydrating your `0 LUL | 0 CYON | 0 RESPITE` balances and `PROFILE | BAG | WALLET` top bar.
+- **See:** `/api/near-relayer` provisions or resolves `judge01.buddiesblitz.testnet` with an `ed25519:` `FunctionCall` session key scoped to `market.buddiesblitz.testnet`, hydrating your `0 LUL | 0 CYON | 0 RESPITE` balances and `PROFILE | BAG | WALLET` top bar. Balances are re-read from chain after every transaction, so a claim shows up immediately.
+- **First Home tutorial (forced, 8 hard-gated steps — the new-player path):** connect → talk to Hana → claim the starter pack (**0.30 NEAR + 100 LUL + 20 CYON**, once per account; guest mode cannot claim — judges must sign in) → swap 0.25 NEAR into 100 RESPITE → buy the house deed (100 RESPITE) → buy one furniture piece (from 8 RESPITE) → go home → place it. Off-path interactions stay locked until the chain completes, and progress is stored per wallet.
 
 ### 2. Portal Hub -> Warzone Team Deployment (`BLUE` vs `RED`), Despawn Timers & Return
 - **Do:** Walk to the black **City Transit & Services Kiosk** (`[E]`), click **`WARZONE ARENA`**, choose **`BLUE TEAM`** or **`RED TEAM`** in **`SELECT FACTION`**, and watch the 3D Tram deployment cutscene.
@@ -177,7 +178,7 @@ In [`contracts/buddies-market/src/lib.rs`](contracts/buddies-market/src/lib.rs),
 
 ### 5. Modern Japanese Wooden Pavilion House (`100 RESPITE`), Empty Studio & Friend Invite (`Track 10-nfts`)
 - **Do:** Swap `NEAR -> RESPITE` (`1 NEAR = 400 RESPITE`) in **Hana's `EXCHANGE`** tab, purchase **House Ownership (`100 RESPITE`)** in **`CATALOG`**, then open the **City Transit Kiosk -> `MY HOUSE`**.
-- **See:** On-chain NEP-171 House Deed verification grants entry into your **empty-start Modern Japanese Wooden Pavilion**. Click **`DECORATE STUDIO`** to place `CYON` or `RESPITE` furniture, click **`INVITE FRIEND`** on the top HUD to invite citizens from your friendlist, and click **`EXIT ROOM`** to return to the exact Kiosk coordinates you teleported from. Back outside, list the deed on the **PROPERTY MARKET**: the deed moves into contract escrow (`list_property_deed`) and a buyer's `buy_property` swaps RESPITE and deed atomically — nobody can take the money and keep the house. NFT furniture follows the same on-chain rule: buy from pre-minted merchant stock (`buy_merchant_item`), sell back any time (`sell_merchant_item`, 65% of base). Every purchase also issues a **Letter** — open the `PRIVATE` tab of the world chat to read your sales contract / ownership certificate with its NearBlocks transaction link.
+- **See:** On-chain NEP-171 House Deed verification grants entry into your **empty-start Modern Japanese Wooden Pavilion**. Click **`DECORATE STUDIO`** to place your `RESPITE` NFT furniture, click **`INVITE FRIEND`** on the top HUD to invite citizens from your friendlist, and click **`EXIT ROOM`** to return to the exact Kiosk coordinates you teleported from. Back outside, list the deed on the **PROPERTY MARKET**: the deed moves into contract escrow (`list_property_deed`) and a buyer's `buy_property` swaps RESPITE and deed atomically — nobody can take the money and keep the house. NFT furniture follows the same on-chain rule: buy from pre-minted merchant stock (`buy_merchant_item`), sell back any time (`sell_merchant_item`, 65% of base). Every purchase also issues a **Letter** — open the `PRIVATE` tab of the world chat to read your sales contract / ownership certificate with its NearBlocks transaction link.
 
 ---
 
@@ -207,6 +208,8 @@ Live contract version **1.4.0**, compiled with `near-sdk 5.30.1` + `cargo-near` 
 | **Escrow property market deploy (contract v1.3.0)** | `9MxHwwWgQFXT6CHuooqKok4kCuKvGQnYHFg87betwgHE` | [Tx Receipt](https://testnet.nearblocks.io/txns/9MxHwwWgQFXT6CHuooqKok4kCuKvGQnYHFg87betwgHE) |
 | **Server-attested fish mint deploy (contract v1.4.0)** | `DEJc6aPBFFyq1Yev397ipgTxDXsAf1tp9TbfUbWfMVJQ` | [Tx Receipt](https://testnet.nearblocks.io/txns/DEJc6aPBFFyq1Yev397ipgTxDXsAf1tp9TbfUbWfMVJQ) |
 | **Kai treasury account + 2,000 RESPITE float** | `kai.buddiesblitz.testnet` (create `47G4x9nsuVc56B9C8tVshJdY4DePKyHK3zpZeb3xUEf3`, float `66eT12ikrXotwnE1mcXxGgz3CBSNPGUmVNP4G2x3ogu5`) | [NearBlocks](https://testnet.nearblocks.io/address/kai.buddiesblitz.testnet) |
+
+> **Note:** the swap and house-purchase receipts above are historical transactions from before the rate change — the current rate is **1 NEAR = 400 RESPITE** and the house deed is **100 RESPITE**.
 
 ```bash
 # Verify live on-chain WASM code_hash (DH8P26g46WPiqKiXm4g8xgKA5kGdYBVwEoVQXYqNywHQ == SHA-256 of target/near/buddies_market.wasm)
