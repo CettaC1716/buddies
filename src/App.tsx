@@ -6254,6 +6254,19 @@ export default function App() {
                 isPersonalWalletModalOpen) && (
               <div className="pointer-events-auto flex items-center gap-1.5">
                 <div
+                  data-top-near-badge="true"
+                  title="NEAR — Wallet balance (swaps, purchases, network fees)"
+                  className="-skew-x-12 px-2.5 py-1 bg-[#1a1a1a] text-white border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-mono-tabular font-bold text-[11px]"
+                >
+                  <span className="skew-x-12 inline-block">
+                    {nearTestnetBalance >= 1
+                      ? nearTestnetBalance.toFixed(2)
+                      : Number(nearTestnetBalance.toFixed(4))}{' '}
+                    NEAR
+                  </span>
+                </div>
+
+                <div
                   data-top-lul-badge="true"
                   title="LUL (Lulling) Session Currency"
                   className="-skew-x-12 px-2.5 py-1 bg-[#fec83e] text-[#1a1a1a] border-3 border-[#1a1a1a] shadow-[3px_3px_0_#1a1a1a] font-mono-tabular font-bold text-[11px]"
