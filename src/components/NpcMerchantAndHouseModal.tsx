@@ -65,6 +65,7 @@ import {
   getLastNearTransactionError,
   getNearBlocksTxUrl,
   isActiveWalletReadOnlyObserver,
+  isCitizenSubAccountId,
   type FamilyMemberContractPlanId,
   type FamilyMemberOrderId,
   type NearRespiteSwapReceipt,
@@ -2497,7 +2498,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             const parsedCryptoInput = Math.max(0, Number(cryptoSwapInputStr) || 0);
             const isNearToRespite = true;
             const calculatedCryptoOutput = Math.floor(parsedCryptoInput * respitePerNearRate);
-            const isReadOnlyWallet = walletConnected && isActiveWalletReadOnlyObserver();
+            const isReadOnlyWallet =
+              walletConnected &&
+              isActiveWalletReadOnlyObserver() &&
+              !isCitizenSubAccountId(playerNearAccount);
             const exceedsKnownSignerBalance =
               walletConnected &&
               !isReadOnlyWallet &&

@@ -6,6 +6,7 @@ import {
   disconnectNearWallet,
   getNearBlocksAccountUrl,
   isActiveWalletReadOnlyObserver,
+  isCitizenSubAccountId,
   setActiveWalletAuthKind,
   spawnSubAccountOnChainViaMaster,
   type NearNetworkId,
@@ -42,7 +43,10 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
 
   if (!isOpen) return null;
 
-  const isReadOnlyObserver = Boolean(currentWalletId) && isActiveWalletReadOnlyObserver();
+  const isReadOnlyObserver =
+    Boolean(currentWalletId) &&
+    isActiveWalletReadOnlyObserver() &&
+    !isCitizenSubAccountId(currentWalletId ?? '');
 
   const handleOpenNearConnectorPopup = async () => {
     soundEngine.playUiClick();
@@ -216,39 +220,14 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
             </div>
           )}
 
-          {/* Option 1: External NEAR Wallet */}
-          <div className="p-3 bg-[#eff6ff] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
-                EXTERNAL WALLET
-              </span>
-              <span className="px-1.5 py-0.5 bg-[#38bdf8] border border-[#0d0f12] text-[9px] font-black uppercase">
-                RECOMMENDED
-              </span>
-            </div>
-            <p className="text-[11px] font-bold text-[#334155] leading-snug">
-              Connect Meteor, MyNearWallet, or Intear to trade and purchase items.
-            </p>
-
-            <button
-              type="button"
-              data-wallet-option="near-connect-modal"
-              disabled={isConnecting}
-              onClick={() => void handleOpenNearConnectorPopup()}
-              className="w-full py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider cursor-pointer"
-            >
-              {isConnecting ? 'OPENING...' : 'CONNECT EXTERNAL WALLET'}
-            </button>
-          </div>
-
-          {/* Option 2: Create In-Game Wallet */}
+          {/* Option 1: Create In-Game Wallet (primary) */}
           <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
                 CREATE WALLET
               </span>
-              <span className="px-1.5 py-0.5 bg-[#fde047] border border-[#0d0f12] text-[9px] font-black uppercase">
-                INSTANT
+              <span className="px-1.5 py-0.5 bg-[#b8ff3c] border border-[#0d0f12] text-[9px] font-black uppercase">
+                RECOMMENDED
               </span>
             </div>
             <p className="text-[11px] font-bold text-[#334155] leading-snug">
@@ -265,7 +244,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                   onClose();
                   onSelectGoogleAutoRegister();
                 }}
-                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>CONTINUE WITH GOOGLE</span>
               </button>
@@ -311,6 +290,31 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 </div>
               )}
             </form>
+          </div>
+
+          {/* Option 2: External NEAR Wallet (secondary, optional) */}
+          <div className="p-3 bg-[#f8fafc] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
+                EXTERNAL WALLET
+              </span>
+              <span className="px-1.5 py-0.5 bg-slate-300 border border-[#0d0f12] text-[9px] font-black uppercase">
+                OPTIONAL
+              </span>
+            </div>
+            <p className="text-[11px] font-bold text-[#334155] leading-snug">
+              Already have a NEAR wallet? Connect Meteor, MyNearWallet, or Intear instead.
+            </p>
+
+            <button
+              type="button"
+              data-wallet-option="near-connect-modal"
+              disabled={isConnecting}
+              onClick={() => void handleOpenNearConnectorPopup()}
+              className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+            >
+              {isConnecting ? 'OPENING...' : 'CONNECT EXTERNAL WALLET'}
+            </button>
           </div>
 
           {/* Option 3: View Account */}

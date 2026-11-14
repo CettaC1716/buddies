@@ -934,6 +934,12 @@ export function isActiveWalletReadOnlyObserver(): boolean {
   return getActiveWalletAuthKind() === 'rpc-observer';
 }
 
+/** True for citizen sub-accounts minted by the game relayer (`<handle>.buddiesblitz.testnet`). */
+export function isCitizenSubAccountId(accountId: string): boolean {
+  const clean = (accountId || '').trim().toLowerCase();
+  return clean.endsWith(`.${NEAR_CONFIG.masterAccountId}`) && clean !== NEAR_CONFIG.masterAccountId;
+}
+
 export interface NearWalletConnectionResult {
   accountId: string;
   walletProvider:
@@ -1449,7 +1455,11 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
   depositYocto: string;
 }): Promise<{ ok: boolean; txHash: string; error?: string } | null> {
   const cleanSigner = params.signerAccountId.trim().toLowerCase();
-  if (!cleanSigner || isActiveWalletReadOnlyObserver()) return null;
+  if (!cleanSigner) return null;
+  // A citizen sub-account is never read-only for itself: if this browser
+  // holds its session key, the on-chain access-key check below is the real
+  // gate. The observer veto only applies to foreign accounts being viewed.
+  if (isActiveWalletReadOnlyObserver() && !isCitizenSubAccountId(cleanSigner)) return null;
 
   const { publicKey, privateKey } = await getOrCreateCitizenSessionKeyPair();
   if (!privateKey || !publicKey.startsWith('ed25519:') || typeof crypto === 'undefined') {
