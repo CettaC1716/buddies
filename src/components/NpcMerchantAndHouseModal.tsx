@@ -541,6 +541,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     }
   }, [homeTourGuide, activeTab, hanaCatalogTab]);
 
+  // FIRST HOME guide: on exchange steps, prefill the swap field with the
+  // exact amount the guide asks for (0.25 for the house fund, 0.02 for the
+  // furniture top-up) — once per step, so manual edits are not fought.
+  const guidePrefillKeyRef = React.useRef<string>('');
+  useEffect(() => {
+    if (!homeTourGuide || homeTourGuide.tab !== 'transaksi') return;
+    const amount =
+      homeTourGuide.step === 'swap'
+        ? '0.25'
+        : homeTourGuide.step === 'buy_furniture'
+          ? '0.02'
+          : null;
+    if (!amount) return;
+    const key = `${homeTourGuide.step}:${amount}`;
+    if (guidePrefillKeyRef.current === key) return;
+    guidePrefillKeyRef.current = key;
+    setCryptoSwapInputStr(amount);
+  }, [homeTourGuide]);
+
   // Cutaway Interior Studio State
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
     'furniture',
@@ -2598,24 +2617,33 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {/* Quick Amount Presets */}
                     <div className="flex items-center justify-center gap-1.5 flex-wrap">
                       {[
+                        { near: '0.02', label: '0.02 NEAR' },
                         { near: '0.25', label: '0.25 NEAR' },
                         { near: '0.5', label: '0.5 NEAR' },
-                        { near: '1', label: '1 NEAR' },
-                      ].map((preset) => (
-                        <button
-                          key={preset.near}
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setCryptoSwapInputStr(preset.near);
-                            setSwapErrorText(null);
-                            setLastCryptoSwapReceipt(null);
-                          }}
-                          className="px-2.5 py-0.5 bg-[#1e293b] hover:bg-[#334155] border border-white/40 text-[9.5px] font-black uppercase text-[#d8b4fe] cursor-pointer"
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
+                      ].map((preset) => {
+                        const overBalance =
+                          nearTestnetBalance > 0 && Number(preset.near) > nearTestnetBalance;
+                        return (
+                          <button
+                            key={preset.near}
+                            type="button"
+                            disabled={overBalance}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setCryptoSwapInputStr(preset.near);
+                              setSwapErrorText(null);
+                              setLastCryptoSwapReceipt(null);
+                            }}
+                            className={`px-2.5 py-0.5 border border-white/40 text-[9.5px] font-black uppercase ${
+                              overBalance
+                                ? 'bg-slate-700 text-slate-400 opacity-40 cursor-not-allowed'
+                                : 'bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] cursor-pointer'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {/* Input Row */}
