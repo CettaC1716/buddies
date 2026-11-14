@@ -934,6 +934,175 @@ export function createChalkboardMenuTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+export function createWorkShiftBoardFaceTexture(): THREE.CanvasTexture {
+  const W = 1024;
+  const H = 568;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    // Satin off-white magnetic enamel face
+    ctx.fillStyle = '#edf1f4';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle recessed inner frame shadow
+    ctx.strokeStyle = '#9aa5b1';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(8, 8, W - 16, H - 16);
+
+    // Top Station Operations Navy Header Band
+    ctx.fillStyle = '#263850';
+    ctx.fillRect(14, 14, W - 28, 62);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '900 25px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('STATION OPERATIONS // SHIFT ROSTER & PERSONNEL BOARD', 32, 46);
+
+    // Sub-header row: Digital LED Clock + Active Shift Status
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'italic 700 22px sans-serif';
+    ctx.fillText('Digital LED Clock', 112, 112);
+
+    // Digital LED Clock Housing (08:00:00)
+    ctx.fillStyle = '#1c242b';
+    ctx.fillRect(318, 86, 178, 48);
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(318, 86, 178, 48);
+    ctx.fillStyle = '#334155';
+    ctx.font = '700 30px monospace';
+    ctx.fillText('88:88:88', 334, 111);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText('08:00:00', 334, 111);
+
+    // ACTIVE SHIFT illuminated badge
+    ctx.fillStyle = '#2d4f3e';
+    ctx.fillRect(516, 86, 98, 48);
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(516, 86, 98, 48);
+    ctx.fillStyle = '#a7f3d0';
+    ctx.font = '800 15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ACTIVE', 565, 103);
+    ctx.fillText('SHIFT', 565, 121);
+
+    // Magnetic Roster Grid (Left 70% panel: x = 28..732, y = 148..540)
+    const gx = 28;
+    const gy = 148;
+    const gw = 704;
+    const gh = 392;
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(gx, gy, gw, gh);
+
+    // Table header bands
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(gx, gy, gw, 50);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(gx, gy, gw, gh);
+
+    const colPersonnelW = 156;
+    const colTimeSlotW = 34;
+    const numTimeCols = 9;
+    const colTimeTotalW = colTimeSlotW * numTimeCols; // 306
+    const colZoneSubW = 122; // split into 2 sub-cols
+
+    // Vertical column dividers
+    const xTimeStart = gx + colPersonnelW;
+    const xZone1Start = xTimeStart + colTimeTotalW;
+    const xZone2Start = xZone1Start + colZoneSubW;
+
+    ctx.beginPath();
+    ctx.moveTo(xTimeStart, gy);
+    ctx.lineTo(xTimeStart, gy + gh);
+    ctx.moveTo(xZone1Start, gy);
+    ctx.lineTo(xZone1Start, gy + gh);
+    ctx.moveTo(xZone2Start, gy);
+    ctx.lineTo(xZone2Start, gy + gh);
+    // Mid-header horizontal split for Time 1..9 & Zone sub-tags
+    ctx.moveTo(xTimeStart, gy + 25);
+    ctx.lineTo(xZone2Start, gy + 25);
+    ctx.stroke();
+
+    // Time sub-columns 1..9
+    ctx.font = '700 14px sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'center';
+    for (let t = 0; t < numTimeCols; t++) {
+      const cx = xTimeStart + t * colTimeSlotW;
+      if (t > 0) {
+        ctx.beginPath();
+        ctx.moveTo(cx, gy + 25);
+        ctx.lineTo(cx, gy + gh);
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+      ctx.fillText(String(t + 1), cx + colTimeSlotW * 0.5, gy + 38);
+    }
+
+    // Zone sub-columns
+    const xZoneSubMid = xZone1Start + 72;
+    ctx.beginPath();
+    ctx.moveTo(xZoneSubMid, gy + 25);
+    ctx.lineTo(xZoneSubMid, gy + gh);
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '800 16px sans-serif';
+    ctx.fillText('Personnel', gx + colPersonnelW * 0.5, gy + 26);
+    ctx.fillText('Time', xTimeStart + colTimeTotalW * 0.5, gy + 14);
+    ctx.font = '800 14px sans-serif';
+    ctx.fillText('Zone Tags', xZone1Start + colZoneSubW * 0.5, gy + 14);
+    ctx.font = '700 12px sans-serif';
+    ctx.fillText('Position', xZone1Start + 36, gy + 38);
+    ctx.fillText('Out', xZoneSubMid + 25, gy + 38);
+    ctx.font = '800 15px sans-serif';
+    ctx.fillText('Zone Tags', xZone2Start + (gx + gw - xZone2Start) * 0.5, gy + 26);
+
+    // 13 Roster Rows
+    const bodyStartY = gy + 50;
+    const rows = 13;
+    const rowH = (gh - 50) / rows;
+    for (let r = 0; r < rows; r++) {
+      const ry = bodyStartY + r * rowH;
+      if (r % 2 === 1) {
+        ctx.fillStyle = 'rgba(203, 213, 225, 0.38)';
+        ctx.fillRect(gx + 1, ry, gw - 2, rowH);
+      }
+      ctx.beginPath();
+      ctx.moveTo(gx, ry);
+      ctx.lineTo(gx + gw, ry);
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+
+      if (r < 4) {
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '700 14px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Personnel ${r + 1}`, gx + 10, ry + rowH * 0.54);
+      }
+    }
+
+    // Right Accessory Bay Panel border (Key Rack + Magnetic Clips + Document Pocket)
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillRect(752, 148, 244, 392);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(752, 148, 244, 392);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 // Lazy singleton shared textures so multiple builders reuse GPU memory cleanly
 let cachedTextures: {
   oak?: THREE.CanvasTexture;
@@ -1816,11 +1985,16 @@ export function buildCompleteEspressoBarAssembly(
   pastryCase.position.set(1.52, 1.01, FRONT_Z - 0.02);
   g.add(pastryCase);
 
-  // B. Back Espresso Credenza Wall (z = -0.95)
+  // B. Back Espresso Credenza Wall (z = -0.95) + Full-Depth Rear Cabinet & Marble Infill (zero rear gap to conservatory wall!)
   addPart(g, styler, makeRoundedBoxGeo(COUNTER_W, 0.92, 0.72, 0.022, 3), '#a8703c', [0, 0.46, -0.95], [0, 0, 0], 0.005, {
     tex: oak,
     tintTex: true,
     roughness: 0.56,
+  });
+  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W, 0.92, 0.42, 0.016, 2), '#966232', [0, 0.46, -1.46], [0, 0, 0], 0.004, {
+    tex: oak,
+    tintTex: true,
+    roughness: 0.58,
   });
   for (const fx of [-1.2, -0.45]) {
     addPart(g, styler, makeRoundedBoxGeo(0.68, 0.76, 0.045, 0.014, 2), '#b8c2ce', [fx, 0.45, -0.58], [0, 0, 0], 0.003, {
@@ -1831,10 +2005,17 @@ export function buildCompleteEspressoBarAssembly(
       clearcoat: 0.35,
     });
   }
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W + 0.12, 0.09, 0.82, 0.024, 3), '#f5f2eb', [0, 0.965, -0.95], [0, 0, 0], 0.005, {
+  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W + 0.12, 0.09, 1.24, 0.024, 3), '#f5f2eb', [0, 0.965, -1.16], [0, 0, 0], 0.005, {
     tex: marbleTex,
     roughness: 0.26,
     clearcoat: 0.62,
+  });
+
+  // Full-height rear architectural backing behind walnut menu wall so zero empty cavity exists behind the bar
+  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W - 0.10, 1.88, 0.40, 0.018, 2), '#7c4e29', [0, 1.86, -1.46], [0, 0, 0], 0.004, {
+    tex: oak,
+    tintTex: true,
+    roughness: 0.56,
   });
 
   // Back Espresso Machine + 2 Commercial Grinders
@@ -2464,6 +2645,534 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
   return g;
 }
 
+function createArcadeHeaderMarqueeTexture(): THREE.CanvasTexture | null {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 144;
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    const bg = ctx.createLinearGradient(0, 0, 0, 144);
+    bg.addColorStop(0, '#091e2c');
+    bg.addColorStop(0.5, '#12364d');
+    bg.addColorStop(1, '#081a28');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 512, 144);
+
+    // Subtle horizontal scanline/grid bars matching model sheet marquee
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+    ctx.lineWidth = 2;
+    for (let y = 16; y < 130; y += 12) {
+      ctx.beginPath();
+      ctx.moveTo(12, y);
+      ctx.lineTo(500, y);
+      ctx.stroke();
+    }
+
+    // Outer cyan & inner magenta neon frame
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(6, 6, 500, 132);
+    ctx.strokeStyle = '#ec4899';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(14, 14, 484, 116);
+
+    // Bold glowing Cyan "NEO-STRIKE" headline
+    ctx.fillStyle = '#a5f3fc';
+    ctx.font = '900 50px "Barlow", "Arial Black", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#06b6d4';
+    ctx.shadowBlur = 14;
+    ctx.fillText('NEO-STRIKE', 256, 54);
+
+    // Glowing Magenta/Pink "ARCADE" subtitle
+    ctx.fillStyle = '#f9a8d4';
+    ctx.font = '900 32px "Barlow", "Arial Black", sans-serif';
+    ctx.shadowColor = '#ec4899';
+    ctx.shadowBlur = 12;
+    ctx.fillText('ARCADE', 256, 102);
+    ctx.shadowBlur = 0;
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function createArcadeMonitorScreenTexture(): THREE.CanvasTexture | null {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 384;
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    // Illuminated CRT / Curved LCD ice-cyan phosphor glow matching the 4-view model sheet
+    const bg = ctx.createLinearGradient(0, 0, 512, 384);
+    bg.addColorStop(0, '#5ea8c8');
+    bg.addColorStop(0.45, '#99d5ea');
+    bg.addColorStop(0.75, '#72bbd8');
+    bg.addColorStop(1, '#4d92b4');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 512, 384);
+
+    // Subtle CRT scanlines
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.08)';
+    for (let y = 0; y < 384; y += 6) {
+      ctx.fillRect(0, y, 512, 2);
+    }
+
+    // Crisp diagonal glass reflection bands matching the 4-view reference sheet
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
+    ctx.beginPath();
+    ctx.moveTo(130, 0);
+    ctx.lineTo(255, 0);
+    ctx.lineTo(80, 384);
+    ctx.lineTo(-45, 384);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
+    ctx.beginPath();
+    ctx.moveTo(290, 0);
+    ctx.lineTo(355, 0);
+    ctx.lineTo(180, 384);
+    ctx.lineTo(115, 384);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Rounded dark CRT mask border
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.72)';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(5, 5, 502, 374);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+let cachedArcadeUiTextures: {
+  marquee?: THREE.CanvasTexture | null;
+  screen?: THREE.CanvasTexture | null;
+} = {};
+
+function getArcadeUiTextures(styler: CafeAssetStyler): {
+  marquee: THREE.CanvasTexture | null;
+  screen: THREE.CanvasTexture | null;
+} {
+  if (styler.preserveTextures === false || typeof document === 'undefined') {
+    return { marquee: null, screen: null };
+  }
+  if (!cachedArcadeUiTextures.marquee) {
+    cachedArcadeUiTextures = {
+      marquee: createArcadeHeaderMarqueeTexture(),
+      screen: createArcadeMonitorScreenTexture(),
+    };
+  }
+  return {
+    marquee: cachedArcadeUiTextures.marquee ?? null,
+    screen: cachedArcadeUiTextures.screen ?? null,
+  };
+}
+
+/**
+ * 1:1 Industrial Standalone Arcade Cabinet Machine ("STANDALONE ARCADE CABINET MACHINE - 4-VIEW INDUSTRIAL MODEL SHEET")
+ * Real-world 1:1 dimensions at scale=1.0:
+ *   - Outer Cabinet Width: 0.79m (790mm)
+ *   - Total Height: 1.80m (1800mm: 600mm lower pedestal, 180mm control deck, 900mm monitor bay, 120mm marquee header)
+ *   - Rear vertical spine at z = -0.30m (100% flat & flush against wall with zero rear gap)
+ *   - Illuminated "NEO-STRIKE ARCADE" marquee header, dual speaker soffit grilles, angled CRT/LCD gaming monitor,
+ *     2-player joysticks + 12 push buttons control deck, double coin door acceptor mechanism with red illuminated
+ *     reject buttons, lower speaker kick plates, diagonal Cyan/Magenta side graphic decals, and full rear service door + louvers.
+ */
+export function buildStandaloneArcadeCabinet(styler: CafeAssetStyler, scale = 1.0): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'StandaloneArcadeCabinet3D';
+  const { metal } = getSharedTextures(styler);
+  const { marquee: marqueeTex, screen: screenTex } = getArcadeUiTextures(styler);
+
+  const COL_CABINET_DARK = '#232730';
+  const COL_CABINET_PANEL = '#2d323e';
+  const COL_BEZEL_SLATE = '#1a1e26';
+  const COL_CYAN_NEON = '#22d3ee';
+  const COL_MAGENTA_NEON = '#ec4899';
+  const COL_CHROME = '#cbd5e1';
+
+  // 1. 4 Heavy-Duty Rubber Leveling Feet + Recessed Plinth Base (y = 0.00 .. 0.036m)
+  const footGeo = new THREE.CylinderGeometry(0.032, 0.036, 0.018, 12);
+  for (const fx of [-0.31, 0.31]) {
+    for (const fz of [-0.23, 0.13]) {
+      addPart(g, styler, footGeo, '#111318', [fx, 0.009, fz], [0, 0, 0], 0.002, {
+        roughness: 0.85,
+      });
+    }
+  }
+  addPart(g, styler, makeRoundedBoxGeo(0.74, 0.032, 0.48, 0.006, 2), '#171a21', [0, 0.024, -0.05], [0, 0, 0], 0.004, {
+    roughness: 0.72,
+    metalness: 0.16,
+  });
+
+  // 2. Full-Height Sculpted Side Cheeks (x = +/-0.362m, thickness = 0.066m -> 0.79m outer width)
+  // Rear spine sits dead-vertical at z = -0.30m from y = 0.03m to y = 1.64m so the back is 100% flush against the wall!
+  const sideCheekProfile: [number, number][] = [
+    [-0.30, 0.03],
+    [-0.30, 1.64],
+    [-0.27, 1.67],
+    [0.14, 1.80],
+    [0.22, 1.80],
+    [0.22, 1.62],
+    [0.05, 1.55],
+    [0.16, 0.94],
+    [0.37, 0.88],
+    [0.35, 0.70],
+    [0.19, 0.62],
+    [0.19, 0.03],
+  ];
+  const cheekGeo = makeExtrudedSideProfileGeo(sideCheekProfile, 0.066, 0.006);
+  for (const side of [-1, 1]) {
+    addPart(g, styler, cheekGeo, COL_CABINET_DARK, [side * 0.362, 0, 0], [0, 0, 0], 0.005, {
+      tex: metal,
+      tintTex: true,
+      roughness: 0.48,
+      metalness: 0.18,
+      clearcoat: 0.22,
+    });
+  }
+
+  // Cyan Outer T-Molding Perimeter Trim + Magenta Inner Accent Trim along both Side Cheeks
+  const cyanTrimProfile: [number, number][] = [
+    [-0.303, 0.03],
+    [-0.303, 1.645],
+    [-0.272, 1.675],
+    [0.14, 1.804],
+    [0.225, 1.804],
+    [0.225, 1.616],
+    [0.056, 1.546],
+    [0.166, 0.944],
+    [0.376, 0.884],
+    [0.355, 0.696],
+    [0.195, 0.618],
+    [0.195, 0.03],
+    [0.175, 0.03],
+    [0.175, 0.625],
+    [0.335, 0.706],
+    [0.354, 0.870],
+    [0.146, 0.932],
+    [0.034, 1.556],
+    [0.204, 1.626],
+    [0.204, 1.784],
+    [0.138, 1.784],
+    [-0.282, 1.638],
+    [-0.282, 0.03],
+  ];
+  const cyanTrimGeo = makeExtrudedSideProfileGeo(cyanTrimProfile, 0.070, 0.003);
+  for (const side of [-1, 1]) {
+    addPart(g, styler, cyanTrimGeo, COL_CYAN_NEON, [side * 0.362, 0, 0], [0, 0, 0], 0.002, {
+      emissiveHex: '#06b6d4',
+      emissiveIntensity: 0.42,
+      roughness: 0.25,
+    });
+  }
+
+  // Side Graphic Decal ("Side Graphic Decal Tampak Samping" - Diagonal Cyan & Magenta geometric stripes on left & right outer faces)
+  const sideCyanStripeProfile: [number, number][] = [
+    [0.24, 0.56],
+    [0.31, 0.68],
+    [-0.27, 0.96],
+    [-0.27, 0.79],
+  ];
+  const sideMagentaStripeProfile: [number, number][] = [
+    [0.19, 0.48],
+    [0.23, 0.54],
+    [-0.27, 0.77],
+    [-0.27, 0.71],
+  ];
+  const sideCyanStripeGeo = makeExtrudedSideProfileGeo(sideCyanStripeProfile, 0.008, 0.001);
+  const sideMagentaStripeGeo = makeExtrudedSideProfileGeo(sideMagentaStripeProfile, 0.008, 0.001);
+  for (const side of [-1, 1]) {
+    addPart(g, styler, sideCyanStripeGeo, COL_CYAN_NEON, [side * 0.395, 0, 0], [0, 0, 0], 0.002, {
+      emissiveHex: '#0891b2',
+      emissiveIntensity: 0.38,
+      roughness: 0.28,
+    });
+    addPart(g, styler, sideMagentaStripeGeo, COL_MAGENTA_NEON, [side * 0.395, 0, 0], [0, 0, 0], 0.002, {
+      emissiveHex: '#db2777',
+      emissiveIntensity: 0.38,
+      roughness: 0.28,
+    });
+    // Lower rear side service latch detail shown on Side Profile Elevation
+    addPart(g, styler, makeRoundedBoxGeo(0.010, 0.075, 0.058, 0.002, 1), '#151820', [side * 0.395, 0.11, -0.18], [0, 0, 0], 0.002);
+  }
+
+  // 3. Central Cabinet Body Core (x in [-0.33, +0.33])
+  const centerBodyProfile: [number, number][] = [
+    [-0.30, 0.03],
+    [-0.30, 1.64],
+    [-0.27, 1.67],
+    [0.14, 1.80],
+    [0.21, 1.80],
+    [0.21, 1.62],
+    [0.04, 1.55],
+    [0.15, 0.94],
+    [0.35, 0.88],
+    [0.33, 0.70],
+    [0.18, 0.62],
+    [0.18, 0.03],
+  ];
+  addPart(g, styler, makeExtrudedSideProfileGeo(centerBodyProfile, 0.665, 0.004), COL_CABINET_PANEL, [0, 0, 0], [0, 0, 0], 0.004, {
+    tex: metal,
+    tintTex: true,
+    roughness: 0.50,
+    metalness: 0.16,
+  });
+
+  // 4. Illuminated Marquee Header ("NEO-STRIKE ARCADE", y = 1.62 .. 1.79m, z = +0.215m)
+  addPart(g, styler, makeRoundedBoxGeo(0.66, 0.165, 0.024, 0.006, 2), COL_BEZEL_SLATE, [0, 1.708, 0.212], [0, 0, 0], 0.003);
+  addPart(g, styler, makeRoundedBoxGeo(0.635, 0.142, 0.014, 0.004, 2), '#0d2b3e', [0, 1.708, 0.220], [0, 0, 0], 0.002, {
+    emissiveHex: '#0891b2',
+    emissiveIntensity: 0.35,
+    roughness: 0.24,
+  });
+  if (marqueeTex) {
+    addPart(g, styler, new THREE.PlaneGeometry(0.62, 0.132), '#ffffff', [0, 1.708, 0.228], [0, 0, 0], 0, {
+      tex: marqueeTex,
+      emissiveHex: '#38bdf8',
+      emissiveIntensity: 0.42,
+      roughness: 0.20,
+      clearcoat: 0.65,
+    });
+  } else {
+    // 3D geometric neon typography bars for vertex-baked views
+    for (const gx of [-0.21, -0.13, -0.05, 0.04, 0.12, 0.20]) {
+      addPart(g, styler, new THREE.BoxGeometry(0.055, 0.036, 0.006), '#67e8f9', [gx, 1.728, 0.229], [0, 0, 0], 0, {
+        emissiveHex: '#22d3ee',
+        emissiveIntensity: 0.5,
+      });
+    }
+    for (const gx of [-0.11, -0.03, 0.05, 0.12]) {
+      addPart(g, styler, new THREE.BoxGeometry(0.05, 0.024, 0.006), '#f472b6', [gx, 1.682, 0.229], [0, 0, 0], 0, {
+        emissiveHex: '#ec4899',
+        emissiveIntensity: 0.5,
+      });
+    }
+  }
+
+  // 5. Under-Marquee Stereo Speaker Grille Soffit (y = 1.54 .. 1.62m)
+  const speakerSoffit = new THREE.Group();
+  speakerSoffit.position.set(0, 1.582, 0.128);
+  speakerSoffit.rotation.x = 0.38;
+  g.add(speakerSoffit);
+  addPart(speakerSoffit, styler, makeRoundedBoxGeo(0.65, 0.085, 0.04, 0.005, 1), COL_BEZEL_SLATE, [0, 0, 0], [0, 0, 0], 0.002);
+  const slotGeo = new THREE.BoxGeometry(0.14, 0.006, 0.008);
+  for (const side of [-1, 1]) {
+    for (let s = 0; s < 4; s++) {
+      addPart(speakerSoffit, styler, slotGeo, '#0f1319', [side * 0.18, -0.018 + s * 0.012, 0.018], [0, 0, 0], 0);
+    }
+  }
+
+  // 6. Illuminated Angled CRT / Curved LCD Gaming Monitor (y = 0.95 .. 1.53m)
+  const monitorBay = new THREE.Group();
+  monitorBay.position.set(0, 1.245, 0.118);
+  monitorBay.rotation.x = -0.20;
+  g.add(monitorBay);
+
+  // Molded outer monitor bezel + cyan inner accent border
+  addPart(monitorBay, styler, makeRoundedBoxGeo(0.64, 0.54, 0.055, 0.016, 2), COL_BEZEL_SLATE, [0, 0, 0], [0, 0, 0], 0.004, {
+    roughness: 0.52,
+    metalness: 0.20,
+  });
+  addPart(monitorBay, styler, makeRoundedBoxGeo(0.56, 0.45, 0.024, 0.022, 2), COL_CYAN_NEON, [0, 0, 0.020], [0, 0, 0], 0.002, {
+    emissiveHex: '#06b6d4',
+    emissiveIntensity: 0.32,
+  });
+  addPart(monitorBay, styler, makeRoundedBoxGeo(0.535, 0.425, 0.022, 0.020, 2), '#111827', [0, 0, 0.024], [0, 0, 0], 0.002);
+  addPart(
+    monitorBay,
+    styler,
+    new THREE.PlaneGeometry(0.50, 0.39),
+    screenTex ? '#ffffff' : '#8fd0e8',
+    [0, 0, 0.036],
+    [0, 0, 0],
+    0,
+    {
+      tex: screenTex,
+      roughness: 0.14,
+      metalness: 0.08,
+      clearcoat: 0.90,
+      clearcoatRoughness: 0.10,
+      emissiveHex: '#38bdf8',
+      emissiveIntensity: 0.26,
+    },
+  );
+
+  // 7. Control Deck - 2-Player Joysticks & 12 Arcade Push Buttons (y = 0.70 .. 0.91m, z = 0.15 .. 0.37m)
+  const controlDeck = new THREE.Group();
+  controlDeck.position.set(0, 0.875, 0.255);
+  controlDeck.rotation.x = 0.18;
+  g.add(controlDeck);
+
+  // Control console surface plate + Cyan/Magenta front apron molding
+  addPart(controlDeck, styler, makeRoundedBoxGeo(0.66, 0.055, 0.23, 0.010, 2), COL_BEZEL_SLATE, [0, 0, 0], [0, 0, 0], 0.004, {
+    roughness: 0.44,
+    metalness: 0.22,
+  });
+  addPart(controlDeck, styler, makeRoundedBoxGeo(0.668, 0.018, 0.236, 0.005, 1), COL_CYAN_NEON, [0, 0.016, 0.002], [0, 0, 0], 0.002, {
+    emissiveHex: '#06b6d4',
+    emissiveIntensity: 0.35,
+  });
+  addPart(controlDeck, styler, makeRoundedBoxGeo(0.668, 0.016, 0.024, 0.004, 1), COL_MAGENTA_NEON, [0, -0.016, 0.108], [0, 0, 0], 0.002, {
+    emissiveHex: '#ec4899',
+    emissiveIntensity: 0.38,
+  });
+
+  // 2-Player Joysticks (Player 1 Left Red Ball-Top, Player 2 Right Cyan-Blue Ball-Top)
+  const washerGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.006, 14);
+  const shaftGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.058, 10);
+  const ballGeo = new THREE.SphereGeometry(0.020, 14, 12);
+  const playerConfigs: Array<{ joyX: number; ballHex: string; btnBaseX: number }> = [
+    { joyX: -0.235, ballHex: '#ef4444', btnBaseX: -0.135 },
+    { joyX: 0.055, ballHex: '#38bdf8', btnBaseX: 0.155 },
+  ];
+  const btnColors = ['#ef4444', '#facc15', '#38bdf8', '#22c55e', '#fb923c', '#ec4899'];
+  const btnBezelGeo = new THREE.CylinderGeometry(0.013, 0.015, 0.008, 12);
+  const btnCapGeo = new THREE.CylinderGeometry(0.010, 0.010, 0.012, 12);
+
+  for (const pc of playerConfigs) {
+    // Dust washer + Chrome shaft + Glossy Ball Top
+    addPart(controlDeck, styler, washerGeo, '#0f172a', [pc.joyX, 0.030, 0.012], [0, 0, 0], 0.001);
+    addPart(controlDeck, styler, shaftGeo, COL_CHROME, [pc.joyX, 0.056, 0.012], [0, 0, 0], 0.001, {
+      metalness: 0.70,
+      roughness: 0.20,
+    });
+    addPart(controlDeck, styler, ballGeo, pc.ballHex, [pc.joyX, 0.088, 0.012], [0, 0, 0], 0.002, {
+      roughness: 0.15,
+      clearcoat: 0.90,
+      emissiveHex: pc.ballHex,
+      emissiveIntensity: 0.22,
+    });
+
+    // 6 Arcade Push Buttons arranged in 2 ergonomic curved rows of 3
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 3; col++) {
+        const bx = pc.btnBaseX + col * 0.036;
+        const bz = (row === 0 ? -0.012 : 0.026) - (col === 1 ? 0.006 : 0);
+        const colHex = btnColors[(row * 3 + col) % btnColors.length];
+        addPart(controlDeck, styler, btnBezelGeo, '#111827', [bx, 0.030, bz], [0, 0, 0], 0.001);
+        addPart(controlDeck, styler, btnCapGeo, colHex, [bx, 0.034, bz], [0, 0, 0], 0.001, {
+          emissiveHex: colHex,
+          emissiveIntensity: 0.28,
+          roughness: 0.22,
+        });
+      }
+    }
+  }
+
+  // 1P / 2P Start & Coin Credit Micro-Buttons along upper deck center
+  for (const sx of [-0.18, -0.03, 0.03, 0.18]) {
+    addPart(controlDeck, styler, btnCapGeo, sx < 0 ? '#f8fafc' : '#38bdf8', [sx, 0.032, -0.062], [0, 0, 0], 0.001, {
+      emissiveHex: '#e2e8f0',
+      emissiveIntensity: 0.20,
+    });
+  }
+
+  // 8. Lower Front Cabinet Panel: Neon V-Chevrons, Double Coin Door Acceptor Mechanism & Speaker Kick Plates
+  // Diagonal Cyan & Magenta V-chevron accent bars flanking the coin door
+  const chevronBarGeo = makeRoundedBoxGeo(0.18, 0.014, 0.010, 0.003, 1);
+  for (const side of [-1, 1]) {
+    addPart(g, styler, chevronBarGeo, COL_CYAN_NEON, [side * 0.225, 0.34, 0.192], [0, 0, -side * 0.62], 0.001, {
+      emissiveHex: '#06b6d4',
+      emissiveIntensity: 0.40,
+    });
+    addPart(g, styler, chevronBarGeo, COL_MAGENTA_NEON, [side * 0.225, 0.315, 0.192], [0, 0, -side * 0.62], 0.001, {
+      emissiveHex: '#ec4899',
+      emissiveIntensity: 0.40,
+    });
+    // Horizontal lower continuation toward coin door
+    addPart(g, styler, makeRoundedBoxGeo(0.08, 0.014, 0.010, 0.003, 1), COL_CYAN_NEON, [side * 0.135, 0.285, 0.192], [0, 0, 0], 0.001, {
+      emissiveHex: '#06b6d4',
+      emissiveIntensity: 0.40,
+    });
+    addPart(g, styler, makeRoundedBoxGeo(0.08, 0.014, 0.010, 0.003, 1), COL_MAGENTA_NEON, [side * 0.135, 0.262, 0.192], [0, 0, 0], 0.001, {
+      emissiveHex: '#ec4899',
+      emissiveIntensity: 0.40,
+    });
+  }
+
+  // Double Coin Door Acceptor Mechanism (Center lower front, y = 0.14 .. 0.58m, z = 0.194m)
+  addPart(g, styler, makeRoundedBoxGeo(0.22, 0.44, 0.022, 0.008, 2), '#1b1f28', [0, 0.36, 0.192], [0, 0, 0], 0.004, {
+    roughness: 0.46,
+    metalness: 0.30,
+  });
+  // Upper Coin Acceptor Door + 2 Illuminated Red/Orange Coin Reject Buttons
+  addPart(g, styler, makeRoundedBoxGeo(0.185, 0.20, 0.014, 0.005, 1), '#252b37', [0, 0.46, 0.202], [0, 0, 0], 0.003);
+  for (const cx of [-0.042, 0.042]) {
+    // Glowing red/orange coin insert/reject button bezel & backlit button
+    addPart(g, styler, makeRoundedBoxGeo(0.044, 0.052, 0.012, 0.003, 1), '#111827', [cx, 0.505, 0.208], [0, 0, 0], 0.001);
+    addPart(g, styler, makeRoundedBoxGeo(0.032, 0.038, 0.014, 0.003, 1), '#f97316', [cx, 0.505, 0.212], [0, 0, 0], 0.001, {
+      emissiveHex: '#ef4444',
+      emissiveIntensity: 0.85,
+      roughness: 0.20,
+    });
+    // Coin return pocket below each reject button
+    addPart(g, styler, makeRoundedBoxGeo(0.044, 0.046, 0.012, 0.003, 1), '#111827', [cx, 0.405, 0.208], [0, 0, 0], 0.002);
+  }
+  // Lower Cash Vault Door + Keylock Cylinder
+  addPart(g, styler, makeRoundedBoxGeo(0.185, 0.18, 0.014, 0.005, 1), '#252b37', [0, 0.25, 0.202], [0, 0, 0], 0.003);
+  for (const ky of [0.465, 0.31]) {
+    addPart(g, styler, new THREE.CylinderGeometry(0.010, 0.010, 0.014, 10), COL_CHROME, [0.068, ky, 0.208], [Math.PI / 2, 0, 0], 0.001, {
+      metalness: 0.65,
+    });
+  }
+
+  // Lower Speaker Kick Plates (Left & Right perforated grilles at y = 0.088m)
+  for (const side of [-1, 1]) {
+    addPart(g, styler, makeRoundedBoxGeo(0.15, 0.072, 0.014, 0.006, 2), '#151820', [side * 0.22, 0.088, 0.192], [0, 0, 0], 0.002, {
+      roughness: 0.70,
+    });
+  }
+
+  // 9. Rear Elevation ("Tampak Belakang", z = -0.30m): Upper Louvers, Flush Service Maintenance Door & Power Conduit Port
+  // Upper Ventilation Cooling Louvers (2 columns of 6 horizontal slots)
+  const rearLouverGeo = new THREE.BoxGeometry(0.20, 0.010, 0.010);
+  for (const lx of [-0.14, 0.14]) {
+    for (let i = 0; i < 6; i++) {
+      addPart(g, styler, rearLouverGeo, '#14171f', [lx, 1.41 + i * 0.024, -0.302], [0, 0, 0], 0);
+    }
+  }
+
+  // Rear Flush Service Maintenance Door with Keylock & Hinges (y = 0.38 .. 1.28m)
+  addPart(g, styler, makeRoundedBoxGeo(0.46, 0.88, 0.014, 0.008, 2), '#262b36', [0, 0.83, -0.302], [0, 0, 0], 0.004, {
+    tex: metal,
+    tintTex: true,
+    roughness: 0.48,
+    metalness: 0.22,
+  });
+  // Left-side dual service door hinges
+  for (const hy of [1.12, 0.54]) {
+    addPart(g, styler, new THREE.BoxGeometry(0.018, 0.065, 0.016), '#151820', [-0.23, hy, -0.305], [0, 0, 0], 0.002);
+  }
+  // Right-side Keylock cylinder + keyhole slot
+  addPart(g, styler, new THREE.CylinderGeometry(0.018, 0.018, 0.016, 12), COL_CHROME, [0.175, 0.78, -0.306], [Math.PI / 2, 0, 0], 0.002, {
+    metalness: 0.6,
+  });
+  addPart(g, styler, new THREE.BoxGeometry(0.006, 0.028, 0.018), '#0f172a', [0.175, 0.76, -0.307], [0, 0, 0], 0);
+
+  // Lower Left Cooling Louvers & Lower Right Power Cable Conduit Entry Port
+  const lowerLouverGeo = new THREE.BoxGeometry(0.18, 0.010, 0.010);
+  for (let i = 0; i < 5; i++) {
+    addPart(g, styler, lowerLouverGeo, '#14171f', [-0.16, 0.10 + i * 0.022, -0.302], [0, 0, 0], 0);
+  }
+  addPart(g, styler, makeRoundedBoxGeo(0.14, 0.11, 0.014, 0.004, 1), '#1b1f28', [0.17, 0.14, -0.302], [0, 0, 0], 0.002);
+  addPart(g, styler, new THREE.BoxGeometry(0.036, 0.048, 0.016), '#0f172a', [0.17, 0.135, -0.305], [0, 0, 0], 0.001);
+  addPart(g, styler, new THREE.BoxGeometry(0.016, 0.022, 0.018), '#ef4444', [0.17, 0.135, -0.307], [0, 0, 0], 0);
+
+  g.scale.setScalar(scale);
+  return g;
+}
+
 
 // ---------------------------------------------------------------------------
 // SHARED 1:1 L-SHAPED BOTANICAL GLASSHOUSE ARCHITECTURE SHELL
@@ -3074,6 +3783,233 @@ export function buildLShapedGlasshouseArchitecture(
 // GRAND SOUTH PLAZA L-SHAPED BOTANICAL GLASSHOUSE CAFE (Exterior on South Plaza)
 // ---------------------------------------------------------------------------
 
+/**
+ * 1:1 Industrial Wall-Mounted Work Shift Board (`180cm × 100cm × 10cm` model sheet):
+ * - Satin off-white powder-coated steel low-profile casing (`1.80m W × 1.00m H × 0.10m D`)
+ * - 45° angled LED illumination hood visor across top edge
+ * - Station Operations header, Digital LED Clock (`08:00:00`), `ACTIVE SHIFT` status badge,
+ *   Magnetic Roster Grid, 9-peg Brass Key Tag Rack, 2 Magnetic Clip Holders, Clear Acrylic
+ *   Document Pocket, Wall-Mounting Anchor Bolts & Lower Cable Conduits.
+ */
+export function buildWallMountedWorkShiftBoard(
+  styler: CafeAssetStyler,
+  scale = 1.0,
+): THREE.Group {
+  const g = new THREE.Group();
+  const W = 1.80;
+  const H = 1.00;
+  const D = 0.10;
+  const { metal } = getSharedTextures(styler);
+  const useTex = styler.preserveTextures !== false && typeof document !== 'undefined';
+  const boardTex = useTex ? createWorkShiftBoardFaceTexture() : null;
+
+  // 1. Satin off-white powder-coated steel main chassis (centered on X, bottom at y = 0, back at z = -D/2)
+  addPart(g, styler, makeRoundedBoxGeo(W, H, D, 0.016, 3), '#e7ecef', [0, H * 0.5, 0], [0, 0, 0], 0.005, {
+    tex: metal,
+    tintTex: true,
+    metalness: 0.28,
+    roughness: 0.34,
+    clearcoat: 0.30,
+  });
+
+  // Dark charcoal inner bezel frame around recessed magnetic roster bay
+  const bezelThick = 0.026;
+  addPart(g, styler, makeRoundedBoxGeo(W - 0.036, bezelThick, 0.022, 0.004, 2), '#2b313a', [0, H - 0.03, D * 0.5 + 0.004], [0, 0, 0], 0.003);
+  addPart(g, styler, makeRoundedBoxGeo(W - 0.036, bezelThick, 0.022, 0.004, 2), '#2b313a', [0, 0.03, D * 0.5 + 0.004], [0, 0, 0], 0.003);
+  addPart(g, styler, makeRoundedBoxGeo(bezelThick, H - 0.04, 0.022, 0.004, 2), '#2b313a', [-W * 0.5 + 0.03, H * 0.5, D * 0.5 + 0.004], [0, 0, 0], 0.003);
+  addPart(g, styler, makeRoundedBoxGeo(bezelThick, H - 0.04, 0.022, 0.004, 2), '#2b313a', [W * 0.5 - 0.03, H * 0.5, D * 0.5 + 0.004], [0, 0, 0], 0.003);
+
+  // 2. Printed Magnetic Roster & Station Operations Faceplate
+  const faceMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(W - 0.08, H - 0.08),
+    new THREE.MeshStandardMaterial({
+      color: boardTex ? '#ffffff' : '#e2e8f0',
+      map: boardTex,
+      roughness: 0.36,
+      metalness: 0.08,
+      fog: false,
+    }),
+  );
+  faceMesh.position.set(0, H * 0.5, D * 0.5 + 0.006);
+  faceMesh.raycast = () => {};
+  g.add(faceMesh);
+
+  // 3. 45° Top LED Illumination Hood Visor + Warm-Cyan LED Light Diffuser Strip
+  addPart(
+    g,
+    styler,
+    makeRoundedBoxGeo(W + 0.02, 0.026, 0.115, 0.006, 2),
+    '#eef2f6',
+    [0, H + 0.006, D * 0.5 + 0.038],
+    [0.24, 0, 0],
+    0.004,
+    { tex: metal, tintTex: true, metalness: 0.34, roughness: 0.28, clearcoat: 0.35 },
+  );
+  // Angled side gusset cheeks for 45° hood visor
+  for (const sx of [-W * 0.5, W * 0.5]) {
+    addPart(
+      g,
+      styler,
+      makeRoundedBoxGeo(0.014, 0.075, 0.095, 0.003, 2),
+      '#dce3ea',
+      [sx, H - 0.024, D * 0.5 + 0.032],
+      [0, 0, 0],
+      0.003,
+      { metalness: 0.32, roughness: 0.32 },
+    );
+  }
+  addPart(
+    g,
+    styler,
+    new THREE.BoxGeometry(W - 0.08, 0.010, 0.026),
+    '#e0f2fe',
+    [0, H - 0.008, D * 0.5 + 0.048],
+    [0, 0, 0],
+    0,
+    { emissiveHex: '#7dd3fc', emissiveIntensity: 0.72, roughness: 0.15 },
+  );
+
+  // 4. 3D Relief Accessories on Right Bay (x in [+0.42 .. +0.80]):
+  // 4A. Key Peg Rack with 2 Interlocking Rails & Brass Key Tags (5 top + 4 second row)
+  for (const ry of [0.69, 0.58]) {
+    addPart(g, styler, new THREE.BoxGeometry(0.36, 0.014, 0.014), '#cbd5e1', [0.61, ry, D * 0.5 + 0.012], [0, 0, 0], 0.002, {
+      metalness: 0.55,
+      roughness: 0.28,
+    });
+  }
+  const tagGeo = makeRoundedBoxGeo(0.034, 0.056, 0.010, 0.008, 2);
+  const pegGeo = new THREE.CylinderGeometry(0.004, 0.004, 0.018, 8);
+  for (let i = 0; i < 5; i++) {
+    const kx = 0.47 + i * 0.068;
+    addPart(g, styler, pegGeo, '#94a3b8', [kx, 0.69, D * 0.5 + 0.018], [Math.PI / 2, 0, 0], 0);
+    if (i !== 3) {
+      addPart(g, styler, tagGeo, '#caa252', [kx, 0.648, D * 0.5 + 0.018], [0, 0, 0], 0.002, {
+        metalness: 0.66,
+        roughness: 0.28,
+      });
+    }
+  }
+  for (let i = 0; i < 4; i++) {
+    const kx = 0.47 + i * 0.068;
+    addPart(g, styler, pegGeo, '#94a3b8', [kx, 0.58, D * 0.5 + 0.018], [Math.PI / 2, 0, 0], 0);
+    addPart(g, styler, tagGeo, '#c49a47', [kx, 0.538, D * 0.5 + 0.018], [0, 0, 0], 0.002, {
+      metalness: 0.66,
+      roughness: 0.28,
+    });
+  }
+
+  // 4B. Twin Magnetic Clip Holders (`x = 0.52` & `x = 0.70`, `y = 0.40`)
+  for (const cx of [0.52, 0.70]) {
+    addPart(g, styler, makeRoundedBoxGeo(0.11, 0.11, 0.016, 0.006, 2), '#475569', [cx, 0.395, D * 0.5 + 0.014], [0, 0, 0], 0.003, {
+      metalness: 0.48,
+      roughness: 0.34,
+    });
+    addPart(g, styler, makeRoundedBoxGeo(0.058, 0.028, 0.022, 0.004, 2), '#94a3b8', [cx, 0.442, D * 0.5 + 0.020], [0, 0, 0], 0.002, {
+      metalness: 0.68,
+      roughness: 0.24,
+    });
+  }
+
+  // 4C. Clear Acrylic Document Pocket (`x = 0.61, y = 0.185`) + White Shift Sheet Insert
+  addPart(g, styler, new THREE.BoxGeometry(0.28, 0.19, 0.008), '#f8fafc', [0.61, 0.19, D * 0.5 + 0.011], [0, 0, 0], 0.002, {
+    roughness: 0.65,
+  });
+  const acrylicPocket = new THREE.Mesh(
+    makeRoundedBoxGeo(0.32, 0.22, 0.026, 0.006, 2),
+    styler.clearGlassMat,
+  );
+  acrylicPocket.position.set(0.61, 0.185, D * 0.5 + 0.022);
+  acrylicPocket.raycast = () => {};
+  g.add(acrylicPocket);
+
+  // 5. Side Wall-Mounting Anchor Bolts & Lower Cable Conduit Entry Tubes (1:1 Detail Section)
+  for (const sx of [-W * 0.5 + 0.06, W * 0.5 - 0.06]) {
+    for (const by of [0.22, 0.78]) {
+      addPart(g, styler, new THREE.CylinderGeometry(0.012, 0.012, 0.06, 10), '#94a3b8', [sx, by, -D * 0.5 - 0.025], [Math.PI / 2, 0, 0], 0.002, {
+        metalness: 0.7,
+      });
+    }
+  }
+  for (const cx of [0.54, 0.66]) {
+    addPart(g, styler, new THREE.CylinderGeometry(0.016, 0.016, 0.09, 10), '#64748b', [cx, -0.04, -0.01], [0, 0, 0], 0.002, {
+      metalness: 0.62,
+      roughness: 0.32,
+    });
+  }
+
+  g.scale.setScalar(scale);
+  return g;
+}
+
+/**
+ * Seamless Wooden Base Cabinet + Full-Height Rear Backing Wall + 1:1 Wall-Mounted Work Shift Board.
+ * Joins 100% flush to the right end of `buildCompleteEspressoBarAssembly` with zero side gap
+ * and extends all the way back to the conservatory rear wall with zero rear gap.
+ */
+export function buildJoinedShiftBoardCounterWing(
+  styler: CafeAssetStyler,
+  marbleTex: THREE.Texture | null,
+  scaleOrExtraTex: number | THREE.Texture | null = 1.0,
+  maybeScale?: number,
+): THREE.Group {
+  const scale = typeof scaleOrExtraTex === 'number' ? scaleOrExtraTex : (maybeScale ?? 1.0);
+  const g = new THREE.Group();
+  const { oak, metal } = getSharedTextures(styler);
+
+  // Local origin: x = 0 sits at the exact right face of the bartender back credenza (`x = +2.60` in bar local space).
+  // Overlap `-0.03m` into the bartender credenza so there is 0.00m side seam, and span `W = 2.08m` to the right!
+  // Depth spans from front face `z = +0.49` (matching bartender back credenza front face `-0.95 + 0.36 = -0.59`) all the way back to `z = -0.52` (flush against conservatory rear wall, 0.00m rear gap!).
+  const W = 2.08;
+  const cx = W * 0.5 - 0.02;
+  const D = 1.02;
+  const cz = -0.02;
+
+  // 1. Warm Oak Lower Credenza Box Cabinet (same 0.92m height & warm oak finish as bartender back bar)
+  addPart(g, styler, makeRoundedBoxGeo(W, 0.92, D, 0.022, 3), '#a8703c', [cx, 0.46, cz], [0, 0, 0], 0.005, {
+    tex: oak,
+    tintTex: true,
+    roughness: 0.56,
+  });
+
+  // Twin recessed stainless/oak service doors on front face (`z = +0.495`) matching bartender back bar
+  for (const dx of [cx - 0.48, cx + 0.48]) {
+    addPart(g, styler, makeRoundedBoxGeo(0.82, 0.74, 0.036, 0.014, 2), '#8f5c2e', [dx, 0.46, cz + D * 0.5 + 0.006], [0, 0, 0], 0.003, {
+      tex: oak,
+      tintTex: true,
+      roughness: 0.52,
+      clearcoat: 0.18,
+    });
+    addPart(g, styler, new THREE.CylinderGeometry(0.009, 0.009, 0.18, 10), '#cbd5e1', [dx + (dx < cx ? 0.30 : -0.30), 0.52, cz + D * 0.5 + 0.032], [0, 0, 0], 0.002, {
+      tex: metal,
+      metalness: 0.68,
+      roughness: 0.24,
+    });
+  }
+
+  // 2. Continuous Bullnose White Carrara Marble Countertop (`y = 0.965m`, seamlessly joining bartender marble slab!)
+  addPart(g, styler, makeRoundedBoxGeo(W + 0.08, 0.09, D + 0.08, 0.024, 3), '#f5f2eb', [cx + 0.02, 0.965, cz], [0, 0, 0], 0.005, {
+    tex: marbleTex,
+    roughness: 0.26,
+    clearcoat: 0.62,
+  });
+
+  // 3. Full-Depth Warm Walnut Rear Mounting Wall Panel (`y = 0.96..2.42m`, flush to rear conservatory wall so board anchor bolts mount into solid wood with zero gap behind!)
+  addPart(g, styler, makeRoundedBoxGeo(W, 1.48, 0.44, 0.020, 3), '#7c4e29', [cx, 1.70, cz - D * 0.5 + 0.22], [0, 0, 0], 0.005, {
+    tex: oak,
+    tintTex: true,
+    roughness: 0.54,
+    clearcoat: 0.16,
+  });
+
+  // 4. 1:1 Industrial Wall-Mounted Work Shift Board (`1.80m × 1.00m × 0.10m`) mounted cleanly above the marble countertop
+  const board = buildWallMountedWorkShiftBoard(styler, 1.0);
+  board.position.set(cx + 0.02, 1.10, cz - D * 0.5 + 0.49);
+  g.add(board);
+
+  g.scale.setScalar(scale);
+  return g;
+}
+
 export function buildSouthPlazaLShapedGlasshouseCafe(styler: CafeAssetStyler): THREE.Group {
   const root = new THREE.Group();
   root.name = 'LobbyLShapedBotanicalGlasshouseCafe';
@@ -3125,11 +4061,31 @@ export function buildSouthPlazaLShapedGlasshouseCafe(styler: CafeAssetStyler): T
   barGroup.rotation.y = Math.PI;
   root.add(barGroup);
 
-  // Matching 1:1 Industrial Bank Cash ATM inside South Plaza Glasshouse Cafe (NW/SE barista alcove, +0 extra static draw calls)
+  // Seamless Joined Wooden Cabinet + 1:1 Wall-Mounted Work Shift Board flush to the bartender bar
+  const exteriorShiftWing = buildJoinedShiftBoardCounterWing(
+    styler,
+    marbleTex,
+    CAFE_GLOBAL_SCALE_SPEC.exteriorEspressoBarScale,
+  );
+  exteriorShiftWing.position.set(
+    3.20 - 2.60 * CAFE_GLOBAL_SCALE_SPEC.exteriorEspressoBarScale,
+    0.06,
+    33.45 + 1.12 * CAFE_GLOBAL_SCALE_SPEC.exteriorEspressoBarScale,
+  );
+  exteriorShiftWing.rotation.y = Math.PI;
+  root.add(exteriorShiftWing);
+
+  // Matching 1:1 Industrial Bank Cash ATM inside South Plaza Glasshouse Cafe (flush to rear wall, +0 extra static draw calls)
   const exteriorAtm = buildStandardBankCashAtm(styler, CAFE_GLOBAL_SCALE_SPEC.exteriorAtmScale);
-  exteriorAtm.position.set(10.55, 0.06, 34.05);
-  exteriorAtm.rotation.y = Math.PI + 0.45;
+  exteriorAtm.position.set(8.85, 0.06, 36.22);
+  exteriorAtm.rotation.y = Math.PI;
   root.add(exteriorAtm);
+
+  // Matching 1:1 Standalone Arcade Cabinet Machine flush against West (+X interior equivalent) conservatory wall
+  const exteriorArcade = buildStandaloneArcadeCabinet(styler, CAFE_GLOBAL_SCALE_SPEC.exteriorAtmScale);
+  exteriorArcade.position.set(-12.22, 0.06, 24.50);
+  exteriorArcade.rotation.y = Math.PI / 2;
+  root.add(exteriorArcade);
 
   const addBanquetteLoungeSet = (bx: number, bz: number, rotY: number, twoFacingChairs = true) => {
     const bSet = new THREE.Group();

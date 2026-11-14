@@ -1,6 +1,6 @@
 /**
  * Pure gameplay rules, XP/Level progression, Barista Work Shift state machine,
- * Food & Drink Order Catalog (paid in LUL or CYON) and Glasshouse Cafe geometry constants.
+ * Food & Drink Order Catalog, ATM Salary Exchange, and Glasshouse Cafe geometry constants.
  */
 
 export interface CafeMenuItemSpec {
@@ -17,8 +17,8 @@ export interface CafeMenuItemSpec {
   name: string;
   category: 'drink' | 'pastry';
   priceLul: number;
-  priceCyon: number;
   xpReward: number;
+  shiftBucksReward: number;
   prepHint: string;
   accentHex: string;
 }
@@ -29,9 +29,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Caramel Latte',
     category: 'drink',
     priceLul: 10,
-    priceCyon: 10,
     xpReward: 35,
-    prepHint: 'Warm milk latte art',
+    shiftBucksReward: 24,
+    prepHint: 'Warm steamed milk latte art',
     accentHex: '#f59e0b',
   },
   {
@@ -39,9 +39,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Butter Croissant',
     category: 'pastry',
     priceLul: 3,
-    priceCyon: 3,
     xpReward: 12,
-    prepHint: 'Crispy butter pastry',
+    shiftBucksReward: 12,
+    prepHint: 'Flaky golden butter pastry',
     accentHex: '#fbbf24',
   },
   {
@@ -49,9 +49,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Club Sandwich',
     category: 'pastry',
     priceLul: 10,
-    priceCyon: 10,
     xpReward: 35,
-    prepHint: 'Fresh layered garden sandwich',
+    shiftBucksReward: 24,
+    prepHint: 'Fresh botanical club sandwich',
     accentHex: '#4ade80',
   },
   {
@@ -59,9 +59,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Double Espresso',
     category: 'drink',
     priceLul: 3,
-    priceCyon: 3,
     xpReward: 12,
-    prepHint: 'Classic strong coffee',
+    shiftBucksReward: 12,
+    prepHint: 'Rich classic double espresso',
     accentHex: '#92400e',
   },
   {
@@ -69,9 +69,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Cinnamon Roll',
     category: 'pastry',
     priceLul: 6,
-    priceCyon: 6,
     xpReward: 22,
-    prepHint: 'Cinnamon swirl roll',
+    shiftBucksReward: 16,
+    prepHint: 'Warm spiced cinnamon roll',
     accentHex: '#d97706',
   },
   {
@@ -79,9 +79,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Glazed Donut',
     category: 'pastry',
     priceLul: 2,
-    priceCyon: 2,
     xpReward: 8,
-    prepHint: 'Sweet glazed donut',
+    shiftBucksReward: 10,
+    prepHint: 'Sweet classic glazed donut',
     accentHex: '#f472b6',
   },
   {
@@ -89,9 +89,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Blueberry Muffin',
     category: 'pastry',
     priceLul: 4,
-    priceCyon: 4,
     xpReward: 16,
-    prepHint: 'Soft berry muffin',
+    shiftBucksReward: 14,
+    prepHint: 'Soft baked blueberry muffin',
     accentHex: '#60a5fa',
   },
   {
@@ -99,9 +99,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Botanical Iced Latte',
     category: 'drink',
     priceLul: 3,
-    priceCyon: 3,
     xpReward: 14,
-    prepHint: 'Chilled iced milk coffee',
+    shiftBucksReward: 12,
+    prepHint: 'Chilled botanical iced coffee',
     accentHex: '#38bdf8',
   },
   {
@@ -109,9 +109,9 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Hot Choco Mocha',
     category: 'drink',
     priceLul: 6,
-    priceCyon: 6,
     xpReward: 24,
-    prepHint: 'Warm chocolate mocha',
+    shiftBucksReward: 18,
+    prepHint: 'Rich warm chocolate mocha',
     accentHex: '#f87171',
   },
 ];
@@ -136,7 +136,7 @@ export const CAFE_INTERIOR_BOUNDS = {
   wingMinX: 1.65,
   courtyardMinZ: 5.25,
   spawnX: 0.0,
-  spawnZ: 2.65,
+  spawnZ: 1.15,
   spawnYaw: Math.PI / 2,
   exitDoorX: 0.0,
   exitDoorZ: 4.55,
@@ -144,14 +144,39 @@ export const CAFE_INTERIOR_BOUNDS = {
   baristaCounterFrontZ: -1.10,
   baristaCounterStandX: -0.2,
   baristaCounterStandZ: -3.35,
-  rotaBoardX: 3.35,
-  rotaBoardZ: -3.80,
-  atmMachineX: -5.10,
-  atmMachineZ: -3.55,
-  prepCoffeeX: -2.20,
-  prepCoffeeZ: -2.95,
-  prepFoodX: 1.15,
-  prepFoodZ: -2.95,
+  workShiftExitPadX: 1.95,
+  workShiftExitPadZ: -3.38,
+  workShiftMinX: -1.62,
+  workShiftMaxX: 1.95,
+  workShiftMinZ: -3.78,
+  workShiftMaxZ: -2.96,
+  rotaBoardX: 3.04,
+  rotaBoardZ: -3.62,
+  atmMachineX: -4.25,
+  atmMachineZ: -4.15,
+} as const;
+
+export const CAFE_APPLIANCE_TARGETS = {
+  exitDoor: { x: 0.0, markerY: 0.65, promptY: 1.45, z: 4.55 },
+  atmMachine: { x: -4.25, markerY: 1.98, promptY: 2.18, z: -4.82 },
+  workShiftBoard: { x: 3.04, markerY: 2.24, promptY: 2.44, z: -4.42 },
+  orderPosRegister: { x: -2.23, markerY: 1.56, promptY: 1.76, z: -1.99 },
+  drinkEspressoMachine: {
+    x: -0.91,
+    markerY: 1.72,
+    promptY: 1.92,
+    z: -2.07,
+    standX: -0.88,
+    standZ: -2.95,
+  },
+  pastryDisplayCase: {
+    x: 1.01,
+    markerY: 1.96,
+    promptY: 2.16,
+    z: -2.07,
+    standX: 0.96,
+    standZ: -2.95,
+  },
 } as const;
 
 /**
@@ -185,6 +210,28 @@ export function clampCafeInteriorPosition(
     }
   }
   return { x, z };
+}
+
+/**
+ * While the player is actively working a Barista Work Shift (`isWorking === true`),
+ * contains their position strictly inside the behind-counter wooden workspace corridor
+ * (`x in [-1.62 .. +1.95]`, `z in [-3.78 .. -2.96]`) so they cannot exit past the
+ * work-shift exit ring+triangle boundary at `x = 1.95` until they end their shift.
+ */
+export function clampCafeBaristaWorkShiftPosition(
+  rawX: number,
+  rawZ: number,
+): { x: number; z: number } {
+  return {
+    x: Math.max(
+      CAFE_INTERIOR_BOUNDS.workShiftMinX,
+      Math.min(CAFE_INTERIOR_BOUNDS.workShiftMaxX, rawX),
+    ),
+    z: Math.max(
+      CAFE_INTERIOR_BOUNDS.workShiftMinZ,
+      Math.min(CAFE_INTERIOR_BOUNDS.workShiftMaxZ, rawZ),
+    ),
+  };
 }
 
 export const CAFE_GLOBAL_SCALE_SPEC = {
@@ -228,20 +275,9 @@ export const CAFE_INTERIOR_SEAT_SPOTS: ReadonlyArray<CafeInteriorSeatSpot> = [
 ];
 
 export const CAFE_SHIFT_MAX_ORDERS = 3;
-export const CAFE_SHIFT_DURATION_SEC = 180;
 export const CAFE_SHIFT_COMPLETION_BONUS_XP = 30;
-export const CAFE_SERVE_XP_BONUS = 15;
-export const CAFE_CYON_XP_MULTIPLIER = 2.5;
-
-/** XP a working waiter earns for serving this item. Working earns XP only — no Bucks, no LUL. */
-export function cafeWorkXpForItem(item: CafeMenuItemSpec): number {
-  return item.xpReward + CAFE_SERVE_XP_BONUS;
-}
-
-/** XP for buying this item with CYON: 2.5x the XP of working (serving) the same item. */
-export function cafeCyonPurchaseXpForItem(item: CafeMenuItemSpec): number {
-  return Math.round(cafeWorkXpForItem(item) * CAFE_CYON_XP_MULTIPLIER);
-}
+export const CAFE_SHIFT_COMPLETION_BONUS_BUCKS = 25;
+export const CAFE_BUCKS_TO_LUL_RATE = 1; // 1 Shift Buck = 1 LUL
 
 export interface PlayerLevelProgress {
   level: number;
@@ -309,11 +345,22 @@ export function applyPlayerXpGain(currentTotalXp: number, gainXp: number): XpGai
 export interface CafeActiveCustomerOrder {
   orderId: string;
   customerName: string;
-  customerUid: string | null;
-  source: 'ai' | 'player';
   item: CafeMenuItemSpec;
   orderNumber: number;
   maxOrdersInShift: number;
+}
+
+export interface CafeShiftQueueEntry {
+  id: string;
+  name: string;
+  isSelf: boolean;
+}
+
+export interface CafeActiveOtherWorker {
+  id: string;
+  name: string;
+  ordersServed: number;
+  maxOrders: number;
 }
 
 export interface CafeWorkShiftState {
@@ -321,9 +368,9 @@ export interface CafeWorkShiftState {
   ordersCompletedInShift: number;
   maxOrdersInShift: number;
   activeOrder: CafeActiveCustomerOrder | null;
-  preparedItemId: CafeMenuItemSpec['id'] | null;
-  queuedOrders: CafeActiveCustomerOrder[];
   totalOrdersServedEver: number;
+  otherActiveWorker?: CafeActiveOtherWorker | null;
+  shiftQueue?: ReadonlyArray<CafeShiftQueueEntry>;
 }
 
 const AI_CAFE_CUSTOMER_NAMES = [
@@ -337,15 +384,21 @@ const AI_CAFE_CUSTOMER_NAMES = [
   'Ayu',
 ] as const;
 
+const AI_CAFE_SHIFT_WORKER_NAMES = [
+  'Riko (Citizen)',
+  'Mika (Citizen)',
+  'Kenji (Citizen)',
+] as const;
+
 export function createInitialCafeWorkShiftState(totalOrdersServedEver = 0): CafeWorkShiftState {
   return {
     isWorking: false,
     ordersCompletedInShift: 0,
     maxOrdersInShift: CAFE_SHIFT_MAX_ORDERS,
     activeOrder: null,
-    preparedItemId: null,
-    queuedOrders: [],
     totalOrdersServedEver,
+    otherActiveWorker: null,
+    shiftQueue: [],
   };
 }
 
@@ -360,8 +413,6 @@ export function pickNextAiCafeOrder(
   return {
     orderId: `order-${orderNumber}-${safeSeed}`,
     customerName,
-    customerUid: null,
-    source: 'ai',
     item,
     orderNumber,
     maxOrdersInShift,
@@ -372,60 +423,23 @@ export function startCafeWorkShift(
   prev: CafeWorkShiftState,
   seed = Date.now(),
 ): CafeWorkShiftState {
-  const queued = prev.queuedOrders ?? [];
-  const first = queued.length > 0 ? queued[0] : pickNextAiCafeOrder(1, seed, CAFE_SHIFT_MAX_ORDERS);
+  const remainingQueue = (prev.shiftQueue ?? []).filter((entry) => !entry.isSelf);
+  const safeSeed = Math.abs(Math.floor(seed));
+  const nextNpcName =
+    AI_CAFE_SHIFT_WORKER_NAMES[safeSeed % AI_CAFE_SHIFT_WORKER_NAMES.length];
+  const queueWithWaitingPeer: ReadonlyArray<CafeShiftQueueEntry> =
+    remainingQueue.length > 0
+      ? remainingQueue
+      : [{ id: `npc-worker-${safeSeed}`, name: nextNpcName, isSelf: false }];
+
   return {
     isWorking: true,
     ordersCompletedInShift: 0,
     maxOrdersInShift: CAFE_SHIFT_MAX_ORDERS,
-    activeOrder: first,
-    preparedItemId: null,
-    queuedOrders: queued.length > 0 ? queued.slice(1) : [],
+    activeOrder: pickNextAiCafeOrder(1, seed, CAFE_SHIFT_MAX_ORDERS),
     totalOrdersServedEver: prev.totalOrdersServedEver,
-  };
-}
-
-/** A real player ordered from this barista: the order joins the shift (active if free, else queued). */
-export function enqueuePlayerCafeOrder(
-  prev: CafeWorkShiftState,
-  input: { customerName: string; customerUid: string; itemId: CafeMenuItemSpec['id']; seed?: number },
-): CafeWorkShiftState {
-  const item = CAFE_MENU_ITEMS.find((i) => i.id === input.itemId);
-  if (!item) return prev;
-  const seed = Math.abs(Math.floor(input.seed ?? Date.now()));
-  const order: CafeActiveCustomerOrder = {
-    orderId: `player-${input.customerUid}-${seed}`,
-    customerName: input.customerName,
-    customerUid: input.customerUid,
-    source: 'player',
-    item,
-    orderNumber: prev.ordersCompletedInShift + 1 + (prev.activeOrder ? 1 : 0) + prev.queuedOrders.length,
-    maxOrdersInShift: prev.maxOrdersInShift,
-  };
-  if (!prev.activeOrder) {
-    return { ...prev, activeOrder: order, preparedItemId: null };
-  }
-  return { ...prev, queuedOrders: [...prev.queuedOrders, order] };
-}
-
-/** The barista prepared an item at a category station; only the active order's item counts. */
-export function prepareActiveCafeOrder(
-  prev: CafeWorkShiftState,
-  itemId: CafeMenuItemSpec['id'],
-): CafeWorkShiftState {
-  if (!prev.isWorking || !prev.activeOrder) return prev;
-  if (prev.activeOrder.item.id !== itemId) return prev;
-  return { ...prev, preparedItemId: itemId };
-}
-
-/** Shift timer ran out: the shift ends, served XP stays, no completion bonus. */
-export function expireCafeWorkShift(prev: CafeWorkShiftState): CafeWorkShiftState {
-  if (!prev.isWorking) return prev;
-  return {
-    ...prev,
-    isWorking: false,
-    activeOrder: null,
-    preparedItemId: null,
+    otherActiveWorker: null,
+    shiftQueue: queueWithWaitingPeer,
   };
 }
 
@@ -434,6 +448,7 @@ export interface ServeCafeOrderResult {
   servedItem: CafeMenuItemSpec | null;
   customerName: string | null;
   xpGained: number;
+  bucksEarned: number;
   shiftCompleted: boolean;
   nextShiftState: CafeWorkShiftState;
 }
@@ -442,12 +457,13 @@ export function serveActiveCafeOrder(
   prev: CafeWorkShiftState,
   seed = Date.now(),
 ): ServeCafeOrderResult {
-  if (!prev.isWorking || !prev.activeOrder || prev.preparedItemId !== prev.activeOrder.item.id) {
+  if (!prev.isWorking || !prev.activeOrder) {
     return {
       served: false,
       servedItem: null,
       customerName: null,
       xpGained: 0,
+      bucksEarned: 0,
       shiftCompleted: false,
       nextShiftState: prev,
     };
@@ -455,9 +471,17 @@ export function serveActiveCafeOrder(
   const servedOrder = prev.activeOrder;
   const completedCount = prev.ordersCompletedInShift + 1;
   const shiftCompleted = completedCount >= prev.maxOrdersInShift;
-  const xpGained =
-    cafeWorkXpForItem(servedOrder.item) +
-    (shiftCompleted ? CAFE_SHIFT_COMPLETION_BONUS_XP : 0);
+  const baseXp = servedOrder.item.xpReward + 15;
+  const baseBucks = servedOrder.item.shiftBucksReward;
+  const xpGained = baseXp + (shiftCompleted ? CAFE_SHIFT_COMPLETION_BONUS_XP : 0);
+  const bucksEarned = baseBucks + (shiftCompleted ? CAFE_SHIFT_COMPLETION_BONUS_BUCKS : 0);
+
+  // When 1 round (3 serves) completes, player exits shift and must register again;
+  // any waiting worker in queue advances into the active barista slot.
+  const currentQueue = (prev.shiftQueue ?? []).filter((entry) => !entry.isSelf);
+  const nextQueueWorker = shiftCompleted && currentQueue.length > 0 ? currentQueue[0] : null;
+  const remainingQueueAfterPromote =
+    shiftCompleted && currentQueue.length > 0 ? currentQueue.slice(1) : currentQueue;
 
   const nextShiftState: CafeWorkShiftState = shiftCompleted
     ? {
@@ -465,21 +489,25 @@ export function serveActiveCafeOrder(
         ordersCompletedInShift: completedCount,
         maxOrdersInShift: prev.maxOrdersInShift,
         activeOrder: null,
-        preparedItemId: null,
-        queuedOrders: prev.queuedOrders,
         totalOrdersServedEver: prev.totalOrdersServedEver + 1,
+        otherActiveWorker: nextQueueWorker
+          ? {
+              id: nextQueueWorker.id,
+              name: nextQueueWorker.name,
+              ordersServed: 0,
+              maxOrders: CAFE_SHIFT_MAX_ORDERS,
+            }
+          : null,
+        shiftQueue: remainingQueueAfterPromote,
       }
     : {
         isWorking: true,
         ordersCompletedInShift: completedCount,
         maxOrdersInShift: prev.maxOrdersInShift,
-        activeOrder:
-          prev.queuedOrders.length > 0
-            ? prev.queuedOrders[0]
-            : pickNextAiCafeOrder(completedCount + 1, seed + 17, prev.maxOrdersInShift),
-        preparedItemId: null,
-        queuedOrders: prev.queuedOrders.length > 0 ? prev.queuedOrders.slice(1) : [],
+        activeOrder: pickNextAiCafeOrder(completedCount + 1, seed + 17, prev.maxOrdersInShift),
         totalOrdersServedEver: prev.totalOrdersServedEver + 1,
+        otherActiveWorker: null,
+        shiftQueue: prev.shiftQueue ?? [],
       };
 
   return {
@@ -487,8 +515,159 @@ export function serveActiveCafeOrder(
     servedItem: servedOrder.item,
     customerName: servedOrder.customerName,
     xpGained,
+    bucksEarned,
     shiftCompleted,
     nextShiftState,
+  };
+}
+
+export function joinCafeWorkShiftQueue(
+  prev: CafeWorkShiftState,
+  playerName = 'YOU',
+  seed = Date.now(),
+): { nextState: CafeWorkShiftState; startedImmediately: boolean; queuePosition: number } {
+  if (prev.isWorking) {
+    return { nextState: prev, startedImmediately: false, queuePosition: 0 };
+  }
+  if (!prev.otherActiveWorker) {
+    const started = startCafeWorkShift(prev, seed);
+    return { nextState: started, startedImmediately: true, queuePosition: 0 };
+  }
+  const existingQueue = prev.shiftQueue ?? [];
+  const existingIdx = existingQueue.findIndex((entry) => entry.isSelf);
+  if (existingIdx >= 0) {
+    return {
+      nextState: prev,
+      startedImmediately: false,
+      queuePosition: existingIdx + 1,
+    };
+  }
+  const cleanName = playerName.trim() ? `${playerName.trim()} (YOU)` : 'YOU';
+  const updatedQueue: ReadonlyArray<CafeShiftQueueEntry> = [
+    ...existingQueue,
+    { id: 'self-player', name: cleanName, isSelf: true },
+  ];
+  return {
+    nextState: {
+      ...prev,
+      shiftQueue: updatedQueue,
+    },
+    startedImmediately: false,
+    queuePosition: updatedQueue.length,
+  };
+}
+
+export function leaveCafeWorkShiftQueue(prev: CafeWorkShiftState): CafeWorkShiftState {
+  const existingQueue = prev.shiftQueue ?? [];
+  if (!existingQueue.some((entry) => entry.isSelf)) return prev;
+  return {
+    ...prev,
+    shiftQueue: existingQueue.filter((entry) => !entry.isSelf),
+  };
+}
+
+export function stepOtherActiveCafeWorkerServe(
+  prev: CafeWorkShiftState,
+  seed = Date.now(),
+): {
+  nextState: CafeWorkShiftState;
+  promotedSelfToWorking: boolean;
+  completedWorkerName: string | null;
+} {
+  if (prev.isWorking || !prev.otherActiveWorker) {
+    return {
+      nextState: prev,
+      promotedSelfToWorking: false,
+      completedWorkerName: null,
+    };
+  }
+  const active = prev.otherActiveWorker;
+  const nextServed = active.ordersServed + 1;
+  if (nextServed < active.maxOrders) {
+    return {
+      nextState: {
+        ...prev,
+        otherActiveWorker: {
+          ...active,
+          ordersServed: nextServed,
+        },
+      },
+      promotedSelfToWorking: false,
+      completedWorkerName: null,
+    };
+  }
+
+  // Active other worker finished all 3 serves in their round!
+  const completedName = active.name;
+  const currentQueue = prev.shiftQueue ?? [];
+  if (currentQueue.length === 0) {
+    return {
+      nextState: {
+        ...prev,
+        otherActiveWorker: null,
+        shiftQueue: [],
+      },
+      promotedSelfToWorking: false,
+      completedWorkerName: completedName,
+    };
+  }
+
+  const nextUp = currentQueue[0];
+  const restQueue = currentQueue.slice(1);
+  if (nextUp.isSelf) {
+    const startedSelf = startCafeWorkShift(
+      {
+        ...prev,
+        otherActiveWorker: null,
+        shiftQueue: restQueue,
+      },
+      seed,
+    );
+    return {
+      nextState: startedSelf,
+      promotedSelfToWorking: true,
+      completedWorkerName: completedName,
+    };
+  }
+
+  return {
+    nextState: {
+      ...prev,
+      otherActiveWorker: {
+        id: nextUp.id,
+        name: nextUp.name,
+        ordersServed: 0,
+        maxOrders: CAFE_SHIFT_MAX_ORDERS,
+      },
+      shiftQueue: restQueue,
+    },
+    promotedSelfToWorking: false,
+    completedWorkerName: completedName,
+  };
+}
+
+export function toggleSimulatedOtherCafeWorker(
+  prev: CafeWorkShiftState,
+  seed = Date.now(),
+): CafeWorkShiftState {
+  if (prev.isWorking) return prev;
+  if (prev.otherActiveWorker) {
+    return {
+      ...prev,
+      otherActiveWorker: null,
+      shiftQueue: [],
+    };
+  }
+  const safeSeed = Math.abs(Math.floor(seed));
+  const npcName = AI_CAFE_SHIFT_WORKER_NAMES[safeSeed % AI_CAFE_SHIFT_WORKER_NAMES.length];
+  return {
+    ...prev,
+    otherActiveWorker: {
+      id: `sim-worker-${safeSeed}`,
+      name: npcName,
+      ordersServed: 0,
+      maxOrders: CAFE_SHIFT_MAX_ORDERS,
+    },
   };
 }
 
@@ -531,42 +710,39 @@ export function purchaseCafeMenuItem(
   };
 }
 
-export interface PurchaseCafeFoodCyonResult {
-  purchased: boolean;
-  reason?: 'insufficient_cyon' | 'item_not_found';
-  item: CafeMenuItemSpec | null;
-  nextCyon: number;
-  xpGained: number;
+export interface ExchangeCafeBucksResult {
+  exchanged: boolean;
+  bucksSpent: number;
+  lulReceived: number;
+  nextBucks: number;
+  nextLul: number;
 }
 
-export function purchaseCafeMenuItemWithCyon(
-  itemId: CafeMenuItemSpec['id'],
-  currentCyon: number,
-): PurchaseCafeFoodCyonResult {
-  const item = CAFE_MENU_ITEMS.find((m) => m.id === itemId) ?? null;
-  if (!item) {
+export function exchangeCafeBucksToLul(
+  requestedBucks: number,
+  currentBucks: number,
+  currentLul: number,
+): ExchangeCafeBucksResult {
+  const cleanBucks = Math.min(
+    Math.max(0, Math.floor(requestedBucks)),
+    Math.max(0, Math.floor(currentBucks)),
+  );
+  if (cleanBucks <= 0) {
     return {
-      purchased: false,
-      reason: 'item_not_found',
-      item: null,
-      nextCyon: currentCyon,
-      xpGained: 0,
+      exchanged: false,
+      bucksSpent: 0,
+      lulReceived: 0,
+      nextBucks: currentBucks,
+      nextLul: currentLul,
     };
   }
-  if (currentCyon < item.priceCyon) {
-    return {
-      purchased: false,
-      reason: 'insufficient_cyon',
-      item,
-      nextCyon: currentCyon,
-      xpGained: 0,
-    };
-  }
+  const lulReceived = cleanBucks * CAFE_BUCKS_TO_LUL_RATE;
   return {
-    purchased: true,
-    item,
-    nextCyon: currentCyon - item.priceCyon,
-    xpGained: cafeCyonPurchaseXpForItem(item),
+    exchanged: true,
+    bucksSpent: cleanBucks,
+    lulReceived,
+    nextBucks: currentBucks - cleanBucks,
+    nextLul: currentLul + lulReceived,
   };
 }
 
@@ -575,16 +751,31 @@ export type CafeStationInteractionKind =
   | 'serve_customer'
   | 'order_counter'
   | 'rota_board'
-  | 'atm_machine'
-  | 'prep_coffee'
-  | 'prep_food';
+  | 'atm_machine';
 
 export function detectNearestCafeStation(
   px: number,
   pz: number,
   isWorking: boolean,
-  opts?: { needsPrep: boolean; orderCategory: 'drink' | 'pastry' | null },
+  activeOrderCategory: 'drink' | 'pastry' | null = null,
 ): { kind: CafeStationInteractionKind | null; dist: number } {
+  if (isWorking) {
+    const dWorkExitPad = Math.hypot(
+      px - CAFE_INTERIOR_BOUNDS.workShiftExitPadX,
+      pz - CAFE_INTERIOR_BOUNDS.workShiftExitPadZ,
+    );
+    if (dWorkExitPad <= 0.68) {
+      return { kind: 'rota_board', dist: dWorkExitPad };
+    }
+  }
+
+  const activeAppliance =
+    activeOrderCategory === 'pastry'
+      ? CAFE_APPLIANCE_TARGETS.pastryDisplayCase
+      : activeOrderCategory === 'drink'
+        ? CAFE_APPLIANCE_TARGETS.drinkEspressoMachine
+        : null;
+
   const candidates: Array<{ kind: CafeStationInteractionKind; x: number; z: number; radius: number }> = [
     {
       kind: 'exit_door',
@@ -593,44 +784,45 @@ export function detectNearestCafeStation(
       radius: 1.9,
     },
     {
-      kind: 'rota_board',
-      x: CAFE_INTERIOR_BOUNDS.rotaBoardX,
-      z: CAFE_INTERIOR_BOUNDS.rotaBoardZ,
-      radius: 2.1,
-    },
-    {
       kind: 'atm_machine',
       x: CAFE_INTERIOR_BOUNDS.atmMachineX,
       z: CAFE_INTERIOR_BOUNDS.atmMachineZ,
       radius: 2.1,
     },
+    {
+      kind: 'rota_board',
+      x: CAFE_INTERIOR_BOUNDS.rotaBoardX,
+      z: CAFE_INTERIOR_BOUNDS.rotaBoardZ,
+      radius: 2.25,
+    },
     ...(isWorking
-      ? opts?.needsPrep
-        ? [
-            {
-              kind: (opts.orderCategory === 'drink' ? 'prep_coffee' : 'prep_food') as CafeStationInteractionKind,
-              x:
-                opts.orderCategory === 'drink'
-                  ? CAFE_INTERIOR_BOUNDS.prepCoffeeX
-                  : CAFE_INTERIOR_BOUNDS.prepFoodX,
-              z:
-                opts.orderCategory === 'drink'
-                  ? CAFE_INTERIOR_BOUNDS.prepCoffeeZ
-                  : CAFE_INTERIOR_BOUNDS.prepFoodZ,
-              radius: 1.9,
-            },
-          ]
-        : [
-            {
-              kind: 'serve_customer' as CafeStationInteractionKind,
-              x: CAFE_INTERIOR_BOUNDS.baristaCounterStandX,
-              z: CAFE_INTERIOR_BOUNDS.baristaCounterStandZ,
-              radius: 2.6,
-            },
-          ]
+      ? [
+          ...(activeAppliance
+            ? [
+                {
+                  kind: 'serve_customer' as const,
+                  x: activeAppliance.standX,
+                  z: activeAppliance.standZ,
+                  radius: 2.65,
+                },
+              ]
+            : []),
+          {
+            kind: 'serve_customer' as const,
+            x: CAFE_INTERIOR_BOUNDS.baristaCounterStandX,
+            z: CAFE_INTERIOR_BOUNDS.baristaCounterStandZ,
+            radius: 2.65,
+          },
+        ]
       : [
           {
-            kind: 'order_counter' as CafeStationInteractionKind,
+            kind: 'order_counter' as const,
+            x: CAFE_APPLIANCE_TARGETS.orderPosRegister.x,
+            z: CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
+            radius: 2.45,
+          },
+          {
+            kind: 'order_counter' as const,
             x: CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
             z: CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
             radius: 2.4,
@@ -688,4 +880,215 @@ export function computeCafeExteriorMistFactor(localX: number, localZ: number): n
   if (distOutside <= 0.001) return 0;
   return Math.min(0.88, 0.30 + smoothstep01(0.15, 9.0, distOutside) * 0.58);
 }
+
+export type IndoorOrbitRoomKind = 'cafe_interior' | 'house_visit';
+
+export const HOUSE_VISIT_INDOOR_BOUNDS = {
+  minX: -5.3,
+  maxX: 5.3,
+  minZ: -3.7,
+  maxZ: 3.7,
+  spawnX: 0.0,
+  spawnZ: 0.65,
+  spawnYaw: Math.PI / 2,
+} as const;
+
+export const INDOOR_ORBIT_CAMERA_CONFIG = {
+  cafe_interior: {
+    fovDeg: 56,
+    defaultYaw: 0.03,
+    defaultPitch: 0.49,
+    defaultDist: 5.30,
+    baristaShiftYaw: -0.52,
+    baristaShiftPitch: 0.50,
+    baristaShiftDist: 5.10,
+    minPitch: 0.14,
+    maxPitch: 0.88,
+    minDist: 2.2,
+    maxDist: 6.4,
+    lookHeightOffset: 0.98,
+    minCamHeightOffset: 0.55,
+    maxCamHeightOffset: 3.72,
+    wallMargin: 0.34,
+    wallLookShiftFactor: 0.35,
+    maxWallLookShift: 0.60,
+  },
+  house_visit: {
+    fovDeg: 56,
+    defaultYaw: 0.0,
+    defaultPitch: 0.50,
+    defaultDist: 4.55,
+    minPitch: 0.14,
+    maxPitch: 0.84,
+    minDist: 2.1,
+    maxDist: 5.8,
+    lookHeightOffset: 0.96,
+    minCamHeightOffset: 0.50,
+    maxCamHeightOffset: 3.55,
+    wallMargin: 0.42,
+    wallLookShiftFactor: 0.32,
+    maxWallLookShift: 0.55,
+  },
+} as const;
+
+export interface IndoorRoomOrbitCameraPoseInput {
+  roomKind: IndoorOrbitRoomKind;
+  originY: number;
+  anchorX: number;
+  anchorZ: number;
+  yaw: number;
+  pitch: number;
+  dist: number;
+}
+
+export interface IndoorRoomOrbitCameraPose {
+  fovDeg: number;
+  camX: number;
+  camY: number;
+  camZ: number;
+  lookX: number;
+  lookY: number;
+  lookZ: number;
+}
+
+function clampNum(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function clampCafeCameraLineOfSightXZ(
+  anchorX: number,
+  anchorZ: number,
+  rawCamX: number,
+  rawCamZ: number,
+  margin: number,
+): { x: number; z: number } {
+  const minX = CAFE_INTERIOR_BOUNDS.minX + margin;
+  const maxX = CAFE_INTERIOR_BOUNDS.maxX - margin;
+  const minZ = CAFE_INTERIOR_BOUNDS.minZ + margin;
+  const hallMaxZ = CAFE_INTERIOR_BOUNDS.courtyardMinZ - margin;
+  const wingMinX = CAFE_INTERIOR_BOUNDS.wingMinX + margin;
+  const wingMaxZ = CAFE_INTERIOR_BOUNDS.maxZ - margin;
+
+  // Smoothly unlock the East (+X) Wing Z-extension as the anchor crosses into x >= wingMinX,
+  // and restrict X >= wingMinX when the anchor is deep inside the East Wing (z > hallMaxZ),
+  // guaranteeing 100% unobstructed straight-line sight without crossing the outdoor courtyard notch.
+  const wingBlendX = smoothstep01(wingMinX - 0.25, wingMinX + 0.25, anchorX);
+  const wingBlendZ = smoothstep01(hallMaxZ - 0.25, hallMaxZ + 0.25, anchorZ);
+
+  const effectiveMaxZ = hallMaxZ + (wingMaxZ - hallMaxZ) * wingBlendX;
+  const effectiveMinX = minX + (wingMinX - minX) * wingBlendZ;
+
+  let x = clampNum(rawCamX, effectiveMinX, maxX);
+  let z = clampNum(rawCamZ, minZ, effectiveMaxZ);
+
+  if (x < wingMinX && z > hallMaxZ) {
+    const pushEast = wingMinX - x;
+    const pushNorth = z - hallMaxZ;
+    if (pushEast < pushNorth && wingBlendX >= 0.5) {
+      x = wingMinX;
+    } else {
+      z = hallMaxZ;
+    }
+  }
+  return { x, z };
+}
+
+/**
+ * Computes the elevated 3/4 room-overview orbital camera pose for both `cafe_interior` and
+ * `house_visit`. Preserves full 360-degree user yaw/pitch rotation & wheel zoom while strictly
+ * containing the camera inside room walls/ceilings and smoothly sliding the look target inward
+ * when backing against a wall so the room overview never collapses onto the top of the avatar's head.
+ */
+export function computeIndoorRoomOrbitCameraPose(
+  input: IndoorRoomOrbitCameraPoseInput,
+): IndoorRoomOrbitCameraPose {
+  const cfg = INDOOR_ORBIT_CAMERA_CONFIG[input.roomKind];
+  const safePitch = clampNum(input.pitch, cfg.minPitch, cfg.maxPitch);
+  const safeDist = clampNum(input.dist, cfg.minDist, cfg.maxDist);
+
+  const cosPitch = Math.cos(safePitch);
+  const sinPitch = Math.sin(safePitch);
+  const desiredHoriz = Math.max(0.001, cosPitch * safeDist);
+  const desiredVert = sinPitch * safeDist;
+
+  const rawCamX = input.anchorX + Math.sin(input.yaw) * desiredHoriz;
+  const rawCamZ = input.anchorZ + Math.cos(input.yaw) * desiredHoriz;
+
+  const clampedCamXZ =
+    input.roomKind === 'cafe_interior'
+      ? clampCafeCameraLineOfSightXZ(
+          input.anchorX,
+          input.anchorZ,
+          rawCamX,
+          rawCamZ,
+          cfg.wallMargin,
+        )
+      : {
+          x: clampNum(
+            rawCamX,
+            HOUSE_VISIT_INDOOR_BOUNDS.minX + cfg.wallMargin,
+            HOUSE_VISIT_INDOOR_BOUNDS.maxX - cfg.wallMargin,
+          ),
+          z: clampNum(
+            rawCamZ,
+            HOUSE_VISIT_INDOOR_BOUNDS.minZ + cfg.wallMargin,
+            HOUSE_VISIT_INDOOR_BOUNDS.maxZ - cfg.wallMargin,
+          ),
+        };
+
+  const pushX = clampedCamXZ.x - rawCamX;
+  const pushZ = clampedCamXZ.z - rawCamZ;
+
+  let shiftX = pushX * cfg.wallLookShiftFactor;
+  let shiftZ = pushZ * cfg.wallLookShiftFactor;
+  const shiftMag = Math.hypot(shiftX, shiftZ);
+  if (shiftMag > cfg.maxWallLookShift && shiftMag > 1e-6) {
+    const scale = cfg.maxWallLookShift / shiftMag;
+    shiftX *= scale;
+    shiftZ *= scale;
+  }
+
+  const rawLookX = input.anchorX + shiftX;
+  const rawLookZ = input.anchorZ + shiftZ;
+  const clampedLookXZ =
+    input.roomKind === 'cafe_interior'
+      ? clampCafeInteriorPosition(rawLookX, rawLookZ, cfg.wallMargin)
+      : {
+          x: clampNum(
+            rawLookX,
+            HOUSE_VISIT_INDOOR_BOUNDS.minX + cfg.wallMargin,
+            HOUSE_VISIT_INDOOR_BOUNDS.maxX - cfg.wallMargin,
+          ),
+          z: clampNum(
+            rawLookZ,
+            HOUSE_VISIT_INDOOR_BOUNDS.minZ + cfg.wallMargin,
+            HOUSE_VISIT_INDOOR_BOUNDS.maxZ - cfg.wallMargin,
+          ),
+        };
+
+  const actualHoriz = Math.hypot(
+    clampedCamXZ.x - clampedLookXZ.x,
+    clampedCamXZ.z - clampedLookXZ.z,
+  );
+  const horizRatio = clampNum(actualHoriz / desiredHoriz, 0.4, 1.0);
+  const adjustedVert = desiredVert * (0.80 + 0.20 * horizRatio);
+
+  const lookY = input.originY + cfg.lookHeightOffset;
+  const camY = clampNum(
+    lookY + adjustedVert,
+    input.originY + cfg.minCamHeightOffset,
+    input.originY + cfg.maxCamHeightOffset,
+  );
+
+  return {
+    fovDeg: cfg.fovDeg,
+    camX: clampedCamXZ.x,
+    camY,
+    camZ: clampedCamXZ.z,
+    lookX: clampedLookXZ.x,
+    lookY,
+    lookZ: clampedLookXZ.z,
+  };
+}
+
 

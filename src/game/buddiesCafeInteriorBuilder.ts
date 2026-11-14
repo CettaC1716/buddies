@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import {
+  CAFE_APPLIANCE_TARGETS,
   CAFE_GLOBAL_SCALE_SPEC,
   CAFE_INTERIOR_BOUNDS,
   CAFE_INTERIOR_SEAT_SPOTS,
   CAFE_ORIGIN_Y,
+  type CafeStationInteractionKind,
 } from './buddiesCafeRules';
 import { bakeStaticGroupMeshes, createBlitzStrokeMesh } from './buddiesBlitzShadersAndAssets';
 import {
@@ -11,9 +13,11 @@ import {
   buildBentwoodRattanChair,
   buildCompleteEspressoBarAssembly,
   buildHangingMacrameFern,
+  buildJoinedShiftBoardCounterWing,
   buildLShapedGlasshouseArchitecture,
   buildPottedMonsteraOnStand,
   buildRoundOakBistroTable,
+  buildStandaloneArcadeCabinet,
   buildStandardBankCashAtm,
   buildTuftedLeatherBanquette,
   buildWisteriaCluster,
@@ -42,12 +46,14 @@ export const CAFE_INTERIOR_COLLIDERS: ReadonlyArray<CafeInteriorObbCollider> = [
   { id: 'cafe_barista_counter', x: -0.45, z: -2.05, hw: 2.54, hd: 0.49, ry: 0 },
   // Left L-Return Wing of Espresso Bar
   { id: 'cafe_barista_wing', x: -2.50, z: -3.25, hw: 0.48, hd: 1.18, ry: 0 },
-  // Back Espresso Credenza Wall (front edge at z = -4.23 -> 1.76m spacious barista workspace behind front counter!)
-  { id: 'cafe_back_bar', x: -0.45, z: -4.63, hw: 2.54, hd: 0.40, ry: 0 },
-  // Rota Shift Board Kiosk (0.92x human-proportioned terminal)
-  { id: 'cafe_rota_board', x: 3.45, z: -4.48, hw: 0.60, hd: 0.28, ry: 0 },
-  // Standard Bank Cash ATM Terminal (1:1 industrial 0.79m x 1.75m x 0.64m unibody cabinet)
-  { id: 'cafe_atm_terminal', x: -5.45, z: -4.18, hw: 0.42, hd: 0.36, ry: 0.45 },
+  // Back Espresso Credenza Wall (front edge at z = -4.23 -> 1.76m spacious barista workspace behind front counter, flush to rear wall)
+  { id: 'cafe_back_bar', x: -0.45, z: -4.72, hw: 2.54, hd: 0.50, ry: 0 },
+  // Seamless Joined Wooden Base Cabinet + 1:1 Wall-Mounted Work Shift Board (flush to cafe_back_bar right edge & rear wall, zero side/rear gap)
+  { id: 'cafe_rota_board', x: 3.04, z: -4.72, hw: 1.02, hd: 0.50, ry: 0 },
+  // Standard Bank Cash ATM Terminal (flush against rear wall at z = -4.95, rotation.y = 0, zero rear gap)
+  { id: 'cafe_atm_terminal', x: -4.25, z: -4.95, hw: 0.42, hd: 0.36, ry: 0 },
+  // Standalone Arcade Cabinet Machine (flush against East conservatory wall at x = 6.50, z = 4.33, zero rear gap)
+  { id: 'cafe_arcade_cabinet', x: 6.50, z: 4.33, hw: 0.38, hd: 0.42, ry: 0 },
   // Bistro Tables (East & West windows, 0.96x 1:1 human posture scale)
   { id: 'cafe_table_e1', x: 5.28, z: -0.85, hw: 0.53, hd: 0.53, ry: 0 },
   { id: 'cafe_table_e2', x: 5.28, z: 1.55, hw: 0.53, hd: 0.53, ry: 0 },
@@ -66,6 +72,12 @@ export const CAFE_INTERIOR_COLLIDERS: ReadonlyArray<CafeInteriorObbCollider> = [
   { id: 'cafe_planter_sw', x: -6.02, z: 4.52, hw: 0.38, hd: 0.38, ry: 0 },
 ];
 
+export interface CompactInteractiveChevronMarker {
+  group: THREE.Group;
+  chevronArrow: THREE.Mesh;
+  chevronMat: THREE.MeshBasicMaterial;
+}
+
 export interface CafeInteriorSceneHandle {
   root: THREE.Group;
   floorSpotIndicators: Array<{
@@ -76,10 +88,20 @@ export interface CafeInteriorSceneHandle {
   baristaReadyGlow: THREE.Mesh;
   customerBubbleGroup: THREE.Group;
   customerBubbleQuad: THREE.Mesh;
-  updateVisuals: (timeSec: number, isWorking: boolean) => void;
+  interactiveMarkers: {
+    atm: CompactInteractiveChevronMarker;
+    workShiftBoard: CompactInteractiveChevronMarker;
+    orderPosRegister: CompactInteractiveChevronMarker;
+    drinkEspressoMachine: CompactInteractiveChevronMarker;
+    pastryDisplayCase: CompactInteractiveChevronMarker;
+  };
+  updateVisuals: (
+    timeSec: number,
+    isWorking: boolean,
+    activeOrderCategory?: 'drink' | 'pastry' | null,
+    activeStationKind?: CafeStationInteractionKind | null,
+  ) => void;
   setCustomerOrderSign: (visible: boolean, label: string, accentHex: string) => void;
-  setRotaBoard: (state: { status: string; workerName: string | null; queueNames: string[] }) => void;
-  setApronRackWorking: (working: boolean) => void;
 }
 
 function makeHanaToonMesh(
@@ -387,6 +409,8 @@ function addSoftFocusBlurShells(targetRoot: THREE.Object3D, shellConfigs: Readon
 export function buildGlowingDoorFloorArrowPad(): {
   group: THREE.Group;
   pulseMat: THREE.MeshBasicMaterial;
+  innerDiscMat: THREE.MeshBasicMaterial;
+  arrowMat: THREE.MeshBasicMaterial;
   chevronArrow: THREE.Mesh;
 } {
   const group = new THREE.Group();
@@ -403,25 +427,21 @@ export function buildGlowingDoorFloorArrowPad(): {
   outerRing.raycast = () => {};
   group.add(outerRing);
 
-  const innerDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(0.46, 24),
-    new THREE.MeshBasicMaterial({
-      color: '#0ea5e9',
-      transparent: true,
-      opacity: 0.35,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    }),
-  );
+  const innerDiscMat = new THREE.MeshBasicMaterial({
+    color: '#0ea5e9',
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const innerDisc = new THREE.Mesh(new THREE.CircleGeometry(0.46, 24), innerDiscMat);
   innerDisc.rotation.x = -Math.PI / 2;
   innerDisc.position.y = 0.016;
   innerDisc.raycast = () => {};
   group.add(innerDisc);
 
-  const chevronArrow = new THREE.Mesh(
-    new THREE.ConeGeometry(0.22, 0.42, 4),
-    new THREE.MeshBasicMaterial({ color: '#38bdf8' }),
-  );
+  const arrowMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
+  const chevronArrow = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.42, 4), arrowMat);
   chevronArrow.rotation.x = Math.PI;
   chevronArrow.position.y = 0.65;
   chevronArrow.raycast = () => {};
@@ -432,7 +452,31 @@ export function buildGlowingDoorFloorArrowPad(): {
   }
   group.add(chevronArrow);
 
-  return { group, pulseMat, chevronArrow };
+  return { group, pulseMat, innerDiscMat, arrowMat, chevronArrow };
+}
+
+/**
+ * Compact ring-less floating 3D triangle indicator (`tanpa cincin, hanya bentuk segitiga kecil saja`)
+ * placed cleanly above interactive trigger items (ATM, Kiosks, Work Shift Board, POS Register,
+ * and contextual Pastry Display Case / Espresso Drink Machine during Barista Work Shifts).
+ */
+export function buildCompactInteractiveChevronMarker(
+  radius = 0.095,
+  height = 0.19,
+  colorHex = '#38bdf8',
+): CompactInteractiveChevronMarker {
+  const group = new THREE.Group();
+  const chevronMat = new THREE.MeshBasicMaterial({ color: colorHex, fog: false });
+  const chevronArrow = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 4), chevronMat);
+  chevronArrow.rotation.x = Math.PI;
+  chevronArrow.raycast = () => {};
+  const stroke = createBlitzStrokeMesh(chevronArrow.geometry, 0.010, '#ffffff');
+  if (stroke) {
+    stroke.raycast = () => {};
+    chevronArrow.add(stroke);
+  }
+  group.add(chevronArrow);
+  return { group, chevronArrow, chevronMat };
 }
 
 export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle {
@@ -655,16 +699,16 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   // Apply distance-graded soft mist shader across all outdoor surfaces (including courtyard patio flagstones!)
   applyExteriorBackdropSoftMist(outdoorBackdropGroup);
 
-  // Dark walnut barista deck spanning z in [-5.02 .. -2.47] so its front border meets the back face of the shifted front counter (-2.47m) dead-flush and gives a spacious 1.76m barista workspace!
+  // Dark walnut barista deck spanning under both the bartender bar and the joined Work Shift Board cabinet
   const baristaDeck = makeHanaToonMesh(
-    makeRoundedBoxGeo(5.16, 0.032, 2.55, 0.015, 2),
+    makeRoundedBoxGeo(7.16, 0.032, 2.72, 0.015, 2),
     '#9a6838',
     0.58,
     0.04,
     0.004,
     { map: oakTex },
   );
-  baristaDeck.position.set(-0.45, 0.022, -3.745);
+  baristaDeck.position.set(0.55, 0.022, -3.83);
   staticIndoorGroup.add(baristaDeck);
 
   // 3. 1:1 Rounded Espresso Bar, Pastry Counter, Grinders, Brass Lamps & Hanging Menu (0.96x human posture scale, front counter center z = -2.05 / back face -2.47)
@@ -677,6 +721,20 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   );
   espressoBarGroup.position.set(-0.45, 0.036, -3.72);
   staticIndoorGroup.add(espressoBarGroup);
+
+  // 4. SEAMLESS JOINED WOODEN BASE CABINET + 1:1 WALL-MOUNTED WORK SHIFT BOARD
+  //    Connected flush to the right side of the bartender back credenza (`x = +2.046`) and flush to the rear glasshouse wall (`z = -5.18`) with zero side or rear gap!
+  const shiftBoardWing = buildJoinedShiftBoardCounterWing(
+    styler,
+    marbleTex,
+    CAFE_GLOBAL_SCALE_SPEC.interiorEspressoBarScale,
+  );
+  shiftBoardWing.position.set(
+    -0.45 + 2.60 * CAFE_GLOBAL_SCALE_SPEC.interiorEspressoBarScale,
+    0.036,
+    -4.70,
+  );
+  staticIndoorGroup.add(shiftBoardWing);
 
   const baristaReadyGlow = new THREE.Mesh(
     new THREE.RingGeometry(0.42, 0.62, 24),
@@ -698,122 +756,17 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   baristaReadyGlow.raycast = () => {};
   root.add(baristaReadyGlow);
 
-  // 4. ROTA WORK SHIFT BOARD KIOSK (Victorian Dark-Bronze & Rounded Warm Oak Frame, 0.92x human eye-level scale)
-  const rotaStand = new THREE.Group();
-  rotaStand.position.set(3.45, 0, -4.48);
-  rotaStand.scale.setScalar(0.92);
-  const rotaPlinth = makeHanaToonMesh(makeRoundedBoxGeo(1.26, 0.24, 0.42, 0.03, 2), '#8c5d34', 0.52, 0.05, 0.004, { map: oakTex });
-  rotaPlinth.position.y = 0.12;
-  rotaStand.add(rotaPlinth);
-  const rotaPillar = makeHanaToonMesh(makeRoundedBoxGeo(1.16, 1.92, 0.30, 0.045, 3), '#3f3228', 0.44, 0.22, 0.005);
-  rotaPillar.position.y = 1.14;
-  rotaStand.add(rotaPillar);
-  const rotaCrown = makeHanaToonMesh(makeRoundedBoxGeo(1.26, 0.10, 0.38, 0.025, 2), '#a8703c', 0.50, 0.05, 0.004, { map: oakTex });
-  rotaCrown.position.y = 2.13;
-  rotaStand.add(rotaCrown);
-  const rotaBoardCanvas = document.createElement('canvas');
-  rotaBoardCanvas.width = 512;
-  rotaBoardCanvas.height = 440;
-  const rotaBoardTex = new THREE.CanvasTexture(rotaBoardCanvas);
-  rotaBoardTex.colorSpace = THREE.SRGBColorSpace;
-  rotaBoardTex.generateMipmaps = false;
-  rotaBoardTex.minFilter = THREE.LinearFilter;
-  rotaBoardTex.magFilter = THREE.LinearFilter;
-  const drawRotaBoard = (status: string, workerName: string | null, queueNames: string[]) => {
-    const ctx = rotaBoardCanvas.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#141b26';
-    ctx.fillRect(0, 0, 512, 440);
-    ctx.strokeStyle = '#b8ff3c';
-    ctx.lineWidth = 12;
-    ctx.strokeRect(6, 6, 500, 428);
-    ctx.fillStyle = '#b8ff3c';
-    ctx.fillRect(24, 22, 464, 52);
-    ctx.fillStyle = '#14161d';
-    ctx.font = '900 30px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('SHIFT BOARD', 256, 49);
-    ctx.fillStyle = status === 'OPEN' ? '#4ade80' : '#facc15';
-    ctx.font = '900 25px sans-serif';
-    ctx.fillText(status === 'OPEN' ? '● OPEN FOR ORDERS' : '● NO BARISTA ON SHIFT', 256, 104);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '800 19px sans-serif';
-    ctx.fillText('NOW WORKING', 256, 148);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 31px sans-serif';
-    ctx.fillText((workerName ?? '—').toUpperCase().slice(0, 18), 256, 182);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '800 19px sans-serif';
-    ctx.fillText('WAITING LIST', 256, 228);
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = '800 23px sans-serif';
-    if (queueNames.length === 0) {
-      ctx.fillText('—', 256, 262);
-    } else {
-      queueNames.slice(0, 4).forEach((n, i) => {
-        ctx.fillText(`${i + 1}. ${n.toUpperCase().slice(0, 16)}`, 256, 262 + i * 32);
-      });
-      if (queueNames.length > 4) {
-        ctx.font = '800 19px sans-serif';
-        ctx.fillText(`+${queueNames.length - 4} MORE`, 256, 262 + 4 * 32);
-      }
-    }
-    ctx.fillStyle = '#64748b';
-    ctx.font = '800 17px sans-serif';
-    ctx.fillText('PRESS E HERE TO WORK OR JOIN THE LIST', 256, 414);
-    rotaBoardTex.needsUpdate = true;
-  };
-  drawRotaBoard('CLOSED', null, []);
-  const rotaScreen = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.98, 0.88),
-    new THREE.MeshBasicMaterial({ map: rotaBoardTex, fog: false }),
-  );
-  rotaScreen.position.set(0, 1.38, 0.16);
-  rotaScreen.raycast = () => {};
-  rotaStand.add(rotaScreen);
-  staticIndoorGroup.add(rotaStand);
-
-  // 4b. APRON RACK beside the rota stand: three aprons hang here; while a barista
-  // works, one apron is gone from the rack (it is being worn).
-  const apronRack = new THREE.Group();
-  apronRack.position.set(4.62, 0, -4.32);
-  apronRack.rotation.y = -0.12;
-  const rackPole = makeHanaToonMesh(makeRoundedBoxGeo(0.09, 1.86, 0.09, 0.02, 2), '#3f3228', 0.44, 0.22, 0.005);
-  rackPole.position.y = 0.93;
-  apronRack.add(rackPole);
-  const rackBase = makeHanaToonMesh(makeRoundedBoxGeo(0.52, 0.07, 0.34, 0.02, 2), '#8c5d34', 0.52, 0.05, 0.004, { map: oakTex });
-  rackBase.position.y = 0.035;
-  apronRack.add(rackBase);
-  const rackBar = makeHanaToonMesh(makeRoundedBoxGeo(0.78, 0.06, 0.06, 0.02, 2), '#a8703c', 0.5, 0.05, 0.004, { map: oakTex });
-  rackBar.position.y = 1.78;
-  apronRack.add(rackBar);
-  const rackAprons: THREE.Group[] = [];
-  for (let ai = 0; ai < 3; ai++) {
-    const apron = new THREE.Group();
-    const panel = makeHanaToonMesh(makeRoundedBoxGeo(0.4, 0.56, 0.035, 0.03, 2), '#f3ead9', 0.6, 0.1, 0.004);
-    panel.position.y = -0.34;
-    apron.add(panel);
-    const bib = makeHanaToonMesh(makeRoundedBoxGeo(0.26, 0.2, 0.037, 0.03, 2), '#f3ead9', 0.6, 0.1, 0.004);
-    bib.position.y = -0.02;
-    apron.add(bib);
-    const strap = makeHanaToonMesh(makeRoundedBoxGeo(0.4, 0.045, 0.04, 0.01, 1), '#1f4d3a', 0.5, 0.15, 0.004);
-    strap.position.y = -0.18;
-    apron.add(strap);
-    apron.position.set(-0.26 + ai * 0.26, 1.74, 0.02);
-    apronRack.add(apron);
-    rackAprons.push(apron);
-  }
-  staticIndoorGroup.add(apronRack);
-  const setApronRackWorking = (working: boolean) => {
-    if (rackAprons[2]) rackAprons[2].visible = !working;
-  };
-
-  // 5. STANDARD BANK CASH ATM TERMINAL (1:1 Industrial 4-View Model Sheet: 1.75m height, illuminated ATM // CASH canopy, CCTV dome, angled screen + 8 FDK keys, green LED card slot, shielded PIN pad + NFC, cash shutter & rear vault door)
+  // 5. STANDARD BANK CASH ATM TERMINAL (flush against the rear wall with zero gap behind it)
   const atmStand = buildStandardBankCashAtm(styler, CAFE_GLOBAL_SCALE_SPEC.interiorAtmScale);
-  atmStand.position.set(-5.45, 0.02, -4.18);
-  atmStand.rotation.y = 0.45;
+  atmStand.position.set(-4.25, 0.02, -4.95);
+  atmStand.rotation.y = 0;
   staticIndoorGroup.add(atmStand);
+
+  // 5b. 1:1 STANDALONE ARCADE CABINET MACHINE ("NEO-STRIKE ARCADE" - flush against the East conservatory wall between the two banquettes with zero rear gap)
+  const arcadeCabinet = buildStandaloneArcadeCabinet(styler, CAFE_GLOBAL_SCALE_SPEC.interiorAtmScale);
+  arcadeCabinet.position.set(6.50, 0.02, 4.33);
+  arcadeCabinet.rotation.y = -Math.PI / 2;
+  staticIndoorGroup.add(arcadeCabinet);
 
   // 6. Round Oak Bistro Tables (0.96x = 0.77m waist height), Bentwood Rattan Armchairs (0.96x = 0.475m knee seat / 0.90m back) & Tufted Leather Banquettes (0.98x)
   const bistroLocations: Array<{
@@ -932,6 +885,65 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     }
   }
 
+  // 8. Glowing Exit Floor Arrow Pad at South Courtyard Entrance Door & Work-Shift Boundary Pad
+  const exitPad = buildGlowingDoorFloorArrowPad();
+  exitPad.group.position.set(CAFE_INTERIOR_BOUNDS.exitDoorX, 0.03, CAFE_INTERIOR_BOUNDS.exitDoorZ);
+  root.add(exitPad.group);
+
+  const workShiftExitPad = buildGlowingDoorFloorArrowPad();
+  workShiftExitPad.group.position.set(
+    CAFE_INTERIOR_BOUNDS.workShiftExitPadX,
+    0.045,
+    CAFE_INTERIOR_BOUNDS.workShiftExitPadZ,
+  );
+  workShiftExitPad.group.scale.setScalar(0.68);
+  workShiftExitPad.group.visible = false;
+  root.add(workShiftExitPad.group);
+
+  // 8B. Compact Ring-less Floating 3D Triangles above Interactive Trigger Appliances
+  const interactiveMarkers = {
+    atm: buildCompactInteractiveChevronMarker(0.095, 0.19, '#38bdf8'),
+    workShiftBoard: buildCompactInteractiveChevronMarker(0.095, 0.19, '#38bdf8'),
+    orderPosRegister: buildCompactInteractiveChevronMarker(0.090, 0.18, '#38bdf8'),
+    drinkEspressoMachine: buildCompactInteractiveChevronMarker(0.090, 0.18, '#38bdf8'),
+    pastryDisplayCase: buildCompactInteractiveChevronMarker(0.090, 0.18, '#38bdf8'),
+  };
+  interactiveMarkers.atm.group.position.set(
+    CAFE_APPLIANCE_TARGETS.atmMachine.x,
+    CAFE_APPLIANCE_TARGETS.atmMachine.markerY,
+    CAFE_APPLIANCE_TARGETS.atmMachine.z,
+  );
+  interactiveMarkers.workShiftBoard.group.position.set(
+    CAFE_APPLIANCE_TARGETS.workShiftBoard.x,
+    CAFE_APPLIANCE_TARGETS.workShiftBoard.markerY,
+    CAFE_APPLIANCE_TARGETS.workShiftBoard.z,
+  );
+  interactiveMarkers.orderPosRegister.group.position.set(
+    CAFE_APPLIANCE_TARGETS.orderPosRegister.x,
+    CAFE_APPLIANCE_TARGETS.orderPosRegister.markerY,
+    CAFE_APPLIANCE_TARGETS.orderPosRegister.z,
+  );
+  interactiveMarkers.drinkEspressoMachine.group.position.set(
+    CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.x,
+    CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.markerY,
+    CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.z,
+  );
+  interactiveMarkers.drinkEspressoMachine.group.visible = false;
+  interactiveMarkers.pastryDisplayCase.group.position.set(
+    CAFE_APPLIANCE_TARGETS.pastryDisplayCase.x,
+    CAFE_APPLIANCE_TARGETS.pastryDisplayCase.markerY,
+    CAFE_APPLIANCE_TARGETS.pastryDisplayCase.z,
+  );
+  interactiveMarkers.pastryDisplayCase.group.visible = false;
+
+  root.add(
+    interactiveMarkers.atm.group,
+    interactiveMarkers.workShiftBoard.group,
+    interactiveMarkers.orderPosRegister.group,
+    interactiveMarkers.drinkEspressoMachine.group,
+    interactiveMarkers.pastryDisplayCase.group,
+  );
+
   // 9. Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (proportioned cleanly over 0.475m chair seats!)
   const makeCompactSeatIndicatorCoin = (
     radius: number,
@@ -995,19 +1007,143 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     return { coinRoot, blueCoin, greenCoin };
   });
 
-  // (The overhead customer-order billboard was removed by design: order info now
-  // reaches the barista through the on-screen order banner + order card instead.)
+  // 10. AI Customer Order Sign Quad Overhead (camera-aligned constant-screen-size billboard)
+  const customerBubbleCanvas = document.createElement('canvas');
+  customerBubbleCanvas.width = 320;
+  customerBubbleCanvas.height = 128;
+  const customerBubbleTex = new THREE.CanvasTexture(customerBubbleCanvas);
+  customerBubbleTex.colorSpace = THREE.SRGBColorSpace;
+  customerBubbleTex.generateMipmaps = false;
+  customerBubbleTex.minFilter = THREE.LinearFilter;
+  customerBubbleTex.magFilter = THREE.LinearFilter;
+  const customerBubbleMat = new THREE.MeshBasicMaterial({
+    map: customerBubbleTex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    fog: false,
+  });
+  const customerBubbleQuad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), customerBubbleMat);
+  customerBubbleQuad.scale.set(0.85, 0.34, 1);
+  customerBubbleQuad.position.set(0, 2.02, 0);
+  customerBubbleQuad.renderOrder = 10;
+  customerBubbleQuad.castShadow = false;
+  customerBubbleQuad.receiveShadow = false;
+  customerBubbleQuad.raycast = () => {};
   const customerBubbleGroup = new THREE.Group();
+  customerBubbleGroup.position.set(
+    CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
+    0,
+    CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
+  );
   customerBubbleGroup.visible = false;
-  const customerBubbleQuad = new THREE.Mesh();
-  customerBubbleQuad.visible = false;
-  const setCustomerOrderSign = (_visible: boolean, _label: string, _accentHex: string) => {};
+  customerBubbleGroup.add(customerBubbleQuad);
+  root.add(customerBubbleGroup);
 
-  const updateVisuals = (timeSec: number, isWorking: boolean) => {
-    baristaReadyGlow.visible = isWorking;
-    if (isWorking) {
-      baristaReadyGlow.scale.setScalar(1.0 + Math.sin(timeSec * 4.0) * 0.08);
+  const setCustomerOrderSign = (visible: boolean, label: string, accentHex: string) => {
+    customerBubbleGroup.visible = visible;
+    customerBubbleQuad.visible = visible;
+    if (!visible) return;
+    const ctx = customerBubbleCanvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 320, 128);
+      ctx.fillStyle = '#14161d';
+      ctx.fillRect(8, 12, 304, 96);
+      ctx.strokeStyle = accentHex;
+      ctx.lineWidth = 8;
+      ctx.strokeRect(12, 16, 296, 88);
+      ctx.fillStyle = accentHex;
+      ctx.font = '900 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('PESANAN PELANGGAN', 160, 44);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 28px sans-serif';
+      ctx.fillText(label.toUpperCase().slice(0, 20), 160, 82);
     }
+    customerBubbleTex.needsUpdate = true;
+  };
+
+  const applyChevronProximityFeedback = (
+    marker: CompactInteractiveChevronMarker,
+    isActive: boolean,
+  ) => {
+    marker.chevronMat.color.set(isActive ? '#b8ff3c' : '#38bdf8');
+    marker.chevronArrow.scale.setScalar(isActive ? 1.16 : 1.0);
+  };
+
+  const updateVisuals = (
+    timeSec: number,
+    isWorking: boolean,
+    activeOrderCategory: 'drink' | 'pastry' | null = null,
+    activeStationKind: CafeStationInteractionKind | null = null,
+  ) => {
+    const isNearExit = activeStationKind === 'exit_door';
+    exitPad.pulseMat.color.set(isNearExit ? '#b8ff3c' : '#38bdf8');
+    exitPad.innerDiscMat.color.set(isNearExit ? '#84cc16' : '#0ea5e9');
+    exitPad.arrowMat.color.set(isNearExit ? '#b8ff3c' : '#38bdf8');
+    exitPad.chevronArrow.scale.setScalar(isNearExit ? 1.14 : 1.0);
+    exitPad.pulseMat.opacity = 0.55 + Math.sin(timeSec * 3.8) * 0.25;
+    exitPad.chevronArrow.position.y = 0.65 + Math.sin(timeSec * 3.5) * 0.12;
+    exitPad.chevronArrow.rotation.y = timeSec * 1.4;
+
+    workShiftExitPad.group.visible = isWorking;
+    if (isWorking) {
+      const isNearWorkExit = activeStationKind === 'rota_board';
+      workShiftExitPad.pulseMat.color.set(isNearWorkExit ? '#b8ff3c' : '#38bdf8');
+      workShiftExitPad.innerDiscMat.color.set(isNearWorkExit ? '#84cc16' : '#0ea5e9');
+      workShiftExitPad.arrowMat.color.set(isNearWorkExit ? '#b8ff3c' : '#38bdf8');
+      workShiftExitPad.chevronArrow.scale.setScalar(isNearWorkExit ? 1.14 : 1.0);
+      workShiftExitPad.pulseMat.opacity = 0.55 + Math.sin(timeSec * 3.8) * 0.25;
+      workShiftExitPad.chevronArrow.position.y = 0.65 + Math.sin(timeSec * 3.5) * 0.12;
+      workShiftExitPad.chevronArrow.rotation.y = timeSec * 1.4;
+    }
+
+    baristaReadyGlow.visible = false;
+
+    // Static appliance triggers vs contextual Barista Work Shift appliance triggers
+    interactiveMarkers.atm.group.visible = true;
+    interactiveMarkers.workShiftBoard.group.visible = !isWorking;
+    interactiveMarkers.orderPosRegister.group.visible = !isWorking;
+    interactiveMarkers.drinkEspressoMachine.group.visible =
+      isWorking && activeOrderCategory === 'drink';
+    interactiveMarkers.pastryDisplayCase.group.visible =
+      isWorking && activeOrderCategory === 'pastry';
+
+    applyChevronProximityFeedback(interactiveMarkers.atm, activeStationKind === 'atm_machine');
+    applyChevronProximityFeedback(
+      interactiveMarkers.workShiftBoard,
+      !isWorking && activeStationKind === 'rota_board',
+    );
+    applyChevronProximityFeedback(
+      interactiveMarkers.orderPosRegister,
+      activeStationKind === 'order_counter',
+    );
+    applyChevronProximityFeedback(
+      interactiveMarkers.drinkEspressoMachine,
+      activeStationKind === 'serve_customer' && activeOrderCategory === 'drink',
+    );
+    applyChevronProximityFeedback(
+      interactiveMarkers.pastryDisplayCase,
+      activeStationKind === 'serve_customer' && activeOrderCategory === 'pastry',
+    );
+
+    const bob = Math.sin(timeSec * 3.6) * 0.038;
+    const spin = timeSec * 1.65;
+    interactiveMarkers.atm.chevronArrow.position.y = bob;
+    interactiveMarkers.atm.chevronArrow.rotation.y = spin;
+    interactiveMarkers.workShiftBoard.chevronArrow.position.y =
+      Math.sin(timeSec * 3.6 + 0.8) * 0.038;
+    interactiveMarkers.workShiftBoard.chevronArrow.rotation.y = spin + 0.5;
+    interactiveMarkers.orderPosRegister.chevronArrow.position.y =
+      Math.sin(timeSec * 3.6 + 1.6) * 0.035;
+    interactiveMarkers.orderPosRegister.chevronArrow.rotation.y = spin + 1.0;
+    interactiveMarkers.drinkEspressoMachine.chevronArrow.position.y =
+      Math.sin(timeSec * 4.2) * 0.036;
+    interactiveMarkers.drinkEspressoMachine.chevronArrow.rotation.y = timeSec * 2.0;
+    interactiveMarkers.pastryDisplayCase.chevronArrow.position.y =
+      Math.sin(timeSec * 4.2) * 0.036;
+    interactiveMarkers.pastryDisplayCase.chevronArrow.rotation.y = timeSec * 2.0;
+
     floorSpotIndicators.forEach((entry, idx) => {
       const baseY = CAFE_INTERIOR_SEAT_SPOTS[idx]?.indicatorHeightY ?? 0.73;
       entry.coinRoot.position.y = baseY + Math.sin(timeSec * 3.4 + idx * 0.9) * 0.024;
@@ -1021,9 +1157,8 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     baristaReadyGlow,
     customerBubbleGroup,
     customerBubbleQuad,
+    interactiveMarkers,
     updateVisuals,
     setCustomerOrderSign,
-    setRotaBoard: (state) => drawRotaBoard(state.status, state.workerName, state.queueNames),
-    setApronRackWorking,
   };
 }

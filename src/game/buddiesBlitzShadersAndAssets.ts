@@ -11094,8 +11094,6 @@ function stepCharBuddiesGlbRigController(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
-  isBartending = false,
-  emoteClip: string | null = null,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -11239,17 +11237,11 @@ function stepCharBuddiesGlbRigController(
   ) {
     targetClip = 'driving.001';
     timeScale = 1.0;
-  } else if (isBartending && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('bartending.001')) {
-    targetClip = 'bartending.001';
-    timeScale = 1.0;
   } else if (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sleeping.001')) {
     targetClip = 'sleeping.001';
     timeScale = 1.0;
   } else if (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sitting.001')) {
     targetClip = 'sitting.001';
-    timeScale = 1.0;
-  } else if (emoteClip && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has(emoteClip)) {
-    targetClip = emoteClip;
     timeScale = 1.0;
   } else if (ctrl.kickAnimTimer > 0 && hasRifleTurnAndKickClip) {
     targetClip = 'rifle_turn_and_kick.001';
@@ -11917,8 +11909,6 @@ export function updateCharacterWeaponStance(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
-  isBartending = false,
-  emoteClip: string | null = null,
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -11942,8 +11932,6 @@ export function updateCharacterWeaponStance(
       isSitting,
       isDriving,
       isSleeping,
-      isBartending,
-      emoteClip,
     );
   }
   if (
@@ -11951,9 +11939,7 @@ export function updateCharacterWeaponStance(
     Boolean(rig.isSeatedRiderRef) ||
     (isDriving && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('driving.001')) ||
     (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001')) ||
-    (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001')) ||
-    (isBartending && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('bartending.001')) ||
-    (emoteClip !== null && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has(emoteClip))
+    (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
   ) {
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;

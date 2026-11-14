@@ -37,9 +37,9 @@ Requires **Node.js 18+** and **npm** (plus **Rust `stable` + `cargo-near`** if r
 npm install
 npm run dev
 
-# 2. Run TypeScript static verification, 165 unit tests, and production WebGL bundle build
+# 2. Run TypeScript static verification, 166 unit tests, and production WebGL bundle build
 npm run lint     # tsc --noEmit (0 errors)
-npm test         # 165 unit tests (3-currency P2P invariants, negotiation & NPC treasury discipline, House Deed vs Fish NFT filter, NEAR client, audio & preloader)
+npm test         # 166 unit tests (3-currency P2P invariants, negotiation & NPC treasury discipline, House Deed vs Fish NFT filter, NEAR client, audio & preloader)
 npm run build    # Production Vite 8 build into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM binary (near-sdk 5.30.1)

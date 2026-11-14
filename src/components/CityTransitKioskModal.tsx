@@ -731,7 +731,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     BARISTA SHIFT
                   </span>
                   <span className="px-2 py-0.5 bg-black/80 text-white border-[2px] border-white/80 text-[10px] font-black uppercase">
-                    BUCKS / LUL / XP
+                    LUL / XP
                   </span>
                 </div>
 
@@ -742,7 +742,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     CAFE GLASSHOUSE
                   </div>
                   <p className="mt-1 text-xs font-bold text-slate-200 line-clamp-2">
-                    Register at the Work Rota board inside Cafe Glasshouse, prepare customer drinks and pastries, and cash out Shift Bucks for LUL.
+                    Register at the Work Rota board inside Cafe Glasshouse, prepare customer drinks and pastries, and earn XP for every serve.
                   </p>
                 </div>
               </button>

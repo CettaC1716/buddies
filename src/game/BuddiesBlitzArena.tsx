@@ -160,6 +160,8 @@ import {
   pickRandomTeamShieldedCratePadSpawn,
   CityTransitStationId,
   CITY_TRANSIT_DESTINATIONS,
+  CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
+  BEACHFRONT_KAI_KIOSK_SPEC,
   getCityTransitDestinationById,
   evaluateNearestCityTransitKioskProximity,
   evaluateTramRideTransitionStep,
@@ -216,13 +218,13 @@ import {
   type FishingPhaseState,
   type FishingWaterZoneId,
 } from './buddiesFishingMarket';
-import { isPointOnAmusementOverwaterPier } from './buddiesAmusementParkRules';
 import { buildShorelineProceduralFishGroup } from '../components/ShorelineCatchShowcaseModal';
 import {
   soundEngine,
   computeSpatialAudioGain,
   computeBuildBoxAudioGain,
 } from './audio';
+import { isPointOnAmusementOverwaterPier } from './buddiesAmusementParkRules';
 import {
   loadAllRealBlitzAssets,
   getCachedLoadedBlitzAssets,
@@ -306,17 +308,24 @@ import {
   evaluateRoomDaylightState,
 } from './buddiesMerchantPricing';
 import {
+  CAFE_APPLIANCE_TARGETS,
   CAFE_EXTERIOR_DOOR_TRIGGER,
   CAFE_INTERIOR_BOUNDS,
   CAFE_INTERIOR_SEAT_SPOTS,
   CAFE_ORIGIN_Y,
+  HOUSE_VISIT_INDOOR_BOUNDS,
+  INDOOR_ORBIT_CAMERA_CONFIG,
+  clampCafeBaristaWorkShiftPosition,
   clampCafeInteriorPosition,
+  computeIndoorRoomOrbitCameraPose,
   detectNearestCafeStation,
   type CafeInteriorSeatSpot,
 } from './buddiesCafeRules';
 import {
   CAFE_INTERIOR_COLLIDERS,
+  type CompactInteractiveChevronMarker,
   buildBotanicalGlasshouseCafeInterior,
+  buildCompactInteractiveChevronMarker,
   buildGlowingDoorFloorArrowPad,
 } from './buddiesCafeInteriorBuilder';
 import {
@@ -522,15 +531,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     promptOverlay.style.overflow = 'hidden';
     container.appendChild(promptOverlay);
 
-    // Every world prompt button registers here. The floating billboards are
-    // force-hidden by CSS (except the bottom sit/sleep bars); ONE fixed hint
-    // pill at bottom-center mirrors whichever prompt would be visible.
-    const promptButtonRegistry: HTMLButtonElement[] = [];
-    const promptHideStyleEl = document.createElement('style');
-    promptHideStyleEl.textContent =
-      '.bb-world-prompt:not([data-bottom-sit-action-btn]):not([data-bottom-sleep-action-btn]) { display: none !important; }';
-    promptOverlay.appendChild(promptHideStyleEl);
-
     const createPromptButton = (htmlContent: string, title: string, actionDetail?: string) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -552,8 +552,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       btn.style.willChange = 'transform';
       btn.style.transition = 'none';
       btn.innerHTML = htmlContent;
-      btn.classList.add('bb-world-prompt');
-      promptButtonRegistry.push(btn);
       if (actionDetail) {
         btn.onpointerdown = (e) => {
           e.stopPropagation();
@@ -569,119 +567,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       return btn;
     };
 
-    // ONE fixed interaction hint (bottom-center) replacing every floating
-    // world billboard: it mirrors the prompt that would be on screen.
-    const fixedPromptBtn = document.createElement('button');
-    fixedPromptBtn.type = 'button';
-    fixedPromptBtn.tabIndex = -1;
-    fixedPromptBtn.setAttribute('data-fixed-interaction-prompt', 'true');
-    fixedPromptBtn.style.cssText =
-      'position:absolute; left:50%; bottom:88px; transform:translateX(-50%); display:none; align-items:center; gap:8px; padding:8px 16px 8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.35); background:rgba(20,22,29,0.88); color:#fff; font-family:Barlow,sans-serif; font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; box-shadow:0 10px 26px rgba(5,8,14,0.45); backdrop-filter:blur(8px); cursor:pointer; pointer-events:auto; user-select:none; white-space:nowrap; z-index:30; margin:0;';
-    const fixedPromptKeyEl = document.createElement('span');
-    fixedPromptKeyEl.style.cssText =
-      'display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 5px; border-radius:6px; background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.45); font-size:11px; font-weight:900;';
-    fixedPromptKeyEl.textContent = 'E';
-    const fixedPromptLabelEl = document.createElement('span');
-    fixedPromptBtn.appendChild(fixedPromptKeyEl);
-    fixedPromptBtn.appendChild(fixedPromptLabelEl);
-    let fixedPromptSource: HTMLButtonElement | null = null;
-    fixedPromptBtn.onpointerdown = (e) => {
-      e.stopPropagation();
-    };
-    fixedPromptBtn.onclick = (e) => {
-      e.stopPropagation();
-      resetAllPlayerMovementInputs();
-      fixedPromptSource?.click();
-    };
-    promptOverlay.appendChild(fixedPromptBtn);
-
-    const syncFixedInteractionPrompt = () => {
-      let best: HTMLButtonElement | null = null;
-      let bestLabel = '';
-      let bestKey = 'E';
-      for (const btn of promptButtonRegistry) {
-        if (btn.hasAttribute('data-bottom-sit-action-btn') || btn.hasAttribute('data-bottom-sleep-action-btn')) continue;
-        if (btn.style.display === 'none' || btn.style.display === '') continue;
-        const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
-        let label = text.length > 2 ? text : btn.title || text;
-        if (!label) continue;
-        const keyMatch = label.match(/\[(B \/ E|E|F)\]\s*$/i);
-        const key = keyMatch ? keyMatch[1].toUpperCase().replace(' / ', '/') : 'E';
-        label = label.replace(/\s*\[(B \/ E|E|F)\]\s*$/i, '').trim();
-        if (!label) continue;
-        // While working a cafe shift, PREPARE/SERVE hints live in the shift card.
-        if (cafeWorkShiftActive && (label.startsWith('PREPARE') || label.startsWith('SERVE'))) continue;
-        best = btn;
-        bestLabel = label;
-        bestKey = key;
-      }
-      if (!best) {
-        if (fixedPromptBtn.style.display !== 'none') fixedPromptBtn.style.display = 'none';
-        fixedPromptSource = null;
-        return;
-      }
-      if (fixedPromptSource !== best) {
-        fixedPromptSource = best;
-        fixedPromptLabelEl.textContent = bestLabel;
-        fixedPromptKeyEl.textContent = bestKey;
-      }
-      if (fixedPromptBtn.style.display !== 'inline-flex') fixedPromptBtn.style.display = 'inline-flex';
-    };
-
-    // ONE small triangle marker in the 3D world (vivid blue, white edge — the
-    // old door-pad chevron, minus its floor ring) anchored just above the
-    // object the current interaction belongs to: kiosk, ATM, shift board,
-    // doors, and the cafe prep stations while an order is being worked.
-    let interactMarkerGroup: THREE.Group | null = null;
-    const ensureInteractMarker = (): THREE.Group => {
-      if (interactMarkerGroup) return interactMarkerGroup;
-      const group = new THREE.Group();
-      group.name = 'InteractTriangleMarker3D';
-      group.visible = false;
-      const geo = new THREE.ConeGeometry(0.22, 0.42, 4);
-      geo.rotateX(Math.PI);
-      const cone = new THREE.Mesh(
-        geo,
-        new THREE.MeshBasicMaterial({ color: '#38bdf8', fog: false, depthTest: false, transparent: true }),
-      );
-      cone.renderOrder = 999;
-      cone.raycast = () => {};
-      const stroke = createBlitzStrokeMesh(geo, 0.015, '#ffffff');
-      if (stroke) {
-        stroke.renderOrder = 998;
-        stroke.raycast = () => {};
-        cone.add(stroke);
-      }
-      group.add(cone);
-      scene.add(group);
-      interactMarkerGroup = group;
-      return group;
-    };
-    type MarkerAnchor = { x: number; y: number; z: number; pad?: boolean; flat?: boolean };
-    let markerGuideAnchor: MarkerAnchor | null = null;
-    let markerPromptAnchor: MarkerAnchor | null = null;
-    let doorPad: ReturnType<typeof buildGlowingDoorFloorArrowPad> | null = null;
-    const ensureDoorPad = () => {
-      if (doorPad) return doorPad;
-      doorPad = buildGlowingDoorFloorArrowPad();
-      doorPad.group.visible = false;
-      scene.add(doorPad.group);
-      return doorPad;
-    };
-    const CAFE_MARKER_ANCHORS: Record<string, MarkerAnchor> = {
-      prep_coffee: { x: -0.93, y: CAFE_ORIGIN_Y + 1.85, z: -2.0 },
-      prep_food: { x: 1.01, y: CAFE_ORIGIN_Y + 1.75, z: -2.07 },
-      serve_customer: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
-      order_counter: { x: -0.2, y: CAFE_ORIGIN_Y + 1.38, z: -1.55 },
-      rota_board: { x: 3.45, y: CAFE_ORIGIN_Y + 2.6, z: -4.48 },
-      atm_machine: { x: -5.45, y: CAFE_ORIGIN_Y + 2.0, z: -4.18 },
-      exit_door: { x: 0, y: CAFE_ORIGIN_Y, z: 4.55, pad: true, flat: true },
-    };
-
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
     const HAND_ICON_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; background:#facc15; color:#14161d; font-family:'Barlow',sans-serif; font-weight:900; font-size:10px; border:2px solid #14161d; box-shadow:2px 2px 0 #14161d; user-select:none; pointer-events:none;">E</span>`;
 
-    const kioskPromptBtn = createPromptButton(POLYGON_ICON_HTML, 'HOUSE PLOT [B / E]');
+    // Unified Comic-Arcade Skewed Bottom-Center HUD Action Bar (matches Chat Bar & Top-Right HUD)
+    const DOCK_ICON_DOOR_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M13 4h6v16h-6"/><path d="M4 12h11"/><path d="m11 8 4 4-4 4"/></svg>`;
+    const DOCK_ICON_EXIT_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`;
+    const DOCK_ICON_CAFE_CUP_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>`;
+    const DOCK_ICON_ROSTER_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>`;
+    const DOCK_ICON_ATM_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/></svg>`;
+    const DOCK_ICON_KIOSK_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/><circle cx="12" cy="16.5" r="1.2" fill="currentColor"/></svg>`;
+    const DOCK_ICON_HOUSE_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>`;
+    const DOCK_ICON_CHAT_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+    const DOCK_ICON_TRAM_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><rect x="5" y="4" width="14" height="14" rx="2"/><line x1="5" y1="11" x2="19" y2="11"/><line x1="9" y1="21" x2="7" y2="18"/><line x1="15" y1="21" x2="17" y2="18"/><circle cx="8.5" cy="15" r="1" fill="currentColor"/><circle cx="15.5" cy="15" r="1" fill="currentColor"/></svg>`;
+
+    const getGameStyleBottomDockHtml = (
+      label: string,
+      accentHex: string,
+      iconSvg: string,
+      keyBadge = 'E',
+      badgeTextHex = '#0b0d13',
+    ) =>
+      `<span style="display:inline-flex; align-items:center; height:40px; min-width:228px; padding:0 8px 0 6px; background:#14161d; border:3px solid #14161d; box-shadow:0 0 0 2px #ffffff, 4px 4px 0 #14161d; transform:skewX(-10deg); pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:space-between; width:100%; gap:10px; transform:skewX(10deg);"><span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; flex-shrink:0; background:${accentHex}; color:${badgeTextHex}; border:2px solid #0b0d13; box-shadow:2px 2px 0 #0b0d13;">${iconSvg}</span><span style="flex:1; text-align:center; padding:0 4px; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:13px; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; text-shadow:0 1px 0 #000000;">${label}</span><span style="display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:24px; padding:0 6px; flex-shrink:0; background:${accentHex}; color:${badgeTextHex}; border:2px solid #0b0d13; box-shadow:2px 2px 0 #0b0d13; font-family:'Barlow',sans-serif; font-weight:900; font-size:11px; line-height:1;">${keyBadge}</span></span></span>`;
+
+    const kioskPromptBtn = createPromptButton(
+      getGameStyleBottomDockHtml('HOUSE PLOT', '#facc15', DOCK_ICON_HOUSE_SVG, 'E'),
+      'HOUSE PLOT [B / E]',
+    );
     kioskPromptBtn.onpointerdown = (e) => {
       e.stopPropagation();
       resetAllPlayerMovementInputs();
@@ -724,7 +636,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     lobbyEnterCityPromptBtn.setAttribute('data-lobby-portal-floating-btn', 'enter-city');
 
-    const RIDE_TRAM_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:5px 14px; background:#facc15; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(250,204,21,0.75); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">RIDE</span></span>`;
+    const RIDE_TRAM_BTN_HTML = getGameStyleBottomDockHtml('RIDE TRAM', '#facc15', DOCK_ICON_TRAM_SVG, 'E');
     const rideTramPromptBtn = createPromptButton(
       RIDE_TRAM_BTN_HTML,
       'RIDE',
@@ -732,7 +644,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     rideTramPromptBtn.setAttribute('data-ride-tram-floating-btn', 'true');
 
-    const EXIT_TRAM_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:5px 14px; background:#f97316; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(249,115,22,0.75); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">EXIT</span></span>`;
+    const EXIT_TRAM_BTN_HTML = getGameStyleBottomDockHtml('EXIT TRAM', '#f97316', DOCK_ICON_EXIT_SVG, 'E', '#ffffff');
     const exitTramPromptBtn = createPromptButton(
       EXIT_TRAM_BTN_HTML,
       'EXIT',
@@ -740,7 +652,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     exitTramPromptBtn.setAttribute('data-exit-tram-floating-btn', 'true');
 
-    const NPC_MERCHANT_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:5px 14px; background:#b8ff3c; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(184,255,60,0.75); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">TALK</span></span>`;
+    const NPC_MERCHANT_BTN_HTML = getGameStyleBottomDockHtml('TALK', '#b8ff3c', DOCK_ICON_CHAT_SVG, '▸');
     const npcMerchantPromptBtn = createPromptButton(
       NPC_MERCHANT_BTN_HTML,
       'TALK',
@@ -748,7 +660,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     npcMerchantPromptBtn.setAttribute('data-npc-merchant-floating-btn', 'true');
 
-    const ENTER_HOUSE_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:5px 14px; background:#2bb3b1; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(43,179,177,0.75); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">ENTER HOUSE [E]</span></span>`;
+    const ENTER_HOUSE_BTN_HTML = getGameStyleBottomDockHtml('ENTER HOUSE', '#2bb3b1', DOCK_ICON_DOOR_SVG, 'E');
     const enterHousePromptBtn = createPromptButton(
       ENTER_HOUSE_BTN_HTML,
       'ENTER HOUSE [E]',
@@ -756,7 +668,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     enterHousePromptBtn.setAttribute('data-enter-house-floating-btn', 'true');
 
-    const EXIT_HOUSE_ROOM_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 16px; background:#ef4444; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 14px rgba(239,68,68,0.85); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">EXIT ROOM [E]</span></span>`;
+    const EXIT_HOUSE_ROOM_BTN_HTML = getGameStyleBottomDockHtml('EXIT HOUSE', '#ef4444', DOCK_ICON_EXIT_SVG, 'E', '#ffffff');
     const exitHouseRoomPromptBtn = createPromptButton(
       EXIT_HOUSE_ROOM_BTN_HTML,
       'EXIT ROOM [E]',
@@ -764,7 +676,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     exitHouseRoomPromptBtn.setAttribute('data-exit-house-room-floating-btn', 'true');
 
-    const ENTER_CAFE_BTN_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 15px; background:#38bdf8; color:#0f172a; font-family:'Barlow',sans-serif; font-weight:900; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border:3px solid #14161d; box-shadow:3px 3px 0 #14161d, 0 0 16px rgba(56,189,248,0.85); transform:skewX(-12deg); user-select:none; pointer-events:none;"><span style="display:inline-block; transform:skewX(12deg);">ENTER CAFE [E]</span></span>`;
+    const ENTER_CAFE_BTN_HTML = getGameStyleBottomDockHtml('ENTER CAFE', '#38bdf8', DOCK_ICON_DOOR_SVG, 'E');
     const enterCafePromptBtn = createPromptButton(
       ENTER_CAFE_BTN_HTML,
       'ENTER CAFE [E]',
@@ -772,11 +684,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     enterCafePromptBtn.setAttribute('data-enter-cafe-floating-btn', 'true');
 
-    const getCafeStationBtnHtml = (label: string, bgHex = '#b8ff3c', fgHex = '#14161d') =>
-      `<span style="display:inline-flex; align-items:center; justify-content:center; padding:4px 11px; background:${bgHex}; color:${fgHex}; font-family:'Barlow',sans-serif; font-weight:900; font-size:10.5px; letter-spacing:0.05em; text-transform:uppercase; border:2px solid #14161d; border-radius:999px; box-shadow:2px 2px 0 #14161d; user-select:none; pointer-events:none;">${label}</span>`;
+    const getCafeStationBtnHtml = (
+      label: string,
+      accentHex = '#b8ff3c',
+      iconSvg = DOCK_ICON_CAFE_CUP_SVG,
+      badgeTextHex = '#0b0d13',
+    ) => getGameStyleBottomDockHtml(label, accentHex, iconSvg, 'E', badgeTextHex);
     const cafeStationPromptBtn = createPromptButton(
-      getCafeStationBtnHtml('ORDER MENU [E]'),
-      'CAFE STATION [E]',
+      getCafeStationBtnHtml('ORDER MENU', '#38bdf8', DOCK_ICON_CAFE_CUP_SVG),
+      'CAFE INTERACT [E]',
       'cafeStationInteract',
     );
     cafeStationPromptBtn.setAttribute('data-cafe-station-floating-btn', 'true');
@@ -896,13 +812,46 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const getCityTransitKioskMeshById = (stationId: CityTransitStationId): THREE.Object3D | null => {
-      if (stationId === 'central_plaza' || stationId === 'warzone_arena') {
+      if (stationId === 'central_plaza') {
+        const infoKiosk = scene.getObjectByName('CityTransitKiosk3D_info_center');
+        const halteKiosk = scene.getObjectByName('HalteLobbyTeleportKiosk3D');
+        if (infoKiosk && playerUnit) {
+          const dInfo = Math.hypot(
+            playerUnit.x - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
+            playerUnit.z - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
+          );
+          const dHalte = Math.hypot(playerUnit.x - -61.95, playerUnit.z - 0.0);
+          if (dInfo <= dHalte) {
+            return infoKiosk;
+          }
+        }
+        return halteKiosk ?? infoKiosk ?? null;
+      }
+      if (stationId === 'beachfront_harbor') {
+        const kaiKiosk = scene.getObjectByName('CityTransitKiosk3D_beachfront_kai');
+        const halteBeachKiosk = scene.getObjectByName('CityTransitKiosk3D_beachfront_harbor');
+        if (kaiKiosk && playerUnit) {
+          const dKai = Math.hypot(
+            playerUnit.x - BEACHFRONT_KAI_KIOSK_SPEC.kioskX,
+            playerUnit.z - BEACHFRONT_KAI_KIOSK_SPEC.kioskZ,
+          );
+          const dHalte = Math.hypot(playerUnit.x - 79.35, playerUnit.z - 29.5);
+          if (dKai <= dHalte) {
+            return kaiKiosk;
+          }
+        }
+        return halteBeachKiosk ?? kaiKiosk ?? null;
+      }
+      if (stationId === 'warzone_arena') {
         return scene.getObjectByName('HalteLobbyTeleportKiosk3D') ?? null;
       }
       return scene.getObjectByName(`CityTransitKiosk3D_${stationId}`) ?? null;
     };
 
-    const teleportKioskHexBtn = createPromptButton(POLYGON_ICON_HTML, 'CITY TRANSIT KIOSK [E]');
+    const teleportKioskHexBtn = createPromptButton(
+      getGameStyleBottomDockHtml('TRANSIT KIOSK', '#38bdf8', DOCK_ICON_KIOSK_SVG, 'E'),
+      'CITY TRANSIT KIOSK [E]',
+    );
     teleportKioskHexBtn.setAttribute('data-teleport-kiosk-hex-btn', 'true');
     teleportKioskHexBtn.onpointerdown = (e) => {
       e.stopPropagation();
@@ -928,15 +877,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
 
-    const syncTeleportKiosksGreenFootRing = (activeKind: ActiveTransitKioskKey) => {
-      const resolvedId = activeKind === 'none' ? null : resolveStationIdFromKioskKey(activeKind);
+    const syncTeleportKiosksGreenFootRing = (_activeKind: ActiveTransitKioskKey) => {
+      // Kiosks use compact ring-less 3D triangles overhead; floor rings are exclusive to entrance/exit doors!
       for (const spec of CITY_TRANSIT_DESTINATIONS) {
         const mesh = getCityTransitKioskMeshById(spec.id);
         if (mesh?.userData?.greenFootRing) {
-          (mesh.userData.greenFootRing as THREE.Mesh).visible =
-            resolvedId !== null &&
-            (spec.id === resolvedId ||
-              (resolvedId === 'warzone_arena' && spec.id === 'central_plaza'));
+          (mesh.userData.greenFootRing as THREE.Mesh).visible = false;
         }
       }
     };
@@ -1063,15 +1009,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const SEAT_DISC_GREEN_HTML = `<span style="display:block; width:44px; height:44px; pointer-events:none; user-select:none;"></span>`;
     const SEAT_DISC_BLUE_HTML = `<span style="display:block; width:40px; height:40px; pointer-events:none; user-select:none;"></span>`;
 
-    const CHAIR_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M7 4v9h10"/><path d="M7 13v7"/><path d="M17 13v7"/><path d="M7 16h10"/></svg>`;
-    const MOON_SVG_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff" style="display:block;"><path d="M20 13.2A8.5 8.5 0 1 1 10.8 4a7 7 0 0 0 9.2 9.2z"/></svg>`;
+    const CHAIR_SVG_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M7 4v9h10"/><path d="M7 13v7"/><path d="M17 13v7"/><path d="M7 16h10"/></svg>`;
+    const MOON_SVG_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:block;"><path d="M20 13.2A8.5 8.5 0 1 1 10.8 4a7 7 0 0 0 9.2 9.2z"/></svg>`;
+    const SLEEP_DISC_MOON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff" style="display:block;"><path d="M20 13.2A8.5 8.5 0 1 1 10.8 4a7 7 0 0 0 9.2 9.2z"/></svg>`;
     const getSleepDiscHtml = (near: boolean) =>
-      `<span style="display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background:${near ? 'rgba(146,110,32,0.92)' : 'rgba(38,32,52,0.92)'}; border:1.5px solid rgba(255,255,255,0.85); box-shadow:0 6px 18px rgba(0,0,0,0.45); pointer-events:none; user-select:none;">${MOON_SVG_ICON}</span>`;
+      `<span style="display:flex; align-items:center; justify-content:center; width:40px; height:40px; background:${near ? '#b8ff3c' : '#14161d'}; border:2.5px solid #ffffff; box-shadow:3px 3px 0 #14161d; transform:skewX(-8deg); pointer-events:none; user-select:none;"><span style="display:inline-flex; transform:skewX(8deg); color:${near ? '#14161d' : '#ffffff'};">${ near ? MOON_SVG_ICON : SLEEP_DISC_MOON_SVG }</span></span>`;
     const getSleepBarHtml = (label: string) =>
-      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,52,0.94); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${MOON_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
+      getGameStyleBottomDockHtml(label, '#a855f7', MOON_SVG_ICON, '▸', '#ffffff');
 
     const getSitBarHtml = (label: string) =>
-      `<span style="display:inline-flex; align-items:center; height:42px; min-width:210px; background:rgba(38,32,28,0.94); border:1.5px solid rgba(255,255,255,0.75); border-radius:22px; padding:0 14px 0 4px; box-shadow:0 6px 18px rgba(0,0,0,0.45); color:#ffffff; font-family:'Barlow',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.03em; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.85); margin-right:12px;">${CHAIR_SVG_ICON}</span><span style="flex:1; text-align:center;">${label}</span><span style="margin-left:12px; font-weight:900; font-size:16px; opacity:0.9;">&gt;</span></span>`;
+      getGameStyleBottomDockHtml(label, '#b8ff3c', CHAIR_SVG_ICON, '▸', '#0b0d13');
+
+    const PROXIMITY_IDLE_SKY_COLOR = new THREE.Color('#38bdf8');
+    const PROXIMITY_ACTIVE_LIME_COLOR = new THREE.Color('#b8ff3c');
 
     // Final seated position for a spot. Park benches: spawnRealBlitzPropFromGlb recenters
     // every prop on its bounding-box center, so the spot point is the bench's CENTER.
@@ -1370,9 +1320,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isWorkingCafeShift?: boolean;
                 activeCafeOrderLabel?: string;
                 activeCafeOrderAccent?: string;
-                cafeOrderCategory?: 'drink' | 'pastry' | null;
-                cafeOrderPrepared?: boolean;
-                cafeOrderSource?: 'ai' | 'player';
+                activeCafeOrderCategory?: 'drink' | 'pastry' | null;
                 onboardingCompleted?: boolean;
                 characterGender?: CharacterGender;
                 playerDisplayName?: string;
@@ -1504,9 +1452,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     socialSpeechBubbleEl.style.borderRadius = '12px';
     socialSpeechBubbleEl.style.border = '2.5px solid #14161d';
     socialSpeechBubbleEl.style.boxShadow = '2.5px 2.5px 0 #14161d';
-    socialSpeechBubbleEl.style.maxWidth = '220px';
+    socialSpeechBubbleEl.style.maxWidth = '280px';
     socialSpeechBubbleEl.style.textAlign = 'center';
-    socialSpeechBubbleEl.style.whiteSpace = 'nowrap';
+    socialSpeechBubbleEl.style.whiteSpace = 'normal';
+    socialSpeechBubbleEl.style.lineHeight = '1.25';
+    socialSpeechBubbleEl.style.overflowWrap = 'break-word';
     promptOverlay.appendChild(socialSpeechBubbleEl);
 
     const onUpdateSocialBubbleStyle = (ev: Event) => {
@@ -2048,7 +1998,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       return mesh;
     };
 
-    const shadowDiscGeo = new THREE.CircleGeometry(1.1, 18);
+    const shadowDiscGeo = new THREE.CircleGeometry(1.1, 24);
     shadowDiscGeo.rotateX(-Math.PI / 2);
     const shadowDiscMat = new THREE.MeshBasicMaterial({
       color: 0x12121e,
@@ -2056,6 +2006,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       opacity: 0.0,
       visible: false,
       depthWrite: false,
+    });
+
+    const avatarShadowCanvas = document.createElement('canvas');
+    avatarShadowCanvas.width = 64;
+    avatarShadowCanvas.height = 64;
+    const avatarShadowCtx = avatarShadowCanvas.getContext('2d');
+    if (avatarShadowCtx) {
+      const grad = avatarShadowCtx.createRadialGradient(32, 32, 3, 32, 32, 30);
+      grad.addColorStop(0.0, 'rgba(10, 15, 28, 0.56)');
+      grad.addColorStop(0.45, 'rgba(10, 15, 28, 0.36)');
+      grad.addColorStop(0.78, 'rgba(10, 15, 28, 0.12)');
+      grad.addColorStop(1.0, 'rgba(10, 15, 28, 0.0)');
+      avatarShadowCtx.fillStyle = grad;
+      avatarShadowCtx.fillRect(0, 0, 64, 64);
+    }
+    const avatarShadowTex = new THREE.CanvasTexture(avatarShadowCanvas);
+    const avatarContactShadowMat = new THREE.MeshBasicMaterial({
+      map: avatarShadowTex,
+      transparent: true,
+      opacity: 1.0,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
     });
 
     // =========================================================================
@@ -2330,6 +2303,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       kioskMesh.position.set(1.22, 0.0, -6.48);
       kioskMesh.rotation.y = -Math.PI / 2;
       kioskMesh.visible = true;
+      const plotKioskChevron = buildCompactInteractiveChevronMarker(0.13, 0.25, '#38bdf8');
+      plotKioskChevron.group.position.set(0, 2.92, 0.02);
+      kioskMesh.add(plotKioskChevron.group);
+      kioskMesh.userData.interactiveChevron = plotKioskChevron;
       padGroup.add(kioskMesh);
       padGroup.updateMatrixWorld(true);
 
@@ -2995,9 +2972,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       root.position.set(spawnX, 0, spawnZ);
       scene.add(root);
 
-      const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
-      shadow.position.y = 0.02;
-      shadow.scale.setScalar(0.8);
+      const shadow = new THREE.Mesh(shadowDiscGeo, avatarContactShadowMat);
+      shadow.position.y = 0.032;
+      shadow.scale.setScalar(0.68);
+      shadow.renderOrder = 1;
       root.add(shadow);
 
       const footColorHex = getUnitFootRingTeamColor(team).hexInt;
@@ -3217,6 +3195,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       npcGrp.rotation.y = rotY;
       scene.add(npcGrp);
 
+      const npcShadow = new THREE.Mesh(shadowDiscGeo, avatarContactShadowMat);
+      npcShadow.position.y = 0.032;
+      npcShadow.scale.setScalar(0.68);
+      npcShadow.renderOrder = 1;
+      npcGrp.add(npcShadow);
+
       const npcRing = new THREE.Mesh(
         new THREE.RingGeometry(0.82, 0.96, 48),
         new THREE.MeshBasicMaterial({
@@ -3314,10 +3298,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const dotMesh = new THREE.Mesh(dotGeo, markMat);
       dotMesh.position.set(0, -0.25, 0.06);
       exclamationGroup.add(dotMesh);
+      exclamationGroup.visible = false;
 
       npcGrp.add(exclamationGroup);
 
-      return { npcGrp, bodyGrp, npcRig, npcNameplate, exclamationGroup };
+      // Compact Ring-less 3D Blue->Green Interaction Triangle above Merchant's Head
+      const merchantChevron = buildCompactInteractiveChevronMarker(0.15, 0.28, '#38bdf8');
+      merchantChevron.group.position.set(0, 3.68, 0);
+      npcGrp.add(merchantChevron.group);
+
+      return { npcGrp, bodyGrp, npcRig, npcNameplate, exclamationGroup, merchantChevron };
     };
 
     const lobbyCafeNpc = buildStandingNpcMerchant3D(
@@ -3346,6 +3336,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // =========================================================================
     // BOTANICAL GLASSHOUSE CAFE ("RUMAH KACA CAFE") EXTERIOR DOOR PAD & 3D INTERIOR
     // =========================================================================
+    const cafeExteriorDoorPad = buildGlowingDoorFloorArrowPad();
+    cafeExteriorDoorPad.group.position.set(
+      CAFE_EXTERIOR_DOOR_TRIGGER.x,
+      CAFE_EXTERIOR_DOOR_TRIGGER.deckY + 0.04,
+      CAFE_EXTERIOR_DOOR_TRIGGER.z,
+    );
+    scene.add(cafeExteriorDoorPad.group);
+
+    // Glowing Floor Ring + 3D Triangle for Outdoor Private House / Model Estate Entrance Door
+    const houseExteriorDoorPad = buildGlowingDoorFloorArrowPad();
+    houseExteriorDoorPad.group.visible = false;
+    scene.add(houseExteriorDoorPad.group);
+
     const cafeInterior = buildBotanicalGlasshouseCafeInterior();
     scene.add(cafeInterior.root);
 
@@ -5680,15 +5683,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const houseFurnitureMeshMap = new Map<string, THREE.Group>();
     let selectedHouseFurnitureId: string | null = housePlacedItems[0]?.instanceId ?? null;
     let draggingHouseFurnitureId: string | null = null;
-    // A furniture move (drag / rotate) stays provisional until the player
-    // confirms it in the studio dock: while pending, state emitted to the UI
-    // still carries the pre-move transform, so nothing persists early.
-    let pendingFurnitureMove: {
-      instanceId: string;
-      prevX: number;
-      prevZ: number;
-      prevRy: number;
-    } | null = null;
     let isOrbitingHouseCamera = false;
     let isPanningHouseCamera = false;
     let houseOrbitDragStart = { x: 0, y: 0, yaw: -0.58, pitch: 0.48, tx: -0.4, tz: -0.2 };
@@ -5699,12 +5693,39 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let houseCamDist = 12.6;
     const houseCamTarget = new THREE.Vector3(-0.3, 1.05, -0.2);
 
-    // 3rd-Person Perspective Camera State when player is walking inside the room (`house_visit`)
-    let houseVisitCamYaw = 0.0;
-    let houseVisitCamPitch = 0.32;
-    let houseVisitCamDist = 3.25;
+    // Elevated 3/4 Room-Overview Orbital Camera State when player is walking inside the room (`house_visit`)
+    let houseVisitCamYaw: number = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultYaw;
+    let houseVisitCamPitch: number = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultPitch;
+    let houseVisitCamDist: number = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultDist;
     let isOrbitingHouseVisitCamera = false;
-    let houseVisitOrbitDragStart = { x: 0, y: 0, yaw: 0.0, pitch: 0.32 };
+    let houseVisitOrbitDragStart = {
+      x: 0,
+      y: 0,
+      yaw: houseVisitCamYaw,
+      pitch: houseVisitCamPitch,
+    };
+
+    // Outdoor World 360° Orbital Camera State
+    let outdoorWorldCamYaw = 0;
+    let outdoorWorldCamPitchOffset = 0;
+    let isOrbitingOutdoorCamera = false;
+    let outdoorOrbitDragStart = {
+      x: 0,
+      y: 0,
+      yaw: 0,
+      pitch: 0,
+    };
+
+    // Furniture moves are staged: a drag/rotate updates the live mesh, but
+    // the state emitted to the UI keeps carrying the pre-move transform
+    // until the player confirms the move in the studio dock — so nothing
+    // persists early, and leaving the studio auto-cancels the move.
+    let pendingFurnitureMove: {
+      instanceId: string;
+      prevX: number;
+      prevZ: number;
+      prevRy: number;
+    } | null = null;
 
     const emitHouseInteriorStateToUi = () => {
       window.dispatchEvent(
@@ -5900,26 +5921,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
     let savedOutdoorCafePos: { x: number; z: number; yaw: number } | null = null;
     let cafeWorkShiftActive = Boolean(initialMpAppSync?.isWorkingCafeShift);
-    let cafePreparingUntilMs = 0;
     let activeCafeOrderLabel = initialMpAppSync?.activeCafeOrderLabel ?? '';
     let activeCafeOrderAccent = initialMpAppSync?.activeCafeOrderAccent ?? '#b8ff3c';
-    let cafeOrderCategory: 'drink' | 'pastry' | null = null;
-    let cafeOrderPrepared = false;
-    let cafeOrderSource: 'ai' | 'player' = 'ai';
-    let cafePresenceState: {
-      workerUid: string | null;
-      workerName: string | null;
-      queueNames: string[];
-      myRole: 'worker' | 'queue' | 'called' | 'none';
-      myQueuePos: number;
-    } = { workerUid: null, workerName: null, queueNames: [], myRole: 'none', myQueuePos: 0 };
-    let cafePrepareDoneArmed = false;
-    let playerEmoteClip: string | null = null;
-    let cafeVisitCamYaw = 0.0;
-    let cafeVisitCamPitch = 0.34;
-    let cafeVisitCamDist = 3.65;
+    let activeCafeOrderCategory: 'drink' | 'pastry' | null =
+      initialMpAppSync?.activeCafeOrderCategory ?? null;
+    let lastNearIdleCafeRotaBoard = false;
+
+    // Glowing Floor Ring + 3D Triangle at Private House Interior Exit Door (`house_visit` mode only)
+    const houseInteriorExitDoorPad = buildGlowingDoorFloorArrowPad();
+    houseInteriorExitDoorPad.group.position.set(0.0, 0.03, 3.25);
+    houseVisitWallGrp.add(houseInteriorExitDoorPad.group);
+    let cafeVisitCamYaw: number = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultYaw;
+    let cafeVisitCamPitch: number = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultPitch;
+    let cafeVisitCamDist: number = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultDist;
     let isOrbitingCafeVisitCamera = false;
-    let cafeVisitOrbitDragStart = { x: 0, y: 0, yaw: 0.0, pitch: 0.34 };
+    let cafeVisitOrbitDragStart = {
+      x: 0,
+      y: 0,
+      yaw: cafeVisitCamYaw,
+      pitch: cafeVisitCamPitch,
+    };
     let activeCafeSeatedSpot: CafeInteriorSeatSpot | null = null;
     let currentNearestCafeSeat: CafeInteriorSeatSpot | null = null;
     let mpOnboardingCompleted = initialMpAppSync?.onboardingCompleted ?? false;
@@ -5971,9 +5992,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           isWorkingCafeShift?: boolean;
           activeCafeOrderLabel?: string;
           activeCafeOrderAccent?: string;
-          cafeOrderCategory?: 'drink' | 'pastry' | null;
-          cafeOrderPrepared?: boolean;
-          cafeOrderSource?: 'ai' | 'player';
+          activeCafeOrderCategory?: 'drink' | 'pastry' | null;
           houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
           onboardingCompleted?: boolean;
           characterGender?: CharacterGender;
@@ -6028,9 +6047,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           playerUnit.vx = 0;
           playerUnit.vz = 0;
           playerUnit.yaw = -Math.PI / 2;
-          cafeVisitCamYaw = -0.58;
-          cafeVisitCamPitch = 0.36;
-          cafeVisitCamDist = 3.65;
+          cafeVisitCamYaw = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.baristaShiftYaw;
+          cafeVisitCamPitch = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.baristaShiftPitch;
+          cafeVisitCamDist = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.baristaShiftDist;
+        } else if (wasWorkingShift && !cafeWorkShiftActive && npcCameraMode === 'cafe_interior' && playerUnit) {
+          playerUnit.x = CAFE_INTERIOR_BOUNDS.rotaBoardX;
+          playerUnit.z = -2.15;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = Math.PI / 2;
         }
       }
       if (typeof detail.activeCafeOrderLabel === 'string') {
@@ -6039,27 +6064,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (typeof detail.activeCafeOrderAccent === 'string') {
         activeCafeOrderAccent = detail.activeCafeOrderAccent;
       }
-      if (detail.cafeOrderCategory === 'drink' || detail.cafeOrderCategory === 'pastry') {
-        cafeOrderCategory = detail.cafeOrderCategory;
-      } else if (detail.cafeOrderCategory === null) {
-        cafeOrderCategory = null;
+      if (
+        detail.activeCafeOrderCategory === 'drink' ||
+        detail.activeCafeOrderCategory === 'pastry' ||
+        detail.activeCafeOrderCategory === null
+      ) {
+        activeCafeOrderCategory = detail.activeCafeOrderCategory;
       }
-      if (typeof detail.cafeOrderPrepared === 'boolean') {
-        cafeOrderPrepared = detail.cafeOrderPrepared;
-      }
-      if (detail.cafeOrderSource === 'player' || detail.cafeOrderSource === 'ai') {
-        cafeOrderSource = detail.cafeOrderSource;
-      }
-      const showCafeCustomer = Boolean(
-        cafeWorkShiftActive && activeCafeOrderLabel && cafeOrderSource !== 'player',
-      );
+      const showCafeCustomer = Boolean(cafeWorkShiftActive && activeCafeOrderLabel);
       cafeCustomerNpcRoot.visible = showCafeCustomer;
-      cafeInterior.setCustomerOrderSign(showCafeCustomer, activeCafeOrderLabel, activeCafeOrderAccent);
+      cafeInterior.setCustomerOrderSign(false, '', activeCafeOrderAccent);
       if (playerUnit?.nameplate?.updatePlate) {
-        playerUnit.nameplate.updatePlate(playerCustomDisplayName, cafeWorkShiftActive ? 'CAFE WAITER' : '', undefined, {
-          level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
-          role: cafeWorkShiftActive ? 'barista' : null,
-        });
+        playerUnit.nameplate.updatePlate(
+          playerCustomDisplayName,
+          cafeWorkShiftActive ? 'PELAYAN CAFE' : '',
+        );
       }
       if (typeof detail.isSampleHouse === 'boolean') {
         mpIsSampleHouse = detail.isSampleHouse;
@@ -6129,9 +6148,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           playerUnit.vx = 0;
           playerUnit.vz = 0;
           playerUnit.yaw = CAFE_INTERIOR_BOUNDS.spawnYaw;
-          cafeVisitCamYaw = 0.28;
-          cafeVisitCamPitch = 0.36;
-          cafeVisitCamDist = 2.75;
+          playerUnit.visualYaw = CAFE_INTERIOR_BOUNDS.spawnYaw;
+          playerUnit.root.position.set(playerUnit.x, CAFE_ORIGIN_Y, playerUnit.z);
+          playerUnit.root.rotation.set(0, 0, 0);
+          playerUnit.root.scale.setScalar(0.55);
+          if (windUniforms.uCurvatureStrength) windUniforms.uCurvatureStrength.value = 0;
+          cafeVisitCamYaw = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultYaw;
+          cafeVisitCamPitch = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultPitch;
+          cafeVisitCamDist = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultDist;
         } else if (wasCafeMode && !isCafeMode && playerUnit) {
           activeCafeSeatedSpot = null;
           playerUnit.isSitting = false;
@@ -6160,14 +6184,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               z: playerUnit.z,
               yaw: playerUnit.yaw,
             };
-            playerUnit.x = 0.0;
-            playerUnit.z = 2.05;
+            playerUnit.x = HOUSE_VISIT_INDOOR_BOUNDS.spawnX;
+            playerUnit.z = HOUSE_VISIT_INDOOR_BOUNDS.spawnZ;
             playerUnit.vx = 0;
             playerUnit.vz = 0;
-            playerUnit.yaw = Math.PI / 2;
-            houseVisitCamYaw = 0.0;
-            houseVisitCamPitch = 0.32;
-            houseVisitCamDist = 3.25;
+            playerUnit.yaw = HOUSE_VISIT_INDOOR_BOUNDS.spawnYaw;
+            playerUnit.visualYaw = HOUSE_VISIT_INDOOR_BOUNDS.spawnYaw;
+            playerUnit.root.position.set(playerUnit.x, HOUSE_ORIGIN_Y, playerUnit.z);
+            playerUnit.root.rotation.set(0, 0, 0);
+            playerUnit.root.scale.setScalar(0.55);
+            if (windUniforms.uCurvatureStrength) windUniforms.uCurvatureStrength.value = 0;
+            houseVisitCamYaw = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultYaw;
+            houseVisitCamPitch = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultPitch;
+            houseVisitCamDist = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultDist;
           }
         } else if (wasHouseMode && playerUnit) {
           playerUnit.root.scale.setScalar(1.0);
@@ -6302,13 +6331,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         syncFootprintOutlines(catId, solved.x, solved.z, solved.ry, solved.valid, true);
         emitHouseInteriorStateToUi();
       }
-      // Rotate selected furniture by 45° (`Math.PI / 4`)
       if (detail.confirmFurnitureMove) {
         resolvePendingFurnitureMove(true);
       }
       if (detail.cancelFurnitureMove) {
         resolvePendingFurnitureMove(false);
       }
+      // Rotate selected furniture by 45° (`Math.PI / 4`)
       if (typeof detail.rotateSelectedDelta === 'number' && selectedHouseFurnitureId) {
         const sel = housePlacedItems.find((it) => it.instanceId === selectedHouseFurnitureId);
         if (sel) {
@@ -6399,49 +6428,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
     window.addEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
-    const onCafeShiftPresence = (ev: Event) => {
-      const d = (
-        ev as CustomEvent<{
-          workerUid: string | null;
-          workerName: string | null;
-          queueNames: string[];
-          myRole: 'worker' | 'queue' | 'called' | 'none';
-          myQueuePos: number;
-        }>
-      ).detail;
-      if (!d) return;
-      cafePresenceState = {
-        workerUid: d.workerUid ?? null,
-        workerName: d.workerName ?? null,
-        queueNames: Array.isArray(d.queueNames) ? d.queueNames : [],
-        myRole: d.myRole ?? 'none',
-        myQueuePos: d.myQueuePos ?? 0,
-      };
-      cafeInterior.setRotaBoard({
-        status: cafePresenceState.workerUid ? 'OPEN' : 'CLOSED',
-        workerName: cafePresenceState.workerName,
-        queueNames: cafePresenceState.queueNames,
-      });
-      cafeInterior.setApronRackWorking(Boolean(cafePresenceState.workerUid));
-    };
-    window.addEventListener('cafe-shift-presence', onCafeShiftPresence);
-    const onCafePrepareStart = () => {
-      cafePreparingUntilMs = performance.now() + 3000;
-      cafePrepareDoneArmed = true;
-    };
-    window.addEventListener('cafe-prepare-start', onCafePrepareStart);
-    const onSetPlayerEmote = (ev: Event) => {
-      const d = (ev as CustomEvent<{ clip?: string | null }>).detail;
-      playerEmoteClip = d?.clip ? String(d.clip) : null;
-    };
-    window.addEventListener('set-player-emote', onSetPlayerEmote);
-    const onPlayerEmotePunch = () => {
-      if (playerUnit && playerUnit.alive) {
-        playerUnit.punchHand = playerUnit.punchHand === 'right' ? 'left' : 'right';
-        playerUnit.punchTimer = 0.24;
-      }
-    };
-    window.addEventListener('player-emote-punch', onPlayerEmotePunch);
 
     // =========================================================================
     // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
@@ -6515,62 +6501,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // Floating pinpoint over the nearest Teleport Kiosk, shown while a player
     // who owns no property has not met Hana's property pitch yet. This is the
     // floating explainer marker for the property-discovery tutorial beat.
-    let propertyPinpointActive = false;
-    const onSetPropertyPinpoint = (ev: Event) => {
-      const detail = (ev as CustomEvent<{ active?: boolean }>).detail;
-      propertyPinpointActive = Boolean(detail?.active);
-      if (!propertyPinpointActive) markerGuideAnchor = null;
+    const onSetPropertyPinpoint = (_ev: Event) => {
+      // Large floating property pinpoint disabled; kiosks use compact 3D overhead triangles only.
     };
     window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
-    ensureInteractMarker();
-    ensureDoorPad();
 
-    // Kai's local tutorial markers: his exclamation plus a floating pinpoint
-    // whose target (Kai himself, or the shoreline cast point) is set by App.
-    let kaiExclamationActive = false;
-    let kaiPinpointTarget: { x: number; z: number } | null = null;
-    const kaiPinpointGroup = new THREE.Group();
-    kaiPinpointGroup.name = 'KaiTutorialPinpoint3D';
-    kaiPinpointGroup.visible = false;
-    scene.add(kaiPinpointGroup);
-    const kaiPinMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', fog: false });
-    const kaiPinHead = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 16), kaiPinMat);
-    kaiPinHead.position.y = 0.55;
-    const kaiPinTipGeo = new THREE.ConeGeometry(0.24, 0.62, 20);
-    kaiPinTipGeo.rotateX(Math.PI);
-    const kaiPinTip = new THREE.Mesh(kaiPinTipGeo, kaiPinMat);
-    kaiPinTip.position.y = 0.12;
-    const kaiPinDot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.15, 14, 12),
-      new THREE.MeshBasicMaterial({ color: '#0d0f12', fog: false }),
-    );
-    kaiPinDot.position.y = 0.55;
-    const kaiPinRingGeo = new THREE.RingGeometry(0.5, 0.72, 32);
-    kaiPinRingGeo.rotateX(-Math.PI / 2);
-    const kaiPinRingMat = new THREE.MeshBasicMaterial({
-      color: '#b8ff3c',
-      transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      fog: false,
-    });
-    const kaiPinRing = new THREE.Mesh(kaiPinRingGeo, kaiPinRingMat);
-    kaiPinRing.position.y = -0.28;
-    kaiPinRing.renderOrder = 18;
-    kaiPinpointGroup.add(kaiPinHead, kaiPinTip, kaiPinDot, kaiPinRing);
-    const onSetKaiTutorial = (ev: Event) => {
-      const detail = (
-        ev as CustomEvent<{
-          exclamation?: boolean;
-          pin?: { x: number; z: number } | null;
-        }>
-      ).detail;
-      kaiExclamationActive = Boolean(detail?.exclamation);
-      kaiPinpointTarget = detail?.pin ?? null;
-      if (!kaiPinpointTarget) {
-        kaiPinpointGroup.visible = false;
-      }
+    const onSetKaiTutorial = (_ev: Event) => {
+      // Large floating tutorial pinpoint disabled; merchants & kiosks use compact 3D overhead triangles only.
     };
     window.addEventListener('set-kai-tutorial', onSetKaiTutorial);
 
@@ -7807,9 +7744,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       root.position.set(peer.x, getTerrainElevation(peer.x, peer.z), peer.z);
       scene.add(root);
 
-      const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
-      shadow.position.y = 0.02;
-      shadow.scale.setScalar(0.8);
+      const shadow = new THREE.Mesh(shadowDiscGeo, avatarContactShadowMat);
+      shadow.position.y = 0.032;
+      shadow.scale.setScalar(0.68);
+      shadow.renderOrder = 1;
       root.add(shadow);
 
       const footHex =
@@ -7880,10 +7818,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const nameplate = createGlassmorphicNameplate(2.8, 0.72, peer.displayName, '', false);
       nameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
       nameplate.sprite.visible = true;
-      nameplate.updatePlate(peer.displayName, '', peer.nearAccountId ? 'player_veteran' : 'player_rookie', {
-        level: peer.level,
-        role: peer.isCafeWorker ? 'barista' : null,
-      });
+      nameplate.updatePlate(
+        peer.displayName,
+        '',
+        peer.nearAccountId ? 'player_veteran' : 'player_rookie',
+      );
       root.add(nameplate.sprite);
 
       const saluteSign = createBillboardSign(3.4, 0.92);
@@ -8085,9 +8024,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         startZ = LOBBY_SAFEZONE_BOUNDS.spawnZ;
         startYaw = Math.PI;
       } else if (initWorldMode === 'safezone') {
-        startX = SAFEZONE_CITY_HALTE_SPAWN.x;
-        startZ = SAFEZONE_CITY_HALTE_SPAWN.z;
-        startYaw = SAFEZONE_CITY_HALTE_SPAWN.yaw;
+        const devParkSpawn =
+          Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) &&
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('parkspawn') === '1';
+        if (devParkSpawn) {
+          startX = 94.0;
+          startZ = -32.8;
+          startYaw = Math.PI / 2;
+        } else {
+          startX = SAFEZONE_CITY_HALTE_SPAWN.x;
+          startZ = SAFEZONE_CITY_HALTE_SPAWN.z;
+          startYaw = SAFEZONE_CITY_HALTE_SPAWN.yaw;
+        }
       } else if (initWorldMode === 'warzone' || deployedFromLobbyRef.current || startTeam === 'red') {
         const padSpawn = pickRandomTeamShieldedCratePadSpawn(startTeam);
         startX = padSpawn.spawnX;
@@ -8491,8 +8440,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       releaseActiveNearSessionBaseAndHarvesters(
         'CENTRAL PLAZA ACTIVE (100% Damage-Free). Session Base Plot automatically reverted to an empty grass lot.',
       );
-      playerUnit.x = -85.5;
-      playerUnit.z = 0.0;
+      playerUnit.x = -86.85;
+      playerUnit.z = -19.85;
       playerUnit.vx = 0;
       playerUnit.vz = 0;
       playerUnit.vy = 0;
@@ -8614,6 +8563,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const kioskMesh = getCityTransitKioskMeshById(spec.id);
         if (kioskMesh) {
           kioskMesh.visible = !isWarzoneMode;
+        }
+      }
+      for (const extraKioskName of [
+        'CityTransitKiosk3D_info_center',
+        'HalteLobbyTeleportKiosk3D',
+        'CityTransitKiosk3D_beachfront_kai',
+        'CityTransitKiosk3D_beachfront_harbor',
+      ]) {
+        const extraMesh = scene.getObjectByName(extraKioskName);
+        if (extraMesh) {
+          extraMesh.visible = !isWarzoneMode;
         }
       }
       if (isWarzoneMode) {
@@ -9109,6 +9069,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         beachHouseNpc.npcRig.weaponRigGroup.visible = false;
         syncPadVisuals(blueBase, bluePadSlots, 'BLUE', blueBaseHp);
         syncPadVisuals(redBase, redPadSlots, 'RED', redBaseHp);
+        window.dispatchEvent(new CustomEvent('request-kiosk-thumbnails'));
 
         // 4. Populate Projectile Pool with Real 3D Bullet Shells from blitz-shell.glb (Bullet_Boss, Bullet_Player, Bullet_Fodder)
         const bulletTemplates: Blitz3dBulletTemplates | null = buildRealBlitzBulletTemplates(
@@ -10982,6 +10943,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.jumpOffset = jumpStep.jumpOffset;
         playerUnit.vy = jumpStep.vy;
         playerUnit.isGrounded = false;
+        soundEngine.playJump();
+        const groundY = getTerrainElevation(playerUnit.x, playerUnit.z);
+        spawnBurstParticles(playerUnit.x, groundY + 0.18, playerUnit.z, 6);
       }
     };
 
@@ -11998,7 +11962,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         if (wasFishingRod) {
           playerUnit.saluteTimer = 1.6;
-          playerUnit.saluteSign.updateText('ROD STORED', 'INTO THE BAG', '#94a3b8', 1);
+          playerUnit.saluteSign.updateText('JORAN DISIMPAN', 'MASUK KE DALAM TAS', '#94a3b8', 1);
           playerUnit.saluteSign.sprite.visible = true;
           emitHudImmediately();
         }
@@ -12790,9 +12754,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (e.code === 'KeyC' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
         if (mountedTank && mountedTank.vehicleKind === 'plane') {
           mountedTank.targetAltitude = 0;
+        } else if (e.code === 'KeyC' && !mountedTank && ridingTramCarIdx === null) {
+          handleToggleSitting(null);
         }
-        // NOTE: KeyC no longer toggles sitting on foot. Sitting is only allowed at
-        // seat spots (benches, loungers, chairs, cafe seats) via their prompts.
       }
 
       if (e.code === 'KeyE') {
@@ -12803,7 +12767,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             playerUnit.x,
             playerUnit.z,
             cafeWorkShiftActive,
-            { needsPrep: cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared, orderCategory: cafeOrderCategory },
+            activeCafeOrderCategory,
           );
           if (station.kind === 'exit_door') {
             soundEngine.playUiClick();
@@ -12812,22 +12776,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           if (station.kind === 'serve_customer') {
             soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('serve-cafe-active-order'));
+            const prepCat =
+              activeCafeOrderCategory === 'pastry'
+                ? 'pastry'
+                : activeCafeOrderCategory === 'drink'
+                  ? 'drink'
+                  : playerUnit.x >= 0
+                    ? 'pastry'
+                    : 'drink';
+            window.dispatchEvent(
+              new CustomEvent('open-cafe-prep-modal', { detail: { category: prepCat } }),
+            );
             return;
           }
           if (station.kind === 'order_counter') {
             soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('cafe-order-counter-hint'));
+            window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
             return;
           }
           if (station.kind === 'rota_board') {
             soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('cafe-rota-interact'));
-            return;
-          }
-          if (station.kind === 'prep_coffee' || station.kind === 'prep_food') {
-            soundEngine.playUiClick();
-            window.dispatchEvent(new CustomEvent('open-cafe-prepare-modal'));
+            window.dispatchEvent(
+              new CustomEvent(
+                cafeWorkShiftActive ? 'stop-cafe-work-shift' : 'toggle-cafe-rota-dock-menu',
+              ),
+            );
             return;
           }
           if (station.kind === 'atm_machine') {
@@ -13055,7 +13028,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const dx = e.clientX - cafeVisitOrbitDragStart.x;
           const dy = e.clientY - cafeVisitOrbitDragStart.y;
           cafeVisitCamYaw = cafeVisitOrbitDragStart.yaw - dx * 0.007;
-          cafeVisitCamPitch = clamp(cafeVisitOrbitDragStart.pitch + dy * 0.0055, 0.12, 0.86);
+          cafeVisitCamPitch = clamp(
+            cafeVisitOrbitDragStart.pitch + dy * 0.0055,
+            INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.minPitch,
+            INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.maxPitch,
+          );
         }
         return;
       }
@@ -13065,7 +13042,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const dx = e.clientX - houseVisitOrbitDragStart.x;
           const dy = e.clientY - houseVisitOrbitDragStart.y;
           houseVisitCamYaw = houseVisitOrbitDragStart.yaw - dx * 0.007;
-          houseVisitCamPitch = clamp(houseVisitOrbitDragStart.pitch + dy * 0.0055, 0.1, 0.82);
+          houseVisitCamPitch = clamp(
+            houseVisitOrbitDragStart.pitch + dy * 0.0055,
+            INDOOR_ORBIT_CAMERA_CONFIG.house_visit.minPitch,
+            INDOOR_ORBIT_CAMERA_CONFIG.house_visit.maxPitch,
+          );
         }
         return;
       }
@@ -13150,6 +13131,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const dy = e.clientY - seatedOrbitDragStart.y;
         seatedCameraYaw = seatedOrbitDragStart.yaw - dx * 0.007;
         seatedCameraPitch = clamp(seatedOrbitDragStart.pitch + dy * 0.0055, 0.06, 0.85);
+      } else if (isOrbitingOutdoorCamera && npcCameraMode === 'none') {
+        const dx = e.clientX - outdoorOrbitDragStart.x;
+        outdoorWorldCamYaw = outdoorOrbitDragStart.yaw - dx * 0.007;
+        outdoorWorldCamPitchOffset = 0;
       }
     };
 
@@ -13290,8 +13275,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         // 1. Raycast Check for Black City Transit Kiosks (Strictly disabled in Warzone)
         const teleKiosks: { mesh: THREE.Object3D; stationId: CityTransitStationId }[] = [];
         if (worldModeRef.current !== 'warzone') {
+          const infoCenterKioskMesh = scene.getObjectByName('CityTransitKiosk3D_info_center');
+          if (infoCenterKioskMesh && infoCenterKioskMesh.visible) {
+            teleKiosks.push({ mesh: infoCenterKioskMesh, stationId: 'central_plaza' });
+          }
+          const halteCentralKioskMesh = scene.getObjectByName('HalteLobbyTeleportKiosk3D');
+          if (halteCentralKioskMesh && halteCentralKioskMesh.visible) {
+            teleKiosks.push({ mesh: halteCentralKioskMesh, stationId: 'central_plaza' });
+          }
+          const beachKaiKioskMesh = scene.getObjectByName('CityTransitKiosk3D_beachfront_kai');
+          if (beachKaiKioskMesh && beachKaiKioskMesh.visible) {
+            teleKiosks.push({ mesh: beachKaiKioskMesh, stationId: 'beachfront_harbor' });
+          }
+          const beachHalteKioskMesh = scene.getObjectByName('CityTransitKiosk3D_beachfront_harbor');
+          if (beachHalteKioskMesh && beachHalteKioskMesh.visible) {
+            teleKiosks.push({ mesh: beachHalteKioskMesh, stationId: 'beachfront_harbor' });
+          }
           for (const spec of CITY_TRANSIT_DESTINATIONS) {
-            if (spec.id === 'warzone_arena') continue;
+            if (
+              spec.id === 'warzone_arena' ||
+              spec.id === 'central_plaza' ||
+              spec.id === 'beachfront_harbor'
+            ) {
+              continue;
+            }
             const mesh = getCityTransitKioskMeshById(spec.id);
             if (mesh && mesh.visible) {
               teleKiosks.push({ mesh, stationId: spec.id });
@@ -13489,43 +13496,52 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
-        // 3. Check Standing NPCs (Hana Cafe & Kai Beach House — disabled inside Warzone)
+        // 3. Check Standing NPCs (Hana Cafe & Kai Beach House — clicking directly on Merchant or her 3D triangle opens the Merchant UI)
         for (const npc of [
           {
             id: 'npc_cafe',
-            name: 'HANA',
-            team: 'blue' as const,
-            status: 'Official Merchant',
+            location: 'lobby_cafe' as const,
             grp: lobbyCafeNpc.npcGrp,
-            nameplate: lobbyCafeNpc.npcNameplate,
             active: worldModeRef.current !== 'warzone' && lobbyCafeNpc.npcGrp.visible,
           },
           {
             id: 'npc_beach',
-            name: 'KAI',
-            team: 'red' as const,
-            status: 'Beach Merchant',
+            location: 'beach_house' as const,
             grp: beachHouseNpc.npcGrp,
-            nameplate: beachHouseNpc.npcNameplate,
             active: worldModeRef.current !== 'warzone' && beachHouseNpc.npcGrp.visible,
           },
         ]) {
           if (!npc.active) continue;
           npc.grp.getWorldPosition(scratchCharHitPos);
-          scratchCharHitPos.y += 1.4;
-          const rayDist = raycaster.ray.distanceToPoint(scratchCharHitPos);
-          if (rayDist < bestCharDist) {
-            bestCharDist = rayDist;
-            clickedCharacter = {
-              id: npc.id,
-              name: npc.name,
-              isNpc: true,
-              team: npc.team,
-              status: npc.status,
-              root: npc.grp,
-              nameplate: npc.nameplate,
-              isSelf: false,
-            };
+          const actorX = mountedTank ? mountedTank.x : playerUnit.x;
+          const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
+          const distToNpc = getPlanetShortestDistance(
+            actorX,
+            actorZ,
+            scratchCharHitPos.x,
+            scratchCharHitPos.z,
+          );
+          if (distToNpc > 16.0) continue;
+          const basePosY = scratchCharHitPos.y;
+          scratchCharHitPos.y = basePosY + 1.45;
+          const rayDistBody = raycaster.ray.distanceToPoint(scratchCharHitPos);
+          scratchCharHitPos.y = basePosY + 3.68;
+          const rayDistTriangle = raycaster.ray.distanceToPoint(scratchCharHitPos);
+          if (Math.min(rayDistBody, rayDistTriangle) < 2.2) {
+            soundEngine.playUiClick();
+            clearTeleportKioskSelection();
+            if (selectedCharacterTarget) {
+              clearCharacterSelection();
+              window.dispatchEvent(new CustomEvent('character-deselected'));
+              window.dispatchEvent(new CustomEvent('close-character-profile-modal'));
+            }
+            window.dispatchEvent(
+              new CustomEvent('open-npc-merchant-ui', {
+                detail: { location: npc.location },
+              }),
+            );
+            isPointerDown = false;
+            return;
           }
         }
 
@@ -13600,16 +13616,68 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             yaw: seatedCameraYaw,
             pitch: seatedCameraPitch,
           };
+        } else if (npcCameraMode === 'none') {
+          isOrbitingOutdoorCamera = true;
+          outdoorOrbitDragStart = {
+            x: e.clientX,
+            y: e.clientY,
+            yaw: outdoorWorldCamYaw,
+            pitch: outdoorWorldCamPitchOffset,
+          };
         }
 
         isPointerDown = true;
       } else if (e.button === 2) {
+        if (npcCameraMode === 'none') {
+          isOrbitingOutdoorCamera = true;
+          outdoorOrbitDragStart = {
+            x: e.clientX,
+            y: e.clientY,
+            yaw: outdoorWorldCamYaw,
+            pitch: outdoorWorldCamPitchOffset,
+          };
+        }
         handlePlayerPickupOrThrowCrate();
       }
     };
 
     const onPointerUp = (e: PointerEvent) => {
       if (npcCameraMode === 'cafe_interior') {
+        const dragDist = Math.hypot(
+          e.clientX - cafeVisitOrbitDragStart.x,
+          e.clientY - cafeVisitOrbitDragStart.y,
+        );
+        if (dragDist < 6 && cafeWorkShiftActive && renderer.domElement) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const projectApplianceScreenDist = (wx: number, wy: number, wz: number) => {
+            scratchPickupPt.set(wx, wy, wz).project(camera);
+            if (scratchPickupPt.z > 1) return Infinity;
+            const sx = rect.left + (scratchPickupPt.x * 0.5 + 0.5) * rect.width;
+            const sy = rect.top + (-scratchPickupPt.y * 0.5 + 0.5) * rect.height;
+            return Math.hypot(e.clientX - sx, e.clientY - sy);
+          };
+          const dPastry = projectApplianceScreenDist(
+            CAFE_APPLIANCE_TARGETS.pastryDisplayCase.x,
+            CAFE_ORIGIN_Y + 1.45,
+            CAFE_APPLIANCE_TARGETS.pastryDisplayCase.z,
+          );
+          const dDrink = projectApplianceScreenDist(
+            CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.x,
+            CAFE_ORIGIN_Y + 1.45,
+            CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.z,
+          );
+          if (dPastry <= 95 && dPastry <= dDrink) {
+            soundEngine.playUiClick();
+            window.dispatchEvent(
+              new CustomEvent('open-cafe-prep-modal', { detail: { category: 'pastry' } }),
+            );
+          } else if (dDrink <= 95) {
+            soundEngine.playUiClick();
+            window.dispatchEvent(
+              new CustomEvent('open-cafe-prep-modal', { detail: { category: 'drink' } }),
+            );
+          }
+        }
         isOrbitingCafeVisitCamera = false;
         isPointerDown = false;
         return;
@@ -13628,16 +13696,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (droppedItem) {
             droppedItem.lift = 0;
             soundEngine.playPickup();
-            if (
-              pendingFurnitureMove &&
-              pendingFurnitureMove.instanceId === droppedItem.instanceId &&
-              Math.abs(droppedItem.x - pendingFurnitureMove.prevX) < 0.001 &&
-              Math.abs(droppedItem.z - pendingFurnitureMove.prevZ) < 0.001 &&
-              Math.abs(droppedItem.ry - pendingFurnitureMove.prevRy) < 0.001
-            ) {
-              pendingFurnitureMove = null;
-              window.dispatchEvent(new CustomEvent('house-furniture-move-cleared'));
-            }
           }
           draggingHouseFurnitureId = null;
           emitHouseInteriorStateToUi();
@@ -13652,19 +13710,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         return;
       }
 
-      if (e.button === 0) {
-        isPointerDown = false;
+      if (e.button === 0 || e.button === 2) {
+        if (e.button === 0) {
+          isPointerDown = false;
+        }
         isOrbitingSeatedCamera = false;
+        isOrbitingOutdoorCamera = false;
       }
     };
 
     const onWheel = (e: WheelEvent) => {
       if (npcCameraMode === 'cafe_interior') {
-        cafeVisitCamDist = clamp(cafeVisitCamDist + Math.sign(e.deltaY) * 0.3, 2.0, 5.4);
+        cafeVisitCamDist = clamp(
+          cafeVisitCamDist + Math.sign(e.deltaY) * 0.3,
+          INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.minDist,
+          INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.maxDist,
+        );
         return;
       }
       if (npcCameraMode === 'house_visit') {
-        houseVisitCamDist = clamp(houseVisitCamDist + Math.sign(e.deltaY) * 0.3, 1.9, 5.2);
+        houseVisitCamDist = clamp(
+          houseVisitCamDist + Math.sign(e.deltaY) * 0.3,
+          INDOOR_ORBIT_CAMERA_CONFIG.house_visit.minDist,
+          INDOOR_ORBIT_CAMERA_CONFIG.house_visit.maxDist,
+        );
         return;
       }
 
@@ -14470,17 +14539,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
       } else if (act === 'cafeStationInteract' && playerUnit) {
         soundEngine.playUiClick();
-        const st = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive, { needsPrep: cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared, orderCategory: cafeOrderCategory });
+        const st = detectNearestCafeStation(
+          playerUnit.x,
+          playerUnit.z,
+          cafeWorkShiftActive,
+          activeCafeOrderCategory,
+        );
         if (st.kind === 'exit_door') {
           window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
         } else if (st.kind === 'serve_customer') {
-          window.dispatchEvent(new CustomEvent('serve-cafe-active-order'));
+          const prepCat =
+            activeCafeOrderCategory === 'pastry'
+              ? 'pastry'
+              : activeCafeOrderCategory === 'drink'
+                ? 'drink'
+                : playerUnit.x >= 0
+                  ? 'pastry'
+                  : 'drink';
+          window.dispatchEvent(
+            new CustomEvent('open-cafe-prep-modal', { detail: { category: prepCat } }),
+          );
         } else if (st.kind === 'order_counter') {
-          window.dispatchEvent(new CustomEvent('cafe-order-counter-hint'));
+          window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
         } else if (st.kind === 'rota_board') {
-          window.dispatchEvent(new CustomEvent('cafe-rota-interact'));
-        } else if (st.kind === 'prep_coffee' || st.kind === 'prep_food') {
-          window.dispatchEvent(new CustomEvent('open-cafe-prepare-modal'));
+          window.dispatchEvent(
+            new CustomEvent(
+              cafeWorkShiftActive ? 'stop-cafe-work-shift' : 'toggle-cafe-rota-dock-menu',
+            ),
+          );
         } else if (st.kind === 'atm_machine') {
           window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
         }
@@ -14789,28 +14875,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('focusin', onDocumentFocusIn);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    const onCafeWorkerClick = (e: MouseEvent) => {
-      if (npcCameraMode !== 'cafe_interior') return;
-      if (
-        cafeVisitOrbitDragStart &&
-        Math.hypot(e.clientX - cafeVisitOrbitDragStart.x, e.clientY - cafeVisitOrbitDragStart.y) > 6
-      ) {
-        return;
-      }
-      updateMouseWorldAim(e.clientX, e.clientY);
-      raycaster.setFromCamera(mouseNdc, camera);
-      const workerRoots: THREE.Object3D[] = [];
-      remotePlayerAvatars.forEach((av) => {
-        if (av.peer.isCafeWorker) workerRoots.push(av.root);
-      });
-      if (workerRoots.length === 0) return;
-      const hits = raycaster.intersectObjects(workerRoots, true);
-      if (hits.length > 0) {
-        soundEngine.playUiClick();
-        window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
-      }
-    };
-    renderer.domElement.addEventListener('click', onCafeWorkerClick);
     renderer.domElement.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
@@ -16067,20 +16131,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let rafId = 0;
     let prevTime = performance.now();
     let frameTickCount = 0;
-    // Adaptive pixel ratio (low-end FPS rescue): if the frame rate stays low, step the
-    // internal render resolution down (cap x [1, 0.85, 0.7, 0.55], floor 0.8); step back
-    // up only after 3 consecutive healthy ~2s windows. Content and layout are unchanged.
-    const ADAPTIVE_PR_STEPS = [1, 0.85, 0.7, 0.55];
-    const adaptivePrCap = isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
-    let adaptivePrIndex = 0;
-    let adaptivePrAccum = 0;
-    let adaptivePrFrames = 0;
-    let adaptivePrGoodWindows = 0;
-    const applyAdaptivePixelRatio = () => {
-      const pr = Math.max(0.8, adaptivePrCap * ADAPTIVE_PR_STEPS[adaptivePrIndex]);
-      renderer.setPixelRatio(pr);
-      renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
-    };
     const reusableGrassTramplers: { x: number; z: number; radius: number; weight: number }[] = [];
     const reusableGrassExclusions: {
       x: number;
@@ -16132,6 +16182,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const buildingViewMode = isDevBuild
       ? (initialSearchParams?.get('buildingview') ?? null)
       : null;
+    const parkViewMode = isDevBuild
+      ? (initialSearchParams?.get('parkview') ?? null)
+      : null;
     const debugShowcaseBgColor = new THREE.Color('#dfd7c8');
     const debugOrthoCam = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
 
@@ -16180,29 +16233,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const rawDt = (now - prevTime) / 1000;
       prevTime = now;
       const dt = Math.min(rawDt, 0.05);
-      if (!isSoftwareGl && rawDt > 0) {
-        adaptivePrAccum += rawDt;
-        adaptivePrFrames++;
-        if (adaptivePrAccum >= 2) {
-          const avgFps = adaptivePrFrames / adaptivePrAccum;
-          adaptivePrAccum = 0;
-          adaptivePrFrames = 0;
-          if (avgFps < 28 && adaptivePrIndex < ADAPTIVE_PR_STEPS.length - 1) {
-            adaptivePrIndex++;
-            adaptivePrGoodWindows = 0;
-            applyAdaptivePixelRatio();
-          } else if (avgFps > 57 && adaptivePrIndex > 0) {
-            adaptivePrGoodWindows++;
-            if (adaptivePrGoodWindows >= 3) {
-              adaptivePrIndex--;
-              adaptivePrGoodWindows = 0;
-              applyAdaptivePixelRatio();
-            }
-          } else {
-            adaptivePrGoodWindows = 0;
-          }
-        }
-      }
       const timeSec = now * 0.001;
 
       const state = gameStateRef.current;
@@ -16577,6 +16607,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else if (npcCameraMode === 'house_interior') {
           moveX = 0;
           moveZ = 0;
+        } else if (
+          npcCameraMode === 'none' &&
+          currentPlayMode !== 'editor' &&
+          Math.abs(outdoorWorldCamYaw) > 0.0001
+        ) {
+          const cosOutYaw = Math.cos(outdoorWorldCamYaw);
+          const sinOutYaw = Math.sin(outdoorWorldCamYaw);
+          const rawMx = moveX;
+          const rawMz = moveZ;
+          moveX = rawMx * cosOutYaw + rawMz * sinOutYaw;
+          moveZ = -rawMx * sinOutYaw + rawMz * cosOutYaw;
         }
 
         if (socialTalkTimer > 0) {
@@ -17909,6 +17950,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
                 }
               }
+              if (cafeWorkShiftActive) {
+                const shiftClamped = clampCafeBaristaWorkShiftPosition(playerUnit.x, playerUnit.z);
+                playerUnit.x = shiftClamped.x;
+                playerUnit.z = shiftClamped.z;
+              }
             } else if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
               playerUnit.x = clamp(
                 playerUnit.x,
@@ -17977,8 +18023,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             playerUnit.vy = jumpStep.vy;
             playerUnit.isGrounded = jumpStep.isGrounded;
             playerUnit.jumpBufferTimer = jumpStep.jumpBufferTimer;
-            if (jumpStep.justLanded) {
+            if (jumpStep.justJumped) {
+              soundEngine.playJump();
+              spawnBurstParticles(
+                playerUnit.x,
+                getTerrainElevation(playerUnit.x, playerUnit.z) + 0.18,
+                playerUnit.z,
+                6,
+              );
+            } else if (jumpStep.justLanded) {
               soundEngine.playHeavyThud(3.2, false);
+              spawnBurstParticles(
+                playerUnit.x,
+                getTerrainElevation(playerUnit.x, playerUnit.z) + 0.15,
+                playerUnit.z,
+                5,
+              );
             }
 
             activeSpeed = Math.hypot(playerUnit.vx, playerUnit.vz);
@@ -18011,7 +18071,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               }
             } else if (playerUnit.isSitting && activeSeatedSpot) {
               playerUnit.yaw = activeSeatedSpot.yaw;
-            } else if ((isPointerDown || isArmedAimStance) && Math.hypot(aimDx, aimDz) > 0.2) {
+            } else if (
+              !isPeacefulPlayerZone &&
+              isArmedAimStance &&
+              Math.hypot(aimDx, aimDz) > 0.2
+            ) {
               playerUnit.yaw = Math.atan2(-aimDz, aimDx);
             } else if (inputLen > 0.01) {
               playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
@@ -19334,10 +19398,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
               }
             }
-            if (b.isPlayer && playerEmoteClip && (isMoving || unitIsSitting || unitIsSleeping)) {
-              playerEmoteClip = null;
-              window.dispatchEvent(new CustomEvent('player-emote-cleared'));
-            }
             if (b.isPlayer || b.root.visible) {
               updateCharacterWeaponStance(
                 b.rig,
@@ -19361,8 +19421,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsSitting,
                 unitIsDriving,
                 unitIsSleeping,
-                b.isPlayer ? cafePreparingUntilMs > performance.now() : false,
-                b.isPlayer ? playerEmoteClip : null,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -20685,7 +20743,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-
       // 4. Camera: Follow Camera (Sandbox/Match) vs High Top-Down Orbit Overview (Map Editor)
       const activePlaneAlt =
         mountedTank && mountedTank.vehicleKind === 'plane' ? mountedTank.altitude ?? 0 : 0;
@@ -20734,38 +20791,60 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         focusTarget.z += leadZ;
       }
 
-      // Toroidal-aware Camera Spring: unwrap focusTarget relative to camFollowPos so crossing ±80 never snaps!
-      const unwrappedFocusTarget: Vec3 = {
-        x: camFollowPos.x + getPlanetShortestDelta(focusTarget.x, camFollowPos.x),
-        y: focusTarget.y,
-        z: camFollowPos.z + getPlanetShortestDelta(focusTarget.z, camFollowPos.z),
-      };
+      // Lock camera pivot 100% directly to the on-foot playerUnit position during gameplay
+      // (zero spring swing and zero mouse-pan drift so 360° world rotation never causes foot sliding!)
+      const isDirectFootLockCamera =
+        state === 'playing' &&
+        currentPlayMode !== 'editor' &&
+        !mountedTank &&
+        !isFullMapOverview &&
+        !parkViewMode &&
+        nukeStrikeState.phase === 'idle';
 
-      const springStep = stepCriticalDampedSpring3D(
-        camFollowPos,
-        unwrappedFocusTarget,
-        camFollowVel,
-        currentPlayMode === 'editor' ? 18 : Math.max(8, activeSpeed),
-        dt,
-      );
-      camFollowPos = {
-        x: wrapPlanetCoord(springStep.position.x),
-        y: springStep.position.y,
-        z: wrapPlanetCoord(springStep.position.z),
-      };
-      camFollowVel = springStep.velocity;
+      if (isDirectFootLockCamera && playerUnit) {
+        camFollowPos = {
+          x: playerUnit.x,
+          y: activeTerrainY + 1.0,
+          z: playerUnit.z,
+        };
+        camFollowVel = { x: 0, y: 0, z: 0 };
+        mousePanCurrent.x = 0;
+        mousePanCurrent.z = 0;
+      } else {
+        // Toroidal-aware Camera Spring: unwrap focusTarget relative to camFollowPos so crossing ±80 never snaps!
+        const unwrappedFocusTarget: Vec3 = {
+          x: camFollowPos.x + getPlanetShortestDelta(focusTarget.x, camFollowPos.x),
+          y: focusTarget.y,
+          z: camFollowPos.z + getPlanetShortestDelta(focusTarget.z, camFollowPos.z),
+        };
 
-      const panAlpha = 1 - Math.exp(-BUDDIES_CONSTANTS.camera.mousePan.dampSpeed * dt);
-      const panScale =
-        state === 'title'
-          ? 0.3
-          : currentPlayMode === 'editor'
-          ? 0.0
-          : BUDDIES_CONSTANTS.camera.mousePan.sensitivity;
-      const panMirrorSign =
-        state !== 'title' && currentPlayMode !== 'editor' && playerUnit?.team === 'red' ? -1 : 1;
-      mousePanCurrent.x += (mouseNdc.x * panScale * panMirrorSign - mousePanCurrent.x) * panAlpha;
-      mousePanCurrent.z += (-mouseNdc.y * panScale * panMirrorSign - mousePanCurrent.z) * panAlpha;
+        const springStep = stepCriticalDampedSpring3D(
+          camFollowPos,
+          unwrappedFocusTarget,
+          camFollowVel,
+          currentPlayMode === 'editor' ? 18 : Math.max(8, activeSpeed),
+          dt,
+        );
+        camFollowPos = {
+          x: wrapPlanetCoord(springStep.position.x),
+          y: springStep.position.y,
+          z: wrapPlanetCoord(springStep.position.z),
+        };
+        camFollowVel = springStep.velocity;
+
+        const panAlpha = 1 - Math.exp(-BUDDIES_CONSTANTS.camera.mousePan.dampSpeed * dt);
+        const panScale =
+          state === 'title'
+            ? 0.3
+            : currentPlayMode === 'editor'
+              ? 0.0
+              : BUDDIES_CONSTANTS.camera.mousePan.sensitivity;
+        const panMirrorSign =
+          state !== 'title' && currentPlayMode !== 'editor' && playerUnit?.team === 'red' ? -1 : 1;
+        mousePanCurrent.x += (mouseNdc.x * panScale * panMirrorSign - mousePanCurrent.x) * panAlpha;
+        mousePanCurrent.z +=
+          (-mouseNdc.y * panScale * panMirrorSign - mousePanCurrent.z) * panAlpha;
+      }
 
       recoilOffset.x *= Math.exp(-10 * dt);
       recoilOffset.z *= Math.exp(-10 * dt);
@@ -20789,15 +20868,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         state === 'title'
           ? { x: -3.2, y: 10.6, z: 14.5 }
           : currentPlayMode === 'editor'
-          ? { x: 0, y: 54.0 * editorZoom, z: 22.0 * editorZoom }
-          : { x: 0, y: 13.6 * zoomMult, z: 16.2 * zoomMult };
+            ? { x: 0, y: 54.0 * editorZoom, z: 22.0 * editorZoom }
+            : { x: 0, y: 13.6 * zoomMult, z: 16.2 * zoomMult };
 
       const finalLookX = isFullMapOverview
         ? 0
-        : wrapPlanetCoord(camFollowPos.x + mousePanCurrent.x + recoilOffset.x + shakeX);
+        : parkViewMode
+          ? 95.0
+          : wrapPlanetCoord(camFollowPos.x + mousePanCurrent.x + recoilOffset.x + shakeX);
       const finalLookZ = isFullMapOverview
         ? 0
-        : wrapPlanetCoord(camFollowPos.z + mousePanCurrent.z + recoilOffset.z + shakeZ);
+        : parkViewMode
+          ? -56.0
+          : wrapPlanetCoord(camFollowPos.z + mousePanCurrent.z + recoilOffset.z + shakeZ);
 
       // =======================================================================
       // 4A. STEP NUCLEAR LAUNCHER 4-PHASE SEQUENCE (MAP ZOOM-OUT -> ROCKET CHASE -> PRE-IMPACT RISE -> RETURN)
@@ -20874,20 +20957,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               z: camOffset.z * fovScale,
             })
           : null;
+      const isFlatIndoorRoomMode =
+        npcCameraMode === 'house_visit' ||
+        npcCameraMode === 'house_interior' ||
+        npcCameraMode === 'cafe_interior';
       const planetPivotX =
-        isFullMapOverview || planeViewMode || skyshieldViewMode || buildingViewMode
+        isFlatIndoorRoomMode ||
+        isFullMapOverview ||
+        planeViewMode ||
+        skyshieldViewMode ||
+        buildingViewMode
           ? 0
           : activeNukePose
           ? activeNukePose.focusPivotPos.x
           : viewCenterX;
       const planetPivotZ =
-        isFullMapOverview || planeViewMode || skyshieldViewMode || buildingViewMode
+        isFlatIndoorRoomMode ||
+        isFullMapOverview ||
+        planeViewMode ||
+        skyshieldViewMode ||
+        buildingViewMode
           ? 0
           : activeNukePose
           ? activeNukePose.focusPivotPos.z
           : viewCenterZ;
       const highAltFactor = clamp((activePlaneAlt - 3.5) / 11.0, 0, 1);
       const kCurve =
+        isFlatIndoorRoomMode ||
         isFullMapOverview ||
         planeViewMode ||
         skyshieldViewMode ||
@@ -20943,9 +21039,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       const isInHouseScene =
-        npcCameraMode === 'house_interior' ||
-        npcCameraMode === 'house_visit' ||
-        npcCameraMode === 'cafe_interior';
+        npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit';
       if (!buildingViewMode && !skyshieldViewMode && !planeViewMode) {
         const showOutdoorScene = !isInHouseScene;
         curvedPlanetEnv.groundMesh.visible = showOutdoorScene;
@@ -21064,6 +21158,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         dirLight.shadow.camera.top = 148;
         dirLight.shadow.camera.bottom = -148;
         dirLight.shadow.camera.far = 395;
+        dirLight.shadow.camera.updateProjectionMatrix();
+      } else if (parkViewMode) {
+        scene.fog = null;
+        editorCursorGroup.visible = false;
+        playerUnit.root.visible = false;
+        camera.up.set(0, 1, 0);
+        camera.far = 900;
+        if (parkViewMode === 'midway') {
+          camera.fov = 42;
+          camera.position.set(68.5, 13.8, -104.0);
+          camera.lookAt(86.8, 3.6, -72.0);
+        } else if (parkViewMode === 'pier') {
+          camera.fov = 42;
+          camera.position.set(92.5, 19.5, -74.5);
+          camera.lookAt(108.5, 9.2, -35.0);
+        } else if (parkViewMode === 'arch') {
+          camera.fov = 44;
+          camera.position.set(86.2, 7.8, -6.8);
+          camera.lookAt(89.5, 4.4, -36.0);
+        } else {
+          // 1:1 Panoramic 3/4 Coastal Masterplan View matching Sheet 1 & Sheet 3
+          camera.fov = 44;
+          camera.position.set(71.5, 23.5, -117.5);
+          camera.lookAt(95.5, 5.2, -55.0);
+        }
+        camera.updateProjectionMatrix();
+        dirLight.shadow.camera.left = -85;
+        dirLight.shadow.camera.right = 85;
+        dirLight.shadow.camera.top = 85;
+        dirLight.shadow.camera.bottom = -85;
+        dirLight.shadow.camera.far = 360;
         dirLight.shadow.camera.updateProjectionMatrix();
       } else if (activeNukePose) {
         camera.up.set(0, 1, 0);
@@ -21272,36 +21397,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         //    - In 'house_visit', use a true 3rd-person perspective camera following behind/above the character
         //    - In 'house_interior' (Edit Room mode), use the cutaway studio camera
         if (npcCameraMode === 'house_visit' && playerUnit) {
-          const targetVisitFov = 52;
-          if (camera.fov !== targetVisitFov) {
-            camera.fov = targetVisitFov;
+          const visitPose = computeIndoorRoomOrbitCameraPose({
+            roomKind: 'house_visit',
+            originY: HOUSE_ORIGIN_Y,
+            anchorX: playerUnit.x,
+            anchorZ: playerUnit.z,
+            yaw: houseVisitCamYaw,
+            pitch: houseVisitCamPitch,
+            dist: houseVisitCamDist,
+          });
+          if (camera.fov !== visitPose.fovDeg) {
+            camera.fov = visitPose.fovDeg;
             camera.updateProjectionMatrix();
           }
-          const lookX = playerUnit.x;
-          const lookY = HOUSE_ORIGIN_Y + 1.05;
-          const lookZ = playerUnit.z;
-          const cosPitch = Math.cos(houseVisitCamPitch);
-          const sinPitch = Math.sin(houseVisitCamPitch);
-          // Contain the visit camera inside the fully walled 4.0m-tall room so it can
-          // never slip outside and capture the exterior.
-          const camX = clamp(
-            lookX + Math.sin(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
-            CUTAWAY_ROOM_BOUNDS.minX + 0.5,
-            CUTAWAY_ROOM_BOUNDS.maxX - 0.5,
-          );
-          const camY = clamp(
-            lookY + sinPitch * houseVisitCamDist,
-            HOUSE_ORIGIN_Y + 0.35,
-            HOUSE_ORIGIN_Y + 3.45,
-          );
-          const camZ = clamp(
-            lookZ + Math.cos(houseVisitCamYaw) * cosPitch * houseVisitCamDist,
-            CUTAWAY_ROOM_BOUNDS.minZ + 0.5,
-            CUTAWAY_ROOM_BOUNDS.maxZ - 0.5,
-          );
           camera.up.set(0, 1, 0);
-          camera.position.set(camX, camY, camZ);
-          camera.lookAt(lookX, lookY, lookZ);
+          camera.position.set(visitPose.camX, visitPose.camY, visitPose.camZ);
+          camera.lookAt(visitPose.lookX, visitPose.lookY, visitPose.lookZ);
           camera.updateMatrixWorld();
           // Slide the twin shoji/glass entrance doors apart as the player approaches
           const doorDt = clamp(timeSec - houseDoorSwingPrevT, 0, 0.05);
@@ -21334,12 +21445,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       } else if (npcCameraMode === 'cafe_interior') {
         cafeInterior.root.visible = true;
-        cafeInterior.updateVisuals(timeSec, cafeWorkShiftActive);
-        if (cafePrepareDoneArmed && cafePreparingUntilMs > 0 && performance.now() >= cafePreparingUntilMs) {
-          cafePrepareDoneArmed = false;
-          cafePreparingUntilMs = 0;
-          window.dispatchEvent(new CustomEvent('cafe-prepare-done'));
-        }
+        const activeCafeStationForVisuals = playerUnit
+          ? detectNearestCafeStation(
+              playerUnit.x,
+              playerUnit.z,
+              cafeWorkShiftActive,
+              activeCafeOrderCategory,
+            ).kind
+          : null;
+        cafeInterior.updateVisuals(
+          timeSec,
+          cafeWorkShiftActive,
+          activeCafeOrderCategory,
+          activeCafeStationForVisuals,
+        );
         if (cafeCustomerNpcRoot.visible) {
           const customerCharGltf = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
           if (customerCharGltf && !cafeCustomerGlbUpgraded) {
@@ -21355,34 +21474,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         if (playerUnit) {
           playerUnit.root.visible = true;
-          const targetCafeFov = 56;
-          if (camera.fov !== targetCafeFov) {
-            camera.fov = targetCafeFov;
+          const cafeAnchorX = cafeWorkShiftActive
+            ? CAFE_INTERIOR_BOUNDS.baristaCounterFrontX
+            : playerUnit.x;
+          const cafeAnchorZ = cafeWorkShiftActive ? -2.25 : playerUnit.z;
+          const cafePose = computeIndoorRoomOrbitCameraPose({
+            roomKind: 'cafe_interior',
+            originY: CAFE_ORIGIN_Y,
+            anchorX: cafeAnchorX,
+            anchorZ: cafeAnchorZ,
+            yaw: cafeVisitCamYaw,
+            pitch: cafeVisitCamPitch,
+            dist: cafeVisitCamDist,
+          });
+          if (camera.fov !== cafePose.fovDeg) {
+            camera.fov = cafePose.fovDeg;
             camera.updateProjectionMatrix();
           }
-          const lookX = cafeWorkShiftActive ? CAFE_INTERIOR_BOUNDS.baristaCounterFrontX : playerUnit.x;
-          const lookY = CAFE_ORIGIN_Y + 0.94;
-          const lookZ = cafeWorkShiftActive ? -2.25 : playerUnit.z;
-          const cosPitch = Math.cos(cafeVisitCamPitch);
-          const sinPitch = Math.sin(cafeVisitCamPitch);
-          const camX = clamp(
-            lookX + Math.sin(cafeVisitCamYaw) * cosPitch * cafeVisitCamDist,
-            CAFE_INTERIOR_BOUNDS.minX + 0.15,
-            CAFE_INTERIOR_BOUNDS.maxX - 0.15,
-          );
-          const camY = clamp(
-            lookY + sinPitch * cafeVisitCamDist,
-            CAFE_ORIGIN_Y + 0.45,
-            CAFE_ORIGIN_Y + 4.35,
-          );
-          const camZ = clamp(
-            lookZ + Math.cos(cafeVisitCamYaw) * cosPitch * cafeVisitCamDist,
-            CAFE_INTERIOR_BOUNDS.minZ + 0.15,
-            CAFE_INTERIOR_BOUNDS.maxZ + 0.2,
-          );
           camera.up.set(0, 1, 0);
-          camera.position.set(camX, camY, camZ);
-          camera.lookAt(lookX, lookY, lookZ);
+          camera.position.set(cafePose.camX, cafePose.camY, cafePose.camZ);
+          camera.lookAt(cafePose.lookX, cafePose.lookY, cafePose.lookZ);
           camera.updateMatrixWorld();
         }
       } else {
@@ -21432,69 +21543,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           beachHouseNpc.npcRig.customGlbController.lastStepTimeMs = now;
         }
 
-        // Animate Floating 3D Exclamation Mark Indicator (bobbing Y; world-Y cylindrical billboard synced pre-render)
-        const excBob = Math.sin(timeSec * 3.2) * 0.08;
-        lobbyCafeNpc.exclamationGroup.position.y = 3.25 + excBob;
-        beachHouseNpc.exclamationGroup.position.y = 3.25 + excBob;
-        const hasActiveEvent = activeTutorialWaypointTarget === 'hana';
-        lobbyCafeNpc.exclamationGroup.visible =
-          hasActiveEvent && worldModeRef.current !== 'warzone';
-        beachHouseNpc.exclamationGroup.visible =
-          kaiExclamationActive && worldModeRef.current !== 'warzone';
-
-        // Animate Kai's tutorial pinpoint above its current target.
-        if (
-          kaiPinpointTarget &&
-          worldModeRef.current !== 'warzone' &&
-          npcCameraMode === 'none' &&
-          playerUnit &&
-          playerUnit.alive
-        ) {
-          kaiPinpointGroup.visible = true;
-          kaiPinpointGroup.position.set(
-            kaiPinpointTarget.x,
-            getTerrainElevation(kaiPinpointTarget.x, kaiPinpointTarget.z) +
-              4.0 +
-              Math.sin(timeSec * 2.6) * 0.18,
-            kaiPinpointTarget.z,
-          );
-          kaiPinpointGroup.rotation.y = timeSec * 0.9;
-          kaiPinRing.scale.setScalar(1 + Math.sin(timeSec * 4.5) * 0.15);
-          kaiPinRingMat.opacity = 0.55 + Math.sin(timeSec * 4.5) * 0.25;
-        } else if (kaiPinpointGroup.visible) {
-          kaiPinpointGroup.visible = false;
-        }
-
-        // Animate the floating property pinpoint (bob + slow spin + pulsing
-        // ring) above whichever Teleport Kiosk is nearest to the player.
-        if (
-          propertyPinpointActive &&
-          worldModeRef.current !== 'warzone' &&
-          npcCameraMode === 'none' &&
-          playerUnit &&
-          playerUnit.alive
-        ) {
-          const pinStation = evaluateNearestCityTransitKioskProximity(
-            playerUnit.x,
-            playerUnit.z,
-            worldModeRef.current === 'lobby' ? 'lobby' : 'safezone',
-            9999,
-          );
-          let pinX = pinStation.kioskX;
-          let pinY =
-            getTerrainElevation(pinStation.kioskX, pinStation.kioskZ) + pinStation.kioskY;
-          let pinZ = pinStation.kioskZ;
-          const pinKioskMesh = getCityTransitKioskMeshById(pinStation.id);
-          if (pinKioskMesh) {
-            pinKioskMesh.getWorldPosition(scratchLiveObjPos);
-            pinX = scratchLiveObjPos.x;
-            pinY = scratchLiveObjPos.y;
-            pinZ = scratchLiveObjPos.z;
-          }
-          markerGuideAnchor = { x: pinX, y: pinY + 2.5, z: pinZ };
-        } else {
-          markerGuideAnchor = null;
-        }
+        lobbyCafeNpc.exclamationGroup.visible = false;
+        beachHouseNpc.exclamationGroup.visible = false;
 
         // Update 3D Guided Tutorial Waypoint Chevron Path (`hana` or `kiosk`)
         if (
@@ -21702,16 +21752,58 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               ? 0.845
               : 1.0;
           const footY = camFollowPos.y - 1.0;
+          let relCamX = (mirrorPose.cameraPos.x - finalLookX) * camLockStep;
+          let relCamY = (mirrorPose.cameraPos.y - footY) * camLockStep;
+          let relCamZ = (mirrorPose.cameraPos.z - finalLookZ) * camLockStep;
+          let relLookX =
+            state === 'playing' && !isFullMapOverview && !mountedTank
+              ? 0
+              : (mirrorPose.lookAtPos.x - finalLookX) * camLockStep;
+          const relLookY =
+            state === 'playing' && !isFullMapOverview && !mountedTank
+              ? 1.05
+              : (mirrorPose.lookAtPos.y - footY) * camLockStep;
+          let relLookZ =
+            state === 'playing' && !isFullMapOverview && !mountedTank
+              ? 0
+              : (mirrorPose.lookAtPos.z - finalLookZ) * camLockStep;
+
+          if (state === 'playing' && !isFullMapOverview) {
+            if (Math.abs(outdoorWorldCamPitchOffset) > 0.0001) {
+              const horizDist = Math.hypot(relCamX, relCamZ);
+              const baseElev = Math.atan2(relCamY, Math.max(0.001, horizDist));
+              const totalRadius = Math.hypot(horizDist, relCamY);
+              const newElev = clamp(baseElev + outdoorWorldCamPitchOffset, 0.22, 1.28);
+              const newHorizDist = Math.cos(newElev) * totalRadius;
+              const horizScale = horizDist > 0.001 ? newHorizDist / horizDist : 1;
+              relCamX *= horizScale;
+              relCamZ *= horizScale;
+              relCamY = Math.max(1.35, Math.sin(newElev) * totalRadius);
+            }
+            if (Math.abs(outdoorWorldCamYaw) > 0.0001) {
+              const cosOutYaw = Math.cos(outdoorWorldCamYaw);
+              const sinOutYaw = Math.sin(outdoorWorldCamYaw);
+              const rx = relCamX * cosOutYaw + relCamZ * sinOutYaw;
+              const rz = -relCamX * sinOutYaw + relCamZ * cosOutYaw;
+              relCamX = rx;
+              relCamZ = rz;
+              const lx = relLookX * cosOutYaw + relLookZ * sinOutYaw;
+              const lz = -relLookX * sinOutYaw + relLookZ * cosOutYaw;
+              relLookX = lx;
+              relLookZ = lz;
+            }
+          }
+
           camera.up.set(0, 1, 0);
           camera.position.set(
-            finalLookX + (mirrorPose.cameraPos.x - finalLookX) * camLockStep,
-            footY + (mirrorPose.cameraPos.y - footY) * camLockStep,
-            finalLookZ + (mirrorPose.cameraPos.z - finalLookZ) * camLockStep,
+            finalLookX + relCamX,
+            footY + relCamY,
+            finalLookZ + relCamZ,
           );
           camera.lookAt(
-            finalLookX + (mirrorPose.lookAtPos.x - finalLookX) * camLockStep,
-            footY + (mirrorPose.lookAtPos.y - footY) * camLockStep,
-            finalLookZ + (mirrorPose.lookAtPos.z - finalLookZ) * camLockStep,
+            finalLookX + relLookX,
+            footY + relLookY,
+            finalLookZ + relLookZ,
           );
           camera.updateMatrixWorld();
           raycaster.setFromCamera(mouseNdc, camera);
@@ -21790,9 +21882,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   nearSessionState.claimedTeam === playerUnit.team &&
                   nearSessionState.claimedPlotIndex !== null,
                 isCafeWorker: cafeWorkShiftActive,
-                cafePreparing: cafePreparingUntilMs > performance.now(),
+                cafePreparing: false,
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
-                emoteClip: playerEmoteClip ?? '',
+                emoteClip: '',
                 chatBubbleText: curChat,
               },
               zoneOrChatChanged,
@@ -21937,19 +22029,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.innerFootDiscMat.color.setHex(desiredFootHex);
 
           // Update Nameplate & Overhead Chat Speech Bubble
-          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}|${peer.level}|${peer.isCafeWorker ? 1 : 0}`;
+          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}`;
           if (av.lastLabelKey !== nextLabelKey) {
             av.lastLabelKey = nextLabelKey;
             av.nameplate.updatePlate(
               peer.displayName,
               '',
               peer.nearAccountId ? 'player_veteran' : 'player_rookie',
-              { level: peer.level, role: peer.isCafeWorker ? 'barista' : null },
             );
           }
           const distToPeer = localZoneKey.startsWith('house:')
             ? Math.hypot(localActorX - av.renderX, localActorZ - av.renderZ)
             : getPlanetShortestDistance(localActorX, localActorZ, av.renderX, av.renderZ);
+          const isLocalSeatedSkyView = Boolean(
+            playerUnit && playerUnit.isSitting && activeSeatedSpot,
+          );
+          const peerWithinChunk =
+            peerInHouse || isLocalSeatedSkyView || distToPeer <= 64.0;
+          av.root.visible = peerWithinChunk;
+          if (!peerWithinChunk) {
+            av.nameplate.sprite.visible = false;
+            av.saluteSign.sprite.visible = false;
+            if (av.rig.customGlbController) {
+              av.rig.customGlbController.lastStepTimeMs = now;
+            }
+            continue;
+          }
           av.nameplate.sprite.visible = distToPeer <= 48.0;
 
           if (peer.chatBubbleText !== av.lastBubbleText) {
@@ -22020,9 +22125,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerSpeed,
               peer.isSitting,
               peer.isDriving,
-              false,
-              peer.cafePreparing,
-              peer.emoteClip || null,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -22065,35 +22167,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         );
       }
       if (lobbyCafeNpc?.npcNameplate?.sprite) {
-        if (!isWarzoneActive && playerUnit && npcCameraMode === 'none') {
-          const distCafe = Math.hypot(
-            playerUnit.x - lobbyCafeNpc.npcGrp.position.x,
-            playerUnit.z - lobbyCafeNpc.npcGrp.position.z,
-          );
-          const isSelected = Boolean(
-            selectedCharacterTarget &&
-              (selectedCharacterTarget.id === 'npc_cafe' || selectedCharacterTarget.id === 'npc_hana'),
-          );
-          lobbyCafeNpc.npcNameplate.sprite.visible =
-            isSelected || distCafe <= 8.5 || activeTutorialWaypointTarget === 'hana';
-        } else {
-          lobbyCafeNpc.npcNameplate.sprite.visible = false;
-        }
+        lobbyCafeNpc.npcNameplate.sprite.visible = false;
       }
       if (beachHouseNpc?.npcNameplate?.sprite) {
-        if (playerUnit && npcCameraMode === 'none') {
-          const distBeach = Math.hypot(
-            playerUnit.x - beachHouseNpc.npcGrp.position.x,
-            playerUnit.z - beachHouseNpc.npcGrp.position.z,
-          );
-          const isSelected = Boolean(
-            selectedCharacterTarget &&
-              (selectedCharacterTarget.id === 'npc_beach' || selectedCharacterTarget.id === 'npc_kai'),
-          );
-          beachHouseNpc.npcNameplate.sprite.visible = isSelected || distBeach <= 8.5;
-        } else {
-          beachHouseNpc.npcNameplate.sprite.visible = false;
-        }
+        beachHouseNpc.npcNameplate.sprite.visible = false;
       }
       for (let i = 0; i < buddyUnits.length; i++) {
         const bu = buddyUnits[i];
@@ -22596,12 +22673,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
+      // Avatar-Centric 64m Chunk Culling (active when walking on foot with elevated locked-pitch camera;
+      // disabled when seated on a bench looking at the horizon/sky or in full-map overview/editor).
+      const useAvatarChunkCulling =
+        isDirectFootLockCamera &&
+        !(playerUnit && playerUnit.isSitting && activeSeatedSpot);
+      const CHUNK_CULL_RADIUS_SQ = 64.0 * 64.0;
+
       // Align all Destructible Trees + Apply Elastic Tree Jiggle When Rammed or Shot!
       for (let i = 0; i < trees.length; i++) {
         const tr = trees[i];
         if (!tr.alive) continue;
+        if (useAvatarChunkCulling) {
+          const tdx = getPlanetShortestDelta(tr.x, finalLookX);
+          const tdz = getPlanetShortestDelta(tr.z, finalLookZ);
+          const inChunk = tdx * tdx + tdz * tdz <= CHUNK_CULL_RADIUS_SQ;
+          if (!inChunk) {
+            if (tr.mesh.visible) tr.mesh.visible = false;
+            continue;
+          }
+          if (!tr.mesh.visible) {
+            tr.mesh.visible = true;
+            tr.mesh.userData.__needsChunkRealign = true;
+          }
+        } else if (!tr.mesh.visible) {
+          tr.mesh.visible = true;
+          tr.mesh.userData.__needsChunkRealign = true;
+        }
         const isJiggling = tr.jiggleTimer > 0;
-        if (needFullStaticAlign || isJiggling || tr.mesh.userData.__wasJiggling) {
+        if (
+          needFullStaticAlign ||
+          isJiggling ||
+          tr.mesh.userData.__wasJiggling ||
+          tr.mesh.userData.__needsChunkRealign
+        ) {
           applyPlanetCurvatureToObject(
             tr.mesh,
             tr.x,
@@ -22613,6 +22718,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             kCurve,
           );
           tr.mesh.userData.__wasJiggling = isJiggling;
+          tr.mesh.userData.__needsChunkRealign = false;
         }
         if (isJiggling) {
           tr.jiggleTimer = Math.max(0, tr.jiggleTimer - dt);
@@ -22630,6 +22736,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (!propWrapper.visible) continue;
         const wx = (propWrapper.userData.worldX as number) ?? propWrapper.position.x;
         const wz = (propWrapper.userData.worldZ as number) ?? propWrapper.position.z;
+        if (useAvatarChunkCulling) {
+          const pdx = getPlanetShortestDelta(wx, finalLookX);
+          const pdz = getPlanetShortestDelta(wz, finalLookZ);
+          const inChunk = pdx * pdx + pdz * pdz <= CHUNK_CULL_RADIUS_SQ;
+          if (!inChunk) {
+            if (!propWrapper.userData.__chunkCulledChildren) {
+              for (let ci = 0; ci < propWrapper.children.length; ci++) {
+                propWrapper.children[ci].visible = false;
+              }
+              propWrapper.userData.__chunkCulledChildren = true;
+            }
+            continue;
+          }
+          if (propWrapper.userData.__chunkCulledChildren) {
+            for (let ci = 0; ci < propWrapper.children.length; ci++) {
+              propWrapper.children[ci].visible = true;
+            }
+            propWrapper.userData.__chunkCulledChildren = false;
+            propWrapper.userData.__alignedX = undefined;
+          }
+        } else if (propWrapper.userData.__chunkCulledChildren) {
+          for (let ci = 0; ci < propWrapper.children.length; ci++) {
+            propWrapper.children[ci].visible = true;
+          }
+          propWrapper.userData.__chunkCulledChildren = false;
+          propWrapper.userData.__alignedX = undefined;
+        }
         const baseRotY = (propWrapper.userData.baseRotY as number) ?? 0;
         const fallOffsetY = (propWrapper.userData.fallOffsetY as number) ?? 0;
         const movedOrUnaligned =
@@ -22816,6 +22949,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.isPlayer,
         );
         const localY = getTerrainElevation(b.x, b.z);
+        const shadowMesh = b.root.children[0];
+        if (shadowMesh) {
+          const jumpShrink = Math.max(0.42, 1.0 - b.jumpOffset * 0.22);
+          shadowMesh.scale.setScalar(0.68 * jumpShrink);
+        }
         if (b.isPlayer && npcCameraMode === 'cafe_interior') {
           const seatLiftCafe = b.isSitting && activeCafeSeatedSpot ? activeCafeSeatedSpot.seatLiftY : 0;
           b.bodyGroup.position.y = (floatY + b.jumpOffset + bHitPose.hopY) * 0.55 + seatLiftCafe;
@@ -23724,20 +23862,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const bypassFogOfWar3D =
         currentPlayMode === 'editor' ||
         isFullMapOverview ||
-        Boolean(skyshieldViewMode || buildingViewMode || planeViewMode) ||
+        Boolean(skyshieldViewMode || buildingViewMode || planeViewMode || parkViewMode) ||
         nukeStrikeState.phase !== 'idle';
-      const fogGrassCenterX =
-        npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
-          ? viewCenterX
-          : activeFocusUnit
-          ? activeFocusUnit.x
-          : playerUnit.x;
-      const fogGrassCenterZ =
-        npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
-          ? viewCenterZ
-          : activeFocusUnit
-          ? activeFocusUnit.z
-          : playerUnit.z;
+      const fogGrassCenterX = parkViewMode
+        ? 92.0
+        : npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
+        ? viewCenterX
+        : activeFocusUnit
+        ? activeFocusUnit.x
+        : playerUnit.x;
+      const fogGrassCenterZ = parkViewMode
+        ? -62.0
+        : npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
+        ? viewCenterZ
+        : activeFocusUnit
+        ? activeFocusUnit.z
+        : playerUnit.z;
       applyGrassChunkSyncedFogOfWar3D({
         viewerX: fogGrassCenterX,
         viewerZ: fogGrassCenterZ,
@@ -23867,7 +24007,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const shadowMoved =
           snappedLookX !== prevSnappedShadowX || snappedLookZ !== prevSnappedShadowZ;
 
-        if (shadowMoved || frameTickCount % 4 === 0 || frameTickCount <= 2) {
+        if (shadowMoved || frameTickCount % 12 === 0 || frameTickCount <= 2) {
           prevSnappedShadowX = snappedLookX;
           prevSnappedShadowZ = snappedLookZ;
           dirLight.position.set(
@@ -24307,45 +24447,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // Position the ONE interaction marker: entrance doors get the ground
-      // pad (ring + chevron on the floor); objects get the small triangle
-      // floating just above them. The prompt anchor wins over the guide.
-      {
-        const ma = markerPromptAnchor ?? markerGuideAnchor;
-        const mg = ensureInteractMarker();
-        if (ma && ma.pad) {
-          mg.visible = false;
-          const pad = ensureDoorPad();
-          pad.group.visible = true;
-          if (ma.flat) {
-            pad.group.position.set(ma.x, ma.y + 0.03, ma.z);
-          } else {
-            applyPlanetCurvatureToObject(
-              pad.group,
-              ma.x,
-              ma.y + 0.03,
-              ma.z,
-              camFollowPos.x,
-              camFollowPos.z,
-              0,
-              PLANET_CURVATURE_STRENGTH,
-            );
-          }
-          pad.pulseMat.opacity = 0.58 + Math.sin(timeSec * 3.8) * 0.25;
-          pad.chevronArrow.position.y = 0.65 + Math.sin(timeSec * 3.5) * 0.12;
-          pad.chevronArrow.rotation.y = timeSec * 1.6;
-        } else {
-          if (doorPad) doorPad.group.visible = false;
-          if (ma) {
-            mg.visible = true;
-            mg.position.set(ma.x, ma.y + Math.sin(timeSec * 2.4) * 0.05, ma.z);
-            mg.rotation.y = timeSec * 0.9;
-          } else {
-            mg.visible = false;
-          }
-        }
-      }
-
       // Update 2D DOM floating prompt buttons with pixel-perfect Math.round() & Hysteresis at 60 FPS
       updateDirectDomPrompts();
 
@@ -24421,7 +24522,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       Boolean(new URLSearchParams(window.location.search).get('buildingview'));
 
     updateDirectDomPrompts = () => {
-      markerPromptAnchor = null;
       if (promptOverlay) {
         promptOverlay.setAttribute('data-city-arena-mode', cityArenaMode);
         promptOverlay.setAttribute('data-world-mode', worldModeRef.current);
@@ -24451,12 +24551,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         exitHouseRoomPromptBtn.style.display = 'none';
         enterCafePromptBtn.style.display = 'none';
         cafeStationPromptBtn.style.display = 'none';
-        if (interactMarkerGroup) interactMarkerGroup.visible = false;
         socialSpeechBubbleEl.style.display = 'none';
         bottomSitActionBtn.style.display = 'none';
+        bottomSleepActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
           seatIndicatorBtns[si].btn.style.display = 'none';
           if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
+        }
+        for (let si = 0; si < sleepIndicatorBtns.length; si++) {
+          sleepIndicatorBtns[si].btn.style.display = 'none';
         }
         return;
       }
@@ -24466,144 +24569,307 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const w = window.innerWidth;
       const h = window.innerHeight;
 
-      // Animate & project Botanical Glasshouse Conservatory exterior doorway beacon + [E] MASUK CAFE prompt
+      // Single Unified Bottom-Center HUD Dock Slot (zero floating 3D prompt billboards, offset safely past chat bar on medium viewports)
+      const dockCenterX = w >= 640 ? Math.max(Math.round(w * 0.5), 595) : Math.round(w * 0.5);
+      const bottomDockTransform = `translate3d(${dockCenterX}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+      let bottomDockOccupied = npcCameraMode === 'none' && Boolean(selectedCharacterTarget);
+      const claimBottomDock = (btn: HTMLButtonElement): boolean => {
+        if (bottomDockOccupied) {
+          btn.style.display = 'none';
+          return false;
+        }
+        bottomDockOccupied = true;
+        btn.style.display = 'block';
+        btn.style.transform = bottomDockTransform;
+        return true;
+      };
+
+      const syncDoorPadProximityVisuals = (
+        pad: typeof cafeExteriorDoorPad,
+        isActive: boolean,
+      ) => {
+        const targetCol = isActive ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR;
+        pad.pulseMat.color.copy(targetCol);
+        pad.innerDiscMat.color.copy(targetCol);
+        pad.arrowMat.color.copy(targetCol);
+        pad.chevronArrow.scale.setScalar(isActive ? 1.16 : 1.0);
+      };
+
+      // Pre-evaluate Base Plot Kiosk & City Transit Kiosk proximity so 3D triangles highlight in real time
+      const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
+      const distToKiosk = nearestKiosk.distance;
+      const kioskThreshold = isKioskPromptActive ? 4.2 : 3.6;
+      const nearKioskNow =
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        distToKiosk <= kioskThreshold;
+      isKioskPromptActive = nearKioskNow;
+
+      let nearProximityKiosk: ActiveTransitKioskKey = 'none';
+      if (
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        !isKioskModalOpenCanvas &&
+        !activeTramRideCutscene?.active
+      ) {
+        const nearTransit = evaluateNearestCityTransitKioskProximity(
+          actorX,
+          actorZ,
+          worldModeRef.current,
+          3.5,
+        );
+        if (nearTransit.isNear) {
+          const kioskMesh = getCityTransitKioskMeshById(nearTransit.id);
+          if (kioskMesh && kioskMesh.visible) {
+            nearProximityKiosk = nearTransit.id;
+          }
+        }
+      }
+      currentNearTeleportKiosk = nearProximityKiosk;
+
+      // Animate Botanical Glasshouse Conservatory exterior doorway beacon + bottom-center MASUK CAFE bar
       const distToCafeDoor = getPlanetShortestDistance(
         actorX,
         actorZ,
         CAFE_EXTERIOR_DOOR_TRIGGER.x,
         CAFE_EXTERIOR_DOOR_TRIGGER.z,
       );
-      const doorTerrainY = getTerrainElevation(
-        CAFE_EXTERIOR_DOOR_TRIGGER.x,
-        CAFE_EXTERIOR_DOOR_TRIGGER.z,
-      );
-      if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
-        if (distToCafeDoor <= 42) {
-          markerPromptAnchor = {
-            x: CAFE_EXTERIOR_DOOR_TRIGGER.x,
-            y: doorTerrainY,
-            z: CAFE_EXTERIOR_DOOR_TRIGGER.z,
-            pad: true,
-          };
-        }
-        if (!isKioskModalOpenCanvas && distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius) {
-          const proj = projectWorldToScreenPixels(
-            CAFE_EXTERIOR_DOOR_TRIGGER.x,
-            doorTerrainY + 2.35,
-            CAFE_EXTERIOR_DOOR_TRIGGER.z,
-          );
-          const sx = proj.visible ? proj.x : clamp(proj.x || Math.round(w * 0.5), 96, Math.max(96, w - 96));
-          const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.55), 64, Math.max(64, h - 64));
-          enterCafePromptBtn.style.display = 'block';
-          enterCafePromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-        } else {
-          enterCafePromptBtn.style.display = 'none';
-        }
-      } else {
-        enterCafePromptBtn.style.display = 'none';
+      const showCafeDoorPad =
+        worldModeRef.current !== 'warzone' && npcCameraMode === 'none' && distToCafeDoor <= 42;
+      const isNearCafeExteriorDoor =
+        showCafeDoorPad &&
+        !isKioskModalOpenCanvas &&
+        distToCafeDoor <= CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius;
+      cafeExteriorDoorPad.group.visible = showCafeDoorPad;
+      if (showCafeDoorPad) {
+        const doorTerrainY = getTerrainElevation(
+          CAFE_EXTERIOR_DOOR_TRIGGER.x,
+          CAFE_EXTERIOR_DOOR_TRIGGER.z,
+        );
+        applyPlanetCurvatureToObject(
+          cafeExteriorDoorPad.group,
+          CAFE_EXTERIOR_DOOR_TRIGGER.x,
+          doorTerrainY + 0.03,
+          CAFE_EXTERIOR_DOOR_TRIGGER.z,
+          camFollowPos.x,
+          camFollowPos.z,
+          0,
+          PLANET_CURVATURE_STRENGTH,
+        );
+        const pulseNow = performance.now() * 0.001;
+        cafeExteriorDoorPad.pulseMat.opacity = 0.58 + Math.sin(pulseNow * 3.8) * 0.25;
+        cafeExteriorDoorPad.chevronArrow.position.y = 0.65 + Math.sin(pulseNow * 3.5) * 0.12;
+        cafeExteriorDoorPad.chevronArrow.rotation.y = pulseNow * 1.6;
+        syncDoorPadProximityVisuals(cafeExteriorDoorPad, isNearCafeExteriorDoor);
       }
 
-      // Floating Station Prompt inside Botanical Glasshouse Cafe ('cafe_interior')
-      if (npcCameraMode === 'cafe_interior' && !isKioskModalOpenCanvas) {
-        const station = detectNearestCafeStation(playerUnit.x, playerUnit.z, cafeWorkShiftActive, { needsPrep: cafeWorkShiftActive && !!activeCafeOrderLabel && !cafeOrderPrepared, orderCategory: cafeOrderCategory });
-        if (station.kind) {
-          let tx = 0;
-          let ty = CAFE_ORIGIN_Y + 1.95;
-          let tz = 0;
-          let label = 'ORDER MENU [E]';
-          let bgHex = '#38bdf8';
-          let fgHex = '#0f172a';
-          if (station.kind === 'exit_door') {
-            tx = CAFE_INTERIOR_BOUNDS.exitDoorX;
-            tz = CAFE_INTERIOR_BOUNDS.exitDoorZ;
-            ty = CAFE_ORIGIN_Y + 1.45;
-            label = 'EXIT CAFE [E]';
-            bgHex = '#ef4444';
-            fgHex = '#ffffff';
-          } else if (station.kind === 'serve_customer') {
-            tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
-            tz = -2.05;
-            ty = CAFE_ORIGIN_Y + 1.16;
-            label = 'SERVE [E]';
-            bgHex = '#b8ff3c';
-            fgHex = '#14161d';
-          } else if (station.kind === 'order_counter') {
-            tx = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
-            tz = CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ;
-            ty = CAFE_ORIGIN_Y + 1.75;
-            label = cafePresenceState.workerUid ? 'CLICK THE BARISTA TO ORDER' : 'NO BARISTA ON SHIFT';
-            bgHex = cafePresenceState.workerUid ? '#38bdf8' : '#64748b';
-            fgHex = '#0f172a';
-          } else if (station.kind === 'rota_board') {
-            tx = CAFE_INTERIOR_BOUNDS.rotaBoardX;
-            tz = CAFE_INTERIOR_BOUNDS.rotaBoardZ;
-            ty = CAFE_ORIGIN_Y + 2.05;
-            label =
-              cafePresenceState.myRole === 'worker'
-                ? 'SHIFT ACTIVE'
-                : cafePresenceState.myRole === 'called'
-                  ? 'YOUR TURN — TAKE THE APRON [E]'
-                  : cafePresenceState.myRole === 'queue'
-                    ? `WAITING #${cafePresenceState.myQueuePos} — VIEW QUEUE [E]`
-                    : cafePresenceState.workerUid
-                      ? 'VIEW QUEUE [E]'
-                      : 'WORK AS WAITER [E]';
-            bgHex = '#4ade80';
-            fgHex = '#052e16';
-          } else if (station.kind === 'prep_coffee') {
-            tx = CAFE_INTERIOR_BOUNDS.prepCoffeeX;
-            tz = CAFE_INTERIOR_BOUNDS.prepCoffeeZ;
-            ty = CAFE_ORIGIN_Y + 1.6;
-            label = `PREPARE ${activeCafeOrderLabel.toUpperCase()} [E]`;
-            bgHex = '#f59e0b';
-            fgHex = '#14161d';
-          } else if (station.kind === 'prep_food') {
-            tx = CAFE_INTERIOR_BOUNDS.prepFoodX;
-            tz = CAFE_INTERIOR_BOUNDS.prepFoodZ;
-            ty = CAFE_ORIGIN_Y + 1.6;
-            label = `PREPARE ${activeCafeOrderLabel.toUpperCase()} [E]`;
-            bgHex = '#4ade80';
-            fgHex = '#052e16';
-          } else if (station.kind === 'atm_machine') {
-            tx = -5.45;
-            tz = -4.18;
-            ty = CAFE_ORIGIN_Y + 1.94;
-            label = 'ATM · LUL TO CYON [E]';
-            bgHex = '#facc15';
-            fgHex = '#14161d';
+      // Animate compact ring-less 3D triangles above Outdoor Base Plot Kiosks & City Transit Kiosks
+      const markerPulseNow = performance.now() * 0.001;
+      const showOutdoorKioskMarkers =
+        worldModeRef.current !== 'warzone' && npcCameraMode === 'none';
+      const basePairs: Array<{ team: 'blue' | 'red'; baseObj: typeof blueBase }> = [
+        { team: 'blue', baseObj: blueBase },
+        { team: 'red', baseObj: redBase },
+      ];
+      for (const { team, baseObj } of basePairs) {
+        for (let pi = 0; pi < baseObj.commanderPads.length; pi++) {
+          const kMesh = baseObj.commanderPads[pi].kioskMesh;
+          const chev = kMesh.userData.interactiveChevron as
+            | CompactInteractiveChevronMarker
+            | undefined;
+          if (chev) {
+            chev.group.visible = showOutdoorKioskMarkers && kMesh.visible;
+            if (chev.group.visible) {
+              const isPlotKioskActive =
+                nearKioskNow &&
+                !isKioskModalOpenCanvas &&
+                nearestKiosk.team === team &&
+                nearestKiosk.plotIdx === pi;
+              chev.chevronMat.color.copy(
+                isPlotKioskActive ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+              );
+              chev.chevronArrow.scale.setScalar(isPlotKioskActive ? 1.16 : 1.0);
+              chev.chevronArrow.position.y = Math.sin(markerPulseNow * 3.6 + pi * 0.7) * 0.05;
+              chev.chevronArrow.rotation.y = markerPulseNow * 1.6 + pi * 0.4;
+            }
           }
-          cafeStationPromptBtn.innerHTML = getCafeStationBtnHtml(label, bgHex, fgHex);
-          const proj = projectFlatRoomToScreenPixels(tx, ty, tz);
-          const sx = proj.visible ? proj.x : clamp(proj.x || Math.round(w * 0.5), 96, Math.max(96, w - 96));
-          const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.55), 64, Math.max(64, h - 64));
-          cafeStationPromptBtn.style.display = 'block';
-          cafeStationPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-          const stationAnchor = CAFE_MARKER_ANCHORS[station.kind];
-          if (stationAnchor) markerPromptAnchor = stationAnchor;
+        }
+      }
+      const transitKioskVisualTargets: Array<{
+        mesh: THREE.Object3D | null;
+        stationId: CityTransitStationId;
+        kioskX: number;
+        kioskZ: number;
+      }> = [
+        {
+          mesh: scene.getObjectByName('CityTransitKiosk3D_info_center') ?? null,
+          stationId: 'central_plaza',
+          kioskX: CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
+          kioskZ: CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
+        },
+        {
+          mesh: scene.getObjectByName('HalteLobbyTeleportKiosk3D') ?? null,
+          stationId: 'central_plaza',
+          kioskX: -61.95,
+          kioskZ: 0.0,
+        },
+        {
+          mesh: scene.getObjectByName('CityTransitKiosk3D_beachfront_kai') ?? null,
+          stationId: 'beachfront_harbor',
+          kioskX: BEACHFRONT_KAI_KIOSK_SPEC.kioskX,
+          kioskZ: BEACHFRONT_KAI_KIOSK_SPEC.kioskZ,
+        },
+        {
+          mesh: scene.getObjectByName('CityTransitKiosk3D_beachfront_harbor') ?? null,
+          stationId: 'beachfront_harbor',
+          kioskX: 79.35,
+          kioskZ: 29.5,
+        },
+      ];
+      for (let ti = 0; ti < CITY_TRANSIT_DESTINATIONS.length; ti++) {
+        const tSpec = CITY_TRANSIT_DESTINATIONS[ti];
+        if (
+          tSpec.id === 'central_plaza' ||
+          tSpec.id === 'beachfront_harbor' ||
+          tSpec.id === 'warzone_arena'
+        ) {
+          continue;
+        }
+        transitKioskVisualTargets.push({
+          mesh: getCityTransitKioskMeshById(tSpec.id),
+          stationId: tSpec.id,
+          kioskX: tSpec.kioskX,
+          kioskZ: tSpec.kioskZ,
+        });
+      }
+      for (let ti = 0; ti < transitKioskVisualTargets.length; ti++) {
+        const target = transitKioskVisualTargets[ti];
+        const tMesh = target.mesh;
+        if (!tMesh) continue;
+        if (tMesh.userData?.greenFootRing) {
+          (tMesh.userData.greenFootRing as THREE.Mesh).visible = false;
+        }
+        let tChev = tMesh.userData.interactiveChevron as
+          | CompactInteractiveChevronMarker
+          | undefined;
+        if (!tChev) {
+          tChev = buildCompactInteractiveChevronMarker(0.13, 0.25, '#38bdf8');
+          tChev.group.position.set(0, 2.38, 0.04);
+          tMesh.add(tChev.group);
+          tMesh.userData.interactiveChevron = tChev;
+        }
+        tChev.group.visible = showOutdoorKioskMarkers && tMesh.visible;
+        if (tChev.group.visible) {
+          const isTransitActive =
+            nearProximityKiosk === target.stationId &&
+            Math.hypot(actorX - target.kioskX, actorZ - target.kioskZ) <= 3.5;
+          tChev.chevronMat.color.copy(
+            isTransitActive ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+          );
+          tChev.chevronArrow.scale.setScalar(isTransitActive ? 1.16 : 1.0);
+          tChev.chevronArrow.position.y = Math.sin(markerPulseNow * 3.6 + ti * 0.6) * 0.05;
+          tChev.chevronArrow.rotation.y = markerPulseNow * 1.6 + ti * 0.5;
+        }
+      }
+
+      // Active Ride / Sit / Sleep Exit Priority (if player is currently riding tram, sleeping, or sitting, let them exit first)
+      if (ridingTramCarIdx !== null && !isKioskModalOpenCanvas) {
+        claimBottomDock(exitTramPromptBtn);
+      } else {
+        exitTramPromptBtn.style.display = 'none';
+      }
+
+      // Contextual Cafe Station Action Bar inside Botanical Glasshouse Cafe ('cafe_interior')
+      if (
+        npcCameraMode === 'cafe_interior' &&
+        !isKioskModalOpenCanvas &&
+        !(playerUnit.isSitting && activeCafeSeatedSpot)
+      ) {
+        const station = detectNearestCafeStation(
+          playerUnit.x,
+          playerUnit.z,
+          cafeWorkShiftActive,
+          activeCafeOrderCategory,
+        );
+        const isNearIdleRota = station.kind === 'rota_board' && !cafeWorkShiftActive;
+        if (isNearIdleRota !== lastNearIdleCafeRotaBoard) {
+          lastNearIdleCafeRotaBoard = isNearIdleRota;
+          window.dispatchEvent(
+            new CustomEvent('cafe-rota-proximity-change', {
+              detail: { near: isNearIdleRota },
+            }),
+          );
+        }
+        if (station.kind && !(station.kind === 'rota_board' && !cafeWorkShiftActive)) {
+          let label = 'ORDER MENU';
+          let accentHex = '#38bdf8';
+          let iconSvg = DOCK_ICON_CAFE_CUP_SVG;
+          let badgeTextHex = '#0b0d13';
+          if (station.kind === 'exit_door') {
+            label = 'EXIT CAFE';
+            accentHex = '#ef4444';
+            iconSvg = DOCK_ICON_EXIT_SVG;
+            badgeTextHex = '#ffffff';
+          } else if (station.kind === 'serve_customer') {
+            label =
+              activeCafeOrderCategory === 'pastry'
+                ? 'PASTRY DISPLAY'
+                : 'DRINK MACHINE';
+            accentHex = '#b8ff3c';
+            iconSvg = DOCK_ICON_CAFE_CUP_SVG;
+          } else if (station.kind === 'order_counter') {
+            label = 'ORDER MENU';
+            accentHex = '#38bdf8';
+            iconSvg = DOCK_ICON_CAFE_CUP_SVG;
+          } else if (station.kind === 'rota_board') {
+            label = 'END SHIFT';
+            accentHex = '#f97316';
+            iconSvg = DOCK_ICON_ROSTER_SVG;
+            badgeTextHex = '#ffffff';
+          } else if (station.kind === 'atm_machine') {
+            label = 'CAFE ATM';
+            accentHex = '#facc15';
+            iconSvg = DOCK_ICON_ATM_SVG;
+          }
+          cafeStationPromptBtn.innerHTML = getCafeStationBtnHtml(
+            label,
+            accentHex,
+            iconSvg,
+            badgeTextHex,
+          );
+          claimBottomDock(cafeStationPromptBtn);
         } else {
           cafeStationPromptBtn.style.display = 'none';
         }
       } else {
+        if (lastNearIdleCafeRotaBoard) {
+          lastNearIdleCafeRotaBoard = false;
+          window.dispatchEvent(
+            new CustomEvent('cafe-rota-proximity-change', {
+              detail: { near: false },
+            }),
+          );
+        }
         cafeStationPromptBtn.style.display = 'none';
       }
 
-      // 0A-00. Floating "EXIT ROOM [E]" at the Exit Door inside Private House ('house_visit')
-      if (
+      // House Interior Exit Door Ring+Triangle & Bed Sleep Action Bar ('house_visit' / 'house_interior')
+      const isNearHouseInteriorExit =
         npcCameraMode === 'house_visit' &&
         !isKioskModalOpenCanvas &&
-        Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35) <= 1.85
-      ) {
-        const proj = projectFlatRoomToScreenPixels(0.0, HOUSE_ORIGIN_Y + 1.25, 3.65);
-        const sx = proj.visible ? proj.x : clamp(proj.x || Math.round(w * 0.5), 96, Math.max(96, w - 96));
-        const sy = proj.visible ? proj.y : clamp(proj.y || Math.round(h * 0.65), 64, Math.max(64, h - 64));
-        exitHouseRoomPromptBtn.style.display = 'block';
-        exitHouseRoomPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-        markerPromptAnchor = { x: 0, y: HOUSE_ORIGIN_Y, z: 3.35, pad: true, flat: true };
+        !playerUnit.isSleeping &&
+        Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35) <= 1.85;
+      if (npcCameraMode === 'house_visit') {
+        houseInteriorExitDoorPad.group.visible = true;
+        houseInteriorExitDoorPad.pulseMat.opacity = 0.55 + Math.sin(markerPulseNow * 3.8) * 0.25;
+        houseInteriorExitDoorPad.chevronArrow.position.y =
+          0.65 + Math.sin(markerPulseNow * 3.5) * 0.12;
+        houseInteriorExitDoorPad.chevronArrow.rotation.y = markerPulseNow * 1.4;
+        syncDoorPadProximityVisuals(houseInteriorExitDoorPad, isNearHouseInteriorExit);
       } else {
-        exitHouseRoomPromptBtn.style.display = 'none';
+        houseInteriorExitDoorPad.group.visible = false;
       }
 
-      // 0A-000. Floating bed sleep points inside the private house (one over each pillow side)
       const isHouseModeForSleep =
         npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
       if (playerUnit.isSleeping && !isHouseModeForSleep) {
@@ -24654,59 +24920,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
         if (playerUnit.isSleeping && activeSleepSpot) {
-          bottomSleepActionBtn.innerHTML = getSleepBarHtml('Wake Up');
-          bottomSleepActionBtn.style.display = 'block';
-          bottomSleepActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+          exitHouseRoomPromptBtn.style.display = 'none';
+          bottomSleepActionBtn.innerHTML = getSleepBarHtml('WAKE UP');
+          claimBottomDock(bottomSleepActionBtn);
+        } else if (isNearHouseInteriorExit) {
+          bottomSleepActionBtn.style.display = 'none';
+          claimBottomDock(exitHouseRoomPromptBtn);
         } else if (currentNearestSleepSpot) {
-          bottomSleepActionBtn.innerHTML = getSleepBarHtml('Sleep');
-          bottomSleepActionBtn.style.display = 'block';
-          bottomSleepActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+          exitHouseRoomPromptBtn.style.display = 'none';
+          bottomSleepActionBtn.innerHTML = getSleepBarHtml('SLEEP');
+          claimBottomDock(bottomSleepActionBtn);
         } else {
+          exitHouseRoomPromptBtn.style.display = 'none';
           bottomSleepActionBtn.style.display = 'none';
         }
       } else {
         for (const entry of sleepIndicatorBtns) entry.btn.style.display = 'none';
         bottomSleepActionBtn.style.display = 'none';
+        exitHouseRoomPromptBtn.style.display = 'none';
         currentNearestSleepSpot = null;
       }
 
-      // 0A-0. Floating "TALK" at Central Plaza Cafe (-94.0, -13.8) or East Beach House (85.8, 60.0)
-      // Bound strictly to live visible NPC mesh world position and tight <= 3.5m radius
-      let nearCafeNow = false;
-      let nearBeachNow = false;
-      let npcPromptWorldX = 0;
-      let npcPromptWorldZ = 0;
-      if (worldModeRef.current !== 'warzone' && lobbyCafeNpc?.npcGrp?.visible) {
-        lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
-        if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
-          nearCafeNow = true;
-          npcPromptWorldX = scratchLiveObjPos.x;
-          npcPromptWorldZ = scratchLiveObjPos.z;
-        }
-      }
-      if (!nearCafeNow && beachHouseNpc?.npcGrp?.visible) {
-        beachHouseNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
-        if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
-          nearBeachNow = true;
-          npcPromptWorldX = scratchLiveObjPos.x;
-          npcPromptWorldZ = scratchLiveObjPos.z;
-        }
-      }
-      if ((nearCafeNow || nearBeachNow) && npcCameraMode === 'none' && !isKioskModalOpenCanvas) {
-        const my = getTerrainElevation(npcPromptWorldX, npcPromptWorldZ) + 2.65;
-        const proj = projectWorldToScreenPixels(npcPromptWorldX, my, npcPromptWorldZ);
-        const sx = proj.visible ? proj.x : clamp(proj.x, 96, Math.max(96, w - 96));
-        const sy = proj.visible ? proj.y : clamp(proj.y, 64, Math.max(64, h - 64));
-        npcMerchantPromptBtn.style.display = 'block';
-        npcMerchantPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-      } else {
-        npcMerchantPromptBtn.style.display = 'none';
-      }
-
-      // 0A-1. Floating "ENTER HOUSE [E]" at active, visible House doorway in The City (<= 3.5m)
+      // Outdoor House Exterior Door Ring+Triangle Evaluation
       let nearClaimedHouseDoorPos: { x: number; z: number } | null = null;
       let nearClaimedHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
         null;
+      let visibleHouseDoorBeaconPos: { x: number; z: number } | null = null;
       if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
         const getPlotHouseVisList = (baseGroup: THREE.Group): boolean[] => {
           const pcs = (
@@ -24728,7 +24967,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               ),
           );
         };
-        const proxEval = evaluateBasePlotProximityTriggers({
+        const houseVisMap = {
+          blue: getPlotHouseVisList(blueBase.baseGroup),
+          red: getPlotHouseVisList(redBase.baseGroup),
+        };
+        const beaconEval = evaluateBasePlotProximityTriggers({
           actorX,
           actorZ,
           worldMode: worldModeRef.current,
@@ -24738,106 +24981,129 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           blueHqZ: blueBase.hqZ,
           redHqX: redBase.hqX,
           redHqZ: redBase.hqZ,
-          houseVisibilityByPlot: {
-            blue: getPlotHouseVisList(blueBase.baseGroup),
-            red: getPlotHouseVisList(redBase.baseGroup),
-          },
-          maxHouseDoorRadius: 3.5,
+          houseVisibilityByPlot: houseVisMap,
+          maxHouseDoorRadius: 38.0,
         });
-        if (proxEval.canTriggerEnterHouseDoor && proxEval.nearestHouseDoorWorldPos) {
-          nearClaimedHouseDoorPos = proxEval.nearestHouseDoorWorldPos;
-          if (
-            proxEval.nearestHouseDoorTeam &&
-            typeof proxEval.nearestHouseDoorPlotIndex === 'number'
-          ) {
-            nearClaimedHouseDoorPlot = {
-              team: proxEval.nearestHouseDoorTeam,
-              commanderIdx: proxEval.nearestHouseDoorPlotIndex,
-            };
+        if (beaconEval.canTriggerEnterHouseDoor && beaconEval.nearestHouseDoorWorldPos) {
+          visibleHouseDoorBeaconPos = beaconEval.nearestHouseDoorWorldPos;
+          if (beaconEval.nearestHouseDoorDistance <= 3.5) {
+            nearClaimedHouseDoorPos = beaconEval.nearestHouseDoorWorldPos;
+            if (
+              beaconEval.nearestHouseDoorTeam &&
+              typeof beaconEval.nearestHouseDoorPlotIndex === 'number'
+            ) {
+              nearClaimedHouseDoorPlot = {
+                team: beaconEval.nearestHouseDoorTeam,
+                commanderIdx: beaconEval.nearestHouseDoorPlotIndex,
+              };
+            }
           }
         }
+      }
+      houseExteriorDoorPad.group.visible = Boolean(visibleHouseDoorBeaconPos);
+      if (visibleHouseDoorBeaconPos) {
+        const hDoorTerrainY = getTerrainElevation(
+          visibleHouseDoorBeaconPos.x,
+          visibleHouseDoorBeaconPos.z,
+        );
+        applyPlanetCurvatureToObject(
+          houseExteriorDoorPad.group,
+          visibleHouseDoorBeaconPos.x,
+          hDoorTerrainY + 0.03,
+          visibleHouseDoorBeaconPos.z,
+          camFollowPos.x,
+          camFollowPos.z,
+          0,
+          PLANET_CURVATURE_STRENGTH,
+        );
+        houseExteriorDoorPad.pulseMat.opacity = 0.58 + Math.sin(markerPulseNow * 3.8) * 0.25;
+        houseExteriorDoorPad.chevronArrow.position.y =
+          0.65 + Math.sin(markerPulseNow * 3.5) * 0.12;
+        houseExteriorDoorPad.chevronArrow.rotation.y = markerPulseNow * 1.6;
+        syncDoorPadProximityVisuals(
+          houseExteriorDoorPad,
+          Boolean(nearClaimedHouseDoorPos) && !isKioskModalOpenCanvas,
+        );
       }
       currentNearHouseDoorWorldPos = nearClaimedHouseDoorPos;
       currentNearHouseDoorPlot = nearClaimedHouseDoorPlot;
-      if (nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
-        const hy = getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z) + 3.2;
-        const proj = projectWorldToScreenPixels(
-          nearClaimedHouseDoorPos.x,
-          hy,
-          nearClaimedHouseDoorPos.z,
-        );
-        const sx = proj.visible ? proj.x : clamp(proj.x, 96, Math.max(96, w - 96));
-        const sy = proj.visible ? proj.y : clamp(proj.y, 64, Math.max(64, h - 64));
-        enterHousePromptBtn.style.display = 'block';
-        enterHousePromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-        markerPromptAnchor = {
-          x: nearClaimedHouseDoorPos.x,
-          y: getTerrainElevation(nearClaimedHouseDoorPos.x, nearClaimedHouseDoorPos.z),
-          z: nearClaimedHouseDoorPos.z,
-          pad: true,
-        };
-      } else {
-        enterHousePromptBtn.style.display = 'none';
-      }
 
-      // 0A & 0B. Black City Transit Kiosk Proximity Trigger (Strictly disabled inside Warzone!)
-      let nearProximityKiosk: ActiveTransitKioskKey = 'none';
-      let nearKioskWorldX = 0;
-      let nearKioskWorldZ = 0;
-      if (
-        worldModeRef.current !== 'warzone' &&
-        npcCameraMode === 'none' &&
-        !isKioskModalOpenCanvas &&
-        !activeTramRideCutscene?.active
-      ) {
-        const nearTransit = evaluateNearestCityTransitKioskProximity(
-          actorX,
-          actorZ,
-          worldModeRef.current,
-          3.5,
-        );
-        if (nearTransit.isNear) {
-          const kioskMesh = getCityTransitKioskMeshById(nearTransit.id);
-          if (kioskMesh && kioskMesh.visible) {
-            kioskMesh.getWorldPosition(scratchLiveObjPos);
-            nearProximityKiosk = nearTransit.id;
-            nearKioskWorldX = scratchLiveObjPos.x;
-            nearKioskWorldZ = scratchLiveObjPos.z;
-          }
+      // Outdoor NPC Merchant Proximity Check & 3D Blue->Green Triangle Animation
+      let nearCafeNow = false;
+      let nearBeachNow = false;
+      if (worldModeRef.current !== 'warzone' && lobbyCafeNpc?.npcGrp?.visible) {
+        lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+        if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
+          nearCafeNow = true;
         }
       }
-      currentNearTeleportKiosk = nearProximityKiosk;
-
-      if (nearProximityKiosk !== 'none') {
-        markerPromptAnchor = {
-          x: nearKioskWorldX,
-          y: getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 2.9,
-          z: nearKioskWorldZ,
-        };
-        const ky = getTerrainElevation(nearKioskWorldX, nearKioskWorldZ) + 1.85;
-        const proj = projectWorldToScreenPixels(nearKioskWorldX, ky, nearKioskWorldZ);
-        if (proj.visible) {
-          teleportKioskHexBtn.style.display = 'block';
-          teleportKioskHexBtn.style.transform = `translate3d(${proj.x}px, ${proj.y}px, 0) translate(-50%, -50%)`;
-        } else {
-          teleportKioskHexBtn.style.display = 'none';
+      if (!nearCafeNow && beachHouseNpc?.npcGrp?.visible) {
+        beachHouseNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+        if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
+          nearBeachNow = true;
         }
-      } else {
-        teleportKioskHexBtn.style.display = 'none';
+      }
+      if (lobbyCafeNpc?.merchantChevron) {
+        const showHanaChev =
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          lobbyCafeNpc.npcGrp.visible;
+        lobbyCafeNpc.merchantChevron.group.visible = showHanaChev;
+        if (showHanaChev) {
+          const isHanaActive = nearCafeNow && !isKioskModalOpenCanvas;
+          lobbyCafeNpc.merchantChevron.chevronMat.color.copy(
+            isHanaActive ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+          );
+          lobbyCafeNpc.merchantChevron.chevronArrow.scale.setScalar(isHanaActive ? 1.16 : 1.0);
+          lobbyCafeNpc.merchantChevron.chevronArrow.position.y =
+            Math.sin(markerPulseNow * 3.6) * 0.06;
+          lobbyCafeNpc.merchantChevron.chevronArrow.rotation.y = markerPulseNow * 1.6;
+        }
+      }
+      if (beachHouseNpc?.merchantChevron) {
+        const showKaiChev =
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          beachHouseNpc.npcGrp.visible;
+        beachHouseNpc.merchantChevron.group.visible = showKaiChev;
+        if (showKaiChev) {
+          const isKaiActive = nearBeachNow && !isKioskModalOpenCanvas;
+          beachHouseNpc.merchantChevron.chevronMat.color.copy(
+            isKaiActive ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+          );
+          beachHouseNpc.merchantChevron.chevronArrow.scale.setScalar(isKaiActive ? 1.16 : 1.0);
+          beachHouseNpc.merchantChevron.chevronArrow.position.y =
+            Math.sin(markerPulseNow * 3.6 + 1.2) * 0.06;
+          beachHouseNpc.merchantChevron.chevronArrow.rotation.y = markerPulseNow * 1.6 + 0.8;
+        }
       }
 
       if (activeClickedTeleportKiosk !== 'none') {
-        const activeStationSpec = getCityTransitDestinationById(
-          resolveStationIdFromKioskKey(activeClickedTeleportKiosk),
+        const resolvedStationId = resolveStationIdFromKioskKey(activeClickedTeleportKiosk);
+        const activeStationSpec = getCityTransitDestinationById(resolvedStationId);
+        const distMain = getPlanetShortestDistance(
+          actorX,
+          actorZ,
+          activeStationSpec.kioskX,
+          activeStationSpec.kioskZ,
         );
-        if (
-          getPlanetShortestDistance(
-            actorX,
-            actorZ,
-            activeStationSpec.kioskX,
-            activeStationSpec.kioskZ,
-          ) > 12.0
-        ) {
+        const distInfoCenter =
+          resolvedStationId === 'central_plaza'
+            ? getPlanetShortestDistance(
+                actorX,
+                actorZ,
+                CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
+                CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
+              )
+            : resolvedStationId === 'beachfront_harbor'
+              ? getPlanetShortestDistance(
+                  actorX,
+                  actorZ,
+                  BEACHFRONT_KAI_KIOSK_SPEC.kioskX,
+                  BEACHFRONT_KAI_KIOSK_SPEC.kioskZ,
+                )
+              : 9999;
+        if (Math.min(distMain, distInfoCenter) > 12.0) {
           clearTeleportKioskSelection();
         }
       }
@@ -24847,7 +25113,63 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       lobbyBluePortalPromptBtn.style.display = 'none';
       lobbyEnterCityPromptBtn.style.display = 'none';
 
-      // 0B-2. Floating 3D Circular Seat Indicators (Blue & Green Discs) + Bottom "Sit" Bar
+      // Outdoor Priority Queue for Single Bottom-Center HUD Dock
+      // (Active Stand-Up first if already seated -> Cafe Door -> House Door -> Plot Kiosk -> Transit Kiosk -> Ride Tram -> Sit)
+      const isAlreadySeatedOutdoors =
+        npcCameraMode === 'none' && Boolean(playerUnit.isSitting && activeSeatedSpot);
+
+      if (!isAlreadySeatedOutdoors && isNearCafeExteriorDoor) {
+        claimBottomDock(enterCafePromptBtn);
+      } else {
+        enterCafePromptBtn.style.display = 'none';
+      }
+
+      if (!isAlreadySeatedOutdoors && nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
+        claimBottomDock(enterHousePromptBtn);
+      } else {
+        enterHousePromptBtn.style.display = 'none';
+      }
+
+      if (!isAlreadySeatedOutdoors && nearKioskNow && !isKioskModalOpenCanvas) {
+        claimBottomDock(kioskPromptBtn);
+      } else {
+        kioskPromptBtn.style.display = 'none';
+      }
+
+      if (!isAlreadySeatedOutdoors && nearProximityKiosk !== 'none') {
+        claimBottomDock(teleportKioskHexBtn);
+      } else {
+        teleportKioskHexBtn.style.display = 'none';
+      }
+
+      // Merchant uses the 3D overhead triangle + direct click / [E] (no talk text trigger button)
+      npcMerchantPromptBtn.style.display = 'none';
+
+      const tramNowForPrompt = cityTram.getState();
+      if (ridingTramCarIdx === null) {
+        const tramBoardCheck =
+          !mountedTank &&
+          !isAlreadySeatedOutdoors &&
+          npcCameraMode === 'none' &&
+          playerUnit.alive &&
+          !isPointInsideLobbySafezone(actorX, actorZ)
+            ? canUnitBoardCityTramAtAnyPoint(
+                actorX,
+                actorZ,
+                tramNowForPrompt,
+                cityArenaMode === 'safezone' ? 6.2 : 3.6,
+              )
+            : { canBoard: false, carIndex: 0 as const, distanceMeters: 999 };
+        if (tramBoardCheck.canBoard && !isKioskModalOpenCanvas) {
+          claimBottomDock(rideTramPromptBtn);
+        } else {
+          rideTramPromptBtn.style.display = 'none';
+        }
+      } else {
+        rideTramPromptBtn.style.display = 'none';
+      }
+
+      // 3D Circular Seat Indicators (Blue & Green Coins) + Bottom-Center "DUDUK / BERDIRI" Bar
       currentNearestLobbySeat = null;
       if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none' && !isKioskModalOpenCanvas && !mountedTank) {
         let bestSeatIdx = -1;
@@ -24901,14 +25223,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
-        if (!selectedCharacterTarget && playerUnit.isSitting && activeSeatedSpot) {
-          bottomSitActionBtn.innerHTML = getSitBarHtml('Stand Up');
-          bottomSitActionBtn.style.display = 'block';
-          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
-        } else if (!selectedCharacterTarget && currentNearestLobbySeat) {
-          bottomSitActionBtn.innerHTML = getSitBarHtml('Sit');
-          bottomSitActionBtn.style.display = 'block';
-          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+        if (playerUnit.isSitting && activeSeatedSpot) {
+          bottomSitActionBtn.innerHTML = getSitBarHtml('STAND UP');
+          claimBottomDock(bottomSitActionBtn);
+        } else if (currentNearestLobbySeat) {
+          bottomSitActionBtn.innerHTML = getSitBarHtml('SIT');
+          claimBottomDock(bottomSitActionBtn);
         } else {
           bottomSitActionBtn.style.display = 'none';
         }
@@ -24939,13 +25259,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           currentNearestCafeSeat = CAFE_INTERIOR_SEAT_SPOTS[bestCafeSeatIdx];
         }
         if (playerUnit.isSitting && activeCafeSeatedSpot) {
-          bottomSitActionBtn.innerHTML = getSitBarHtml('Berdiri');
-          bottomSitActionBtn.style.display = 'block';
-          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+          bottomSitActionBtn.innerHTML = getSitBarHtml('STAND UP');
+          claimBottomDock(bottomSitActionBtn);
         } else if (currentNearestCafeSeat && !cafeWorkShiftActive) {
-          bottomSitActionBtn.innerHTML = getSitBarHtml('Duduk');
-          bottomSitActionBtn.style.display = 'block';
-          bottomSitActionBtn.style.transform = `translate3d(${Math.round(w * 0.5)}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+          bottomSitActionBtn.innerHTML = getSitBarHtml('SIT');
+          claimBottomDock(bottomSitActionBtn);
         } else {
           bottomSitActionBtn.style.display = 'none';
         }
@@ -24958,51 +25276,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // 0C. Floating "RIDE TRAM" & "EXIT TRAM" Buttons above the City Tram
-      const tramNowForPrompt = cityTram.getState();
-      if (ridingTramCarIdx !== null && !isKioskModalOpenCanvas) {
-        const activeCar = ridingTramCarIdx === 0 ? tramNowForPrompt.car1 : tramNowForPrompt.car2;
-        const ty = getTerrainElevation(activeCar.x, activeCar.z) + 3.45;
-        const proj = projectWorldToScreenPixels(activeCar.x, ty, activeCar.z);
-        const sx = proj.visible ? proj.x : Math.round(w * 0.5);
-        const sy = proj.visible ? proj.y : Math.round(h * 0.32);
-        exitTramPromptBtn.style.display = 'block';
-        exitTramPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-        rideTramPromptBtn.style.display = 'none';
-      } else {
-        exitTramPromptBtn.style.display = 'none';
-        const tramBoardCheck =
-          !mountedTank &&
-          playerUnit.alive &&
-          !isPointInsideLobbySafezone(actorX, actorZ)
-            ? canUnitBoardCityTramAtAnyPoint(
-                actorX,
-                actorZ,
-                tramNowForPrompt,
-                cityArenaMode === 'safezone' ? 6.2 : 3.6,
-              )
-            : { canBoard: false, carIndex: 0 as const, distanceMeters: 999 };
-        if (tramBoardCheck.canBoard && !isKioskModalOpenCanvas) {
-          const targetCar =
-            tramBoardCheck.carIndex === 0 ? tramNowForPrompt.car1 : tramNowForPrompt.car2;
-          const ty = getTerrainElevation(targetCar.x, targetCar.z) + 3.25;
-          const proj = projectWorldToScreenPixels(targetCar.x, ty, targetCar.z);
-          const sx = proj.visible ? proj.x : clamp(proj.x, 80, Math.max(80, w - 80));
-          const sy = proj.visible ? proj.y : clamp(proj.y, 64, Math.max(64, h - 64));
-          rideTramPromptBtn.style.display = 'block';
-          rideTramPromptBtn.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%)`;
-        } else {
-          rideTramPromptBtn.style.display = 'none';
-        }
-      }
-
       // 0D. Overhead Social Talk Speech Bubble above Player Character's Head
       if (socialTalkMessage && socialTalkTimer > 0 && playerUnit && playerUnit.alive) {
         const bx = playerUnit.x;
         const bz = playerUnit.z;
         const proj =
           npcCameraMode === 'cafe_interior'
-            ? projectFlatRoomToScreenPixels(bx, CAFE_ORIGIN_Y + 1.65, bz)
+            ? projectFlatRoomToScreenPixels(
+                bx,
+                CAFE_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
+                bz,
+              )
             : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
               ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
               : projectWorldToScreenPixels(
@@ -25016,28 +25300,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         socialSpeechBubbleEl.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -100%)`;
       } else {
         socialSpeechBubbleEl.style.display = 'none';
-      }
-
-      // 1. Kiosk Prompt: [B] / [E] KIOSK on ALL 8 White House Plot Kiosks across The City & Warzone (<= 2.9m)
-      const nearestKiosk = findNearestBaseKiosk(actorX, actorZ);
-      const kx = nearestKiosk.x;
-      const kz = nearestKiosk.z;
-      const distToKiosk = nearestKiosk.distance;
-      const kioskThreshold = isKioskPromptActive ? 4.2 : 3.6;
-      const nearKioskNow = worldModeRef.current !== 'warzone' && distToKiosk <= kioskThreshold;
-      isKioskPromptActive = nearKioskNow;
-
-      if (nearKioskNow && !isKioskModalOpenCanvas) {
-        const ky = getTerrainElevation(kx, kz) + 2.5;
-        const proj = projectWorldToScreenPixels(kx, ky, kz);
-        if (proj.visible) {
-          kioskPromptBtn.style.display = 'block';
-          kioskPromptBtn.style.transform = `translate3d(${proj.x}px, ${proj.y}px, 0) translate(-50%, -50%)`;
-        } else {
-          kioskPromptBtn.style.display = 'none';
-        }
-      } else {
-        kioskPromptBtn.style.display = 'none';
       }
 
       if (cityArenaMode === 'safezone') {
@@ -25123,27 +25385,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isPadDepositPromptActive = false;
         padDepositPromptBtn.style.display = 'none';
       }
-      if (
-        !markerPromptAnchor &&
-        !markerGuideAnchor &&
-        worldModeRef.current !== 'warzone' &&
-        npcCameraMode === 'none' &&
-        !isKioskModalOpenCanvas
-      ) {
-        const beaconKiosk = evaluateNearestCityTransitKioskProximity(actorX, actorZ, worldModeRef.current, 25);
-        if (beaconKiosk.isNear) {
-          const beaconMesh = getCityTransitKioskMeshById(beaconKiosk.id);
-          if (beaconMesh && beaconMesh.visible) {
-            beaconMesh.getWorldPosition(scratchLiveObjPos);
-            markerPromptAnchor = {
-              x: scratchLiveObjPos.x,
-              y: scratchLiveObjPos.y + 2.9,
-              z: scratchLiveObjPos.z,
-            };
-          }
-        }
-      }
-      syncFixedInteractionPrompt();
     };
 
     const buildHudSnapshot = (outcome: 'victory' | 'defeat' | null): HudSnapshot => {
@@ -25627,6 +25868,457 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       onHudUpdate(buildHudSnapshot(null));
     };
 
+    const captureKioskCardThumbnails = () => {
+      if (isDisposed) return;
+      const winStore = window as unknown as {
+        __BUDDIES_KIOSK_THUMBNAILS__?: Record<string, string>;
+      };
+      const SNAP_W = 640;
+      const SNAP_H = 360;
+      const snapCam = new THREE.PerspectiveCamera(46, SNAP_W / SNAP_H, 0.15, 280);
+      const snapRt = new THREE.WebGLRenderTarget(SNAP_W, SNAP_H, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType,
+      });
+      snapRt.texture.colorSpace = THREE.SRGBColorSpace;
+      const pixelBuf = new Uint8Array(SNAP_W * SNAP_H * 4);
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = SNAP_W;
+      offCanvas.height = SNAP_H;
+      const offCtx = offCanvas.getContext('2d');
+      if (!offCtx) {
+        snapRt.dispose();
+        return;
+      }
+      const imgData = offCtx.createImageData(SNAP_W, SNAP_H);
+
+      // Save scene state before snapshot capture
+      const prevRenderTarget = renderer.getRenderTarget();
+      const prevPlayerVis = playerUnit ? playerUnit.root.visible : false;
+      const prevPlayerNameVis = Boolean(playerUnit?.nameplate?.sprite?.visible);
+      const prevSelRingVis = characterSelectionRing.visible;
+      const prevCafeVis = cafeInterior.root.visible;
+      const prevCafeCustVis = cafeCustomerNpcRoot.visible;
+      const prevCafeBubbleVis = cafeInterior.customerBubbleGroup.visible;
+      const prevHouseVis = houseInteriorRoomGrp.visible;
+      const prevHouseVisitWallsVis = houseVisitWallGrp.visible;
+      const prevTutorialVis = tutorialWaypointGroup.visible;
+      const prevCafeExtPadVis = cafeExteriorDoorPad.group.visible;
+      const prevHouseExtPadVis = houseExteriorDoorPad.group.visible;
+      const prevHouseExitPadVis = houseInteriorExitDoorPad.group.visible;
+      const prevHanaGrpVis = Boolean(lobbyCafeNpc?.npcGrp?.visible);
+      const prevHanaNameVis = Boolean(lobbyCafeNpc?.npcNameplate?.sprite?.visible);
+      const prevHanaExclVis = Boolean(lobbyCafeNpc?.exclamationGroup?.visible);
+      const prevHanaChevVis = Boolean(lobbyCafeNpc?.merchantChevron?.group?.visible);
+      const prevKaiGrpVis = Boolean(beachHouseNpc?.npcGrp?.visible);
+      const prevKaiNameVis = Boolean(beachHouseNpc?.npcNameplate?.sprite?.visible);
+      const prevKaiExclVis = Boolean(beachHouseNpc?.exclamationGroup?.visible);
+      const prevKaiChevVis = Boolean(beachHouseNpc?.merchantChevron?.group?.visible);
+      const prevTramDist = cityTramDistance;
+      const prevCurve = windUniforms.uCurvatureStrength
+        ? windUniforms.uCurvatureStrength.value
+        : 0;
+      const prevPivotX = windUniforms.uPlanetPivot ? windUniforms.uPlanetPivot.value.x : 0;
+      const prevPivotZ = windUniforms.uPlanetPivot ? windUniforms.uPlanetPivot.value.z : 12.5;
+      const prevPublicPadVis = publicWarzonePads.map((p) => p.padGroup.visible);
+      const prevPublicPadSignVis = publicWarzonePads.map((p) => p.padSign.sprite.visible);
+      const prevBluePadVis = blueBase.commanderPads.map((p) => p.padGroup.visible);
+      const prevBluePadSignVis = blueBase.commanderPads.map((p) => p.padSign.sprite.visible);
+      const prevBlueHoloVis = blueBase.commanderPads.map((p) => p.kioskHoloSign.sprite.visible);
+      const prevRedPadVis = redBase.commanderPads.map((p) => p.padGroup.visible);
+      const prevRedPadSignVis = redBase.commanderPads.map((p) => p.padSign.sprite.visible);
+      const prevRedHoloVis = redBase.commanderPads.map((p) => p.kioskHoloSign.sprite.visible);
+      const prevBlueHpSignVis = blueBase.hpSign.sprite.visible;
+      const prevRedHpSignVis = redBase.hpSign.sprite.visible;
+      const prevLobbyCoinVis = lobbySeatCoinMeshes.map((m) => m.coinRoot.visible);
+
+      // Collect all 3D interactiveChevron triangle groups across base plot kiosks and transit kiosks
+      const chevronGroups: Array<{ grp: THREE.Object3D; vis: boolean }> = [];
+      const registerChevron = (mesh: THREE.Object3D | null | undefined) => {
+        const chevGrp = mesh?.userData?.interactiveChevron?.group as THREE.Object3D | undefined;
+        if (chevGrp && !chevronGroups.some((c) => c.grp === chevGrp)) {
+          chevronGroups.push({ grp: chevGrp, vis: chevGrp.visible });
+        }
+      };
+      blueBase.commanderPads.forEach((p) => registerChevron(p.kioskMesh));
+      redBase.commanderPads.forEach((p) => registerChevron(p.kioskMesh));
+      registerChevron(scene.getObjectByName('CityTransitKiosk3D_info_center'));
+      registerChevron(scene.getObjectByName('HalteLobbyTeleportKiosk3D'));
+      registerChevron(scene.getObjectByName('CityTransitKiosk3D_beachfront_kai'));
+      registerChevron(scene.getObjectByName('CityTransitKiosk3D_beachfront_harbor'));
+      for (const dest of CITY_TRANSIT_DESTINATIONS) {
+        registerChevron(getCityTransitKioskMeshById(dest.id));
+      }
+
+      const hideAllMarkersAndSprites = () => {
+        for (const item of chevronGroups) {
+          item.grp.visible = false;
+        }
+        blueBase.hpSign.sprite.visible = false;
+        redBase.hpSign.sprite.visible = false;
+        publicWarzonePads.forEach((p) => {
+          p.padSign.sprite.visible = false;
+        });
+        blueBase.commanderPads.forEach((p) => {
+          p.padSign.sprite.visible = false;
+          p.kioskHoloSign.sprite.visible = false;
+        });
+        redBase.commanderPads.forEach((p) => {
+          p.padSign.sprite.visible = false;
+          p.kioskHoloSign.sprite.visible = false;
+        });
+      };
+
+      // Hide player, foot ring, remote peers, NPCs, and floating 3D UI markers/billboards
+      if (playerUnit) {
+        playerUnit.root.visible = false;
+        if (playerUnit.nameplate?.sprite) playerUnit.nameplate.sprite.visible = false;
+      }
+      characterSelectionRing.visible = false;
+      const prevRemoteVis: Array<{ av: { root: THREE.Group }; vis: boolean }> = [];
+      for (const av of remotePlayerAvatars.values()) {
+        prevRemoteVis.push({ av, vis: av.root.visible });
+        av.root.visible = false;
+      }
+      tutorialWaypointGroup.visible = false;
+      cafeExteriorDoorPad.group.visible = false;
+      houseExteriorDoorPad.group.visible = false;
+      houseInteriorExitDoorPad.group.visible = false;
+      lobbySeatCoinMeshes.forEach((m) => {
+        m.coinRoot.visible = false;
+      });
+      if (lobbyCafeNpc?.npcGrp) lobbyCafeNpc.npcGrp.visible = false;
+      if (lobbyCafeNpc?.npcNameplate?.sprite) lobbyCafeNpc.npcNameplate.sprite.visible = false;
+      if (lobbyCafeNpc?.exclamationGroup) lobbyCafeNpc.exclamationGroup.visible = false;
+      if (lobbyCafeNpc?.merchantChevron?.group) lobbyCafeNpc.merchantChevron.group.visible = false;
+      if (beachHouseNpc?.npcGrp) beachHouseNpc.npcGrp.visible = false;
+      if (beachHouseNpc?.npcNameplate?.sprite) beachHouseNpc.npcNameplate.sprite.visible = false;
+      if (beachHouseNpc?.exclamationGroup) beachHouseNpc.exclamationGroup.visible = false;
+      if (beachHouseNpc?.merchantChevron?.group) beachHouseNpc.merchantChevron.group.visible = false;
+      hideAllMarkersAndSprites();
+      if (windUniforms.uCurvatureStrength) {
+        windUniforms.uCurvatureStrength.value = 0;
+      }
+
+      const alignOutdoorWorldFlat = (pivotX: number, pivotZ: number) => {
+        applyPlanetCurvatureToObject(
+          blueBase.baseGroup,
+          blueBase.hqX,
+          blueBase.hqZ,
+          pivotX,
+          pivotZ,
+          0,
+          0,
+        );
+        applyPlanetCurvatureToObject(
+          redBase.baseGroup,
+          redBase.hqX,
+          redBase.hqZ,
+          pivotX,
+          pivotZ,
+          0,
+          0,
+        );
+        for (const pad of publicWarzonePads) {
+          applyPlanetCurvatureToObject(
+            pad.padGroup,
+            pad.worldX,
+            pad.worldZ,
+            pivotX,
+            pivotZ,
+            0,
+            0,
+          );
+        }
+        for (const tr of trees) {
+          applyPlanetCurvatureToObject(tr.mesh, tr.x, tr.z, pivotX, pivotZ, 0, 0);
+        }
+        for (let pi = 0; pi < realPropsGroup.children.length; pi++) {
+          const pr = realPropsGroup.children[pi];
+          const px = pr.userData.baseX ?? pr.position.x;
+          const pz = pr.userData.baseZ ?? pr.position.z;
+          const ry = pr.userData.baseRotY ?? 0;
+          applyPlanetCurvatureToObject(pr, px, pz, pivotX, pivotZ, ry, 0);
+        }
+      };
+
+      const showcaseBluePlots = blueCommanderBases.map((b) => ({
+        ...b,
+        isClaimedOnlineSession: true,
+        isModelEstate: true,
+      }));
+      const showcaseRedPlots = redCommanderBases.map((b) => ({
+        ...b,
+        isClaimedOnlineSession: true,
+        isModelEstate: true,
+      }));
+
+      const renderCurrentViewToDataUrl = (): string => {
+        snapCam.updateProjectionMatrix();
+        snapCam.updateMatrixWorld();
+        renderer.setRenderTarget(snapRt);
+        renderer.clear();
+        renderer.render(scene, snapCam);
+        renderer.readRenderTargetPixels(snapRt, 0, 0, SNAP_W, SNAP_H, pixelBuf);
+        const dst = imgData.data;
+        const rowBytes = SNAP_W * 4;
+        for (let y = 0; y < SNAP_H; y++) {
+          const srcRow = (SNAP_H - 1 - y) * rowBytes;
+          const dstRow = y * rowBytes;
+          for (let x = 0; x < rowBytes; x++) {
+            dst[dstRow + x] = pixelBuf[srcRow + x];
+          }
+        }
+        offCtx.putImageData(imgData, 0, 0);
+        return offCanvas.toDataURL('image/jpeg', 0.88);
+      };
+
+      const renderOutdoorSpot = (
+        camPos: [number, number, number],
+        lookAt: [number, number, number],
+        fov = 46,
+      ): string => {
+        cafeInterior.root.visible = false;
+        houseInteriorRoomGrp.visible = false;
+        hideAllMarkersAndSprites();
+        alignOutdoorWorldFlat(lookAt[0], lookAt[2]);
+        snapCam.fov = fov;
+        snapCam.up.set(0, 1, 0);
+        snapCam.position.set(camPos[0], camPos[1], camPos[2]);
+        snapCam.lookAt(lookAt[0], lookAt[1], lookAt[2]);
+        windUniforms.uPlanetPivot?.value.set(lookAt[0], 0, lookAt[2]);
+        curvedPlanetEnv.update(lookAt[0], lookAt[2], snapCam.position, 0);
+        return renderCurrentViewToDataUrl();
+      };
+
+      const thumbnails: Record<string, string> = {
+        ...(winStore.__BUDDIES_KIOSK_THUMBNAILS__ ?? {}),
+      };
+
+      try {
+        // Temporarily populate all 4 residential plots on both North & South Residence in safezone mode
+        syncMilitaryBasePlotsVisuals(blueBase.baseGroup, showcaseBluePlots, 'blue', true);
+        syncMilitaryBasePlotsVisuals(redBase.baseGroup, showcaseRedPlots, 'red', true);
+        publicWarzonePads.forEach((p) => {
+          p.padGroup.visible = false;
+        });
+        blueBase.commanderPads.forEach((p) => {
+          p.padGroup.visible = false;
+        });
+        redBase.commanderPads.forEach((p) => {
+          p.padGroup.visible = false;
+        });
+
+        // 1. travel_districts & central_plaza: Park City Tram at Halte Central Plaza & capture Halte + Stairs + Plaza Buildings
+        const halteLeadDist = findCityTramLeadDistanceNearHalte();
+        cityTram.update(halteLeadDist, 0, -63.8, 0.0, 0);
+        thumbnails.travel_districts = renderOutdoorSpot(
+          [-53.8, 5.2, 8.8],
+          [-64.8, 2.0, -0.4],
+          46,
+        );
+        thumbnails.central_plaza = renderOutdoorSpot(
+          [-52.5, 6.2, 10.5],
+          [-71.2, 2.4, -2.0],
+          46,
+        );
+
+        // 2. beachfront_harbor: Coastal timber boardwalk pier, Kai Fish Market kiosk, surfboard rack & ocean (100% clean of player & KAI label)
+        thumbnails.beachfront_harbor = renderOutdoorSpot(
+          [94.2, 5.2, 67.2],
+          [82.2, 2.1, 58.8],
+          46,
+        );
+
+        // 3. nw_fishing_lake: NW Fishing Lake shoreline dock & turquoise lake water
+        thumbnails.nw_fishing_lake = renderOutdoorSpot(
+          [-46.5, 5.6, -11.2],
+          [-30.5, 0.5, 1.2],
+          46,
+        );
+
+        // 4. north_residence: Row of residential houses & boulevard at North Residence
+        thumbnails.north_residence = renderOutdoorSpot(
+          [-26.0, 9.8, -42.0],
+          [4.0, 2.4, -74.0],
+          46,
+        );
+
+        // 5. south_residence: Row of residential houses & avenue at South Residence
+        thumbnails.south_residence = renderOutdoorSpot(
+          [-54.0, 9.8, 42.0],
+          [-22.0, 2.4, 74.0],
+          46,
+        );
+
+        // 6. shop_exchange: Central Plaza Kiosk & Exchange Pavilion Counter (clean 3D scene)
+        thumbnails.shop_exchange = renderOutdoorSpot(
+          [-81.8, 3.85, -14.8],
+          [-90.2, 2.25, -23.6],
+          44,
+        );
+
+        // 7. warzone_arena: Elevated overview of Warzone Arena Red vs Blue Bastions & Crate Pads
+        syncMilitaryBasePlotsVisuals(blueBase.baseGroup, showcaseBluePlots, 'blue', false);
+        syncMilitaryBasePlotsVisuals(redBase.baseGroup, showcaseRedPlots, 'red', false);
+        publicWarzonePads.forEach((p) => {
+          p.padGroup.visible = true;
+        });
+        blueBase.commanderPads.forEach((p) => {
+          p.padGroup.visible = true;
+        });
+        redBase.commanderPads.forEach((p) => {
+          p.padGroup.visible = true;
+        });
+        thumbnails.warzone_arena = renderOutdoorSpot(
+          [-36.0, 15.2, 22.0],
+          [-10.0, 2.2, 58.0],
+          48,
+        );
+
+        // 8. my_house: Clean Sample House Interior without characters
+        syncHousePlacedFurnitureMeshes();
+        const prevSampleZonesVis = sampleHouseZonesGrp ? sampleHouseZonesGrp.visible : false;
+        cafeInterior.root.visible = false;
+        houseInteriorRoomGrp.visible = true;
+        houseVisitWallGrp.visible = true;
+        if (sampleHouseZonesGrp) sampleHouseZonesGrp.visible = true;
+        applyHouseDaylightVisuals(13.0, 0);
+        snapCam.fov = 48;
+        snapCam.up.set(0, 1, 0);
+        snapCam.position.set(3.5, HOUSE_ORIGIN_Y + 2.55, 3.5);
+        snapCam.lookAt(-0.8, HOUSE_ORIGIN_Y + 1.05, -1.2);
+        thumbnails.my_house = renderCurrentViewToDataUrl();
+        if (sampleHouseZonesGrp) sampleHouseZonesGrp.visible = prevSampleZonesVis;
+
+        // 9. jobs_cafe & cafe_glasshouse: Clean Glasshouse Cafe Interior facing Espresso Counter & Pastry Case
+        houseInteriorRoomGrp.visible = false;
+        cafeInterior.root.visible = true;
+        cafeCustomerNpcRoot.visible = false;
+        cafeInterior.customerBubbleGroup.visible = false;
+        cafeInterior.interactiveMarkers.atm.group.visible = false;
+        cafeInterior.interactiveMarkers.workShiftBoard.group.visible = false;
+        cafeInterior.interactiveMarkers.orderPosRegister.group.visible = false;
+        cafeInterior.interactiveMarkers.drinkEspressoMachine.group.visible = false;
+        cafeInterior.interactiveMarkers.pastryDisplayCase.group.visible = false;
+        cafeInterior.floorSpotIndicators.forEach((s) => {
+          s.coinRoot.visible = false;
+        });
+        snapCam.fov = 46;
+        snapCam.up.set(0, 1, 0);
+        snapCam.position.set(2.35, CAFE_ORIGIN_Y + 2.42, 2.15);
+        snapCam.lookAt(-0.55, CAFE_ORIGIN_Y + 1.25, -2.65);
+        const cafeSnapUrl = renderCurrentViewToDataUrl();
+        thumbnails.jobs_cafe = cafeSnapUrl;
+        thumbnails.cafe_glasshouse = cafeSnapUrl;
+        thumbnails.jobs = cafeSnapUrl;
+      } finally {
+        // Restore all scene visibility, base plots, and render target
+        renderer.setRenderTarget(prevRenderTarget);
+        snapRt.dispose();
+        syncMilitaryBasePlotsVisuals(
+          blueBase.baseGroup,
+          blueCommanderBases,
+          'blue',
+          cityArenaMode === 'safezone',
+        );
+        syncMilitaryBasePlotsVisuals(
+          redBase.baseGroup,
+          redCommanderBases,
+          'red',
+          cityArenaMode === 'safezone',
+        );
+        publicWarzonePads.forEach((p, idx) => {
+          p.padGroup.visible = prevPublicPadVis[idx];
+          p.padSign.sprite.visible = prevPublicPadSignVis[idx];
+        });
+        blueBase.commanderPads.forEach((p, idx) => {
+          p.padGroup.visible = prevBluePadVis[idx];
+          p.padSign.sprite.visible = prevBluePadSignVis[idx];
+          p.kioskHoloSign.sprite.visible = prevBlueHoloVis[idx];
+        });
+        redBase.commanderPads.forEach((p, idx) => {
+          p.padGroup.visible = prevRedPadVis[idx];
+          p.padSign.sprite.visible = prevRedPadSignVis[idx];
+          p.kioskHoloSign.sprite.visible = prevRedHoloVis[idx];
+        });
+        blueBase.hpSign.sprite.visible = prevBlueHpSignVis;
+        redBase.hpSign.sprite.visible = prevRedHpSignVis;
+        for (const item of chevronGroups) {
+          item.grp.visible = item.vis;
+        }
+        lobbySeatCoinMeshes.forEach((m, idx) => {
+          m.coinRoot.visible = prevLobbyCoinVis[idx];
+        });
+        cityTram.update(prevTramDist, 0, prevPivotX, prevPivotZ, prevCurve);
+        alignOutdoorWorldFlat(prevPivotX, prevPivotZ);
+        scene.userData.__staticWorldAligned = false;
+        windUniforms.uPlanetPivot?.value.set(prevPivotX, 0, prevPivotZ);
+        if (windUniforms.uCurvatureStrength) {
+          windUniforms.uCurvatureStrength.value = prevCurve;
+        }
+        curvedPlanetEnv.update(prevPivotX, prevPivotZ, camera.position, 0);
+        cafeInterior.root.visible = prevCafeVis;
+        cafeCustomerNpcRoot.visible = prevCafeCustVis;
+        cafeInterior.customerBubbleGroup.visible = prevCafeBubbleVis;
+        houseInteriorRoomGrp.visible = prevHouseVis;
+        houseVisitWallGrp.visible = prevHouseVisitWallsVis;
+        tutorialWaypointGroup.visible = prevTutorialVis;
+        cafeExteriorDoorPad.group.visible = prevCafeExtPadVis;
+        houseExteriorDoorPad.group.visible = prevHouseExtPadVis;
+        houseInteriorExitDoorPad.group.visible = prevHouseExitPadVis;
+        if (lobbyCafeNpc?.npcGrp) {
+          lobbyCafeNpc.npcGrp.visible = prevHanaGrpVis;
+        }
+        if (lobbyCafeNpc?.npcNameplate?.sprite) {
+          lobbyCafeNpc.npcNameplate.sprite.visible = prevHanaNameVis;
+        }
+        if (lobbyCafeNpc?.exclamationGroup) {
+          lobbyCafeNpc.exclamationGroup.visible = prevHanaExclVis;
+        }
+        if (lobbyCafeNpc?.merchantChevron?.group) {
+          lobbyCafeNpc.merchantChevron.group.visible = prevHanaChevVis;
+        }
+        if (beachHouseNpc?.npcGrp) {
+          beachHouseNpc.npcGrp.visible = prevKaiGrpVis;
+        }
+        if (beachHouseNpc?.npcNameplate?.sprite) {
+          beachHouseNpc.npcNameplate.sprite.visible = prevKaiNameVis;
+        }
+        if (beachHouseNpc?.exclamationGroup) {
+          beachHouseNpc.exclamationGroup.visible = prevKaiExclVis;
+        }
+        if (beachHouseNpc?.merchantChevron?.group) {
+          beachHouseNpc.merchantChevron.group.visible = prevKaiChevVis;
+        }
+        characterSelectionRing.visible = prevSelRingVis;
+        if (playerUnit) {
+          playerUnit.root.visible = prevPlayerVis;
+          if (playerUnit.nameplate?.sprite) {
+            playerUnit.nameplate.sprite.visible = prevPlayerNameVis;
+          }
+        }
+        for (const item of prevRemoteVis) {
+          item.av.root.visible = item.vis;
+        }
+      }
+
+      winStore.__BUDDIES_KIOSK_THUMBNAILS__ = thumbnails;
+      window.dispatchEvent(
+        new CustomEvent('kiosk-thumbnails-ready', { detail: thumbnails }),
+      );
+    };
+
+    const onRequestKioskThumbnails = () => {
+      captureKioskCardThumbnails();
+    };
+    window.addEventListener('request-kiosk-thumbnails', onRequestKioskThumbnails);
+    const kioskThumbTimerId = window.setTimeout(() => {
+      captureKioskCardThumbnails();
+    }, 220);
+
     emitHudImmediately();
     rafId = requestAnimationFrame(animate);
 
@@ -25635,6 +26327,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);
       window.clearTimeout(softwareGlTimerId);
+      window.clearTimeout(kioskThumbTimerId);
+      window.removeEventListener('request-kiosk-thumbnails', onRequestKioskThumbnails);
       worldMultiplayer.unsubscribe();
       for (const av of remotePlayerAvatars.values()) {
         disposeRemotePlayerAvatar3D(av);
@@ -25653,17 +26347,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
-      renderer.domElement.removeEventListener('click', onCafeWorkerClick);
       renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('toggle-kiosk-ui', onKioskUiToggled);
       window.removeEventListener('close-kiosk-ui', onKioskUiClosed);
       window.removeEventListener('sync-kiosk-ui', onKioskUiSynced);
       window.removeEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
-      window.removeEventListener('cafe-shift-presence', onCafeShiftPresence);
-      window.removeEventListener('cafe-prepare-start', onCafePrepareStart);
-      window.removeEventListener('set-player-emote', onSetPlayerEmote);
-      window.removeEventListener('player-emote-punch', onPlayerEmotePunch);
       window.removeEventListener('clear-character-selection', onWindowClearCharacterSelection);
       window.removeEventListener('close-teleport-kiosk-ui', onCloseTeleportKioskUi);
       window.removeEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);

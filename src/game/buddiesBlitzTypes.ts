@@ -451,12 +451,7 @@ export interface BuddyUnit {
   };
   nameplate?: {
     sprite: THREE.Mesh | THREE.Sprite;
-    updatePlate: (
-      name: string,
-      sub: string,
-      emblemType?: 'npc' | 'player_rookie' | 'player_veteran',
-      opts?: { level?: number; role?: 'barista' | null },
-    ) => void;
+    updatePlate: (name: string, sub: string, emblemType?: 'npc' | 'player_rookie' | 'player_veteran') => void;
   };
   teamRing: THREE.Mesh;
   x: number;

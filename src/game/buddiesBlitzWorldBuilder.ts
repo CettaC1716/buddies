@@ -3,7 +3,6 @@ import {
   IndividualCommanderBaseState,
   isCommanderBasePlotActive,
 } from './buddiesBlitzRules';
-import { getCoastalAmusementParkObstacles } from './buddiesAmusementParkRules';
 import {
   resetTerrainSculptGrid,
   restoreTerrainSculptGrid,
@@ -16,8 +15,9 @@ import {
   PlacedMapProp,
   StaticWorldStructureObb,
 } from './buddiesBlitzTypes';
+import { getCoastalAmusementParkObstacles } from './buddiesAmusementParkRules';
 
-export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v53';
+export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v54';
 
 /**
  * Single 180°-Rotationally Symmetric Base Section Generator (`buildTeamBaseQuadrant`):
@@ -151,7 +151,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 336, kind: 'tree_purple', x: -84.0, z: -48.0, rotY: -0.3, scale: 1.12 },
     { id: 337, kind: 'tree_purple', x: -68.5, z: 58.5, rotY: 0.3, scale: 1.12 },
 
-    { id: 401, kind: 'crane', x: 105.8, z: 0.0, rotY: Math.PI / 2, scale: 1.38 },
+    { id: 401, kind: 'crane', x: 105.8, z: 21.5, rotY: Math.PI / 2, scale: 1.38 },
     { id: 431, kind: 'forklift', x: 88.5, z: 29.5, rotY: Math.PI, scale: 1.18 },
 
     { id: 520, kind: 'bench', x: 2.0, z: -34.5, rotY: 0.0, scale: 1.35 },
@@ -216,7 +216,9 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
       const parsed = JSON.parse(raw) as ArenaMapLayout;
       if (parsed && Array.isArray(parsed.props) && parsed.blueHq && parsed.redHq) {
         parsed.props = parsed.props.filter(
-          (p) => p.id !== 491 && !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
+          (p) =>
+            p.id !== 491 &&
+            !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
             !isInsideCoastalAmusementParkFootprint(p.x, p.z),
         );
         if (Array.isArray(parsed.sculptData) && parsed.sculptData.length > 0) {
@@ -406,112 +408,123 @@ export function createGlassmorphicNameplate(
   sprite.receiveShadow = false;
   sprite.raycast = () => {};
 
-  const updatePlate = (
-    name: string,
-    _sub = '',
-    emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie',
-    opts?: { level?: number; role?: 'barista' | null },
-  ) => {
+  const updatePlate = (name: string, _sub = '', emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie') => {
     ctx.clearRect(0, 0, 512, 116);
-    const level = Math.max(1, Math.min(999, Math.floor(opts?.level ?? 1)));
-    const isBarista = opts?.role === 'barista';
 
-    // 1. Glassmorphic pill: translucent dark glass, bright rim, soft drop shadow
-    const bgGrad = ctx.createLinearGradient(0, 16, 0, 108);
-    bgGrad.addColorStop(0, 'rgba(30, 40, 62, 0.52)');
-    bgGrad.addColorStop(0.5, 'rgba(17, 24, 42, 0.58)');
-    bgGrad.addColorStop(1, 'rgba(10, 14, 26, 0.66)');
+    // 1. Crisp High-Contrast Frosted Dark Slate Backing matching UI Prompts
+    const bgGrad = ctx.createLinearGradient(0, 8, 0, 108);
+    bgGrad.addColorStop(0, 'rgba(20, 27, 45, 0.88)');
+    bgGrad.addColorStop(0.45, 'rgba(15, 23, 42, 0.90)');
+    bgGrad.addColorStop(1, 'rgba(8, 12, 24, 0.94)');
+
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 3;
+
     ctx.fillStyle = bgGrad;
     ctx.beginPath();
-    ctx.roundRect(10, 16, 492, 92, 20);
+    ctx.roundRect(10, 10, 492, 96, 20);
     ctx.fill();
     ctx.restore();
 
-    // 2. Frosted top sheen
-    const glossGrad = ctx.createLinearGradient(0, 16, 0, 52);
-    glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
+    // 2. Subtle Top Specular Sheen
+    const glossGrad = ctx.createLinearGradient(0, 10, 0, 48);
+    glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
     glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
     ctx.fillStyle = glossGrad;
     ctx.beginPath();
-    ctx.roundRect(12, 18, 488, 34, [18, 18, 0, 0]);
+    ctx.roundRect(12, 12, 488, 36, [18, 18, 0, 0]);
     ctx.fill();
 
-    // 3. Glass rim
-    ctx.lineWidth = 3.0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    // 3. Crisp Accent Border matching UI Prompt stroke weight
+    ctx.lineWidth = 4.0;
+    ctx.strokeStyle = emblemType === 'npc' ? '#facc15' : '#38bdf8';
     ctx.beginPath();
-    ctx.roundRect(10, 16, 492, 92, 20);
+    ctx.roundRect(10, 10, 492, 96, 20);
     ctx.stroke();
 
-    // 4. Shield badge (left): carries the LEVEL number for players, a crown for NPCs
-    const cx = 62;
-    const cy = 62;
-    const shieldPath = () => {
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - 31);
-      ctx.quadraticCurveTo(cx + 10, cy - 24, cx + 24, cy - 21);
-      ctx.lineTo(cx + 24, cy + 6);
-      ctx.quadraticCurveTo(cx + 24, cy + 22, cx, cy + 31);
-      ctx.quadraticCurveTo(cx - 24, cy + 22, cx - 24, cy + 6);
-      ctx.lineTo(cx - 24, cy - 21);
-      ctx.quadraticCurveTo(cx - 10, cy - 24, cx, cy - 31);
-      ctx.closePath();
-    };
+    // 4. Render Emblem (Left badge circle/shield)
     ctx.save();
+    const cx = 60;
+    const cy = 58;
+
     if (emblemType === 'npc') {
-      const g = ctx.createLinearGradient(0, cy - 31, 0, cy + 31);
-      g.addColorStop(0, '#fbbf24');
-      g.addColorStop(1, '#b45309');
-      ctx.fillStyle = g;
-      shieldPath();
-      ctx.fill();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-      ctx.stroke();
-      // Crown glyph
-      ctx.fillStyle = '#fff7ed';
+      // NPC Emblem: Royal Golden Crown & Star Crest
+      ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.moveTo(cx - 13, cy + 9);
-      ctx.lineTo(cx - 14, cy - 6);
-      ctx.lineTo(cx - 5, cy + 0);
-      ctx.lineTo(cx, cy - 11);
-      ctx.lineTo(cx + 5, cy + 0);
-      ctx.lineTo(cx + 14, cy - 6);
-      ctx.lineTo(cx + 13, cy + 9);
+      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 3.0;
+      ctx.strokeStyle = '#facc15';
+      ctx.stroke();
+
+      // Golden Crown polygon
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.moveTo(cx - 15, cy + 11);
+      ctx.lineTo(cx - 16, cy - 6);
+      ctx.lineTo(cx - 6, cy + 1);
+      ctx.lineTo(cx, cy - 13);
+      ctx.lineTo(cx + 6, cy + 1);
+      ctx.lineTo(cx + 16, cy - 6);
+      ctx.lineTo(cx + 15, cy + 11);
       ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = '#78350f';
+      ctx.stroke();
+
+      // Center ruby gem
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(cx, cy + 3, 3, 0, Math.PI * 2);
       ctx.fill();
     } else {
-      const g = ctx.createLinearGradient(0, cy - 31, 0, cy + 31);
-      if (emblemType === 'player_veteran') {
-        g.addColorStop(0, '#a78bfa');
-        g.addColorStop(1, '#6d28d9');
-      } else {
-        g.addColorStop(0, '#818cf8');
-        g.addColorStop(1, '#4f46e5');
-      }
-      ctx.fillStyle = g;
-      shieldPath();
+      // Player Default Rookie Emblem: Blue Tactical Shield with Wing/Chevron
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
       ctx.fill();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.lineWidth = 3.0;
+      ctx.strokeStyle = '#38bdf8';
       ctx.stroke();
+
+      // Shield Chevron / Wings (Rookie military badge)
       ctx.fillStyle = '#ffffff';
-      ctx.font = `900 ${level >= 100 ? 24 : 30}px "Barlow", sans-serif`;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 14);
+      ctx.lineTo(cx + 14, cy - 3);
+      ctx.lineTo(cx + 11, cy + 11);
+      ctx.lineTo(cx, cy + 17);
+      ctx.lineTo(cx - 11, cy + 11);
+      ctx.lineTo(cx - 14, cy - 3);
+      ctx.closePath();
+      ctx.fill();
+
+      // Inner tactical star / chevron
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 8);
+      ctx.lineTo(cx + 8, cy - 1);
+      ctx.lineTo(cx + 5, cy + 8);
+      ctx.lineTo(cx, cy + 12);
+      ctx.lineTo(cx - 5, cy + 8);
+      ctx.lineTo(cx - 8, cy - 1);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 14px "Barlow", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(0,0,0,0.45)';
-      ctx.shadowBlur = 3;
-      ctx.fillText(String(level), cx, cy + 2);
+      ctx.fillText('1', cx, cy + 2);
     }
     ctx.restore();
 
-    // 5. Name
+    // 5. Player / NPC Name Text (Bold, legible at compact 146x33px constant screen size)
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
     ctx.shadowBlur = 4;
     ctx.shadowOffsetX = 1.5;
     ctx.shadowOffsetY = 1.5;
@@ -519,43 +532,8 @@ export function createGlassmorphicNameplate(
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 36px "Barlow", sans-serif';
-    ctx.fillText(name.toUpperCase(), 296, 64, 368);
+    ctx.fillText(name.toUpperCase(), 292, 58, 372);
     ctx.restore();
-
-    // 6. Working badge: green circle with a coffee cup, overlapping the top edge.
-    // Shown only while the player is on a cafe shift (the "currently working" mark).
-    if (isBarista) {
-      const bx = 256;
-      const by = 18;
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.4)';
-      ctx.shadowBlur = 5;
-      ctx.shadowOffsetY = 2;
-      ctx.fillStyle = '#1f9d55';
-      ctx.beginPath();
-      ctx.arc(bx, by, 16, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath();
-      ctx.arc(bx, by, 16, 0, Math.PI * 2);
-      ctx.stroke();
-      // Cup glyph
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.roundRect(bx - 8, by - 3, 15, 10, 3);
-      ctx.fill();
-      ctx.lineWidth = 2.2;
-      ctx.strokeStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(bx + 9.5, by + 2, 3.4, -Math.PI / 2, Math.PI / 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(bx - 9, by + 10);
-      ctx.lineTo(bx + 9, by + 10);
-      ctx.stroke();
-    }
 
     tex.needsUpdate = true;
   };
@@ -580,8 +558,6 @@ export function buildStaticWorldStructuresList(params: {
   const blueSkyshields = getBaseSkyshieldTurrets(blueBase.baseGroup);
   const redSkyshields = redBase ? getBaseSkyshieldTurrets(redBase.baseGroup) : [];
 
-  const nExcRot = Math.PI + 0.35;
-  const excBoomOffset = 4.55;
   const plotOffsetsX = [-45.0, -15.0, 15.0, 45.0] as const;
   const bastionLocalZ = [-51.4, -21.4, 8.6, 38.6] as const;
   const parasolRatio = HALTE_GOLDEN_SCALE_CONFIG.lobbyParasolScale / 1.38;
@@ -652,6 +628,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'south_residence_transit_kiosk', x: -36.5, z: 44.95, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'beachfront_harbor_shelter_windbreak', x: 81.68, z: 29.5, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
     { id: 'beachfront_harbor_transit_kiosk', x: 79.35, z: 29.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'beachfront_kai_transit_kiosk', x: 84.85, z: 65.65, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'beachfront_harbor_passenger_bench', x: 81.16, z: 26.9, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
     { id: 'nw_fishing_lake_transit_kiosk', x: -44.5, z: -6.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
 
@@ -736,26 +713,9 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'beach_shrub_7', x: 94.8, z: 100.0, halfX: 0.48, halfZ: 0.48, rotY: 0, heightY: 1.5, mat: 'wood' },
     { id: 'beach_shrub_8', x: 98.5, z: 88.5, halfX: 0.48, halfZ: 0.48, rotY: 0, heightY: 1.5, mat: 'wood' },
 
-    // North-East Construction Yard Equipment (Excavator, Steel Girders, Palletized Bricks/Cement)
-    { id: 'const_excavator_n_body', x: 92.0, z: -72.0, halfX: 2.22, halfZ: 2.75, rotY: nExcRot, heightY: 4.85, mat: 'metal' },
-    {
-      id: 'const_excavator_n_boom',
-      x: 92.0 + Math.sin(nExcRot) * excBoomOffset,
-      z: -72.0 + Math.cos(nExcRot) * excBoomOffset,
-      halfX: 0.62,
-      halfZ: 2.15,
-      rotY: nExcRot,
-      heightY: 4.85,
-      mat: 'metal',
-    },
-    { id: 'const_girders_n1', x: 93.0, z: -55.0, halfX: 1.85, halfZ: 3.48, rotY: 0.0, heightY: 1.75, mat: 'metal' },
-    { id: 'const_pallets_n2', x: 92.5, z: -89.0, halfX: 2.85, halfZ: 2.65, rotY: 0.0, heightY: 1.95, mat: 'concrete' },
-
-    { id: 'cont_stack_harbor_nw', x: 80.15, z: -34.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 6.72, mat: 'metal' },
+    // Southern Dermaga Container Stacks (Northern Dermaga & Northern Beach claimed by 1:1 Taman Ria Dermaga!)
     { id: 'cont_stack_harbor_sw', x: 94.15, z: 34.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 6.72, mat: 'metal' },
-    { id: 'cont_stack_harbor_nc', x: 80.15, z: -24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
     { id: 'cont_stack_harbor_sc', x: 94.15, z: 24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
-    { id: 'cont_stack_harbor_ne', x: 101.5, z: -33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
     { id: 'cont_stack_harbor_se', x: 101.5, z: 33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
     ...getCoastalAmusementParkObstacles(),
   ];
