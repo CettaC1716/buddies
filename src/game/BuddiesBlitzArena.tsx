@@ -570,7 +570,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const POLYGON_ICON_HTML = `<svg viewBox="0 0 64 64" style="width:24px; height:24px; filter:drop-shadow(0 1.5px 3px rgba(0,0,0,0.35)); display:block; pointer-events:none;" aria-hidden="true"><polygon points="15,10 46,5 60,22 60,48 45,60 18,57 5,40" fill="#ffffff" /><polygon points="18,14 45,9 57,24 57,46 44,56 20,53 9,39" fill="#14161d" /><polygon points="22,20 44,16 54,27 54,44 43,53 22,50 14,38" fill="#ffffff" /><circle cx="34.5" cy="34.5" r="7.5" fill="#14161d" /></svg>`;
     const HAND_ICON_HTML = `<span style="display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; background:#facc15; color:#14161d; font-family:'Barlow',sans-serif; font-weight:900; font-size:10px; border:2px solid #14161d; box-shadow:2px 2px 0 #14161d; user-select:none; pointer-events:none;">E</span>`;
 
-    // Unified Comic-Arcade Skewed Bottom-Center HUD Action Bar (matches Chat Bar & Top-Right HUD)
+    // Unified Rounded Bottom HUD Action Bar (same rounded style as the Chat Bar)
     const DOCK_ICON_DOOR_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M13 4h6v16h-6"/><path d="M4 12h11"/><path d="m11 8 4 4-4 4"/></svg>`;
     const DOCK_ICON_EXIT_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`;
     const DOCK_ICON_CAFE_CUP_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>`;
@@ -588,7 +588,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       keyBadge = 'E',
       badgeTextHex = '#0b0d13',
     ) =>
-      `<span style="display:inline-flex; align-items:center; height:40px; min-width:228px; padding:0 8px 0 6px; background:#14161d; border:3px solid #14161d; box-shadow:0 0 0 2px #ffffff, 4px 4px 0 #14161d; transform:skewX(-10deg); pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:space-between; width:100%; gap:10px; transform:skewX(10deg);"><span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; flex-shrink:0; background:${accentHex}; color:${badgeTextHex}; border:2px solid #0b0d13; box-shadow:2px 2px 0 #0b0d13;">${iconSvg}</span><span style="flex:1; text-align:center; padding:0 4px; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:13px; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; text-shadow:0 1px 0 #000000;">${label}</span><span style="display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:24px; padding:0 6px; flex-shrink:0; background:${accentHex}; color:${badgeTextHex}; border:2px solid #0b0d13; box-shadow:2px 2px 0 #0b0d13; font-family:'Barlow',sans-serif; font-weight:900; font-size:11px; line-height:1;">${keyBadge}</span></span></span>`;
+      `<span style="display:inline-flex; align-items:center; height:44px; min-width:228px; padding:0 10px 0 8px; background:#14161d; border:3px solid #14161d; border-radius:10px; box-shadow:0 0 0 2px #ffffff, 4px 4px 0 #14161d; pointer-events:none; user-select:none;"><span style="display:inline-flex; align-items:center; justify-content:space-between; width:100%; gap:10px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; flex-shrink:0; background:${accentHex}; color:${badgeTextHex}; border:2px solid #0b0d13; border-radius:6px; box-shadow:2px 2px 0 #0b0d13;">${iconSvg}</span><span style="flex:1; text-align:center; padding:0 4px; color:#ffffff; font-family:'Barlow',sans-serif; font-weight:900; font-size:13px; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; text-shadow:0 1px 0 #000000;">${label}</span><span style="display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:24px; padding:0 6px; flex-shrink:0; background:${accentHex}; color:${badgeTextHex}; border:2px solid #0b0d13; border-radius:6px; box-shadow:2px 2px 0 #0b0d13; font-family:'Barlow',sans-serif; font-weight:900; font-size:11px; line-height:1;">${keyBadge}</span></span></span>`;
 
     const kioskPromptBtn = createPromptButton(
       getGameStyleBottomDockHtml('HOUSE PLOT', '#facc15', DOCK_ICON_HOUSE_SVG, 'E'),
@@ -24569,9 +24569,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const w = window.innerWidth;
       const h = window.innerHeight;
 
-      // Single Unified Bottom-Center HUD Dock Slot (zero floating 3D prompt billboards, offset safely past chat bar on medium viewports)
-      const dockCenterX = w >= 640 ? Math.max(Math.round(w * 0.5), 595) : Math.round(w * 0.5);
-      const bottomDockTransform = `translate3d(${dockCenterX}px, ${h - 26}px, 0) translate(-50%, -50%)`;
+      // Single Unified Bottom HUD Dock Slot (zero floating 3D prompt billboards).
+      // Rounded bar aligned with the bottom-left chat bar: on desktop it shares
+      // the chat row, docked right beside the chat bar on the same baseline; on
+      // tablet & mobile it moves one row above the chat bar so the two never
+      // collide. Chat bar metrics: left 16px, bottom 12px, width
+      // min(100vw - 32px, 512px), ~46px tall (row centre ~= h - 35).
+      const chatBarRightEdge = 16 + Math.min(w - 32, 512);
+      const bottomDockTransform =
+        w >= 1024
+          ? `translate3d(${chatBarRightEdge + 14}px, ${h - 35}px, 0) translate(0, -50%)`
+          : `translate3d(${Math.round(w * 0.5)}px, ${h - 92}px, 0) translate(-50%, -50%)`;
       let bottomDockOccupied = npcCameraMode === 'none' && Boolean(selectedCharacterTarget);
       const claimBottomDock = (btn: HTMLButtonElement): boolean => {
         if (bottomDockOccupied) {
