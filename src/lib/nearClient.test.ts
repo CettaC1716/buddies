@@ -26,6 +26,7 @@ import {
   createInitialMerchantMarketState,
   createInitialPlacedHouseFurniture,
   generateNpcMerchantReply,
+  resolveTutorialFurnitureTarget,
 } from '../game/buddiesMerchantPricing';
 import {
   createInitialNearGamepassSessionState,
@@ -694,4 +695,55 @@ test('NEAR balance and Hana treasury view helpers forward optimistic finality an
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('resolveTutorialFurnitureTarget computes live minimum price and exact NEAR top-up so buy_furniture never traps players', () => {
+  // Reproduces live production state: Chabudai Low Tea Table stock=4, demand=1 -> 11 RESPITE
+  const state = createInitialMerchantMarketState();
+  state.stockByItemId = {
+    ...state.stockByItemId,
+    tatami_tea_table: 4,
+    sakura_bonsai_pot: 5,
+  };
+  state.demandByItemId = {
+    ...state.demandByItemId,
+    tatami_tea_table: 1,
+    sakura_bonsai_pot: 2,
+  };
+
+  // Case (a): Player has 8 RESPITE -> short 3 RESPITE -> 0.01 NEAR (+4 RESPITE -> 12 RESPITE)
+  const at8 = resolveTutorialFurnitureTarget(state, 8, RESPITE_NEP141_METADATA.rateRespitePerNear);
+  assert.ok(at8);
+  assert.equal(at8.item.id, 'tatami_tea_table');
+  assert.equal(at8.buyPriceRespite, 11);
+  assert.equal(at8.recommendedTopUpNear, 0.01);
+  assert.equal(at8.recommendedTopUpRespite, 4);
+
+  // Case (b): Player has 0 RESPITE -> short 11 RESPITE -> 0.03 NEAR (+12 RESPITE)
+  const at0 = resolveTutorialFurnitureTarget(state, 0, RESPITE_NEP141_METADATA.rateRespitePerNear);
+  assert.ok(at0);
+  assert.equal(at0.recommendedTopUpNear, 0.03);
+  assert.equal(at0.recommendedTopUpRespite, 12);
+
+  // Case (c): Player already has >= 11 RESPITE -> top-up 0
+  const at11 = resolveTutorialFurnitureTarget(state, 11, RESPITE_NEP141_METADATA.rateRespitePerNear);
+  assert.ok(at11);
+  assert.equal(at11.recommendedTopUpNear, 0);
+  assert.equal(at11.recommendedTopUpRespite, 0);
+
+  // Case (d): Cheapest item out of stock -> picks next cheapest in-stock furniture cleanly
+  const outOfStock = createInitialMerchantMarketState();
+  outOfStock.stockByItemId = {
+    ...outOfStock.stockByItemId,
+    tatami_tea_table: 0,
+  };
+  const nextCheapest = resolveTutorialFurnitureTarget(
+    outOfStock,
+    8,
+    RESPITE_NEP141_METADATA.rateRespitePerNear,
+  );
+  assert.ok(nextCheapest);
+  assert.notEqual(nextCheapest.item.id, 'tatami_tea_table');
+  assert.ok(nextCheapest.stock > 0);
+  assert.ok(nextCheapest.buyPriceRespite >= 10);
 });

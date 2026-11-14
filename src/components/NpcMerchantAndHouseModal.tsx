@@ -185,6 +185,8 @@ interface NpcMerchantAndHouseModalProps {
     step: string;
     tab: 'sesi_chat' | 'transaksi' | 'katalog';
     katalogTab?: 'house' | 'furniture';
+    prefillSwapAmount?: string;
+    allowExchangeTab?: boolean;
     line: string;
     walletLabel: string;
   } | null;
@@ -533,26 +535,45 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   // FIRST HOME guide mode: while App drives a guided step, this modal stays
   // pinned to that step's tab (and catalog sub-tab); the tab buttons for the
   // other tabs are disabled below so the player cannot wander off the step.
+  // When allowExchangeTab is set (e.g. buy_furniture with >= min price),
+  // switching guide step/tab still redirects automatically once, while manual
+  // trips to EXCHANGE remain unlocked.
+  const prevGuideTabKeyRef = React.useRef<string>('');
   useEffect(() => {
-    if (!homeTourGuide) return;
-    if (activeTab !== homeTourGuide.tab) setActiveTab(homeTourGuide.tab);
+    if (!homeTourGuide) {
+      prevGuideTabKeyRef.current = '';
+      return;
+    }
+    const guideKey = `${homeTourGuide.step}:${homeTourGuide.tab}:${homeTourGuide.katalogTab ?? ''}`;
+    const guideTransitioned = prevGuideTabKeyRef.current !== guideKey;
+    prevGuideTabKeyRef.current = guideKey;
+
+    const canStayInExchange =
+      Boolean(homeTourGuide.allowExchangeTab) && activeTab === 'transaksi';
+    if (
+      activeTab !== homeTourGuide.tab &&
+      (guideTransitioned || !canStayInExchange)
+    ) {
+      setActiveTab(homeTourGuide.tab);
+    }
     if (homeTourGuide.katalogTab && hanaCatalogTab !== homeTourGuide.katalogTab) {
       setHanaCatalogTab(homeTourGuide.katalogTab);
     }
   }, [homeTourGuide, activeTab, hanaCatalogTab]);
 
   // FIRST HOME guide: on exchange steps, prefill the swap field with the
-  // exact amount the guide asks for (0.25 for the house fund, 0.02 for the
-  // furniture top-up) — once per step, so manual edits are not fought.
+  // exact amount the guide asks for (0.25 for the house fund, or dynamic
+  // top-up NEAR for furniture) — once per step, so manual edits are not fought.
   const guidePrefillKeyRef = React.useRef<string>('');
   useEffect(() => {
     if (!homeTourGuide || homeTourGuide.tab !== 'transaksi') return;
     const amount =
-      homeTourGuide.step === 'swap'
+      homeTourGuide.prefillSwapAmount ??
+      (homeTourGuide.step === 'swap'
         ? '0.25'
         : homeTourGuide.step === 'buy_furniture'
           ? '0.02'
-          : null;
+          : null);
     if (!amount) return;
     const key = `${homeTourGuide.step}:${amount}`;
     if (guidePrefillKeyRef.current === key) return;
@@ -1811,7 +1832,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             <button
               type="button"
-              disabled={Boolean(homeTourGuide) && homeTourGuide?.tab !== 'transaksi'}
+              disabled={
+                Boolean(homeTourGuide) &&
+                homeTourGuide?.tab !== 'transaksi' &&
+                !homeTourGuide?.allowExchangeTab
+              }
               onClick={() => {
                 soundEngine.playUiClick();
                 setActiveTab('transaksi');
@@ -1913,7 +1938,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             claim: 'Claim',
                             swap: 'Swap 0.25',
                             house: 'Home deed',
-                            swap_small: 'Swap 0.02',
+                            swap_small: 'Top-Up Swap',
                             furniture: 'Furniture',
                           } as Record<string, string>
                         )[k]
@@ -2617,7 +2642,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {/* Quick Amount Presets */}
                     <div className="flex items-center justify-center gap-1.5 flex-wrap">
                       {[
+                        { near: '0.01', label: '0.01 NEAR' },
                         { near: '0.02', label: '0.02 NEAR' },
+                        { near: '0.03', label: '0.03 NEAR' },
                         { near: '0.25', label: '0.25 NEAR' },
                         { near: '0.5', label: '0.5 NEAR' },
                       ].map((preset) => {
@@ -2660,7 +2687,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       <input
                         type="number"
                         min={0.01}
-                        step={0.05}
+                        step={0.01}
                         data-near-respite-swap-input="true"
                         value={cryptoSwapInputStr}
                         onChange={(e) => {

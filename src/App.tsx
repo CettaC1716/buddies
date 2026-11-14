@@ -81,6 +81,7 @@ import {
   executeLulToCyonExchange,
   executeLulToCyonExchangePackets,
   evaluateLulToCyonExchangeQuote,
+  resolveTutorialFurnitureTarget,
   evaluateNegotiationEnvelope,
   createNpcTreasuryLedger,
   rollNpcTreasuryDay,
@@ -128,6 +129,7 @@ import {
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
   NEAR_CONFIG,
+  RESPITE_NEP141_METADATA,
   checkCitizenSubAccountAvailability,
   claimHanaWelcomeNearOnChain,
   claimHanaWelcomeNearAttestedOnChain,
@@ -2255,10 +2257,20 @@ export default function App() {
     };
   }, [postTourKioskGuideActive]);
 
+  const tutorialFurnitureTarget = resolveTutorialFurnitureTarget(
+    marketState,
+    respiteBalance,
+    RESPITE_NEP141_METADATA.rateRespitePerNear,
+  );
+  const tutorialFurnitureReady =
+    !tutorialFurnitureTarget || respiteBalance >= tutorialFurnitureTarget.buyPriceRespite;
+
   const homeTourGuide: {
     step: string;
     tab: 'sesi_chat' | 'transaksi' | 'katalog';
     katalogTab?: 'house' | 'furniture';
+    prefillSwapAmount?: string;
+    allowExchangeTab?: boolean;
     line: string;
     walletLabel: string;
   } | null =
@@ -2281,6 +2293,7 @@ export default function App() {
             ? {
                 step: homeTourStep,
                 tab: 'transaksi',
+                prefillSwapAmount: '0.25',
                 line: 'Swap 0.25 NEAR into 100 RESPITE. That is your house fund.',
                 walletLabel: hud.nearWalletId || '',
               }
@@ -2293,18 +2306,23 @@ export default function App() {
                   walletLabel: hud.nearWalletId || '',
                 }
               : homeTourStep === 'buy_furniture'
-                ? respiteBalance >= 8
+                ? tutorialFurnitureReady
                   ? {
                       step: homeTourStep,
                       tab: 'katalog',
                       katalogTab: 'furniture',
-                      line: 'Pick a piece of furniture for your new home. The Chabudai tea table is a lovely start.',
+                      allowExchangeTab: true,
+                      line:
+                        tutorialFurnitureTarget && tutorialFurnitureTarget.item.id !== 'tatami_tea_table'
+                          ? `Pick a piece of furniture for your new home. ${tutorialFurnitureTarget.item.name} is ${tutorialFurnitureTarget.buyPriceRespite} RESPITE right now.`
+                          : 'Pick a piece of furniture for your new home. The Chabudai tea table is a lovely start.',
                       walletLabel: hud.nearWalletId || '',
                     }
                   : {
                       step: homeTourStep,
                       tab: 'transaksi',
-                      line: 'Swap 0.02 NEAR into 8 RESPITE first, just enough for your first furniture.',
+                      prefillSwapAmount: tutorialFurnitureTarget.recommendedTopUpNear.toFixed(2),
+                      line: `Swap ${tutorialFurnitureTarget.recommendedTopUpNear.toFixed(2)} NEAR into ${tutorialFurnitureTarget.recommendedTopUpRespite} RESPITE first — ${tutorialFurnitureTarget.item.name} currently costs ${tutorialFurnitureTarget.buyPriceRespite} RESPITE.`,
                       walletLabel: hud.nearWalletId || '',
                     }
                 : homeTourStep === 'go_home'
@@ -2324,7 +2342,10 @@ export default function App() {
     claim: "Open Hana's chat and claim your starter pack.",
     swap: "In Hana's EXCHANGE tab, swap 0.25 NEAR into 100 RESPITE.",
     buy_house: "In Hana's CATALOG, buy your first home deed.",
-    buy_furniture: "In Hana's CATALOG, buy one piece of furniture.",
+    buy_furniture:
+      tutorialFurnitureReady || !tutorialFurnitureTarget
+        ? "In Hana's CATALOG, buy one piece of furniture."
+        : `In Hana's EXCHANGE tab, swap ${tutorialFurnitureTarget.recommendedTopUpNear.toFixed(2)} NEAR into ${tutorialFurnitureTarget.recommendedTopUpRespite} RESPITE (${tutorialFurnitureTarget.item.name} costs ${tutorialFurnitureTarget.buyPriceRespite} RESPITE).`,
     go_home: "Tap GO TO YOUR HOUSE in Hana's CATALOG to step right inside.",
     decor: 'Place your furniture inside, then press CONFIRM MOVE.',
   };
@@ -7974,6 +7995,7 @@ export default function App() {
             const liveRespiteStr = await fetchNep141Balance(
               NEAR_CONFIG.nep141RespiteContractId,
               resolvedActor,
+              'optimistic',
             );
             if (liveRespiteStr !== null) {
               nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
@@ -8226,6 +8248,7 @@ export default function App() {
             const liveRespiteStr = await fetchNep141Balance(
               NEAR_CONFIG.nep141RespiteContractId,
               resolvedActor,
+              'optimistic',
             );
             if (liveRespiteStr !== null) {
               nextRespite = Math.max(0, Number(liveRespiteStr) || 0);

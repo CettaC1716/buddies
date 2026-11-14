@@ -445,6 +445,54 @@ export function evaluateMerchantItemQuote(
   };
 }
 
+export interface TutorialFurnitureTarget {
+  item: MerchantCatalogItem;
+  buyPriceRespite: number;
+  stock: number;
+  recommendedTopUpNear: number;
+  recommendedTopUpRespite: number;
+}
+
+/**
+ * Picks the cheapest in-stock RESPITE furniture item under live dynamic
+ * pricing and computes the exact NEAR top-up needed (rounded up to 0.01 NEAR)
+ * so the FIRST HOME tutorial never traps a player with stale hardcoded RESPITE.
+ */
+export function resolveTutorialFurnitureTarget(
+  state: MerchantAgentMarketState,
+  currentRespiteBalance: number,
+  respitePerNearRate = 400,
+): TutorialFurnitureTarget | null {
+  const candidates = MERCHANT_CATALOG_ITEMS.filter(
+    (item) => item.category === 'nft_collector_furniture' && item.currency === 'RESPITE',
+  )
+    .map((item) => {
+      const quote = evaluateMerchantItemQuote(state, item);
+      return { item, buyPriceRespite: quote.buyPrice, stock: quote.stock };
+    })
+    .filter((entry) => entry.stock > 0);
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.buyPriceRespite - b.buyPriceRespite);
+  const cheapest = candidates[0];
+  const currentRespite = Math.max(0, Math.floor(Number(currentRespiteBalance) || 0));
+  const shortfallRespite = Math.max(0, cheapest.buyPriceRespite - currentRespite);
+  const rate = Math.max(1, Number(respitePerNearRate) || 400);
+  const recommendedTopUpNear =
+    shortfallRespite > 0
+      ? Number(Math.max(0.01, Math.ceil((shortfallRespite / rate) * 100) / 100).toFixed(2))
+      : 0;
+  const recommendedTopUpRespite = Math.floor(recommendedTopUpNear * rate);
+
+  return {
+    item: cheapest.item,
+    buyPriceRespite: cheapest.buyPriceRespite,
+    stock: cheapest.stock,
+    recommendedTopUpNear,
+    recommendedTopUpRespite,
+  };
+}
+
 /**
  * Exchange LUL -> CYON at the NPC Merchant.
  * If NPC runs out of CYON (< 20 CYON), the merchant goes broke until someone invests!
