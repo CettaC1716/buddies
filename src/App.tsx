@@ -65,6 +65,7 @@ import {
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
 import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
+import { InGameWalletConfirmModal } from './components/InGameWalletConfirmModal';
 import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
@@ -153,6 +154,8 @@ import {
   type Nep171GamepassSubAccountLedger,
   type RecruitedFamilyMemberAgent,
   resolveApiUrl,
+  setLocalTxConfirmHandler,
+  type LocalTxConfirmRequest,
 } from './lib/nearClient';
 import {
   mirrorRecipientOnChainRespiteCacheInSupabase,
@@ -741,6 +744,20 @@ export default function App() {
   const [walletTransactions, setWalletTransactions] = useState<DbMarketTransactionRow[]>([]);
   const [isLoadingWalletTransactions, setIsLoadingWalletTransactions] = useState<boolean>(false);
   const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
+  const [localTxConfirmState, setLocalTxConfirmState] = useState<{
+    request: LocalTxConfirmRequest;
+    resolve: (approved: boolean) => void;
+  } | null>(null);
+
+  useEffect(() => {
+    setLocalTxConfirmHandler(
+      (request) =>
+        new Promise<boolean>((resolve) => {
+          setLocalTxConfirmState({ request, resolve });
+        }),
+    );
+    return () => setLocalTxConfirmHandler(null);
+  }, []);
   const [hasHouseOwnership, setHasHouseOwnership] = useState<boolean>(false);
   const [houseEntryScanState, setHouseEntryScanState] = useState<'idle' | 'scanning' | 'verified'>(
     'idle',
@@ -10350,6 +10367,17 @@ export default function App() {
       {/* =====================================================================
           12. NEAR WALLET SELECTOR MODAL (@near-wallet-selector/modal-ui Adaptation)
          ===================================================================== */}
+      <InGameWalletConfirmModal
+        request={localTxConfirmState?.request ?? null}
+        onApprove={() => {
+          localTxConfirmState?.resolve(true);
+          setLocalTxConfirmState(null);
+        }}
+        onReject={() => {
+          localTxConfirmState?.resolve(false);
+          setLocalTxConfirmState(null);
+        }}
+      />
       <NearWalletSelectorModal
         isOpen={isNearWalletSelectorOpen}
         onClose={() => setIsNearWalletSelectorOpen(false)}

@@ -934,6 +934,28 @@ export function isActiveWalletReadOnlyObserver(): boolean {
   return getActiveWalletAuthKind() === 'rpc-observer';
 }
 
+/**
+ * In-game wallet confirmation: before the local session key signs, the app
+ * may register a handler that shows a Meteor-style confirm dialog. The
+ * handler resolves true (sign) or false (reject). No handler = sign
+ * immediately (headless contexts).
+ */
+export interface LocalTxConfirmRequest {
+  signerAccountId: string;
+  receiverId: string;
+  methodName: string;
+  args: Record<string, unknown>;
+  gas: string;
+  depositYocto: string;
+}
+
+type LocalTxConfirmHandler = (request: LocalTxConfirmRequest) => Promise<boolean>;
+let localTxConfirmHandler: LocalTxConfirmHandler | null = null;
+
+export function setLocalTxConfirmHandler(handler: LocalTxConfirmHandler | null): void {
+  localTxConfirmHandler = handler;
+}
+
 /** True for citizen sub-accounts minted by the game relayer (`<handle>.buddiesblitz.testnet`). */
 export function isCitizenSubAccountId(accountId: string): boolean {
   const clean = (accountId || '').trim().toLowerCase();
@@ -1494,6 +1516,28 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
     if (depositBigInt > 0n && !isFullAccess) {
       // Scoped FunctionCall keys cannot attach NEAR deposit > 0 on NEAR protocol
       return null;
+    }
+
+    // The in-game wallet reviews the transaction before signing, exactly
+    // like an external wallet popup. Rejection aborts here and never falls
+    // through to the external selector.
+    if (localTxConfirmHandler) {
+      let approved = false;
+      try {
+        approved = await localTxConfirmHandler({
+          signerAccountId: cleanSigner,
+          receiverId: params.receiverId,
+          methodName: params.methodName,
+          args: params.args ?? {},
+          gas: params.gas,
+          depositYocto: params.depositYocto,
+        });
+      } catch {
+        approved = false;
+      }
+      if (!approved) {
+        return { ok: false, txHash: '', error: 'Transaction rejected in your in-game wallet.' };
+      }
     }
 
     const nextNonce = BigInt(akJson.result.nonce) + 1n;
