@@ -2081,6 +2081,8 @@ export default function App() {
     !isInsidePrivateHouse &&
     !isInsideGlasshouseCafe &&
     Boolean(hud.nearWalletId);
+  // Connect step: spotlight the WALLET button, dim PROFILE/BAG beside it.
+  const tourConnectAttention = homeTourActive && homeTourStep === 'connect';
 
   useEffect(() => {
     if (homeTourStep === 'done' && !homeTour.done) {
@@ -6681,7 +6683,7 @@ export default function App() {
                       });
                       setIsProfileModalOpen(true);
                     }}
-                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${tourConnectAttention ? ' opacity-40 saturate-50' : ''}`}
                     title="View Your Profile"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
@@ -6711,7 +6713,7 @@ export default function App() {
                       hud.equippedWeapon === 'Joran Fishing'
                         ? 'bg-[#4ade80] hover:bg-[#86efac]'
                         : 'bg-[#b8ff3c] hover:bg-[#d9f99d]'
-                    } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
+                    } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${tourConnectAttention ? ' opacity-40 saturate-50' : ''}`}
                     title="Open Personal Bag (Joran & Items)"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
@@ -6740,7 +6742,7 @@ export default function App() {
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
                       setIsPersonalWalletModalOpen(true);
                     }}
-                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${tourConnectAttention ? ' bb-attention-wiggle ring-4 ring-[#38bdf8] brightness-110' : ''}`}
                     title="Open Your Personal Citizen Wallet"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
