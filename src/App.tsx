@@ -4243,6 +4243,122 @@ export default function App() {
    * patience Kai has today — repeat haggling shortens it, a stressed
    * treasury shortens it further, so grinding to the ceiling stops early.
    */
+  /** Fase 2 (plan Bagian 5): ask the trade server for a bounded RESPITE
+   * session for a minted fish. The server verifies ownership on-chain,
+   * computes the envelope and checks Kai's treasury before any number
+   * reaches the negotiation card. */
+  const handleRequestKaiNftTradeSession = useCallback(
+    async (fish: CaughtFishItem) => {
+      const actorAccount = hudRef.current.nearWalletId || playerUid;
+      if (!actorAccount || !fish.nftTokenId) {
+        return { ok: false as const, reason: 'not_configured' };
+      }
+      try {
+        const resp = await fetch('/api/npc-trade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_session',
+            playerAccount: actorAccount,
+            tokenId: fish.nftTokenId,
+          }),
+        });
+        const data = (await resp.json().catch(() => null)) as any;
+        if (data?.ok && data.sessionId) {
+          return {
+            ok: true as const,
+            sessionId: String(data.sessionId),
+            baseValueRespite: Number(data.baseValueRespite) || 0,
+            ceilingRespite: Number(data.ceilingRespite) || 0,
+            openingOffer: Number(data.openingOffer) || 0,
+            patience: Number(data.patience) || 3,
+            memoryFinalPrice:
+              data.memoryFinalPrice == null ? null : Number(data.memoryFinalPrice),
+          };
+        }
+        return {
+          ok: false as const,
+          reason: typeof data?.reason === 'string' ? data.reason : 'failed',
+        };
+      } catch {
+        return { ok: false as const, reason: 'failed' };
+      }
+    },
+    [playerUid],
+  );
+
+  /** Fase 2 settlement (Route A): the player lists the fish at the
+   * agreed price with their own signature, then the trade server has
+   * Kai buy it atomically. A refused or failed execution pulls the
+   * listing back so the fish is never stranded on the board. */
+  const handleSellNftFishToKai = useCallback(
+    async (
+      fish: CaughtFishItem,
+      serverSessionId: string,
+      agreedPriceRespite: number,
+    ) => {
+      const actorAccount = hudRef.current.nearWalletId || playerUid;
+      if (!actorAccount || !fish.nftTokenId) {
+        return { ok: false as const, reason: 'failed' };
+      }
+      const listingId = `kai-${serverSessionId}`;
+      const cleanPrice = Math.max(1, Math.round(agreedPriceRespite));
+      const listRes = await executeMarketContractCallOnChain({
+        signerAccountId: actorAccount || undefined,
+        methodName: 'list_fish_nft',
+        args: {
+          listing_id: listingId,
+          token_id: fish.nftTokenId,
+          price_respite: String(cleanPrice),
+        },
+      });
+      if (!listRes.ok) return { ok: false as const, reason: 'failed' };
+      const pullListingBack = async () => {
+        await executeMarketContractCallOnChain({
+          signerAccountId: actorAccount || undefined,
+          methodName: 'unlist_fish_nft',
+          args: { listing_id: listingId },
+        }).catch(() => null);
+      };
+      try {
+        const resp = await fetch('/api/npc-trade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'execute',
+            sessionId: serverSessionId,
+            listingId,
+            playerAccount: actorAccount,
+          }),
+        });
+        const data = (await resp.json().catch(() => null)) as any;
+        if (!data?.ok) {
+          await pullListingBack();
+          return {
+            ok: false as const,
+            reason: typeof data?.reason === 'string' ? data.reason : 'failed',
+          };
+        }
+      } catch {
+        await pullListingBack();
+        return { ok: false as const, reason: 'failed' };
+      }
+      // Kai owns the fish now and the RESPITE landed in the player's
+      // contract balance — re-read it from chain (wallet principle).
+      setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+      const resolvedActor = listRes.signerAccountId || actorAccount;
+      const liveRespiteStr = await fetchNep141Balance(
+        NEAR_CONFIG.nep141RespiteContractId,
+        resolvedActor,
+      ).catch(() => null);
+      if (liveRespiteStr !== null) {
+        setRespiteBalance(Math.max(0, Number(liveRespiteStr) || 0));
+      }
+      return { ok: true as const };
+    },
+    [playerUid],
+  );
+
   const getKaiTradeContext = useCallback(
     (fish: CaughtFishItem): { memoryFinalPrice: number | null; patience: number } => {
       const playerKey = hudRef.current.nearWalletId || playerUid || 'guest';
@@ -7758,6 +7874,8 @@ export default function App() {
         onSellCaughtFish={handleSellRawFishForLul}
         onSellCaughtFishNegotiated={handleSellRawFishNegotiated}
         getKaiTradeContext={getKaiTradeContext}
+        onRequestKaiNftTradeSession={handleRequestKaiNftTradeSession}
+        onSellNftFishToKai={handleSellNftFishToKai}
         onReleaseCaughtFish={(fish: CaughtFishItem) => {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
           if (lastCaughtFishToast?.id === fish.id) setLastCaughtFishToast(null);

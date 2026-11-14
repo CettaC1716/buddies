@@ -28,6 +28,7 @@ import {
   evaluateLulToCyonExchangeQuote,
   evaluateMerchantItemQuote,
   createNegotiationSessionWithMemory,
+  createNegotiationSessionFromBounds,
   type NpcPurchaseRefusal,
   negotiateRaise,
   negotiatePlayerCounter,
@@ -142,6 +143,28 @@ interface NpcMerchantAndHouseModalProps {
     memoryFinalPrice: number | null;
     patience: number;
   };
+  /** Fase 2 (plan Bagian 5): the trade server issues a bounded RESPITE
+   * session for a minted fish — envelope, patience and memory included. */
+  onRequestKaiNftTradeSession?: (fish: CaughtFishItem) => Promise<
+    | {
+        ok: true;
+        sessionId: string;
+        baseValueRespite: number;
+        ceilingRespite: number;
+        openingOffer: number;
+        patience: number;
+        memoryFinalPrice: number | null;
+      }
+    | { ok: false; reason: string }
+  >;
+  /** Fase 2: settle a minted-fish trade at the agreed RESPITE price
+   * (guided listing + server-side Kai purchase, atomic on-chain). */
+  onSellNftFishToKai?: (
+    fish: CaughtFishItem,
+    serverSessionId: string,
+    agreedPriceRespite: number,
+    roundsUsed?: number,
+  ) => Promise<{ ok: true } | { ok: false; reason: string }>;
   onReleaseCaughtFish?: (fish: CaughtFishItem) => void;
   onReleaseAllCommonFish?: () => void;
   onMintFishAsNft?: (fish: CaughtFishItem) => Promise<boolean> | boolean | void;
@@ -200,7 +223,9 @@ const TRADE_LINES: Record<
     | 'treasuryBreaker'
     | 'treasuryBudget'
     | 'treasuryPool'
-    | 'patienceOut',
+    | 'patienceOut'
+    | 'nftChecking'
+    | 'nftDeskClosed',
     string
   >
 > = {
@@ -222,6 +247,8 @@ const TRADE_LINES: Record<
     treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
     treasuryPool: 'My purse cannot cover that today, friend.',
     patienceOut: 'That is enough for this catch. Come back tomorrow.',
+    nftChecking: 'That one is an NFT. Let me check my treasury desk.',
+    nftDeskClosed: 'My NFT desk is closed right now, friend.',
   },
   id: {
     pick: 'Pick the fish you want to sell.',
@@ -241,6 +268,8 @@ const TRADE_LINES: Record<
     treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
     treasuryPool: 'My purse cannot cover that today, friend.',
     patienceOut: 'That is enough for this catch. Come back tomorrow.',
+    nftChecking: 'That one is an NFT. Let me check my treasury desk.',
+    nftDeskClosed: 'My NFT desk is closed right now, friend.',
   },
 };
 const TRADE_LABELS: Record<
@@ -380,6 +409,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onSellCaughtFish,
   onSellCaughtFishNegotiated,
   getKaiTradeContext,
+  onRequestKaiNftTradeSession,
+  onSellNftFishToKai,
   onReleaseCaughtFish,
   onReleaseAllCommonFish,
   onMintFishAsNft,
@@ -621,9 +652,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [tradePhase, setTradePhase] = useState<KaiTradePhase | null>(null);
   const [tradeFishId, setTradeFishId] = useState<string | null>(null);
   const [tradeSession, setTradeSession] = useState<NegotiationSession | null>(null);
-  const [tradeDoneInfo, setTradeDoneInfo] = useState<{ name: string; price: number } | null>(
-    null,
-  );
+  const [tradeDoneInfo, setTradeDoneInfo] = useState<{
+    name: string;
+    price: number;
+    currency: 'LUL' | 'RESPITE';
+  } | null>(null);
+  const [tradeCurrency, setTradeCurrency] = useState<'LUL' | 'RESPITE'>('LUL');
+  const [tradeServerSessionId, setTradeServerSessionId] = useState<string | null>(null);
+  const [tradeBusy, setTradeBusy] = useState(false);
+  const tradeCurrencyRef = useRef<'LUL' | 'RESPITE'>('LUL');
   const tradePhaseRef = useRef<KaiTradePhase | null>(null);
   const tradeSessionRef = useRef<NegotiationSession | null>(null);
   const [tradeLang, setTradeLang] = useState<TradeLang>('en');
@@ -667,6 +704,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   };
 
   const endTrade = () => {
+    tradeCurrencyRef.current = 'LUL';
+    setTradeCurrency('LUL');
+    setTradeServerSessionId(null);
+    setTradeBusy(false);
     syncTrade(null, null, null);
   };
 
@@ -678,6 +719,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   const chooseTradeFish = (fish: CaughtFishItem) => {
     soundEngine.playUiClick();
+    if (fish.isMintedNft && fish.nftTokenId && onRequestKaiNftTradeSession) {
+      void chooseNftTradeFish(fish);
+      return;
+    }
+    tradeCurrencyRef.current = 'LUL';
+    setTradeCurrency('LUL');
+    setTradeServerSessionId(null);
     const value = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
     // Treasury memory (plan Bagian 13.4): a fresh session for the same
     // species within 24h resumes at the last final offer, not the opener,
@@ -747,10 +795,100 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     triggerNpcSpeech(tradeLine('walkaway'));
   };
 
+  /** Fase 2: a minted fish negotiates in RESPITE against a session the
+   * trade server issued — Kai checks his treasury before any number is
+   * offered, and the server re-verifies everything again at settlement. */
+  const chooseNftTradeFish = async (fish: CaughtFishItem) => {
+    if (!onRequestKaiNftTradeSession) return;
+    triggerNpcSpeech(tradeLine('nftChecking'));
+    setTradeBusy(true);
+    try {
+      const res = await onRequestKaiNftTradeSession(fish);
+      if (!res.ok) {
+        endTrade();
+        triggerNpcSpeech(
+          tradeLine(
+            res.reason === 'breaker'
+              ? 'treasuryBreaker'
+              : res.reason === 'budget' || res.reason === 'player_cap'
+                ? 'treasuryBudget'
+                : res.reason === 'treasury_low' || res.reason === 'pool'
+                  ? 'treasuryPool'
+                  : 'nftDeskClosed',
+          ),
+        );
+        return;
+      }
+      tradeCurrencyRef.current = 'RESPITE';
+      setTradeCurrency('RESPITE');
+      setTradeServerSessionId(res.sessionId);
+      syncTrade(
+        createNegotiationSessionFromBounds({
+          baseValue: res.baseValueRespite,
+          ceiling: res.ceilingRespite,
+          openingOffer: res.openingOffer,
+          patience: res.patience,
+          memoryFinalPrice: res.memoryFinalPrice,
+        }),
+        'offering',
+        fish.id,
+      );
+      triggerNpcSpeech(tradeLine('open'));
+    } finally {
+      setTradeBusy(false);
+    }
+  };
+
+  const settleNftTradeSell = async (
+    s: NegotiationSession,
+    fish: CaughtFishItem,
+    serverSessionId: string,
+  ) => {
+    if (!onSellNftFishToKai || s.agreedPrice == null) return;
+    soundEngine.playUiClick();
+    setTradeBusy(true);
+    try {
+      const result = await onSellNftFishToKai(
+        fish,
+        serverSessionId,
+        s.agreedPrice,
+        s.roundsUsed,
+      );
+      if (!result.ok) {
+        endTrade();
+        triggerNpcSpeech(
+          tradeLine(
+            result.reason === 'breaker'
+              ? 'treasuryBreaker'
+              : result.reason === 'budget' || result.reason === 'player_cap'
+                ? 'treasuryBudget'
+                : result.reason === 'pool'
+                  ? 'treasuryPool'
+                  : 'nftDeskClosed',
+          ),
+        );
+        return;
+      }
+      setTradeDoneInfo({ name: fish.speciesName, price: s.agreedPrice, currency: 'RESPITE' });
+      syncTrade(null, 'done', null);
+      triggerNpcSpeech(tradeLine('done'));
+    } finally {
+      setTradeBusy(false);
+    }
+  };
+
   const doTradeSell = () => {
     const s = tradeSessionRef.current;
     const fish = tradeFish;
     if (!s || s.agreedPrice == null || !fish) return;
+    if (
+      tradeCurrencyRef.current === 'RESPITE' &&
+      tradeServerSessionId &&
+      onSellNftFishToKai
+    ) {
+      void settleNftTradeSell(s, fish, tradeServerSessionId);
+      return;
+    }
     soundEngine.playUiClick();
     const result = onSellCaughtFishNegotiated?.(fish, s.agreedPrice, s.roundsUsed);
     if (result && !result.ok) {
@@ -776,6 +914,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         s.ceiling,
         s.agreedPrice + quickDealBonusLul(s.baseValue, s.roundsUsed),
       ),
+      currency: 'LUL',
     });
     syncTrade(null, 'done', null);
     triggerNpcSpeech(tradeLine('done'));
@@ -969,7 +1108,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     itemLabel: tradeFish
                       ? `${tradeFish.speciesName} (${tradeFish.weightKg.toFixed(2)} kg)`
                       : 'raw fish',
-                    currency: 'LUL',
+                    currency: tradeCurrencyRef.current,
                     currentOffer: tradeSessionRef.current.currentOffer,
                     ceiling: tradeSessionRef.current.ceiling,
                     roundsLeft: Math.max(
@@ -1850,7 +1989,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
                           {tradeLabels.entryTitle}
                         </span>
-                        <span className="text-[10.5px] font-black text-white">{tradeLabels.paidIn}</span>
+                        <span className="text-[10.5px] font-black text-white">{tradeCurrency === 'RESPITE' ? 'PAID IN RESPITE' : tradeLabels.paidIn}</span>
                       </div>
                       <p className="text-[11px] font-bold text-slate-300">
                         {tradeLabels.entrySub}
@@ -1928,7 +2067,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           {tradeLabels.offerLabel}
                         </div>
                         <div className="text-2xl font-black text-white leading-none">
-                          {tradeSession.currentOffer} LUL
+                          {tradeSession.currentOffer} {tradeCurrency}
                         </div>
                         <div className="mt-1.5 h-2 bg-slate-700 border border-black">
                           <div
@@ -1939,7 +2078,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           />
                         </div>
                         <div className="text-[9.5px] font-bold text-slate-400 mt-1">
-                          {tradeLabels.standardPrice}: {tradeSession.baseValue} LUL
+                          {tradeLabels.standardPrice}: {tradeSession.baseValue} {tradeCurrency}
                           {tradeSession.isFinalOffer ? ` · ${tradeLabels.finalOffer}` : ''}
                         </div>
                         <div className="text-[9.5px] italic font-bold text-slate-400 mt-0.5">
@@ -1984,7 +2123,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                        {tradeLabels.deal} · {tradeSession.agreedPrice} LUL
+                        {tradeLabels.deal} · {tradeSession.agreedPrice} {tradeCurrency}
                       </div>
                       <div className="text-[11px] font-bold text-slate-300">
                         ✓ {tradeLabels.fishPicked} · ● {tradeLabels.payment}
@@ -1993,6 +2132,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <button
                           type="button"
                           data-kai-trade-sell-btn="true"
+                          disabled={tradeBusy}
                           onClick={doTradeSell}
                           className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
                         >
@@ -2015,7 +2155,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                   >
                     <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                      ✓ {tradeLabels.sold} · {tradeDoneInfo.name} · +{tradeDoneInfo.price} LUL
+                      ✓ {tradeLabels.sold} · {tradeDoneInfo.name} · +{tradeDoneInfo.price} {tradeDoneInfo.currency}
                     </div>
                     <div className="flex gap-2">
                       {caughtFishBucket.some((f) => !f.isMintedNft) && (
@@ -2046,7 +2186,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
                     >
                       <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                        {tradeLabels.lastOffer} · {tradeSession.currentOffer} LUL
+                        {tradeLabels.lastOffer} · {tradeSession.currentOffer} {tradeCurrency}
                       </div>
                       <div className="text-[9.5px] italic font-bold text-slate-400">
                         {TRADE_LINES[tradeLang][getTradeReasonKey(tradeSession)]}

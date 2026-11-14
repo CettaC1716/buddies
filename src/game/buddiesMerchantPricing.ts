@@ -905,6 +905,33 @@ export function clampNegotiationOffer(session: NegotiationSession, price: number
  * same species within the memory window (plan Bagian 13.4): re-rolling a
  * fresh session must not reset the NPC back to its opening price.
  */
+/**
+ * Builds a negotiation session from bounds issued elsewhere (Fase 2:
+ * the trade server computes V, the hard ceiling and the opening offer
+ * from on-chain data). The raise engine clamps every step to
+ * `session.ceiling`, so server bounds hold for the whole haggle.
+ */
+export function createNegotiationSessionFromBounds(params: {
+  baseValue: number;
+  ceiling: number;
+  openingOffer: number;
+  patience?: number;
+  memoryFinalPrice?: number | null;
+}): NegotiationSession {
+  const base = createNegotiationSession(params.baseValue, params.patience ?? 3);
+  const ceiling = Math.max(1, Math.round(params.ceiling));
+  let offer = Math.max(1, Math.min(ceiling, Math.round(params.openingOffer)));
+  if (params.memoryFinalPrice != null && Number.isFinite(params.memoryFinalPrice)) {
+    offer = Math.max(offer, Math.min(ceiling, Math.round(params.memoryFinalPrice)));
+  }
+  return {
+    ...base,
+    ceiling,
+    currentOffer: offer,
+    isFinalOffer: offer >= ceiling,
+  };
+}
+
 export function createNegotiationSessionWithMemory(
   baseValue: number,
   memoryFinalPrice?: number | null,

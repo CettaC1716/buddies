@@ -11,6 +11,7 @@ import {
   parseTradeChatIntent,
   countOwnedMerchantItems,
   createNegotiationSessionWithMemory,
+  createNegotiationSessionFromBounds,
   quickDealBonusLul,
   createNpcTreasuryLedger,
   rollNpcTreasuryDay,
@@ -255,4 +256,39 @@ test('owned item counts: the ownership list is a multiset', () => {
     sofa: 2,
     lamp: 1,
   });
+});
+
+test('server-bounded session: raises clamp to the issued ceiling', () => {
+  const s = createNegotiationSessionFromBounds({
+    baseValue: 60,
+    ceiling: 60,
+    openingOffer: 48,
+    patience: 3,
+  });
+  assert.equal(s.currentOffer, 48);
+  assert.equal(s.ceiling, 60);
+  const r1 = negotiateRaise(s);
+  assert.ok(r1.currentOffer > 48 && r1.currentOffer <= 60);
+  const r2 = negotiateRaise(r1);
+  assert.ok(r2.currentOffer <= 60);
+  const r3 = negotiateRaise(r2);
+  assert.ok(r3.currentOffer <= 60);
+});
+
+test('server-bounded session: memory anchors the opening offer', () => {
+  const s = createNegotiationSessionFromBounds({
+    baseValue: 60,
+    ceiling: 60,
+    openingOffer: 48,
+    memoryFinalPrice: 55,
+  });
+  assert.equal(s.currentOffer, 55);
+  const capped = createNegotiationSessionFromBounds({
+    baseValue: 60,
+    ceiling: 60,
+    openingOffer: 48,
+    memoryFinalPrice: 500,
+  });
+  assert.equal(capped.currentOffer, 60);
+  assert.equal(capped.isFinalOffer, true);
 });
