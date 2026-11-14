@@ -2103,6 +2103,42 @@ export default function App() {
     !isInsidePrivateHouse &&
     !isInsideGlasshouseCafe &&
     Boolean(hud.nearWalletId);
+  // The city-tour bridge ends the moment the player reaches Kai — the tram
+  // arrival is one way (handled by the ride-complete listener), but walking
+  // there or arriving via another station must end it too: talking to Kai
+  // completes the bridge, so the guide can never drag the player back to
+  // Hana after they have already found him.
+  useEffect(() => {
+    if (!postTourKioskGuideActive) return;
+    if (activeSpecialModal !== 'npc_merchant' || merchantLocation !== 'beach_house') return;
+    setHomeTour((prev) => {
+      if (!prev.done || prev.kioskIntroDone) return prev;
+      const next = { ...prev, kioskIntroDone: true };
+      try {
+        window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, [postTourKioskGuideActive, activeSpecialModal, merchantLocation]);
+
+  // Same rule for the bridge's other destination: stepping into the
+  // Glasshouse Cafe also completes the city-tour bridge.
+  useEffect(() => {
+    if (!postTourKioskGuideActive || !isInsideGlasshouseCafe) return;
+    setHomeTour((prev) => {
+      if (!prev.done || prev.kioskIntroDone) return prev;
+      const next = { ...prev, kioskIntroDone: true };
+      try {
+        window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, [postTourKioskGuideActive, isInsideGlasshouseCafe]);
+
   // Connect step: spotlight the WALLET button, dim PROFILE/BAG beside it.
   const tourConnectAttention = homeTourActive && homeTourStep === 'connect';
 
