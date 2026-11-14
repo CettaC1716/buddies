@@ -1619,6 +1619,13 @@ async function trySignAndBroadcastWithLocalSessionKey(params: {
         bcastJson?.result?.transaction_outcome?.id ||
         encodeBase58(new Uint8Array(txDigest)),
     );
+    // Let the app re-read balances and claim status from chain right away —
+    // the wallet principle is that the UI mirrors the chain, not a cache.
+    try {
+      window.dispatchEvent(new CustomEvent('buddies:citizen-tx-settled'));
+    } catch {
+      // ignore
+    }
     return { ok: true, txHash: confirmedHash };
   } catch {
     return null;

@@ -192,9 +192,15 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                 <div className="mt-1 text-xs font-mono font-black truncate text-[#0d0f12]">
                   {currentWalletId}
                 </div>
+                {hasCitizenWallet && (
+                  <div className="text-[10px] font-bold text-emerald-900 mt-0.5">
+                    Your in-game wallet name was set when you created it and can't be
+                    changed. Creating another wallet means a separate new player.
+                  </div>
+                )}
                 {isReadOnlyObserver && (
                   <div className="text-[10px] font-bold text-[#92400e] mt-0.5">
-                    View-only mode cannot sign transactions. Connect a wallet below.
+                    View-only mode cannot sign transactions. Press SWITCH to exit view mode, then connect your own wallet.
                   </div>
                 )}
               </div>
@@ -223,6 +229,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
             </div>
           )}
 
+          {!currentWalletId && (<>
           {/* Option 1: Create In-Game Wallet (primary) */}
           <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
             <div className="flex items-center justify-between">
@@ -356,6 +363,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               </div>
             </form>
           </div>
+          </>)}
         </div>
       </div>
     </div>

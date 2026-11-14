@@ -448,6 +448,30 @@ export default function App() {
 
   // FIRST HOME forced tour (hard gate, rifallah 14 Nov): persisted progress
   // and the on-chain proof captured from each completed purchase step.
+  // Tutorial progress is scoped PER WALLET: each wallet is its own player,
+  // so First Home and Kai tutorial state live under keys namespaced by the
+  // active account ('guest' while signed out). The legacy device-wide keys
+  // migrate once into the first wallet scope that loads after this change.
+  const tourScopeRef = useRef<string>('');
+  const tourKey = (base: string): string =>
+    `${base}::${tourScopeRef.current || 'guest'}`;
+  const readScopedTourJson = (base: string): Record<string, unknown> | null => {
+    try {
+      const scopedRaw = window.localStorage.getItem(tourKey(base));
+      if (scopedRaw) return JSON.parse(scopedRaw) as Record<string, unknown>;
+      const legacyRaw = window.localStorage.getItem(base);
+      const migratedFlag = `bb_tour_scope_migrated_v1:${base}`;
+      if (legacyRaw && window.localStorage.getItem(migratedFlag) !== '1') {
+        window.localStorage.setItem(migratedFlag, '1');
+        window.localStorage.setItem(tourKey(base), legacyRaw);
+        return JSON.parse(legacyRaw) as Record<string, unknown>;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
   const [homeTour, setHomeTour] = useState<{
     done: boolean;
     metHana: boolean;
@@ -488,7 +512,7 @@ export default function App() {
   }) => {
     setHomeTour({ ...next, menusTourDone: Boolean(next.menusTourDone) });
     try {
-      window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+      window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
     } catch {
       // ignore
     }
@@ -507,7 +531,7 @@ export default function App() {
         },
       };
       try {
-        window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+        window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
       } catch {
         // ignore
       }
@@ -1973,7 +1997,7 @@ export default function App() {
           if (!prev.done || prev.kioskIntroDone) return prev;
           const next = { ...prev, kioskIntroDone: true };
           try {
-            window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+            window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
           } catch {
             // ignore
           }
@@ -2128,7 +2152,7 @@ export default function App() {
       if (!prev.done || prev.kioskIntroDone) return prev;
       const next = { ...prev, kioskIntroDone: true };
       try {
-        window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+        window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
       } catch {
         // ignore
       }
@@ -2144,7 +2168,7 @@ export default function App() {
       if (!prev.done || prev.kioskIntroDone) return prev;
       const next = { ...prev, kioskIntroDone: true };
       try {
-        window.localStorage.setItem('bb_home_tour_v1', JSON.stringify(next));
+        window.localStorage.setItem(tourKey('bb_home_tour_v1'), JSON.stringify(next));
       } catch {
         // ignore
       }
@@ -2377,6 +2401,29 @@ export default function App() {
     return false;
   });
   const kaiTutorialStageRef = useRef<KaiTutorialStage>(kaiTutorialStage);
+
+  // Reload tutorial state whenever the active wallet changes: the incoming
+  // wallet's own progress replaces whatever the previous wallet had.
+  useEffect(() => {
+    const scope = hud.nearWalletId ?? 'guest';
+    if (tourScopeRef.current === scope) return;
+    tourScopeRef.current = scope;
+    const home = readScopedTourJson('bb_home_tour_v1');
+    setHomeTour({
+      done: Boolean(home?.done),
+      metHana: Boolean(home?.metHana),
+      kioskIntroDone: Boolean(home?.kioskIntroDone),
+      menusTourDone: Boolean(home?.menusTourDone),
+      txs:
+        (home?.txs as Record<string, { txHash: string; explorerUrl: string }>) ?? {},
+    });
+    const kai = readScopedTourJson('bb_kai_tutorial_v1');
+    const stage: KaiTutorialStage = kai?.stage === 'done' ? 'done' : 'off';
+    kaiTutorialStageRef.current = stage;
+    setKaiTutorialStage(stage);
+    setKaiCardDismissed(Boolean(kai?.cardDismissed));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hud.nearWalletId]);
   const kaiTutorialAssistRef = useRef<boolean>(false);
   const advanceKaiTutorial = (next: KaiTutorialStage, cardDismissed?: boolean) => {
     kaiTutorialStageRef.current = next;
@@ -2384,7 +2431,7 @@ export default function App() {
     if (cardDismissed !== undefined) setKaiCardDismissed(cardDismissed);
     try {
       window.localStorage.setItem(
-        'bb_kai_tutorial_v1',
+        tourKey('bb_kai_tutorial_v1'),
         JSON.stringify({
           stage: next,
           cardDismissed: cardDismissed ?? kaiCardDismissed,
@@ -3069,6 +3116,23 @@ export default function App() {
       void refreshWalletTransactions();
     }
   }, [isPersonalWalletModalOpen, personalWalletTab, refreshWalletTransactions]);
+
+  // Chain-truth refresh: after any in-game wallet transaction settles, and
+  // whenever an NPC merchant modal opens, re-read balances and claim status
+  // from chain so the numbers on screen never lag the ledger.
+  useEffect(() => {
+    const onSettled = () => {
+      void refreshWalletTransactions();
+    };
+    window.addEventListener('buddies:citizen-tx-settled', onSettled);
+    return () => window.removeEventListener('buddies:citizen-tx-settled', onSettled);
+  }, [refreshWalletTransactions]);
+
+  useEffect(() => {
+    if (activeSpecialModal === 'npc_merchant') {
+      void refreshWalletTransactions();
+    }
+  }, [activeSpecialModal, refreshWalletTransactions]);
 
   const handleConnectWalletAndEnterLobby = useCallback(
     async (

@@ -125,7 +125,103 @@ async function nearRpcCall(rpcUrl: string, method: string, params: unknown): Pro
   return json.result;
 }
 
-export async function handleNearRelayerRequest(body: Record<string, unknown>): Promise<{
+/* ------------------------------------------------------------------ */
+/* Spawn throttle: account creation is free and instant, so the        */
+/* relayer is the sybil chokepoint for the whole game economy. Every   */
+/* funded creation is logged (IP stored as a sha256 hash) and new      */
+/* creations are refused once an IP or the global daily budget runs    */
+/* out. Fails OPEN when Supabase is not configured or unreachable:      */
+/* real players must never be locked out of sign-up by the limiter.    */
+/* Requires table public.bb_relayer_spawn_log (ip_hash, sub_account_id,*/
+/* created_at).                                                        */
+/* ------------------------------------------------------------------ */
+
+const SPAWN_LIMIT_PER_IP_PER_DAY = 5;
+const SPAWN_LIMIT_GLOBAL_PER_DAY = 40;
+
+function relayerSupabaseConfig(): { url: string; key: string } | null {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    '';
+  if (!url || !key) return null;
+  return { url: url.replace(/\/$/, ''), key };
+}
+
+async function spawnLogCount(query: string): Promise<number | null> {
+  const cfg = relayerSupabaseConfig();
+  if (!cfg) return null;
+  try {
+    const resp = await fetch(
+      `${cfg.url}/rest/v1/bb_relayer_spawn_log?select=id&${query}`,
+      {
+        headers: {
+          apikey: cfg.key,
+          Authorization: `Bearer ${cfg.key}`,
+          Prefer: 'count=exact',
+          Range: '0-0',
+        },
+      },
+    );
+    if (!resp.ok) return null;
+    const range = resp.headers.get('content-range') || '';
+    const total = Number(range.split('/')[1]);
+    return Number.isFinite(total) ? total : null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkSpawnThrottle(
+  ipHash: string,
+): Promise<{ blocked: boolean; reason?: string }> {
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const encodedSince = encodeURIComponent(since);
+  const [perIp, global] = await Promise.all([
+    spawnLogCount(`ip_hash=eq.${ipHash}&created_at=gte.${encodedSince}`),
+    spawnLogCount(`created_at=gte.${encodedSince}`),
+  ]);
+  if (perIp !== null && perIp >= SPAWN_LIMIT_PER_IP_PER_DAY) {
+    return {
+      blocked: true,
+      reason:
+        'Too many wallets created from this network today. Please try again tomorrow.',
+    };
+  }
+  if (global !== null && global >= SPAWN_LIMIT_GLOBAL_PER_DAY) {
+    return {
+      blocked: true,
+      reason: 'Wallet creation is temporarily paused. Please try again later.',
+    };
+  }
+  return { blocked: false };
+}
+
+async function logSpawn(ipHash: string, subAccountId: string): Promise<void> {
+  const cfg = relayerSupabaseConfig();
+  if (!cfg) return;
+  try {
+    await fetch(`${cfg.url}/rest/v1/bb_relayer_spawn_log`, {
+      method: 'POST',
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ ip_hash: ipHash, sub_account_id: subAccountId }),
+    });
+  } catch {
+    // best effort only
+  }
+}
+
+export async function handleNearRelayerRequest(
+  body: Record<string, unknown>,
+  clientIpHash = '',
+): Promise<{
   status: number;
   payload: Record<string, unknown>;
 }> {
@@ -187,6 +283,18 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
       }
     } catch {
       // Account does not exist yet — proceed to provision if master key is configured
+    }
+
+    // Sybil throttle: only funded creations count — healing an existing
+    // account's session key stays free.
+    if (!accountAlreadyExists && clientIpHash) {
+      const throttle = await checkSpawnThrottle(clientIpHash);
+      if (throttle.blocked) {
+        return {
+          status: 429,
+          payload: { ok: false, error: throttle.reason || 'Too many wallet creations.' },
+        };
+      }
     }
 
     if (accountAlreadyExists) {
@@ -407,6 +515,10 @@ export async function handleNearRelayerRequest(body: Record<string, unknown>): P
       }
       const confirmedHash = String(broadcast?.transaction?.hash || base58Encode(txHash));
 
+      if (clientIpHash) {
+        await logSpawn(clientIpHash, subAccountId);
+      }
+
       return {
         status: 200,
         payload: {
@@ -458,6 +570,13 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-  const result = await handleNearRelayerRequest(body);
+  const forwardedFor = String(req.headers?.['x-forwarded-for'] || '')
+    .split(',')[0]
+    .trim();
+  const clientIp = forwardedFor || String(req.socket?.remoteAddress || '');
+  const clientIpHash = clientIp
+    ? crypto.createHash('sha256').update(clientIp).digest('hex')
+    : '';
+  const result = await handleNearRelayerRequest(body, clientIpHash);
   res.status(result.status).json(result.payload);
 }
