@@ -350,10 +350,6 @@ import {
   type UrbanScooterKind,
 } from './buddiesUrbanScooterRules';
 import {
-  computeKickScooterRidePose,
-  type KickScooterRidePose,
-} from './buddiesScooterRidePose';
-import {
   createElectricScooterBike3D,
   createPushKickScooter3D,
   type ElectricScooterBike3DHandle,
@@ -828,9 +824,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       scooterHandle: ScooterRideHandle | null;
       scooterLastX: number;
       scooterLastZ: number;
-      scooterPushDistanceM: number;
-      scooterMountBlend: number;
-      scooterPose: KickScooterRidePose | null;
       lastLabelKey: string;
       lastBubbleText: string | null;
       hitFlashTimer: number;
@@ -7594,8 +7587,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       speed: number;
       yaw: number;
       steer: number;
-      pushDistanceM: number;
-      mountBlend: number;
     }
     let scooterRideState: ScooterRideState | null = null;
     let crateSpawnTimer = 0;
@@ -8681,9 +8672,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         scooterHandle: null,
         scooterLastX: 0,
         scooterLastZ: 0,
-        scooterPushDistanceM: 0,
-        scooterMountBlend: 0,
-        scooterPose: null,
       };
     };
 
@@ -12764,15 +12752,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       handle.root.scale.setScalar(SCOOTER_RIDE_MODEL_SCALE);
       handle.setParked(false);
       scene.add(handle.root);
-      scooterRideState = {
-        kind,
-        handle,
-        speed: 0,
-        yaw: playerUnit.yaw,
-        steer: 0,
-        pushDistanceM: 0,
-        mountBlend: 0,
-      };
+      scooterRideState = { kind, handle, speed: 0, yaw: playerUnit.yaw, steer: 0 };
       handle.root.position.set(
         playerUnit.x,
         getTerrainElevation(playerUnit.x, playerUnit.z),
@@ -19189,8 +19169,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
             if (rideTarget === 0 && Math.abs(st.speed) < 0.02) st.speed = 0;
             const rideDist = st.speed * dt;
-            st.pushDistanceM += Math.max(0, rideDist);
-            st.mountBlend = Math.min(1, st.mountBlend + dt / 0.25);
             playerUnit.x = wrapPlanetCoord(playerUnit.x + Math.cos(st.yaw) * rideDist);
             playerUnit.z = wrapPlanetCoord(playerUnit.z - Math.sin(st.yaw) * rideDist);
             playerUnit.vx = Math.cos(st.yaw) * st.speed;
@@ -20642,14 +20620,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             if (b.isPlayer) {
               b.root.scale.setScalar(isPlayerInCafeNow || isPlayerInHouseNow ? 0.55 : 1.0);
             }
-            const scooterPose: KickScooterRidePose | null =
-              b.isPlayer && scooterRideState?.kind === 'push_kick_scooter'
-                ? computeKickScooterRidePose(
-                    scooterRideState.pushDistanceM,
-                    Math.abs(scooterRideState.speed),
-                    scooterRideState.mountBlend,
-                  )
-                : null;
             const seatLift =
               b.isPlayer && b.isSitting && activeCafeSeatedSpot
                 ? activeCafeSeatedSpot.seatLiftY
@@ -20658,8 +20628,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   : b.isPlayer && b.isSleeping && activeSleepSpot
                     ? activeSleepSpot.sleepLiftY
                     : b.isPlayer && scooterRideState
-                      ? SCOOTER_RIDER_LIFT_M[scooterRideState.kind] -
-                        (scooterPose ? scooterPose.dipY : 0)
+                      ? SCOOTER_RIDER_LIFT_M[scooterRideState.kind]
                       : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
@@ -20705,15 +20674,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
             const legSwing = walkSync.legSwingAngle;
 
-            if (b.isPlayer && scooterPose) {
-              // Kick scooter push cycle on the pivot rig (pivot forward is -X,
-              // the pose module uses the GLB convention, so negate).
-              const pb = scooterPose.blend;
-              b.leftLegPivot.rotation.x =
-                -scooterPose.supportHipX * pb + legSwing * (1 - pb);
-              b.rightLegPivot.rotation.x =
-                -scooterPose.pushHipX * pb - legSwing * (1 - pb);
-            } else if (b.kickTimer > 0) {
+            if (b.kickTimer > 0) {
               // Buddies Blitz Front Boot Kick: right leg snaps high forward (-X Euler lifts leg toward +Z front!)
               const kickPhase = Math.sin(Math.min(1, b.kickTimer / 0.34) * Math.PI);
               b.rightLegPivot.rotation.x = -1.48 * kickPhase;
@@ -20818,7 +20779,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsSitting,
                 unitIsDriving,
                 unitIsSleeping,
-                scooterPose,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -23427,9 +23387,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               scene.add(av.scooterHandle.root);
               av.scooterLastX = av.renderX;
               av.scooterLastZ = av.renderZ;
-              av.scooterPushDistanceM = 0;
-              av.scooterMountBlend = 0;
-              av.scooterPose = null;
             }
           }
 
@@ -23573,16 +23530,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           });
           av.walkCycle = peerWalk.nextWalkCycle;
           if (peer.scooterKind === 'push_kick_scooter') {
-            av.scooterPushDistanceM += peerSpeed * dt;
-            av.scooterMountBlend = Math.min(1, av.scooterMountBlend + dt / 0.25);
-            const pose = computeKickScooterRidePose(
-              av.scooterPushDistanceM,
-              peerSpeed,
-              av.scooterMountBlend,
-            );
-            av.scooterPose = pose;
-            av.rig.leftLegPivot.rotation.x = -pose.supportHipX * pose.blend;
-            av.rig.rightLegPivot.rotation.x = -pose.pushHipX * pose.blend;
+            av.rig.leftLegPivot.rotation.x = -0.18;
+            av.rig.rightLegPivot.rotation.x = 0.12;
           } else if (peer.jumpOffset > 0.08) {
             av.rig.leftLegPivot.rotation.x = -0.58;
             av.rig.rightLegPivot.rotation.x = 0.44;
@@ -23634,8 +23583,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerSpeed,
               peer.isSitting,
               peer.isDriving,
-              false,
-              peer.scooterKind === 'push_kick_scooter' ? av.scooterPose : null,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -24518,10 +24465,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.bodyGroup.position.y =
             av.peer.jumpOffset +
             (av.peer.scooterKind
-              ? SCOOTER_RIDER_LIFT_M[av.peer.scooterKind] -
-                (av.peer.scooterKind === 'push_kick_scooter' && av.scooterPose
-                  ? av.scooterPose.dipY
-                  : 0)
+              ? SCOOTER_RIDER_LIFT_M[av.peer.scooterKind]
               : av.peer.isSitting
                 ? 0.128
                 : 0);

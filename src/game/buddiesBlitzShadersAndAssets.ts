@@ -21,7 +21,6 @@ import {
   shouldStripDetachedTreeBaseCollar,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
 } from './buddiesBlitzRules';
-import type { KickScooterRidePose } from './buddiesScooterRidePose';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 import { buildGrandCasino3D } from './buddiesGrandCasinoBuilder';
 import {
@@ -10733,27 +10732,6 @@ function fadeToCharBuddiesAction(
   ctrl.activeClipName = clipName;
 }
 
-const _scooterDeltaEuler = new THREE.Euler();
-const _scooterDeltaQuat = new THREE.Quaternion();
-const _scooterTargetQuat = new THREE.Quaternion();
-
-/** Applies a local-space Euler pose delta on top of a bone's clip pose, blended 0..1. */
-function applyScooterBoneDelta(
-  ctrl: CharBuddiesGlbRigController,
-  boneShortName: string,
-  x: number,
-  y: number,
-  z: number,
-  blend: number,
-) {
-  const bone = ctrl.bones.get(boneShortName);
-  if (!bone) return;
-  _scooterDeltaEuler.set(x, y, z);
-  _scooterDeltaQuat.setFromEuler(_scooterDeltaEuler);
-  _scooterTargetQuat.copy(bone.quaternion).multiply(_scooterDeltaQuat);
-  bone.quaternion.slerp(_scooterTargetQuat, blend);
-}
-
 function aimMixamoArmBoneWorld(
   ctrl: CharBuddiesGlbRigController,
   armShortName: string,
@@ -11171,7 +11149,6 @@ function stepCharBuddiesGlbRigController(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
-  scooterRidePose: KickScooterRidePose | null = null,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -11675,8 +11652,6 @@ function stepCharBuddiesGlbRigController(
 
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
-  // NOTE: scooterRidePose must NOT join this flag — folding it in disabled
-  // the upright Hips/Spine stabilization below and laid riders flat.
   const isSeatedOrPiloting = Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping;
   if (!isSeatedOrPiloting) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
@@ -11817,21 +11792,6 @@ function stepCharBuddiesGlbRigController(
     if (rightLeg && bindRightLeg) {
       rightLeg.quaternion.slerp(bindRightLeg, kickPhase);
     }
-  }
-
-  // 4B. Kick Scooter Push-Cycle override: the legs follow the procedural
-  // push cycle from buddiesScooterRidePose and both hands grip the T-bar.
-  if (scooterRidePose && scooterRidePose.blend > 0.001) {
-    const bp = scooterRidePose.blend;
-    applyScooterBoneDelta(ctrl, 'LeftUpLeg', scooterRidePose.supportHipX, 0, 0, bp);
-    applyScooterBoneDelta(ctrl, 'LeftLeg', scooterRidePose.supportKneeX, 0, 0, bp);
-    applyScooterBoneDelta(ctrl, 'RightUpLeg', scooterRidePose.pushHipX, 0, 0, bp);
-    applyScooterBoneDelta(ctrl, 'RightLeg', scooterRidePose.pushKneeX, 0, 0, bp);
-    applyScooterBoneDelta(ctrl, 'RightFoot', scooterRidePose.pushFootX, 0, 0, bp);
-    applyScooterBoneDelta(ctrl, 'LeftArm', -0.92, 0, 0.14, bp);
-    applyScooterBoneDelta(ctrl, 'LeftForeArm', -0.38, 0, 0, bp);
-    applyScooterBoneDelta(ctrl, 'RightArm', -0.92, 0, -0.14, bp);
-    applyScooterBoneDelta(ctrl, 'RightForeArm', -0.38, 0, 0, bp);
   }
 
   // 5. Zero-allocation Dynamic Foot Grounding (lowest stance foot always touches local Y = 0 on the ground ring)
@@ -12004,7 +11964,6 @@ export function updateCharacterWeaponStance(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
-  scooterRidePose: KickScooterRidePose | null = null,
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -12028,7 +11987,6 @@ export function updateCharacterWeaponStance(
       isSitting,
       isDriving,
       isSleeping,
-      scooterRidePose,
     );
   }
   if (
