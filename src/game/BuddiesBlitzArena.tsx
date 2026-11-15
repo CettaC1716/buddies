@@ -3796,8 +3796,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let cafeInterior: CafeInteriorSceneHandle | null = null;
     let cafeCustomerNpcRoot: THREE.Group | null = null;
     let cafeCustomerRig: ReturnType<typeof buildProceduralBuddyAvatar> | null = null;
-    let cafeGuestMixer: THREE.AnimationMixer | null = null;
-    let cafeGuestCreated = false;
     let cafeCustomerGlbUpgraded = false;
     let cafeInteriorShadersCompiled = false;
     let pendingCafeActivationToken = 0;
@@ -3808,57 +3806,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const showCafeCustomer = Boolean(cafeWorkShiftActive && activeCafeOrderLabel);
       cafeCustomerNpcRoot.visible = showCafeCustomer;
       cafeInterior.setCustomerOrderSign(false, '', activeCafeOrderAccent);
-    };
-
-    // Standing cafe guest: a user-supplied custom character that carries
-    // its own baked hands-on-hips idle clip, so she is loaded as-is and
-    // played through her own mixer (her skeleton is not the Mixamo rig).
-    // Raw model height is 1.58 units. Scale 1.16 matches her height to
-    // the cafe customer NPC (measured from a screenshot at 1.34 she stood
-    // ~15% taller than him). Retried from
-    // the frame loop until the asset has arrived, like the customer NPC's
-    // late GLB upgrade.
-    const ensureCafeGuest = (cafeRoot: THREE.Group) => {
-      if (cafeGuestCreated) return;
-      try {
-        const guestGltf = loadedBlitzAssets?.cafeGuestGltf;
-        if (!guestGltf || guestGltf.animations.length === 0) return;
-        // Convert her PBR materials to the game's toon tone: same textures,
-        // but lighting falls in flat cel bands instead of smooth PBR
-        // gradients (a 4-step gradient map), like the built-in avatars.
-        const gradientData = new Uint8Array([96, 148, 198, 255]);
-        const gradientMap = new THREE.DataTexture(gradientData, 4, 1, THREE.RedFormat);
-        gradientMap.minFilter = THREE.NearestFilter;
-        gradientMap.magFilter = THREE.NearestFilter;
-        gradientMap.needsUpdate = true;
-        guestGltf.scene.traverse((obj) => {
-          const skinned = obj as THREE.SkinnedMesh;
-          if (skinned.isSkinnedMesh) {
-            skinned.frustumCulled = false;
-            const src = skinned.material as THREE.MeshStandardMaterial;
-            if (src && !Array.isArray(src)) {
-              skinned.material = new THREE.MeshToonMaterial({
-                map: src.map ?? null,
-                color: src.color ? src.color.clone() : new THREE.Color('#ffffff'),
-                gradientMap,
-              });
-            }
-          }
-        });
-        const guestRoot = new THREE.Group();
-        guestRoot.position.set(2.35, 0, -0.55);
-        guestRoot.rotation.y = Math.PI; // face the barista counter
-        guestRoot.scale.setScalar(1.16);
-        guestRoot.add(guestGltf.scene);
-        cafeRoot.add(guestRoot);
-        cafeGuestMixer = new THREE.AnimationMixer(guestGltf.scene);
-        const guestAction = cafeGuestMixer.clipAction(guestGltf.animations[0]);
-        guestAction.setLoop(THREE.LoopRepeat, Infinity);
-        guestAction.play();
-        cafeGuestCreated = true;
-      } catch (err) {
-        console.warn('[Cafe] Guest character failed to set up:', err);
-      }
     };
 
     const ensureCafeInteriorLoaded = (): CafeInteriorSceneHandle => {
@@ -3900,7 +3847,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       builtCafe.root.add(custRoot);
 
       cafeInterior = builtCafe;
-      ensureCafeGuest(builtCafe.root);
       cafeCustomerNpcRoot = custRoot;
       cafeCustomerRig = custRig;
       cafeInteriorShadersCompiled = false;
@@ -22885,9 +22831,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           activeCafeOrderCategory,
           activeCafeStationForVisuals,
         );
-        if (cafeInterior && !cafeGuestCreated) {
-          ensureCafeGuest(cafeInterior.root);
-        }
         if (cafeCustomerNpcRoot?.visible && cafeCustomerRig) {
           const customerCharGltf = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
           if (customerCharGltf && !cafeCustomerGlbUpgraded) {
@@ -22900,9 +22843,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           cafeCustomerRig.rightArmPivot.rotation.x = -0.35 + Math.sin(timeSec * 2.8) * 0.12;
           updateCharacterWeaponStance(cafeCustomerRig, 'unarmed', 0, false, false, 0, 0);
-        }
-        if (cafeGuestMixer && cafeInterior?.root.visible) {
-          cafeGuestMixer.update(dt);
         }
         if (playerUnit) {
           playerUnit.root.visible = true;
