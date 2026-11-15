@@ -1253,8 +1253,8 @@ export default function App() {
         snap.seen = null;
       }
     }
-    if (isPersonalWalletModalOpen) {
-      // Opening the wallet acknowledges everything currently owned.
+    if (isPersonalWalletModalOpen || isPersonalBagModalOpen) {
+      // Opening the wallet or the bag acknowledges everything currently owned.
       try {
         window.localStorage.setItem(
           `bb_seen_assets_v1:${account}`,
@@ -1295,6 +1295,7 @@ export default function App() {
     hasHouseOwnership,
     dailyMissionsAccountKey,
     isPersonalWalletModalOpen,
+    isPersonalBagModalOpen,
   ]);
   const [missionGuide, setMissionGuide] = useState<{
     missionId: DailyMissionId;
@@ -10840,6 +10841,39 @@ export default function App() {
                           </span>
                         </button>
                       )}
+                    </div>
+                  ))}
+
+                  {/* Owned Vehicles (NFT Scooters) */}
+                  {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) =>
+                    ownedScooterIds.includes(v.id),
+                  ).map((v) => (
+                    <div
+                      key={v.id}
+                      data-bag-vehicle={v.id}
+                      className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-10 h-10 bg-[#0f172a] text-[#2dd4bf] border-2 border-black flex items-center justify-center font-black text-[10px] shrink-0">
+                          RIDE
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black uppercase text-black">
+                              {v.name}
+                            </span>
+                            <span className="px-1.5 py-0.5 text-[9px] font-black uppercase border border-black bg-[#d8b4fe] text-black">
+                              NFT
+                            </span>
+                          </div>
+                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
+                            {v.subtitle}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 shrink-0">
+                        OWNED
+                      </span>
                     </div>
                   ))}
 
