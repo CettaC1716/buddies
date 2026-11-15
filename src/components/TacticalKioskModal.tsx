@@ -8,6 +8,7 @@ import {
   evaluateNuclearLauncherAccess,
   evaluateClusterBombAccess,
   SafezonePlotAccessMode,
+  type HouseArchitectureStyle,
 } from '../game/buddiesBlitzRules';
 import { HudSnapshot } from '../game/BuddiesBlitzArena';
 import { soundEngine } from '../game/audio';
@@ -23,6 +24,8 @@ interface TacticalKioskModalProps {
   onBuyCrateAirdrop: (crateKind: WorldCrateKind) => void;
   onNearConnectAndMint?: () => void;
   onNearClaimBasePlot?: () => void;
+  ownedHouseStyles?: HouseArchitectureStyle[];
+  onNearClaimBasePlotWithStyle?: (style: HouseArchitectureStyle) => void;
   onNearReleaseBasePlot?: () => void;
   onSetSafezoneAccessMode?: (mode: SafezonePlotAccessMode) => void;
   onAddSafezoneFriend?: (friendId: string) => void;
@@ -328,6 +331,8 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
   onBuyCrateAirdrop,
   onNearConnectAndMint,
   onNearClaimBasePlot,
+  ownedHouseStyles,
+  onNearClaimBasePlotWithStyle,
   onNearReleaseBasePlot,
   onSetSafezoneAccessMode,
   onAddSafezoneFriend,
@@ -889,20 +894,62 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       {hud.nearWalletId}
                     </span>
                   </div>
-                  {onNearClaimBasePlot && (
-                    <button
-                      type="button"
-                      data-near-btn="claim-base"
-                      data-kiosk-claim-plot="true"
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        soundEngine.playUiClick();
-                        onNearClaimBasePlot();
-                      }}
-                      className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
-                    >
-                      CLAIM PLOT
-                    </button>
+                  {onNearClaimBasePlotWithStyle && ownedHouseStyles && ownedHouseStyles.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+                        BUILD YOUR HOUSE — PICK YOUR DEED
+                      </div>
+                      {ownedHouseStyles.map((style) => (
+                        <div
+                          key={style}
+                          data-kiosk-build-style={style}
+                          className="p-2.5 bg-[#1e293b] border border-white/25 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-black uppercase text-white">
+                              {style === 'plaza_manor' ? 'Classic Plaza Manor' : 'Japanese Pavilion'}
+                            </div>
+                            <div className="text-[9.5px] font-bold text-slate-300">
+                              {style === 'plaza_manor'
+                                ? 'Stone manor, round front porch, twin stairs.'
+                                : 'Wooden pavilion, tiled roof, garden front.'}
+                            </div>
+                            <div className="text-[9px] font-black uppercase text-[#4ade80]">
+                              From your deed NFT
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            data-near-btn="claim-base"
+                            data-kiosk-claim-plot="true"
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              soundEngine.playUiClick();
+                              onNearClaimBasePlotWithStyle(style);
+                            }}
+                            className="py-2 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all shrink-0"
+                          >
+                            BUILD HERE
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    onNearClaimBasePlot && (
+                      <button
+                        type="button"
+                        data-near-btn="claim-base"
+                        data-kiosk-claim-plot="true"
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          soundEngine.playUiClick();
+                          onNearClaimBasePlot();
+                        }}
+                        className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                      >
+                        CLAIM PLOT
+                      </button>
+                    )
                   )}
                 </div>
               ) : (

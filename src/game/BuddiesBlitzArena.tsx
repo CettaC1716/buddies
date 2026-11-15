@@ -342,6 +342,7 @@ import {
   buildCompactSeatIndicatorPair,
   buildGlowingDoorFloorArrowPad,
 } from './buddiesCafeInteriorBuilder';
+import { findRoadRoute } from './buddiesRoadGuide';
 import {
   URBAN_SCOOTER_SHOP_TRIGGER,
   type UrbanScooterKind,
@@ -7099,6 +7100,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     tutorialWaypointGroup.add(tutorialDestRingMesh);
 
     let tutorialWaypointCoord = { x: 0, z: 0 };
+    let tutorialWaypointPath: Array<{ x: number; z: number }> | null = null;
+    let tutorialWaypointPathIdx = 0;
     let missionGuideLastProgressAt = 0;
 
     const onSetTutorialWaypoint = (ev: Event) => {
@@ -7108,6 +7111,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           x?: number;
           z?: number;
           color?: string;
+          roadRoute?: boolean;
         }>
       ).detail;
       const nextTarget = detail?.target ?? 'none';
@@ -7120,6 +7124,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       ) {
         tutorialWaypointCoord = { x: detail.x, z: detail.z };
         activeTutorialWaypointTarget = 'coord';
+        tutorialWaypointPath = null;
+        tutorialWaypointPathIdx = 0;
+        if (detail?.roadRoute && playerUnit) {
+          const route = findRoadRoute(playerUnit.x, playerUnit.z, detail.x, detail.z);
+          if (route.length >= 3) tutorialWaypointPath = route;
+        }
       } else {
         activeTutorialWaypointTarget =
           nextTarget === 'hana' || nextTarget === 'kiosk' ? nextTarget : 'none';
@@ -7136,6 +7146,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         item.mat.color.set(hex);
       }
       if (activeTutorialWaypointTarget === 'none') {
+        tutorialWaypointPath = null;
         tutorialWaypointGroup.visible = false;
       }
     };
@@ -22934,6 +22945,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
           }
 
+          // Road-following guides (scooter owners): aim the chevrons at the
+          // next road node while the ring and arrival checks use the final
+          // destination; reported distance is the remaining road length.
+          let guideFinalX = targetX;
+          let guideFinalZ = targetZ;
+          const roadPath =
+            activeTutorialWaypointTarget === 'coord' &&
+            tutorialWaypointPath &&
+            tutorialWaypointPath.length > 1
+              ? tutorialWaypointPath
+              : null;
+          if (roadPath) {
+            guideFinalX = roadPath[roadPath.length - 1].x;
+            guideFinalZ = roadPath[roadPath.length - 1].z;
+            while (
+              tutorialWaypointPathIdx < roadPath.length - 1 &&
+              Math.hypot(
+                roadPath[tutorialWaypointPathIdx].x - playerUnit.x,
+                roadPath[tutorialWaypointPathIdx].z - playerUnit.z,
+              ) <= 7
+            ) {
+              tutorialWaypointPathIdx++;
+            }
+            targetX = roadPath[tutorialWaypointPathIdx].x;
+            targetZ = roadPath[tutorialWaypointPathIdx].z;
+          }
+
           const dx = targetX - playerUnit.x;
           const dz = targetZ - playerUnit.z;
           const dist = Math.hypot(dx, dz);
@@ -22942,15 +22980,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           // Mission guide (`coord` target): report distance to App and
           // auto-complete the guide when the player reaches the destination.
           if (activeTutorialWaypointTarget === 'coord') {
-            if (dist <= 6) {
+            const finalDist = Math.hypot(guideFinalX - playerUnit.x, guideFinalZ - playerUnit.z);
+            let reportDist = finalDist;
+            if (roadPath) {
+              reportDist = dist;
+              for (let pi = tutorialWaypointPathIdx; pi + 1 < roadPath.length; pi++) {
+                reportDist += Math.hypot(
+                  roadPath[pi + 1].x - roadPath[pi].x,
+                  roadPath[pi + 1].z - roadPath[pi].z,
+                );
+              }
+            }
+            if (finalDist <= 6) {
               activeTutorialWaypointTarget = 'none';
+              tutorialWaypointPath = null;
               tutorialWaypointGroup.visible = false;
               window.dispatchEvent(new CustomEvent('mission-guide-arrived'));
             } else if (now - missionGuideLastProgressAt >= 250) {
               missionGuideLastProgressAt = now;
               window.dispatchEvent(
                 new CustomEvent('mission-guide-progress', {
-                  detail: { distanceM: Math.round(dist) },
+                  detail: { distanceM: Math.round(reportDist) },
                 }),
               );
             }
@@ -22959,9 +23009,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           tutorialWaypointGroup.visible = true;
           const ringScale = 1.0 + Math.sin(timeSec * 4.5) * 0.12;
           tutorialDestRingMesh.position.set(
-            targetX,
-            getTerrainElevation(targetX, targetZ) + 0.12,
-            targetZ,
+            guideFinalX,
+            getTerrainElevation(guideFinalX, guideFinalZ) + 0.12,
+            guideFinalZ,
           );
           tutorialDestRingMesh.scale.setScalar(ringScale);
           tutorialDestRingMat.opacity = 0.65 + Math.sin(timeSec * 4.5) * 0.25;

@@ -1308,6 +1308,7 @@ export default function App() {
     finalX: number;
     finalZ: number;
     stationId: CityTransitStationId | null;
+    roadRoute?: boolean;
   } | null>(null);
   const missionGuideRef = useRef<typeof missionGuide>(null);
   const [missionGuideDistanceM, setMissionGuideDistanceM] = useState<number | null>(null);
@@ -5560,6 +5561,40 @@ export default function App() {
     }, 700);
   };
 
+  const claimBasePlotNow = (style?: HouseArchitectureStyle) => {
+    const account = hud.nearWalletId || playerUid;
+    if (!account) return;
+    if (style) {
+      // Pin the Arena session to the deed style the player picked in the
+      // build menu, so the claimed plot is built with that NFT's exterior.
+      dispatchBuddyAction(
+        `nearSyncWalletSession:${account}:1:${nep171Ledger.tokenId || hud.nearGamepassTokenId || ''}:${style}`,
+      );
+    }
+    dispatchBuddyAction('nearClaimBasePlot');
+    const team = hud.nearKioskPlotTeam || hud.playerTeam || 'blue';
+    const plotIdx = hud.nearKioskPlotIndex ?? 1;
+    void syncBasePlotToSupabase({
+      team,
+      plotIndex: plotIdx,
+      isClaimed: true,
+      claimedByNearAccount: account,
+      claimedByTokenId: nep171Ledger.tokenId || null,
+      activeHarvesters: [`harvester-1.${account}`, `harvester-2.${account}`],
+      accessMode: hud.safezonePlotAccessMode || 'PUBLIC',
+    });
+  };
+
+  const ownedHouseStyles: HouseArchitectureStyle[] = hasHouseOwnership
+    ? Array.from(
+        new Set(
+          [ownedHouseStyle, houseArchitectureStyle].filter(
+            (s): s is HouseArchitectureStyle => Boolean(s),
+          ),
+        ),
+      )
+    : [];
+
   const handleBuyHouseWithRespite = async (
     _priceRespite: number,
     requestedStyle?: HouseArchitectureStyle,
@@ -9202,22 +9237,9 @@ export default function App() {
           soundEngine.playUiClick();
           setIsNearWalletSelectorOpen(true);
         }}
-        onNearClaimBasePlot={() => {
-          const account = hud.nearWalletId || playerUid;
-          if (!account) return;
-          dispatchBuddyAction('nearClaimBasePlot');
-          const team = hud.nearKioskPlotTeam || hud.playerTeam || 'blue';
-          const plotIdx = hud.nearKioskPlotIndex ?? 1;
-          void syncBasePlotToSupabase({
-            team,
-            plotIndex: plotIdx,
-            isClaimed: true,
-            claimedByNearAccount: account,
-            claimedByTokenId: nep171Ledger.tokenId || null,
-            activeHarvesters: [`harvester-1.${account}`, `harvester-2.${account}`],
-            accessMode: hud.safezonePlotAccessMode || 'PUBLIC',
-          });
-        }}
+        onNearClaimBasePlot={() => claimBasePlotNow()}
+        ownedHouseStyles={ownedHouseStyles}
+        onNearClaimBasePlotWithStyle={(style) => claimBasePlotNow(style)}
         onNearReleaseBasePlot={() => {
           dispatchBuddyAction('nearReleaseBasePlot');
           const team = hud.nearClaimedTeam || hud.playerTeam || 'blue';
@@ -10684,7 +10706,7 @@ export default function App() {
             <div className="-skew-x-6 px-3 py-1 bg-[#fb923c] border-2 border-black shadow-[2px_2px_0px_#000] text-[11px] font-black uppercase flex items-center gap-1.5">
               <span className="skew-x-6 flex items-center gap-1">
                 <Wrench className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                <span>GEAR — YOUR RIDES</span>
+                <span>YOUR GEAR</span>
               </span>
             </div>
             <button
@@ -10702,6 +10724,144 @@ export default function App() {
           </div>
 
           <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+            {(() => {
+              const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
+              const ownedFishingGear = MERCHANT_CATALOG_ITEMS.filter(
+                (item) => item.category === 'fishing_gear' && ownedMerchantItemIds.includes(item.id),
+              );
+              return (
+                <>
+            {/* Personal Fishing Rod Card */}
+            <div
+              data-gear-item-card="fishing_rod"
+              className={`p-3.5 border-[2.5px] border-black shadow-[3px_3px_0px_#000] transition-colors ${
+                isJoranEquipped ? 'bg-[#ecfccb]' : 'bg-slate-50'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 bg-[#1e293b] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-center font-black text-xs tracking-wider shrink-0">
+                    ROD
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-black uppercase tracking-wide text-black">
+                        FISHING ROD
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 text-[9.5px] font-black uppercase border border-black ${
+                          isJoranEquipped
+                            ? 'bg-[#b8ff3c] text-black'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {isJoranEquipped ? 'EQUIPPED' : 'IN GEAR'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-600 mt-0.5">
+                      Carbon spin rod. Use along the beach or lake shore.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2.5 border-t border-black/15 flex items-center justify-between gap-2">
+                <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
+                  {isJoranEquipped ? 'Equipped' : 'Stored in Gear'}
+                </span>
+
+                <button
+                  type="button"
+                  data-gear-toggle-fishing-rod="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    if (isJoranEquipped) {
+                      setIsChargingCast(false);
+                      setIsHoldingReel(false);
+                      setFishingMinigame(null);
+                      setFishingHintMessage(null);
+                      setFishingPhase('idle');
+                      dispatchBuddyAction('qcEquipWeapon:unarmed');
+                    } else {
+                      dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+                    }
+                  }}
+                  className={`-skew-x-6 px-4 py-1.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all ${
+                    isJoranEquipped
+                      ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
+                      : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                  }`}
+                >
+                  <span className="skew-x-6 inline-block">
+                    {isJoranEquipped ? 'UNEQUIP' : 'EQUIP'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Owned Fishing Gear & Tackle Purchased from Merchant Kai */}
+            {ownedFishingGear.map((gear) => (
+              <div
+                key={gear.id}
+                data-gear-item-card={gear.id}
+                className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 bg-[#0f172a] text-[#b8ff3c] border-2 border-black flex items-center justify-center font-black text-[10px] shrink-0">
+                    GEAR
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-black uppercase text-black">
+                        {gear.name}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 text-[9px] font-black uppercase border border-black ${
+                          gear.isNft ? 'bg-[#d8b4fe] text-black' : 'bg-[#38bdf8] text-black'
+                        }`}
+                      >
+                        {gear.isNft ? 'NFT' : 'TACKLE'}
+                      </span>
+                    </div>
+                    <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
+                      {gear.description}
+                    </div>
+                  </div>
+                </div>
+
+                {gear.isEquippableRod && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      if (isJoranEquipped) {
+                        setIsChargingCast(false);
+                        setIsHoldingReel(false);
+                        setFishingMinigame(null);
+                        setFishingHintMessage(null);
+                        setFishingPhase('idle');
+                        dispatchBuddyAction('qcEquipWeapon:unarmed');
+                      } else {
+                        dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+                      }
+                    }}
+                    className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10px] uppercase cursor-pointer shrink-0 ${
+                      isJoranEquipped
+                        ? 'bg-[#ff3b30] text-white'
+                        : 'bg-[#b8ff3c] text-black'
+                    }`}
+                  >
+                    <span className="skew-x-6 inline-block">
+                      {isJoranEquipped ? 'UNEQUIP' : 'EQUIP'}
+                    </span>
+                  </button>
+                )}
+              </div>
+            ))}
+                </>
+              );
+            })()}
+
             {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) => ownedScooterIds.includes(v.id)).map(
               (v) => {
                 const isEquipped = equippedScooterKind === v.id;
@@ -10888,140 +11048,8 @@ export default function App() {
           {/* Bag Body */}
           <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
             {personalBagTab === 'equipment' && (() => {
-              const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
-              const ownedFishingGear = MERCHANT_CATALOG_ITEMS.filter(
-                (item) => item.category === 'fishing_gear' && ownedMerchantItemIds.includes(item.id),
-              );
               return (
                 <div className="space-y-3">
-                  {/* Personal Fishing Rod Card */}
-                  <div
-                    data-bag-item-card="fishing_rod"
-                    className={`p-3.5 border-[2.5px] border-black shadow-[3px_3px_0px_#000] transition-colors ${
-                      isJoranEquipped ? 'bg-[#ecfccb]' : 'bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-12 h-12 bg-[#1e293b] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-center font-black text-xs tracking-wider shrink-0">
-                          ROD
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-black uppercase tracking-wide text-black">
-                              FISHING ROD
-                            </span>
-                            <span
-                              className={`px-1.5 py-0.5 text-[9.5px] font-black uppercase border border-black ${
-                                isJoranEquipped
-                                  ? 'bg-[#b8ff3c] text-black'
-                                  : 'bg-slate-200 text-slate-700'
-                              }`}
-                            >
-                              {isJoranEquipped ? 'EQUIPPED' : 'IN BAG'}
-                            </span>
-                          </div>
-                          <p className="text-[11px] font-bold text-slate-600 mt-0.5">
-                            Carbon spin rod. Use along the beach or lake shore.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 pt-2.5 border-t border-black/15 flex items-center justify-between gap-2">
-                      <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
-                        {isJoranEquipped ? 'Equipped' : 'Stored in Bag'}
-                      </span>
-
-                      <button
-                        type="button"
-                        data-bag-toggle-fishing-rod="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          if (isJoranEquipped) {
-                            setIsChargingCast(false);
-                            setIsHoldingReel(false);
-                            setFishingMinigame(null);
-                            setFishingHintMessage(null);
-                            setFishingPhase('idle');
-                            dispatchBuddyAction('qcEquipWeapon:unarmed');
-                          } else {
-                            dispatchBuddyAction('qcEquipWeapon:fishing_rod');
-                          }
-                        }}
-                        className={`-skew-x-6 px-4 py-1.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:scale-95 transition-all ${
-                          isJoranEquipped
-                            ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
-                            : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
-                        }`}
-                      >
-                        <span className="skew-x-6 inline-block">
-                          {isJoranEquipped ? 'UNEQUIP' : 'EQUIP'}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Owned Fishing Gear & Tackle Purchased from Merchant Kai */}
-                  {ownedFishingGear.map((gear) => (
-                    <div
-                      key={gear.id}
-                      data-bag-item-card={gear.id}
-                      className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-10 h-10 bg-[#0f172a] text-[#b8ff3c] border-2 border-black flex items-center justify-center font-black text-[10px] shrink-0">
-                          GEAR
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-black uppercase text-black">
-                              {gear.name}
-                            </span>
-                            <span
-                              className={`px-1.5 py-0.5 text-[9px] font-black uppercase border border-black ${
-                                gear.isNft ? 'bg-[#d8b4fe] text-black' : 'bg-[#38bdf8] text-black'
-                              }`}
-                            >
-                              {gear.isNft ? 'NFT' : 'TACKLE'}
-                            </span>
-                          </div>
-                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
-                            {gear.description}
-                          </div>
-                        </div>
-                      </div>
-
-                      {gear.isEquippableRod && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            if (isJoranEquipped) {
-                              setIsChargingCast(false);
-                              setIsHoldingReel(false);
-                              setFishingMinigame(null);
-                              setFishingHintMessage(null);
-                              setFishingPhase('idle');
-                              dispatchBuddyAction('qcEquipWeapon:unarmed');
-                            } else {
-                              dispatchBuddyAction('qcEquipWeapon:fishing_rod');
-                            }
-                          }}
-                          className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10px] uppercase cursor-pointer shrink-0 ${
-                            isJoranEquipped
-                              ? 'bg-[#ff3b30] text-white'
-                              : 'bg-[#b8ff3c] text-black'
-                          }`}
-                        >
-                          <span className="skew-x-6 inline-block">
-                            {isJoranEquipped ? 'UNEQUIP' : 'EQUIP'}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-
                   {/* Quick Summary of Bag Capacity */}
                   <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                     <div>
@@ -11729,6 +11757,30 @@ export default function App() {
             finalZ = dest.spawnZ;
             guideStationId = stationId;
           }
+          // Scooter owners ride instead of teleporting: far missions and the
+          // trip home follow the asphalt road network straight to the target
+          // (no kiosk, no tram), which also lands them at their own plot door
+          // instead of a station spawn they then have to search from.
+          const hasScooter = ownedScooterIds.length > 0;
+          let roadRoute = false;
+          if (hasScooter && (missionId === 'meet_kai' || missionId === 'go_fishing')) {
+            guideStationId = null;
+            roadRoute = true;
+          } else if (hasScooter && missionId === 'visit_claimed_house') {
+            const claimedTeam = hud.nearClaimedTeam;
+            const claimedIdx = hud.nearClaimedPlotIndex;
+            if (claimedTeam && claimedIdx != null && claimedIdx >= 0 && claimedIdx <= 3) {
+              finalX = [-45, -15, 15, 45][claimedIdx];
+              finalZ = claimedTeam === 'blue' ? 73.45 : -73.45;
+              guideStationId = null;
+              roadRoute = true;
+            }
+          } else if (hasScooter && missionId === 'claim_plot_house') {
+            finalX = 6.5;
+            finalZ = -46.4;
+            guideStationId = null;
+            roadRoute = true;
+          }
           // Far missions guide to a teleport kiosk first (leg 1); when the
           // tram arrives at the mission station, leg 2 guides to the target.
           const farGuide = guideStationId !== null;
@@ -11739,6 +11791,7 @@ export default function App() {
             finalX,
             finalZ,
             stationId: guideStationId,
+            roadRoute,
           };
           missionGuideRef.current = nextGuide;
           setMissionGuide(nextGuide);
@@ -11747,7 +11800,13 @@ export default function App() {
             new CustomEvent('set-tutorial-waypoint', {
               detail: farGuide
                 ? { target: 'kiosk', color: '#22ff5e' }
-                : { target: 'coord', x: finalX, z: finalZ, color: '#22ff5e' },
+                : {
+                    target: 'coord',
+                    x: finalX,
+                    z: finalZ,
+                    color: '#22ff5e',
+                    roadRoute,
+                  },
             }),
           );
         }}
