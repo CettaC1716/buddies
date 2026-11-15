@@ -138,6 +138,7 @@ import {
   claimDailyAllClearBonus,
   claimDailyMissionReward,
   createInitialDailyMissionsState,
+  DAILY_MISSIONS_CATALOG,
   getDailyMissionsStorageKey,
   getLocalDailyDateKey,
   recordDailyMissionProgress,
@@ -204,6 +205,7 @@ import {
   fetchRecentSocialMessages,
   insertSocialMessageToSupabase,
   createLetterForAccount,
+  fetchLettersForAccount,
   logMarketTransactionToSupabase,
   signInWithSupabaseGoogle,
   signOutSupabaseAuth,
@@ -1178,6 +1180,22 @@ export default function App() {
   const [personalBagTab, setPersonalBagTab] = useState<'equipment' | 'fish' | 'items'>('equipment');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
+  const [unreadLetterCount, setUnreadLetterCount] = useState<number>(0);
+  const [missionGuide, setMissionGuide] = useState<{
+    missionId: DailyMissionId;
+    title: string;
+    stage: 'to_kiosk' | 'direct';
+    finalX: number;
+    finalZ: number;
+    stationId: CityTransitStationId | null;
+  } | null>(null);
+  const missionGuideRef = useRef<typeof missionGuide>(null);
+  const [missionGuideDistanceM, setMissionGuideDistanceM] = useState<number | null>(null);
+  const clearMissionGuide = () => {
+    missionGuideRef.current = null;
+    setMissionGuide(null);
+    setMissionGuideDistanceM(null);
+  };
   const [lastUnreadPrivateSender, setLastUnreadPrivateSender] = useState<NearbyEntityUser | null>(
     null,
   );
@@ -2356,6 +2374,30 @@ export default function App() {
           cityArenaMode: detail.worldMode === 'warzone' ? 'warzone' : 'safezone',
           playerTeam: detail.team ?? prev.playerTeam,
         }));
+        // Mission guide leg 2: the tram reached the mission's station, so the
+        // waypoint switches from the teleport kiosk to the final target.
+        const guide = missionGuideRef.current;
+        if (
+          guide &&
+          guide.stage === 'to_kiosk' &&
+          guide.stationId &&
+          detail.destinationStationId === guide.stationId
+        ) {
+          const nextGuide = { ...guide, stage: 'direct' as const };
+          missionGuideRef.current = nextGuide;
+          setMissionGuide(nextGuide);
+          setMissionGuideDistanceM(null);
+          window.dispatchEvent(
+            new CustomEvent('set-tutorial-waypoint', {
+              detail: {
+                target: 'coord',
+                x: guide.finalX,
+                z: guide.finalZ,
+                color: '#fec83e',
+              },
+            }),
+          );
+        }
       }
     };
     window.addEventListener('toggle-kiosk-ui', onToggleKiosk);
@@ -2442,6 +2484,64 @@ export default function App() {
       }),
     );
   }, [tutorialStage]);
+
+  // Mission guide: the 3D chevron waypoint (tutorial waypoint `coord` mode)
+  // reports distance and arrival from the world renderer.
+  useEffect(() => {
+    const onGuideProgress = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ distanceM?: number }>).detail;
+      if (typeof detail?.distanceM === 'number') {
+        setMissionGuideDistanceM(detail.distanceM);
+      }
+    };
+    const onGuideArrived = () => {
+      clearMissionGuide();
+      soundEngine.playUiClick();
+    };
+    window.addEventListener('mission-guide-progress', onGuideProgress);
+    window.addEventListener('mission-guide-arrived', onGuideArrived);
+    return () => {
+      window.removeEventListener('mission-guide-progress', onGuideProgress);
+      window.removeEventListener('mission-guide-arrived', onGuideArrived);
+    };
+  }, []);
+
+  // Clear the mission guide as soon as its mission is completed.
+  useEffect(() => {
+    if (!missionGuide) return;
+    const def = DAILY_MISSIONS_CATALOG.find((m) => m.id === missionGuide.missionId);
+    const entry = dailyMissionsState.missions[missionGuide.missionId];
+    if (def && entry && entry.progress >= def.targetCount) {
+      window.dispatchEvent(
+        new CustomEvent('set-tutorial-waypoint', { detail: { target: 'none' } }),
+      );
+      clearMissionGuide();
+    }
+  }, [dailyMissionsState, missionGuide]);
+
+  // Unread letters feed the WORLD chat button badge alongside unread private
+  // messages. Refreshed on account change, when the chat modal closes
+  // (letters may have been read), and once a minute.
+  const letterAccount = hud.nearWalletId || playerUid || null;
+  useEffect(() => {
+    if (!letterAccount) {
+      setUnreadLetterCount(0);
+      return;
+    }
+    let cancelled = false;
+    const loadUnreadLetters = async () => {
+      const rows = await fetchLettersForAccount(letterAccount, 50);
+      if (!cancelled) {
+        setUnreadLetterCount(rows.filter((row) => !row.isRead).length);
+      }
+    };
+    void loadUnreadLetters();
+    const intervalId = window.setInterval(loadUnreadLetters, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [letterAccount, isSocialChatModalOpen]);
 
   useEffect(() => {
     if (
@@ -7960,12 +8060,12 @@ export default function App() {
                       ) : (
                         <>
                           <span>WORLD</span>
-                          {unreadPrivateCount > 0 && (
+                          {unreadPrivateCount + unreadLetterCount > 0 && (
                             <span
                               data-chat-unread-private-badge="true"
                               className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
                             >
-                              {unreadPrivateCount}
+                              {unreadPrivateCount + unreadLetterCount}
                             </span>
                           )}
                         </>
@@ -7974,6 +8074,45 @@ export default function App() {
                   </button>
                 )}
               </form>
+            </div>
+          )}
+
+          {/* Mission guide chip: active waypoint guidance from Daily Missions */}
+          {missionGuide && playMode !== 'editor' && (
+            <div
+              data-mission-guide-chip="true"
+              className="fixed left-1/2 top-[76px] z-40 -translate-x-1/2 pointer-events-none select-none"
+            >
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#14161d]/95 text-white border-2 border-black shadow-[3px_3px_0_#000]">
+                <span className="w-2 h-2 shrink-0 bg-[#fec83e] border border-black animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
+                  {missionGuide.stage === 'to_kiosk'
+                    ? 'Go to a Teleport Kiosk'
+                    : missionGuide.title}
+                </span>
+                {missionGuide.stage === 'direct' && missionGuideDistanceM != null && (
+                  <span className="text-[10px] font-black text-[#fec83e] tabular-nums whitespace-nowrap">
+                    {missionGuideDistanceM} m
+                  </span>
+                )}
+                <button
+                  type="button"
+                  data-mission-guide-cancel="true"
+                  aria-label="Cancel mission guide"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    window.dispatchEvent(
+                      new CustomEvent('set-tutorial-waypoint', {
+                        detail: { target: 'none' },
+                      }),
+                    );
+                    clearMissionGuide();
+                  }}
+                  className="pointer-events-auto w-5 h-5 shrink-0 bg-[#ff3b30] hover:bg-[#ff554a] text-white border border-black font-black text-[10px] leading-none flex items-center justify-center cursor-pointer"
+                >
+                  X
+                </button>
+              </div>
             </div>
           )}
 
@@ -9888,6 +10027,44 @@ export default function App() {
                     );
                   })}
 
+                  {/* 1C. OWNED VEHICLES (NFT SCOOTERS) */}
+                  {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) =>
+                    ownedScooterIds.includes(v.id),
+                  ).map((v) => (
+                    <div
+                      key={v.id}
+                      data-wallet-vehicle={v.id}
+                      className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2"
+                    >
+                      <div className="relative w-full h-28 bg-[#0f172a] border-2 border-black flex flex-col items-center justify-center text-center p-2">
+                        <div className="text-xl font-black text-[#2dd4bf] tracking-widest uppercase">
+                          VEHICLE
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-300">
+                          {v.subtitle}
+                        </div>
+                        <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black font-black text-[9px] uppercase pointer-events-none">
+                          GEAR
+                        </div>
+                        <div className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 bg-[#0f172a]/90 text-[#b8ff3c] border border-black font-mono font-bold text-[9px] pointer-events-none">
+                          NFT
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black uppercase text-black truncate">
+                          {v.name}
+                        </div>
+                        <div className="text-[9.5px] font-mono text-slate-500 truncate">
+                          {v.tokenId}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-[9.5px] font-mono border-t border-slate-200 pt-1.5">
+                        <span className="text-emerald-600 font-bold">OWNED</span>
+                        <span className="text-slate-500">{v.priceRespite} RESPITE</span>
+                      </div>
+                    </div>
+                  ))}
+
                   {/* 2. RECRUITED FAMILY MEMBERS */}
                   {recruitedFamilyMembers.map((m) => (
                     <div key={m.agentId} className="p-3 bg-white border-2 border-black shadow-[3px_3px_0_#000] space-y-2">
@@ -11133,19 +11310,59 @@ export default function App() {
         onShortcutTravel={(missionId, stationId) => {
           soundEngine.playUiClick();
           setIsDailyMissionsModalOpen(false);
+          if (missionId === 'work_cafe' && isInsideGlasshouseCafe) {
+            // Already inside the cafe: the shift can start right here.
+            return;
+          }
           if (isInsidePrivateHouse) {
             dispatchBuddyAction('exitPrivateHouseInterior');
-          }
-          if (missionId === 'work_cafe' && hud.worldMode === 'lobby' && !isInsideGlasshouseCafe) {
-            window.dispatchEvent(new CustomEvent('enter-glasshouse-cafe'));
-            return;
           }
           if (isInsideGlasshouseCafe) {
             dispatchBuddyAction('exitGlasshouseCafe');
           }
-          const originStationId: CityTransitStationId =
-            hud.worldMode === 'lobby' ? 'central_plaza' : 'beachfront_harbor';
-          handleStartCityTransitTravel(getCityTransitDestinationById(stationId), originStationId);
+          if (hud.worldMode === 'warzone') return;
+          const def = DAILY_MISSIONS_CATALOG.find((m) => m.id === missionId);
+          let finalX = 0;
+          let finalZ = 0;
+          let guideStationId: CityTransitStationId | null = null;
+          if (missionId === 'meet_kai') {
+            finalX = 85.8;
+            finalZ = 60.0;
+            guideStationId = 'kai_fish_market';
+          } else if (missionId === 'go_fishing') {
+            finalX = 86.85;
+            finalZ = 65.65;
+            guideStationId = 'kai_fish_market';
+          } else if (missionId === 'work_cafe') {
+            finalX = -88.3;
+            finalZ = 22.35;
+          } else {
+            const dest = getCityTransitDestinationById(stationId);
+            finalX = dest.spawnX;
+            finalZ = dest.spawnZ;
+            guideStationId = stationId;
+          }
+          // Far missions guide to a teleport kiosk first (leg 1); when the
+          // tram arrives at the mission station, leg 2 guides to the target.
+          const farGuide = guideStationId !== null;
+          const nextGuide = {
+            missionId,
+            title: def?.title ?? 'Daily Mission',
+            stage: farGuide ? ('to_kiosk' as const) : ('direct' as const),
+            finalX,
+            finalZ,
+            stationId: guideStationId,
+          };
+          missionGuideRef.current = nextGuide;
+          setMissionGuide(nextGuide);
+          setMissionGuideDistanceM(null);
+          window.dispatchEvent(
+            new CustomEvent('set-tutorial-waypoint', {
+              detail: farGuide
+                ? { target: 'kiosk', color: '#fec83e' }
+                : { target: 'coord', x: finalX, z: finalZ, color: '#fec83e' },
+            }),
+          );
         }}
       />
       <UrbanScooterShowroomModal
@@ -11235,6 +11452,35 @@ export default function App() {
               }),
             );
           }
+          void logMarketTransactionToSupabase({
+            actor_near_account: resolvedActor,
+            action_type: 'buy_item',
+            item_id: item.id,
+            nep245_token_id: item.tokenId,
+            currency: 'RESPITE',
+            amount: 1,
+            unit_price: item.priceRespite,
+            reasoning_summary: `You purchased ${item.name} (${item.priceRespite} RESPITE).`,
+            near_tx_hash: buyRes.txHash,
+          });
+          void createLetterForAccount({
+            recipientAccount: resolvedActor,
+            kind: 'item_purchase',
+            title: `Certificate of Ownership — ${item.name}`,
+            payload: {
+              buyerAccount: resolvedActor,
+              sellerName: 'Urban Scooter Showroom',
+              sellerAccount: 'buddiesblitz.testnet',
+              itemName: item.name,
+              itemId: item.id,
+              tokenId: item.tokenId,
+              assetKind: item.kind,
+              priceAmount: item.priceRespite,
+              priceCurrency: 'RESPITE',
+              settlementContract: NEAR_CONFIG.marketContractId,
+            },
+            txHash: buyRes.txHash,
+          });
           return { ok: true };
         }}
       />

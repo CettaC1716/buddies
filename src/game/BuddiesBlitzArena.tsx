@@ -7086,6 +7086,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     tutorialWaypointGroup.add(tutorialDestRingMesh);
 
     let tutorialWaypointCoord = { x: 0, z: 0 };
+    let missionGuideLastProgressAt = 0;
 
     const onSetTutorialWaypoint = (ev: Event) => {
       const detail = (
@@ -22796,6 +22797,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const dz = targetZ - playerUnit.z;
           const dist = Math.hypot(dx, dz);
           const yaw = Math.atan2(dx, dz);
+
+          // Mission guide (`coord` target): report distance to App and
+          // auto-complete the guide when the player reaches the destination.
+          if (activeTutorialWaypointTarget === 'coord') {
+            if (dist <= 6) {
+              activeTutorialWaypointTarget = 'none';
+              tutorialWaypointGroup.visible = false;
+              window.dispatchEvent(new CustomEvent('mission-guide-arrived'));
+            } else if (now - missionGuideLastProgressAt >= 250) {
+              missionGuideLastProgressAt = now;
+              window.dispatchEvent(
+                new CustomEvent('mission-guide-progress', {
+                  detail: { distanceM: Math.round(dist) },
+                }),
+              );
+            }
+          }
 
           tutorialWaypointGroup.visible = true;
           const ringScale = 1.0 + Math.sin(timeSec * 4.5) * 0.12;
