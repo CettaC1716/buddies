@@ -1239,7 +1239,7 @@ export const ChatActionCard: React.FC<
       {intent.kind === 'invest_shop' && (
         <div className="space-y-2">
           <div className="text-[10.5px] font-bold text-slate-300">
-            Shop reserve: <strong className="text-[#38bdf8]">{props.marketState.treasuryCyon} CYON</strong>. Support with 300 LUL to receive +45 CYON and a 15% catalog discount.
+            The shop holds <strong className="text-[#38bdf8]">{props.marketState.treasuryCyon} CYON</strong>. Back the shop with 300 LUL to receive +45 CYON and a 15% catalog discount.
           </div>
           {!props.walletConnected ? (
             <GuestSignInStrip onConnectWallet={props.onConnectWallet} />

@@ -265,7 +265,7 @@ const TRADE_LINES: Record<
     treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
     treasuryPool: 'My purse cannot cover that today, friend.',
     patienceOut: 'That is enough for this catch. Come back tomorrow.',
-    nftChecking: 'That one is an NFT. Let me check my treasury desk.',
+    nftChecking: 'That one is a collectible. One moment.',
     nftDeskClosed: 'My NFT desk is closed right now, friend.',
   },
   id: {
@@ -286,7 +286,7 @@ const TRADE_LINES: Record<
     treasuryBudget: "That empties today's purse. Come back tomorrow, friend.",
     treasuryPool: 'My purse cannot cover that today, friend.',
     patienceOut: 'That is enough for this catch. Come back tomorrow.',
-    nftChecking: 'That one is an NFT. Let me check my treasury desk.',
+    nftChecking: 'That one is a collectible. One moment.',
     nftDeskClosed: 'My NFT desk is closed right now, friend.',
   },
 };
@@ -3725,7 +3725,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           data-catalog-buy-receipt="true"
                           className="p-2 bg-black/60 border border-[#10b981] text-[10px] font-bold text-slate-100 text-center"
                         >
-                          Purchase confirmed on-chain.{' '}
+                          Purchase complete.{' '}
                           <a
                             href={
                               lastCatalogBuyReceipt.explorerUrl ||
@@ -4354,7 +4354,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                                 },
                                           );
                                           if (ok) {
-                                            triggerNpcSpeech('Payment confirmed on-chain!');
+                                            triggerNpcSpeech('Payment received, thanks!');
                                           }
                                         }}
                                         className="inline-flex items-center gap-1 px-2 py-1 bg-[#2bb3b1] hover:bg-[#38bdf8] text-black border border-black text-[8.5px] font-black uppercase cursor-pointer disabled:bg-slate-500 disabled:text-slate-300 disabled:cursor-not-allowed"

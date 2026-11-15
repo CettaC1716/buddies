@@ -20,23 +20,23 @@ const METHOD_LABELS: Record<string, string> = {
   list_property_furniture: 'List Furniture NFT for sale',
   buy_property: 'Buy listed property',
   cancel_property_listing: 'Cancel property listing',
-  mint_fish_nft: 'Mint Fish NFT',
-  mint_fish_nft_attested: 'Mint Fish NFT',
+  mint_fish_nft: 'Turn Fish into an NFT',
+  mint_fish_nft_attested: 'Turn Fish into an NFT',
   list_fish_nft: 'List Fish NFT for sale',
   buy_fish_nft: 'Buy Fish NFT',
   unlist_fish_nft: 'Remove Fish NFT listing',
   ft_transfer: 'Transfer RESPITE',
   nft_transfer: 'Transfer NFT',
   mt_transfer: 'Transfer Collectible Item',
-  fund_deed_royalty: 'Add funds to House treasury',
-  claim_deed_payout: 'Claim House treasury payout',
-  authorize_deed_session_key: 'Authorize House access key',
+  fund_deed_royalty: 'Add to House Account',
+  claim_deed_payout: 'Collect from House Account',
+  authorize_deed_session_key: 'Allow House Access',
   mint_merchant_item: 'Mint Merchant Item',
 };
 
 const DETAIL_KEY_LABELS: Record<string, string> = {
   catalog_id: 'Item',
-  token_id: 'Token ID',
+  token_id: 'Item code',
   listing_id: 'Listing',
   item_id: 'Item',
   amount: 'Amount',
@@ -44,10 +44,9 @@ const DETAIL_KEY_LABELS: Record<string, string> = {
   receiver_id: 'Recipient',
 };
 
-function humanizeMethod(methodName: string): string {
-  return methodName
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function humanizeMethod(_methodName: string): string {
+  // Unmapped methods never leak raw contract names to players.
+  return 'Confirm Transaction';
 }
 
 function formatNearFromYocto(yocto: string): string {

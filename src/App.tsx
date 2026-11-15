@@ -3990,7 +3990,7 @@ export default function App() {
       currency: 'NEAR',
       amount: 0.3,
       unit_price: 1,
-      reasoning_summary: `Claimed +0.30 NEAR starter grant from Hana Smart Contract Treasury (${NEAR_CONFIG.marketContractId}).`,
+      reasoning_summary: `Starter pack from Hana · +0.30 NEAR.`,
       near_tx_hash: claimRes.txHash,
     });
 
@@ -4537,7 +4537,7 @@ export default function App() {
           currency: 'LUL',
           amount: earnedLul,
           unit_price: earnedLul,
-          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) directly to Merchant Kai for +${earnedLul} LUL (convertible to CYON at Exchange).`,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai · +${earnedLul} LUL.`,
         });
       }
     },
@@ -4771,7 +4771,7 @@ export default function App() {
           currency: 'LUL',
           amount: earnedLul,
           unit_price: earnedLul,
-          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Merchant Kai for +${earnedLul} LUL — price negotiated in chat (standard formula ${standardLul} LUL), paid from Kai's treasury pool under the daily discipline caps.${quickDealBonusLul(standardLul, roundsUsed) > 0 ? ' Includes the quick-deal bonus for accepting the first offer.' : ''}`,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai · +${earnedLul} LUL.`,
         });
       }
       return { ok: true };
@@ -4874,7 +4874,7 @@ export default function App() {
           currency: 'RESPITE',
           amount: 0,
           unit_price: 0,
-          reasoning_summary: `Minted ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) into NEP-171 Fish NFT ${nftTokenId}.`,
+          reasoning_summary: `Saved ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) as an NFT collectible.`,
           near_tx_hash: res.txHash,
         });
       }
@@ -7539,7 +7539,7 @@ export default function App() {
               currency: 'RESPITE',
               amount: 1,
               unit_price: priceRespite,
-              reasoning_summary: `Purchased Private House Sub-Account Deed (${deedTokenId} · ${chosenStyle}) for ${priceRespite} RESPITE.`,
+              reasoning_summary: `Bought your house · ${chosenStyle} · ${priceRespite} RESPITE.`,
               near_tx_hash: res.txHash,
             });
           }
@@ -8361,7 +8361,7 @@ export default function App() {
                   currency: 'RESPITE',
                   amount: newListing.priceRespite,
                   unit_price: newListing.priceRespite,
-                  reasoning_summary: `${resolvedActor} listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) on Kai's Marketplace for ${newListing.priceRespite} RESPITE.`,
+                  reasoning_summary: `Listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) for ${newListing.priceRespite} RESPITE.`,
                   near_tx_hash: newListing.nearTxHash,
                 },
               });
@@ -9326,10 +9326,10 @@ export default function App() {
                       >
                         <div className="flex items-center justify-between gap-1.5">
                           <span className="text-[9px] font-black uppercase text-[#38bdf8] truncate">
-                            {onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId}
+                            YOUR HOUSE ACCOUNT
                           </span>
                           <span className="px-1.5 py-0.5 bg-[#1e293b] border border-white/20 text-[8.5px] font-mono font-bold text-[#b8ff3c] shrink-0">
-                            EPOCH #{onChainDeedLedger?.key_epoch ?? (nep171Ledger.ownershipHistory.length + 1)}
+                            {(() => { const raw = onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId || ''; const m = raw.match(/estate-0*(\d+)/i); return m ? 'House No. ' + parseInt(m[1], 10) : 'Your house'; })()}
                           </span>
                         </div>
 
@@ -9337,7 +9337,7 @@ export default function App() {
                           <>
                             <div className="grid grid-cols-3 gap-1 text-[8.5px] font-mono">
                               <div className="p-1 bg-[#1e293b] border border-white/10">
-                                <div className="text-slate-400">PENDING</div>
+                                <div className="text-slate-400">READY TO COLLECT</div>
                                 <div className="text-[#b8ff3c] font-bold">
                                   {onChainDeedLedger.pending_payout_respite} R
                                 </div>
@@ -9349,7 +9349,7 @@ export default function App() {
                                 </div>
                               </div>
                               <div className="p-1 bg-[#1e293b] border border-white/10">
-                                <div className="text-slate-400">PAID OUT</div>
+                                <div className="text-slate-400">COLLECTED</div>
                                 <div className="text-[#38bdf8] font-bold">
                                   {onChainDeedLedger.total_paid_out_respite} R
                                 </div>
@@ -9358,11 +9358,11 @@ export default function App() {
 
                             <div className="text-[8.5px] font-mono text-slate-300 space-y-0.5 max-h-16 overflow-y-auto">
                               {onChainDeedLedger.ownership_history.length === 0 ? (
-                                <div>Provenance: Genesis holder · 0 transfers</div>
+                                <div>You are the first owner</div>
                               ) : (
                                 onChainDeedLedger.ownership_history.slice(-3).map((rec, idx) => (
                                   <div key={`${rec.new_key_epoch}-${idx}`} className="truncate">
-                                    Epoch #{rec.new_key_epoch}: {rec.from_owner} -&gt; {rec.to_owner} ({rec.transferred_treasury_respite} R)
+                                    Owner #{rec.new_key_epoch} · {rec.transferred_treasury_respite} R moved with the house
                                   </div>
                                 ))
                               )}
@@ -9402,7 +9402,7 @@ export default function App() {
                                       currency: 'RESPITE',
                                       amount: 5,
                                       unit_price: 1,
-                                      reasoning_summary: `Deposited +5 RESPITE royalty into ${onChainDeedLedger.sub_account_id}`,
+                                      reasoning_summary: `Added 5 RESPITE to your house account`,
                                       near_tx_hash: tx.txHash,
                                     });
                                     setDeedLedgerActionFeedback({
@@ -9424,7 +9424,7 @@ export default function App() {
                                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                                 }`}
                               >
-                                {isDeedLedgerTxBusy ? 'WAIT...' : 'FUND +5 R'}
+                                {isDeedLedgerTxBusy ? 'WAIT...' : 'ADD 5 R'}
                               </button>
 
                               <button
@@ -9469,7 +9469,7 @@ export default function App() {
                                       currency: 'RESPITE',
                                       amount: payoutAmt,
                                       unit_price: 1,
-                                      reasoning_summary: `Claimed ${payoutAmt} RESPITE from ${onChainDeedLedger.sub_account_id} (Epoch #${onChainDeedLedger.key_epoch})`,
+                                      reasoning_summary: `Collected ${payoutAmt} RESPITE from your house`,
                                       near_tx_hash: tx.txHash,
                                     });
                                     setDeedLedgerActionFeedback({
@@ -9492,7 +9492,7 @@ export default function App() {
                                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                                 }`}
                               >
-                                CLAIM PAYOUT
+                                COLLECT
                               </button>
                             </div>
                           </>

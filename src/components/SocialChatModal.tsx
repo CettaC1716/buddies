@@ -492,7 +492,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
               </div>
               <div className="my-3 border-t-2 border-slate-900" />
               <p className="text-[11px] leading-relaxed text-slate-800">
-                This certificate is made effective as of{' '}
+                Sale completed on{' '}
                 <strong>
                   {new Date(openLetter.createdAt).toLocaleDateString('en-GB', {
                     day: 'numeric',
@@ -504,87 +504,73 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 <strong>
                   {openLetter.payload.buyerName || openLetter.payload.buyerAccount || 'Buyer'}
                 </strong>{' '}
-                (&ldquo;Buyer&rdquo;) and{' '}
+                and{' '}
                 <strong>
                   {openLetter.payload.sellerName || openLetter.payload.sellerAccount || 'Seller'}
                 </strong>{' '}
-                (&ldquo;Seller&rdquo;).
+                .
               </p>
-              <div className="mt-4 text-[12px] font-black text-slate-900">Asset.</div>
+              <div className="mt-4 text-[12px] font-black text-slate-900">Item</div>
               <p className="text-[11px] leading-relaxed text-slate-800">
                 {openLetter.payload.itemName || 'Digital asset'}
                 {openLetter.payload.tokenId && (
                   <>
                     {' '}
-                    &middot; Token ID <span className="font-mono">{openLetter.payload.tokenId}</span>
+                    &middot; Item code <span className="font-mono">{openLetter.payload.tokenId}</span>
                   </>
                 )}
                 {openLetter.payload.deedTokenId && (
                   <>
                     {' '}
-                    &middot; Deed <span className="font-mono">{openLetter.payload.deedTokenId}</span>
-                  </>
-                )}
-                {openLetter.payload.estateAccount && (
-                  <>
-                    {' '}
-                    &middot; Estate <span className="font-mono">{openLetter.payload.estateAccount}</span>
+                    &middot; House No. {String(openLetter.payload.deedTokenId).replace(/^.*-0*/, '')}
                   </>
                 )}
               </p>
               {typeof openLetter.payload.priceAmount === 'number' && (
                 <>
-                  <div className="mt-4 text-[12px] font-black text-slate-900">Purchase Price.</div>
+                  <div className="mt-4 text-[12px] font-black text-slate-900">Price</div>
                   <p className="text-[11px] leading-relaxed text-slate-800">
-                    The purchase price for the Asset shall be{' '}
+                    Price paid:{' '}
                     <strong>
                       {openLetter.payload.priceAmount} {openLetter.payload.priceCurrency || 'RESPITE'}
                     </strong>
-                    , settled in full on-chain at the time of purchase.
+                    .
                   </p>
                 </>
               )}
-              <div className="mt-4 text-[12px] font-black text-slate-900">Settlement.</div>
+              <div className="mt-4 text-[12px] font-black text-slate-900">How it works</div>
               <p className="text-[11px] leading-relaxed text-slate-800">
-                Settled atomically by the Buddies Blitz market contract
-                {openLetter.payload.settlementContract && (
-                  <>
-                    {' '}
-                    (<span className="font-mono">{openLetter.payload.settlementContract}</span>)
-                  </>
-                )}
-                , acting as escrow and settlement agent for both parties.
+                The market kept the payment safe until the item moved to its new owner.
               </p>
               {openLetter.txHash && (
                 <p className="text-[11px] leading-relaxed text-slate-800">
-                  Transaction:{' '}
+                  Receipt:{' '}
                   <a
                     href={getNearBlocksTxUrl(openLetter.txHash, 'testnet')}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-mono text-sky-700 underline break-all"
                   >
-                    {openLetter.txHash}
+                    View
                   </a>
                 </p>
               )}
               {openLetter.payload.paymentTx && (
                 <p className="text-[11px] leading-relaxed text-slate-800">
-                  Payment transaction:{' '}
+                  Payment receipt:{' '}
                   <a
                     href={getNearBlocksTxUrl(openLetter.payload.paymentTx, 'testnet')}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-mono text-sky-700 underline break-all"
                   >
-                    {openLetter.payload.paymentTx}
+                    View
                   </a>
                 </p>
               )}
               <div className="my-3 border-t border-slate-300" />
               <p className="text-[9.5px] leading-relaxed text-slate-500 text-center">
-                Issued in-world by Buddies Blitz. Keep this letter in your phone as your proof of
-                ownership — the on-chain record is the final authority.
+                Keep this letter as your proof that this item is yours.
               </p>
             </div>
           )}
