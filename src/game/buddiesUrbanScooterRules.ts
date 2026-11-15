@@ -2,6 +2,25 @@ import type { StaticWorldStructureObb } from './buddiesBlitzTypes';
 
 export type UrbanScooterKind = 'electric_scooter_bike' | 'push_kick_scooter';
 
+/**
+ * World scale applied to a scooter while it is being ridden. The city
+ * avatars stand ~3.9 world units tall, so a real-world-sized scooter
+ * (built to the spec sheets below) reads as a toy under them; ridden
+ * scooters are scaled up to match the avatar proportions.
+ */
+export const SCOOTER_RIDE_MODEL_SCALE = 2.0;
+
+/**
+ * Rider body lift (world units) while riding, per kind: the scale-1 lift
+ * (bike seat 0.78 -> 0.33, kick deck 0.114 -> 0.12) plus the anchor height
+ * gained from SCOOTER_RIDE_MODEL_SCALE, so hips stay on the seat and feet
+ * stay on the deck at the larger size.
+ */
+export const SCOOTER_RIDER_LIFT_M: Record<UrbanScooterKind, number> = {
+  electric_scooter_bike: 1.11,
+  push_kick_scooter: 0.23,
+};
+
 export interface ScooterVec3Tuple {
   readonly x: number;
   readonly y: number;

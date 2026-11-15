@@ -344,6 +344,8 @@ import {
 } from './buddiesCafeInteriorBuilder';
 import { findRoadRoute } from './buddiesRoadGuide';
 import {
+  SCOOTER_RIDE_MODEL_SCALE,
+  SCOOTER_RIDER_LIFT_M,
   URBAN_SCOOTER_SHOP_TRIGGER,
   type UrbanScooterKind,
 } from './buddiesUrbanScooterRules';
@@ -12747,6 +12749,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         kind === 'electric_scooter_bike'
           ? createElectricScooterBike3D({ parked: false })
           : createPushKickScooter3D({ parked: false, folded: false });
+      handle.root.scale.setScalar(SCOOTER_RIDE_MODEL_SCALE);
       handle.setParked(false);
       scene.add(handle.root);
       scooterRideState = { kind, handle, speed: 0, yaw: playerUnit.yaw, steer: 0 };
@@ -19186,7 +19189,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 rideTarget < st.speed - 0.6,
               );
             }
-            st.handle.spinWheels(rideDist);
+            st.handle.spinWheels(rideDist, SCOOTER_RIDE_MODEL_SCALE);
             activeSpeed = Math.abs(st.speed);
           } else if (playerUnit.alive) {
             // =================================================================
@@ -20625,9 +20628,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   : b.isPlayer && b.isSleeping && activeSleepSpot
                     ? activeSleepSpot.sleepLiftY
                     : b.isPlayer && scooterRideState
-                      ? scooterRideState.kind === 'electric_scooter_bike'
-                        ? 0.33
-                        : 0.12
+                      ? SCOOTER_RIDER_LIFT_M[scooterRideState.kind]
                       : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
@@ -23380,6 +23381,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 peer.scooterKind === 'electric_scooter_bike'
                   ? createElectricScooterBike3D({ parked: false })
                   : createPushKickScooter3D({ parked: false, folded: false });
+              av.scooterHandle.root.scale.setScalar(SCOOTER_RIDE_MODEL_SCALE);
               av.scooterHandle.setParked(false);
               av.scooterHandle.root.visible = false;
               scene.add(av.scooterHandle.root);
@@ -24462,13 +24464,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
           av.bodyGroup.position.y =
             av.peer.jumpOffset +
-            (av.peer.scooterKind === 'electric_scooter_bike'
-              ? 0.33
-              : av.peer.scooterKind === 'push_kick_scooter'
-                ? 0.12
-                : av.peer.isSitting
-                  ? 0.128
-                  : 0);
+            (av.peer.scooterKind
+              ? SCOOTER_RIDER_LIFT_M[av.peer.scooterKind]
+              : av.peer.isSitting
+                ? 0.128
+                : 0);
           if (av.scooterHandle) {
             av.scooterHandle.root.visible = true;
             av.scooterHandle.root.position.set(av.renderX, avTerrainY, av.renderZ);
@@ -24476,7 +24476,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const fwdDot =
               (av.renderX - av.scooterLastX) * Math.cos(av.renderYaw) +
               (av.renderZ - av.scooterLastZ) * -Math.sin(av.renderYaw);
-            av.scooterHandle.spinWheels(Math.max(-0.6, Math.min(0.6, fwdDot)));
+            av.scooterHandle.spinWheels(Math.max(-0.6, Math.min(0.6, fwdDot)), SCOOTER_RIDE_MODEL_SCALE);
             av.scooterLastX = av.renderX;
             av.scooterLastZ = av.renderZ;
           }
