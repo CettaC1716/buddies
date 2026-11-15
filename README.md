@@ -1,21 +1,79 @@
 # Buddies Blitz
 
-**Buddies Blitz** is a 60 FPS WebGL 3D social district, economy sandbox, and team arena built with Three.js, React 19, and NEAR Protocol (`market.buddiesblitz.testnet`). It pairs seedless NEAR citizen sub-accounts (`<handle>.buddiesblitz.testnet`) with a non-ponzi three-currency economy, server-attested Fish NFTs, an autonomous on-chain NPC market desk, NEP-245 furnishings, and functional NEP-171 House Ownership Deeds backed by epoch-rotated sub-account treasuries.
+**A 3D social world on NEAR where you hang out, work a cafe shift, fish the shoreline, buy a house, and haggle with AI merchants — and the things you own are really yours, recorded on-chain.**
 
-- **Live Deployment**: [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app)
+You arrive at Central Plaza, a coastal district with a tram line, a glasshouse cafe, a beach boardwalk, and two merchants who remember you. **Hana** runs property and housing and guides you around the city. **Kai** fishes the East Beach and buys your catch — if you can talk him up from his first offer. Other players are walking the same streets: this is a place to spend time in, not a menu to click through.
+
+- **Play it now**: [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) — sign in with Google or look around as a guest, no wallet setup needed to start.
+- **Watch the trailer**: [Demo post on X](https://x.com/Charvicetta/status/2120546023848468952)
 - **Primary Hackathon Track**: `games` -- Games With Real Economies
 - **Secondary Hackathon Track**: `nfts` -- NFTs That Do Something
 - **Smart Contract (NEAR Testnet v1.5.0)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) (`code_hash`: `6fbD9tVEkmJguNMc6SL7uGwu6hurX8iHtCkhUQ5WwRtg`)
 - **Master Account**: [`buddiesblitz.testnet`](https://testnet.nearblocks.io/address/buddiesblitz.testnet) · **NPC Treasury Desk**: [`kai.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/kai.buddiesblitz.testnet)
 
-| Coastal District & Fishing Pier | City Transit & Services Hub |
+<!-- VIDEO EMBED: paste the GitHub user-attachments URL for buddies-blitz-trailer-readme.mp4 on its own line here (upload via the github.com README editor, file must stay under 10 MB). -->
+
+| Central Plaza, the tram, and other citizens | A barista shift at the Glasshouse Cafe |
 |---|---|
-| ![East Beach boardwalk and Merchant Kai coastal pier](docs/hero-1-beach-pier.jpg) | ![City Transit & Services Kiosk Hub](docs/hero-10-transit-kiosk-hub.jpg) |
-| ![Street Tram Station at Central Plaza](docs/hero-2-tram-station.jpg) | ![Hana Property & Housing Exchange desk](docs/hero-4-hana-exchange.jpg) |
-| ![Hana AI Dialogue Session](docs/hero-4b-hana-chat.jpg) | ![Kai P2P Fish NFT Marketplace](docs/hero-5-kai-fish-market.jpg) |
-| ![Warzone Faction Deployment Selection](docs/hero-11-warzone-team-select.jpg) | ![Private House 3D Interior Studio](docs/hero-3-house-interior.jpg) |
+| ![Central Plaza with the city tram and other players](docs/new-hero-1-plaza.jpg) | ![Working a barista shift at the Glasshouse Cafe](docs/new-hero-2-cafe-work.jpg) |
+| ![Fishing the East Beach shoreline](docs/new-hero-3-fishing.jpg) | ![A catch at East Beach Shoreline](docs/new-hero-4-catch.jpg) |
+| ![Inside a player's house](docs/new-hero-5-house-interior.jpg) | ![Riding the city tram](docs/new-hero-6-tram.jpg) |
+| ![The Warzone team arena](docs/new-hero-9-warzone.jpg) | ![Kai's beachfront stall](docs/new-hero-8-kai-beach.jpg) |
 
 ---
+
+## Start playing in under a minute
+
+1. Open the live game and choose **Continue with Google** (your in-game wallet is created for you) or **Play as Guest** to look around first.
+2. Walk up to **Hana** at Central Plaza, press **E**, and claim your starter pack: **0.30 NEAR + 100 LUL + 20 CYON**, once per account.
+3. That is enough to start: work, fish, and explore right away — and 0.25 NEAR swaps to the 100 RESPITE that buys your first house.
+
+![Start screen: Continue with Google, Play as Guest, or connect a NEAR wallet](docs/ui-login.jpg)
+
+The keys you actually need: **WASD** move, **E** does almost everything (talk, board the tram, work a station, open doors, get in a vehicle, sit down), **F** fish, **Space** jump, **T** chat. The full table is further down.
+
+## A day in Buddies
+
+- **Morning — say hello.** Chat with Hana in any language; she explains the city, sells houses and furniture, and runs the exchange counter.
+- **Get a home.** A Classic Plaza Manor costs 100 RESPITE. The deed is an NFT, the house is yours to furnish, and it earns RESPITE you can collect.
+- **Work a shift.** The Glasshouse Cafe pays LUL per drink order you serve against the clock — and the NEO-STRIKE 777 slot cabinet by the windows takes LUL bets when the shift is over.
+- **Afternoon — go fishing.** Ten species live in these waters. Keep a catch raw and sell it, or turn a good one into an NFT with its real species, weight, and shoreline recorded on-chain.
+- **Haggle with Kai.** Kai opens below the standard price and moves up in small steps if you push — three rounds, no more. For NFT fish he pays real RESPITE from his own on-chain account.
+- **Every day — four missions.** Meet Kai, work a cafe shift, catch a fish, visit your house: 200 LUL and 240 XP a day if you clear them all.
+- **Evening — the Warzone.** A separate 10-vs-10 team arena with weapons, vehicles, and crate-stacking, sealed off from the peaceful city so the plaza stays a place to relax.
+
+## Meet the merchants
+
+**Hana — property, housing, and your guide to the city.** Her catalog sells the house deed and NFT furniture; her exchange swaps NEAR to RESPITE and LUL to CYON. Judges: everything she sells settles on-chain, and the deed she hands you carries its own earnings ledger (details under Core Design).
+
+![Chatting with Hana at Central Plaza](docs/ui-hana-chat.jpg)
+![Hana's catalog: the Classic Plaza Manor deed](docs/ui-hana-catalog-house.jpg)
+
+**Kai — fisherman, beach keeper, and the hardest bargain in town.** His offers are not random and not the LLM's mood: he opens at 80% of a fish's standard price, counters in fixed steps up to a hard ceiling, remembers walking away for 24 hours, and pays NFT fish from a real treasury account with daily limits and a circuit breaker. The chat is free-form and multilingual; the money math never is.
+
+![Haggling with Kai over a Volt-Fin Arapaima](docs/ui-kai-haggle.jpg)
+![A caught fish in the Bag, ready to mint as an NFT](docs/ui-bag-fish.jpg)
+
+## Your house is a real deed
+
+Buying a house mints you a deed NFT bound to its own estate account on NEAR. The house earns RESPITE over time; open the deed card to see what it earned and collect it. Furniture is NFT too — buy a piece from Hana, carry it in your Bag, place it in your studio, and it stays where you put it. Selling up? The property market holds your deed in escrow and settles the sale in one transaction, and the deed's earnings and key control pass to the buyer atomically.
+
+![NFT furniture in Hana's catalog](docs/ui-furniture.jpg)
+
+## The three currencies, in plain words
+
+- **LUL** — play money you earn inside the game: cafe shifts, raw fish, arena drops. Spends on fun, converts to CYON. It never leaves the game.
+- **CYON** — gear money, converted from LUL. Buys everyday non-NFT gear and tackle.
+- **RESPITE** — the real on-chain token (NEP-141). Buys houses, NFT furniture, and NFT fish, and settles player-to-player trades. RESPITE is never printed by gameplay: it only enters by swapping NEAR, so grinding can never inflate it.
+
+![Daily Missions board](docs/ui-missions.jpg)
+![The City Transit & Services Kiosk: travel, Warzone, your house, jobs](docs/ui-kiosk.jpg)
+
+---
+
+## For judges and developers: the systems underneath
+
+Everything above runs on the machinery documented below — seedless sub-accounts, an attested starter grant, escrow markets, and an AI trade desk bounded by deterministic math. The verification section includes copy-paste checks against the live testnet contract and step-by-step walkthroughs of every feature shown in the screenshots.
 
 ## Core Design & NEAR Integration
 
@@ -89,9 +147,9 @@ Requirements: Node.js 18+, npm, and Rust (`stable` + `cargo-near` for WASM recom
 # 1. Install dependencies
 npm install
 
-# 2. Run TypeScript static check, 175 Node unit tests, and production WebGL build
+# 2. Run TypeScript static check, 194 Node unit tests, and production WebGL build
 npm run lint      # tsc --noEmit (0 errors)
-npm test          # 175 unit tests via tsx --test (relayer auth, economy invariants, fishing, OAuth guards, arena rules)
+npm test          # 194 unit tests via tsx --test (relayer auth, economy invariants, fishing, OAuth guards, arena rules)
 npm run build     # Vite 8 production bundle into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM (near-sdk 5.5.0)
@@ -153,8 +211,7 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 |---|---|
 | `W A S D` / Arrow Keys | Move character, swim, or drive vehicle |
 | `Space` | Jump (Main World & Warzone) |
-| `E` | Interact: Hana/Kai, Transit Kiosk, board/exit the Street Tram, Cafe stations, house doors, sit/stand in the city, or pick up/throw crates in Warzone |
-| `G` | Mount or dismount a Warzone vehicle (Tank, Truck, Plane) |
+| `E` | Interact: Hana/Kai, Transit Kiosk, board/exit the Street Tram, Cafe stations, house doors, sit/stand in the city, mount/dismount Warzone vehicles (Tank, Truck, Plane), or pick up/throw crates in Warzone |
 | `F` | Cast / reel Fishing Rod by shoreline or assemble active `2x2x2` pad recipe in Warzone |
 | `Q` | Cycle active `2x2x2` crate recipe hologram on base pad |
 | `B` | Open Tactical Base Kiosk (`Armory` / `Hangar`) or Plot Claim panel |
