@@ -342,7 +342,16 @@ import {
   buildCompactSeatIndicatorPair,
   buildGlowingDoorFloorArrowPad,
 } from './buddiesCafeInteriorBuilder';
-import { URBAN_SCOOTER_SHOP_TRIGGER } from './buddiesUrbanScooterRules';
+import {
+  URBAN_SCOOTER_SHOP_TRIGGER,
+  type UrbanScooterKind,
+} from './buddiesUrbanScooterRules';
+import {
+  createElectricScooterBike3D,
+  createPushKickScooter3D,
+  type ElectricScooterBike3DHandle,
+  type PushKickScooter3DHandle,
+} from './buddiesUrbanScooterBuilder';
 import {
   PLAZA_MODEL_HOUSE_DOOR_TRIGGER,
   REAL_ESTATE_CATALOG_TRIGGER,
@@ -808,6 +817,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       walkCycle: number;
       appliedGender: CharacterGender | null;
       hasGlbUpgraded: boolean;
+      scooterKind: UrbanScooterKind | null;
+      scooterHandle: ScooterRideHandle | null;
+      scooterLastX: number;
+      scooterLastZ: number;
       lastLabelKey: string;
       lastBubbleText: string | null;
       hitFlashTimer: number;
@@ -7554,6 +7567,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let blueBuddyClassIdx = 0;
     let mountedTank: TankVehicle | null = null;
     let ridingTramCarIdx: 0 | 1 | null = null;
+    type ScooterRideHandle = ElectricScooterBike3DHandle | PushKickScooter3DHandle;
+    interface ScooterRideState {
+      kind: UrbanScooterKind;
+      handle: ScooterRideHandle;
+      speed: number;
+      yaw: number;
+      steer: number;
+    }
+    let scooterRideState: ScooterRideState | null = null;
     let crateSpawnTimer = 0;
     let superCrateSpawnTimer = 0;
     let legendCrateSpawnTimer = 0;
@@ -8501,6 +8523,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let lastBroadcastChatText: string | null = null;
     let lastBroadcastYaw = 0;
     let lastBroadcastSitting = false;
+    let lastBroadcastScooterKind: UrbanScooterKind | null = null;
     let lastBroadcastWeaponId = '';
     let lastBroadcastCarryingCrate = '';
     let spawnRemoteShotRef:
@@ -8632,6 +8655,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         lastLabelKey: `${peer.displayName}|${peer.nearAccountId ?? ''}`,
         lastBubbleText: null,
         hitFlashTimer: 0,
+        scooterKind: null,
+        scooterHandle: null,
+        scooterLastX: 0,
+        scooterLastZ: 0,
       };
     };
 
@@ -12688,6 +12715,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       emitHudImmediately();
     };
 
+    const dismountScooter = () => {
+      if (!scooterRideState) return;
+      scene.remove(scooterRideState.handle.root);
+      scooterRideState = null;
+      if (playerUnit) playerUnit.isSitting = false;
+      window.dispatchEvent(new CustomEvent('scooter-dismounted'));
+    };
+
+    const handleEquipScooter = (kind: UrbanScooterKind) => {
+      if (!playerUnit || !playerUnit.alive) return;
+      if (scooterRideState?.kind === kind) {
+        dismountScooter();
+        return;
+      }
+      if (mountedTank || ridingTramCarIdx !== null) return;
+      if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+      dismountScooter();
+      const handle: ScooterRideHandle =
+        kind === 'electric_scooter_bike'
+          ? createElectricScooterBike3D({ parked: false })
+          : createPushKickScooter3D({ parked: false, folded: false });
+      handle.setParked(false);
+      scene.add(handle.root);
+      scooterRideState = { kind, handle, speed: 0, yaw: playerUnit.yaw, steer: 0 };
+      handle.root.position.set(
+        playerUnit.x,
+        getTerrainElevation(playerUnit.x, playerUnit.z),
+        playerUnit.z,
+      );
+      handle.root.rotation.set(0, playerUnit.yaw + Math.PI / 2, 0);
+    };
+
+    const handleUnequipScooter = () => dismountScooter();
+
     const handleToggleDriving = (forceGender: CharacterGender | null = null) => {
       if (!playerUnit || !playerUnit.alive) return;
       if (forceGender && getDefaultCharacterGender() !== forceGender) {
@@ -14911,6 +14972,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       else if (act === 'qcEquipWeapon:laser') handleQcEquipWeapon('laser');
       else if (act === 'qcEquipWeapon:gatling') handleQcEquipWeapon('gatling');
       else if (act === 'qcEquipWeapon:fishing_rod') handleQcEquipWeapon('fishing_rod');
+      else if (act === 'equipScooter:electric_scooter_bike')
+        handleEquipScooter('electric_scooter_bike');
+      else if (act === 'equipScooter:push_kick_scooter')
+        handleEquipScooter('push_kick_scooter');
+      else if (act === 'unequipScooter') handleUnequipScooter();
       else if (act === 'qcBoardVehicle:tank') handleQcBoardVehicle('tank');
       else if (act === 'qcBoardVehicle:super_tank') handleQcBoardVehicle('super_tank');
       else if (act === 'qcBoardVehicle:truck') handleQcBoardVehicle('truck');
@@ -18522,6 +18588,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             buddyUnits[bi].isFiringLaser = false;
           }
 
+          // Scooter riding cannot continue indoors, in the Warzone, on a tram, or mid-cast
+          if (
+            scooterRideState &&
+            (npcCameraMode !== 'none' ||
+              worldModeRef.current === 'warzone' ||
+              ridingTramCarIdx !== null ||
+              shorelineFishingSync.phase !== 'idle' ||
+              !playerUnit.alive)
+          ) {
+            dismountScooter();
+          }
+
           if (mountedTank) {
             // =================================================================
             // A. DRIVING BLITZ TANK / DUMP TRUCK OR FLYING BLITZ PLANE MODE
@@ -19040,6 +19118,65 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
             activeSpeed = CITY_TRAM_SPEC.cruiseSpeed;
             soundEngine.updateVehicleMovementLoop(activeSpeed * 0.65, false, false);
+          } else if (scooterRideState && playerUnit.alive) {
+            // =================================================================
+            // A3. RIDING URBAN SCOOTER MODE (owned GEAR vehicles, outdoor city only)
+            // =================================================================
+            const st = scooterRideState;
+            const isBikeRide = st.kind === 'electric_scooter_bike';
+            soundEngine.updateVehicleMovementLoop(Math.abs(st.speed) * 0.35, false, false);
+            const rideInputLen = Math.hypot(moveX, moveZ);
+            const rideMaxSpeed = isBikeRide
+              ? isBoosting
+                ? 12.5
+                : 9.5
+              : isBoosting
+                ? 8.5
+                : 6.5;
+            let rideTarget = 0;
+            if (rideInputLen > 0.01) {
+              const desiredYaw = Math.atan2(-(moveZ / rideInputLen), moveX / rideInputLen);
+              let dYaw = desiredYaw - st.yaw;
+              while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+              while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+              const turnRate = isBikeRide ? 3.1 : 4.4;
+              st.yaw += Math.max(-turnRate * dt, Math.min(turnRate * dt, dYaw));
+              st.steer = Math.max(-0.5, Math.min(0.5, dYaw));
+              if (Math.abs(dYaw) < Math.PI / 2) {
+                rideTarget = rideMaxSpeed * Math.min(1, rideInputLen);
+              }
+            } else {
+              st.steer *= Math.pow(0.001, dt);
+            }
+            const rideRate = rideTarget > st.speed ? (isBikeRide ? 9 : 6.5) : 17;
+            st.speed += Math.max(
+              -rideRate * dt,
+              Math.min(rideRate * dt, rideTarget - st.speed),
+            );
+            if (rideTarget === 0 && Math.abs(st.speed) < 0.02) st.speed = 0;
+            const rideDist = st.speed * dt;
+            playerUnit.x = wrapPlanetCoord(playerUnit.x + Math.cos(st.yaw) * rideDist);
+            playerUnit.z = wrapPlanetCoord(playerUnit.z - Math.sin(st.yaw) * rideDist);
+            playerUnit.vx = Math.cos(st.yaw) * st.speed;
+            playerUnit.vz = -Math.sin(st.yaw) * st.speed;
+            playerUnit.yaw = st.yaw;
+            playerUnit.jumpOffset = 0;
+            playerUnit.isSitting = isBikeRide;
+            resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);
+            st.handle.root.position.set(
+              playerUnit.x,
+              getTerrainElevation(playerUnit.x, playerUnit.z),
+              playerUnit.z,
+            );
+            st.handle.root.rotation.set(0, st.yaw + Math.PI / 2, 0);
+            st.handle.setSteerAngle(st.steer * 0.55);
+            if (isBikeRide) {
+              (st.handle as ElectricScooterBike3DHandle).setBraking(
+                rideTarget < st.speed - 0.6,
+              );
+            }
+            st.handle.spinWheels(rideDist);
+            activeSpeed = Math.abs(st.speed);
           } else if (playerUnit.alive) {
             // =================================================================
             // B. ON-FOOT CHIBI BUDDY CHARACTER MODE + OBJECT COLLISION RESOLUTION
@@ -20476,7 +20613,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   ? activeSeatedSpot.seatLiftY + 0.178
                   : b.isPlayer && b.isSleeping && activeSleepSpot
                     ? activeSleepSpot.sleepLiftY
-                    : 0;
+                    : b.isPlayer && scooterRideState
+                      ? scooterRideState.kind === 'electric_scooter_bike'
+                        ? 0.33
+                        : 0.12
+                      : 0;
             b.bodyGroup.rotation.order = 'YXZ';
             b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
             // Soften the facing snap just slightly: the visual facing chases the unit yaw
@@ -20497,7 +20638,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const speedMag = Math.hypot(b.vx, b.vz);
             const walkSync = computeSynchronizedWalkCycleStep({
               currentWalkCycle: b.walkCycle,
-              actualGroundSpeed: speedMag,
+              actualGroundSpeed: b.isPlayer && scooterRideState ? 0 : speedMag,
               dt,
               carryingCrate: b.carryingCrate !== 'none',
             });
@@ -23074,8 +23215,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           let yawDeltaForBroadcast = Math.abs(curYawForBroadcast - lastBroadcastYaw);
           if (yawDeltaForBroadcast > Math.PI) yawDeltaForBroadcast = Math.PI * 2 - yawDeltaForBroadcast;
           const curSittingForBroadcast = Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null;
+          const curScooterForBroadcast = scooterRideState ? scooterRideState.kind : null;
           const stateChangedForBroadcast =
             curSittingForBroadcast !== lastBroadcastSitting ||
+            curScooterForBroadcast !== lastBroadcastScooterKind ||
             playerUnit.weaponId !== lastBroadcastWeaponId ||
             playerUnit.carryingCrate !== lastBroadcastCarryingCrate;
           const minIntervalMs = zoneOrChatChanged
@@ -23091,6 +23234,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             lastBroadcastChatText = curChat;
             lastBroadcastYaw = curYawForBroadcast;
             lastBroadcastSitting = curSittingForBroadcast;
+            lastBroadcastScooterKind = curScooterForBroadcast;
             lastBroadcastWeaponId = playerUnit.weaponId;
             lastBroadcastCarryingCrate = playerUnit.carryingCrate;
             worldMultiplayer.publishLocalPose(
@@ -23114,6 +23258,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isSitting: Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null,
                 isDriving: Boolean(playerUnit.isDriving) || mountedTank !== null,
                 isHiddenInVehicle: ridingTramCarIdx !== null,
+                scooterKind: curScooterForBroadcast,
                 fishingPhase: shorelineFishingSync.phase,
                 isReeling: shorelineFishingSync.isReeling,
                 rodBend: shorelineFishingSync.rodBend,
@@ -23173,6 +23318,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           av.peer = peer;
           av.root.visible = true;
+
+          if (peer.scooterKind !== av.scooterKind) {
+            if (av.scooterHandle) {
+              scene.remove(av.scooterHandle.root);
+              av.scooterHandle = null;
+            }
+            av.scooterKind = peer.scooterKind;
+            if (peer.scooterKind) {
+              av.scooterHandle =
+                peer.scooterKind === 'electric_scooter_bike'
+                  ? createElectricScooterBike3D({ parked: false })
+                  : createPushKickScooter3D({ parked: false, folded: false });
+              av.scooterHandle.setParked(false);
+              av.scooterHandle.root.visible = false;
+              scene.add(av.scooterHandle.root);
+              av.scooterLastX = av.renderX;
+              av.scooterLastZ = av.renderZ;
+            }
+          }
 
           // Upgrade procedural placeholder rig to Male/Female GLB character mesh
           const desiredPeerGltf =
@@ -23308,12 +23472,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const peerSpeed = Math.hypot(peer.vx, peer.vz);
           const peerWalk = computeSynchronizedWalkCycleStep({
             currentWalkCycle: av.walkCycle,
-            actualGroundSpeed: peerSpeed,
+            actualGroundSpeed: peer.scooterKind ? 0 : peerSpeed,
             dt,
             carryingCrate: peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
           });
           av.walkCycle = peerWalk.nextWalkCycle;
-          if (peer.jumpOffset > 0.08) {
+          if (peer.scooterKind === 'push_kick_scooter') {
+            av.rig.leftLegPivot.rotation.x = -0.18;
+            av.rig.rightLegPivot.rotation.x = 0.12;
+          } else if (peer.jumpOffset > 0.08) {
             av.rig.leftLegPivot.rotation.x = -0.58;
             av.rig.rightLegPivot.rotation.x = 0.44;
           } else {
@@ -24243,7 +24410,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.root.scale.setScalar(0.55);
         } else {
           const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
-          av.bodyGroup.position.y = av.peer.jumpOffset + (av.peer.isSitting ? 0.128 : 0);
+          av.bodyGroup.position.y =
+            av.peer.jumpOffset +
+            (av.peer.scooterKind === 'electric_scooter_bike'
+              ? 0.33
+              : av.peer.scooterKind === 'push_kick_scooter'
+                ? 0.12
+                : av.peer.isSitting
+                  ? 0.128
+                  : 0);
+          if (av.scooterHandle) {
+            av.scooterHandle.root.visible = true;
+            av.scooterHandle.root.position.set(av.renderX, avTerrainY, av.renderZ);
+            av.scooterHandle.root.rotation.set(0, av.renderYaw + Math.PI / 2, 0);
+            const fwdDot =
+              (av.renderX - av.scooterLastX) * Math.cos(av.renderYaw) +
+              (av.renderZ - av.scooterLastZ) * -Math.sin(av.renderYaw);
+            av.scooterHandle.spinWheels(Math.max(-0.6, Math.min(0.6, fwdDot)));
+            av.scooterLastX = av.renderX;
+            av.scooterLastZ = av.renderZ;
+          }
           av.root.scale.setScalar(1.0);
           applyPlanetCurvatureToObject(
             av.root,

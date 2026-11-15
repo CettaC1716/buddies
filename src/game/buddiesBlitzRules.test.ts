@@ -5779,6 +5779,7 @@ test('World multiplayer session ID isolates separate tabs/devices while persisti
       isSitting: false,
       isDriving: false,
       isHiddenInVehicle: false,
+      scooterKind: null,
       fishingPhase: 'idle',
       isReeling: false,
       rodBend: 0,

@@ -8,6 +8,7 @@ import {
   History,
   ArrowLeft,
   Backpack,
+  Wrench,
   Package,
   Play,
   LogIn,
@@ -243,6 +244,7 @@ import {
 import {
   URBAN_SCOOTER_CATALOG_ITEMS,
   type UrbanScooterCatalogItem,
+  type UrbanScooterKind,
 } from './game/buddiesUrbanScooterRules';
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
 import {
@@ -1182,6 +1184,8 @@ export default function App() {
   const [isSocialChatModalOpen, setIsSocialChatModalOpen] = useState<boolean>(false);
   const [isPersonalWalletModalOpen, setIsPersonalWalletModalOpen] = useState<boolean>(false);
   const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
+  const [isGearModalOpen, setIsGearModalOpen] = useState<boolean>(false);
+  const [equippedScooterKind, setEquippedScooterKind] = useState<UrbanScooterKind | null>(null);
   const [personalBagTab, setPersonalBagTab] = useState<'equipment' | 'fish' | 'items'>('equipment');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
@@ -2554,6 +2558,8 @@ export default function App() {
     window.addEventListener('close-realestate-catalog-modal', onCloseRealEstateCatalogModal);
     window.addEventListener('city-tram-ride-progress', onCityTramRideProgress);
     window.addEventListener('city-tram-ride-complete', onCityTramRideComplete);
+    const onScooterDismounted = () => setEquippedScooterKind(null);
+    window.addEventListener('scooter-dismounted', onScooterDismounted);
     return () => {
       window.removeEventListener('toggle-kiosk-ui', onToggleKiosk);
       window.removeEventListener('close-kiosk-ui', onCloseKiosk);
@@ -2590,6 +2596,7 @@ export default function App() {
       window.removeEventListener('close-realestate-catalog-modal', onCloseRealEstateCatalogModal);
       window.removeEventListener('city-tram-ride-progress', onCityTramRideProgress);
       window.removeEventListener('city-tram-ride-complete', onCityTramRideComplete);
+      window.removeEventListener('scooter-dismounted', onScooterDismounted);
     };
   }, [openMerchantInChatSession]);
 
@@ -7626,6 +7633,7 @@ export default function App() {
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsGearModalOpen(false);
                       setProfileTargetUser({
                         id: 0,
                         name: playerDisplayName || 'BUDDY',
@@ -7662,6 +7670,7 @@ export default function App() {
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsGearModalOpen(false);
                       setIsPersonalBagModalOpen((prev) => !prev);
                     }}
                     className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs ${
@@ -7675,6 +7684,41 @@ export default function App() {
                       <Backpack className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                       <span>BAG</span>
                       {hud.equippedWeapon === 'Joran Fishing' && (
+                        <span className="w-2 h-2 rounded-full bg-[#166534] border border-black" />
+                      )}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-top-gear-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setSelectedTargetUser(null);
+                      setIsProfileModalOpen(false);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setIsPersonalBagModalOpen(false);
+                      setIsDailyMissionsModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsGearModalOpen((prev) => !prev);
+                    }}
+                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs ${
+                      equippedScooterKind
+                        ? 'bg-[#4ade80] hover:bg-[#86efac]'
+                        : 'bg-[#fb923c] hover:bg-[#fdba74]'
+                    } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
+                    title="Open Gear (Ride Your Scooter)"
+                  >
+                    <span className="skew-x-12 flex items-center gap-1">
+                      <Wrench className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                      <span>GEAR</span>
+                      {equippedScooterKind && (
                         <span className="w-2 h-2 rounded-full bg-[#166534] border border-black" />
                       )}
                     </span>
@@ -7696,6 +7740,7 @@ export default function App() {
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsGearModalOpen(false);
                       setIsPersonalWalletModalOpen(true);
                     }}
                     className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#facc15] hover:bg-[#fde047] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
@@ -7731,6 +7776,7 @@ export default function App() {
                       setActiveTeleportKioskModal('none');
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsGearModalOpen(false);
                       setIsDailyMissionsModalOpen((prev) => !prev);
                     }}
                     className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#c084fc] hover:bg-[#d8b4fe] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${showMissionsOnboardingHint ? ' animate-pulse ring-4 ring-[#ff3b30]' : ''}`}
@@ -10618,6 +10664,138 @@ export default function App() {
       </aside>
 
       {/* =====================================================================
+          9B-3A. LEFT-SLIDE GEAR MODAL (Owned rideable vehicles, opened from GEAR)
+         ===================================================================== */}
+      <aside
+        role="dialog"
+        aria-modal="false"
+        aria-hidden={!isGearModalOpen}
+        inert={!isGearModalOpen || undefined}
+        aria-label="Gear"
+        data-gear-modal="true"
+        className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-md flex flex-col select-none transition-all duration-300 ease-out transform ${
+          isGearModalOpen
+            ? 'translate-x-0 opacity-100 visible pointer-events-auto'
+            : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
+        }`}
+      >
+        <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
+          <div className="flex items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
+            <div className="-skew-x-6 px-3 py-1 bg-[#fb923c] border-2 border-black shadow-[2px_2px_0px_#000] text-[11px] font-black uppercase flex items-center gap-1.5">
+              <span className="skew-x-6 flex items-center gap-1">
+                <Wrench className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span>GEAR — YOUR RIDES</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              data-close-gear-btn="true"
+              onClick={() => {
+                soundEngine.playUiCancel();
+                setIsGearModalOpen(false);
+              }}
+              className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
+              aria-label="Close Gear"
+            >
+              <span className="skew-x-6 inline-block">X</span>
+            </button>
+          </div>
+
+          <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+            {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) => ownedScooterIds.includes(v.id)).map(
+              (v) => {
+                const isEquipped = equippedScooterKind === v.id;
+                return (
+                  <div
+                    key={v.id}
+                    data-gear-vehicle={v.id}
+                    className={`p-3.5 border-[2.5px] border-black shadow-[3px_3px_0px_#000] ${
+                      isEquipped ? 'bg-[#dcfce7]' : 'bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-12 h-12 bg-[#0f172a] text-[#2dd4bf] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-center font-black text-[10px] shrink-0">
+                          RIDE
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-black uppercase tracking-wide text-black">
+                              {v.name}
+                            </span>
+                            <span className="px-1.5 py-0.5 text-[9px] font-black uppercase border border-black bg-[#d8b4fe] text-black">
+                              NFT
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 text-[9.5px] font-black uppercase border border-black ${
+                                isEquipped
+                                  ? 'bg-[#b8ff3c] text-black'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {isEquipped ? 'RIDING' : 'OWNED'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] font-bold text-slate-600 mt-0.5">
+                            {v.subtitle}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-gear-equip-btn={v.id}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          if (isEquipped) {
+                            dispatchBuddyAction('unequipScooter');
+                            setEquippedScooterKind(null);
+                          } else {
+                            dispatchBuddyAction(`equipScooter:${v.id}`);
+                            setEquippedScooterKind(v.id as UrbanScooterKind);
+                          }
+                          setIsGearModalOpen(false);
+                        }}
+                        className={`-skew-x-6 px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer shrink-0 ${
+                          isEquipped
+                            ? 'bg-[#ff3b30] text-white'
+                            : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                        }`}
+                      >
+                        <span className="skew-x-6 inline-block">
+                          {isEquipped ? 'GET OFF' : 'RIDE'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              },
+            )}
+
+            {ownedScooterIds.length === 0 && (
+              <div className="p-4 bg-slate-50 border-2 border-dashed border-slate-400 text-center">
+                <div className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  No rides yet
+                </div>
+                <div className="text-[11px] font-bold text-slate-500 mt-1">
+                  Buy a scooter at the Scooter Showroom in the city, then ride it from here.
+                </div>
+              </div>
+            )}
+
+            <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000]">
+              <div className="text-[10px] font-black uppercase tracking-wider text-[#b8ff3c]">
+                HOW TO RIDE
+              </div>
+              <div className="text-[11px] font-bold text-slate-200 mt-1 leading-relaxed">
+                Move with WASD or the joystick — hold Shift to go faster. Your scooter
+                parks itself when you step indoors, board the tram, or enter the Warzone.
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* =====================================================================
           9B-3. LEFT-SLIDE PERSONAL BAG / TAS MODAL (Opened When Clicking BAG)
          ===================================================================== */}
       <aside
@@ -10652,7 +10830,7 @@ export default function App() {
               >
                 <div className="skew-x-6 flex items-center gap-1">
                   <Backpack className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                  <span>GEAR</span>
+                  <span>EQUIPMENT</span>
                 </div>
               </button>
 
@@ -10841,39 +11019,6 @@ export default function App() {
                           </span>
                         </button>
                       )}
-                    </div>
-                  ))}
-
-                  {/* Owned Vehicles (NFT Scooters) */}
-                  {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) =>
-                    ownedScooterIds.includes(v.id),
-                  ).map((v) => (
-                    <div
-                      key={v.id}
-                      data-bag-vehicle={v.id}
-                      className="p-3 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-10 h-10 bg-[#0f172a] text-[#2dd4bf] border-2 border-black flex items-center justify-center font-black text-[10px] shrink-0">
-                          RIDE
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-black uppercase text-black">
-                              {v.name}
-                            </span>
-                            <span className="px-1.5 py-0.5 text-[9px] font-black uppercase border border-black bg-[#d8b4fe] text-black">
-                              NFT
-                            </span>
-                          </div>
-                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5 truncate">
-                            {v.subtitle}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 shrink-0">
-                        OWNED
-                      </span>
                     </div>
                   ))}
 

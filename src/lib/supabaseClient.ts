@@ -1381,6 +1381,7 @@ export interface WorldMultiplayerPeerState {
   isSitting: boolean;
   isDriving: boolean;
   isHiddenInVehicle: boolean;
+  scooterKind: 'electric_scooter_bike' | 'push_kick_scooter' | null;
   fishingPhase: 'idle' | 'charging' | 'casting' | 'nibble' | 'bite' | 'fighting';
   isReeling: boolean;
   rodBend: number;
@@ -1493,6 +1494,10 @@ export function subscribeToWorldMultiplayer(handlers: {
       isSitting: Boolean(raw.isSitting),
       isDriving: Boolean(raw.isDriving),
       isHiddenInVehicle: Boolean(raw.isHiddenInVehicle),
+      scooterKind:
+        raw.scooterKind === 'electric_scooter_bike' || raw.scooterKind === 'push_kick_scooter'
+          ? raw.scooterKind
+          : null,
       fishingPhase:
         raw.fishingPhase === 'charging' ||
         raw.fishingPhase === 'casting' ||
