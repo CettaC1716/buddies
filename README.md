@@ -58,7 +58,7 @@ Every House Ownership Deed (`house-deed-*`, e.g., `house-deed-0001`) binds an on
 - Calling `claim_deed_payout(token_id, expected_key_epoch)` enforces both owner equality and `expected_key_epoch == ledger.key_epoch`, eliminating mid-payout front-running by a former owner.
 
 ### 4. Autonomous AI Merchants Bounded by Deterministic Math
-Players talk or haggle in natural language (and any spoken language) with **Hana** (Central Plaza) and **Kai** (East Beach) through `/api/npc-agent` (Gemini 2.5 Flash) and `/api/npc-trade` -- either in person or through Kai's in-game phone call after catching a fish:
+Players chat in natural language (and any spoken language) with **Hana** (Central Plaza) and **Kai** (East Beach) through `/api/npc-agent` (Gemini 3.5 Flash Lite). Bounded `RESPITE` haggling sessions run through `/api/npc-trade` with **Kai** -- in person at the Fish Market, or through his in-game phone call after catching a fish:
 - **Words vs. Numbers Separation**: The LLM generates conversational text only; every offer, counter-offer (+7% / +5% / +3% steps), 80% opening anchor, 115% ceiling, patience limit, and 24-hour memory/walk-away lockout is enforced deterministically in `src/game/buddiesMerchantPricing.ts` and clamped server-side inside `api/npc-trade.ts`.
 - **Live NPC On-Chain Settlement**: For minted Fish NFTs, `kai.buddiesblitz.testnet` holds real on-chain `RESPITE` and signs `buy_fish_nft` with a 250 `RESPITE` per-tx cap, 1,000 `RESPITE`/day cap, 500 reserve floor, -10% daily circuit breaker, and 50% profit lock.
 - **Fast-Forward Economy Simulation**: Inside Hana/Kai `EXCHANGE` and `CATALOG` tabs, clicking `FAST-FORWARD SIM` advances simulated market days in real time so judges can observe dynamic pricing pressure, restocking, and liquidity reserve protection.
@@ -129,18 +129,21 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 
 ### Interactive Feature Walkthroughs (`Do X -> See Y`)
 
-1. **First Home Forced Tutorial (8 Hard-Gated Steps) & Attested Starter Pack**
-   - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000`). Complete the guided First Home flow: connect Google OAuth, Meteor, MyNearWallet, or create a citizen handle (`judge01`), talk to **Hana (`[E]`)** at Central Plaza, and claim the starter pack (`0.30 NEAR + 100 LUL + 20 CYON`, once per wallet and once per Google account; Guest mode cannot claim).
-   - **See:** Google sign-ins invoke `/api/hana-claim-attest` + `claim_hana_welcome_near_attested`, recording an immutable email hash on-chain and displaying your transaction proof strip. Balances re-read directly from NEAR RPC after confirmation, unlocking each tutorial gate sequentially (`0.25 NEAR -> 100 RESPITE` swap, House Deed purchase, NFT furniture purchase, home entry, furniture placement).
+1. **Attested Starter Pack & Your First Home**
+   - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000`). Connect Google OAuth, Meteor, MyNearWallet, or create a citizen handle (`judge01`), talk to **Hana (`[E]`)** at Central Plaza, and claim the starter pack (`0.30 NEAR + 100 LUL + 20 CYON`, once per wallet and once per Google account; Guest mode cannot claim). The city is open from the start -- nothing is gated; Walkthrough 2 below is a suggested first route, not a lock.
+   - **See:** Google sign-ins invoke `/api/hana-claim-attest` + `claim_hana_welcome_near_attested`, recording an immutable email hash on-chain and displaying your transaction proof strip. Balances re-read directly from NEAR RPC after confirmation.
 2. **Swap `NEAR -> RESPITE`, Buy Deed, Furnish Studio, and Inspect Sub-Account Ledger (`nfts`)**
    - **Do:** In **Hana -> `EXCHANGE`**, swap `0.25 NEAR -> 100 RESPITE` and toggle `FAST-FORWARD SIM` to watch simulated market days advance, then purchase **House Ownership (`100 RESPITE`)** in `CATALOG -> HOUSE` and one piece of **NFT Furniture** (`RESPITE` / NEP-245) in `CATALOG -> FURNITURE`. Enter with **`GO TO YOUR HOUSE`** (`CONFIRM MOVE` after placing furniture), then open **`WALLET -> MY ITEMS`**.
    - **See:** Your House Deed card displays the real minted Deed ID (e.g., `house-deed-0001`), linked sub-account (`estate-0001.buddiesblitz.testnet`), active **`EPOCH #N`**, Pending/Earned/Paid Out RESPITE counters, Provenance History, and functional **`FUND +5 R`** / **`CLAIM PAYOUT`** on-chain buttons. Under `CATALOG -> MARKET`, real estate and NFT furniture listings settle atomically via contract escrow (`list_property_deed` -> `buy_property`), and each settlement issues a receipt Letter under `Social Chat -> PRIVATE`.
-3. **Shoreline Fishing, Attested NFT Minting & Bounded AI Haggling (`games`)**
-   - **Do:** Ride the tram (`[G]`) or take **City Transit Kiosk (`[E]`) -> `KAI FISH MARKET`**, equip the **Fishing Rod** (`BAG`), hold **`F`** near East Beach water, complete the **Line-Tension Gauge** catch, open **`BAG -> FISH`** to mint a Fish NFT (`/api/fish-attest`), and talk or haggle with **Kai (`[E]`)** or answer his phone call in any language.
+3. **Daily Missions (`games`)**
+   - **Do:** Open the **`MISSIONS`** board from the HUD and complete the day's four missions: **Meet Kai** at the Fish Market, **Work a Shift** at Glasshouse Cafe, **Catch a Fish**, and **Visit Your Claimed Plot House**. Every mission card carries a transit shortcut (`GO TO KAI`, `GO TO CAFE`, `GO TO PIER`, `GO TO PLOTS`).
+   - **See:** Progress records automatically from real gameplay events -- chatting with Kai, serving a cafe order, landing a catch, stepping into your own house. Rewards are off-chain `LUL` + `XP` (`25/30`, `35/40`, `35/40`, `45/50` per mission) plus a `+60 LUL / +80 XP` all-clear bonus, for a maximum of `200 LUL + 240 XP` per day -- `RESPITE` is never emitted from gameplay grinding. Mission state is stored per wallet account and resets on the player's local calendar day.
+4. **Shoreline Fishing, Attested NFT Minting & Bounded AI Haggling (`games`)**
+   - **Do:** Ride the tram (`[E]`) or take **City Transit Kiosk (`[E]`) -> `KAI FISH MARKET`**, equip the **Fishing Rod** (`BAG`), hold **`F`** near East Beach water, complete the **Line-Tension Gauge** catch, open **`BAG -> FISH`** to mint a Fish NFT (`/api/fish-attest`), and talk or haggle with **Kai (`[E]`)** or answer his phone call in any language.
    - **See:** Minting writes on-chain species, zone, rarity, and weight attributes verified by Ed25519 signature. Haggling runs deterministic step/ceiling logic while allowing `kai.buddiesblitz.testnet` to buy qualifying Fish NFTs with real on-chain `RESPITE`.
-4. **Glasshouse Cafe Barista Shift & Separated 4v4 Warzone Arena**
-   - **Do:** Enter **Glasshouse Cafe** inside Central Plaza to prepare 3 drink orders (`+12 LUL` each), then return to the **Transit Kiosk (`[E]`) -> `WARZONE ARENA`**, pick **`BLUE TEAM`** or **`RED TEAM`**, stack crates on `2x2x2` team pads, and press **`EXIT WARZONE`** when finished.
-   - **See:** Combat weapons, crates, and Family Member AI squad companions operate exclusively inside the Warzone arena, never inside the peaceful city plaza.
+5. **Glasshouse Cafe Barista Shift, NEO-STRIKE Slots & Separated 4v4 Warzone Arena**
+   - **Do:** Enter **Glasshouse Cafe** inside Central Plaza to prepare 3 drink orders (`+12 LUL` each), then play the **NEO-STRIKE 777 Slots** cabinet by the cafe windows. Return to the **Transit Kiosk (`[E]`) -> `WARZONE ARENA`**, pick **`BLUE TEAM`** or **`RED TEAM`**, stack crates on `2x2x2` team pads, and press **`EXIT WARZONE`** when finished.
+   - **See:** The slot cabinet takes `LUL` bets (`2 / 5 / 10 / 25`) on weighted 32-stop reels and pays entirely in off-chain `LUL`: `7-7-7` jackpot `50x`, triple Diamond `20x`, Star `12x`, Bell `8x`, Coffee `5x`, Cherry `3x`, with pair pays up to `4x`. Combat weapons, crates, and Family Member AI squad companions operate exclusively inside the Warzone arena, never inside the peaceful city plaza.
 
 ---
 
@@ -150,8 +153,8 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 |---|---|
 | `W A S D` / Arrow Keys | Move character, swim, or drive vehicle |
 | `Space` | Jump (Main World & Warzone) |
-| `E` | Interact with Hana/Kai, Transit Kiosk, Cafe, or pick up/throw crates in Warzone |
-| `G` | Board or exit the Street Tram |
+| `E` | Interact: Hana/Kai, Transit Kiosk, board/exit the Street Tram, Cafe stations, house doors, sit/stand in the city, or pick up/throw crates in Warzone |
+| `G` | Mount or dismount a Warzone vehicle (Tank, Truck, Plane) |
 | `F` | Cast / reel Fishing Rod by shoreline or assemble active `2x2x2` pad recipe in Warzone |
 | `Q` | Cycle active `2x2x2` crate recipe hologram on base pad |
 | `B` | Open Tactical Base Kiosk (`Armory` / `Hangar`) or Plot Claim panel |
@@ -167,7 +170,7 @@ api/
   fish-attest.ts                        Serverless Ed25519 catch attestation (mint_fish_nft_attested + rate limit)
   hana-claim-attest.ts                  Serverless Ed25519 starter-claim attestation + email hash deduplication
   near-relayer.ts                       Dual-key citizen sub-account provisioner + email-verified session recovery
-  npc-agent.ts                          Gemini 2.5 Flash multilingual NPC dialogue concierge for Hana & Kai
+  npc-agent.ts                          Gemini 3.5 Flash Lite multilingual NPC dialogue concierge for Hana & Kai
   npc-trade.ts                          Bounded RESPITE negotiation sessions + kai.buddiesblitz.testnet settlement
 
 contracts/buddies-market/
@@ -176,13 +179,15 @@ contracts/buddies-market/
   target/near/                          Compiled buddies_market.wasm (348,564 B) + buddies_market_abi.json
 
 src/
-  App.tsx                               HUD, Wallet MY ITEMS/HISTORY, Sub-Account Deed Ledger UI, Bag, Tutorial state
+  App.tsx                               HUD, Wallet MY ITEMS/HISTORY, Sub-Account Deed Ledger UI, Bag, Daily Missions state
   components/
     CharacterProfileModal.tsx           Citizen identity & balance modal
     CityTransitKioskModal.tsx           Portal Hub: Travel & Districts, Warzone Faction Select, My House, Shop
     Fish3dPreviewModal.tsx              360-degree Three.js fish inspector
     Furniture3dPreviewModal.tsx         3D interior catalog item inspector
     GlasshouseCafeModal.tsx             Barista job shift mini-game (+12 LUL/order)
+    GlasshouseCafeSlotModal.tsx         NEO-STRIKE 777 arcade slots cabinet (LUL bets & payouts)
+    DailyMissionsModal.tsx              Daily missions board: progress, reward claims & transit shortcuts
     InGameWalletConfirmModal.tsx        On-chain transaction signer confirmation sheet
     MobileResponsiveControls.tsx        Touch joysticks & responsive orientation guard
     NearWalletSelectorModal.tsx         Handle registration + Meteor / MyNearWallet NEP-413 connection
@@ -195,6 +200,8 @@ src/
     buddiesBlitzRules.ts                Crate stacking recipes, match win conditions, plot & transit rules
     buddiesMerchantPricing.ts           Deterministic NPC negotiation math, dynamic catalog & house rules
     buddiesFishingMarket.ts             Shoreline habitat tables, cast/tension mechanics & P2P market types
+    buddiesArcadeSlots.ts               NEO-STRIKE slot odds, bet tiers & LUL payout math
+    buddiesDailyMissions.ts             Daily mission catalog, per-account progress & local-day reset
     buddiesInteriorAssets.ts            Pavilion architectural studio & OBB furniture placement
     buddiesBlitzWorldBuilder.ts         Coastal city geometry, tram line & Warzone map builder
     buddiesBlitzSquadAi.ts              Octile A* pathfinding & Warzone-only Family Member companion AI
