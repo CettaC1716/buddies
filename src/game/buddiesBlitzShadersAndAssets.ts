@@ -10780,6 +10780,27 @@ function fadeToCharBuddiesAction(
   ctrl.activeClipName = clipName;
 }
 
+const _rideDeltaEuler = new THREE.Euler();
+const _rideDeltaQuat = new THREE.Quaternion();
+const _rideTargetQuat = new THREE.Quaternion();
+
+/** Applies a small local-space Euler pose delta on top of a bone's clip pose. */
+function applyRideBoneDelta(
+  ctrl: CharBuddiesGlbRigController,
+  boneShortName: string,
+  x: number,
+  y: number,
+  z: number,
+  blend: number,
+) {
+  const bone = ctrl.bones.get(boneShortName);
+  if (!bone) return;
+  _rideDeltaEuler.set(x, y, z);
+  _rideDeltaQuat.setFromEuler(_rideDeltaEuler);
+  _rideTargetQuat.copy(bone.quaternion).multiply(_rideDeltaQuat);
+  bone.quaternion.slerp(_rideTargetQuat, blend);
+}
+
 function aimMixamoArmBoneWorld(
   ctrl: CharBuddiesGlbRigController,
   armShortName: string,
@@ -11844,6 +11865,14 @@ function stepCharBuddiesGlbRigController(
     if (rightLeg && bindRightLeg) {
       rightLeg.quaternion.slerp(bindRightLeg, kickPhase);
     }
+  }
+
+  // 4C. Scooter bike grip reach: the authored riding clip leaves the hands
+  // just short of the grips, so pitch both shoulders a touch further
+  // forward while the bike clip plays. Arms only — nothing else moves.
+  if (scooterBikeRide) {
+    applyRideBoneDelta(ctrl, 'LeftArm', -0.16, 0, 0, 1);
+    applyRideBoneDelta(ctrl, 'RightArm', -0.16, 0, 0, 1);
   }
 
   // 5. Zero-allocation Dynamic Foot Grounding (lowest stance foot always touches local Y = 0 on the ground ring)
