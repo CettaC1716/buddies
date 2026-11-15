@@ -3796,6 +3796,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let cafeInterior: CafeInteriorSceneHandle | null = null;
     let cafeCustomerNpcRoot: THREE.Group | null = null;
     let cafeCustomerRig: ReturnType<typeof buildProceduralBuddyAvatar> | null = null;
+    let cafeGuestMixer: THREE.AnimationMixer | null = null;
     let cafeCustomerGlbUpgraded = false;
     let cafeInteriorShadersCompiled = false;
     let pendingCafeActivationToken = 0;
@@ -3845,6 +3846,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         cafeCustomerGlbUpgraded = false;
       }
       builtCafe.root.add(custRoot);
+
+      // Standing cafe guest: a user-supplied custom character that carries
+      // its own baked hands-on-hips idle clip, so she is loaded as-is and
+      // played through her own mixer (her skeleton is not the Mixamo rig).
+      // Raw model height is 1.58 units; the cafe customer NPC stands 2.11
+      // in cafe-local units, so she is scaled by 1.34 to match.
+      try {
+        const guestGltf = loadedBlitzAssets?.cafeGuestGltf;
+        if (guestGltf && guestGltf.animations.length > 0) {
+          guestGltf.scene.traverse((obj) => {
+            if ((obj as THREE.SkinnedMesh).isSkinnedMesh) {
+              obj.frustumCulled = false;
+            }
+          });
+          const guestRoot = new THREE.Group();
+          guestRoot.position.set(2.35, 0, -0.55);
+          guestRoot.rotation.y = Math.PI; // face the barista counter
+          guestRoot.scale.setScalar(1.34);
+          guestRoot.add(guestGltf.scene);
+          builtCafe.root.add(guestRoot);
+          cafeGuestMixer = new THREE.AnimationMixer(guestGltf.scene);
+          const guestAction = cafeGuestMixer.clipAction(guestGltf.animations[0]);
+          guestAction.setLoop(THREE.LoopRepeat, Infinity);
+          guestAction.play();
+        }
+      } catch (err) {
+        console.warn('[Cafe] Guest character failed to set up:', err);
+      }
 
       cafeInterior = builtCafe;
       cafeCustomerNpcRoot = custRoot;
@@ -22843,6 +22872,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           cafeCustomerRig.rightArmPivot.rotation.x = -0.35 + Math.sin(timeSec * 2.8) * 0.12;
           updateCharacterWeaponStance(cafeCustomerRig, 'unarmed', 0, false, false, 0, 0);
+        }
+        if (cafeGuestMixer && cafeInterior?.root.visible) {
+          cafeGuestMixer.update(dt);
         }
         if (playerUnit) {
           playerUnit.root.visible = true;

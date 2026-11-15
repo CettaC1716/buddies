@@ -4200,6 +4200,7 @@ export interface LoadedBlitzAssets {
   sleepingClip: THREE.AnimationClip | null;
   jumpClip: THREE.AnimationClip | null;
   scooterBikeClip: THREE.AnimationClip | null;
+  cafeGuestGltf: GLTF | null;
   jumpIdleClip: THREE.AnimationClip | null;
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
@@ -4718,6 +4719,7 @@ export async function loadAllRealBlitzAssets(
     sleepingClipPromise,
     jumpClipPromise,
     scooterBikeClipPromise,
+    loadOptionalGltf('/assets/cafe-guest.glb'),
     jumpIdleClipPromise,
     idleClipPromise,
     kaiIdleClipPromise,
@@ -4767,6 +4769,7 @@ export async function loadAllRealBlitzAssets(
       sleepingClip,
       jumpClip,
       scooterBikeClip,
+      cafeGuestGltf,
       jumpIdleClip,
       idleClip,
       kaiIdleClip,
@@ -4818,6 +4821,7 @@ export async function loadAllRealBlitzAssets(
         sleepingClip,
         jumpClip,
         scooterBikeClip,
+        cafeGuestGltf,
         jumpIdleClip,
         idleClip,
         kaiIdleClip,
