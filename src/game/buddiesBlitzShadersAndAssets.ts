@@ -11871,8 +11871,8 @@ function stepCharBuddiesGlbRigController(
   // just short of the grips, so pitch both shoulders a touch further
   // forward while the bike clip plays. Arms only — nothing else moves.
   if (scooterBikeRide) {
-    applyRideBoneDelta(ctrl, 'LeftArm', -0.16, 0, 0, 1);
-    applyRideBoneDelta(ctrl, 'RightArm', -0.16, 0, 0, 1);
+    applyRideBoneDelta(ctrl, 'LeftArm', -0.07, 0, 0, 1);
+    applyRideBoneDelta(ctrl, 'RightArm', -0.07, 0, 0, 1);
   }
 
   // 5. Zero-allocation Dynamic Foot Grounding (lowest stance foot always touches local Y = 0 on the ground ring)
