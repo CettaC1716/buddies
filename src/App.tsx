@@ -10864,7 +10864,7 @@ export default function App() {
 
             {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) => ownedScooterIds.includes(v.id)).map(
               (v) => {
-                const isEquipped = equippedScooterKind === v.id;
+                const isEquipped = equippedScooterKind === v.kind;
                 return (
                   <div
                     key={v.id}
@@ -10910,8 +10910,8 @@ export default function App() {
                             dispatchBuddyAction('unequipScooter');
                             setEquippedScooterKind(null);
                           } else {
-                            dispatchBuddyAction(`equipScooter:${v.id}`);
-                            setEquippedScooterKind(v.id as UrbanScooterKind);
+                            dispatchBuddyAction(`equipScooter:${v.kind}`);
+                            setEquippedScooterKind(v.kind);
                           }
                           setIsGearModalOpen(false);
                         }}
