@@ -3934,6 +3934,10 @@ export default function App() {
 
     // Contract v1.5.0 enforces one welcome NEAR grant per Google email hash
     // when attested claim is enabled; non-Google wallets use legacy 1x-per-account claim.
+    // Attestation-side failures (unbound email, invalid or expired signature,
+    // endpoint down) fall through to the legacy claim below: they must never
+    // strand a new player whose wallet has not claimed yet. Only a genuine
+    // already-claimed answer stops the flow.
     let claimRes: Awaited<ReturnType<typeof claimHanaWelcomeNearOnChain>> | null = null;
     const claimEmail = (connectedGoogleEmail || '').trim().toLowerCase();
     if (shouldAttemptAttestedHanaClaim(claimEmail)) {
@@ -3947,11 +3951,11 @@ export default function App() {
           claimRes = attestedRes;
         } else if (
           attestedRes.error &&
-          /already claimed|Invalid Hana claim attestation/i.test(attestedRes.error)
+          /already claimed/i.test(attestedRes.error)
         ) {
           return attestedRes;
         }
-      } else if (att.code === 'ALREADY_CLAIMED' || att.code === 'EMAIL_NOT_BOUND') {
+      } else if (att.code === 'ALREADY_CLAIMED') {
         return {
           ok: false,
           txHash: '',
