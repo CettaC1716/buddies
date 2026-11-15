@@ -28,10 +28,10 @@ test('getDailyMissionsStorageKey scopes state cleanly by account or guest', () =
 test('initial daily missions state starts at 0/4 with zero claimable items', () => {
   const state = createInitialDailyMissionsState('2026-11-14');
   assert.equal(state.dateKey, '2026-11-14');
-  assert.equal(DAILY_MISSIONS_CATALOG.length, 5);
+  assert.equal(DAILY_MISSIONS_CATALOG.length, 7);
   const summary = summarizeDailyMissions(state);
   assert.equal(summary.completedCount, 0);
-  assert.equal(summary.totalCount, 5);
+  assert.equal(summary.totalCount, 7);
   assert.equal(summary.claimableMissionCount, 0);
   assert.equal(summary.bonusReady, false);
   assert.equal(summary.actionableCount, 0);
@@ -75,23 +75,25 @@ test('claimDailyMissionReward awards LUL/XP once and blocks double claim or inco
   assert.equal(doubleClaim.rewardLul, 0);
 });
 
-test('claimDailyAllClearBonus unlocks after completing all 5 missions and resists double claim', () => {
+test('claimDailyAllClearBonus unlocks after completing all 7 missions and resists double claim', () => {
   const day = '2026-11-14';
   let state = createInitialDailyMissionsState(day);
   state = recordDailyMissionProgress(state, 'meet_kai', 1, day).nextState;
   state = recordDailyMissionProgress(state, 'work_cafe', 1, day).nextState;
   state = recordDailyMissionProgress(state, 'go_fishing', 1, day).nextState;
+  state = recordDailyMissionProgress(state, 'buy_house', 1, day).nextState;
   state = recordDailyMissionProgress(state, 'claim_plot_house', 1, day).nextState;
+  state = recordDailyMissionProgress(state, 'buy_scooter', 1, day).nextState;
 
   const beforeLast = claimDailyAllClearBonus(state, day);
   assert.equal(beforeLast.claimed, false);
 
   state = recordDailyMissionProgress(state, 'visit_claimed_house', 1, day).nextState;
   const summary = summarizeDailyMissions(state);
-  assert.equal(summary.completedCount, 5);
+  assert.equal(summary.completedCount, 7);
   assert.equal(summary.bonusReady, true);
-  assert.equal(summary.claimableMissionCount, 5);
-  assert.equal(summary.actionableCount, 6);
+  assert.equal(summary.claimableMissionCount, 7);
+  assert.equal(summary.actionableCount, 8);
 
   const bonusClaim = claimDailyAllClearBonus(state, day, '2026-11-14T12:00:00Z');
   assert.equal(bonusClaim.claimed, true);

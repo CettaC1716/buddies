@@ -1181,6 +1181,84 @@ export default function App() {
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
   const [unreadLetterCount, setUnreadLetterCount] = useState<number>(0);
+  // New-asset notification: counts owned items (merchant NFT copies, scooters,
+  // the house deed) that arrived since the player last opened their wallet.
+  const [newAssetCount, setNewAssetCount] = useState<number>(0);
+  const assetSeenRef = useRef<{
+    account: string;
+    seen: Record<string, number> | null;
+    armedAt: number;
+  }>({ account: '', seen: null, armedAt: 0 });
+  useEffect(() => {
+    const account = dailyMissionsAccountKey;
+    if (!account || account === 'guest') {
+      setNewAssetCount(0);
+      return;
+    }
+    const current: Record<string, number> = {};
+    for (const id of ownedMerchantItemIds) {
+      current[`item:${id}`] = (current[`item:${id}`] ?? 0) + 1;
+    }
+    for (const id of ownedScooterIds) {
+      current[`vehicle:${id}`] = 1;
+    }
+    if (hasHouseOwnership) {
+      current['house_deed'] = 1;
+    }
+    const snap = assetSeenRef.current;
+    if (snap.account !== account) {
+      snap.account = account;
+      snap.armedAt = Date.now() + 4000;
+      try {
+        const raw = window.localStorage.getItem(`bb_seen_assets_v1:${account}`);
+        snap.seen = raw ? (JSON.parse(raw) as Record<string, number>) : null;
+      } catch {
+        snap.seen = null;
+      }
+    }
+    if (isPersonalWalletModalOpen) {
+      // Opening the wallet acknowledges everything currently owned.
+      try {
+        window.localStorage.setItem(
+          `bb_seen_assets_v1:${account}`,
+          JSON.stringify(current),
+        );
+      } catch {
+        // ignore storage failures
+      }
+      snap.seen = current;
+      setNewAssetCount(0);
+      return;
+    }
+    if (!snap.seen) {
+      // First run for this account: seed the snapshot once the initial
+      // chain hydration has had a moment to land, so long-owned items do
+      // not badge as "new".
+      if (Date.now() >= snap.armedAt) {
+        try {
+          window.localStorage.setItem(
+            `bb_seen_assets_v1:${account}`,
+            JSON.stringify(current),
+          );
+        } catch {
+          // ignore storage failures
+        }
+        snap.seen = current;
+      }
+      return;
+    }
+    let delta = 0;
+    for (const [key, qty] of Object.entries(current)) {
+      delta += Math.max(0, qty - (snap.seen[key] ?? 0));
+    }
+    setNewAssetCount(delta);
+  }, [
+    ownedMerchantItemIds,
+    ownedScooterIds,
+    hasHouseOwnership,
+    dailyMissionsAccountKey,
+    isPersonalWalletModalOpen,
+  ]);
   const [missionGuide, setMissionGuide] = useState<{
     missionId: DailyMissionId;
     title: string;
@@ -2767,6 +2845,22 @@ export default function App() {
     plotMissionBaselineRef.current = { ...baseline, hadPlot: true };
     completeDailyMission('claim_plot_house');
   }, [hud.nearClaimedTeam, hud.nearClaimedPlotIndex, completeDailyMission]);
+
+  // buy_house completes as soon as deed ownership is verified on-chain
+  // (covers both a fresh purchase and long-time deed holders).
+  useEffect(() => {
+    if (hasHouseOwnership) {
+      completeDailyMission('buy_house');
+    }
+  }, [hasHouseOwnership, completeDailyMission]);
+
+  // buy_scooter completes when the account owns any scooter (purchase or
+  // chain hydration of ownedScooterIds).
+  useEffect(() => {
+    if (ownedScooterIds.length > 0) {
+      completeDailyMission('buy_scooter');
+    }
+  }, [ownedScooterIds, completeDailyMission]);
 
   useEffect(() => {
     if (!isInsidePrivateHouse || isSampleHouseView) return;
@@ -7572,6 +7666,14 @@ export default function App() {
                     <span className="skew-x-12 flex items-center gap-1">
                       <Wallet className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                       <span>WALLET</span>
+                      {newAssetCount > 0 && (
+                        <span
+                          data-wallet-new-asset-badge="true"
+                          className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
+                        >
+                          {newAssetCount}
+                        </span>
+                      )}
                     </span>
                   </button>
 
@@ -11378,6 +11480,14 @@ export default function App() {
           } else if (missionId === 'work_cafe') {
             finalX = -88.3;
             finalZ = 22.35;
+          } else if (missionId === 'buy_house') {
+            // Real Estate Kiosk A-frame trigger (west plaza).
+            finalX = -97.414;
+            finalZ = -17.322;
+          } else if (missionId === 'buy_scooter') {
+            // Urban Scooter Showroom A-frame trigger (west plaza).
+            finalX = -97.355;
+            finalZ = -4.574;
           } else {
             const dest = getCityTransitDestinationById(stationId);
             finalX = dest.spawnX;

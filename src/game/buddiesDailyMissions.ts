@@ -4,7 +4,9 @@ export type DailyMissionId =
   | 'meet_kai'
   | 'work_cafe'
   | 'go_fishing'
+  | 'buy_house'
   | 'claim_plot_house'
+  | 'buy_scooter'
   | 'visit_claimed_house';
 
 export interface DailyMissionDefinition {
@@ -83,6 +85,17 @@ export const DAILY_MISSIONS_CATALOG: readonly DailyMissionDefinition[] = [
     shortcutLabel: 'GO TO PIER',
   },
   {
+    id: 'buy_house',
+    title: 'Buy Your House',
+    description: 'Buy the House Deed at the Real Estate Kiosk.',
+    hintText: 'The deed costs 100 RESPITE — your starter pack already holds 400.',
+    targetCount: 1,
+    rewardLul: 35,
+    rewardXp: 40,
+    shortcutStationId: 'central_plaza',
+    shortcutLabel: 'GO TO KIOSK',
+  },
+  {
     id: 'claim_plot_house',
     title: 'Claim Your Plot',
     description: 'Use your House Deed to claim an empty plot at North or South Residence.',
@@ -92,6 +105,17 @@ export const DAILY_MISSIONS_CATALOG: readonly DailyMissionDefinition[] = [
     rewardXp: 45,
     shortcutStationId: 'north_residence',
     shortcutLabel: 'GO TO PLOTS',
+  },
+  {
+    id: 'buy_scooter',
+    title: 'Buy a Scooter',
+    description: 'Buy any scooter at the Urban Scooter Showroom.',
+    hintText: 'Kick Scooter 15 RESPITE, Scooter Bike 30 RESPITE — both are NFTs you truly own.',
+    targetCount: 1,
+    rewardLul: 30,
+    rewardXp: 35,
+    shortcutStationId: 'central_plaza',
+    shortcutLabel: 'GO TO SHOWROOM',
   },
   {
     id: 'visit_claimed_house',
@@ -110,8 +134,10 @@ const MISSION_MAP: Record<DailyMissionId, DailyMissionDefinition> = {
   meet_kai: DAILY_MISSIONS_CATALOG[0],
   work_cafe: DAILY_MISSIONS_CATALOG[1],
   go_fishing: DAILY_MISSIONS_CATALOG[2],
-  claim_plot_house: DAILY_MISSIONS_CATALOG[3],
-  visit_claimed_house: DAILY_MISSIONS_CATALOG[4],
+  buy_house: DAILY_MISSIONS_CATALOG[3],
+  claim_plot_house: DAILY_MISSIONS_CATALOG[4],
+  buy_scooter: DAILY_MISSIONS_CATALOG[5],
+  visit_claimed_house: DAILY_MISSIONS_CATALOG[6],
 };
 
 function createEmptyEntry(): DailyMissionProgressEntry {
@@ -144,7 +170,9 @@ export function createInitialDailyMissionsState(
       meet_kai: createEmptyEntry(),
       work_cafe: createEmptyEntry(),
       go_fishing: createEmptyEntry(),
+      buy_house: createEmptyEntry(),
       claim_plot_house: createEmptyEntry(),
+      buy_scooter: createEmptyEntry(),
       visit_claimed_house: createEmptyEntry(),
     },
     bonusClaimed: false,

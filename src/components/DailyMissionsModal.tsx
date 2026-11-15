@@ -29,20 +29,38 @@ const SHORT_CARD_LABELS: Record<DailyMissionId, string> = {
   meet_kai: 'MEET KAI',
   work_cafe: 'CAFE SHIFT',
   go_fishing: 'FISHING',
+  buy_house: 'BUY HOUSE',
   claim_plot_house: 'CLAIM PLOT',
+  buy_scooter: 'SCOOTER',
   visit_claimed_house: 'MY HOUSE',
 };
 
+// The claim-plot mission stays hidden until the buy-house mission is done:
+// claiming a plot is meaningless before the player owns a House Deed.
+function isMissionVisible(state: DailyMissionsState, id: DailyMissionId): boolean {
+  if (id !== 'claim_plot_house') return true;
+  const buyHouse = state.missions.buy_house;
+  const buyHouseDef = DAILY_MISSIONS_CATALOG.find((d) => d.id === 'buy_house');
+  if (buyHouse && buyHouseDef && buyHouse.progress >= buyHouseDef.targetCount) return true;
+  const claimEntry = state.missions.claim_plot_house;
+  return Boolean(claimEntry && (claimEntry.progress > 0 || claimEntry.completedAtIso));
+}
+
+function visibleCatalog(state: DailyMissionsState) {
+  return DAILY_MISSIONS_CATALOG.filter((def) => isMissionVisible(state, def.id));
+}
+
 function pickInitialMissionId(state: DailyMissionsState): DailyMissionId {
-  const ready = DAILY_MISSIONS_CATALOG.find(
+  const visible = visibleCatalog(state);
+  const ready = visible.find(
     (def) => state.missions[def.id].progress >= def.targetCount && !state.missions[def.id].claimed,
   );
   if (ready) return ready.id;
-  const pending = DAILY_MISSIONS_CATALOG.find(
+  const pending = visible.find(
     (def) => state.missions[def.id].progress < def.targetCount,
   );
   if (pending) return pending.id;
-  return DAILY_MISSIONS_CATALOG[0].id;
+  return visible[0]?.id ?? DAILY_MISSIONS_CATALOG[0].id;
 }
 
 export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
@@ -139,7 +157,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
             {/* Left 2x2 Mission Grid */}
             <div className="sm:col-span-7 grid grid-cols-2 gap-2.5">
-              {DAILY_MISSIONS_CATALOG.map((def) => {
+              {visibleCatalog(missionsState).map((def) => {
                 const entry = missionsState.missions[def.id];
                 const isSelected = def.id === selectedId;
                 const isComplete = entry.progress >= def.targetCount;
