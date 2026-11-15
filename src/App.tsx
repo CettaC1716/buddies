@@ -491,6 +491,11 @@ export default function App() {
   );
   const [tutorialStage, setTutorialStage] = useState<'none' | 'go_to_hana'>('none');
   const [hanaWelcomeNearClaimed, setHanaWelcomeNearClaimed] = useState<boolean>(false);
+  // Onboarding spotlight: after the starter claim AND the first NEAR -> RESPITE
+  // swap, the MISSIONS button pulses until the player opens Daily Missions
+  // once — Hana covers claim + exchange, the missions carry the rest.
+  const [onboardingSwapDone, setOnboardingSwapDone] = useState<boolean>(false);
+  const [onboardingMissionsSeen, setOnboardingMissionsSeen] = useState<boolean>(false);
   const [hanaPitchOrigin, setHanaPitchOrigin] = useState<'kiosk' | 'browse' | null>(null);
   const [pendingPitchKioskStation, setPendingPitchKioskStation] =
     useState<CityTransitStationId>('central_plaza');
@@ -1184,6 +1189,38 @@ export default function App() {
   // New-asset notification: counts owned items (merchant NFT copies, scooters,
   // the house deed) that arrived since the player last opened their wallet.
   const [newAssetCount, setNewAssetCount] = useState<number>(0);
+  useEffect(() => {
+    const account = dailyMissionsAccountKey;
+    if (!account || account === 'guest') {
+      setOnboardingSwapDone(false);
+      setOnboardingMissionsSeen(false);
+      return;
+    }
+    try {
+      setOnboardingSwapDone(
+        window.localStorage.getItem(`bb_onboarding_swap_v1:${account}`) === '1',
+      );
+      setOnboardingMissionsSeen(
+        window.localStorage.getItem(`bb_onboarding_missions_seen_v1:${account}`) === '1',
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [dailyMissionsAccountKey]);
+  useEffect(() => {
+    if (!isDailyMissionsModalOpen || onboardingMissionsSeen) return;
+    setOnboardingMissionsSeen(true);
+    const account = dailyMissionsAccountKey;
+    if (account && account !== 'guest') {
+      try {
+        window.localStorage.setItem(`bb_onboarding_missions_seen_v1:${account}`, '1');
+      } catch {
+        // ignore storage failures
+      }
+    }
+  }, [isDailyMissionsModalOpen, onboardingMissionsSeen, dailyMissionsAccountKey]);
+  const showMissionsOnboardingHint =
+    hanaWelcomeNearClaimed && onboardingSwapDone && !onboardingMissionsSeen;
   const assetSeenRef = useRef<{
     account: string;
     seen: Record<string, number> | null;
@@ -7695,12 +7732,20 @@ export default function App() {
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
                       setIsDailyMissionsModalOpen((prev) => !prev);
                     }}
-                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#c084fc] hover:bg-[#d8b4fe] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#c084fc] hover:bg-[#d8b4fe] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer${showMissionsOnboardingHint ? ' animate-pulse ring-4 ring-[#ff3b30]' : ''}`}
                     title="Open Daily Missions"
                   >
                     <span className="skew-x-12 flex items-center gap-1.5">
                       <ClipboardList className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                       <span>MISSIONS</span>
+                      {showMissionsOnboardingHint && (
+                        <span
+                          data-missions-onboarding-hint="true"
+                          className="px-1.5 py-0.2 bg-[#ff3b30] text-white border border-black text-[9px] font-black leading-tight"
+                        >
+                          START HERE
+                        </span>
+                      )}
                       <span className="px-1 py-0.2 bg-white border border-[#1a1a1a] text-[10px] leading-tight">
                         {dailyMissionsSummary.completedCount}/{dailyMissionsSummary.totalCount}
                       </span>
@@ -8807,6 +8852,17 @@ export default function App() {
           if (!receipt || !receipt.txHash) return null;
           const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
           pendingPostClaimFloorRef.current = null;
+          if (direction === 'near_to_respite' && !onboardingSwapDone) {
+            setOnboardingSwapDone(true);
+            const swapAccount = (resolvedActor || '').trim().toLowerCase();
+            if (swapAccount) {
+              try {
+                window.localStorage.setItem(`bb_onboarding_swap_v1:${swapAccount}`, '1');
+              } catch {
+                // ignore storage failures
+              }
+            }
+          }
 
           let nextNear =
             direction === 'near_to_respite'
