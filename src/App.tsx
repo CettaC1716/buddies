@@ -2726,6 +2726,48 @@ export default function App() {
     prevCafeOrdersServedRef.current = cafeShiftState.totalOrdersServedEver;
   }, [cafeShiftState.totalOrdersServedEver, completeDailyMission]);
 
+  // claim_plot_house: snapshot whether the account already owned a plot when
+  // the session started, then complete the mission when a NEW claim appears
+  // in the HUD state (plot owners from earlier sessions do not re-complete).
+  const plotMissionBaselineRef = useRef<{
+    account: string;
+    checked: boolean;
+    hadPlot: boolean;
+  }>({ account: '', checked: false, hadPlot: false });
+  const plotMissionAccount = hud.nearWalletId || playerUid || '';
+  useEffect(() => {
+    const account = plotMissionAccount.trim().toLowerCase();
+    if (!account) return;
+    if (plotMissionBaselineRef.current.account === account) return;
+    plotMissionBaselineRef.current = { account, checked: false, hadPlot: false };
+    let cancelled = false;
+    void fetchBasePlotsFromSupabase().then((plots) => {
+      if (cancelled) return;
+      const hadPlot = plots.some(
+        (p) =>
+          p.is_claimed &&
+          (p.claimed_by_near_account || '').toLowerCase() === account,
+      );
+      plotMissionBaselineRef.current = { account, checked: true, hadPlot };
+      // The claim may have landed while this snapshot was loading.
+      if (!hadPlot && hudRef.current.nearClaimedPlotIndex != null) {
+        plotMissionBaselineRef.current = { account, checked: true, hadPlot: true };
+        completeDailyMission('claim_plot_house');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [plotMissionAccount, completeDailyMission]);
+
+  useEffect(() => {
+    const baseline = plotMissionBaselineRef.current;
+    if (!baseline.checked || baseline.hadPlot) return;
+    if (!hud.nearClaimedTeam || hud.nearClaimedPlotIndex == null) return;
+    plotMissionBaselineRef.current = { ...baseline, hadPlot: true };
+    completeDailyMission('claim_plot_house');
+  }, [hud.nearClaimedTeam, hud.nearClaimedPlotIndex, completeDailyMission]);
+
   useEffect(() => {
     if (!isInsidePrivateHouse || isSampleHouseView) return;
     if (!hud.nearClaimedTeam || hud.nearClaimedPlotIndex == null) return;

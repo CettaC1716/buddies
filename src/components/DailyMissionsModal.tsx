@@ -29,6 +29,7 @@ const SHORT_CARD_LABELS: Record<DailyMissionId, string> = {
   meet_kai: 'MEET KAI',
   work_cafe: 'CAFE SHIFT',
   go_fishing: 'FISHING',
+  claim_plot_house: 'CLAIM PLOT',
   visit_claimed_house: 'MY HOUSE',
 };
 

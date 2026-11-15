@@ -4,6 +4,7 @@ export type DailyMissionId =
   | 'meet_kai'
   | 'work_cafe'
   | 'go_fishing'
+  | 'claim_plot_house'
   | 'visit_claimed_house';
 
 export interface DailyMissionDefinition {
@@ -82,6 +83,17 @@ export const DAILY_MISSIONS_CATALOG: readonly DailyMissionDefinition[] = [
     shortcutLabel: 'GO TO PIER',
   },
   {
+    id: 'claim_plot_house',
+    title: 'Claim Your Plot',
+    description: 'Use your House Deed to claim an empty plot at North or South Residence.',
+    hintText: 'Buy a House Deed first, then stand on an empty residence plot and press [B] to claim it.',
+    targetCount: 1,
+    rewardLul: 40,
+    rewardXp: 45,
+    shortcutStationId: 'north_residence',
+    shortcutLabel: 'GO TO PLOTS',
+  },
+  {
     id: 'visit_claimed_house',
     title: 'Visit Your Claimed Plot House',
     description: 'Step inside the Private House on your own claimed neighborhood plot.',
@@ -98,7 +110,8 @@ const MISSION_MAP: Record<DailyMissionId, DailyMissionDefinition> = {
   meet_kai: DAILY_MISSIONS_CATALOG[0],
   work_cafe: DAILY_MISSIONS_CATALOG[1],
   go_fishing: DAILY_MISSIONS_CATALOG[2],
-  visit_claimed_house: DAILY_MISSIONS_CATALOG[3],
+  claim_plot_house: DAILY_MISSIONS_CATALOG[3],
+  visit_claimed_house: DAILY_MISSIONS_CATALOG[4],
 };
 
 function createEmptyEntry(): DailyMissionProgressEntry {
@@ -131,6 +144,7 @@ export function createInitialDailyMissionsState(
       meet_kai: createEmptyEntry(),
       work_cafe: createEmptyEntry(),
       go_fishing: createEmptyEntry(),
+      claim_plot_house: createEmptyEntry(),
       visit_claimed_house: createEmptyEntry(),
     },
     bonusClaimed: false,

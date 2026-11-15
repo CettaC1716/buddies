@@ -14,7 +14,8 @@ pub const FAMILY_PLAN_1_WEEK_PRICE_RESPITE: u128 = 15;
 pub const FAMILY_PLAN_1_MONTH_PRICE_RESPITE: u128 = 45;
 pub const FAMILY_PLAN_1_YEAR_PRICE_RESPITE: u128 = 180;
 pub const MIN_STORAGE_DEPOSIT_YOCTO: u128 = 1_250_000_000_000_000_000_000; // 0.00125 NEAR
-pub const HANA_WELCOME_GRANT_YOCTO: u128 = 300_000_000_000_000_000_000_000; // 0.30 NEAR starter grant
+pub const HANA_WELCOME_GRANT_YOCTO: u128 = 350_000_000_000_000_000_000_000; // 0.35 NEAR starter grant
+pub const HANA_WELCOME_GRANT_RESPITE: u128 = 400; // starter RESPITE, transferred from the master float (never minted)
 pub const TREASURY_STORAGE_SAFETY_BUFFER_YOCTO: u128 = 100_000_000_000_000_000_000_000; // 0.10 NEAR buffer
 
 const RESPITE_SVG_DATA_URI: &str = "data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%230f172a%22/><circle cx=%2232%22 cy=%2232%22 r=%2224%22 fill=%22%23d8b4fe%22 stroke=%22%23b8ff3c%22 stroke-width=%224%22/><text x=%2232%22 y=%2240%22 font-family=%22Arial,sans-serif%22 font-weight=%22900%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%230f172a%22>R</text></svg>";
@@ -1792,7 +1793,7 @@ impl BuddiesMarketContract {
 
     pub fn get_contract_overview(&self) -> ContractOverview {
         ContractOverview {
-            contract_version: "1.6.0".to_string(),
+            contract_version: "1.7.0".to_string(),
             master_account: self.master_account.clone(),
             respite_per_near_rate: (1_000_000_000_000_000_000_000_000 / YOCTO_PER_RESPITE) as u64,
             house_price_respite: U128(HOUSE_OWNERSHIP_PRICE_RESPITE),
@@ -2017,13 +2018,35 @@ impl BuddiesMarketContract {
             "Hana smart contract treasury has insufficient liquid NEAR"
         );
 
+        // Starter RESPITE is transferred from the master float, never minted,
+        // so the total supply is unchanged by onboarding grants. The master
+        // itself is skipped: a same-account transfer would corrupt the ledger.
+        if *caller != self.master_account {
+            let master_account = self.master_account.clone();
+            let master_respite = *self
+                .respite_balances
+                .get(&master_account)
+                .unwrap_or(&0);
+            require!(
+                master_respite >= HANA_WELCOME_GRANT_RESPITE,
+                "Master RESPITE float has insufficient balance for the starter grant"
+            );
+            self.internal_transfer_respite(
+                &master_account,
+                caller,
+                HANA_WELCOME_GRANT_RESPITE,
+                Some("Hana welcome starter grant".to_string()),
+            );
+        }
+
         Self::emit_nep_event(
             "buddies_hana_treasury",
             "welcome_near_claimed",
             json!([{
                 "citizen_id": caller,
                 "amount_yocto": HANA_WELCOME_GRANT_YOCTO.to_string(),
-                "amount_near": "0.30",
+                "amount_near": "0.35",
+                "amount_respite": HANA_WELCOME_GRANT_RESPITE.to_string(),
                 "mode": mode
             }]),
         );
@@ -2063,7 +2086,7 @@ impl BuddiesMarketContract {
     }
 
     /// One-time onboarding grant distributed directly from Hana's smart contract treasury
-    /// (`0.30 NEAR`) after a new citizen finishes Hana's Central Plaza Cafe tutorial chat.
+    /// (`0.35 NEAR` + `400 RESPITE`) after a new citizen finishes Hana's Central Plaza Cafe tutorial chat.
     pub fn claim_hana_welcome_near(&mut self) -> Promise {
         let caller = env::predecessor_account_id();
         let key = Self::hana_welcome_storage_key(&caller);
@@ -2074,7 +2097,7 @@ impl BuddiesMarketContract {
         self.internal_payout_hana_welcome_near(&caller, "account")
     }
 
-    /// Google-identity attested starter grant (`0.30 NEAR`): enforces one grant
+    /// Google-identity attested starter grant (`0.35 NEAR` + `400 RESPITE`): enforces one grant
     /// per Google email hash AND per NEAR account across wallets via an ed25519
     /// server attestation matching `/api/hana-claim-attest`.
     pub fn claim_hana_welcome_near_attested(
@@ -2288,7 +2311,7 @@ mod tests {
         let migrated =
             BuddiesMarketContract::migrate(Some(ATTESTER_PUBKEY_HEX.to_string()));
         let overview = migrated.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.6.0");
+        assert_eq!(overview.contract_version, "1.7.0");
         assert_eq!(overview.total_respite_supply.0, 777);
         assert_eq!(migrated.ft_balance_of("alice.testnet".parse().unwrap()).0, 777);
         assert_eq!(overview.active_property_listings, 0);
@@ -2971,6 +2994,35 @@ mod tests {
     }
 
     #[test]
+    fn test_hana_welcome_claim_pays_respite_from_master_float() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("xyz.buddiesblitz.testnet"))
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .block_timestamp(1_762_800_000_000_000_000);
+        testing_env!(builder.build());
+
+        assert_eq!(contract.ft_balance_of(acct("xyz.buddiesblitz.testnet")).0, 0);
+        let supply_before = contract.ft_total_supply().0;
+        let _ = contract.claim_hana_welcome_near();
+        // Caller receives the 400 RESPITE starter grant...
+        assert_eq!(
+            contract.ft_balance_of(acct("xyz.buddiesblitz.testnet")).0,
+            HANA_WELCOME_GRANT_RESPITE
+        );
+        // ...paid out of the master float (50,000 initial), never minted.
+        assert_eq!(
+            contract.ft_balance_of(acct("buddiesblitz.testnet")).0,
+            50_000 - HANA_WELCOME_GRANT_RESPITE
+        );
+        assert_eq!(contract.ft_total_supply().0, supply_before);
+    }
+
+    #[test]
     #[should_panic(expected = "Citizen has already claimed Hana's welcome NEAR grant")]
     fn test_hana_welcome_near_prevents_double_claim() {
         set_ctx("buddiesblitz.testnet", 0);
@@ -3213,7 +3265,7 @@ mod tests {
         drop(old);
         let contract = BuddiesMarketContract::migrate(None);
         let overview = contract.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.6.0");
+        assert_eq!(overview.contract_version, "1.7.0");
         assert_eq!(overview.total_respite_supply.0, 50_777);
         assert_eq!(overview.total_houses_minted, 4);
         assert_eq!(overview.active_property_listings, 0);
@@ -3259,7 +3311,7 @@ mod tests {
 
         let migrated = BuddiesMarketContract::migrate_v140_to_v150(None);
         let overview = migrated.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.6.0");
+        assert_eq!(overview.contract_version, "1.7.0");
         assert_eq!(overview.total_respite_supply.0, 51_645);
         assert_eq!(overview.total_houses_minted, 7);
         assert_eq!(overview.total_fish_nfts_minted, 14);

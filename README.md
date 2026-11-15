@@ -8,7 +8,7 @@ You arrive at Central Plaza, a coastal district with a tram line, a glasshouse c
 - **Watch the trailer**: [Demo post on X](https://x.com/Charvicetta/status/2120546023848468952)
 - **Primary Hackathon Track**: `games` -- Games With Real Economies
 - **Secondary Hackathon Track**: `nfts` -- NFTs That Do Something
-- **Smart Contract (NEAR Testnet v1.6.0)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) (`code_hash`: `3ZzjGFe6DWs8ut2awzcb6mxWqqtRNaSarf3jyvmPgoSR`)
+- **Smart Contract (NEAR Testnet v1.7.0)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) (`code_hash`: `DzuGWw1RtF4BUwxN2HvicYgWXRxcwVe7C5Nj3XvywpRE`)
 - **Master Account**: [`buddiesblitz.testnet`](https://testnet.nearblocks.io/address/buddiesblitz.testnet) · **NPC Treasury Desk**: [`kai.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/kai.buddiesblitz.testnet)
 
 <!-- VIDEO EMBED: paste the GitHub user-attachments URL for buddies-blitz-trailer-readme.mp4 on its own line here (upload via the github.com README editor, file must stay under 10 MB). -->
@@ -25,7 +25,7 @@ You arrive at Central Plaza, a coastal district with a tram line, a glasshouse c
 ## Start playing in under a minute
 
 1. Open the live game and choose **Continue with Google** (your in-game wallet is created for you) or **Play as Guest** to look around first.
-2. Walk up to **Hana** at Central Plaza, press **E**, and claim your starter pack: **0.30 NEAR + 100 LUL + 20 CYON**, once per account.
+2. Walk up to **Hana** at Central Plaza, press **E**, and claim your starter pack: **0.35 NEAR + 400 RESPITE + 100 LUL + 20 CYON**, once per account.
 3. That is enough to start: work, fish, and explore right away — and 0.25 NEAR swaps to the 100 RESPITE that buys your first house.
 
 ![Start screen: Continue with Google, Play as Guest, or connect a NEAR wallet](docs/ui-login.jpg)
@@ -93,7 +93,7 @@ OFF-CHAIN GAMEPLAY LAYER (Zero Gas, No On-Chain Token Printing from Grinding)
                                                               ▼ (Exchange: 100 LUL -> 10 CYON base rate)
                                                              CYON ──> Non-NFT Catalog Gear & Tackle (Never NFT Furniture)
 
-ON-CHAIN TREASURY & P2P OWNERSHIP LAYER (market.buddiesblitz.testnet, v1.6.0)
+ON-CHAIN TREASURY & P2P OWNERSHIP LAYER (market.buddiesblitz.testnet, v1.7.0)
   NEAR Testnet ──> swap_near_for_respite() [One-Way 1 NEAR = 400 RESPITE] ──> RESPITE (NEP-141)
      ├──> purchase_citizen_asset() ──> House Ownership Deed (100 R) / Family AI Contracts (15 / 45 / 180 R)
      ├──> buy_merchant_item() / sell_merchant_item() ──> Pre-Minted NEP-245 NFT Furniture Only
@@ -154,18 +154,18 @@ npm run build     # Vite 8 production bundle into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM (near-sdk 5.5.0)
 cd contracts/buddies-market
-cargo test                                 # 44/44 unit tests (NEP-141, P2P fish market, escrow, epoch rotation, vehicle purchases, migrations)
+cargo test                                 # 45/45 unit tests (NEP-141, P2P fish market, escrow, epoch rotation, vehicle purchases, starter grant, migrations)
 cargo near build non-reproducible-wasm     # Builds target/near/buddies_market.wasm (348,564 bytes) + buddies_market_abi.json
 ```
 
 ### Live NEAR Testnet Contract Verification
 
 ```bash
-# Verify deployed WASM code hash (expected: 3ZzjGFe6DWs8ut2awzcb6mxWqqtRNaSarf3jyvmPgoSR)
+# Verify deployed WASM code hash (expected: DzuGWw1RtF4BUwxN2HvicYgWXRxcwVe7C5Nj3XvywpRE)
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","finality":"final","account_id":"market.buddiesblitz.testnet"}}'
 
-# Verify live contract overview (contract_version: "1.6.0", house_price_respite: "100", respite_per_near_rate: 400)
+# Verify live contract overview (contract_version: "1.7.0", house_price_respite: "100", respite_per_near_rate: 400)
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"get_contract_overview","args_base64":"e30="}}'
 
@@ -178,6 +178,7 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 |---|---|---|
 | Contract v1.5.0 Deploy | `y86KBd736RCszxeC7hzyPDiq3wy25opjYK6KUm2xyR3` | [NearBlocks](https://testnet.nearblocks.io/txns/y86KBd736RCszxeC7hzyPDiq3wy25opjYK6KUm2xyR3) |
 | Contract v1.6.0 Deploy (vehicle purchases) | `2p3iJKaTPWToEAXkEbVDLKr4QChn71hzxxjPW9sPwKJS` | [NearBlocks](https://testnet.nearblocks.io/txns/2p3iJKaTPWToEAXkEbVDLKr4QChn71hzxxjPW9sPwKJS) |
+| Contract v1.7.0 Deploy (starter grant 0.35 NEAR + 400 RESPITE) | `CuApSZDm51kWw5Bd5VEmYNKvFrBkVJjuuo1QYwbchYEe` | [NearBlocks](https://testnet.nearblocks.io/txns/CuApSZDm51kWw5Bd5VEmYNKvFrBkVJjuuo1QYwbchYEe) |
 | State Migration (`migrate_v140_to_v150`) | `2zye3Xr1MhCRzohbagLdFbu4JwCRXbaQzVo24fpkVBy7` | [NearBlocks](https://testnet.nearblocks.io/txns/2zye3Xr1MhCRzohbagLdFbu4JwCRXbaQzVo24fpkVBy7) |
 | Server-Attested Fish Mint Deploy (`v1.4.0`) | `DEJc6aPBFFyq1Yev397ipgTxDXsAf1tp9TbfUbWfMVJQ` | [NearBlocks](https://testnet.nearblocks.io/txns/DEJc6aPBFFyq1Yev397ipgTxDXsAf1tp9TbfUbWfMVJQ) |
 | Escrow Property Market Deploy (`v1.3.0`) | `9MxHwwWgQFXT6CHuooqKok4kCuKvGQnYHFg87betwgHE` | [NearBlocks](https://testnet.nearblocks.io/txns/9MxHwwWgQFXT6CHuooqKok4kCuKvGQnYHFg87betwgHE) |
@@ -189,14 +190,14 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 ### Interactive Feature Walkthroughs (`Do X -> See Y`)
 
 1. **Attested Starter Pack & Your First Home**
-   - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000`). Connect Google OAuth, Meteor, MyNearWallet, or create a citizen handle (`judge01`), talk to **Hana (`[E]`)** at Central Plaza, and claim the starter pack (`0.30 NEAR + 100 LUL + 20 CYON`, once per wallet and once per Google account; Guest mode cannot claim). The city is open from the start -- nothing is gated; Walkthrough 2 below is a suggested first route, not a lock.
+   - **Do:** Open [https://buddies-rouge.vercel.app](https://buddies-rouge.vercel.app) (or `http://localhost:3000`). Connect Google OAuth, Meteor, MyNearWallet, or create a citizen handle (`judge01`), talk to **Hana (`[E]`)** at Central Plaza, and claim the starter pack (`0.35 NEAR + 400 RESPITE + 100 LUL + 20 CYON`, once per wallet and once per Google account; Guest mode cannot claim). The city is open from the start -- nothing is gated; Walkthrough 2 below is a suggested first route, not a lock.
    - **See:** Google sign-ins invoke `/api/hana-claim-attest` + `claim_hana_welcome_near_attested`, recording an immutable email hash on-chain and displaying your transaction proof strip. Balances re-read directly from NEAR RPC after confirmation.
 2. **Swap `NEAR -> RESPITE`, Buy Deed, Furnish Studio, and Inspect Sub-Account Ledger (`nfts`)**
-   - **Do:** In **Hana -> `EXCHANGE`**, swap `0.25 NEAR -> 100 RESPITE` and toggle `FAST-FORWARD SIM` to watch simulated market days advance, then purchase **House Ownership (`100 RESPITE`)** in `CATALOG -> HOUSE` and one piece of **NFT Furniture** (`RESPITE` / NEP-245) in `CATALOG -> FURNITURE`. Enter with **`GO TO YOUR HOUSE`** (`CONFIRM MOVE` after placing furniture), then open **`WALLET -> MY ITEMS`**.
-   - **See:** Your House Deed card displays the real minted Deed ID (e.g., `house-deed-0001`), linked sub-account (`estate-0001.buddiesblitz.testnet`), active **`EPOCH #N`**, Pending/Earned/Paid Out RESPITE counters, Provenance History, and functional **`FUND +5 R`** / **`CLAIM PAYOUT`** on-chain buttons. Under `CATALOG -> MARKET`, real estate and NFT furniture listings settle atomically via contract escrow (`list_property_deed` -> `buy_property`), and each settlement issues a receipt Letter under `Social Chat -> PRIVATE`.
+   - **Do:** Your starter pack already holds `400 RESPITE`, so walk to the **Real Estate Kiosk** by the plaza and purchase **House Ownership (`100 RESPITE`)** plus one piece of **NFT Furniture** (`RESPITE` / NEP-245). **Hana -> `EXCHANGE`** swaps NEAR for more RESPITE at `400` per NEAR whenever you need it. Enter with **`GO TO YOUR HOUSE`** (`CONFIRM MOVE` after placing furniture), then open **`WALLET -> MY ITEMS`**.
+   - **See:** Your House Deed card displays the real minted Deed ID (e.g., `house-deed-0001`), linked sub-account (`estate-0001.buddiesblitz.testnet`), active **`EPOCH #N`**, Pending/Earned/Paid Out RESPITE counters, Provenance History, and functional **`FUND +5 R`** / **`CLAIM PAYOUT`** on-chain buttons. Under the kiosk's `PROPERTY MARKET` tab, real estate and NFT furniture listings settle atomically via contract escrow (`list_property_deed` -> `buy_property`), and each settlement issues a receipt Letter under `Social Chat -> PRIVATE`.
 3. **Daily Missions (`games`)**
-   - **Do:** Open the **`MISSIONS`** board from the HUD and complete the day's four missions: **Meet Kai** at the Fish Market, **Work a Shift** at Glasshouse Cafe, **Catch a Fish**, and **Visit Your Claimed Plot House**. Every mission card carries a transit shortcut (`GO TO KAI`, `GO TO CAFE`, `GO TO PIER`, `GO TO PLOTS`).
-   - **See:** Progress records automatically from real gameplay events -- chatting with Kai, serving a cafe order, landing a catch, stepping into your own house. Rewards are off-chain `LUL` + `XP` (`25/30`, `35/40`, `35/40`, `45/50` per mission) plus a `+60 LUL / +80 XP` all-clear bonus, for a maximum of `200 LUL + 240 XP` per day -- `RESPITE` is never emitted from gameplay grinding. Mission state is stored per wallet account and resets on the player's local calendar day.
+   - **Do:** Open the **`MISSIONS`** board from the HUD and complete the day's five missions: **Meet Kai** at the Fish Market, **Work a Shift** at Glasshouse Cafe, **Catch a Fish**, **Claim Your Plot** at the residences, and **Visit Your Claimed Plot House**. Every mission's `GO` button lights a golden waypoint path to its first stop (a transit kiosk for the far ones, then on to the target after the tram).
+   - **See:** Progress records automatically from real gameplay events -- chatting with Kai, serving a cafe order, landing a catch, stepping into your own house. Rewards are off-chain `LUL` + `XP` (`25/30`, `35/40`, `35/40`, `40/45`, `45/50` per mission) plus a `+60 LUL / +80 XP` all-clear bonus, for a maximum of `240 LUL + 285 XP` per day -- `RESPITE` is never emitted from gameplay grinding. Mission state is stored per wallet account and resets on the player's local calendar day.
 4. **Shoreline Fishing, Attested NFT Minting & Bounded AI Haggling (`games`)**
    - **Do:** Ride the tram (`[E]`) or take **City Transit Kiosk (`[E]`) -> `KAI FISH MARKET`**, equip the **Fishing Rod** (`BAG`), hold **`F`** near East Beach water, complete the **Line-Tension Gauge** catch, open **`BAG -> FISH`** to mint a Fish NFT (`/api/fish-attest`), and talk or haggle with **Kai (`[E]`)** or answer his phone call in any language.
    - **See:** Minting writes on-chain species, zone, rarity, and weight attributes verified by Ed25519 signature. Haggling runs deterministic step/ceiling logic while allowing `kai.buddiesblitz.testnet` to buy qualifying Fish NFTs with real on-chain `RESPITE`.
@@ -233,7 +234,7 @@ api/
 
 contracts/buddies-market/
   Cargo.toml                            near-sdk 5.5.0 manifest
-  src/lib.rs                            NEP-141/145, NEP-171/177/181, Sub-Account Deeds, Escrow, NEP-245 (v1.6.0)
+  src/lib.rs                            NEP-141/145, NEP-171/177/181, Sub-Account Deeds, Escrow, NEP-245 (v1.7.0)
   target/near/                          Compiled buddies_market.wasm (348,564 B) + buddies_market_abi.json
 
 src/
