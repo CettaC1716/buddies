@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
+  prepareFittedStudioGroup,
   prepareStudioFurnitureGroup,
   rasterizeTexturedGroupToBuffer,
 } from './furniture3dRasterizer';
@@ -162,5 +163,59 @@ test('renders all procedural catalog furniture items with rich non-white colors'
       stats.nonWhiteCount > stats.opaqueCount * 0.65,
       `${id} must show colored/shaded surfaces instead of stark white (${stats.nonWhiteCount}/${stats.opaqueCount})`,
     );
+  }
+});
+
+test('prepareFittedStudioGroup fits all furniture items inside viewport bounds without clipping', () => {
+  const furnitureIds = [
+    'tatami_tea_table',
+    'sakura_bonsai_pot',
+    'shoji_floor_lamp',
+    'tactical_sofa_lounge',
+    'arcade_blitz_cab',
+    'nft_golden_katana_rack',
+    'nft_holo_command_globe',
+  ];
+  const w = 240;
+  const h = 180;
+  const pixels = new Uint8ClampedArray(w * h * 4);
+
+  for (const id of furnitureIds) {
+    const meshGroup = buildOriginalBuddiesCatalogFurnitureMesh(id);
+    const wrapper = prepareFittedStudioGroup(meshGroup, {
+      cameraZ: 2.9,
+      fovDeg: 24,
+      aspect: 1.24,
+      topMarginFrac: 0.075,
+      bottomMarginFrac: 0.145,
+      sideMarginFrac: 0.065,
+      pitchRange: [-0.25, 0.68],
+    });
+
+    for (const [pitch, yaw] of [
+      [0.24, 0.62],
+      [0.68, 0.78],
+      [-0.25, 1.4],
+    ]) {
+      wrapper.rotation.set(pitch, yaw, 0);
+      rasterizeTexturedGroupToBuffer(wrapper, pixels, w, h, 2.9, 24);
+      let minX = w;
+      let maxX = -1;
+      let minY = h;
+      let maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (pixels[(y * w + x) * 4 + 3] > 20) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      assert.ok(minY >= 4, `${id} (pitch=${pitch}) top clipped at y=${minY}`);
+      assert.ok(maxY <= h - 18, `${id} (pitch=${pitch}) bottom too close to hint at y=${maxY}/${h}`);
+      assert.ok(minX >= 4 && maxX <= w - 5, `${id} (pitch=${pitch}) side clipped (${minX}..${maxX})`);
+    }
   }
 });

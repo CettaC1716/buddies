@@ -685,6 +685,98 @@ export function buildCompactInteractiveChevronMarker(
   return { group, chevronArrow, chevronMat };
 }
 
+export interface CompactSeatIndicatorPair {
+  coinRoot: THREE.Group;
+  blueCoin: THREE.Group;
+  greenCoin: THREE.Group;
+}
+
+export type CompactSeatCoinResourceCache = Map<
+  string,
+  {
+    outerGeo: THREE.CylinderGeometry;
+    outerMat: THREE.MeshBasicMaterial;
+    innerGeo: THREE.CylinderGeometry;
+    innerMat: THREE.MeshBasicMaterial;
+  }
+>;
+
+/**
+ * Builds the Cafe-style compact translucent dual-disc seat trigger indicator
+ * (blue when idle, bright lime-green when nearest/winning sit target).
+ */
+export function buildCompactSeatIndicatorPair(
+  scaleMultiplier = 1.0,
+  resourceCache?: CompactSeatCoinResourceCache,
+): CompactSeatIndicatorPair {
+  const makeDisc = (
+    radius: number,
+    thickness: number,
+    outerHex: string,
+    innerHex: string,
+    opacity: number,
+  ): THREE.Group => {
+    const cacheKey = `${radius}_${thickness}_${outerHex}_${innerHex}_${opacity}`;
+    let res = resourceCache?.get(cacheKey);
+    if (!res) {
+      res = {
+        outerGeo: new THREE.CylinderGeometry(radius, radius, thickness, 24),
+        outerMat: new THREE.MeshBasicMaterial({
+          color: outerHex,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          fog: false,
+        }),
+        innerGeo: new THREE.CylinderGeometry(radius * 0.68, radius * 0.68, thickness + 0.003 * scaleMultiplier, 20),
+        innerMat: new THREE.MeshBasicMaterial({
+          color: innerHex,
+          transparent: true,
+          opacity: Math.min(0.95, opacity + 0.12),
+          depthWrite: false,
+          fog: false,
+        }),
+      };
+      resourceCache?.set(cacheKey, res);
+    }
+    const g = new THREE.Group();
+    const outerMesh = new THREE.Mesh(res.outerGeo, res.outerMat);
+    outerMesh.rotation.x = Math.PI / 2;
+    outerMesh.raycast = () => {};
+    outerMesh.castShadow = false;
+    outerMesh.receiveShadow = false;
+    g.add(outerMesh);
+
+    const innerMesh = new THREE.Mesh(res.innerGeo, res.innerMat);
+    innerMesh.rotation.x = Math.PI / 2;
+    innerMesh.raycast = () => {};
+    innerMesh.castShadow = false;
+    innerMesh.receiveShadow = false;
+    g.add(innerMesh);
+
+    return g;
+  };
+
+  const coinRoot = new THREE.Group();
+  const blueCoin = makeDisc(
+    CAFE_GLOBAL_SCALE_SPEC.interiorSeatIndicatorBlueRadiusM * scaleMultiplier,
+    0.018 * scaleMultiplier,
+    '#38bdf8',
+    '#7dd3fc',
+    0.68,
+  );
+  const greenCoin = makeDisc(
+    CAFE_GLOBAL_SCALE_SPEC.interiorSeatIndicatorGreenRadiusM * scaleMultiplier,
+    0.020 * scaleMultiplier,
+    '#b8ff3c',
+    '#d9f99d',
+    0.82,
+  );
+  greenCoin.visible = false;
+  coinRoot.add(blueCoin, greenCoin);
+  return { coinRoot, blueCoin, greenCoin };
+}
+
 export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle {
   const root = new THREE.Group();
   root.name = 'BotanicalGlasshouseCafeInterior3D';
@@ -1168,77 +1260,9 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   );
 
   // 9. Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (shared geometry & material per variant)
-  const coinResourceCache = new Map<
-    string,
-    {
-      outerGeo: THREE.CylinderGeometry;
-      outerMat: THREE.MeshBasicMaterial;
-      innerGeo: THREE.CylinderGeometry;
-      innerMat: THREE.MeshBasicMaterial;
-    }
-  >();
-  const makeCompactSeatIndicatorCoin = (
-    radius: number,
-    thickness: number,
-    outerHex: string,
-    innerHex: string,
-    opacity: number,
-  ): THREE.Group => {
-    const cacheKey = `${radius}_${thickness}_${outerHex}_${innerHex}_${opacity}`;
-    let res = coinResourceCache.get(cacheKey);
-    if (!res) {
-      res = {
-        outerGeo: new THREE.CylinderGeometry(radius, radius, thickness, 24),
-        outerMat: new THREE.MeshBasicMaterial({
-          color: outerHex,
-          transparent: true,
-          opacity,
-          depthWrite: false,
-          fog: false,
-        }),
-        innerGeo: new THREE.CylinderGeometry(radius * 0.68, radius * 0.68, thickness + 0.003, 20),
-        innerMat: new THREE.MeshBasicMaterial({
-          color: innerHex,
-          transparent: true,
-          opacity: Math.min(0.95, opacity + 0.12),
-          depthWrite: false,
-          fog: false,
-        }),
-      };
-      coinResourceCache.set(cacheKey, res);
-    }
-    const g = new THREE.Group();
-    const outerMesh = new THREE.Mesh(res.outerGeo, res.outerMat);
-    outerMesh.rotation.x = Math.PI / 2;
-    outerMesh.raycast = () => {};
-    g.add(outerMesh);
-
-    const innerMesh = new THREE.Mesh(res.innerGeo, res.innerMat);
-    innerMesh.rotation.x = Math.PI / 2;
-    innerMesh.raycast = () => {};
-    g.add(innerMesh);
-
-    return g;
-  };
-
+  const coinResourceCache: CompactSeatCoinResourceCache = new Map();
   const floorSpotIndicators = CAFE_INTERIOR_SEAT_SPOTS.map((spot) => {
-    const coinRoot = new THREE.Group();
-    const blueCoin = makeCompactSeatIndicatorCoin(
-      CAFE_GLOBAL_SCALE_SPEC.interiorSeatIndicatorBlueRadiusM,
-      0.018,
-      '#38bdf8',
-      '#7dd3fc',
-      0.68,
-    );
-    const greenCoin = makeCompactSeatIndicatorCoin(
-      CAFE_GLOBAL_SCALE_SPEC.interiorSeatIndicatorGreenRadiusM,
-      0.020,
-      '#b8ff3c',
-      '#d9f99d',
-      0.82,
-    );
-    greenCoin.visible = false;
-    coinRoot.add(blueCoin, greenCoin);
+    const { coinRoot, blueCoin, greenCoin } = buildCompactSeatIndicatorPair(1.0, coinResourceCache);
     coinRoot.position.set(spot.x, spot.indicatorHeightY, spot.z);
     root.add(coinRoot);
     return { coinRoot, blueCoin, greenCoin };

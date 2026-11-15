@@ -239,6 +239,7 @@ import {
   pickWarzoneRaiderRespawnCoord,
   CITY_AMBIENT_NPC_PRESETS,
   stepCityAmbientNpcSchedule,
+  resolveUnifiedBottomDockProximity,
 } from './buddiesBlitzRules';
 import { applyGrassChunkSyncedFogOfWar3D } from './buddiesBlitzMinimap';
 import {
@@ -6219,5 +6220,99 @@ test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on s
   assert.equal(sitStep.isSitting, true);
   assert.equal(sitStep.isMoving, false);
 });
+
+test('Unified bottom dock arbitrates nearby merchants, ambient NPCs, players, hysteresis, and benches', () => {
+  // 1. Approaching ambient NPC Nadia surfaces Nadia in the bottom dock
+  const r1 = resolveUnifiedBottomDockProximity({
+    candidates: [
+      {
+        id: 'city_plaza_nadia',
+        name: 'Nadia',
+        distance: 2.1,
+        isNpc: true,
+        isMerchant: false,
+        gender: 'female',
+        team: 'red',
+        status: 'PLAZA STROLL',
+      },
+      {
+        id: 'npc_hana',
+        name: 'HANA',
+        distance: 6.4,
+        isNpc: true,
+        isMerchant: true,
+        merchantLocation: 'lobby_cafe',
+        gender: 'female',
+        team: 'blue',
+        status: 'Real Estate & Exchange Merchant',
+      },
+    ],
+    previousEntityId: null,
+    nearestSeatDistance: null,
+  });
+  assert.equal(r1.winner, 'entity');
+  if (r1.winner === 'entity') {
+    assert.equal(r1.entity.name, 'Nadia');
+  }
+
+  // 2. Hysteresis keeps previous target active up to exitRadiusMeters (4.45m)
+  const r2 = resolveUnifiedBottomDockProximity({
+    candidates: [
+      {
+        id: 'city_plaza_nadia',
+        name: 'Nadia',
+        distance: 4.15,
+        isNpc: true,
+        isMerchant: false,
+        team: 'red',
+        status: 'PLAZA STROLL',
+      },
+    ],
+    previousEntityId: 'city_plaza_nadia',
+    nearestSeatDistance: null,
+  });
+  assert.equal(r2.winner, 'entity');
+
+  // 3. Bench wins when player is clearly closer to the bench than to any NPC/player
+  const r3 = resolveUnifiedBottomDockProximity({
+    candidates: [
+      {
+        id: 'peer_1',
+        name: 'AlexRunner',
+        distance: 3.4,
+        isNpc: false,
+        isMerchant: false,
+        team: 'blue',
+        status: 'Online in City',
+      },
+    ],
+    previousEntityId: null,
+    nearestSeatDistance: 1.1,
+  });
+  assert.equal(r3.winner, 'sit');
+
+  // 4. Merchant wins when player walks up right beside Hana even if a bench is also nearby
+  const r4 = resolveUnifiedBottomDockProximity({
+    candidates: [
+      {
+        id: 'npc_hana',
+        name: 'HANA',
+        distance: 1.4,
+        isNpc: true,
+        isMerchant: true,
+        merchantLocation: 'lobby_cafe',
+        team: 'blue',
+        status: 'Official Merchant',
+      },
+    ],
+    previousEntityId: null,
+    nearestSeatDistance: 2.2,
+  });
+  assert.equal(r4.winner, 'entity');
+  if (r4.winner === 'entity') {
+    assert.equal(r4.entity.id, 'npc_hana');
+  }
+});
+
 
 

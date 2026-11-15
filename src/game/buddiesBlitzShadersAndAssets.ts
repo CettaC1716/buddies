@@ -19,8 +19,16 @@ import {
   stepCommanderSlidingGate,
   KioskSideHologramModelKind,
   shouldStripDetachedTreeBaseCollar,
+  CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
 } from './buddiesBlitzRules';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
+import { buildGrandCasino3D } from './buddiesGrandCasinoBuilder';
+import {
+  buildUrbanScooterShowroomKiosk3D,
+  createElectricScooterBike3D,
+  createPushKickScooter3D,
+} from './buddiesUrbanScooterBuilder';
+import { buildRealEstateAndFurnitureKiosk3D } from './buddiesRealEstateKioskBuilder';
 import {
   PLANET_CURVATURE_STRENGTH,
   PLANET_HALF_EXTENT,
@@ -64,6 +72,7 @@ import {
   type CafeAssetStyler,
 } from './buddiesLShapedCafeAssets';
 
+export { createElectricScooterBike3D, createPushKickScooter3D };
 export {
   PLANET_CURVATURE_STRENGTH,
   PLANET_HALF_EXTENT,
@@ -162,8 +171,13 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       (12.2 - 1.7 * smoothstep(-106.0, -112.0, p.x)) *
       smoothstep(35.0, 41.0, p.y) *
       (1.0 - smoothstep(75.0, 82.0, p.y));
+    float grandCasinoClear =
+      smoothstep(-65.0, -94.5, p.x) *
+      (19.5 - 8.5 * smoothstep(-104.5, -113.5, p.x)) *
+      smoothstep(-41.5, -48.0, p.y) *
+      (1.0 - smoothstep(-99.5, -111.5, p.y));
     float eastCoastalOpen = smoothstep(96.5, 102.0, p.x) * 92.0;
-    float d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - eastCoastalOpen;
+    float d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - grandCasinoClear - eastCoastalOpen;
     if (d0 < -6.5) {
       return vec4(d0, d0 - 6.0, d0 - 12.0, d0 - 18.0);
     }
@@ -255,7 +269,14 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     );
 
     float dCentralSCurve = evalMirroredCentralSCurveDist(p, az) - 4.2;
-    return min(dOuterAndBaseRing, dCentralSCurve);
+    float dCasinoValetLoop = 999.0;
+    if (p.x <= -56.0 && p.y <= -56.5 && p.y >= -85.0) {
+      float clampedX = min(p.x, -60.0);
+      float eastFade = max(0.0, p.x + 60.0) * 4.0;
+      float boxSdf = sdRoundedBox2D(vec2(clampedX, p.y), vec2(-64.05, -70.6), vec2(9.45, 7.35), 5.2);
+      dCasinoValetLoop = abs(boxSdf) - 2.7 + eastFade;
+    }
+    return min(min(dOuterAndBaseRing, dCentralSCurve), dCasinoValetLoop);
   }
 
   float evaluateNwLakeSdf(vec2 p) {
@@ -292,7 +313,27 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dBeach = sdRoundedBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4), 0.4);
     float dPlazaSidewalk = sdRoundedBox2D(p, vec2(-75.25, 0.0), vec2(1.45, 38.2), 0.2);
     float dTennisClub = sdRoundedBox2D(p, vec2(-89.20, 51.90), vec2(15.20, 13.70), 0.3);
-    return min(dTennisClub, min(dPlazaSidewalk, min(dCentral, min(dNorth, min(dSouth, dBeach)))));
+    float dGrandCasino = 50.0;
+    if (p.x <= -62.5 && p.y <= -36.8 && p.y >= -105.5) {
+      float dMainPerimeter = sdRoundedBox2D(p, vec2(-88.9, -70.6), vec2(12.75, 20.45), 0.8);
+      float dMedianIsland = sdRoundedBox2D(p, vec2(-67.4, -70.6), vec2(3.45, 4.7), 2.45);
+      float westEdgeX = -76.58 - 0.87 * smoothstep(-46.8, -50.2, p.y);
+      float dTramClear = 11.85 - length(vec2(min(p.x + 62.0, 0.0), min(p.y + 44.0, 0.0)));
+      float dSeSidewalk = max(
+        max(westEdgeX - p.x, p.x + 63.85),
+        max(max(p.y + 37.5, -68.6 - p.y), dTramClear)
+      );
+      float dNorthGarden1 = sdSegment2D(p, vec2(-92.1, -90.8), vec2(-83.6, -97.6)) - 5.8;
+      float dNorthGarden2 = sdSegment2D(p, vec2(-83.6, -97.6), vec2(-76.8, -100.2)) - 3.8;
+      dGrandCasino = min(
+        min(dMainPerimeter, dMedianIsland),
+        min(dSeSidewalk, min(dNorthGarden1, dNorthGarden2))
+      );
+    }
+    return min(
+      dGrandCasino,
+      min(dTennisClub, min(dPlazaSidewalk, min(dCentral, min(dNorth, min(dSouth, dBeach)))))
+    );
   }
 
   float evaluateBlitzGrassMaskFromSdfs(
@@ -4750,6 +4791,13 @@ export async function loadAllRealBlitzAssets(
         hanaIdleClip,
       };
       cachedLoadedBlitzAssets = loaded;
+      if (loaded.treeFoliageTex) {
+        pendingBushLeafMaskMaterials.forEach((mat) => {
+          if (mat.uniforms?.uLeafTex) {
+            mat.uniforms.uLeafTex.value = loaded.treeFoliageTex;
+          }
+        });
+      }
       inFlightLoadedBlitzAssetsPromise = null;
       notifyBlitz3dAssetProgress(BLITZ_3D_TOTAL_ASSET_TASKS, BLITZ_3D_TOTAL_ASSET_TASKS);
       return loaded;
@@ -4760,6 +4808,7 @@ export async function loadAllRealBlitzAssets(
 }
 
 let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
+const pendingBushLeafMaskMaterials = new Set<THREE.ShaderMaterial>();
 // Set the moment the sleeping FBX parse finishes, independently of the full asset
 // batch: character rigs are built early (onCharacterGltfReady) and their clip maps
 // must already see the sleeping clip at build time.
@@ -12615,6 +12664,16 @@ export function createCurvedPlanetEnvironment(
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 3.8, 0.8));
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-15.0, 52.0), vec2(-15.0, 64.2), 3.8, 0.8));
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(15.0, 52.0), vec2(15.0, 64.2), 3.8, 0.8));
+
+            // Grand Casino Semi-Circular Valet Drop-Off Loop Centerline Dashes (North of Central Plaza)
+            if (p.x <= -63.6 && p.y <= -60.5 && p.y >= -80.8) {
+              float dValetCenter = abs(sdRoundedBox2D(p, vec2(-64.05, -70.6), vec2(9.45, 7.35), 5.2));
+              float valetLineMask = 1.0 - smoothstep(0.11, 0.23, dValetCenter);
+              if (valetLineMask > 0.001) {
+                float sValet = atan(p.y + 70.6, p.x + 68.3) * 5.2 + p.x * 0.35 + p.y * 0.35;
+                singleDash = max(singleDash, valetLineMask * step(0.42, fract(sValet * 0.22)));
+              }
+            }
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(45.0, 52.0), vec2(45.0, 64.2), 3.8, 0.8));
           }
         }
@@ -12899,6 +12958,9 @@ export function createCurvedPlanetEnvironment(
           zc = max(zc, evalZebraCrosswalk(mp, vec2(0.0, 58.0), vec2(3.2, 2.2), true));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(30.0, 58.0), vec2(3.2, 2.2), true));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(60.0, 58.0), vec2(3.2, 2.2), true));
+          // Grand Casino Valet Drop-Off Loop Throat Crosswalks (North & South junctions along x = -65.45)
+          zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -63.25), vec2(1.35, 2.15), false));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -77.95), vec2(1.35, 2.15), false));
 
           // Center Dashed Markings (Twin Parallel Dashed Lines on Autonomous Tram Loop + Single Dashed Line on All Other Roads)
           float centerDash = evalAllRoadCenterMarkings(p) * (1.0 - zc.y);
@@ -13462,57 +13524,7 @@ export function createCurvedPlanetEnvironment(
     return tex;
   })();
 
-  // Procedural Chalkboard Menu Board Texture for Modern Coffee & Gelato Kiosk (Sheet 3)
-  const lobbyGelatoMenuTex = (() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 320;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#23282e';
-    ctx.fillRect(0, 0, 256, 320);
-    ctx.strokeStyle = '#8b5e34';
-    ctx.lineWidth = 14;
-    ctx.strokeRect(7, 7, 242, 306);
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = 'italic bold 26px Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Menu', 128, 52);
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(44, 66);
-    ctx.lineTo(212, 66);
-    ctx.stroke();
-    ctx.font = 'bold 15px "Inter", sans-serif';
-    ctx.fillStyle = '#fde68a';
-    ctx.fillText('ESPRESSO & BAR', 128, 96);
-    ctx.font = '13px "Inter", sans-serif';
-    ctx.fillStyle = '#e2e8f0';
-    const lines = [
-      'Espresso / Americano ... 3.5',
-      'Artisan Cappuccino ..... 4.5',
-      'Iced Sea-Salt Latte .... 5.0',
-      'Matcha Affogato ........ 5.5',
-      '',
-      'ARTISANAL GELATO',
-      'Pistachio Bronte ....... 4.5',
-      'Strawberry Sorbetto .... 4.5',
-      'Mango Passion & Cocoa .. 5.0',
-    ];
-    lines.forEach((ln, idx) => {
-      if (ln === 'ARTISANAL GELATO') {
-        ctx.font = 'bold 15px "Inter", sans-serif';
-        ctx.fillStyle = '#f9a8d4';
-      } else {
-        ctx.font = '13px "Inter", sans-serif';
-        ctx.fillStyle = '#e2e8f0';
-      }
-      ctx.fillText(ln, 128, 122 + idx * 20);
-    });
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  })();
+
 
   // World-Meter Proportional UV Tiling Helper for Lobby BoxGeometries (eliminates stretched textures)
   const tileLobbyBoxGeometryUVs = (geo: THREE.BufferGeometry, worldTileMeters = 2.6) => {
@@ -13809,14 +13821,15 @@ export function createCurvedPlanetEnvironment(
     lobbySidewalkPaverTex,
     2.2,
   );
-  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [13.92 .. 16.47])
+  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [13.92 .. 16.47];
+  //    strokeW = 0 so zero BackSide outline lip crosses the flush z = -38.10 Grand Casino sidewalk seam!)
   addLobbyPart(
     urbanStaircaseGrp,
     new THREE.BoxGeometry(2.55, 0.09, 28.10),
     '#bcc3cc',
     [15.195, 0.045, -24.05],
     [0, 0, 0],
-    0.012,
+    0,
     lobbySidewalkPaverTex,
     2.2,
   );
@@ -13831,23 +13844,14 @@ export function createCurvedPlanetEnvironment(
     lobbySidewalkPaverTex,
     2.2,
   );
-  // 4) Continuous Full-Length Roadside Granite Curb Beam right along the Asphalt Road Edge (lx = +16.57, lz in [-38.15 .. +38.15])
+  // 4) Continuous Full-Length Roadside Granite Curb Beam right along the Asphalt Road Edge
+  //    (lx = +16.57 -> worldX = -73.93, lz in [-38.10 .. +38.15]; North end joins Grand Casino curb at z = -38.10
+  //    and South end flows continuously into the Tennis Court curb at z = +38.10!)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(0.20, 0.105, 76.30),
+    new THREE.BoxGeometry(0.20, 0.105, 76.25),
     '#8f96a0',
-    [16.57, 0.0525, 0.0],
-    [0, 0, 0],
-    0.010,
-    lobbyConcreteTex,
-    2.2,
-  );
-  // North Sidewalk End-Return Curb at lz = -38.12 (South end flows continuously into the Tennis Court Sidewalk!)
-  addLobbyPart(
-    urbanStaircaseGrp,
-    new THREE.BoxGeometry(2.75, 0.105, 0.18),
-    '#8f96a0',
-    [15.295, 0.0525, -38.12],
+    [16.57, 0.0525, 0.025],
     [0, 0, 0],
     0.010,
     lobbyConcreteTex,
@@ -14004,7 +14008,11 @@ export function createCurvedPlanetEnvironment(
     [10.00, 1.90, 1.18], // Tier 3 (Mid-Landing / Lower Top)
     [12.30, 2.66, 0.64], // Tier 4 (Lower Street Foot)
   ];
-  const shrubColors = ['#3b8c36', '#4ea844', '#63bd52', '#32782e'];
+  const staircaseShrubMatrices: THREE.Matrix4[] = [];
+  const tmpShrubPos = new THREE.Vector3();
+  const tmpShrubQuat = new THREE.Quaternion();
+  const tmpShrubScale = new THREE.Vector3();
+  const shrubUpAxis = new THREE.Vector3(0, 1, 0);
   for (const sideSign of [-1, 1]) {
     const planterZ = sideSign * 9.20;
     for (let tIdx = 0; tIdx < steppedPlanterTiers.length; tIdx++) {
@@ -14038,30 +14046,35 @@ export function createCurvedPlanetEnvironment(
         [0, 0, 0],
         0.006,
       );
-      // Lush Low-Poly Blitz Toon Green Shrub Mounds centered neatly inside each Stepped Planter
+      // Lush Leaf-Petal Cluster Shrubs (adapted from TreeLeaves billboard leaf-petal cluster + calm organic wind sway, pure green)
       const shrubCount = tIdx === 3 ? 4 : 3;
       for (let sh = 0; sh < shrubCount; sh++) {
         const shFrac = sh / (shrubCount - 1) - 0.5;
         const shX = tierX + shFrac * (tierLenX - 0.64);
-        const shZ = planterZ + ((sh % 2 === 0 ? -1 : 1) * 0.08);
+        const shZ = planterZ + ((sh % 2 === 0 ? -1 : 1) * 0.05);
         const shR = 0.28 + (sh % 2) * 0.04;
-        const shCol = shrubColors[(tIdx + sh) % shrubColors.length];
-        addToonRailingPart(
-          urbanStaircaseGrp,
-          new THREE.DodecahedronGeometry(shR, 1),
-          shCol,
-          [shX, tierTopY + shR * 0.58, shZ],
-          [0, (sh * 1.1) % Math.PI, 0],
-          0.008,
+
+        tmpShrubPos.set(shX, tierTopY + 0.24, shZ);
+        tmpShrubQuat.setFromAxisAngle(
+          shrubUpAxis,
+          (tIdx * 1.73 + sh * 2.11 + (sideSign > 0 ? 0.85 : 0.0)) % (Math.PI * 2),
         );
-        addToonRailingPart(
-          urbanStaircaseGrp,
-          new THREE.DodecahedronGeometry(shR * 0.74, 1),
-          shrubColors[(tIdx + sh + 1) % shrubColors.length],
-          [shX + 0.12, tierTopY + shR * 0.44, planterZ],
-          [0, 0, 0],
-          0.007,
+        tmpShrubScale.set(shR * 0.94, shR * 0.78, shR * 0.94);
+        const mainMat = new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale);
+        staircaseShrubMatrices.push(mainMat);
+
+        tmpShrubPos.set(
+          shX + (sh % 2 === 0 ? 0.12 : -0.12),
+          tierTopY + 0.19,
+          planterZ + (sh % 2 === 0 ? 0.03 : -0.03),
         );
+        tmpShrubQuat.setFromAxisAngle(
+          shrubUpAxis,
+          (tIdx * 2.37 + sh * 1.49 + 1.9) % (Math.PI * 2),
+        );
+        tmpShrubScale.set(shR * 0.72, shR * 0.60, shR * 0.72);
+        const sideMat = new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale);
+        staircaseShrubMatrices.push(sideMat);
       }
     }
 
@@ -14099,6 +14112,394 @@ export function createCurvedPlanetEnvironment(
         0.008,
       );
     }
+  }
+
+  const bushPlanesPerCluster = isSoftwareGl ? 34 : 46;
+  const sharedPlazaBushClusterGeo = getSharedTreeClusterGeometry(bushPlanesPerCluster);
+  const initialPlazaBushLeafMask =
+    cachedLoadedBlitzAssets?.treeFoliageTex || getSharedFallbackFoliageMaskTexture();
+
+  const sharedPlazaLeafShrubMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uLeafTex: { value: initialPlazaBushLeafMask },
+      uColorMain: { value: new THREE.Color('#217a34') },
+      uColorDepth: { value: new THREE.Color('#185c27') },
+      uColorSun: { value: new THREE.Color('#57b83c') },
+      uLeafScale: { value: 1.86 },
+      uAlphaThreshold: { value: 0.28 },
+      uLightDirection: windUniforms.uLightDirection,
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+      uWindGust: windUniforms.uWindGust,
+    },
+    vertexShader: /* glsl */ `
+      attribute vec3 aLeafCenter;
+      attribute vec3 aLeafLocalPos;
+      attribute float aLeafPlaneSeed;
+
+      uniform float uLeafScale;
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
+      varying vec2 vUv;
+      varying float vLeafShade;
+      varying vec3 vCanopyNormalW;
+      varying float vSunTipMask;
+
+      void main() {
+        vUv = uv;
+        mat4 worldMat = modelMatrix * instanceMatrix;
+        vec3 clusterOriginW = (worldMat * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+
+        vec3 clampedCenter = vec3(aLeafCenter.x, max(aLeafCenter.y, -0.62), aLeafCenter.z);
+        vec3 cardAnchorW = (worldMat * vec4(clampedCenter, 1.0)).xyz;
+        float bushRadiusScale = length(vec3(worldMat[0][0], worldMat[0][1], worldMat[0][2]));
+
+        vec2 windDir = length(uWindDirection) > 0.001 ? normalize(uWindDirection) : vec2(0.7071, 0.7071);
+        vec2 perpDir = vec2(-windDir.y, windDir.x);
+        float spatialPhase = dot(clusterOriginW.xz, windDir) * 0.55 + clusterOriginW.y * 0.35;
+        float rootMask = smoothstep(-0.62, 0.95, clampedCenter.y);
+
+        float primaryWave = sin(uWindPhase * 0.45 - spatialPhase + aLeafPlaneSeed * 1.1);
+        float gustEnvelope = 0.55 + 0.45 * sin(uWindPhase * 0.20 - spatialPhase * 0.45);
+        float gustPush = uWindGust * gustEnvelope;
+        float swayWorld = (primaryWave * 0.022 + gustPush * 0.026) * (0.45 + uWindStrength * 0.90) * rootMask;
+        float sideRustle = sin(uWindPhase * 0.75 - spatialPhase * 0.85 + aLeafPlaneSeed * 6.2831853) * 0.006 * rootMask;
+
+        float flutterRoll = sin(uWindPhase * 0.82 - spatialPhase * 0.75 + aLeafPlaneSeed * 6.2831853) * (0.035 + uWindGust * 0.040) * rootMask;
+        float angle = aLeafPlaneSeed * 6.2831853 + flutterRoll;
+        float s = sin(angle);
+        float c = cos(angle);
+
+        vec3 scaledCard = aLeafLocalPos * (bushRadiusScale * uLeafScale);
+        float rotX = scaledCard.x * c - scaledCard.y * s;
+        float rotY = scaledCard.x * s + scaledCard.y * c;
+
+        vec3 camRightW = normalize(vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]));
+        vec3 camUpW = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
+        vec3 camFwdW = normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
+
+        vec3 windOffsetW = vec3(
+          windDir.x * swayWorld + perpDir.x * sideRustle,
+          -abs(swayWorld) * 0.14 + sin(uWindPhase * 0.62 + aLeafPlaneSeed * 6.2831853) * 0.004 * rootMask,
+          windDir.y * swayWorld + perpDir.y * sideRustle
+        );
+
+        vec3 finalWorldPos = cardAnchorW + windOffsetW + camRightW * rotX + camUpW * rotY + camFwdW * ((aLeafPlaneSeed - 0.5) * 0.015);
+        float heightLift = smoothstep(-0.62, 0.18, clampedCenter.y);
+        float radialOut = smoothstep(0.10, 0.82, length(clampedCenter));
+        float petalSeedTone = 0.94 + 0.08 * fract(aLeafPlaneSeed * 17.31);
+        vLeafShade = clamp((0.28 + 0.72 * max(heightLift * 0.88, radialOut * 0.78)) * petalSeedTone, 0.0, 1.0);
+
+        vec3 localCanopyN = normalize(vec3(clampedCenter.x, clampedCenter.y + 0.34, clampedCenter.z));
+        vCanopyNormalW = normalize(mat3(worldMat) * localCanopyN);
+        vSunTipMask = smoothstep(-0.14, 0.56, clampedCenter.y) * smoothstep(0.22, 0.82, length(clampedCenter));
+
+        gl_Position = projectionMatrix * viewMatrix * vec4(finalWorldPos, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uLeafTex;
+      uniform vec3 uColorMain;
+      uniform vec3 uColorDepth;
+      uniform vec3 uColorSun;
+      uniform float uAlphaThreshold;
+      uniform vec3 uLightDirection;
+
+      varying vec2 vUv;
+      varying float vLeafShade;
+      varying vec3 vCanopyNormalW;
+      varying float vSunTipMask;
+
+      void main() {
+        float mask = texture2D(uLeafTex, vUv).r;
+        if (mask < uAlphaThreshold) discard;
+
+        vec3 baseGreen = mix(uColorDepth, uColorMain, vLeafShade);
+        // Subtle directional warm-sunlight highlight on upper sun-facing outer leaf tips
+        // ("BERIKAN TANAMAN SEDIKIT FEK CAHAYA SINAR MATAHARI" while keeping dark green dominant!)
+        float sunNdl = smoothstep(0.16, 0.88, dot(normalize(vCanopyNormalW), normalize(uLightDirection)));
+        float petalEdgeLift = 0.62 + 0.38 * smoothstep(0.28, 0.88, length(vUv - vec2(0.5)) * 1.6);
+        float sunHighlight = clamp(sunNdl * vSunTipMask * petalEdgeLift * 0.42, 0.0, 0.38);
+        vec3 finalCol = mix(baseGreen, uColorSun, sunHighlight);
+
+        gl_FragColor = vec4(finalCol, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    side: THREE.DoubleSide,
+  });
+
+  const sharedPlazaLeafShrubDepthMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uLeafTex: { value: initialPlazaBushLeafMask },
+      uLeafScale: { value: 1.36 },
+      uAlphaThreshold: { value: 0.40 },
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+      uWindGust: windUniforms.uWindGust,
+    },
+    vertexShader: /* glsl */ `
+      attribute vec3 aLeafCenter;
+      attribute vec3 aLeafLocalPos;
+      attribute float aLeafPlaneSeed;
+
+      uniform float uLeafScale;
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
+      varying vec2 vUv;
+      varying float vSeed;
+
+      void main() {
+        vUv = uv;
+        vSeed = aLeafPlaneSeed;
+        mat4 worldMat = modelMatrix * instanceMatrix;
+        vec3 clusterOriginW = (worldMat * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vec3 clampedCenter = vec3(aLeafCenter.x, max(aLeafCenter.y, -0.62), aLeafCenter.z);
+        vec3 cardAnchorW = (worldMat * vec4(clampedCenter, 1.0)).xyz;
+        float bushRadiusScale = length(vec3(worldMat[0][0], worldMat[0][1], worldMat[0][2]));
+
+        vec2 windDir = length(uWindDirection) > 0.001 ? normalize(uWindDirection) : vec2(0.7071, 0.7071);
+        float spatialPhase = dot(clusterOriginW.xz, windDir) * 0.55 + clusterOriginW.y * 0.35;
+        float rootMask = smoothstep(-0.62, 0.95, clampedCenter.y);
+
+        float primaryWave = sin(uWindPhase * 0.45 - spatialPhase + aLeafPlaneSeed * 1.1);
+        float gustEnvelope = 0.55 + 0.45 * sin(uWindPhase * 0.20 - spatialPhase * 0.45);
+        float swayWorld = (primaryWave * 0.022 + uWindGust * gustEnvelope * 0.026) * (0.45 + uWindStrength * 0.90) * rootMask;
+
+        float flutterRoll = sin(uWindPhase * 0.82 - spatialPhase * 0.75 + aLeafPlaneSeed * 6.2831853) * (0.035 + uWindGust * 0.040) * rootMask;
+        float angle = aLeafPlaneSeed * 6.2831853 + flutterRoll;
+        float s = sin(angle);
+        float c = cos(angle);
+
+        vec3 scaledCard = aLeafLocalPos * (bushRadiusScale * uLeafScale);
+        float rotX = scaledCard.x * c - scaledCard.y * s;
+        float rotY = scaledCard.x * s + scaledCard.y * c;
+
+        vec3 camRightW = normalize(vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]));
+        vec3 camUpW = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
+        vec3 windOffsetW = vec3(windDir.x * swayWorld, -abs(swayWorld) * 0.14, windDir.y * swayWorld);
+
+        vec3 finalWorldPos = cardAnchorW + windOffsetW + camRightW * rotX + camUpW * rotY;
+        gl_Position = projectionMatrix * viewMatrix * vec4(finalWorldPos, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uLeafTex;
+      uniform float uAlphaThreshold;
+      varying vec2 vUv;
+      varying float vSeed;
+      void main() {
+        if (fract(vSeed * 19.0) > 0.68) discard;
+        if (texture2D(uLeafTex, vUv).r < uAlphaThreshold) discard;
+        gl_FragColor = vec4(vec3(1.0 - gl_FragCoord.z), 1.0);
+      }
+    `,
+    side: THREE.DoubleSide,
+  });
+
+  pendingBushLeafMaskMaterials.add(sharedPlazaLeafShrubMat);
+  pendingBushLeafMaskMaterials.add(sharedPlazaLeafShrubDepthMat);
+
+  const createPlazaLeafPetalShrubInstanced = (
+    matrices: THREE.Matrix4[],
+    meshName: string,
+  ): THREE.InstancedMesh => {
+    const inst = new THREE.InstancedMesh(
+      sharedPlazaBushClusterGeo,
+      sharedPlazaLeafShrubMat,
+      matrices.length,
+    );
+    inst.name = meshName;
+    inst.frustumCulled = true;
+    inst.castShadow = !isSoftwareGl;
+    inst.receiveShadow = !isSoftwareGl;
+    inst.customDepthMaterial = sharedPlazaLeafShrubDepthMat;
+    for (let idx = 0; idx < matrices.length; idx++) {
+      inst.setMatrixAt(idx, matrices[idx]);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.computeBoundingSphere();
+    if (inst.boundingSphere) {
+      inst.boundingSphere.radius += 2.0;
+    }
+    return inst;
+  };
+
+  interface PlazaFlowerClusterSpec {
+    matrix: THREE.Matrix4;
+    mainHex: string;
+    depthHex: string;
+  }
+
+  const createPlazaFlowerPetalClusterInstanced = (
+    specs: PlazaFlowerClusterSpec[],
+    meshName: string,
+  ): THREE.InstancedMesh => {
+    const baseFlowerGeo = getSharedTreeClusterGeometry(isSoftwareGl ? 20 : 28);
+    const flowerGeo = new THREE.BufferGeometry();
+    flowerGeo.setIndex(baseFlowerGeo.getIndex());
+    for (const attrKey of Object.keys(baseFlowerGeo.attributes)) {
+      flowerGeo.setAttribute(attrKey, baseFlowerGeo.getAttribute(attrKey));
+    }
+
+    const mainColArr = new Float32Array(specs.length * 3);
+    const depthColArr = new Float32Array(specs.length * 3);
+    const tmpMainC = new THREE.Color();
+    const tmpDepthC = new THREE.Color();
+    for (let i = 0; i < specs.length; i++) {
+      tmpMainC.set(specs[i].mainHex);
+      tmpDepthC.set(specs[i].depthHex);
+      mainColArr[i * 3] = tmpMainC.r;
+      mainColArr[i * 3 + 1] = tmpMainC.g;
+      mainColArr[i * 3 + 2] = tmpMainC.b;
+      depthColArr[i * 3] = tmpDepthC.r;
+      depthColArr[i * 3 + 1] = tmpDepthC.g;
+      depthColArr[i * 3 + 2] = tmpDepthC.b;
+    }
+    flowerGeo.setAttribute('aFlowerMainCol', new THREE.InstancedBufferAttribute(mainColArr, 3));
+    flowerGeo.setAttribute('aFlowerDepthCol', new THREE.InstancedBufferAttribute(depthColArr, 3));
+
+    const flowerMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uLeafTex: { value: initialPlazaBushLeafMask },
+        uLeafScale: { value: 1.72 },
+        uAlphaThreshold: { value: 0.28 },
+        uLightDirection: windUniforms.uLightDirection,
+        uWindPhase: windUniforms.uWindPhase,
+        uWindDirection: windUniforms.uWindDirection,
+        uWindStrength: windUniforms.uWindStrength,
+        uWindGust: windUniforms.uWindGust,
+      },
+      vertexShader: /* glsl */ `
+        attribute vec3 aLeafCenter;
+        attribute vec3 aLeafLocalPos;
+        attribute float aLeafPlaneSeed;
+        attribute vec3 aFlowerMainCol;
+        attribute vec3 aFlowerDepthCol;
+
+        uniform float uLeafScale;
+        uniform float uWindPhase;
+        uniform vec2 uWindDirection;
+        uniform float uWindStrength;
+        uniform float uWindGust;
+
+        varying vec2 vUv;
+        varying float vPetalShade;
+        varying vec3 vMainCol;
+        varying vec3 vDepthCol;
+        varying vec3 vCanopyNormalW;
+
+        void main() {
+          vUv = uv;
+          vMainCol = aFlowerMainCol;
+          vDepthCol = aFlowerDepthCol;
+
+          mat4 worldMat = modelMatrix * instanceMatrix;
+          vec3 clusterOriginW = (worldMat * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          vec3 clampedCenter = vec3(aLeafCenter.x, max(aLeafCenter.y, -0.55), aLeafCenter.z);
+          vec3 cardAnchorW = (worldMat * vec4(clampedCenter, 1.0)).xyz;
+          float flowerRadiusScale = length(vec3(worldMat[0][0], worldMat[0][1], worldMat[0][2]));
+
+          vec2 windDir = length(uWindDirection) > 0.001 ? normalize(uWindDirection) : vec2(0.7071, 0.7071);
+          vec2 perpDir = vec2(-windDir.y, windDir.x);
+          float spatialPhase = dot(clusterOriginW.xz, windDir) * 0.55 + clusterOriginW.y * 0.35;
+          float rootMask = smoothstep(-0.75, 0.90, clampedCenter.y);
+
+          float primaryWave = sin(uWindPhase * 0.45 - spatialPhase + aLeafPlaneSeed * 1.1);
+          float gustEnvelope = 0.55 + 0.45 * sin(uWindPhase * 0.20 - spatialPhase * 0.45);
+          float gustPush = uWindGust * gustEnvelope;
+          float swayWorld = (primaryWave * 0.024 + gustPush * 0.028) * (0.45 + uWindStrength * 0.90) * rootMask;
+          float sideRustle = sin(uWindPhase * 0.75 - spatialPhase * 0.85 + aLeafPlaneSeed * 6.2831853) * 0.006 * rootMask;
+
+          float flutterRoll = sin(uWindPhase * 0.82 - spatialPhase * 0.75 + aLeafPlaneSeed * 6.2831853) * (0.038 + uWindGust * 0.042) * rootMask;
+          float angle = aLeafPlaneSeed * 6.2831853 + flutterRoll;
+          float s = sin(angle);
+          float c = cos(angle);
+
+          vec3 scaledCard = aLeafLocalPos * (flowerRadiusScale * uLeafScale);
+          float rotX = scaledCard.x * c - scaledCard.y * s;
+          float rotY = scaledCard.x * s + scaledCard.y * c;
+
+          vec3 camRightW = normalize(vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]));
+          vec3 camUpW = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
+          vec3 camFwdW = normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
+
+          vec3 windOffsetW = vec3(
+            windDir.x * swayWorld + perpDir.x * sideRustle,
+            -abs(swayWorld) * 0.14 + sin(uWindPhase * 0.62 + aLeafPlaneSeed * 6.2831853) * 0.004 * rootMask,
+            windDir.y * swayWorld + perpDir.y * sideRustle
+          );
+
+          vec3 finalWorldPos = cardAnchorW + windOffsetW + camRightW * rotX + camUpW * rotY + camFwdW * (0.045 + (aLeafPlaneSeed - 0.5) * 0.015);
+          float heightLift = smoothstep(-0.55, 0.25, clampedCenter.y);
+          float radialOut = smoothstep(0.08, 0.82, length(clampedCenter));
+          float petalSeedTone = 0.94 + 0.08 * fract(aLeafPlaneSeed * 23.17);
+          vPetalShade = clamp((0.25 + 0.75 * max(heightLift * 0.90, radialOut * 0.82)) * petalSeedTone, 0.0, 1.0);
+          vCanopyNormalW = normalize(mat3(worldMat) * normalize(vec3(clampedCenter.x, clampedCenter.y + 0.30, clampedCenter.z)));
+
+          gl_Position = projectionMatrix * viewMatrix * vec4(finalWorldPos, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uLeafTex;
+        uniform float uAlphaThreshold;
+        uniform vec3 uLightDirection;
+
+        varying vec2 vUv;
+        varying float vPetalShade;
+        varying vec3 vMainCol;
+        varying vec3 vDepthCol;
+        varying vec3 vCanopyNormalW;
+
+        void main() {
+          float mask = texture2D(uLeafTex, vUv).r;
+          if (mask < uAlphaThreshold) discard;
+
+          vec3 baseCol = mix(vDepthCol, vMainCol, vPetalShade);
+          float sunNdl = smoothstep(0.20, 0.90, dot(normalize(vCanopyNormalW), normalize(uLightDirection)));
+          vec3 finalCol = baseCol * mix(vec3(1.0), vec3(1.13, 1.10, 1.03), sunNdl * 0.58);
+          gl_FragColor = vec4(finalCol, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+      side: THREE.DoubleSide,
+    });
+
+    pendingBushLeafMaskMaterials.add(flowerMat);
+
+    const inst = new THREE.InstancedMesh(flowerGeo, flowerMat, specs.length);
+    inst.name = meshName;
+    inst.frustumCulled = true;
+    inst.castShadow = false;
+    inst.receiveShadow = false;
+    for (let idx = 0; idx < specs.length; idx++) {
+      inst.setMatrixAt(idx, specs[idx].matrix);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.computeBoundingSphere();
+    if (inst.boundingSphere) {
+      inst.boundingSphere.radius += 2.0;
+    }
+    return inst;
+  };
+
+  if (staircaseShrubMatrices.length > 0) {
+    urbanStaircaseGrp.add(
+      createPlazaLeafPetalShrubInstanced(
+        staircaseShrubMatrices,
+        'LobbyStaircaseLeafPetalShrubs',
+      ),
+    );
   }
 
   // J. Twin Central Continuous Mitred Brushed-Steel Handrail Divider ("Central Handrail Divider" at lz = 0.0)
@@ -14447,653 +14848,50 @@ export function createCurvedPlanetEnvironment(
   };
 
   // -------------------------------------------------------------------------
-  // 4. SHEET 3: ARCHITECTURAL MODEL SHEET — MODERN COFFEE & GELATO KIOSK
-  //    (Kios Kopi & Gelato Kaca Modern)
-  //    Reference: media_1794077939964_7e39720f.jpg
-  //    Placed along the West Plaza border at local (-10.2, 2.50, -13.8), facing East (+X) toward the Plaza,
-  //    scaled 1.48x for realistic character proportions (~7.6m W x 5.9m D x 4.4m H).
+  // 4. ARCHITECTURAL MODEL SHEET — REAL ESTATE & FURNITURE SHOWROOM KIOSK
+  //    (Kios Kantor Agen Properti Rumah & Showroom Furnitur Minimalis — `screen_722f4ee5.png`)
+  //    Placed along the West Plaza border at local (-10.2, 2.50, -13.8), facing East (+X) toward Central Plaza,
+  //    with Merchant Hana stationed on the Central Plaza tiles directly in front (`screenshot_16_16283bb7.png`).
   // -------------------------------------------------------------------------
-  const gelatoKioskGrp = new THREE.Group();
-  gelatoKioskGrp.name = 'LobbyModernCoffeeAndGelatoKiosk';
-  gelatoKioskGrp.position.set(-10.2, 2.50, -13.8);
-  gelatoKioskGrp.rotation.y = Math.PI / 2;
-  gelatoKioskGrp.scale.setScalar(1.48);
-  westPlantGroup.add(gelatoKioskGrp);
-
-  const COL_KIOSK_STEEL = '#2b3036';
-  const COL_KIOSK_WOOD = '#c28a54';
-  const COL_KIOSK_GLASS = '#7bc6e2';
-  const COL_KIOSK_LED = '#ffefc2';
-
-  // 4A. Non-Overlapping 4-Sided Mitred Steel Perimeter Plinth & Solid Interior Floor Block (zero coplanar or stacked horizontal faces to prevent z-fighting)
-  const gkPerimeterCurbPath: [number, number][] = [
-    [-2.13, -1.53],
-    [2.13, -1.53],
-    [2.13, 1.53],
-    [-2.13, 1.53],
-  ];
-  addLobbyPart(
-    gelatoKioskGrp,
-    createMitredPolylineStripGeometry(gkPerimeterCurbPath, 0.22, 0.19, true),
-    COL_KIOSK_STEEL,
-    [0, 0.105, 0],
-    [0, 0, 0],
-    0.010,
-    lobbySteelRoofTex,
-  );
-  addLobbyPart(
-    gelatoKioskGrp,
-    new THREE.BoxGeometry(4.02, 0.19, 2.82),
-    '#dfd8c8',
-    [0, 0.115, 0],
-    [0, 0, 0],
-    0,
-    lobbyGranitePaverTex,
-    1.4,
-  );
-
-  for (const cx of [-2.14, 2.14]) {
-    for (const cz of [-1.54, 1.54]) {
-      addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.20, 2.60, 0.20), COL_KIOSK_STEEL, [cx, 1.51, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
-    }
-  }
-  // Center Front Vertical Steel Mullion cleanly separating Left Service Counter Bar ([-2.04 .. +0.06]) from Right Gelato Vitrine ([+0.16 .. +2.04])
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.10, 2.60, 0.18), COL_KIOSK_STEEL, [0.11, 1.51, 1.54], [0, 0, 0], 0.010, lobbySteelRoofTex);
-
-  // 4B. Front Elevation (+Z): Left Service Counter Bar + 3x Timber Bar Stools & Right Artisanal Gelato Display Case
-  // Left Lower Front Wall Base (Warm Timber Cladding spanning strictly x in [-2.04 .. +0.06], y in [0.21 .. 1.14], z = 1.51)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.10, 0.93, 0.16), COL_KIOSK_WOOD, [-0.99, 0.675, 1.51], [0, 0, 0], 0.011, lobbyTimberTex, 1.6);
-  // Projecting Warm Timber Service Counter Bar trimmed to fit strictly between Left Column (-2.04) and Center Divider (+0.06) without penetrating the Gelato Case!
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(2.10, 0.08, 0.54), COL_KIOSK_WOOD, [-0.99, 1.18, 1.71], [0, 0, 0], 0.011, lobbyTimberTex, 1.5);
-
-  // 3x Timber Bar Stools in front of Service Counter Bar ("3x Timber Bar Stools") planted directly on the Plaza floor
-  for (const sx of [-1.70, -0.99, -0.28]) {
-    const stGrp = new THREE.Group();
-    stGrp.position.set(sx, 0.01, 2.12);
-    gelatoKioskGrp.add(stGrp);
-    // Round warm teak stool seat
-    addLobbyPart(stGrp, new THREE.CylinderGeometry(0.22, 0.21, 0.06, 14), COL_KIOSK_WOOD, [0, 0.76, 0], [0, 0, 0], 0.008, lobbyTimberTex);
-    // Circular steel footrest ring
-    addLobbyPart(stGrp, new THREE.CylinderGeometry(0.17, 0.17, 0.025, 12), COL_KIOSK_STEEL, [0, 0.28, 0], [0, 0, 0], 0.005);
-    // 4 splayed dark steel legs
-    for (const [lx, lz] of [
-      [-0.12, -0.12],
-      [0.12, -0.12],
-      [-0.12, 0.12],
-      [0.12, 0.12],
-    ] as [number, number][]) {
-      addLobbyPart(stGrp, new THREE.CylinderGeometry(0.018, 0.014, 0.76, 6), COL_KIOSK_STEEL, [lx, 0.38, lz], [lz * 0.6, 0, -lx * 0.6], 0);
-    }
-  }
-
-  // Artisanal Gelato Display Case ("Gelato Display" — Full-Depth Cabinet Base + Chilled Stainless Deck + 8 Gelato Tubs + Crystal-Clear Enclosed Glass Vitrine)
-  // 1) Full-depth cabinet base underneath the Gelato Display Case (x in [0.16 .. 2.04], y in [0.22 .. 0.94], z in [1.16 .. 1.78] — non-coplanar with steel base/columns to eliminate z-fighting)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.86, 0.72, 0.62), '#e5e7eb', [1.10, 0.58, 1.47], [0, 0, 0], 0.010, lobbyConcreteTex, 1.8);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.74, 0.54, 0.03), '#f3f4f6', [1.10, 0.58, 1.805], [0, 0, 0], 0.006, lobbyConcreteTex, 1.5);
-  // 2) Chilled stainless-steel gelato well deck (y in [0.94 .. 1.01], z in [1.14 .. 1.80])
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.07, 0.66), '#cbd5e1', [1.10, 0.975, 1.47], [0, 0, 0], 0.009);
-  // 3) 8 Colorful Artisanal Gelato Tubs (2 rows x 4 columns recessed cleanly inside the stainless well)
-  const gelatoFlavors: [number, number, string][] = [
-    [0.43, 1.32, '#a3d977'], // Pistachio Green
-    [0.88, 1.32, '#ff8da1'], // Strawberry Pink
-    [1.32, 1.32, '#ffd166'], // Mango Passion Gold
-    [1.77, 1.32, '#fdf6e2'], // Vanilla Bean Cream
-    [0.43, 1.60, '#72ddf7'], // Sea Salt Blue Gelato
-    [0.88, 1.60, '#c77dff'], // Blueberry Lavender
-    [1.32, 1.60, '#f4a261'], // Salted Caramel
-    [1.77, 1.60, '#7f4f24'], // Dark Gianduja Chocolate
-  ];
-  for (const [gx, gz, gCol] of gelatoFlavors) {
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.36, 0.035, 0.22), '#94a3b8', [gx, 1.02, gz], [0, 0, 0], 0.005);
-    addLobbyPart(gelatoKioskGrp, new THREE.SphereGeometry(0.13, 10, 8), gCol, [gx, 1.05, gz], [0, 0, 0], 0.006);
-  }
-  // 4) Sleek Brushed-Steel / Charcoal Vitrine Frame Bars & Crystal-Clear Enclosed Glass Vitrine (Front Sloped Sneeze-Guard + Top Canopy + Side Glass End Panels)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.035, 0.035), COL_KIOSK_STEEL, [1.10, 1.02, 1.79], [0, 0, 0], 0.005);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.038, 0.038), COL_KIOSK_STEEL, [1.10, 1.49, 1.66], [0, 0, 0], 0.005);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.88, 0.038, 0.038), COL_KIOSK_STEEL, [1.10, 1.49, 1.16], [0, 0, 0], 0.005);
-  for (const vx of [0.18, 2.02]) {
-    // Sloped front vitrine side stile + rear vertical vitrine stile + top horizontal side rail
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.035, 0.49, 0.035), COL_KIOSK_STEEL, [vx, 1.255, 1.725], [-0.27, 0, 0], 0.005);
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.035, 0.49, 0.035), COL_KIOSK_STEEL, [vx, 1.255, 1.16], [0, 0, 0], 0.005);
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.035, 0.035, 0.52), COL_KIOSK_STEEL, [vx, 1.49, 1.41], [0, 0, 0], 0.005);
-  }
-  // Custom-fitted crystal-clear glass geometry (Front sloped pane + Top horizontal canopy + Left & Right trapezoidal side cheeks)
-  const gvPos: number[] = [];
-  const pushGvQuad = (
-    ax: number, ay: number, az: number,
-    bx: number, by: number, bz: number,
-    cx: number, cy: number, cz: number,
-    dx: number, dy: number, dz: number,
-  ) => {
-    gvPos.push(
-      ax, ay, az, bx, by, bz, cx, cy, cz,
-      ax, ay, az, cx, cy, cz, dx, dy, dz,
-    );
-  };
-  // Front sloped sneeze-guard glass (z = 1.79 at y = 1.02 -> z = 1.66 at y = 1.49)
-  pushGvQuad(0.19, 1.02, 1.79, 2.01, 1.02, 1.79, 2.01, 1.49, 1.66, 0.19, 1.49, 1.66);
-  // Top horizontal glass canopy (y = 1.49, z = 1.66 -> z = 1.16)
-  pushGvQuad(0.19, 1.49, 1.66, 2.01, 1.49, 1.66, 2.01, 1.49, 1.16, 0.19, 1.49, 1.16);
-  // Left & Right trapezoidal side glass end panels (x = 0.19 and x = 2.01)
-  pushGvQuad(0.19, 1.02, 1.16, 0.19, 1.02, 1.79, 0.19, 1.49, 1.66, 0.19, 1.49, 1.16);
-  pushGvQuad(2.01, 1.02, 1.79, 2.01, 1.02, 1.16, 2.01, 1.49, 1.16, 2.01, 1.49, 1.66);
-  const gvGlassGeo = new THREE.BufferGeometry();
-  gvGlassGeo.setAttribute('position', new THREE.Float32BufferAttribute(gvPos, 3));
-  gvGlassGeo.computeVertexNormals();
-  const gvGlassMesh = new THREE.Mesh(gvGlassGeo, sharedLobbyClearGlassMat);
-  gvGlassMesh.castShadow = false;
-  gvGlassMesh.receiveShadow = false;
-  gelatoKioskGrp.add(gvGlassMesh);
-
-  // Folding Glass Shutters on left side of front service counter opening ("Folding Glass Shutters")
-  for (const fx of [-1.92, -1.68]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.24, 1.38, 0.08), COL_KIOSK_GLASS, [fx, 1.92, 1.54], [0, 0.35, 0], 0.008, lobbyWindowTex);
-  }
-
-  // 4C. Interior Work Counter, Commercial Espresso Machine, Grinder, POS Register, Shelves & Chalkboard Menu Board
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(3.98, 0.90, 0.82), '#383e47', [0, 0.67, 0.42], [0, 0, 0], 0.012, lobbySteelRoofTex);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.02, 0.06, 0.88), '#d6d3cb', [0, 1.15, 0.42], [0, 0, 0], 0.008, lobbyConcreteTex);
-  // Commercial Espresso Machine ("Espresso Machine" — Chrome housing, group heads, top cup warmer)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.92, 0.52, 0.48), '#dce2e8', [-1.18, 1.44, 0.42], [0, 0, 0], 0.012);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.72, 0.16, 0.14), '#1e2228', [-1.18, 1.38, 0.68], [0, 0, 0], 0.006);
-  for (const cxCup of [-1.42, -1.18, -0.94]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.055, 0.048, 0.11, 8), '#ffffff', [cxCup, 1.75, 0.42], [0, 0, 0], 0.005);
-  }
-  // Coffee Grinder & POS Register
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.24, 0.36, 0.26), '#23272e', [-0.48, 1.36, 0.46], [0, 0, 0], 0.008);
-  addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.10, 0.07, 0.22, 8), '#d4a373', [-0.48, 1.64, 0.46], [0, 0, 0], 0.006);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.38, 0.20, 0.32), '#2b3038', [-0.04, 1.28, 0.52], [0, 0, 0], 0.008);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.30, 0.24, 0.05), '#0f172a', [-0.04, 1.46, 0.58], [-0.32, 0, 0], 0.006);
-
-  // Rear Interior Wall Upper Wooden Shelves with Jars & Framed Chalkboard Menu Board ("Menu Board")
-  for (const sy of [1.86, 2.26]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.96, 0.06, 0.30), COL_KIOSK_WOOD, [-0.95, sy, -1.28], [0, 0, 0], 0.008, lobbyTimberTex);
-  }
-  for (const jx of [-1.62, -1.28, -0.94, -0.60, -0.26]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.075, 0.075, 0.20, 8), '#e2e8f0', [jx, 1.99, -1.28], [0, 0, 0], 0.005);
-    addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.07, 0.07, 0.18, 8), '#cbd5e1', [jx, 2.38, -1.28], [0, 0, 0], 0.005);
-  }
-  // Framed Chalkboard Menu Board on Right Rear Wall ("Menu Board")
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.06, 1.28, 0.08), '#23282e', [0.98, 1.98, -1.36], [0, 0, 0], 0.010, lobbyGelatoMenuTex);
-
-  // 4D. Side Profile Elevations (±X): Panoramic Glass Wall & Side Service Door ("Panoramic Glass Wall" & "Side Service Door")
-  for (const sideX of [-2.14, 2.14]) {
-    // 2 Vertical Mullions dividing the Side Elevation into 2 Panoramic Glass Bays + 1 Side Service Door Bay
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 2.56, 0.12), COL_KIOSK_STEEL, [sideX, 1.49, 0.48], [0, 0, 0], 0.010);
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 2.56, 0.12), COL_KIOSK_STEEL, [sideX, 1.49, -0.52], [0, 0, 0], 0.010);
-    // Bottom steel glazing sill connecting the side glass wall cleanly to the steel perimeter plinth
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.12, 0.06, 2.86), COL_KIOSK_STEEL, [sideX, 0.23, 0.0], [0, 0, 0], 0.007);
-    // Panoramic Glass Wall Panels
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.08, 2.46, 2.86), COL_KIOSK_GLASS, [sideX, 1.49, 0.0], [0, 0, 0], 0.008, lobbyWindowTex, 2.8);
-    // Side Service Door Frame & Stainless Lever Handle on Rear Bay (non-overlapping with corner column at z = -1.54)
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.12, 2.36, 0.08), COL_KIOSK_STEEL, [sideX, 1.44, -1.38], [0, 0, 0], 0.008);
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.18, 0.05, 0.16), '#cbd5e1', [sideX, 1.28, -0.66], [0, 0, 0], 0.005);
-  }
-
-  // 4E. Rear Elevation (-Z): Solid Vertical Timber Cladding, Rear Service Door, Exterior Ventilation Grille & Electrical Conduits
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(4.06, 2.56, 0.16), COL_KIOSK_WOOD, [0, 1.49, -1.52], [0, 0, 0], 0.014, lobbyVerticalTimberTex, 1.6);
-  // Rear Service Door ("Rear Service Door" on right rear -> x = -1.02, non-overlapping frame and leaf)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.16, 2.16, 0.04), COL_KIOSK_STEEL, [-1.02, 1.29, -1.62], [0, 0, 0], 0.010);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(1.02, 2.04, 0.04), '#c8ccd2', [-1.02, 1.29, -1.66], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.06), '#2b3036', [-0.62, 1.22, -1.70], [0, 0, 0], 0.005);
-  // Exterior Ventilation Grille ("Exterior Ventilation Grille" on lower-left rear -> x = +1.18)
-  addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.06), '#47505c', [1.18, 0.68, -1.63], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
-  // Surface-Mounted Electrical Utility Conduits & Twin Junction Boxes ("Electrical Utility Conduits")
-  addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.024, 0.024, 2.36, 8), '#64748b', [0.32, 1.46, -1.63], [0, 0, 0], 0.005);
-  addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.78, 8), '#64748b', [0.71, 0.30, -1.63], [0, 0, Math.PI / 2], 0.005);
-  for (const jbx of [0.06, 0.32]) {
-    addLobbyPart(gelatoKioskGrp, new THREE.BoxGeometry(0.16, 0.22, 0.08), '#94a3b8', [jbx, 0.42, -1.63], [0, 0, 0], 0.006);
-    addLobbyPart(gelatoKioskGrp, new THREE.CylinderGeometry(0.02, 0.02, 0.28, 6), '#475569', [jbx, 0.20, -1.63], [0, 0, 0], 0);
-  }
-
-  // 4F. Cantilevered Sloped Canopy Roof & 8 Integrated Warm LED Spotlights ("Cantilevered Canopy Roof" & "Integrated LED Spotlights")
-  const kioskRoofGrp = new THREE.Group();
-  kioskRoofGrp.position.set(0, 2.84, 0.14);
-  kioskRoofGrp.rotation.x = -0.055; // Higher at front (+Z), sloping gently down toward rear (-Z) as in Side Profile View
-  gelatoKioskGrp.add(kioskRoofGrp);
-
-  addLobbyPart(kioskRoofGrp, new THREE.BoxGeometry(5.16, 0.18, 4.18), COL_KIOSK_STEEL, [0, 0.04, 0], [0, 0, 0], 0.014, lobbySteelRoofTex, 2.4);
-  addLobbyPart(kioskRoofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), '#1e2228', [0, 0.15, 0], [0, 0, 0], 0.010);
-  addLobbyPart(kioskRoofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
-  // 8 Integrated Warm LED Spotlights on Canopy Soffit
-  for (const sx of [-1.85, -0.62, 0.62, 1.85]) {
-    for (const sz of [1.65, -0.15]) {
-      addLobbyPart(kioskRoofGrp, new THREE.CylinderGeometry(0.075, 0.075, 0.03, 10), COL_KIOSK_LED, [sx, -0.08, sz], [0, 0, 0], 0.004);
-    }
-  }
+  buildRealEstateAndFurnitureKiosk3D({
+    westPlantGroup,
+    isSoftwareGl,
+    sharedClearGlassMat: sharedLobbyClearGlassMat,
+    createMitredPolylineStripGeometry,
+    addLobbyPart,
+    createBlitzStrokeMesh,
+    textures: {
+      steelRoofTex: lobbySteelRoofTex,
+      granitePaverTex: lobbyGranitePaverTex,
+      verticalTimberTex: lobbyVerticalTimberTex,
+      timberTex: lobbyTimberTex,
+      concreteTex: lobbyConcreteTex,
+      louverTex: lobbyLouverTex,
+    },
+  });
 
   // -------------------------------------------------------------------------
-  // 4B-2. ARCHITECTURAL MODEL SHEET: MODERN FASHION & APPAREL KIOSK
-  //       (Compact Glass & Steel Fashion & Apparel Boutique Kiosk / Kios Toko Baju & Butik Pakaian Modern)
-  //       Reference: screen_47d90552.png (Front, Side Profile, Rear & 3/4 Isometric Views)
-  //       Placed along the West Plaza border between Café Hana & the Botanical Glasshouse Conservatory
-  //       at local (-10.2, 2.50, -1.2), facing East (+X) toward the Central Plaza, scaled 1.48x.
+  // 4B-2. ARCHITECTURAL MODEL SHEET: URBAN SCOOTER & E-MOBILITY SHOWROOM KIOSK
+  //       (Renovated Central Plaza West Kiosk + 2 Non-Rideable Front Display Scooters:
+  //        Modern Urban Electric Scooter `screen_8a1fbcde.png` & Modern Urban Push Scooter `screen_e2bde276.png`)
+  //       Placed along the West Plaza border at local (-10.2, 2.50, -1.2), facing East (+X) toward Central Plaza.
   // -------------------------------------------------------------------------
-  const fashionKioskGrp = new THREE.Group();
-  fashionKioskGrp.name = 'LobbyModernFashionAndApparelKiosk';
-  fashionKioskGrp.position.set(-10.2, 2.50, -1.2);
-  fashionKioskGrp.rotation.y = Math.PI / 2;
-  fashionKioskGrp.scale.setScalar(1.48);
-  westPlantGroup.add(fashionKioskGrp);
-
-  const addFkToonPart = (
-    parent: THREE.Object3D,
-    geo: THREE.BufferGeometry,
-    colorHex: string,
-    pos: [number, number, number],
-    rot: [number, number, number] = [0, 0, 0],
-    toonStrokeWidth = 0.009,
-    tex?: THREE.Texture,
-    bumpScale = 1.5,
-    castShad = true,
-  ) => {
-    const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
-    m.castShadow = !isSoftwareGl && castShad;
-    if (toonStrokeWidth > 0) {
-      const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
-      if (st) m.add(st);
-    }
-    return m;
-  };
-
-  const addFkGlassPane = (
-    parent: THREE.Object3D,
-    w: number,
-    h: number,
-    pos: [number, number, number],
-    rot: [number, number, number] = [0, 0, 0],
-  ) => {
-    const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), sharedLobbyClearGlassMat);
-    gMesh.position.set(pos[0], pos[1], pos[2]);
-    gMesh.rotation.set(rot[0], rot[1], rot[2]);
-    gMesh.castShadow = false;
-    gMesh.receiveShadow = false;
-    parent.add(gMesh);
-    return gMesh;
-  };
-
-  // Procedural Signboard Texture for the Outdoor A-Frame Sign ("FASHION & APPAREL BOUTIQUE")
-  const fashionBoutiqueSignTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = 256;
-    c.height = 384;
-    const ctx = c.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#efe8d8';
-      ctx.fillRect(0, 0, 256, 384);
-      ctx.strokeStyle = '#4a3d31';
-      ctx.lineWidth = 10;
-      ctx.strokeRect(14, 14, 228, 356);
-      ctx.strokeStyle = '#8c765c';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(24, 24, 208, 336);
-
-      ctx.fillStyle = '#262320';
-      ctx.textAlign = 'center';
-      ctx.font = 'bold 34px Georgia, serif';
-      ctx.fillText('FASHION', 128, 128);
-      ctx.font = 'italic bold 22px Georgia, serif';
-      ctx.fillText('& APPAREL', 128, 178);
-      ctx.font = 'bold 30px Georgia, serif';
-      ctx.fillText('BOUTIQUE', 128, 232);
-
-      // Decorative divider rules
-      ctx.fillRect(54, 74, 148, 3);
-      ctx.fillRect(54, 268, 148, 3);
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillStyle = '#5c4e3e';
-      ctx.fillText('NEW COLLECTION', 128, 312);
-    }
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  })();
-
-  // 1) Non-Overlapping 4-Sided Mitred Steel Perimeter Plinth & Solid Interior Floor Block (zero coplanar or stacked horizontal faces)
-  const fkPerimeterCurbPath: [number, number][] = [
-    [-2.13, -1.53],
-    [2.13, -1.53],
-    [2.13, 1.53],
-    [-2.13, 1.53],
-  ];
-  addFkToonPart(
-    fashionKioskGrp,
-    createMitredPolylineStripGeometry(fkPerimeterCurbPath, 0.22, 0.19, true),
-    COL_KIOSK_STEEL,
-    [0, 0.105, 0],
-    [0, 0, 0],
-    0.011,
-    lobbySteelRoofTex,
-  );
-  addFkToonPart(
-    fashionKioskGrp,
-    new THREE.BoxGeometry(4.02, 0.19, 2.82),
-    '#e8dfd1',
-    [0, 0.115, 0],
-    [0, 0, 0],
-    0,
-    lobbyGranitePaverTex,
-    1.2,
-    false,
-  );
-
-  // 4 Corner Dark Charcoal Steel Columns (x = ±2.14, z = ±1.54)
-  for (const cx of [-2.14, 2.14]) {
-    for (const cz of [-1.54, 1.54]) {
-      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.20, 2.62, 0.20), COL_KIOSK_STEEL, [cx, 1.51, cz], [0, 0, 0], 0.011, lobbySteelRoofTex);
-    }
-  }
-  // Continuous 45° Mitred Upper Steel Architrave / Header Ring (y = 2.74m)
-  const fkFrameRectPath: [number, number][] = [
-    [-2.14, -1.54],
-    [2.14, -1.54],
-    [2.14, 1.54],
-    [-2.14, 1.54],
-  ];
-  addFkToonPart(
-    fashionKioskGrp,
-    createMitredPolylineStripGeometry(fkFrameRectPath, 0.18, 0.14, true),
-    COL_KIOSK_STEEL,
-    [0, 2.74, 0],
-    [0, 0, 0],
-    0.010,
-    lobbySteelRoofTex,
-  );
-
-  // 2) Front Elevation (+Z = +1.54): 2 Tempered Display Glass Bays (Left & Center) + Right Glass Entrance Door
-  //    2 Vertical Mullions at x = -0.72 and x = +0.72 dividing Front into 3 equal bays
-  for (const mx of [-0.72, 0.72]) {
-    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 2.54, 0.14), COL_KIOSK_STEEL, [mx, 1.48, 1.54], [0, 0, 0], 0.009, lobbySteelRoofTex);
-  }
-  // Bottom steel glazing sill along Left & Center display windows
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(2.86, 0.06, 0.12), COL_KIOSK_STEEL, [-0.71, 0.24, 1.54], [0, 0, 0], 0.007);
-  // Clear Tempered Display Glass Panes (Left & Center Bays)
-  addFkGlassPane(fashionKioskGrp, 1.30, 2.40, [-1.43, 1.48, 1.54], [0, 0, 0]);
-  addFkGlassPane(fashionKioskGrp, 1.32, 2.40, [0.0, 1.48, 1.54], [0, 0, 0]);
-
-  // Right Bay: Framed Glass Entrance Door ("Glass Entrance Door" at x in [+0.78 .. +2.04])
-  // Inner door frame stiles & top/bottom door rails
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.08), '#3b424c', [0.82, 1.42, 1.54], [0, 0, 0], 0.007);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.08), '#3b424c', [2.00, 1.42, 1.54], [0, 0, 0], 0.007);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.09, 0.08), '#3b424c', [1.41, 2.58, 1.54], [0, 0, 0], 0.007);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.24, 0.08, 0.08), '#3b424c', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
-  addFkGlassPane(fashionKioskGrp, 1.10, 2.24, [1.41, 1.42, 1.54], [0, 0, 0]);
-  // Brushed Stainless Lever Door Handle & Escutcheon Plate on Left Stile of Entrance Door
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.04, 0.22, 0.09), '#cbd5e1', [0.90, 1.18, 1.56], [0, 0, 0], 0.005, undefined, 1.0, false);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 0.035, 0.12), '#e2e8f0', [0.95, 1.20, 1.59], [0, 0, 0], 0.005, undefined, 1.0, false);
-
-  // 3) Side Profile Elevations (±X = ±2.14): 3 Panoramic Glass Wall Bays ("Panoramic Glass Wall" & "Side Glazing Panel")
-  for (const sideX of [-2.14, 2.14]) {
-    for (const mz of [-0.52, 0.48]) {
-      addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 2.54, 0.12), COL_KIOSK_STEEL, [sideX, 1.48, mz], [0, 0, 0], 0.009, lobbySteelRoofTex);
-    }
-    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.12, 0.06, 2.86), COL_KIOSK_STEEL, [sideX, 0.24, 0.0], [0, 0, 0], 0.007);
-    addFkGlassPane(fashionKioskGrp, 2.86, 2.40, [sideX, 1.48, 0.0], [0, Math.PI / 2, 0]);
-  }
-
-  // 4) Rear Elevation (-Z = -1.52): Solid Vertical Timber Cladding, Rear Staff Door, Exterior Ventilation Grille & Conduits
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(4.06, 2.56, 0.16), COL_KIOSK_WOOD, [0, 1.49, -1.52], [0, 0, 0], 0.012, lobbyVerticalTimberTex, 1.6);
-  // Rear Staff Door ("Rear Staff Door" on right rear -> x = -1.02, non-overlapping frame and leaf)
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.16, 2.16, 0.04), COL_KIOSK_STEEL, [-1.02, 1.29, -1.62], [0, 0, 0], 0.010);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.02, 2.04, 0.04), '#c8ccd2', [-1.02, 1.29, -1.66], [0, 0, 0], 0.008, lobbyConcreteTex, 1.8);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 0.05, 0.06), '#2b3036', [-0.62, 1.22, -1.70], [0, 0, 0], 0.005);
-  // Exterior Ventilation Grille ("Exterior Ventilation Grille" on lower-left rear -> x = +1.18)
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.84, 0.72, 0.06), '#47505c', [1.18, 0.68, -1.63], [0, 0, 0], 0.010, lobbyLouverTex, 1.0);
-  // Surface-Mounted Electrical Utility Conduits & Twin Junction Boxes ("Electrical Utility Conduits")
-  addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.024, 0.024, 2.36, 8), '#64748b', [0.32, 1.46, -1.63], [0, 0, 0], 0.005, undefined, 1.0, false);
-  addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.78, 8), '#64748b', [0.71, 0.30, -1.63], [0, 0, Math.PI / 2], 0.005, undefined, 1.0, false);
-  for (const jbx of [0.06, 0.32]) {
-    addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.16, 0.22, 0.08), '#94a3b8', [jbx, 0.42, -1.63], [0, 0, 0], 0.006, undefined, 1.0, false);
-    addFkToonPart(fashionKioskGrp, new THREE.CylinderGeometry(0.02, 0.02, 0.28, 6), '#475569', [jbx, 0.20, -1.63], [0, 0, 0], 0, undefined, 1.0, false);
-  }
-
-  // 5) Cantilevered Sloped Canopy Roof & Integrated Warm LED Spotlights ("Cantilevered Canopy Roof" & "Integrated LED Spotlights")
-  const fkRoofGrp = new THREE.Group();
-  fkRoofGrp.position.set(0, 2.84, 0.14);
-  fkRoofGrp.rotation.x = -0.055; // Higher at front (+Z), sloping gently down toward rear (-Z) as in Side Profile View
-  fashionKioskGrp.add(fkRoofGrp);
-
-  addFkToonPart(fkRoofGrp, new THREE.BoxGeometry(5.16, 0.18, 4.18), COL_KIOSK_STEEL, [0, 0.04, 0], [0, 0, 0], 0.013, lobbySteelRoofTex, 2.4);
-  addFkToonPart(fkRoofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), '#1e2228', [0, 0.15, 0], [0, 0, 0], 0.010);
-  addFkToonPart(fkRoofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
-  for (const sx of [-1.85, -0.62, 0.62, 1.85]) {
-    for (const sz of [1.65, 0.45, -0.65]) {
-      addFkToonPart(fkRoofGrp, new THREE.CylinderGeometry(0.075, 0.075, 0.03, 10), COL_KIOSK_LED, [sx, -0.08, sz], [0, 0, 0], 0.004, undefined, 1.0, false);
-    }
-  }
-
-  // 6) Boutique Interior Architecture: Left Vertical Timber Accent Panel, Rear Boutique Wall & Interior Staff Doorway
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.14, 2.38, 1.48), COL_KIOSK_WOOD, [-1.92, 1.40, -0.45], [0, 0, 0], 0.009, lobbyVerticalTimberTex, 1.5);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(3.84, 2.42, 0.08), '#f3efe6', [0, 1.42, -1.36], [0, 0, 0], 0.008, lobbyConcreteTex, 1.2);
-  // Interior wooden staff doorway frame on rear partition (visible through center glass window in Front View)
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.86, 1.98, 0.11), '#d6cfc2', [0.42, 1.20, -1.34], [0, 0, 0], 0.007);
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(0.74, 1.88, 0.12), '#e5dec9', [0.42, 1.16, -1.33], [0, 0, 0], 0.006);
-  // Low Warm-Timber Center Display Plinth behind Center Mannequin
-  addFkToonPart(fashionKioskGrp, new THREE.BoxGeometry(1.12, 0.24, 0.56), COL_KIOSK_WOOD, [-0.18, 0.34, 0.18], [0, 0, 0], 0.008, lobbyTimberTex, 1.4);
-
-  // 7) 3 Sculpted Fashion Mannequin Displays ("Fashion Mannequin Display" & "Boutique Display & Mannequins")
-  const buildFashionMannequin = (
-    mx: number,
-    mz: number,
-    rotY: number,
-    style: 'camel_trench_coat' | 'charcoal_pleated_dress' | 'dove_grey_blazer',
-  ) => {
-    const mGrp = new THREE.Group();
-    mGrp.position.set(mx, 0.22, mz);
-    mGrp.rotation.y = rotY;
-    fashionKioskGrp.add(mGrp);
-
-    // Brushed steel circular pedestal base + tripod/crossbar feet + chrome vertical support rod
-    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.22, 0.24, 0.03, 12), '#94a3b8', [0, 0.015, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
-    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.72, 8), '#cbd5e1', [0, 0.37, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
-
-    // Mannequin neck & wooden finial cap (y = 1.46m .. 1.60m)
-    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.048, 0.056, 0.14, 8), '#ede4d3', [0, 1.48, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
-    addFkToonPart(mGrp, new THREE.CylinderGeometry(0.052, 0.052, 0.03, 8), '#8a623e', [0, 1.56, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
-
-    if (style === 'camel_trench_coat') {
-      // Left Window Mannequin: Long Tailored Camel/Beige Trench Coat over Dark Turtleneck
-      // Inner dark charcoal turtleneck chest
-      addFkToonPart(mGrp, new THREE.CylinderGeometry(0.12, 0.10, 0.36, 8), '#2b3038', [0, 1.26, 0.02], [0, 0, 0], 0.006, undefined, 1.0, false);
-      // Upper camel coat torso & shoulders
-      const torsoGeo = new THREE.CylinderGeometry(0.20, 0.16, 0.48, 10);
-      torsoGeo.scale(1.12, 1.0, 0.72);
-      addFkToonPart(mGrp, torsoGeo, '#c8a97e', [0, 1.18, 0], [0, 0, 0], 0.008);
-      // Lower long flared camel trench coat skirt (y = 0.42m .. 0.96m)
-      const skirtGeo = new THREE.CylinderGeometry(0.16, 0.25, 0.58, 10);
-      skirtGeo.scale(1.08, 1.0, 0.76);
-      addFkToonPart(mGrp, skirtGeo, '#c8a97e', [0, 0.68, 0], [0, 0, 0], 0.008);
-      // Waist belt & notched lapels
-      addFkToonPart(mGrp, new THREE.BoxGeometry(0.36, 0.05, 0.26), '#a6855b', [0, 0.95, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
-      for (const side of [-1, 1]) {
-        addFkToonPart(mGrp, new THREE.BoxGeometry(0.07, 0.34, 0.04), '#b8966b', [side * 0.08, 1.24, 0.12], [0, 0, side * 0.22], 0.005, undefined, 1.0, false);
-        // Tailored coat sleeves
-        addFkToonPart(mGrp, new THREE.CylinderGeometry(0.055, 0.048, 0.56, 8), '#c8a97e', [side * 0.24, 1.10, 0], [0, 0, -side * 0.14], 0.007, undefined, 1.0, false);
-      }
-    } else if (style === 'charcoal_pleated_dress') {
-      // Center Window Mannequin: Sleeveless Charcoal-Taupe Pleated Boutique Dress
-      // Exposed cream mannequin shoulders & upper bust
-      const shoulderGeo = new THREE.CylinderGeometry(0.18, 0.14, 0.16, 10);
-      shoulderGeo.scale(1.10, 1.0, 0.68);
-      addFkToonPart(mGrp, shoulderGeo, '#ede4d3', [0, 1.36, 0], [0, 0, 0], 0.007, undefined, 1.0, false);
-      // Fitted bodice (y = 0.98m .. 1.32m)
-      const bodiceGeo = new THREE.CylinderGeometry(0.16, 0.12, 0.36, 10);
-      bodiceGeo.scale(1.08, 1.0, 0.70);
-      addFkToonPart(mGrp, bodiceGeo, '#5c5650', [0, 1.15, 0], [0, 0, 0], 0.008);
-      // Cinched waist ribbon
-      addFkToonPart(mGrp, new THREE.BoxGeometry(0.28, 0.04, 0.20), '#3d3935', [0, 0.97, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
-      // Flared A-line pleated knee-length dress skirt (y = 0.52m .. 0.97m)
-      const dressSkirtGeo = new THREE.CylinderGeometry(0.13, 0.28, 0.48, 12);
-      dressSkirtGeo.scale(1.06, 1.0, 0.82);
-      addFkToonPart(mGrp, dressSkirtGeo, '#6b645d', [0, 0.74, 0], [0, 0, 0], 0.008);
-    } else {
-      // Front-Right Side Window Mannequin: Tailored Dove-Grey Structured Blazer & Midi Skirt
-      addFkToonPart(mGrp, new THREE.CylinderGeometry(0.11, 0.09, 0.32, 8), '#f5efe6', [0, 1.26, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
-      const blazerGeo = new THREE.CylinderGeometry(0.19, 0.15, 0.46, 10);
-      blazerGeo.scale(1.10, 1.0, 0.72);
-      addFkToonPart(mGrp, blazerGeo, '#787e87', [0, 1.16, 0], [0, 0, 0], 0.008);
-      const skirtGeo = new THREE.CylinderGeometry(0.15, 0.21, 0.46, 10);
-      skirtGeo.scale(1.05, 1.0, 0.74);
-      addFkToonPart(mGrp, skirtGeo, '#646a73', [0, 0.72, 0], [0, 0, 0], 0.008);
-      for (const side of [-1, 1]) {
-        addFkToonPart(mGrp, new THREE.CylinderGeometry(0.052, 0.045, 0.52, 8), '#787e87', [side * 0.23, 1.10, 0], [0, 0, -side * 0.12], 0.006, undefined, 1.0, false);
-      }
-    }
-  };
-
-  buildFashionMannequin(-1.42, 0.78, 0.08, 'camel_trench_coat');
-  buildFashionMannequin(-0.04, 0.74, -0.05, 'charcoal_pleated_dress');
-  buildFashionMannequin(1.42, 0.88, 0.42, 'dove_grey_blazer');
-
-  // Helper: build a Structured Designer Leather Handbag with Double Arched Handles
-  const addDesignerHandbag = (
-    parent: THREE.Object3D,
-    pos: [number, number, number],
-    rotY: number,
-    bagColor: string,
-    strapColor = '#4a3525',
-  ) => {
-    const bgGrp = new THREE.Group();
-    bgGrp.position.set(pos[0], pos[1], pos[2]);
-    bgGrp.rotation.y = rotY;
-    parent.add(bgGrp);
-
-    // Structured trapezoidal leather tote body + brass clasp accent
-    addFkToonPart(bgGrp, new THREE.BoxGeometry(0.30, 0.22, 0.14), bagColor, [0, 0.11, 0], [0, 0, 0], 0.006, undefined, 1.0, false);
-    addFkToonPart(bgGrp, new THREE.BoxGeometry(0.28, 0.04, 0.15), strapColor, [0, 0.20, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
-    addFkToonPart(bgGrp, new THREE.BoxGeometry(0.04, 0.04, 0.16), '#d4af37', [0, 0.16, 0], [0, 0, 0], 0, undefined, 1.0, false);
-    // Arched leather top handle
-    const handleArch = new THREE.TorusGeometry(0.075, 0.014, 6, 10, Math.PI);
-    addFkToonPart(bgGrp, handleArch, strapColor, [0, 0.22, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
-  };
-
-  // 8) 2 Indoor Garment Display Racks ("Indoor Display Rack") with Hanging Shirts, Coats & Top Handbag Shelf
-  const buildIndoorGarmentRack = (
-    rx: number,
-    rz: number,
-    rotY: number,
-    rackWidth: number,
-    withTopBagShelf: boolean,
-  ) => {
-    const rGrp = new THREE.Group();
-    rGrp.position.set(rx, 0.22, rz);
-    rGrp.rotation.y = rotY;
-    fashionKioskGrp.add(rGrp);
-
-    const halfW = rackWidth * 0.5;
-    // Warm timber lower platform base
-    addFkToonPart(rGrp, new THREE.BoxGeometry(rackWidth + 0.12, 0.08, 0.52), COL_KIOSK_WOOD, [0, 0.04, 0], [0, 0, 0], 0.007, lobbyTimberTex);
-    // Vertical brushed-steel rack uprights & top crossbar (height 1.38m)
-    for (const sx of [-halfW, halfW]) {
-      addFkToonPart(rGrp, new THREE.CylinderGeometry(0.022, 0.022, 1.36, 8), '#94a3b8', [sx, 0.72, 0], [0, 0, 0], 0.005, undefined, 1.0, false);
-    }
-    addFkToonPart(
-      rGrp,
-      new THREE.CylinderGeometry(0.020, 0.020, rackWidth, 8),
-      '#cbd5e1',
-      [0, 1.34, 0],
-      [0, 0, Math.PI / 2],
-      0.005,
-      undefined,
-      1.0,
-      false,
-    );
-
-    // Row of Neatly Hung Tailored Garments (Shirts, Blouses, Jackets) on Hangers along the Rail
-    const garmentColors = ['#eef2f6', '#b8c7d6', '#d8c5b0', '#7c8b99', '#f4efe6', '#94a3b8', '#c8b29b'];
-    const garmentCount = Math.max(4, Math.round(rackWidth * 5.2));
-    for (let g = 0; g < garmentCount; g++) {
-      const gx = -halfW + 0.14 + (g / (garmentCount - 1)) * (rackWidth - 0.28);
-      const gH = 0.64 + (g % 3) * 0.08;
-      // Wire hanger hook
-      addFkToonPart(rGrp, new THREE.BoxGeometry(0.02, 0.09, 0.04), '#cbd5e1', [gx, 1.30, 0], [0, 0, 0], 0, undefined, 1.0, false);
-      // Hanging garment body (draped perpendicular to the rail)
-      addFkToonPart(
-        rGrp,
-        new THREE.BoxGeometry(0.09, gH, 0.42),
-        garmentColors[g % garmentColors.length],
-        [gx, 1.26 - gH * 0.5, 0],
-        [0, (g % 2 === 0 ? 1 : -1) * 0.04, 0],
-        0.006,
-        undefined,
-        1.0,
-        false,
-      );
-    }
-
-    if (withTopBagShelf) {
-      // Upper Warm-Timber Accessory Shelf above the Garment Rail + 2 Designer Handbags (Side Profile & Isometric Views)
-      addFkToonPart(rGrp, new THREE.BoxGeometry(rackWidth + 0.14, 0.06, 0.46), COL_KIOSK_WOOD, [0, 1.42, 0], [0, 0, 0], 0.007, lobbyTimberTex);
-      addDesignerHandbag(rGrp, [-0.28, 1.45, 0], 0.12, '#a6825c', '#5c3f24');
-      addDesignerHandbag(rGrp, [0.28, 1.45, 0], -0.10, '#c8b49c', '#6e5236');
-    }
-  };
-
-  // Foreground Right-Side Garment Rack (oriented along Z so its profile faces the Front Entrance Door & full rack faces the Right Side Window!)
-  buildIndoorGarmentRack(1.42, -0.02, Math.PI / 2, 1.12, true);
-  // Rear-Center Garment Rack (oriented along X behind the Center Dress Mannequin, visible through the Front Display Glass!)
-  buildIndoorGarmentRack(-0.56, -0.78, 0.0, 1.32, false);
-
-  // 9) Rear-Right Tall Warm-Timber Apparel & Accessories Display Cabinet ("Apparel & Accessories Display" / "Timber Cladding Accents")
-  const shelfCabGrp = new THREE.Group();
-  shelfCabGrp.position.set(1.48, 0.22, -0.98);
-  shelfCabGrp.rotation.y = Math.PI / 2; // Facing outward toward the Right Side Glazing Panel (+X) and Front-Left (-X)
-  fashionKioskGrp.add(shelfCabGrp);
-
-  // Tall wooden cabinet frame (0.86m W x 1.82m H x 0.48m D)
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.86, 0.52, 0.48), COL_KIOSK_WOOD, [0, 0.26, 0], [0, 0, 0], 0.008, lobbyTimberTex);
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.06, 1.30, 0.46), COL_KIOSK_WOOD, [-0.40, 1.17, 0], [0, 0, 0], 0.007, lobbyTimberTex);
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.06, 1.30, 0.46), COL_KIOSK_WOOD, [0.40, 1.17, 0], [0, 0, 0], 0.007, lobbyTimberTex);
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.82, 1.30, 0.05), '#b07b47', [0, 1.17, -0.21], [0, 0, 0], 0.006, lobbyTimberTex);
-  for (const sy of [0.94, 1.36, 1.80]) {
-    addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.86, 0.05, 0.48), COL_KIOSK_WOOD, [0, sy, 0], [0, 0, 0], 0.007, lobbyTimberTex);
-  }
-  // Top Shelf: Structured Designer Handbag
-  addDesignerHandbag(shelfCabGrp, [0, 1.83, 0.02], 0.05, '#8c7258', '#4a3525');
-  // Upper Cubby (y = 1.39m): Boutique Wide-Brimmed Sun Hat / Fedora with Dark Ribbon Band
-  addFkToonPart(shelfCabGrp, new THREE.CylinderGeometry(0.21, 0.22, 0.025, 12), '#dfd3be', [0, 1.41, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
-  addFkToonPart(shelfCabGrp, new THREE.CylinderGeometry(0.11, 0.13, 0.12, 10), '#e8dec9', [0, 1.48, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
-  addFkToonPart(shelfCabGrp, new THREE.CylinderGeometry(0.125, 0.128, 0.03, 10), '#3b332b', [0, 1.44, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
-  // Middle Cubby (y = 0.97m): Neatly Folded Stack of Boutique Knitwear Sweaters
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.38, 0.06, 0.28), '#c8beb0', [0, 1.00, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.36, 0.06, 0.26), '#8f96a0', [0, 1.06, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
-  addFkToonPart(shelfCabGrp, new THREE.BoxGeometry(0.34, 0.05, 0.25), '#ede6d8', [0, 1.115, 0.02], [0, 0, 0], 0.005, undefined, 1.0, false);
-  // Lower Cubby (y = 0.52m): Structured Saddle-Brown Leather Tote Bag
-  addDesignerHandbag(shelfCabGrp, [0, 0.53, 0.02], -0.08, '#966842', '#4a301a');
-
-  // 10) Outdoor Wooden A-Frame Sidewalk Sign ("Outdoor A-Frame Sign" / "A-Frame Sidewalk Sign")
-  //     Placed directly on the Plaza floor outside the front-right corner (x = +1.36, z = +2.04)
-  const fkSignGrp = new THREE.Group();
-  fkSignGrp.position.set(1.36, 0.01, 2.04);
-  fkSignGrp.rotation.y = 0.32;
-  fashionKioskGrp.add(fkSignGrp);
-
-  for (const sideZ of [-1, 1]) {
-    const legAngle = sideZ * 0.20;
-    const panelZ = sideZ * 0.11;
-    // Wooden easel frame & legs
-    addFkToonPart(
-      fkSignGrp,
-      new THREE.BoxGeometry(0.58, 0.88, 0.04),
-      COL_KIOSK_WOOD,
-      [0, 0.44, panelZ],
-      [-legAngle, 0, 0],
-      0.007,
-      lobbyTimberTex,
-    );
-    // Printed "FASHION & APPAREL BOUTIQUE" placard face
-    addFkToonPart(
-      fkSignGrp,
-      new THREE.BoxGeometry(0.48, 0.66, 0.048),
-      '#ffffff',
-      [0, 0.48, panelZ + sideZ * 0.006],
-      [-legAngle, 0, 0],
-      0.005,
-      fashionBoutiqueSignTex,
-      0.4,
-      false,
-    );
-  }
+  buildUrbanScooterShowroomKiosk3D({
+    westPlantGroup,
+    isSoftwareGl,
+    sharedClearGlassMat: sharedLobbyClearGlassMat,
+    createMitredPolylineStripGeometry,
+    addLobbyPart,
+    createBlitzStrokeMesh,
+    textures: {
+      steelRoofTex: lobbySteelRoofTex,
+      granitePaverTex: lobbyGranitePaverTex,
+      verticalTimberTex: lobbyVerticalTimberTex,
+      timberTex: lobbyTimberTex,
+      concreteTex: lobbyConcreteTex,
+      louverTex: lobbyLouverTex,
+    },
+  });
 
   // 4G. 2 Outdoor Café Tables with Cream Octagonal Parasol Umbrellas moved near the Flowering Pink Tree on the East-South Plaza Wing (pindah kursi payung.png)
   const outdoorCafeZoneGrp = new THREE.Group();
@@ -15335,10 +15133,10 @@ export function createCurvedPlanetEnvironment(
 
       ctx.fillStyle = '#3b2816';
       ctx.textAlign = 'center';
-      ctx.font = 'bold 44px Georgia, serif';
-      ctx.fillText('INFORMATION', 256, 116);
-      ctx.font = 'bold 48px Georgia, serif';
-      ctx.fillText('CENTER', 256, 184);
+      ctx.font = 'bold 40px Georgia, serif';
+      ctx.fillText('Model House,', 256, 108, 424);
+      ctx.font = 'bold 36px Georgia, serif';
+      ctx.fillText('Classic Plaza Manor', 256, 174, 424);
     }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
@@ -15447,11 +15245,26 @@ export function createCurvedPlanetEnvironment(
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.032, 10), '#ffe699', [ux, 0.094, uz], [0, 0, 0], 0, undefined, 1.0, false);
   }
 
-  // --- PART 2: STONE RETAINING BALUSTRADES, HYDRANGEA/LAVENDER PLANTERS & FRONT LAMPPOSTS ---
+  // --- PART 2: STONE RETAINING BALUSTRADES, LEAF-PETAL SHRUB & PINK/PURPLE FLOWER PLANTERS ---
   const chLeafPalette = ['#4d8545', '#5f9955', '#3e7037', '#6eab63'];
-  const chHydrangeaBlue = ['#8ca8d9', '#9eb8e6', '#7995c7', '#b2c8f0'];
   const chHydrangeaPink = ['#e89bb5', '#d982a0', '#f2b3c8'];
-  const chLavenderCols = ['#8c6ec9', '#a184de', '#7456b0'];
+  const civicPinkPalette: [string, string][] = [
+    ['#f288b6', '#c75b89'],
+    ['#fa9ec6', '#cf6e98'],
+    ['#e673a4', '#b84c7b'],
+  ];
+  const civicLilacPalette: [string, string][] = [
+    ['#a67df0', '#7a51c4'],
+    ['#b894f7', '#8963cc'],
+    ['#9266e0', '#683eb5'],
+  ];
+  const civicLavenderSpirePalette: [string, string][] = [
+    ['#8d5ce0', '#6335b3'],
+    ['#9f72ed', '#7346c2'],
+    ['#7e4fd1', '#562ba3'],
+  ];
+  const civicPlanterShrubMatrices: THREE.Matrix4[] = [];
+  const civicPlanterFlowerSpecs: PlazaFlowerClusterSpec[] = [];
 
   for (const sideSign of [-1, 1]) {
     // Continuous 45° Mitred L-Shaped Stone Retaining Balustrade wrapping the Front-Left & Front-Right Promenade Corners
@@ -15512,60 +15325,121 @@ export function createCurvedPlanetEnvironment(
       addChToonPart(civicHallGrp, new THREE.SphereGeometry(0.082, 8, 6), COL_CH_STONE, [sideSign * 5.88, 0.40, bz], [0, 0, 0], 0.005, undefined, 1.0, false);
     }
 
-    // Raised Stone Planter Bed inside the Balustrade Corner ("Hydrangea & Lavender Planters")
+    // Raised Stone Planter Bed inside the Balustrade Corner
     const bedCenterX = sideSign * 3.95;
     const bedCenterZ = 3.15;
+    const lampX = sideSign * 4.75;
+    const lampZ = 3.25;
     addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.45, 0.34, 1.56), COL_CH_STONE_DARK, [bedCenterX, 0.21, bedCenterZ], [0, 0, 0], 0.009, lobbyConcreteTex);
     addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.25, 0.05, 1.36), '#4a3525', [bedCenterX, 0.39, bedCenterZ], [0, 0, 0], 0, undefined, 1.0, false);
 
-    // Lush Green Shrubs + Pastel Blue/Pink Hydrangea Globes + Tall Purple Lavender Spikes
+    // Lush Pure Dark-Green Leaf-Petal Shrubs + Swaying Pink & Purple Blossom Clusters
     for (let f = 0; f < 9; f++) {
-      const fx = bedCenterX + ((f % 5) - 2.0) * 0.68;
-      const fz = bedCenterZ + (Math.floor(f / 5) - 0.5) * 0.52;
-      const foliageGeo = new THREE.DodecahedronGeometry(0.32, 1);
-      foliageGeo.scale(1.18, 0.82, 1.18);
-      addChToonPart(
-        civicHallGrp,
-        foliageGeo,
-        chLeafPalette[f % chLeafPalette.length],
-        [fx, 0.54, fz],
-        [0, f * 0.7, 0],
-        0.008,
-        undefined,
-        1.0,
-        false,
+      const isFrontRow = f >= 5;
+      let fx = isFrontRow
+        ? bedCenterX + ((f - 5) - 1.5) * 0.68
+        : bedCenterX + (f - 2.0) * 0.62;
+      let fz = bedCenterZ + (isFrontRow ? 0.22 : -0.24);
+
+      const dxLamp = fx - lampX;
+      const dzLamp = fz - lampZ;
+      const distLamp = Math.hypot(dxLamp, dzLamp);
+      if (distLamp < 0.32 && distLamp > 0.001) {
+        const push = (0.32 - distLamp) / distLamp;
+        fx += dxLamp * push;
+        fz += dzLamp * push;
+      }
+
+      const shR = 0.23 + (f % 2) * 0.025;
+      tmpShrubPos.set(fx, 0.59, fz);
+      tmpShrubQuat.setFromAxisAngle(
+        shrubUpAxis,
+        (f * 1.93 + (sideSign > 0 ? 1.15 : 0.0)) % (Math.PI * 2),
       );
-      const hydGeo = new THREE.DodecahedronGeometry(0.21, 1);
-      addChToonPart(
-        civicHallGrp,
-        hydGeo,
-        f % 3 === 0 ? chHydrangeaPink[f % chHydrangeaPink.length] : chHydrangeaBlue[f % chHydrangeaBlue.length],
-        [fx + 0.06, 0.74, fz + 0.04],
-        [0, f * 1.1, 0],
-        0.007,
-        undefined,
-        1.0,
-        false,
+      tmpShrubScale.set(shR, shR * 0.82, shR);
+      civicPlanterShrubMatrices.push(
+        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
       );
-      if (f % 2 === 0) {
-        const spkGeo = new THREE.ConeGeometry(0.11, 0.54, 6);
-        addChToonPart(
-          civicHallGrp,
-          spkGeo,
-          chLavenderCols[f % chLavenderCols.length],
-          [fx - 0.10, 0.88, fz - 0.08],
-          [0, f * 0.5, 0],
-          0.006,
-          undefined,
-          1.0,
-          false,
+
+      const compX = fx + (f % 2 === 0 ? 0.13 : -0.13);
+      const compZ = fz + (f % 2 === 0 ? 0.04 : -0.04);
+      if (Math.hypot(compX - lampX, compZ - lampZ) >= 0.26) {
+        tmpShrubPos.set(compX, 0.54, compZ);
+        tmpShrubQuat.setFromAxisAngle(
+          shrubUpAxis,
+          (f * 2.51 + (sideSign > 0 ? 2.4 : 0.7)) % (Math.PI * 2),
         );
+        tmpShrubScale.set(shR * 0.78, shR * 0.64, shR * 0.78);
+        civicPlanterShrubMatrices.push(
+          new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+        );
+      }
+
+      // 1) Primary Rounded Hydrangea Blossom Cluster (alternating Pink & Lilac-Purple)
+      const isPinkPrimary = (f + (sideSign > 0 ? 1 : 0)) % 2 === 0;
+      const [mainFlowerHex, depthFlowerHex] = isPinkPrimary
+        ? civicPinkPalette[f % civicPinkPalette.length]
+        : civicLilacPalette[f % civicLilacPalette.length];
+      const flOffX = f % 2 === 0 ? 0.065 : -0.065;
+      const flX = fx + flOffX;
+      const flZ = fz + 0.055;
+      if (Math.hypot(flX - lampX, flZ - lampZ) >= 0.24) {
+        tmpShrubPos.set(flX, 0.78, flZ);
+        tmpShrubQuat.setFromAxisAngle(
+          shrubUpAxis,
+          (f * 1.37 + (sideSign > 0 ? 0.6 : 2.1)) % (Math.PI * 2),
+        );
+        tmpShrubScale.set(0.118, 0.098, 0.118);
+        civicPlanterFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          mainHex: mainFlowerHex,
+          depthHex: depthFlowerHex,
+        });
+      }
+
+      // 2) Secondary Companion Blossom Bud Cluster (complementary Purple/Pink accent on opposite shoulder)
+      const [secMainHex, secDepthHex] = isPinkPrimary
+        ? civicLilacPalette[(f + 1) % civicLilacPalette.length]
+        : civicPinkPalette[(f + 1) % civicPinkPalette.length];
+      const secX = fx - flOffX * 1.15;
+      const secZ = fz + 0.02;
+      if (Math.hypot(secX - lampX, secZ - lampZ) >= 0.24) {
+        tmpShrubPos.set(secX, 0.74, secZ);
+        tmpShrubQuat.setFromAxisAngle(
+          shrubUpAxis,
+          (f * 2.19 + 1.4) % (Math.PI * 2),
+        );
+        tmpShrubScale.set(0.092, 0.078, 0.092);
+        civicPlanterFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          mainHex: secMainHex,
+          depthHex: secDepthHex,
+        });
+      }
+
+      // 3) Upright Purple Lavender Plume Spire rising from the bush crown
+      if (f % 2 === 0) {
+        const [lavMainHex, lavDepthHex] =
+          civicLavenderSpirePalette[(f >> 1) % civicLavenderSpirePalette.length];
+        const lavX = fx - flOffX * 0.55;
+        const lavZ = fz - 0.055;
+        if (Math.hypot(lavX - lampX, lavZ - lampZ) >= 0.24) {
+          tmpShrubPos.set(lavX, 0.86, lavZ);
+          tmpShrubQuat.setFromAxisAngle(
+            shrubUpAxis,
+            (f * 1.61 + 0.9) % (Math.PI * 2),
+          );
+          tmpShrubScale.set(0.082, 0.168, 0.082);
+          civicPlanterFlowerSpecs.push({
+            matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+            mainHex: lavMainHex,
+            depthHex: lavDepthHex,
+          });
+        }
       }
     }
 
     // Vintage Cast-Iron Lamppost with Hanging Flower Baskets inside Front Planter Bed
-    const lampX = sideSign * 4.75;
-    const lampZ = 3.25;
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.14, 0.18, 0.55, 8), '#2c353d', [lampX, 0.65, lampZ], [0, 0, 0], 0.008);
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.065, 0.095, 2.35, 8), '#2c353d', [lampX, 2.05, lampZ], [0, 0, 0], 0.009);
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.96, 6), '#2c353d', [lampX, 2.95, lampZ], [0, 0, Math.PI / 2], 0.007, undefined, 1.0, false);
@@ -15581,6 +15455,23 @@ export function createCurvedPlanetEnvironment(
     // Top warm glowing lantern head
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.17, 0.12, 0.38, 4), '#ffe896', [lampX, 3.42, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
     addChToonPart(civicHallGrp, new THREE.ConeGeometry(0.22, 0.20, 4), '#2c353d', [lampX, 3.70, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
+  }
+
+  if (civicPlanterShrubMatrices.length > 0) {
+    civicHallGrp.add(
+      createPlazaLeafPetalShrubInstanced(
+        civicPlanterShrubMatrices,
+        'LobbyCivicPlanterLeafPetalShrubs',
+      ),
+    );
+  }
+  if (civicPlanterFlowerSpecs.length > 0) {
+    civicHallGrp.add(
+      createPlazaFlowerPetalClusterInstanced(
+        civicPlanterFlowerSpecs,
+        'LobbyCivicPlanterFlowerPetals',
+      ),
+    );
   }
 
   // --- PART 3: MAIN ONE-STORY NEOCLASSICAL CIVIC HALL BODY, EXPOSED BRICK QUOINS & PORTICO STEPS ---
@@ -18134,8 +18025,14 @@ export function createCurvedPlanetEnvironment(
   );
   // 5) NW FISHING LAKE Standalone Black Transit Kiosk (-44.5, 0.0, -6.5, facing West -X toward lake boardwalk spawn pad)
   buildStandaloneCityTransitKioskEndpoint('nw_fishing_lake', -44.5, 0.0, -6.5, -Math.PI / 2);
-  // 6) CENTRAL PLAZA INFORMATION CENTER Standalone Black Transit Kiosk (-86.85, 2.50, -21.85, facing South +Z in front of the right balustrade)
-  buildStandaloneCityTransitKioskEndpoint('info_center', -86.85, 2.50, -21.85, 0);
+  // 6) CENTRAL PLAZA Standalone Black Transit Kiosk (-86.55, 2.50, -9.40, facing West -X / Left beside NW staircase balustrade corner)
+  buildStandaloneCityTransitKioskEndpoint(
+    'info_center',
+    CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
+    CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskY,
+    CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
+    CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskRotY,
+  );
   // 7) BEACHFRONT HARBOR (NEAR KAI) Standalone Black Transit Kiosk (84.85, 0.82, 65.65, facing East +X beside Kai Fish Market Kiosk)
   buildStandaloneCityTransitKioskEndpoint('beachfront_kai', 84.85, 0.82, 65.65, Math.PI / 2);
 
@@ -21024,6 +20921,21 @@ export function createCurvedPlanetEnvironment(
   });
   roadsGroup.add(coastalAmusementPark.group);
 
+  const grandCasino = buildGrandCasino3D({
+    windUniforms,
+    isSoftwareGl,
+    sharedGlassMat: sharedLobbyClearGlassMat,
+    tagFrostedGlassGeometry,
+    upgradeMeshToBlitzWorldMaterial,
+    createBlitzStrokeMesh,
+    bakeStaticGroupMeshes,
+    createLeafPetalShrubInstanced: createPlazaLeafPetalShrubInstanced,
+    createFlowerPetalClusterInstanced: createPlazaFlowerPetalClusterInstanced,
+    sharedSidewalkPaverTex: lobbySidewalkPaverTex,
+    sharedCurbConcreteTex: lobbyConcreteTex,
+  });
+  roadsGroup.add(grandCasino.group);
+
   bakeStaticGroupMeshes(quayGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(westPlantGroup, {
     minShadowCasterSpan: 0.55,
@@ -21085,9 +20997,15 @@ export function createCurvedPlanetEnvironment(
       const dxLake = Math.max(-52 - pivotX, 0, pivotX - -10);
       const dzLake = Math.max(-24 - pivotZ, 0, pivotZ - 24);
       lakeSurfaceMesh.visible = !cullActive || dxLake * dxLake + dzLake * dzLake <= rSq;
+
+      // 6. North-of-Plaza Beaux-Arts Grand Casino District (x in [-105, -62], z in [-97, -38])
+      const dxCasino = Math.max(-105 - pivotX, 0, pivotX - -62);
+      const dzCasino = Math.max(-97 - pivotZ, 0, pivotZ - -38);
+      grandCasino.group.visible = !cullActive || dxCasino * dxCasino + dzCasino * dzCasino <= rSq;
     },
     dispose() {
       coastalAmusementPark.dispose();
+      grandCasino.dispose();
       scene.remove(groundMesh);
       scene.remove(roadsGroup);
       scene.remove(natureGroup);

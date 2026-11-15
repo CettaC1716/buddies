@@ -4,7 +4,7 @@ import { Crown, Flower2, Maximize2, Rotate3d, Sparkles } from 'lucide-react';
 import { buildOriginalBuddiesCatalogFurnitureMesh } from '../game/buddiesInteriorAssets';
 import { soundEngine } from '../game/audio';
 import {
-  prepareStudioFurnitureGroup,
+  prepareFittedStudioGroup,
   renderTexturedGroupTo2dCanvas,
 } from './furniture3dRasterizer';
 
@@ -25,12 +25,20 @@ export function getOrRenderFurniturePortraitUrl(catalogId: string): string {
 
   try {
     const meshGroup = buildOriginalBuddiesCatalogFurnitureMesh(catalogId);
-    const wrapper = prepareStudioFurnitureGroup(meshGroup, 1.48);
+    const width = 320;
+    const height = 200;
+    const wrapper = prepareFittedStudioGroup(meshGroup, {
+      cameraZ: 2.9,
+      fovDeg: 24,
+      aspect: width / height,
+      topMarginFrac: 0.075,
+      bottomMarginFrac: 0.075,
+      sideMarginFrac: 0.075,
+      pitchRange: [0.24, 0.24],
+    });
     wrapper.rotation.set(0.24, 0.62, 0);
     wrapper.updateMatrixWorld(true);
 
-    const width = 320;
-    const height = 200;
     const offscreenCanvas = document.createElement('canvas');
     offscreenCanvas.width = width;
     offscreenCanvas.height = height;

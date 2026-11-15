@@ -433,6 +433,20 @@ class SoundEngine {
   private _muted = false;
   private _musicMuted = false;
   private _masterVolume = 1.0;
+  private _sfxVolume = 1.0;
+  private _musicVolume = 1.0;
+
+  private get effectiveSfxGain(): number {
+    return this._muted || this._sfxVolume <= 0
+      ? 0
+      : 1.58 * this._sfxVolume * this._masterVolume;
+  }
+
+  private get effectiveBgmGain(): number {
+    return this.musicSilent
+      ? 0
+      : this.bgmVolume * this._musicVolume * this._masterVolume;
+  }
 
   public get muted(): boolean {
     return this._muted;
@@ -442,72 +456,95 @@ class SoundEngine {
     this._muted = Boolean(val);
     if (this._muted) {
       this.stopAllLoops();
-      this.clearBgmScheduler();
       if (this.ctx && this.masterInputGain) {
         this.masterInputGain.gain.setValueAtTime(0, this.ctx.currentTime);
       }
-      if (this.ctx && this.bgmBusGain) {
-        this.bgmBusGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.04);
-      }
     } else {
       if (this.ctx && this.masterInputGain) {
-        this.masterInputGain.gain.setValueAtTime(1.58 * this._masterVolume, this.ctx.currentTime);
-      }
-      if (this.ctx && this.bgmBusGain) {
-        this.bgmBusGain.gain.setTargetAtTime(
-          this._musicMuted ? 0 : this.bgmVolume * this._masterVolume,
-          this.ctx.currentTime,
-          0.08,
-        );
-      }
-      if (this.bgmStarted) {
-        this.ensureBgmSchedulerRunning();
+        this.masterInputGain.gain.setValueAtTime(this.effectiveSfxGain, this.ctx.currentTime);
       }
     }
-    this.syncSessionMusicPlayback();
   }
 
   /** Music-only mute: silences the BGM buses and session tracks while
-   *  leaving UI clicks and every other SFX under the master `muted` flag. */
+   *  leaving UI clicks and every other SFX under the SFX `muted` flag. */
   public get musicMuted(): boolean {
     return this._musicMuted;
   }
 
   public set musicMuted(val: boolean) {
     this._musicMuted = Boolean(val);
+    if (this._musicMuted) {
+      this.clearBgmScheduler();
+    }
     if (this.ctx && this.bgmBusGain) {
       this.bgmBusGain.gain.setTargetAtTime(
-        this.musicSilent ? 0 : this.bgmVolume * this._masterVolume,
+        this.effectiveBgmGain,
         this.ctx.currentTime,
         0.05,
       );
     }
-    if (!this._musicMuted && this.bgmStarted) {
+    if (!this.musicSilent && this.bgmStarted) {
       this.ensureBgmSchedulerRunning();
     }
     this.syncSessionMusicPlayback();
   }
 
-  /** Music is silent when either the master mute or the music mute is on. */
+  /** Music is silent when music mute is active or music/master volume is 0. */
   private get musicSilent(): boolean {
-    return this._muted || this._musicMuted;
+    return this._musicMuted || this._musicVolume <= 0 || this._masterVolume <= 0;
   }
 
   public get masterVolume(): number {
     return this._masterVolume;
   }
 
+  public get sfxVolume(): number {
+    return this._sfxVolume;
+  }
+
+  public get musicVolume(): number {
+    return this._musicVolume;
+  }
+
+  public setSfxVolume(vol: number): void {
+    this._sfxVolume = clamp(vol, 0, 1);
+    if (this.ctx && this.masterInputGain) {
+      this.masterInputGain.gain.setValueAtTime(
+        this.effectiveSfxGain,
+        this.ctx.currentTime,
+      );
+    }
+  }
+
+  public setMusicVolume(vol: number): void {
+    this._musicVolume = clamp(vol, 0, 1);
+    if (this.ctx && this.bgmBusGain) {
+      this.bgmBusGain.gain.setTargetAtTime(
+        this.effectiveBgmGain,
+        this.ctx.currentTime,
+        0.05,
+      );
+    }
+    if (!this.musicSilent && this.bgmStarted) {
+      this.ensureBgmSchedulerRunning();
+    } else if (this.musicSilent) {
+      this.clearBgmScheduler();
+    }
+    this.syncSessionMusicPlayback();
+  }
+
   public setMasterVolume(vol: number): void {
     this._masterVolume = clamp(vol, 0, 1);
     if (this.ctx && this.masterInputGain) {
       this.masterInputGain.gain.setValueAtTime(
-        this._muted ? 0 : 1.58 * this._masterVolume,
+        this.effectiveSfxGain,
         this.ctx.currentTime,
       );
     }
     if (this.ctx && this.bgmBusGain) {
       this.bgmBusGain.gain.setTargetAtTime(
-        this.musicSilent ? 0 : this.bgmVolume * this._masterVolume,
+        this.effectiveBgmGain,
         this.ctx.currentTime,
         0.05,
       );
@@ -588,7 +625,7 @@ class SoundEngine {
   private applySessionAudioVolumes(): void {
     const baseVolume = this.musicSilent
       ? 0
-      : clamp(this.bgmVolume * this._masterVolume * 0.95, 0, 1);
+      : clamp(this.effectiveBgmGain * 0.95, 0, 1);
     const effectiveVolume = clamp(baseVolume * this.sessionFadeMultiplier, 0, 1);
 
     if (this.landingBgmAudio) {
@@ -922,7 +959,7 @@ class SoundEngine {
   }
 
   private ensureCtx(): AudioContext | null {
-    if (this._muted || typeof window === 'undefined') return null;
+    if ((this._muted && this._musicMuted) || typeof window === 'undefined') return null;
     if (!this.userInteracted) {
       const hasActivation =
         typeof navigator !== 'undefined' &&
@@ -945,9 +982,9 @@ class SoundEngine {
           typeof this.ctx.createDynamicsCompressor === 'function' &&
           typeof this.ctx.createBiquadFilter === 'function'
         ) {
-          // 1. Pre-bus makeup gain (1.58x * masterVolume) for loud, assertive tactical presence
+          // 1. Pre-bus makeup gain (1.58x * sfxVolume * masterVolume) for loud, assertive tactical presence
           const inputGain = this.ctx.createGain();
-          inputGain.gain.setValueAtTime(1.58 * this._masterVolume, this.ctx.currentTime);
+          inputGain.gain.setValueAtTime(this.effectiveSfxGain, this.ctx.currentTime);
 
           // 2. Low-Shelf Punch EQ (+4.8 dB below 145Hz) for chest-thumping weight
           const lowShelf = this.ctx.createBiquadFilter();
@@ -996,9 +1033,9 @@ class SoundEngine {
 
           const bgmGain = this.ctx.createGain();
           bgmGain.gain.setValueAtTime(
-            this.musicSilent ? 0 : this.bgmVolume * this._masterVolume,
+            this.effectiveBgmGain,
             this.ctx.currentTime,
-            );
+          );
           bgmFilter.connect(bgmGain);
           bgmGain.connect(this.ctx.destination);
           this.bgmWarmFilter = bgmFilter;

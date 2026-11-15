@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
   IndividualCommanderBaseState,
   isCommanderBasePlotActive,
 } from './buddiesBlitzRules';
@@ -16,6 +17,15 @@ import {
   StaticWorldStructureObb,
 } from './buddiesBlitzTypes';
 import { getCoastalAmusementParkObstacles } from './buddiesAmusementParkRules';
+import {
+  getGrandCasinoObstacles,
+  isInsideNorthGrandCasinoFootprint,
+} from './buddiesGrandCasinoRules';
+import { computeScooterShopWorldColliders } from './buddiesUrbanScooterRules';
+import {
+  computeRealEstateKioskWorldColliders,
+  REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
+} from './buddiesRealEstateKioskRules';
 
 export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v54';
 
@@ -51,7 +61,13 @@ export function buildTeamBaseQuadrant(
     placeWorld('hydrant', -25.2, 56.8, 0.0, 1.05),
     placeWorld('hydrant', 4.8, 56.8, 0.0, 1.05),
     placeWorld('hydrant', 34.8, 56.8, 0.0, 1.05),
-    placeWorld('tree_purple', 66.5, 74.5, -0.45, 1.12),
+    placeWorld(
+      'tree_purple',
+      sign === -1 ? 67.2 : 66.5,
+      sign === -1 ? 83.2 : 74.5,
+      -0.45,
+      1.12,
+    ),
     placeWorld('tree_gold', 66.5, 91.5, 0.25, 1.1),
     placeWorld('tree_purple', -66.5, 74.5, 0.55, 1.12),
     placeWorld('tree_gold', -66.5, 91.5, -0.35, 1.1),
@@ -148,7 +164,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 333, kind: 'tree_purple', x: -28.5, z: 15.2, rotY: 0.5, scale: 1.1 },
     { id: 334, kind: 'tree_gold', x: -48.5, z: -36.5, rotY: 0.6, scale: 1.1 },
     { id: 335, kind: 'tree_gold', x: -48.5, z: 36.5, rotY: -0.6, scale: 1.1 },
-    { id: 336, kind: 'tree_purple', x: -84.0, z: -48.0, rotY: -0.3, scale: 1.12 },
+    { id: 336, kind: 'tree_purple', x: -69.5, z: -96.8, rotY: -0.3, scale: 1.12 },
     { id: 337, kind: 'tree_purple', x: -68.5, z: 58.5, rotY: 0.3, scale: 1.12 },
 
     { id: 401, kind: 'crane', x: 105.8, z: 21.5, rotY: Math.PI / 2, scale: 1.38 },
@@ -184,7 +200,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
 
     { id: 538, kind: 'lamppost_1a', x: -3.5, z: -45.2, rotY: 0.0, scale: 1.15 },
     { id: 539, kind: 'lamppost_1a', x: 0.0, z: 45.2, rotY: Math.PI, scale: 1.15 },
-    { id: 540, kind: 'lamppost_1a', x: -64.8, z: -78.0, rotY: -Math.PI / 2, scale: 1.15 },
+    { id: 540, kind: 'lamppost_1a', x: -64.8, z: -84.5, rotY: -Math.PI / 2, scale: 1.15 },
     { id: 541, kind: 'lamppost_1a', x: -64.8, z: 78.0, rotY: -Math.PI / 2, scale: 1.15 },
     { id: 542, kind: 'lamppost_1a', x: 64.8, z: -78.0, rotY: Math.PI / 2, scale: 1.15 },
     { id: 543, kind: 'lamppost_1a', x: 64.8, z: 78.0, rotY: Math.PI / 2, scale: 1.15 },
@@ -219,7 +235,8 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
           (p) =>
             p.id !== 491 &&
             !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
-            !isInsideCoastalAmusementParkFootprint(p.x, p.z),
+            !isInsideCoastalAmusementParkFootprint(p.x, p.z) &&
+            !isInsideNorthGrandCasinoFootprint(p.x, p.z),
         );
         if (Array.isArray(parsed.sculptData) && parsed.sculptData.length > 0) {
           restoreTerrainSculptGrid(parsed.sculptData);
@@ -574,11 +591,18 @@ export function buildStaticWorldStructuresList(params: {
     // South Plaza Grand L-Shaped Botanical Glasshouse Cafe (+2.50m Plaza Level, spanning West-to-East fence & West wing, clear of East Parasol Cafe Tables), Modern Coffee & Gelato Kiosks
     { id: 'lobby_glasshouse_l_main', x: -90.50, z: 30.00, halfX: 12.85, halfZ: 6.85, rotY: 0, heightY: 9.6, mat: 'metal' },
     { id: 'lobby_glasshouse_l_wing', x: -98.10, z: 18.60, halfX: 5.25, halfZ: 4.65, rotY: 0, heightY: 9.6, mat: 'metal' },
-    { id: 'lobby_gelato_kiosk_body', x: -100.55, z: -13.8, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
-    { id: 'lobby_gelato_kiosk_stools', x: -97.56, z: -12.38, halfX: 0.44, halfZ: 1.38, rotY: 0, heightY: 3.7, mat: 'wood' },
-    { id: 'lobby_fashion_kiosk_body', x: -100.55, z: -1.2, halfX: 2.62, halfZ: 3.30, rotY: 0, heightY: 6.9, mat: 'metal' },
-    { id: 'lobby_fashion_kiosk_sign', x: -97.68, z: -3.21, halfX: 0.42, halfZ: 0.42, rotY: 0, heightY: 3.8, mat: 'wood' },
-    { id: 'npc_merchant_hana', x: -91.3, z: -24.26, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
+    ...computeRealEstateKioskWorldColliders(),
+    ...computeScooterShopWorldColliders(),
+    {
+      id: 'npc_merchant_hana',
+      x: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
+      z: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
+      halfX: 0.52,
+      halfZ: 0.52,
+      rotY: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.rotY,
+      heightY: 3.85,
+      mat: 'wood',
+    },
     { id: 'npc_merchant_kai', x: 85.8, z: 60.0, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
     { id: 'lobby_parasol_table_n', x: -81.7, z: 13.31, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
     { id: 'lobby_parasol_table_s', x: -81.7, z: 19.09, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
@@ -618,6 +642,16 @@ export function buildStaticWorldStructuresList(params: {
     // Central Plaza Halte Trem Shelter Colliders (Windbreak Wall, Black Transit Kiosk, Ticket Machine & Slatted Passenger Bench)
     { id: 'lobby_tram_shelter_windbreak', x: -59.6, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
     { id: 'halte_teleport_kiosk', x: -61.95, z: 0.0, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    {
+      id: 'central_plaza_info_transit_kiosk',
+      x: CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
+      z: CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
+      halfX: 0.42,
+      halfZ: 0.48,
+      rotY: 0,
+      heightY: 4.65,
+      mat: 'metal',
+    },
     { id: 'halte_ticket_machine', x: -59.96, z: -5.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
     { id: 'halte_passenger_bench', x: -60.14, z: 2.60, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
     // North Residence & South Residence Rail Halte Colliders + Standalone Black Transit Kiosks at Beachfront Harbor & NW Fishing Lake
@@ -718,6 +752,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'cont_stack_harbor_sc', x: 94.15, z: 24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
     { id: 'cont_stack_harbor_se', x: 101.5, z: 33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
     ...getCoastalAmusementParkObstacles(),
+    ...getGrandCasinoObstacles(),
   ];
 
   const gardenCornersLocal: readonly [number, number][] = [

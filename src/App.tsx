@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSafePrivy, useSafePrivyLogin } from './lib/privyAuthBridge';
 import {
   User,
-  MessageCircle,
-  MessageSquare,
   ChevronLeft,
   ChevronRight,
   Wallet,
@@ -12,9 +10,6 @@ import {
   Backpack,
   Package,
   Play,
-  Music,
-  Volume2,
-  VolumeX,
   LogIn,
   X,
   ClipboardList,
@@ -134,6 +129,7 @@ import {
   GlasshouseCafePrepModal,
   GlasshouseCafeRotaModal,
   XpGainCelebrationBanner,
+  type UnifiedBottomDockActionMode,
 } from './components/GlasshouseCafeModal';
 import { GlasshouseCafeSlotModal } from './components/GlasshouseCafeSlotModal';
 import type { ArcadeSlotEvaluation } from './game/buddiesArcadeSlots';
@@ -237,6 +233,22 @@ import {
   type ShorelineBiteSchedule,
   type ShorelineMinigameState,
 } from './game/buddiesFishingMarket';
+import { UrbanScooterShowroomModal } from './components/UrbanScooterShowroomModal';
+import {
+  RealEstateCatalogModal,
+  type RealEstateCatalogTabId,
+} from './components/RealEstateCatalogModal';
+import {
+  URBAN_SCOOTER_CATALOG_ITEMS,
+  type UrbanScooterCatalogItem,
+} from './game/buddiesUrbanScooterRules';
+import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
+import {
+  clampAudioVolumePct,
+  computeChannelStateAfterSliderChange,
+  computeChannelStateAfterToggleMute,
+  REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
+} from './game/buddiesRealEstateKioskRules';
 
 const INITIAL_HUD: HudSnapshot = {
   hp: PLAYER_WARZONE_MAX_HP,
@@ -611,9 +623,38 @@ export default function App() {
   }, [onboardingStep]);
   const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('day');
   const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'ortho18'>('webgl35');
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [isMusicMuted, setIsMusicMuted] = useState<boolean>(false);
-  const [audioVolumePct, setAudioVolumePct] = useState<number>(100);
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('bb_sfx_muted_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [isMusicMuted, setIsMusicMuted] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('bb_music_muted_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [audioVolumePct, setAudioVolumePct] = useState<number>(() => {
+    try {
+      const saved = window.localStorage.getItem('bb_sfx_vol_pct_v1');
+      return saved !== null ? clampAudioVolumePct(Number(saved)) : 100;
+    } catch {
+      return 100;
+    }
+  });
+  const [musicVolumePct, setMusicVolumePct] = useState<number>(() => {
+    try {
+      const saved = window.localStorage.getItem('bb_music_vol_pct_v1');
+      return saved !== null ? clampAudioVolumePct(Number(saved)) : 100;
+    } catch {
+      return 100;
+    }
+  });
+  const lastNonZeroSfxPctRef = useRef<number>(audioVolumePct > 0 ? audioVolumePct : 80);
+  const lastNonZeroMusicPctRef = useRef<number>(musicVolumePct > 0 ? musicVolumePct : 80);
   const [showJoystickOnDesktop, setShowJoystickOnDesktop] = useState<boolean>(() => {
     try {
       return window.localStorage.getItem('bb_desktop_joystick_v1') === '1';
@@ -650,7 +691,10 @@ export default function App() {
     | 'prep_pastry'
     | 'prep_drink'
   >('none');
-  const [isNearCafeRotaBoard, setIsNearCafeRotaBoard] = useState<boolean>(false);
+  const [unifiedBottomDockMode, setUnifiedBottomDockMode] =
+    useState<UnifiedBottomDockActionMode>('none');
+  const [nearbyDockEntity, setNearbyDockEntity] = useState<NearbyEntityUser | null>(null);
+  const lastNearbyDockEntityIdRef = useRef<string | null>(null);
   const [isCafeRotaMenuExpanded, setIsCafeRotaMenuExpanded] = useState<boolean>(false);
   const [isCafeOrderSlideBannerVisible, setIsCafeOrderSlideBannerVisible] =
     useState<boolean>(false);
@@ -713,6 +757,58 @@ export default function App() {
     dailyMissionsStateRef.current = dailyMissionsState;
   }, [dailyMissionsState]);
   const [isDailyMissionsModalOpen, setIsDailyMissionsModalOpen] = useState<boolean>(false);
+  const [isScooterShowroomModalOpen, setIsScooterShowroomModalOpen] = useState<boolean>(false);
+  const [isRealEstateCatalogModalOpen, setIsRealEstateCatalogModalOpen] =
+    useState<boolean>(false);
+  const [realEstateCatalogTab, setRealEstateCatalogTab] =
+    useState<RealEstateCatalogTabId>('house');
+  const loadOwnedScootersFromStorage = useCallback((acctKey: string): string[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(`bb_owned_scooters_v1:${acctKey}`);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, []);
+  const [ownedScooterIds, setOwnedScooterIds] = useState<string[]>(() =>
+    loadOwnedScootersFromStorage('guest'),
+  );
+  useEffect(() => {
+    setOwnedScooterIds(loadOwnedScootersFromStorage(dailyMissionsAccountKey));
+    const account = dailyMissionsAccountKey.trim();
+    if (!account || account === 'guest') return;
+    let cancelled = false;
+    void fetchOwnedNep245CatalogCounts(
+      account,
+      URBAN_SCOOTER_CATALOG_ITEMS.map((s) => s.tokenId),
+    )
+      .then((counts) => {
+        if (cancelled || !counts) return;
+        const chainOwned = URBAN_SCOOTER_CATALOG_ITEMS.filter(
+          (s) => (counts[s.tokenId] ?? 0) > 0,
+        ).map((s) => s.id);
+        if (chainOwned.length === 0) return;
+        setOwnedScooterIds((prev) => {
+          const next = Array.from(new Set([...prev, ...chainOwned]));
+          try {
+            window.localStorage.setItem(
+              `bb_owned_scooters_v1:${dailyMissionsAccountKey}`,
+              JSON.stringify(next),
+            );
+          } catch {
+            // ignore storage failures
+          }
+          return next;
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [dailyMissionsAccountKey, loadOwnedScootersFromStorage]);
   const lastEnteredHousePlotRef = useRef<{
     team: 'blue' | 'red' | null;
     plotIndex: number | null;
@@ -1800,53 +1896,112 @@ export default function App() {
         : 'none';
 
   useEffect(() => {
+    soundEngine.muted = isMuted;
+    soundEngine.musicMuted = isMusicMuted;
+    soundEngine.setSfxVolume(audioVolumePct / 100);
+    soundEngine.setMusicVolume(musicVolumePct / 100);
+  }, [isMuted, isMusicMuted, audioVolumePct, musicVolumePct]);
+
+  useEffect(() => {
     soundEngine.setBgmMode(activeBgmMode);
     soundEngine.setSessionMusicTrack(activeSessionMusicTrack);
   }, [activeBgmMode, activeSessionMusicTrack]);
 
   const handleToggleAudio = useCallback(() => {
-    const nextMuted = !soundEngine.muted;
-    soundEngine.muted = nextMuted;
-    setIsMuted(nextMuted);
-    if (!nextMuted) {
-      if (soundEngine.masterVolume <= 0) {
-        soundEngine.setMasterVolume(0.5);
-        setAudioVolumePct(50);
-      }
-      soundEngine.startBgm(
-        hudRef.current.worldMode === 'warzone' ? 'warzone' : 'city',
-      );
+    const next = computeChannelStateAfterToggleMute({
+      volumePct: audioVolumePct,
+      muted: soundEngine.muted,
+      lastNonZeroPct: lastNonZeroSfxPctRef.current,
+    });
+    lastNonZeroSfxPctRef.current = next.lastNonZeroPct;
+    soundEngine.setSfxVolume(next.volumePct / 100);
+    soundEngine.muted = next.muted;
+    setAudioVolumePct(next.volumePct);
+    setIsMuted(next.muted);
+    try {
+      window.localStorage.setItem('bb_sfx_muted_v1', next.muted ? '1' : '0');
+      window.localStorage.setItem('bb_sfx_vol_pct_v1', String(next.volumePct));
+    } catch {
+      // ignore storage quota errors
+    }
+    if (!next.muted) {
       soundEngine.playUiClick();
     }
-  }, []);
+  }, [audioVolumePct]);
 
   const handleToggleMusic = useCallback(() => {
-    const nextMusicMuted = !soundEngine.musicMuted;
-    soundEngine.musicMuted = nextMusicMuted;
-    setIsMusicMuted(nextMusicMuted);
-    if (!nextMusicMuted && !soundEngine.muted) {
+    const next = computeChannelStateAfterToggleMute({
+      volumePct: musicVolumePct,
+      muted: soundEngine.musicMuted,
+      lastNonZeroPct: lastNonZeroMusicPctRef.current,
+    });
+    lastNonZeroMusicPctRef.current = next.lastNonZeroPct;
+    soundEngine.setMusicVolume(next.volumePct / 100);
+    soundEngine.musicMuted = next.muted;
+    setMusicVolumePct(next.volumePct);
+    setIsMusicMuted(next.muted);
+    try {
+      window.localStorage.setItem('bb_music_muted_v1', next.muted ? '1' : '0');
+      window.localStorage.setItem('bb_music_vol_pct_v1', String(next.volumePct));
+    } catch {
+      // ignore storage quota errors
+    }
+    if (!next.muted) {
       soundEngine.startBgm(
         hudRef.current.worldMode === 'warzone' ? 'warzone' : 'city',
       );
     }
     soundEngine.playUiClick();
-  }, []);
+  }, [musicVolumePct]);
 
   const handleChangeVolumePct = useCallback((nextPct: number) => {
-    const clamped = Math.max(0, Math.min(100, Math.round(nextPct)));
-    setAudioVolumePct(clamped);
-    soundEngine.setMasterVolume(clamped / 100);
-    if (clamped === 0) {
-      soundEngine.muted = true;
-      setIsMuted(true);
-    } else if (soundEngine.muted) {
-      soundEngine.muted = false;
-      setIsMuted(false);
+    const next = computeChannelStateAfterSliderChange(
+      {
+        volumePct: audioVolumePct,
+        muted: soundEngine.muted,
+        lastNonZeroPct: lastNonZeroSfxPctRef.current,
+      },
+      nextPct,
+    );
+    lastNonZeroSfxPctRef.current = next.lastNonZeroPct;
+    setAudioVolumePct(next.volumePct);
+    setIsMuted(next.muted);
+    soundEngine.setSfxVolume(next.volumePct / 100);
+    soundEngine.muted = next.muted;
+    try {
+      window.localStorage.setItem('bb_sfx_vol_pct_v1', String(next.volumePct));
+      window.localStorage.setItem('bb_sfx_muted_v1', next.muted ? '1' : '0');
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [audioVolumePct]);
+
+  const handleChangeMusicVolumePct = useCallback((nextPct: number) => {
+    const next = computeChannelStateAfterSliderChange(
+      {
+        volumePct: musicVolumePct,
+        muted: soundEngine.musicMuted,
+        lastNonZeroPct: lastNonZeroMusicPctRef.current,
+      },
+      nextPct,
+    );
+    lastNonZeroMusicPctRef.current = next.lastNonZeroPct;
+    setMusicVolumePct(next.volumePct);
+    setIsMusicMuted(next.muted);
+    soundEngine.setMusicVolume(next.volumePct / 100);
+    soundEngine.musicMuted = next.muted;
+    if (!next.muted) {
       soundEngine.startBgm(
         hudRef.current.worldMode === 'warzone' ? 'warzone' : 'city',
       );
     }
-  }, []);
+    try {
+      window.localStorage.setItem('bb_music_vol_pct_v1', String(next.volumePct));
+      window.localStorage.setItem('bb_music_muted_v1', next.muted ? '1' : '0');
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [musicVolumePct]);
 
   const handleCycleLighting = useCallback(() => {
     soundEngine.playUiClick();
@@ -1917,19 +2072,25 @@ export default function App() {
           team?: 'blue' | 'red' | null;
           commanderIdx?: number | null;
           houseStyle?: HouseArchitectureStyle | null;
+          isSampleEntry?: boolean;
         }>
       ).detail;
-      const isSampleEntry = Boolean(
-        entryDetail?.team &&
-          typeof entryDetail?.commanderIdx === 'number' &&
-          isIntactModelEstateBasePlot(entryDetail.team, entryDetail.commanderIdx),
-      );
+      const isModelHousePlaqueEntry = Boolean(entryDetail?.isSampleEntry);
+      const isSampleEntry =
+        isModelHousePlaqueEntry ||
+        Boolean(
+          entryDetail?.team &&
+            typeof entryDetail?.commanderIdx === 'number' &&
+            isIntactModelEstateBasePlot(entryDetail.team, entryDetail.commanderIdx),
+        );
       const requestedInteriorStyle = parseOptionalHouseArchitectureStyle(entryDetail?.houseStyle);
-      const targetInteriorStyle: HouseArchitectureStyle = isSampleEntry
-        ? 'japanese_pavilion'
-        : requestedInteriorStyle ??
-          ownedHouseStyleRef.current ??
-          houseArchitectureStyleRef.current;
+      const targetInteriorStyle: HouseArchitectureStyle = isModelHousePlaqueEntry
+        ? requestedInteriorStyle ?? 'plaza_manor'
+        : isSampleEntry
+          ? 'japanese_pavilion'
+          : requestedInteriorStyle ??
+            ownedHouseStyleRef.current ??
+            houseArchitectureStyleRef.current;
       lastEnteredHousePlotRef.current = {
         team: entryDetail?.team ?? null,
         plotIndex: typeof entryDetail?.commanderIdx === 'number' ? entryDetail.commanderIdx : null,
@@ -1991,7 +2152,7 @@ export default function App() {
       setIsCafeInteriorLoading(false);
       setIsInsideGlasshouseCafe(false);
       setActiveCafeModal('none');
-      setIsNearCafeRotaBoard(false);
+      setUnifiedBottomDockMode((prev) => (prev === 'work_shift' ? 'none' : prev));
       setIsCafeRotaMenuExpanded(false);
       setCafeShiftState((prev) => ({ ...prev, isWorking: false, activeOrder: null }));
     };
@@ -2016,15 +2177,40 @@ export default function App() {
       setIsCafeOrderSlideBannerVisible(false);
       setActiveCafeModal(cat === 'pastry' ? 'prep_pastry' : 'prep_drink');
     };
+    const onUnifiedBottomDockChange = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          mode?: UnifiedBottomDockActionMode;
+          entity?: NearbyEntityUser | null;
+        }>
+      ).detail;
+      const mode = detail?.mode ?? 'none';
+      const nextEntity = mode === 'nearby_entity' ? detail?.entity ?? null : null;
+      const nextId = nextEntity ? String(nextEntity.id) : null;
+      const isSameEntity =
+        nextId !== null && lastNearbyDockEntityIdRef.current === nextId;
+      lastNearbyDockEntityIdRef.current = nextId;
+      setUnifiedBottomDockMode(mode);
+      setNearbyDockEntity(nextEntity);
+      if (mode !== 'work_shift') {
+        setIsCafeRotaMenuExpanded(false);
+      }
+      if (mode !== 'nearby_entity' || !isSameEntity) {
+        setIsTargetMenuExpanded(false);
+      }
+    };
     const onCafeRotaProximityChange = (e: Event) => {
       const near = Boolean((e as CustomEvent<{ near?: boolean }>).detail?.near);
-      setIsNearCafeRotaBoard(near);
+      setUnifiedBottomDockMode((prev) => {
+        if (near) return 'work_shift';
+        return prev === 'work_shift' ? 'none' : prev;
+      });
       if (!near) {
         setIsCafeRotaMenuExpanded(false);
       }
     };
     const onToggleCafeRotaDockMenu = () => {
-      setIsNearCafeRotaBoard(true);
+      setUnifiedBottomDockMode('work_shift');
       setIsCafeRotaMenuExpanded((prev) => !prev);
     };
     const onStopCafeWorkShiftEvent = () => {
@@ -2098,6 +2284,40 @@ export default function App() {
     const onCloseTeleportKioskModal = () => {
       setActiveTeleportKioskModal('none');
     };
+    const onOpenScooterShowroomModal = () => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      setIsKioskModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsPersonalBagModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsRealEstateCatalogModalOpen(false);
+      setActiveSpecialModal('none');
+      setActiveTeleportKioskModal('none');
+      setIsScooterShowroomModalOpen(true);
+    };
+    const onCloseScooterShowroomModal = () => {
+      setIsScooterShowroomModalOpen(false);
+    };
+    const onOpenRealEstateCatalogModal = (e: Event) => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      const tab = (e as CustomEvent<{ tab?: RealEstateCatalogTabId }>).detail?.tab;
+      setRealEstateCatalogTab(tab === 'furniture' || tab === 'market' ? tab : 'house');
+      setIsKioskModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsPersonalBagModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsScooterShowroomModalOpen(false);
+      setActiveSpecialModal('none');
+      setActiveTeleportKioskModal('none');
+      setIsRealEstateCatalogModalOpen(true);
+    };
+    const onCloseRealEstateCatalogModal = () => {
+      setIsRealEstateCatalogModalOpen(false);
+    };
     const onCityTramRideProgress = (e: Event) => {
       const detail = (
         e as CustomEvent<{
@@ -2157,6 +2377,7 @@ export default function App() {
     window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
     window.addEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
     window.addEventListener('open-cafe-prep-modal', onOpenCafePrepModal);
+    window.addEventListener('unified-bottom-dock-change', onUnifiedBottomDockChange);
     window.addEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
     window.addEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
     window.addEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
@@ -2169,6 +2390,10 @@ export default function App() {
     window.addEventListener('character-deselected', onCharacterDeselected);
     window.addEventListener('open-teleport-kiosk-modal', onOpenTeleportKioskModal);
     window.addEventListener('close-teleport-kiosk-modal', onCloseTeleportKioskModal);
+    window.addEventListener('open-scooter-showroom-modal', onOpenScooterShowroomModal);
+    window.addEventListener('close-scooter-showroom-modal', onCloseScooterShowroomModal);
+    window.addEventListener('open-realestate-catalog-modal', onOpenRealEstateCatalogModal);
+    window.addEventListener('close-realestate-catalog-modal', onCloseRealEstateCatalogModal);
     window.addEventListener('city-tram-ride-progress', onCityTramRideProgress);
     window.addEventListener('city-tram-ride-complete', onCityTramRideComplete);
     return () => {
@@ -2188,6 +2413,7 @@ export default function App() {
       window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
       window.removeEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
       window.removeEventListener('open-cafe-prep-modal', onOpenCafePrepModal);
+      window.removeEventListener('unified-bottom-dock-change', onUnifiedBottomDockChange);
       window.removeEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
       window.removeEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
       window.removeEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
@@ -2200,6 +2426,10 @@ export default function App() {
       window.removeEventListener('character-deselected', onCharacterDeselected);
       window.removeEventListener('open-teleport-kiosk-modal', onOpenTeleportKioskModal);
       window.removeEventListener('close-teleport-kiosk-modal', onCloseTeleportKioskModal);
+      window.removeEventListener('open-scooter-showroom-modal', onOpenScooterShowroomModal);
+      window.removeEventListener('close-scooter-showroom-modal', onCloseScooterShowroomModal);
+      window.removeEventListener('open-realestate-catalog-modal', onOpenRealEstateCatalogModal);
+      window.removeEventListener('close-realestate-catalog-modal', onCloseRealEstateCatalogModal);
       window.removeEventListener('city-tram-ride-progress', onCityTramRideProgress);
       window.removeEventListener('city-tram-ride-complete', onCityTramRideComplete);
     };
@@ -3934,10 +4164,6 @@ export default function App() {
 
     // Contract v1.5.0 enforces one welcome NEAR grant per Google email hash
     // when attested claim is enabled; non-Google wallets use legacy 1x-per-account claim.
-    // Attestation-side failures (unbound email, invalid or expired signature,
-    // endpoint down) fall through to the legacy claim below: they must never
-    // strand a new player whose wallet has not claimed yet. Only a genuine
-    // already-claimed answer stops the flow.
     let claimRes: Awaited<ReturnType<typeof claimHanaWelcomeNearOnChain>> | null = null;
     const claimEmail = (connectedGoogleEmail || '').trim().toLowerCase();
     if (shouldAttemptAttestedHanaClaim(claimEmail)) {
@@ -5004,6 +5230,424 @@ export default function App() {
     );
   };
 
+  const handleViewModelHouse = (requestedStyle?: HouseArchitectureStyle) => {
+    soundEngine.playUiClick();
+    const targetStyle = requestedStyle ?? 'plaza_manor';
+    setHouseArchitectureStyle(targetStyle);
+    setActiveSpecialModal('none');
+    setIsRealEstateCatalogModalOpen(false);
+    setHanaPitchOrigin(null);
+    setIsKioskModalOpen(false);
+    setIsSocialChatModalOpen(false);
+    setHouseEntryScanState('scanning');
+    window.setTimeout(() => {
+      soundEngine.playPickup();
+      setHouseEntryScanState('verified');
+      window.setTimeout(() => {
+        setHouseEntryScanState('idle');
+        setIsSampleHouseView(true);
+        setIsInsidePrivateHouse(true);
+      }, 600);
+    }, 700);
+  };
+
+  const handleEnterOwnHouse = (requestedStyle?: HouseArchitectureStyle) => {
+    soundEngine.playUiClick();
+    const targetStyle =
+      isOnChainHouseStyleLockedRef.current && ownedHouseStyleRef.current
+        ? ownedHouseStyleRef.current
+        : requestedStyle ?? ownedHouseStyleRef.current ?? houseArchitectureStyleRef.current;
+    if (!isOnChainHouseStyleLockedRef.current) {
+      setAndPersistHouseArchitectureStyle(targetStyle);
+    } else {
+      setHouseArchitectureStyle(targetStyle);
+    }
+    setActiveSpecialModal('none');
+    setIsRealEstateCatalogModalOpen(false);
+    setHanaPitchOrigin(null);
+    setIsKioskModalOpen(false);
+    setIsSocialChatModalOpen(false);
+    setHouseEntryScanState('scanning');
+    window.setTimeout(() => {
+      soundEngine.playPickup();
+      setHouseEntryScanState('verified');
+      window.setTimeout(() => {
+        setHouseEntryScanState('idle');
+        setIsSampleHouseView(false);
+        setIsInsidePrivateHouse(true);
+      }, 600);
+    }, 700);
+  };
+
+  const handleBuyHouseWithRespite = async (
+    _priceRespite: number,
+    requestedStyle?: HouseArchitectureStyle,
+  ): Promise<boolean> => {
+    const priceRespite = HOUSE_OWNERSHIP_PRICE_RESPITE;
+    if (respiteBalance < priceRespite) return false;
+    const chosenStyle: HouseArchitectureStyle =
+      requestedStyle ?? houseArchitectureStyleRef.current;
+    const actorAccount = hud.nearWalletId || playerUid;
+    const res = await executeMarketContractCallOnChain({
+      signerAccountId: actorAccount || undefined,
+      methodName: 'purchase_citizen_asset',
+      args: {
+        asset_id: 'house_ownership',
+        plan_id: chosenStyle,
+        order_id: null,
+      },
+    });
+    if (!res.ok || !res.txHash) return false;
+    const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
+    let nextRespite = Math.max(0, respiteBalance - priceRespite);
+    let deedTokenId = 'nep171:house:ownership';
+    if (resolvedActor) {
+      const [liveRespiteStr, liveEstate] = await Promise.all([
+        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor),
+        fetchBuddiesMarketEstate(resolvedActor),
+      ]);
+      if (liveRespiteStr !== null) {
+        nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+      }
+      if (liveEstate?.house_deed?.deed_token_id) {
+        deedTokenId = liveEstate.house_deed.deed_token_id;
+      }
+    }
+    setRespiteBalance(nextRespite);
+    setHasHouseOwnership(true);
+    setOwnedHouseStyle(chosenStyle);
+    setIsOnChainHouseStyleLocked(true);
+    setHouseArchitectureStyle(chosenStyle);
+    if (resolvedActor) {
+      persistHouseStyleLocally(resolvedActor, chosenStyle);
+      void createLetterForAccount({
+        recipientAccount: resolvedActor,
+        kind: 'property_purchase',
+        title: 'Real Estate Sales Contract — House Deed',
+        payload: {
+          buyerAccount: resolvedActor,
+          sellerName: 'Buddies Blitz',
+          sellerAccount: 'buddiesblitz.testnet',
+          itemName: 'House Ownership Certificate',
+          assetKind: 'house',
+          houseStyle: chosenStyle,
+          deedTokenId,
+          priceAmount: priceRespite,
+          priceCurrency: 'RESPITE',
+          settlementContract: NEAR_CONFIG.marketContractId,
+        },
+        txHash: res.txHash,
+      });
+    }
+    if (resolvedActor) {
+      dispatchBuddyAction(
+        `nearSyncWalletSession:${resolvedActor}:1:${deedTokenId}:${chosenStyle}`,
+      );
+    }
+    setHud((prev) => ({
+      ...prev,
+      nearHasGamepassNft: true,
+      nearGamepassTokenId: deedTokenId,
+    }));
+    if (resolvedActor) {
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: resolvedActor,
+        lulBalance: hud.gold,
+        cyonBalance,
+        respiteBalance: nextRespite,
+        ownedTokenIds: [...ownedMerchantItemIds, deedTokenId],
+        unlockedSkins: buildProfileUnlockedSkins(characterGender, chosenStyle),
+      });
+      void logMarketTransactionToSupabase({
+        merchant_id: merchantLocation,
+        actor_near_account: resolvedActor,
+        action_type: 'buy_item',
+        item_id: `house_ownership:${chosenStyle}`,
+        nep245_token_id: deedTokenId,
+        currency: 'RESPITE',
+        amount: 1,
+        unit_price: priceRespite,
+        reasoning_summary: `Bought your house · ${chosenStyle} · ${priceRespite} RESPITE.`,
+        near_tx_hash: res.txHash,
+      });
+    }
+    return true;
+  };
+
+  const handleCreatePropertyListing = async ({
+    assetKind,
+    assetId,
+    priceRespite,
+  }: {
+    assetKind: 'house' | 'furniture';
+    assetId: string;
+    assetLabel: string;
+    priceRespite: number;
+  }): Promise<boolean> => {
+    const seller = hud.nearWalletId || '';
+    if (!seller) return false;
+    const price = Math.floor(Number(priceRespite) || 0);
+    if (price < 1 || price > 100000) return false;
+    if (assetKind === 'house') {
+      const estate = await fetchBuddiesMarketEstate(seller).catch(() => null);
+      const deedId = estate?.house_deed?.deed_token_id || '';
+      if (!deedId) return false;
+      const res = await executeMarketContractCallOnChain({
+        signerAccountId: seller,
+        methodName: 'list_property_deed',
+        args: { token_id: deedId, price_respite: String(price) },
+      });
+      if (!res.ok) return false;
+      setHasHouseOwnership(false);
+      setOwnedHouseStyle(null);
+      setIsOnChainHouseStyleLocked(false);
+    } else {
+      const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === assetId);
+      if (!item?.tokenId) return false;
+      const res = await executeMarketContractCallOnChain({
+        signerAccountId: seller,
+        methodName: 'list_property_furniture',
+        args: { token_id: item.tokenId, amount: '1', price_respite: String(price) },
+      });
+      if (!res.ok) return false;
+      setOwnedMerchantItemIds((prev) => {
+        const idx = prev.indexOf(assetId);
+        return idx < 0 ? prev : prev.filter((_, i) => i !== idx);
+      });
+    }
+    await refreshPropertyListings();
+    return true;
+  };
+
+  const handleCancelPropertyListing = async (listingId: string): Promise<void> => {
+    const listing = propertyListings.find((l) => l.id === listingId);
+    if (!listing || listing.status !== 'active') return;
+    const seller = hud.nearWalletId || '';
+    if (!seller || listing.seller_account.toLowerCase() !== seller.toLowerCase()) return;
+    setBusyPropertyListingId(listing.id);
+    try {
+      const res = await executeMarketContractCallOnChain({
+        signerAccountId: seller,
+        methodName: 'cancel_property_listing',
+        args: { listing_id: listing.id },
+      });
+      if (!res.ok) return;
+      if (listing.asset_kind === 'house') {
+        setHasHouseOwnership(true);
+        void refreshOnChainBalances(seller);
+      } else {
+        setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
+      }
+      await refreshPropertyListings();
+    } finally {
+      setBusyPropertyListingId(null);
+    }
+  };
+
+  const handleBuyPropertyListing = async (listing: DbPropertyListingRow): Promise<boolean> => {
+    const buyer = hud.nearWalletId || '';
+    if (!buyer || listing.status !== 'active') return false;
+    if (listing.seller_account.toLowerCase() === buyer.toLowerCase()) return false;
+    setBusyPropertyListingId(listing.id);
+    try {
+      const res = await executeMarketContractCallOnChain({
+        signerAccountId: buyer,
+        methodName: 'buy_property',
+        args: { listing_id: listing.id },
+      });
+      if (!res.ok || !res.txHash) return false;
+      const liveBal = await fetchNep141Balance(
+        NEAR_CONFIG.nep141RespiteContractId,
+        buyer,
+      ).catch(() => null);
+      if (liveBal !== null) {
+        setRespiteBalance(Math.max(0, Number(liveBal) || 0));
+      } else {
+        setRespiteBalance((prev) => Math.max(0, prev - listing.price_respite));
+      }
+      if (listing.asset_kind === 'house') {
+        setHasHouseOwnership(true);
+        void refreshOnChainBalances(buyer);
+      } else {
+        setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
+      }
+      void createLetterForAccount({
+        recipientAccount: buyer,
+        kind: listing.asset_kind === 'house' ? 'property_purchase' : 'item_purchase',
+        title:
+          listing.asset_kind === 'house'
+            ? 'Real Estate Sales Contract — House Deed'
+            : 'Certificate of Ownership — Furniture NFT',
+        payload: {
+          buyerAccount: buyer,
+          sellerAccount: listing.seller_account,
+          itemName:
+            listing.asset_kind === 'house'
+              ? 'House Ownership Certificate'
+              : (MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.name ??
+                listing.asset_id),
+          itemId: listing.asset_id,
+          tokenId:
+            listing.asset_kind === 'house'
+              ? listing.asset_id
+              : MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.tokenId,
+          assetKind: listing.asset_kind,
+          deedTokenId: listing.asset_kind === 'house' ? listing.asset_id : undefined,
+          priceAmount: listing.price_respite,
+          priceCurrency: 'RESPITE',
+          settlementContract: NEAR_CONFIG.marketContractId,
+          paymentTx: res.txHash,
+        },
+        txHash: res.txHash,
+      });
+      await refreshPropertyListings();
+      return true;
+    } finally {
+      setBusyPropertyListingId(null);
+    }
+  };
+
+  const handleCompletePropertyTransfer = async (): Promise<boolean> => false;
+
+  const handleBuyCatalogMerchantItem = async (
+    item: MerchantCatalogItem,
+    finalPrice: number,
+  ): Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }> => {
+    soundEngine.playUiClick();
+    if (
+      item.category === 'nft_collector_furniture' &&
+      !hasHouseOwnership &&
+      !hud.nearHasGamepassNft
+    ) {
+      return { ok: false };
+    }
+    if (!item.interiorSlot && ownedMerchantItemIds.includes(item.id)) return { ok: false };
+    const actorAccount = hud.nearWalletId || playerUid;
+    if (item.currency === 'RESPITE' && !actorAccount) {
+      setIsNearWalletSelectorOpen(true);
+      return { ok: false };
+    }
+    let nextCyon = cyonBalance;
+    let nextRespite = respiteBalance;
+    let onChainBuyReceipt: { txHash?: string; explorerUrl?: string } = {};
+    if (item.currency === 'CYON') {
+      if (cyonBalance < finalPrice) return { ok: false };
+      nextCyon = Math.max(0, cyonBalance - finalPrice);
+      setCyonBalance(nextCyon);
+    } else {
+      if (respiteBalance < finalPrice) return { ok: false };
+      const buyRes = await executeMarketContractCallOnChain({
+        signerAccountId: actorAccount || undefined,
+        methodName: 'buy_merchant_item',
+        args: {
+          token_id: item.tokenId,
+          amount: '1',
+          price_respite: String(finalPrice),
+        },
+      });
+      if (!buyRes.ok || !buyRes.txHash) return { ok: false };
+      onChainBuyReceipt = { txHash: buyRes.txHash, explorerUrl: buyRes.explorerUrl };
+      void createLetterForAccount({
+        recipientAccount: actorAccount,
+        kind: 'item_purchase',
+        title: `Certificate of Ownership — ${item.name}`,
+        payload: {
+          buyerAccount: actorAccount,
+          sellerName: merchantLocation === 'beach_house' ? 'Kai Fish Market' : 'Hana Property & Housing',
+          sellerAccount: 'buddiesblitz.testnet',
+          itemName: item.name,
+          itemId: item.id,
+          tokenId: item.tokenId,
+          assetKind: item.category,
+          priceAmount: finalPrice,
+          priceCurrency: 'RESPITE',
+          settlementContract: NEAR_CONFIG.marketContractId,
+        },
+        txHash: buyRes.txHash,
+      });
+      const resolvedActor = buyRes.signerAccountId || actorAccount;
+      nextRespite = Math.max(0, respiteBalance - finalPrice);
+      const liveRespiteStr = await fetchNep141Balance(
+        NEAR_CONFIG.nep141RespiteContractId,
+        resolvedActor,
+        'optimistic',
+      );
+      if (liveRespiteStr !== null) {
+        nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+      }
+      setRespiteBalance(nextRespite);
+    }
+    const nextOwned = [...ownedMerchantItemIds, item.id];
+    setOwnedMerchantItemIds(nextOwned);
+    if (item.category === 'nft_house_theme') {
+      setActiveHouseThemeId(item.id);
+      dispatchBuddyAction(
+        `applyHouseTheme:${item.skinThemeId ?? 'military_standard'}:${item.gardenPresetId ?? 'sakura_grove'}`,
+      );
+    } else if (item.interiorSlot) {
+      const slotId = item.interiorSlot;
+      setInteriorPlacement((prev) => {
+        if (prev[slotId] !== null) return prev;
+        const next = { ...prev, [slotId]: item.id };
+        housePersistRef.current.slot = next;
+        return next;
+      });
+    }
+    setMarketState((prev) => {
+      const nextStock = {
+        ...prev.stockByItemId,
+        [item.id]: Math.max(0, (prev.stockByItemId[item.id] ?? item.initialStock) - 1),
+      };
+      const nextDemand = {
+        ...prev.demandByItemId,
+        [item.id]: Math.min(5, (prev.demandByItemId[item.id] ?? 0) + 1),
+      };
+      const nextTreasury =
+        prev.treasuryCyon + (item.currency === 'CYON' ? finalPrice : finalPrice * 12);
+      const headline = `You purchased ${item.name} (${finalPrice} ${item.currency}). Stock decreased, demand trend rising!`;
+
+      if (actorAccount) {
+        void syncNpcMerchantToSupabase({
+          merchant_id: merchantLocation,
+          cyon_treasury: nextTreasury,
+          stock_by_item: nextStock,
+          recent_demand_by_item: nextDemand,
+          last_headline: headline,
+        });
+        void logMarketTransactionToSupabase({
+          merchant_id: merchantLocation,
+          actor_near_account: actorAccount,
+          action_type: 'buy_item',
+          item_id: item.id,
+          nep245_token_id: item.tokenId,
+          currency: item.currency,
+          amount: 1,
+          unit_price: finalPrice,
+          reasoning_summary: headline,
+          near_tx_hash: onChainBuyReceipt.txHash,
+        });
+      }
+
+      return {
+        ...prev,
+        stockByItemId: nextStock,
+        demandByItemId: nextDemand,
+        treasuryCyon: nextTreasury,
+        lastMarketHeadline: headline,
+      };
+    });
+    if (actorAccount) {
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: actorAccount,
+        lulBalance: hud.gold,
+        cyonBalance: nextCyon,
+        respiteBalance: nextRespite,
+        ownedTokenIds: nextOwned,
+      });
+    }
+    return { ok: true, ...onChainBuyReceipt };
+  };
+
   return (
     <main className="relative w-screen h-screen overflow-hidden select-none">
       {/* 1. 60FPS 3D Buddies Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
@@ -5139,41 +5783,18 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2.5 pointer-events-auto">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  handleToggleMusic();
-                }}
-                aria-label={isMusicMuted ? 'Unmute Music' : 'Mute Music'}
-                className="-skew-x-6 w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
-              >
-                <span className="skew-x-6 relative flex items-center justify-center">
-                  <Music
-                    className={`w-4 h-4 ${isMusicMuted ? 'text-slate-300' : 'text-[#b8ff3c]'}`}
-                  />
-                  {isMusicMuted && (
-                    <span className="absolute w-5 h-[2px] bg-red-400 rotate-[-45deg] rounded" />
-                  )}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  handleToggleAudio();
-                }}
-                aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
-                className="-skew-x-6 w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
-              >
-                <span className="skew-x-6 flex items-center justify-center">
-                  {isMuted ? (
-                    <VolumeX className="w-4 h-4 text-slate-300" />
-                  ) : (
-                    <Volume2 className="w-4 h-4 text-[#b8ff3c]" />
-                  )}
-                </span>
-              </button>
+              <HudAudioVolumeControl
+                contextId="landing"
+                popoverPlacement="bottom"
+                isMusicMuted={isMusicMuted}
+                isSfxMuted={isMuted}
+                musicVolumePct={musicVolumePct}
+                sfxVolumePct={audioVolumePct}
+                onToggleMusicMute={handleToggleMusic}
+                onToggleSfxMute={handleToggleAudio}
+                onChangeMusicVolumePct={handleChangeMusicVolumePct}
+                onChangeSfxVolumePct={handleChangeVolumePct}
+              />
 
               <button
                 type="button"
@@ -6132,7 +6753,14 @@ export default function App() {
                         );
                       })}
                       {[
-                        { id: 'hana', label: 'HANA', x: -91.3, z: -24.26, cls: 'bg-[#b8ff3c]', side: 'right' },
+                        {
+                          id: 'hana',
+                          label: 'HANA',
+                          x: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
+                          z: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
+                          cls: 'bg-[#b8ff3c]',
+                          side: 'right',
+                        },
                         { id: 'cafe', label: 'CAFE', x: -88.3, z: 22.35, cls: 'bg-[#fb923c]', side: 'right' },
                         { id: 'kai', label: 'KAI', x: 85.8, z: 60.0, cls: 'bg-[#facc15]', side: 'left' },
                         { id: 'park', label: 'PARK', x: 101.0, z: -61.0, cls: 'bg-[#c084fc]', side: 'left' },
@@ -6854,6 +7482,18 @@ export default function App() {
               aria-label="Tactical Weapon & Character HUD"
               className="fixed bottom-3 right-3 z-30 pointer-events-auto flex flex-col items-end gap-2"
             >
+              <HudAudioVolumeControl
+                contextId="warzone"
+                popoverPlacement="top"
+                isMusicMuted={isMusicMuted}
+                isSfxMuted={isMuted}
+                musicVolumePct={musicVolumePct}
+                sfxVolumePct={audioVolumePct}
+                onToggleMusicMute={handleToggleMusic}
+                onToggleSfxMute={handleToggleAudio}
+                onChangeMusicVolumePct={handleChangeMusicVolumePct}
+                onChangeSfxVolumePct={handleChangeVolumePct}
+              />
               {/* Optional Nuclear Launcher targeting button */}
               {hud.hasDeployedNuclearLauncher && hud.nuclearStrikePhase === 'idle' && (
                 <div className="flex items-center gap-1.5">
@@ -7336,6 +7976,26 @@ export default function App() {
               </form>
             </div>
           )}
+
+          {/* =================================================================
+              3G. BOTTOM-RIGHT: MUSIC & SOUND TOGGLE BUTTONS (City / Safezone / Interiors)
+             ================================================================= */}
+          {playMode !== 'editor' && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
+            <div className="fixed bottom-16 sm:bottom-3 right-3 z-30 pointer-events-auto select-none">
+              <HudAudioVolumeControl
+                contextId="city"
+                popoverPlacement="top"
+                isMusicMuted={isMusicMuted}
+                isSfxMuted={isMuted}
+                musicVolumePct={musicVolumePct}
+                sfxVolumePct={audioVolumePct}
+                onToggleMusicMute={handleToggleMusic}
+                onToggleSfxMute={handleToggleAudio}
+                onChangeMusicVolumePct={handleChangeMusicVolumePct}
+                onChangeSfxVolumePct={handleChangeVolumePct}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -7433,50 +8093,12 @@ export default function App() {
         onSelectHouseArchitectureStyle={(style) => {
           setAndPersistHouseArchitectureStyle(style);
         }}
-        onViewModelHouse={(requestedStyle) => {
-          soundEngine.playUiClick();
-          const targetStyle = requestedStyle ?? 'plaza_manor';
-          setHouseArchitectureStyle(targetStyle);
+        onViewModelHouse={handleViewModelHouse}
+        onEnterOwnHouse={handleEnterOwnHouse}
+        onOpenExternalCatalog={(tab) => {
+          setRealEstateCatalogTab(tab === 'furniture' || tab === 'market' ? tab : 'house');
           setActiveSpecialModal('none');
-          setHanaPitchOrigin(null);
-          setIsKioskModalOpen(false);
-          setIsSocialChatModalOpen(false);
-          setHouseEntryScanState('scanning');
-          window.setTimeout(() => {
-            soundEngine.playPickup();
-            setHouseEntryScanState('verified');
-            window.setTimeout(() => {
-              setHouseEntryScanState('idle');
-              setIsSampleHouseView(true);
-              setIsInsidePrivateHouse(true);
-            }, 600);
-          }, 700);
-        }}
-        onEnterOwnHouse={(requestedStyle) => {
-          soundEngine.playUiClick();
-          const targetStyle =
-            isOnChainHouseStyleLockedRef.current && ownedHouseStyleRef.current
-              ? ownedHouseStyleRef.current
-              : requestedStyle ?? ownedHouseStyleRef.current ?? houseArchitectureStyleRef.current;
-          if (!isOnChainHouseStyleLockedRef.current) {
-            setAndPersistHouseArchitectureStyle(targetStyle);
-          } else {
-            setHouseArchitectureStyle(targetStyle);
-          }
-          setActiveSpecialModal('none');
-          setHanaPitchOrigin(null);
-          setIsKioskModalOpen(false);
-          setIsSocialChatModalOpen(false);
-          setHouseEntryScanState('scanning');
-          window.setTimeout(() => {
-            soundEngine.playPickup();
-            setHouseEntryScanState('verified');
-            window.setTimeout(() => {
-              setHouseEntryScanState('idle');
-              setIsSampleHouseView(false);
-              setIsInsidePrivateHouse(true);
-            }, 600);
-          }, 700);
+          setIsRealEstateCatalogModalOpen(true);
         }}
         onOpenTeleportKioskFromPitch={
           hanaPitchOrigin === 'kiosk'
@@ -7490,234 +8112,14 @@ export default function App() {
         }
         hanaWelcomeNearClaimed={hanaWelcomeNearClaimed}
         onClaimHanaWelcomeNear={handleClaimHanaWelcomeNear}
-        onBuyHouseWithRespite={async (_priceRespite, requestedStyle) => {
-          const priceRespite = HOUSE_OWNERSHIP_PRICE_RESPITE;
-          if (respiteBalance < priceRespite) return false;
-          const chosenStyle: HouseArchitectureStyle =
-            requestedStyle ?? houseArchitectureStyleRef.current;
-          const actorAccount = hud.nearWalletId || playerUid;
-          const res = await executeMarketContractCallOnChain({
-            signerAccountId: actorAccount || undefined,
-            methodName: 'purchase_citizen_asset',
-            args: {
-              asset_id: 'house_ownership',
-              plan_id: chosenStyle,
-              order_id: null,
-            },
-          });
-          if (!res.ok || !res.txHash) return false;
-          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
-          let nextRespite = Math.max(0, respiteBalance - priceRespite);
-          let deedTokenId = 'nep171:house:ownership';
-          if (resolvedActor) {
-            const [liveRespiteStr, liveEstate] = await Promise.all([
-              fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor),
-              fetchBuddiesMarketEstate(resolvedActor),
-            ]);
-            if (liveRespiteStr !== null) {
-              nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
-            }
-            if (liveEstate?.house_deed?.deed_token_id) {
-              deedTokenId = liveEstate.house_deed.deed_token_id;
-            }
-          }
-          setRespiteBalance(nextRespite);
-          setHasHouseOwnership(true);
-          setOwnedHouseStyle(chosenStyle);
-          setIsOnChainHouseStyleLocked(true);
-          setHouseArchitectureStyle(chosenStyle);
-          if (resolvedActor) {
-            persistHouseStyleLocally(resolvedActor, chosenStyle);
-            void createLetterForAccount({
-              recipientAccount: resolvedActor,
-              kind: 'property_purchase',
-              title: 'Real Estate Sales Contract — House Deed',
-              payload: {
-                buyerAccount: resolvedActor,
-                sellerName: 'Buddies Blitz',
-                sellerAccount: 'buddiesblitz.testnet',
-                itemName: 'House Ownership Certificate',
-                assetKind: 'house',
-                houseStyle: chosenStyle,
-                deedTokenId,
-                priceAmount: priceRespite,
-                priceCurrency: 'RESPITE',
-                settlementContract: NEAR_CONFIG.marketContractId,
-              },
-              txHash: res.txHash,
-            });
-          }
-          if (resolvedActor) {
-            dispatchBuddyAction(
-              `nearSyncWalletSession:${resolvedActor}:1:${deedTokenId}:${chosenStyle}`,
-            );
-          }
-          setHud((prev) => ({
-            ...prev,
-            nearHasGamepassNft: true,
-            nearGamepassTokenId: deedTokenId,
-          }));
-          if (resolvedActor) {
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: resolvedActor,
-              lulBalance: hud.gold,
-              cyonBalance,
-              respiteBalance: nextRespite,
-              ownedTokenIds: [...ownedMerchantItemIds, deedTokenId],
-              unlockedSkins: buildProfileUnlockedSkins(characterGender, chosenStyle),
-            });
-            void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
-              actor_near_account: resolvedActor,
-              action_type: 'buy_item',
-              item_id: `house_ownership:${chosenStyle}`,
-              nep245_token_id: deedTokenId,
-              currency: 'RESPITE',
-              amount: 1,
-              unit_price: priceRespite,
-              reasoning_summary: `Bought your house · ${chosenStyle} · ${priceRespite} RESPITE.`,
-              near_tx_hash: res.txHash,
-            });
-          }
-          return true;
-        }}
+        onBuyHouseWithRespite={handleBuyHouseWithRespite}
         recruitedFamilyMembers={recruitedFamilyMembers}
         propertyListings={propertyListings}
         busyPropertyListingId={busyPropertyListingId}
-        onCreatePropertyListing={async ({ assetKind, assetId, priceRespite }) => {
-          const seller = hud.nearWalletId || '';
-          if (!seller) return false;
-          const price = Math.floor(Number(priceRespite) || 0);
-          if (price < 1 || price > 100000) return false;
-          if (assetKind === 'house') {
-            const estate = await fetchBuddiesMarketEstate(seller).catch(() => null);
-            const deedId = estate?.house_deed?.deed_token_id || '';
-            if (!deedId) return false;
-            // The deed NFT itself moves into contract escrow.
-            const res = await executeMarketContractCallOnChain({
-              signerAccountId: seller,
-              methodName: 'list_property_deed',
-              args: { token_id: deedId, price_respite: String(price) },
-            });
-            if (!res.ok) return false;
-            setHasHouseOwnership(false);
-            setOwnedHouseStyle(null);
-            setIsOnChainHouseStyleLocked(false);
-          } else {
-            const item = MERCHANT_CATALOG_ITEMS.find((i) => i.id === assetId);
-            if (!item?.tokenId) return false;
-            // One copy moves into contract escrow, out of the seller's bag.
-            const res = await executeMarketContractCallOnChain({
-              signerAccountId: seller,
-              methodName: 'list_property_furniture',
-              args: { token_id: item.tokenId, amount: '1', price_respite: String(price) },
-            });
-            if (!res.ok) return false;
-            setOwnedMerchantItemIds((prev) => {
-              const idx = prev.indexOf(assetId);
-              return idx < 0 ? prev : prev.filter((_, i) => i !== idx);
-            });
-          }
-          await refreshPropertyListings();
-          return true;
-        }}
-        onCancelPropertyListing={async (listingId) => {
-          const listing = propertyListings.find((l) => l.id === listingId);
-          if (!listing || listing.status !== 'active') return;
-          const seller = hud.nearWalletId || '';
-          if (!seller || listing.seller_account.toLowerCase() !== seller.toLowerCase()) return;
-          setBusyPropertyListingId(listing.id);
-          try {
-            const res = await executeMarketContractCallOnChain({
-              signerAccountId: seller,
-              methodName: 'cancel_property_listing',
-              args: { listing_id: listing.id },
-            });
-            if (!res.ok) return;
-            if (listing.asset_kind === 'house') {
-              setHasHouseOwnership(true);
-              void refreshOnChainBalances(seller);
-            } else {
-              setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
-            }
-            await refreshPropertyListings();
-          } finally {
-            setBusyPropertyListingId(null);
-          }
-        }}
-        onBuyPropertyListing={async (listing) => {
-          const buyer = hud.nearWalletId || '';
-          if (!buyer || listing.status !== 'active') return false;
-          if (listing.seller_account.toLowerCase() === buyer.toLowerCase()) return false;
-          setBusyPropertyListingId(listing.id);
-          try {
-            // Escrow settlement (contract v1.3.0): ONE on-chain call moves
-            // the RESPITE to the seller and the escrowed asset to the
-            // buyer. There is no claim step and no delivery step — a failed
-            // call reverts both legs together.
-            const res = await executeMarketContractCallOnChain({
-              signerAccountId: buyer,
-              methodName: 'buy_property',
-              args: { listing_id: listing.id },
-            });
-            if (!res.ok || !res.txHash) return false;
-            const liveBal = await fetchNep141Balance(
-              NEAR_CONFIG.nep141RespiteContractId,
-              buyer,
-            ).catch(() => null);
-            if (liveBal !== null) {
-              setRespiteBalance(Math.max(0, Number(liveBal) || 0));
-            } else {
-              setRespiteBalance((prev) => Math.max(0, prev - listing.price_respite));
-            }
-            if (listing.asset_kind === 'house') {
-              setHasHouseOwnership(true);
-              void refreshOnChainBalances(buyer);
-            } else {
-              setOwnedMerchantItemIds((prev) => [...prev, listing.asset_id]);
-            }
-            void createLetterForAccount({
-              recipientAccount: buyer,
-              kind: listing.asset_kind === 'house' ? 'property_purchase' : 'item_purchase',
-              title:
-                listing.asset_kind === 'house'
-                  ? 'Real Estate Sales Contract — House Deed'
-                  : 'Certificate of Ownership — Furniture NFT',
-              payload: {
-                buyerAccount: buyer,
-                sellerAccount: listing.seller_account,
-                itemName:
-                  listing.asset_kind === 'house'
-                    ? 'House Ownership Certificate'
-                    : (MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.name ??
-                      listing.asset_id),
-                itemId: listing.asset_id,
-                tokenId:
-                  listing.asset_kind === 'house'
-                    ? listing.asset_id
-                    : MERCHANT_CATALOG_ITEMS.find((i) => i.id === listing.asset_id)?.tokenId,
-                assetKind: listing.asset_kind,
-                deedTokenId: listing.asset_kind === 'house' ? listing.asset_id : undefined,
-                priceAmount: listing.price_respite,
-                priceCurrency: 'RESPITE',
-                settlementContract: NEAR_CONFIG.marketContractId,
-                paymentTx: res.txHash,
-              },
-              txHash: res.txHash,
-            });
-            await refreshPropertyListings();
-            return true;
-          } finally {
-            setBusyPropertyListingId(null);
-          }
-        }}
-        onCompletePropertyTransfer={async () => {
-          // Escrow listings settle atomically inside buy_property — there
-          // is no seller delivery step anymore. This callback remains only
-          // for the modal's legacy 'paid' rows, which the contract board
-          // never produces.
-          return false;
-        }}
+        onCreatePropertyListing={handleCreatePropertyListing}
+        onCancelPropertyListing={handleCancelPropertyListing}
+        onBuyPropertyListing={handleBuyPropertyListing}
+        onCompletePropertyTransfer={handleCompletePropertyTransfer}
         onRecruitFamilyMember={async (planId) => {
           const plan =
             FAMILY_MEMBER_CONTRACT_PLANS.find((p) => p.id === planId) ||
@@ -7935,150 +8337,7 @@ export default function App() {
             }
           }
         }}
-        onBuyMerchantItem={async (item: MerchantCatalogItem, finalPrice: number): Promise<{ ok: boolean; txHash?: string; explorerUrl?: string }> => {
-          soundEngine.playUiClick();
-          // No house, no furniture: a deed comes first, otherwise bought
-          // furniture has nowhere to go and confuses new players.
-          if (
-            item.category === 'nft_collector_furniture' &&
-            !hasHouseOwnership &&
-            !hud.nearHasGamepassNft
-          ) {
-            return { ok: false };
-          }
-          // Furniture is owned per copy (one copy per house placement), so
-          // it can be bought again while stock lasts; themes and gear are
-          // unique and block a second purchase.
-          if (!item.interiorSlot && ownedMerchantItemIds.includes(item.id)) return { ok: false };
-          const actorAccount = hud.nearWalletId || playerUid;
-          if (item.currency === 'RESPITE' && !actorAccount) {
-            setIsNearWalletSelectorOpen(true);
-            return { ok: false };
-          }
-          let nextCyon = cyonBalance;
-          let nextRespite = respiteBalance;
-          let onChainBuyReceipt: { txHash?: string; explorerUrl?: string } = {};
-          if (item.currency === 'CYON') {
-            if (cyonBalance < finalPrice) return { ok: false };
-            nextCyon = Math.max(0, cyonBalance - finalPrice);
-            setCyonBalance(nextCyon);
-          } else {
-            if (respiteBalance < finalPrice) return { ok: false };
-            // RESPITE catalog items are real NEP-245 stock held by the
-            // merchant on-chain: the purchase itself settles on-chain
-            // (RESPITE buyer -> merchant, item merchant stock -> buyer bag).
-            // Local balances and ownership only move after the tx succeeds.
-            const buyRes = await executeMarketContractCallOnChain({
-              signerAccountId: actorAccount || undefined,
-              methodName: 'buy_merchant_item',
-              args: {
-                token_id: item.tokenId,
-                amount: '1',
-                price_respite: String(finalPrice),
-              },
-            });
-            if (!buyRes.ok || !buyRes.txHash) return { ok: false };
-            onChainBuyReceipt = { txHash: buyRes.txHash, explorerUrl: buyRes.explorerUrl };
-            void createLetterForAccount({
-              recipientAccount: actorAccount,
-              kind: 'item_purchase',
-              title: `Certificate of Ownership — ${item.name}`,
-              payload: {
-                buyerAccount: actorAccount,
-                sellerName: merchantLocation === 'beach_house' ? 'Kai Fish Market' : 'Hana Property & Housing',
-                sellerAccount: 'buddiesblitz.testnet',
-                itemName: item.name,
-                itemId: item.id,
-                tokenId: item.tokenId,
-                assetKind: item.category,
-                priceAmount: finalPrice,
-                priceCurrency: 'RESPITE',
-                settlementContract: NEAR_CONFIG.marketContractId,
-              },
-              txHash: buyRes.txHash,
-            });
-            const resolvedActor = buyRes.signerAccountId || actorAccount;
-            nextRespite = Math.max(0, respiteBalance - finalPrice);
-            const liveRespiteStr = await fetchNep141Balance(
-              NEAR_CONFIG.nep141RespiteContractId,
-              resolvedActor,
-              'optimistic',
-            );
-            if (liveRespiteStr !== null) {
-              nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
-            }
-            setRespiteBalance(nextRespite);
-          }
-          const nextOwned = [...ownedMerchantItemIds, item.id];
-          setOwnedMerchantItemIds(nextOwned);
-          if (item.category === 'nft_house_theme') {
-            setActiveHouseThemeId(item.id);
-            dispatchBuddyAction(
-              `applyHouseTheme:${item.skinThemeId ?? 'military_standard'}:${item.gardenPresetId ?? 'sakura_grove'}`,
-            );
-          } else if (item.interiorSlot) {
-            const slotId = item.interiorSlot;
-            setInteriorPlacement((prev) => {
-              if (prev[slotId] !== null) return prev;
-              const next = { ...prev, [slotId]: item.id };
-              housePersistRef.current.slot = next;
-              return next;
-            });
-          }
-          setMarketState((prev) => {
-            const nextStock = {
-              ...prev.stockByItemId,
-              [item.id]: Math.max(0, (prev.stockByItemId[item.id] ?? item.initialStock) - 1),
-            };
-            const nextDemand = {
-              ...prev.demandByItemId,
-              [item.id]: Math.min(5, (prev.demandByItemId[item.id] ?? 0) + 1),
-            };
-            const nextTreasury =
-              prev.treasuryCyon + (item.currency === 'CYON' ? finalPrice : finalPrice * 12);
-            const headline = `You purchased ${item.name} (${finalPrice} ${item.currency}). Stock decreased, demand trend rising!`;
-
-            if (actorAccount) {
-              void syncNpcMerchantToSupabase({
-                merchant_id: merchantLocation,
-                cyon_treasury: nextTreasury,
-                stock_by_item: nextStock,
-                recent_demand_by_item: nextDemand,
-                last_headline: headline,
-              });
-              void logMarketTransactionToSupabase({
-                merchant_id: merchantLocation,
-                actor_near_account: actorAccount,
-                action_type: 'buy_item',
-                item_id: item.id,
-                nep245_token_id: item.tokenId,
-                currency: item.currency,
-                amount: 1,
-                unit_price: finalPrice,
-                reasoning_summary: headline,
-                near_tx_hash: onChainBuyReceipt.txHash,
-              });
-            }
-
-            return {
-              ...prev,
-              stockByItemId: nextStock,
-              demandByItemId: nextDemand,
-              treasuryCyon: nextTreasury,
-              lastMarketHeadline: headline,
-            };
-          });
-          if (actorAccount) {
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: actorAccount,
-              lulBalance: hud.gold,
-              cyonBalance: nextCyon,
-              respiteBalance: nextRespite,
-              ownedTokenIds: nextOwned,
-            });
-          }
-          return { ok: true, ...onChainBuyReceipt };
-        }}
+        onBuyMerchantItem={handleBuyCatalogMerchantItem}
         onSellMerchantItem={async (item: MerchantCatalogItem, refund: number) => {
           soundEngine.playUiClick();
           if (!ownedMerchantItemIds.includes(item.id)) return false;
@@ -8621,8 +8880,8 @@ export default function App() {
           soundEngine.playUiClick();
           setIsKioskModalOpen(false);
           window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-          openMerchantInChatSession('lobby_cafe');
-          setHanaPitchOrigin('browse');
+          setRealEstateCatalogTab('house');
+          setIsRealEstateCatalogModalOpen(true);
         }}
         onOpenPersonalWallet={() => {
           soundEngine.playUiClick();
@@ -8807,8 +9066,8 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
           setIsKioskModalOpen(false);
           setIsSocialChatModalOpen(false);
-          openMerchantInChatSession('lobby_cafe');
-          setHanaPitchOrigin('kiosk');
+          setRealEstateCatalogTab('house');
+          setIsRealEstateCatalogModalOpen(true);
         }}
         onOpenShopAndExchange={() => {
           soundEngine.playUiClick();
@@ -10432,244 +10691,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* =====================================================================
-          9C. TWO-STAGE CHARACTER TARGET & ACTION HUD (Bottom-Center)
-              Click 1 (3D Character) = Black Name Bar Only
-              Click 2 (Black Name Bar) =
-                - If Self (YOU): 2 Buttons (WALLET, PROFILE)
-                - If Other Player / NPC: 3 Buttons (TALK, PROFILE, WHISPER)
-         ===================================================================== */}
-      {selectedTargetUser &&
-        !selectedTargetUser.isSelf &&
-        String(selectedTargetUser.id) !== '0' &&
-        !isProfileModalOpen &&
-        !isSocialChatModalOpen &&
-        !isKioskModalOpen &&
-        !isPersonalWalletModalOpen &&
-        !isPersonalBagModalOpen &&
-        !isNearWalletSelectorOpen &&
-        activeSpecialModal === 'none' &&
-        activeTeleportKioskModal === 'none' &&
-        fishingPhase === 'idle' &&
-        !nearbyWaterZone.canFish && (
-        <aside
-          aria-label={`Target: ${selectedTargetUser.name}`}
-          className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1.5 pointer-events-auto select-none"
-        >
-          {/* Top Section: Quick Action Buttons (Only Shown When Bar is Expanded) */}
-          {isTargetMenuExpanded && (() => {
-            const isSelfTarget =
-              Boolean(selectedTargetUser.isSelf) ||
-              String(selectedTargetUser.id) === '0' ||
-              (!selectedTargetUser.isNpc &&
-                Boolean(playerDisplayName.trim()) &&
-                selectedTargetUser.name.trim().toUpperCase() ===
-                  playerDisplayName.trim().toUpperCase()) ||
-              selectedTargetUser.name.toUpperCase().includes('KAMU') ||
-              selectedTargetUser.name.toUpperCase().includes('YOU');
-
-            if (isSelfTarget) {
-              return (
-                <div className="flex flex-col gap-1.5 mb-1">
-                  <button
-                    type="button"
-                    data-self-profile-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsTargetMenuExpanded(false);
-                      setProfileTargetUser({
-                        ...selectedTargetUser,
-                        id: 0,
-                        isSelf: true,
-                      });
-                      setIsProfileModalOpen(true);
-                    }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
-                  >
-                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                      <User className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                      <span>Profile</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-self-wallet-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsTargetMenuExpanded(false);
-                      setIsKioskModalOpen(false);
-                      setIsSocialChatModalOpen(false);
-                      setActiveSpecialModal('none');
-                      setActiveTeleportKioskModal('none');
-                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-                      setIsPersonalWalletModalOpen(true);
-                    }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
-                  >
-                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                      <Wallet className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                      <span>Wallet</span>
-                    </div>
-                  </button>
-                </div>
-              );
-            }
-
-            return (
-              <div className="flex flex-col gap-1.5 mb-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsTargetMenuExpanded(false);
-                    setIsKioskModalOpen(false);
-                    setIsSocialChatModalOpen(false);
-                    setIsPersonalWalletModalOpen(false);
-                    setActiveSpecialModal('none');
-                    setActiveTeleportKioskModal('none');
-                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                    setProfileTargetUser(selectedTargetUser);
-                    setIsProfileModalOpen(true);
-                  }}
-                  className="-skew-x-6 w-40 py-1.5 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
-                >
-                  <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                    <User className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                    <span>Profile</span>
-                  </div>
-                </button>
-
-{selectedTargetUser.isNpc && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsTargetMenuExpanded(false);
-                      setIsKioskModalOpen(false);
-                      setIsSocialChatModalOpen(false);
-                      setIsPersonalWalletModalOpen(false);
-                      setActiveTeleportKioskModal('none');
-                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                      window.dispatchEvent(
-                        new CustomEvent('open-npc-merchant-ui', {
-                          detail: {
-                            location:
-                              selectedTargetUser.id === 'npc_beach' || selectedTargetUser.id === 'npc_kai'
-                                ? 'beach_house'
-                                : 'lobby_cafe',
-                          },
-                        }),
-                      );
-                    }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#facc15] hover:bg-[#fde047] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
-                  >
-                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                      <MessageSquare className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                      <span>Talk</span>
-                    </div>
-                  </button>
-                )}
-
-                                {!selectedTargetUser.isNpc && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setIsTargetMenuExpanded(false);
-                      setIsKioskModalOpen(false);
-                      setIsProfileModalOpen(false);
-                      setIsPersonalWalletModalOpen(false);
-                      setActiveSpecialModal('none');
-                      setActiveTeleportKioskModal('none');
-                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                      setSelectedPrivateUser(selectedTargetUser);
-                      setIsSocialChatModalOpen(true);
-                    }}
-                    className="-skew-x-6 w-40 py-1.5 px-3 bg-[#10b981] hover:bg-[#34d399] border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-center text-black font-black uppercase text-xs tracking-wider cursor-pointer"
-                  >
-                    <div className="skew-x-6 flex items-center justify-center gap-2 w-full">
-                      <MessageCircle className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                      <span>Whisper</span>
-                    </div>
-                  </button>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Unified Game-Style Comic-Arcade Bottom Bar (Aligned at bottom-3 level with chat input) */}
-          <div
-            role="button"
-            tabIndex={0}
-            data-target-name-bar="true"
-            onClick={() => {
-              soundEngine.playUiClick();
-              setIsTargetMenuExpanded((prev) => !prev);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                soundEngine.playUiClick();
-                setIsTargetMenuExpanded((prev) => !prev);
-              }
-            }}
-            className="-skew-x-10 inline-flex items-center h-10 min-w-[224px] bg-[#14161d] border-3 border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform select-none"
-          >
-            <div className="skew-x-10 flex items-center gap-2.5 w-full">
-              {/* Avatar Tile */}
-              <div className="w-7 h-7 bg-[#38bdf8] border-2 border-[#0b0d13] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center overflow-hidden shrink-0 text-xs font-black text-[#0f172a]">
-                {selectedTargetUser.name.toLowerCase().includes('hana') ||
-                selectedTargetUser.name.toLowerCase().includes('nadia') ? (
-                  <img src="/assets/avatar_nadia.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
-                ) : selectedTargetUser.isNpc ? (
-                  <img src="/assets/avatar_hiro.jpg" alt={selectedTargetUser.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span>{selectedTargetUser.name.slice(0, 1).toUpperCase()}</span>
-                )}
-              </div>
-
-              {/* Target Name */}
-              <span className="flex-1 text-center font-black text-xs text-white tracking-wider px-1 uppercase truncate">
-                {selectedTargetUser.name.replace(/\s*\((ANDA|YOU)\)/i, '')}
-              </span>
-
-              {/* Cycle Target Chevron Badge */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  soundEngine.playUiClick();
-                  const list =
-                    hud.nearbyRadiusUsers && hud.nearbyRadiusUsers.length > 0
-                      ? hud.nearbyRadiusUsers
-                      : [selectedTargetUser];
-                  const currentIdx = list.findIndex(
-                    (u) => String(u.id) === String(selectedTargetUser.id),
-                  );
-                  const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % list.length : 0;
-                  const nextUser = list[nextIdx];
-                  if (nextUser) {
-                    setSelectedTargetUser(nextUser);
-                    setIsTargetMenuExpanded(false);
-                    window.dispatchEvent(
-                      new CustomEvent('select-character-by-id', {
-                        detail: { id: nextUser.id },
-                      }),
-                    );
-                  }
-                }}
-                title="Switch Target"
-                aria-label="Next Target"
-                className="px-1.5 py-0.5 bg-[#facc15] hover:bg-[#fde047] text-[#0f172a] border-2 border-[#0b0d13] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0 cursor-pointer"
-              >
-                &gt;
-              </button>
-            </div>
-          </div>
-        </aside>
-      )}
+      {/* 9C. Target / Nearby Merchant, NPC & Player Bar is unified inside CafeWorkShiftBottomDock */}
 
       {/* =====================================================================
           10. AVAKIN-STYLE MMORPG CHARACTER PROFILE MODAL
@@ -10728,6 +10750,8 @@ export default function App() {
           isPersonalWalletModalOpen ||
           isPersonalBagModalOpen ||
           isNearWalletSelectorOpen ||
+          isScooterShowroomModalOpen ||
+          isRealEstateCatalogModalOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
         }
@@ -10898,32 +10922,158 @@ export default function App() {
         activeOrder={cafeShiftState.activeOrder}
         onClose={() => setActiveCafeModal('none')}
       />
-      <CafeWorkShiftBottomDock
-        isVisible={
-          isInsideGlasshouseCafe &&
-          !cafeShiftState.isWorking &&
-          isNearCafeRotaBoard &&
-          activeCafeModal === 'none'
+      {(() => {
+        const isDockBlockedByModal =
+          gameState !== 'playing' ||
+          playMode === 'editor' ||
+          onboardingStep !== 'completed' ||
+          isKioskModalOpen ||
+          isProfileModalOpen ||
+          isSocialChatModalOpen ||
+          isPersonalWalletModalOpen ||
+          isPersonalBagModalOpen ||
+          isNearWalletSelectorOpen ||
+          isDailyMissionsModalOpen ||
+          isScooterShowroomModalOpen ||
+          isRealEstateCatalogModalOpen ||
+          activeSpecialModal !== 'none' ||
+          activeTeleportKioskModal !== 'none' ||
+          activeCafeModal !== 'none' ||
+          Boolean(tramRideCutsceneUi?.active);
+
+        const activeSelectedTarget =
+          selectedTargetUser &&
+          !selectedTargetUser.isSelf &&
+          String(selectedTargetUser.id) !== '0'
+            ? selectedTargetUser
+            : null;
+        const dockEntity = activeSelectedTarget ?? nearbyDockEntity;
+
+        let effectiveDockMode: UnifiedBottomDockActionMode = 'none';
+        if (!isDockBlockedByModal) {
+          if (unifiedBottomDockMode === 'stand_up') {
+            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
+              effectiveDockMode = 'stand_up';
+            }
+          } else if (activeSelectedTarget) {
+            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
+              effectiveDockMode = 'nearby_entity';
+            }
+          } else if (unifiedBottomDockMode === 'work_shift') {
+            if (isInsideGlasshouseCafe && !cafeShiftState.isWorking) {
+              effectiveDockMode = 'work_shift';
+            }
+          } else if (unifiedBottomDockMode === 'sit') {
+            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
+              effectiveDockMode = 'sit';
+            }
+          } else if (unifiedBottomDockMode === 'nearby_entity' && dockEntity) {
+            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
+              effectiveDockMode = 'nearby_entity';
+            }
+          }
         }
-        isExpanded={isCafeRotaMenuExpanded}
-        shiftState={cafeShiftState}
-        onToggleExpand={() => {
-          soundEngine.playUiClick();
-          setIsCafeRotaMenuExpanded((prev) => !prev);
-        }}
-        onOpenRotaModal={() => {
-          soundEngine.playUiClick();
-          setIsCafeRotaMenuExpanded(false);
-          setActiveCafeModal('rota');
-        }}
-        onStartOrQueueShift={handleStartCafeWorkShift}
-        onLeaveShiftQueue={handleLeaveCafeWorkShiftQueue}
-        onOpenAtmModal={() => {
-          soundEngine.playUiClick();
-          setIsCafeRotaMenuExpanded(false);
-          setActiveCafeModal('atm');
-        }}
-      />
+
+        const nearbyCycleList = (hud.nearbyRadiusUsers ?? []).filter(
+          (u) => String(u.id) !== '0' && u.distance <= 8.5,
+        );
+        const canCycleNearby =
+          Boolean(dockEntity) && nearbyCycleList.length > 1;
+
+        return (
+          <CafeWorkShiftBottomDock
+            isVisible={effectiveDockMode !== 'none'}
+            actionMode={effectiveDockMode}
+            isExpanded={isCafeRotaMenuExpanded}
+            shiftState={cafeShiftState}
+            nearbyEntity={dockEntity}
+            isEntityMenuExpanded={isTargetMenuExpanded}
+            canCycleNearbyEntity={canCycleNearby}
+            onToggleExpand={() => {
+              soundEngine.playUiClick();
+              setIsCafeRotaMenuExpanded((prev) => !prev);
+            }}
+            onToggleEntityMenu={() => {
+              setIsTargetMenuExpanded((prev) => !prev);
+            }}
+            onTriggerSitOrStand={() => {
+              window.dispatchEvent(new CustomEvent('trigger-sit-or-stand-action'));
+            }}
+            onOpenEntityProfile={(entity) => {
+              soundEngine.playUiClick();
+              setIsTargetMenuExpanded(false);
+              setIsKioskModalOpen(false);
+              setIsSocialChatModalOpen(false);
+              setIsPersonalWalletModalOpen(false);
+              setActiveSpecialModal('none');
+              setActiveTeleportKioskModal('none');
+              window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+              setProfileTargetUser(entity);
+              setIsProfileModalOpen(true);
+            }}
+            onTalkMerchant={(entity) => {
+              soundEngine.playUiClick();
+              setIsTargetMenuExpanded(false);
+              setIsKioskModalOpen(false);
+              setIsSocialChatModalOpen(false);
+              setIsPersonalWalletModalOpen(false);
+              setActiveTeleportKioskModal('none');
+              window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+              const location =
+                entity.merchantLocation ??
+                (entity.id === 'npc_beach' || entity.id === 'npc_kai'
+                  ? 'beach_house'
+                  : 'lobby_cafe');
+              window.dispatchEvent(
+                new CustomEvent('open-npc-merchant-ui', {
+                  detail: { location },
+                }),
+              );
+            }}
+            onWhisperEntity={(entity) => {
+              soundEngine.playUiClick();
+              setIsTargetMenuExpanded(false);
+              setIsKioskModalOpen(false);
+              setIsProfileModalOpen(false);
+              setIsPersonalWalletModalOpen(false);
+              setActiveSpecialModal('none');
+              setActiveTeleportKioskModal('none');
+              window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+              setSelectedPrivateUser(entity);
+              setIsSocialChatModalOpen(true);
+            }}
+            onCycleNearbyEntity={() => {
+              if (!dockEntity || nearbyCycleList.length <= 1) return;
+              const currentIdx = nearbyCycleList.findIndex(
+                (u) => String(u.id) === String(dockEntity.id),
+              );
+              const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % nearbyCycleList.length : 0;
+              const nextUser = nearbyCycleList[nextIdx];
+              if (nextUser) {
+                setSelectedTargetUser(nextUser);
+                setIsTargetMenuExpanded(false);
+                window.dispatchEvent(
+                  new CustomEvent('select-character-by-id', {
+                    detail: { id: nextUser.id },
+                  }),
+                );
+              }
+            }}
+            onOpenRotaModal={() => {
+              soundEngine.playUiClick();
+              setIsCafeRotaMenuExpanded(false);
+              setActiveCafeModal('rota');
+            }}
+            onStartOrQueueShift={handleStartCafeWorkShift}
+            onLeaveShiftQueue={handleLeaveCafeWorkShiftQueue}
+            onOpenAtmModal={() => {
+              soundEngine.playUiClick();
+              setIsCafeRotaMenuExpanded(false);
+              setActiveCafeModal('atm');
+            }}
+          />
+        );
+      })()}
       <GlasshouseCafeRotaModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'rota'}
         onClose={() => setActiveCafeModal('none')}
@@ -10997,6 +11147,134 @@ export default function App() {
             hud.worldMode === 'lobby' ? 'central_plaza' : 'beachfront_harbor';
           handleStartCityTransitTravel(getCityTransitDestinationById(stationId), originStationId);
         }}
+      />
+      <UrbanScooterShowroomModal
+        isOpen={isScooterShowroomModalOpen && hud.worldMode !== 'warzone'}
+        onClose={() => setIsScooterShowroomModalOpen(false)}
+        respiteBalance={respiteBalance}
+        walletConnected={Boolean(hud.nearWalletConnected || hud.nearWalletId || playerUid)}
+        walletAccountId={hud.nearWalletId || playerUid || null}
+        ownedScooterIds={ownedScooterIds}
+        onConnectWallet={() => {
+          setIsScooterShowroomModalOpen(false);
+          setIsNearWalletSelectorOpen(true);
+        }}
+        onOpenWalletTopUp={() => {
+          setIsScooterShowroomModalOpen(false);
+          setPersonalWalletTab('wallet');
+          setIsPersonalWalletModalOpen(true);
+        }}
+        onPurchaseScooter={async (item: UrbanScooterCatalogItem) => {
+          if (ownedScooterIds.includes(item.id)) {
+            return { ok: true };
+          }
+          if (respiteBalance < item.priceRespite) {
+            return {
+              ok: false,
+              errorMessage: `Insufficient RESPITE balance (${respiteBalance.toLocaleString()} / ${item.priceRespite} RESPITE).`,
+            };
+          }
+          const actorAccount = hud.nearWalletId || playerUid;
+          if (!actorAccount) {
+            return {
+              ok: false,
+              errorMessage: 'Connect your wallet to buy this scooter.',
+            };
+          }
+          // Real on-chain purchase from the merchant's pre-minted stock —
+          // the same buy_merchant_item path as NFT furniture. RESPITE moves
+          // buyer -> merchant and the vehicle token moves stock -> buyer in
+          // one transaction; local state only mirrors the chain afterwards.
+          const buyRes = await executeMarketContractCallOnChain({
+            signerAccountId: actorAccount,
+            methodName: 'buy_merchant_item',
+            args: {
+              token_id: item.tokenId,
+              amount: '1',
+              price_respite: String(item.priceRespite),
+            },
+          });
+          if (!buyRes.ok || !buyRes.txHash) {
+            return {
+              ok: false,
+              errorMessage:
+                'Purchase did not settle on-chain. Your RESPITE was not charged — please try again.',
+            };
+          }
+          const resolvedActor = buyRes.signerAccountId || actorAccount;
+          let nextRespite = Math.max(0, respiteBalance - item.priceRespite);
+          const liveRespiteStr = await fetchNep141Balance(
+            NEAR_CONFIG.nep141RespiteContractId,
+            resolvedActor,
+            'optimistic',
+          );
+          if (liveRespiteStr !== null) {
+            nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+          }
+          setRespiteBalance(nextRespite);
+          const nextOwned = [...ownedScooterIds, item.id];
+          setOwnedScooterIds(nextOwned);
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.setItem(
+                `bb_owned_scooters_v1:${dailyMissionsAccountKey}`,
+                JSON.stringify(nextOwned),
+              );
+            } catch {
+              // ignore storage failures
+            }
+            window.dispatchEvent(
+              new CustomEvent('urban-scooter-purchased', {
+                detail: {
+                  item,
+                  accountId: resolvedActor,
+                  priceRespite: item.priceRespite,
+                  remainingRespite: nextRespite,
+                  txHash: buyRes.txHash,
+                },
+              }),
+            );
+          }
+          return { ok: true };
+        }}
+      />
+      <RealEstateCatalogModal
+        isOpen={isRealEstateCatalogModalOpen && hud.worldMode !== 'warzone'}
+        initialTab={realEstateCatalogTab}
+        onClose={() => setIsRealEstateCatalogModalOpen(false)}
+        marketState={marketState}
+        respiteBalance={respiteBalance}
+        cyonBalance={cyonBalance}
+        nearTestnetBalance={nearTestnetBalance}
+        walletConnected={Boolean(hud.nearWalletConnected)}
+        playerNearAccount={hud.nearWalletId || playerUid || ''}
+        hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
+        ownedItemIds={ownedMerchantItemIds}
+        houseArchitectureStyle={houseArchitectureStyle}
+        ownedHouseStyle={ownedHouseStyle}
+        onChainHouseStyleLocked={isOnChainHouseStyleLocked}
+        propertyListings={propertyListings}
+        busyPropertyListingId={busyPropertyListingId}
+        onConnectWallet={() => {
+          setIsRealEstateCatalogModalOpen(false);
+          setIsNearWalletSelectorOpen(true);
+        }}
+        onOpenWalletTopUp={() => {
+          setIsRealEstateCatalogModalOpen(false);
+          setPersonalWalletTab('wallet');
+          setIsPersonalWalletModalOpen(true);
+        }}
+        onSelectHouseArchitectureStyle={(style) => {
+          setAndPersistHouseArchitectureStyle(style);
+        }}
+        onViewModelHouse={handleViewModelHouse}
+        onEnterOwnHouse={handleEnterOwnHouse}
+        onBuyHouseWithRespite={handleBuyHouseWithRespite}
+        onBuyMerchantItem={handleBuyCatalogMerchantItem}
+        onCreatePropertyListing={handleCreatePropertyListing}
+        onCancelPropertyListing={handleCancelPropertyListing}
+        onBuyPropertyListing={handleBuyPropertyListing}
+        onCompletePropertyTransfer={handleCompletePropertyTransfer}
       />
       <XpGainCelebrationBanner banner={xpCelebrationBanner} />
     </main>

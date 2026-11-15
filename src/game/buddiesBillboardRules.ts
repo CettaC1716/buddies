@@ -121,6 +121,7 @@ export function syncScreenSpaceBillboardQuad(
   const sx = Math.max(1e-4, Math.abs(_parentWorldScale.x));
   const sy = Math.max(1e-4, Math.abs(_parentWorldScale.y));
   quad.scale.set(worldWidth / sx, worldHeight / sy, 1);
+  quad.updateMatrixWorld(true);
 }
 
 /**

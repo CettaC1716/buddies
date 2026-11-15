@@ -1299,6 +1299,8 @@ impl BuddiesMarketContract {
             "nep245:furniture:arcade_blitz_cab" => Some(20),
             "nep245:fishing:golden_poseidon_rod" => Some(15),
             "nep245:fishing:sonar_fishfinder_pro" => Some(12),
+            "nep245:vehicle:urban_electric_scooter_bike" => Some(30),
+            "nep245:vehicle:urban_push_kick_scooter" => Some(15),
             _ => None,
         }
     }
@@ -1790,7 +1792,7 @@ impl BuddiesMarketContract {
 
     pub fn get_contract_overview(&self) -> ContractOverview {
         ContractOverview {
-            contract_version: "1.5.0".to_string(),
+            contract_version: "1.6.0".to_string(),
             master_account: self.master_account.clone(),
             respite_per_near_rate: (1_000_000_000_000_000_000_000_000 / YOCTO_PER_RESPITE) as u64,
             house_price_respite: U128(HOUSE_OWNERSHIP_PRICE_RESPITE),
@@ -2286,7 +2288,7 @@ mod tests {
         let migrated =
             BuddiesMarketContract::migrate(Some(ATTESTER_PUBKEY_HEX.to_string()));
         let overview = migrated.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.5.0");
+        assert_eq!(overview.contract_version, "1.6.0");
         assert_eq!(overview.total_respite_supply.0, 777);
         assert_eq!(migrated.ft_balance_of("alice.testnet".parse().unwrap()).0, 777);
         assert_eq!(overview.active_property_listings, 0);
@@ -2594,6 +2596,148 @@ mod tests {
         );
         assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 28);
         assert_eq!(contract.ft_balance_of(acct("buddiesblitz.testnet")).0, 50_012);
+    }
+
+    #[test]
+    fn test_buy_vehicle_scooter_bike_moves_stock_and_respite() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+
+        // Merchant pre-mints showroom stock (scooter bike, base 30 RESPITE)
+        contract.mint_merchant_item(
+            None,
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(2),
+        );
+
+        // Alice swaps 0.1 NEAR -> 40 RESPITE and buys one bike at 30
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        let bal = contract.swap_near_for_respite();
+        assert_eq!(bal.0, 40);
+        set_ctx("alice.testnet", 0);
+        let owned = contract.buy_merchant_item(
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(1),
+            U128(30),
+        );
+        assert_eq!(owned.0, 1);
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("alice.testnet"),
+                    "nep245:vehicle:urban_electric_scooter_bike".to_string()
+                )
+                .0,
+            1
+        );
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("buddiesblitz.testnet"),
+                    "nep245:vehicle:urban_electric_scooter_bike".to_string()
+                )
+                .0,
+            1
+        );
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 10);
+        assert_eq!(contract.ft_balance_of(acct("buddiesblitz.testnet")).0, 50_030);
+    }
+
+    #[test]
+    #[should_panic(expected = "Price below the catalog floor for this merchant item")]
+    fn test_buy_vehicle_kick_scooter_below_floor_rejected() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.mint_merchant_item(
+            None,
+            "nep245:vehicle:urban_push_kick_scooter".to_string(),
+            U128(1),
+        );
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        // Kick scooter base is 15; the floor is floor(15 * 45 / 100) = 6, so 5 must revert
+        contract.buy_merchant_item(
+            "nep245:vehicle:urban_push_kick_scooter".to_string(),
+            U128(1),
+            U128(5),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown merchant item token_id")]
+    fn test_buy_vehicle_unknown_token_rejected() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:vehicle:unknown_hoverboard".to_string(),
+            U128(1),
+            U128(30),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Merchant stock is insufficient for this purchase")]
+    fn test_buy_vehicle_insufficient_stock_rejected() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.mint_merchant_item(
+            None,
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(1),
+        );
+        // Alice swaps 0.2 NEAR -> 80 RESPITE and tries to buy 2 bikes from a stock of 1
+        set_ctx("alice.testnet", 200_000_000_000_000_000_000_000);
+        let bal = contract.swap_near_for_respite();
+        assert_eq!(bal.0, 80);
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(2),
+            U128(60),
+        );
+    }
+
+    #[test]
+    fn test_sell_vehicle_back_restock_and_payment() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.mint_merchant_item(
+            None,
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(2),
+        );
+        set_ctx("alice.testnet", 100_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+        set_ctx("alice.testnet", 0);
+        contract.buy_merchant_item(
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(1),
+            U128(30),
+        );
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 10);
+
+        // Buyback ceiling for the bike is floor(30 * 65 / 100) = 19
+        let remaining = contract.sell_merchant_item(
+            "nep245:vehicle:urban_electric_scooter_bike".to_string(),
+            U128(1),
+            U128(19),
+        );
+        assert_eq!(remaining.0, 0);
+        assert_eq!(contract.ft_balance_of(acct("alice.testnet")).0, 29);
+        assert_eq!(
+            contract
+                .mt_balance_of(
+                    acct("buddiesblitz.testnet"),
+                    "nep245:vehicle:urban_electric_scooter_bike".to_string()
+                )
+                .0,
+            2
+        );
+        assert_eq!(contract.ft_balance_of(acct("buddiesblitz.testnet")).0, 50_011);
     }
 
     #[test]
@@ -3069,7 +3213,7 @@ mod tests {
         drop(old);
         let contract = BuddiesMarketContract::migrate(None);
         let overview = contract.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.5.0");
+        assert_eq!(overview.contract_version, "1.6.0");
         assert_eq!(overview.total_respite_supply.0, 50_777);
         assert_eq!(overview.total_houses_minted, 4);
         assert_eq!(overview.active_property_listings, 0);
@@ -3115,7 +3259,7 @@ mod tests {
 
         let migrated = BuddiesMarketContract::migrate_v140_to_v150(None);
         let overview = migrated.get_contract_overview();
-        assert_eq!(overview.contract_version, "1.5.0");
+        assert_eq!(overview.contract_version, "1.6.0");
         assert_eq!(overview.total_respite_supply.0, 51_645);
         assert_eq!(overview.total_houses_minted, 7);
         assert_eq!(overview.total_fish_nfts_minted, 14);

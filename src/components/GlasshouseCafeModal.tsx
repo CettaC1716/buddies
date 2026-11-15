@@ -13,6 +13,9 @@ import {
   Zap,
   Bell,
   Clock,
+  User,
+  MessageSquare,
+  MessageCircle,
 } from 'lucide-react';
 import {
   CAFE_MENU_ITEMS,
@@ -23,6 +26,7 @@ import {
   type PlayerLevelProgress,
 } from '../game/buddiesCafeRules';
 import { CafeMenuItemArtwork } from './GlasshouseCafeMenuArtwork';
+import { type NearbyEntityUser } from './SocialChatModal';
 import { soundEngine } from '../game/audio';
 
 export interface PlayerLevelXpBadgeProps {
@@ -568,11 +572,28 @@ export const XpGainCelebrationBanner: React.FC<{
   );
 };
 
+export type UnifiedBottomDockActionMode =
+  | 'none'
+  | 'work_shift'
+  | 'sit'
+  | 'stand_up'
+  | 'nearby_entity';
+
 export interface CafeWorkShiftBottomDockProps {
   isVisible: boolean;
+  actionMode?: UnifiedBottomDockActionMode;
   isExpanded: boolean;
   shiftState: CafeWorkShiftState;
+  nearbyEntity?: NearbyEntityUser | null;
+  isEntityMenuExpanded?: boolean;
+  canCycleNearbyEntity?: boolean;
   onToggleExpand: () => void;
+  onToggleEntityMenu?: () => void;
+  onTriggerSitOrStand?: () => void;
+  onOpenEntityProfile?: (entity: NearbyEntityUser) => void;
+  onTalkMerchant?: (entity: NearbyEntityUser) => void;
+  onWhisperEntity?: (entity: NearbyEntityUser) => void;
+  onCycleNearbyEntity?: () => void;
   onOpenRotaModal: () => void;
   onStartOrQueueShift: () => void;
   onLeaveShiftQueue: () => void;
@@ -581,9 +602,19 @@ export interface CafeWorkShiftBottomDockProps {
 
 export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = ({
   isVisible,
+  actionMode,
   isExpanded,
   shiftState,
+  nearbyEntity,
+  isEntityMenuExpanded = false,
+  canCycleNearbyEntity = false,
   onToggleExpand,
+  onToggleEntityMenu,
+  onTriggerSitOrStand,
+  onOpenEntityProfile,
+  onTalkMerchant,
+  onWhisperEntity,
+  onCycleNearbyEntity,
   onOpenRotaModal,
   onStartOrQueueShift,
   onLeaveShiftQueue,
@@ -610,21 +641,62 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
 
   if (!isVisible) return null;
 
+  const resolvedMode: UnifiedBottomDockActionMode = actionMode ?? 'work_shift';
+  if (resolvedMode === 'none') return null;
+  if (resolvedMode === 'nearby_entity' && !nearbyEntity) return null;
+
+  const isWorkShiftMode = resolvedMode === 'work_shift';
+  const isNearbyEntityMode = resolvedMode === 'nearby_entity' && Boolean(nearbyEntity);
   const hasOtherActiveWorker = Boolean(shiftState.otherActiveWorker);
   const queueList = shiftState.shiftQueue ?? [];
   const selfQueueIndex = queueList.findIndex((entry) => entry.isSelf);
   const isSelfInQueue = selfQueueIndex >= 0;
   const selfQueueNumber = selfQueueIndex + 1;
 
+  const cleanEntityName = nearbyEntity
+    ? nearbyEntity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim()
+    : '';
+  const entityLower = cleanEntityName.toLowerCase();
+  const isMerchantEntity = Boolean(
+    nearbyEntity &&
+      (nearbyEntity.isMerchant ||
+        nearbyEntity.id === 'npc_hana' ||
+        nearbyEntity.id === 'npc_cafe' ||
+        nearbyEntity.id === 'npc_kai' ||
+        nearbyEntity.id === 'npc_beach'),
+  );
+  const isWhisperablePlayer = Boolean(
+    nearbyEntity &&
+      !nearbyEntity.isNpc &&
+      !nearbyEntity.isSelf &&
+      !cleanEntityName.toUpperCase().startsWith('BUDDY #'),
+  );
+  const isFemaleNpcPortrait = Boolean(
+    nearbyEntity &&
+      (entityLower.includes('hana') ||
+        entityLower.includes('nadia') ||
+        (nearbyEntity.isNpc && nearbyEntity.gender === 'female')),
+  );
+
   return (
     <aside
-      aria-label="Cafe Work Shift"
-      data-cafe-giliran-kerja-dock="true"
+      aria-label={
+        isNearbyEntityMode && nearbyEntity
+          ? `Nearby: ${cleanEntityName}`
+          : isWorkShiftMode
+            ? 'Cafe Work Shift'
+            : resolvedMode === 'stand_up'
+              ? 'Stand Up'
+              : 'Sit'
+      }
+      data-unified-bottom-action-dock={resolvedMode}
+      data-cafe-giliran-kerja-dock={isWorkShiftMode ? 'true' : undefined}
+      onPointerDown={(e) => e.stopPropagation()}
       className="fixed bottom-[70px] left-1/2 -translate-x-1/2 lg:bottom-3 lg:left-[570px] lg:translate-x-0 z-40 flex flex-col items-center lg:items-start gap-1.5 pointer-events-auto select-none"
       style={dockLeftPx !== null ? { left: dockLeftPx } : undefined}
     >
-      {/* Upward Expanded Action Stack */}
-      {isExpanded && (
+      {/* Upward Expanded Action Stack (Work Shift Mode Only) */}
+      {isWorkShiftMode && isExpanded && (
         <div
           data-cafe-giliran-kerja-menu="true"
           className="flex flex-col items-center gap-1.5 mb-1"
@@ -728,28 +800,181 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         </div>
       )}
 
-      {/* Bottom Primary Trigger Bar: Work Shift */}
-      <button
-        type="button"
-        data-cafe-giliran-kerja-bar="true"
-        onClick={onToggleExpand}
-        className="rounded-[10px] inline-flex items-center h-11 min-w-[236px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
-      >
-        <div className="flex items-center justify-between gap-2.5 w-full">
-          <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
-            <ClipboardList className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
-          </span>
+      {/* Upward Expanded Action Stack (Nearby / Selected Character Mode) */}
+      {isNearbyEntityMode && nearbyEntity && isEntityMenuExpanded && (
+        <div
+          data-nearby-entity-action-menu="true"
+          className="flex flex-col items-center lg:items-start gap-1.5 mb-1"
+        >
+          <button
+            type="button"
+            data-nearby-entity-profile-btn="true"
+            onClick={() => onOpenEntityProfile?.(nearbyEntity)}
+            className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+          >
+            <div className="flex items-center gap-2.5 w-full">
+              <span className="w-6 h-6 bg-[#38bdf8] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
+                <User className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+              </span>
+              <span className="flex-1 text-left">Profile</span>
+            </div>
+          </button>
 
-          <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white whitespace-nowrap">
-            Work Shift
-            {isSelfInQueue ? ` (#${selfQueueNumber})` : ''}
-          </span>
+          {isMerchantEntity && (
+            <button
+              type="button"
+              data-nearby-entity-talk-btn="true"
+              onClick={() => onTalkMerchant?.(nearbyEntity)}
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            >
+              <div className="flex items-center gap-2.5 w-full">
+                <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                </span>
+                <span className="flex-1 text-left text-[#facc15]">Talk</span>
+              </div>
+            </button>
+          )}
 
-          <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
-            {isExpanded ? '▾' : '▸'}
-          </span>
+          {isWhisperablePlayer && (
+            <button
+              type="button"
+              data-nearby-entity-whisper-btn="true"
+              onClick={() => onWhisperEntity?.(nearbyEntity)}
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#10b981] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            >
+              <div className="flex items-center gap-2.5 w-full">
+                <span className="w-6 h-6 bg-[#10b981] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
+                  <MessageCircle className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                </span>
+                <span className="flex-1 text-left text-[#10b981]">Whisper</span>
+              </div>
+            </button>
+          )}
         </div>
-      </button>
+      )}
+
+      {/* Unified Primary Trigger Bar: Nearby Entity OR Work Shift OR Sit / Stand Up */}
+      {isNearbyEntityMode && nearbyEntity ? (
+        <div
+          role="button"
+          tabIndex={0}
+          data-target-name-bar="true"
+          data-nearby-entity-bar={String(nearbyEntity.id)}
+          onClick={() => {
+            soundEngine.playUiClick();
+            onToggleEntityMenu?.();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              soundEngine.playUiClick();
+              onToggleEntityMenu?.();
+            }
+          }}
+          className="rounded-[10px] inline-flex items-center h-11 min-w-[228px] max-w-[300px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
+        >
+          <div className="flex items-center justify-between gap-2.5 w-full min-w-0">
+            <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center overflow-hidden shrink-0 font-black text-xs">
+              {isFemaleNpcPortrait ? (
+                <img
+                  src="/assets/avatar_nadia.jpg"
+                  alt={cleanEntityName}
+                  className="w-full h-full object-cover"
+                />
+              ) : nearbyEntity.isNpc ? (
+                <img
+                  src="/assets/avatar_hiro.jpg"
+                  alt={cleanEntityName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span>{cleanEntityName.slice(0, 1).toUpperCase()}</span>
+              )}
+            </span>
+
+            <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white truncate whitespace-nowrap px-1">
+              {cleanEntityName}
+            </span>
+
+            {canCycleNearbyEntity ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundEngine.playUiClick();
+                  onCycleNearbyEntity?.();
+                }}
+                title="Switch Target"
+                aria-label="Next Target"
+                className="min-w-[24px] h-6 px-1.5 bg-[#facc15] hover:bg-[#fde047] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0 cursor-pointer"
+              >
+                &gt;
+              </button>
+            ) : (
+              <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+                {isEntityMenuExpanded ? '▾' : '▸'}
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          data-cafe-giliran-kerja-bar={isWorkShiftMode ? 'true' : undefined}
+          data-bottom-sit-action-btn={!isWorkShiftMode ? 'true' : undefined}
+          onClick={isWorkShiftMode ? onToggleExpand : onTriggerSitOrStand}
+          className="rounded-[10px] inline-flex items-center h-11 min-w-[228px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
+        >
+          <div className="flex items-center justify-between gap-2.5 w-full">
+            {isWorkShiftMode ? (
+              <>
+                <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
+                  <ClipboardList className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+                </span>
+
+                <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white whitespace-nowrap">
+                  Work Shift
+                  {isSelfInQueue ? ` (#${selfQueueNumber})` : ''}
+                </span>
+
+                <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+                  {isExpanded ? '▾' : '▸'}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="w-7 h-7 bg-[#b8ff3c] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M7 4v9h10" />
+                    <path d="M7 13v7" />
+                    <path d="M17 13v7" />
+                    <path d="M7 16h10" />
+                  </svg>
+                </span>
+
+                <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white whitespace-nowrap">
+                  {resolvedMode === 'stand_up' ? 'Stand Up' : 'Sit'}
+                </span>
+
+                <span className="min-w-[24px] h-6 px-1.5 bg-[#b8ff3c] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+                  ▸
+                </span>
+              </>
+            )}
+          </div>
+        </button>
+      )}
     </aside>
   );
 };

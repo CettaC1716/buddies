@@ -19,6 +19,7 @@ import {
   detectNearestCafeStation,
   exchangeCafeBucksToLul,
   purchaseCafeMenuItem,
+  resolveNearestCafePromptOrSeat,
   serveActiveCafeOrder,
   startCafeWorkShift,
   xpRequiredForLevelStep,
@@ -1049,7 +1050,111 @@ test('Neo-Strike Slot Machine paytable, deterministic RNG outcomes, balance chec
   assert.equal(deterministicJackpot.updatedLulBalance, 20 - 5 + 250);
 });
 
+test('resolveNearestCafePromptOrSeat resolves overlap between Work Shift board and Bistro Chair strictly to whichever physical object is closer', () => {
+  const eastChair1 = CAFE_INTERIOR_SEAT_SPOTS.find((s) => s.id === 'cafe_east_bistro_1')!;
 
+  // 1. Overlap zone closer to Work Shift board (`(3.55, -2.65)` is within 2.25m of rotaBoard AND within 1.85m of eastChair1? Let's test `(3.65, -2.47)` vs `(3.55, -2.55)`)
+  // At `(3.58, -2.46)`: dist to rotaBoard(3.04,-3.62)=1.28m<=2.25m, dist to eastChair1(4.46,-0.85)=1.835m<=1.85m
+  // Physical surface distances: chair surface is closer (`1.47m`) than rota cabinet (`1.76m`) -> Sit wins!
+  const closerToChairInOverlap = resolveNearestCafePromptOrSeat(3.75, -2.45, false);
+  assert.equal(detectNearestCafeStation(3.75, -2.45, false).kind, 'rota_board');
+  assert.ok(Math.hypot(3.75 - eastChair1.x, -2.45 - eastChair1.z) <= 1.85);
+  assert.equal(closerToChairInOverlap.target, 'seat');
+  assert.equal(closerToChairInOverlap.seatSpot?.id, 'cafe_east_bistro_1');
+  assert.equal(closerToChairInOverlap.stationKind, null);
 
+  // 2. Stepping onto the wooden barista deck closer to the Work Shift board (`(3.35, -2.85)`) -> Work Shift (`rota_board`) wins!
+  const closerToBoard = resolveNearestCafePromptOrSeat(3.35, -2.85, false);
+  assert.equal(closerToBoard.target, 'station');
+  assert.equal(closerToBoard.stationKind, 'rota_board');
+  assert.equal(closerToBoard.seatSpot, null);
 
+  // 3. Standing directly in front of the Work Shift board `(3.04, -3.62)` -> `rota_board`
+  const atBoard = resolveNearestCafePromptOrSeat(3.04, -3.62, false);
+  assert.equal(atBoard.target, 'station');
+  assert.equal(atBoard.stationKind, 'rota_board');
 
+  // 4. While actively working a Barista Shift (`isWorking = true`), chairs never override stations
+  const whileWorkingNearChair = resolveNearestCafePromptOrSeat(eastChair1.x, eastChair1.z, true);
+  assert.notEqual(whileWorkingNearChair.target, 'seat');
+});
+
+test('ambient NPC nametag quads set their world rotation to camera world rotation each frame so they face the screen squarely from all angles', async () => {
+  const {
+    NAMEPLATE_SCREEN_SPEC,
+    syncScreenSpaceBillboardQuad,
+  } = await import('./buddiesBillboardRules');
+  const { CITY_AMBIENT_NPC_PRESETS } = await import('./buddiesBlitzRules');
+
+  const viewportW = 1310;
+  const viewportH = 750;
+  const camera = new THREE.PerspectiveCamera(46, viewportW / viewportH, 0.1, 300);
+  const scene = new THREE.Scene();
+
+  const npcControllers = CITY_AMBIENT_NPC_PRESETS.map((preset) => {
+    const wp0 = preset.waypoints[0] ?? { x: 0, z: 0, yaw: 0 };
+    const root = new THREE.Group();
+    root.position.set(wp0.x, 2.5, wp0.z);
+    // Simulate parent tilt + arbitrary orientation
+    root.rotation.set(0.06, 0.42, -0.04);
+    scene.add(root);
+
+    const nameplateQuad = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial(),
+    );
+    nameplateQuad.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
+    nameplateQuad.visible = true;
+    root.add(nameplateQuad);
+    return { preset, root, nameplateQuad };
+  });
+
+  // Test multiple 360° camera orbits & oblique pitches around Central Plaza (including facing behind +Z -> -Z)
+  const cameraViews = [
+    { pos: [-85.5, 13.5, -10.2] as const, look: [-86.0, 2.5, -23.0] as const },
+    { pos: [-72.0, 15.0, -21.2] as const, look: [-84.0, 2.5, -21.2] as const },
+    { pos: [-84.0, 14.2, -33.0] as const, look: [-81.5, 2.5, -21.2] as const },
+    { pos: [-96.0, 11.8, -14.5] as const, look: [-78.0, 2.5, -18.0] as const },
+  ];
+
+  const camQuat = new THREE.Quaternion();
+  const quadQuat = new THREE.Quaternion();
+  const topLeft = new THREE.Vector3();
+  const topRight = new THREE.Vector3();
+
+  for (const view of cameraViews) {
+    camera.position.set(view.pos[0], view.pos[1], view.pos[2]);
+    camera.lookAt(view.look[0], view.look[1], view.look[2]);
+    camera.updateMatrixWorld();
+    camera.getWorldQuaternion(camQuat);
+
+    for (const npc of npcControllers) {
+      syncScreenSpaceBillboardQuad(
+        npc.nameplateQuad,
+        camera,
+        viewportH,
+        NAMEPLATE_SCREEN_SPEC.playerAndPeerWidthPx,
+        NAMEPLATE_SCREEN_SPEC.playerAndPeerHeightPx,
+      );
+
+      // Immediately after syncScreenSpaceBillboardQuad (even prior to scene.updateMatrixWorld),
+      // quad world rotation must equal camera world rotation
+      npc.nameplateQuad.getWorldQuaternion(quadQuat);
+      const dot = Math.abs(quadQuat.dot(camQuat));
+      assert.ok(
+        dot > 0.999999,
+        `NPC ${npc.preset.displayName} quad world rotation must match camera rotation (dot=${dot})`,
+      );
+
+      // Top edge of nametag must project strictly horizontal on screen (zero 3D skew/tilt)
+      topLeft.set(-0.5, 0.5, 0).applyMatrix4(npc.nameplateQuad.matrixWorld).project(camera);
+      topRight.set(0.5, 0.5, 0).applyMatrix4(npc.nameplateQuad.matrixWorld).project(camera);
+      const topLeftPy = (-topLeft.y * 0.5 + 0.5) * viewportH;
+      const topRightPy = (-topRight.y * 0.5 + 0.5) * viewportH;
+      assert.ok(
+        Math.abs(topLeftPy - topRightPy) < 1e-3,
+        `NPC ${npc.preset.displayName} nametag top edge must be horizontal on screen, got deltaY=${Math.abs(topLeftPy - topRightPy)}px`,
+      );
+    }
+  }
+});

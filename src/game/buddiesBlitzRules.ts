@@ -13160,9 +13160,9 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     kioskY: 0.26,
     kioskZ: 0.0,
     kioskRotY: -Math.PI / 2,
-    spawnX: -86.85,
-    spawnZ: -19.85,
-    spawnYaw: 0,
+    spawnX: -88.55,
+    spawnZ: -9.4,
+    spawnYaw: Math.PI / 2,
     hasHalteShelter: true,
     shelterX: -63.8,
     shelterZ: 0.0,
@@ -13339,10 +13339,10 @@ export interface CityTransitKioskProximityResult {
 
 export const CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC = {
   stationId: 'central_plaza' as CityTransitStationId,
-  kioskX: -86.85,
+  kioskX: -86.55,
   kioskY: 2.5,
-  kioskZ: -21.85,
-  kioskRotY: 0,
+  kioskZ: -9.4,
+  kioskRotY: -Math.PI / 2,
 } as const;
 
 export const BEACHFRONT_KAI_KIOSK_SPEC = {
@@ -14123,5 +14123,65 @@ export function stepCityAmbientNpcSchedule(
     pauseTimer: 0,
   };
 }
+
+export interface UnifiedDockProximityCandidate {
+  id: string | number;
+  nearAccountId?: string;
+  name: string;
+  distance: number;
+  isNpc: boolean;
+  isMerchant?: boolean;
+  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  gender?: 'male' | 'female';
+  team: 'blue' | 'red';
+  status: string;
+}
+
+export function resolveUnifiedBottomDockProximity(input: {
+  candidates: readonly UnifiedDockProximityCandidate[];
+  previousEntityId: string | null;
+  nearestSeatDistance: number | null;
+  enterRadiusMeters?: number;
+  exitRadiusMeters?: number;
+}):
+  | { winner: 'entity'; entity: UnifiedDockProximityCandidate }
+  | { winner: 'sit' }
+  | { winner: 'none' } {
+  const enterR = input.enterRadiusMeters ?? 3.85;
+  const exitR = input.exitRadiusMeters ?? 4.45;
+
+  let best: UnifiedDockProximityCandidate | null = null;
+  for (let i = 0; i < input.candidates.length; i++) {
+    const c = input.candidates[i];
+    if (!Number.isFinite(c.distance)) continue;
+    const isPrev =
+      input.previousEntityId !== null && String(c.id) === input.previousEntityId;
+    const limit = isPrev ? exitR : enterR;
+    if (c.distance > limit) continue;
+    if (!best || c.distance < best.distance - 0.15) {
+      best = c;
+    } else if (Math.abs(c.distance - best.distance) <= 0.15 && isPrev) {
+      best = c;
+    }
+  }
+
+  if (best) {
+    if (
+      input.nearestSeatDistance !== null &&
+      Number.isFinite(input.nearestSeatDistance) &&
+      input.nearestSeatDistance + 0.35 < best.distance
+    ) {
+      return { winner: 'sit' };
+    }
+    return { winner: 'entity', entity: best };
+  }
+
+  if (input.nearestSeatDistance !== null && Number.isFinite(input.nearestSeatDistance)) {
+    return { winner: 'sit' };
+  }
+
+  return { winner: 'none' };
+}
+
 
 

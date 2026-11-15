@@ -815,6 +815,186 @@ export type CafeStationInteractionKind =
   | 'atm_machine'
   | 'arcade_slot';
 
+export const CAFE_SEAT_PROXIMITY_RADIUS = 1.85;
+export const CAFE_CHAIR_HALF_EXTENT_M = 0.27;
+
+function distanceToAabb2d(
+  px: number,
+  pz: number,
+  cx: number,
+  cz: number,
+  hw: number,
+  hd: number,
+): number {
+  const dx = Math.max(0, Math.abs(px - cx) - hw);
+  const dz = Math.max(0, Math.abs(pz - cz) - hd);
+  return Math.hypot(dx, dz);
+}
+
+/**
+ * Exact 2D surface distance from `(px, pz)` to a cafe chair's physical 3D collider footprint.
+ */
+export function computeCafeSeatObjectDistance(
+  px: number,
+  pz: number,
+  spot: Pick<CafeInteriorSeatSpot, 'x' | 'z'>,
+): number {
+  return distanceToAabb2d(
+    px,
+    pz,
+    spot.x,
+    spot.z,
+    CAFE_CHAIR_HALF_EXTENT_M,
+    CAFE_CHAIR_HALF_EXTENT_M,
+  );
+}
+
+/**
+ * Exact 2D surface distance from `(px, pz)` to the physical 3D object footprint of a cafe station.
+ */
+export function computeCafeStationObjectDistance(
+  px: number,
+  pz: number,
+  kind: CafeStationInteractionKind,
+  isWorking: boolean,
+  activeOrderCategory: 'drink' | 'pastry' | null = null,
+): number {
+  switch (kind) {
+    case 'rota_board':
+      if (isWorking) {
+        return Math.hypot(
+          px - CAFE_INTERIOR_BOUNDS.workShiftExitPadX,
+          pz - CAFE_INTERIOR_BOUNDS.workShiftExitPadZ,
+        );
+      }
+      // Joined Wooden Base Cabinet + Wall-Mounted Work Shift Board collider (`cafe_rota_board`)
+      return distanceToAabb2d(px, pz, 3.04, -4.72, 1.02, 0.50);
+    case 'atm_machine':
+      return distanceToAabb2d(px, pz, -4.25, -4.95, 0.42, 0.36);
+    case 'arcade_slot':
+      return distanceToAabb2d(px, pz, 6.32, 4.33, 0.38, 0.42);
+    case 'order_counter':
+      return distanceToAabb2d(px, pz, -0.45, -2.05, 2.54, 0.49);
+    case 'exit_door':
+      return distanceToAabb2d(
+        px,
+        pz,
+        CAFE_INTERIOR_BOUNDS.exitDoorX,
+        CAFE_INTERIOR_BOUNDS.exitDoorZ,
+        0.55,
+        0.35,
+      );
+    case 'serve_customer': {
+      if (activeOrderCategory === 'pastry') {
+        return Math.hypot(
+          px - CAFE_APPLIANCE_TARGETS.pastryDisplayCase.x,
+          pz - CAFE_APPLIANCE_TARGETS.pastryDisplayCase.z,
+        );
+      }
+      if (activeOrderCategory === 'drink') {
+        return Math.hypot(
+          px - CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.x,
+          pz - CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.z,
+        );
+      }
+      return distanceToAabb2d(px, pz, -0.45, -2.05, 2.54, 0.49);
+    }
+  }
+}
+
+export interface CafeNearestPromptOrSeatResult {
+  target: 'none' | 'station' | 'seat';
+  stationKind: CafeStationInteractionKind | null;
+  seatIndex: number;
+  seatSpot: CafeInteriorSeatSpot | null;
+  objectDistance: number;
+}
+
+/**
+ * Unified proximity arbiter inside the Botanical Glasshouse Cafe:
+ * When both a Cafe station (such as the Work Shift rota board) and a Cafe chair (`SIT`)
+ * are simultaneously within interaction range, resolves strictly to whichever physical
+ * 3D object (`bendanya`) is closer to the player.
+ */
+export function resolveNearestCafePromptOrSeat(
+  px: number,
+  pz: number,
+  isWorking: boolean,
+  activeOrderCategory: 'drink' | 'pastry' | null = null,
+): CafeNearestPromptOrSeatResult {
+  const station = detectNearestCafeStation(px, pz, isWorking, activeOrderCategory);
+  const stationObjectDist =
+    station.kind !== null
+      ? computeCafeStationObjectDistance(px, pz, station.kind, isWorking, activeOrderCategory)
+      : Infinity;
+
+  let bestSeatIdx = -1;
+  let bestSeatObjectDist = Infinity;
+  if (!isWorking) {
+    for (let i = 0; i < CAFE_INTERIOR_SEAT_SPOTS.length; i++) {
+      const spot = CAFE_INTERIOR_SEAT_SPOTS[i];
+      const centerDist = Math.hypot(px - spot.x, pz - spot.z);
+      if (centerDist <= CAFE_SEAT_PROXIMITY_RADIUS) {
+        const objDist = computeCafeSeatObjectDistance(px, pz, spot);
+        if (objDist < bestSeatObjectDist) {
+          bestSeatObjectDist = objDist;
+          bestSeatIdx = i;
+        }
+      }
+    }
+  }
+
+  const hasStation = station.kind !== null;
+  const hasSeat = bestSeatIdx !== -1;
+
+  if (hasStation && hasSeat) {
+    if (bestSeatObjectDist < stationObjectDist) {
+      return {
+        target: 'seat',
+        stationKind: null,
+        seatIndex: bestSeatIdx,
+        seatSpot: CAFE_INTERIOR_SEAT_SPOTS[bestSeatIdx],
+        objectDistance: bestSeatObjectDist,
+      };
+    }
+    return {
+      target: 'station',
+      stationKind: station.kind,
+      seatIndex: -1,
+      seatSpot: null,
+      objectDistance: stationObjectDist,
+    };
+  }
+
+  if (hasStation) {
+    return {
+      target: 'station',
+      stationKind: station.kind,
+      seatIndex: -1,
+      seatSpot: null,
+      objectDistance: stationObjectDist,
+    };
+  }
+
+  if (hasSeat) {
+    return {
+      target: 'seat',
+      stationKind: null,
+      seatIndex: bestSeatIdx,
+      seatSpot: CAFE_INTERIOR_SEAT_SPOTS[bestSeatIdx],
+      objectDistance: bestSeatObjectDist,
+    };
+  }
+
+  return {
+    target: 'none',
+    stationKind: null,
+    seatIndex: -1,
+    seatSpot: null,
+    objectDistance: Infinity,
+  };
+}
+
 export function detectNearestCafeStation(
   px: number,
   pz: number,

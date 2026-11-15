@@ -3,6 +3,12 @@ import {
   evaluateAmusementBoardwalkElevation,
   isPointOnAmusementOverwaterPier,
 } from './buddiesAmusementParkRules';
+import {
+  evaluateGrandCasinoHillClear,
+  evaluateGrandCasinoPavedPlatformSdf,
+  evaluateGrandCasinoValetLoopSdf,
+  isPointOnGrandCasinoCrosswalk,
+} from './buddiesGrandCasinoRules';
 
 /**
  * Flat Ground Map (Original Buddies Blitz / Blitz World):
@@ -261,9 +267,16 @@ export function evaluateEmbankmentTierOffsets(
     (12.2 - 1.7 * smoothstep(-106.0, -112.0, px)) *
     smoothstep(35.0, 41.0, pz) *
     (1.0 - smoothstep(75.0, 82.0, pz));
+  const grandCasinoClear = evaluateGrandCasinoHillClear(px, pz);
   // Smoothly open the East side at x >= 101.5 where the shifted Coastal Concrete Seawall & Open Ocean sit
   const eastCoastalOpen = smoothstep(96.5, 102.0, px) * 92.0;
-  const d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - eastCoastalOpen;
+  const d0 =
+    dBox +
+    westCornerBulge -
+    westPlantClear -
+    tennisClubClear -
+    grandCasinoClear -
+    eastCoastalOpen;
 
   const w1 =
     Math.sin(px * 0.075 + Math.cos(pz * 0.068) * 1.55) * 2.05 +
@@ -391,7 +404,10 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   // 3. Mirrored Central S-Curve Warzone Roads (cutting through Wind Farm, Forest, and East Warzone)
   const dCentralSCurve = evalMirroredCentralSCurveDist(px, az) - 4.2;
 
-  return Math.min(dOuterAndBaseRing, dCentralSCurve);
+  // 4. Grand Casino Semi-Circular Valet Drop-Off Loop (North of Central Plaza, x <= -60.0, z in [-76.4, -50.8])
+  const dCasinoValetLoop = evaluateGrandCasinoValetLoopSdf(px, worldZ);
+
+  return Math.min(Math.min(dOuterAndBaseRing, dCentralSCurve), dCasinoValetLoop);
 }
 
 export interface ZebraCrosswalkZoneSpec {
@@ -442,7 +458,11 @@ export function isPointOnZebraCrosswalk(worldX: number, worldZ: number): boolean
  * Returns true when a unit or vehicle is on the Asphalt Road Network or any Zebra Crosswalk.
  */
 export function isPointOnAsphaltRoadOrZebraCross(worldX: number, worldZ: number): boolean {
-  return evaluateRoadNetworkSdf(worldX, worldZ) <= 0.15 || isPointOnZebraCrosswalk(worldX, worldZ);
+  return (
+    evaluateRoadNetworkSdf(worldX, worldZ) <= 0.15 ||
+    isPointOnZebraCrosswalk(worldX, worldZ) ||
+    isPointOnGrandCasinoCrosswalk(worldX, worldZ)
+  );
 }
 
 
@@ -508,9 +528,14 @@ export function evaluateHaltePlatformSdf(px: number, pz: number): number {
   const dPlazaSidewalk = sdRoundedBox2D(px, pz, -75.25, 0.0, 1.45, 38.2, 0.2);
   // Standalone Scenic Clay Tennis Court & Full-Width Perimeter Sidewalks (worldX in [-104.40 .. -73.85], worldZ in [+38.10 .. +65.70])
   const dTennisClub = sdRoundedBox2D(px, pz, -89.20, 51.90, 15.20, 13.70, 0.3);
+  // North-of-Plaza Grand Casino, Median Island, South Connector & Curved North Garden
+  const dGrandCasino = evaluateGrandCasinoPavedPlatformSdf(px, pz);
   return Math.min(
-    dTennisClub,
-    Math.min(dPlazaSidewalk, Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)))),
+    dGrandCasino,
+    Math.min(
+      dTennisClub,
+      Math.min(dPlazaSidewalk, Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)))),
+    ),
   );
 }
 

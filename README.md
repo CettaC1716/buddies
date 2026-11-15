@@ -8,7 +8,7 @@ You arrive at Central Plaza, a coastal district with a tram line, a glasshouse c
 - **Watch the trailer**: [Demo post on X](https://x.com/Charvicetta/status/2120546023848468952)
 - **Primary Hackathon Track**: `games` -- Games With Real Economies
 - **Secondary Hackathon Track**: `nfts` -- NFTs That Do Something
-- **Smart Contract (NEAR Testnet v1.5.0)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) (`code_hash`: `6fbD9tVEkmJguNMc6SL7uGwu6hurX8iHtCkhUQ5WwRtg`)
+- **Smart Contract (NEAR Testnet v1.6.0)**: [`market.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/market.buddiesblitz.testnet) (`code_hash`: `3ZzjGFe6DWs8ut2awzcb6mxWqqtRNaSarf3jyvmPgoSR`)
 - **Master Account**: [`buddiesblitz.testnet`](https://testnet.nearblocks.io/address/buddiesblitz.testnet) · **NPC Treasury Desk**: [`kai.buddiesblitz.testnet`](https://testnet.nearblocks.io/address/kai.buddiesblitz.testnet)
 
 <!-- VIDEO EMBED: paste the GitHub user-attachments URL for buddies-blitz-trailer-readme.mp4 on its own line here (upload via the github.com README editor, file must stay under 10 MB). -->
@@ -93,7 +93,7 @@ OFF-CHAIN GAMEPLAY LAYER (Zero Gas, No On-Chain Token Printing from Grinding)
                                                               ▼ (Exchange: 100 LUL -> 10 CYON base rate)
                                                              CYON ──> Non-NFT Catalog Gear & Tackle (Never NFT Furniture)
 
-ON-CHAIN TREASURY & P2P OWNERSHIP LAYER (market.buddiesblitz.testnet, v1.5.0)
+ON-CHAIN TREASURY & P2P OWNERSHIP LAYER (market.buddiesblitz.testnet, v1.6.0)
   NEAR Testnet ──> swap_near_for_respite() [One-Way 1 NEAR = 400 RESPITE] ──> RESPITE (NEP-141)
      ├──> purchase_citizen_asset() ──> House Ownership Deed (100 R) / Family AI Contracts (15 / 45 / 180 R)
      ├──> buy_merchant_item() / sell_merchant_item() ──> Pre-Minted NEP-245 NFT Furniture Only
@@ -147,25 +147,25 @@ Requirements: Node.js 18+, npm, and Rust (`stable` + `cargo-near` for WASM recom
 # 1. Install dependencies
 npm install
 
-# 2. Run TypeScript static check, 194 Node unit tests, and production WebGL build
+# 2. Run TypeScript static check, 215 Node unit tests, and production WebGL build
 npm run lint      # tsc --noEmit (0 errors)
-npm test          # 194 unit tests via tsx --test (relayer auth, economy invariants, fishing, OAuth guards, arena rules)
+npm test          # 215 unit tests via tsx --test (relayer auth, economy invariants, fishing, OAuth guards, arena rules)
 npm run build     # Vite 8 production bundle into dist/
 
 # 3. Run Rust smart contract unit tests & compile WASM (near-sdk 5.5.0)
 cd contracts/buddies-market
-cargo test                                 # 38/38 unit tests (NEP-141, P2P fish market, escrow, epoch rotation, v1.5.0 migration)
+cargo test                                 # 44/44 unit tests (NEP-141, P2P fish market, escrow, epoch rotation, vehicle purchases, migrations)
 cargo near build non-reproducible-wasm     # Builds target/near/buddies_market.wasm (348,564 bytes) + buddies_market_abi.json
 ```
 
 ### Live NEAR Testnet Contract Verification
 
 ```bash
-# Verify deployed WASM code hash (expected: 6fbD9tVEkmJguNMc6SL7uGwu6hurX8iHtCkhUQ5WwRtg)
+# Verify deployed WASM code hash (expected: 3ZzjGFe6DWs8ut2awzcb6mxWqqtRNaSarf3jyvmPgoSR)
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","finality":"final","account_id":"market.buddiesblitz.testnet"}}'
 
-# Verify live contract overview (contract_version: "1.5.0", house_price_respite: "100", respite_per_near_rate: 400)
+# Verify live contract overview (contract_version: "1.6.0", house_price_respite: "100", respite_per_near_rate: 400)
 curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"market.buddiesblitz.testnet","method_name":"get_contract_overview","args_base64":"e30="}}'
 
@@ -177,6 +177,7 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
 | Milestone | Account / TX Identifier | Explorer |
 |---|---|---|
 | Contract v1.5.0 Deploy | `y86KBd736RCszxeC7hzyPDiq3wy25opjYK6KUm2xyR3` | [NearBlocks](https://testnet.nearblocks.io/txns/y86KBd736RCszxeC7hzyPDiq3wy25opjYK6KUm2xyR3) |
+| Contract v1.6.0 Deploy (vehicle purchases) | `2p3iJKaTPWToEAXkEbVDLKr4QChn71hzxxjPW9sPwKJS` | [NearBlocks](https://testnet.nearblocks.io/txns/2p3iJKaTPWToEAXkEbVDLKr4QChn71hzxxjPW9sPwKJS) |
 | State Migration (`migrate_v140_to_v150`) | `2zye3Xr1MhCRzohbagLdFbu4JwCRXbaQzVo24fpkVBy7` | [NearBlocks](https://testnet.nearblocks.io/txns/2zye3Xr1MhCRzohbagLdFbu4JwCRXbaQzVo24fpkVBy7) |
 | Server-Attested Fish Mint Deploy (`v1.4.0`) | `DEJc6aPBFFyq1Yev397ipgTxDXsAf1tp9TbfUbWfMVJQ` | [NearBlocks](https://testnet.nearblocks.io/txns/DEJc6aPBFFyq1Yev397ipgTxDXsAf1tp9TbfUbWfMVJQ) |
 | Escrow Property Market Deploy (`v1.3.0`) | `9MxHwwWgQFXT6CHuooqKok4kCuKvGQnYHFg87betwgHE` | [NearBlocks](https://testnet.nearblocks.io/txns/9MxHwwWgQFXT6CHuooqKok4kCuKvGQnYHFg87betwgHE) |
@@ -232,7 +233,7 @@ api/
 
 contracts/buddies-market/
   Cargo.toml                            near-sdk 5.5.0 manifest
-  src/lib.rs                            NEP-141/145, NEP-171/177/181, Sub-Account Deeds, Escrow, NEP-245 (v1.5.0)
+  src/lib.rs                            NEP-141/145, NEP-171/177/181, Sub-Account Deeds, Escrow, NEP-245 (v1.6.0)
   target/near/                          Compiled buddies_market.wasm (348,564 B) + buddies_market_abi.json
 
 src/

@@ -145,6 +145,9 @@ interface RasterTri {
   baseR: number;
   baseG: number;
   baseB: number;
+  emR: number;
+  emG: number;
+  emB: number;
   roughness: number;
   metalness: number;
   alpha: number;
@@ -393,15 +396,17 @@ function rasterizeTriangleToBuffer(
               const metalRim = tri.metalness > 0.15 ? fresnel * 1.45 : fresnel;
 
               const linR =
-                albedoR * diffuseGain + spec * metalTintR + metalRim * 0.22;
+                albedoR * diffuseGain + spec * metalTintR + metalRim * 0.22 + tri.emR;
               const linG =
                 albedoG * (0.32 + diff1 * 0.7 + diff2 * 0.26 + diff3 * 0.23) +
                 spec * metalTintG +
-                metalRim * 0.28;
+                metalRim * 0.28 +
+                tri.emG;
               const linB =
                 albedoB * (0.34 + diff1 * 0.66 + diff2 * 0.32 + diff3 * 0.26) +
                 spec * metalTintB +
-                metalRim * 0.36;
+                metalRim * 0.36 +
+                tri.emB;
 
               outR = linearToneMapByte(linR);
               outG = linearToneMapByte(linG);
@@ -467,6 +472,231 @@ export function prepareStudioFurnitureGroup(
   return wrapper;
 }
 
+export interface StudioFramingOptions {
+  cameraZ?: number;
+  fovDeg?: number;
+  aspect?: number;
+  topMarginFrac?: number;
+  bottomMarginFrac?: number;
+  sideMarginFrac?: number;
+  pitchRange?: readonly [number, number];
+}
+
+/**
+ * Centers and uniformly scales a Three.js Group so that every visible vertex stays strictly
+ * inside the camera frustum with the requested viewport margins across yaw 360° and `pitchRange`,
+ * shifting the model vertically to preserve room for bottom hints/shadows.
+ */
+export function prepareFittedStudioGroup(
+  meshGroup: THREE.Group,
+  options: StudioFramingOptions = {},
+): THREE.Group {
+  const cameraZ = Math.max(0.8, options.cameraZ ?? 2.9);
+  const fovDeg = options.fovDeg ?? 24;
+  const aspect = Math.max(0.5, options.aspect ?? 1.28);
+  const topMarginFrac = options.topMarginFrac ?? 0.075;
+  const bottomMarginFrac = options.bottomMarginFrac ?? 0.145;
+  const sideMarginFrac = options.sideMarginFrac ?? 0.065;
+  const pitchRange = options.pitchRange ?? [-0.25, 0.68];
+
+  meshGroup.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const samplePts: number[] = [];
+  const tmp = new THREE.Vector3();
+
+  meshGroup.traverseVisible((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const typedMat = mat as
+      | (THREE.Material & { isShaderMaterial?: boolean })
+      | undefined;
+    if (
+      typedMat &&
+      (typedMat.isShaderMaterial ||
+        typedMat.side === THREE.BackSide ||
+        typedMat.visible === false)
+    ) {
+      return;
+    }
+    const pos = mesh.geometry.getAttribute('position');
+    if (!pos || pos.count === 0) return;
+
+    const stride = pos.count <= 250 ? 1 : Math.max(1, Math.floor(pos.count / 100));
+    for (let i = 0; i < pos.count; i += stride) {
+      tmp.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      box.expandByPoint(tmp);
+      samplePts.push(tmp.x, tmp.y, tmp.z);
+    }
+    if ((pos.count - 1) % stride !== 0) {
+      tmp.fromBufferAttribute(pos, pos.count - 1).applyMatrix4(mesh.matrixWorld);
+      box.expandByPoint(tmp);
+      samplePts.push(tmp.x, tmp.y, tmp.z);
+    }
+  });
+
+  if (box.isEmpty()) {
+    box.setFromObject(meshGroup);
+  }
+  const center = box.getCenter(new THREE.Vector3());
+
+  if (samplePts.length === 0) {
+    const corners = [
+      [box.min.x, box.min.y, box.min.z],
+      [box.min.x, box.min.y, box.max.z],
+      [box.min.x, box.max.y, box.min.z],
+      [box.min.x, box.max.y, box.max.z],
+      [box.max.x, box.min.y, box.min.z],
+      [box.max.x, box.min.y, box.max.z],
+      [box.max.x, box.max.y, box.min.z],
+      [box.max.x, box.max.y, box.max.z],
+    ];
+    for (const c of corners) {
+      samplePts.push(c[0], c[1], c[2]);
+    }
+  }
+
+  for (let i = 0; i < samplePts.length; i += 3) {
+    samplePts[i] -= center.x;
+    samplePts[i + 1] -= center.y;
+    samplePts[i + 2] -= center.z;
+  }
+
+  const halfTan = Math.tan(((fovDeg * Math.PI) / 180) * 0.5);
+  const targetCenterFrac = 0.5 * (topMarginFrac + (1 - bottomMarginFrac));
+  const shiftWorldY = (0.5 - targetCenterFrac) * (2 * cameraZ * halfTan);
+
+  const pitchSamples = Array.from(
+    new Set([pitchRange[0], 0, 0.24, pitchRange[1]].map((p) =>
+      Math.max(pitchRange[0], Math.min(pitchRange[1], p)),
+    )),
+  );
+  const yawSteps = 16;
+
+  let lo = 0.05;
+  let hi = 3.5;
+  for (let iter = 0; iter < 24; iter++) {
+    const mid = (lo + hi) * 0.5;
+    let fits = true;
+    for (let pi = 0; pi < pitchSamples.length && fits; pi++) {
+      const p = pitchSamples[pi];
+      const cp = Math.cos(p);
+      const sp = Math.sin(p);
+      for (let yi = 0; yi < yawSteps && fits; yi++) {
+        const yaw = (yi / yawSteps) * Math.PI * 2;
+        const cy = Math.cos(yaw);
+        const sy = Math.sin(yaw);
+        for (let k = 0; k < samplePts.length; k += 3) {
+          const px = samplePts[k] * mid;
+          const py = samplePts[k + 1] * mid;
+          const pz = samplePts[k + 2] * mid;
+          const x1 = px * cy + pz * sy;
+          const z1 = -px * sy + pz * cy;
+          const y2 = py * cp - z1 * sp;
+          const z2 = py * sp + z1 * cp;
+          const d = cameraZ - z2;
+          if (d < 0.25) {
+            fits = false;
+            break;
+          }
+          const nx = 0.5 + x1 / (2 * d * halfTan * aspect);
+          const ny = 0.5 - (y2 + shiftWorldY) / (2 * d * halfTan);
+          if (
+            nx < sideMarginFrac ||
+            nx > 1 - sideMarginFrac ||
+            ny < topMarginFrac ||
+            ny > 1 - bottomMarginFrac
+          ) {
+            fits = false;
+            break;
+          }
+        }
+      }
+    }
+    if (fits) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+
+  const wrapper = new THREE.Group();
+  meshGroup.position.set(-center.x, -center.y, -center.z);
+  wrapper.add(meshGroup);
+  wrapper.scale.setScalar(lo);
+  wrapper.position.y = shiftWorldY;
+  wrapper.updateMatrixWorld(true);
+  return wrapper;
+}
+
+/**
+ * Computes the projected screen bounding box of a fitted studio group at its current rotation
+ * so studio floor contact shadows align right under the base of any object.
+ */
+export function getProjectedGroupBounds(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  cameraZ = 2.9,
+  fovDeg = 24,
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  group.traverseVisible((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const typedMat = mat as
+      | (THREE.Material & { isShaderMaterial?: boolean })
+      | undefined;
+    if (
+      typedMat &&
+      (typedMat.isShaderMaterial ||
+        typedMat.side === THREE.BackSide ||
+        typedMat.visible === false)
+    ) {
+      return;
+    }
+    box.expandByObject(mesh);
+  });
+
+  if (box.isEmpty()) {
+    return {
+      minX: width * 0.25,
+      maxX: width * 0.75,
+      minY: height * 0.25,
+      maxY: height * 0.75,
+    };
+  }
+
+  const camZ = Math.max(0.8, cameraZ);
+  const halfW = width * 0.5;
+  const halfH = height * 0.5;
+  const focal = halfH / Math.tan(((fovDeg * Math.PI) / 180) * 0.5);
+
+  let minX = width;
+  let maxX = 0;
+  let minY = height;
+  let maxY = 0;
+  const xs = [box.min.x, box.max.x];
+  const ys = [box.min.y, box.max.y];
+  const zs = [box.min.z, box.max.z];
+  for (const x of xs) {
+    for (const y of ys) {
+      for (const z of zs) {
+        const d = Math.max(0.2, camZ - z);
+        const sx = halfW + (x / d) * focal;
+        const sy = halfH - (y / d) * focal;
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
+      }
+    }
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 /**
  * Projects and software-rasterizes a Three.js Group into a preallocated RGBA pixel buffer
  * with Z-buffering, UV texture sampling, vertex colors, wireframe meshes, and studio lighting.
@@ -503,9 +733,9 @@ export function rasterizeTexturedGroupToBuffer(
   const wireSegments: WireSegment[] = [];
   let drawnTriangles = 0;
 
-  group.traverse((obj) => {
+  group.traverseVisible((obj) => {
     const mesh = obj as THREE.Mesh;
-    if (!mesh.isMesh || !mesh.visible || !mesh.geometry) return;
+    if (!mesh.isMesh || !mesh.geometry) return;
 
     const geo = mesh.geometry;
     const posAttr = geo.getAttribute('position');
@@ -535,6 +765,8 @@ export function rasterizeTexturedGroupToBuffer(
       const mat = resolvedMat as
         | (THREE.Material & {
             color?: THREE.Color;
+            emissive?: THREE.Color;
+            emissiveIntensity?: number;
             map?: THREE.Texture | null;
             roughness?: number;
             metalness?: number;
@@ -555,6 +787,11 @@ export function rasterizeTexturedGroupToBuffer(
       const matR = mat.color ? mat.color.r : 1;
       const matG = mat.color ? mat.color.g : 1;
       const matB = mat.color ? mat.color.b : 1;
+      const emScale =
+        !isBasic && mat.emissive ? Math.max(0, mat.emissiveIntensity ?? 1) * 0.75 : 0;
+      const emR = mat.emissive ? mat.emissive.r * emScale : 0;
+      const emG = mat.emissive ? mat.emissive.g * emScale : 0;
+      const emB = mat.emissive ? mat.emissive.b * emScale : 0;
       const roughness = !isBasic && typeof mat.roughness === 'number' ? mat.roughness : 0.48;
       const metalness = !isBasic && typeof mat.metalness === 'number' ? mat.metalness : 0.0;
       const alpha = mat.transparent ? (mat.opacity ?? 0.9) : 1;
@@ -751,6 +988,9 @@ export function rasterizeTexturedGroupToBuffer(
           baseR,
           baseG,
           baseB,
+          emR,
+          emG,
+          emB,
           roughness,
           metalness,
           alpha,

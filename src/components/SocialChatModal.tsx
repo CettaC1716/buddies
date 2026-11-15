@@ -13,6 +13,9 @@ export interface NearbyEntityUser {
   name: string;
   distance: number;
   isNpc?: boolean;
+  isMerchant?: boolean;
+  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  gender?: 'male' | 'female';
   isSelf?: boolean;
   team?: 'red' | 'blue';
   status?: string;

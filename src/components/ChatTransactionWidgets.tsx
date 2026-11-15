@@ -112,8 +112,8 @@ function GuestSignInStrip({ onConnectWallet }: { onConnectWallet?: () => void })
   );
 }
 
-/** Shared inline LUL -> CYON exchange widget used in Chat Action Card & Quick Shop Modal. */
-function InlineExchangePanel({
+/** Shared inline LUL -> CYON exchange widget used in Exchange Quick View & Quick Shop Modal. */
+export function InlineExchangePanel({
   marketState,
   lulBalance,
   walletConnected,
@@ -256,8 +256,8 @@ function InlineExchangePanel({
   );
 }
 
-/** Shared inline NEAR -> RESPITE swap widget used in Chat Action Card & Quick Shop Modal. */
-function InlineSwapNearPanel({
+/** Shared inline NEAR -> RESPITE swap widget used in Exchange Quick View & Quick Shop Modal. */
+export function InlineSwapNearPanel({
   nearTestnetBalance,
   respiteBalance,
   walletConnected,
@@ -430,8 +430,8 @@ function InlineSwapNearPanel({
   );
 }
 
-/** Shared inline Private House purchase panel for chat card & modal. */
-function InlineHouseDealPanel({
+/** Shared inline Private House purchase panel for Exchange Quick View & modal. */
+export function InlineHouseDealPanel({
   walletConnected,
   hasHouseOwnership,
   respiteBalance,
@@ -858,10 +858,10 @@ function InlineCatalogItemPanel({
 }
 
 /**
- * Neo-brutalist city location list rendered inline in Chat Session.
+ * Neo-brutalist city location list rendered inside Exchange Quick View.
  * Clicking any location box transforms that box into a YES / NO teleport confirmation.
  */
-function InlineTeleportPlacesPanel({
+export function InlineTeleportPlacesPanel({
   merchantLocation,
   focusStationId,
   onTeleportToDestination,
@@ -1322,6 +1322,163 @@ export const ChatActionCard: React.FC<
 };
 
 /**
+ * Shared Quick Shop / Fishing Gear items grid reused by both QuickShopChatModal
+ * and the Exchange tab's embedded QUICK SHOP / FISHING GEAR views.
+ */
+export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
+  const { merchantLocation } = props;
+  const [itemFeedback, setItemFeedback] = useState<{
+    ok: boolean;
+    text: string;
+    txHash?: string;
+    explorerUrl?: string;
+  } | null>(null);
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
+
+  const visibleItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
+    merchantLocation === 'beach_house'
+      ? item.category === 'fishing_gear'
+      : item.category !== 'fishing_gear',
+  );
+
+  return (
+    <div className="space-y-2.5">
+      {!props.walletConnected && <GuestSignInStrip onConnectWallet={props.onConnectWallet} />}
+      {itemFeedback && (
+        <div
+          className={`p-2 border-2 border-black text-[10px] font-bold flex items-center justify-between gap-2 ${
+            itemFeedback.ok
+              ? 'bg-[#ecfdf5] text-[#065f46]'
+              : 'bg-[#fef2f2] text-[#991b1b]'
+          }`}
+        >
+          <span>{itemFeedback.text}</span>
+          {itemFeedback.txHash && (
+            <a
+              href={
+                itemFeedback.explorerUrl ||
+                getNearBlocksTxUrl(itemFeedback.txHash, 'testnet')
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#0369a1] underline font-mono shrink-0"
+            >
+              Receipt
+            </a>
+          )}
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {visibleItems.map((item) => {
+          const quote = evaluateMerchantItemQuote(props.marketState, item);
+          const isOwned = props.ownedItemIds.includes(item.id);
+          const balance = item.currency === 'CYON' ? props.cyonBalance : props.respiteBalance;
+          const needsHouse =
+            item.category === 'nft_collector_furniture' && !props.hasHouseOwnership;
+          const canBuy =
+            props.walletConnected &&
+            !needsHouse &&
+            (!isOwned || Boolean(item.interiorSlot)) &&
+            quote.stock > 0 &&
+            balance >= quote.buyPrice;
+
+          return (
+            <div
+              key={item.id}
+              data-quick-modal-item={item.id}
+              className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex flex-col gap-2"
+            >
+              <div className="flex items-start gap-2">
+                {item.category !== 'fishing_gear' ? (
+                  <div className="w-16 shrink-0 border border-white/30 overflow-hidden">
+                    <Furniture3dThumbnail
+                      catalogId={item.id}
+                      name={item.name}
+                      iconEmoji={item.iconEmoji}
+                      size="compact"
+                      onInspect={
+                        props.onInspectFurniture
+                          ? () => props.onInspectFurniture!(item)
+                          : undefined
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 shrink-0 bg-[#1e293b] border border-white/30 flex items-center justify-center">
+                    <ShoppingBag className="w-4 h-4 text-[#38bdf8]" aria-hidden="true" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10.5px] font-black uppercase text-white truncate">
+                    {item.name}
+                  </div>
+                  <div className="text-[9.5px] font-bold text-slate-300 mt-0.5">
+                    {quote.buyPrice} {item.currency} · Stock {quote.stock}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-1.5 mt-auto">
+                {props.onInspectFurniture && item.category !== 'fishing_gear' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      props.onInspectFurniture!(item);
+                    }}
+                    className="px-2 py-1 bg-[#1e293b] hover:bg-[#334155] text-white border border-white/30 text-[9px] font-black uppercase cursor-pointer"
+                  >
+                    3D VIEW
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={!canBuy || busyItemId === item.id}
+                  onClick={async () => {
+                    if (!canBuy) return;
+                    soundEngine.playPickup();
+                    setBusyItemId(item.id);
+                    setItemFeedback(null);
+                    try {
+                      const res = await props.onBuyMerchantItem(item, quote.buyPrice);
+                      const text = res.ok
+                        ? `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`
+                        : 'Purchase failed — your balance was not charged.';
+                      setItemFeedback({
+                        ok: res.ok,
+                        text,
+                        txHash: res.txHash,
+                        explorerUrl: res.explorerUrl,
+                      });
+                      props.onNotifySpeech(text);
+                    } finally {
+                      setBusyItemId(null);
+                    }
+                  }}
+                  className={`ml-auto px-2.5 py-1 border-2 border-black text-[9.5px] font-black uppercase ${
+                    canBuy && busyItemId !== item.id
+                      ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
+                      : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  }`}
+                >
+                  {busyItemId === item.id
+                    ? 'BUYING...'
+                    : needsHouse
+                      ? 'NEEDS HOUSE'
+                      : isOwned && !item.interiorSlot
+                        ? 'OWNED'
+                        : `BUY ${quote.buyPrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/**
  * Centered Quick Transaction Modal launched right from Chat Session so players
  * can exchange, swap, or purchase catalog items without touching top tabs.
  */
@@ -1335,20 +1492,12 @@ export const QuickShopChatModal: React.FC<
   const { isOpen, initialTab, onClose, merchantLocation } = props;
   const [modalTab, setModalTab] = useState<'exchange' | 'house' | 'items'>(initialTab);
   const [swapNearOverride, setSwapNearOverride] = useState<number | null>(null);
-  const [itemFeedback, setItemFeedback] = useState<{
-    ok: boolean;
-    text: string;
-    txHash?: string;
-    explorerUrl?: string;
-  } | null>(null);
-  const [busyItemId, setBusyItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setModalTab(
         initialTab === 'house' && merchantLocation !== 'lobby_cafe' ? 'items' : initialTab,
       );
-      setItemFeedback(null);
     }
   }, [isOpen, initialTab, merchantLocation]);
 
@@ -1365,12 +1514,6 @@ export const QuickShopChatModal: React.FC<
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
-  const visibleItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
-    merchantLocation === 'beach_house'
-      ? item.category === 'fishing_gear'
-      : item.category !== 'fishing_gear',
-  );
 
   return (
     <div
@@ -1519,141 +1662,7 @@ export const QuickShopChatModal: React.FC<
             </div>
           )}
 
-          {modalTab === 'items' && (
-            <div className="space-y-2.5">
-              {!props.walletConnected && <GuestSignInStrip onConnectWallet={props.onConnectWallet} />}
-              {itemFeedback && (
-                <div
-                  className={`p-2 border-2 border-black text-[10px] font-bold flex items-center justify-between gap-2 ${
-                    itemFeedback.ok
-                      ? 'bg-[#ecfdf5] text-[#065f46]'
-                      : 'bg-[#fef2f2] text-[#991b1b]'
-                  }`}
-                >
-                  <span>{itemFeedback.text}</span>
-                  {itemFeedback.txHash && (
-                    <a
-                      href={
-                        itemFeedback.explorerUrl ||
-                        getNearBlocksTxUrl(itemFeedback.txHash, 'testnet')
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#0369a1] underline font-mono shrink-0"
-                    >
-                      Receipt
-                    </a>
-                  )}
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {visibleItems.map((item) => {
-                  const quote = evaluateMerchantItemQuote(props.marketState, item);
-                  const isOwned = props.ownedItemIds.includes(item.id);
-                  const balance = item.currency === 'CYON' ? props.cyonBalance : props.respiteBalance;
-                  const needsHouse =
-                    item.category === 'nft_collector_furniture' && !props.hasHouseOwnership;
-                  const canBuy =
-                    props.walletConnected &&
-                    !needsHouse &&
-                    (!isOwned || Boolean(item.interiorSlot)) &&
-                    quote.stock > 0 &&
-                    balance >= quote.buyPrice;
-
-                  return (
-                    <div
-                      key={item.id}
-                      data-quick-modal-item={item.id}
-                      className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex flex-col gap-2"
-                    >
-                      <div className="flex items-start gap-2">
-                        {item.category !== 'fishing_gear' ? (
-                          <div className="w-16 shrink-0 border border-white/30 overflow-hidden">
-                            <Furniture3dThumbnail
-                              catalogId={item.id}
-                              name={item.name}
-                              iconEmoji={item.iconEmoji}
-                              size="compact"
-                              onInspect={
-                                props.onInspectFurniture
-                                  ? () => props.onInspectFurniture!(item)
-                                  : undefined
-                              }
-                            />
-                          </div>
-                        ) : (
-                          <div className="w-10 h-10 shrink-0 bg-[#1e293b] border border-white/30 flex items-center justify-center">
-                            <ShoppingBag className="w-4 h-4 text-[#38bdf8]" aria-hidden="true" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-[10.5px] font-black uppercase text-white truncate">
-                            {item.name}
-                          </div>
-                          <div className="text-[9.5px] font-bold text-slate-300 mt-0.5">
-                            {quote.buyPrice} {item.currency} · Stock {quote.stock}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-1.5 mt-auto">
-                        {props.onInspectFurniture && item.category !== 'fishing_gear' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              props.onInspectFurniture!(item);
-                            }}
-                            className="px-2 py-1 bg-[#1e293b] hover:bg-[#334155] text-white border border-white/30 text-[9px] font-black uppercase cursor-pointer"
-                          >
-                            3D VIEW
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={!canBuy || busyItemId === item.id}
-                          onClick={async () => {
-                            if (!canBuy) return;
-                            soundEngine.playPickup();
-                            setBusyItemId(item.id);
-                            setItemFeedback(null);
-                            try {
-                              const res = await props.onBuyMerchantItem(item, quote.buyPrice);
-                              const text = res.ok
-                                ? `Bought ${item.name} (${quote.buyPrice} ${item.currency}).`
-                                : 'Purchase failed — your balance was not charged.';
-                              setItemFeedback({
-                                ok: res.ok,
-                                text,
-                                txHash: res.txHash,
-                                explorerUrl: res.explorerUrl,
-                              });
-                              props.onNotifySpeech(text);
-                            } finally {
-                              setBusyItemId(null);
-                            }
-                          }}
-                          className={`ml-auto px-2.5 py-1 border-2 border-black text-[9.5px] font-black uppercase ${
-                            canBuy && busyItemId !== item.id
-                              ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                              : 'bg-slate-600 text-slate-300 cursor-not-allowed'
-                          }`}
-                        >
-                          {busyItemId === item.id
-                            ? 'BUYING...'
-                            : needsHouse
-                              ? 'NEEDS HOUSE'
-                              : isOwned && !item.interiorSlot
-                                ? 'OWNED'
-                                : `BUY ${quote.buyPrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {modalTab === 'items' && <QuickShopItemsPanel {...props} />}
         </div>
       </div>
     </div>
