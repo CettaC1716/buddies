@@ -98,7 +98,7 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
       aria-modal="true"
       aria-label="Confirm transaction in your in-game wallet"
       data-ingame-wallet-confirm="true"
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/70 p-4 select-none"
+      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/70 p-4 select-none"
     >
       <div className="relative w-full max-w-sm bg-white border-[4px] border-[#0d0f12] shadow-[8px_8px_0px_#0d0f12] p-5 text-[#0d0f12]">
         <div className="border-b-[3px] border-[#0d0f12] pb-3">
