@@ -4199,6 +4199,7 @@ export interface LoadedBlitzAssets {
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
   jumpClip: THREE.AnimationClip | null;
+  scooterBikeClip: THREE.AnimationClip | null;
   jumpIdleClip: THREE.AnimationClip | null;
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
@@ -4448,6 +4449,35 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
+  // Scooter bike riding idle: a user-supplied seated take, retargeted onto
+  // the Mixamo rig offline and shipped as an animation-only GLB whose track
+  // names match the character bones. Played for electric scooter bike
+  // riders instead of the generic sitting clip.
+  const loadScooterBikeClip = (): Promise<THREE.AnimationClip | null> =>
+    trackAssetTask(
+      (async () => {
+        try {
+          const res = await fetch('/assets/scooter-bike-idle.glb');
+          if (!res.ok) return null;
+          const buf = await res.arrayBuffer();
+          const gltf = await new GLTFLoader().parseAsync(buf, '');
+          const raw = gltf.animations?.[0];
+          if (!raw) return null;
+          raw.name = 'scooter_bike_idle.001';
+          return raw;
+        } catch (err) {
+          console.warn('[PreloadGate] Scooter bike clip failed to load:', err);
+          return null;
+        }
+      })(),
+    );
+  const scooterBikeClipPromise = loadScooterBikeClip();
+  scooterBikeClipPromise
+    .then((c) => {
+      loadedScooterBikeClip = c;
+    })
+    .catch(() => {});
+
   // Standing-jump variant of the take above (user-supplied, in-place: its hip
   // track has almost no travel). Height arc on Z is -72.8..-29.5cm (0.295..0.728
   // in rig units); rescaled onto the same baked 0.38..0.65 range as the run jump.
@@ -4687,6 +4717,7 @@ export async function loadAllRealBlitzAssets(
     loadFoliageTex(),
     sleepingClipPromise,
     jumpClipPromise,
+    scooterBikeClipPromise,
     jumpIdleClipPromise,
     idleClipPromise,
     kaiIdleClipPromise,
@@ -4735,6 +4766,7 @@ export async function loadAllRealBlitzAssets(
       treeFoliageTex,
       sleepingClip,
       jumpClip,
+      scooterBikeClip,
       jumpIdleClip,
       idleClip,
       kaiIdleClip,
@@ -4785,6 +4817,7 @@ export async function loadAllRealBlitzAssets(
         treeFoliageTex,
         sleepingClip,
         jumpClip,
+        scooterBikeClip,
         jumpIdleClip,
         idleClip,
         kaiIdleClip,
@@ -4814,6 +4847,7 @@ const pendingBushLeafMaskMaterials = new Set<THREE.ShaderMaterial>();
 // must already see the sleeping clip at build time.
 let loadedSleepingClip: THREE.AnimationClip | null = null;
 let loadedJumpClip: THREE.AnimationClip | null = null;
+let loadedScooterBikeClip: THREE.AnimationClip | null = null;
 let loadedJumpIdleClip: THREE.AnimationClip | null = null;
 let loadedIdleClip: THREE.AnimationClip | null = null;
 let loadedKaiIdleClip: THREE.AnimationClip | null = null;
@@ -10444,6 +10478,20 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('unarmed_jump.001', c);
   }
+  // Merge the scooter bike riding idle (user-supplied take retargeted onto
+  // this rig), with the same track filtering as the baked clips. The take
+  // carries no Hips.position track, so rider height stays with the seat lift.
+  const scooterBikeClipSrc = loadedScooterBikeClip ?? cachedLoadedBlitzAssets?.scooterBikeClip;
+  if (scooterBikeClipSrc && !clips.has('scooter_bike_idle.001')) {
+    const c = scooterBikeClipSrc.clone();
+    c.name = 'scooter_bike_idle.001';
+    c.tracks = c.tracks.filter((track) => {
+      const dotIdx = track.name.indexOf('.');
+      const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+      return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+    });
+    if (c.tracks.length) clips.set('scooter_bike_idle.001', c);
+  }
   const jumpIdleClipSrc = loadedJumpIdleClip ?? cachedLoadedBlitzAssets?.jumpIdleClip;
   if (jumpIdleClipSrc && !clips.has('unarmed_jump_idle.001')) {
     const c = jumpIdleClipSrc.clone();
@@ -11149,6 +11197,7 @@ function stepCharBuddiesGlbRigController(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
+  scooterBikeRide = false,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -11291,6 +11340,9 @@ function stepCharBuddiesGlbRigController(
     ctrl.clips.has('driving.001')
   ) {
     targetClip = 'driving.001';
+    timeScale = 1.0;
+  } else if (scooterBikeRide && ctrl.clips.has('scooter_bike_idle.001')) {
+    targetClip = 'scooter_bike_idle.001';
     timeScale = 1.0;
   } else if (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sleeping.001')) {
     targetClip = 'sleeping.001';
@@ -11964,6 +12016,7 @@ export function updateCharacterWeaponStance(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
+  scooterBikeRide = false,
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -11987,6 +12040,7 @@ export function updateCharacterWeaponStance(
       isSitting,
       isDriving,
       isSleeping,
+      scooterBikeRide,
     );
   }
   if (

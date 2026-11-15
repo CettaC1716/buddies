@@ -20779,6 +20779,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsSitting,
                 unitIsDriving,
                 unitIsSleeping,
+                b.isPlayer && scooterRideState?.kind === 'electric_scooter_bike',
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -23583,6 +23584,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerSpeed,
               peer.isSitting,
               peer.isDriving,
+              false,
+              peer.scooterKind === 'electric_scooter_bike',
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
