@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Guest Preview</title>
+<style>body{margin:0;background:#191c22;overflow:hidden}canvas{display:block}#label{position:fixed;top:10px;left:12px;color:#fff;font:14px system-ui;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:8px}</style>
+<script type="importmap">
+{"imports":{"three":"/preview-lib/three.module.js","three/addons/":"/preview-lib/addons/"}}
+</script>
+</head>
+<body>
+<div id="label">loading</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const params = new URLSearchParams(location.search);
+const orig = params.get('orig') === '1';
+document.getElementById('label').textContent = orig ? 'guest: ORIGINAL textures' : 'guest: BAKED (posterized) textures';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#232833');
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 1.25, 4.6);
+camera.lookAt(0, 0.92, 0);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a6f4d, 1.15));
+const key = new THREE.DirectionalLight(0xfff2dd, 2.2);
+key.position.set(2.5, 4, 3);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5);
+fill.position.set(-3, 2, -2);
+scene.add(fill);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(6, 40),
+  new THREE.MeshStandardMaterial({ color: '#b08954', roughness: 1 }),
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const gradientData = new Uint8Array([96, 148, 198, 255]);
+const gradientMap = new THREE.DataTexture(gradientData, 4, 1, THREE.RedFormat);
+gradientMap.minFilter = THREE.NearestFilter;
+gradientMap.magFilter = THREE.NearestFilter;
+gradientMap.needsUpdate = true;
+
+const loader = new GLTFLoader();
+const mixers = [];
+const clock = new THREE.Clock();
+
+function toonify(root) {
+  root.traverse((obj) => {
+    if (obj.isSkinnedMesh) {
+      obj.frustumCulled = false;
+      const src = obj.material;
+      if (src && !Array.isArray(src)) {
+        obj.material = new THREE.MeshToonMaterial({
+          map: src.map ?? null,
+          color: src.color ? src.color.clone() : new THREE.Color('#ffffff'),
+          gradientMap,
+        });
+      }
+    }
+  });
+}
+
+const guestUrl = orig ? '/preview-lib/cafe-guest-original.glb' : '/assets/cafe-guest.glb';
+loader.load(guestUrl, (gltf) => {
+  toonify(gltf.scene);
+  const root = new THREE.Group();
+  root.position.set(0.95, 0, 0);
+  root.scale.setScalar(1.16);
+  root.add(gltf.scene);
+  scene.add(root);
+  const mixer = new THREE.AnimationMixer(gltf.scene);
+  mixer.clipAction(gltf.animations[0]).setLoop(THREE.LoopRepeat, Infinity).play();
+  mixers.push(mixer);
+});
+
+loader.load('/assets/mancharacterbuddies.glb', (gltf) => {
+  const root = new THREE.Group();
+  root.position.set(-0.95, 0, 0);
+  root.rotation.y = Math.PI;
+  root.scale.setScalar(1.878); // 0.98 raw -> 1.84, the cafe NPC height
+  root.add(gltf.scene);
+  scene.add(root);
+  const idle = gltf.animations.find((a) => a.name === 'idle.001');
+  if (idle) {
+    const mixer = new THREE.AnimationMixer(gltf.scene);
+    mixer.clipAction(idle).setLoop(THREE.LoopRepeat, Infinity).play();
+    mixers.push(mixer);
+  }
+});
+
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  mixers.forEach((m) => m.update(dt));
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
