@@ -12,6 +12,7 @@ import {
   Backpack,
   Package,
   Play,
+  Music,
   Volume2,
   VolumeX,
   LogIn,
@@ -611,6 +612,7 @@ export default function App() {
   const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('day');
   const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'ortho18'>('webgl35');
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isMusicMuted, setIsMusicMuted] = useState<boolean>(false);
   const [audioVolumePct, setAudioVolumePct] = useState<number>(100);
   const [showJoystickOnDesktop, setShowJoystickOnDesktop] = useState<boolean>(() => {
     try {
@@ -1816,6 +1818,18 @@ export default function App() {
       );
       soundEngine.playUiClick();
     }
+  }, []);
+
+  const handleToggleMusic = useCallback(() => {
+    const nextMusicMuted = !soundEngine.musicMuted;
+    soundEngine.musicMuted = nextMusicMuted;
+    setIsMusicMuted(nextMusicMuted);
+    if (!nextMusicMuted && !soundEngine.muted) {
+      soundEngine.startBgm(
+        hudRef.current.worldMode === 'warzone' ? 'warzone' : 'city',
+      );
+    }
+    soundEngine.playUiClick();
   }, []);
 
   const handleChangeVolumePct = useCallback((nextPct: number) => {
@@ -5125,6 +5139,24 @@ export default function App() {
                 type="button"
                 onClick={(e) => {
                   e.currentTarget.blur();
+                  handleToggleMusic();
+                }}
+                aria-label={isMusicMuted ? 'Unmute Music' : 'Mute Music'}
+                className="-skew-x-6 w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+              >
+                <span className="skew-x-6 relative flex items-center justify-center">
+                  <Music
+                    className={`w-4 h-4 ${isMusicMuted ? 'text-slate-300' : 'text-[#b8ff3c]'}`}
+                  />
+                  {isMusicMuted && (
+                    <span className="absolute w-5 h-[2px] bg-red-400 rotate-[-45deg] rounded" />
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
                   handleToggleAudio();
                 }}
                 aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
@@ -7067,7 +7099,7 @@ export default function App() {
               3F. BOTTOM-LEFT: SOCIAL TALK CHAT INPUT BAR + PRIVATE NOTIFICATION TOAST
              ================================================================= */}
           {playMode !== 'editor' && (
-            <div className="fixed bottom-3 left-4 z-30 w-[calc(100vw-2rem)] max-w-[540px] pointer-events-auto flex flex-col items-end">
+            <div data-buddies-chat-bar="true" className="fixed bottom-3 left-4 z-30 w-[calc(100vw-2rem)] max-w-[540px] pointer-events-auto flex flex-col items-end">
               {/* Incoming Private Chat Notification Popup (Hidden during active NPC Dialogue) */}
               {activeSpecialModal !== 'npc_merchant' && activePrivateNotificationToast && (
                 <button

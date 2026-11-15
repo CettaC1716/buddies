@@ -431,6 +431,7 @@ class SoundEngine {
   private static readonly LOOP_FADE_MS = 180;
 
   private _muted = false;
+  private _musicMuted = false;
   private _masterVolume = 1.0;
 
   public get muted(): boolean {
@@ -454,7 +455,7 @@ class SoundEngine {
       }
       if (this.ctx && this.bgmBusGain) {
         this.bgmBusGain.gain.setTargetAtTime(
-          this.bgmVolume * this._masterVolume,
+          this._musicMuted ? 0 : this.bgmVolume * this._masterVolume,
           this.ctx.currentTime,
           0.08,
         );
@@ -464,6 +465,32 @@ class SoundEngine {
       }
     }
     this.syncSessionMusicPlayback();
+  }
+
+  /** Music-only mute: silences the BGM buses and session tracks while
+   *  leaving UI clicks and every other SFX under the master `muted` flag. */
+  public get musicMuted(): boolean {
+    return this._musicMuted;
+  }
+
+  public set musicMuted(val: boolean) {
+    this._musicMuted = Boolean(val);
+    if (this.ctx && this.bgmBusGain) {
+      this.bgmBusGain.gain.setTargetAtTime(
+        this.musicSilent ? 0 : this.bgmVolume * this._masterVolume,
+        this.ctx.currentTime,
+        0.05,
+      );
+    }
+    if (!this._musicMuted && this.bgmStarted) {
+      this.ensureBgmSchedulerRunning();
+    }
+    this.syncSessionMusicPlayback();
+  }
+
+  /** Music is silent when either the master mute or the music mute is on. */
+  private get musicSilent(): boolean {
+    return this._muted || this._musicMuted;
   }
 
   public get masterVolume(): number {
@@ -480,7 +507,7 @@ class SoundEngine {
     }
     if (this.ctx && this.bgmBusGain) {
       this.bgmBusGain.gain.setTargetAtTime(
-        this._muted ? 0 : this.bgmVolume * this._masterVolume,
+        this.musicSilent ? 0 : this.bgmVolume * this._masterVolume,
         this.ctx.currentTime,
         0.05,
       );
@@ -559,17 +586,17 @@ class SoundEngine {
   }
 
   private applySessionAudioVolumes(): void {
-    const baseVolume = this._muted
+    const baseVolume = this.musicSilent
       ? 0
       : clamp(this.bgmVolume * this._masterVolume * 0.95, 0, 1);
     const effectiveVolume = clamp(baseVolume * this.sessionFadeMultiplier, 0, 1);
 
     if (this.landingBgmAudio) {
-      this.landingBgmAudio.muted = this._muted;
+      this.landingBgmAudio.muted = this.musicSilent;
       this.landingBgmAudio.volume = effectiveVolume;
     }
     if (this.ingameBgmAudio) {
-      this.ingameBgmAudio.muted = this._muted;
+      this.ingameBgmAudio.muted = this.musicSilent;
       this.ingameBgmAudio.volume = effectiveVolume;
     }
   }
@@ -605,7 +632,7 @@ class SoundEngine {
           } catch {
             // ignore seek error if not buffered yet
           }
-          if (!this._muted && this.sessionMusicTrack !== 'none' && audio.paused) {
+          if (!this.musicSilent && this.sessionMusicTrack !== 'none' && audio.paused) {
             audio.play().catch(() => {});
           }
           phase = 'in';
@@ -632,7 +659,7 @@ class SoundEngine {
     if (this.sessionLoopMonitorId !== null || typeof window === 'undefined') return;
     const fadeLeadSec = SoundEngine.LOOP_FADE_MS / 1000;
     this.sessionLoopMonitorId = setInterval(() => {
-      if (this._muted || this.sessionMusicTrack === 'none') return;
+      if (this.musicSilent || this.sessionMusicTrack === 'none') return;
       this.ensureSessionBgmFilterChain();
 
       if (this.sessionMusicTrack === 'landing' && this.landingBgmAudio && !this.landingBgmAudio.paused) {
@@ -752,7 +779,7 @@ class SoundEngine {
     this.ensureSessionBgmFilterChain();
     this.applySessionAudioVolumes();
 
-    if (this._muted || this.sessionMusicTrack === 'none') {
+    if (this.musicSilent || this.sessionMusicTrack === 'none') {
       this.stopSessionLoopMonitor();
       if (this.landingBgmAudio && !this.landingBgmAudio.paused) {
         this.landingBgmAudio.pause();
@@ -874,7 +901,7 @@ class SoundEngine {
     this.bgmMode = nextMode;
     const nextBarStep = Math.ceil(this.bgmStepIndex / 16) * 16;
     this.bgmStepIndex = nextBarStep % 128;
-    if (this.bgmStarted && !this._muted) {
+    if (this.bgmStarted && !this.musicSilent) {
       this.ensureBgmSchedulerRunning();
     }
   }
@@ -969,7 +996,7 @@ class SoundEngine {
 
           const bgmGain = this.ctx.createGain();
           bgmGain.gain.setValueAtTime(
-            this._muted ? 0 : this.bgmVolume * this._masterVolume,
+            this.musicSilent ? 0 : this.bgmVolume * this._masterVolume,
             this.ctx.currentTime,
             );
           bgmFilter.connect(bgmGain);
@@ -986,7 +1013,7 @@ class SoundEngine {
       this.preloadStarted = true;
       this.preloadAllBlitzSamples();
     }
-    if (this.ctx && this.bgmStarted && !this._muted && this.bgmTimerId === null) {
+    if (this.ctx && this.bgmStarted && !this.musicSilent && this.bgmTimerId === null) {
       this.startBgmSchedulerForCtx(this.ctx);
     }
     return this.ctx;
@@ -1027,13 +1054,13 @@ class SoundEngine {
     // Dedicated session MP3 soundtracks (Landing & In-Game) replace procedural synth BGM
     this.clearBgmScheduler();
     this.syncSessionMusicPlayback();
-    if (!this.bgmStarted || this._muted || this.sessionMusicTrack !== 'none' || this.bgmUnlockBound) {
+    if (!this.bgmStarted || this.musicSilent || this.sessionMusicTrack !== 'none' || this.bgmUnlockBound) {
       return;
     }
     if (this.bgmTimerId !== null) return;
     this.bgmNextNoteTime = ctx.currentTime + 0.06;
     this.bgmTimerId = setInterval(() => {
-      if (!this.bgmStarted || this._muted || !this.ctx) {
+      if (!this.bgmStarted || this.musicSilent || !this.ctx) {
         this.clearBgmScheduler();
         return;
       }

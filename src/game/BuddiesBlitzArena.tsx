@@ -13571,6 +13571,51 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           return;
         }
 
+        // 5c. Vehicles (Warzone): [E] is the universal interact key — it
+        // mounts and dismounts tanks, trucks and planes (formerly [G]).
+        // In a flying plane [E] keeps its climb job; on the ground it
+        // dismounts. On foot it mounts the nearest free vehicle in range
+        // when both hands are empty.
+        if (worldModeRef.current === 'warzone' && mountedTank) {
+          if (
+            mountedTank.vehicleKind === 'plane' &&
+            (mountedTank.targetAltitude ?? 0) > 0
+          ) {
+            mountedTank.targetAltitude = Math.min(
+              14.5,
+              Math.max(12.2, (mountedTank.targetAltitude ?? 0) + 4.5),
+            );
+            mountedTank.forwardSpeed = Math.max(mountedTank.forwardSpeed ?? 0, 8.5);
+          } else {
+            handleToggleMountTank();
+          }
+          return;
+        }
+        if (
+          worldModeRef.current === 'warzone' &&
+          !mountedTank &&
+          playerUnit &&
+          playerUnit.alive &&
+          playerUnit.carryingCrate === 'none'
+        ) {
+          let nearVehicle = false;
+          for (const t of tanks) {
+            if (
+              !t.occupiedByPlayer &&
+              t.hp > 0 &&
+              t.root.visible &&
+              getPlanetShortestDistance(t.x, t.z, playerUnit.x, playerUnit.z) < 3.8
+            ) {
+              nearVehicle = true;
+              break;
+            }
+          }
+          if (nearVehicle) {
+            handleToggleMountTank();
+            return;
+          }
+        }
+
         // 6. Plane altitude or Crate Pickup
         if (mountedTank && mountedTank.vehicleKind === 'plane') {
           mountedTank.targetAltitude = Math.min(14.5, Math.max(12.2, (mountedTank.targetAltitude ?? 0) + 4.5));
@@ -13588,9 +13633,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (e.code === 'KeyX') {
         e.preventDefault();
         handleUseSecondaryOrdnance();
-      } else if (e.code === 'KeyG') {
-        e.preventDefault();
-        handleToggleMountTank();
       } else if (e.code === 'KeyQ') {
         e.preventDefault();
         handleCycleBuildOrder();
@@ -25351,12 +25393,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Rounded bar aligned with the bottom-left chat bar: on desktop it shares
       // the chat row, docked right beside the chat bar on the same baseline; on
       // tablet & mobile it moves one row above the chat bar so the two never
-      // collide. Chat bar metrics: left 16px, bottom 12px, width
-      // min(100vw - 32px, 512px), ~46px tall (row centre ~= h - 35).
-      const chatBarRightEdge = 16 + Math.min(w - 32, 512);
+      // collide. The chat bar is measured live from the App DOM (its
+      // width is set there, currently up to 540px); the old 512px
+      // constant drifted and let the dock overlap the chat bar.
+      const chatBarEl = document.querySelector('[data-buddies-chat-bar="true"]');
+      const chatRect = chatBarEl?.getBoundingClientRect();
+      const chatBarRightEdge =
+        chatRect && chatRect.width > 0 ? chatRect.right : 16 + Math.min(w - 32, 512);
+      const chatRowCentreY =
+        chatRect && chatRect.height > 0 ? chatRect.bottom - 24 : h - 35;
       const bottomDockTransform =
         w >= 1024
-          ? `translate3d(${chatBarRightEdge + 14}px, ${h - 35}px, 0) translate(0, -50%)`
+          ? `translate3d(${chatBarRightEdge + 14}px, ${chatRowCentreY}px, 0) translate(0, -50%)`
           : `translate3d(${Math.round(w * 0.5)}px, ${h - 92}px, 0) translate(-50%, -50%)`;
       let bottomDockOccupied = npcCameraMode === 'none' && Boolean(selectedCharacterTarget);
       const claimBottomDock = (btn: HTMLButtonElement): boolean => {
