@@ -11675,8 +11675,9 @@ function stepCharBuddiesGlbRigController(
 
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
-  const isSeatedOrPiloting =
-    Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping || Boolean(scooterRidePose);
+  // NOTE: scooterRidePose must NOT join this flag — folding it in disabled
+  // the upright Hips/Spine stabilization below and laid riders flat.
+  const isSeatedOrPiloting = Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping;
   if (!isSeatedOrPiloting) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving
