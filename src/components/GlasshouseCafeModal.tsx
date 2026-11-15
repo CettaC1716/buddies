@@ -589,6 +589,25 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
   onLeaveShiftQueue,
   onOpenAtmModal,
 }) => {
+  // Dock to the measured right edge of the world chat bar on desktop —
+  // the same shared bottom-bar slot the in-world prompt buttons use.
+  const [dockLeftPx, setDockLeftPx] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isVisible) return;
+    const measure = () => {
+      if (window.innerWidth < 1024) {
+        setDockLeftPx(null);
+        return;
+      }
+      const chatBarEl = document.querySelector('[data-buddies-chat-bar="true"]');
+      const chatRect = chatBarEl?.getBoundingClientRect();
+      setDockLeftPx(chatRect && chatRect.width > 0 ? Math.round(chatRect.right) + 14 : null);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [isVisible]);
+
   if (!isVisible) return null;
 
   const hasOtherActiveWorker = Boolean(shiftState.otherActiveWorker);
@@ -601,7 +620,8 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
     <aside
       aria-label="Cafe Work Shift"
       data-cafe-giliran-kerja-dock="true"
-      className="fixed bottom-[70px] left-1/2 -translate-x-1/2 lg:bottom-3 lg:left-[542px] lg:translate-x-0 z-40 flex flex-col items-center lg:items-start gap-1.5 pointer-events-auto select-none"
+      className="fixed bottom-[70px] left-1/2 -translate-x-1/2 lg:bottom-3 lg:left-[570px] lg:translate-x-0 z-40 flex flex-col items-center lg:items-start gap-1.5 pointer-events-auto select-none"
+      style={dockLeftPx !== null ? { left: dockLeftPx } : undefined}
     >
       {/* Upward Expanded Action Stack */}
       {isExpanded && (
