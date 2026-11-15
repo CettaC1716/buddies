@@ -2509,7 +2509,7 @@ export default function App() {
                 target: 'coord',
                 x: guide.finalX,
                 z: guide.finalZ,
-                color: '#fec83e',
+                color: '#22ff5e',
               },
             }),
           );
@@ -8274,14 +8274,14 @@ export default function App() {
               className="fixed left-1/2 top-[76px] z-40 -translate-x-1/2 pointer-events-none select-none"
             >
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[#14161d]/95 text-white border-2 border-black shadow-[3px_3px_0_#000]">
-                <span className="w-2 h-2 shrink-0 bg-[#fec83e] border border-black animate-pulse" />
+                <span className="w-2 h-2 shrink-0 bg-[#22ff5e] border border-black animate-pulse" />
                 <span className="text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
                   {missionGuide.stage === 'to_kiosk'
                     ? 'Go to a Teleport Kiosk'
                     : missionGuide.title}
                 </span>
                 {missionGuide.stage === 'direct' && missionGuideDistanceM != null && (
-                  <span className="text-[10px] font-black text-[#fec83e] tabular-nums whitespace-nowrap">
+                  <span className="text-[10px] font-black text-[#22ff5e] tabular-nums whitespace-nowrap">
                     {missionGuideDistanceM} m
                   </span>
                 )}
@@ -11601,8 +11601,8 @@ export default function App() {
           window.dispatchEvent(
             new CustomEvent('set-tutorial-waypoint', {
               detail: farGuide
-                ? { target: 'kiosk', color: '#fec83e' }
-                : { target: 'coord', x: finalX, z: finalZ, color: '#fec83e' },
+                ? { target: 'kiosk', color: '#22ff5e' }
+                : { target: 'coord', x: finalX, z: finalZ, color: '#22ff5e' },
             }),
           );
         }}
