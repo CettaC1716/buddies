@@ -3,8 +3,15 @@ import assert from 'node:assert/strict';
 
 import {
   computeKickScooterRidePose,
+  computeScooterRiderRigPose,
   kickScooterStrideLengthM,
 } from './buddiesScooterRidePose';
+import {
+  SCOOTER_HANDLEBAR_SPECS,
+  SCOOTER_RIDE_MODEL_SCALE,
+  SCOOTER_RIDER_BACK_OFFSET_M,
+  SCOOTER_RIDER_LIFT_M,
+} from './buddiesUrbanScooterRules';
 
 function closeTo(actual: number, expected: number, epsilon = 1e-6): void {
   assert.ok(
@@ -65,4 +72,102 @@ test('lengthens the stride with speed within bounds', () => {
   closeTo(kickScooterStrideLengthM(0), 2.4, 1e-9);
   closeTo(kickScooterStrideLengthM(4), 3.22, 1e-9);
   closeTo(kickScooterStrideLengthM(20), 4.6, 1e-9);
+});
+
+test('electric_scooter_bike rig pose matches 2x saddle, floorboard, and steered handlebar grips', () => {
+  const straight = computeScooterRiderRigPose({
+    kind: 'electric_scooter_bike',
+    distanceM: 0,
+    speedMps: 0,
+    mountBlend: 1,
+    steerAngleRad: 0,
+  });
+  closeTo(straight.seatLiftY, SCOOTER_RIDER_LIFT_M.electric_scooter_bike, 1e-6);
+  closeTo(straight.seatBackOffsetZ, SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike, 1e-6);
+
+  // Convert bodyGroup-local back into scooter-world coordinates
+  const worldLeftGripY = straight.leftGripBodyLocal.y + straight.seatLiftY;
+  const worldLeftGripZ = straight.leftGripBodyLocal.z + straight.seatBackOffsetZ;
+  closeTo(straight.leftGripBodyLocal.x, 0.524, 1e-3);
+  closeTo(worldLeftGripY, 2.184, 1e-3);
+  closeTo(worldLeftGripZ, 0.48, 1e-3);
+
+  const worldLeftFootY = straight.leftFootSoleBodyLocal.y + straight.seatLiftY;
+  const worldLeftFootZ = straight.leftFootSoleBodyLocal.z + straight.seatBackOffsetZ;
+  closeTo(worldLeftFootY, 0.49, 1e-3);
+  assert.ok(worldLeftFootZ > -0.2 && worldLeftFootZ < 0.45, 'feet stay squarely on bike floorboard');
+
+  // Turning left (+steer > 0) pulls left grip back, pushes right grip forward, leans left (<0 roll)
+  const leftTurn = computeScooterRiderRigPose({
+    kind: 'electric_scooter_bike',
+    distanceM: 12,
+    speedMps: 7,
+    mountBlend: 1,
+    steerAngleRad: 0.25,
+    spec: {
+      modelScale: SCOOTER_RIDE_MODEL_SCALE,
+      seatLiftY: SCOOTER_RIDER_LIFT_M.electric_scooter_bike,
+      seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike,
+      handlebar: SCOOTER_HANDLEBAR_SPECS.electric_scooter_bike,
+    },
+  });
+  assert.ok(leftTurn.leftGripBodyLocal.z < straight.leftGripBodyLocal.z);
+  assert.ok(leftTurn.rightGripBodyLocal.z > straight.rightGripBodyLocal.z);
+  assert.ok(leftTurn.leanRollZ < 0 && Math.abs(leftTurn.leanRollZ) <= 0.14);
+  assert.ok(leftTurn.headLookYawRad > 0);
+});
+
+test('push_kick_scooter rig pose locks left foot on deck and grounds push stroke cleanly', () => {
+  const speed = 3.6;
+  const stride = kickScooterStrideLengthM(speed);
+
+  const midPush = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: stride * 0.22,
+    speedMps: speed,
+    mountBlend: 1,
+    steerAngleRad: 0,
+    isThrottleActive: true,
+    pushActivity: 1,
+  });
+  assert.equal(midPush.isPushing, true);
+  assert.ok(midPush.dipY >= 0.22, 'hips dip deeply enough on deck leg so pushing shoe reaches ground');
+  closeTo(midPush.leftFootSoleBodyLocal.y + midPush.seatLiftY, 0.228, 1e-3);
+  closeTo(midPush.rightFootSoleBodyLocal.y + midPush.seatLiftY, 0, 1e-3);
+
+  // World T-bar grip Y matches slanted kick stem 2x height (~1.968m)
+  closeTo(midPush.leftGripBodyLocal.y + midPush.seatLiftY, 1.968374, 1e-3);
+
+  const midRecovery = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: stride * 0.72,
+    speedMps: speed,
+    mountBlend: 1,
+    steerAngleRad: 0,
+    isThrottleActive: true,
+    pushActivity: 1,
+  });
+  assert.equal(midRecovery.isPushing, false);
+  const recoveryFootWorldY = midRecovery.rightFootSoleBodyLocal.y + midRecovery.seatLiftY;
+  assert.ok(recoveryFootWorldY > 0.18, 'recovery swing lifts pushing foot clear above asphalt');
+
+  const coast = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: 10,
+    speedMps: 3.0,
+    mountBlend: 1,
+    isThrottleActive: false,
+    pushActivity: 0,
+  });
+  closeTo(coast.rightFootSoleBodyLocal.y + coast.seatLiftY, 0.228, 1e-3);
+
+  const brake = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: 10,
+    speedMps: 3.0,
+    mountBlend: 1,
+    isBraking: true,
+    pushActivity: 0,
+  });
+  assert.ok(brake.rightFootSoleBodyLocal.z < -0.3 && brake.rightFootPitchRad < -0.1);
 });

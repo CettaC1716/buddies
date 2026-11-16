@@ -21,6 +21,7 @@ import {
   shouldStripDetachedTreeBaseCollar,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
 } from './buddiesBlitzRules';
+import type { ScooterRiderRigPose } from './buddiesScooterRidePose';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 import { buildGrandCasino3D } from './buddiesGrandCasinoBuilder';
 import {
@@ -7894,6 +7895,10 @@ export interface CharBuddiesGlbRigController {
   fireDuration: number;
   baseRootY: number;
   standingSoleOffsetY: number;
+  bindAnkleHeightY: number;
+  bindFootDropPitchRad: number;
+  bindFootBallLenM: number;
+  bindPalmOffsetM: number;
   rightHandLocalPos: THREE.Vector3;
   leftHandLocalPos: THREE.Vector3;
   rightHandGripAxisLocal: THREE.Vector3;
@@ -10780,25 +10785,426 @@ function fadeToCharBuddiesAction(
   ctrl.activeClipName = clipName;
 }
 
-const _rideDeltaEuler = new THREE.Euler();
-const _rideDeltaQuat = new THREE.Quaternion();
-const _rideTargetQuat = new THREE.Quaternion();
+const _scooterIkBodyPosA = new THREE.Vector3();
+const _scooterIkBodyPosB = new THREE.Vector3();
+const _scooterIkWorldTarget = new THREE.Vector3();
+const _scooterIkWorldPole = new THREE.Vector3();
+const _scooterIkRootPos = new THREE.Vector3();
+const _scooterIkMidPos = new THREE.Vector3();
+const _scooterIkEndPos = new THREE.Vector3();
+const _scooterIkToTarget = new THREE.Vector3();
+const _scooterIkBendAxis = new THREE.Vector3();
+const _scooterIkDesMid = new THREE.Vector3();
+const _scooterIkDesEnd = new THREE.Vector3();
+const _scooterIkCurDir = new THREE.Vector3();
+const _scooterIkDesDir = new THREE.Vector3();
+const _scooterIkSideCur = new THREE.Vector3();
+const _scooterIkSideDes = new THREE.Vector3();
+const _scooterIkOrigRootQ = new THREE.Quaternion();
+const _scooterIkOrigMidQ = new THREE.Quaternion();
+const _scooterIkOrigBoneQ = new THREE.Quaternion();
+const _scooterIkWorldDeltaQ = new THREE.Quaternion();
+const _scooterIkParentWorldQ = new THREE.Quaternion();
+const _scooterIkParentInvQ = new THREE.Quaternion();
+const _scooterIkLocalDeltaQ = new THREE.Quaternion();
+const _scooterIkBodyWorldQ = new THREE.Quaternion();
+const _scooterIkWorldAxis = new THREE.Vector3();
 
-/** Applies a small local-space Euler pose delta on top of a bone's clip pose. */
-function applyRideBoneDelta(
-  ctrl: CharBuddiesGlbRigController,
-  boneShortName: string,
-  x: number,
-  y: number,
-  z: number,
+const SCOOTER_LIMB_RESET_BONES = [
+  'LeftShoulder',
+  'RightShoulder',
+  'LeftArm',
+  'LeftForeArm',
+  'LeftHand',
+  'RightArm',
+  'RightForeArm',
+  'RightHand',
+  'LeftUpLeg',
+  'LeftLeg',
+  'LeftFoot',
+  'RightUpLeg',
+  'RightLeg',
+  'RightFoot',
+] as const;
+
+const SCOOTER_SPINE_RESET_BONES = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head'] as const;
+
+const SCOOTER_FINGER_BONE_SUFFIXES = [
+  'Index1',
+  'Index2',
+  'Index3',
+  'Middle1',
+  'Middle2',
+  'Middle3',
+  'Ring1',
+  'Ring2',
+  'Ring3',
+  'Pinky1',
+  'Pinky2',
+  'Pinky3',
+  'Thumb1',
+  'Thumb2',
+  'Thumb3',
+] as const;
+
+/** Rotates a bone around a bodyGroup-local axis regardless of skeleton rest-twist conventions. */
+function rotateBoneAroundBodyLocalAxis(
+  bodyGroup: THREE.Group,
+  bone: THREE.Bone,
+  axisBodyX: number,
+  axisBodyY: number,
+  axisBodyZ: number,
+  angleRad: number,
   blend: number,
 ) {
-  const bone = ctrl.bones.get(boneShortName);
-  if (!bone) return;
-  _rideDeltaEuler.set(x, y, z);
-  _rideDeltaQuat.setFromEuler(_rideDeltaEuler);
-  _rideTargetQuat.copy(bone.quaternion).multiply(_rideDeltaQuat);
-  bone.quaternion.slerp(_rideTargetQuat, blend);
+  if (!bone.parent || Math.abs(angleRad) < 1e-5 || blend <= 0.001) return;
+  bone.parent.updateWorldMatrix(true, false);
+  bodyGroup.getWorldQuaternion(_scooterIkBodyWorldQ);
+  _scooterIkWorldAxis
+    .set(axisBodyX, axisBodyY, axisBodyZ)
+    .applyQuaternion(_scooterIkBodyWorldQ)
+    .normalize();
+  _scooterIkWorldDeltaQ.setFromAxisAngle(_scooterIkWorldAxis, angleRad * blend);
+  bone.parent.getWorldQuaternion(_scooterIkParentWorldQ);
+  _scooterIkParentInvQ.copy(_scooterIkParentWorldQ).invert();
+  _scooterIkLocalDeltaQ
+    .copy(_scooterIkParentInvQ)
+    .multiply(_scooterIkWorldDeltaQ)
+    .multiply(_scooterIkParentWorldQ);
+  bone.quaternion.premultiply(_scooterIkLocalDeltaQ);
+  bone.updateWorldMatrix(false, true);
+}
+
+/** Swings a bone so a world-space vector rigidly attached to it aligns with a desired world direction. */
+function swingBoneWorldVector(
+  bone: THREE.Bone,
+  curVecWorld: THREE.Vector3,
+  desVecWorld: THREE.Vector3,
+  blend = 1,
+) {
+  if (!bone.parent || curVecWorld.lengthSq() < 1e-6 || desVecWorld.lengthSq() < 1e-6) return;
+  _scooterIkCurDir.copy(curVecWorld).normalize();
+  _scooterIkDesDir.copy(desVecWorld).normalize();
+  _scooterIkOrigBoneQ.copy(bone.quaternion);
+  _scooterIkWorldDeltaQ.setFromUnitVectors(_scooterIkCurDir, _scooterIkDesDir);
+  bone.parent.getWorldQuaternion(_scooterIkParentWorldQ);
+  _scooterIkParentInvQ.copy(_scooterIkParentWorldQ).invert();
+  _scooterIkLocalDeltaQ
+    .copy(_scooterIkParentInvQ)
+    .multiply(_scooterIkWorldDeltaQ)
+    .multiply(_scooterIkParentWorldQ);
+  bone.quaternion.premultiply(_scooterIkLocalDeltaQ);
+  if (blend < 0.999) {
+    bone.quaternion.copy(_scooterIkOrigBoneQ).slerp(bone.quaternion, blend);
+  }
+  bone.updateWorldMatrix(false, true);
+}
+
+/**
+ * Analytic Two-Bone Pole-Vector IK in bodyGroup space. Handles both Female
+ * and Male Mixamo bone axis twists identically for arms and legs.
+ */
+function solveTwoBoneLimbPoleIkBodyLocal(
+  bodyGroup: THREE.Group,
+  rootBone: THREE.Bone | undefined,
+  midBone: THREE.Bone | undefined,
+  endBone: THREE.Bone | undefined,
+  targetBodyX: number,
+  targetBodyY: number,
+  targetBodyZ: number,
+  poleBodyX: number,
+  poleBodyY: number,
+  poleBodyZ: number,
+  blend: number,
+) {
+  if (!rootBone || !midBone || !endBone || !rootBone.parent || !midBone.parent) return;
+  bodyGroup.updateWorldMatrix(true, false);
+  _scooterIkWorldTarget.set(targetBodyX, targetBodyY, targetBodyZ).applyMatrix4(bodyGroup.matrixWorld);
+  _scooterIkWorldPole
+    .set(poleBodyX, poleBodyY, poleBodyZ)
+    .transformDirection(bodyGroup.matrixWorld)
+    .normalize();
+
+  _scooterIkOrigRootQ.copy(rootBone.quaternion);
+  _scooterIkOrigMidQ.copy(midBone.quaternion);
+
+  rootBone.parent.updateWorldMatrix(true, false);
+  rootBone.updateWorldMatrix(false, true);
+  rootBone.getWorldPosition(_scooterIkRootPos);
+  midBone.getWorldPosition(_scooterIkMidPos);
+  endBone.getWorldPosition(_scooterIkEndPos);
+
+  const l1 = _scooterIkMidPos.distanceTo(_scooterIkRootPos);
+  const l2 = _scooterIkEndPos.distanceTo(_scooterIkMidPos);
+  if (l1 < 1e-4 || l2 < 1e-4) return;
+
+  _scooterIkToTarget.copy(_scooterIkWorldTarget).sub(_scooterIkRootPos);
+  const rawDist = _scooterIkToTarget.length();
+  const minDist = Math.abs(l1 - l2) + 0.02;
+  const maxDist = l1 + l2 - 0.015;
+  const dist = Math.max(minDist, Math.min(maxDist, rawDist));
+  if (rawDist > 1e-5) {
+    _scooterIkToTarget.divideScalar(rawDist);
+  } else {
+    _scooterIkToTarget.set(0, -1, 0);
+  }
+
+  const cosAlpha = Math.max(-1, Math.min(1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)));
+  const sinAlpha = Math.sqrt(Math.max(0, 1 - cosAlpha * cosAlpha));
+
+  _scooterIkBendAxis
+    .copy(_scooterIkWorldPole)
+    .addScaledVector(_scooterIkToTarget, -_scooterIkWorldPole.dot(_scooterIkToTarget));
+  if (_scooterIkBendAxis.lengthSq() < 1e-5) {
+    _scooterIkBendAxis.set(0, 0, 1).cross(_scooterIkToTarget);
+    if (_scooterIkBendAxis.lengthSq() < 1e-5) {
+      _scooterIkBendAxis.set(1, 0, 0).cross(_scooterIkToTarget);
+    }
+  }
+  _scooterIkBendAxis.normalize();
+
+  _scooterIkDesMid
+    .copy(_scooterIkRootPos)
+    .addScaledVector(_scooterIkToTarget, l1 * cosAlpha)
+    .addScaledVector(_scooterIkBendAxis, l1 * sinAlpha);
+  _scooterIkDesEnd.copy(_scooterIkRootPos).addScaledVector(_scooterIkToTarget, dist);
+
+  _scooterIkCurDir.copy(_scooterIkMidPos).sub(_scooterIkRootPos);
+  _scooterIkDesDir.copy(_scooterIkDesMid).sub(_scooterIkRootPos);
+  swingBoneWorldVector(rootBone, _scooterIkCurDir, _scooterIkDesDir, 1);
+
+  midBone.getWorldPosition(_scooterIkMidPos);
+  endBone.getWorldPosition(_scooterIkEndPos);
+  _scooterIkCurDir.copy(_scooterIkEndPos).sub(_scooterIkMidPos);
+  _scooterIkDesDir.copy(_scooterIkDesEnd).sub(_scooterIkMidPos);
+  swingBoneWorldVector(midBone, _scooterIkCurDir, _scooterIkDesDir, 1);
+
+  if (blend < 0.999) {
+    rootBone.quaternion.copy(_scooterIkOrigRootQ).slerp(rootBone.quaternion, blend);
+    midBone.quaternion.copy(_scooterIkOrigMidQ).slerp(midBone.quaternion, blend);
+    rootBone.updateWorldMatrix(false, true);
+  }
+}
+
+/** Aligns hand palm center to rubber grip, twists knuckles along grip axis, and curls fingers. */
+function orientScooterHandOnGrip(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  side: 'Left' | 'Right',
+  gripBody: { x: number; y: number; z: number },
+  barAxisBody: { x: number; y: number; z: number },
+  fingerCurl: number,
+  blend: number,
+) {
+  const hand = ctrl.bones.get(`${side}Hand`);
+  const mid1 = ctrl.bones.get(`${side}HandMiddle1`);
+  const idx1 = ctrl.bones.get(`${side}HandIndex1`);
+  const pinky1 = ctrl.bones.get(`${side}HandPinky1`);
+  if (!hand || !mid1) return;
+
+  hand.updateWorldMatrix(true, true);
+  hand.getWorldPosition(_scooterIkRootPos);
+  mid1.getWorldPosition(_scooterIkMidPos);
+  _scooterIkWorldTarget.set(gripBody.x, gripBody.y, gripBody.z).applyMatrix4(bodyGroup.matrixWorld);
+
+  _scooterIkCurDir.copy(_scooterIkMidPos).sub(_scooterIkRootPos);
+  _scooterIkDesDir.copy(_scooterIkWorldTarget).sub(_scooterIkRootPos);
+  swingBoneWorldVector(hand, _scooterIkCurDir, _scooterIkDesDir, blend);
+
+  // Align palm width axis (Index1 -> Pinky1) with outward steered handlebar axis around Hand->Mid1
+  if (idx1 && pinky1) {
+    hand.getWorldPosition(_scooterIkRootPos);
+    mid1.getWorldPosition(_scooterIkMidPos);
+    idx1.getWorldPosition(_scooterIkBodyPosA);
+    pinky1.getWorldPosition(_scooterIkBodyPosB);
+
+    const fingerDir = _scooterIkDesDir.copy(_scooterIkMidPos).sub(_scooterIkRootPos);
+    if (fingerDir.lengthSq() > 1e-6) {
+      fingerDir.normalize();
+      _scooterIkSideCur.copy(_scooterIkBodyPosB).sub(_scooterIkBodyPosA);
+      _scooterIkSideCur.addScaledVector(fingerDir, -_scooterIkSideCur.dot(fingerDir));
+
+      _scooterIkSideDes
+        .set(barAxisBody.x, barAxisBody.y, barAxisBody.z)
+        .transformDirection(bodyGroup.matrixWorld);
+      _scooterIkSideDes.addScaledVector(fingerDir, -_scooterIkSideDes.dot(fingerDir));
+
+      if (_scooterIkSideCur.lengthSq() > 1e-6 && _scooterIkSideDes.lengthSq() > 1e-6) {
+        swingBoneWorldVector(hand, _scooterIkSideCur, _scooterIkSideDes, blend * 0.85);
+      }
+    }
+  }
+
+  // Curl fingers into native Mixamo grip fist
+  const curlAmount = Math.max(0, Math.min(1, fingerCurl)) * blend;
+  if (curlAmount > 0.01 && ctrl.fireUpperQuats.size > 0) {
+    for (const suffix of SCOOTER_FINGER_BONE_SUFFIXES) {
+      const shortName = `${side}Hand${suffix}`;
+      const fBone = ctrl.bones.get(shortName);
+      const fistQ = ctrl.fireUpperQuats.get(shortName);
+      if (fBone && fistQ) {
+        fBone.quaternion.slerp(fistQ, curlAmount);
+      }
+    }
+  }
+}
+
+/** Aligns foot sneaker orientation to surface slope / push-off rocker pitch in bodyGroup space. */
+function orientScooterFootSole(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  side: 'Left' | 'Right',
+  footPitchRad: number,
+  footYawRad: number,
+  blend: number,
+) {
+  const foot = ctrl.bones.get(`${side}Foot`);
+  const toe = ctrl.bones.get(`${side}ToeBase`);
+  if (!foot || !toe) return;
+  foot.updateWorldMatrix(true, true);
+  foot.getWorldPosition(_scooterIkRootPos);
+  toe.getWorldPosition(_scooterIkMidPos);
+  _scooterIkCurDir.copy(_scooterIkMidPos).sub(_scooterIkRootPos);
+
+  const dropAngle = ctrl.bindFootDropPitchRad - footPitchRad;
+  const horiz = Math.cos(dropAngle);
+  _scooterIkDesDir
+    .set(Math.sin(footYawRad) * horiz, -Math.sin(dropAngle), Math.cos(footYawRad) * horiz)
+    .transformDirection(bodyGroup.matrixWorld);
+  swingBoneWorldVector(foot, _scooterIkCurDir, _scooterIkDesDir, blend);
+}
+
+/** Applies full two-bone IK, spine/head steering lean, grip wrap, and rocker foot grounding. */
+function applyScooterRiderGlbRig(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  pose: ScooterRiderRigPose,
+) {
+  const bp = pose.blend;
+  if (bp <= 0.001) return;
+
+  ctrl.glbRoot.position.x = 0;
+  ctrl.glbRoot.position.y = ctrl.baseRootY;
+
+  for (const name of SCOOTER_LIMB_RESET_BONES) {
+    const bone = ctrl.bones.get(name);
+    const bindQ = ctrl.bindQuats.get(name);
+    if (bone && bindQ) bone.quaternion.slerp(bindQ, bp);
+  }
+  for (const name of SCOOTER_SPINE_RESET_BONES) {
+    const bone = ctrl.bones.get(name);
+    const bindQ = ctrl.bindQuats.get(name);
+    if (bone && bindQ) bone.quaternion.slerp(bindQ, bp * 0.65);
+  }
+
+  rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine')!, 1, 0, 0, pose.torsoPitchRad * 0.30, bp);
+  rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine1')!, 1, 0, 0, pose.torsoPitchRad * 0.35, bp);
+  rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine2')!, 1, 0, 0, pose.torsoPitchRad * 0.35, bp);
+
+  if (Math.abs(pose.torsoYawRad) > 1e-4) {
+    rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine')!, 0, 1, 0, pose.torsoYawRad * 0.30, bp);
+    rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine1')!, 0, 1, 0, pose.torsoYawRad * 0.35, bp);
+    rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine2')!, 0, 1, 0, pose.torsoYawRad * 0.35, bp);
+  }
+
+  const headRelYaw = pose.headLookYawRad - pose.torsoYawRad;
+  const neck = ctrl.bones.get('Neck');
+  const head = ctrl.bones.get('Head');
+  if (neck) rotateBoneAroundBodyLocalAxis(bodyGroup, neck, 0, 1, 0, headRelYaw * 0.35, bp);
+  if (head) rotateBoneAroundBodyLocalAxis(bodyGroup, head, 0, 1, 0, headRelYaw * 0.65, bp);
+
+  bodyGroup.updateWorldMatrix(true, true);
+
+  // Arms -> Handlebar grips (place wrist slightly up & back so palm center lands on rubber grip)
+  const palmOff = ctrl.bindPalmOffsetM;
+  solveTwoBoneLimbPoleIkBodyLocal(
+    bodyGroup,
+    ctrl.bones.get('LeftArm'),
+    ctrl.bones.get('LeftForeArm'),
+    ctrl.bones.get('LeftHand'),
+    pose.leftGripBodyLocal.x,
+    pose.leftGripBodyLocal.y + palmOff * 0.42,
+    pose.leftGripBodyLocal.z - palmOff * 0.85,
+    0.45,
+    -0.45,
+    -0.80,
+    bp,
+  );
+  solveTwoBoneLimbPoleIkBodyLocal(
+    bodyGroup,
+    ctrl.bones.get('RightArm'),
+    ctrl.bones.get('RightForeArm'),
+    ctrl.bones.get('RightHand'),
+    pose.rightGripBodyLocal.x,
+    pose.rightGripBodyLocal.y + palmOff * 0.42,
+    pose.rightGripBodyLocal.z - palmOff * 0.85,
+    -0.45,
+    -0.45,
+    -0.80,
+    bp,
+  );
+
+  orientScooterHandOnGrip(
+    ctrl,
+    bodyGroup,
+    'Left',
+    pose.leftGripBodyLocal,
+    pose.leftGripBarAxisLocal,
+    pose.fingerGripCurl,
+    bp,
+  );
+  orientScooterHandOnGrip(
+    ctrl,
+    bodyGroup,
+    'Right',
+    pose.rightGripBodyLocal,
+    pose.rightGripBarAxisLocal,
+    pose.fingerGripCurl,
+    bp,
+  );
+
+  // Legs -> Floorboard / Scooter Deck / Ground Push Sweep (rocker-compensated ankle height)
+  const computeAnkleTargetY = (soleY: number, pitchRad: number) => {
+    const rockerLift =
+      pitchRad < 0
+        ? ctrl.bindFootBallLenM *
+          Math.max(
+            0,
+            Math.sin(ctrl.bindFootDropPitchRad - pitchRad) - Math.sin(ctrl.bindFootDropPitchRad),
+          )
+        : 0;
+    return soleY + ctrl.bindAnkleHeightY + rockerLift;
+  };
+
+  solveTwoBoneLimbPoleIkBodyLocal(
+    bodyGroup,
+    ctrl.bones.get('LeftUpLeg'),
+    ctrl.bones.get('LeftLeg'),
+    ctrl.bones.get('LeftFoot'),
+    pose.leftFootSoleBodyLocal.x,
+    computeAnkleTargetY(pose.leftFootSoleBodyLocal.y, pose.leftFootPitchRad),
+    pose.leftFootSoleBodyLocal.z,
+    0.22,
+    0.08,
+    1.0,
+    bp,
+  );
+  solveTwoBoneLimbPoleIkBodyLocal(
+    bodyGroup,
+    ctrl.bones.get('RightUpLeg'),
+    ctrl.bones.get('RightLeg'),
+    ctrl.bones.get('RightFoot'),
+    pose.rightFootSoleBodyLocal.x,
+    computeAnkleTargetY(pose.rightFootSoleBodyLocal.y, pose.rightFootPitchRad),
+    pose.rightFootSoleBodyLocal.z,
+    -0.22,
+    0.08,
+    1.0,
+    bp,
+  );
+
+  orientScooterFootSole(ctrl, bodyGroup, 'Left', pose.leftFootPitchRad, pose.leftFootYawRad, bp);
+  orientScooterFootSole(ctrl, bodyGroup, 'Right', pose.rightFootPitchRad, pose.rightFootYawRad, bp);
 }
 
 function aimMixamoArmBoneWorld(
@@ -10822,6 +11228,7 @@ function aimMixamoArmBoneWorld(
   armBone.quaternion.copy(_armAimRotDelta);
 
   const foreArmBone = ctrl.bones.get(foreArmShortName);
+
   const bindForeArm = ctrl.bindQuats.get(foreArmShortName);
   if (foreArmBone && bindForeArm) {
     foreArmBone.quaternion.copy(bindForeArm);
@@ -11119,6 +11526,10 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   // (Y = 0 on the ground ring, completely independent of parent world positions/rotations)
   let baseRootY = 0;
   let standingSoleOffsetY = 0.048;
+  let bindAnkleHeightY = 0.205;
+  let bindFootDropPitchRad = 0.65;
+  let bindFootBallLenM = 0.275;
+  let bindPalmOffsetM = 0.11;
   if (!isSeatedRider) {
     const tempMeasureHost = new THREE.Group();
     tempMeasureHost.add(glbRoot);
@@ -11126,6 +11537,39 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     _charInitBox3.setFromObject(glbRoot);
     if (!_charInitBox3.isEmpty()) {
       baseRootY = -_charInitBox3.min.y;
+    }
+    glbRoot.position.set(0, baseRootY, 0);
+    tempMeasureHost.updateMatrixWorld(true);
+    const bFoot = bones.get('LeftFoot');
+    const bToe = bones.get('LeftToeBase');
+    const bHand = bones.get('LeftHand');
+    const bMid1 = bones.get('LeftHandMiddle1');
+    if (bFoot && bToe) {
+      bFoot.getWorldPosition(_scooterIkBodyPosA);
+      bToe.getWorldPosition(_scooterIkBodyPosB);
+      if (_scooterIkBodyPosA.y > 0.05 && _scooterIkBodyPosA.y < 0.45) {
+        bindAnkleHeightY = _scooterIkBodyPosA.y;
+      }
+      const fLen = _scooterIkBodyPosA.distanceTo(_scooterIkBodyPosB);
+      if (fLen > 0.05 && fLen < 0.6) {
+        bindFootBallLenM = fLen;
+        const horiz = Math.hypot(
+          _scooterIkBodyPosB.x - _scooterIkBodyPosA.x,
+          _scooterIkBodyPosB.z - _scooterIkBodyPosA.z,
+        );
+        bindFootDropPitchRad = Math.atan2(
+          Math.max(0.01, _scooterIkBodyPosA.y - _scooterIkBodyPosB.y),
+          Math.max(0.01, horiz),
+        );
+      }
+    }
+    if (bHand && bMid1) {
+      bHand.getWorldPosition(_scooterIkBodyPosA);
+      bMid1.getWorldPosition(_scooterIkBodyPosB);
+      const palmSpan = _scooterIkBodyPosA.distanceTo(_scooterIkBodyPosB);
+      if (palmSpan > 0.05 && palmSpan < 0.6) {
+        bindPalmOffsetM = palmSpan * 0.5;
+      }
     }
     tempMeasureHost.remove(glbRoot);
     bodyGroup.add(glbRoot);
@@ -11178,6 +11622,10 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     fireDuration: template.fireDuration,
     baseRootY,
     standingSoleOffsetY,
+    bindAnkleHeightY,
+    bindFootDropPitchRad,
+    bindFootBallLenM,
+    bindPalmOffsetM,
     rightHandLocalPos: new THREE.Vector3(-0.15, 1.24, 0.22),
     leftHandLocalPos: new THREE.Vector3(-0.11, 1.28, 0.49),
     rightHandGripAxisLocal: new THREE.Vector3(0, 0.72, 0.69),
@@ -11218,7 +11666,7 @@ function stepCharBuddiesGlbRigController(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
-  scooterBikeRide = false,
+  scooterRidePose: ScooterRiderRigPose | null = null,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -11362,8 +11810,11 @@ function stepCharBuddiesGlbRigController(
   ) {
     targetClip = 'driving.001';
     timeScale = 1.0;
-  } else if (scooterBikeRide && ctrl.clips.has('scooter_bike_idle.001')) {
-    targetClip = 'scooter_bike_idle.001';
+  } else if (scooterRidePose && scooterRidePose.blend > 0.001) {
+    targetClip =
+      scooterRidePose.kind === 'electric_scooter_bike' && ctrl.clips.has('sitting.001')
+        ? 'sitting.001'
+        : 'idle.001';
     timeScale = 1.0;
   } else if (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sleeping.001')) {
     targetClip = 'sleeping.001';
@@ -11700,8 +12151,9 @@ function stepCharBuddiesGlbRigController(
   const isActiveFishingAction =
     weaponId === 'fishing_rod' &&
     Boolean(rig.fishingPoseState && rig.fishingPoseState.phase !== 'idle');
+  const hasScooterPose = Boolean(scooterRidePose && scooterRidePose.blend > 0.001);
   const minStepInterval =
-    isMoving || ctrl.turnInPlaceTimer > 0 || jumpOffset > 0.05 || isActiveFishingAction
+    isMoving || ctrl.turnInPlaceTimer > 0 || jumpOffset > 0.05 || isActiveFishingAction || hasScooterPose
       ? 0.008
       : 0.028;
   const shouldStepMixer =
@@ -11710,7 +12162,8 @@ function stepCharBuddiesGlbRigController(
     recoilAmount > 0.02 ||
     punchTimer > 0 ||
     kickTimer > 0 ||
-    isActiveFishingAction;
+    isActiveFishingAction ||
+    hasScooterPose;
   if (shouldStepMixer && rawDt >= 0.002) {
     ctrl.lastStepTimeMs = nowMs;
     ctrl.mixer.update(stepDt);
@@ -11725,7 +12178,8 @@ function stepCharBuddiesGlbRigController(
 
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
-  const isSeatedOrPiloting = Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping;
+  const isSeatedOrPiloting =
+    Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping || Boolean(scooterRidePose);
   if (!isSeatedOrPiloting) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving
@@ -11867,21 +12321,19 @@ function stepCharBuddiesGlbRigController(
     }
   }
 
-  // 4C. Scooter bike grip reach: the authored riding clip leaves the hands
-  // just short of the grips, so pitch both shoulders a touch further
-  // forward while the bike clip plays. Arms only — nothing else moves.
-  if (scooterBikeRide) {
-    applyRideBoneDelta(ctrl, 'LeftArm', -0.07, 0, 0, 1);
-    applyRideBoneDelta(ctrl, 'RightArm', -0.07, 0, 0, 1);
+  // 4B. Unified Scooter Rider Rigging (electric_scooter_bike & push_kick_scooter)
+  const bodyGroup = rig.bodyGroupRef;
+  ctrl.glbRoot.position.x = 0;
+  ctrl.glbRoot.position.y = ctrl.baseRootY;
+  if (scooterRidePose && scooterRidePose.blend > 0.001 && bodyGroup) {
+    applyScooterRiderGlbRig(ctrl, bodyGroup, scooterRidePose);
   }
 
   // 5. Zero-allocation Dynamic Foot Grounding (lowest stance foot always touches local Y = 0 on the ground ring)
   //    + live Right/Left Palm Grip Center sampling & Two-Bone Arm IK alignment
-  const bodyGroup = rig.bodyGroupRef;
-  ctrl.glbRoot.position.y = ctrl.baseRootY;
   let footGroundShiftY = 0;
   const needHandSampling =
-    carryingCrate || (punchTimer <= 0 && weaponId !== 'unarmed');
+    !hasScooterPose && (carryingCrate || (punchTimer <= 0 && weaponId !== 'unarmed'));
   if (bodyGroup && (!isSeatedOrPiloting || needHandSampling)) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
     if (!isSeatedOrPiloting) {
@@ -12045,7 +12497,7 @@ export function updateCharacterWeaponStance(
   isSitting = false,
   isDriving = false,
   isSleeping = false,
-  scooterBikeRide = false,
+  scooterRidePose: ScooterRiderRigPose | null = null,
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -12069,12 +12521,13 @@ export function updateCharacterWeaponStance(
       isSitting,
       isDriving,
       isSleeping,
-      scooterBikeRide,
+      scooterRidePose,
     );
   }
   if (
     !isAlive ||
     Boolean(rig.isSeatedRiderRef) ||
+    Boolean(scooterRidePose && scooterRidePose.blend > 0.001) ||
     (isDriving && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('driving.001')) ||
     (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001')) ||
     (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
@@ -12082,6 +12535,14 @@ export function updateCharacterWeaponStance(
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;
     rig.bazookaBackblastGroup.visible = false;
+    if (scooterRidePose && scooterRidePose.blend > 0.001 && !rig.customGlbController) {
+      const charRightArm = rig.leftArmPivot;
+      const charLeftArm = rig.rightArmPivot;
+      charRightArm.position.set(-0.52, 1.38, 0.18);
+      charLeftArm.position.set(0.52, 1.38, 0.18);
+      charRightArm.rotation.set(scooterRidePose.rightArmPitchX, 0.12, -0.08);
+      charLeftArm.rotation.set(scooterRidePose.leftArmPitchX, -0.12, 0.08);
+    }
     return;
   }
   const hasCustomGlb = Boolean(rig.customGlbController);

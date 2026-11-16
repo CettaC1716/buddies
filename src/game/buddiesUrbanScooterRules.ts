@@ -11,14 +11,51 @@ export type UrbanScooterKind = 'electric_scooter_bike' | 'push_kick_scooter';
 export const SCOOTER_RIDE_MODEL_SCALE = 2.0;
 
 /**
- * Rider body lift (world units) while riding, per kind: the scale-1 lift
- * (bike seat 0.78 -> 0.33, kick deck 0.114 -> 0.12) plus the anchor height
- * gained from SCOOTER_RIDE_MODEL_SCALE, so hips stay on the seat and feet
- * stay on the deck at the larger size.
+ * Rider body lift (world units) while riding, per kind: positioned so the
+ * rider's hips sit inside the saddle bucket (bike) or stand with knees softly
+ * flexed over the deck (kick scooter) at SCOOTER_RIDE_MODEL_SCALE.
  */
 export const SCOOTER_RIDER_LIFT_M: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: 1.11,
+  electric_scooter_bike: 0.60,
   push_kick_scooter: 0.23,
+};
+
+/**
+ * Rider body local-Z offset (world units along forward heading) while riding.
+ * Negative shifts the hips back onto the bike's rear saddle.
+ */
+export const SCOOTER_RIDER_BACK_OFFSET_M: Record<UrbanScooterKind, number> = {
+  electric_scooter_bike: -0.29,
+  push_kick_scooter: 0,
+};
+
+export interface ScooterHandlebarGeometrySpec {
+  steeringPivot: { x: number; y: number; z: number };
+  neckOffset: { x: number; y: number; z: number };
+  neckTiltX: number;
+  leftGripInNeck: { x: number; y: number; z: number };
+  rightGripInNeck: { x: number; y: number; z: number };
+}
+
+/**
+ * Exact scale-1 local coordinates of the steered handlebar / T-bar rubber grip
+ * centers matching buddiesUrbanScooterBuilder.ts mesh construction.
+ */
+export const SCOOTER_HANDLEBAR_SPECS: Record<UrbanScooterKind, ScooterHandlebarGeometrySpec> = {
+  electric_scooter_bike: {
+    steeringPivot: { x: 0, y: 0.96, z: 0.30 },
+    neckOffset: { x: 0, y: 0, z: 0 },
+    neckTiltX: 0,
+    leftGripInNeck: { x: 0.262, y: 0.132, z: -0.06 },
+    rightGripInNeck: { x: -0.262, y: 0.132, z: -0.06 },
+  },
+  push_kick_scooter: {
+    steeringPivot: { x: 0, y: 0.24, z: 0.315 },
+    neckOffset: { x: 0, y: 0.045, z: -0.01 },
+    neckTiltX: -0.19,
+    leftGripInNeck: { x: 0.18, y: 0.712, z: 0 },
+    rightGripInNeck: { x: -0.18, y: 0.712, z: 0 },
+  },
 };
 
 export interface ScooterVec3Tuple {

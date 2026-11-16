@@ -344,11 +344,17 @@ import {
 } from './buddiesCafeInteriorBuilder';
 import { findRoadRoute } from './buddiesRoadGuide';
 import {
+  SCOOTER_HANDLEBAR_SPECS,
   SCOOTER_RIDE_MODEL_SCALE,
+  SCOOTER_RIDER_BACK_OFFSET_M,
   SCOOTER_RIDER_LIFT_M,
   URBAN_SCOOTER_SHOP_TRIGGER,
   type UrbanScooterKind,
 } from './buddiesUrbanScooterRules';
+import {
+  computeScooterRiderRigPose,
+  type ScooterRiderRigPose,
+} from './buddiesScooterRidePose';
 import {
   createElectricScooterBike3D,
   createPushKickScooter3D,
@@ -824,6 +830,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       scooterHandle: ScooterRideHandle | null;
       scooterLastX: number;
       scooterLastZ: number;
+      scooterLastYaw: number;
+      scooterSteerEst: number;
+      scooterSpeedEst: number;
+      scooterPushDistanceM: number;
+      scooterMountBlend: number;
+      scooterPushActivity: number;
+      scooterPose: ScooterRiderRigPose | null;
       lastLabelKey: string;
       lastBubbleText: string | null;
       hitFlashTimer: number;
@@ -7587,7 +7600,51 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       speed: number;
       yaw: number;
       steer: number;
+      pushDistanceM: number;
+      mountBlend: number;
+      pushActivity: number;
+      isThrottleActive: boolean;
+      isBraking: boolean;
+      pose: ScooterRiderRigPose | null;
     }
+    const buildScooterSpecInput = (kind: UrbanScooterKind) => ({
+      modelScale: SCOOTER_RIDE_MODEL_SCALE,
+      seatLiftY: SCOOTER_RIDER_LIFT_M[kind],
+      seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M[kind],
+      handlebar: SCOOTER_HANDLEBAR_SPECS[kind],
+    });
+    const applyScooterHandleLeanAndSteer = (
+      handle: ScooterRideHandle,
+      steerAngleRad: number,
+      leanRollZ: number,
+      isBraking = false,
+    ) => {
+      handle.setSteerAngle(steerAngleRad);
+      if ('chassisGroup' in handle) {
+        handle.chassisGroup.rotation.z = leanRollZ;
+        handle.setBraking(isBraking);
+      } else {
+        handle.leanGroup.rotation.z = leanRollZ;
+      }
+    };
+    const applyScooterBodyTransform = (
+      bodyGroup: THREE.Group,
+      baseY: number,
+      yaw: number,
+      pose: ScooterRiderRigPose,
+    ) => {
+      const cosR = Math.cos(pose.leanRollZ);
+      const sinR = Math.sin(pose.leanRollZ);
+      const localX = -pose.seatLiftY * sinR;
+      const localY = pose.seatLiftY * cosR;
+      const localZ = pose.seatBackOffsetZ;
+      bodyGroup.position.set(
+        localX * -Math.sin(yaw) + localZ * Math.cos(yaw),
+        baseY + localY,
+        localX * -Math.cos(yaw) - localZ * Math.sin(yaw),
+      );
+      bodyGroup.rotation.set(0, yaw + Math.PI / 2, pose.leanRollZ, 'YXZ');
+    };
     let scooterRideState: ScooterRideState | null = null;
     let crateSpawnTimer = 0;
     let superCrateSpawnTimer = 0;
@@ -8672,6 +8729,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         scooterHandle: null,
         scooterLastX: 0,
         scooterLastZ: 0,
+        scooterLastYaw: peer.yaw,
+        scooterSteerEst: 0,
+        scooterSpeedEst: 0,
+        scooterPushDistanceM: 0,
+        scooterMountBlend: 0,
+        scooterPushActivity: 0,
+        scooterPose: null,
       };
     };
 
@@ -12732,7 +12796,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (!scooterRideState) return;
       scene.remove(scooterRideState.handle.root);
       scooterRideState = null;
-      if (playerUnit) playerUnit.isSitting = false;
+      if (playerUnit) {
+        playerUnit.isSitting = false;
+        playerUnit.bodyGroup.position.set(0, 0, 0);
+        playerUnit.bodyGroup.rotation.set(0, playerUnit.yaw + Math.PI / 2, 0, 'YXZ');
+      }
       window.dispatchEvent(new CustomEvent('scooter-dismounted'));
     };
 
@@ -12752,7 +12820,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       handle.root.scale.setScalar(SCOOTER_RIDE_MODEL_SCALE);
       handle.setParked(false);
       scene.add(handle.root);
-      scooterRideState = { kind, handle, speed: 0, yaw: playerUnit.yaw, steer: 0 };
+      const initialPose = computeScooterRiderRigPose({
+        kind,
+        distanceM: 0,
+        speedMps: 0,
+        mountBlend: 0,
+        steerAngleRad: 0,
+        isThrottleActive: false,
+        isBraking: false,
+        pushActivity: 0,
+        spec: buildScooterSpecInput(kind),
+      });
+      scooterRideState = {
+        kind,
+        handle,
+        speed: 0,
+        yaw: playerUnit.yaw,
+        steer: 0,
+        pushDistanceM: 0,
+        mountBlend: 0,
+        pushActivity: 0,
+        isThrottleActive: false,
+        isBraking: false,
+        pose: initialPose,
+      };
       handle.root.position.set(
         playerUnit.x,
         getTerrainElevation(playerUnit.x, playerUnit.z),
@@ -19169,6 +19260,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
             if (rideTarget === 0 && Math.abs(st.speed) < 0.02) st.speed = 0;
             const rideDist = st.speed * dt;
+            st.pushDistanceM += Math.max(0, rideDist);
+            st.mountBlend = Math.min(1, st.mountBlend + dt / 0.25);
+            st.isThrottleActive = rideTarget > 0.05;
+            st.isBraking = rideTarget < -0.05;
+            const targetPushAct =
+              st.kind === 'push_kick_scooter' &&
+              !st.isBraking &&
+              (st.isThrottleActive || (st.speed > 0.22 && st.speed < 1.15))
+                ? 1
+                : 0;
+            const actRate = targetPushAct > st.pushActivity ? dt / 0.14 : dt / 0.26;
+            if (targetPushAct > st.pushActivity) {
+              st.pushActivity = Math.min(1, st.pushActivity + actRate);
+            } else {
+              st.pushActivity = Math.max(0, st.pushActivity - actRate);
+            }
             playerUnit.x = wrapPlanetCoord(playerUnit.x + Math.cos(st.yaw) * rideDist);
             playerUnit.z = wrapPlanetCoord(playerUnit.z - Math.sin(st.yaw) * rideDist);
             playerUnit.vx = Math.cos(st.yaw) * st.speed;
@@ -19183,7 +19290,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               playerUnit.z,
             );
             st.handle.root.rotation.set(0, st.yaw + Math.PI / 2, 0);
-            st.handle.setSteerAngle(st.steer * 0.55);
+            st.pose = computeScooterRiderRigPose({
+              kind: st.kind,
+              distanceM: st.pushDistanceM,
+              speedMps: st.speed,
+              mountBlend: st.mountBlend,
+              steerAngleRad: st.steer * 0.55,
+              isThrottleActive: st.isThrottleActive,
+              isBraking: st.isBraking,
+              pushActivity: st.pushActivity,
+              spec: buildScooterSpecInput(st.kind),
+            });
+            applyScooterHandleLeanAndSteer(
+              st.handle,
+              st.pose.steerAngleRad,
+              st.pose.leanRollZ,
+              st.isBraking,
+            );
             if (isBikeRide) {
               (st.handle as ElectricScooterBike3DHandle).setBraking(
                 rideTarget < st.speed - 0.6,
@@ -20620,32 +20743,54 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             if (b.isPlayer) {
               b.root.scale.setScalar(isPlayerInCafeNow || isPlayerInHouseNow ? 0.55 : 1.0);
             }
-            const seatLift =
-              b.isPlayer && b.isSitting && activeCafeSeatedSpot
-                ? activeCafeSeatedSpot.seatLiftY
-                : b.isPlayer && b.isSitting && activeSeatedSpot
-                  ? activeSeatedSpot.seatLiftY + 0.178
-                  : b.isPlayer && b.isSleeping && activeSleepSpot
-                    ? activeSleepSpot.sleepLiftY
-                    : b.isPlayer && scooterRideState
-                      ? SCOOTER_RIDER_LIFT_M[scooterRideState.kind]
-                      : 0;
-            b.bodyGroup.rotation.order = 'YXZ';
-            b.bodyGroup.position.y = floatY + b.jumpOffset + hitPose.hopY + seatLift;
+            const scooterPose: ScooterRiderRigPose | null =
+              b.isPlayer && scooterRideState
+                ? (scooterRideState.pose ??
+                  computeScooterRiderRigPose({
+                    kind: scooterRideState.kind,
+                    distanceM: scooterRideState.pushDistanceM,
+                    speedMps: scooterRideState.speed,
+                    mountBlend: scooterRideState.mountBlend,
+                    steerAngleRad: scooterRideState.steer * 0.55,
+                    isThrottleActive: scooterRideState.isThrottleActive,
+                    isBraking: scooterRideState.isBraking,
+                    pushActivity: scooterRideState.pushActivity,
+                    spec: buildScooterSpecInput(scooterRideState.kind),
+                  }))
+                : null;
             // Soften the facing snap just slightly: the visual facing chases the unit yaw
             // at up to ~12 rad/s (a 180-degree turn settles in ~0.26s instead of one
-            // frame). Seat/bed poses and teleports snap instantly.
+            // frame). Seat/bed/scooter poses and teleports snap instantly so hands stay locked on grips.
             if (b.visualYaw === undefined) b.visualYaw = b.yaw;
             {
               const dYaw = Math.atan2(Math.sin(b.yaw - b.visualYaw), Math.cos(b.yaw - b.visualYaw));
-              if (Math.abs(dYaw) > 2.4 || b.isSitting || b.isSleeping) {
+              if (Math.abs(dYaw) > 2.4 || b.isSitting || b.isSleeping || Boolean(scooterPose)) {
                 b.visualYaw = b.yaw;
               } else {
                 const maxStep = 12 * dt;
                 b.visualYaw += Math.max(-maxStep, Math.min(maxStep, dYaw));
               }
             }
-            b.bodyGroup.rotation.set(0, b.visualYaw + Math.PI / 2, 0);
+            b.bodyGroup.rotation.order = 'YXZ';
+            if (scooterPose) {
+              applyScooterBodyTransform(
+                b.bodyGroup,
+                floatY + b.jumpOffset + hitPose.hopY,
+                b.visualYaw,
+                scooterPose,
+              );
+            } else {
+              const seatLift =
+                b.isPlayer && b.isSitting && activeCafeSeatedSpot
+                  ? activeCafeSeatedSpot.seatLiftY
+                  : b.isPlayer && b.isSitting && activeSeatedSpot
+                    ? activeSeatedSpot.seatLiftY + 0.178
+                    : b.isPlayer && b.isSleeping && activeSleepSpot
+                      ? activeSleepSpot.sleepLiftY
+                      : 0;
+              b.bodyGroup.position.set(0, floatY + b.jumpOffset + hitPose.hopY + seatLift, 0);
+              b.bodyGroup.rotation.set(0, b.visualYaw + Math.PI / 2, 0);
+            }
 
             const speedMag = Math.hypot(b.vx, b.vz);
             const walkSync = computeSynchronizedWalkCycleStep({
@@ -20712,7 +20857,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               b.isDriving = false;
             }
             const unitIsSitting =
-              Boolean(b.isSitting) || (b.isPlayer && ridingTramCarIdx !== null);
+              Boolean(b.isSitting) ||
+              (b.isPlayer && (ridingTramCarIdx !== null || scooterPose?.kind === 'electric_scooter_bike'));
             const unitIsDriving = Boolean(b.isDriving);
             const unitIsSleeping = Boolean(b.isSleeping);
             if (b.isPlayer) {
@@ -20779,7 +20925,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsSitting,
                 unitIsDriving,
                 unitIsSleeping,
-                b.isPlayer && scooterRideState?.kind === 'electric_scooter_bike',
+                scooterPose,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -23388,6 +23534,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               scene.add(av.scooterHandle.root);
               av.scooterLastX = av.renderX;
               av.scooterLastZ = av.renderZ;
+              av.scooterLastYaw = av.renderYaw;
+              av.scooterSteerEst = 0;
+              av.scooterSpeedEst = 0;
+              av.scooterPushDistanceM = 0;
+              av.scooterMountBlend = 0;
+              av.scooterPushActivity = 0;
+              av.scooterPose = null;
+            } else {
+              av.scooterPose = null;
+              av.scooterMountBlend = 0;
+              av.scooterPushActivity = 0;
+              av.scooterSteerEst = 0;
+              av.scooterSpeedEst = 0;
+              av.bodyGroup.position.set(0, 0, 0);
+              av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0, 'YXZ');
             }
           }
 
@@ -23530,9 +23691,50 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             carryingCrate: peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
           });
           av.walkCycle = peerWalk.nextWalkCycle;
-          if (peer.scooterKind === 'push_kick_scooter') {
-            av.rig.leftLegPivot.rotation.x = -0.18;
-            av.rig.rightLegPivot.rotation.x = 0.12;
+          if (peer.scooterKind) {
+            const safeDt = Math.max(1e-3, dt);
+            const rawDYaw = Math.atan2(
+              Math.sin(av.renderYaw - av.scooterLastYaw),
+              Math.cos(av.renderYaw - av.scooterLastYaw),
+            );
+            av.scooterLastYaw = av.renderYaw;
+            const targetSteer = Math.max(-0.28, Math.min(0.28, (rawDYaw / safeDt) * 0.14));
+            av.scooterSteerEst += (targetSteer - av.scooterSteerEst) * Math.min(1, dt * 10);
+            av.scooterSpeedEst += (peerSpeed - av.scooterSpeedEst) * Math.min(1, dt * 8);
+            av.scooterPushDistanceM += Math.max(0, av.scooterSpeedEst) * dt;
+            av.scooterMountBlend = Math.min(1, av.scooterMountBlend + dt / 0.25);
+            const peerPushTarget =
+              peer.scooterKind === 'push_kick_scooter' && av.scooterSpeedEst > 0.28 ? 1 : 0;
+            const peerActStep = peerPushTarget > av.scooterPushActivity ? dt / 0.15 : dt / 0.26;
+            if (peerPushTarget > av.scooterPushActivity) {
+              av.scooterPushActivity = Math.min(1, av.scooterPushActivity + peerActStep);
+            } else {
+              av.scooterPushActivity = Math.max(0, av.scooterPushActivity - peerActStep);
+            }
+            const pose = computeScooterRiderRigPose({
+              kind: peer.scooterKind,
+              distanceM: av.scooterPushDistanceM,
+              speedMps: av.scooterSpeedEst,
+              mountBlend: av.scooterMountBlend,
+              steerAngleRad: av.scooterSteerEst,
+              isThrottleActive: av.scooterSpeedEst > 0.35,
+              isBraking: false,
+              pushActivity: av.scooterPushActivity,
+              spec: buildScooterSpecInput(peer.scooterKind),
+            });
+            av.scooterPose = pose;
+            av.rig.leftLegPivot.rotation.x = -pose.supportHipX * pose.blend;
+            av.rig.rightLegPivot.rotation.x = -pose.pushHipX * pose.blend;
+            av.bodyGroup.rotation.order = 'YXZ';
+            applyScooterBodyTransform(av.bodyGroup, peer.jumpOffset, av.renderYaw, pose);
+            if (av.scooterHandle) {
+              applyScooterHandleLeanAndSteer(
+                av.scooterHandle,
+                pose.steerAngleRad,
+                pose.leanRollZ,
+                false,
+              );
+            }
           } else if (peer.jumpOffset > 0.08) {
             av.rig.leftLegPivot.rotation.x = -0.58;
             av.rig.rightLegPivot.rotation.x = 0.44;
@@ -23582,10 +23784,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               1,
               av.renderYaw,
               peerSpeed,
-              peer.isSitting,
+              peer.isSitting || peer.scooterKind === 'electric_scooter_bike',
               peer.isDriving,
               false,
-              peer.scooterKind === 'electric_scooter_bike',
+              peer.scooterKind ? av.scooterPose : null,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -24439,11 +24641,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.root.scale.setScalar(0.55);
           continue;
         }
-        const seatLift =
-          b.isPlayer && b.isSitting && activeSeatedSpot
-            ? activeSeatedSpot.seatLiftY + 0.178
-            : 0;
-        b.bodyGroup.position.y = floatY + b.jumpOffset + bHitPose.hopY + seatLift;
+        if (b.isPlayer && scooterRideState?.pose) {
+          applyScooterBodyTransform(
+            b.bodyGroup,
+            floatY + b.jumpOffset + bHitPose.hopY,
+            scooterRideState.yaw,
+            scooterRideState.pose,
+          );
+        } else {
+          const seatLift =
+            b.isPlayer && b.isSitting && activeSeatedSpot
+              ? activeSeatedSpot.seatLiftY + 0.178
+              : 0;
+          b.bodyGroup.position.set(0, floatY + b.jumpOffset + bHitPose.hopY + seatLift, 0);
+        }
         applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
       }
 
@@ -24465,13 +24676,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.root.scale.setScalar(0.55);
         } else {
           const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
-          av.bodyGroup.position.y =
-            av.peer.jumpOffset +
-            (av.peer.scooterKind
-              ? SCOOTER_RIDER_LIFT_M[av.peer.scooterKind]
-              : av.peer.isSitting
-                ? 0.128
-                : 0);
+          if (av.peer.scooterKind && av.scooterPose) {
+            applyScooterBodyTransform(av.bodyGroup, av.peer.jumpOffset, av.renderYaw, av.scooterPose);
+          } else {
+            av.bodyGroup.position.set(0, av.peer.jumpOffset + (av.peer.isSitting ? 0.128 : 0), 0);
+            av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0, 'YXZ');
+          }
           if (av.scooterHandle) {
             av.scooterHandle.root.visible = true;
             av.scooterHandle.root.position.set(av.renderX, avTerrainY, av.renderZ);
