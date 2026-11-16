@@ -1220,3 +1220,42 @@ test('cafe-work-anims.glb contains retargetable drink, tray, and serve Mixamo cl
     assert.ok(duration > 2.0, `Unexpectedly short duration=${duration}s on ${clipName}`);
   }
 });
+
+test('sleeping-anim.glb contains retargetable Mixamo sleeping.001 clip with full-body and finger tracks', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const glbPath = path.resolve(process.cwd(), 'public/assets/sleeping-anim.glb');
+  assert.ok(fs.existsSync(glbPath), `Missing ${glbPath}`);
+  const buf = fs.readFileSync(glbPath);
+  assert.equal(buf.readUInt32LE(0), 0x46546c67, 'Invalid glTF magic header');
+  const jsonLen = buf.readUInt32LE(12);
+  assert.equal(buf.readUInt32LE(16), 0x4e4f534a, 'Expected JSON chunk at offset 12');
+  const gltfJson = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8')) as {
+    nodes?: Array<{ name?: string }>;
+    animations?: Array<{ name?: string; channels?: unknown[]; samplers?: Array<{ input: number }> }>;
+    accessors?: Array<{ max?: number[] }>;
+  };
+
+  const nodeNames = new Set((gltfJson.nodes ?? []).map((n) => n.name ?? ''));
+  for (const bone of [
+    'Armature',
+    'mixamorig:Hips',
+    'mixamorig:Spine2',
+    'mixamorig:Head',
+    'mixamorig:LeftUpLeg',
+    'mixamorig:RightFoot',
+    'mixamorig:LeftHandIndex1',
+  ]) {
+    assert.ok(nodeNames.has(bone), `Missing skeleton reference node ${bone}`);
+  }
+
+  const sleepAnim = (gltfJson.animations ?? []).find((a) => a.name === 'sleeping.001');
+  assert.ok(sleepAnim, 'Missing sleeping.001 clip in sleeping-anim.glb');
+  assert.ok((sleepAnim.channels?.length ?? 0) >= 45, 'Expected full-body + finger channels on sleeping.001');
+  const timeAccessor = sleepAnim.samplers?.[0]
+    ? gltfJson.accessors?.[sleepAnim.samplers[0].input]
+    : undefined;
+  const duration = timeAccessor?.max?.[0] ?? 0;
+  assert.ok(duration >= 7.0, `Expected ~7.6s sleeping animation loop, got ${duration}s`);
+});

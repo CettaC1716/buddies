@@ -1075,11 +1075,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     ];
 
     // Bed sleep spots for the private-house bedroom (static zone bed at interior
-    // (3.4, -2.62), headboard toward -Z): one floating point over each pillow side.
-    // Hips anchor sits 0.47 (world) from the pillows so the reclined sleeping pose
-    // rests its head on the pillows and its feet stay on the 2.12-long mattress.
-    // sleepLiftY is in bodyGroup units: mattress top 0.50 world / 0.54 house scale,
-    // minus the clip's own hip height over its calm segment (measured -0.12).
+    // (3.35, -2.46), headboard & pillows toward -Z): one floating point over each pillow side.
+    // Sleeping animation `sleeping.001` (`Laying_—_Ramah_Malu-Malu_#4`) lies along world -Z (head)
+    // to +Z (knees/feet) at `yaw = -Math.PI / 2` (`bodyGroup.rotation.y = 0`).
+    // Dynamic sleeping grounding in `stepCharBuddiesGlbRigController` aligns the lowest body
+    // bone to local `0.11`, so `sleepLiftY = 1.02` (`0.56 / 0.55` house scale) rests avatars
+    // directly atop the duvet surface with head against the pillows for both Female and Male rigs.
     type BedSleepSpot = {
       id: string;
       x: number;
@@ -1093,8 +1094,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       wakeZ: number;
     };
     const HOUSE_BED_SLEEP_SPOTS: BedSleepSpot[] = [
-      { id: 'bed_left', x: 2.83, z: -2.02, yaw: Math.PI, sleepLiftY: 1.22, indicatorX: 2.83, indicatorZ: -2.32, indicatorHeightY: 1.06, wakeX: 2.83, wakeZ: -0.25 },
-      { id: 'bed_right', x: 3.87, z: -2.02, yaw: Math.PI, sleepLiftY: 1.22, indicatorX: 3.87, indicatorZ: -2.32, indicatorHeightY: 1.06, wakeX: 3.87, wakeZ: -0.25 },
+      { id: 'bed_left', x: 2.83, z: -2.30, yaw: -Math.PI / 2, sleepLiftY: 1.02, indicatorX: 2.83, indicatorZ: -2.32, indicatorHeightY: 1.06, wakeX: 2.83, wakeZ: -0.25 },
+      { id: 'bed_right', x: 3.87, z: -2.30, yaw: -Math.PI / 2, sleepLiftY: 1.02, indicatorX: 3.87, indicatorZ: -2.32, indicatorHeightY: 1.06, wakeX: 3.87, wakeZ: -0.25 },
     ];
     let activeSleepSpot: BedSleepSpot | null = null;
     let currentNearestSleepSpot: BedSleepSpot | null = null;
@@ -1218,11 +1219,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       resetAllPlayerMovementInputs();
       clearTeleportKioskSelection();
       activeSleepSpot = spot;
+      activeSeatedSpot = null;
+      activeCafeSeatedSpot = null;
       playerUnit.x = spot.x;
       playerUnit.z = spot.z;
       playerUnit.vx = 0;
       playerUnit.vz = 0;
       playerUnit.yaw = spot.yaw;
+      playerUnit.visualYaw = spot.yaw;
       playerUnit.isSleeping = true;
       playerUnit.isSitting = false;
       playerUnit.isDriving = false;
@@ -23639,8 +23643,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isCafeWorker: cafeWorkShiftActive,
                 cafePreparing: cafeWorkAnimSync.phase !== 'idle',
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
-                emoteClip:
-                  cafeWorkAnimSync.phase === 'prep_act'
+                emoteClip: playerUnit?.isSleeping
+                  ? 'bed:sleep'
+                  : cafeWorkAnimSync.phase === 'prep_act'
                     ? cafeWorkAnimSync.category === 'pastry'
                       ? 'cafe:tray'
                       : 'cafe:coffee'
@@ -23974,7 +23979,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerSpeed,
               peer.isSitting || peer.scooterKind === 'electric_scooter_bike',
               peer.isDriving,
-              false,
+              peer.emoteClip === 'bed:sleep',
               peer.scooterKind ? av.scooterPose : null,
               peerCafeWorkAction,
             );
@@ -24859,7 +24864,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.root.rotation.set(0, 0, 0);
           av.root.scale.setScalar(0.55);
         } else if (isLocalInHouseAlign) {
-          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
+          const peerSleepLiftY = av.peer.emoteClip === 'bed:sleep' ? 1.02 : 0;
+          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55 + peerSleepLiftY;
           av.root.position.set(av.renderX, HOUSE_ORIGIN_Y, av.renderZ);
           av.root.rotation.set(0, 0, 0);
           av.root.scale.setScalar(0.55);

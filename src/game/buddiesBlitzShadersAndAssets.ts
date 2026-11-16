@@ -4206,12 +4206,14 @@ export interface LoadedBlitzAssets {
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
   cafeWorkGltf?: GLTF | null;
+  sleepingGltf?: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
 
 export type CafeWorkAnimAction = 'idle' | 'coffee' | 'tray' | 'serve';
 let loadedCafeWorkGltf: GLTF | null = null;
+let loadedSleepingGltf: GLTF | null = null;
 
 const BLITZ_3D_TOTAL_ASSET_TASKS = 41;
 let blitz3dCompletedAssetTasks = 0;
@@ -4372,41 +4374,26 @@ export async function loadAllRealBlitzAssets(
       }),
     );
 
-  // Sleeping idle: a user-supplied FBX take parsed at runtime. FBX units are centimeters
-  // while the character rigs are meters, so the hip-height track is scaled by 0.01. Only the
-  // calm reclined segment (0.5s-6.5s) is looped: the full take rolls over mid-way, which
-  // would sink the body through the mattress.
-  const loadSleepingIdleClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/sleeping-idle.fbx');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              for (let i = 0; i < vals.length; i += 3) vals[i + 1] *= 0.01;
-            }
-          }
-          return THREE.AnimationUtils.subclip(raw, 'sleeping.001', 15, 195, 30);
-        } catch (err) {
-          console.warn('[PreloadGate] Sleeping idle clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const sleepingClipPromise = loadSleepingIdleClip();
-  sleepingClipPromise
-    .then((c) => {
-      loadedSleepingClip = c;
+  // Sleeping idle: retargetable Mixamo GLB (`Laying_—_Ramah_Malu-Malu_#4` baked as `sleeping.001`)
+  // loaded once via GLTFLoader + DRACOLoader so Female and Male rigs share the exact same
+  // bind-pose delta retargeting without FBX unit mismatches.
+  const sleepingGltfPromise = loadOptionalGltf('/assets/sleeping-anim.glb').then((gltf) => {
+    loadedSleepingGltf = gltf;
+    return gltf;
+  });
+  const sleepingClipPromise = sleepingGltfPromise
+    .then((gltf) => {
+      const raw = gltf?.animations?.[0];
+      if (!raw) return null;
+      const cloned = raw.clone();
+      cloned.name = 'sleeping.001';
+      loadedSleepingClip = cloned;
+      return cloned;
     })
-    .catch(() => {});
+    .catch((err) => {
+      console.warn('[PreloadGate] Sleeping idle clip failed to load:', err);
+      return null;
+    });
 
   // Replacement jump: a user-supplied FBX take (root-motion) parsed at runtime.
   // The take carries its forward travel on the hip track's Y component (0 ->
@@ -4834,6 +4821,7 @@ export async function loadAllRealBlitzAssets(
         kaiIdleClip,
         hanaIdleClip,
         cafeWorkGltf,
+        sleepingGltf: loadedSleepingGltf,
       };
       cachedLoadedBlitzAssets = loaded;
       if (loaded.treeFoliageTex) {
@@ -10593,32 +10581,21 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     clips.set(rawClip.name, rawClip);
   }
-  // Merge the separately loaded sleeping clip (FBX take), dropping any track whose
-  // target bone does not exist on this character, same as the baked clips above.
-  const sleepingClipSrc = loadedSleepingClip ?? cachedLoadedBlitzAssets?.sleepingClip;
+  // Merge the bed sleeping clip (`sleeping-anim.glb`), dynamically retargeting from the
+  // embedded Mixamo reference bind pose onto this character template so Female & Male align cleanly.
+  const sleepingGltfSrc = loadedSleepingGltf ?? cachedLoadedBlitzAssets?.sleepingGltf ?? null;
+  const sleepingClipSrc =
+    sleepingGltfSrc?.animations?.[0] ?? loadedSleepingClip ?? cachedLoadedBlitzAssets?.sleepingClip;
   if (sleepingClipSrc && !clips.has('sleeping.001')) {
-    const c = sleepingClipSrc.clone();
+    const c = sleepingGltfSrc
+      ? retargetMixamoClipBetweenBindPoses(sleepingClipSrc, sleepingGltfSrc.scene, gltf.scene)
+      : sleepingClipSrc.clone();
+    c.name = 'sleeping.001';
     c.tracks = c.tracks.filter((track) => {
       const dotIdx = track.name.indexOf('.');
       const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
       return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
     });
-    // Same root-motion lock as the baked clips: the source take was recorded meters
-    // away from its stage origin, so pin hip X/Z to the bind values and clamp Y.
-    for (const track of c.tracks) {
-      if (/Hips\.position$/i.test(track.name)) {
-        const vals = track.values;
-        for (let i = 0; i < vals.length; i += 3) {
-          vals[i] = hipsBindX;
-          if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
-            vals[i + 1] = hipsBindY * 0.62;
-          } else if (vals[i + 1] < 0.05) {
-            vals[i + 1] = 0.06;
-          }
-          vals[i + 2] = hipsBindZ;
-        }
-      }
-    }
     if (c.tracks.length) clips.set('sleeping.001', c);
   }
   // Swap in the replacement jump (runtime FBX take, already remapped to an
@@ -12573,13 +12550,40 @@ function stepCharBuddiesGlbRigController(
   let footGroundShiftY = 0;
   const needHandSampling =
     !hasScooterPose && (carryingCrate || (punchTimer <= 0 && weaponId !== 'unarmed'));
-  if (bodyGroup && (!isSeatedOrPiloting || needHandSampling)) {
+  if (bodyGroup && (!isSeatedOrPiloting || isSleeping || needHandSampling)) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
     if (!isSeatedOrPiloting) {
       const minFootY = measureLowestFootBoneLocalY(ctrl.bones, ctrl.glbRoot);
       if (Number.isFinite(minFootY)) {
         footGroundShiftY = (minFootY - ctrl.standingSoleOffsetY) * ctrl.glbRoot.scale.y;
         ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
+        ctrl.glbRoot.updateWorldMatrix(true, true);
+      }
+    } else if (isSleeping && targetClip === 'sleeping.001') {
+      // Align the lowest major body bone to y = 0.11 inside `bodyGroup` (~0.06m world
+      // radius at 0.55 room scale) so Female and Male avatars rest flush on any mattress surface.
+      let lowestSleepLocalY = Infinity;
+      for (const [bName, bone] of ctrl.bones.entries()) {
+        if (
+          bName.startsWith('mixamorig') ||
+          bName.includes('End') ||
+          bName.includes('Hand') ||
+          bName.includes('Thumb') ||
+          bName.includes('Index') ||
+          bName.includes('Middle') ||
+          bName.includes('Ring') ||
+          bName.includes('Pinky')
+        ) {
+          continue;
+        }
+        bone.getWorldPosition(_scooterIkBodyPosA);
+        bodyGroup.worldToLocal(_scooterIkBodyPosA);
+        if (_scooterIkBodyPosA.y < lowestSleepLocalY) {
+          lowestSleepLocalY = _scooterIkBodyPosA.y;
+        }
+      }
+      if (Number.isFinite(lowestSleepLocalY)) {
+        ctrl.glbRoot.position.y = ctrl.baseRootY + (0.11 - lowestSleepLocalY);
         ctrl.glbRoot.updateWorldMatrix(true, true);
       }
     }
