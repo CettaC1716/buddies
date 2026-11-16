@@ -265,6 +265,7 @@ import {
   populateAr99AssaultFromGlb,
   updateCharacterWeaponStance,
   type CafeWorkAnimAction,
+  type SitAnimVariant,
   BuddyCharacterRig,
   BlitzWeaponId,
   stepBlitzTankTracks,
@@ -1022,6 +1023,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       yaw: number;
       seatLiftY: number;
       indicatorHeightY: number;
+      sitVariant?: SitAnimVariant;
+      standUpX?: number;
+      standUpZ?: number;
     }
 
     const LOBBY_SEAT_SPOTS: readonly LobbySeatSpot[] = [
@@ -1053,8 +1057,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: Math.PI / 2, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_529', x: -9.5, z: 44.6, yaw: -Math.PI / 2, seatLiftY: 0.0, indicatorHeightY: 1.25 },
-      // Beachfront Harbor Pergola Bench
-      { id: 'beach_pergola_bench_1', x: 83.92, z: 93.61, yaw: 0.0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      // Beachfront Harbor Pergola Timber Plank Bench (`Laying_—_Runway_Catwalk_Stylish_#20` lounge pose)
+      {
+        id: 'beach_pergola_bench_1',
+        x: 84.20,
+        z: 93.61,
+        yaw: Math.PI,
+        seatLiftY: 0.838,
+        indicatorHeightY: 1.08,
+        sitVariant: 'bench_lounge',
+        standUpX: 83.92,
+        standUpZ: 94.85,
+      },
       // SE Beach sun loungers & Adirondack chairs (ShadersAndAssets §6B placements; builder
       // coords are world coords). Spot yaw = placement rotY - PI/2: these procedural groups
       // render with rotation.y = rotY verbatim and their backrests sit at local -Z, so the
@@ -1151,6 +1165,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       };
     };
 
+    const getLobbySeatStandUpPos = (spot: LobbySeatSpot) => ({
+      x: spot.standUpX ?? wrapPlanetCoord(spot.x + Math.cos(spot.yaw) * 0.88),
+      z: spot.standUpZ ?? wrapPlanetCoord(spot.z - Math.sin(spot.yaw) * 0.88),
+    });
+
     const sitOnLobbySeat = (spot: LobbySeatSpot) => {
       if (!playerUnit || !playerUnit.alive) return;
       const isOccupiedByBuddy = buddyUnits.some(
@@ -1169,12 +1188,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       playerUnit.vx = 0;
       playerUnit.vz = 0;
       playerUnit.yaw = spot.yaw;
+      playerUnit.visualYaw = spot.yaw;
       playerUnit.isSitting = true;
       playerUnit.isDriving = false;
-      // Set 3rd-person perspective camera facing the seated character from the open plaza diagonal
-      seatedCameraYaw = spot.yaw + Math.PI / 2 + 0.36;
-      seatedCameraPitch = 0.22;
-      seatedCameraDist = 3.55;
+      // Set 3rd-person perspective camera facing the seated/lounging character cleanly
+      if (spot.sitVariant === 'bench_lounge') {
+        seatedCameraYaw = 0.22;
+        seatedCameraPitch = 0.28;
+        seatedCameraDist = 4.2;
+      } else {
+        seatedCameraYaw = spot.yaw + Math.PI / 2 + 0.36;
+        seatedCameraPitch = 0.22;
+        seatedCameraDist = 3.55;
+      }
       updateCharacterWeaponStance(
         playerUnit.rig,
         playerUnit.weaponId,
@@ -1196,6 +1222,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         0,
         true,
         false,
+        false,
+        null,
+        'idle',
+        spot.sitVariant ?? 'chair',
       );
       emitHudImmediately();
     };
@@ -1203,8 +1233,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const standUpFromLobbySeat = () => {
       if (!playerUnit) return;
       if (activeSeatedSpot) {
-        playerUnit.x = wrapPlanetCoord(activeSeatedSpot.x + Math.cos(activeSeatedSpot.yaw) * 0.88);
-        playerUnit.z = wrapPlanetCoord(activeSeatedSpot.z - Math.sin(activeSeatedSpot.yaw) * 0.88);
+        const exitPos = getLobbySeatStandUpPos(activeSeatedSpot);
+        playerUnit.x = exitPos.x;
+        playerUnit.z = exitPos.z;
       }
       activeSeatedSpot = null;
       isOrbitingSeatedCamera = false;
@@ -11816,8 +11847,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       if (mountedTank || !playerUnit || !playerUnit.alive) return;
       if (playerUnit.isSitting && activeSeatedSpot) {
-        playerUnit.x = wrapPlanetCoord(activeSeatedSpot.x + Math.cos(activeSeatedSpot.yaw) * 0.88);
-        playerUnit.z = wrapPlanetCoord(activeSeatedSpot.z - Math.sin(activeSeatedSpot.yaw) * 0.88);
+        const exitPos = getLobbySeatStandUpPos(activeSeatedSpot);
+        playerUnit.x = exitPos.x;
+        playerUnit.z = exitPos.z;
         activeSeatedSpot = null;
         isOrbitingSeatedCamera = false;
       }
@@ -19526,12 +19558,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 playerUnit.isSleeping = false;
               }
               if (playerUnit.isSitting && activeSeatedSpot) {
-                playerUnit.x = wrapPlanetCoord(
-                  activeSeatedSpot.x + Math.cos(activeSeatedSpot.yaw) * 0.88,
-                );
-                playerUnit.z = wrapPlanetCoord(
-                  activeSeatedSpot.z - Math.sin(activeSeatedSpot.yaw) * 0.88,
-                );
+                const exitPos = getLobbySeatStandUpPos(activeSeatedSpot);
+                playerUnit.x = exitPos.x;
+                playerUnit.z = exitPos.z;
                 activeSeatedSpot = null;
                 isOrbitingSeatedCamera = false;
                 playerUnit.isSitting = false;
@@ -20951,7 +20980,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 b.isPlayer && b.isSitting && activeCafeSeatedSpot
                   ? activeCafeSeatedSpot.seatLiftY
                   : b.isPlayer && b.isSitting && activeSeatedSpot
-                    ? activeSeatedSpot.seatLiftY + 0.178
+                    ? activeSeatedSpot.seatLiftY +
+                      (activeSeatedSpot.sitVariant === 'bench_lounge' ? 0 : 0.178)
                     : b.isPlayer && b.isSleeping && activeSleepSpot
                       ? activeSleepSpot.sleepLiftY
                       : 0;
@@ -21103,6 +21133,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsSleeping,
                 scooterPose,
                 unitCafeWorkAction,
+                b.isPlayer && activeSeatedSpot?.sitVariant ? activeSeatedSpot.sitVariant : 'chair',
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -23645,13 +23676,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
                 emoteClip: playerUnit?.isSleeping
                   ? 'bed:sleep'
-                  : cafeWorkAnimSync.phase === 'prep_act'
-                    ? cafeWorkAnimSync.category === 'pastry'
-                      ? 'cafe:tray'
-                      : 'cafe:coffee'
-                    : cafeWorkAnimSync.phase === 'serve_act'
-                      ? 'cafe:serve'
-                      : '',
+                  : playerUnit?.isSitting && activeSeatedSpot?.sitVariant === 'bench_lounge'
+                    ? 'seat:bench_lounge'
+                    : cafeWorkAnimSync.phase === 'prep_act'
+                      ? cafeWorkAnimSync.category === 'pastry'
+                        ? 'cafe:tray'
+                        : 'cafe:coffee'
+                      : cafeWorkAnimSync.phase === 'serve_act'
+                        ? 'cafe:serve'
+                        : '',
                 chatBubbleText: curChat,
               },
               zoneOrChatChanged,
@@ -23982,6 +24015,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.emoteClip === 'bed:sleep',
               peer.scooterKind ? av.scooterPose : null,
               peerCafeWorkAction,
+              peer.emoteClip === 'seat:bench_lounge' ? 'bench_lounge' : 'chair',
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -24845,7 +24879,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else {
           const seatLift =
             b.isPlayer && b.isSitting && activeSeatedSpot
-              ? activeSeatedSpot.seatLiftY + 0.178
+              ? activeSeatedSpot.seatLiftY +
+                (activeSeatedSpot.sitVariant === 'bench_lounge' ? 0 : 0.178)
               : 0;
           b.bodyGroup.position.set(0, floatY + b.jumpOffset + bHitPose.hopY + seatLift, 0);
         }
@@ -24874,7 +24909,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (av.peer.scooterKind && av.scooterPose) {
             applyScooterBodyTransform(av.bodyGroup, av.peer.jumpOffset, av.renderYaw, av.scooterPose);
           } else {
-            av.bodyGroup.position.set(0, av.peer.jumpOffset + (av.peer.isSitting ? 0.128 : 0), 0);
+            const peerSeatLiftY =
+              av.peer.emoteClip === 'seat:bench_lounge' ? 0.838 : av.peer.isSitting ? 0.128 : 0;
+            av.bodyGroup.position.set(0, av.peer.jumpOffset + peerSeatLiftY, 0);
             av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0, 'YXZ');
           }
           if (av.scooterHandle) {

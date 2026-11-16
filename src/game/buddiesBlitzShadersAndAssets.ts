@@ -4207,15 +4207,18 @@ export interface LoadedBlitzAssets {
   hanaIdleClip: THREE.AnimationClip | null;
   cafeWorkGltf?: GLTF | null;
   sleepingGltf?: GLTF | null;
+  benchLoungeGltf?: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
 
 export type CafeWorkAnimAction = 'idle' | 'coffee' | 'tray' | 'serve';
+export type SitAnimVariant = 'chair' | 'bench_lounge';
 let loadedCafeWorkGltf: GLTF | null = null;
 let loadedSleepingGltf: GLTF | null = null;
+let loadedBenchLoungeGltf: GLTF | null = null;
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 41;
+const BLITZ_3D_TOTAL_ASSET_TASKS = 42;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4655,8 +4658,12 @@ export async function loadAllRealBlitzAssets(
     loadedCafeWorkGltf = gltf;
     return gltf;
   });
+  const benchLoungeGltfPromise = loadOptionalGltf('/assets/bench-lounge-anim.glb').then((gltf) => {
+    loadedBenchLoungeGltf = gltf;
+    return gltf;
+  });
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4719,6 +4726,7 @@ export async function loadAllRealBlitzAssets(
     kaiIdleClipPromise,
     hanaIdleClipPromise,
     cafeWorkGltfPromise,
+    benchLoungeGltfPromise,
   ]).then(
     ([
       playerGltf,
@@ -4769,6 +4777,7 @@ export async function loadAllRealBlitzAssets(
       kaiIdleClip,
       hanaIdleClip,
       cafeWorkGltf,
+      benchLoungeGltf,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4822,6 +4831,7 @@ export async function loadAllRealBlitzAssets(
         hanaIdleClip,
         cafeWorkGltf,
         sleepingGltf: loadedSleepingGltf,
+        benchLoungeGltf,
       };
       cachedLoadedBlitzAssets = loaded;
       if (loaded.treeFoliageTex) {
@@ -10581,22 +10591,38 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     clips.set(rawClip.name, rawClip);
   }
-  // Merge the bed sleeping clip (`sleeping-anim.glb`), dynamically retargeting from the
-  // embedded Mixamo reference bind pose onto this character template so Female & Male align cleanly.
+  // Merge retargetable horizontal surface clips (`sleeping-anim.glb` -> `sleeping.001` and
+  // `bench-lounge-anim.glb` -> `bench_lounge.001`), dynamically adapting from each clip's
+  // Mixamo reference bind pose onto this character template so Female & Male align cleanly.
   const sleepingGltfSrc = loadedSleepingGltf ?? cachedLoadedBlitzAssets?.sleepingGltf ?? null;
-  const sleepingClipSrc =
-    sleepingGltfSrc?.animations?.[0] ?? loadedSleepingClip ?? cachedLoadedBlitzAssets?.sleepingClip;
-  if (sleepingClipSrc && !clips.has('sleeping.001')) {
-    const c = sleepingGltfSrc
-      ? retargetMixamoClipBetweenBindPoses(sleepingClipSrc, sleepingGltfSrc.scene, gltf.scene)
-      : sleepingClipSrc.clone();
-    c.name = 'sleeping.001';
+  const benchLoungeGltfSrc =
+    loadedBenchLoungeGltf ?? cachedLoadedBlitzAssets?.benchLoungeGltf ?? null;
+  for (const spec of [
+    {
+      gltfSrc: sleepingGltfSrc,
+      clipSrc:
+        sleepingGltfSrc?.animations?.[0] ??
+        loadedSleepingClip ??
+        cachedLoadedBlitzAssets?.sleepingClip,
+      clipName: 'sleeping.001',
+    },
+    {
+      gltfSrc: benchLoungeGltfSrc,
+      clipSrc: benchLoungeGltfSrc?.animations?.[0] ?? null,
+      clipName: 'bench_lounge.001',
+    },
+  ]) {
+    if (!spec.clipSrc || clips.has(spec.clipName)) continue;
+    const c = spec.gltfSrc
+      ? retargetMixamoClipBetweenBindPoses(spec.clipSrc, spec.gltfSrc.scene, gltf.scene)
+      : spec.clipSrc.clone();
+    c.name = spec.clipName;
     c.tracks = c.tracks.filter((track) => {
       const dotIdx = track.name.indexOf('.');
       const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
       return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
     });
-    if (c.tracks.length) clips.set('sleeping.001', c);
+    if (c.tracks.length) clips.set(spec.clipName, c);
   }
   // Swap in the replacement jump (runtime FBX take, already remapped to an
   // in-place clip by its loader) over the baked unarmed_jump.001, with the same
@@ -11829,6 +11855,41 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   };
 }
 
+function alignLyingBodyToSurfaceLocalY(
+  bones: Map<string, THREE.Bone>,
+  glbRoot: THREE.Group,
+  bodyGroup: THREE.Group,
+  baseRootY: number,
+  targetWorldBodyRadius: number,
+): void {
+  const parentScaleY = Math.max(0.25, bodyGroup.parent?.scale.y ?? 1);
+  const targetLocalBoneY = targetWorldBodyRadius / parentScaleY;
+  let lowestLocalY = Infinity;
+  for (const [bName, bone] of bones.entries()) {
+    if (
+      bName.startsWith('mixamorig') ||
+      bName.includes('End') ||
+      bName.includes('Hand') ||
+      bName.includes('Thumb') ||
+      bName.includes('Index') ||
+      bName.includes('Middle') ||
+      bName.includes('Ring') ||
+      bName.includes('Pinky')
+    ) {
+      continue;
+    }
+    bone.getWorldPosition(_scooterIkBodyPosA);
+    bodyGroup.worldToLocal(_scooterIkBodyPosA);
+    if (_scooterIkBodyPosA.y < lowestLocalY) {
+      lowestLocalY = _scooterIkBodyPosA.y;
+    }
+  }
+  if (Number.isFinite(lowestLocalY)) {
+    glbRoot.position.y = baseRootY + (targetLocalBoneY - lowestLocalY);
+    glbRoot.updateWorldMatrix(true, true);
+  }
+}
+
 function stepCharBuddiesGlbRigController(
   ctrl: CharBuddiesGlbRigController,
   rig: BuddyCharacterRig,
@@ -11852,6 +11913,7 @@ function stepCharBuddiesGlbRigController(
   isSleeping = false,
   scooterRidePose: ScooterRiderRigPose | null = null,
   cafeWorkAction: CafeWorkAnimAction = 'idle',
+  sittingVariant: SitAnimVariant = 'chair',
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -12004,8 +12066,18 @@ function stepCharBuddiesGlbRigController(
   } else if (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sleeping.001')) {
     targetClip = 'sleeping.001';
     timeScale = 1.0;
-  } else if (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && ctrl.clips.has('sitting.001')) {
-    targetClip = 'sitting.001';
+  } else if (
+    isSitting &&
+    !isMoving &&
+    jumpOffset <= 0.05 &&
+    !carryingCrate &&
+    ((sittingVariant === 'bench_lounge' && ctrl.clips.has('bench_lounge.001')) ||
+      ctrl.clips.has('sitting.001'))
+  ) {
+    targetClip =
+      sittingVariant === 'bench_lounge' && ctrl.clips.has('bench_lounge.001')
+        ? 'bench_lounge.001'
+        : 'sitting.001';
     timeScale = 1.0;
   } else if (ctrl.kickAnimTimer > 0 && hasRifleTurnAndKickClip) {
     targetClip = 'rifle_turn_and_kick.001';
@@ -12550,7 +12622,10 @@ function stepCharBuddiesGlbRigController(
   let footGroundShiftY = 0;
   const needHandSampling =
     !hasScooterPose && (carryingCrate || (punchTimer <= 0 && weaponId !== 'unarmed'));
-  if (bodyGroup && (!isSeatedOrPiloting || isSleeping || needHandSampling)) {
+  const isLyingSurfacePose =
+    (isSleeping && targetClip === 'sleeping.001') ||
+    (isSitting && targetClip === 'bench_lounge.001');
+  if (bodyGroup && (!isSeatedOrPiloting || isLyingSurfacePose || needHandSampling)) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
     if (!isSeatedOrPiloting) {
       const minFootY = measureLowestFootBoneLocalY(ctrl.bones, ctrl.glbRoot);
@@ -12559,33 +12634,14 @@ function stepCharBuddiesGlbRigController(
         ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
         ctrl.glbRoot.updateWorldMatrix(true, true);
       }
-    } else if (isSleeping && targetClip === 'sleeping.001') {
-      // Align the lowest major body bone to y = 0.11 inside `bodyGroup` (~0.06m world
-      // radius at 0.55 room scale) so Female and Male avatars rest flush on any mattress surface.
-      let lowestSleepLocalY = Infinity;
-      for (const [bName, bone] of ctrl.bones.entries()) {
-        if (
-          bName.startsWith('mixamorig') ||
-          bName.includes('End') ||
-          bName.includes('Hand') ||
-          bName.includes('Thumb') ||
-          bName.includes('Index') ||
-          bName.includes('Middle') ||
-          bName.includes('Ring') ||
-          bName.includes('Pinky')
-        ) {
-          continue;
-        }
-        bone.getWorldPosition(_scooterIkBodyPosA);
-        bodyGroup.worldToLocal(_scooterIkBodyPosA);
-        if (_scooterIkBodyPosA.y < lowestSleepLocalY) {
-          lowestSleepLocalY = _scooterIkBodyPosA.y;
-        }
-      }
-      if (Number.isFinite(lowestSleepLocalY)) {
-        ctrl.glbRoot.position.y = ctrl.baseRootY + (0.11 - lowestSleepLocalY);
-        ctrl.glbRoot.updateWorldMatrix(true, true);
-      }
+    } else if (isLyingSurfacePose) {
+      alignLyingBodyToSurfaceLocalY(
+        ctrl.bones,
+        ctrl.glbRoot,
+        bodyGroup,
+        ctrl.baseRootY,
+        targetClip === 'bench_lounge.001' ? 0.065 : 0.062,
+      );
     }
     if (needHandSampling) {
       const hasRight = sampleMixamoHandPalmLocal(
@@ -12742,6 +12798,7 @@ export function updateCharacterWeaponStance(
   isSleeping = false,
   scooterRidePose: ScooterRiderRigPose | null = null,
   cafeWorkAction: CafeWorkAnimAction = 'idle',
+  sittingVariant: SitAnimVariant = 'chair',
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -12767,6 +12824,7 @@ export function updateCharacterWeaponStance(
       isSleeping,
       scooterRidePose,
       cafeWorkAction,
+      sittingVariant,
     );
   }
   if (
@@ -12775,7 +12833,12 @@ export function updateCharacterWeaponStance(
     Boolean(scooterRidePose && scooterRidePose.blend > 0.001) ||
     (!isMoving && jumpOffset <= 0.05 && !carryingCrate && cafeWorkAction !== 'idle') ||
     (isDriving && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('driving.001')) ||
-    (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001')) ||
+    (isSitting &&
+      !isMoving &&
+      jumpOffset <= 0.05 &&
+      !carryingCrate &&
+      (rig.customGlbController?.clips.has('sitting.001') ||
+        rig.customGlbController?.clips.has('bench_lounge.001'))) ||
     (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
   ) {
     rig.weaponRigGroup.visible = false;
