@@ -29,6 +29,7 @@ import {
   buildStaticWorldStructuresList,
   isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
+import { buildSouthEastCoastalBeachfront3D } from './buddiesCoastalBeachBuilder';
 
 test('Botanical Glasshouse Cafe menu contains 9 distinct food & drink items matching PESAN SESUATU', () => {
   assert.equal(CAFE_MENU_ITEMS.length, 9);
@@ -1226,9 +1227,13 @@ const RETARGETABLE_SEAT_AND_SLEEP_CLIPS = [
   { file: 'bench-lounge-anim.glb', clipName: 'bench_lounge.001', minDurationSec: 2.8 },
   { file: 'chair-casual-anim.glb', clipName: 'chair_casual.001', minDurationSec: 5.5 },
   { file: 'sun-lounger-anim.glb', clipName: 'sun_lounger.001', minDurationSec: 4.5 },
+  { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_idle.001', minDurationSec: 4.5 },
+  { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_walk.001', minDurationSec: 0.8 },
+  { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_run.001', minDurationSec: 0.7 },
+  { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_sit.001', minDurationSec: 2.5 },
 ] as const;
 
-test('retargetable sleep, pergola bench, Adirondack chair, and sun lounger GLBs expose Mixamo clips', async () => {
+test('retargetable sleep, beach seating, and fishing carry GLBs expose Mixamo clips', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');
 
@@ -1272,4 +1277,55 @@ test('retargetable sleep, pergola bench, Adirondack chair, and sun lounger GLBs 
       `Expected >= ${spec.minDurationSec}s duration on ${spec.clipName}, got ${duration}s`,
     );
   }
+});
+
+test('buildSouthEastCoastalBeachfront3D generates finite rounded geometries and continuous UVs across Kai beachfront landmarks', () => {
+  const parentGroup = new THREE.Group();
+  const roadsGroup = new THREE.Group();
+  const stubTex = new THREE.DataTexture(new Uint8Array([220, 210, 195, 255]), 1, 1, THREE.RGBAFormat);
+  stubTex.needsUpdate = true;
+
+  const handle = buildSouthEastCoastalBeachfront3D({
+    parentGroup,
+    roadsGroup,
+    windUniforms: {},
+    isSoftwareGl: true,
+    lobbyConcreteTex: stubTex,
+    lobbyLouverTex: stubTex,
+    createBlitzStrokeMesh: () => null,
+    upgradeMeshToBlitzWorldMaterial: () => {},
+  });
+
+  assert.equal(handle.boardwalkY, 0.82);
+  for (const landmarkName of [
+    'MinimalistTimberBeachPergola',
+    'OutdoorBeachShowerStation',
+    'BeachsideJuiceAndCoconutKiosk',
+    'SurfboardRentalRackDisplay',
+    'CoastalLifeguardWatchtower',
+  ]) {
+    assert.ok(handle.seBeachGroup.getObjectByName(landmarkName), `Missing landmark ${landmarkName}`);
+  }
+
+  let meshCount = 0;
+  let roundedOrCurvedCount = 0;
+  handle.seBeachGroup.updateMatrixWorld(true);
+  handle.seBeachGroup.traverse((obj) => {
+    if (!(obj as THREE.Mesh).isMesh) return;
+    const mesh = obj as THREE.Mesh;
+    meshCount++;
+    const pos = mesh.geometry.getAttribute('position');
+    const norm = mesh.geometry.getAttribute('normal');
+    const uv = mesh.geometry.getAttribute('uv');
+    assert.ok(pos && pos.count > 0, 'Expected non-empty position attribute');
+    assert.ok(norm && norm.count === pos.count, 'Expected valid vertex normals');
+    assert.ok(uv && uv.count === pos.count, 'Expected valid vertex UVs');
+    if (pos.count > 24) roundedOrCurvedCount++;
+    for (let i = 0; i < pos.count; i++) {
+      assert.ok(Number.isFinite(pos.getX(i)) && Number.isFinite(pos.getY(i)) && Number.isFinite(pos.getZ(i)));
+      assert.ok(Number.isFinite(uv.getX(i)) && Number.isFinite(uv.getY(i)));
+    }
+  });
+  assert.ok(meshCount >= 180, `Expected rich coastal architecture & furniture meshes, got ${meshCount}`);
+  assert.ok(roundedOrCurvedCount >= 150, `Expected rounded/curved mid-res geometries across beachfront, got ${roundedOrCurvedCount}`);
 });

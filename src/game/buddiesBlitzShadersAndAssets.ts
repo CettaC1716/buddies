@@ -24,6 +24,7 @@ import {
 import type { ScooterRiderRigPose } from './buddiesScooterRidePose';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 import { buildGrandCasino3D } from './buddiesGrandCasinoBuilder';
+import { buildSouthEastCoastalBeachfront3D } from './buddiesCoastalBeachBuilder';
 import {
   buildUrbanScooterShowroomKiosk3D,
   createElectricScooterBike3D,
@@ -4210,6 +4211,7 @@ export interface LoadedBlitzAssets {
   benchLoungeGltf?: GLTF | null;
   chairCasualGltf?: GLTF | null;
   sunLoungerGltf?: GLTF | null;
+  fishingCarryGltf?: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
@@ -4221,8 +4223,9 @@ let loadedSleepingGltf: GLTF | null = null;
 let loadedBenchLoungeGltf: GLTF | null = null;
 let loadedChairCasualGltf: GLTF | null = null;
 let loadedSunLoungerGltf: GLTF | null = null;
+let loadedFishingCarryGltf: GLTF | null = null;
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 44;
+const BLITZ_3D_TOTAL_ASSET_TASKS = 45;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4674,8 +4677,12 @@ export async function loadAllRealBlitzAssets(
     loadedSunLoungerGltf = gltf;
     return gltf;
   });
+  const fishingCarryGltfPromise = loadOptionalGltf('/assets/fishing-carry-anims.glb').then((gltf) => {
+    loadedFishingCarryGltf = gltf;
+    return gltf;
+  });
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, chairCasualGltfPromise, sunLoungerGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, chairCasualGltfPromise, sunLoungerGltfPromise, fishingCarryGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4741,6 +4748,7 @@ export async function loadAllRealBlitzAssets(
     benchLoungeGltfPromise,
     chairCasualGltfPromise,
     sunLoungerGltfPromise,
+    fishingCarryGltfPromise,
   ]).then(
     ([
       playerGltf,
@@ -4794,6 +4802,7 @@ export async function loadAllRealBlitzAssets(
       benchLoungeGltf,
       chairCasualGltf,
       sunLoungerGltf,
+      fishingCarryGltf,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4850,6 +4859,7 @@ export async function loadAllRealBlitzAssets(
         benchLoungeGltf,
         chairCasualGltf,
         sunLoungerGltf,
+        fishingCarryGltf,
       };
       cachedLoadedBlitzAssets = loaded;
       if (loaded.treeFoliageTex) {
@@ -7929,6 +7939,7 @@ export interface CharBuddiesGlbRigController {
   rightHandLocalPos: THREE.Vector3;
   leftHandLocalPos: THREE.Vector3;
   rightHandGripAxisLocal: THREE.Vector3;
+  leftHandGripAxisLocal: THREE.Vector3;
   hasHandBonePositions: boolean;
   prevJumpOffset: number;
   landRecoveryTimer: number;
@@ -10619,7 +10630,13 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     loadedChairCasualGltf ?? cachedLoadedBlitzAssets?.chairCasualGltf ?? null;
   const sunLoungerGltfSrc =
     loadedSunLoungerGltf ?? cachedLoadedBlitzAssets?.sunLoungerGltf ?? null;
-  for (const spec of [
+  const fishingCarryGltfSrc =
+    loadedFishingCarryGltf ?? cachedLoadedBlitzAssets?.fishingCarryGltf ?? null;
+  const retargetSpecs: Array<{
+    gltfSrc: GLTF | null;
+    clipSrc: THREE.AnimationClip | null | undefined;
+    clipName: string;
+  }> = [
     {
       gltfSrc: sleepingGltfSrc,
       clipSrc:
@@ -10643,7 +10660,15 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       clipSrc: sunLoungerGltfSrc?.animations?.[0] ?? null,
       clipName: 'sun_lounger.001',
     },
-  ]) {
+  ];
+  for (const fcClip of fishingCarryGltfSrc?.animations ?? []) {
+    retargetSpecs.push({
+      gltfSrc: fishingCarryGltfSrc,
+      clipSrc: fcClip,
+      clipName: fcClip.name,
+    });
+  }
+  for (const spec of retargetSpecs) {
     if (!spec.clipSrc || clips.has(spec.clipName)) continue;
     const c = spec.gltfSrc
       ? retargetMixamoClipBetweenBindPoses(spec.clipSrc, spec.gltfSrc.scene, gltf.scene)
@@ -11871,6 +11896,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     rightHandLocalPos: new THREE.Vector3(-0.15, 1.24, 0.22),
     leftHandLocalPos: new THREE.Vector3(-0.11, 1.28, 0.49),
     rightHandGripAxisLocal: new THREE.Vector3(0, 0.72, 0.69),
+    leftHandGripAxisLocal: new THREE.Vector3(0.06, 0.67, -0.74),
     hasHandBonePositions: false,
     prevJumpOffset: 0,
     landRecoveryTimer: 0,
@@ -11902,13 +11928,35 @@ const CUSTOM_POSE_SURFACE_ANCHOR: Record<
   'bench_lounge.001': { targetWorldY: 0.065 },
   'sun_lounger.001': { targetWorldY: 0.055, includeHands: true },
   'chair_casual.001': { targetWorldY: 1.08, anchorBone: 'Hips' },
+  'fishing_carry_sit.001': { targetWorldY: 1.04, anchorBone: 'Hips' },
 };
+
+function isActiveFishingActionState(
+  rig: BuddyCharacterRig,
+  weaponId: BlitzWeaponId,
+  fishingCastTimer = 0,
+): boolean {
+  return (
+    weaponId === 'fishing_rod' &&
+    (fishingCastTimer > 0 || Boolean(rig.fishingPoseState && rig.fishingPoseState.phase !== 'idle'))
+  );
+}
 
 function resolveSitClipName(
   clips: Map<string, THREE.AnimationClip> | undefined,
   sittingVariant: SitAnimVariant,
+  weaponId: BlitzWeaponId = 'unarmed',
+  isActiveFishing = false,
 ): string | null {
   if (!clips) return null;
+  if (
+    sittingVariant === 'chair' &&
+    weaponId === 'fishing_rod' &&
+    !isActiveFishing &&
+    clips.has('fishing_carry_sit.001')
+  ) {
+    return 'fishing_carry_sit.001';
+  }
   const preferred = SIT_VARIANT_CLIP_MAP[sittingVariant];
   if (preferred && clips.has(preferred)) return preferred;
   return clips.has('sitting.001') ? 'sitting.001' : null;
@@ -12139,9 +12187,19 @@ function stepCharBuddiesGlbRigController(
     !isMoving &&
     jumpOffset <= 0.05 &&
     !carryingCrate &&
-    resolveSitClipName(ctrl.clips, sittingVariant) !== null
+    resolveSitClipName(
+      ctrl.clips,
+      sittingVariant,
+      weaponId,
+      isActiveFishingActionState(rig, weaponId, ctrl.fishingCastTimer),
+    ) !== null
   ) {
-    targetClip = resolveSitClipName(ctrl.clips, sittingVariant)!;
+    targetClip = resolveSitClipName(
+      ctrl.clips,
+      sittingVariant,
+      weaponId,
+      isActiveFishingActionState(rig, weaponId, ctrl.fishingCastTimer),
+    )!;
     timeScale = 1.0;
   } else if (ctrl.kickAnimTimer > 0 && hasRifleTurnAndKickClip) {
     targetClip = 'rifle_turn_and_kick.001';
@@ -12349,6 +12407,19 @@ function stepCharBuddiesGlbRigController(
         targetClip = 'run.001';
         timeScale = 1.0;
       }
+    } else if (
+      !carryingCrate &&
+      weaponId === 'fishing_rod' &&
+      (ctrl.clips.has('fishing_carry_walk.001') || ctrl.clips.has('fishing_carry_run.001'))
+    ) {
+      const isFishingWalk = moveSpeed > 0 && moveSpeed < 6.35;
+      targetClip =
+        isFishingWalk && ctrl.clips.has('fishing_carry_walk.001')
+          ? 'fishing_carry_walk.001'
+          : ctrl.clips.has('fishing_carry_run.001')
+            ? 'fishing_carry_run.001'
+            : 'fishing_carry_walk.001';
+      timeScale = forwardDir < -0.35 ? -1.0 : 1.0;
     } else if (!carryingCrate && (weaponId === 'unarmed' || weaponId === 'fishing_rod')) {
       // FEMALE / UNARMED BASIC LOCOMOTION PACK (NON-COMBAT)
       const isUnarmedWalk = moveSpeed > 0 && moveSpeed < 6.35;
@@ -12406,6 +12477,16 @@ function stepCharBuddiesGlbRigController(
     if (ctrl.fishingCastTimer > 0 && ctrl.clips.has('fishing_cast.001')) {
       targetClip = 'fishing_cast.001';
       timeScale = 1.25;
+    } else if (
+      rig.fishingPoseState &&
+      rig.fishingPoseState.phase !== 'idle' &&
+      ctrl.clips.has('fishing_idle.001')
+    ) {
+      targetClip = 'fishing_idle.001';
+      timeScale = 1.0;
+    } else if (ctrl.clips.has('fishing_carry_idle.001')) {
+      targetClip = 'fishing_carry_idle.001';
+      timeScale = 1.0;
     } else if (ctrl.clips.has('fishing_idle.001')) {
       targetClip = 'fishing_idle.001';
       timeScale = 1.0;
@@ -12419,7 +12500,9 @@ function stepCharBuddiesGlbRigController(
   } else if (
     ctrl.turnInPlaceTimer > 0 &&
     !carryingCrate &&
-    (weaponId === 'unarmed' || weaponId === 'fishing_rod' || weaponId === 'pistol') &&
+    (weaponId === 'unarmed' ||
+      (weaponId === 'fishing_rod' && !ctrl.clips.has('fishing_carry_idle.001')) ||
+      weaponId === 'pistol') &&
     (ctrl.clips.has('unarmed_turn_left.001') || ctrl.clips.has('unarmed_turn_right.001'))
   ) {
     targetClip =
@@ -12598,8 +12681,12 @@ function stepCharBuddiesGlbRigController(
     }
   } else if (punchTimer <= 0 && weaponId !== 'unarmed') {
     // 3A. Curl finger bones into a closed fist grip around the weapon handle when the active clip
-    // does not already contain native Mixamo finger tracks (`fishing_idle.001` & `fishing_cast.001` have 30 native finger tracks)
-    if (targetClip !== 'fishing_idle.001' && targetClip !== 'fishing_cast.001') {
+    // does not already contain native Mixamo finger tracks (`fishing_idle.001`, `fishing_cast.001`, & `fishing_carry_*`)
+    if (
+      targetClip !== 'fishing_idle.001' &&
+      targetClip !== 'fishing_cast.001' &&
+      !targetClip.startsWith('fishing_carry_')
+    ) {
       for (const [shortName, fireQuat] of ctrl.fireUpperQuats.entries()) {
         const isRightFinger = shortName.startsWith('RightHand') && shortName !== 'RightHand';
         const isLeftFinger =
@@ -12721,6 +12808,7 @@ function stepCharBuddiesGlbRigController(
         bodyGroup,
         false,
         ctrl.leftHandLocalPos,
+        ctrl.leftHandGripAxisLocal,
       );
       if (hasRight && hasLeft) {
         if (carryingCrate) {
@@ -12902,7 +12990,19 @@ export function updateCharacterWeaponStance(
       !isMoving &&
       jumpOffset <= 0.05 &&
       !carryingCrate &&
-      resolveSitClipName(rig.customGlbController?.clips, sittingVariant) !== null) ||
+      (() => {
+        const sitClip = resolveSitClipName(
+          rig.customGlbController?.clips,
+          sittingVariant,
+          weaponId,
+          isActiveFishingActionState(
+            rig,
+            weaponId,
+            rig.customGlbController?.fishingCastTimer ?? 0,
+          ),
+        );
+        return sitClip !== null && sitClip !== 'fishing_carry_sit.001';
+      })()) ||
     (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
   ) {
     rig.weaponRigGroup.visible = false;
@@ -13027,55 +13127,74 @@ export function updateCharacterWeaponStance(
     hasHandBones && glbCtrl ? (glbCtrl.rightHandLocalPos.x + glbCtrl.leftHandLocalPos.x) * 0.5 : -0.12;
 
   if (weaponId === 'fishing_rod') {
-    // 0C. 3D JORAN PANCING / FISHING ROD STANCE (`fishing_idle.001`, `fishing_cast.001`, & Active Fish Fighting)
-    // Origin [0, 0, 0] sits inside the Right-Hand Curled Finger Tunnel (`rightHandLocalPos`), and we build a
-    // gravity-upright orthonormal basis (`makeBasis`) so the spinning reel & guide rings ALWAYS hang downward (-Y)!
+    // 0C. 3D JORAN PANCING / FISHING ROD STANCE (`fishing_carry_*.001` Left-Hand shoulder carry,
+    //     or `fishing_idle.001` / `fishing_cast.001` / Fighting Right-Hand forward cast & reel)
     const fp = rig.fishingPoseState;
     const castPitch = r * 0.55;
-    rig.weaponRigGroup.position.set(
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.x : -0.06,
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.y : 1.34 + walkBob,
-      hasHandBones && glbCtrl ? glbCtrl.rightHandLocalPos.z : 0.40,
-    );
+    const isCarryPose = Boolean(glbCtrl?.activeClipName.startsWith('fishing_carry_'));
     if (hasHandBones && glbCtrl) {
-      _rodTargetDir.copy(glbCtrl.rightHandGripAxisLocal);
-      if (_rodTargetDir.lengthSq() > 1e-6) {
-        _rodTargetDir.normalize();
+      if (isCarryPose) {
+        rig.weaponRigGroup.position.set(
+          glbCtrl.leftHandLocalPos.x + 0.035,
+          glbCtrl.leftHandLocalPos.y,
+          glbCtrl.leftHandLocalPos.z,
+        );
+        _rodTargetDir.copy(glbCtrl.leftHandGripAxisLocal);
+        if (_rodTargetDir.lengthSq() > 1e-6) {
+          _rodTargetDir.normalize();
+        } else {
+          _rodTargetDir.set(0.06, 0.67, -0.74);
+        }
+        // Keep shoulder-rested blank angled slightly outward (+X) so it never grazes hair/cheek.
+        if (_rodTargetDir.z < -0.2 && _rodTargetDir.x < 0.06) {
+          _rodTargetDir.x = 0.06;
+          _rodTargetDir.normalize();
+        }
       } else {
-        _rodTargetDir.set(0, 0.68, 0.73);
-      }
-      // Prevent a genuinely inverted grip axis during transitions (pointing down/back).
-      // An earlier z<0.15 rule also fired on the upright idle grip and tilted the rod
-      // ~22deg forward off the hand, so only a clearly downward axis is corrected now.
-      if (
-        _rodTargetDir.y < -0.05 &&
-        (!fp || (fp.phase !== 'charging' && fp.phase !== 'casting'))
-      ) {
-        _rodTargetDir.y = 0.15;
-        _rodTargetDir.z = Math.max(0.45, _rodTargetDir.z);
-        _rodTargetDir.normalize();
-      }
-      if (fp) {
-        if (fp.phase === 'charging') {
-          _rodFightAimDir.set(0, Math.min(0.96, 0.68 + fp.castPower * 0.26), 0.72 - fp.castPower * 0.35).normalize();
-          _rodTargetDir.lerp(_rodFightAimDir, 0.75).normalize();
-        } else if (fp.phase === 'bite') {
-          _rodFightAimDir.set(0, 0.80, 0.60).normalize();
-          _rodTargetDir.lerp(_rodFightAimDir, 0.82).normalize();
-        } else if (fp.phase === 'fighting') {
-          const pumpLift = fp.isReeling ? Math.sin(fp.reelAngle * 0.32) * 0.11 : 0;
-          const surgeDip = fp.isSurging ? 0.13 : 0;
-          _rodFightAimDir
-            .set(
-              0,
-              Math.max(0.35, Math.min(0.88, 0.68 + pumpLift - surgeDip)),
-              0.73,
-            )
-            .normalize();
-          _rodTargetDir.lerp(_rodFightAimDir, 0.85).normalize();
-        } else if (fp.phase === 'nibble') {
-          _rodFightAimDir.set(0, 0.56, 0.83).normalize();
-          _rodTargetDir.lerp(_rodFightAimDir, 0.65).normalize();
+        rig.weaponRigGroup.position.set(
+          glbCtrl.rightHandLocalPos.x,
+          glbCtrl.rightHandLocalPos.y,
+          glbCtrl.rightHandLocalPos.z,
+        );
+        _rodTargetDir.copy(glbCtrl.rightHandGripAxisLocal);
+        if (_rodTargetDir.lengthSq() > 1e-6) {
+          _rodTargetDir.normalize();
+        } else {
+          _rodTargetDir.set(0, 0.68, 0.73);
+        }
+        // Prevent a genuinely inverted grip axis during transitions (pointing down/back).
+        // An earlier z<0.15 rule also fired on the upright idle grip and tilted the rod
+        // ~22deg forward off the hand, so only a clearly downward axis is corrected now.
+        if (
+          _rodTargetDir.y < -0.05 &&
+          (!fp || (fp.phase !== 'charging' && fp.phase !== 'casting'))
+        ) {
+          _rodTargetDir.y = 0.15;
+          _rodTargetDir.z = Math.max(0.45, _rodTargetDir.z);
+          _rodTargetDir.normalize();
+        }
+        if (fp) {
+          if (fp.phase === 'charging') {
+            _rodFightAimDir.set(0, Math.min(0.96, 0.68 + fp.castPower * 0.26), 0.72 - fp.castPower * 0.35).normalize();
+            _rodTargetDir.lerp(_rodFightAimDir, 0.75).normalize();
+          } else if (fp.phase === 'bite') {
+            _rodFightAimDir.set(0, 0.80, 0.60).normalize();
+            _rodTargetDir.lerp(_rodFightAimDir, 0.82).normalize();
+          } else if (fp.phase === 'fighting') {
+            const pumpLift = fp.isReeling ? Math.sin(fp.reelAngle * 0.32) * 0.11 : 0;
+            const surgeDip = fp.isSurging ? 0.13 : 0;
+            _rodFightAimDir
+              .set(
+                0,
+                Math.max(0.35, Math.min(0.88, 0.68 + pumpLift - surgeDip)),
+                0.73,
+              )
+              .normalize();
+            _rodTargetDir.lerp(_rodFightAimDir, 0.85).normalize();
+          } else if (fp.phase === 'nibble') {
+            _rodFightAimDir.set(0, 0.56, 0.83).normalize();
+            _rodTargetDir.lerp(_rodFightAimDir, 0.65).normalize();
+          }
         }
       }
       _rodRightAxis.crossVectors(_rodUpRef, _rodTargetDir);
@@ -13088,6 +13207,7 @@ export function updateCharacterWeaponStance(
       _rodBasisMat.makeBasis(_rodRightAxis, _rodTrueUpAxis, _rodTargetDir);
       rig.weaponRigGroup.quaternion.setFromRotationMatrix(_rodBasisMat);
     } else {
+      rig.weaponRigGroup.position.set(-0.06, 1.34 + walkBob, 0.40);
       rig.weaponRigGroup.rotation.set(-0.82 - castPitch, 0, 0);
     }
 
@@ -19156,1167 +19276,27 @@ export function createCurvedPlanetEnvironment(
   void buildPalletizedBrickAndCementStack;
 
   // =========================================================================
-  // 2A-SOUTH-EAST. COASTAL BEACHFRONT & PARK (1:1 5-SHEET ARCHITECTURAL MODEL)
-  //                Spans x in [76.0..107.0], z in [48.0..101.0] (Bottom-Right Corner of Map)
-  //                1. Elevated Weathered Timber Boardwalk, Concrete Foundation Piers,
-  //                   Step-Stone / Timber Access Stairs, Beach Ramp & Nautical Rope Railing (Sheets 3 & 5)
-  //                2. Minimalist Timber Pergola & Shade Pavilion with Airy Canvas Sails,
-  //                   Rear Wall Trellis, Built-in Timber Lounger & Potted Dune Plants (Sheet 3)
-  //                3. Outdoor Beach Shower Station & Foot Wash with Pebble Drain Basin,
-  //                   Rain Showerheads, Mist Spray, Turn Handles, Peg Hooks & Spigots (Sheet 1)
-  //                4. Beachside Juice & Coconut Kiosk with Striped Awning, Chalkboard Menu,
-  //                   Hanging Coconuts, Sun Hat, Bar Stools, Blender & Coconut Crates (Sheet 4)
-  //                5. Surfboard Rental Rack & Equipment Display with 5 Sculpted Surfboards,
-  //                   Rear X-Bracing, Hanging Signboards, Wax Basket & Life Buoy Ring (Sheet 2)
-  //                6. Golden Sand Dunes, Lifeguard Watchtower, Timber Sun Loungers,
-  //                   Adirondack Beach Chairs & Tropical Coconut Palm Trees (Sheet 5)
+  // 2A-SOUTH-EAST. COASTAL BEACHFRONT & PARK (Rounded Mid-Res Geometry & Continuous PBR Textures)
   // =========================================================================
-  const seBeachGroup = new THREE.Group();
-  seBeachGroup.name = 'SouthEastBeachfrontPark3D';
-  constructionYardGroup.add(seBeachGroup);
-
-  const createCoastalTimberPlankTexture = (): THREE.CanvasTexture => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#d8ba92';
-      ctx.fillRect(0, 0, 512, 512);
-      const plankRows = 10;
-      const rowH = 512 / plankRows;
-      const plankTones = ['#dec29b', '#d4b48a', '#e0c6a2', '#cfb086', '#d9bc94'];
-      for (let r = 0; r < plankRows; r++) {
-        const y0 = r * rowH;
-        const grad = ctx.createLinearGradient(0, y0, 0, y0 + rowH);
-        const baseTone = plankTones[r % plankTones.length];
-        grad.addColorStop(0, '#e6cda8');
-        grad.addColorStop(0.15, baseTone);
-        grad.addColorStop(0.88, baseTone);
-        grad.addColorStop(1, '#b8966c');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, y0, 512, rowH - 2);
-        // Soft natural plank groove seam (warm driftwood shadow, never pitch black)
-        ctx.fillStyle = '#9e7c56';
-        ctx.fillRect(0, y0 + rowH - 2, 512, 2);
-        // Fine organic wood grain fibers
-        ctx.fillStyle = 'rgba(135, 98, 60, 0.13)';
-        for (let g = 0; g < 9; g++) {
-          const gx = (r * 61 + g * 79) % 440;
-          const gy = y0 + 5 + ((g * 11) % (rowH - 12));
-          ctx.fillRect(gx, gy, 64 + (g % 3) * 24, 1.5);
-        }
-        // Subtle staggered plank butt joint & tiny countersunk brass screws
-        const buttX = ((r * 137) % 380) + 64;
-        ctx.fillStyle = '#a4825c';
-        ctx.fillRect(buttX, y0 + 1, 2, rowH - 3);
-        ctx.fillStyle = '#876744';
-        ctx.fillRect(buttX - 6, y0 + 9, 2.5, 2.5);
-        ctx.fillRect(buttX - 6, y0 + rowH - 12, 2.5, 2.5);
-        ctx.fillRect(buttX + 5, y0 + 9, 2.5, 2.5);
-        ctx.fillRect(buttX + 5, y0 + rowH - 12, 2.5, 2.5);
-      }
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-  };
-
-  const createCoastalWeatherboardTexture = (): THREE.CanvasTexture => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#f4ede0';
-      ctx.fillRect(0, 0, 256, 256);
-      const lapCount = 10;
-      const lapH = 256 / lapCount;
-      for (let i = 0; i < lapCount; i++) {
-        const y = i * lapH;
-        const grad = ctx.createLinearGradient(0, y, 0, y + lapH);
-        grad.addColorStop(0, '#f8f2e7');
-        grad.addColorStop(0.82, '#ebe2d1');
-        grad.addColorStop(1, '#b8ab96');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, y, 256, lapH);
-        ctx.fillStyle = '#9e907a';
-        ctx.fillRect(0, y + lapH - 2, 256, 2);
-      }
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-  };
-
-  const createCoastalStripedAwningTexture = (): THREE.CanvasTexture => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      const stripes = 8;
-      const sw = 256 / stripes;
-      for (let i = 0; i < stripes; i++) {
-        ctx.fillStyle = i % 2 === 0 ? '#5aa7c7' : '#f9f6ee';
-        ctx.fillRect(i * sw, 0, sw, 256);
-        ctx.fillStyle = 'rgba(30, 60, 80, 0.12)';
-        ctx.fillRect(i * sw, 0, 2, 256);
-      }
-      // Subtle woven fabric cross-lines
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-      for (let y = 0; y < 256; y += 8) {
-        ctx.fillRect(0, y, 256, 1);
-      }
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-  };
-
-  const createShowerPebbleBasinTexture = (): THREE.CanvasTexture => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#948e82';
-      ctx.fillRect(0, 0, 256, 256);
-      const pebbleCols = ['#d4cdc0', '#b8b0a2', '#827b70', '#e4dfd4', '#a39b8e'];
-      for (let py = 10; py < 246; py += 16) {
-        for (let px = 10; px < 246; px += 18) {
-          const ox = ((py * 13 + px * 7) % 7) - 3;
-          const oy = ((px * 11 + py * 5) % 7) - 3;
-          const rx = 6 + ((px + py) % 4);
-          const ry = 5 + ((px * 3 + py) % 3);
-          ctx.fillStyle = pebbleCols[(px + py) % pebbleCols.length];
-          ctx.beginPath();
-          ctx.ellipse(px + ox, py + oy, rx, ry, ((px ^ py) % 5) * 0.3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#635d53';
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-        }
-      }
-      // Perimeter recessed stainless drain grate slots
-      ctx.strokeStyle = '#6c757d';
-      ctx.lineWidth = 8;
-      ctx.strokeRect(12, 12, 232, 232);
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  };
-
-  const createKioskChalkboardTexture = (): THREE.CanvasTexture => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 320;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#22292b';
-      ctx.fillRect(0, 0, 256, 320);
-      ctx.strokeStyle = '#a3784c';
-      ctx.lineWidth = 14;
-      ctx.strokeRect(7, 7, 242, 306);
-      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(20, 20, 216, 280);
-
-      ctx.fillStyle = '#fef08a';
-      ctx.font = '900 22px "Barlow", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('FRESH COCONUT', 128, 58);
-
-      ctx.fillStyle = '#7dd3fc';
-      ctx.font = '800 17px "Barlow", sans-serif';
-      ctx.fillText('& TROPICAL JUICE', 128, 84);
-
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(36, 98, 184, 2);
-
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = '700 15px "JetBrains Mono", monospace';
-      const items: [string, string][] = [
-        ['Young Coconut', '$4'],
-        ['Mango Smoothie', '$5'],
-        ['Pineapple Crush', '$5'],
-        ['Watermelon Ice', '$4'],
-        ['Citrus Breeze', '$4'],
-        ['Island Detox', '$6'],
-      ];
-      items.forEach(([name, price], idx) => {
-        const y = 130 + idx * 26;
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillText(name, 32, y);
-        ctx.fillStyle = '#fde047';
-        ctx.fillText(price, 196, y);
-      });
-
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#86efac';
-      ctx.font = '800 14px "Barlow", sans-serif';
-      ctx.fillText('100% ICE COLD & NATURAL', 128, 290);
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  };
-
-  const createSurfRentalSignTexture = (): THREE.CanvasTexture => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#d4b083';
-      ctx.fillRect(0, 0, 256, 128);
-      ctx.fillStyle = '#b89162';
-      ctx.fillRect(0, 42, 256, 3);
-      ctx.fillRect(0, 84, 256, 3);
-      ctx.strokeStyle = '#6e4e2e';
-      ctx.lineWidth = 6;
-      ctx.strokeRect(3, 3, 250, 122);
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '900 26px "Barlow", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('SURF RENTALS', 128, 54);
-      ctx.fillStyle = '#0f4c5c';
-      ctx.font = '800 21px "Barlow", sans-serif';
-      ctx.fillText('WAX & LESSONS', 128, 96);
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  };
-
-  const coastalTimberTex = createCoastalTimberPlankTexture();
-  const boardwalkDeckTex = coastalTimberTex.clone();
-  boardwalkDeckTex.wrapS = THREE.RepeatWrapping;
-  boardwalkDeckTex.wrapT = THREE.RepeatWrapping;
-  boardwalkDeckTex.repeat.set(6, 26);
-  boardwalkDeckTex.needsUpdate = true;
-  const coastalWeatherboardTex = createCoastalWeatherboardTexture();
-  const coastalAwningTex = createCoastalStripedAwningTexture();
-  const showerPebbleTex = createShowerPebbleBasinTexture();
-  const kioskChalkboardTex = createKioskChalkboardTexture();
-  const surfSignTex = createSurfRentalSignTexture();
-
-  const tileBeachBoxGeometryUVs = (geo: THREE.BufferGeometry, mapTex?: THREE.Texture) => {
-    if (!mapTex) return;
-    if (
-      mapTex !== boardwalkDeckTex &&
-      mapTex !== coastalTimberTex &&
-      mapTex !== coastalWeatherboardTex &&
-      mapTex !== lobbyConcreteTex
-    ) {
-      return;
-    }
-    const params = (geo as THREE.BoxGeometry).parameters;
-    const uvAttr = geo.attributes.uv as THREE.BufferAttribute | undefined;
-    if (!params || !uvAttr || uvAttr.count < 24 || typeof params.width !== 'number') return;
-
-    const unitM =
-      mapTex === coastalWeatherboardTex
-        ? 1.75
-        : mapTex === lobbyConcreteTex
-        ? 2.85
-        : 2.35;
-    const tx = Math.max(0.35, params.width / unitM);
-    const ty = Math.max(0.25, params.height / unitM);
-    const tz = Math.max(0.35, params.depth / unitM);
-
-    // Faces 0 & 1 (+X / -X): U along Z, V along Y
-    for (let i = 0; i < 8; i++) {
-      uvAttr.setXY(i, uvAttr.getX(i) * tz, uvAttr.getY(i) * ty);
-    }
-    // Faces 2 & 3 (+Y / -Y): U along X, V along Z
-    for (let i = 8; i < 16; i++) {
-      uvAttr.setXY(i, uvAttr.getX(i) * tx, uvAttr.getY(i) * tz);
-    }
-    // Faces 4 & 5 (+Z / -Z): U along X, V along Y
-    for (let i = 16; i < 24; i++) {
-      uvAttr.setXY(i, uvAttr.getX(i) * tx, uvAttr.getY(i) * ty);
-    }
-    uvAttr.needsUpdate = true;
-  };
-
-  const addBeachPart = (
-    parent: THREE.Object3D,
-    geo: THREE.BufferGeometry,
-    colorHex: string,
-    pos: [number, number, number],
-    rot: [number, number, number] = [0, 0, 0],
-    strokeW = 0.020,
-    mapTex?: THREE.Texture,
-  ): THREE.Mesh => {
-    tileBeachBoxGeometryUVs(geo, mapTex);
-    const effectiveTint = mapTex ? '#ffffff' : colorHex;
-    const mesh = new THREE.Mesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        color: effectiveTint,
-        map: mapTex || null,
-        roughness: 0.78,
-      }),
-    );
-    mesh.position.set(pos[0], pos[1], pos[2]);
-    mesh.rotation.set(rot[0], rot[1], rot[2]);
-    mesh.castShadow = !isSoftwareGl;
-    mesh.receiveShadow = !isSoftwareGl;
-    upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, effectiveTint, 0.08);
-    if (strokeW > 0) {
-      const st = createBlitzStrokeMesh(geo, strokeW);
-      if (st) mesh.add(st);
-    }
-    parent.add(mesh);
-    return mesh;
-  };
-
-  // -------------------------------------------------------------------------
-  // 1. URBAN SEASIDE WALKWAY, ELEVATED WEATHERED TIMBER BOARDWALK,
-  //    CONCRETE FOUNDATION PIERS, STEP-STONE ACCESS STAIRS, RAMP & NAUTICAL ROPE RAILING
-  // -------------------------------------------------------------------------
-  const BOARDWALK_Y = 0.82;
-  // 1A. Urban Seaside Walkway stone promenade strip along the West road border (x in [75.2..78.0], z in [45.5..103.0], top at y = +0.24m)
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(2.8, 0.24, 57.5), '#d8d4c8', [76.6, 0.12, 74.25], [0, 0, 0], 0.022, lobbyConcreteTex);
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.36, 0.30, 57.7), '#9e9b93', [75.22, 0.15, 74.25], [0, 0, 0], 0.018);
-  // Continuous 2-step Western Promenade Stairs from Urban Walkway (+0.24m) up to Timber Boardwalk (+0.82m) along x = 77.5..78.0
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.56, 0.22, 56.5), '#c4bfb4', [77.52, 0.35, 74.25], [0, 0, 0], 0.016, lobbyConcreteTex);
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.56, 0.22, 56.5), '#c89d6c', [77.82, 0.56, 74.25], [0, 0, 0], 0.016, boardwalkDeckTex);
-  // Decorative low coastal greenery & flower planter boxes along the West edge of the boardwalk
-  for (const [pzStart, pzLen] of [
-    [51.0, 7.5],
-    [66.2, 6.5],
-    [80.5, 6.5],
-    [96.0, 6.5],
-  ] as [number, number][]) {
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.96, 0.44, pzLen), '#c4bfb4', [78.55, BOARDWALK_Y + 0.22, pzStart], [0, 0, 0], 0.016, lobbyConcreteTex);
-    // Rich dark potting soil bed inside each concrete planter box (topped with 3D V-fold palm-fern & colorful flowers below)
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.74, 0.10, pzLen - 0.24), '#4a3525', [78.55, BOARDWALK_Y + 0.42, pzStart], [0, 0, 0], 0.010);
-  }
-
-  // Sleek Urban Promenade Streetlamps along the West walkway (Sheet 3 & Sheet 5 left side — calibrated to 5.05m Halte ratio)
-  for (const lz of [49.5, 63.0, 76.5, 91.5]) {
-    addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.14, 0.18, 0.42, 8), '#383e47', [75.85, 0.44, lz], [0, 0, 0], 0.012);
-    addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.075, 0.098, 4.65, 8), '#474f5c', [75.85, 2.75, lz], [0, 0, 0], 0.012);
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.98, 0.11, 0.16), '#474f5c', [76.26, 5.04, lz], [0, 0, 0], 0.010);
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.48, 0.07, 0.22), '#fff1b8', [76.48, 4.96, lz], [0, 0, 0], 0.008);
-  }
-
-  // 1B. Elevated Weathered Timber Boardwalk Deck (x in [78.0..92.2], z in [46.0..102.5], width = 14.2m, length = 56.5m, top at y = +0.82m)
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(14.2, 0.24, 56.5), '#c89d6c', [85.1, BOARDWALK_Y - 0.12, 74.25], [0, 0, 0], 0.024, boardwalkDeckTex);
-  // Perimeter heavy timber fascia & under-deck bearer beams
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(14.42, 0.32, 56.72), '#9e7448', [85.1, BOARDWALK_Y - 0.28, 74.25], [0, 0, 0], 0.020);
-
-  // Concrete Foundation Base Piers & Timber Support Piles visible under the seaward & side edges (Sheets 3 & 5)
-  for (let pz = 46.8; pz <= 101.8; pz += 4.58) {
-    for (const px of [78.6, 85.1, 91.6]) {
-      addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.78, 0.28, 0.78), '#9c9890', [px, 0.14, pz], [0, 0, 0], 0.016, lobbyConcreteTex);
-      addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.42, 0.48, 0.42), '#8f673e', [px, 0.48, pz], [0, 0, 0], 0.016);
-    }
-  }
-
-  // 1C. Step-Stone / Timber Access Stairs & Sloped Beach Access Ramp on the East (Seaward) Edge (x = 92.2 -> 96.2)
-  // Main Central Wide Access Stairs (z in [69.5..76.5], 5 broad steps descending from y = +0.82m to the beach sand at y = 0.0m)
-  for (let st = 0; st < 5; st++) {
-    const stepW = 0.86;
-    const stepH = 0.17;
-    const sx = 92.58 + st * 0.78;
-    const sy = BOARDWALK_Y - (st + 1) * 0.155;
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(stepW, stepH, 7.0), '#c4bfb4', [sx, sy, 73.0], [0, 0, 0], 0.018, lobbyConcreteTex);
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(stepW + 0.06, 0.06, 7.08), '#c89d6c', [sx, sy + 0.095, 73.0], [0, 0, 0], 0.014, coastalTimberTex);
-  }
-  // Sloped Timber Beach Access Ramp right beside the main stairs (z in [65.0..69.2], x in [92.2..96.2], as in Sheets 3 & 5 Front Elevation!)
-  addBeachPart(seBeachGroup, new THREE.BoxGeometry(4.35, 0.18, 4.0), '#c89d6c', [94.2, 0.42, 67.1], [0, 0, -0.195], 0.020, coastalTimberTex);
-  for (const rz of [65.15, 69.05]) {
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(4.38, 0.32, 0.22), '#8f673e', [94.2, 0.52, rz], [0, 0, -0.195], 0.016);
-  }
-  // Secondary Southern Timber Beach Stairs (z in [94.2..99.0], x in [92.2..95.8])
-  for (let st = 0; st < 4; st++) {
-    const sx = 92.55 + st * 0.82;
-    const sy = BOARDWALK_Y - (st + 1) * 0.185;
-    addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.84, 0.18, 4.8), '#c89d6c', [sx, sy, 96.6], [0, 0, 0], 0.016, coastalTimberTex);
-  }
-
-  // 1D. Nautical Timber-and-Hemp Rope Railing with Recessed LED Post Lighting ("Nautical Timber Boardwalk Detail")
-  const buildNauticalRopeRailingRun = (pts: [number, number][]) => {
-    for (let i = 0; i < pts.length; i++) {
-      const [px, pz] = pts[i];
-      // Weather-treated square timber post + chamfered cap (scaled 1.38x to match character waist/chest height)
-      addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.30, 1.38, 0.30), '#a67b4e', [px, BOARDWALK_Y + 0.69, pz], [0, 0, 0], 0.018, coastalTimberTex);
-      addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.36, 0.09, 0.36), '#7d5934', [px, BOARDWALK_Y + 1.40, pz], [0, 0, 0], 0.014);
-      // Warm Recessed LED Post Lighting at base ("Recessed Lighting" in Sheet 5 close-up)
-      addBeachPart(seBeachGroup, new THREE.BoxGeometry(0.33, 0.12, 0.33), '#ffe596', [px, BOARDWALK_Y + 0.11, pz], [0, 0, 0], 0.008);
-      // Bronze rope eyelet rings
-      addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.18, 0.18, 0.07, 8), '#3b4048', [px, BOARDWALK_Y + 1.15, pz], [0, 0, 0], 0.010);
-      addBeachPart(seBeachGroup, new THREE.CylinderGeometry(0.18, 0.18, 0.07, 8), '#3b4048', [px, BOARDWALK_Y + 0.68, pz], [0, 0, 0], 0.010);
-
-      // Double sagging catenary hemp ropes to next post
-      if (i + 1 < pts.length) {
-        const [nx, nz] = pts[i + 1];
-        const dx = nx - px;
-        const dz = nz - pz;
-        const span = Math.hypot(dx, dz);
-        const yaw = Math.atan2(dx, dz);
-        const segs = 5;
-        for (const ropeBaseY of [BOARDWALK_Y + 1.15, BOARDWALK_Y + 0.68]) {
-          for (let s = 0; s < segs; s++) {
-            const t0 = s / segs;
-            const t1 = (s + 1) / segs;
-            const tm = 0.5 * (t0 + t1);
-            const sag0 = Math.sin(t0 * Math.PI) * 0.14;
-            const sag1 = Math.sin(t1 * Math.PI) * 0.14;
-            const sagM = 0.5 * (sag0 + sag1);
-            const pitch = Math.atan2(sag1 - sag0, span / segs);
-            const segLen = Math.hypot(span / segs, sag1 - sag0) + 0.05;
-            const ropeGeo = new THREE.CylinderGeometry(0.044, 0.044, segLen, 6);
-            ropeGeo.rotateX(Math.PI / 2 + pitch);
-            addBeachPart(
-              seBeachGroup,
-              ropeGeo,
-              '#d6be94',
-              [px + dx * tm, ropeBaseY - sagM, pz + dz * tm],
-              [0, yaw, 0],
-              0.010,
-            );
-          }
-        }
-      }
-    }
-  };
-
-  // North Perimeter & Seaward North Run (up to the Ramp at z = 64.8)
-  buildNauticalRopeRailingRun([
-    [78.5, 46.3],
-    [83.0, 46.3],
-    [87.5, 46.3],
-    [91.9, 46.3],
-    [91.9, 50.9],
-    [91.9, 55.5],
-    [91.9, 60.1],
-    [91.9, 64.7],
-  ]);
-  // Seaward Mid-South Run (between Main Stairs z = 76.7 and South Stairs z = 94.0, in front of the Pergola!)
-  buildNauticalRopeRailingRun([
-    [91.9, 76.8],
-    [91.9, 81.1],
-    [91.9, 85.4],
-    [91.9, 89.7],
-    [91.9, 94.0],
-  ]);
-  // Seaward South Corner & South Perimeter Run
-  buildNauticalRopeRailingRun([
-    [91.9, 99.2],
-    [91.9, 102.2],
-    [87.4, 102.2],
-    [82.9, 102.2],
-    [78.5, 102.2],
-  ]);
-
-  // -------------------------------------------------------------------------
-  // 2. SHEET 3: MINIMALIST TIMBER PERGOLA & SHADE PAVILION WITH AIRY CANVAS SAILS
-  //    Reference: media_1794073719748_0c0a457a.jpg ("Paviliun Kanopi Kayu Peneduh Pantai")
-  //    Placed at (x = 84.2, y = BOARDWALK_Y, z = 88.5), scaled 1.42x proportionally to character!
-  // -------------------------------------------------------------------------
-  const beachPergolaGrp = new THREE.Group();
-  beachPergolaGrp.name = 'MinimalistTimberBeachPergola';
-  beachPergolaGrp.position.set(84.2, BOARDWALK_Y, 88.5);
-  // Rotate +90° around Y so local +Z faces East (+X, seaward) and local X runs South-to-North
-  beachPergolaGrp.rotation.y = Math.PI / 2;
-  beachPergolaGrp.scale.setScalar(1.42);
-  seBeachGroup.add(beachPergolaGrp);
-
-  const PERG_W = 10.4;
-  const PERG_D = 6.2;
-  const PERG_H = 3.85;
-  const COL_DRIFTWOOD = '#b58858';
-  const COL_DRIFTWOOD_DARK = '#876139';
-  const COL_SAIL_CREAM = '#faf6ec';
-
-  // Slightly raised Pergola Lounge Deck Platform (+0.08m above boardwalk)
-  addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(PERG_W + 0.6, 0.08, PERG_D + 0.6), '#cfa576', [0, 0.04, 0], [0, 0, 0], 0.016, coastalTimberTex);
-
-  // 6 Main Structural Timber Columns (Left -5.0, Center 0.0, Right +5.0 x Front +2.8 & Rear -2.8, matching Sheet 3 2-Bay Front Elevation!)
-  for (const cx of [-4.9, 0.0, 4.9]) {
-    for (const cz of [-2.8, 2.8]) {
-      const colH = cz > 0 ? PERG_H + 0.14 : PERG_H - 0.14;
-      // Dark steel base anchor shoe
-      addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(0.40, 0.14, 0.40), '#3b4048', [cx, 0.11, cz], [0, 0, 0], 0.010);
-      // Heavy weather-treated timber column
-      addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(0.32, colH, 0.32), COL_DRIFTWOOD, [cx, 0.08 + colH * 0.5, cz], [0, 0, 0], 0.020, coastalTimberTex);
-    }
-  }
-
-  // Rear Beam Diagonal Bracing ("Rear Beam Bracing" knee braces in Sheet 3 Rear & Front Elevation)
-  for (const [bx, dir] of [
-    [-4.2, 1],
-    [-0.7, -1],
-    [0.7, 1],
-    [4.2, -1],
-  ] as [number, number][]) {
-    for (const bz of [-2.8, 2.8]) {
-      const braceH = bz > 0 ? PERG_H - 0.32 : PERG_H - 0.58;
-      addBeachPart(
-        beachPergolaGrp,
-        new THREE.BoxGeometry(1.25, 0.16, 0.18),
-        COL_DRIFTWOOD_DARK,
-        [bx, braceH, bz],
-        [0, 0, dir * 0.68],
-        0.014,
-      );
-    }
-  }
-
-  // Integrated Timber Wall Trellis on Rear (-Z) Bay ("3. Rear Elevation View — Integrated Timber Wall Trellis")
-  for (let tx = -3.2; tx <= 3.21; tx += 1.28) {
-    addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(0.14, PERG_H - 0.35, 0.14), COL_DRIFTWOOD, [tx, 1.92, -2.8], [0, 0, 0], 0.014);
-  }
-  for (let ty = 0.85; ty <= 3.15; ty += 0.72) {
-    addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(6.8, 0.10, 0.10), COL_DRIFTWOOD_DARK, [0, ty, -2.8], [0, 0, 0], 0.012);
-  }
-
-  // Sloped Overhead Timber Header Beams & 17 Closely Spaced Side Timber Rafters with Beam Overhang ("2. Side Elevation View")
-  const pergolaRoofPivot = new THREE.Group();
-  pergolaRoofPivot.position.set(0, PERG_H + 0.06, 0);
-  pergolaRoofPivot.rotation.x = -0.048; // Gentle upward slope toward the ocean (+Z) as in Side Elevation View!
-  beachPergolaGrp.add(pergolaRoofPivot);
-
-  // Front & Rear Main Carrying Beams with Beam Overhang
-  addBeachPart(pergolaRoofPivot, new THREE.BoxGeometry(PERG_W + 1.4, 0.26, 0.28), COL_DRIFTWOOD_DARK, [0, 0, 2.8], [0, 0, 0], 0.018, coastalTimberTex);
-  addBeachPart(pergolaRoofPivot, new THREE.BoxGeometry(PERG_W + 1.4, 0.26, 0.28), COL_DRIFTWOOD_DARK, [0, 0, -2.8], [0, 0, 0], 0.018, coastalTimberTex);
-  // 3 Front-to-Back Tie Beams above columns
-  for (const cx of [-4.9, 0.0, 4.9]) {
-    addBeachPart(pergolaRoofPivot, new THREE.BoxGeometry(0.26, 0.24, PERG_D + 1.3), COL_DRIFTWOOD_DARK, [cx, 0.12, 0], [0, 0, 0], 0.016, coastalTimberTex);
-  }
-  // 17 Overhead Timber Rafters with overhanging ends
-  for (let rx = -5.2; rx <= 5.21; rx += 0.65) {
-    addBeachPart(pergolaRoofPivot, new THREE.BoxGeometry(0.14, 0.20, PERG_D + 1.4), COL_DRIFTWOOD, [rx, 0.28, 0], [0, 0, 0], 0.012, coastalTimberTex);
-  }
-
-  // Draped Airy Canvas Sails ("Airy Canvas Sails / Hanging Canvas Canopy" — 2 Billowing Catenary Bays, each with 2 overlapping sails)
-  for (const bayCenterX of [-2.45, 2.45]) {
-    for (const [zOffset, zSpan, maxSag] of [
-      [-1.05, 3.1, 0.46],
-      [1.15, 3.1, 0.42],
-    ] as [number, number, number][]) {
-      const sailW = 4.35;
-      const sailSegs = 7;
-      const segW = sailW / sailSegs;
-      for (let s = 0; s < sailSegs; s++) {
-        const t0 = s / sailSegs;
-        const t1 = (s + 1) / sailSegs;
-        const tm = 0.5 * (t0 + t1);
-        const y0 = -Math.sin(t0 * Math.PI) * maxSag;
-        const y1 = -Math.sin(t1 * Math.PI) * maxSag;
-        const ym = 0.5 * (y0 + y1);
-        const rollZ = Math.atan2(y1 - y0, segW);
-        const pieceW = Math.hypot(segW, y1 - y0) + 0.03;
-        addBeachPart(
-          pergolaRoofPivot,
-          new THREE.BoxGeometry(pieceW, 0.045, zSpan),
-          COL_SAIL_CREAM,
-          [bayCenterX - sailW * 0.5 + tm * sailW, -0.06 + ym, zOffset],
-          [0.04, 0, rollZ],
-          0.010,
-        );
-      }
-    }
-  }
-
-  // Built-in Timber Lounger Bench & Coastal Café Tables under the Pergola Canopy ("4. 3/4 Isometric Perspective View" & Sheet 5)
-  // Built-in Timber Lounger Bench along the right/south bay (-X in local pergola coords = South end)
-  addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(1.15, 0.14, 3.6), '#c89d6c', [-3.6, 0.52, -0.2], [0, 0, 0], 0.016, coastalTimberTex);
-  for (const lz of [-1.6, 0.0, 1.2]) {
-    addBeachPart(beachPergolaGrp, new THREE.BoxGeometry(0.95, 0.40, 0.18), COL_DRIFTWOOD_DARK, [-3.6, 0.26, lz], [0, 0, 0], 0.012);
-  }
-  // 2 Round Coastal Timber Tables + 3 Chairs each in the Pergola Shade
-  for (const tblX of [-0.8, 2.6]) {
-    addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.82, 0.82, 0.09, 14), '#cfa576', [tblX, 0.82, 0.2], [0, 0, 0], 0.014, coastalTimberTex);
-    addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.10, 0.12, 0.74, 8), COL_DRIFTWOOD_DARK, [tblX, 0.44, 0.2], [0, 0, 0], 0.010);
-    addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.38, 0.42, 0.06, 10), COL_DRIFTWOOD_DARK, [tblX, 0.11, 0.2], [0, 0, 0], 0.010);
-    for (let cAng = 0; cAng < 3; cAng++) {
-      const ang = cAng * ((Math.PI * 2) / 3) + 0.4;
-      const chX = tblX + Math.cos(ang) * 1.18;
-      const chZ = 0.2 + Math.sin(ang) * 1.18;
-      addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.28, 0.26, 0.07, 10), '#c89d6c', [chX, 0.50, chZ], [0, 0, 0], 0.010);
-      addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.06, 0.08, 0.44, 8), COL_DRIFTWOOD_DARK, [chX, 0.26, chZ], [0, 0, 0], 0.008);
-    }
-  }
-
-  // Small Potted Coastal Plants at the Pergola corners (pots & dark soil beds — topped with 3D V-fold palm-fern & colorful flowers below!)
-  for (const [potX, potZ] of [
-    [-4.3, 2.3],
-    [3.8, 2.3],
-    [4.4, 1.4],
-    [-4.3, -2.2],
-    [4.3, -2.2],
-  ] as [number, number][]) {
-    addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.36, 0.26, 0.48, 12), '#d6cec2', [potX, 0.32, potZ], [0, 0, 0], 0.012, lobbyConcreteTex);
-    addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.40, 0.37, 0.08, 12), '#c9bfb0', [potX, 0.54, potZ], [0, 0, 0], 0.010);
-    addBeachPart(beachPergolaGrp, new THREE.CylinderGeometry(0.33, 0.33, 0.05, 12), '#4a3525', [potX, 0.56, potZ], [0, 0, 0], 0.008);
-  }
-
-  // -------------------------------------------------------------------------
-  // 3. SHEET 1: OUTDOOR BEACH SHOWER STATION & FOOT WASH (STASIUN MANDI BILAS PANTAI TERBUKA)
-  //    Reference: media_1794073719737_312843ae.jpg
-  //    Placed at (x = 83.6, y = BOARDWALK_Y, z = 72.8), scaled 1.55x so showerheads sit above character head!
-  // -------------------------------------------------------------------------
-  const showerStationGrp = new THREE.Group();
-  showerStationGrp.name = 'OutdoorBeachShowerStation';
-  showerStationGrp.position.set(83.6, BOARDWALK_Y, 72.8);
-  // Rotate +90° around Y so local +Z faces East (+X)
-  showerStationGrp.rotation.y = Math.PI / 2;
-  showerStationGrp.scale.setScalar(1.72);
-  seBeachGroup.add(showerStationGrp);
-
-  const COL_STAINLESS = '#d8e0e8';
-  const COL_STAINLESS_DARK = '#7c8794';
-
-  // Concrete Drain Basin Curb ("Drain Basin Depth" & "Recessed Drain Grate")
-  addBeachPart(showerStationGrp, new THREE.BoxGeometry(3.4, 0.24, 2.15), '#c8c4bc', [0, 0.12, 0.25], [0, 0, 0], 0.018, lobbyConcreteTex);
-  // Textured Pebble Basin Floor & Recessed Stainless Drain Grates
-  addBeachPart(showerStationGrp, new THREE.BoxGeometry(2.96, 0.06, 1.72), '#ffffff', [0, 0.22, 0.25], [0, 0, 0], 0.010, showerPebbleTex);
-  for (const gx of [-0.82, 0.82]) {
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.28, 0.28, 0.07, 12), COL_STAINLESS_DARK, [gx, 0.225, 0.45], [0, 0, 0], 0.008);
-  }
-  // Integrated Warm LED Ground Lights recessed into the Concrete Basin Curb & Post Bases (Sheet 1 3/4 Isometric View)
-  for (const [lx, lz] of [
-    [-1.1, 1.33],
-    [1.1, 1.33],
-    [1.71, 0.65],
-    [-1.71, 0.65],
-  ] as [number, number][]) {
-    addBeachPart(showerStationGrp, new THREE.SphereGeometry(0.075, 8, 8), '#fff0b3', [lx, 0.13, lz], [0, 0, 0], 0);
-  }
-
-  // 2 Main Weather-Treated Timber Shower Pillars (Left -0.82 & Right +0.82) + 1 Rear Central Concealed Pipe Casing Pillar (Sheet 1 Rear Elevation)
-  for (const px of [-0.82, 0.82]) {
-    // Weather-Treated Timber Pillar (2.85m * 1.55 = 4.42m tall)
-    addBeachPart(showerStationGrp, new THREE.BoxGeometry(0.32, 2.85, 0.32), COL_DRIFTWOOD, [px, 1.62, -0.35], [0, 0, 0], 0.018, coastalTimberTex);
-    // Base LED light on pillar foot
-    addBeachPart(showerStationGrp, new THREE.SphereGeometry(0.065, 8, 8), '#fff0b3', [px + 0.12, 0.34, -0.18], [0, 0, 0], 0);
-
-    // Projecting Marine-Grade Stainless Steel Shower Arm ("Shower Arm Projection")
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.042, 0.042, 0.88, 8), COL_STAINLESS, [px, 2.76, 0.12], [Math.PI / 2, 0, 0], 0.010);
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.042, 0.042, 0.18, 8), COL_STAINLESS, [px, 2.68, 0.54], [0.35, 0, 0], 0.008);
-    // Wide Marine-Grade Stainless Steel Rain Showerhead Disc ("Rain Showerheads")
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.18, 0.28, 0.09, 14), COL_STAINLESS, [px, 2.58, 0.58], [0.18, 0, 0], 0.012);
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.26, 0.26, 0.03, 14), COL_STAINLESS_DARK, [px, 2.53, 0.58], [0.18, 0, 0], 0);
-
-    // Modern Circular Turn Handle at mid-height ("Modern Turn Handles")
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.12, 0.12, 0.06, 12), COL_STAINLESS, [px, 1.48, -0.17], [Math.PI / 2, 0, 0], 0.008);
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.045, 0.045, 0.11, 8), COL_STAINLESS_DARK, [px, 1.48, -0.13], [Math.PI / 2, 0, 0], 0.006);
-
-    // Lower Foot Wash Spigot ("Foot Wash Spigot 400mm")
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.035, 0.035, 0.24, 8), COL_STAINLESS, [px, 0.72, -0.10], [Math.PI / 2, 0, 0], 0.008);
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.032, 0.028, 0.12, 8), COL_STAINLESS, [px, 0.66, 0.0], [0.35, 0, 0], 0.006);
-    addBeachPart(showerStationGrp, new THREE.BoxGeometry(0.10, 0.035, 0.04), COL_STAINLESS_DARK, [px, 0.78, -0.12], [0, 0, 0], 0.006);
-
-    // Angled Timber Peg Hooks on outer side of each pillar ("Timber Peg Hooks")
-    const sideDir = px < 0 ? -1 : 1;
-    addBeachPart(
-      showerStationGrp,
-      new THREE.CylinderGeometry(0.028, 0.032, 0.22, 6),
-      COL_DRIFTWOOD_DARK,
-      [px + sideDir * 0.22, 2.02, -0.35],
-      [0, 0, -sideDir * 0.75],
-      0.008,
-    );
-  }
-
-  // Central Rear Concealed Pipe Casing Pillar & Stainless Pipework ("Rear Elevation View — Concealed Pipe Casing")
-  addBeachPart(showerStationGrp, new THREE.BoxGeometry(0.28, 2.82, 0.26), COL_DRIFTWOOD, [0, 1.60, -0.42], [0, 0, 0], 0.016, coastalTimberTex);
-  addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.04, 0.04, 2.55, 8), COL_STAINLESS, [0, 1.52, -0.57], [0, 0, 0], 0.008);
-  for (const clampY of [0.65, 1.45, 2.25, 2.68]) {
-    addBeachPart(showerStationGrp, new THREE.BoxGeometry(0.14, 0.06, 0.08), COL_STAINLESS_DARK, [0, clampY, -0.56], [0, 0, 0], 0.006);
-  }
-  // 2 Coastal Ceramic Flower Pots flanking the Shower Basin
-  for (const spX of [-1.98, 1.98]) {
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.32, 0.24, 0.44, 12), '#d6cec2', [spX, 0.22, -0.25], [0, 0, 0], 0.012, lobbyConcreteTex);
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.36, 0.33, 0.07, 12), '#c9bfb0', [spX, 0.42, -0.25], [0, 0, 0], 0.010);
-    addBeachPart(showerStationGrp, new THREE.CylinderGeometry(0.29, 0.29, 0.05, 12), '#4a3525', [spX, 0.44, -0.25], [0, 0, 0], 0.008);
-  }
-
-  // Translucent Water Mist Spray Cones streaming from both Rain Showerheads (added to roadsGroup so transparent mist isn't merged with opaque geometry)
-  for (const wzOffset of [-0.82, 0.82]) {
-    const mistGeo = new THREE.CylinderGeometry(0.37, 0.80, 3.53, 14, 1, true);
-    const mistMat = new THREE.MeshBasicMaterial({
-      color: '#ccf4ff',
-      transparent: true,
-      opacity: 0.26,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const mistMesh = new THREE.Mesh(mistGeo, mistMat);
-    // Shower station is at (83.6, BOARDWALK_Y, 72.8) scaled 1.72x rotated +90° around Y
-    mistMesh.position.set(83.6 + 0.60 * 1.72, BOARDWALK_Y + 1.38 * 1.72, 72.8 - wzOffset * 1.72);
-    roadsGroup.add(mistMesh);
-  }
-
-  // -------------------------------------------------------------------------
-  // 4. SHEET 4: BEACHSIDE JUICE & COCONUT KIOSK (KIOS MINUMAN KELAPA & JUS PANTAI)
-  //    Reference: media_1794073719754_0bb2f46a.jpg
-  //    Placed at (x = 82.0, y = BOARDWALK_Y, z = 60.0), scaled 1.52x proportionally to character!
-  // -------------------------------------------------------------------------
-  const juiceKioskGrp = new THREE.Group();
-  juiceKioskGrp.name = 'BeachsideJuiceAndCoconutKiosk';
-  juiceKioskGrp.position.set(82.0, BOARDWALK_Y, 60.0);
-  // Rotate +90° around Y so local +Z faces East (+X, seaward)
-  juiceKioskGrp.rotation.y = Math.PI / 2;
-  juiceKioskGrp.scale.setScalar(1.52);
-  seBeachGroup.add(juiceKioskGrp);
-
-  const KIOSK_W = 5.0;
-  const KIOSK_D = 3.6;
-  const KIOSK_WALL_H = 3.15;
-
-  // Raised Kiosk Timber Sub-Deck Platform (kept strictly under the kiosk body x <= 84.74m so Kai at x = 85.8m stands flush on the +0.82m boardwalk)
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W + 0.4, 0.09, KIOSK_D + 0.2), '#c89d6c', [0, 0.055, -0.10], [0, 0, 0], 0.018, coastalTimberTex);
-
-  // 4 Timber Corner Posts
-  for (const cx of [-2.42, 2.42]) {
-    for (const cz of [-1.72, 1.72]) {
-      addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.24, KIOSK_WALL_H, 0.24), COL_DRIFTWOOD, [cx, 0.12 + KIOSK_WALL_H * 0.5, cz], [0, 0, 0], 0.016, coastalTimberTex);
-    }
-  }
-
-  // Horizontal Weatherboard Wood Siding Walls:
-  // Rear Wall (-Z) with Staff Door & Upper Ventilation Louvers ("Rear Elevation View")
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W - 0.16, KIOSK_WALL_H, 0.22), '#f5efe4', [0, 0.12 + KIOSK_WALL_H * 0.5, -1.68], [0, 0, 0], 0.018, coastalWeatherboardTex);
-  // Rear Staff Door with Timber Frame, Lower Louver Grille & Brass Doorknob
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(1.22, 2.28, 0.08), COL_DRIFTWOOD, [-0.95, 1.26, -1.80], [0, 0, 0], 0.014);
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(1.06, 2.14, 0.10), '#eee6d6', [-0.95, 1.26, -1.82], [0, 0, 0], 0.012);
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.68, 0.42, 0.12), '#876139', [-0.95, 0.56, -1.83], [0, 0, 0], 0.008, lobbyLouverTex);
-  addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.055, 8, 8), '#d97706', [-0.52, 1.18, -1.88], [0, 0, 0], 0.006);
-  // Rear Upper Ventilation Louvers
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.88, 0.38, 0.09), COL_DRIFTWOOD, [1.15, 2.48, -1.81], [0, 0, 0], 0.012, lobbyLouverTex);
-
-  // Left (-X) & Right (+X) Side Walls with Shuttered Louvered Windows & Mini Striped Window Awning ("Side Profile Elevation View")
-  for (const sx of [-2.38, 2.38]) {
-    const dir = sx < 0 ? -1 : 1;
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.22, KIOSK_WALL_H, KIOSK_D - 0.16), '#f5efe4', [sx, 0.12 + KIOSK_WALL_H * 0.5, 0], [0, 0, 0], 0.018, coastalWeatherboardTex);
-    // Gable Triangular Wall Peak filled with stepped weatherboard strips
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.20, 0.42, 2.35), '#f5efe4', [sx, KIOSK_WALL_H + 0.30, 0], [0, 0, 0], 0.014, coastalWeatherboardTex);
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.20, 0.34, 1.25), '#f5efe4', [sx, KIOSK_WALL_H + 0.64, 0], [0, 0, 0], 0.012, coastalWeatherboardTex);
-    // Framed Louvered Window on Side Wall + Timber Window Flower Box underneath
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.10, 1.24, 1.04), COL_DRIFTWOOD, [sx + dir * 0.09, 1.92, 0.05], [0, 0, 0], 0.012);
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.12, 1.06, 0.86), '#a8845c', [sx + dir * 0.10, 1.92, 0.05], [0, 0, 0], 0.010, lobbyLouverTex);
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.32, 0.24, 1.12), COL_DRIFTWOOD, [sx + dir * 0.24, 1.18, 0.05], [0, 0, 0], 0.012, coastalTimberTex);
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.24, 0.06, 1.02), '#4a3525', [sx + dir * 0.24, 1.29, 0.05], [0, 0, 0], 0.008);
-    // Mini Blue-and-White Striped Window Awning on Side Wall
-    addBeachPart(
-      juiceKioskGrp,
-      new THREE.BoxGeometry(0.65, 0.08, 1.18),
-      '#ffffff',
-      [sx + dir * 0.34, 2.58, 0.05],
-      [0, 0, -dir * 0.42],
-      0.012,
-      coastalAwningTex,
-    );
-  }
-  // 2 Coastal Ceramic Flower Pots on the Kiosk Left Sub-Deck Corners
-  for (const [kpX, kpZ] of [
-    [-2.58, 2.36],
-    [-2.58, -1.42],
-  ] as [number, number][]) {
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.32, 0.24, 0.44, 12), '#d6cec2', [kpX, 0.34, kpZ], [0, 0, 0], 0.012, lobbyConcreteTex);
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.36, 0.33, 0.07, 12), '#c9bfb0', [kpX, 0.54, kpZ], [0, 0, 0], 0.010);
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.29, 0.29, 0.05, 12), '#4a3525', [kpX, 0.56, kpZ], [0, 0, 0], 0.008);
-  }
-
-  // Front Elevation (+Z): Lower Weatherboard Counter Wall, Left Chalkboard Wall Bay & Upper Header Wall
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W - 0.2, 1.16, 0.24), '#f5efe4', [0, 0.70, 1.66], [0, 0, 0], 0.018, coastalWeatherboardTex);
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(1.38, 1.68, 0.22), '#f5efe4', [-1.72, 2.12, 1.66], [0, 0, 0], 0.014, coastalWeatherboardTex);
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W - 0.2, 0.42, 0.24), '#f5efe4', [0, 3.06, 1.66], [0, 0, 0], 0.014, coastalWeatherboardTex);
-
-  // Chalkboard Menu on Front-Left Wall ("Chalkboard Menu")
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(1.16, 1.38, 0.08), '#ffffff', [-1.72, 2.08, 1.80], [0, 0, 0], 0.014, kioskChalkboardTex);
-
-  // Overhanging Natural Timber Service Counter Ledge ("1050mm Service Counter Window")
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W + 0.16, 0.14, 0.72), '#b88652', [0, 1.32, 1.88], [0, 0, 0], 0.016, coastalTimberTex);
-  for (const bx of [-2.1, -0.7, 0.7, 2.1]) {
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.10, 0.28, 0.36), COL_DRIFTWOOD_DARK, [bx, 1.12, 1.95], [-0.45, 0, 0], 0.010);
-  }
-
-  // Interior Service Counter Bay: Rear Shelves, 2 Tropical Fruit Display Trays & Commercial Juice Blender
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(4.5, 1.15, 1.15), '#d8ceb8', [0, 0.70, 0.95], [0, 0, 0], 0.012);
-  // Interior rear wooden shelves with syrup bottles
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(2.6, 0.08, 0.36), COL_DRIFTWOOD, [0.45, 2.35, 0.25], [0, 0, 0], 0.010);
-  for (const jx of [-0.4, 0.1, 0.6, 1.1]) {
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.26, 8), '#e2e8f0', [jx, 2.52, 0.25], [0, 0, 0], 0.006);
-  }
-  // 2 Tropical Fruit Display Trays with Oranges, Mangoes & Limes on the Service Counter
-  for (const [trayX, fruitCol1, fruitCol2] of [
-    [-0.25, '#f97316', '#facc15'],
-    [0.75, '#84cc16', '#f59e0b'],
-  ] as [number, string, string][]) {
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.82, 0.18, 0.48), '#c89d6c', [trayX, 1.44, 1.56], [0, 0, 0], 0.010);
-    // Glass sneeze-guard hood over fruit tray
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.80, 0.26, 0.44), '#bae6fd', [trayX, 1.66, 1.56], [0, 0, 0], 0.008);
-    for (let fx = -0.24; fx <= 0.25; fx += 0.16) {
-      addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.085, 8, 8), fx < 0 ? fruitCol1 : fruitCol2, [trayX + fx, 1.56, 1.56], [0, 0, 0], 0.006);
-    }
-  }
-  // Commercial Juice Blender on Right Counter
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.32, 0.26, 0.32), '#334155', [1.62, 1.50, 1.58], [0, 0, 0], 0.010);
-  addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.13, 0.10, 0.36, 10), '#fb923c', [1.62, 1.81, 1.58], [0, 0, 0], 0.008);
-  addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.14, 0.14, 0.06, 10), '#1e293b', [1.62, 2.02, 1.58], [0, 0, 0], 0.006);
-
-  // 2 Round Wooden Coastal Bar Stools in front of the counter ("Coastal Bar Stools")
-  for (const stoolX of [-1.85, -0.85]) {
-    const stoolZ = 2.42;
-    // Round wooden seat top
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.30, 0.28, 0.08, 12), '#c89d6c', [stoolX, 0.88, stoolZ], [0, 0, 0], 0.012, coastalTimberTex);
-    // 4 Splayed wooden legs
-    for (const [lx, lz] of [
-      [-0.16, -0.16],
-      [0.16, -0.16],
-      [-0.16, 0.16],
-      [0.16, 0.16],
-    ] as [number, number][]) {
-      addBeachPart(
-        juiceKioskGrp,
-        new THREE.CylinderGeometry(0.032, 0.026, 0.78, 6),
-        COL_DRIFTWOOD_DARK,
-        [stoolX + lx, 0.48, stoolZ + lz],
-        [lz * 0.25, 0, -lx * 0.25],
-        0.008,
-      );
-    }
-    // Footrest ring
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.21, 0.21, 0.04, 10), COL_DRIFTWOOD_DARK, [stoolX, 0.34, stoolZ], [0, 0, 0], 0.006);
-  }
-
-  // Hanging Green Coconuts (Left & Right Awning Corners) & Woven Straw Sun Hat on Right Post ("Hanging Coconuts")
-  for (const [hx, hz] of [
-    [-2.52, 1.92],
-    [1.82, 1.82],
-  ] as [number, number][]) {
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.02, 0.02, 0.55, 6), '#a67b4e', [hx, 2.52, hz], [0, 0, 0], 0.006);
-    for (const [cx, cy, cz] of [
-      [-0.10, 2.22, 0.0],
-      [0.10, 2.18, 0.08],
-      [0.0, 2.04, -0.06],
-    ] as [number, number, number][]) {
-      addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.14, 10, 10), '#65a34e', [hx + cx, cy, hz + cz], [0, 0, 0], 0.010);
-    }
-  }
-  // Woven Straw Sun Hat hanging on Right Post (Sheet 4 Front & 3/4 Isometric View)
-  addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.36, 0.36, 0.04, 14), '#e6c88a', [2.44, 2.05, 1.84], [Math.PI / 2 - 0.15, 0, -0.2], 0.010);
-  addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.18, 0.21, 0.16, 12), '#d9b571', [2.44, 2.05, 1.92], [Math.PI / 2 - 0.15, 0, -0.2], 0.008);
-
-  // 2 Overflowing Slatted Wooden Fruit Crates filled with Fresh Green Coconuts at the Front-Right Corner ("Wooden Fruit Crate")
-  for (const [crateX, crateZ, crateRot] of [
-    [2.05, 2.25, 0.08],
-    [2.85, 1.45, -0.12],
-  ] as [number, number, number][]) {
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(1.08, 0.64, 0.82), '#b58858', [crateX, 0.44, crateZ], [0, crateRot, 0], 0.014, coastalTimberTex);
-    // Overflowing green coconuts inside the crate
-    for (const [ox, oy, oz] of [
-      [-0.26, 0.82, -0.14],
-      [0.02, 0.85, 0.12],
-      [0.28, 0.80, -0.10],
-      [-0.12, 0.96, 0.02],
-      [0.18, 0.94, 0.06],
-    ] as [number, number, number][]) {
-      addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.16, 10, 10), '#68a84f', [crateX + ox, oy, crateZ + oz], [0, 0, 0], 0.010);
-    }
-  }
-  // 3 Loose Green Coconuts with White Drinking Straws sitting on the deck beside the crate
-  for (const [lx, lz] of [
-    [1.32, 2.42],
-    [1.62, 2.56],
-    [1.48, 2.24],
-  ] as [number, number][]) {
-    addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.16, 10, 10), '#68a84f', [lx, 0.27, lz], [0, 0, 0], 0.010);
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.015, 0.015, 0.22, 6), '#f8fafc', [lx + 0.03, 0.44, lz], [0.2, 0, -0.25], 0);
-  }
-
-  // Pitched Gabled Coastal Roof with Slate-Blue Fascia Trim ("Side Profile Elevation View")
-  for (const zSide of [-1, 1] as const) {
-    addBeachPart(
-      juiceKioskGrp,
-      new THREE.BoxGeometry(KIOSK_W + 0.65, 0.14, 2.38),
-      '#6d9cb5',
-      [0, KIOSK_WALL_H + 0.56, zSide * 1.02],
-      [zSide * 0.38, 0, 0],
-      0.018,
-    );
-    addBeachPart(
-      juiceKioskGrp,
-      new THREE.BoxGeometry(KIOSK_W + 0.55, 0.10, 2.32),
-      COL_DRIFTWOOD,
-      [0, KIOSK_WALL_H + 0.48, zSide * 1.02],
-      [zSide * 0.38, 0, 0],
-      0.012,
-      coastalTimberTex,
-    );
-  }
-  // Ridge cap beam
-  addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(KIOSK_W + 0.70, 0.16, 0.28), '#4c7c96', [0, KIOSK_WALL_H + 0.98, 0], [0, 0, 0], 0.014);
-
-  // Projecting Blue-and-White Striped Front Awning with Scalloped Valance & Angled Support Struts ("Blue-and-white Striped Awning")
-  addBeachPart(
+  const {
+    seBeachGroup,
+    beachPergolaGrp,
+    showerStationGrp,
     juiceKioskGrp,
-    new THREE.BoxGeometry(KIOSK_W + 0.36, 0.10, 1.78),
-    '#ffffff',
-    [0, 2.96, 2.42],
-    [0.42, 0, 0],
-    0.018,
-    coastalAwningTex,
-  );
-  // Scalloped Valance Edge along the front of the Striped Awning (12 alternating sky-blue and cream-white scallops!)
-  for (let sc = 0; sc < 12; sc++) {
-    const scX = -2.42 + sc * 0.44;
-    const scCol = sc % 2 === 0 ? '#5aa7c7' : '#f9f6ee';
-    addBeachPart(juiceKioskGrp, new THREE.CylinderGeometry(0.22, 0.22, 0.08, 10), scCol, [scX, 2.55, 3.22], [Math.PI / 2, 0, 0], 0.010);
-  }
-  // Angled Timber Awning Support Struts
-  for (const stX of [-2.36, 2.36]) {
-    addBeachPart(juiceKioskGrp, new THREE.BoxGeometry(0.10, 0.10, 1.38), COL_DRIFTWOOD_DARK, [stX, 2.42, 2.28], [-0.58, 0, 0], 0.012);
-  }
-
-  // -------------------------------------------------------------------------
-  // 5. SHEET 2: SURFBOARD RENTAL RACK & EQUIPMENT DISPLAY
-  //    Reference: media_1794073719742_193c3a2b.jpg
-  //    Placed at (x = 83.8, y = BOARDWALK_Y, z = 49.5), scaled 1.48x proportionally to character!
-  // -------------------------------------------------------------------------
-  const surfRackGrp = new THREE.Group();
-  surfRackGrp.name = 'SurfboardRentalRackDisplay';
-  surfRackGrp.position.set(83.8, BOARDWALK_Y, 49.5);
-  surfRackGrp.rotation.y = Math.PI / 2 - 0.18;
-  surfRackGrp.scale.setScalar(1.18);
-  seBeachGroup.add(surfRackGrp);
-
-  // Ground Base Skids & Slotted Base Deck ("Ground base skids" & "Side Profile Elevation View")
-  for (const sx of [-1.95, 1.95]) {
-    addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.24, 0.18, 1.48), COL_DRIFTWOOD_DARK, [sx, 0.09, 0], [0, 0, 0], 0.014, coastalTimberTex);
-    // A-Frame Front & Rear Slanted Timber Legs
-    addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.18, 2.38, 0.18), COL_DRIFTWOOD, [sx, 1.24, 0.22], [-0.18, 0, 0], 0.016, coastalTimberTex);
-    addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.18, 2.38, 0.18), COL_DRIFTWOOD, [sx, 1.24, -0.22], [0.18, 0, 0], 0.016, coastalTimberTex);
-  }
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(4.35, 0.14, 1.22), '#c89d6c', [0, 0.22, 0], [0, 0, 0], 0.016, coastalTimberTex);
-
-  // Rear Diagonal X-Bracing ("Rear Elevation View")
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(4.15, 0.14, 0.10), COL_DRIFTWOOD_DARK, [0, 1.18, -0.26], [0.16, 0, 0.44], 0.014, coastalTimberTex);
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(4.15, 0.14, 0.10), COL_DRIFTWOOD_DARK, [0, 1.18, -0.26], [0.16, 0, -0.44], 0.014, coastalTimberTex);
-
-  // Upper Horizontal Crossbar with Projecting Side Arms & 6 Wooden Divider Pegs
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(5.45, 0.16, 0.18), COL_DRIFTWOOD, [0, 1.98, 0.0], [0, 0, 0], 0.016, coastalTimberTex);
-  for (let pIdx = 0; pIdx < 6; pIdx++) {
-    const pegX = -1.75 + pIdx * 0.70;
-    addBeachPart(surfRackGrp, new THREE.CylinderGeometry(0.04, 0.04, 0.68, 8), COL_DRIFTWOOD_DARK, [pegX, 1.98, 0.28], [Math.PI / 2, 0, 0], 0.010);
-  }
-
-  // 5 Distinct Sculpted 3D Surfboards with Tail Traction Pads, Rear Fins & Coiled Ankle Leashes (Matching Sheet 2 1:1!)
-  const surfboardsSpec: {
-    x: number;
-    h: number;
-    w: number;
-    mainCol: string;
-    stripeCol: string;
-    padCol: string;
-    isSwallowTail?: boolean;
-    hasWaveArt?: boolean;
-  }[] = [
-    { x: -1.40, h: 3.15, w: 0.56, mainCol: '#6ec4c8', stripeCol: '#f4d35e', padCol: '#e9c46a' }, // 1. Yellow & Aqua Longboard
-    { x: -0.70, h: 3.10, w: 0.54, mainCol: '#f28b6d', stripeCol: '#f6a58c', padCol: '#c85a42' }, // 2. Coral-Orange Funboard
-    { x: 0.00, h: 2.86, w: 0.52, mainCol: '#95d5b2', stripeCol: '#74c69d', padCol: '#2d3748' },  // 3. Mint-Green Malibu Board
-    { x: 0.70, h: 2.72, w: 0.55, mainCol: '#4a8ec2', stripeCol: '#90e0ef', padCol: '#1e293b', isSwallowTail: true }, // 4. Blue Swallowtail Fish Board
-    { x: 1.40, h: 2.68, w: 0.52, mainCol: '#f8fafc', stripeCol: '#38bdf8', padCol: '#3b82f6', hasWaveArt: true }, // 5. White Wave-Art Shortboard
-  ];
-
-  for (const sb of surfboardsSpec) {
-    const sbGrp = new THREE.Group();
-    sbGrp.position.set(sb.x, 0.28, 0.22);
-    sbGrp.rotation.x = -0.24; // Leaning back against the upper rack rail
-    surfRackGrp.add(sbGrp);
-
-    // Sculpted surfboard body (flattened oval cylinder + pointed nose cone)
-    const bodyH = sb.h * 0.74;
-    const bodyGeo = new THREE.CylinderGeometry(sb.w * 0.48, sb.w * 0.42, bodyH, 14);
-    bodyGeo.scale(1.0, 1.0, 0.16);
-    addBeachPart(sbGrp, bodyGeo, sb.mainCol, [0, bodyH * 0.5 + 0.18, 0], [0, 0, 0], 0.016);
-
-    if (sb.isSwallowTail) {
-      // Twin swallowtail tips at the top of Board 4
-      for (const tx of [-sb.w * 0.20, sb.w * 0.20]) {
-        const tipGeo = new THREE.ConeGeometry(sb.w * 0.24, sb.h * 0.24, 10);
-        tipGeo.scale(1.0, 1.0, 0.16);
-        addBeachPart(sbGrp, tipGeo, sb.mainCol, [tx, bodyH + 0.34, 0], [0, 0, tx < 0 ? 0.08 : -0.08], 0.012);
-      }
-    } else {
-      const noseGeo = new THREE.ConeGeometry(sb.w * 0.48, sb.h * 0.28, 14);
-      noseGeo.scale(1.0, 1.0, 0.16);
-      addBeachPart(sbGrp, noseGeo, sb.mainCol, [0, bodyH + sb.h * 0.14 + 0.16, 0], [0, 0, 0], 0.014);
-    }
-
-    // Center stripe / wave graphic on front deck (+Z)
-    addBeachPart(sbGrp, new THREE.BoxGeometry(sb.w * 0.32, bodyH * 0.92, 0.095), sb.stripeCol, [0, bodyH * 0.5 + 0.18, 0.01], [0, 0, 0], 0);
-    if (sb.hasWaveArt) {
-      addBeachPart(sbGrp, new THREE.CylinderGeometry(sb.w * 0.44, sb.w * 0.40, bodyH * 0.42, 12), '#38bdf8', [0, bodyH * 0.28 + 0.18, 0.012], [0, 0, 0], 0);
-    }
-
-    // Checkered / grooved Tail Traction Pad near the bottom tail (+Z face)
-    addBeachPart(sbGrp, new THREE.BoxGeometry(sb.w * 0.52, 0.42, 0.04), sb.padCol, [0, 0.42, 0.045], [0, 0, 0], 0.008);
-
-    // Twin / Thruster Surfboard Fins on the lower rear (-Z face, shown in Rear Elevation View)
-    for (const fx of [-0.12, 0.12]) {
-      addBeachPart(sbGrp, new THREE.BoxGeometry(0.03, 0.22, 0.16), '#e2e8f0', [fx, 0.38, -0.08], [0.35, 0, 0], 0.008);
-    }
-
-    // Coiled Ankle Leash resting on the base deck in front of the tail
-    const leashGeo = new THREE.TorusGeometry(0.14, 0.025, 6, 12);
-    leashGeo.rotateX(Math.PI / 2);
-    addBeachPart(surfRackGrp, leashGeo, '#1e293b', [sb.x + 0.08, 0.32, 0.36], [0, 0.3, 0], 0.006);
-  }
-
-  // Hanging Wooden "SURF RENTALS / WAX & LESSONS" Signboard on Projecting Side Arm (Sheet 2 Front & Rear View)
-  for (const signSideX of [-2.42, 2.42]) {
-    addBeachPart(surfRackGrp, new THREE.CylinderGeometry(0.018, 0.018, 0.26, 6), '#876139', [signSideX - 0.18, 1.82, 0], [0, 0, 0], 0);
-    addBeachPart(surfRackGrp, new THREE.CylinderGeometry(0.018, 0.018, 0.26, 6), '#876139', [signSideX + 0.18, 1.82, 0], [0, 0, 0], 0);
-    addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.72, 0.42, 0.06), '#ffffff', [signSideX, 1.52, 0], [0, 0, 0], 0.012, surfSignTex);
-  }
-
-  // Side Basket holding Blocks of Surf Wax & Fin Keys ("Side basket blocks of surf wax & fin keys")
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.38, 0.32, 0.36), '#b58858', [2.15, 1.18, 0.12], [0, 0, 0], 0.012);
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.14, 0.16, 0.14), '#fde047', [2.12, 1.38, 0.08], [0, 0.2, 0], 0.008);
-  addBeachPart(surfRackGrp, new THREE.BoxGeometry(0.14, 0.16, 0.14), '#38bdf8', [2.22, 1.38, 0.18], [0, -0.2, 0], 0.008);
-
-  // Red-and-White Life Preserver Buoy Ring hanging on Side Hook ("Life hook" in Sheet 2)
-  const buoyGrp = new THREE.Group();
-  buoyGrp.position.set(2.26, 0.85, 0.26);
-  buoyGrp.rotation.y = 0.25;
-  surfRackGrp.add(buoyGrp);
-  addBeachPart(buoyGrp, new THREE.TorusGeometry(0.36, 0.11, 10, 18), '#f8fafc', [0, 0, 0], [0, 0, 0], 0.014);
-  for (const [bx, by, rotZ] of [
-    [0, 0.36, 0],
-    [0, -0.36, 0],
-    [0.36, 0, Math.PI / 2],
-    [-0.36, 0, Math.PI / 2],
-  ] as [number, number, number][]) {
-    addBeachPart(buoyGrp, new THREE.CylinderGeometry(0.118, 0.118, 0.18, 10), '#ef4444', [bx, by, 0], [0, 0, rotZ + Math.PI / 2], 0);
-  }
-
-  // -------------------------------------------------------------------------
-  // 6. SHEET 5: GOLDEN SAND DUNES, LIFEGUARD WATCHTOWER, TIMBER SUN LOUNGERS,
-  //    ADIRONDACK BEACH CHAIRS & TROPICAL COCONUT PALM TREES
-  // -------------------------------------------------------------------------
-  // 6A. Lifeguard Watchtower at (x = 100.5, y = 0.0, z = 67.5) scaled 1.58x overlooking the East Ocean ("Side Profile Elevation View")
-  const lifeguardGrp = new THREE.Group();
-  lifeguardGrp.name = 'CoastalLifeguardWatchtower';
-  lifeguardGrp.position.set(100.5, 0.0, 67.5);
-  lifeguardGrp.rotation.y = Math.PI / 2;
-  lifeguardGrp.scale.setScalar(1.58);
-  seBeachGroup.add(lifeguardGrp);
-
-  // 4 Angled Timber Stilts + X-Bracing
-  for (const lx of [-0.95, 0.95]) {
-    for (const lz of [-0.95, 0.95]) {
-      addBeachPart(
-        lifeguardGrp,
-        new THREE.BoxGeometry(0.20, 2.35, 0.20),
-        COL_DRIFTWOOD,
-        [lx, 1.15, lz],
-        [lz * 0.08, 0, -lx * 0.08],
-        0.016,
-        coastalTimberTex,
-      );
-    }
-  }
-  for (const sideZ of [-0.95, 0.95]) {
-    addBeachPart(lifeguardGrp, new THREE.BoxGeometry(2.15, 0.12, 0.10), COL_DRIFTWOOD_DARK, [0, 1.18, sideZ], [0, 0, 0.68], 0.012);
-    addBeachPart(lifeguardGrp, new THREE.BoxGeometry(2.15, 0.12, 0.10), COL_DRIFTWOOD_DARK, [0, 1.18, sideZ], [0, 0, -0.68], 0.012);
-  }
-  // Elevated Observation Deck & Guardrails (y = +2.28m)
-  addBeachPart(lifeguardGrp, new THREE.BoxGeometry(2.85, 0.16, 2.95), '#c89d6c', [0, 2.28, 0.10], [0, 0, 0], 0.018, coastalTimberTex);
-  addBeachPart(lifeguardGrp, new THREE.BoxGeometry(2.82, 0.08, 0.10), '#f5efe4', [0, 3.05, 1.50], [0, 0, 0], 0.012);
-  for (const rx of [-1.35, 1.35]) {
-    addBeachPart(lifeguardGrp, new THREE.BoxGeometry(0.10, 0.08, 2.85), '#f5efe4', [rx, 3.05, 0.10], [0, 0, 0], 0.012);
-    addBeachPart(lifeguardGrp, new THREE.BoxGeometry(0.12, 0.78, 0.12), COL_DRIFTWOOD, [rx, 2.68, 1.48], [0, 0, 0], 0.010);
-  }
-  // White Weatherboard Lifeguard Cabin + Panoramic Windows + Pitched Coastal Roof
-  addBeachPart(lifeguardGrp, new THREE.BoxGeometry(1.95, 2.05, 1.95), '#f5efe4', [0, 3.38, -0.18], [0, 0, 0], 0.018, coastalWeatherboardTex);
-  addBeachPart(lifeguardGrp, new THREE.BoxGeometry(2.02, 0.68, 2.02), '#38485c', [0, 3.68, -0.18], [0, 0, 0], 0.012);
-  for (const rSide of [-1, 1] as const) {
-    addBeachPart(lifeguardGrp, new THREE.BoxGeometry(2.55, 0.12, 1.55), '#5aa7c7', [0, 4.56, -0.18 + rSide * 0.62], [rSide * 0.42, 0, 0], 0.016);
-  }
-  // Sloped Access Ladder / Stairs down the front (+Z seaward side)
-  for (const railX of [-0.42, 0.42]) {
-    addBeachPart(lifeguardGrp, new THREE.BoxGeometry(0.10, 2.85, 0.14), COL_DRIFTWOOD, [railX, 1.18, 2.15], [-0.58, 0, 0], 0.012);
-  }
-  for (let step = 0; step < 6; step++) {
-    addBeachPart(
-      lifeguardGrp,
-      new THREE.BoxGeometry(0.78, 0.07, 0.18),
-      '#c89d6c',
-      [0, 0.34 + step * 0.34, 2.82 - step * 0.23],
-      [0, 0, 0],
-      0.010,
-    );
-  }
-  // Red Lifeguard Rescue Torpedo Buoy mounted on side rail
-  addBeachPart(lifeguardGrp, new THREE.CylinderGeometry(0.11, 0.11, 0.78, 8), '#ef4444', [1.44, 2.75, 0.45], [0.35, 0, 0], 0.010);
-
-  // 6B. Slatted Timber Sun Loungers with Rear Wheels & Coastal Adirondack Beach Chairs ("Timber Lounger & Beach Seating" — scaled 1.798x: original 1.55 x 1.16 rebalance so the seating matches full-size 3.92 avatars, same factor as park benches & vehicles)
-  const buildTimberSunLounger = (wx: number, wz: number, rotY: number) => {
-    const lGrp = new THREE.Group();
-    lGrp.position.set(wx, 0.04, wz);
-    lGrp.rotation.y = rotY;
-    lGrp.scale.setScalar(1.798);
-    seBeachGroup.add(lGrp);
-
-    // Slatted horizontal timber bed frame
-    addBeachPart(lGrp, new THREE.BoxGeometry(0.88, 0.10, 1.48), '#c89d6c', [0, 0.34, 0.25], [0, 0, 0], 0.014, coastalTimberTex);
-    // Reclined adjustable slatted backrest (-Z end)
-    addBeachPart(lGrp, new THREE.BoxGeometry(0.86, 0.09, 0.86), '#cfa576', [0, 0.62, -0.76], [0.68, 0, 0], 0.014, coastalTimberTex);
-    // 4 Legs + 2 Rear Wooden Wheels (as shown in Sheet 5 bottom-right close-up!)
-    for (const lx of [-0.38, 0.38]) {
-      addBeachPart(lGrp, new THREE.BoxGeometry(0.09, 0.32, 0.09), COL_DRIFTWOOD_DARK, [lx, 0.16, 0.82], [0, 0, 0], 0.008);
-      addBeachPart(lGrp, new THREE.BoxGeometry(0.09, 0.32, 0.09), COL_DRIFTWOOD_DARK, [lx, 0.16, -0.52], [0, 0, 0], 0.008);
-      addBeachPart(lGrp, new THREE.CylinderGeometry(0.13, 0.13, 0.06, 10), COL_DRIFTWOOD_DARK, [lx + (lx < 0 ? -0.06 : 0.06), 0.14, -0.68], [0, 0, Math.PI / 2], 0.008);
-    }
-  };
-
-  const buildAdirondackBeachChair = (wx: number, wz: number, rotY: number) => {
-    const aGrp = new THREE.Group();
-    aGrp.position.set(wx, 0.04, wz);
-    aGrp.rotation.y = rotY;
-    aGrp.scale.setScalar(1.798);
-    seBeachGroup.add(aGrp);
-
-    // Tilted seat + Fanned high backrest + Wide coastal armrests
-    addBeachPart(aGrp, new THREE.BoxGeometry(0.78, 0.09, 0.72), '#c89d6c', [0, 0.36, 0.05], [-0.18, 0, 0], 0.012, coastalTimberTex);
-    addBeachPart(aGrp, new THREE.BoxGeometry(0.76, 0.88, 0.09), '#cfa576', [0, 0.76, -0.28], [-0.32, 0, 0], 0.014, coastalTimberTex);
-    for (const ax of [-0.42, 0.42]) {
-      addBeachPart(aGrp, new THREE.BoxGeometry(0.18, 0.07, 0.82), '#b58858', [ax, 0.56, 0.04], [0, 0, 0], 0.010, coastalTimberTex);
-      addBeachPart(aGrp, new THREE.BoxGeometry(0.09, 0.52, 0.12), COL_DRIFTWOOD_DARK, [ax, 0.28, 0.32], [0, 0, 0], 0.008);
-      addBeachPart(aGrp, new THREE.BoxGeometry(0.09, 0.38, 0.14), COL_DRIFTWOOD_DARK, [ax, 0.20, -0.28], [0.35, 0, 0], 0.008);
-    }
-  };
-
-  // Place Pairs of Timber Sun Loungers & Adirondack Beach Chairs facing the East Ocean (matching Sheet 5 Aerial View!)
-  buildTimberSunLounger(100.2, 54.0, Math.PI / 2 - 0.12);
-  buildTimberSunLounger(100.2, 57.2, Math.PI / 2 - 0.08);
-  buildTimberSunLounger(100.2, 60.4, Math.PI / 2 - 0.05);
-
-  buildTimberSunLounger(101.0, 77.5, Math.PI / 2 + 0.08);
-  buildTimberSunLounger(101.0, 80.8, Math.PI / 2 + 0.12);
-  buildTimberSunLounger(100.2, 91.5, Math.PI / 2 - 0.10);
-  buildTimberSunLounger(100.2, 94.8, Math.PI / 2 - 0.06);
-
-  buildAdirondackBeachChair(96.2, 81.8, Math.PI / 2 + 0.15);
-  buildAdirondackBeachChair(96.2, 85.0, Math.PI / 2 + 0.05);
-  buildAdirondackBeachChair(96.2, 88.2, Math.PI / 2 - 0.10);
-  buildAdirondackBeachChair(97.5, 49.5, Math.PI / 2 - 0.20);
+    boardwalkY: BOARDWALK_Y,
+    coastalTimberTex,
+    addBeachPart,
+  } = buildSouthEastCoastalBeachfront3D({
+    parentGroup: constructionYardGroup,
+    roadsGroup,
+    windUniforms,
+    isSoftwareGl,
+    lobbyConcreteTex,
+    lobbyLouverTex,
+    createBlitzStrokeMesh,
+    upgradeMeshToBlitzWorldMaterial,
+  });
+  void coastalTimberTex;
 
   // 6C. Realistic Blitz-Style Tropical Coconut Palm Trees & Coastal Sea-Oats Foliage:
   //     1. High-resolution 512x512 Pinnate Palm Frond Alpha-Cutout Mask Texture (38 pairs of lance-shaped leaflets + central rachis)

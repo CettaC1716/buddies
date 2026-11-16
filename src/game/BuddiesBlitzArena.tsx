@@ -3759,6 +3759,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           npc.glbUpgraded = true;
           if (npc.preset.activity === 'fishing' && fishingRodGlb) {
             npc.rodUpgraded = true;
+            npc.rig.fishingPoseState = {
+              phase: 'nibble',
+              isReeling: false,
+              isSurging: false,
+              tension: 0.12,
+              rodBend: 0.08,
+              reelAngle: 0,
+              castPower: 0.5,
+              castProgress: 1,
+            };
           }
           upgradedThisFrame = true;
         }
