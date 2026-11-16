@@ -4208,17 +4208,21 @@ export interface LoadedBlitzAssets {
   cafeWorkGltf?: GLTF | null;
   sleepingGltf?: GLTF | null;
   benchLoungeGltf?: GLTF | null;
+  chairCasualGltf?: GLTF | null;
+  sunLoungerGltf?: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
 
 export type CafeWorkAnimAction = 'idle' | 'coffee' | 'tray' | 'serve';
-export type SitAnimVariant = 'chair' | 'bench_lounge';
+export type SitAnimVariant = 'chair' | 'bench_lounge' | 'chair_casual' | 'sun_lounger';
 let loadedCafeWorkGltf: GLTF | null = null;
 let loadedSleepingGltf: GLTF | null = null;
 let loadedBenchLoungeGltf: GLTF | null = null;
+let loadedChairCasualGltf: GLTF | null = null;
+let loadedSunLoungerGltf: GLTF | null = null;
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 42;
+const BLITZ_3D_TOTAL_ASSET_TASKS = 44;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4662,8 +4666,16 @@ export async function loadAllRealBlitzAssets(
     loadedBenchLoungeGltf = gltf;
     return gltf;
   });
+  const chairCasualGltfPromise = loadOptionalGltf('/assets/chair-casual-anim.glb').then((gltf) => {
+    loadedChairCasualGltf = gltf;
+    return gltf;
+  });
+  const sunLoungerGltfPromise = loadOptionalGltf('/assets/sun-lounger-anim.glb').then((gltf) => {
+    loadedSunLoungerGltf = gltf;
+    return gltf;
+  });
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, chairCasualGltfPromise, sunLoungerGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4727,6 +4739,8 @@ export async function loadAllRealBlitzAssets(
     hanaIdleClipPromise,
     cafeWorkGltfPromise,
     benchLoungeGltfPromise,
+    chairCasualGltfPromise,
+    sunLoungerGltfPromise,
   ]).then(
     ([
       playerGltf,
@@ -4778,6 +4792,8 @@ export async function loadAllRealBlitzAssets(
       hanaIdleClip,
       cafeWorkGltf,
       benchLoungeGltf,
+      chairCasualGltf,
+      sunLoungerGltf,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4832,6 +4848,8 @@ export async function loadAllRealBlitzAssets(
         cafeWorkGltf,
         sleepingGltf: loadedSleepingGltf,
         benchLoungeGltf,
+        chairCasualGltf,
+        sunLoungerGltf,
       };
       cachedLoadedBlitzAssets = loaded;
       if (loaded.treeFoliageTex) {
@@ -10591,12 +10609,16 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     clips.set(rawClip.name, rawClip);
   }
-  // Merge retargetable horizontal surface clips (`sleeping-anim.glb` -> `sleeping.001` and
-  // `bench-lounge-anim.glb` -> `bench_lounge.001`), dynamically adapting from each clip's
-  // Mixamo reference bind pose onto this character template so Female & Male align cleanly.
+  // Merge retargetable beach/bed clips (`sleeping-anim.glb`, `bench-lounge-anim.glb`,
+  // `chair-casual-anim.glb`, `sun-lounger-anim.glb`), dynamically adapting from each
+  // clip's Mixamo reference bind pose onto this character template so Female & Male align cleanly.
   const sleepingGltfSrc = loadedSleepingGltf ?? cachedLoadedBlitzAssets?.sleepingGltf ?? null;
   const benchLoungeGltfSrc =
     loadedBenchLoungeGltf ?? cachedLoadedBlitzAssets?.benchLoungeGltf ?? null;
+  const chairCasualGltfSrc =
+    loadedChairCasualGltf ?? cachedLoadedBlitzAssets?.chairCasualGltf ?? null;
+  const sunLoungerGltfSrc =
+    loadedSunLoungerGltf ?? cachedLoadedBlitzAssets?.sunLoungerGltf ?? null;
   for (const spec of [
     {
       gltfSrc: sleepingGltfSrc,
@@ -10610,6 +10632,16 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       gltfSrc: benchLoungeGltfSrc,
       clipSrc: benchLoungeGltfSrc?.animations?.[0] ?? null,
       clipName: 'bench_lounge.001',
+    },
+    {
+      gltfSrc: chairCasualGltfSrc,
+      clipSrc: chairCasualGltfSrc?.animations?.[0] ?? null,
+      clipName: 'chair_casual.001',
+    },
+    {
+      gltfSrc: sunLoungerGltfSrc,
+      clipSrc: sunLoungerGltfSrc?.animations?.[0] ?? null,
+      clipName: 'sun_lounger.001',
     },
   ]) {
     if (!spec.clipSrc || clips.has(spec.clipName)) continue;
@@ -11855,37 +11887,73 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   };
 }
 
-function alignLyingBodyToSurfaceLocalY(
+const SIT_VARIANT_CLIP_MAP: Record<SitAnimVariant, string> = {
+  chair: 'sitting.001',
+  bench_lounge: 'bench_lounge.001',
+  chair_casual: 'chair_casual.001',
+  sun_lounger: 'sun_lounger.001',
+};
+
+const CUSTOM_POSE_SURFACE_ANCHOR: Record<
+  string,
+  { targetWorldY: number; includeHands?: boolean; anchorBone?: string }
+> = {
+  'sleeping.001': { targetWorldY: 0.062 },
+  'bench_lounge.001': { targetWorldY: 0.065 },
+  'sun_lounger.001': { targetWorldY: 0.055, includeHands: true },
+  'chair_casual.001': { targetWorldY: 1.08, anchorBone: 'Hips' },
+};
+
+function resolveSitClipName(
+  clips: Map<string, THREE.AnimationClip> | undefined,
+  sittingVariant: SitAnimVariant,
+): string | null {
+  if (!clips) return null;
+  const preferred = SIT_VARIANT_CLIP_MAP[sittingVariant];
+  if (preferred && clips.has(preferred)) return preferred;
+  return clips.has('sitting.001') ? 'sitting.001' : null;
+}
+
+function alignBodyReferenceToSurfaceLocalY(
   bones: Map<string, THREE.Bone>,
   glbRoot: THREE.Group,
   bodyGroup: THREE.Group,
   baseRootY: number,
-  targetWorldBodyRadius: number,
+  spec: { targetWorldY: number; includeHands?: boolean; anchorBone?: string },
 ): void {
   const parentScaleY = Math.max(0.25, bodyGroup.parent?.scale.y ?? 1);
-  const targetLocalBoneY = targetWorldBodyRadius / parentScaleY;
-  let lowestLocalY = Infinity;
-  for (const [bName, bone] of bones.entries()) {
-    if (
-      bName.startsWith('mixamorig') ||
-      bName.includes('End') ||
-      bName.includes('Hand') ||
-      bName.includes('Thumb') ||
-      bName.includes('Index') ||
-      bName.includes('Middle') ||
-      bName.includes('Ring') ||
-      bName.includes('Pinky')
-    ) {
-      continue;
+  const targetLocalBoneY = spec.targetWorldY / parentScaleY;
+  let refLocalY = Infinity;
+  if (spec.anchorBone) {
+    const bone = bones.get(spec.anchorBone);
+    if (bone) {
+      bone.getWorldPosition(_scooterIkBodyPosA);
+      bodyGroup.worldToLocal(_scooterIkBodyPosA);
+      refLocalY = _scooterIkBodyPosA.y;
     }
-    bone.getWorldPosition(_scooterIkBodyPosA);
-    bodyGroup.worldToLocal(_scooterIkBodyPosA);
-    if (_scooterIkBodyPosA.y < lowestLocalY) {
-      lowestLocalY = _scooterIkBodyPosA.y;
+  } else {
+    for (const [bName, bone] of bones.entries()) {
+      if (
+        bName.startsWith('mixamorig') ||
+        bName.includes('End') ||
+        (!spec.includeHands && bName.includes('Hand')) ||
+        bName.includes('Thumb') ||
+        bName.includes('Index') ||
+        bName.includes('Middle') ||
+        bName.includes('Ring') ||
+        bName.includes('Pinky')
+      ) {
+        continue;
+      }
+      bone.getWorldPosition(_scooterIkBodyPosA);
+      bodyGroup.worldToLocal(_scooterIkBodyPosA);
+      if (_scooterIkBodyPosA.y < refLocalY) {
+        refLocalY = _scooterIkBodyPosA.y;
+      }
     }
   }
-  if (Number.isFinite(lowestLocalY)) {
-    glbRoot.position.y = baseRootY + (targetLocalBoneY - lowestLocalY);
+  if (Number.isFinite(refLocalY)) {
+    glbRoot.position.y = baseRootY + (targetLocalBoneY - refLocalY);
     glbRoot.updateWorldMatrix(true, true);
   }
 }
@@ -12071,13 +12139,9 @@ function stepCharBuddiesGlbRigController(
     !isMoving &&
     jumpOffset <= 0.05 &&
     !carryingCrate &&
-    ((sittingVariant === 'bench_lounge' && ctrl.clips.has('bench_lounge.001')) ||
-      ctrl.clips.has('sitting.001'))
+    resolveSitClipName(ctrl.clips, sittingVariant) !== null
   ) {
-    targetClip =
-      sittingVariant === 'bench_lounge' && ctrl.clips.has('bench_lounge.001')
-        ? 'bench_lounge.001'
-        : 'sitting.001';
+    targetClip = resolveSitClipName(ctrl.clips, sittingVariant)!;
     timeScale = 1.0;
   } else if (ctrl.kickAnimTimer > 0 && hasRifleTurnAndKickClip) {
     targetClip = 'rifle_turn_and_kick.001';
@@ -12622,10 +12686,11 @@ function stepCharBuddiesGlbRigController(
   let footGroundShiftY = 0;
   const needHandSampling =
     !hasScooterPose && (carryingCrate || (punchTimer <= 0 && weaponId !== 'unarmed'));
-  const isLyingSurfacePose =
-    (isSleeping && targetClip === 'sleeping.001') ||
-    (isSitting && targetClip === 'bench_lounge.001');
-  if (bodyGroup && (!isSeatedOrPiloting || isLyingSurfacePose || needHandSampling)) {
+  const surfaceAnchorSpec =
+    (isSleeping && targetClip === 'sleeping.001') || isSitting
+      ? CUSTOM_POSE_SURFACE_ANCHOR[targetClip]
+      : undefined;
+  if (bodyGroup && (!isSeatedOrPiloting || surfaceAnchorSpec || needHandSampling)) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
     if (!isSeatedOrPiloting) {
       const minFootY = measureLowestFootBoneLocalY(ctrl.bones, ctrl.glbRoot);
@@ -12634,13 +12699,13 @@ function stepCharBuddiesGlbRigController(
         ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
         ctrl.glbRoot.updateWorldMatrix(true, true);
       }
-    } else if (isLyingSurfacePose) {
-      alignLyingBodyToSurfaceLocalY(
+    } else if (surfaceAnchorSpec) {
+      alignBodyReferenceToSurfaceLocalY(
         ctrl.bones,
         ctrl.glbRoot,
         bodyGroup,
         ctrl.baseRootY,
-        targetClip === 'bench_lounge.001' ? 0.065 : 0.062,
+        surfaceAnchorSpec,
       );
     }
     if (needHandSampling) {
@@ -12837,8 +12902,7 @@ export function updateCharacterWeaponStance(
       !isMoving &&
       jumpOffset <= 0.05 &&
       !carryingCrate &&
-      (rig.customGlbController?.clips.has('sitting.001') ||
-        rig.customGlbController?.clips.has('bench_lounge.001'))) ||
+      resolveSitClipName(rig.customGlbController?.clips, sittingVariant) !== null) ||
     (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
   ) {
     rig.weaponRigGroup.visible = false;

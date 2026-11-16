@@ -1069,23 +1069,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         standUpX: 83.92,
         standUpZ: 94.85,
       },
-      // SE Beach sun loungers & Adirondack chairs (ShadersAndAssets §6B placements; builder
-      // coords are world coords). Spot yaw = placement rotY - PI/2: these procedural groups
-      // render with rotation.y = rotY verbatim and their backrests sit at local -Z, so the
-      // sitter faces local +Z (east, toward the ocean). Per-seat yaw offsets mirror the
-      // builders' hand-placed rotY variations. seatLiftY starts from measured seat-top
-      // heights (lounger bed ~0.74, chair seat ~0.77 vs park bench ~0.85 at lift 0).
-      { id: 'beach_lounger_1', x: 100.2, z: 54.0, yaw: -0.12, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_lounger_2', x: 100.2, z: 57.2, yaw: -0.08, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_lounger_3', x: 100.2, z: 60.4, yaw: -0.05, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_lounger_4', x: 101.0, z: 77.5, yaw: 0.08, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_lounger_5', x: 101.0, z: 80.8, yaw: 0.12, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_lounger_6', x: 100.2, z: 91.5, yaw: -0.1, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_lounger_7', x: 100.2, z: 94.8, yaw: -0.06, seatLiftY: -0.11, indicatorHeightY: 1.1 },
-      { id: 'beach_chair_1', x: 96.2, z: 81.8, yaw: 0.15, seatLiftY: -0.08, indicatorHeightY: 1.2 },
-      { id: 'beach_chair_2', x: 96.2, z: 85.0, yaw: 0.05, seatLiftY: -0.08, indicatorHeightY: 1.2 },
-      { id: 'beach_chair_3', x: 96.2, z: 88.2, yaw: -0.1, seatLiftY: -0.08, indicatorHeightY: 1.2 },
-      { id: 'beach_chair_4', x: 97.5, z: 49.5, yaw: -0.2, seatLiftY: -0.08, indicatorHeightY: 1.2 },
+      // SE Beach sun loungers (`Laying_—_Runway_Catwalk_Stylish_#21`) & Adirondack chairs
+      // (`Sit_—_Kasual_Harian_#6`), scaled 1.798x on flat sand (elev 0).
+      // Spot yaw = placement rotY - PI/2 (backrest at local -Z, character faces east toward ocean).
+      // Loungers step sideways off the bed (`standUpX/Z`) so stand-up clears the halfX=1.38 collider.
+      { id: 'beach_lounger_1', x: 100.2, z: 54.0, yaw: -0.12, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_2', x: 100.2, z: 57.2, yaw: -0.08, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_3', x: 100.2, z: 60.4, yaw: -0.05, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_4', x: 101.0, z: 77.5, yaw: 0.08, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_5', x: 101.0, z: 80.8, yaw: 0.12, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_6', x: 100.2, z: 91.5, yaw: -0.1, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_7', x: 100.2, z: 94.8, yaw: -0.06, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_chair_1', x: 96.2, z: 81.8, yaw: 0.15, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_chair_2', x: 96.2, z: 85.0, yaw: 0.05, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_chair_3', x: 96.2, z: 88.2, yaw: -0.1, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_chair_4', x: 97.5, z: 49.5, yaw: -0.2, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
     ];
 
     // Bed sleep spots for the private-house bedroom (static zone bed at interior
@@ -1149,15 +1147,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     // with the pelvis clear of the backrest. Beach seats use their own smaller shifts
     // (see below); the remaining seat types anchor exactly on the spot.
     const getSeatedAnchor = (spot: LobbySeatSpot) => {
-      // Beach seats: loungers sit up on the bed near the backrest with legs resting along
-      // the bed (bed front edge is ~1.78 ahead of the origin), Adirondack chairs take a
-      // small shift like a normal chair. Other seat types anchor exactly on the spot.
+      // Beach loungers shift slightly toward the backrest (+0.12) while Adirondack chairs
+      // shift slightly forward (-0.12) so hands behind head and heels align cleanly.
       const backShift = spot.id.startsWith('park_bench')
         ? 0.12
         : spot.id.startsWith('beach_lounger')
-          ? 0.1
+          ? 0.12
           : spot.id.startsWith('beach_chair')
-            ? 0.05
+            ? -0.12
             : 0;
       return {
         x: spot.x - Math.cos(spot.yaw) * backShift,
@@ -1165,10 +1162,49 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       };
     };
 
-    const getLobbySeatStandUpPos = (spot: LobbySeatSpot) => ({
-      x: spot.standUpX ?? wrapPlanetCoord(spot.x + Math.cos(spot.yaw) * 0.88),
-      z: spot.standUpZ ?? wrapPlanetCoord(spot.z - Math.sin(spot.yaw) * 0.88),
-    });
+    const CUSTOM_SIT_REMOTE_TABLE: Record<
+      Exclude<SitAnimVariant, 'chair'>,
+      { emoteClip: string; peerLiftY: number }
+    > = {
+      bench_lounge: { emoteClip: 'seat:bench_lounge', peerLiftY: 0.838 },
+      sun_lounger: { emoteClip: 'seat:sun_lounger', peerLiftY: 0.741 },
+      chair_casual: { emoteClip: 'seat:chair_casual', peerLiftY: 0 },
+    };
+
+    const resolveOutdoorSeatLiftY = (spot: LobbySeatSpot): number =>
+      spot.seatLiftY + (!spot.sitVariant || spot.sitVariant === 'chair' ? 0.178 : 0);
+
+    const resolvePeerSitVariantAndLift = (
+      emoteClip: string,
+      isSitting: boolean,
+    ): { variant: SitAnimVariant; peerLiftY: number } => {
+      for (const [variant, spec] of Object.entries(CUSTOM_SIT_REMOTE_TABLE) as Array<
+        [Exclude<SitAnimVariant, 'chair'>, { emoteClip: string; peerLiftY: number }]
+      >) {
+        if (emoteClip === spec.emoteClip) {
+          return { variant, peerLiftY: spec.peerLiftY };
+        }
+      }
+      return { variant: 'chair', peerLiftY: isSitting ? 0.128 : 0 };
+    };
+
+    const getLobbySeatStandUpPos = (spot: LobbySeatSpot) => {
+      if (spot.standUpX !== undefined && spot.standUpZ !== undefined) {
+        return { x: spot.standUpX, z: spot.standUpZ };
+      }
+      if (spot.sitVariant === 'sun_lounger') {
+        // Step laterally onto adjacent sand so stand-up clears the 2.76m lounger box collider.
+        return {
+          x: wrapPlanetCoord(spot.x + Math.sin(spot.yaw) * 1.18),
+          z: wrapPlanetCoord(spot.z + Math.cos(spot.yaw) * 1.18),
+        };
+      }
+      const fwdDist = spot.sitVariant === 'chair_casual' ? 1.18 : 0.88;
+      return {
+        x: wrapPlanetCoord(spot.x + Math.cos(spot.yaw) * fwdDist),
+        z: wrapPlanetCoord(spot.z - Math.sin(spot.yaw) * fwdDist),
+      };
+    };
 
     const sitOnLobbySeat = (spot: LobbySeatSpot) => {
       if (!playerUnit || !playerUnit.alive) return;
@@ -1199,7 +1235,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else {
         seatedCameraYaw = spot.yaw + Math.PI / 2 + 0.36;
         seatedCameraPitch = 0.22;
-        seatedCameraDist = 3.55;
+        seatedCameraDist =
+          spot.sitVariant === 'sun_lounger'
+            ? 4.15
+            : spot.sitVariant === 'chair_casual'
+              ? 3.85
+              : 3.55;
       }
       updateCharacterWeaponStance(
         playerUnit.rig,
@@ -20980,8 +21021,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 b.isPlayer && b.isSitting && activeCafeSeatedSpot
                   ? activeCafeSeatedSpot.seatLiftY
                   : b.isPlayer && b.isSitting && activeSeatedSpot
-                    ? activeSeatedSpot.seatLiftY +
-                      (activeSeatedSpot.sitVariant === 'bench_lounge' ? 0 : 0.178)
+                    ? resolveOutdoorSeatLiftY(activeSeatedSpot)
                     : b.isPlayer && b.isSleeping && activeSleepSpot
                       ? activeSleepSpot.sleepLiftY
                       : 0;
@@ -23676,8 +23716,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
                 emoteClip: playerUnit?.isSleeping
                   ? 'bed:sleep'
-                  : playerUnit?.isSitting && activeSeatedSpot?.sitVariant === 'bench_lounge'
-                    ? 'seat:bench_lounge'
+                  : playerUnit?.isSitting &&
+                      activeSeatedSpot?.sitVariant &&
+                      activeSeatedSpot.sitVariant !== 'chair'
+                    ? CUSTOM_SIT_REMOTE_TABLE[activeSeatedSpot.sitVariant].emoteClip
                     : cafeWorkAnimSync.phase === 'prep_act'
                       ? cafeWorkAnimSync.category === 'pastry'
                         ? 'cafe:tray'
@@ -24015,7 +24057,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.emoteClip === 'bed:sleep',
               peer.scooterKind ? av.scooterPose : null,
               peerCafeWorkAction,
-              peer.emoteClip === 'seat:bench_lounge' ? 'bench_lounge' : 'chair',
+              resolvePeerSitVariantAndLift(peer.emoteClip, peer.isSitting).variant,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -24879,8 +24921,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else {
           const seatLift =
             b.isPlayer && b.isSitting && activeSeatedSpot
-              ? activeSeatedSpot.seatLiftY +
-                (activeSeatedSpot.sitVariant === 'bench_lounge' ? 0 : 0.178)
+              ? resolveOutdoorSeatLiftY(activeSeatedSpot)
               : 0;
           b.bodyGroup.position.set(0, floatY + b.jumpOffset + bHitPose.hopY + seatLift, 0);
         }
@@ -24909,8 +24950,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (av.peer.scooterKind && av.scooterPose) {
             applyScooterBodyTransform(av.bodyGroup, av.peer.jumpOffset, av.renderYaw, av.scooterPose);
           } else {
-            const peerSeatLiftY =
-              av.peer.emoteClip === 'seat:bench_lounge' ? 0.838 : av.peer.isSitting ? 0.128 : 0;
+            const peerSeatLiftY = resolvePeerSitVariantAndLift(
+              av.peer.emoteClip,
+              av.peer.isSitting,
+            ).peerLiftY;
             av.bodyGroup.position.set(0, av.peer.jumpOffset + peerSeatLiftY, 0);
             av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0, 'YXZ');
           }
