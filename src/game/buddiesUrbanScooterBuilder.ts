@@ -9,6 +9,9 @@ import {
 export interface ScooterPartFinish {
   roughness?: number;
   metalness?: number;
+  bumpScale?: number;
+  opacity?: number;
+  transparent?: boolean;
 }
 
 export interface ScooterToonPartHelper {
@@ -130,13 +133,21 @@ let cachedShowroomAFrameTex: THREE.Texture | null = null;
 let cachedShowroomFasciaTex: THREE.Texture | null = null;
 let cachedShowroomBackwallTex: THREE.Texture | null = null;
 
-const FINISH_GLOSS_BODY: ScooterPartFinish = { roughness: 0.22, metalness: 0.08 };
-const FINISH_SATIN_METAL: ScooterPartFinish = { roughness: 0.28, metalness: 0.68 };
-const FINISH_DARK_ALLOY: ScooterPartFinish = { roughness: 0.34, metalness: 0.56 };
-const FINISH_MATTE_TRIM: ScooterPartFinish = { roughness: 0.68, metalness: 0.08 };
-const FINISH_RUBBER_TIRE: ScooterPartFinish = { roughness: 0.84, metalness: 0.03 };
-const FINISH_SADDLE_LEATHER: ScooterPartFinish = { roughness: 0.74, metalness: 0.04 };
-const FINISH_OPTICAL_LENS: ScooterPartFinish = { roughness: 0.14, metalness: 0.16 };
+const FINISH_GLOSS_BODY: ScooterPartFinish = { roughness: 0.28, metalness: 0.08 };
+const FINISH_SATIN_METAL: ScooterPartFinish = { roughness: 0.30, metalness: 0.65 };
+const FINISH_DARK_ALLOY: ScooterPartFinish = { roughness: 0.38, metalness: 0.52 };
+const FINISH_MATTE_TRIM: ScooterPartFinish = { roughness: 0.72, metalness: 0.06 };
+const FINISH_RUBBER_TIRE: ScooterPartFinish = { roughness: 0.86, metalness: 0.03, bumpScale: 0.0045 };
+const FINISH_SADDLE_LEATHER: ScooterPartFinish = { roughness: 0.78, metalness: 0.04, bumpScale: 0.003 };
+const FINISH_OPTICAL_LENS: ScooterPartFinish = { roughness: 0.12, metalness: 0.18 };
+const FINISH_SMOKED_VISOR: ScooterPartFinish = { roughness: 0.10, metalness: 0.24 };
+
+// Warm pearl ivory, matte slate-charcoal, and crisp muted cyan matching reference sheets
+const SCOOTER_PEARL_HEX = '#f1eee6';
+const SCOOTER_SILVER_TRIM_HEX = '#d6dae0';
+const SCOOTER_CHARCOAL_HEX = '#353a42';
+const SCOOTER_DEEP_CHARCOAL_HEX = '#262a31';
+const SCOOTER_REF_CYAN_HEX = '#62c7c1';
 
 function makeCanvas2d(w: number, h: number): {
   canvas: HTMLCanvasElement | null;
@@ -190,68 +201,72 @@ function getSoftContactShadowTexture(): THREE.Texture {
 }
 
 /**
- * Pearl-White Aerodynamic Front Shield Texture (`screen_8a1fbcde.png` Front & 3/4 Views):
- * - Smooth pearl-alabaster center crown with satin metallic edge falloff,
- * - Outer cyan-teal (`#14b8a6`) aerodynamic pinstripe running symmetrically along left & right flanks,
- * - Crisp panel shut-line & recessed vertical stadium DRL bezel shadow.
+ * Warm Pearl Satin Front Shield Texture (matching 3/4 Isometric & Front Elevation reference):
+ * - Smooth warm pearl ivory crown fading softly to warm silver-stone along flanks,
+ * - Fine slate-charcoal automotive panel shut-lines framing shoulder seam & horizontal headlamp parting groove.
+ *   (Outer cyan edge piping is modeled natively as flush continuous 3D geometry!)
  */
 function getElectricFrontShieldTexture(): THREE.Texture {
   if (cachedFrontShieldTex) return cachedFrontShieldTex;
   const { canvas, ctx } = makeCanvas2d(512, 512);
   if (!canvas || !ctx) {
-    cachedFrontShieldTex = makeFallbackDataTex(242, 246, 250, 255);
+    cachedFrontShieldTex = makeFallbackDataTex(241, 238, 230, 255);
     return cachedFrontShieldTex;
   }
   const bg = ctx.createLinearGradient(0, 0, 512, 0);
-  bg.addColorStop(0.0, '#d8e1ec');
-  bg.addColorStop(0.14, '#edf2f7');
-  bg.addColorStop(0.50, '#f8fafc');
-  bg.addColorStop(0.86, '#edf2f7');
-  bg.addColorStop(1.0, '#d8e1ec');
+  bg.addColorStop(0.0, '#dbd6cb');
+  bg.addColorStop(0.14, '#ebe7de');
+  bg.addColorStop(0.50, '#f5f2eb');
+  bg.addColorStop(0.86, '#ebe7de');
+  bg.addColorStop(1.0, '#dbd6cb');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, 512, 512);
 
-  // Subtle vertical specular crown sheen down the center of the shield
+  // Soft vertical studio highlight down shield center
   const vGrad = ctx.createLinearGradient(0, 0, 0, 512);
-  vGrad.addColorStop(0.0, 'rgba(255,255,255,0.28)');
-  vGrad.addColorStop(0.68, 'rgba(255,255,255,0.06)');
-  vGrad.addColorStop(1.0, 'rgba(148,163,184,0.22)');
+  vGrad.addColorStop(0.0, 'rgba(255,255,255,0.22)');
+  vGrad.addColorStop(0.65, 'rgba(255,255,255,0.04)');
+  vGrad.addColorStop(1.0, 'rgba(120,115,105,0.16)');
   ctx.fillStyle = vGrad;
   ctx.fillRect(0, 0, 512, 512);
 
-  // Outer aerodynamic cyan-teal contour pinstripes on left (`u ~ 0.11`) & right (`u ~ 0.89`) flanks
-  for (const sideX of [58, 454]) {
-    ctx.strokeStyle = '#0f766e';
-    ctx.lineWidth = 13;
+  // Subtle inset cyan edge accent border tracing outer shield shoulders (`u ~ 0.09` & `0.91`)
+  for (const sideX of [46, 466]) {
+    const dir = sideX < 256 ? 1 : -1;
+    ctx.strokeStyle = '#333942';
+    ctx.lineWidth = 11;
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(sideX, 18);
-    ctx.quadraticCurveTo(sideX + (sideX < 256 ? -10 : 10), 260, sideX + (sideX < 256 ? 8 : -8), 494);
+    ctx.moveTo(sideX, 16);
+    ctx.quadraticCurveTo(sideX - dir * 8, 240, sideX + dir * 10, 488);
     ctx.stroke();
 
-    ctx.strokeStyle = '#2dd4bf';
-    ctx.lineWidth = 8;
+    ctx.strokeStyle = SCOOTER_REF_CYAN_HEX;
+    ctx.lineWidth = 6.5;
     ctx.beginPath();
-    ctx.moveTo(sideX, 18);
-    ctx.quadraticCurveTo(sideX + (sideX < 256 ? -10 : 10), 260, sideX + (sideX < 256 ? 8 : -8), 494);
+    ctx.moveTo(sideX, 16);
+    ctx.quadraticCurveTo(sideX - dir * 8, 240, sideX + dir * 10, 488);
     ctx.stroke();
   }
 
-  // Subtle automotive panel shut-lines inboard of the cyan stripes
-  ctx.strokeStyle = 'rgba(71, 85, 105, 0.38)';
+  // Crisp automotive panel shut-lines framing inner shoulder seam & horizontal headlamp parting line
+  ctx.strokeStyle = 'rgba(53, 58, 66, 0.42)';
   ctx.lineWidth = 2.5;
-  for (const seamX of [74, 438]) {
+  for (const seamX of [62, 450]) {
+    const dir = seamX < 256 ? 1 : -1;
     ctx.beginPath();
     ctx.moveTo(seamX, 24);
-    ctx.quadraticCurveTo(seamX + (seamX < 256 ? -8 : 8), 260, seamX + (seamX < 256 ? 6 : -6), 488);
+    ctx.quadraticCurveTo(seamX - dir * 6, 240, seamX + dir * 8, 482);
     ctx.stroke();
   }
-
-  // Lower horizontal crease line right above the flush headlamp bar
-  ctx.strokeStyle = 'rgba(51, 65, 85, 0.45)';
+  // Horizontal shut-line running left & right from the horizontal headlamp bar to outer stripe (`v ~ 0.67`)
+  ctx.strokeStyle = 'rgba(42, 47, 54, 0.56)';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(64, 466);
-  ctx.quadraticCurveTo(256, 480, 448, 466);
+  ctx.moveTo(46, 336);
+  ctx.lineTo(132, 344);
+  ctx.moveTo(380, 344);
+  ctx.lineTo(466, 336);
   ctx.stroke();
 
   cachedFrontShieldTex = finalizeCanvasTex(canvas);
@@ -259,11 +274,10 @@ function getElectricFrontShieldTexture(): THREE.Texture {
 }
 
 /**
- * Glossy Horizontal Headlamp Lens & Multi-Reflector Optics (`screen_8a1fbcde.png` Front & 3/4 Views):
- * - Smoked dark chrome internal bezel,
- * - 3 jewel-like LED projector segments in center,
- * - Corner amber LED turn indicator pods,
- * - Crisp diagonal glossy polycarbonate lens reflection streak.
+ * Glossy Horizontal Headlamp Lens & Multi-Reflector Optics (matching 3/4 & Front Elevation):
+ * - Clean dark charcoal outer gasket housing,
+ * - Continuous ice-white/cyan 5-cell linear LED optic array inside smoked polycarbonate lens,
+ * - Diagonal specular glass reflection streak.
  */
 function getElectricHeadlampBarTexture(): THREE.Texture {
   if (cachedHeadlampBarTex) return cachedHeadlampBarTex;
@@ -272,128 +286,91 @@ function getElectricHeadlampBarTexture(): THREE.Texture {
     cachedHeadlampBarTex = makeFallbackDataTex(225, 248, 255, 255);
     return cachedHeadlampBarTex;
   }
-  ctx.fillStyle = '#121822';
+  ctx.fillStyle = '#1c2026';
   ctx.fillRect(0, 0, 512, 128);
 
-  // Outer chrome/cyan inner reflector frame
-  ctx.strokeStyle = '#64748b';
+  // Inner metallic satin bezel frame
+  ctx.strokeStyle = '#647080';
   ctx.lineWidth = 5;
-  ctx.strokeRect(8, 10, 496, 108);
+  ctx.strokeRect(10, 12, 492, 104);
 
-  // Left & Right corner amber turn-indicator segments
-  for (const [ax, aw] of [
-    [16, 66],
-    [430, 66],
-  ] as [number, number][]) {
-    const aGrad = ctx.createLinearGradient(ax, 20, ax, 108);
-    aGrad.addColorStop(0.0, '#fde68a');
-    aGrad.addColorStop(0.5, '#f59e0b');
-    aGrad.addColorStop(1.0, '#b45309');
-    ctx.fillStyle = aGrad;
-    ctx.fillRect(ax, 22, aw, 84);
-  }
-
-  // Central triple LED projector array (`x = 94 .. 418`)
-  const mainGrad = ctx.createLinearGradient(94, 18, 94, 110);
-  mainGrad.addColorStop(0.0, '#cffafe');
-  mainGrad.addColorStop(0.5, '#f8fafc');
-  mainGrad.addColorStop(1.0, '#93c5fd');
+  // Wide linear crystal multi-LED cavity (`x = 24 .. 488`)
+  const mainGrad = ctx.createLinearGradient(24, 22, 24, 106);
+  mainGrad.addColorStop(0.0, '#cfeef2');
+  mainGrad.addColorStop(0.45, '#f9feff');
+  mainGrad.addColorStop(1.0, '#9bd3dd');
   ctx.fillStyle = mainGrad;
-  ctx.fillRect(92, 20, 328, 88);
+  ctx.fillRect(24, 24, 464, 80);
 
-  // Projector cell dividers + bright optical cores
-  ctx.fillStyle = '#1e293b';
-  ctx.fillRect(198, 20, 6, 88);
-  ctx.fillRect(308, 20, 6, 88);
-  for (const cx of [145, 256, 366]) {
-    const pGrad = ctx.createRadialGradient(cx, 64, 4, cx, 64, 42);
+  // Subtle vertical crystal optic ribs (5 LED cubes)
+  ctx.fillStyle = 'rgba(30, 41, 59, 0.28)';
+  for (let i = 1; i < 5; i++) {
+    ctx.fillRect(24 + i * 92.8 - 2, 24, 4, 80);
+  }
+  for (let i = 0; i < 5; i++) {
+    const cx = 24 + (i + 0.5) * 92.8;
+    const pGrad = ctx.createRadialGradient(cx, 64, 4, cx, 64, 38);
     pGrad.addColorStop(0.0, '#ffffff');
-    pGrad.addColorStop(0.6, 'rgba(186, 230, 253, 0.75)');
-    pGrad.addColorStop(1.0, 'rgba(30, 41, 59, 0.15)');
+    pGrad.addColorStop(0.65, 'rgba(214, 248, 252, 0.72)');
+    pGrad.addColorStop(1.0, 'rgba(51, 65, 85, 0.14)');
     ctx.fillStyle = pGrad;
-    ctx.fillRect(cx - 46, 22, 92, 84);
+    ctx.fillRect(cx - 42, 26, 84, 76);
   }
 
-  // Signature glossy diagonal headlamp lens specular reflection
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
-  ctx.beginPath();
-  ctx.moveTo(118, 14);
-  ctx.lineTo(170, 14);
-  ctx.lineTo(128, 114);
-  ctx.lineTo(76, 114);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(334, 14);
-  ctx.lineTo(362, 14);
-  ctx.lineTo(322, 114);
-  ctx.lineTo(294, 114);
-  ctx.closePath();
-  ctx.fill();
+  // Crisp glossy diagonal lens reflection streaks
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.44)';
+  for (const [sx, w] of [
+    [98, 44],
+    [164, 18],
+    [340, 26],
+  ]) {
+    ctx.beginPath();
+    ctx.moveTo(sx, 14);
+    ctx.lineTo(sx + w, 14);
+    ctx.lineTo(sx + w - 36, 114);
+    ctx.lineTo(sx - 36, 114);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   cachedHeadlampBarTex = finalizeCanvasTex(canvas);
   return cachedHeadlampBarTex;
 }
 
 /**
- * Sculpted Rear Side Cowl Texture (`screen_8a1fbcde.png` Side Profile & 3/4 Isometric):
- * - Pearl-white upper body shell + satin-silver metallic lower sculpt,
- * - Signature angled cyan-teal boomerang accent stripe & crisp panel crease!
- * UV orientation: `u = 0` (rear tail `z = -0.80`) -> `u = 1` (front knee `z = -0.02`), `v = 0` (bottom) -> `v = 1` (top).
+ * Warm Pearl-Ivory Sculpted Rear Body Cowl Texture (`Side Profile & 3/4 Isometric`):
+ * - Seamless warm pearl ivory shell matching front shield (`#f2efe7 -> #ded9ce`),
+ * - Crisp panel seam crease separating rear quarter fender from lower inner skirt.
  */
 function getElectricSideCowlTexture(): THREE.Texture {
   if (cachedSideCowlTex) return cachedSideCowlTex;
   const { canvas, ctx } = makeCanvas2d(512, 256);
   if (!canvas || !ctx) {
-    cachedSideCowlTex = makeFallbackDataTex(241, 245, 249, 255);
+    cachedSideCowlTex = makeFallbackDataTex(241, 238, 230, 255);
     return cachedSideCowlTex;
   }
-  // Base pearl-white automotive finish
   const baseGrad = ctx.createLinearGradient(0, 0, 0, 256);
-  baseGrad.addColorStop(0.0, '#dce4ee');
-  baseGrad.addColorStop(0.35, '#eef3f8');
-  baseGrad.addColorStop(0.75, '#f8fafc');
-  baseGrad.addColorStop(1.0, '#e2e8f0');
+  baseGrad.addColorStop(0.0, '#d8d3c8');
+  baseGrad.addColorStop(0.30, '#e8e4db');
+  baseGrad.addColorStop(0.74, '#f4f1ea');
+  baseGrad.addColorStop(1.0, '#e6e2d8');
   ctx.fillStyle = baseGrad;
   ctx.fillRect(0, 0, 512, 256);
 
-  // Lower satin-metallic recessed scallop along the bottom-front edge
-  ctx.fillStyle = '#cbd5e1';
-  ctx.beginPath();
-  ctx.moveTo(180, 256);
-  ctx.lineTo(512, 256);
-  ctx.lineTo(512, 186);
-  ctx.lineTo(340, 198);
-  ctx.closePath();
-  ctx.fill();
-
-  // Signature Boomerang Cyan-Teal Accent Trim (`u` rear=36 -> front-knee=438, then angling down-forward to 486)
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  ctx.strokeStyle = '#1e293b';
-  ctx.lineWidth = 14;
-  ctx.beginPath();
-  ctx.moveTo(34, 92);
-  ctx.lineTo(384, 118);
-  ctx.lineTo(466, 214);
-  ctx.stroke();
-
-  ctx.strokeStyle = '#2dd4bf';
-  ctx.lineWidth = 9;
-  ctx.beginPath();
-  ctx.moveTo(34, 92);
-  ctx.lineTo(384, 118);
-  ctx.lineTo(466, 214);
-  ctx.stroke();
-
-  // Subtle upper highlight crease above the boomerang stripe
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+  // Subtle horizontal contour shadow crease along lower hip edge
+  ctx.strokeStyle = 'rgba(53, 58, 66, 0.28)';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(38, 82);
-  ctx.lineTo(388, 108);
+  ctx.moveTo(28, 178);
+  ctx.lineTo(410, 194);
+  ctx.stroke();
+
+  // Subtle specular highlight ridge along upper shoulder
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(24, 58);
+  ctx.lineTo(430, 82);
   ctx.stroke();
 
   cachedSideCowlTex = finalizeCanvasTex(canvas);
@@ -401,7 +378,7 @@ function getElectricSideCowlTexture(): THREE.Texture {
 }
 
 /**
- * Rear Slim LED Taillight & Turn-Signal Strip Texture (`screen_8a1fbcde.png` Rear Elevation).
+ * Rear Slim LED Taillight & Amber Outer Indicator Bar Texture (`Rear Elevation` reference).
  */
 function getElectricTaillightBarTexture(): THREE.Texture {
   if (cachedTaillightBarTex) return cachedTaillightBarTex;
@@ -410,125 +387,139 @@ function getElectricTaillightBarTexture(): THREE.Texture {
     cachedTaillightBarTex = makeFallbackDataTex(239, 68, 68, 255);
     return cachedTaillightBarTex;
   }
-  ctx.fillStyle = '#181c24';
+  ctx.fillStyle = '#1b1f26';
   ctx.fillRect(0, 0, 512, 96);
 
-  // Outer amber turn-indicator end strips
+  // Outer compact amber turn-indicator tips
   for (const [tx, tw] of [
-    [12, 74],
-    [426, 74],
+    [10, 62],
+    [440, 62],
   ] as [number, number][]) {
-    const tGrad = ctx.createLinearGradient(tx, 18, tx, 78);
+    const tGrad = ctx.createLinearGradient(tx, 20, tx, 76);
     tGrad.addColorStop(0.0, '#fde68a');
     tGrad.addColorStop(0.5, '#f59e0b');
     tGrad.addColorStop(1.0, '#b45309');
     ctx.fillStyle = tGrad;
-    ctx.fillRect(tx, 20, tw, 56);
+    ctx.fillRect(tx, 22, tw, 52);
   }
 
-  // Central ruby-red neon LED light bar
-  const rGrad = ctx.createLinearGradient(96, 14, 96, 82);
+  // Central continuous slim ruby-red LED bar
+  const rGrad = ctx.createLinearGradient(82, 16, 82, 80);
   rGrad.addColorStop(0.0, '#fca5a5');
   rGrad.addColorStop(0.45, '#ef4444');
   rGrad.addColorStop(1.0, '#991b1b');
   ctx.fillStyle = rGrad;
-  ctx.fillRect(94, 16, 324, 64);
+  ctx.fillRect(80, 18, 352, 60);
 
-  // Inner bright LED light-guide tube
+  // Inner luminous LED light guide core
   ctx.fillStyle = '#ffe4e6';
-  ctx.fillRect(108, 38, 296, 16);
+  ctx.fillRect(96, 40, 320, 14);
 
   cachedTaillightBarTex = finalizeCanvasTex(canvas);
   return cachedTaillightBarTex;
 }
 
 /**
- * Matte-Charcoal Faux-Leather 2-Up Saddle Texture with Contrast French Stitching (`screen_8a1fbcde.png`).
+ * Matte-Charcoal Contoured 2-Up Saddle Upholstery Texture (`Side Profile & 3/4 Isometric` reference).
+ * Clean fine leather grain & subtle curved step seam (no bright noisy dashed borders).
  */
 function getSaddleLeatherTexture(): THREE.Texture {
   if (cachedSaddleLeatherTex) return cachedSaddleLeatherTex;
   const { canvas, ctx } = makeCanvas2d(512, 256);
   if (!canvas || !ctx) {
-    cachedSaddleLeatherTex = makeFallbackDataTex(38, 43, 51, 255);
+    cachedSaddleLeatherTex = makeFallbackDataTex(52, 57, 65, 255);
     return cachedSaddleLeatherTex;
   }
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0.0, '#1e232b');
-  grad.addColorStop(0.32, '#2d333e');
-  grad.addColorStop(0.68, '#2d333e');
-  grad.addColorStop(1.0, '#1e232b');
+  grad.addColorStop(0.0, '#272b32');
+  grad.addColorStop(0.32, '#3a404a');
+  grad.addColorStop(0.68, '#3d434e');
+  grad.addColorStop(1.0, '#282c33');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 512, 256);
 
-  // Subtle leather grain micro-stipple
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.24)';
-  for (let y = 4; y < 252; y += 6) {
-    for (let x = 4; x < 508; x += 6) {
-      if ((x * 7 + y * 13) % 18 === 0) {
+  // Subtle matte pebble grain micro-stipple
+  ctx.fillStyle = 'rgba(18, 22, 28, 0.22)';
+  for (let y = 4; y < 252; y += 5) {
+    for (let x = 4; x < 508; x += 5) {
+      if ((x * 7 + y * 13) % 17 === 0) {
         ctx.fillRect(x, y, 2, 2);
       }
     }
   }
 
-  // Pillion-to-rider bolster seam (`u ~ 0.46`) + perimeter french stitching
-  ctx.strokeStyle = '#64748b';
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([7, 5]);
-  ctx.strokeRect(18, 28, 476, 200);
-
+  // Smooth stitched bolster contour seam separating pillion & rider cushion
+  ctx.strokeStyle = 'rgba(22, 26, 32, 0.72)';
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(232, 26);
-  ctx.quadraticCurveTo(252, 128, 232, 230);
+  ctx.moveTo(222, 18);
+  ctx.quadraticCurveTo(246, 128, 222, 238);
   ctx.stroke();
-  ctx.setLineDash([]);
+
+  ctx.strokeStyle = 'rgba(116, 125, 140, 0.32)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(226, 18);
+  ctx.quadraticCurveTo(250, 128, 226, 238);
+  ctx.stroke();
 
   cachedSaddleLeatherTex = finalizeCanvasTex(canvas);
   return cachedSaddleLeatherTex;
 }
 
 /**
- * Directional Urban Commuter Tire Tread Texture (`256x256`, tiled cleanly around Torus tires).
+ * Circumferential Commuter Tire Tread Texture (`512x256`, self-tiled cleanly under `ClampToEdgeWrapping`
+ * so showroom `addLobbyPart` never overwrites torus UVs).
  */
 function getScooterTireTreadTexture(): THREE.Texture {
   if (cachedTireTreadTex) return cachedTireTreadTex;
-  const { canvas, ctx } = makeCanvas2d(256, 256);
+  const { canvas, ctx } = makeCanvas2d(512, 256);
   if (!canvas || !ctx) {
-    cachedTireTreadTex = makeFallbackDataTex(30, 34, 41, 255);
+    cachedTireTreadTex = makeFallbackDataTex(46, 51, 58, 255);
     return cachedTireTreadTex;
   }
-  // Sidewall & crown shading
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0.0, '#1b1f27');
-  grad.addColorStop(0.25, '#262c36');
-  grad.addColorStop(0.50, '#20252e');
-  grad.addColorStop(0.75, '#262c36');
-  grad.addColorStop(1.0, '#1b1f27');
+  grad.addColorStop(0.0, '#2a2f37');
+  grad.addColorStop(0.24, '#363c46');
+  grad.addColorStop(0.50, '#2e333c');
+  grad.addColorStop(0.76, '#363c46');
+  grad.addColorStop(1.0, '#2a2f37');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, 512, 256);
 
-  // Circumferential center rain groove + diagonal V-sipes
-  ctx.fillStyle = '#11141a';
-  ctx.fillRect(0, 123, 256, 10);
+  // Subtle sidewall molding ring lines
+  ctx.strokeStyle = '#20242b';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 44);
+  ctx.lineTo(512, 44);
+  ctx.moveTo(0, 212);
+  ctx.lineTo(512, 212);
+  ctx.stroke();
 
-  ctx.strokeStyle = '#12161d';
-  ctx.lineWidth = 5;
-  for (let x = -16; x < 272; x += 24) {
+  // Center circumferential groove + 16 directional chevron sipes across U=0..512
+  ctx.fillStyle = '#191d23';
+  ctx.fillRect(0, 124, 512, 8);
+
+  ctx.strokeStyle = '#1b1f26';
+  ctx.lineWidth = 4.5;
+  ctx.lineCap = 'round';
+  const step = 32;
+  for (let x = 0; x <= 512; x += step) {
     ctx.beginPath();
     ctx.moveTo(x, 124);
-    ctx.lineTo(x + 18, 72);
-    ctx.moveTo(x + 12, 132);
-    ctx.lineTo(x + 30, 184);
+    ctx.lineTo(x + 18, 78);
+    ctx.moveTo(x + step * 0.5, 132);
+    ctx.lineTo(x + step * 0.5 + 18, 178);
     ctx.stroke();
   }
 
-  const tex = finalizeCanvasTex(canvas, THREE.RepeatWrapping);
-  tex.repeat.set(4, 1);
-  cachedTireTreadTex = tex;
+  cachedTireTreadTex = finalizeCanvasTex(canvas, THREE.ClampToEdgeWrapping);
   return cachedTireTreadTex;
 }
 
 /**
- * Drilled Stainless-Steel Brake Disc Rotor Texture (`256x256`).
+ * Perforated Stainless Brake Rotor Texture (`256x256`) for annular brake disc rings.
  */
 function getVentilatedDiscRotorTexture(): THREE.Texture {
   if (cachedDiscRotorTex) return cachedDiscRotorTex;
@@ -537,91 +528,87 @@ function getVentilatedDiscRotorTexture(): THREE.Texture {
     cachedDiscRotorTex = makeFallbackDataTex(203, 213, 225, 255);
     return cachedDiscRotorTex;
   }
-  ctx.fillStyle = '#cbd5e1';
+  ctx.fillStyle = '#b9c0ca';
   ctx.fillRect(0, 0, 256, 256);
 
-  // Outer machined friction track
+  const grad = ctx.createRadialGradient(128, 128, 72, 128, 128, 126);
+  grad.addColorStop(0.0, '#9ba4b0');
+  grad.addColorStop(0.45, '#dde3ea');
+  grad.addColorStop(1.0, '#aeb6c2');
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(128, 128, 122, 0, Math.PI * 2);
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#94a3b8';
-  ctx.stroke();
-
-  // Dark inner carrier spider
-  ctx.beginPath();
-  ctx.arc(128, 128, 66, 0, Math.PI * 2);
-  ctx.fillStyle = '#334155';
+  ctx.arc(128, 128, 124, 0, Math.PI * 2);
   ctx.fill();
 
-  // Cooling drill holes along friction ring
-  ctx.fillStyle = '#1e293b';
+  // Cooling vent drill holes around brushed friction track
+  ctx.fillStyle = '#252a32';
   for (let i = 0; i < 18; i++) {
     const a = (i / 18) * Math.PI * 2;
-    const r1 = 86;
-    const r2 = 104;
-    ctx.beginPath();
-    ctx.arc(128 + Math.cos(a) * r1, 128 + Math.sin(a) * r1, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(128 + Math.cos(a + 0.14) * r2, 128 + Math.sin(a + 0.14) * r2, 4.5, 0, Math.PI * 2);
-    ctx.fill();
+    for (const r of [90, 108]) {
+      ctx.beginPath();
+      ctx.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 4.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
-  cachedDiscRotorTex = finalizeCanvasTex(canvas);
+  cachedDiscRotorTex = finalizeCanvasTex(canvas, THREE.ClampToEdgeWrapping);
   return cachedDiscRotorTex;
 }
 
 /**
- * Fine Satin Brushed-Aluminum Texture (`256x256`) for Push Scooter Deck, Neck, Fork & Cast Swingarm.
+ * Fine Satin Brushed-Aluminum Texture (`256x256`, `ClampToEdgeWrapping` UV-safe).
  */
 function getBrushedAluminumTexture(): THREE.Texture {
   if (cachedBrushedMetalTex) return cachedBrushedMetalTex;
   const { canvas, ctx } = makeCanvas2d(256, 256);
   if (!canvas || !ctx) {
-    cachedBrushedMetalTex = makeFallbackDataTex(220, 227, 236, 255);
+    cachedBrushedMetalTex = makeFallbackDataTex(222, 226, 231, 255);
     return cachedBrushedMetalTex;
   }
   const grad = ctx.createLinearGradient(0, 0, 256, 256);
-  grad.addColorStop(0.0, '#d5dde7');
-  grad.addColorStop(0.5, '#ecf1f7');
-  grad.addColorStop(1.0, '#cfd8e4');
+  grad.addColorStop(0.0, '#d8dde4');
+  grad.addColorStop(0.5, '#ebeff4');
+  grad.addColorStop(1.0, '#d3d8e0');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 256);
 
-  // Subtle anisotropic brushed hairline streaks
   for (let y = 0; y < 256; y += 3) {
-    ctx.fillStyle = y % 6 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(100,116,139,0.10)';
+    ctx.fillStyle = y % 6 === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(90,100,115,0.08)';
     ctx.fillRect(0, y, 256, 1);
   }
-  cachedBrushedMetalTex = finalizeCanvasTex(canvas, THREE.RepeatWrapping);
+  cachedBrushedMetalTex = finalizeCanvasTex(canvas, THREE.ClampToEdgeWrapping);
   return cachedBrushedMetalTex;
 }
 
 /**
- * Knurled Ergonomic Rubber Handlebar Grip Texture (`128x128`).
+ * Ribbed & Knurled Ergonomic Rubber Handlebar Grip Texture (`256x128`, `ClampToEdgeWrapping`).
  */
 function getErgonomicGripTexture(): THREE.Texture {
   if (cachedRubberGripTex) return cachedRubberGripTex;
-  const { canvas, ctx } = makeCanvas2d(128, 128);
+  const { canvas, ctx } = makeCanvas2d(256, 128);
   if (!canvas || !ctx) {
-    cachedRubberGripTex = makeFallbackDataTex(35, 40, 48, 255);
+    cachedRubberGripTex = makeFallbackDataTex(36, 41, 49, 255);
     return cachedRubberGripTex;
   }
-  ctx.fillStyle = '#232831';
-  ctx.fillRect(0, 0, 128, 128);
-  ctx.strokeStyle = '#171b22';
+  ctx.fillStyle = '#282d35';
+  ctx.fillRect(0, 0, 256, 128);
+  ctx.strokeStyle = '#1b1f26';
   ctx.lineWidth = 2;
-  for (let i = -128; i < 256; i += 12) {
+  for (let x = 0; x < 256; x += 12) {
     ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + 128, 128);
-    ctx.moveTo(i + 128, 0);
-    ctx.lineTo(i, 128);
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 128);
     ctx.stroke();
   }
-  cachedRubberGripTex = finalizeCanvasTex(canvas, THREE.RepeatWrapping);
+  ctx.strokeStyle = 'rgba(71, 85, 105, 0.26)';
+  ctx.lineWidth = 1.5;
+  for (let y = 8; y < 128; y += 16) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(256, y);
+    ctx.stroke();
+  }
+  cachedRubberGripTex = finalizeCanvasTex(canvas, THREE.ClampToEdgeWrapping);
   return cachedRubberGripTex;
 }
 
@@ -632,38 +619,35 @@ function getElectricCockpitLcdTexture(): THREE.Texture {
     cachedCockpitLcdTex = makeFallbackDataTex(14, 32, 48, 255);
     return cachedCockpitLcdTex;
   }
-  ctx.fillStyle = '#09131f';
+  ctx.fillStyle = '#0c1520';
   ctx.fillRect(0, 0, 256, 144);
-  ctx.strokeStyle = '#22d3ee';
+  ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 4;
   ctx.strokeRect(8, 8, 240, 128);
 
-  // Cyan power arc across top
-  ctx.strokeStyle = '#0ea5e9';
-  ctx.lineWidth = 6;
+  // Subtle cyan status arc
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth = 5;
   ctx.beginPath();
   ctx.moveTo(32, 26);
   ctx.quadraticCurveTo(128, 14, 224, 26);
   ctx.stroke();
 
-  // Battery gauge bars on left
   for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = i < 4 ? '#14b8a6' : '#38bdf8';
+    ctx.fillStyle = i < 4 ? '#2dd4bf' : '#38bdf8';
     ctx.fillRect(22, 104 - i * 15, 22, 10);
   }
-  // Speedometer readout in center
-  ctx.fillStyle = '#ecfeff';
+  ctx.fillStyle = '#f0fdfa';
   ctx.textAlign = 'center';
   ctx.font = 'bold 50px sans-serif';
   ctx.fillText('28', 130, 86);
-  ctx.fillStyle = '#67e8f9';
+  ctx.fillStyle = '#7dd3fc';
   ctx.font = 'bold 15px sans-serif';
   ctx.fillText('KM/H · READY', 130, 114);
 
-  // Mode badge on right
-  ctx.fillStyle = '#134e4a';
+  ctx.fillStyle = '#164e63';
   ctx.fillRect(190, 34, 46, 26);
-  ctx.fillStyle = '#5eead4';
+  ctx.fillStyle = '#67e8f9';
   ctx.font = 'bold 14px sans-serif';
   ctx.fillText('ECO', 213, 52);
 
@@ -671,76 +655,96 @@ function getElectricCockpitLcdTexture(): THREE.Texture {
   return cachedCockpitLcdTex;
 }
 
+/**
+ * Molded Matte-Charcoal Floorboard Rubber Mat with Rounded Border & Horizontal Anti-Slip Ribs
+ * (`3/4 Isometric View` reference — clean understated dark traction ribs, NO neon cyan boxes).
+ */
 function getElectricFloorMatTexture(): THREE.Texture {
   if (cachedElectricFloorMatTex) return cachedElectricFloorMatTex;
-  const { canvas, ctx } = makeCanvas2d(256, 256);
+  const { canvas, ctx } = makeCanvas2d(256, 512);
   if (!canvas || !ctx) {
-    cachedElectricFloorMatTex = makeFallbackDataTex(38, 43, 52, 255);
+    cachedElectricFloorMatTex = makeFallbackDataTex(50, 55, 62, 255);
     return cachedElectricFloorMatTex;
   }
-  ctx.fillStyle = '#252b35';
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.strokeStyle = '#384150';
+  ctx.fillStyle = '#363b44';
+  ctx.fillRect(0, 0, 256, 512);
+
+  // Rounded outer recessed tray border
+  ctx.strokeStyle = '#23272e';
   ctx.lineWidth = 6;
-  ctx.strokeRect(12, 12, 232, 232);
-  // Longitudinal anti-slip rubber grip channels matching 3/4 isometric floorboard detail
-  for (let x = 34; x <= 222; x += 20) {
-    ctx.fillStyle = '#181c23';
-    ctx.fillRect(x - 5, 26, 10, 204);
-    ctx.fillStyle = '#333b48';
-    ctx.fillRect(x - 5, 26, 2, 204);
+  ctx.beginPath();
+  ctx.roundRect(14, 16, 228, 480, 36);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#474e59';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.roundRect(24, 28, 208, 456, 28);
+  ctx.stroke();
+
+  // Horizontal transverse anti-slip molded rubber tread ribs across center & front toe zone
+  for (let y = 58; y <= 452; y += 26) {
+    ctx.fillStyle = '#242830';
+    ctx.fillRect(42, y, 172, 9);
+    ctx.fillStyle = '#48505c';
+    ctx.fillRect(42, y - 2, 172, 3);
   }
-  ctx.strokeStyle = '#14b8a6';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(20, 20, 216, 216);
+
+  // Subtle twin central tunnel divide seam
+  ctx.fillStyle = '#2b3038';
+  ctx.fillRect(123, 36, 10, 440);
 
   cachedElectricFloorMatTex = finalizeCanvasTex(canvas);
   return cachedElectricFloorMatTex;
 }
 
 /**
- * Geometric High-Grip Deck Texture (`screen_e2bde276.png` Quadrant 3 Top Plan & Quadrant 4 3/4 Isometric).
+ * Push Scooter Stadium-Rounded Textured High-Grip Footpad (`Top Plan View` reference).
+ * Clean fine dark anti-slip matrix with rounded border trim — understated & industrial.
  */
 function getKickGeometricGripDeckTexture(): THREE.Texture {
   if (cachedKickGripDeckTex) return cachedKickGripDeckTex;
   const { canvas, ctx } = makeCanvas2d(256, 512);
   if (!canvas || !ctx) {
-    cachedKickGripDeckTex = makeFallbackDataTex(36, 41, 49, 255);
+    cachedKickGripDeckTex = makeFallbackDataTex(44, 49, 57, 255);
     return cachedKickGripDeckTex;
   }
-  ctx.fillStyle = '#262b34';
+  ctx.fillStyle = '#333841';
   ctx.fillRect(0, 0, 256, 512);
 
-  // Fine silicon-carbide grip-tape stipple
-  ctx.fillStyle = '#1c2027';
-  for (let y = 16; y < 496; y += 8) {
-    for (let x = 16; x < 240; x += 8) {
-      if ((x + y) % 16 === 0) ctx.fillRect(x, y, 3, 3);
+  // Fine high-grip elastomer micro-dot matrix
+  ctx.fillStyle = '#242830';
+  for (let y = 18; y < 494; y += 7) {
+    for (let x = 18; x < 238; x += 7) {
+      if ((x + y) % 14 === 0) ctx.fillRect(x, y, 3, 3);
     }
   }
 
-  // Molded perimeter track
-  ctx.strokeStyle = '#475569';
+  // Stadium/rounded perimeter trim groove
+  ctx.strokeStyle = '#20242b';
   ctx.lineWidth = 6;
-  ctx.strokeRect(18, 20, 220, 472);
+  ctx.beginPath();
+  ctx.roundRect(14, 16, 228, 480, 96);
+  ctx.stroke();
 
-  // Precision geometric diamond / hex grip lattice matching reference Top Plan
-  ctx.strokeStyle = '#384152';
-  ctx.lineWidth = 3;
-  for (let y = 44; y <= 468; y += 28) {
+  ctx.strokeStyle = '#4c5460';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.roundRect(22, 24, 212, 464, 88);
+  ctx.stroke();
+
+  // Subtle geometric diamond tread embossing
+  ctx.strokeStyle = 'rgba(76, 84, 96, 0.55)';
+  ctx.lineWidth = 2;
+  for (let y = 64; y <= 424; y += 30) {
     ctx.beginPath();
-    ctx.moveTo(34, y + 14);
+    ctx.moveTo(48, y + 15);
     ctx.lineTo(128, y);
-    ctx.lineTo(222, y + 14);
-    ctx.lineTo(128, y + 28);
+    ctx.lineTo(208, y + 15);
+    ctx.lineTo(128, y + 30);
     ctx.closePath();
     ctx.stroke();
   }
-
-  // Subtle front & rear cyan precision alignment ticks
-  ctx.fillStyle = '#14b8a6';
-  ctx.fillRect(123, 30, 10, 44);
-  ctx.fillRect(123, 438, 10, 44);
 
   cachedKickGripDeckTex = finalizeCanvasTex(canvas);
   return cachedKickGripDeckTex;
@@ -909,8 +913,12 @@ function makeStandardFallbackHelper(): ScooterToonPartHelper {
       const mat = new THREE.MeshStandardMaterial({
         color: colorHex,
         map: tex ?? null,
+        bumpMap: finish?.bumpScale && tex ? tex : null,
+        bumpScale: finish?.bumpScale ?? 0,
         roughness: finish?.roughness ?? 0.36,
         metalness: finish?.metalness ?? 0.18,
+        transparent: finish?.transparent ?? false,
+        opacity: finish?.opacity ?? 1,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(pos[0], pos[1], pos[2]);
@@ -960,30 +968,47 @@ function createRoundedRectExtrudeGeo(
   depth: number,
   cornerRadius: number,
   bevelSize = 0.008,
+  bevelSegments = 4,
 ): THREE.BufferGeometry {
   const hw = width * 0.5;
   const hl = length * 0.5;
-  const r = Math.min(cornerRadius, hw * 0.9, hl * 0.9);
+  const r = Math.min(cornerRadius, hw * 0.96, hl * 0.96);
   const shape = new THREE.Shape();
   shape.moveTo(-hw + r, -hl);
   shape.lineTo(hw - r, -hl);
-  shape.quadraticCurveTo(hw, -hl, hw, -hl + r);
+  shape.absarc(hw - r, -hl + r, r, -Math.PI / 2, 0, false);
   shape.lineTo(hw, hl - r);
-  shape.quadraticCurveTo(hw, hl, hw - r, hl);
+  shape.absarc(hw - r, hl - r, r, 0, Math.PI / 2, false);
   shape.lineTo(-hw + r, hl);
-  shape.quadraticCurveTo(-hw, hl, -hw, hl - r);
+  shape.absarc(-hw + r, hl - r, r, Math.PI / 2, Math.PI, false);
   shape.lineTo(-hw, -hl + r);
-  shape.quadraticCurveTo(-hw, -hl, -hw + r, -hl);
+  shape.absarc(-hw + r, -hl + r, r, Math.PI, Math.PI * 1.5, false);
 
   const geo = new THREE.ExtrudeGeometry(shape, {
     steps: 1,
+    curveSegments: 18,
     depth,
     bevelEnabled: bevelSize > 0,
     bevelThickness: bevelSize,
     bevelSize,
-    bevelSegments: 3,
+    bevelSegments,
   });
   geo.rotateX(-Math.PI / 2);
+  // Normalize UVs cleanly into [0, 1] across top XZ planform so textures match Top Plan 1:1
+  const posAttr = geo.getAttribute('position');
+  const uvAttr = geo.getAttribute('uv');
+  if (posAttr && uvAttr) {
+    const spanX = Math.max(1e-4, width + bevelSize * 2);
+    const spanZ = Math.max(1e-4, length + bevelSize * 2);
+    for (let i = 0; i < posAttr.count; i++) {
+      uvAttr.setXY(
+        i,
+        THREE.MathUtils.clamp((posAttr.getX(i) + spanX * 0.5) / spanX, 0, 1),
+        THREE.MathUtils.clamp((posAttr.getZ(i) + spanZ * 0.5) / spanZ, 0, 1),
+      );
+    }
+    uvAttr.needsUpdate = true;
+  }
   return geo;
 }
 
@@ -992,6 +1017,8 @@ interface LoftStation {
   y: number;
   /** Center Z in scooter local space (m). */
   z: number;
+  /** Optional Center X offset in scooter local space (m). */
+  offsetX?: number;
   /** Half-width along X (m). */
   rx: number;
   /** Upper vertical radius (+local Y) (m). */
@@ -1004,17 +1031,152 @@ interface LoftStation {
   power?: number;
 }
 
+function catmullRomScalar(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+  );
+}
+
+function averageGridSeamNormals(geo: THREE.BufferGeometry, cols: number, stCount: number): void {
+  const norm = geo.getAttribute('normal');
+  if (!norm) return;
+  for (let s = 0; s < stCount; s++) {
+    const i0 = s * cols;
+    const i1 = s * cols + (cols - 1);
+    const nx = norm.getX(i0) + norm.getX(i1);
+    const ny = norm.getY(i0) + norm.getY(i1);
+    const nz = norm.getZ(i0) + norm.getZ(i1);
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-6) {
+      const ix = nx / len;
+      const iy = ny / len;
+      const iz = nz / len;
+      norm.setXYZ(i0, ix, iy, iz);
+      norm.setXYZ(i1, ix, iy, iz);
+    }
+  }
+  norm.needsUpdate = true;
+}
+
+function resampleLoftStations(
+  stations: readonly LoftStation[],
+  subdivsPerSpan: number,
+  capMode: 'dome' | 'flat',
+): LoftStation[] {
+  if (stations.length <= 1 || subdivsPerSpan <= 1) {
+    return stations.map((s) => ({ ...s }));
+  }
+  const n = stations.length;
+  const out: LoftStation[] = [];
+  const getSt = (idx: number) => stations[Math.max(0, Math.min(n - 1, idx))];
+
+  for (let i = 0; i < n - 1; i++) {
+    const s0 = getSt(i - 1);
+    const s1 = getSt(i);
+    const s2 = getSt(i + 1);
+    const s3 = getSt(i + 2);
+    const steps = i === n - 2 ? subdivsPerSpan + 1 : subdivsPerSpan;
+    for (let k = 0; k < steps; k++) {
+      const t = k / subdivsPerSpan;
+      out.push({
+        y: catmullRomScalar(s0.y, s1.y, s2.y, s3.y, t),
+        z: catmullRomScalar(s0.z, s1.z, s2.z, s3.z, t),
+        offsetX: catmullRomScalar(
+          s0.offsetX ?? 0,
+          s1.offsetX ?? 0,
+          s2.offsetX ?? 0,
+          s3.offsetX ?? 0,
+          t,
+        ),
+        rx: Math.max(0.002, catmullRomScalar(s0.rx, s1.rx, s2.rx, s3.rx, t)),
+        ryTop: Math.max(0.002, catmullRomScalar(s0.ryTop, s1.ryTop, s2.ryTop, s3.ryTop, t)),
+        ryBot: Math.max(0.002, catmullRomScalar(s0.ryBot, s1.ryBot, s2.ryBot, s3.ryBot, t)),
+        pitchRad: catmullRomScalar(
+          s0.pitchRad ?? 0,
+          s1.pitchRad ?? 0,
+          s2.pitchRad ?? 0,
+          s3.pitchRad ?? 0,
+          t,
+        ),
+        power: Math.max(
+          1.6,
+          catmullRomScalar(s0.power ?? 2.8, s1.power ?? 2.8, s2.power ?? 2.8, s3.power ?? 2.8, t),
+        ),
+      });
+    }
+  }
+
+  if (capMode === 'dome' && out.length >= 2) {
+    const first = out[0];
+    const next = out[1];
+    const startDx = (first.offsetX ?? 0) - (next.offsetX ?? 0);
+    const startDy = first.y - next.y;
+    const startDz = first.z - next.z;
+    const startLen = Math.hypot(startDx, startDy, startDz) || 1;
+    const domeS = Math.min(first.rx, first.ryTop + first.ryBot) * 0.28;
+    const ux0 = (startDx / startLen) * domeS;
+    const uy0 = (startDy / startLen) * domeS;
+    const uz0 = (startDz / startLen) * domeS;
+
+    const last = out[out.length - 1];
+    const prev = out[out.length - 2];
+    const endDx = (last.offsetX ?? 0) - (prev.offsetX ?? 0);
+    const endDy = last.y - prev.y;
+    const endDz = last.z - prev.z;
+    const endLen = Math.hypot(endDx, endDy, endDz) || 1;
+    const domeE = Math.min(last.rx, last.ryTop + last.ryBot) * 0.28;
+    const ux1 = (endDx / endLen) * domeE;
+    const uy1 = (endDy / endLen) * domeE;
+    const uz1 = (endDz / endLen) * domeE;
+
+    const mkDome = (base: LoftStation, frac: number, ux: number, uy: number, uz: number): LoftStation => {
+      const rad = Math.sqrt(Math.max(0.02, 1 - frac * frac));
+      return {
+        y: base.y + uy * frac,
+        z: base.z + uz * frac,
+        offsetX: (base.offsetX ?? 0) + ux * frac,
+        rx: Math.max(0.0025, base.rx * rad),
+        ryTop: Math.max(0.0025, base.ryTop * rad),
+        ryBot: Math.max(0.0025, base.ryBot * rad),
+        pitchRad: base.pitchRad,
+        power: THREE.MathUtils.lerp(base.power ?? 2.8, 2.0, frac * 0.7),
+      };
+    };
+
+    return [
+      mkDome(first, 0.96, ux0, uy0, uz0),
+      mkDome(first, 0.72, ux0, uy0, uz0),
+      mkDome(first, 0.36, ux0, uy0, uz0),
+      ...out,
+      mkDome(last, 0.36, ux1, uy1, uz1),
+      mkDome(last, 0.72, ux1, uy1, uz1),
+      mkDome(last, 0.96, ux1, uy1, uz1),
+    ];
+  }
+
+  return out;
+}
+
 /**
- * Parametric Multi-Station Automotive Bodywork Loft Builder:
- * Connects an array of 3D cross-section stations smoothly with clean vertex normals,
- * closed end-caps, and distortion-free `'front'`, `'side'`, or `'wrap'` UV coordinates.
+ * Continuous Spline-Interpolated Multi-Station Automotive Bodywork Loft Builder:
+ * Automatically subdivides control stations via Catmull-Rom splines, appends smooth domed end caps,
+ * averages seam vertex normals, and produces distortion-free `'front'`, `'side'`, or `'wrap'` UVs.
  */
 function createLoftedBodyShellGeo(
   stations: readonly LoftStation[],
-  ringSegs = 20,
+  ringSegs = 28,
   uvMode: 'front' | 'side' | 'wrap' = 'wrap',
+  subdivsPerSpan = 3,
+  capMode: 'dome' | 'flat' = 'dome',
 ): THREE.BufferGeometry {
-  const stCount = stations.length;
+  const smoothStations = resampleLoftStations(stations, subdivsPerSpan, capMode);
+  const stCount = smoothStations.length;
   const cols = ringSegs + 1;
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -1030,19 +1192,20 @@ function createLoftedBodyShellGeo(
   const rawPts: Array<{ x: number; y: number; z: number; sFrac: number; rFrac: number }> = [];
 
   for (let s = 0; s < stCount; s++) {
-    const st = stations[s];
+    const st = smoothStations[s];
     const sFrac = stCount > 1 ? s / (stCount - 1) : 0;
     const exp = 2 / Math.max(1.4, st.power ?? 2.8);
     const pitch = st.pitchRad ?? 0;
     const cosP = Math.cos(pitch);
     const sinP = Math.sin(pitch);
+    const offX = st.offsetX ?? 0;
 
     for (let r = 0; r <= ringSegs; r++) {
       const rFrac = r / ringSegs;
       const theta = rFrac * Math.PI * 2;
       const ct = Math.cos(theta);
       const stSin = Math.sin(theta);
-      const sx = Math.sign(ct) * Math.pow(Math.abs(ct), exp) * st.rx;
+      const sx = offX + Math.sign(ct) * Math.pow(Math.abs(ct), exp) * st.rx;
       const syLocal =
         Math.sign(stSin) *
         Math.pow(Math.abs(stSin), exp) *
@@ -1088,17 +1251,17 @@ function createLoftedBodyShellGeo(
     }
   }
 
-  // Start cap (`s = 0`) and End cap (`s = stCount - 1`)
+  const firstSt = smoothStations[0];
   const startCenterIdx = positions.length / 3;
-  positions.push(0, stations[0].y, stations[0].z);
+  positions.push(firstSt.offsetX ?? 0, firstSt.y, firstSt.z);
   uvs.push(0.5, 1.0);
   for (let r = 0; r < ringSegs; r++) {
     indices.push(startCenterIdx, r + 1, r);
   }
 
-  const lastSt = stations[stCount - 1];
+  const lastSt = smoothStations[stCount - 1];
   const endCenterIdx = positions.length / 3;
-  positions.push(0, lastSt.y, lastSt.z);
+  positions.push(lastSt.offsetX ?? 0, lastSt.y, lastSt.z);
   uvs.push(0.5, 0.0);
   const lastRow = (stCount - 1) * cols;
   for (let r = 0; r < ringSegs; r++) {
@@ -1110,12 +1273,374 @@ function createLoftedBodyShellGeo(
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
+  averageGridSeamNormals(geo, cols, stCount);
+  return geo;
+}
+
+interface LoftStationX {
+  x: number;
+  y: number;
+  z: number;
+  ry: number;
+  rzFront: number;
+  rzBack: number;
+  rollRad?: number;
+  power?: number;
+}
+
+/**
+ * Lateral (Left-to-Right along X) Continuous Spline Loft Builder for Handlebar Nacelles,
+ * Smoked Windscreen Visors, and Cross-Car Cowlings.
+ */
+function createLoftedXShellGeo(
+  stations: readonly LoftStationX[],
+  ringSegs = 26,
+  subdivsPerSpan = 3,
+): THREE.BufferGeometry {
+  const n = stations.length;
+  const smooth: LoftStationX[] = [];
+  const getS = (idx: number) => stations[Math.max(0, Math.min(n - 1, idx))];
+  for (let i = 0; i < n - 1; i++) {
+    const s0 = getS(i - 1);
+    const s1 = getS(i);
+    const s2 = getS(i + 1);
+    const s3 = getS(i + 2);
+    const steps = i === n - 2 ? subdivsPerSpan + 1 : subdivsPerSpan;
+    for (let k = 0; k < steps; k++) {
+      const t = k / subdivsPerSpan;
+      smooth.push({
+        x: catmullRomScalar(s0.x, s1.x, s2.x, s3.x, t),
+        y: catmullRomScalar(s0.y, s1.y, s2.y, s3.y, t),
+        z: catmullRomScalar(s0.z, s1.z, s2.z, s3.z, t),
+        ry: Math.max(0.002, catmullRomScalar(s0.ry, s1.ry, s2.ry, s3.ry, t)),
+        rzFront: Math.max(0.002, catmullRomScalar(s0.rzFront, s1.rzFront, s2.rzFront, s3.rzFront, t)),
+        rzBack: Math.max(0.002, catmullRomScalar(s0.rzBack, s1.rzBack, s2.rzBack, s3.rzBack, t)),
+        rollRad: catmullRomScalar(s0.rollRad ?? 0, s1.rollRad ?? 0, s2.rollRad ?? 0, s3.rollRad ?? 0, t),
+        power: Math.max(1.6, catmullRomScalar(s0.power ?? 2.8, s1.power ?? 2.8, s2.power ?? 2.8, s3.power ?? 2.8, t)),
+      });
+    }
+  }
+
+  const first = smooth[0];
+  const last = smooth[smooth.length - 1];
+  const mkXCap = (base: LoftStationX, dx: number, frac: number): LoftStationX => {
+    const rad = Math.sqrt(Math.max(0.03, 1 - frac * frac));
+    return {
+      x: base.x + dx * frac,
+      y: base.y,
+      z: base.z,
+      ry: Math.max(0.0025, base.ry * rad),
+      rzFront: Math.max(0.0025, base.rzFront * rad),
+      rzBack: Math.max(0.0025, base.rzBack * rad),
+      rollRad: base.rollRad,
+      power: THREE.MathUtils.lerp(base.power ?? 2.8, 2.0, frac * 0.7),
+    };
+  };
+  const allStations: LoftStationX[] = [
+    mkXCap(first, -first.ry * 0.45, 0.94),
+    mkXCap(first, -first.ry * 0.45, 0.62),
+    ...smooth,
+    mkXCap(last, last.ry * 0.45, 0.62),
+    mkXCap(last, last.ry * 0.45, 0.94),
+  ];
+
+  const stCount = allStations.length;
+  const cols = ringSegs + 1;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let s = 0; s < stCount; s++) {
+    const st = allStations[s];
+    const sFrac = stCount > 1 ? s / (stCount - 1) : 0;
+    const exp = 2 / Math.max(1.4, st.power ?? 2.8);
+    const roll = st.rollRad ?? 0;
+    const cosR = Math.cos(roll);
+    const sinR = Math.sin(roll);
+
+    for (let r = 0; r <= ringSegs; r++) {
+      const rFrac = r / ringSegs;
+      const theta = rFrac * Math.PI * 2;
+      const ct = Math.cos(theta);
+      const stSin = Math.sin(theta);
+      const syLocal = Math.sign(ct) * Math.pow(Math.abs(ct), exp) * st.ry;
+      const szLocal =
+        Math.sign(stSin) *
+        Math.pow(Math.abs(stSin), exp) *
+        (stSin >= 0 ? st.rzFront : st.rzBack);
+
+      const wy = st.y + syLocal * cosR - szLocal * sinR;
+      const wz = st.z + syLocal * sinR + szLocal * cosR;
+      positions.push(st.x, wy, wz);
+      uvs.push(sFrac, rFrac);
+    }
+  }
+
+  for (let s = 0; s < stCount - 1; s++) {
+    const row0 = s * cols;
+    const row1 = (s + 1) * cols;
+    for (let r = 0; r < ringSegs; r++) {
+      const a = row0 + r;
+      const b = row1 + r;
+      const c = row1 + r + 1;
+      const d = row0 + r + 1;
+      indices.push(a, d, b, b, d, c);
+    }
+  }
+
+  const startCenterIdx = positions.length / 3;
+  positions.push(allStations[0].x, allStations[0].y, allStations[0].z);
+  uvs.push(0, 0.5);
+  for (let r = 0; r < ringSegs; r++) {
+    indices.push(startCenterIdx, r, r + 1);
+  }
+
+  const endSt = allStations[stCount - 1];
+  const endCenterIdx = positions.length / 3;
+  positions.push(endSt.x, endSt.y, endSt.z);
+  uvs.push(1, 0.5);
+  const lastRow = (stCount - 1) * cols;
+  for (let r = 0; r < ringSegs; r++) {
+    indices.push(endCenterIdx, lastRow + r + 1, lastRow + r);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  averageGridSeamNormals(geo, cols, stCount);
   return geo;
 }
 
 /**
- * Builds a split-spoke scooter wheel assembly centered at `(0, 0, 0)` in the YZ rolling plane
- * (axle along X axis, so spinning `wheelGroup.rotation.x += deltaRad` rolls forward `+Z`).
+ * Watertight Thickened Curved Arc Shell Builder (`phi = 0` is `+Y`, `phi = +PI/2` is `+Z`).
+ * Produces smooth rounded mudguards, flush curved pill headlamp/taillight bars, and windscreens
+ * with zero paper-thin faces or open edges.
+ */
+function createCurvedArcShellGeo(opts: {
+  centerY: number;
+  centerZ: number;
+  phiStart: number;
+  phiEnd: number;
+  radius: number | ((u: number) => number);
+  halfWidth: number | ((u: number) => number);
+  thickness: number;
+  crownDrop?: number;
+  arcSegs?: number;
+  ringSegs?: number;
+}): THREE.BufferGeometry {
+  const arcSegs = opts.arcSegs ?? 28;
+  const ringSegs = opts.ringSegs ?? 20;
+  const crownDrop = opts.crownDrop ?? 0.012;
+  const evalR = typeof opts.radius === 'function' ? opts.radius : () => opts.radius as number;
+  const evalHW = typeof opts.halfWidth === 'function' ? opts.halfWidth : () => opts.halfWidth as number;
+
+  const cols = ringSegs + 1;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= arcSegs; i++) {
+    const u = i / arcSegs;
+    const phi = THREE.MathUtils.lerp(opts.phiStart, opts.phiEnd, u);
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+    const baseR = evalR(u);
+    const endTaper = Math.min(1, Math.min(u, 1 - u) / 0.05);
+    const taperMul = Math.sin(endTaper * Math.PI * 0.5);
+    const hw = Math.max(0.004, evalHW(u) * (0.45 + 0.55 * taperMul));
+    const thick = Math.max(0.003, opts.thickness * (0.35 + 0.65 * taperMul));
+    const midR = baseR - thick * 0.5;
+
+    for (let r = 0; r <= ringSegs; r++) {
+      const rFrac = r / ringSegs;
+      const theta = rFrac * Math.PI * 2;
+      const ct = Math.cos(theta);
+      const stSin = Math.sin(theta);
+      // Superellipse ring in (x, radial thickness) plus wrap crown curvature
+      const sx = Math.sign(ct) * Math.pow(Math.abs(ct), 0.58) * hw;
+      const sr = Math.sign(stSin) * Math.pow(Math.abs(stSin), 0.65) * (thick * 0.5);
+      const wNorm = sx / Math.max(1e-4, hw);
+      const radialR = midR + sr - crownDrop * wNorm * wNorm;
+      const wy = opts.centerY + radialR * cosP;
+      const wz = opts.centerZ + radialR * sinP;
+      positions.push(sx, wy, wz);
+      uvs.push(0.5 + 0.5 * wNorm, u);
+    }
+  }
+
+  for (let i = 0; i < arcSegs; i++) {
+    const row0 = i * cols;
+    const row1 = (i + 1) * cols;
+    for (let r = 0; r < ringSegs; r++) {
+      const a = row0 + r;
+      const b = row1 + r;
+      const c = row1 + r + 1;
+      const d = row0 + r + 1;
+      indices.push(a, d, b, b, d, c);
+    }
+  }
+
+  // Cap both ends cleanly
+  for (const [endU, rowIdx, flip] of [
+    [0, 0, false],
+    [1, arcSegs * cols, true],
+  ] as [number, number, boolean][]) {
+    const phi = THREE.MathUtils.lerp(opts.phiStart, opts.phiEnd, endU);
+    const midR = evalR(endU) - opts.thickness * 0.5;
+    const cy = opts.centerY + midR * Math.cos(phi);
+    const cz = opts.centerZ + midR * Math.sin(phi);
+    const cIdx = positions.length / 3;
+    positions.push(0, cy, cz);
+    uvs.push(0.5, endU);
+    for (let r = 0; r < ringSegs; r++) {
+      if (flip) {
+        indices.push(cIdx, rowIdx + r + 1, rowIdx + r);
+      } else {
+        indices.push(cIdx, rowIdx + r, rowIdx + r + 1);
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  averageGridSeamNormals(geo, cols, arcSegs + 1);
+  return geo;
+}
+
+/**
+ * Watertight Swept Tube with Elliptical Cross-Section, Rotation-Minimizing Parallel Frames,
+ * and Domed Closed End-Caps (ideal for Grab Rails, Levers, Kickstands, Pinstripes & Straps).
+ */
+function createTubeSweepWithCapsGeo(
+  curve: THREE.Curve<THREE.Vector3>,
+  tubularSegs = 28,
+  rx = 0.012,
+  ry = 0.012,
+  radialSegs = 14,
+  taperEnds = false,
+): THREE.BufferGeometry {
+  const cols = radialSegs + 1;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  const tangents: THREE.Vector3[] = [];
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= tubularSegs; i++) {
+    const t = i / tubularSegs;
+    pts.push(curve.getPointAt(t));
+    tangents.push(curve.getTangentAt(t).normalize());
+  }
+
+  // Parallel-transport (Bishop) normal/binormal frame along the curve
+  const t0 = tangents[0];
+  const ref = Math.abs(t0.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const normal = new THREE.Vector3().crossVectors(t0, ref).normalize();
+  const binormal = new THREE.Vector3().crossVectors(t0, normal).normalize();
+  const rotQ = new THREE.Quaternion();
+
+  for (let i = 0; i <= tubularSegs; i++) {
+    if (i > 0) {
+      rotQ.setFromUnitVectors(tangents[i - 1], tangents[i]);
+      normal.applyQuaternion(rotQ).normalize();
+      binormal.crossVectors(tangents[i], normal).normalize();
+    }
+    const u = i / tubularSegs;
+    const edgeDist = Math.min(u, 1 - u);
+    const scale = taperEnds && edgeDist < 0.08 ? 0.35 + 0.65 * (edgeDist / 0.08) : 1.0;
+
+    for (let r = 0; r <= radialSegs; r++) {
+      const rFrac = r / radialSegs;
+      const theta = rFrac * Math.PI * 2;
+      const cx = Math.cos(theta) * rx * scale;
+      const cy = Math.sin(theta) * ry * scale;
+      const px = pts[i].x + normal.x * cx + binormal.x * cy;
+      const py = pts[i].y + normal.y * cx + binormal.y * cy;
+      const pz = pts[i].z + normal.z * cx + binormal.z * cy;
+      positions.push(px, py, pz);
+      uvs.push(rFrac, u);
+    }
+  }
+
+  for (let i = 0; i < tubularSegs; i++) {
+    const row0 = i * cols;
+    const row1 = (i + 1) * cols;
+    for (let r = 0; r < radialSegs; r++) {
+      const a = row0 + r;
+      const b = row1 + r;
+      const c = row1 + r + 1;
+      const d = row0 + r + 1;
+      indices.push(a, b, d, b, c, d);
+    }
+  }
+
+  // Start & end dome center caps
+  const capOffset = Math.min(rx, ry) * 0.45;
+  const startCapIdx = positions.length / 3;
+  positions.push(
+    pts[0].x - tangents[0].x * capOffset,
+    pts[0].y - tangents[0].y * capOffset,
+    pts[0].z - tangents[0].z * capOffset,
+  );
+  uvs.push(0.5, 0);
+  for (let r = 0; r < radialSegs; r++) {
+    indices.push(startCapIdx, r + 1, r);
+  }
+
+  const endCapIdx = positions.length / 3;
+  const lastP = pts[tubularSegs];
+  const lastT = tangents[tubularSegs];
+  positions.push(
+    lastP.x + lastT.x * capOffset,
+    lastP.y + lastT.y * capOffset,
+    lastP.z + lastT.z * capOffset,
+  );
+  uvs.push(0.5, 1);
+  const lastRow = tubularSegs * cols;
+  for (let r = 0; r < radialSegs; r++) {
+    indices.push(endCapIdx, lastRow + r, lastRow + r + 1);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  averageGridSeamNormals(geo, cols, tubularSegs + 1);
+  return geo;
+}
+
+/**
+ * Contoured Ergonomic Handlebar Rubber Grip (`LatheGeometry`, 28 radial segs):
+ * Inner flange collar, micro-ribbed barrel, slight palm swell, and domed outer cap.
+ */
+function createContouredErgonomicGripGeo(length: number, radius: number): THREE.BufferGeometry {
+  const half = length * 0.5;
+  const pts: THREE.Vector2[] = [
+    new THREE.Vector2(0.002, -half),
+    new THREE.Vector2(radius * 1.18, -half),
+    new THREE.Vector2(radius * 1.22, -half + 0.008),
+    new THREE.Vector2(radius * 0.96, -half + 0.012),
+    new THREE.Vector2(radius * 1.00, -half * 0.45),
+    new THREE.Vector2(radius * 1.10, 0.0),
+    new THREE.Vector2(radius * 1.13, half * 0.42),
+    new THREE.Vector2(radius * 1.04, half - 0.012),
+    new THREE.Vector2(radius * 0.88, half - 0.003),
+    new THREE.Vector2(0.002, half),
+  ];
+  const geo = new THREE.LatheGeometry(pts, 24);
+  geo.rotateZ(-Math.PI / 2);
+  return geo;
+}
+
+/**
+ * Builds a precision twin-V-spoke scooter wheel assembly centered at `(0, 0, 0)` in the YZ plane
+ * (axle along X axis) with high-res treaded pneumatic/PU tires and hollow ventilated rotor rings.
  */
 function buildSpokeWheelAssembly(
   helper: ScooterToonPartHelper,
@@ -1125,13 +1650,13 @@ function buildSpokeWheelAssembly(
   tireHex: string,
   rimHex: string,
   hubHex: string,
-  includeFrontDisc: boolean,
+  discStyle: 'full_front' | 'micro_hub' | 'none' = 'none',
 ): THREE.Group {
   const wheelGrp = new THREE.Group();
   const torusMajorR = Math.max(0.03, outerRadius - tireTubeRadius);
 
-  // Sculpted pneumatic / PU tire with directional tread texture
-  const tireGeo = new THREE.TorusGeometry(torusMajorR, tireTubeRadius, 14, 28);
+  // High-res sculpted rounded tire (`22 x 44` segs) with ClampToEdge circumferential tread
+  const tireGeo = new THREE.TorusGeometry(torusMajorR, tireTubeRadius, 22, 44);
   tireGeo.rotateY(Math.PI / 2);
   helper.addPart(
     wheelGrp,
@@ -1139,16 +1664,16 @@ function buildSpokeWheelAssembly(
     tireHex,
     [0, 0, 0],
     [0, 0, 0],
-    0.005,
+    0.004,
     getScooterTireTreadTexture(),
     1.0,
     true,
     FINISH_RUBBER_TIRE,
   );
 
-  // Outer machined alloy rim flange + inner dark barrel ring
-  const innerRimR = torusMajorR - tireTubeRadius * 0.72;
-  const rimRingGeo = new THREE.TorusGeometry(innerRimR, tireTubeRadius * 0.34, 10, 26);
+  // Sculpted dark charcoal alloy outer rim barrel & satin rim flange lip
+  const innerRimR = torusMajorR - tireTubeRadius * 0.68;
+  const rimRingGeo = new THREE.TorusGeometry(innerRimR, tireTubeRadius * 0.34, 14, 40);
   rimRingGeo.rotateY(Math.PI / 2);
   helper.addPart(
     wheelGrp,
@@ -1156,48 +1681,47 @@ function buildSpokeWheelAssembly(
     rimHex,
     [0, 0, 0],
     [0, 0, 0],
+    0.0025,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+
+  const lipPinGeo = new THREE.TorusGeometry(innerRimR + tireTubeRadius * 0.16, tireTubeRadius * 0.085, 8, 40);
+  lipPinGeo.rotateY(Math.PI / 2);
+  helper.addPart(
+    wheelGrp,
+    lipPinGeo,
+    '#aeb6c2',
+    [0, 0, 0],
+    [0, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_SATIN_METAL,
+  );
+
+  // Central alloy hub barrel + machined silver axle bearing caps
+  const hubWidth = tireTubeRadius * 1.9;
+  const hubRadius = outerRadius * 0.22;
+  helper.addPart(
+    wheelGrp,
+    new THREE.CylinderGeometry(hubRadius, hubRadius, hubWidth, 24),
+    hubHex,
+    [0, 0, 0],
+    [0, 0, Math.PI / 2],
     0.003,
     undefined,
     1.0,
     false,
     FINISH_DARK_ALLOY,
   );
-
-  // Fine satin-silver machined rim-lip pinstripe (signature industrial wheel detail)
-  const lipPinGeo = new THREE.TorusGeometry(innerRimR + tireTubeRadius * 0.16, tireTubeRadius * 0.09, 6, 26);
-  lipPinGeo.rotateY(Math.PI / 2);
   helper.addPart(
     wheelGrp,
-    lipPinGeo,
-    '#cbd5e1',
-    [0, 0, 0],
-    [0, 0, 0],
-    0,
-    undefined,
-    1.0,
-    false,
-    FINISH_SATIN_METAL,
-  );
-
-  // Central alloy hub barrel + left/right machined bearing caps
-  const hubWidth = tireTubeRadius * 1.95;
-  const hubRadius = outerRadius * 0.23;
-  helper.addPart(
-    wheelGrp,
-    new THREE.CylinderGeometry(hubRadius, hubRadius, hubWidth, 14),
-    hubHex,
-    [0, 0, 0],
-    [0, 0, Math.PI / 2],
-    0.004,
-    undefined,
-    1.0,
-    false,
-    FINISH_DARK_ALLOY,
-  );
-  helper.addPart(
-    wheelGrp,
-    new THREE.CylinderGeometry(hubRadius * 0.48, hubRadius * 0.48, hubWidth * 1.14, 12),
-    '#94a3b8',
+    new THREE.CylinderGeometry(hubRadius * 0.45, hubRadius * 0.45, hubWidth * 1.15, 20),
+    '#adb5c0',
     [0, 0, 0],
     [0, 0, Math.PI / 2],
     0,
@@ -1207,24 +1731,34 @@ function buildSpokeWheelAssembly(
     FINISH_SATIN_METAL,
   );
 
-  // Twin V-Split Sculpted Alloy Spokes matching both 4-view reference sheets
-  const spokeLen = Math.max(0.02, innerRimR - hubRadius * 0.55);
-  const spokeMidR = hubRadius * 0.55 + spokeLen * 0.5;
-  const spokeArmW = Math.max(0.007, outerRadius * 0.046);
-  const spokeThickX = Math.max(0.011, tireTubeRadius * 0.68);
+  // Sculpted rounded Y-split twin alloy spokes (rounded extrude ribs instead of sharp BoxGeometry!)
+  const spokeLen = Math.max(0.02, innerRimR - hubRadius * 0.62);
+  const spokeMidR = hubRadius * 0.62 + spokeLen * 0.5;
+  const spokeArmW = Math.max(0.007, outerRadius * 0.044);
+  const spokeThickX = Math.max(0.011, tireTubeRadius * 0.62);
+  const singleSpokeGeo = createRoundedRectExtrudeGeo(
+    spokeThickX,
+    spokeArmW,
+    spokeLen,
+    Math.min(spokeThickX, spokeArmW) * 0.42,
+    0.002,
+    2,
+  );
+  singleSpokeGeo.translate(0, -spokeLen * 0.5, 0);
+
   for (let i = 0; i < spokeCount; i++) {
     const baseTheta = (i / spokeCount) * Math.PI * 2;
-    for (const splay of [-0.085, 0.085]) {
+    for (const splay of [-0.095, 0.095]) {
       const theta = baseTheta + splay;
       const sy = Math.cos(theta) * spokeMidR;
       const sz = Math.sin(theta) * spokeMidR;
       helper.addPart(
         wheelGrp,
-        new THREE.BoxGeometry(spokeThickX, spokeLen, spokeArmW),
+        singleSpokeGeo,
         rimHex,
         [0, sy, sz],
-        [-(baseTheta + splay * 1.65), 0, 0],
-        0.002,
+        [-(baseTheta + splay * 1.7), 0, 0],
+        0.0015,
         undefined,
         1.0,
         false,
@@ -1233,16 +1767,43 @@ function buildSpokeWheelAssembly(
     }
   }
 
-  // Drilled ventilated stainless brake disc rotor
-  if (includeFrontDisc) {
-    const discR = outerRadius * 0.54;
+  // Hollow ventilated stainless brake disc ring (open spokes remain visible through center!)
+  if (discStyle !== 'none') {
+    const discR = discStyle === 'full_front' ? outerRadius * 0.55 : outerRadius * 0.44;
+    const innerHoleR = discR * 0.58;
+    const discShape = new THREE.Shape();
+    discShape.absarc(0, 0, discR, 0, Math.PI * 2, false);
+    const holePath = new THREE.Path();
+    holePath.absarc(0, 0, innerHoleR, 0, Math.PI * 2, true);
+    discShape.holes.push(holePath);
+
+    const discGeo = new THREE.ExtrudeGeometry(discShape, {
+      steps: 1,
+      curveSegments: 28,
+      depth: 0.006,
+      bevelEnabled: false,
+    });
+    discGeo.rotateY(Math.PI / 2);
+    const dPos = discGeo.getAttribute('position');
+    const dUv = discGeo.getAttribute('uv');
+    if (dPos && dUv) {
+      for (let i = 0; i < dPos.count; i++) {
+        dUv.setXY(
+          i,
+          THREE.MathUtils.clamp((dPos.getZ(i) + discR) / (discR * 2), 0, 1),
+          THREE.MathUtils.clamp((dPos.getY(i) + discR) / (discR * 2), 0, 1),
+        );
+      }
+      dUv.needsUpdate = true;
+    }
+
     helper.addPart(
       wheelGrp,
-      new THREE.CylinderGeometry(discR, discR, 0.007, 20),
+      discGeo,
       '#ffffff',
-      [hubWidth * 0.54, 0, 0],
-      [0, 0, Math.PI / 2],
-      0.002,
+      [hubWidth * 0.52, 0, 0],
+      [0, 0, 0],
+      0.0015,
       getVentilatedDiscRotorTexture(),
       1.0,
       false,
@@ -1255,7 +1816,8 @@ function buildSpokeWheelAssembly(
 
 /**
  * Creates the Modern Urban Electric Scooter ("Scooter Bike") matching all 4 views
- * of `screen_8a1fbcde.png` (`~180cm` length, `~125cm` wheelbase, `~78cm` seat, `~115cm` cockpit).
+ * of the reference sheets (`~180cm` length, `~125cm` wheelbase, `~78cm` seat, `~115cm` cockpit),
+ * built with continuous spline-lofted mid-res shells, seamless panel transitions, and warm pearl/charcoal/cyan finishes.
  */
 export function createElectricScooterBike3D(
   options: CreateScooterModelOptions = {},
@@ -1263,7 +1825,8 @@ export function createElectricScooterBike3D(
   const helper = options.partHelper ?? makeStandardFallbackHelper();
   const pal = ELECTRIC_SCOOTER_BIKE_SPEC.palette;
   const bodyHex = options.bodyColorHex ?? '#ffffff';
-  const accentHex = options.accentColorHex ?? pal.accentCyan;
+  const solidPearlHex = options.bodyColorHex ?? SCOOTER_PEARL_HEX;
+  const accentHex = options.accentColorHex ?? SCOOTER_REF_CYAN_HEX;
   const isParkedInit = options.parked ?? true;
 
   const root = new THREE.Group();
@@ -1285,13 +1848,13 @@ export function createElectricScooterBike3D(
         FINISH_MATTE_TRIM,
       );
     } else {
-      const shadGeo = new THREE.PlaneGeometry(0.88, 2.04);
+      const shadGeo = new THREE.PlaneGeometry(0.92, 2.08);
       shadGeo.rotateX(-Math.PI / 2);
       const shadMat = new THREE.MeshBasicMaterial({
         map: getSoftContactShadowTexture(),
         transparent: true,
         depthWrite: false,
-        opacity: 0.72,
+        opacity: 0.68,
       });
       const shadMesh = new THREE.Mesh(shadGeo, shadMat);
       shadMesh.position.set(0, 0.008, -0.02);
@@ -1303,43 +1866,56 @@ export function createElectricScooterBike3D(
   chassisGroup.name = 'ElectricScooterChassis';
   root.add(chassisGroup);
 
-  // 1) Rear Wheel (`z = -0.61, y = 0.255`) + Brushless Hub Motor + Cast Aluminum Swingarm + Dual Shocks
+  // 1) Rear Wheel (`z = -0.61, y = 0.255`) + Hub Motor + Sculpted Brushed-Silver Cast Swingarms + Dual Coil Shocks
   const rearWheelGroup = buildSpokeWheelAssembly(
     helper,
     ELECTRIC_SCOOTER_BIKE_SPEC.wheelOuterRadiusM,
     ELECTRIC_SCOOTER_BIKE_SPEC.tireSectionRadiusM,
     5,
     '#ffffff',
-    pal.alloyWheelDark,
-    '#1f242d',
-    false,
+    '#323842',
+    '#20252d',
+    'none',
   );
   rearWheelGroup.name = 'ElectricScooterRearWheel';
   rearWheelGroup.position.set(0, 0.255, -0.61);
   helper.addPart(
     rearWheelGroup,
-    new THREE.CylinderGeometry(0.118, 0.118, 0.098, 16),
-    '#232832',
+    new THREE.CylinderGeometry(0.084, 0.084, 0.098, 22),
+    '#272c35',
     [0, 0, 0],
     [0, 0, Math.PI / 2],
-    0.003,
+    0.0025,
     undefined,
     1.0,
     false,
     FINISH_DARK_ALLOY,
   );
+  helper.addPart(
+    rearWheelGroup,
+    new THREE.CylinderGeometry(0.090, 0.090, 0.072, 22),
+    '#8e98a6',
+    [0, 0, 0],
+    [0, 0, Math.PI / 2],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_SATIN_METAL,
+  );
   chassisGroup.add(rearWheelGroup);
 
-  // Sculpted Tapered Satin-Silver Cast-Aluminum Swingarm Arms + Dual Coil-Spring Rear Shocks
   for (const side of [-1, 1]) {
     const swingGeo = createLoftedBodyShellGeo(
       [
-        { y: 0.255, z: -0.635, rx: 0.018, ryTop: 0.028, ryBot: 0.028, power: 2.6 },
-        { y: 0.262, z: -0.45, rx: 0.022, ryTop: 0.040, ryBot: 0.036, power: 2.8 },
-        { y: 0.275, z: -0.22, rx: 0.024, ryTop: 0.046, ryBot: 0.038, power: 2.8 },
+        { y: 0.255, z: -0.635, rx: 0.018, ryTop: 0.027, ryBot: 0.027, power: 2.6 },
+        { y: 0.262, z: -0.455, rx: 0.022, ryTop: 0.038, ryBot: 0.035, power: 2.8 },
+        { y: 0.276, z: -0.235, rx: 0.024, ryTop: 0.044, ryBot: 0.038, power: 2.8 },
       ],
-      12,
+      18,
       'side',
+      3,
+      'dome',
     );
     helper.addPart(
       chassisGroup,
@@ -1347,18 +1923,17 @@ export function createElectricScooterBike3D(
       '#ffffff',
       [side * 0.106, 0, 0],
       [0, 0, 0],
-      0.004,
+      0.003,
       getBrushedAluminumTexture(),
       1.0,
       true,
       FINISH_SATIN_METAL,
     );
-    // Swingarm recessed charcoal pocket accent (matching Side Profile view)
     helper.addPart(
       chassisGroup,
-      new THREE.BoxGeometry(0.010, 0.022, 0.22),
-      '#333b47',
-      [side * 0.126, 0.264, -0.42],
+      createRoundedRectExtrudeGeo(0.010, 0.20, 0.018, 0.004, 0.002, 2),
+      '#353b45',
+      [side * 0.125, 0.255, -0.425],
       [0.03, 0, 0],
       0,
       undefined,
@@ -1368,9 +1943,9 @@ export function createElectricScooterBike3D(
     );
     helper.addPart(
       chassisGroup,
-      new THREE.CylinderGeometry(0.022, 0.022, 0.028, 12),
-      '#cbd5e1',
-      [side * 0.124, 0.255, -0.61],
+      new THREE.CylinderGeometry(0.021, 0.021, 0.028, 18),
+      '#c7cdd6',
+      [side * 0.122, 0.255, -0.61],
       [0, 0, Math.PI / 2],
       0.002,
       undefined,
@@ -1379,15 +1954,15 @@ export function createElectricScooterBike3D(
       FINISH_SATIN_METAL,
     );
 
-    // Dual Coil-Over Rear Shock Absorbers (`z = -0.59, y = 0.29` -> `z = -0.43, y = 0.54`)
+    // Twin Rear Coil-Over Shock Absorbers
     const shockGrp = new THREE.Group();
-    shockGrp.position.set(side * 0.122, 0.415, -0.508);
-    shockGrp.rotation.x = 0.54;
+    shockGrp.position.set(side * 0.122, 0.420, -0.512);
+    shockGrp.rotation.x = 0.52;
     chassisGroup.add(shockGrp);
     helper.addPart(
       shockGrp,
-      new THREE.CylinderGeometry(0.012, 0.011, 0.28, 10),
-      '#cbd5e1',
+      new THREE.CylinderGeometry(0.012, 0.011, 0.28, 16),
+      '#c7cdd6',
       [0, 0, 0],
       [0, 0, 0],
       0.002,
@@ -1396,14 +1971,26 @@ export function createElectricScooterBike3D(
       false,
       FINISH_SATIN_METAL,
     );
-    for (let c = -4; c <= 4; c++) {
-      const ringGeo = new THREE.TorusGeometry(0.022, 0.0052, 6, 14);
+    helper.addPart(
+      shockGrp,
+      new THREE.CylinderGeometry(0.019, 0.019, 0.044, 16),
+      '#2d323b',
+      [0, 0.115, 0],
+      [0, 0, 0],
+      0.002,
+      undefined,
+      1.0,
+      false,
+      FINISH_DARK_ALLOY,
+    );
+    for (let c = -4; c <= 3; c++) {
+      const ringGeo = new THREE.TorusGeometry(0.022, 0.0052, 10, 20);
       ringGeo.rotateX(Math.PI / 2);
       helper.addPart(
         shockGrp,
         ringGeo,
-        '#2b313c',
-        [0, c * 0.022, 0],
+        '#282d36',
+        [0, c * 0.022 - 0.005, 0],
         [0, 0, 0],
         0,
         undefined,
@@ -1413,76 +2000,121 @@ export function createElectricScooterBike3D(
       );
     }
   }
+  // Rear brake caliper on right swingarm
+  helper.addPart(
+    chassisGroup,
+    createRoundedRectExtrudeGeo(0.032, 0.054, 0.044, 0.012, 0.004, 3),
+    '#414854',
+    [0.088, 0.318, -0.682],
+    [0.45, 0, 0],
+    0.002,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
 
-  // 2) Sculpted Step-Through Floorboard (`~16cm` Ground Clearance), Underbelly Pan & Continuous Cyan Rocker Trim
-  const underbellyGeo = createLoftedBodyShellGeo(
+  // 2) Continuous Dark Charcoal Inner Knee-Shield, Toe-Board, Floorboard Well & Under-Seat Tub
+  const continuousInnerTubGeo = createLoftedBodyShellGeo(
     [
-      { y: 0.205, z: -0.20, rx: 0.155, ryTop: 0.042, ryBot: 0.040, power: 3.0 },
-      { y: 0.198, z: 0.04, rx: 0.172, ryTop: 0.044, ryBot: 0.038, power: 3.2 },
-      { y: 0.205, z: 0.29, rx: 0.168, ryTop: 0.044, ryBot: 0.040, power: 3.0 },
-      { y: 0.265, z: 0.40, rx: 0.148, ryTop: 0.042, ryBot: 0.036, pitchRad: -0.45, power: 2.8 },
+      { y: 0.945, z: 0.282, rx: 0.128, ryTop: 0.028, ryBot: 0.024, pitchRad: 1.12, power: 2.8 },
+      { y: 0.720, z: 0.348, rx: 0.156, ryTop: 0.034, ryBot: 0.032, pitchRad: 1.24, power: 3.0 },
+      { y: 0.455, z: 0.352, rx: 0.152, ryTop: 0.036, ryBot: 0.032, pitchRad: 1.38, power: 3.0 },
+      { y: 0.232, z: 0.285, rx: 0.152, ryTop: 0.032, ryBot: 0.034, pitchRad: 0.42, power: 3.0 },
+      { y: 0.205, z: 0.055, rx: 0.156, ryTop: 0.038, ryBot: 0.038, pitchRad: 0.0, power: 3.2 },
+      { y: 0.220, z: -0.155, rx: 0.146, ryTop: 0.044, ryBot: 0.038, pitchRad: -0.25, power: 3.0 },
+      { y: 0.375, z: -0.215, rx: 0.136, ryTop: 0.088, ryBot: 0.084, pitchRad: 1.48, power: 3.0 },
+      { y: 0.545, z: -0.205, rx: 0.128, ryTop: 0.104, ryBot: 0.102, pitchRad: 1.48, power: 3.0 },
+      { y: 0.656, z: -0.208, rx: 0.104, ryTop: 0.094, ryBot: 0.098, pitchRad: 1.48, power: 2.8 },
     ],
-    16,
+    28,
     'wrap',
+    3,
+    'dome',
   );
   helper.addPart(
     chassisGroup,
-    underbellyGeo,
-    pal.trimCharcoal,
+    continuousInnerTubGeo,
+    SCOOTER_CHARCOAL_HEX,
     [0, 0, 0],
     [0, 0, 0],
-    0.006,
+    0.005,
     undefined,
     1.0,
     true,
     FINISH_MATTE_TRIM,
   );
 
-  // Textured Anti-Slip Rubber Floorboard Footmat (`y = 0.246`)
+  // Molded Anti-Slip Transverse-Rib Floorboard Mat (`y = 0.244`)
   helper.addPart(
     chassisGroup,
-    createRoundedRectExtrudeGeo(0.315, 0.52, 0.012, 0.065, 0.003),
+    createRoundedRectExtrudeGeo(0.288, 0.46, 0.010, 0.058, 0.004, 4),
     '#ffffff',
-    [0, 0.240, 0.055],
+    [0, 0.241, 0.055],
     [0, 0, 0],
-    0.003,
+    0.0025,
     getElectricFloorMatTexture(),
-    0.8,
+    1.0,
+    false,
+    FINISH_RUBBER_TIRE,
+  );
+  // Slanted front toe-board grip mat extension matching 3/4 Iso reference
+  helper.addPart(
+    chassisGroup,
+    createRoundedRectExtrudeGeo(0.258, 0.14, 0.008, 0.042, 0.003, 3),
+    SCOOTER_DEEP_CHARCOAL_HEX,
+    [0, 0.285, 0.305],
+    [-0.68, 0, 0],
+    0,
+    undefined,
+    1.0,
     false,
     FINISH_RUBBER_TIRE,
   );
 
-  // Continuous Pearl-White Lower Rocker Skirts + Unbroken Cyan Pinstripe flowing from Front Shield to Rear Cowl
-  const rockerCurvePts: [number, number, number][] = [
-    [0.168, 0.285, -0.22],
-    [0.176, 0.222, -0.06],
-    [0.178, 0.218, 0.16],
-    [0.175, 0.242, 0.33],
-    [0.168, 0.375, 0.44],
-    [0.174, 0.565, 0.53],
-  ];
+  // Sculpted Continuous Pearl-White Side Fairing Chin + Lower Rocker Sill Skirts + Cyan Edge Trim + Side Pod Badge
   for (const side of [-1, 1]) {
-    const skirtPts = rockerCurvePts.map(([x, y, z]) => new THREE.Vector3(side * x, y, z));
-    const skirtCurve = new THREE.CatmullRomCurve3(skirtPts);
+    const rockerCheekGeo = createLoftedBodyShellGeo(
+      [
+        { y: 0.562, z: 0.486, offsetX: side * 0.150, rx: 0.032, ryTop: 0.036, ryBot: 0.032, pitchRad: 0.90, power: 2.8 },
+        { y: 0.420, z: 0.420, offsetX: side * 0.162, rx: 0.030, ryTop: 0.038, ryBot: 0.032, pitchRad: 0.65, power: 3.0 },
+        { y: 0.232, z: 0.305, offsetX: side * 0.166, rx: 0.030, ryTop: 0.034, ryBot: 0.028, pitchRad: 0.20, power: 3.0 },
+        { y: 0.205, z: 0.060, offsetX: side * 0.168, rx: 0.030, ryTop: 0.030, ryBot: 0.026, pitchRad: 0.0, power: 3.1 },
+        { y: 0.215, z: -0.165, offsetX: side * 0.162, rx: 0.029, ryTop: 0.031, ryBot: 0.026, pitchRad: -0.14, power: 3.0 },
+        { y: 0.295, z: -0.252, offsetX: side * 0.148, rx: 0.028, ryTop: 0.032, ryBot: 0.026, pitchRad: -0.45, power: 2.8 },
+      ],
+      20,
+      'wrap',
+      3,
+      'dome',
+    );
     helper.addPart(
       chassisGroup,
-      new THREE.TubeGeometry(skirtCurve, 22, 0.024, 8, false),
-      options.bodyColorHex ?? pal.bodyPearlWhite,
+      rockerCheekGeo,
+      solidPearlHex,
       [0, 0, 0],
       [0, 0, 0],
       0.004,
       undefined,
       1.0,
-      false,
+      true,
       FINISH_GLOSS_BODY,
     );
-    const pinPts = rockerCurvePts.map(
-      ([x, y, z]) => new THREE.Vector3(side * (x + 0.015), y + 0.006, z + 0.004),
-    );
-    const pinCurve = new THREE.CatmullRomCurve3(pinPts);
+
+    // Continuous outer cyan-teal pinstripe flowing cleanly along front apron edge -> rocker sill -> rear cowl
+    const pinCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.142, 0.935, 0.320),
+      new THREE.Vector3(side * 0.178, 0.775, 0.422),
+      new THREE.Vector3(side * 0.188, 0.618, 0.506),
+      new THREE.Vector3(side * 0.184, 0.455, 0.440),
+      new THREE.Vector3(side * 0.188, 0.242, 0.318),
+      new THREE.Vector3(side * 0.190, 0.214, 0.060),
+      new THREE.Vector3(side * 0.184, 0.226, -0.165),
+      new THREE.Vector3(side * 0.166, 0.290, -0.242),
+    ]);
     helper.addPart(
       chassisGroup,
-      new THREE.TubeGeometry(pinCurve, 22, 0.0065, 6, false),
+      createTubeSweepWithCapsGeo(pinCurve, 36, 0.0055, 0.0045, 10, true),
       accentHex,
       [0, 0, 0],
       [0, 0, 0],
@@ -1492,33 +2124,35 @@ export function createElectricScooterBike3D(
       false,
       FINISH_GLOSS_BODY,
     );
-    // Retractable fold-out passenger footpeg on lower rear frame
+
+    // Signature horizontal brushed-silver side trim badge above swingarm pivot (3/4 Iso & Side Profile)
     helper.addPart(
       chassisGroup,
-      new THREE.BoxGeometry(0.028, 0.018, 0.088),
-      '#64748b',
-      [side * 0.168, 0.295, -0.24],
-      [0.18, 0, 0],
+      createRoundedRectExtrudeGeo(0.016, 0.115, 0.020, 0.008, 0.004, 3),
+      '#ffffff',
+      [side * 0.146, 0.332, -0.205],
+      [0.10, 0, 0],
       0.002,
-      undefined,
+      getBrushedAluminumTexture(),
       1.0,
       false,
       FINISH_SATIN_METAL,
     );
   }
 
-  // 3) Lofted Aerodynamic Front Shield, Flush Vertical DRL, Glossy Headlamp Bar & Inner Leg-Shield
-  // 3a) Continuous Lofted Pearl-White Front Shield (`y = 0.99, z = 0.31` -> `y = 0.58, z = 0.56` -> `y = 0.42, z = 0.46`)
+  // 3) Sculpted Continuous Front Shield Shell + Flush Vertical DRL + Flush Curved Headlamp Bar + Steering Collar
   const frontShieldGeo = createLoftedBodyShellGeo(
     [
-      { y: 0.995, z: 0.305, rx: 0.142, ryTop: 0.028, ryBot: 0.026, pitchRad: 0.96, power: 2.8 },
-      { y: 0.890, z: 0.382, rx: 0.178, ryTop: 0.044, ryBot: 0.036, pitchRad: 0.96, power: 3.0 },
-      { y: 0.755, z: 0.472, rx: 0.194, ryTop: 0.052, ryBot: 0.040, pitchRad: 0.98, power: 3.1 },
-      { y: 0.635, z: 0.542, rx: 0.192, ryTop: 0.052, ryBot: 0.038, pitchRad: 1.18, power: 3.1 },
-      { y: 0.560, z: 0.546, rx: 0.182, ryTop: 0.044, ryBot: 0.034, pitchRad: 1.48, power: 3.0 },
+      { y: 0.960, z: 0.315, rx: 0.144, ryTop: 0.036, ryBot: 0.032, pitchRad: 1.02, power: 2.8 },
+      { y: 0.865, z: 0.375, rx: 0.172, ryTop: 0.045, ryBot: 0.040, pitchRad: 1.02, power: 3.0 },
+      { y: 0.745, z: 0.448, rx: 0.186, ryTop: 0.048, ryBot: 0.044, pitchRad: 1.05, power: 3.1 },
+      { y: 0.618, z: 0.514, rx: 0.192, ryTop: 0.048, ryBot: 0.044, pitchRad: 1.14, power: 3.1 },
+      { y: 0.545, z: 0.516, rx: 0.178, ryTop: 0.038, ryBot: 0.036, pitchRad: 1.34, power: 3.0 },
     ],
-    22,
+    32,
     'front',
+    4,
+    'dome',
   );
   helper.addPart(
     chassisGroup,
@@ -1526,36 +2160,54 @@ export function createElectricScooterBike3D(
     bodyHex,
     [0, 0, 0],
     [0, 0, 0],
-    0.008,
+    0.006,
     options.bodyColorHex ? undefined : getElectricFrontShieldTexture(),
     1.0,
     true,
     FINISH_GLOSS_BODY,
   );
 
-  // Flush Vertical Pill-Shaped LED DRL Headlight Bar centered cleanly on the Front Shield (`screen_8a1fbcde.png`)
+  // Dark Steering Column Neck Pocket Ring bridging chassis shield cleanly into steered nacelle (zero floating gap!)
+  helper.addPart(
+    chassisGroup,
+    new THREE.CylinderGeometry(0.068, 0.076, 0.038, 24),
+    SCOOTER_DEEP_CHARCOAL_HEX,
+    [0, 0.962, 0.300],
+    [0.25, 0, 0],
+    0.003,
+    undefined,
+    1.0,
+    false,
+    FINISH_MATTE_TRIM,
+  );
+
+  // Flush Vertical Capsule DRL Headlight Bar hugging front shield curvature cleanly
   const vDrlGrp = new THREE.Group();
-  vDrlGrp.position.set(0, 0.805, 0.482);
-  vDrlGrp.rotation.x = -0.575;
+  vDrlGrp.position.set(0, 0.818, 0.444);
+  vDrlGrp.rotation.x = -0.545;
   chassisGroup.add(vDrlGrp);
 
+  const drlBezelGeo = new THREE.CapsuleGeometry(0.023, 0.170, 10, 20);
+  drlBezelGeo.scale(1.0, 1.0, 0.30);
   helper.addPart(
     vDrlGrp,
-    new THREE.CapsuleGeometry(0.028, 0.168, 6, 12),
-    '#1e293b',
-    [0, 0, 0.004],
+    drlBezelGeo,
+    '#323842',
+    [0, 0, 0.002],
     [0, 0, 0],
-    0.003,
+    0.002,
     undefined,
     1.0,
     false,
     FINISH_DARK_ALLOY,
   );
+  const drlRimGeo = new THREE.CapsuleGeometry(0.0175, 0.162, 10, 20);
+  drlRimGeo.scale(1.0, 1.0, 0.32);
   helper.addPart(
     vDrlGrp,
-    new THREE.CapsuleGeometry(0.022, 0.162, 6, 12),
+    drlRimGeo,
     accentHex,
-    [0, 0, 0.011],
+    [0, 0, 0.0055],
     [0, 0, 0],
     0,
     undefined,
@@ -1563,93 +2215,74 @@ export function createElectricScooterBike3D(
     false,
     FINISH_OPTICAL_LENS,
   );
+  const drlCoreGeo = new THREE.CapsuleGeometry(0.0115, 0.150, 10, 20);
+  drlCoreGeo.scale(1.0, 1.0, 0.36);
   addLuminousScooterPart(
     helper,
     vDrlGrp,
-    new THREE.CapsuleGeometry(0.014, 0.150, 6, 12),
-    '#f0fdff',
-    '#67e8f9',
-    0.95,
-    [0, 0, 0.018],
+    drlCoreGeo,
+    '#f4feff',
+    '#9ef2ed',
+    0.85,
+    [0, 0, 0.009],
   );
 
-  // 3b) Wrap-Around Curved Horizontal Headlamp Bar (`y = 0.595, z = 0.558`) with Glossy Multi-Reflector Optics
-  const headlampArcGeo = new THREE.CylinderGeometry(
-    0.228,
-    0.222,
-    0.056,
-    24,
-    1,
-    true,
-    -Math.PI * 0.28,
-    Math.PI * 0.56,
+  // Flush Wrap-Around Curved Horizontal Headlamp Bar (`y = 0.625`, wrapped tangentially across shield!)
+  const headlampBezelGeo = createLoftedXShellGeo(
+    [
+      { x: -0.156, y: 0.632, z: 0.514, ry: 0.019, rzFront: 0.012, rzBack: 0.028, rollRad: 0.12, power: 2.8 },
+      { x: -0.090, y: 0.626, z: 0.544, ry: 0.026, rzFront: 0.014, rzBack: 0.030, rollRad: 0.08, power: 3.0 },
+      { x: 0.0, y: 0.623, z: 0.556, ry: 0.028, rzFront: 0.015, rzBack: 0.030, rollRad: 0.0, power: 3.2 },
+      { x: 0.090, y: 0.626, z: 0.544, ry: 0.026, rzFront: 0.014, rzBack: 0.030, rollRad: -0.08, power: 3.0 },
+      { x: 0.156, y: 0.632, z: 0.514, ry: 0.019, rzFront: 0.012, rzBack: 0.028, rollRad: -0.12, power: 2.8 },
+    ],
+    22,
+    3,
+  );
+  helper.addPart(
+    chassisGroup,
+    headlampBezelGeo,
+    '#2a2f38',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.0025,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+
+  const headlampLensGeo = createLoftedXShellGeo(
+    [
+      { x: -0.146, y: 0.632, z: 0.518, ry: 0.013, rzFront: 0.013, rzBack: 0.018, power: 2.6 },
+      { x: -0.085, y: 0.626, z: 0.548, ry: 0.019, rzFront: 0.015, rzBack: 0.018, power: 3.0 },
+      { x: 0.0, y: 0.623, z: 0.560, ry: 0.021, rzFront: 0.016, rzBack: 0.018, power: 3.2 },
+      { x: 0.085, y: 0.626, z: 0.548, ry: 0.019, rzFront: 0.015, rzBack: 0.018, power: 3.0 },
+      { x: 0.146, y: 0.632, z: 0.518, ry: 0.013, rzFront: 0.013, rzBack: 0.018, power: 2.6 },
+    ],
+    22,
+    3,
   );
   addLuminousScooterPart(
     helper,
     chassisGroup,
-    headlampArcGeo,
+    headlampLensGeo,
     '#ffffff',
-    '#bae6fd',
-    0.78,
-    [0, 0.598, 0.362],
-    [0.06, 0, 0],
+    '#cfeef2',
+    0.72,
+    [0, 0, 0],
+    [0, 0, 0],
     getElectricHeadlampBarTexture(),
   );
-  // Crisp cyan-teal lower brow accent directly under the horizontal headlamp bar
-  const browPinGeo = new THREE.CylinderGeometry(
-    0.230,
-    0.230,
-    0.010,
-    22,
-    1,
-    true,
-    -Math.PI * 0.28,
-    Math.PI * 0.56,
-  );
-  helper.addPart(
-    chassisGroup,
-    browPinGeo,
-    accentHex,
-    [0, 0.566, 0.362],
-    [0.06, 0, 0],
-    0,
-    undefined,
-    1.0,
-    false,
-    FINISH_GLOSS_BODY,
-  );
 
-  // 3c) Recessed Dark-Charcoal Front Wheel-Well Arch & Inner Rider Leg-Shield Apron
-  const innerLegShieldGeo = createLoftedBodyShellGeo(
-    [
-      { y: 0.255, z: 0.320, rx: 0.160, ryTop: 0.028, ryBot: 0.024, pitchRad: 1.35, power: 3.0 },
-      { y: 0.460, z: 0.355, rx: 0.172, ryTop: 0.036, ryBot: 0.032, pitchRad: 1.42, power: 3.0 },
-      { y: 0.720, z: 0.345, rx: 0.174, ryTop: 0.036, ryBot: 0.032, pitchRad: 1.66, power: 3.0 },
-      { y: 0.965, z: 0.300, rx: 0.138, ryTop: 0.028, ryBot: 0.026, pitchRad: 1.72, power: 2.8 },
-    ],
-    16,
-    'wrap',
-  );
+  // Inner Knee-Wall Detailing (chrome bag hook & subtle dark glovebox lip)
   helper.addPart(
     chassisGroup,
-    innerLegShieldGeo,
-    pal.trimCharcoal,
-    [0, 0, 0],
-    [0, 0, 0],
-    0.005,
-    undefined,
-    1.0,
-    true,
-    FINISH_MATTE_TRIM,
-  );
-  // Inner rider utility bag hook & illuminated cyan smart-key ignition ring (visible in Rear & 3/4 views)
-  helper.addPart(
-    chassisGroup,
-    new THREE.BoxGeometry(0.026, 0.048, 0.030),
-    '#64748b',
-    [0, 0.74, 0.302],
-    [-0.14, 0, 0],
-    0.002,
+    createRoundedRectExtrudeGeo(0.026, 0.026, 0.044, 0.008, 0.003, 2),
+    '#7a828f',
+    [0, 0.755, 0.302],
+    [-0.18, 0, 0],
+    0,
     undefined,
     1.0,
     false,
@@ -1658,50 +2291,27 @@ export function createElectricScooterBike3D(
   addLuminousScooterPart(
     helper,
     chassisGroup,
-    new THREE.CylinderGeometry(0.022, 0.022, 0.018, 12),
-    '#14b8a6',
-    '#22d3ee',
-    0.55,
-    [0.088, 0.76, 0.305],
-    [Math.PI / 2 - 0.14, 0, 0],
+    new THREE.CylinderGeometry(0.018, 0.018, 0.014, 16),
+    accentHex,
+    accentHex,
+    0.45,
+    [0.085, 0.775, 0.305],
+    [Math.PI / 2 - 0.18, 0, 0],
   );
 
-  // 4) Lofted Rear Body Shell, Tapered Under-Seat Tub, Stitched 2-Up Saddle & Cast Grab Rail
-  // 4a) Satin-Charcoal Under-Seat Front Tub rising cleanly from rear of floorboard (`z = -0.29 .. -0.09`)
-  const underSeatTubGeo = createLoftedBodyShellGeo(
-    [
-      { y: 0.255, z: -0.185, rx: 0.132, ryTop: 0.040, ryBot: 0.024, pitchRad: 1.45, power: 2.8 },
-      { y: 0.465, z: -0.195, rx: 0.140, ryTop: 0.048, ryBot: 0.040, pitchRad: 1.52, power: 2.8 },
-      { y: 0.675, z: -0.210, rx: 0.146, ryTop: 0.046, ryBot: 0.042, pitchRad: 1.55, power: 2.8 },
-    ],
-    16,
-    'wrap',
-  );
-  helper.addPart(
-    chassisGroup,
-    underSeatTubGeo,
-    '#374151',
-    [0, 0, 0],
-    [0, 0, 0],
-    0.005,
-    undefined,
-    1.0,
-    true,
-    FINISH_MATTE_TRIM,
-  );
-
-  // 4b) Organic Upswept Pearl-White Rear Body Shell with Boomerang Cyan Livery (`z = -0.80 .. -0.06`)
+  // 4) Continuous Rear Monocoque Bodywork + 3D Boomerang Hip Pods + Plush Stitched 2-Up Saddle + Aerodynamic Grab Rail
   const rearBodyGeo = createLoftedBodyShellGeo(
     [
-      { y: 0.692, z: -0.800, rx: 0.118, ryTop: 0.036, ryBot: 0.034, pitchRad: 0.12, power: 2.8 },
-      { y: 0.678, z: -0.680, rx: 0.168, ryTop: 0.056, ryBot: 0.052, pitchRad: 0.16, power: 3.0 },
-      { y: 0.648, z: -0.480, rx: 0.194, ryTop: 0.072, ryBot: 0.074, pitchRad: 0.20, power: 3.1 },
-      { y: 0.595, z: -0.260, rx: 0.190, ryTop: 0.088, ryBot: 0.095, pitchRad: 0.26, power: 3.0 },
-      { y: 0.435, z: -0.105, rx: 0.174, ryTop: 0.092, ryBot: 0.110, pitchRad: 0.52, power: 2.9 },
-      { y: 0.285, z: -0.040, rx: 0.164, ryTop: 0.050, ryBot: 0.042, pitchRad: 0.72, power: 2.8 },
+      { y: 0.706, z: -0.805, rx: 0.118, ryTop: 0.044, ryBot: 0.042, pitchRad: 0.10, power: 2.8 },
+      { y: 0.696, z: -0.665, rx: 0.172, ryTop: 0.060, ryBot: 0.062, pitchRad: 0.12, power: 3.0 },
+      { y: 0.672, z: -0.485, rx: 0.190, ryTop: 0.072, ryBot: 0.078, pitchRad: 0.14, power: 3.1 },
+      { y: 0.646, z: -0.315, rx: 0.176, ryTop: 0.068, ryBot: 0.078, pitchRad: 0.16, power: 3.0 },
+      { y: 0.605, z: -0.195, rx: 0.152, ryTop: 0.056, ryBot: 0.062, pitchRad: 0.24, power: 2.8 },
     ],
-    22,
+    30,
     'side',
+    4,
+    'dome',
   );
   helper.addPart(
     chassisGroup,
@@ -1709,25 +2319,76 @@ export function createElectricScooterBike3D(
     bodyHex,
     [0, 0, 0],
     [0, 0, 0],
-    0.008,
+    0.006,
     options.bodyColorHex ? undefined : getElectricSideCowlTexture(),
     1.0,
     true,
     FINISH_GLOSS_BODY,
   );
 
-  // 4c) Contoured Lofted 2-Up Ergonomic Saddle (`~78cm` Rider Bucket + `~82.5cm` Pillion Step, Stitched Leather)
+  // Sculpted 3D Boomerang Quarter Cheek Fairings + Seamless Cyan Livery Trim (`media_1794789749436_31ebafbe.jpg`)
+  for (const side of [-1, 1]) {
+    const hipPodGeo = createLoftedBodyShellGeo(
+      [
+        { y: 0.654, z: -0.715, offsetX: side * 0.144, rx: 0.022, ryTop: 0.026, ryBot: 0.026, pitchRad: 0.14, power: 2.7 },
+        { y: 0.638, z: -0.520, offsetX: side * 0.172, rx: 0.028, ryTop: 0.056, ryBot: 0.060, pitchRad: 0.22, power: 3.0 },
+        { y: 0.592, z: -0.305, offsetX: side * 0.168, rx: 0.028, ryTop: 0.066, ryBot: 0.070, pitchRad: 0.34, power: 3.0 },
+        { y: 0.505, z: -0.160, offsetX: side * 0.148, rx: 0.020, ryTop: 0.044, ryBot: 0.046, pitchRad: 0.52, power: 2.7 },
+      ],
+      20,
+      'side',
+      3,
+      'dome',
+    );
+    helper.addPart(
+      chassisGroup,
+      hipPodGeo,
+      solidPearlHex,
+      [0, 0, 0],
+      [0, 0, 0],
+      0.004,
+      undefined,
+      1.0,
+      true,
+      FINISH_GLOSS_BODY,
+    );
+
+    // 3D Boomerang cyan stripe framing the side pod upper crest & forward chevron edge
+    const boomCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.148, 0.668, -0.745),
+      new THREE.Vector3(side * 0.192, 0.646, -0.520),
+      new THREE.Vector3(side * 0.194, 0.608, -0.295),
+      new THREE.Vector3(side * 0.166, 0.494, -0.155),
+      new THREE.Vector3(side * 0.154, 0.445, -0.245),
+    ]);
+    helper.addPart(
+      chassisGroup,
+      createTubeSweepWithCapsGeo(boomCurve, 28, 0.0050, 0.0040, 10, true),
+      accentHex,
+      [0, 0, 0],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_GLOSS_BODY,
+    );
+  }
+
+  // Contoured Two-Tier Plush Stitched 2-Up Saddle Seat (`~78cm` rider bucket + `~82cm` passenger pillion)
   const saddleGeo = createLoftedBodyShellGeo(
     [
-      { y: 0.775, z: -0.695, rx: 0.115, ryTop: 0.034, ryBot: 0.028, pitchRad: 0.06, power: 2.6 },
-      { y: 0.790, z: -0.560, rx: 0.158, ryTop: 0.042, ryBot: 0.036, pitchRad: 0.05, power: 2.9 },
-      { y: 0.785, z: -0.405, rx: 0.166, ryTop: 0.044, ryBot: 0.038, pitchRad: 0.08, power: 3.0 },
-      { y: 0.742, z: -0.320, rx: 0.172, ryTop: 0.040, ryBot: 0.042, pitchRad: 0.04, power: 3.0 },
-      { y: 0.736, z: -0.145, rx: 0.164, ryTop: 0.044, ryBot: 0.044, pitchRad: -0.04, power: 2.9 },
-      { y: 0.748, z: 0.015, rx: 0.096, ryTop: 0.034, ryBot: 0.032, pitchRad: -0.18, power: 2.5 },
+      { y: 0.774, z: -0.680, rx: 0.122, ryTop: 0.044, ryBot: 0.058, pitchRad: 0.08, power: 2.7 },
+      { y: 0.778, z: -0.535, rx: 0.166, ryTop: 0.048, ryBot: 0.066, pitchRad: 0.06, power: 3.0 },
+      { y: 0.768, z: -0.400, rx: 0.170, ryTop: 0.046, ryBot: 0.068, pitchRad: 0.08, power: 3.0 },
+      { y: 0.728, z: -0.295, rx: 0.172, ryTop: 0.046, ryBot: 0.068, pitchRad: 0.05, power: 3.1 },
+      { y: 0.722, z: -0.145, rx: 0.158, ryTop: 0.048, ryBot: 0.066, pitchRad: -0.05, power: 2.9 },
+      { y: 0.715, z: -0.025, rx: 0.098, ryTop: 0.040, ryBot: 0.048, pitchRad: -0.28, power: 2.5 },
     ],
-    20,
+    28,
     'side',
+    4,
+    'dome',
   );
   helper.addPart(
     chassisGroup,
@@ -1735,76 +2396,113 @@ export function createElectricScooterBike3D(
     '#ffffff',
     [0, 0, 0],
     [0, 0, 0],
-    0.006,
+    0.005,
     getSaddleLeatherTexture(),
     1.0,
     true,
     FINISH_SADDLE_LEATHER,
   );
 
-  // 4d) Cast Satin-Silver Wrap-Around Passenger Grab Rail (`z = -0.50 .. -0.82, y = 0.835`)
+  // Cast Satin-Silver Aerodynamic Flattened-Oval Wrap-Around Rear Grab Rail (`z = -0.48 .. -0.785`)
   const grabCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.162, 0.775, -0.50),
-    new THREE.Vector3(-0.154, 0.826, -0.74),
-    new THREE.Vector3(0, 0.838, -0.815),
-    new THREE.Vector3(0.154, 0.826, -0.74),
-    new THREE.Vector3(0.162, 0.775, -0.50),
+    new THREE.Vector3(-0.158, 0.742, -0.485),
+    new THREE.Vector3(-0.160, 0.780, -0.555),
+    new THREE.Vector3(-0.150, 0.808, -0.710),
+    new THREE.Vector3(0, 0.818, -0.778),
+    new THREE.Vector3(0.150, 0.808, -0.710),
+    new THREE.Vector3(0.160, 0.780, -0.555),
+    new THREE.Vector3(0.158, 0.742, -0.485),
   ]);
   helper.addPart(
     chassisGroup,
-    new THREE.TubeGeometry(grabCurve, 24, 0.0165, 10, false),
+    createTubeSweepWithCapsGeo(grabCurve, 34, 0.0175, 0.0115, 16, true),
     '#ffffff',
     [0, 0, 0],
     [0, 0, 0],
-    0.004,
+    0.0035,
     getBrushedAluminumTexture(),
     1.0,
     true,
     FINISH_SATIN_METAL,
   );
 
-  // 5) Flush Curved Slim LED Taillight Bar + Rear Turn Strips + Tapered Rear Mudguard Fender
-  const tailArcGeo = new THREE.CylinderGeometry(
-    0.168,
-    0.164,
-    0.036,
+  // 5) Watertight Flush Curved LED Taillight Bar + Rear Tire-Hugger Mudguard & License Plate Bracket
+  const tailHousingGeo = createLoftedXShellGeo(
+    [
+      { x: -0.148, y: 0.694, z: -0.762, ry: 0.018, rzFront: 0.022, rzBack: 0.014, rollRad: -0.10, power: 2.8 },
+      { x: -0.078, y: 0.696, z: -0.806, ry: 0.020, rzFront: 0.022, rzBack: 0.014, rollRad: -0.04, power: 3.0 },
+      { x: 0.0, y: 0.697, z: -0.818, ry: 0.021, rzFront: 0.022, rzBack: 0.015, rollRad: 0.0, power: 3.1 },
+      { x: 0.078, y: 0.696, z: -0.806, ry: 0.020, rzFront: 0.022, rzBack: 0.014, rollRad: 0.04, power: 3.0 },
+      { x: 0.148, y: 0.694, z: -0.762, ry: 0.018, rzFront: 0.022, rzBack: 0.014, rollRad: 0.10, power: 2.8 },
+    ],
     20,
-    1,
-    true,
-    Math.PI * 0.72,
-    Math.PI * 0.56,
+    3,
+  );
+  helper.addPart(
+    chassisGroup,
+    tailHousingGeo,
+    '#20252d',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.002,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  const tailLensGeo = createLoftedXShellGeo(
+    [
+      { x: -0.140, y: 0.694, z: -0.766, ry: 0.013, rzFront: 0.016, rzBack: 0.016, power: 2.8 },
+      { x: -0.074, y: 0.696, z: -0.810, ry: 0.015, rzFront: 0.016, rzBack: 0.016, power: 3.0 },
+      { x: 0.0, y: 0.697, z: -0.822, ry: 0.016, rzFront: 0.016, rzBack: 0.017, power: 3.1 },
+      { x: 0.074, y: 0.696, z: -0.810, ry: 0.015, rzFront: 0.016, rzBack: 0.016, power: 3.0 },
+      { x: 0.140, y: 0.694, z: -0.766, ry: 0.013, rzFront: 0.016, rzBack: 0.016, power: 2.8 },
+    ],
+    20,
+    3,
   );
   const brakeLightMesh = addLuminousScooterPart(
     helper,
     chassisGroup,
-    tailArcGeo,
+    tailLensGeo,
     '#ffffff',
     pal.taillightRed,
     0.92,
-    [0, 0.692, -0.648],
-    [0.10, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
     getElectricTaillightBarTexture(),
   );
+  // Amber rear turn indicator strips integrated below outer taillight corners
+  for (const side of [-1, 1]) {
+    addLuminousScooterPart(
+      helper,
+      chassisGroup,
+      createRoundedRectExtrudeGeo(0.032, 0.011, 0.007, 0.004, 0.001, 2),
+      pal.indicatorAmber,
+      pal.indicatorAmber,
+      0.55,
+      [side * 0.125, 0.668, -0.768],
+      [-Math.PI / 2 - 0.15, 0, -side * 0.25],
+    );
+  }
 
-  // Sculpted Rear Mudguard Fender, License Plate Bracket & Reflectors (`z = -0.74 .. -0.90, y = 0.36 .. 0.64`)
-  const rearFenderGrp = new THREE.Group();
-  rearFenderGrp.position.set(0, 0.515, -0.805);
-  rearFenderGrp.rotation.x = 0.46;
-  chassisGroup.add(rearFenderGrp);
-
-  const rearMudGeo = createLoftedBodyShellGeo(
-    [
-      { y: -0.14, z: -0.01, rx: 0.072, ryTop: 0.012, ryBot: 0.012, pitchRad: 1.57, power: 2.6 },
-      { y: 0.0, z: 0.0, rx: 0.092, ryTop: 0.015, ryBot: 0.015, pitchRad: 1.57, power: 2.8 },
-      { y: 0.14, z: 0.01, rx: 0.105, ryTop: 0.018, ryBot: 0.018, pitchRad: 1.57, power: 2.8 },
-    ],
-    14,
-    'wrap',
-  );
+  // Curved Arched Rear Mudguard + License Plate Frame + Reflectors (`Rear Elevation` reference)
+  const rearFenderGeo = createCurvedArcShellGeo({
+    centerY: 0.255,
+    centerZ: -0.61,
+    phiStart: -1.24,
+    phiEnd: -0.68,
+    radius: (u) => THREE.MathUtils.lerp(0.322, 0.348, u),
+    halfWidth: (u) => THREE.MathUtils.lerp(0.072, 0.098, u),
+    thickness: 0.016,
+    crownDrop: 0.016,
+    arcSegs: 24,
+    ringSegs: 18,
+  });
   helper.addPart(
-    rearFenderGrp,
-    rearMudGeo,
-    pal.trimCharcoal,
+    chassisGroup,
+    rearFenderGeo,
+    SCOOTER_CHARCOAL_HEX,
     [0, 0, 0],
     [0, 0, 0],
     0.004,
@@ -1813,11 +2511,16 @@ export function createElectricScooterBike3D(
     true,
     FINISH_MATTE_TRIM,
   );
+  const rearPlateGrp = new THREE.Group();
+  rearPlateGrp.position.set(0, 0.505, -0.865);
+  rearPlateGrp.rotation.x = 0.44;
+  chassisGroup.add(rearPlateGrp);
+
   helper.addPart(
-    rearFenderGrp,
-    createRoundedRectExtrudeGeo(0.168, 0.112, 0.012, 0.018, 0.002),
-    '#e2e8f0',
-    [0, 0.015, -0.022],
+    rearPlateGrp,
+    createRoundedRectExtrudeGeo(0.158, 0.104, 0.012, 0.016, 0.003, 3),
+    '#e4e7ec',
+    [0, 0, 0],
     [Math.PI / 2, 0, 0],
     0.002,
     undefined,
@@ -1827,27 +2530,40 @@ export function createElectricScooterBike3D(
   );
   addLuminousScooterPart(
     helper,
-    rearFenderGrp,
-    new THREE.BoxGeometry(0.068, 0.020, 0.014),
+    rearPlateGrp,
+    createRoundedRectExtrudeGeo(0.062, 0.018, 0.012, 0.005, 0.002, 2),
     pal.taillightRed,
     pal.taillightRed,
-    0.55,
-    [0, -0.095, -0.020],
+    0.65,
+    [0, -0.096, 0.012],
+    [Math.PI / 2, 0, 0],
   );
   for (const side of [-1, 1]) {
+    helper.addPart(
+      rearPlateGrp,
+      createRoundedRectExtrudeGeo(0.022, 0.015, 0.008, 0.004, 0.001, 2),
+      SCOOTER_DEEP_CHARCOAL_HEX,
+      [side * 0.084, 0.006, 0.006],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_MATTE_TRIM,
+    );
     addLuminousScooterPart(
       helper,
-      rearFenderGrp,
-      new THREE.CylinderGeometry(0.015, 0.015, 0.014, 12),
+      rearPlateGrp,
+      new THREE.CylinderGeometry(0.014, 0.014, 0.010, 16),
       pal.indicatorAmber,
       pal.indicatorAmber,
-      0.55,
-      [side * 0.096, 0.055, 0],
+      0.45,
+      [side * 0.092, 0.006, 0.006],
       [0, 0, Math.PI / 2],
     );
   }
 
-  // 6) Articulated Steering Group (Lower Fork Tubes inside Wheel-Well + Curved Fender + Front Wheel + Winged Cockpit + Mirrors)
+  // 6) Articulated Steering Group (Forks, Contoured Mudguard + Riveted Ears, Wheel, Satin-Charcoal Nacelle, Smoked Visor & Mirrors)
   const steeringGroup = new THREE.Group();
   steeringGroup.name = 'ElectricScooterSteeringGroup';
   steeringGroup.position.set(
@@ -1857,17 +2573,30 @@ export function createElectricScooterBike3D(
   );
   chassisGroup.add(steeringGroup);
 
-  // Telescopic Front Fork Legs cleanly terminated inside wheel-well (`y = -0.43` -> `-0.705`, never poking through front shield!)
+  // Tapered Steering Column Neck Bridge (seamlessly connecting Nacelle down into Front Shield Collar!)
+  helper.addPart(
+    steeringGroup,
+    new THREE.CylinderGeometry(0.046, 0.056, 0.14, 24),
+    SCOOTER_CHARCOAL_HEX,
+    [0, 0.018, -0.004],
+    [0.25, 0, 0],
+    0.003,
+    undefined,
+    1.0,
+    true,
+    FINISH_MATTE_TRIM,
+  );
+
+  // Telescopic Front Fork Stanchions & Sliders (`(0, -0.705, +0.34)` wheel axle)
   const forkDx = 0.34;
   const forkDy = -0.705;
-  const forkAngleX = Math.atan2(forkDx, -forkDy);
+  const forkAngleX = -Math.atan2(forkDx, -forkDy);
   for (const side of [-1, 1]) {
-    // Lower dark-gunmetal fork slider (`-0.705 .. -0.52`)
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.021, 0.019, 0.24, 12),
-      '#334155',
-      [side * 0.080, forkDy * 0.88, forkDx * 0.88],
+      new THREE.CylinderGeometry(0.021, 0.019, 0.25, 20),
+      '#343a44',
+      [side * 0.080, forkDy * 0.87, forkDx * 0.87],
       [forkAngleX, 0, 0],
       0.003,
       undefined,
@@ -1875,12 +2604,11 @@ export function createElectricScooterBike3D(
       false,
       FINISH_DARK_ALLOY,
     );
-    // Upper chrome stanchion tucked cleanly under wheel-well (`-0.56 .. -0.40`)
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.015, 0.015, 0.19, 10),
-      '#cbd5e1',
-      [side * 0.080, forkDy * 0.67, forkDx * 0.67],
+      new THREE.CylinderGeometry(0.0155, 0.0155, 0.21, 18),
+      '#cfd5de',
+      [side * 0.080, forkDy * 0.65, forkDx * 0.65],
       [forkAngleX, 0, 0],
       0,
       undefined,
@@ -1888,13 +2616,24 @@ export function createElectricScooterBike3D(
       false,
       FINISH_SATIN_METAL,
     );
+    helper.addPart(
+      steeringGroup,
+      new THREE.CylinderGeometry(0.019, 0.019, 0.022, 16),
+      '#adb5c0',
+      [side * 0.095, forkDy, forkDx],
+      [0, 0, Math.PI / 2],
+      0.002,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
   }
-  // Hydraulic Front Disc Brake Caliper on Right Fork Slider
   helper.addPart(
     steeringGroup,
-    new THREE.BoxGeometry(0.034, 0.064, 0.052),
-    '#475569',
-    [0.066, forkDy + 0.052, forkDx - 0.044],
+    createRoundedRectExtrudeGeo(0.032, 0.056, 0.048, 0.012, 0.004, 3),
+    '#434a56',
+    [0.068, forkDy + 0.056, forkDx - 0.046],
     [0.3, 0, 0],
     0.002,
     undefined,
@@ -1903,125 +2642,171 @@ export function createElectricScooterBike3D(
     FINISH_DARK_ALLOY,
   );
 
-  // Sculpted Aerodynamic Pearl-White Front Mudguard Fender hugging Front Tire Arc
-  const frontFenderArc = new THREE.TorusGeometry(0.278, 0.046, 10, 20, Math.PI * 0.68);
-  frontFenderArc.rotateY(Math.PI / 2);
-  frontFenderArc.scale(1.58, 1.0, 1.0);
+  // Sculpted Contoured Pearl-White Front Mudguard Fender hovering cleanly OVER the Front Tire (`phi = -0.58 .. +0.94`)
+  const frontFenderShellGeo = createCurvedArcShellGeo({
+    centerY: forkDy,
+    centerZ: forkDx,
+    phiStart: -0.58,
+    phiEnd: 0.96,
+    radius: (u) => 0.288 + Math.sin(u * Math.PI) * 0.006,
+    halfWidth: (u) => THREE.MathUtils.lerp(0.072, 0.058, u),
+    thickness: 0.017,
+    crownDrop: 0.022,
+    arcSegs: 28,
+    ringSegs: 20,
+  });
   helper.addPart(
     steeringGroup,
-    frontFenderArc,
-    options.bodyColorHex ?? pal.bodyPearlWhite,
-    [0, forkDy, forkDx],
-    [-Math.PI * 0.24, 0, 0],
-    0.005,
+    frontFenderShellGeo,
+    solidPearlHex,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.0045,
     undefined,
     1.0,
     true,
     FINISH_GLOSS_BODY,
   );
 
-  // Front 5-Split-Spoke Alloy Wheel Assembly at `(0, -0.705, +0.34)` -> world `(0, 0.255, +0.64)`
+  // Twin Sculpted Fender Fork-Mount Gusset Ears & Two Silver Rivets per side (`3/4 Iso & Side View`!)
+  for (const side of [-1, 1]) {
+    helper.addPart(
+      steeringGroup,
+      createLoftedBodyShellGeo(
+        [
+          { y: forkDy + 0.245, z: forkDx - 0.045, offsetX: side * 0.076, rx: 0.008, ryTop: 0.020, ryBot: 0.024, power: 2.8 },
+          { y: forkDy + 0.165, z: forkDx - 0.072, offsetX: side * 0.080, rx: 0.008, ryTop: 0.016, ryBot: 0.018, power: 2.6 },
+        ],
+        14,
+        'side',
+        2,
+        'dome',
+      ),
+      solidPearlHex,
+      [0, 0, 0],
+      [0, 0, 0],
+      0.0025,
+      undefined,
+      1.0,
+      false,
+      FINISH_GLOSS_BODY,
+    );
+    for (const [ryOff, rzOff] of [
+      [0.215, -0.052],
+      [0.180, -0.068],
+    ]) {
+      helper.addPart(
+        steeringGroup,
+        new THREE.CylinderGeometry(0.005, 0.005, 0.008, 12),
+        '#475569',
+        [side * 0.086, forkDy + ryOff, forkDx + rzOff],
+        [0, 0, Math.PI / 2],
+        0,
+        undefined,
+        1.0,
+        false,
+        FINISH_SATIN_METAL,
+      );
+    }
+  }
+
+  // Front 5-Twin-Spoke Alloy Wheel Assembly at `(0, -0.705, +0.34)`
   const frontWheelGroup = buildSpokeWheelAssembly(
     helper,
     ELECTRIC_SCOOTER_BIKE_SPEC.wheelOuterRadiusM,
     ELECTRIC_SCOOTER_BIKE_SPEC.tireSectionRadiusM,
     5,
     '#ffffff',
-    pal.alloyWheelDark,
-    '#1f242d',
-    true,
+    '#323842',
+    '#20252d',
+    'full_front',
   );
   frontWheelGroup.name = 'ElectricScooterFrontWheel';
   frontWheelGroup.position.set(0, forkDy, forkDx);
   steeringGroup.add(frontWheelGroup);
 
-  // 6b) Sleek Sculpted Gull-Wing Handlebar Shroud & Hooded Digital LCD Cockpit (`1.04 .. 1.16m` world height)
-  // Front Pearl-White Sculpted Handlebar Brow (`createLoftedBodyShellGeo` along X span!)
-  const handlebarFrontBrow = createLoftedBodyShellGeo(
+  // 6b) Satin Dark Charcoal Handlebar Nacelle (`70cm` span w/ mirrors) + Smoked Glossy Windscreen Visor + Digital Cockpit
+  const handlebarNacelleGeo = createLoftedXShellGeo(
     [
-      { y: 0.055, z: -0.005, rx: 0.082, ryTop: 0.022, ryBot: 0.018, power: 2.6 },
-      { y: 0.105, z: 0.010, rx: 0.168, ryTop: 0.036, ryBot: 0.030, power: 3.0 },
-      { y: 0.142, z: -0.012, rx: 0.184, ryTop: 0.032, ryBot: 0.028, power: 3.0 },
-      { y: 0.168, z: -0.038, rx: 0.112, ryTop: 0.022, ryBot: 0.020, power: 2.6 },
+      { x: -0.194, y: 0.128, z: -0.036, ry: 0.025, rzFront: 0.028, rzBack: 0.026, rollRad: 0.18, power: 2.6 },
+      { x: -0.130, y: 0.126, z: -0.022, ry: 0.036, rzFront: 0.044, rzBack: 0.042, rollRad: 0.24, power: 3.0 },
+      { x: 0.0, y: 0.118, z: -0.010, ry: 0.048, rzFront: 0.062, rzBack: 0.064, rollRad: 0.30, power: 3.1 },
+      { x: 0.130, y: 0.126, z: -0.022, ry: 0.036, rzFront: 0.044, rzBack: 0.042, rollRad: 0.24, power: 3.0 },
+      { x: 0.194, y: 0.128, z: -0.036, ry: 0.025, rzFront: 0.028, rzBack: 0.026, rollRad: 0.18, power: 2.6 },
     ],
-    18,
-    'wrap',
+    26,
+    4,
   );
   helper.addPart(
     steeringGroup,
-    handlebarFrontBrow,
-    options.bodyColorHex ?? pal.bodyPearlWhite,
+    handlebarNacelleGeo,
+    SCOOTER_CHARCOAL_HEX,
     [0, 0, 0],
     [0, 0, 0],
-    0.006,
-    undefined,
-    1.0,
-    true,
-    FINISH_GLOSS_BODY,
-  );
-  // Glossy Smoked Center Meter Visor Inset on Front of Handlebar Shroud (`screen_8a1fbcde.png` Front & 3/4 views)
-  const frontMeterVisorGeo = createLoftedBodyShellGeo(
-    [
-      { y: 0.108, z: 0.026, rx: 0.068, ryTop: 0.014, ryBot: 0.012, power: 2.8 },
-      { y: 0.148, z: 0.008, rx: 0.074, ryTop: 0.014, ryBot: 0.012, power: 2.8 },
-      { y: 0.178, z: -0.018, rx: 0.062, ryTop: 0.012, ryBot: 0.010, power: 2.6 },
-    ],
-    14,
-    'front',
-  );
-  helper.addPart(
-    steeringGroup,
-    frontMeterVisorGeo,
-    '#1e293b',
-    [0, 0, 0],
-    [0, 0, 0],
-    0.003,
-    undefined,
-    1.0,
-    false,
-    FINISH_OPTICAL_LENS,
-  );
-
-  // Hooded Satin-Charcoal Digital Cockpit Cluster + Illuminated Speedometer LCD (`Digital cockpit display`)
-  const cockpitHoodGeo = createLoftedBodyShellGeo(
-    [
-      { y: 0.110, z: -0.058, rx: 0.118, ryTop: 0.030, ryBot: 0.024, power: 2.8 },
-      { y: 0.156, z: -0.046, rx: 0.104, ryTop: 0.036, ryBot: 0.026, power: 2.8 },
-      { y: 0.188, z: -0.018, rx: 0.084, ryTop: 0.020, ryBot: 0.018, power: 2.6 },
-    ],
-    16,
-    'wrap',
-  );
-  helper.addPart(
-    steeringGroup,
-    cockpitHoodGeo,
-    '#1e242d',
-    [0, 0, 0],
-    [0, 0, 0],
-    0.004,
+    0.005,
     undefined,
     1.0,
     true,
     FINISH_MATTE_TRIM,
   );
+
+  // Glossy Smoked Dark Windscreen / Meter Cowling Dome proud atop center nacelle (`3/4 & Front Views`)
+  const meterVisorGeo = createLoftedXShellGeo(
+    [
+      { x: -0.076, y: 0.162, z: -0.018, ry: 0.022, rzFront: 0.022, rzBack: 0.020, rollRad: 0.42, power: 2.8 },
+      { x: -0.044, y: 0.186, z: -0.018, ry: 0.036, rzFront: 0.028, rzBack: 0.026, rollRad: 0.44, power: 3.0 },
+      { x: 0.0, y: 0.194, z: -0.016, ry: 0.042, rzFront: 0.032, rzBack: 0.028, rollRad: 0.45, power: 3.1 },
+      { x: 0.044, y: 0.186, z: -0.018, ry: 0.036, rzFront: 0.028, rzBack: 0.026, rollRad: 0.44, power: 3.0 },
+      { x: 0.076, y: 0.162, z: -0.018, ry: 0.022, rzFront: 0.022, rzBack: 0.020, rollRad: 0.42, power: 2.8 },
+    ],
+    22,
+    3,
+  );
+  helper.addPart(
+    steeringGroup,
+    meterVisorGeo,
+    '#232830',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.003,
+    undefined,
+    1.0,
+    true,
+    FINISH_SMOKED_VISOR,
+  );
+
+  // Rider-Facing Digital Cockpit Bezel + Speedometer LCD Screen
+  helper.addPart(
+    steeringGroup,
+    createRoundedRectExtrudeGeo(0.148, 0.084, 0.022, 0.018, 0.004, 3),
+    '#20252d',
+    [0, 0.172, -0.056],
+    [Math.PI / 2 - 0.50, 0, 0],
+    0.002,
+    undefined,
+    1.0,
+    false,
+    FINISH_MATTE_TRIM,
+  );
   addLuminousScooterPart(
     helper,
     steeringGroup,
-    new THREE.PlaneGeometry(0.136, 0.072),
+    new THREE.PlaneGeometry(0.132, 0.068),
     '#ffffff',
     '#38bdf8',
     0.55,
-    [0, 0.152, -0.074],
-    [-0.48, Math.PI, 0],
+    [0, 0.176, -0.068],
+    [-0.50, Math.PI, 0],
     getElectricCockpitLcdTexture(),
   );
 
-  // Swept Handlebars, Switchgear Pods, Knurled Grips, Curved Brake Levers & Teardrop Aerodynamic Mirrors (`70cm` span)
+  // Swept Handlebars, Switchgear Pods, Contoured Grips (`±0.262, 0.132, -0.06`), Ball-End Brake Levers & Teardrop Mirrors
+  const bikeGripGeo = createContouredErgonomicGripGeo(0.116, 0.0175);
   for (const side of [-1, 1]) {
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.013, 0.014, 0.16, 10),
-      '#64748b',
+      new THREE.CylinderGeometry(0.013, 0.014, 0.16, 16),
+      '#58606d',
       [side * 0.175, 0.132, -0.036],
       [0, -side * 0.18, Math.PI / 2],
       0.002,
@@ -2030,27 +2815,25 @@ export function createElectricScooterBike3D(
       false,
       FINISH_SATIN_METAL,
     );
-    // Sculpted Switchgear Pod with Cyan Mode Button
     helper.addPart(
       steeringGroup,
-      createRoundedRectExtrudeGeo(0.044, 0.048, 0.044, 0.012, 0.004),
-      '#232830',
-      [side * 0.192, 0.112, -0.048],
+      createRoundedRectExtrudeGeo(0.042, 0.044, 0.038, 0.014, 0.005, 3),
+      SCOOTER_DEEP_CHARCOAL_HEX,
+      [side * 0.194, 0.114, -0.048],
       [0, -side * 0.18, 0],
-      0.003,
+      0.002,
       undefined,
       1.0,
       false,
       FINISH_MATTE_TRIM,
     );
-    // Ergonomic Knurled Rubber Grip + Alloy Bar-End Cap (`x = ±0.21 .. ±0.31m`)
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.0185, 0.0165, 0.115, 12),
+      bikeGripGeo,
       '#ffffff',
       [side * 0.262, 0.132, -0.060],
-      [0, -side * 0.18, Math.PI / 2],
-      0.003,
+      [0, side > 0 ? -0.18 : Math.PI + 0.18, 0],
+      0.0025,
       getErgonomicGripTexture(),
       1.0,
       false,
@@ -2058,8 +2841,8 @@ export function createElectricScooterBike3D(
     );
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.0195, 0.0175, 0.014, 12),
-      '#94a3b8',
+      new THREE.CylinderGeometry(0.0185, 0.0165, 0.014, 18),
+      '#8b95a3',
       [side * 0.322, 0.132, -0.071],
       [0, -side * 0.18, Math.PI / 2],
       0.002,
@@ -2068,16 +2851,17 @@ export function createElectricScooterBike3D(
       false,
       FINISH_SATIN_METAL,
     );
-    // Curved Cast-Alloy Brake Lever
+
+    // Sculpted Ball-End Cast-Alloy Brake Lever
     const leverCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.205, 0.128, -0.032),
-      new THREE.Vector3(side * 0.255, 0.125, -0.016),
-      new THREE.Vector3(side * 0.305, 0.122, -0.026),
+      new THREE.Vector3(side * 0.204, 0.128, -0.030),
+      new THREE.Vector3(side * 0.255, 0.124, -0.012),
+      new THREE.Vector3(side * 0.308, 0.118, -0.022),
     ]);
     helper.addPart(
       steeringGroup,
-      new THREE.TubeGeometry(leverCurve, 10, 0.0055, 6, false),
-      '#cbd5e1',
+      createTubeSweepWithCapsGeo(leverCurve, 14, 0.006, 0.0042, 10, true),
+      '#adb5c2',
       [0, 0, 0],
       [0, 0, 0],
       0,
@@ -2086,17 +2870,41 @@ export function createElectricScooterBike3D(
       false,
       FINISH_SATIN_METAL,
     );
+    helper.addPart(
+      steeringGroup,
+      new THREE.SphereGeometry(0.0075, 12, 10),
+      '#adb5c2',
+      [side * 0.310, 0.118, -0.023],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
 
-    // Slender Swept Mirror Stalk + Teardrop Aerodynamic Mirror Housing (`x = ±0.35m` -> exact `70cm` span!)
+    // Rubber Mirror Stalk Boot + Swept Stalk + Sculpted Lofted Teardrop Wing Mirror (`70cm` total span)
+    helper.addPart(
+      steeringGroup,
+      new THREE.CylinderGeometry(0.011, 0.013, 0.024, 14),
+      '#242830',
+      [side * 0.184, 0.156, -0.038],
+      [0, 0, -side * 0.35],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_RUBBER_TIRE,
+    );
     const stalkCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.182, 0.158, -0.038),
-      new THREE.Vector3(side * 0.258, 0.258, -0.044),
-      new THREE.Vector3(side * 0.308, 0.308, -0.050),
+      new THREE.Vector3(side * 0.185, 0.160, -0.038),
+      new THREE.Vector3(side * 0.255, 0.255, -0.044),
+      new THREE.Vector3(side * 0.308, 0.305, -0.050),
     ]);
     helper.addPart(
       steeringGroup,
-      new THREE.TubeGeometry(stalkCurve, 10, 0.0072, 8, false),
-      '#475569',
+      createTubeSweepWithCapsGeo(stalkCurve, 16, 0.0072, 0.0068, 12, false),
+      '#464e5a',
       [0, 0, 0],
       [0, 0, 0],
       0.002,
@@ -2107,31 +2915,40 @@ export function createElectricScooterBike3D(
     );
 
     const mirrorPodGrp = new THREE.Group();
-    mirrorPodGrp.position.set(side * 0.334, 0.316, -0.052);
-    mirrorPodGrp.rotation.set(0, -side * 0.22, side * 0.12);
+    mirrorPodGrp.position.set(side * 0.336, 0.316, -0.052);
+    mirrorPodGrp.rotation.set(0, -side * 0.20, side * 0.16);
     steeringGroup.add(mirrorPodGrp);
 
-    const mirrorShellGeo = new THREE.SphereGeometry(0.054, 14, 10);
-    mirrorShellGeo.scale(1.10, 0.64, 0.40);
+    // Aerodynamic lofted teardrop housing (`narrow inner stem -> broad sculpted outer tip`)
+    const mirrorHousingGeo = createLoftedXShellGeo(
+      [
+        { x: -side * 0.046, y: -0.006, z: 0.002, ry: 0.018, rzFront: 0.014, rzBack: 0.010, power: 2.4 },
+        { x: -side * 0.012, y: 0.004, z: 0.006, ry: 0.030, rzFront: 0.020, rzBack: 0.014, power: 2.8 },
+        { x: side * 0.028, y: 0.008, z: 0.002, ry: 0.032, rzFront: 0.018, rzBack: 0.012, power: 2.8 },
+        { x: side * 0.052, y: 0.002, z: -0.002, ry: 0.022, rzFront: 0.012, rzBack: 0.009, power: 2.4 },
+      ],
+      18,
+      2,
+    );
     helper.addPart(
       mirrorPodGrp,
-      mirrorShellGeo,
-      '#475569',
+      mirrorHousingGeo,
+      '#414854',
       [0, 0, 0],
       [0, 0, 0],
-      0.003,
+      0.0025,
       undefined,
       1.0,
       false,
       FINISH_DARK_ALLOY,
     );
-    const mirrorGlassGeo = new THREE.CircleGeometry(0.044, 14);
-    mirrorGlassGeo.scale(1.06, 0.58, 1.0);
+    const mirrorGlassGeo = new THREE.CircleGeometry(0.042, 20);
+    mirrorGlassGeo.scale(1.08, 0.60, 1.0);
     helper.addPart(
       mirrorPodGrp,
       mirrorGlassGeo,
-      '#bae6fd',
-      [0, 0, -0.022],
+      '#9cc7dc',
+      [side * 0.006, 0.002, -0.012],
       [0, Math.PI, 0],
       0,
       undefined,
@@ -2141,7 +2958,7 @@ export function createElectricScooterBike3D(
     );
   }
 
-  // 7) Articulated Center Kickstand (`z = -0.18, y = 0.165`)
+  // 7) Connected Tubular U-Brace Center Kickstand (`z = -0.18, y = 0.165`)
   const kickstandGroup = new THREE.Group();
   kickstandGroup.name = 'ElectricScooterCenterKickstand';
   kickstandGroup.position.set(
@@ -2151,37 +2968,46 @@ export function createElectricScooterBike3D(
   );
   chassisGroup.add(kickstandGroup);
 
+  const standBraceCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.088, 0.0, 0.0),
+    new THREE.Vector3(-0.102, -0.085, -0.026),
+    new THREE.Vector3(-0.112, -0.158, -0.048),
+    new THREE.Vector3(0.0, -0.158, -0.048),
+    new THREE.Vector3(0.112, -0.158, -0.048),
+    new THREE.Vector3(0.102, -0.085, -0.026),
+    new THREE.Vector3(0.088, 0.0, 0.0),
+  ]);
+  helper.addPart(
+    kickstandGroup,
+    createTubeSweepWithCapsGeo(standBraceCurve, 28, 0.010, 0.010, 12, false),
+    '#2b3038',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.0025,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
   for (const side of [-1, 1]) {
     helper.addPart(
       kickstandGroup,
-      new THREE.CylinderGeometry(0.011, 0.010, 0.185, 8),
-      '#252a33',
-      [side * 0.095, -0.082, -0.032],
-      [0.34, 0, -side * 0.12],
-      0.003,
-      undefined,
-      1.0,
-      false,
-      FINISH_DARK_ALLOY,
-    );
-    helper.addPart(
-      kickstandGroup,
-      new THREE.BoxGeometry(0.036, 0.012, 0.064),
-      '#1e222a',
-      [side * 0.106, -0.159, -0.052],
+      createRoundedRectExtrudeGeo(0.032, 0.046, 0.010, 0.012, 0.002, 3),
+      '#1f242b',
+      [side * 0.112, -0.162, -0.048],
       [0, 0, 0],
-      0.002,
+      0.0015,
       undefined,
       1.0,
       false,
-      FINISH_DARK_ALLOY,
+      FINISH_RUBBER_TIRE,
     );
   }
   helper.addPart(
     kickstandGroup,
-    new THREE.CylinderGeometry(0.008, 0.008, 0.19, 6),
-    '#333944',
-    [0, -0.09, -0.035],
+    new THREE.CylinderGeometry(0.0085, 0.0085, 0.186, 12),
+    '#343a44',
+    [0, -0.085, -0.026],
     [0, 0, Math.PI / 2],
     0,
     undefined,
@@ -2236,9 +3062,11 @@ export function createPushKickScooter3D(
 ): PushKickScooter3DHandle {
   const helper = options.partHelper ?? makeStandardFallbackHelper();
   const pal = PUSH_KICK_SCOOTER_SPEC.palette;
-  const frameHex = options.bodyColorHex ?? '#ffffff';
+  const frameHex = options.bodyColorHex ?? '#eef1f5';
   const frameTex = options.bodyColorHex ? undefined : getBrushedAluminumTexture();
-  const accentHex = options.accentColorHex ?? pal.accentCyan;
+  const accentHex = options.accentColorHex ?? SCOOTER_REF_CYAN_HEX;
+  const trimCharcoal = SCOOTER_CHARCOAL_HEX;
+  const deepCharcoal = SCOOTER_DEEP_CHARCOAL_HEX;
   const isFoldedInit = options.folded ?? false;
   const isParkedInit = isFoldedInit ? false : (options.parked ?? true);
 
@@ -2289,30 +3117,33 @@ export function createPushKickScooter3D(
     PUSH_KICK_SCOOTER_SPEC.tireSectionRadiusM,
     5,
     '#ffffff',
-    pal.wheelCoreAlloy,
-    '#334155',
-    true,
+    SCOOTER_SILVER_TRIM_HEX,
+    '#343b46',
+    'micro_hub',
   );
   rearWheelGroup.name = 'PushScooterRearWheel';
   rearWheelGroup.position.set(0, 0.10, -0.36);
   deckGroup.add(rearWheelGroup);
 
-  // Sculpted Brushed-Aluminum Rear Dropout Arms + Recessed Cyan Pinstripe Slots (`screen_e2bde276.png` Side & 3/4)
+  // Sculpted Brushed-Aluminum Rear Dropout Arms + Flush Recessed Cyan Pinstripe Slots
   for (const side of [-1, 1]) {
     const dropoutGeo = createLoftedBodyShellGeo(
       [
-        { y: 0.098, z: -0.375, rx: 0.009, ryTop: 0.015, ryBot: 0.015, power: 2.6 },
-        { y: 0.098, z: -0.285, rx: 0.011, ryTop: 0.019, ryBot: 0.017, power: 2.8 },
-        { y: 0.096, z: -0.195, rx: 0.013, ryTop: 0.020, ryBot: 0.018, power: 2.8 },
+        { y: 0.100, z: -0.376, rx: 0.0085, ryTop: 0.015, ryBot: 0.015, offsetX: side * 0.044, power: 2.8 },
+        { y: 0.100, z: -0.315, rx: 0.010, ryTop: 0.018, ryBot: 0.017, offsetX: side * 0.048, power: 2.8 },
+        { y: 0.097, z: -0.220, rx: 0.0115, ryTop: 0.020, ryBot: 0.018, offsetX: side * 0.056, power: 2.8 },
+        { y: 0.096, z: -0.175, rx: 0.013, ryTop: 0.020, ryBot: 0.018, offsetX: side * 0.062, power: 2.8 },
       ],
-      12,
+      22,
       'side',
+      3,
+      'dome',
     );
     helper.addPart(
       deckGroup,
       dropoutGeo,
       frameHex,
-      [side * 0.044, 0, 0],
+      [0, 0, 0],
       [0, 0, 0],
       0.003,
       frameTex,
@@ -2320,11 +3151,30 @@ export function createPushKickScooter3D(
       true,
       FINISH_SATIN_METAL,
     );
+    // Silver axle acorn cap nut on rear dropout tip
     helper.addPart(
       deckGroup,
-      new THREE.BoxGeometry(0.008, 0.007, 0.095),
+      new THREE.CylinderGeometry(0.009, 0.009, 0.008, 16),
+      SCOOTER_SILVER_TRIM_HEX,
+      [side * 0.052, 0.100, -0.360],
+      [0, 0, Math.PI / 2],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
+    // Thin flush cyan slot pinstripe along dropout arm (tapered capsule ends)
+    const dropoutStripeCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.0565, 0.099, -0.320),
+      new THREE.Vector3(side * 0.0605, 0.098, -0.255),
+      new THREE.Vector3(side * 0.0640, 0.097, -0.215),
+    ]);
+    helper.addPart(
+      deckGroup,
+      createTubeSweepWithCapsGeo(dropoutStripeCurve, 14, 0.0020, 0.0028, 10, true),
       accentHex,
-      [side * 0.053, 0.098, -0.285],
+      [0, 0, 0],
       [0, 0, 0],
       0,
       undefined,
@@ -2334,32 +3184,51 @@ export function createPushKickScooter3D(
     );
   }
 
-  // 2) Low-Clearance Brushed-Aluminum Deck (`~8cm` ground clearance) & Geometric High-Grip Footpad
+  // 2) Low-Clearance Stadium Brushed-Aluminum Deck (`~8cm` clearance) & Textured Diamond Grip Pad
   helper.addPart(
     deckGroup,
     createRoundedRectExtrudeGeo(
       PUSH_KICK_SCOOTER_SPEC.deckWidthM,
       PUSH_KICK_SCOOTER_SPEC.deckLengthM,
-      0.030,
-      0.068,
-      0.005,
+      0.028,
+      0.075,
+      0.0055,
+      5,
     ),
     frameHex,
     [0, PUSH_KICK_SCOOTER_SPEC.deckClearanceM, -0.02],
     [0, 0, 0],
-    0.005,
+    0.004,
     frameTex,
     1.0,
     true,
     FINISH_SATIN_METAL,
   );
-  // Satin-Charcoal Perimeter Bumper Trim + Cyan Pinstripe Accents along Deck Flanks (offset outside ±0.084 bevel)
+  // Dark chamfered deck upper tray border supporting the grip pad
+  helper.addPart(
+    deckGroup,
+    createRoundedRectExtrudeGeo(0.146, 0.466, 0.0055, 0.068, 0.002, 4),
+    deepCharcoal,
+    [0, 0.108, -0.02],
+    [0, 0, 0],
+    0.002,
+    undefined,
+    1.0,
+    false,
+    FINISH_MATTE_TRIM,
+  );
+  // Flush Recessed Charcoal Side Channels & Slim Tapered Cyan Pinstripes along Deck Flanks
   for (const side of [-1, 1]) {
+    const channelCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.0785, 0.096, -0.175),
+      new THREE.Vector3(side * 0.0790, 0.096, -0.020),
+      new THREE.Vector3(side * 0.0785, 0.096, 0.125),
+    ]);
     helper.addPart(
       deckGroup,
-      new THREE.BoxGeometry(0.006, 0.017, 0.36),
-      pal.stemCharcoal,
-      [side * 0.0865, 0.095, -0.02],
+      createTubeSweepWithCapsGeo(channelCurve, 18, 0.0032, 0.0062, 12, true),
+      trimCharcoal,
+      [0, 0, 0],
       [0, 0, 0],
       0,
       undefined,
@@ -2367,11 +3236,16 @@ export function createPushKickScooter3D(
       false,
       FINISH_MATTE_TRIM,
     );
+    const sideAccentCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.0805, 0.096, -0.145),
+      new THREE.Vector3(side * 0.0810, 0.096, -0.020),
+      new THREE.Vector3(side * 0.0805, 0.096, 0.095),
+    ]);
     helper.addPart(
       deckGroup,
-      new THREE.BoxGeometry(0.006, 0.0065, 0.28),
+      createTubeSweepWithCapsGeo(sideAccentCurve, 18, 0.0020, 0.0026, 10, true),
       accentHex,
-      [side * 0.0895, 0.096, -0.02],
+      [0, 0, 0],
       [0, 0, 0],
       0,
       undefined,
@@ -2380,56 +3254,123 @@ export function createPushKickScooter3D(
       FINISH_GLOSS_BODY,
     );
   }
-  // Top Textured Geometric Diamond High-Grip Footpad (`y = 0.114`)
+  // Top Textured Geometric Diamond High-Grip Footpad (`y = 0.112`)
   helper.addPart(
     deckGroup,
-    createRoundedRectExtrudeGeo(0.132, 0.435, 0.004, 0.054, 0.001),
+    createRoundedRectExtrudeGeo(0.132, 0.436, 0.0035, 0.062, 0.001, 4),
     '#ffffff',
     [0, 0.112, -0.02],
     [0, 0, 0],
     0.002,
     getKickGeometricGripDeckTexture(),
-    0.6,
+    0.85,
     false,
     FINISH_RUBBER_TIRE,
   );
 
-  // 3) Curved Satin-Charcoal Rear Fender Foot-Brake + Integrated Flush Red Safety Reflector
-  const rearFenderArc = new THREE.TorusGeometry(0.115, 0.019, 10, 18, Math.PI * 0.64);
-  rearFenderArc.rotateY(Math.PI / 2);
-  rearFenderArc.scale(1.48, 1.0, 1.0);
+  // 3) Contoured Satin-Charcoal Rear Fender Foot-Brake + Attached Tail Red Safety Reflector
   helper.addPart(
     deckGroup,
-    rearFenderArc,
-    pal.stemCharcoal,
-    [0, 0.10, -0.36],
-    [Math.PI * 0.36, 0, 0],
-    0.004,
+    createCurvedArcShellGeo({
+      centerY: 0.10,
+      centerZ: -0.36,
+      phiStart: 0.48,
+      phiEnd: -1.48,
+      radius: 0.113,
+      halfWidth: 0.036,
+      thickness: 0.010,
+      crownDrop: 0.011,
+      arcSegs: 28,
+      ringSegs: 18,
+    }),
+    trimCharcoal,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.003,
     undefined,
     1.0,
     true,
     FINISH_MATTE_TRIM,
   );
+  // Fender Hinge Bridge joining rear deck tail (`z = -0.265`) solidly into fender front edge
+  helper.addPart(
+    deckGroup,
+    createLoftedBodyShellGeo(
+      [
+        { y: 0.112, z: -0.308, rx: 0.032, ryTop: 0.008, ryBot: 0.012, power: 2.6 },
+        { y: 0.103, z: -0.275, rx: 0.038, ryTop: 0.011, ryBot: 0.013, power: 2.6 },
+        { y: 0.098, z: -0.242, rx: 0.044, ryTop: 0.012, ryBot: 0.014, power: 2.6 },
+      ],
+      18,
+      'wrap',
+      2,
+      'dome',
+    ),
+    deepCharcoal,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.002,
+    undefined,
+    1.0,
+    false,
+    FINISH_MATTE_TRIM,
+  );
+  // Molded Foot-Brake Tread Ridges on top crown of rear fender
+  for (const phiRidge of [-0.12, -0.26, -0.40]) {
+    const rOuter = 0.1185;
+    helper.addPart(
+      deckGroup,
+      createRoundedRectExtrudeGeo(0.038, 0.007, 0.004, 0.003, 0.001, 2),
+      '#1e232a',
+      [0, 0.10 + rOuter * Math.cos(phiRidge), -0.36 + rOuter * Math.sin(phiRidge)],
+      [phiRidge, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_RUBBER_TIRE,
+    );
+  }
+  // Attached Flush Red Tail Reflector on Rear Fender Surface (`phi = -0.88`, zero floating!)
+  const phiTail = -0.88;
+  const rTail = 0.1185;
+  const tailY = 0.10 + rTail * Math.cos(phiTail);
+  const tailZ = -0.36 + rTail * Math.sin(phiTail);
+  helper.addPart(
+    deckGroup,
+    createRoundedRectExtrudeGeo(0.030, 0.020, 0.006, 0.007, 0.0015, 3),
+    deepCharcoal,
+    [0, tailY, tailZ],
+    [phiTail, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_MATTE_TRIM,
+  );
   addLuminousScooterPart(
     helper,
     deckGroup,
-    new THREE.BoxGeometry(0.026, 0.014, 0.012),
+    createRoundedRectExtrudeGeo(0.024, 0.015, 0.005, 0.005, 0.0012, 3),
     pal.reflectorRed,
-    pal.reflectorRed,
+    '#ef4444',
     0.72,
-    [0, 0.165, -0.462],
-    [-0.4, 0, 0],
+    [0, tailY + 0.003 * Math.cos(phiTail), tailZ + 0.003 * Math.sin(phiTail)],
+    [phiTail, 0, 0],
   );
 
-  // 4) Sculpted Chamfered Brushed-Aluminum Gooseneck & Folding Joint Safety Lock (`z = +0.16 .. +0.30`)
+  // 4) Sculpted Brushed-Aluminum Gooseneck & Folding Hinge Knuckle (`z = +0.16 .. +0.31`)
   const neckGussetGeo = createLoftedBodyShellGeo(
     [
-      { y: 0.098, z: 0.155, rx: 0.036, ryTop: 0.020, ryBot: 0.018, pitchRad: 0.65, power: 3.0 },
-      { y: 0.152, z: 0.232, rx: 0.029, ryTop: 0.024, ryBot: 0.022, pitchRad: 0.85, power: 3.0 },
-      { y: 0.198, z: 0.285, rx: 0.028, ryTop: 0.026, ryBot: 0.024, pitchRad: 1.05, power: 3.0 },
+      { y: 0.098, z: 0.155, rx: 0.036, ryTop: 0.018, ryBot: 0.016, pitchRad: -0.78, power: 2.8 },
+      { y: 0.156, z: 0.220, rx: 0.030, ryTop: 0.021, ryBot: 0.019, pitchRad: -0.72, power: 2.8 },
+      { y: 0.214, z: 0.278, rx: 0.026, ryTop: 0.022, ryBot: 0.020, pitchRad: -0.66, power: 2.8 },
+      { y: 0.248, z: 0.305, rx: 0.025, ryTop: 0.020, ryBot: 0.018, pitchRad: -0.58, power: 2.8 },
     ],
-    14,
+    24,
     'side',
+    3,
+    'dome',
   );
   helper.addPart(
     deckGroup,
@@ -2443,33 +3384,60 @@ export function createPushKickScooter3D(
     true,
     FINISH_SATIN_METAL,
   );
-  // Machined Charcoal Folding Hinge Knuckle + Cyan Quick-Release Safety Lock Lever
+  // Machined Charcoal Folding Hinge Knuckle Cylinder + Side Detent Lock Latch
   helper.addPart(
     deckGroup,
-    createRoundedRectExtrudeGeo(0.062, 0.060, 0.054, 0.014, 0.004),
-    pal.stemCharcoal,
-    [0, 0.172, 0.282],
-    [-0.22, 0, 0],
-    0.004,
+    new THREE.CylinderGeometry(0.024, 0.024, 0.062, 22),
+    trimCharcoal,
+    [0, 0.214, 0.285],
+    [0, 0, Math.PI / 2],
+    0.003,
     undefined,
     1.0,
     true,
     FINISH_DARK_ALLOY,
   );
+  for (const side of [-1, 1]) {
+    helper.addPart(
+      deckGroup,
+      new THREE.CylinderGeometry(0.011, 0.011, 0.006, 16),
+      SCOOTER_SILVER_TRIM_HEX,
+      [side * 0.032, 0.214, 0.285],
+      [0, 0, Math.PI / 2],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
+  }
+  // Compact Contoured Folding Safety Lock Latch on Left Side
   helper.addPart(
     deckGroup,
-    new THREE.BoxGeometry(0.014, 0.044, 0.020),
+    createRoundedRectExtrudeGeo(0.011, 0.042, 0.016, 0.0045, 0.002, 3),
+    deepCharcoal,
+    [0.032, 0.222, 0.278],
+    [0.52, 0, -Math.PI / 2],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  helper.addPart(
+    deckGroup,
+    createRoundedRectExtrudeGeo(0.006, 0.016, 0.005, 0.0025, 0.001, 2),
     accentHex,
-    [0.035, 0.202, 0.276],
-    [-0.35, 0, 0],
-    0.002,
+    [0.036, 0.236, 0.272],
+    [0.52, 0, -Math.PI / 2],
+    0,
     undefined,
     1.0,
     false,
     FINISH_GLOSS_BODY,
   );
 
-  // 5) Lower Headtube, Ribbed Elastomer Front Suspension Fork & Front 200mm PU Wheel
+  // 5) Headtube Collar, Continuous Ribbed Elastomer Suspension Boot, Fork Blades & Front 200mm Wheel
   const steeringGroup = new THREE.Group();
   steeringGroup.name = 'PushScooterSteeringGroup';
   steeringGroup.position.set(
@@ -2479,25 +3447,39 @@ export function createPushKickScooter3D(
   );
   deckGroup.add(steeringGroup);
 
-  // Chamfered Brushed-Aluminum Headtube with Front Cyan-Framed Reflector Badge (`Pinstripe accents`)
+  // Brushed-Aluminum Upper Headtube Collar (clears 200mm front wheel cleanly above `y_local = 0.02`)
   helper.addPart(
     steeringGroup,
-    new THREE.CylinderGeometry(0.026, 0.027, 0.108, 16),
+    new THREE.CylinderGeometry(0.0255, 0.0275, 0.078, 24),
     frameHex,
-    [0, 0.016, -0.005],
+    [0, 0.052, -0.011],
     [PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
-    0.004,
+    0.003,
     frameTex,
     1.0,
     true,
     FINISH_SATIN_METAL,
   );
+  // Lower Headset Bearing Ring (dark alloy transition to suspension bellows)
   helper.addPart(
     steeringGroup,
-    new THREE.BoxGeometry(0.022, 0.064, 0.012),
-    accentHex,
-    [0, 0.018, 0.022],
+    new THREE.CylinderGeometry(0.0285, 0.0275, 0.014, 24),
+    deepCharcoal,
+    [0, 0.015, -0.004],
     [PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  // Subtle Front Vertical Cyan-Framed Badge Flush on Headtube
+  helper.addPart(
+    steeringGroup,
+    createRoundedRectExtrudeGeo(0.014, 0.044, 0.006, 0.006, 0.0015, 3),
+    accentHex,
+    [0, 0.052, 0.014],
+    [Math.PI / 2 + PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
     0,
     undefined,
     1.0,
@@ -2507,81 +3489,140 @@ export function createPushKickScooter3D(
   addLuminousScooterPart(
     helper,
     steeringGroup,
-    new THREE.BoxGeometry(0.014, 0.048, 0.014),
-    '#f0fdff',
-    '#67e8f9',
-    0.7,
-    [0, 0.018, 0.025],
-    [PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
+    createRoundedRectExtrudeGeo(0.0085, 0.032, 0.004, 0.004, 0.001, 2),
+    '#edf9fb',
+    '#b8f2ee',
+    0.45,
+    [0, 0.052, 0.0165],
+    [Math.PI / 2 + PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
   );
 
-  // Accordion Ribbed Elastomer Front Suspension Dust Boot (`Front suspension fork`)
-  for (let b = 0; b < 4; b++) {
-    const bootRing = new THREE.TorusGeometry(0.021, 0.0050, 6, 14);
-    bootRing.rotateX(Math.PI / 2);
-    helper.addPart(
-      steeringGroup,
-      bootRing,
-      '#1e222a',
-      [0, -0.040 - b * 0.010, 0.010 + b * 0.0025],
-      [PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
-      0,
-      undefined,
-      1.0,
-      false,
-      FINISH_RUBBER_TIRE,
-    );
+  // Continuous Molded Accordion Ribbed Elastomer Suspension Dust Boot (`LatheGeometry`, zero floating gaps)
+  const bootProfile: THREE.Vector2[] = [];
+  const bootSteps = 44;
+  for (let i = 0; i <= bootSteps; i++) {
+    const t = i / bootSteps;
+    const yLathe = -0.024 + t * 0.048;
+    const ribWave = Math.sin(t * Math.PI * 10);
+    const rBase = 0.0205 - t * 0.0015;
+    const r = Math.max(0.0155, rBase + Math.max(0, ribWave) * 0.0038 - Math.max(0, -ribWave) * 0.0022);
+    bootProfile.push(new THREE.Vector2(r, yLathe));
   }
+  const bootGeo = new THREE.LatheGeometry(bootProfile, 24);
+  helper.addPart(
+    steeringGroup,
+    bootGeo,
+    '#20252d',
+    [0, -0.006, 0.002],
+    [PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_RUBBER_TIRE,
+  );
 
-  // Sculpted Brushed-Aluminum Front Fork Blades + Cyan Pinstripes straddling the 200mm PU Wheel
+  // Sculpted Fork Crown Bridge above front tire (`y_local = -0.025`, clears 200mm wheel cleanly!)
+  helper.addPart(
+    steeringGroup,
+    createRoundedRectExtrudeGeo(0.078, 0.044, 0.022, 0.016, 0.005, 4),
+    frameHex,
+    [0, -0.026, 0.012],
+    [PUSH_KICK_SCOOTER_SPEC.stemRakeRad, 0, 0],
+    0.003,
+    frameTex,
+    1.0,
+    true,
+    FINISH_SATIN_METAL,
+  );
+
+  // Sculpted Brushed-Aluminum Front Fork Blades straddling the 200mm PU Wheel (`x = ±0.034`)
   for (const side of [-1, 1]) {
+    const forkBladeGeo = createLoftedBodyShellGeo(
+      [
+        { y: -0.024, z: 0.015, rx: 0.009, ryTop: 0.018, ryBot: 0.018, pitchRad: 1.32, power: 2.8 },
+        { y: -0.082, z: 0.030, rx: 0.0085, ryTop: 0.015, ryBot: 0.015, pitchRad: 1.32, power: 2.8 },
+        { y: -0.140, z: 0.045, rx: 0.009, ryTop: 0.013, ryBot: 0.013, pitchRad: 1.32, power: 2.8 },
+      ],
+      20,
+      'side',
+      3,
+      'dome',
+    );
     helper.addPart(
       steeringGroup,
-      new THREE.BoxGeometry(0.015, 0.128, 0.032),
+      forkBladeGeo,
       frameHex,
-      [side * 0.035, -0.105, 0.034],
-      [-0.24, 0, 0],
+      [side * 0.034, 0, 0],
+      [0, 0, 0],
       0.003,
       frameTex,
       1.0,
       true,
       FINISH_SATIN_METAL,
     );
+    // Silver axle acorn cap nut
     helper.addPart(
       steeringGroup,
-      new THREE.BoxGeometry(0.017, 0.075, 0.008),
+      new THREE.CylinderGeometry(0.0085, 0.0085, 0.007, 16),
+      SCOOTER_SILVER_TRIM_HEX,
+      [side * 0.041, -0.140, 0.045],
+      [0, 0, Math.PI / 2],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
+    // Flush cyan pinstripe inlay on lower fork blade
+    const forkStripeCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.0415, -0.056, 0.023),
+      new THREE.Vector3(side * 0.0415, -0.118, 0.039),
+    ]);
+    helper.addPart(
+      steeringGroup,
+      createTubeSweepWithCapsGeo(forkStripeCurve, 12, 0.0018, 0.0024, 10, true),
       accentHex,
-      [side * 0.036, -0.105, 0.036],
-      [-0.24, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
       0,
       undefined,
       1.0,
       false,
       FINISH_GLOSS_BODY,
     );
+    // Amber Oval Mini Side Reflector on Outer Lower Fork (`Mini front reflector` in Front Elevation)
+    addLuminousScooterPart(
+      helper,
+      steeringGroup,
+      createRoundedRectExtrudeGeo(0.004, 0.017, 0.009, 0.004, 0.001, 3),
+      '#f59e0b',
+      '#d97706',
+      0.45,
+      [side * 0.0415, -0.092, 0.045],
+      [0, 0, -side * Math.PI / 2],
+    );
   }
-  // Mini Front Reflector on Fork Crown
-  addLuminousScooterPart(
-    helper,
-    steeringGroup,
-    new THREE.BoxGeometry(0.024, 0.016, 0.010),
-    pal.reflectorFront,
-    '#e0f2fe',
-    0.6,
-    [0, -0.056, 0.038],
-    [-0.18, 0, 0],
-  );
-  // Curved Satin-Charcoal Front Mudguard Fender
-  const kickFrontFender = new THREE.TorusGeometry(0.114, 0.018, 8, 16, Math.PI * 0.54);
-  kickFrontFender.rotateY(Math.PI / 2);
-  kickFrontFender.scale(1.42, 1.0, 1.0);
+
+  // Contoured Satin-Charcoal Front Mini Hugger Mudguard (`createCurvedArcShellGeo`)
   helper.addPart(
     steeringGroup,
-    kickFrontFender,
-    pal.stemCharcoal,
-    [0, -0.14, 0.045],
-    [-Math.PI * 0.16, 0, 0],
-    0.003,
+    createCurvedArcShellGeo({
+      centerY: -0.140,
+      centerZ: 0.045,
+      phiStart: 0.05,
+      phiEnd: -1.18,
+      radius: 0.111,
+      halfWidth: 0.025,
+      thickness: 0.008,
+      crownDrop: 0.009,
+      arcSegs: 22,
+      ringSegs: 16,
+    }),
+    trimCharcoal,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.002,
     undefined,
     1.0,
     true,
@@ -2594,9 +3635,9 @@ export function createPushKickScooter3D(
     PUSH_KICK_SCOOTER_SPEC.tireSectionRadiusM,
     5,
     '#ffffff',
-    pal.wheelCoreAlloy,
-    '#334155',
-    false,
+    SCOOTER_SILVER_TRIM_HEX,
+    '#343b46',
+    'none',
   );
   frontWheelGroup.name = 'PushScooterFrontWheel';
   frontWheelGroup.position.set(0, -0.14, 0.045);
@@ -2612,24 +3653,51 @@ export function createPushKickScooter3D(
   // Lower Satin-Charcoal Anodized Mast Tube (`0 .. 0.43m` along stem)
   helper.addPart(
     foldingNeckGroup,
-    new THREE.CylinderGeometry(0.022, 0.024, 0.43, 14),
-    pal.stemCharcoal,
-    [0, 0.215, 0],
+    new THREE.CylinderGeometry(0.0215, 0.0235, 0.435, 22),
+    trimCharcoal,
+    [0, 0.217, 0],
     [0, 0, 0],
-    0.004,
+    0.003,
     undefined,
     1.0,
     true,
     FINISH_DARK_ALLOY,
   );
-  // Quick-Release Height-Adjustment Collar Latch (`y = 0.435m` along stem)
+  // Compact Quick-Release Height-Adjustment Collar + Contoured Side Cam Lever (`y = 0.435m`)
   helper.addPart(
     foldingNeckGroup,
-    new THREE.CylinderGeometry(0.028, 0.028, 0.044, 14),
-    '#1e242d',
+    new THREE.CylinderGeometry(0.0265, 0.0265, 0.040, 22),
+    deepCharcoal,
     [0, 0.435, 0],
     [0, 0, 0],
-    0.003,
+    0.002,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  // Thin silver compression ring grooves on collar
+  for (const dyRing of [-0.016, 0.016]) {
+    helper.addPart(
+      foldingNeckGroup,
+      new THREE.CylinderGeometry(0.0272, 0.0272, 0.004, 22),
+      SCOOTER_SILVER_TRIM_HEX,
+      [0, 0.435 + dyRing, 0],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
+  }
+  helper.addPart(
+    foldingNeckGroup,
+    createRoundedRectExtrudeGeo(0.010, 0.032, 0.014, 0.004, 0.002, 3),
+    deepCharcoal,
+    [0.026, 0.435, -0.004],
+    [0, 0, Math.PI / 2],
+    0,
     undefined,
     1.0,
     false,
@@ -2637,11 +3705,11 @@ export function createPushKickScooter3D(
   );
   helper.addPart(
     foldingNeckGroup,
-    new THREE.BoxGeometry(0.036, 0.022, 0.038),
+    createRoundedRectExtrudeGeo(0.005, 0.016, 0.005, 0.002, 0.001, 2),
     accentHex,
-    [0.020, 0.435, 0.008],
-    [0, 0, 0],
-    0.002,
+    [0.030, 0.435, -0.008],
+    [0, 0, Math.PI / 2],
+    0,
     undefined,
     1.0,
     false,
@@ -2650,34 +3718,46 @@ export function createPushKickScooter3D(
   // Telescoping Satin-Charcoal Upper Shaft (`0.45 .. 0.70m` along stem -> `~98cm` T-bar height)
   helper.addPart(
     foldingNeckGroup,
-    new THREE.CylinderGeometry(0.0185, 0.0195, 0.27, 14),
-    '#3d4554',
+    new THREE.CylinderGeometry(0.0185, 0.0195, 0.27, 22),
+    '#434b59',
     [0, 0.575, 0],
     [0, 0, 0],
-    0.0035,
+    0.003,
     undefined,
     1.0,
     true,
     FINISH_DARK_ALLOY,
   );
 
-  // Forged Center T-Bar Stem Clamp (`y = 0.71m` along stem)
+  // Forged Rounded T-Bar Stem Clamp (`y = 0.692m` along stem)
   helper.addPart(
     foldingNeckGroup,
-    createRoundedRectExtrudeGeo(0.072, 0.056, 0.046, 0.016, 0.004),
-    pal.stemCharcoal,
-    [0, 0.688, 0],
+    createRoundedRectExtrudeGeo(0.068, 0.050, 0.044, 0.018, 0.005, 4),
+    trimCharcoal,
+    [0, 0.690, 0],
     [0, 0, 0],
-    0.004,
+    0.003,
     undefined,
     1.0,
     true,
     FINISH_DARK_ALLOY,
   );
+  helper.addPart(
+    foldingNeckGroup,
+    new THREE.CylinderGeometry(0.009, 0.009, 0.006, 16),
+    SCOOTER_SILVER_TRIM_HEX,
+    [0, 0.736, 0],
+    [0, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_SATIN_METAL,
+  );
   // Horizontal Brushed-Aluminum T-Bar (`48cm` total width)
   helper.addPart(
     foldingNeckGroup,
-    new THREE.CylinderGeometry(0.014, 0.014, PUSH_KICK_SCOOTER_SPEC.tBarWidthM, 12),
+    new THREE.CylinderGeometry(0.0135, 0.0135, PUSH_KICK_SCOOTER_SPEC.tBarWidthM, 20),
     frameHex,
     [0, 0.712, 0],
     [0, 0, Math.PI / 2],
@@ -2687,56 +3767,71 @@ export function createPushKickScooter3D(
     true,
     FINISH_SATIN_METAL,
   );
-  // Ergonomic Palm-Contoured Knurled Rubber Grips (`x = ±0.12 .. ±0.24`)
+  // Smooth Contoured Ergonomic Rubber Grips (LatheGeometry centered at `(±0.18, 0.712, 0)`)
   for (const side of [-1, 1]) {
     helper.addPart(
       foldingNeckGroup,
-      new THREE.CylinderGeometry(0.019, 0.0165, 0.126, 12),
+      createContouredErgonomicGripGeo(0.128, 0.018),
       '#ffffff',
-      [side * 0.18, 0.712, 0],
-      [0, 0, Math.PI / 2],
-      0.003,
+      [side * 0.180, 0.712, 0],
+      [0, 0, side < 0 ? Math.PI : 0],
+      0.002,
       getErgonomicGripTexture(),
       1.0,
       false,
       FINISH_RUBBER_TIRE,
     );
-    // Ergonomic palm-rest wing pad on rear side of grip
+    // Machined Dark Alloy Bar-End Plug + Silver Collar Ring
+    const endPlug = new THREE.SphereGeometry(0.019, 16, 12);
+    endPlug.scale(0.55, 1.0, 1.0);
     helper.addPart(
       foldingNeckGroup,
-      new THREE.BoxGeometry(0.095, 0.014, 0.028),
-      pal.gripDark,
-      [side * 0.188, 0.708, -0.012],
-      [0.18, 0, 0],
+      endPlug,
+      '#1b2028',
+      [side * 0.244, 0.712, 0],
+      [0, 0, 0],
       0,
-      undefined,
-      1.0,
-      false,
-      FINISH_RUBBER_TIRE,
-    );
-    helper.addPart(
-      foldingNeckGroup,
-      new THREE.CylinderGeometry(0.022, 0.019, 0.016, 12),
-      '#181c23',
-      [side * 0.242, 0.712, 0],
-      [0, 0, Math.PI / 2],
-      0.002,
       undefined,
       1.0,
       false,
       FINISH_DARK_ALLOY,
     );
+    helper.addPart(
+      foldingNeckGroup,
+      new THREE.CylinderGeometry(0.0165, 0.0165, 0.010, 18),
+      SCOOTER_SILVER_TRIM_HEX,
+      [side * 0.114, 0.712, 0],
+      [0, 0, Math.PI / 2],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_SATIN_METAL,
+    );
   }
-  // Curved Alloy Hand-Brake Lever & Bowden Brake Cable (matching Front & 3/4 views)
+  // Curved Alloy Hand-Brake Perch, Swept Lever with Ball-End, Guide Clips & Bowden Cable
+  helper.addPart(
+    foldingNeckGroup,
+    new THREE.CylinderGeometry(0.017, 0.017, 0.018, 16),
+    deepCharcoal,
+    [0.098, 0.712, 0],
+    [0, 0, Math.PI / 2],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
   const kickLeverCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0.102, 0.706, -0.016),
-    new THREE.Vector3(0.148, 0.702, -0.032),
-    new THREE.Vector3(0.196, 0.700, -0.026),
+    new THREE.Vector3(0.098, 0.708, -0.012),
+    new THREE.Vector3(0.122, 0.704, -0.028),
+    new THREE.Vector3(0.158, 0.701, -0.032),
+    new THREE.Vector3(0.194, 0.700, -0.024),
   ]);
   helper.addPart(
     foldingNeckGroup,
-    new THREE.TubeGeometry(kickLeverCurve, 10, 0.005, 6, false),
-    '#94a3b8',
+    createTubeSweepWithCapsGeo(kickLeverCurve, 18, 0.0046, 0.0066, 12, true),
+    SCOOTER_SILVER_TRIM_HEX,
     [0, 0, 0],
     [0, 0, 0],
     0,
@@ -2745,16 +3840,29 @@ export function createPushKickScooter3D(
     false,
     FINISH_SATIN_METAL,
   );
+  helper.addPart(
+    foldingNeckGroup,
+    new THREE.SphereGeometry(0.0072, 12, 10),
+    SCOOTER_SILVER_TRIM_HEX,
+    [0.195, 0.700, -0.024],
+    [0, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_SATIN_METAL,
+  );
   const cableCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0.105, 0.70, -0.018),
-    new THREE.Vector3(0.052, 0.62, 0.026),
-    new THREE.Vector3(0.016, 0.46, 0.022),
-    new THREE.Vector3(0.0, 0.22, 0.018),
+    new THREE.Vector3(0.102, 0.702, -0.016),
+    new THREE.Vector3(0.056, 0.635, 0.024),
+    new THREE.Vector3(0.022, 0.505, 0.026),
+    new THREE.Vector3(0.016, 0.320, 0.024),
+    new THREE.Vector3(0.012, 0.160, 0.024),
   ]);
   helper.addPart(
     foldingNeckGroup,
-    new THREE.TubeGeometry(cableCurve, 14, 0.0035, 6, false),
-    '#181c23',
+    createTubeSweepWithCapsGeo(cableCurve, 24, 0.0034, 0.0034, 10, false),
+    '#1b2028',
     [0, 0, 0],
     [0, 0, 0],
     0,
@@ -2763,21 +3871,38 @@ export function createPushKickScooter3D(
     false,
     FINISH_MATTE_TRIM,
   );
+  for (const clipY of [0.32, 0.52]) {
+    const clipRing = new THREE.TorusGeometry(0.0235, 0.0028, 8, 18);
+    clipRing.rotateX(Math.PI / 2);
+    helper.addPart(
+      foldingNeckGroup,
+      clipRing,
+      '#1e242d',
+      [0, clipY, 0],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_DARK_ALLOY,
+    );
+  }
 
-  // Woven Carrying Strap shown in Compact Folded State (`85cm x 32cm`, Quadrant 3 of `screen_e2bde276.png`)
+  // Woven Flat-Ribbon Carrying Strap attached directly around folded mast collars (`Quadrant 3`)
   const carryingStrapGroup = new THREE.Group();
   carryingStrapGroup.name = 'PushScooterCarryingStrap';
   deckGroup.add(carryingStrapGroup);
   const strapCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0, 0.24, 0.22),
-    new THREE.Vector3(0.012, 0.17, 0.04),
-    new THREE.Vector3(0.012, 0.16, -0.14),
-    new THREE.Vector3(0, 0.23, -0.32),
+    new THREE.Vector3(0, 0.292, 0.185),
+    new THREE.Vector3(0.016, 0.228, 0.055),
+    new THREE.Vector3(0.020, 0.205, -0.095),
+    new THREE.Vector3(0.014, 0.242, -0.235),
+    new THREE.Vector3(0, 0.324, -0.325),
   ]);
   helper.addPart(
     carryingStrapGroup,
-    new THREE.TubeGeometry(strapCurve, 16, 0.009, 6, false),
-    '#1e242d',
+    createTubeSweepWithCapsGeo(strapCurve, 26, 0.011, 0.0032, 12, false),
+    '#222730',
     [0, 0, 0],
     [0, 0, 0],
     0.002,
@@ -2786,8 +3911,26 @@ export function createPushKickScooter3D(
     false,
     FINISH_RUBBER_TIRE,
   );
+  for (const [bz, by] of [
+    [0.185, 0.292],
+    [-0.325, 0.324],
+  ] as const) {
+    const strapBand = new THREE.TorusGeometry(0.024, 0.005, 8, 18);
+    helper.addPart(
+      carryingStrapGroup,
+      strapBand,
+      deepCharcoal,
+      [0, by, bz],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_DARK_ALLOY,
+    );
+  }
 
-  // 7) Retractable Side Kickstand (`x = +0.068, y = 0.084, z = -0.05`)
+  // 7) Connected Retractable Side Kickstand (`x = +0.068, y = 0.084, z = -0.05`)
   const kickstandGroup = new THREE.Group();
   kickstandGroup.name = 'PushScooterSideKickstand';
   kickstandGroup.position.set(
@@ -2797,13 +3940,32 @@ export function createPushKickScooter3D(
   );
   deckGroup.add(kickstandGroup);
 
+  // Compact pivot lug mounted cleanly against deck underside
   helper.addPart(
     kickstandGroup,
-    new THREE.CylinderGeometry(0.007, 0.006, 0.105, 8),
-    '#333944',
-    [0.022, -0.042, -0.018],
-    [0.32, 0, -0.44],
-    0.002,
+    createRoundedRectExtrudeGeo(0.018, 0.024, 0.016, 0.006, 0.002, 3),
+    deepCharcoal,
+    [0, 0, 0],
+    [0, 0, Math.PI / 2],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  // Swept tubular kickstand leg running directly from pivot `(0,0,0)` into rubber footpad `(0.042, -0.079, -0.032)`
+  const kickLegCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.002, 0.0, 0.0),
+    new THREE.Vector3(0.022, -0.038, -0.016),
+    new THREE.Vector3(0.042, -0.079, -0.032),
+  ]);
+  helper.addPart(
+    kickstandGroup,
+    createTubeSweepWithCapsGeo(kickLegCurve, 14, 0.0055, 0.0055, 12, false),
+    trimCharcoal,
+    [0, 0, 0],
+    [0, 0, 0],
+    0,
     undefined,
     1.0,
     false,
@@ -2811,15 +3973,15 @@ export function createPushKickScooter3D(
   );
   helper.addPart(
     kickstandGroup,
-    new THREE.BoxGeometry(0.022, 0.009, 0.032),
-    '#1e2229',
-    [0.042, -0.084, -0.034],
+    createRoundedRectExtrudeGeo(0.022, 0.028, 0.007, 0.010, 0.002, 4),
+    '#1c2028',
+    [0.042, -0.0805, -0.032],
     [0, 0, 0],
     0,
     undefined,
     1.0,
     false,
-    FINISH_DARK_ALLOY,
+    FINISH_RUBBER_TIRE,
   );
 
   let currentParked = isParkedInit;
@@ -3194,7 +4356,7 @@ export function buildUrbanScooterShowroomKiosk3D(
   addShowroomUrbanHelmet(partHelper, gearRackGrp, [0.28, 1.11, 0.02], -0.15, '#334155', COL_CYAN_ACCENT);
   // Display spare spoke-core scooter wheels on lower shelf
   for (const wx of [-0.28, 0.28]) {
-    const spareWheel = buildSpokeWheelAssembly(partHelper, 0.19, 0.045, 5, '#1e2229', '#475569', '#94a3b8', true);
+    const spareWheel = buildSpokeWheelAssembly(partHelper, 0.19, 0.045, 5, '#1e2229', '#475569', '#94a3b8', 'full_front');
     spareWheel.position.set(wx, 0.80, 0);
     spareWheel.rotation.y = Math.PI / 2;
     gearRackGrp.add(spareWheel);
