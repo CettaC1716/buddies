@@ -4205,11 +4205,15 @@ export interface LoadedBlitzAssets {
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
+  cafeWorkGltf?: GLTF | null;
   playerTrackPoints: { x: number; y: number; z: number }[] | null;
   treeFoliageTex: THREE.Texture;
 }
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 40;
+export type CafeWorkAnimAction = 'idle' | 'coffee' | 'tray' | 'serve';
+let loadedCafeWorkGltf: GLTF | null = null;
+
+const BLITZ_3D_TOTAL_ASSET_TASKS = 41;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4660,8 +4664,12 @@ export async function loadAllRealBlitzAssets(
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
   const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
+  const cafeWorkGltfPromise = loadOptionalGltf('/assets/cafe-work-anims.glb').then((gltf) => {
+    loadedCafeWorkGltf = gltf;
+    return gltf;
+  });
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4723,6 +4731,7 @@ export async function loadAllRealBlitzAssets(
     idleClipPromise,
     kaiIdleClipPromise,
     hanaIdleClipPromise,
+    cafeWorkGltfPromise,
   ]).then(
     ([
       playerGltf,
@@ -4772,6 +4781,7 @@ export async function loadAllRealBlitzAssets(
       idleClip,
       kaiIdleClip,
       hanaIdleClip,
+      cafeWorkGltf,
     ]) => {
       dracoLoader.dispose();
       ktx2Loader.dispose();
@@ -4823,6 +4833,7 @@ export async function loadAllRealBlitzAssets(
         idleClip,
         kaiIdleClip,
         hanaIdleClip,
+        cafeWorkGltf,
       };
       cachedLoadedBlitzAssets = loaded;
       if (loaded.treeFoliageTex) {
@@ -10358,6 +10369,162 @@ function convertToTripoAnimeCharacterMaterial(mat: THREE.Material): THREE.Materi
   });
 }
 
+function retargetMixamoClipBetweenBindPoses(
+  clip: THREE.AnimationClip,
+  srcBindRoot: THREE.Object3D,
+  tgtBindRoot: THREE.Object3D,
+): THREE.AnimationClip {
+  srcBindRoot.updateMatrixWorld(true);
+  tgtBindRoot.updateMatrixWorld(true);
+
+  const srcByName = new Map<string, THREE.Object3D>();
+  srcBindRoot.traverse((o) => {
+    if (!o.name) return;
+    srcByName.set(o.name, o);
+    const san = THREE.PropertyBinding.sanitizeNodeName(o.name);
+    if (san && !srcByName.has(san)) srcByName.set(san, o);
+  });
+
+  const tgtOrdered: THREE.Object3D[] = [];
+  const tgtByName = new Map<string, THREE.Object3D>();
+  tgtBindRoot.traverse((o) => {
+    if (!o.name) return;
+    tgtByName.set(o.name, o);
+    const san = THREE.PropertyBinding.sanitizeNodeName(o.name);
+    if (san && !tgtByName.has(san)) tgtByName.set(san, o);
+    if (o.name.startsWith('mixamorig')) {
+      tgtOrdered.push(o);
+    }
+  });
+
+  const qA = new THREE.Quaternion();
+  const qB = new THREE.Quaternion();
+  let maxDiffRad = 0;
+  for (const tgtObj of tgtOrdered) {
+    const srcObj =
+      srcByName.get(tgtObj.name) ??
+      srcByName.get(THREE.PropertyBinding.sanitizeNodeName(tgtObj.name));
+    if (!srcObj) continue;
+    srcObj.getWorldQuaternion(qA);
+    tgtObj.getWorldQuaternion(qB);
+    maxDiffRad = Math.max(maxDiffRad, qA.angleTo(qB));
+  }
+  if (maxDiffRad < 0.01) {
+    return clip.clone();
+  }
+
+  const trackByBone = new Map<string, THREE.QuaternionKeyframeTrack>();
+  let refTimes: Float32Array | null = null;
+  for (const tr of clip.tracks) {
+    if (tr.name.endsWith('.quaternion') && tr instanceof THREE.QuaternionKeyframeTrack) {
+      const boneName = tr.name.slice(0, tr.name.length - '.quaternion'.length);
+      trackByBone.set(boneName, tr);
+      const sanBone = THREE.PropertyBinding.sanitizeNodeName(boneName);
+      if (sanBone && !trackByBone.has(sanBone)) trackByBone.set(sanBone, tr);
+      if (!refTimes || tr.times.length > refTimes.length) {
+        refTimes = tr.times as Float32Array;
+      }
+    }
+  }
+  if (!refTimes || refTimes.length === 0) {
+    return clip.clone();
+  }
+
+  const srcBindW = new Map<string, THREE.Quaternion>();
+  const tgtBindW = new Map<string, THREE.Quaternion>();
+  const outValsByBone = new Map<string, Float32Array>();
+
+  const srcArm = srcByName.get('Armature') ?? srcBindRoot;
+  const tgtArm = tgtByName.get('Armature') ?? tgtBindRoot;
+
+  for (const tgtObj of tgtOrdered) {
+    const sanName = THREE.PropertyBinding.sanitizeNodeName(tgtObj.name);
+    const srcObj = srcByName.get(tgtObj.name) ?? srcByName.get(sanName);
+    if (!srcObj) continue;
+    const sw = new THREE.Quaternion();
+    const tw = new THREE.Quaternion();
+    srcObj.getWorldQuaternion(sw);
+    tgtObj.getWorldQuaternion(tw);
+    srcBindW.set(tgtObj.name, sw);
+    tgtBindW.set(tgtObj.name, tw);
+    if (trackByBone.has(tgtObj.name) || trackByBone.has(sanName)) {
+      outValsByBone.set(tgtObj.name, new Float32Array(refTimes.length * 4));
+    }
+  }
+
+  const qSample = new THREE.Quaternion();
+  const qDelta = new THREE.Quaternion();
+  const qTgtW = new THREE.Quaternion();
+  const qTgtLocal = new THREE.Quaternion();
+
+  for (let f = 0; f < refTimes.length; f++) {
+    const srcFrameW = new Map<string, THREE.Quaternion>();
+    const tgtFrameW = new Map<string, THREE.Quaternion>();
+
+    for (const tgtObj of tgtOrdered) {
+      const nm = tgtObj.name;
+      const sanName = THREE.PropertyBinding.sanitizeNodeName(nm);
+      const srcObj = srcByName.get(nm) ?? srcByName.get(sanName);
+      if (!srcObj) continue;
+
+      const pName = tgtObj.parent?.name ?? '';
+      let srcParentW = srcFrameW.get(pName);
+      if (!srcParentW) {
+        srcParentW = new THREE.Quaternion();
+        (srcObj.parent ?? srcArm).getWorldQuaternion(srcParentW);
+      }
+      let tgtParentW = tgtFrameW.get(pName);
+      if (!tgtParentW) {
+        tgtParentW = new THREE.Quaternion();
+        (tgtObj.parent ?? tgtArm).getWorldQuaternion(tgtParentW);
+      }
+
+      const tr = trackByBone.get(nm) ?? trackByBone.get(sanName);
+      if (tr) {
+        const vals = tr.values;
+        const idx = Math.min(f, tr.times.length - 1) * 4;
+        qSample.set(vals[idx], vals[idx + 1], vals[idx + 2], vals[idx + 3]).normalize();
+      } else {
+        qSample.copy(srcObj.quaternion);
+      }
+
+      const curSrcW = srcParentW.clone().multiply(qSample).normalize();
+      srcFrameW.set(nm, curSrcW);
+
+      const sB = srcBindW.get(nm)!;
+      const tB = tgtBindW.get(nm)!;
+      qDelta.copy(sB).invert().premultiply(curSrcW);
+      qTgtW.copy(qDelta).multiply(tB).normalize();
+      tgtFrameW.set(nm, qTgtW.clone());
+
+      const outArr = outValsByBone.get(nm);
+      if (outArr) {
+        qTgtLocal.copy(tgtParentW).invert().multiply(qTgtW).normalize();
+        if (f > 0) {
+          const prevDot =
+            outArr[(f - 1) * 4] * qTgtLocal.x +
+            outArr[(f - 1) * 4 + 1] * qTgtLocal.y +
+            outArr[(f - 1) * 4 + 2] * qTgtLocal.z +
+            outArr[(f - 1) * 4 + 3] * qTgtLocal.w;
+          if (prevDot < 0) {
+            qTgtLocal.set(-qTgtLocal.x, -qTgtLocal.y, -qTgtLocal.z, -qTgtLocal.w);
+          }
+        }
+        outArr[f * 4] = qTgtLocal.x;
+        outArr[f * 4 + 1] = qTgtLocal.y;
+        outArr[f * 4 + 2] = qTgtLocal.z;
+        outArr[f * 4 + 3] = qTgtLocal.w;
+      }
+    }
+  }
+
+  const outTracks: THREE.KeyframeTrack[] = [];
+  for (const [boneName, arr] of outValsByBone.entries()) {
+    outTracks.push(new THREE.QuaternionKeyframeTrack(`${boneName}.quaternion`, refTimes.slice(), arr));
+  }
+  return new THREE.AnimationClip(clip.name, clip.duration, outTracks);
+}
+
 function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTemplate {
   const cachedCharBuddiesTemplate = cachedCharBuddiesTemplates.get(gltf);
   if (cachedCharBuddiesTemplate) {
@@ -10603,6 +10770,43 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
     if (c.tracks.length) clips.set('hana_idle.001', c);
   }
+  // Register barista cafe work animations (`cafe_coffee.001`, `cafe_tray.001`, `cafe_serve.001`),
+  // retargeted dynamically against the character template's bind pose so both Female and Male
+  // skeletons animate with zero bone twist.
+  const cafeWorkGltfSrc = loadedCafeWorkGltf ?? cachedLoadedBlitzAssets?.cafeWorkGltf ?? null;
+  if (cafeWorkGltfSrc?.animations?.length) {
+    for (const cafeClipName of ['cafe_coffee.001', 'cafe_tray.001', 'cafe_serve.001'] as const) {
+      if (clips.has(cafeClipName)) continue;
+      const rawCafeClip = cafeWorkGltfSrc.animations.find((anim) => anim.name === cafeClipName);
+      if (!rawCafeClip) continue;
+      const retargeted = retargetMixamoClipBetweenBindPoses(
+        rawCafeClip,
+        cafeWorkGltfSrc.scene,
+        gltf.scene,
+      );
+      retargeted.name = cafeClipName;
+      retargeted.tracks = retargeted.tracks.filter((track) => {
+        const dotIdx = track.name.indexOf('.');
+        const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+        return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+      });
+      for (const track of retargeted.tracks) {
+        if (/Hips\.position$/i.test(track.name)) {
+          const vals = track.values;
+          for (let i = 0; i < vals.length; i += 3) {
+            vals[i] = hipsBindX;
+            if (!Number.isFinite(vals[i + 1]) || vals[i + 1] > maxAllowedHipsY) {
+              vals[i + 1] = hipsBindY * 0.62;
+            } else if (vals[i + 1] < 0.05) {
+              vals[i + 1] = 0.06;
+            }
+            vals[i + 2] = hipsBindZ;
+          }
+        }
+      }
+      if (retargeted.tracks.length) clips.set(cafeClipName, retargeted);
+    }
+  }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
     clips.set('fire.001', fallbackFireClip);
@@ -10733,7 +10937,8 @@ function configureCharBuddiesClipAction(act: THREE.AnimationAction, clipName: st
     clipName === 'rifle_turn_and_kick.001' ||
     clipName === 'dying.001' ||
     clipName === 'death_from_right.001' ||
-    clipName === 'death_from_back_headshot.001'
+    clipName === 'death_from_back_headshot.001' ||
+    clipName === 'cafe_serve.001'
   ) {
     act.setLoop(THREE.LoopOnce, 1);
     act.clampWhenFinished = true;
@@ -11669,6 +11874,7 @@ function stepCharBuddiesGlbRigController(
   isDriving = false,
   isSleeping = false,
   scooterRidePose: ScooterRiderRigPose | null = null,
+  cafeWorkAction: CafeWorkAnimAction = 'idle',
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -12069,6 +12275,20 @@ function stepCharBuddiesGlbRigController(
       targetClip = 'run.001';
       timeScale = 1.0;
     }
+  } else if (
+    !carryingCrate &&
+    cafeWorkAction !== 'idle' &&
+    ((cafeWorkAction === 'coffee' && ctrl.clips.has('cafe_coffee.001')) ||
+      (cafeWorkAction === 'tray' && ctrl.clips.has('cafe_tray.001')) ||
+      (cafeWorkAction === 'serve' && ctrl.clips.has('cafe_serve.001')))
+  ) {
+    targetClip =
+      cafeWorkAction === 'coffee'
+        ? 'cafe_coffee.001'
+        : cafeWorkAction === 'tray'
+          ? 'cafe_tray.001'
+          : 'cafe_serve.001';
+    timeScale = cafeWorkAction === 'coffee' ? 1.15 : 1.0;
   } else if (!carryingCrate && weaponId === 'fishing_rod') {
     if (ctrl.fishingCastTimer > 0 && ctrl.clips.has('fishing_cast.001')) {
       targetClip = 'fishing_cast.001';
@@ -12154,8 +12374,19 @@ function stepCharBuddiesGlbRigController(
     weaponId === 'fishing_rod' &&
     Boolean(rig.fishingPoseState && rig.fishingPoseState.phase !== 'idle');
   const hasScooterPose = Boolean(scooterRidePose && scooterRidePose.blend > 0.001);
+  const isCafeWorkPose =
+    !isMoving &&
+    !carryingCrate &&
+    (targetClip === 'cafe_coffee.001' ||
+      targetClip === 'cafe_tray.001' ||
+      targetClip === 'cafe_serve.001');
   const minStepInterval =
-    isMoving || ctrl.turnInPlaceTimer > 0 || jumpOffset > 0.05 || isActiveFishingAction || hasScooterPose
+    isMoving ||
+    ctrl.turnInPlaceTimer > 0 ||
+    jumpOffset > 0.05 ||
+    isActiveFishingAction ||
+    hasScooterPose ||
+    isCafeWorkPose
       ? 0.008
       : 0.028;
   const shouldStepMixer =
@@ -12165,7 +12396,8 @@ function stepCharBuddiesGlbRigController(
     punchTimer > 0 ||
     kickTimer > 0 ||
     isActiveFishingAction ||
-    hasScooterPose;
+    hasScooterPose ||
+    isCafeWorkPose;
   if (shouldStepMixer && rawDt >= 0.002) {
     ctrl.lastStepTimeMs = nowMs;
     ctrl.mixer.update(stepDt);
@@ -12181,7 +12413,12 @@ function stepCharBuddiesGlbRigController(
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
   const isSeatedOrPiloting =
-    Boolean(rig.isSeatedRiderRef) || isDriving || isSitting || isSleeping || Boolean(scooterRidePose);
+    Boolean(rig.isSeatedRiderRef) ||
+    isDriving ||
+    isSitting ||
+    isSleeping ||
+    Boolean(scooterRidePose) ||
+    isCafeWorkPose;
   if (!isSeatedOrPiloting) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving
@@ -12500,6 +12737,7 @@ export function updateCharacterWeaponStance(
   isDriving = false,
   isSleeping = false,
   scooterRidePose: ScooterRiderRigPose | null = null,
+  cafeWorkAction: CafeWorkAnimAction = 'idle',
 ) {
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
@@ -12524,12 +12762,14 @@ export function updateCharacterWeaponStance(
       isDriving,
       isSleeping,
       scooterRidePose,
+      cafeWorkAction,
     );
   }
   if (
     !isAlive ||
     Boolean(rig.isSeatedRiderRef) ||
     Boolean(scooterRidePose && scooterRidePose.blend > 0.001) ||
+    (!isMoving && jumpOffset <= 0.05 && !carryingCrate && cafeWorkAction !== 'idle') ||
     (isDriving && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('driving.001')) ||
     (isSitting && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sitting.001')) ||
     (isSleeping && !isMoving && jumpOffset <= 0.05 && !carryingCrate && rig.customGlbController?.clips.has('sleeping.001'))
@@ -12537,13 +12777,30 @@ export function updateCharacterWeaponStance(
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;
     rig.bazookaBackblastGroup.visible = false;
-    if (scooterRidePose && scooterRidePose.blend > 0.001 && !rig.customGlbController) {
-      const charRightArm = rig.leftArmPivot;
-      const charLeftArm = rig.rightArmPivot;
-      charRightArm.position.set(-0.52, 1.38, 0.18);
-      charLeftArm.position.set(0.52, 1.38, 0.18);
-      charRightArm.rotation.set(scooterRidePose.rightArmPitchX, 0.12, -0.08);
-      charLeftArm.rotation.set(scooterRidePose.leftArmPitchX, -0.12, 0.08);
+    if (!rig.customGlbController) {
+      if (scooterRidePose && scooterRidePose.blend > 0.001) {
+        const charRightArm = rig.leftArmPivot;
+        const charLeftArm = rig.rightArmPivot;
+        charRightArm.position.set(-0.52, 1.38, 0.18);
+        charLeftArm.position.set(0.52, 1.38, 0.18);
+        charRightArm.rotation.set(scooterRidePose.rightArmPitchX, 0.12, -0.08);
+        charLeftArm.rotation.set(scooterRidePose.leftArmPitchX, -0.12, 0.08);
+      } else if (!isMoving && cafeWorkAction !== 'idle') {
+        const charRightArm = rig.leftArmPivot;
+        const charLeftArm = rig.rightArmPivot;
+        const pulse = Math.sin(performance.now() * 0.008) * 0.14;
+        if (cafeWorkAction === 'serve') {
+          charRightArm.position.set(-0.48, 1.34, 0.24);
+          charLeftArm.position.set(0.48, 1.34, 0.24);
+          charRightArm.rotation.set(-1.12, 0.24, -0.08);
+          charLeftArm.rotation.set(-1.08, -0.24, 0.08);
+        } else {
+          charRightArm.position.set(-0.48, 1.36, 0.18);
+          charLeftArm.position.set(0.48, 1.36, 0.18);
+          charRightArm.rotation.set(-0.98 + pulse, 0.28, -0.1);
+          charLeftArm.rotation.set(-0.92 - pulse * 0.5, -0.28, 0.1);
+        }
+      }
     }
     return;
   }

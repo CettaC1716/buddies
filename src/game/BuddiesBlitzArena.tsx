@@ -264,6 +264,7 @@ import {
   getDefaultCharacterGender,
   populateAr99AssaultFromGlb,
   updateCharacterWeaponStance,
+  type CafeWorkAnimAction,
   BuddyCharacterRig,
   BlitzWeaponId,
   stepBlitzTankTracks,
@@ -14893,7 +14894,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           e.clientX - cafeVisitOrbitDragStart.x,
           e.clientY - cafeVisitOrbitDragStart.y,
         );
-        if (dragDist < 6 && cafeWorkShiftActive && renderer.domElement) {
+        if (dragDist < 6 && cafeWorkShiftActive && cafeWorkAnimSync.phase === 'idle' && renderer.domElement) {
           const rect = renderer.domElement.getBoundingClientRect();
           const projectApplianceScreenDist = (wx: number, wy: number, wz: number) => {
             scratchPickupPt.set(wx, wy, wz).project(camera);
@@ -16155,11 +16156,73 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
     };
 
+    type CafeWorkChoreoPhase = 'idle' | 'prep_move' | 'prep_act' | 'serve_move' | 'serve_act';
+    const cafeWorkAnimSync: {
+      phase: CafeWorkChoreoPhase;
+      category: 'drink' | 'pastry';
+      itemName: string;
+      elapsedSec: number;
+      targetX: number;
+      targetZ: number;
+      lookAtX: number;
+      lookAtZ: number;
+    } = {
+      phase: 'idle',
+      category: 'drink',
+      itemName: '',
+      elapsedSec: 0,
+      targetX: CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
+      targetZ: CAFE_INTERIOR_BOUNDS.workShiftMaxZ,
+      lookAtX: CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
+      lookAtZ: CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
+    };
+
+    const onStartCafeWorkAnim = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ category?: 'drink' | 'pastry'; itemName?: string }>
+      ).detail;
+      if (!cafeWorkShiftActive || npcCameraMode !== 'cafe_interior' || !playerUnit) {
+        cafeWorkAnimSync.phase = 'idle';
+        window.dispatchEvent(new CustomEvent('complete-cafe-work-order'));
+        return;
+      }
+      const category: 'drink' | 'pastry' =
+        detail?.category === 'pastry' ? 'pastry' : 'drink';
+      const appliance =
+        category === 'drink'
+          ? CAFE_APPLIANCE_TARGETS.drinkEspressoMachine
+          : CAFE_APPLIANCE_TARGETS.pastryDisplayCase;
+      activeCafeSeatedSpot = null;
+      playerUnit.isSitting = false;
+      playerUnit.isSleeping = false;
+      playerUnit.isDriving = false;
+      playerUnit.saluteTimer = 0;
+      playerUnit.punchTimer = 0;
+      playerUnit.kickTimer = 0;
+      cafeWorkAnimSync.phase = 'prep_move';
+      cafeWorkAnimSync.category = category;
+      cafeWorkAnimSync.itemName = detail?.itemName ?? '';
+      cafeWorkAnimSync.elapsedSec = 0;
+      cafeWorkAnimSync.targetX = appliance.standX;
+      cafeWorkAnimSync.targetZ = Math.min(CAFE_INTERIOR_BOUNDS.workShiftMaxZ, appliance.standZ);
+      cafeWorkAnimSync.lookAtX = appliance.x;
+      cafeWorkAnimSync.lookAtZ = appliance.z;
+    };
+
+    const onCancelCafeWorkAnim = () => {
+      cafeWorkAnimSync.phase = 'idle';
+      cafeWorkAnimSync.elapsedSec = 0;
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
+    window.addEventListener('start-cafe-work-anim', onStartCafeWorkAnim);
+    window.addEventListener('cancel-cafe-work-anim', onCancelCafeWorkAnim);
+    window.addEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
+    window.addEventListener('exit-glasshouse-cafe', onCancelCafeWorkAnim);
     window.addEventListener('mobile-joystick-input', onMobileJoystickInput);
     window.addEventListener('blur', onWindowBlurOrVisibilityReset);
     document.addEventListener('visibilitychange', onWindowBlurOrVisibilityReset);
@@ -19336,11 +19399,109 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
             const inputLen = Math.hypot(moveX, moveZ);
             const isFishingActive = shorelineFishingSync.phase !== 'idle';
+            if (
+              cafeWorkAnimSync.phase !== 'idle' &&
+              (!cafeWorkShiftActive || npcCameraMode !== 'cafe_interior')
+            ) {
+              cafeWorkAnimSync.phase = 'idle';
+              cafeWorkAnimSync.elapsedSec = 0;
+              window.dispatchEvent(
+                new CustomEvent('cafe-work-anim-stage', { detail: { stage: 'idle' } }),
+              );
+            }
+            const isCafeWorkAnimActive = cafeWorkAnimSync.phase !== 'idle';
             if (isFishingActive) {
               playerUnit.vx = 0;
               playerUnit.vz = 0;
               if (shorelineFishingSync.hasLockedCastYaw) {
                 playerUnit.yaw = shorelineFishingSync.castOriginYaw;
+              }
+            } else if (isCafeWorkAnimActive) {
+              cafeWorkAnimSync.elapsedSec += dt;
+              if (
+                cafeWorkAnimSync.phase === 'prep_move' ||
+                cafeWorkAnimSync.phase === 'serve_move'
+              ) {
+                const dx = cafeWorkAnimSync.targetX - playerUnit.x;
+                const dz = cafeWorkAnimSync.targetZ - playerUnit.z;
+                const dist = Math.hypot(dx, dz);
+                const moveStep = 3.2 * dt;
+                if (dist <= moveStep + 0.03 || cafeWorkAnimSync.elapsedSec >= 1.5) {
+                  playerUnit.x = cafeWorkAnimSync.targetX;
+                  playerUnit.z = cafeWorkAnimSync.targetZ;
+                  playerUnit.vx = 0;
+                  playerUnit.vz = 0;
+                  playerUnit.yaw = Math.atan2(
+                    -(cafeWorkAnimSync.lookAtZ - cafeWorkAnimSync.targetZ),
+                    cafeWorkAnimSync.lookAtX - cafeWorkAnimSync.targetX,
+                  );
+                  playerUnit.visualYaw = playerUnit.yaw;
+                  if (cafeWorkAnimSync.phase === 'prep_move') {
+                    cafeWorkAnimSync.phase = 'prep_act';
+                    cafeWorkAnimSync.elapsedSec = 0;
+                    window.dispatchEvent(
+                      new CustomEvent('cafe-work-anim-stage', {
+                        detail: {
+                          stage: 'preparing',
+                          itemName: cafeWorkAnimSync.itemName,
+                          category: cafeWorkAnimSync.category,
+                        },
+                      }),
+                    );
+                  } else {
+                    cafeWorkAnimSync.phase = 'serve_act';
+                    cafeWorkAnimSync.elapsedSec = 0;
+                    window.dispatchEvent(
+                      new CustomEvent('cafe-work-anim-stage', {
+                        detail: {
+                          stage: 'serving',
+                          itemName: cafeWorkAnimSync.itemName,
+                          category: cafeWorkAnimSync.category,
+                        },
+                      }),
+                    );
+                  }
+                } else {
+                  playerUnit.vx = (dx / dist) * 3.5;
+                  playerUnit.vz = (dz / dist) * 3.5;
+                  playerUnit.x = wrapPlanetCoord(playerUnit.x + playerUnit.vx * dt);
+                  playerUnit.z = wrapPlanetCoord(playerUnit.z + playerUnit.vz * dt);
+                  playerUnit.yaw = Math.atan2(-dz, dx);
+                }
+              } else {
+                playerUnit.x = cafeWorkAnimSync.targetX;
+                playerUnit.z = cafeWorkAnimSync.targetZ;
+                playerUnit.vx = 0;
+                playerUnit.vz = 0;
+                playerUnit.yaw = Math.atan2(
+                  -(cafeWorkAnimSync.lookAtZ - cafeWorkAnimSync.targetZ),
+                  cafeWorkAnimSync.lookAtX - cafeWorkAnimSync.targetX,
+                );
+                playerUnit.visualYaw = playerUnit.yaw;
+                if (cafeWorkAnimSync.phase === 'prep_act' && cafeWorkAnimSync.elapsedSec >= 2.25) {
+                  cafeWorkAnimSync.phase = 'serve_move';
+                  cafeWorkAnimSync.elapsedSec = 0;
+                  cafeWorkAnimSync.targetX = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
+                  cafeWorkAnimSync.targetZ = CAFE_INTERIOR_BOUNDS.workShiftMaxZ;
+                  cafeWorkAnimSync.lookAtX = CAFE_INTERIOR_BOUNDS.baristaCounterFrontX;
+                  cafeWorkAnimSync.lookAtZ = CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ;
+                  window.dispatchEvent(
+                    new CustomEvent('cafe-work-anim-stage', {
+                      detail: {
+                        stage: 'moving',
+                        itemName: cafeWorkAnimSync.itemName,
+                        category: cafeWorkAnimSync.category,
+                      },
+                    }),
+                  );
+                } else if (
+                  cafeWorkAnimSync.phase === 'serve_act' &&
+                  cafeWorkAnimSync.elapsedSec >= 2.25
+                ) {
+                  cafeWorkAnimSync.phase = 'idle';
+                  cafeWorkAnimSync.elapsedSec = 0;
+                  window.dispatchEvent(new CustomEvent('complete-cafe-work-order'));
+                }
               }
             } else if (inputLen > 0.01) {
               if (activeCafeSeatedSpot) {
@@ -19520,6 +19681,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               if (shorelineFishingSync.hasLockedCastYaw) {
                 playerUnit.yaw = shorelineFishingSync.castOriginYaw;
               }
+            } else if (isCafeWorkAnimActive) {
+              // Preserve barista choreography yaw facing appliance or customer.
             } else if (
               npcCameraMode === 'house_visit' ||
               npcCameraMode === 'house_interior' ||
@@ -20902,6 +21065,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 b.bodyGroup.rotation.set(0, b.yaw + Math.PI / 2, 0);
               }
             }
+            const unitCafeWorkAction: CafeWorkAnimAction = b.isPlayer
+              ? cafeWorkAnimSync.phase === 'prep_act'
+                ? cafeWorkAnimSync.category === 'pastry'
+                  ? 'tray'
+                  : 'coffee'
+                : cafeWorkAnimSync.phase === 'serve_act'
+                  ? 'serve'
+                  : 'idle'
+              : 'idle';
             if (b.isPlayer || b.root.visible) {
               updateCharacterWeaponStance(
                 b.rig,
@@ -20926,6 +21098,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitIsDriving,
                 unitIsSleeping,
                 scooterPose,
+                unitCafeWorkAction,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -23464,9 +23637,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   nearSessionState.claimedTeam === playerUnit.team &&
                   nearSessionState.claimedPlotIndex !== null,
                 isCafeWorker: cafeWorkShiftActive,
-                cafePreparing: false,
+                cafePreparing: cafeWorkAnimSync.phase !== 'idle',
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
-                emoteClip: '',
+                emoteClip:
+                  cafeWorkAnimSync.phase === 'prep_act'
+                    ? cafeWorkAnimSync.category === 'pastry'
+                      ? 'cafe:tray'
+                      : 'cafe:coffee'
+                    : cafeWorkAnimSync.phase === 'serve_act'
+                      ? 'cafe:serve'
+                      : '',
                 chatBubbleText: curChat,
               },
               zoneOrChatChanged,
@@ -23764,6 +23944,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             castProgress: 1,
           };
 
+          const peerCafeWorkAction: CafeWorkAnimAction =
+            peer.emoteClip === 'cafe:coffee'
+              ? 'coffee'
+              : peer.emoteClip === 'cafe:tray'
+                ? 'tray'
+                : peer.emoteClip === 'cafe:serve'
+                  ? 'serve'
+                  : 'idle';
           if (distToPeer <= 52.0) {
             updateCharacterWeaponStance(
               av.rig,
@@ -23788,6 +23976,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.isDriving,
               false,
               peer.scooterKind ? av.scooterPose : null,
+              peerCafeWorkAction,
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -28560,6 +28749,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
       window.removeEventListener('shoreline-fishing-sync', onShorelineFishingSync);
       window.removeEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
+      window.removeEventListener('start-cafe-work-anim', onStartCafeWorkAnim);
+      window.removeEventListener('cancel-cafe-work-anim', onCancelCafeWorkAnim);
+      window.removeEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
+      window.removeEventListener('exit-glasshouse-cafe', onCancelCafeWorkAnim);
       window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
       window.removeEventListener('set-property-pinpoint', onSetPropertyPinpoint);
       window.removeEventListener('set-kai-tutorial', onSetKaiTutorial);

@@ -720,6 +720,17 @@ export default function App() {
   const [cafeShiftState, setCafeShiftState] = useState<CafeWorkShiftState>(() =>
     createInitialCafeWorkShiftState(),
   );
+  const [cafePrepStatus, setCafePrepStatus] = useState<{
+    stage: 'preparing' | 'moving' | 'serving';
+    itemName: string;
+    category: 'drink' | 'pastry';
+  } | null>(null);
+  const cafePrepStatusRef = useRef<{
+    stage: 'preparing' | 'moving' | 'serving';
+    itemName: string;
+    category: 'drink' | 'pastry';
+  } | null>(null);
+  cafePrepStatusRef.current = cafePrepStatus;
   const [xpCelebrationBanner, setXpCelebrationBanner] = useState<{
     id: number;
     xpGained: number;
@@ -3049,6 +3060,9 @@ export default function App() {
     }
     const countdownTimer = window.setInterval(() => {
       setCafeShiftRemainingSec((prevSec) => {
+        if (cafePrepStatusRef.current) {
+          return prevSec;
+        }
         if (prevSec <= 1) {
           soundEngine.playHit();
           setActiveCafeModal('none');
@@ -3090,6 +3104,9 @@ export default function App() {
 
   const handlePrepareCafeOrder = useCallback(
     (selectedItem: CafeMenuItemSpec): { ok: boolean; message: string } => {
+      if (cafePrepStatusRef.current) {
+        return { ok: false, message: 'Order sedang disiapkan...' };
+      }
       const currentOrder = cafeShiftState.activeOrder;
       if (!cafeShiftState.isWorking || !currentOrder) {
         soundEngine.playHit();
@@ -3100,12 +3117,82 @@ export default function App() {
         return { ok: false, message: `Customer ordered ${currentOrder.item.name}` };
       }
       soundEngine.playUiConfirm();
-      handleServeActiveCafeOrder();
       setActiveCafeModal('none');
-      return { ok: true, message: 'Order prepared' };
+      setCafePrepStatus({
+        stage: 'preparing',
+        itemName: selectedItem.name,
+        category: selectedItem.category,
+      });
+      window.dispatchEvent(
+        new CustomEvent('start-cafe-work-anim', {
+          detail: {
+            category: selectedItem.category,
+            itemName: selectedItem.name,
+          },
+        }),
+      );
+      return { ok: true, message: 'Preparing order...' };
     },
-    [cafeShiftState.isWorking, cafeShiftState.activeOrder, handleServeActiveCafeOrder],
+    [cafeShiftState.isWorking, cafeShiftState.activeOrder],
   );
+
+  useEffect(() => {
+    const onCafeAnimStage = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          stage?: 'preparing' | 'moving' | 'serving' | 'idle';
+          itemName?: string;
+          category?: 'drink' | 'pastry';
+        }>
+      ).detail;
+      if (!detail || detail.stage === 'idle') {
+        setCafePrepStatus(null);
+        return;
+      }
+      if (detail.stage === 'preparing' || detail.stage === 'moving' || detail.stage === 'serving') {
+        const nextStage = detail.stage;
+        setCafePrepStatus((prev) => ({
+          stage: nextStage,
+          itemName: detail.itemName || prev?.itemName || 'Order',
+          category: detail.category ?? prev?.category ?? 'drink',
+        }));
+      }
+    };
+    const onCompleteCafeWorkOrder = () => {
+      setCafePrepStatus(null);
+      handleServeActiveCafeOrder();
+    };
+    const onCancelCafeWork = () => {
+      setCafePrepStatus(null);
+      window.dispatchEvent(new CustomEvent('cancel-cafe-work-anim'));
+    };
+    window.addEventListener('cafe-work-anim-stage', onCafeAnimStage);
+    window.addEventListener('complete-cafe-work-order', onCompleteCafeWorkOrder);
+    window.addEventListener('stop-cafe-work-shift', onCancelCafeWork);
+    window.addEventListener('exit-glasshouse-cafe', onCancelCafeWork);
+    return () => {
+      window.removeEventListener('cafe-work-anim-stage', onCafeAnimStage);
+      window.removeEventListener('complete-cafe-work-order', onCompleteCafeWorkOrder);
+      window.removeEventListener('stop-cafe-work-shift', onCancelCafeWork);
+      window.removeEventListener('exit-glasshouse-cafe', onCancelCafeWork);
+    };
+  }, [handleServeActiveCafeOrder]);
+
+  useEffect(() => {
+    if (
+      cafePrepStatus &&
+      (activeCafeModal === 'prep_drink' || activeCafeModal === 'prep_pastry')
+    ) {
+      setActiveCafeModal('none');
+    }
+  }, [cafePrepStatus, activeCafeModal]);
+
+  useEffect(() => {
+    if (!isInsideGlasshouseCafe || !cafeShiftState.isWorking) {
+      setCafePrepStatus(null);
+      window.dispatchEvent(new CustomEvent('cancel-cafe-work-anim'));
+    }
+  }, [isInsideGlasshouseCafe, cafeShiftState.isWorking]);
 
   const handlePurchaseCafeItem = useCallback(
     (item: CafeMenuItemSpec): { ok: boolean; message: string } => {
@@ -11506,6 +11593,23 @@ export default function App() {
         activeOrder={cafeShiftState.activeOrder}
         onClose={() => setActiveCafeModal('none')}
       />
+      {isInsideGlasshouseCafe && cafeShiftState.isWorking && cafePrepStatus && (
+        <div
+          className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2.5 rounded-full border border-amber-300/70 bg-slate-950/92 px-4 py-2 text-xs font-extrabold tracking-wide text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.45)] backdrop-blur-md"
+          data-testid="cafe-work-prep-status"
+        >
+          <span className="inline-block h-2.5 w-2.5 animate-ping rounded-full bg-amber-400" />
+          <span>
+            {cafePrepStatus.stage === 'serving'
+              ? `Menyajikan ${cafePrepStatus.itemName} ke counter...`
+              : cafePrepStatus.stage === 'moving'
+                ? `Membawa ${cafePrepStatus.itemName} ke counter...`
+                : cafePrepStatus.category === 'pastry'
+                  ? `Menata ${cafePrepStatus.itemName}...`
+                  : `Membuat ${cafePrepStatus.itemName}...`}
+          </span>
+        </div>
+      )}
       {(() => {
         const isDockBlockedByModal =
           gameState !== 'playing' ||
@@ -11523,6 +11627,7 @@ export default function App() {
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none' ||
           activeCafeModal !== 'none' ||
+          Boolean(cafePrepStatus) ||
           Boolean(tramRideCutsceneUi?.active);
 
         const activeSelectedTarget =

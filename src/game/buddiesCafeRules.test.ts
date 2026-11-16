@@ -1158,3 +1158,65 @@ test('ambient NPC nametag quads set their world rotation to camera world rotatio
     }
   }
 });
+
+test('cafe-work-anims.glb contains retargetable drink, tray, and serve Mixamo clips within barista floor bounds', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { CAFE_APPLIANCE_TARGETS } = await import('./buddiesCafeRules');
+
+  // Verify appliance standby targets used by cafe work choreography lie cleanly on barista floor
+  for (const target of [
+    CAFE_APPLIANCE_TARGETS.drinkEspressoMachine,
+    CAFE_APPLIANCE_TARGETS.pastryDisplayCase,
+  ]) {
+    assert.ok(
+      target.standX >= CAFE_INTERIOR_BOUNDS.workShiftMinX &&
+        target.standX <= CAFE_INTERIOR_BOUNDS.workShiftMaxX,
+      `standX=${target.standX} out of barista floor X bounds`,
+    );
+    const clampedZ = Math.min(CAFE_INTERIOR_BOUNDS.workShiftMaxZ, target.standZ);
+    assert.ok(
+      clampedZ >= CAFE_INTERIOR_BOUNDS.workShiftMinZ &&
+        clampedZ <= CAFE_INTERIOR_BOUNDS.workShiftMaxZ,
+      `clampedZ=${clampedZ} out of barista floor Z bounds`,
+    );
+  }
+
+  // Parse GLB JSON chunk directly in Node to verify embedded Mixamo reference rig and 3 barista clips
+  const glbPath = path.resolve(process.cwd(), 'public/assets/cafe-work-anims.glb');
+  assert.ok(fs.existsSync(glbPath), `Missing ${glbPath}`);
+  const buf = fs.readFileSync(glbPath);
+  const magic = buf.readUInt32LE(0);
+  assert.equal(magic, 0x46546c67, 'Invalid glTF magic header');
+  const jsonLen = buf.readUInt32LE(12);
+  const jsonType = buf.readUInt32LE(16);
+  assert.equal(jsonType, 0x4e4f534a, 'Expected JSON chunk at offset 12');
+  const gltfJson = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8')) as {
+    nodes?: Array<{ name?: string }>;
+    animations?: Array<{ name?: string; channels?: unknown[]; samplers?: Array<{ input: number }> }>;
+    accessors?: Array<{ max?: number[]; min?: number[] }>;
+  };
+
+  const nodeNames = new Set((gltfJson.nodes ?? []).map((n) => n.name ?? ''));
+  for (const bone of [
+    'Armature',
+    'mixamorig:Hips',
+    'mixamorig:Spine2',
+    'mixamorig:LeftHand',
+    'mixamorig:RightHand',
+    'mixamorig:RightHandThumb1',
+    'mixamorig:RightHandIndex1',
+  ]) {
+    assert.ok(nodeNames.has(bone), `Missing skeleton reference node ${bone}`);
+  }
+
+  const animMap = new Map((gltfJson.animations ?? []).map((a) => [a.name ?? '', a]));
+  for (const clipName of ['cafe_coffee.001', 'cafe_tray.001', 'cafe_serve.001']) {
+    const anim = animMap.get(clipName);
+    assert.ok(anim, `Missing cafe barista animation clip ${clipName}`);
+    assert.ok((anim.channels?.length ?? 0) >= 40, `Expected full-body channels on ${clipName}`);
+    const timeAccessor = anim.samplers?.[0] ? gltfJson.accessors?.[anim.samplers[0].input] : undefined;
+    const duration = timeAccessor?.max?.[0] ?? 0;
+    assert.ok(duration > 2.0, `Unexpectedly short duration=${duration}s on ${clipName}`);
+  }
+});
