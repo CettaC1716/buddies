@@ -108,18 +108,26 @@ import {
   MERCHANT_CATALOG_ITEMS,
 } from './game/buddiesMerchantPricing';
 import {
+  CAFE_ITEM_CONSUME_DURATION_MS,
+  advanceCafeConsumerState,
   applyPlayerXpGain,
   computeLevelProgress,
+  createInitialCafeConsumerState,
   createInitialCafeWorkShiftState,
+  getCafeConsumerRemainingSummary,
   joinCafeWorkShiftQueue,
   leaveCafeWorkShiftQueue,
   purchaseCafeMenuItem,
+  purchaseCafeOrderBatch,
   serveActiveCafeOrder,
   stepOtherActiveCafeWorkerServe,
   toggleSimulatedOtherCafeWorker,
+  type CafeBatchOrderEntry,
+  type CafeConsumerQueueState,
   type CafeMenuItemSpec,
   type CafeWorkShiftState,
 } from './game/buddiesCafeRules';
+import { CafeMenuItemArtwork } from './components/GlasshouseCafeMenuArtwork';
 import {
   CafeOrderNotificationBellButton,
   CafeOrderSlideBanner,
@@ -731,6 +739,12 @@ export default function App() {
     category: 'drink' | 'pastry';
   } | null>(null);
   cafePrepStatusRef.current = cafePrepStatus;
+  const [cafeConsumerState, setCafeConsumerState] = useState<CafeConsumerQueueState>(() =>
+    createInitialCafeConsumerState(),
+  );
+  const cafeConsumerStateRef = useRef<CafeConsumerQueueState>(cafeConsumerState);
+  cafeConsumerStateRef.current = cafeConsumerState;
+  const [cafeConsumerTickMs, setCafeConsumerTickMs] = useState<number>(() => Date.now());
   const [xpCelebrationBanner, setXpCelebrationBanner] = useState<{
     id: number;
     xpGained: number;
@@ -3194,34 +3208,105 @@ export default function App() {
     }
   }, [isInsideGlasshouseCafe, cafeShiftState.isWorking]);
 
-  const handlePurchaseCafeItem = useCallback(
-    (item: CafeMenuItemSpec): { ok: boolean; message: string } => {
-      const res = purchaseCafeMenuItem(item.id, hudRef.current.gold);
-      if (!res.purchased || !res.item) {
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('cafe-consume-state', {
+        detail: { itemId: cafeConsumerState.activeItem?.id ?? null },
+      }),
+    );
+  }, [cafeConsumerState.activeItem]);
+
+  useEffect(() => {
+    if (!cafeConsumerState.activeItem) return;
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setCafeConsumerTickMs(now);
+      setCafeConsumerState((prev) => advanceCafeConsumerState(prev, now).nextState);
+    }, 200);
+    return () => window.clearInterval(intervalId);
+  }, [cafeConsumerState.activeItem]);
+
+  useEffect(() => {
+    if (cafeShiftState.isWorking || hud.worldMode === 'warzone') {
+      setCafeConsumerState((prev) => (prev.activeItem ? createInitialCafeConsumerState() : prev));
+    }
+  }, [cafeShiftState.isWorking, hud.worldMode]);
+
+  const cafeConsumerSummary = getCafeConsumerRemainingSummary(
+    cafeConsumerState,
+    cafeConsumerTickMs,
+  );
+
+  const handlePurchaseCafeBatch = useCallback(
+    (entries: ReadonlyArray<CafeBatchOrderEntry>): { ok: boolean; message: string } => {
+      const now = Date.now();
+      const res = purchaseCafeOrderBatch(
+        entries,
+        hudRef.current.gold,
+        cafeConsumerStateRef.current,
+        now,
+      );
+      if (!res.purchased) {
         soundEngine.playHit();
-        return {
-          ok: false,
-          message: `Not enough LUL! Need ${item.priceLul} LUL (work a shift or cash out at the ATM).`,
-        };
+        if (res.reason === 'still_consuming') {
+          const activeName = res.nextConsumerState.activeItem?.name ?? 'pesananmu';
+          return {
+            ok: false,
+            message: `Habiskan ${activeName} di tangan dulu sebelum memesan lagi!`,
+          };
+        }
+        if (res.reason === 'insufficient_lul') {
+          return {
+            ok: false,
+            message: `Not enough LUL! Need ${res.totalPriceLul} LUL (work a shift or cash out at the ATM).`,
+          };
+        }
+        return { ok: false, message: 'Pilih minimal 1 menu untuk dipesan.' };
       }
+
       soundEngine.playUiConfirm();
       soundEngine.playPickup();
-      dispatchBuddyAction(`adjustPlayerLul:${-res.item.priceLul}`);
-      setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.item!.priceLul) }));
+      setCafeConsumerTickMs(now);
+      setCafeConsumerState(res.nextConsumerState);
+      dispatchBuddyAction(`adjustPlayerLul:${-res.totalPriceLul}`);
+      setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.totalPriceLul) }));
       const lulBuyerAccount = hudRef.current.nearWalletId || '';
       if (lulBuyerAccount) {
         void syncPlayerBalancesToSupabase({
           nearAccountId: lulBuyerAccount,
-          lulBalance: Math.max(0, hudRef.current.gold - res.item.priceLul),
+          lulBalance: Math.max(0, hudRef.current.gold - res.totalPriceLul),
           cyonBalance,
           respiteBalance,
         });
       }
-      grantPlayerXp(res.xpGained, `ORDER ${res.item.name.toUpperCase()}`);
-      dispatchBuddyAction(`socialTalk:Enjoying ${res.item.name} (+${res.xpGained} XP!)`);
-      return { ok: true, message: `Ordered ${res.item.name}! +${res.xpGained} XP` };
+      const orderTitle =
+        res.items.length > 1
+          ? `BATCH (${res.items.length} MENU)`
+          : `ORDER ${res.items[0].name.toUpperCase()}`;
+      grantPlayerXp(res.xpGained, orderTitle);
+      const talkLabel =
+        res.items.length > 1
+          ? `Nikmati batch ${res.items.length} menu (${res.items[0].name}...) +${res.xpGained} XP!`
+          : `Enjoying ${res.items[0].name} (+${res.xpGained} XP!)`;
+      dispatchBuddyAction(`socialTalk:${talkLabel}`);
+      return {
+        ok: true,
+        message:
+          res.items.length > 1
+            ? `Batch ${res.items.length} menu diterima! +${res.xpGained} XP`
+            : `Ordered ${res.items[0].name}! +${res.xpGained} XP`,
+      };
     },
     [dispatchBuddyAction, grantPlayerXp, cyonBalance, respiteBalance],
+  );
+
+  const handlePurchaseCafeItem = useCallback(
+    (item: CafeMenuItemSpec): { ok: boolean; message: string } => {
+      const checkLegacy = purchaseCafeMenuItem(item.id, hudRef.current.gold);
+      if (!checkLegacy.item) return { ok: false, message: 'Item not found' };
+      return handlePurchaseCafeBatch([{ itemId: item.id, quantity: 1 }]);
+    },
+    [handlePurchaseCafeBatch],
   );
 
   const handleCafeExchangeLulToCyonPackets = useCallback(
@@ -11593,6 +11678,49 @@ export default function App() {
         activeOrder={cafeShiftState.activeOrder}
         onClose={() => setActiveCafeModal('none')}
       />
+      {cafeConsumerSummary.isConsuming &&
+        cafeConsumerSummary.activeItem &&
+        activeCafeModal === 'none' &&
+        !cafePrepStatus && (
+          <div
+            className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2.5 rounded-full border-[2.5px] border-black bg-[#14161d]/95 px-3.5 py-1.5 text-xs font-extrabold tracking-wide text-white shadow-[4px_4px_0_#000]"
+            data-testid="cafe-consuming-status"
+          >
+            <div className="w-7 h-7 rounded-full bg-[#f7efe0] border border-black flex items-center justify-center shrink-0">
+              <CafeMenuItemArtwork itemId={cafeConsumerSummary.activeItem.id} className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-[11px] font-black text-[#b8ff3c]">
+                Menikmati {cafeConsumerSummary.activeItem.name}
+                {cafeConsumerState.totalBatchSize > 1
+                  ? ` (${cafeConsumerState.consumedCount + 1}/${cafeConsumerState.totalBatchSize})`
+                  : ''}
+              </span>
+              <div className="mt-0.5 flex items-center gap-2">
+                <div className="w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden border border-black/60">
+                  <div
+                    className="h-full bg-[#fec83e] transition-all duration-200"
+                    style={{
+                      width: `${Math.max(
+                        4,
+                        Math.min(
+                          100,
+                          100 -
+                            (cafeConsumerSummary.remainingActiveMs /
+                              CAFE_ITEM_CONSUME_DURATION_MS) *
+                              100,
+                        ),
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <span className="text-[10px] font-mono-tabular text-amber-200">
+                  {Math.max(1, Math.ceil(cafeConsumerSummary.remainingActiveMs / 1000))}s
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       {isInsideGlasshouseCafe && cafeShiftState.isWorking && cafePrepStatus && (
         <div
           className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2.5 rounded-full border border-amber-300/70 bg-slate-950/92 px-4 py-2 text-xs font-extrabold tracking-wide text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.45)] backdrop-blur-md"
@@ -11786,7 +11914,9 @@ export default function App() {
         onClose={() => setActiveCafeModal('none')}
         lulBalance={hud.gold}
         levelProgress={levelProgress}
+        consumerSummary={cafeConsumerSummary}
         onPurchaseItem={handlePurchaseCafeItem}
+        onPurchaseBatch={handlePurchaseCafeBatch}
       />
       <GlasshouseCafeAtmModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'atm'}

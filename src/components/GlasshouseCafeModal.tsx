@@ -18,9 +18,13 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import {
+  CAFE_MAX_BATCH_ORDER_ITEMS,
   CAFE_MENU_ITEMS,
   CAFE_SHIFT_MAX_ORDERS,
   type CafeActiveCustomerOrder,
+  type CafeBatchOrderEntry,
+  type CafeConsumerRemainingSummary,
+  type CafeMenuItemId,
   type CafeMenuItemSpec,
   type CafeWorkShiftState,
   type PlayerLevelProgress,
@@ -225,7 +229,9 @@ export interface GlasshouseCafeOrderModalProps {
   onClose: () => void;
   lulBalance: number;
   levelProgress: PlayerLevelProgress;
+  consumerSummary?: CafeConsumerRemainingSummary | null;
   onPurchaseItem: (item: CafeMenuItemSpec) => { ok: boolean; message: string };
+  onPurchaseBatch?: (entries: CafeBatchOrderEntry[]) => { ok: boolean; message: string };
 }
 
 export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> = ({
@@ -233,14 +239,95 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
   onClose,
   lulBalance,
   levelProgress,
+  consumerSummary,
   onPurchaseItem,
+  onPurchaseBatch,
 }) => {
   const [selectedId, setSelectedId] = useState<CafeMenuItemSpec['id'] | null>(null);
+  const [batchCounts, setBatchCounts] = useState<Partial<Record<CafeMenuItemId, number>>>({});
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setBatchCounts({});
+      setFeedback(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
+  const isConsuming = Boolean(consumerSummary?.isConsuming && consumerSummary.activeItem);
   const selectedItem = CAFE_MENU_ITEMS.find((it) => it.id === selectedId) ?? null;
+
+  const batchItems: Array<{ item: CafeMenuItemSpec; qty: number }> = [];
+  let totalBatchQty = 0;
+  let totalBatchLul = 0;
+  let totalBatchXp = 0;
+  for (const item of CAFE_MENU_ITEMS) {
+    const qty = batchCounts[item.id] ?? 0;
+    if (qty > 0) {
+      batchItems.push({ item, qty });
+      totalBatchQty += qty;
+      totalBatchLul += item.priceLul * qty;
+      totalBatchXp += item.xpReward * qty;
+    }
+  }
+
+  const updateBatchQty = (itemId: CafeMenuItemId, delta: number) => {
+    setFeedback(null);
+    setBatchCounts((prev) => {
+      const cur = prev[itemId] ?? 0;
+      const otherQty = totalBatchQty - cur;
+      const maxForItem = Math.max(0, CAFE_MAX_BATCH_ORDER_ITEMS - otherQty);
+      const next = Math.max(0, Math.min(maxForItem, cur + delta));
+      const copy = { ...prev };
+      if (next <= 0) {
+        delete copy[itemId];
+      } else {
+        copy[itemId] = next;
+      }
+      return copy;
+    });
+  };
+
+  const selectedBatchQty = selectedItem ? batchCounts[selectedItem.id] ?? 0 : 0;
+
+  const handleConfirmOrder = () => {
+    if (isConsuming) {
+      soundEngine.playHit();
+      setFeedback({
+        ok: false,
+        text: 'Habiskan makanan/minuman di tangan dulu sebelum memesan lagi!',
+      });
+      return;
+    }
+    if (totalBatchQty > 0 && onPurchaseBatch) {
+      const entries: CafeBatchOrderEntry[] = batchItems.map(({ item, qty }) => ({
+        itemId: item.id,
+        quantity: qty,
+      }));
+      const res = onPurchaseBatch(entries);
+      if (res.ok) {
+        setBatchCounts({});
+        setFeedback(null);
+        onClose();
+      } else {
+        setFeedback({ ok: false, text: res.message });
+      }
+      return;
+    }
+    if (!selectedItem) return;
+    const res = onPurchaseBatch
+      ? onPurchaseBatch([{ itemId: selectedItem.id, quantity: 1 }])
+      : onPurchaseItem(selectedItem);
+    if (res.ok) {
+      setBatchCounts({});
+      setFeedback(null);
+      onClose();
+    } else {
+      setFeedback({ ok: false, text: res.message });
+    }
+  };
 
   return (
     <div
@@ -250,7 +337,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
       data-cafe-order-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/65 pointer-events-auto"
     >
-      <div className="w-full max-w-[680px] bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
+      <div className="w-full max-w-[700px] bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
           <div className="flex items-center gap-2.5">
@@ -283,12 +370,41 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
           </div>
         </div>
 
-        {/* 2-Column Layout: White Body Background + Cream Cards (Header Preserved) */}
+        {/* Consumption Lock Banner */}
+        {isConsuming && consumerSummary?.activeItem && (
+          <div
+            data-cafe-consuming-lock-banner="true"
+            className="px-4 py-2.5 bg-[#fef3c7] text-[#14161d] border-b-[3px] border-black flex items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 bg-white border-2 border-black rounded-lg flex items-center justify-center shrink-0">
+                <CafeMenuItemArtwork itemId={consumerSummary.activeItem.id} className="w-7 h-7" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-black uppercase truncate">
+                  Habiskan {consumerSummary.activeItem.name} di tangan dulu sebelum memesan lagi!
+                </div>
+                <div className="text-[11px] font-bold text-amber-900">
+                  Sisa {Math.max(1, Math.ceil(consumerSummary.remainingActiveMs / 1000))}d
+                  {consumerSummary.queuedCount > 0
+                    ? ` • +${consumerSummary.queuedCount} menu lagi di antrean batch`
+                    : ''}
+                </div>
+              </div>
+            </div>
+            <span className="px-2 py-1 bg-[#14161d] text-[#fec83e] border border-black font-mono-tabular text-[11px] font-black shrink-0">
+              {Math.max(1, Math.ceil(consumerSummary.totalRemainingMs / 1000))}s
+            </span>
+          </div>
+        )}
+
+        {/* 2-Column Layout */}
         <div className="p-4 bg-white text-[#14161d] grid grid-cols-1 sm:grid-cols-12 gap-3.5">
           {/* Left 3x3 Visual Grid (Cream Cards) */}
           <div className="sm:col-span-7 grid grid-cols-3 gap-2.5">
             {CAFE_MENU_ITEMS.map((item) => {
               const isSelected = item.id === selectedId;
+              const qtyInBatch = batchCounts[item.id] ?? 0;
               return (
                 <button
                   key={item.id}
@@ -300,12 +416,17 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                     setFeedback(null);
                   }}
                   aria-label={`${item.name} - ${item.priceLul} LUL`}
-                  className={`group flex flex-col items-center justify-between p-2 rounded-xl border-[3px] transition-transform cursor-pointer active:scale-95 ${
+                  className={`relative group flex flex-col items-center justify-between p-2 rounded-xl border-[3px] transition-transform cursor-pointer active:scale-95 ${
                     isSelected
                       ? 'bg-[#eef8d8] border-[#14161d] ring-2 ring-[#b8ff3c] -translate-y-0.5 shadow-[2px_2px_0_#000]'
                       : 'bg-[#f7efe0] hover:bg-[#efe3cc] border-black shadow-[2px_2px_0_#000]'
                   }`}
                 >
+                  {qtyInBatch > 0 && (
+                    <span className="absolute -top-2 -right-1.5 px-1.5 py-0.5 bg-[#b8ff3c] text-[#14161d] border-2 border-black rounded-full text-[10px] font-black font-mono-tabular shadow-[1px_1px_0_#000]">
+                      ×{qtyInBatch}
+                    </span>
+                  )}
                   <div className="w-14 h-14 flex items-center justify-center">
                     <CafeMenuItemArtwork itemId={item.id} className="w-13 h-13 drop-shadow-[0_2px_2px_rgba(0,0,0,0.28)]" />
                   </div>
@@ -318,37 +439,105 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
             })}
           </div>
 
-          {/* Right Detail Panel (Cream Card) */}
-          <div className="sm:col-span-5 bg-[#f7efe0] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] rounded-xl p-3.5 flex flex-col items-center justify-between text-center min-h-[260px]">
-            {!selectedItem ? (
-              <div className="my-auto px-2">
+          {/* Right Detail Panel + Batch Cart */}
+          <div className="sm:col-span-5 bg-[#f7efe0] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] rounded-xl p-3.5 flex flex-col items-center justify-between text-center min-h-[290px]">
+            {!selectedItem && totalBatchQty === 0 ? (
+              <div className="my-auto px-2 space-y-1.5">
                 <p className="text-xs font-extrabold text-[#14161d] leading-relaxed">
-                  Select an item to view XP info &amp; purchase it
+                  Pilih menu untuk pesan langsung atau masukkan ke Batch Order (maks. {CAFE_MAX_BATCH_ORDER_ITEMS} item)
                 </p>
               </div>
             ) : (
               <>
-                <div className="w-full flex items-center justify-between">
-                  <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border border-black text-[10px] font-black uppercase">
-                    +{selectedItem.xpReward} XP
-                  </span>
-                  <span className="px-2 py-0.5 bg-[#fec83e] text-[#14161d] border border-black text-[10px] font-black font-mono-tabular">
-                    {selectedItem.priceLul} LUL
-                  </span>
-                </div>
+                {selectedItem && (
+                  <>
+                    <div className="w-full flex items-center justify-between">
+                      <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border border-black text-[10px] font-black uppercase">
+                        +{selectedItem.xpReward} XP
+                      </span>
+                      <span className="px-2 py-0.5 bg-[#fec83e] text-[#14161d] border border-black text-[10px] font-black font-mono-tabular">
+                        {selectedItem.priceLul} LUL
+                      </span>
+                    </div>
 
-                <div className="my-2 p-2.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_#000]">
-                  <CafeMenuItemArtwork itemId={selectedItem.id} className="w-24 h-24" />
-                </div>
+                    <div className="my-1.5 p-2 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_#000]">
+                      <CafeMenuItemArtwork itemId={selectedItem.id} className="w-20 h-20" />
+                    </div>
 
-                <div className="space-y-0.5 mb-2">
-                  <div className="text-sm font-black uppercase text-[#14161d]">
-                    {selectedItem.name}
+                    <div className="space-y-0.5 mb-2">
+                      <div className="text-sm font-black uppercase text-[#14161d]">
+                        {selectedItem.name}
+                      </div>
+                      <div className="text-[11px] font-bold text-slate-600">
+                        {selectedItem.prepHint}
+                      </div>
+                    </div>
+
+                    {/* Batch Order Stepper */}
+                    <div className="w-full mb-2 flex items-center justify-between gap-1.5 bg-white border-2 border-black rounded-lg px-2 py-1">
+                      <span className="text-[10px] font-black uppercase text-slate-700">
+                        Batch ({totalBatchQty}/{CAFE_MAX_BATCH_ORDER_ITEMS})
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={isConsuming || selectedBatchQty <= 0}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            updateBatchQty(selectedItem.id, -1);
+                          }}
+                          data-cafe-batch-minus-btn="true"
+                          className="w-6 h-6 bg-slate-200 hover:bg-slate-300 disabled:opacity-40 border border-black rounded font-black text-xs cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="w-5 text-center font-mono-tabular font-black text-xs">
+                          {selectedBatchQty}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={isConsuming || totalBatchQty >= CAFE_MAX_BATCH_ORDER_ITEMS}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            updateBatchQty(selectedItem.id, 1);
+                          }}
+                          data-cafe-batch-plus-btn="true"
+                          className="px-2 h-6 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-40 text-[#0f172a] border border-black rounded font-black text-[10px] uppercase cursor-pointer"
+                        >
+                          +Batch
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {totalBatchQty > 0 && (
+                  <div
+                    data-cafe-batch-summary="true"
+                    className="w-full mb-2 p-2 bg-white border-2 border-black rounded-lg text-left space-y-1 max-h-24 overflow-y-auto"
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-700">
+                      <span>Keranjang Batch ({totalBatchQty} item)</span>
+                      <span className="text-emerald-700">+{totalBatchXp} XP</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {batchItems.map(({ item, qty }) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => updateBatchQty(item.id, -qty)}
+                          className="px-1.5 py-0.5 bg-[#fef3c7] hover:bg-[#fee2e2] border border-black rounded text-[10px] font-extrabold flex items-center gap-1 cursor-pointer"
+                          title="Hapus dari batch"
+                        >
+                          <span>
+                            {item.name} ×{qty}
+                          </span>
+                          <span className="font-black text-red-700">×</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="text-[11px] font-bold text-slate-600">
-                    {selectedItem.prepHint}
-                  </div>
-                </div>
+                )}
 
                 {feedback && (
                   <div
@@ -365,15 +554,18 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
 
                 <button
                   type="button"
+                  disabled={isConsuming || (totalBatchQty === 0 && !selectedItem)}
                   data-cafe-buy-selected-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiConfirm();
-                    const res = onPurchaseItem(selectedItem);
-                    setFeedback({ ok: res.ok, text: res.message });
-                  }}
-                  className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  onClick={handleConfirmOrder}
+                  className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:bg-slate-300 disabled:text-slate-600 text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
                 >
-                  ORDER ({selectedItem.priceLul} LUL)
+                  {isConsuming
+                    ? 'HABISKAN DULU...'
+                    : totalBatchQty > 0
+                      ? `ORDER BATCH (${totalBatchQty} • ${totalBatchLul} LUL)`
+                      : selectedItem
+                        ? `ORDER (${selectedItem.priceLul} LUL)`
+                        : 'PILIH MENU'}
                 </button>
               </>
             )}

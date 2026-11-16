@@ -732,17 +732,267 @@ export function toggleSimulatedOtherCafeWorker(
   };
 }
 
+export type CafeMenuItemId = CafeMenuItemSpec['id'];
+
+export const CAFE_ITEM_CONSUME_DURATION_MS = 8000;
+export const CAFE_MAX_BATCH_ORDER_ITEMS = 6;
+
+export interface CafeBatchOrderEntry {
+  itemId: CafeMenuItemId;
+  quantity: number;
+}
+
+export interface CafeConsumerQueueState {
+  activeItem: CafeMenuItemSpec | null;
+  queuedItems: ReadonlyArray<CafeMenuItemSpec>;
+  startedAtMs: number;
+  itemEndsAtMs: number;
+  totalBatchSize: number;
+  consumedCount: number;
+}
+
+export interface CafeConsumerRemainingSummary {
+  activeItem: CafeMenuItemSpec | null;
+  queuedCount: number;
+  totalRemainingCount: number;
+  remainingActiveMs: number;
+  totalRemainingMs: number;
+  isConsuming: boolean;
+}
+
+export function createInitialCafeConsumerState(): CafeConsumerQueueState {
+  return {
+    activeItem: null,
+    queuedItems: [],
+    startedAtMs: 0,
+    itemEndsAtMs: 0,
+    totalBatchSize: 0,
+    consumedCount: 0,
+  };
+}
+
+export function advanceCafeConsumerState(
+  state: CafeConsumerQueueState,
+  nowMs = Date.now(),
+): {
+  nextState: CafeConsumerQueueState;
+  finishedItems: CafeMenuItemSpec[];
+  batchCompleted: boolean;
+} {
+  if (!state.activeItem) {
+    return {
+      nextState: state,
+      finishedItems: [],
+      batchCompleted: false,
+    };
+  }
+  const finishedItems: CafeMenuItemSpec[] = [];
+  let activeItem: CafeMenuItemSpec | null = state.activeItem;
+  let queued = state.queuedItems.slice();
+  let startedAtMs = state.startedAtMs;
+  let itemEndsAtMs = state.itemEndsAtMs;
+  let consumedCount = state.consumedCount;
+
+  while (activeItem && nowMs >= itemEndsAtMs) {
+    finishedItems.push(activeItem);
+    consumedCount += 1;
+    if (queued.length > 0) {
+      activeItem = queued.shift()!;
+      startedAtMs = itemEndsAtMs;
+      itemEndsAtMs = startedAtMs + CAFE_ITEM_CONSUME_DURATION_MS;
+    } else {
+      activeItem = null;
+      startedAtMs = 0;
+      itemEndsAtMs = 0;
+    }
+  }
+
+  if (finishedItems.length === 0) {
+    return {
+      nextState: state,
+      finishedItems,
+      batchCompleted: false,
+    };
+  }
+
+  if (!activeItem) {
+    return {
+      nextState: createInitialCafeConsumerState(),
+      finishedItems,
+      batchCompleted: true,
+    };
+  }
+
+  return {
+    nextState: {
+      activeItem,
+      queuedItems: queued,
+      startedAtMs,
+      itemEndsAtMs,
+      totalBatchSize: state.totalBatchSize,
+      consumedCount,
+    },
+    finishedItems,
+    batchCompleted: false,
+  };
+}
+
+export function getCafeConsumerRemainingSummary(
+  state: CafeConsumerQueueState,
+  nowMs = Date.now(),
+): CafeConsumerRemainingSummary {
+  const advanced = advanceCafeConsumerState(state, nowMs).nextState;
+  if (!advanced.activeItem) {
+    return {
+      activeItem: null,
+      queuedCount: 0,
+      totalRemainingCount: 0,
+      remainingActiveMs: 0,
+      totalRemainingMs: 0,
+      isConsuming: false,
+    };
+  }
+  const remainingActiveMs = Math.max(0, advanced.itemEndsAtMs - nowMs);
+  const queuedCount = advanced.queuedItems.length;
+  return {
+    activeItem: advanced.activeItem,
+    queuedCount,
+    totalRemainingCount: 1 + queuedCount,
+    remainingActiveMs,
+    totalRemainingMs: remainingActiveMs + queuedCount * CAFE_ITEM_CONSUME_DURATION_MS,
+    isConsuming: true,
+  };
+}
+
+export interface PurchaseCafeOrderBatchResult {
+  purchased: boolean;
+  reason?:
+    | 'still_consuming'
+    | 'empty_batch'
+    | 'exceeds_max_batch'
+    | 'invalid_item'
+    | 'insufficient_lul';
+  items: CafeMenuItemSpec[];
+  totalPriceLul: number;
+  nextLul: number;
+  xpGained: number;
+  nextConsumerState: CafeConsumerQueueState;
+}
+
+export function purchaseCafeOrderBatch(
+  entries: ReadonlyArray<CafeBatchOrderEntry | CafeMenuItemId>,
+  currentLul: number,
+  consumerState: CafeConsumerQueueState,
+  nowMs = Date.now(),
+): PurchaseCafeOrderBatchResult {
+  const advancedState = advanceCafeConsumerState(consumerState, nowMs).nextState;
+  if (advancedState.activeItem) {
+    return {
+      purchased: false,
+      reason: 'still_consuming',
+      items: [],
+      totalPriceLul: 0,
+      nextLul: currentLul,
+      xpGained: 0,
+      nextConsumerState: advancedState,
+    };
+  }
+
+  const expanded: CafeMenuItemSpec[] = [];
+  for (const entry of entries) {
+    const itemId = typeof entry === 'string' ? entry : entry.itemId;
+    const rawQty = typeof entry === 'string' ? 1 : Math.floor(entry.quantity);
+    if (rawQty <= 0) continue;
+    const spec = CAFE_MENU_ITEMS.find((m) => m.id === itemId);
+    if (!spec) {
+      return {
+        purchased: false,
+        reason: 'invalid_item',
+        items: [],
+        totalPriceLul: 0,
+        nextLul: currentLul,
+        xpGained: 0,
+        nextConsumerState: advancedState,
+      };
+    }
+    for (let q = 0; q < rawQty; q++) {
+      expanded.push(spec);
+      if (expanded.length > CAFE_MAX_BATCH_ORDER_ITEMS) {
+        return {
+          purchased: false,
+          reason: 'exceeds_max_batch',
+          items: [],
+          totalPriceLul: 0,
+          nextLul: currentLul,
+          xpGained: 0,
+          nextConsumerState: advancedState,
+        };
+      }
+    }
+  }
+
+  if (expanded.length === 0) {
+    return {
+      purchased: false,
+      reason: 'empty_batch',
+      items: [],
+      totalPriceLul: 0,
+      nextLul: currentLul,
+      xpGained: 0,
+      nextConsumerState: advancedState,
+    };
+  }
+
+  let totalPriceLul = 0;
+  let xpGained = 0;
+  for (const it of expanded) {
+    totalPriceLul += it.priceLul;
+    xpGained += it.xpReward;
+  }
+
+  if (currentLul < totalPriceLul) {
+    return {
+      purchased: false,
+      reason: 'insufficient_lul',
+      items: expanded,
+      totalPriceLul,
+      nextLul: currentLul,
+      xpGained: 0,
+      nextConsumerState: advancedState,
+    };
+  }
+
+  return {
+    purchased: true,
+    items: expanded,
+    totalPriceLul,
+    nextLul: currentLul - totalPriceLul,
+    xpGained,
+    nextConsumerState: {
+      activeItem: expanded[0],
+      queuedItems: expanded.slice(1),
+      startedAtMs: nowMs,
+      itemEndsAtMs: nowMs + CAFE_ITEM_CONSUME_DURATION_MS,
+      totalBatchSize: expanded.length,
+      consumedCount: 0,
+    },
+  };
+}
+
 export interface PurchaseCafeFoodResult {
   purchased: boolean;
-  reason?: 'insufficient_lul' | 'item_not_found';
+  reason?: 'insufficient_lul' | 'item_not_found' | 'still_consuming';
   item: CafeMenuItemSpec | null;
   nextLul: number;
   xpGained: number;
+  nextConsumerState?: CafeConsumerQueueState;
 }
 
 export function purchaseCafeMenuItem(
   itemId: CafeMenuItemSpec['id'],
   currentLul: number,
+  consumerState?: CafeConsumerQueueState,
+  nowMs = Date.now(),
 ): PurchaseCafeFoodResult {
   const item = CAFE_MENU_ITEMS.find((m) => m.id === itemId) ?? null;
   if (!item) {
@@ -752,22 +1002,32 @@ export function purchaseCafeMenuItem(
       item: null,
       nextLul: currentLul,
       xpGained: 0,
+      nextConsumerState: consumerState,
     };
   }
-  if (currentLul < item.priceLul) {
+  const activeState = consumerState ?? createInitialCafeConsumerState();
+  const batchRes = purchaseCafeOrderBatch([itemId], currentLul, activeState, nowMs);
+  if (!batchRes.purchased) {
     return {
       purchased: false,
-      reason: 'insufficient_lul',
+      reason:
+        batchRes.reason === 'still_consuming'
+          ? 'still_consuming'
+          : batchRes.reason === 'insufficient_lul'
+            ? 'insufficient_lul'
+            : 'item_not_found',
       item,
       nextLul: currentLul,
       xpGained: 0,
+      nextConsumerState: batchRes.nextConsumerState,
     };
   }
   return {
     purchased: true,
     item,
-    nextLul: currentLul - item.priceLul,
-    xpGained: item.xpReward,
+    nextLul: batchRes.nextLul,
+    xpGained: batchRes.xpGained,
+    nextConsumerState: batchRes.nextConsumerState,
   };
 }
 

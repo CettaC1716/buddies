@@ -5,20 +5,26 @@ import {
   CAFE_GLOBAL_SCALE_SPEC,
   CAFE_INTERIOR_BOUNDS,
   CAFE_INTERIOR_SEAT_SPOTS,
+  CAFE_ITEM_CONSUME_DURATION_MS,
+  CAFE_MAX_BATCH_ORDER_ITEMS,
   CAFE_MENU_ITEMS,
   CAFE_SHIFT_COMPLETION_BONUS_BUCKS,
   CAFE_SHIFT_COMPLETION_BONUS_XP,
   CAFE_SHIFT_MAX_ORDERS,
+  advanceCafeConsumerState,
   applyPlayerXpGain,
   clampCafeInteriorPosition,
   computeCafeExteriorDistance,
   computeCafeExteriorMistFactor,
   computeCafeSeatStandUpPosition,
   computeLevelProgress,
+  createInitialCafeConsumerState,
   createInitialCafeWorkShiftState,
   detectNearestCafeStation,
   exchangeCafeBucksToLul,
+  getCafeConsumerRemainingSummary,
   purchaseCafeMenuItem,
+  purchaseCafeOrderBatch,
   resolveNearestCafePromptOrSeat,
   serveActiveCafeOrder,
   startCafeWorkShift,
@@ -1231,6 +1237,7 @@ const RETARGETABLE_SEAT_AND_SLEEP_CLIPS = [
   { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_walk.001', minDurationSec: 0.8 },
   { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_run.001', minDurationSec: 0.7 },
   { file: 'fishing-carry-anims.glb', clipName: 'fishing_carry_sit.001', minDurationSec: 2.5 },
+  { file: 'cafe-eat-anims.glb', clipName: 'eat_makan_ngobrol.001', minDurationSec: 3.9 },
 ] as const;
 
 test('retargetable sleep, beach seating, and fishing carry GLBs expose Mixamo clips', async () => {
@@ -1328,4 +1335,110 @@ test('buildSouthEastCoastalBeachfront3D generates finite rounded geometries and 
   });
   assert.ok(meshCount >= 180, `Expected rich coastal architecture & furniture meshes, got ${meshCount}`);
   assert.ok(roundedOrCurvedCount >= 150, `Expected rounded/curved mid-res geometries across beachfront, got ${roundedOrCurvedCount}`);
+});
+
+test('Cafe purchase holds item in hand, locks re-ordering until finished, and supports batch ordering', () => {
+  const idle0 = createInitialCafeConsumerState();
+  const buySingle = purchaseCafeMenuItem('latte', 50, idle0, 1000);
+  assert.equal(buySingle.purchased, true);
+  assert.equal(buySingle.nextLul, 40);
+  assert.equal(buySingle.nextConsumerState?.activeItem?.id, 'latte');
+
+  // Cannot buy again until held food is finished
+  const blockedReorder = purchaseCafeMenuItem(
+    'croissant',
+    buySingle.nextLul,
+    buySingle.nextConsumerState,
+    1000 + Math.floor(CAFE_ITEM_CONSUME_DURATION_MS / 2),
+  );
+  assert.equal(blockedReorder.purchased, false);
+  assert.equal(blockedReorder.reason, 'still_consuming');
+  assert.equal(blockedReorder.nextLul, 40);
+
+  // After finish time, consumer state unlocks cleanly for next order / batch order
+  const doneSingle = advanceCafeConsumerState(
+    buySingle.nextConsumerState!,
+    1000 + CAFE_ITEM_CONSUME_DURATION_MS + 10,
+  );
+  assert.equal(doneSingle.batchCompleted, true);
+  assert.equal(doneSingle.nextState.activeItem, null);
+
+  // Batch order validation cap
+  const overCap = purchaseCafeOrderBatch(
+    [{ itemId: 'donut', quantity: CAFE_MAX_BATCH_ORDER_ITEMS + 1 }],
+    200,
+    doneSingle.nextState,
+    20000,
+  );
+  assert.equal(overCap.purchased, false);
+  assert.equal(overCap.reason, 'exceeds_max_batch');
+
+  // Multi-item batch order: 1x Caramel Latte (10 LUL, 35 XP) + 2x Butter Croissant (6 LUL, 24 XP)
+  const batchOrder = purchaseCafeOrderBatch(
+    [
+      { itemId: 'latte', quantity: 1 },
+      { itemId: 'croissant', quantity: 2 },
+    ],
+    40,
+    doneSingle.nextState,
+    20000,
+  );
+  assert.equal(batchOrder.purchased, true);
+  assert.equal(batchOrder.items.length, 3);
+  assert.equal(batchOrder.totalPriceLul, 16);
+  assert.equal(batchOrder.nextLul, 24);
+  assert.equal(batchOrder.xpGained, 59);
+  assert.equal(batchOrder.nextConsumerState.activeItem?.id, 'latte');
+  assert.equal(batchOrder.nextConsumerState.queuedItems.length, 2);
+
+  // Mid-batch progress step: finishing item #1 advances to #2 ('croissant')
+  const summaryStart = getCafeConsumerRemainingSummary(batchOrder.nextConsumerState, 20000);
+  assert.equal(summaryStart.isConsuming, true);
+  assert.equal(summaryStart.totalRemainingCount, 3);
+
+  const stepOne = advanceCafeConsumerState(
+    batchOrder.nextConsumerState,
+    20000 + CAFE_ITEM_CONSUME_DURATION_MS + 5,
+  );
+  assert.equal(stepOne.batchCompleted, false);
+  assert.equal(stepOne.finishedItems.map((i) => i.id).join(','), 'latte');
+  assert.equal(stepOne.nextState.activeItem?.id, 'croissant');
+  assert.equal(stepOne.nextState.queuedItems.length, 1);
+
+  const blockedMidBatch = purchaseCafeOrderBatch(
+    ['donut'],
+    24,
+    stepOne.nextState,
+    20000 + CAFE_ITEM_CONSUME_DURATION_MS + 100,
+  );
+  assert.equal(blockedMidBatch.purchased, false);
+  assert.equal(blockedMidBatch.reason, 'still_consuming');
+
+  // Advancing past all remaining items completes batch cleanly
+  const stepDone = advanceCafeConsumerState(
+    stepOne.nextState,
+    20000 + CAFE_ITEM_CONSUME_DURATION_MS * 3 + 20,
+  );
+  assert.equal(stepDone.batchCompleted, true);
+  assert.equal(stepDone.nextState.activeItem, null);
+});
+
+test('createCafeHeldFoodGroup builds distinct 3D props for every menu item and swaps visibility cleanly', async () => {
+  const { createCafeHeldFoodGroup } = await import('./buddiesCafeFoodPropBuilder');
+  const handle = createCafeHeldFoodGroup();
+  assert.equal(handle.itemGroups.size, CAFE_MENU_ITEMS.length);
+  assert.equal(handle.root.visible, false);
+
+  for (const spec of CAFE_MENU_ITEMS) {
+    handle.setActiveItem(spec.id);
+    assert.equal(handle.root.visible, true);
+    assert.equal(handle.activeItemId, spec.id);
+    for (const [id, grp] of handle.itemGroups.entries()) {
+      assert.equal(grp.visible, id === spec.id, `Expected only ${spec.id} visible`);
+      assert.ok(grp.children.length > 0, `Expected meshes inside ${id}`);
+    }
+  }
+
+  handle.setActiveItem(null);
+  assert.equal(handle.root.visible, false);
 });

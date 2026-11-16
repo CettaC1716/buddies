@@ -21,6 +21,12 @@ import {
   shouldStripDetachedTreeBaseCollar,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
 } from './buddiesBlitzRules';
+import type { CafeMenuItemId } from './buddiesCafeRules';
+import {
+  createCafeHeldFoodGroup,
+  type CafeHeldFoodRigHandle,
+  type CafePropAddPartFn,
+} from './buddiesCafeFoodPropBuilder';
 import type { ScooterRiderRigPose } from './buddiesScooterRidePose';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 import { buildGrandCasino3D } from './buddiesGrandCasinoBuilder';
@@ -4207,6 +4213,7 @@ export interface LoadedBlitzAssets {
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
   cafeWorkGltf?: GLTF | null;
+  cafeEatGltf?: GLTF | null;
   sleepingGltf?: GLTF | null;
   benchLoungeGltf?: GLTF | null;
   chairCasualGltf?: GLTF | null;
@@ -4219,13 +4226,14 @@ export interface LoadedBlitzAssets {
 export type CafeWorkAnimAction = 'idle' | 'coffee' | 'tray' | 'serve';
 export type SitAnimVariant = 'chair' | 'bench_lounge' | 'chair_casual' | 'sun_lounger';
 let loadedCafeWorkGltf: GLTF | null = null;
+let loadedCafeEatGltf: GLTF | null = null;
 let loadedSleepingGltf: GLTF | null = null;
 let loadedBenchLoungeGltf: GLTF | null = null;
 let loadedChairCasualGltf: GLTF | null = null;
 let loadedSunLoungerGltf: GLTF | null = null;
 let loadedFishingCarryGltf: GLTF | null = null;
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 45;
+const BLITZ_3D_TOTAL_ASSET_TASKS = 46;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4665,6 +4673,10 @@ export async function loadAllRealBlitzAssets(
     loadedCafeWorkGltf = gltf;
     return gltf;
   });
+  const cafeEatGltfPromise = loadOptionalGltf('/assets/cafe-eat-anims.glb').then((gltf) => {
+    loadedCafeEatGltf = gltf;
+    return gltf;
+  });
   const benchLoungeGltfPromise = loadOptionalGltf('/assets/bench-lounge-anim.glb').then((gltf) => {
     loadedBenchLoungeGltf = gltf;
     return gltf;
@@ -4682,7 +4694,7 @@ export async function loadAllRealBlitzAssets(
     return gltf;
   });
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, chairCasualGltfPromise, sunLoungerGltfPromise, fishingCarryGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
+    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, cafeEatGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, chairCasualGltfPromise, sunLoungerGltfPromise, fishingCarryGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
       .then(([charGltf, manGltf, rodGltf]) => {
         onCharacterGltfReady(charGltf, manGltf, rodGltf);
       })
@@ -4745,6 +4757,7 @@ export async function loadAllRealBlitzAssets(
     kaiIdleClipPromise,
     hanaIdleClipPromise,
     cafeWorkGltfPromise,
+    cafeEatGltfPromise,
     benchLoungeGltfPromise,
     chairCasualGltfPromise,
     sunLoungerGltfPromise,
@@ -4799,6 +4812,7 @@ export async function loadAllRealBlitzAssets(
       kaiIdleClip,
       hanaIdleClip,
       cafeWorkGltf,
+      cafeEatGltf,
       benchLoungeGltf,
       chairCasualGltf,
       sunLoungerGltf,
@@ -4855,6 +4869,7 @@ export async function loadAllRealBlitzAssets(
         kaiIdleClip,
         hanaIdleClip,
         cafeWorkGltf,
+        cafeEatGltf,
         sleepingGltf: loadedSleepingGltf,
         benchLoungeGltf,
         chairCasualGltf,
@@ -7930,6 +7945,9 @@ export interface CharBuddiesGlbRigController {
   fireUpperFrames: Map<string, Float32Array>;
   fireFrameCount: number;
   fireDuration: number;
+  eatUpperFrames: Map<string, Float32Array>;
+  eatFrameCount: number;
+  eatDuration: number;
   baseRootY: number;
   standingSoleOffsetY: number;
   bindAnkleHeightY: number;
@@ -7940,6 +7958,8 @@ export interface CharBuddiesGlbRigController {
   leftHandLocalPos: THREE.Vector3;
   rightHandGripAxisLocal: THREE.Vector3;
   leftHandGripAxisLocal: THREE.Vector3;
+  leftPalmNormalLocal: THREE.Vector3;
+  leftPalmFwdLocal: THREE.Vector3;
   hasHandBonePositions: boolean;
   prevJumpOffset: number;
   landRecoveryTimer: number;
@@ -7988,6 +8008,9 @@ export interface BuddyCharacterRig {
   teamRef?: 'blue' | 'red';
   isSeatedRiderRef?: boolean;
   isSoftwareGlRef?: boolean;
+  cafeConsumingItemId?: CafeMenuItemId | null;
+  cafeHeldFoodHandle?: CafeHeldFoodRigHandle;
+  cafeFoodAddPartFn?: CafePropAddPartFn;
 }
 
 type AddWeaponPartFn = (
@@ -10239,6 +10262,9 @@ interface SanitizedCharBuddiesTemplate {
   fireUpperFrames: Map<string, Float32Array>;
   fireFrameCount: number;
   fireDuration: number;
+  eatUpperFrames: Map<string, Float32Array>;
+  eatFrameCount: number;
+  eatDuration: number;
 }
 
 const cachedCharBuddiesTemplates = new WeakMap<GLTF, SanitizedCharBuddiesTemplate>();
@@ -10358,17 +10384,39 @@ const UPPER_BODY_FIRE_BONE_PREFIXES = [
   'RightHand',
 ] as const;
 
+const UPPER_BODY_EAT_BONE_PREFIXES = [
+  'Spine2',
+  'Neck',
+  'Head',
+  'LeftShoulder',
+  'LeftArm',
+  'LeftForeArm',
+  'LeftHand',
+  'RightShoulder',
+  'RightArm',
+  'RightForeArm',
+  'RightHand',
+] as const;
+
 function stripMixamoPrefix(name: string): string {
   return name.replace(/^mixamorig:?/i, '');
 }
 
-function isUpperBodyFireBone(shortName: string): boolean {
-  for (const prefix of UPPER_BODY_FIRE_BONE_PREFIXES) {
+function isUpperBodyBoneMatching(shortName: string, prefixes: readonly string[]): boolean {
+  for (const prefix of prefixes) {
     if (shortName === prefix || shortName.startsWith(prefix)) {
       return true;
     }
   }
   return false;
+}
+
+function isUpperBodyFireBone(shortName: string): boolean {
+  return isUpperBodyBoneMatching(shortName, UPPER_BODY_FIRE_BONE_PREFIXES);
+}
+
+function isUpperBodyEatBone(shortName: string): boolean {
+  return isUpperBodyBoneMatching(shortName, UPPER_BODY_EAT_BONE_PREFIXES);
 }
 
 function convertToTripoAnimeCharacterMaterial(mat: THREE.Material): THREE.Material {
@@ -10632,6 +10680,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     loadedSunLoungerGltf ?? cachedLoadedBlitzAssets?.sunLoungerGltf ?? null;
   const fishingCarryGltfSrc =
     loadedFishingCarryGltf ?? cachedLoadedBlitzAssets?.fishingCarryGltf ?? null;
+  const cafeEatGltfSrc = loadedCafeEatGltf ?? cachedLoadedBlitzAssets?.cafeEatGltf ?? null;
   const retargetSpecs: Array<{
     gltfSrc: GLTF | null;
     clipSrc: THREE.AnimationClip | null | undefined;
@@ -10659,6 +10708,14 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       gltfSrc: sunLoungerGltfSrc,
       clipSrc: sunLoungerGltfSrc?.animations?.[0] ?? null,
       clipName: 'sun_lounger.001',
+    },
+    {
+      gltfSrc: cafeEatGltfSrc,
+      clipSrc:
+        cafeEatGltfSrc?.animations?.find((anim) => anim.name === 'eat_makan_ngobrol.001') ??
+        cafeEatGltfSrc?.animations?.[0] ??
+        null,
+      clipName: 'eat_makan_ngobrol.001',
     },
   ];
   for (const fcClip of fishingCarryGltfSrc?.animations ?? []) {
@@ -10965,6 +11022,29 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
   }
 
+  const eatUpperFrames = new Map<string, Float32Array>();
+  let eatFrameCount = 0;
+  let eatDuration = 4.0;
+  const eatClip = clips.get('eat_makan_ngobrol.001');
+  if (eatClip) {
+    eatDuration = Math.max(0.25, eatClip.duration || 4.0);
+    for (const track of eatClip.tracks) {
+      const dotIdx = track.name.lastIndexOf('.quaternion');
+      if (dotIdx > 0 && track.values.length >= 4) {
+        const shortName = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        if (isUpperBodyEatBone(shortName)) {
+          const count = Math.floor(track.values.length / 4);
+          if (count > 0) {
+            eatUpperFrames.set(shortName, new Float32Array(track.values));
+            if (eatFrameCount === 0 || count < eatFrameCount) {
+              eatFrameCount = count;
+            }
+          }
+        }
+      }
+    }
+  }
+
   const template: SanitizedCharBuddiesTemplate = {
     clips,
     bindQuats,
@@ -10973,6 +11053,9 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     fireUpperFrames,
     fireFrameCount,
     fireDuration,
+    eatUpperFrames,
+    eatFrameCount,
+    eatDuration,
   };
   cachedCharBuddiesTemplates.set(gltf, template);
   return template;
@@ -11600,6 +11683,202 @@ function sampleMixamoHandPalmLocal(
   return true;
 }
 
+const _eatSlerpQ0 = new THREE.Quaternion();
+const _eatSlerpQ1 = new THREE.Quaternion();
+const _eatBasisMat = new THREE.Matrix4();
+const _eatUpAxis = new THREE.Vector3();
+const _eatRightAxis = new THREE.Vector3();
+const _eatFwdAxis = new THREE.Vector3();
+const _eatWorldUp = new THREE.Vector3(0, 1, 0);
+const _eatRightPinchPos = new THREE.Vector3();
+const _eatRightIdxPos = new THREE.Vector3();
+
+/**
+ * Samples the upward-facing open Left Palm surface center, forward finger vector,
+ * and upward palm normal in `bodyGroup` local space for resting handheld plates and drinks.
+ */
+function sampleMixamoOpenPalmSurfaceLocal(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  outCenterLocal: THREE.Vector3,
+  outNormalLocal: THREE.Vector3,
+  outFwdLocal: THREE.Vector3,
+): boolean {
+  const wristBone = ctrl.bones.get('LeftHand');
+  if (!wristBone) return false;
+  wristBone.getWorldPosition(_palmWristLocal);
+  bodyGroup.worldToLocal(_palmWristLocal);
+
+  const midBone = ctrl.bones.get('LeftHandMiddle1');
+  const indexBone = ctrl.bones.get('LeftHandIndex1');
+  const pinkyBone = ctrl.bones.get('LeftHandPinky1');
+
+  if (midBone) {
+    midBone.getWorldPosition(_palmMidLocal);
+    bodyGroup.worldToLocal(_palmMidLocal);
+    outCenterLocal.lerpVectors(_palmWristLocal, _palmMidLocal, 0.72);
+    outFwdLocal.subVectors(_palmMidLocal, _palmWristLocal);
+    if (outFwdLocal.lengthSq() > 1e-6) {
+      outFwdLocal.normalize();
+    } else {
+      outFwdLocal.set(-0.5, 0, 0.86);
+    }
+  } else {
+    outCenterLocal.copy(_palmWristLocal);
+    outFwdLocal.set(-0.5, 0, 0.86);
+  }
+
+  if (indexBone && pinkyBone && midBone) {
+    indexBone.getWorldPosition(_palmIndexLocal);
+    bodyGroup.worldToLocal(_palmIndexLocal);
+    pinkyBone.getWorldPosition(_palmPinkyLocal);
+    bodyGroup.worldToLocal(_palmPinkyLocal);
+    _palmAcrossVec.subVectors(_palmIndexLocal, _palmPinkyLocal);
+    if (_palmAcrossVec.lengthSq() > 1e-6) {
+      _palmAcrossVec.normalize();
+      outNormalLocal.crossVectors(outFwdLocal, _palmAcrossVec);
+      if (outNormalLocal.lengthSq() > 1e-6) {
+        outNormalLocal.normalize();
+        if (outNormalLocal.y < 0) outNormalLocal.negate();
+      } else {
+        outNormalLocal.set(0, 1, 0);
+      }
+    } else {
+      outNormalLocal.set(0, 1, 0);
+    }
+  } else {
+    outNormalLocal.set(0, 1, 0);
+  }
+
+  outCenterLocal.addScaledVector(outNormalLocal, 0.022);
+  return true;
+}
+
+function applyEatUpperBodyOverlay(ctrl: CharBuddiesGlbRigController, nowMs: number): void {
+  if (ctrl.eatFrameCount <= 0 || ctrl.eatUpperFrames.size === 0) return;
+  const dur = Math.max(0.25, ctrl.eatDuration || 4.0);
+  const progress = ((nowMs * 0.001) % dur) / dur;
+  const exactF = progress * (ctrl.eatFrameCount - 1);
+  const f0 = Math.min(ctrl.eatFrameCount - 1, Math.max(0, Math.floor(exactF)));
+  const f1 = Math.min(ctrl.eatFrameCount - 1, f0 + 1);
+  const alpha = exactF - f0;
+  const off0 = f0 * 4;
+  const off1 = f1 * 4;
+  for (const [shortName, frameBuf] of ctrl.eatUpperFrames.entries()) {
+    const bone = ctrl.bones.get(shortName);
+    if (!bone) continue;
+    _eatSlerpQ0.set(
+      frameBuf[off0],
+      frameBuf[off0 + 1],
+      frameBuf[off0 + 2],
+      frameBuf[off0 + 3],
+    );
+    _eatSlerpQ1.set(
+      frameBuf[off1],
+      frameBuf[off1 + 1],
+      frameBuf[off1 + 2],
+      frameBuf[off1 + 3],
+    );
+    bone.quaternion.copy(_eatSlerpQ0).slerp(_eatSlerpQ1, alpha);
+  }
+}
+
+const CAFE_PASTRY_ITEM_IDS = new Set<CafeMenuItemId>([
+  'croissant',
+  'sandwich',
+  'cinnamon_roll',
+  'donut',
+  'muffin',
+]);
+
+function ensureCafeHeldFoodGroup(rig: BuddyCharacterRig): CafeHeldFoodRigHandle | null {
+  if (rig.cafeHeldFoodHandle) return rig.cafeHeldFoodHandle;
+  if (!rig.bodyGroupRef) return null;
+  const handle = createCafeHeldFoodGroup(rig.cafeFoodAddPartFn);
+  rig.bodyGroupRef.add(handle.root);
+  rig.cafeHeldFoodHandle = handle;
+  return handle;
+}
+
+function syncRigCafeHeldFoodPose(
+  rig: BuddyCharacterRig,
+  cafeConsumingItemId: CafeMenuItemId | null,
+  isVisibleState: boolean,
+  nowMs: number,
+): void {
+  if (!isVisibleState || !cafeConsumingItemId) {
+    if (rig.cafeHeldFoodHandle) {
+      rig.cafeHeldFoodHandle.setActiveItem(null);
+    }
+    return;
+  }
+  const handle = ensureCafeHeldFoodGroup(rig);
+  if (!handle) return;
+  handle.setActiveItem(cafeConsumingItemId);
+
+  const ctrl = rig.customGlbController;
+  if (ctrl && ctrl.hasHandBonePositions) {
+    // Sit flush atop open Left Palm surface (`propAnchor`)
+    handle.propAnchor.position.copy(ctrl.leftHandLocalPos);
+    _eatUpAxis.lerpVectors(_eatWorldUp, ctrl.leftPalmNormalLocal, 0.35).normalize();
+    _eatFwdAxis.set(ctrl.leftPalmFwdLocal.x, ctrl.leftPalmFwdLocal.y * 0.25, ctrl.leftPalmFwdLocal.z);
+    if (_eatFwdAxis.lengthSq() < 1e-5) {
+      _eatFwdAxis.set(0, 0, 1);
+    } else {
+      _eatFwdAxis.normalize();
+    }
+    _eatRightAxis.crossVectors(_eatUpAxis, _eatFwdAxis);
+    if (_eatRightAxis.lengthSq() < 1e-5) {
+      _eatRightAxis.set(1, 0, 0);
+    } else {
+      _eatRightAxis.normalize();
+    }
+    _eatFwdAxis.crossVectors(_eatRightAxis, _eatUpAxis).normalize();
+    _eatBasisMat.makeBasis(_eatRightAxis, _eatUpAxis, _eatFwdAxis);
+    handle.propAnchor.quaternion.setFromRotationMatrix(_eatBasisMat);
+
+    // Optional golden pastry morsel lifted by Right Hand from plate -> mouth during bite phase
+    const isPastry = CAFE_PASTRY_ITEM_IDS.has(cafeConsumingItemId);
+    const activeEatAct =
+      ctrl.activeClipName === 'eat_makan_ngobrol.001'
+        ? ctrl.actions.get('eat_makan_ngobrol.001')
+        : null;
+    const eatDur = Math.max(0.25, ctrl.eatDuration || 4.0);
+    const eatPhase = ((activeEatAct ? activeEatAct.time : nowMs * 0.001) % eatDur) / eatDur;
+    const rightWrist = ctrl.bones.get('RightHand');
+    const rightIdx1 = ctrl.bones.get('RightHandIndex1');
+    const rightThumb3 = ctrl.bones.get('RightHandThumb3');
+    if (isPastry && rightWrist && rig.bodyGroupRef && eatPhase >= 0.24 && eatPhase <= 0.68) {
+      rightWrist.getWorldPosition(_eatRightPinchPos);
+      rig.bodyGroupRef.worldToLocal(_eatRightPinchPos);
+      if (rightIdx1 && rightThumb3) {
+        rightIdx1.getWorldPosition(_eatRightPinchPos);
+        rig.bodyGroupRef.worldToLocal(_eatRightPinchPos);
+        rightThumb3.getWorldPosition(_eatRightIdxPos);
+        rig.bodyGroupRef.worldToLocal(_eatRightIdxPos);
+        _eatRightPinchPos.lerp(_eatRightIdxPos, 0.52);
+      } else if (rightIdx1) {
+        rightIdx1.getWorldPosition(_eatRightIdxPos);
+        rig.bodyGroupRef.worldToLocal(_eatRightIdxPos);
+        _eatRightPinchPos.lerp(_eatRightIdxPos, 0.72);
+      }
+      const fadeIn = Math.min(1, (eatPhase - 0.24) / 0.06);
+      const fadeOut = Math.min(1, (0.68 - eatPhase) / 0.06);
+      const biteScale = 2.05 * Math.min(fadeIn, fadeOut);
+      handle.rightBiteAnchor.position.copy(_eatRightPinchPos);
+      handle.rightBiteAnchor.scale.setScalar(biteScale);
+      handle.rightBiteAnchor.visible = biteScale > 0.05;
+    } else {
+      handle.rightBiteAnchor.visible = false;
+    }
+  } else {
+    // Fallback procedural avatar placement (Left Palm in front of chest)
+    handle.propAnchor.position.set(0.32, 1.32, 0.56);
+    handle.propAnchor.rotation.set(0, 0, 0);
+    handle.rightBiteAnchor.visible = false;
+  }
+}
+
 /**
  * Zero-allocation 2-iteration Cyclic Coordinate Descent (CCD) Two-Bone Arm IK solver that swings
  * `ForeArm` (elbow) and `Arm` (shoulder) from their current animated pose so the hand's Palm Grip Center
@@ -11887,6 +12166,9 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     fireUpperFrames: template.fireUpperFrames,
     fireFrameCount: template.fireFrameCount,
     fireDuration: template.fireDuration,
+    eatUpperFrames: template.eatUpperFrames,
+    eatFrameCount: template.eatFrameCount,
+    eatDuration: template.eatDuration,
     baseRootY,
     standingSoleOffsetY,
     bindAnkleHeightY,
@@ -11897,6 +12179,8 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     leftHandLocalPos: new THREE.Vector3(-0.11, 1.28, 0.49),
     rightHandGripAxisLocal: new THREE.Vector3(0, 0.72, 0.69),
     leftHandGripAxisLocal: new THREE.Vector3(0.06, 0.67, -0.74),
+    leftPalmNormalLocal: new THREE.Vector3(0, 1, 0),
+    leftPalmFwdLocal: new THREE.Vector3(-0.5, 0, 0.86),
     hasHandBonePositions: false,
     prevJumpOffset: 0,
     landRecoveryTimer: 0,
@@ -12551,6 +12835,14 @@ function stepCharBuddiesGlbRigController(
       targetClip = 'fire.001';
       timeScale = 1.0;
     }
+  } else if (
+    !carryingCrate &&
+    rig.cafeConsumingItemId &&
+    weaponId === 'unarmed' &&
+    ctrl.clips.has('eat_makan_ngobrol.001')
+  ) {
+    targetClip = 'eat_makan_ngobrol.001';
+    timeScale = 1.0;
   } else {
     targetClip = 'idle.001';
     timeScale = 1.0;
@@ -12576,13 +12868,28 @@ function stepCharBuddiesGlbRigController(
     (targetClip === 'cafe_coffee.001' ||
       targetClip === 'cafe_tray.001' ||
       targetClip === 'cafe_serve.001');
+  const isCafeEatingPose = Boolean(
+    rig.cafeConsumingItemId &&
+      isAlive &&
+      !rig.isSeatedRiderRef &&
+      !carryingCrate &&
+      !isDriving &&
+      !isSleeping &&
+      !hasScooterPose &&
+      cafeWorkAction === 'idle' &&
+      punchTimer <= 0 &&
+      kickTimer <= 0 &&
+      (weaponId === 'unarmed' || isSitting) &&
+      ctrl.clips.has('eat_makan_ngobrol.001'),
+  );
   const minStepInterval =
     isMoving ||
     ctrl.turnInPlaceTimer > 0 ||
     jumpOffset > 0.05 ||
     isActiveFishingAction ||
     hasScooterPose ||
-    isCafeWorkPose
+    isCafeWorkPose ||
+    isCafeEatingPose
       ? 0.008
       : 0.028;
   const shouldStepMixer =
@@ -12593,7 +12900,8 @@ function stepCharBuddiesGlbRigController(
     kickTimer > 0 ||
     isActiveFishingAction ||
     hasScooterPose ||
-    isCafeWorkPose;
+    isCafeWorkPose ||
+    isCafeEatingPose;
   if (shouldStepMixer && rawDt >= 0.002) {
     ctrl.lastStepTimeMs = nowMs;
     ctrl.mixer.update(stepDt);
@@ -12767,12 +13075,17 @@ function stepCharBuddiesGlbRigController(
   if (scooterRidePose && scooterRidePose.blend > 0.001 && bodyGroup) {
     applyScooterRiderGlbRig(ctrl, bodyGroup, scooterRidePose);
   }
+  if (isCafeEatingPose && targetClip !== 'eat_makan_ngobrol.001') {
+    // Layer upper-body holding/eating/talking motion atop walking, jumping, or cafe/beach seating
+    applyEatUpperBodyOverlay(ctrl, nowMs);
+  }
 
   // 5. Zero-allocation Dynamic Foot Grounding (lowest stance foot always touches local Y = 0 on the ground ring)
   //    + live Right/Left Palm Grip Center sampling & Two-Bone Arm IK alignment
   let footGroundShiftY = 0;
   const needHandSampling =
-    !hasScooterPose && (carryingCrate || (punchTimer <= 0 && weaponId !== 'unarmed'));
+    !hasScooterPose &&
+    (carryingCrate || isCafeEatingPose || (punchTimer <= 0 && weaponId !== 'unarmed'));
   const surfaceAnchorSpec =
     (isSleeping && targetClip === 'sleeping.001') || isSitting
       ? CUSTOM_POSE_SURFACE_ANCHOR[targetClip]
@@ -12796,21 +13109,30 @@ function stepCharBuddiesGlbRigController(
       );
     }
     if (needHandSampling) {
-      const hasRight = sampleMixamoHandPalmLocal(
-        ctrl,
-        bodyGroup,
-        true,
-        ctrl.rightHandLocalPos,
-        ctrl.rightHandGripAxisLocal,
-      );
-      const hasLeft = sampleMixamoHandPalmLocal(
-        ctrl,
-        bodyGroup,
-        false,
-        ctrl.leftHandLocalPos,
-        ctrl.leftHandGripAxisLocal,
-      );
-      if (hasRight && hasLeft) {
+      if (isCafeEatingPose) {
+        ctrl.hasHandBonePositions = sampleMixamoOpenPalmSurfaceLocal(
+          ctrl,
+          bodyGroup,
+          ctrl.leftHandLocalPos,
+          ctrl.leftPalmNormalLocal,
+          ctrl.leftPalmFwdLocal,
+        );
+      } else {
+        const hasRight = sampleMixamoHandPalmLocal(
+          ctrl,
+          bodyGroup,
+          true,
+          ctrl.rightHandLocalPos,
+          ctrl.rightHandGripAxisLocal,
+        );
+        const hasLeft = sampleMixamoHandPalmLocal(
+          ctrl,
+          bodyGroup,
+          false,
+          ctrl.leftHandLocalPos,
+          ctrl.leftHandGripAxisLocal,
+        );
+        if (hasRight && hasLeft) {
         if (carryingCrate) {
           for (let ci = 0; ci < bodyGroup.children.length; ci++) {
             const ch = bodyGroup.children[ci];
@@ -12908,6 +13230,7 @@ function stepCharBuddiesGlbRigController(
       } else {
         ctrl.hasHandBonePositions = false;
       }
+      }
     } else {
       ctrl.hasHandBonePositions = false;
     }
@@ -12952,7 +13275,9 @@ export function updateCharacterWeaponStance(
   scooterRidePose: ScooterRiderRigPose | null = null,
   cafeWorkAction: CafeWorkAnimAction = 'idle',
   sittingVariant: SitAnimVariant = 'chair',
+  cafeConsumingItemId: CafeMenuItemId | null = rig.cafeConsumingItemId ?? null,
 ) {
+  rig.cafeConsumingItemId = cafeConsumingItemId;
   if (rig.customGlbController) {
     stepCharBuddiesGlbRigController(
       rig.customGlbController,
@@ -12980,6 +13305,25 @@ export function updateCharacterWeaponStance(
       sittingVariant,
     );
   }
+  const showCafeConsumingProp = Boolean(
+    cafeConsumingItemId &&
+      isAlive &&
+      !rig.isSeatedRiderRef &&
+      !(scooterRidePose && scooterRidePose.blend > 0.001) &&
+      !carryingCrate &&
+      !isDriving &&
+      !isSleeping &&
+      cafeWorkAction === 'idle' &&
+      punchTimer <= 0 &&
+      kickTimer <= 0 &&
+      (weaponId === 'unarmed' || isSitting),
+  );
+  syncRigCafeHeldFoodPose(
+    rig,
+    cafeConsumingItemId,
+    showCafeConsumingProp,
+    typeof performance !== 'undefined' ? performance.now() : 0,
+  );
   if (
     !isAlive ||
     Boolean(rig.isSeatedRiderRef) ||
@@ -13065,6 +13409,15 @@ export function updateCharacterWeaponStance(
     rig.weaponRigGroup.visible = false;
     rig.bazookaFrontFlash.visible = false;
     rig.bazookaBackblastGroup.visible = false;
+
+    if (showCafeConsumingProp && !rig.customGlbController && punchTimer <= 0) {
+      const eatWave = Math.max(0, Math.sin(performance.now() * 0.0025));
+      charLeftArm.position.set(0.46, 1.34 + walkBob * 0.5, 0.22);
+      charLeftArm.rotation.set(-1.05, -0.45, 0.08);
+      charRightArm.position.set(-0.48, 1.34 + walkBob * 0.5, 0.16);
+      charRightArm.rotation.set(-0.65 - eatWave * 0.85, 0.35 + eatWave * 0.22, -0.06);
+      return;
+    }
 
     const punchProgress = punchTimer > 0 ? 1 - Math.min(1, punchTimer / 0.24) : 0;
     const punchThrust = punchTimer > 0 ? Math.sin(punchProgress * Math.PI) : 0;
@@ -13506,6 +13859,8 @@ export function buildProceduralBuddyAvatar(
     teamRef: team,
     isSeatedRiderRef: isSeatedRider,
     isSoftwareGlRef: isSoftwareGl,
+    cafeFoodAddPartFn: (parent, geo, colorHex, pos, rot, scale, strokeWidth) =>
+      addPart(parent, geo, colorHex, pos, rot, scale, strokeWidth),
   };
 
   const resolvedGender = preferredGender ?? activeDefaultCharacterGender;

@@ -324,6 +324,7 @@ import {
   CAFE_EXTERIOR_DOOR_TRIGGER,
   CAFE_INTERIOR_BOUNDS,
   CAFE_INTERIOR_SEAT_SPOTS,
+  CAFE_MENU_ITEMS,
   CAFE_ORIGIN_Y,
   HOUSE_VISIT_INDOOR_BOUNDS,
   INDOOR_ORBIT_CAMERA_CONFIG,
@@ -333,6 +334,7 @@ import {
   computeIndoorRoomOrbitCameraPose,
   resolveNearestCafePromptOrSeat,
   type CafeInteriorSeatSpot,
+  type CafeMenuItemId,
 } from './buddiesCafeRules';
 import {
   CAFE_INTERIOR_COLLIDERS,
@@ -1174,14 +1176,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const resolveOutdoorSeatLiftY = (spot: LobbySeatSpot): number =>
       spot.seatLiftY + (!spot.sitVariant || spot.sitVariant === 'chair' ? 0.178 : 0);
 
+    const CAFE_MENU_ITEM_ID_SET = new Set<string>(CAFE_MENU_ITEMS.map((it) => it.id));
+
+    const parsePeerEatEmoteItemId = (emoteClip: string): CafeMenuItemId | null => {
+      if (!emoteClip.startsWith('eat:')) return null;
+      const body = emoteClip.slice(4);
+      const atIdx = body.indexOf('@');
+      const rawId = atIdx >= 0 ? body.slice(0, atIdx) : body;
+      return CAFE_MENU_ITEM_ID_SET.has(rawId) ? (rawId as CafeMenuItemId) : null;
+    };
+
     const resolvePeerSitVariantAndLift = (
       emoteClip: string,
       isSitting: boolean,
     ): { variant: SitAnimVariant; peerLiftY: number } => {
+      const atIdx = emoteClip.startsWith('eat:') ? emoteClip.indexOf('@') : -1;
+      const sitKey = atIdx >= 0 ? `seat:${emoteClip.slice(atIdx + 1)}` : emoteClip;
       for (const [variant, spec] of Object.entries(CUSTOM_SIT_REMOTE_TABLE) as Array<
         [Exclude<SitAnimVariant, 'chair'>, { emoteClip: string; peerLiftY: number }]
       >) {
-        if (emoteClip === spec.emoteClip) {
+        if (sitKey === spec.emoteClip) {
           return { variant, peerLiftY: spec.peerLiftY };
         }
       }
@@ -16296,6 +16310,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       cafeWorkAnimSync.lookAtZ = appliance.z;
     };
 
+    let activeCafeConsumeItemId: CafeMenuItemId | null = null;
+    const onCafeConsumeState = (event: Event) => {
+      const rawId = (event as CustomEvent<{ itemId?: CafeMenuItemId | null }>).detail?.itemId ?? null;
+      activeCafeConsumeItemId =
+        rawId && CAFE_MENU_ITEM_ID_SET.has(rawId) ? rawId : null;
+    };
+
     const onCancelCafeWorkAnim = () => {
       cafeWorkAnimSync.phase = 'idle';
       cafeWorkAnimSync.elapsedSec = 0;
@@ -16306,6 +16327,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('buddy-action', onBuddyActionEvent);
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
+    window.addEventListener('cafe-consume-state', onCafeConsumeState);
     window.addEventListener('start-cafe-work-anim', onStartCafeWorkAnim);
     window.addEventListener('cancel-cafe-work-anim', onCancelCafeWorkAnim);
     window.addEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
@@ -21184,6 +21206,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 scooterPose,
                 unitCafeWorkAction,
                 b.isPlayer && activeSeatedSpot?.sitVariant ? activeSeatedSpot.sitVariant : 'chair',
+                b.isPlayer ? activeCafeConsumeItemId : null,
               );
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
@@ -23726,17 +23749,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
                 emoteClip: playerUnit?.isSleeping
                   ? 'bed:sleep'
-                  : playerUnit?.isSitting &&
-                      activeSeatedSpot?.sitVariant &&
-                      activeSeatedSpot.sitVariant !== 'chair'
-                    ? CUSTOM_SIT_REMOTE_TABLE[activeSeatedSpot.sitVariant].emoteClip
-                    : cafeWorkAnimSync.phase === 'prep_act'
-                      ? cafeWorkAnimSync.category === 'pastry'
-                        ? 'cafe:tray'
-                        : 'cafe:coffee'
-                      : cafeWorkAnimSync.phase === 'serve_act'
-                        ? 'cafe:serve'
-                        : '',
+                  : cafeWorkAnimSync.phase === 'prep_act'
+                    ? cafeWorkAnimSync.category === 'pastry'
+                      ? 'cafe:tray'
+                      : 'cafe:coffee'
+                    : cafeWorkAnimSync.phase === 'serve_act'
+                      ? 'cafe:serve'
+                      : activeCafeConsumeItemId && !cafeWorkShiftActive
+                        ? playerUnit?.isSitting &&
+                          activeSeatedSpot?.sitVariant &&
+                          activeSeatedSpot.sitVariant !== 'chair'
+                          ? `eat:${activeCafeConsumeItemId}@${activeSeatedSpot.sitVariant}`
+                          : `eat:${activeCafeConsumeItemId}`
+                        : playerUnit?.isSitting &&
+                            activeSeatedSpot?.sitVariant &&
+                            activeSeatedSpot.sitVariant !== 'chair'
+                          ? CUSTOM_SIT_REMOTE_TABLE[activeSeatedSpot.sitVariant].emoteClip
+                          : '',
                 chatBubbleText: curChat,
               },
               zoneOrChatChanged,
@@ -24068,6 +24097,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.scooterKind ? av.scooterPose : null,
               peerCafeWorkAction,
               resolvePeerSitVariantAndLift(peer.emoteClip, peer.isSitting).variant,
+              parsePeerEatEmoteItemId(peer.emoteClip),
             );
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
@@ -28845,6 +28875,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
       window.removeEventListener('shoreline-fishing-sync', onShorelineFishingSync);
       window.removeEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
+      window.removeEventListener('cafe-consume-state', onCafeConsumeState);
       window.removeEventListener('start-cafe-work-anim', onStartCafeWorkAnim);
       window.removeEventListener('cancel-cafe-work-anim', onCancelCafeWorkAnim);
       window.removeEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
