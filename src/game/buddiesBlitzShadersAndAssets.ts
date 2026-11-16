@@ -10827,7 +10827,7 @@ const SCOOTER_LIMB_RESET_BONES = [
   'RightFoot',
 ] as const;
 
-const SCOOTER_SPINE_RESET_BONES = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head'] as const;
+const SCOOTER_SPINE_RESET_BONES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head'] as const;
 
 const SCOOTER_FINGER_BONE_SUFFIXES = [
   'Index1',
@@ -11086,6 +11086,8 @@ function applyScooterRiderGlbRig(
   ctrl.glbRoot.position.x = 0;
   ctrl.glbRoot.position.y = ctrl.baseRootY;
 
+  // Strip any FBX clip root tilt (e.g. idle-2.fbx Hips pitch) right from mount blend start.
+  stabilizeCharBuddiesUprightPosture(ctrl.bones, ctrl.bindQuats, 0);
   for (const name of SCOOTER_LIMB_RESET_BONES) {
     const bone = ctrl.bones.get(name);
     const bindQ = ctrl.bindQuats.get(name);
@@ -11094,7 +11096,7 @@ function applyScooterRiderGlbRig(
   for (const name of SCOOTER_SPINE_RESET_BONES) {
     const bone = ctrl.bones.get(name);
     const bindQ = ctrl.bindQuats.get(name);
-    if (bone && bindQ) bone.quaternion.slerp(bindQ, bp * 0.65);
+    if (bone && bindQ) bone.quaternion.slerp(bindQ, bp);
   }
 
   rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine')!, 1, 0, 0, pose.torsoPitchRad * 0.30, bp);

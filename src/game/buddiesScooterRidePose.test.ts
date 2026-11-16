@@ -84,6 +84,7 @@ test('electric_scooter_bike rig pose matches 2x saddle, floorboard, and steered 
   });
   closeTo(straight.seatLiftY, SCOOTER_RIDER_LIFT_M.electric_scooter_bike, 1e-6);
   closeTo(straight.seatBackOffsetZ, SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike, 1e-6);
+  assert.ok(straight.torsoPitchRad >= 0 && straight.torsoPitchRad <= 0.22, 'e-bike rider stays upright');
 
   // Convert bodyGroup-local back into scooter-world coordinates
   const worldLeftGripY = straight.leftGripBodyLocal.y + straight.seatLiftY;
@@ -131,6 +132,7 @@ test('push_kick_scooter rig pose locks left foot on deck and grounds push stroke
     pushActivity: 1,
   });
   assert.equal(midPush.isPushing, true);
+  assert.ok(midPush.torsoPitchRad >= 0 && midPush.torsoPitchRad <= 0.18, 'kick scooter pushing stays upright');
   assert.ok(midPush.dipY >= 0.22, 'hips dip deeply enough on deck leg so pushing shoe reaches ground');
   closeTo(midPush.leftFootSoleBodyLocal.y + midPush.seatLiftY, 0.228, 1e-3);
   closeTo(midPush.rightFootSoleBodyLocal.y + midPush.seatLiftY, 0, 1e-3);

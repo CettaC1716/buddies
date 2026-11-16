@@ -268,7 +268,7 @@ export function computeScooterRiderRigPose(
     const seatBackOffsetZ = spec.seatBackOffsetZ;
     const leanFactor = 0.24 + 0.14 * clampNumber(absSpeed / 9.0, 0, 1);
     const leanRollZ = clampNumber(-steerAngleRad * leanFactor, -0.13, 0.13) * blend;
-    const torsoPitchRad = 0.26 + 0.05 * clampNumber(absSpeed / 10.0, 0, 1);
+    const torsoPitchRad = 0.16 + 0.04 * clampNumber(absSpeed / 10.0, 0, 1);
     const floorboardY = 0.49;
 
     return {
@@ -399,7 +399,7 @@ export function computeScooterRiderRigPose(
   const seatLiftY = spec.seatLiftY - dipY;
   const leanFactor = (0.18 + 0.12 * clampNumber(absSpeed / 6.0, 0, 1)) * (1 - 0.35 * (isPushing ? pushActivity : 0));
   const leanRollZ = clampNumber(-steerAngleRad * leanFactor, -0.10, 0.10) * blend;
-  const torsoPitchRad = lerpNumber(0.16, 0.22, pushActivity) + (isPushing ? 0.04 : 0);
+  const torsoPitchRad = lerpNumber(0.06, 0.12, pushActivity) + (isPushing ? 0.03 : 0);
 
   const leftSoleScooter: ScooterPoseVec3 = { x: 0.032, y: deckTopY, z: 0.09 };
   const rightSoleScooter: ScooterPoseVec3 = lerpVec3(
