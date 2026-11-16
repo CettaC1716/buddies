@@ -104,7 +104,7 @@ ON-CHAIN TREASURY & P2P OWNERSHIP LAYER (market.buddiesblitz.testnet, v1.7.0)
 
 | Asset | Standard / Layer | Supply Source | Permitted Sink | Security Property |
 |---|---|---|---|---|
-| `LUL` | Off-chain Postgres + HUD | Warzone drops, Glasshouse Cafe shifts (`+12 LUL`/order), raw fish sales | Converts only to `CYON` via NPC Exchange | Cannot withdraw or swap into `RESPITE` or `NEAR`; ground drops expire in `40s` |
+| `LUL` | Off-chain Postgres + HUD | Warzone drops, Glasshouse Cafe shifts (`10–24 LUL`/order, `+25 LUL` shift bonus), raw fish sales | Converts only to `CYON` via NPC Exchange | Cannot withdraw or swap into `RESPITE` or `NEAR`; ground drops expire in `40s` |
 | `CYON` | Off-chain Postgres + HUD | Converted from `LUL` | Standard non-NFT gear and fishing tackle | Strictly isolated from `RESPITE`; furniture is NFT-only and cannot be bought with `CYON` |
 | `RESPITE` | On-chain NEP-141 / NEP-145 | One-way `swap_near_for_respite()` (`1 NEAR = 400 RESPITE`, min `0.0025 NEAR`) or P2P NFT sales | House Deeds (`100 R`), Family AI (`15/45/180 R`), NEP-245 Collector Furniture, P2P & Escrow Markets | Zero emission from gameplay grinding; live RPC `ft_balance_of` overrides UI cache |
 
@@ -202,7 +202,7 @@ curl -s -X POST https://rpc.testnet.fastnear.com -H "Content-Type: application/j
    - **Do:** Ride the tram (`[E]`) or take **City Transit Kiosk (`[E]`) -> `KAI FISH MARKET`**, equip the **Fishing Rod** (`GEAR`), hold **`F`** near East Beach water, complete the **Line-Tension Gauge** catch, open **`BAG -> FISH`** to mint a Fish NFT (`/api/fish-attest`), and talk or haggle with **Kai (`[E]`)** or answer his phone call in any language.
    - **See:** Minting writes on-chain species, zone, rarity, and weight attributes verified by Ed25519 signature. Haggling runs deterministic step/ceiling logic while allowing `kai.buddiesblitz.testnet` to buy qualifying Fish NFTs with real on-chain `RESPITE`.
 5. **Glasshouse Cafe Barista Shift, NEO-STRIKE Slots & Separated 4v4 Warzone Arena**
-   - **Do:** Enter **Glasshouse Cafe** inside Central Plaza to prepare 3 drink orders (`+12 LUL` each), then play the **NEO-STRIKE 777 Slots** cabinet by the cafe windows. Return to the **Transit Kiosk (`[E]`) -> `WARZONE ARENA`**, pick **`BLUE TEAM`** or **`RED TEAM`**, stack crates on `2x2x2` team pads, and press **`EXIT WARZONE`** when finished.
+   - **Do:** Enter **Glasshouse Cafe** inside Central Plaza to prepare 3 orders (`10–24 LUL` each, depending on the item, plus `+25 LUL` when you finish the shift), then play the **NEO-STRIKE 777 Slots** cabinet by the cafe windows. Return to the **Transit Kiosk (`[E]`) -> `WARZONE ARENA`**, pick **`BLUE TEAM`** or **`RED TEAM`**, stack crates on `2x2x2` team pads, and press **`EXIT WARZONE`** when finished.
    - **See:** The slot cabinet takes `LUL` bets (`2 / 5 / 10 / 25`) on weighted 32-stop reels and pays entirely in off-chain `LUL`: `7-7-7` jackpot `50x`, triple Diamond `20x`, Star `12x`, Bell `8x`, Coffee `5x`, Cherry `3x`, with pair pays up to `4x`. Combat weapons, crates, and Family Member AI squad companions operate exclusively inside the Warzone arena, never inside the peaceful city plaza.
 
 ---
@@ -244,7 +244,7 @@ src/
     CityTransitKioskModal.tsx           Portal Hub: Travel & Districts, Warzone Faction Select, My House, Shop
     Fish3dPreviewModal.tsx              360-degree Three.js fish inspector
     Furniture3dPreviewModal.tsx         3D interior catalog item inspector
-    GlasshouseCafeModal.tsx             Barista job shift mini-game (+12 LUL/order)
+    GlasshouseCafeModal.tsx             Barista job shift mini-game (10–24 LUL/order, +25 LUL shift bonus)
     GlasshouseCafeSlotModal.tsx         NEO-STRIKE 777 arcade slots cabinet (LUL bets & payouts)
     DailyMissionsModal.tsx              Daily missions board: progress, reward claims & transit shortcuts
     InGameWalletConfirmModal.tsx        On-chain transaction signer confirmation sheet
