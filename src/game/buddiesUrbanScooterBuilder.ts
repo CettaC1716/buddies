@@ -1043,6 +1043,83 @@ function catmullRomScalar(p0: number, p1: number, p2: number, p3: number, t: num
   );
 }
 
+function pushOrientedQuad(
+  positions: number[],
+  indices: number[],
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  cx: number,
+  cy: number,
+  cz: number,
+): void {
+  const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+  const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
+  const vx = positions[c * 3], vy = positions[c * 3 + 1], vz = positions[c * 3 + 2];
+  const dx = positions[d * 3], dy = positions[d * 3 + 1], dz = positions[d * 3 + 2];
+
+  const abx = bx - ax, aby = by - ay, abz = bz - az;
+  const adx = dx - ax, ady = dy - ay, adz = dz - az;
+  const nx = aby * adz - abz * ady;
+  const ny = abz * adx - abx * adz;
+  const nz = abx * ady - aby * adx;
+
+  const rx = 0.25 * (ax + bx + vx + dx) - cx;
+  const ry = 0.25 * (ay + by + vy + dy) - cy;
+  const rz = 0.25 * (az + bz + vz + dz) - cz;
+
+  if (nx * rx + ny * ry + nz * rz >= 0) {
+    indices.push(a, b, d, b, c, d);
+  } else {
+    indices.push(a, d, b, d, c, b);
+  }
+}
+
+function pushOrientedCap(
+  positions: number[],
+  indices: number[],
+  centerIdx: number,
+  rowStart: number,
+  segs: number,
+  outDx: number,
+  outDy: number,
+  outDz: number,
+): void {
+  if (segs < 2) return;
+  const cx = positions[centerIdx * 3];
+  const cy = positions[centerIdx * 3 + 1];
+  const cz = positions[centerIdx * 3 + 2];
+
+  let accNx = 0;
+  let accNy = 0;
+  let accNz = 0;
+  for (let r = 0; r < segs; r++) {
+    const i1 = rowStart + r;
+    const i2 = rowStart + r + 1;
+    const u1x = positions[i1 * 3] - cx;
+    const u1y = positions[i1 * 3 + 1] - cy;
+    const u1z = positions[i1 * 3 + 2] - cz;
+    const u2x = positions[i2 * 3] - cx;
+    const u2y = positions[i2 * 3 + 1] - cy;
+    const u2z = positions[i2 * 3 + 2] - cz;
+    accNx += u1y * u2z - u1z * u2y;
+    accNy += u1z * u2x - u1x * u2z;
+    accNz += u1x * u2y - u1y * u2x;
+  }
+
+  const forward = accNx * outDx + accNy * outDy + accNz * outDz >= 0;
+  for (let r = 0; r < segs; r++) {
+    const i1 = rowStart + r;
+    const i2 = rowStart + r + 1;
+    if (forward) {
+      indices.push(centerIdx, i1, i2);
+    } else {
+      indices.push(centerIdx, i2, i1);
+    }
+  }
+}
+
 function averageGridSeamNormals(geo: THREE.BufferGeometry, cols: number, stCount: number): void {
   const norm = geo.getAttribute('normal');
   if (!norm) return;
@@ -1242,31 +1319,62 @@ function createLoftedBodyShellGeo(
   for (let s = 0; s < stCount - 1; s++) {
     const row0 = s * cols;
     const row1 = (s + 1) * cols;
+    const sA = smoothStations[s];
+    const sB = smoothStations[s + 1];
+    const cx = 0.5 * ((sA.offsetX ?? 0) + (sB.offsetX ?? 0));
+    const cy = 0.5 * (sA.y + sB.y);
+    const cz = 0.5 * (sA.z + sB.z);
     for (let r = 0; r < ringSegs; r++) {
-      const a = row0 + r;
-      const b = row1 + r;
-      const c = row1 + r + 1;
-      const d = row0 + r + 1;
-      indices.push(a, b, d, b, c, d);
+      pushOrientedQuad(
+        positions,
+        indices,
+        row0 + r,
+        row1 + r,
+        row1 + r + 1,
+        row0 + r + 1,
+        cx,
+        cy,
+        cz,
+      );
     }
   }
 
   const firstSt = smoothStations[0];
+  const nextSt = smoothStations[Math.min(1, stCount - 1)];
+  const fOffX = firstSt.offsetX ?? 0;
+  const nOffX = nextSt.offsetX ?? 0;
+  const startOutX = fOffX - nOffX;
+  const startOutY = firstSt.y - nextSt.y;
+  const startOutZ = firstSt.z - nextSt.z;
+  const startOutLen = Math.hypot(startOutX, startOutY, startOutZ) || 1;
+  const startCapBump = Math.min(firstSt.rx, firstSt.ryTop + firstSt.ryBot) * 0.25;
   const startCenterIdx = positions.length / 3;
-  positions.push(firstSt.offsetX ?? 0, firstSt.y, firstSt.z);
+  positions.push(
+    fOffX + (startOutX / startOutLen) * startCapBump,
+    firstSt.y + (startOutY / startOutLen) * startCapBump,
+    firstSt.z + (startOutZ / startOutLen) * startCapBump,
+  );
   uvs.push(0.5, 1.0);
-  for (let r = 0; r < ringSegs; r++) {
-    indices.push(startCenterIdx, r + 1, r);
-  }
+  pushOrientedCap(positions, indices, startCenterIdx, 0, ringSegs, startOutX, startOutY, startOutZ);
 
   const lastSt = smoothStations[stCount - 1];
+  const prevSt = smoothStations[Math.max(0, stCount - 2)];
+  const lOffX = lastSt.offsetX ?? 0;
+  const pOffX = prevSt.offsetX ?? 0;
+  const endOutX = lOffX - pOffX;
+  const endOutY = lastSt.y - prevSt.y;
+  const endOutZ = lastSt.z - prevSt.z;
+  const endOutLen = Math.hypot(endOutX, endOutY, endOutZ) || 1;
+  const endCapBump = Math.min(lastSt.rx, lastSt.ryTop + lastSt.ryBot) * 0.25;
   const endCenterIdx = positions.length / 3;
-  positions.push(lastSt.offsetX ?? 0, lastSt.y, lastSt.z);
+  positions.push(
+    lOffX + (endOutX / endOutLen) * endCapBump,
+    lastSt.y + (endOutY / endOutLen) * endCapBump,
+    lastSt.z + (endOutZ / endOutLen) * endCapBump,
+  );
   uvs.push(0.5, 0.0);
   const lastRow = (stCount - 1) * cols;
-  for (let r = 0; r < ringSegs; r++) {
-    indices.push(endCenterIdx, lastRow + r, lastRow + r + 1);
-  }
+  pushOrientedCap(positions, indices, endCenterIdx, lastRow, ringSegs, endOutX, endOutY, endOutZ);
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -1379,30 +1487,58 @@ function createLoftedXShellGeo(
   for (let s = 0; s < stCount - 1; s++) {
     const row0 = s * cols;
     const row1 = (s + 1) * cols;
+    const sA = allStations[s];
+    const sB = allStations[s + 1];
+    const cx = 0.5 * (sA.x + sB.x);
+    const cy = 0.5 * (sA.y + sB.y);
+    const cz = 0.5 * (sA.z + sB.z);
     for (let r = 0; r < ringSegs; r++) {
-      const a = row0 + r;
-      const b = row1 + r;
-      const c = row1 + r + 1;
-      const d = row0 + r + 1;
-      indices.push(a, d, b, b, d, c);
+      pushOrientedQuad(
+        positions,
+        indices,
+        row0 + r,
+        row1 + r,
+        row1 + r + 1,
+        row0 + r + 1,
+        cx,
+        cy,
+        cz,
+      );
     }
   }
 
+  const firstXSt = allStations[0];
+  const nextXSt = allStations[Math.min(1, stCount - 1)];
+  const sxOut = firstXSt.x - nextXSt.x;
+  const syOut = firstXSt.y - nextXSt.y;
+  const szOut = firstXSt.z - nextXSt.z;
+  const sLenOut = Math.hypot(sxOut, syOut, szOut) || 1;
+  const sBump = Math.min(firstXSt.ry, firstXSt.rzFront + firstXSt.rzBack) * 0.22;
   const startCenterIdx = positions.length / 3;
-  positions.push(allStations[0].x, allStations[0].y, allStations[0].z);
+  positions.push(
+    firstXSt.x + (sxOut / sLenOut) * sBump,
+    firstXSt.y + (syOut / sLenOut) * sBump,
+    firstXSt.z + (szOut / sLenOut) * sBump,
+  );
   uvs.push(0, 0.5);
-  for (let r = 0; r < ringSegs; r++) {
-    indices.push(startCenterIdx, r, r + 1);
-  }
+  pushOrientedCap(positions, indices, startCenterIdx, 0, ringSegs, sxOut, syOut, szOut);
 
   const endSt = allStations[stCount - 1];
+  const prevXSt = allStations[Math.max(0, stCount - 2)];
+  const exOut = endSt.x - prevXSt.x;
+  const eyOut = endSt.y - prevXSt.y;
+  const ezOut = endSt.z - prevXSt.z;
+  const eLenOut = Math.hypot(exOut, eyOut, ezOut) || 1;
+  const eBump = Math.min(endSt.ry, endSt.rzFront + endSt.rzBack) * 0.22;
   const endCenterIdx = positions.length / 3;
-  positions.push(endSt.x, endSt.y, endSt.z);
+  positions.push(
+    endSt.x + (exOut / eLenOut) * eBump,
+    endSt.y + (eyOut / eLenOut) * eBump,
+    endSt.z + (ezOut / eLenOut) * eBump,
+  );
   uvs.push(1, 0.5);
   const lastRow = (stCount - 1) * cols;
-  for (let r = 0; r < ringSegs; r++) {
-    indices.push(endCenterIdx, lastRow + r + 1, lastRow + r);
-  }
+  pushOrientedCap(positions, indices, endCenterIdx, lastRow, ringSegs, exOut, eyOut, ezOut);
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -1441,6 +1577,8 @@ function createCurvedArcShellGeo(opts: {
   const uvs: number[] = [];
   const indices: number[] = [];
 
+  const arcMidY: number[] = [];
+  const arcMidZ: number[] = [];
   for (let i = 0; i <= arcSegs; i++) {
     const u = i / arcSegs;
     const phi = THREE.MathUtils.lerp(opts.phiStart, opts.phiEnd, u);
@@ -1452,6 +1590,8 @@ function createCurvedArcShellGeo(opts: {
     const hw = Math.max(0.004, evalHW(u) * (0.45 + 0.55 * taperMul));
     const thick = Math.max(0.003, opts.thickness * (0.35 + 0.65 * taperMul));
     const midR = baseR - thick * 0.5;
+    arcMidY.push(opts.centerY + (midR - crownDrop * 0.35) * cosP);
+    arcMidZ.push(opts.centerZ + (midR - crownDrop * 0.35) * sinP);
 
     for (let r = 0; r <= ringSegs; r++) {
       const rFrac = r / ringSegs;
@@ -1473,34 +1613,41 @@ function createCurvedArcShellGeo(opts: {
   for (let i = 0; i < arcSegs; i++) {
     const row0 = i * cols;
     const row1 = (i + 1) * cols;
+    const cy = 0.5 * (arcMidY[i] + arcMidY[i + 1]);
+    const cz = 0.5 * (arcMidZ[i] + arcMidZ[i + 1]);
     for (let r = 0; r < ringSegs; r++) {
-      const a = row0 + r;
-      const b = row1 + r;
-      const c = row1 + r + 1;
-      const d = row0 + r + 1;
-      indices.push(a, d, b, b, d, c);
+      pushOrientedQuad(
+        positions,
+        indices,
+        row0 + r,
+        row1 + r,
+        row1 + r + 1,
+        row0 + r + 1,
+        0,
+        cy,
+        cz,
+      );
     }
   }
 
-  // Cap both ends cleanly
-  for (const [endU, rowIdx, flip] of [
-    [0, 0, false],
-    [1, arcSegs * cols, true],
-  ] as [number, number, boolean][]) {
-    const phi = THREE.MathUtils.lerp(opts.phiStart, opts.phiEnd, endU);
+  // Cap both ends cleanly with automatic outward tangent winding
+  const startPhi = opts.phiStart;
+  const endPhi = opts.phiEnd;
+  const phiSign = endPhi >= startPhi ? 1 : -1;
+  for (const [endU, rowIdx, tangentSign] of [
+    [0, 0, -phiSign],
+    [1, arcSegs * cols, phiSign],
+  ] as [number, number, number][]) {
+    const phi = THREE.MathUtils.lerp(startPhi, endPhi, endU);
     const midR = evalR(endU) - opts.thickness * 0.5;
     const cy = opts.centerY + midR * Math.cos(phi);
     const cz = opts.centerZ + midR * Math.sin(phi);
+    const ty = -Math.sin(phi) * tangentSign;
+    const tz = Math.cos(phi) * tangentSign;
     const cIdx = positions.length / 3;
     positions.push(0, cy, cz);
     uvs.push(0.5, endU);
-    for (let r = 0; r < ringSegs; r++) {
-      if (flip) {
-        indices.push(cIdx, rowIdx + r + 1, rowIdx + r);
-      } else {
-        indices.push(cIdx, rowIdx + r, rowIdx + r + 1);
-      }
-    }
+    pushOrientedCap(positions, indices, cIdx, rowIdx, ringSegs, 0, ty, tz);
   }
 
   const geo = new THREE.BufferGeometry();
@@ -1570,16 +1717,25 @@ function createTubeSweepWithCapsGeo(
   for (let i = 0; i < tubularSegs; i++) {
     const row0 = i * cols;
     const row1 = (i + 1) * cols;
+    const cx = 0.5 * (pts[i].x + pts[i + 1].x);
+    const cy = 0.5 * (pts[i].y + pts[i + 1].y);
+    const cz = 0.5 * (pts[i].z + pts[i + 1].z);
     for (let r = 0; r < radialSegs; r++) {
-      const a = row0 + r;
-      const b = row1 + r;
-      const c = row1 + r + 1;
-      const d = row0 + r + 1;
-      indices.push(a, b, d, b, c, d);
+      pushOrientedQuad(
+        positions,
+        indices,
+        row0 + r,
+        row1 + r,
+        row1 + r + 1,
+        row0 + r + 1,
+        cx,
+        cy,
+        cz,
+      );
     }
   }
 
-  // Start & end dome center caps
+  // Start & end dome center caps with guaranteed outward winding
   const capOffset = Math.min(rx, ry) * 0.45;
   const startCapIdx = positions.length / 3;
   positions.push(
@@ -1588,9 +1744,7 @@ function createTubeSweepWithCapsGeo(
     pts[0].z - tangents[0].z * capOffset,
   );
   uvs.push(0.5, 0);
-  for (let r = 0; r < radialSegs; r++) {
-    indices.push(startCapIdx, r + 1, r);
-  }
+  pushOrientedCap(positions, indices, startCapIdx, 0, radialSegs, -tangents[0].x, -tangents[0].y, -tangents[0].z);
 
   const endCapIdx = positions.length / 3;
   const lastP = pts[tubularSegs];
@@ -1602,9 +1756,7 @@ function createTubeSweepWithCapsGeo(
   );
   uvs.push(0.5, 1);
   const lastRow = tubularSegs * cols;
-  for (let r = 0; r < radialSegs; r++) {
-    indices.push(endCapIdx, lastRow + r, lastRow + r + 1);
-  }
+  pushOrientedCap(positions, indices, endCapIdx, lastRow, radialSegs, lastT.x, lastT.y, lastT.z);
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -2014,18 +2166,17 @@ export function createElectricScooterBike3D(
     FINISH_DARK_ALLOY,
   );
 
-  // 2) Continuous Dark Charcoal Inner Knee-Shield, Toe-Board, Floorboard Well & Under-Seat Tub
-  const continuousInnerTubGeo = createLoftedBodyShellGeo(
+  // 2) Watertight Charcoal Structural Inner Bodywork:
+  // (a) Full-Depth Sculpted Dashboard / Inner Knee-Shield Column (`y = 0.96 -> 0.24`, zero side air gap behind front shield!)
+  const innerDashboardGeo = createLoftedBodyShellGeo(
     [
-      { y: 0.945, z: 0.282, rx: 0.128, ryTop: 0.028, ryBot: 0.024, pitchRad: 1.12, power: 2.8 },
-      { y: 0.720, z: 0.348, rx: 0.156, ryTop: 0.034, ryBot: 0.032, pitchRad: 1.24, power: 3.0 },
-      { y: 0.455, z: 0.352, rx: 0.152, ryTop: 0.036, ryBot: 0.032, pitchRad: 1.38, power: 3.0 },
-      { y: 0.232, z: 0.285, rx: 0.152, ryTop: 0.032, ryBot: 0.034, pitchRad: 0.42, power: 3.0 },
-      { y: 0.205, z: 0.055, rx: 0.156, ryTop: 0.038, ryBot: 0.038, pitchRad: 0.0, power: 3.2 },
-      { y: 0.220, z: -0.155, rx: 0.146, ryTop: 0.044, ryBot: 0.038, pitchRad: -0.25, power: 3.0 },
-      { y: 0.375, z: -0.215, rx: 0.136, ryTop: 0.088, ryBot: 0.084, pitchRad: 1.48, power: 3.0 },
-      { y: 0.545, z: -0.205, rx: 0.128, ryTop: 0.104, ryBot: 0.102, pitchRad: 1.48, power: 3.0 },
-      { y: 0.656, z: -0.208, rx: 0.104, ryTop: 0.094, ryBot: 0.098, pitchRad: 1.48, power: 2.8 },
+      { y: 0.958, z: 0.312, rx: 0.136, ryTop: 0.048, ryBot: 0.056, pitchRad: Math.PI / 2, power: 2.9 },
+      { y: 0.850, z: 0.352, rx: 0.166, ryTop: 0.068, ryBot: 0.068, pitchRad: Math.PI / 2, power: 3.1 },
+      { y: 0.720, z: 0.398, rx: 0.178, ryTop: 0.090, ryBot: 0.088, pitchRad: Math.PI / 2, power: 3.2 },
+      { y: 0.610, z: 0.418, rx: 0.184, ryTop: 0.096, ryBot: 0.096, pitchRad: Math.PI / 2, power: 3.2 },
+      { y: 0.480, z: 0.386, rx: 0.174, ryTop: 0.082, ryBot: 0.082, pitchRad: Math.PI / 2, power: 3.1 },
+      { y: 0.335, z: 0.338, rx: 0.162, ryTop: 0.062, ryBot: 0.072, pitchRad: Math.PI / 2, power: 3.0 },
+      { y: 0.242, z: 0.285, rx: 0.156, ryTop: 0.056, ryBot: 0.068, pitchRad: Math.PI / 2, power: 3.0 },
     ],
     28,
     'wrap',
@@ -2034,11 +2185,87 @@ export function createElectricScooterBike3D(
   );
   helper.addPart(
     chassisGroup,
-    continuousInnerTubGeo,
+    innerDashboardGeo,
     SCOOTER_CHARCOAL_HEX,
     [0, 0, 0],
     [0, 0, 0],
     0.005,
+    undefined,
+    1.0,
+    true,
+    FINISH_MATTE_TRIM,
+  );
+
+  // (b) Horizontal Chassis Floorboard Tub overlapping seamlessly into Dashboard base & Under-Seat tub
+  const floorboardTubGeo = createLoftedBodyShellGeo(
+    [
+      { y: 0.218, z: 0.320, rx: 0.158, ryTop: 0.036, ryBot: 0.032, pitchRad: 0.0, power: 3.1 },
+      { y: 0.205, z: 0.055, rx: 0.160, ryTop: 0.036, ryBot: 0.034, pitchRad: 0.0, power: 3.2 },
+      { y: 0.216, z: -0.255, rx: 0.154, ryTop: 0.040, ryBot: 0.034, pitchRad: 0.0, power: 3.0 },
+    ],
+    26,
+    'wrap',
+    3,
+    'dome',
+  );
+  helper.addPart(
+    chassisGroup,
+    floorboardTubGeo,
+    SCOOTER_CHARCOAL_HEX,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.004,
+    undefined,
+    1.0,
+    true,
+    FINISH_MATTE_TRIM,
+  );
+
+  // (c) Solid Under-Seat Polymer Battery / Frame Enclosure (`y = 0.22 -> 0.70`, zero void under seat!)
+  const underSeatTubGeo = createLoftedBodyShellGeo(
+    [
+      { y: 0.220, z: -0.215, rx: 0.146, ryTop: 0.095, ryBot: 0.105, pitchRad: Math.PI / 2, power: 3.0 },
+      { y: 0.380, z: -0.235, rx: 0.146, ryTop: 0.115, ryBot: 0.125, pitchRad: Math.PI / 2, power: 3.1 },
+      { y: 0.560, z: -0.255, rx: 0.148, ryTop: 0.145, ryBot: 0.145, pitchRad: Math.PI / 2, power: 3.1 },
+      { y: 0.695, z: -0.250, rx: 0.128, ryTop: 0.155, ryBot: 0.155, pitchRad: Math.PI / 2, power: 2.9 },
+    ],
+    28,
+    'wrap',
+    3,
+    'dome',
+  );
+  helper.addPart(
+    chassisGroup,
+    underSeatTubGeo,
+    SCOOTER_CHARCOAL_HEX,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.005,
+    undefined,
+    1.0,
+    true,
+    FINISH_MATTE_TRIM,
+  );
+
+  // (d) Inner Rear Wheel-Well Overhead Undertray sealing under rear bodywork (`z = -0.35 .. -0.76`)
+  const rearWheelWellPanGeo = createLoftedBodyShellGeo(
+    [
+      { y: 0.605, z: -0.350, rx: 0.152, ryTop: 0.052, ryBot: 0.044, pitchRad: 0.08, power: 2.9 },
+      { y: 0.635, z: -0.560, rx: 0.154, ryTop: 0.048, ryBot: 0.042, pitchRad: 0.08, power: 3.0 },
+      { y: 0.655, z: -0.765, rx: 0.112, ryTop: 0.038, ryBot: 0.030, pitchRad: 0.10, power: 2.8 },
+    ],
+    24,
+    'wrap',
+    3,
+    'dome',
+  );
+  helper.addPart(
+    chassisGroup,
+    rearWheelWellPanGeo,
+    SCOOTER_DEEP_CHARCOAL_HEX,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.003,
     undefined,
     1.0,
     true,
@@ -2076,7 +2303,7 @@ export function createElectricScooterBike3D(
   for (const side of [-1, 1]) {
     const rockerCheekGeo = createLoftedBodyShellGeo(
       [
-        { y: 0.562, z: 0.486, offsetX: side * 0.150, rx: 0.032, ryTop: 0.036, ryBot: 0.032, pitchRad: 0.90, power: 2.8 },
+        { y: 0.588, z: 0.478, offsetX: side * 0.152, rx: 0.032, ryTop: 0.038, ryBot: 0.032, pitchRad: 0.90, power: 2.8 },
         { y: 0.420, z: 0.420, offsetX: side * 0.162, rx: 0.030, ryTop: 0.038, ryBot: 0.032, pitchRad: 0.65, power: 3.0 },
         { y: 0.232, z: 0.305, offsetX: side * 0.166, rx: 0.030, ryTop: 0.034, ryBot: 0.028, pitchRad: 0.20, power: 3.0 },
         { y: 0.205, z: 0.060, offsetX: side * 0.168, rx: 0.030, ryTop: 0.030, ryBot: 0.026, pitchRad: 0.0, power: 3.1 },
@@ -2103,9 +2330,9 @@ export function createElectricScooterBike3D(
 
     // Continuous outer cyan-teal pinstripe flowing cleanly along front apron edge -> rocker sill -> rear cowl
     const pinCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.142, 0.935, 0.320),
-      new THREE.Vector3(side * 0.178, 0.775, 0.422),
-      new THREE.Vector3(side * 0.188, 0.618, 0.506),
+      new THREE.Vector3(side * 0.142, 0.942, 0.330),
+      new THREE.Vector3(side * 0.178, 0.775, 0.436),
+      new THREE.Vector3(side * 0.190, 0.618, 0.514),
       new THREE.Vector3(side * 0.184, 0.455, 0.440),
       new THREE.Vector3(side * 0.188, 0.242, 0.318),
       new THREE.Vector3(side * 0.190, 0.214, 0.060),
@@ -2130,8 +2357,8 @@ export function createElectricScooterBike3D(
       chassisGroup,
       createRoundedRectExtrudeGeo(0.016, 0.115, 0.020, 0.008, 0.004, 3),
       '#ffffff',
-      [side * 0.146, 0.332, -0.205],
-      [0.10, 0, 0],
+      [side * 0.144, 0.310, -0.245],
+      [0.06, 0, 0],
       0.002,
       getBrushedAluminumTexture(),
       1.0,
@@ -2181,19 +2408,19 @@ export function createElectricScooterBike3D(
     FINISH_MATTE_TRIM,
   );
 
-  // Flush Vertical Capsule DRL Headlight Bar hugging front shield curvature cleanly
+  // Flush Vertical Capsule DRL Headlight Bar hugging outer front shield curvature cleanly
   const vDrlGrp = new THREE.Group();
-  vDrlGrp.position.set(0, 0.818, 0.444);
-  vDrlGrp.rotation.x = -0.545;
+  vDrlGrp.position.set(0, 0.808, 0.453);
+  vDrlGrp.rotation.x = -0.565;
   chassisGroup.add(vDrlGrp);
 
-  const drlBezelGeo = new THREE.CapsuleGeometry(0.023, 0.170, 10, 20);
+  const drlBezelGeo = new THREE.CapsuleGeometry(0.023, 0.172, 10, 20);
   drlBezelGeo.scale(1.0, 1.0, 0.30);
   helper.addPart(
     vDrlGrp,
     drlBezelGeo,
     '#323842',
-    [0, 0, 0.002],
+    [0, 0, 0.004],
     [0, 0, 0],
     0.002,
     undefined,
@@ -2201,13 +2428,13 @@ export function createElectricScooterBike3D(
     false,
     FINISH_DARK_ALLOY,
   );
-  const drlRimGeo = new THREE.CapsuleGeometry(0.0175, 0.162, 10, 20);
+  const drlRimGeo = new THREE.CapsuleGeometry(0.0175, 0.164, 10, 20);
   drlRimGeo.scale(1.0, 1.0, 0.32);
   helper.addPart(
     vDrlGrp,
     drlRimGeo,
     accentHex,
-    [0, 0, 0.0055],
+    [0, 0, 0.0075],
     [0, 0, 0],
     0,
     undefined,
@@ -2215,7 +2442,7 @@ export function createElectricScooterBike3D(
     false,
     FINISH_OPTICAL_LENS,
   );
-  const drlCoreGeo = new THREE.CapsuleGeometry(0.0115, 0.150, 10, 20);
+  const drlCoreGeo = new THREE.CapsuleGeometry(0.0115, 0.152, 10, 20);
   drlCoreGeo.scale(1.0, 1.0, 0.36);
   addLuminousScooterPart(
     helper,
@@ -2224,7 +2451,7 @@ export function createElectricScooterBike3D(
     '#f4feff',
     '#9ef2ed',
     0.85,
-    [0, 0, 0.009],
+    [0, 0, 0.011],
   );
 
   // Flush Wrap-Around Curved Horizontal Headlamp Bar (`y = 0.625`, wrapped tangentially across shield!)
@@ -2275,28 +2502,87 @@ export function createElectricScooterBike3D(
     getElectricHeadlampBarTexture(),
   );
 
-  // Inner Knee-Wall Detailing (chrome bag hook & subtle dark glovebox lip)
+  // Inner Dashboard / Knee-Wall Detailing (`Rear Elevation`: twin sculpted pockets, folding bag hook & key bezel)
+  for (const side of [-1, 1]) {
+    helper.addPart(
+      chassisGroup,
+      createRoundedRectExtrudeGeo(0.094, 0.032, 0.096, 0.018, 0.004, 4),
+      SCOOTER_DEEP_CHARCOAL_HEX,
+      [side * 0.082, 0.772, 0.285],
+      [0.24, 0, 0],
+      0.002,
+      undefined,
+      1.0,
+      false,
+      FINISH_MATTE_TRIM,
+    );
+    helper.addPart(
+      chassisGroup,
+      createRoundedRectExtrudeGeo(0.078, 0.014, 0.016, 0.006, 0.002, 3),
+      '#1a1e24',
+      [side * 0.082, 0.816, 0.270],
+      [0.24, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_RUBBER_TIRE,
+    );
+  }
+  // Center chrome/dark folding shopping bag hook & upper spine rib
   helper.addPart(
     chassisGroup,
-    createRoundedRectExtrudeGeo(0.026, 0.026, 0.044, 0.008, 0.003, 2),
-    '#7a828f',
-    [0, 0.755, 0.302],
-    [-0.18, 0, 0],
+    createRoundedRectExtrudeGeo(0.032, 0.020, 0.048, 0.008, 0.003, 3),
+    '#434b59',
+    [0, 0.790, 0.278],
+    [0.24, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  const bagHookCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.785, 0.270),
+    new THREE.Vector3(0, 0.758, 0.252),
+    new THREE.Vector3(0, 0.770, 0.245),
+  ]);
+  helper.addPart(
+    chassisGroup,
+    createTubeSweepWithCapsGeo(bagHookCurve, 12, 0.005, 0.005, 10, true),
+    SCOOTER_SILVER_TRIM_HEX,
+    [0, 0, 0],
+    [0, 0, 0],
     0,
     undefined,
     1.0,
     false,
     FINISH_SATIN_METAL,
   );
-  addLuminousScooterPart(
-    helper,
+  // Ignition key cylinder bezel on upper right dashboard
+  helper.addPart(
     chassisGroup,
-    new THREE.CylinderGeometry(0.018, 0.018, 0.014, 16),
-    accentHex,
-    accentHex,
-    0.45,
-    [0.085, 0.775, 0.305],
-    [Math.PI / 2 - 0.18, 0, 0],
+    new THREE.CylinderGeometry(0.015, 0.016, 0.012, 18),
+    '#3e4652',
+    [0.085, 0.858, 0.264],
+    [Math.PI / 2 - 0.24, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_DARK_ALLOY,
+  );
+  helper.addPart(
+    chassisGroup,
+    new THREE.CylinderGeometry(0.0085, 0.0085, 0.014, 16),
+    '#1c2026',
+    [0.085, 0.858, 0.263],
+    [Math.PI / 2 - 0.24, 0, 0],
+    0,
+    undefined,
+    1.0,
+    false,
+    FINISH_SATIN_METAL,
   );
 
   // 4) Continuous Rear Monocoque Bodywork + 3D Boomerang Hip Pods + Plush Stitched 2-Up Saddle + Aerodynamic Grab Rail
@@ -2353,13 +2639,13 @@ export function createElectricScooterBike3D(
       FINISH_GLOSS_BODY,
     );
 
-    // 3D Boomerang cyan stripe framing the side pod upper crest & forward chevron edge
+    // 3D Boomerang cyan stripe framing the side pod upper crest & forward chevron edge (tucked flush on pod!)
     const boomCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(side * 0.148, 0.668, -0.745),
       new THREE.Vector3(side * 0.192, 0.646, -0.520),
-      new THREE.Vector3(side * 0.194, 0.608, -0.295),
-      new THREE.Vector3(side * 0.166, 0.494, -0.155),
-      new THREE.Vector3(side * 0.154, 0.445, -0.245),
+      new THREE.Vector3(side * 0.192, 0.606, -0.295),
+      new THREE.Vector3(side * 0.162, 0.502, -0.158),
+      new THREE.Vector3(side * 0.152, 0.478, -0.235),
     ]);
     helper.addPart(
       chassisGroup,
@@ -2381,9 +2667,9 @@ export function createElectricScooterBike3D(
       { y: 0.774, z: -0.680, rx: 0.122, ryTop: 0.044, ryBot: 0.058, pitchRad: 0.08, power: 2.7 },
       { y: 0.778, z: -0.535, rx: 0.166, ryTop: 0.048, ryBot: 0.066, pitchRad: 0.06, power: 3.0 },
       { y: 0.768, z: -0.400, rx: 0.170, ryTop: 0.046, ryBot: 0.068, pitchRad: 0.08, power: 3.0 },
-      { y: 0.728, z: -0.295, rx: 0.172, ryTop: 0.046, ryBot: 0.068, pitchRad: 0.05, power: 3.1 },
-      { y: 0.722, z: -0.145, rx: 0.158, ryTop: 0.048, ryBot: 0.066, pitchRad: -0.05, power: 2.9 },
-      { y: 0.715, z: -0.025, rx: 0.098, ryTop: 0.040, ryBot: 0.048, pitchRad: -0.28, power: 2.5 },
+      { y: 0.728, z: -0.295, rx: 0.174, ryTop: 0.048, ryBot: 0.068, pitchRad: 0.05, power: 3.1 },
+      { y: 0.722, z: -0.145, rx: 0.164, ryTop: 0.048, ryBot: 0.066, pitchRad: -0.05, power: 2.9 },
+      { y: 0.716, z: -0.025, rx: 0.114, ryTop: 0.044, ryBot: 0.050, pitchRad: -0.22, power: 2.6 },
     ],
     28,
     'side',
