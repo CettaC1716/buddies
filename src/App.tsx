@@ -12098,7 +12098,7 @@ export default function App() {
       {/* 9C. Target / Nearby Merchant, NPC & Player Bar is unified inside CafeWorkShiftBottomDock */}
 
       {/* =====================================================================
-          10. AVAKIN-STYLE MMORPG CHARACTER PROFILE MODAL
+          10. MMORPG CHARACTER PROFILE MODAL
          ===================================================================== */}
       <CharacterProfileModal
         isOpen={isProfileModalOpen}
