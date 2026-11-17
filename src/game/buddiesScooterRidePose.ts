@@ -14,6 +14,12 @@
  * negative X on the shin/foot is flexion). The Arena's pivot rig uses the
  * opposite sign and negates when applying.
  */
+import {
+  SCOOTER_HANDLEBAR_SPECS,
+  SCOOTER_RIDER_BACK_OFFSET_M,
+  SCOOTER_RIDER_LIFT_M,
+  SCOOTER_RIDE_MODEL_SCALE,
+} from './buddiesUrbanScooterRules';
 
 export interface KickScooterRidePose {
   /** Overall override strength 0..1 (mount fade). */
@@ -167,28 +173,16 @@ const DEFAULT_SCOOTER_SPECS: Record<
   ScooterRiderSpecInput
 > = {
   electric_scooter_bike: {
-    modelScale: 2.0,
-    seatLiftY: 0.60,
-    seatBackOffsetZ: -0.29,
-    handlebar: {
-      steeringPivot: { x: 0, y: 0.96, z: 0.30 },
-      neckOffset: { x: 0, y: 0, z: 0 },
-      neckTiltX: 0,
-      leftGripInNeck: { x: 0.262, y: 0.132, z: -0.06 },
-      rightGripInNeck: { x: -0.262, y: 0.132, z: -0.06 },
-    },
+    modelScale: SCOOTER_RIDE_MODEL_SCALE,
+    seatLiftY: SCOOTER_RIDER_LIFT_M.electric_scooter_bike,
+    seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike,
+    handlebar: SCOOTER_HANDLEBAR_SPECS.electric_scooter_bike,
   },
   push_kick_scooter: {
-    modelScale: 2.0,
-    seatLiftY: 0.23,
-    seatBackOffsetZ: 0,
-    handlebar: {
-      steeringPivot: { x: 0, y: 0.24, z: 0.315 },
-      neckOffset: { x: 0, y: 0.045, z: -0.01 },
-      neckTiltX: -0.19,
-      leftGripInNeck: { x: 0.18, y: 0.712, z: 0 },
-      rightGripInNeck: { x: -0.18, y: 0.712, z: 0 },
-    },
+    modelScale: SCOOTER_RIDE_MODEL_SCALE,
+    seatLiftY: SCOOTER_RIDER_LIFT_M.push_kick_scooter,
+    seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M.push_kick_scooter,
+    handlebar: SCOOTER_HANDLEBAR_SPECS.push_kick_scooter,
   },
 };
 

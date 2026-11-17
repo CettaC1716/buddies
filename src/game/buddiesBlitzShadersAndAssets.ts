@@ -11044,7 +11044,12 @@ const PELVIS_ROOT_TO_MIXAMO_BONE_MAP: readonly [string, string][] = [
 const PELVIS_TO_MIXAMO_SHORT_MAP = new Map<string, string>(PELVIS_ROOT_TO_MIXAMO_BONE_MAP);
 
 const NON_UPRIGHT_MIXAMO_CLIP_RE =
-  /^(?:sitting|driving|scooter_bike_idle|sleeping|bench_lounge|cafe_coffee|cafe_tray|cafe_serve|dying|death_)/i;
+  /^(?:sitting|driving|scooter_bike_idle|sleeping|bench_lounge|sun_lounger|chair_casual|fishing_carry_sit|cafe_coffee|cafe_tray|cafe_serve|dying|death_)/i;
+
+/** Returns whether a Mixamo clip represents a seated, reclined, or non-upright pose that must skip upright posture clamping during PelvisRoot retargeting. */
+export function isNonUprightMixamoClipName(clipName: string): boolean {
+  return NON_UPRIGHT_MIXAMO_CLIP_RE.test(clipName);
+}
 
 interface PelvisRootMixamoRetargetContext {
   srcRoot: THREE.Object3D;
@@ -11361,7 +11366,7 @@ class LazyMixamoPelvisClipMap extends Map<string, THREE.AnimationClip> {
     const pending = this.pendingSrcClips.get(key);
     if (!pending) return undefined;
     this.pendingSrcClips.delete(key);
-    const applyUprightStabilize = !NON_UPRIGHT_MIXAMO_CLIP_RE.test(key);
+    const applyUprightStabilize = !isNonUprightMixamoClipName(key);
     const retargeted = retargetMixamoClipWithContext(
       pending,
       this.retargetCtx,
@@ -12549,7 +12554,12 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       if (dotIdx > 0 && track.values.length >= 4) {
         const rawShort = stripMixamoPrefix(track.name.slice(0, dotIdx));
         const shortName = PELVIS_TO_MIXAMO_SHORT_MAP.get(rawShort) ?? rawShort;
-        if (isUpperBodyFireBone(shortName)) {
+        // Skip finger tracks from fire.001 (retargeted PelvisRoot fire clips bake identity finger quats)
+        // so rifle_idle.001 populates true curled fist rotations below.
+        const isFingerTrack =
+          (shortName.startsWith('RightHand') && shortName !== 'RightHand') ||
+          (shortName.startsWith('LeftHand') && shortName !== 'LeftHand');
+        if (!isFingerTrack && isUpperBodyFireBone(shortName)) {
           fireUpperQuats.set(
             shortName,
             new THREE.Quaternion(
@@ -12597,7 +12607,8 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     for (const track of eatClip.tracks) {
       const dotIdx = track.name.lastIndexOf('.quaternion');
       if (dotIdx > 0 && track.values.length >= 4) {
-        const shortName = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const rawShort = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const shortName = PELVIS_TO_MIXAMO_SHORT_MAP.get(rawShort) ?? rawShort;
         if (isUpperBodyEatBone(shortName)) {
           const count = Math.floor(track.values.length / 4);
           if (count > 0) {
@@ -12950,13 +12961,19 @@ function orientScooterHandOnGrip(
     }
   }
 
-  // Curl fingers into native Mixamo grip fist
+  // Curl fingers into native Mixamo grip fist (using Middle1..3 fallback for Index on scooter grips
+  // when rifle trigger poses keep RightHandIndex straighter than Middle).
   const curlAmount = Math.max(0, Math.min(1, fingerCurl)) * blend;
   if (curlAmount > 0.01 && ctrl.fireUpperQuats.size > 0) {
     for (const suffix of SCOOTER_FINGER_BONE_SUFFIXES) {
       const shortName = `${side}Hand${suffix}`;
       const fBone = ctrl.bones.get(shortName);
-      const fistQ = ctrl.fireUpperQuats.get(shortName);
+      let fistQ = ctrl.fireUpperQuats.get(shortName);
+      if (side === 'Right' && suffix.startsWith('Index')) {
+        const phalanx = suffix.slice('Index'.length);
+        const midFistQ = ctrl.fireUpperQuats.get(`RightHandMiddle${phalanx}`);
+        if (midFistQ) fistQ = midFistQ;
+      }
       if (fBone && fistQ) {
         fBone.quaternion.slerp(fistQ, curlAmount);
       }
@@ -13045,8 +13062,8 @@ function applyScooterRiderGlbRig(
     ctrl.bones.get('LeftForeArm'),
     ctrl.bones.get('LeftHand'),
     pose.leftGripBodyLocal.x,
-    pose.leftGripBodyLocal.y + palmOff * 0.42,
-    pose.leftGripBodyLocal.z - palmOff * 0.85,
+    pose.leftGripBodyLocal.y + palmOff * 0.38,
+    pose.leftGripBodyLocal.z - palmOff * 0.68,
     0.45,
     -0.45,
     -0.80,
@@ -13058,8 +13075,8 @@ function applyScooterRiderGlbRig(
     ctrl.bones.get('RightForeArm'),
     ctrl.bones.get('RightHand'),
     pose.rightGripBodyLocal.x,
-    pose.rightGripBodyLocal.y + palmOff * 0.42,
-    pose.rightGripBodyLocal.z - palmOff * 0.85,
+    pose.rightGripBodyLocal.y + palmOff * 0.38,
+    pose.rightGripBodyLocal.z - palmOff * 0.68,
     -0.45,
     -0.45,
     -0.80,
@@ -13286,9 +13303,9 @@ function sampleMixamoOpenPalmSurfaceLocal(
   wristBone.getWorldPosition(_palmWristLocal);
   bodyGroup.worldToLocal(_palmWristLocal);
 
-  const midBone = ctrl.bones.get('LeftHandMiddle1');
-  const indexBone = ctrl.bones.get('LeftHandIndex1');
-  const pinkyBone = ctrl.bones.get('LeftHandPinky1');
+  const midBone = ctrl.bones.get('LeftHandMiddle1') ?? ctrl.bones.get('LeftOthers1');
+  const indexBone = ctrl.bones.get('LeftHandIndex1') ?? ctrl.bones.get('LeftIndex1');
+  const pinkyBone = ctrl.bones.get('LeftHandPinky1') ?? ctrl.bones.get('LeftOthers1');
 
   if (midBone) {
     midBone.getWorldPosition(_palmMidLocal);
@@ -14123,7 +14140,6 @@ const CUSTOM_POSE_SURFACE_ANCHOR: Record<
   'bench_lounge.001': { targetWorldY: 0.065 },
   'sun_lounger.001': { targetWorldY: 0.055, includeHands: true },
   'chair_casual.001': { targetWorldY: 1.08, anchorBone: 'Hips' },
-  'fishing_carry_sit.001': { targetWorldY: 1.04, anchorBone: 'Hips' },
 };
 
 function isActiveFishingActionState(
@@ -14177,14 +14193,18 @@ function alignBodyReferenceToSurfaceLocalY(
   } else {
     for (const [bName, bone] of bones.entries()) {
       if (
+        bName === 'PelvisRoot' ||
         bName.startsWith('mixamorig') ||
         bName.includes('End') ||
+        bName.includes('Null') ||
+        bName.includes('Texture') ||
         (!spec.includeHands && bName.includes('Hand')) ||
         bName.includes('Thumb') ||
         bName.includes('Index') ||
         bName.includes('Middle') ||
         bName.includes('Ring') ||
-        bName.includes('Pinky')
+        bName.includes('Pinky') ||
+        bName.includes('Others')
       ) {
         continue;
       }
@@ -14199,6 +14219,103 @@ function alignBodyReferenceToSurfaceLocalY(
     glbRoot.position.y = baseRootY + (targetLocalBoneY - refLocalY);
     glbRoot.updateWorldMatrix(true, true);
   }
+}
+
+const _sitUpLegPos = new THREE.Vector3();
+const _sitKneePos = new THREE.Vector3();
+const _sitFootPos = new THREE.Vector3();
+const _sitHipsPos = new THREE.Vector3();
+const _sitReachVec = new THREE.Vector3();
+
+/** Computes the ground plane Y coordinate inside `bodyGroup` local space from its vertical lift and scale. */
+export function computeSeatedFloorBodyY(bodyGroupPosY: number, bodyGroupScaleY: number): number {
+  return -bodyGroupPosY / Math.max(0.25, bodyGroupScaleY);
+}
+
+/**
+ * Keeps seated hips flush on the chair cushion while grounding both feet cleanly on the floor (root y = 0)
+ * using two-bone leg IK and level sole orientation so sneakers never hover on park benches, cafe chairs,
+ * casino seats, or seated fishing poses regardless of scale or `seatLiftY`.
+ */
+function applySeatedFloorGroundingIk(
+  ctrl: CharBuddiesGlbRigController,
+  bodyGroup: THREE.Group,
+  targetClip: string,
+  floorClampOnly = false,
+): void {
+  const floorBodyY = computeSeatedFloorBodyY(bodyGroup.position.y, bodyGroup.scale.y);
+
+  if (targetClip === 'fishing_carry_sit.001') {
+    const hipBone = ctrl.bones.get('Hips') ?? ctrl.bones.get('Hip');
+    if (hipBone) {
+      hipBone.getWorldPosition(_sitHipsPos);
+      bodyGroup.worldToLocal(_sitHipsPos);
+      const targetSitHipLocalY = 0.96;
+      ctrl.glbRoot.position.y += targetSitHipLocalY - _sitHipsPos.y;
+      ctrl.glbRoot.updateWorldMatrix(true, true);
+    }
+  }
+
+  const ankleClearanceBodyY = ctrl.bindAnkleHeightY + (floorClampOnly ? 0.025 : 0.004);
+  const targetAnkleFloorY = floorBodyY + ankleClearanceBodyY;
+
+  for (const side of ['Left', 'Right'] as const) {
+    const upLeg = ctrl.bones.get(`${side}UpLeg`);
+    const leg = ctrl.bones.get(`${side}Leg`);
+    const foot = ctrl.bones.get(`${side}Foot`);
+    if (!upLeg || !leg || !foot) continue;
+
+    upLeg.getWorldPosition(_sitUpLegPos);
+    bodyGroup.worldToLocal(_sitUpLegPos);
+    leg.getWorldPosition(_sitKneePos);
+    bodyGroup.worldToLocal(_sitKneePos);
+    foot.getWorldPosition(_sitFootPos);
+    bodyGroup.worldToLocal(_sitFootPos);
+
+    if (floorClampOnly && _sitFootPos.y >= targetAnkleFloorY - 0.002) {
+      continue;
+    }
+
+    const thighLen = _sitUpLegPos.distanceTo(_sitKneePos);
+    const shinLen = _sitKneePos.distanceTo(_sitFootPos);
+    const maxReach = Math.max(0.25, (thighLen + shinLen) * 0.96);
+
+    const minSpreadX = 0.14;
+    const signX = side === 'Left' ? 1 : -1;
+    const targetX =
+      Math.abs(_sitFootPos.x) < minSpreadX ? signX * minSpreadX : _sitFootPos.x;
+    const minForwardZ = floorClampOnly ? _sitFootPos.z : _sitUpLegPos.z + 0.44;
+    const targetZ = Math.max(_sitFootPos.z, minForwardZ);
+
+    _sitReachVec.set(
+      targetX - _sitUpLegPos.x,
+      targetAnkleFloorY - _sitUpLegPos.y,
+      targetZ - _sitUpLegPos.z,
+    );
+    const reqDist = _sitReachVec.length();
+    if (reqDist > maxReach && reqDist > 1e-5) {
+      _sitReachVec.multiplyScalar(maxReach / reqDist);
+    }
+    const clampedTargetX = _sitUpLegPos.x + _sitReachVec.x;
+    const clampedTargetY = _sitUpLegPos.y + _sitReachVec.y;
+    const clampedTargetZ = _sitUpLegPos.z + _sitReachVec.z;
+
+    solveTwoBoneLimbPoleIkBodyLocal(
+      bodyGroup,
+      upLeg,
+      leg,
+      foot,
+      clampedTargetX,
+      clampedTargetY,
+      clampedTargetZ,
+      signX * 0.14,
+      0.28,
+      1.0,
+      1.0,
+    );
+    orientScooterFootSole(ctrl, bodyGroup, side, 0, signX * 0.05, 1.0);
+  }
+  ctrl.glbRoot.updateWorldMatrix(true, true);
 }
 
 function stepCharBuddiesGlbRigController(
@@ -15001,7 +15118,7 @@ function stepCharBuddiesGlbRigController(
     (isSleeping && targetClip === 'sleeping.001') || isSitting
       ? CUSTOM_POSE_SURFACE_ANCHOR[targetClip]
       : undefined;
-  if (bodyGroup && (!isSeatedOrPiloting || surfaceAnchorSpec || needHandSampling)) {
+  if (bodyGroup && (!isSeatedOrPiloting || surfaceAnchorSpec || needHandSampling || isSitting)) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
     if (!isSeatedOrPiloting) {
       const minFootY = measureLowestFootBoneLocalY(ctrl.bones, ctrl.glbRoot);
@@ -15018,6 +15135,17 @@ function stepCharBuddiesGlbRigController(
         ctrl.baseRootY,
         surfaceAnchorSpec,
       );
+      if (isSitting && targetClip === 'chair_casual.001') {
+        applySeatedFloorGroundingIk(ctrl, bodyGroup, targetClip, true);
+      }
+    } else if (
+      isSitting &&
+      !isMoving &&
+      jumpOffset <= 0.05 &&
+      !carryingCrate &&
+      (targetClip === 'sitting.001' || targetClip === 'fishing_carry_sit.001')
+    ) {
+      applySeatedFloorGroundingIk(ctrl, bodyGroup, targetClip, false);
     }
     if (needHandSampling) {
       if (isCafeEatingPose) {

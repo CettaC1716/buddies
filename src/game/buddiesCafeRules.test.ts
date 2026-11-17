@@ -1442,3 +1442,64 @@ test('createCafeHeldFoodGroup builds distinct 3D props for every menu item and s
   handle.setActiveItem(null);
   assert.equal(handle.root.visible, false);
 });
+
+test('non-upright Mixamo retarget filter and scale-invariant seated floor helper match all custom seat and PelvisRoot rigs', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const {
+    isNonUprightMixamoClipName,
+    computeSeatedFloorBodyY,
+  } = await import('./buddiesBlitzShadersAndAssets');
+
+  for (const clip of [
+    'sitting.001',
+    'chair_casual.001',
+    'sun_lounger.001',
+    'bench_lounge.001',
+    'fishing_carry_sit.001',
+    'sleeping.001',
+    'driving.001',
+    'scooter_bike_idle.001',
+    'cafe_coffee.001',
+  ]) {
+    assert.equal(isNonUprightMixamoClipName(clip), true, `Expected ${clip} to skip upright clamping`);
+  }
+
+  for (const upright of ['idle.001', 'walk.001', 'run.001', 'fishing_carry_idle.001', 'fishing_idle.001']) {
+    assert.equal(isNonUprightMixamoClipName(upright), false, `Expected ${upright} to stay upright-stabilized`);
+  }
+
+  assert.ok(Math.abs(computeSeatedFloorBodyY(0.178, 0.98) - (-0.178 / 0.98)) < 1e-6);
+  assert.ok(Math.abs(computeSeatedFloorBodyY(0.19, 0.98) - (-0.19 / 0.98)) < 1e-6);
+  assert.ok(Math.abs(computeSeatedFloorBodyY(0.25, 0.1) - (-0.25 / 0.25)) < 1e-6);
+
+  for (const relGlb of [
+    'public/assets/character_custom_idle_runway_catwalk_stylish_11 (3).glb',
+    'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+  ]) {
+    const absPath = path.resolve(process.cwd(), relGlb);
+    assert.ok(fs.existsSync(absPath), `Missing ${absPath}`);
+    const buf = fs.readFileSync(absPath);
+    const jsonLen = buf.readUInt32LE(12);
+    const gltfJson = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8')) as {
+      nodes?: Array<{ name?: string }>;
+    };
+    const nodeNames = new Set((gltfJson.nodes ?? []).map((n) => n.name ?? ''));
+    for (const bone of [
+      'PelvisRoot',
+      'Spine02',
+      'LeftIndex1',
+      'LeftOthers1',
+      'LeftThumb1',
+      'RightIndex1',
+      'RightOthers1',
+      'RightThumb1',
+      'LeftFoot',
+      'LeftToes',
+      'RightFoot',
+      'RightToes',
+    ]) {
+      assert.ok(nodeNames.has(bone), `Expected custom PelvisRoot bone ${bone} in ${relGlb}`);
+    }
+  }
+});

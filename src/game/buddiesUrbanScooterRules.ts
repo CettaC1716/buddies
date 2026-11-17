@@ -16,7 +16,7 @@ export const SCOOTER_RIDE_MODEL_SCALE = 2.0;
  * flexed over the deck (kick scooter) at SCOOTER_RIDE_MODEL_SCALE.
  */
 export const SCOOTER_RIDER_LIFT_M: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: 0.60,
+  electric_scooter_bike: 0.635,
   push_kick_scooter: 0.23,
 };
 
@@ -25,7 +25,7 @@ export const SCOOTER_RIDER_LIFT_M: Record<UrbanScooterKind, number> = {
  * Negative shifts the hips back onto the bike's rear saddle.
  */
 export const SCOOTER_RIDER_BACK_OFFSET_M: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: -0.29,
+  electric_scooter_bike: -0.37,
   push_kick_scooter: 0,
 };
 
