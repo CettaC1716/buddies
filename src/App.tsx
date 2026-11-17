@@ -14,6 +14,7 @@ import {
   LogIn,
   X,
   ClipboardList,
+  Shirt,
 } from 'lucide-react';
 import {
   BuddiesBlitzArena,
@@ -245,6 +246,18 @@ import {
   type ShorelineMinigameState,
 } from './game/buddiesFishingMarket';
 import { UrbanScooterShowroomModal } from './components/UrbanScooterShowroomModal';
+import { FashionBoutiqueModal } from './components/FashionBoutiqueModal';
+import {
+  FASHION_APPAREL_CATALOG_ITEMS,
+  type FashionApparelCatalogItem,
+  getEquippedTorsoStorageKey,
+  getOwnedApparelStorageKey,
+  purchaseFashionApparelToBag,
+  resolveEquippedTorsoGlbForGender,
+  toggleEquipFashionApparel,
+} from './game/buddiesFashionKioskRules';
+import { GrandCasinoModal, type CasinoTab } from './components/GrandCasinoModal';
+import type { CasinoSlotGameVariant } from './game/buddiesGrandCasinoRules';
 import {
   RealEstateCatalogModal,
   type RealEstateCatalogTabId,
@@ -255,6 +268,7 @@ import {
   type UrbanScooterKind,
 } from './game/buddiesUrbanScooterRules';
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
+import { HudQuickMountScooterControl } from './components/HudQuickMountScooterControl';
 import {
   clampAudioVolumePct,
   computeChannelStateAfterSliderChange,
@@ -698,6 +712,7 @@ export default function App() {
   activeSpecialModalRef.current = activeSpecialModal;
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
+  const [isInsideGrandCasino, setIsInsideGrandCasino] = useState<boolean>(false);
   const [activeCafeModal, setActiveCafeModal] = useState<
     | 'none'
     | 'order'
@@ -792,6 +807,11 @@ export default function App() {
   }, [dailyMissionsState]);
   const [isDailyMissionsModalOpen, setIsDailyMissionsModalOpen] = useState<boolean>(false);
   const [isScooterShowroomModalOpen, setIsScooterShowroomModalOpen] = useState<boolean>(false);
+  const [isFashionBoutiqueModalOpen, setIsFashionBoutiqueModalOpen] = useState<boolean>(false);
+  const [isGrandCasinoModalOpen, setIsGrandCasinoModalOpen] = useState<boolean>(false);
+  const [grandCasinoInitialTab, setGrandCasinoInitialTab] = useState<CasinoTab>('slots');
+  const [grandCasinoSlotVariant, setGrandCasinoSlotVariant] =
+    useState<CasinoSlotGameVariant>('lucky_draw');
   const [isRealEstateCatalogModalOpen, setIsRealEstateCatalogModalOpen] =
     useState<boolean>(false);
   const [realEstateCatalogTab, setRealEstateCatalogTab] =
@@ -843,6 +863,44 @@ export default function App() {
       cancelled = true;
     };
   }, [dailyMissionsAccountKey, loadOwnedScootersFromStorage]);
+
+  const loadOwnedApparelFromStorage = useCallback((acctKey: string): string[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(getOwnedApparelStorageKey(acctKey));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const loadEquippedTorsoFromStorage = useCallback((acctKey: string): string | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.localStorage.getItem(getEquippedTorsoStorageKey(acctKey));
+      return raw && raw.trim().length > 0 ? raw.trim() : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [ownedApparelIds, setOwnedApparelIds] = useState<string[]>(() =>
+    loadOwnedApparelFromStorage('guest'),
+  );
+  const [equippedTorsoItemId, setEquippedTorsoItemId] = useState<string | null>(() =>
+    loadEquippedTorsoFromStorage('guest'),
+  );
+
+  useEffect(() => {
+    const loadedOwned = loadOwnedApparelFromStorage(dailyMissionsAccountKey);
+    const loadedEquipped = loadEquippedTorsoFromStorage(dailyMissionsAccountKey);
+    setOwnedApparelIds(loadedOwned);
+    setEquippedTorsoItemId(
+      loadedEquipped && loadedOwned.includes(loadedEquipped) ? loadedEquipped : null,
+    );
+  }, [dailyMissionsAccountKey, loadOwnedApparelFromStorage, loadEquippedTorsoFromStorage]);
   const lastEnteredHousePlotRef = useRef<{
     team: 'blue' | 'red' | null;
     plotIndex: number | null;
@@ -884,6 +942,27 @@ export default function App() {
   useEffect(() => {
     respiteBalanceRef.current = respiteBalance;
   }, [respiteBalance]);
+  const readCasinoRespiteDelta = useCallback((accountId: string): number => {
+    if (typeof window === 'undefined') return 0;
+    const key = `bb_casino_respite_delta_v1:${accountId.trim().toLowerCase() || 'guest'}`;
+    try {
+      const raw = window.localStorage.getItem(key);
+      const parsed = raw !== null ? Number(raw) : 0;
+      return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
+    } catch {
+      return 0;
+    }
+  }, []);
+  const writeCasinoRespiteDelta = useCallback((accountId: string, delta: number) => {
+    if (typeof window === 'undefined') return;
+    const key = `bb_casino_respite_delta_v1:${accountId.trim().toLowerCase() || 'guest'}`;
+    try {
+      const clean = Number.isFinite(delta) ? Math.round(delta * 100) / 100 : 0;
+      window.localStorage.setItem(key, String(clean));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, []);
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(0);
   const nearTestnetBalanceRef = useRef<number>(0);
   useEffect(() => {
@@ -1211,6 +1290,17 @@ export default function App() {
   const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
   const [isGearModalOpen, setIsGearModalOpen] = useState<boolean>(false);
   const [equippedScooterKind, setEquippedScooterKind] = useState<UrbanScooterKind | null>(null);
+  const [preferredScooterKind, setPreferredScooterKind] = useState<UrbanScooterKind>(() => {
+    try {
+      const saved = window.localStorage.getItem('bb_preferred_scooter_kind_v1');
+      if (saved === 'electric_scooter_bike' || saved === 'push_kick_scooter') {
+        return saved;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 'electric_scooter_bike';
+  });
   const [personalBagTab, setPersonalBagTab] = useState<'equipment' | 'fish' | 'items'>('equipment');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
@@ -1799,6 +1889,8 @@ export default function App() {
   const [isWorldLoading, setIsWorldLoading] = useState<boolean>(false);
   const [isCafeInteriorLoading, setIsCafeInteriorLoading] = useState<boolean>(false);
   const cafeLoadingTimeoutRef = useRef<number | null>(null);
+  const [isCasinoInteriorLoading, setIsCasinoInteriorLoading] = useState<boolean>(false);
+  const casinoLoadingTimeoutRef = useRef<number | null>(null);
   const [loadingTargetMode, setLoadingTargetMode] = useState<WorldMode | null>(null);
   const loadingTimeoutRef = useRef<number | null>(null);
   const loadingCommitTimeoutRef = useRef<number | null>(null);
@@ -1811,9 +1903,22 @@ export default function App() {
       if (loadingCommitTimeoutRef.current !== null) {
         window.clearTimeout(loadingCommitTimeoutRef.current);
       }
+      if (cafeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(cafeLoadingTimeoutRef.current);
+        cafeLoadingTimeoutRef.current = null;
+      }
+      if (casinoLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(casinoLoadingTimeoutRef.current);
+        casinoLoadingTimeoutRef.current = null;
+      }
       setIsKioskModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
       setActiveSpecialModal('none');
       setIsInsidePrivateHouse(false);
+      setIsInsideGlasshouseCafe(false);
+      setIsInsideGrandCasino(false);
+      setIsCafeInteriorLoading(false);
+      setIsCasinoInteriorLoading(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -1922,6 +2027,74 @@ export default function App() {
   const dispatchBuddyAction = useCallback((actionName: string) => {
     window.dispatchEvent(new CustomEvent('buddy-action', { detail: actionName }));
   }, []);
+
+  useEffect(() => {
+    const activeItemId =
+      equippedTorsoItemId && ownedApparelIds.includes(equippedTorsoItemId)
+        ? equippedTorsoItemId
+        : null;
+    const torsoGlbPath = resolveEquippedTorsoGlbForGender(activeItemId, characterGender);
+    dispatchBuddyAction(`setEquippedTorso:${torsoGlbPath ?? ''}`);
+  }, [equippedTorsoItemId, ownedApparelIds, characterGender, gameState, dispatchBuddyAction]);
+
+  const handlePurchaseFashionApparelToBag = useCallback(
+    (item: FashionApparelCatalogItem): { ok: boolean; errorMessage?: string } => {
+      const res = purchaseFashionApparelToBag(ownedApparelIds, hudRef.current.gold, item.id);
+      if (!res.ok) {
+        return { ok: false, errorMessage: res.errorMessage };
+      }
+      if (!res.alreadyOwned) {
+        if (res.priceChargedLul > 0) {
+          dispatchBuddyAction(`adjustPlayerLul:${-res.priceChargedLul}`);
+          setHud((prev) => ({ ...prev, gold: res.nextLulBalance }));
+          const buyerAcct = hudRef.current.nearWalletId || '';
+          if (buyerAcct) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: buyerAcct,
+              lulBalance: res.nextLulBalance,
+              cyonBalance: cyonBalanceRef.current,
+              respiteBalance: respiteBalanceRef.current,
+            });
+          }
+        }
+        setOwnedApparelIds(res.nextOwnedIds);
+        try {
+          window.localStorage.setItem(
+            getOwnedApparelStorageKey(dailyMissionsAccountKey),
+            JSON.stringify(res.nextOwnedIds),
+          );
+        } catch {
+          // ignore storage errors
+        }
+      }
+      return { ok: true };
+    },
+    [ownedApparelIds, dailyMissionsAccountKey, dispatchBuddyAction],
+  );
+
+  const handleToggleEquipApparel = useCallback(
+    (itemId: string | null) => {
+      const toggled = toggleEquipFashionApparel(ownedApparelIds, equippedTorsoItemId, itemId);
+      if (!toggled.ok) return;
+      soundEngine.playUiConfirm();
+      setEquippedTorsoItemId(toggled.nextEquippedId);
+      try {
+        if (toggled.nextEquippedId) {
+          window.localStorage.setItem(
+            getEquippedTorsoStorageKey(dailyMissionsAccountKey),
+            toggled.nextEquippedId,
+          );
+        } else {
+          window.localStorage.removeItem(getEquippedTorsoStorageKey(dailyMissionsAccountKey));
+        }
+      } catch {
+        // ignore storage errors
+      }
+      const nextGlb = resolveEquippedTorsoGlbForGender(toggled.nextEquippedId, characterGender);
+      dispatchBuddyAction(`setEquippedTorso:${nextGlb ?? ''}`);
+    },
+    [ownedApparelIds, equippedTorsoItemId, dailyMissionsAccountKey, characterGender, dispatchBuddyAction],
+  );
 
   const setAndPersistHouseArchitectureStyle = useCallback(
     (style: HouseArchitectureStyle, accountOverride?: string) => {
@@ -2293,6 +2466,9 @@ export default function App() {
       setIsPersonalWalletModalOpen(false);
       setIsProfileModalOpen(false);
       setIsDailyMissionsModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
+      setIsInsideGrandCasino(false);
+      setIsCasinoInteriorLoading(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setActiveSpecialModal('none');
@@ -2319,6 +2495,42 @@ export default function App() {
       setUnifiedBottomDockMode((prev) => (prev === 'work_shift' ? 'none' : prev));
       setIsCafeRotaMenuExpanded(false);
       setCafeShiftState((prev) => ({ ...prev, isWorking: false, activeOrder: null }));
+    };
+    const onEnterGrandCasinoInterior = () => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      setIsKioskModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsScooterShowroomModalOpen(false);
+      setIsRealEstateCatalogModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
+      setActiveTeleportKioskModal('none');
+      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+      setActiveSpecialModal('none');
+      setIsInsidePrivateHouse(false);
+      setIsInsideGlasshouseCafe(false);
+      setIsCafeInteriorLoading(false);
+      setActiveCafeModal('none');
+      if (casinoLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(casinoLoadingTimeoutRef.current);
+      }
+      setIsCasinoInteriorLoading(true);
+      casinoLoadingTimeoutRef.current = window.setTimeout(() => {
+        casinoLoadingTimeoutRef.current = null;
+        setIsCasinoInteriorLoading(false);
+      }, 4000);
+      setIsInsideGrandCasino(true);
+    };
+    const onExitGrandCasinoInterior = () => {
+      if (casinoLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(casinoLoadingTimeoutRef.current);
+        casinoLoadingTimeoutRef.current = null;
+      }
+      setIsCasinoInteriorLoading(false);
+      setIsInsideGrandCasino(false);
+      setIsGrandCasinoModalOpen(false);
     };
     const onStartCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
@@ -2456,6 +2668,7 @@ export default function App() {
       setIsPersonalBagModalOpen(false);
       setIsDailyMissionsModalOpen(false);
       setIsSocialChatModalOpen(false);
+      setIsFashionBoutiqueModalOpen(false);
       setIsRealEstateCatalogModalOpen(false);
       setActiveSpecialModal('none');
       setActiveTeleportKioskModal('none');
@@ -2463,6 +2676,24 @@ export default function App() {
     };
     const onCloseScooterShowroomModal = () => {
       setIsScooterShowroomModalOpen(false);
+    };
+    const onOpenFashionBoutiqueModal = () => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      setIsKioskModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsPersonalBagModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsScooterShowroomModalOpen(false);
+      setIsRealEstateCatalogModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
+      setActiveSpecialModal('none');
+      setActiveTeleportKioskModal('none');
+      setIsFashionBoutiqueModalOpen(true);
+    };
+    const onCloseFashionBoutiqueModal = () => {
+      setIsFashionBoutiqueModalOpen(false);
     };
     const onOpenRealEstateCatalogModal = (e: Event) => {
       if (hudRef.current.worldMode === 'warzone') return;
@@ -2475,12 +2706,53 @@ export default function App() {
       setIsDailyMissionsModalOpen(false);
       setIsSocialChatModalOpen(false);
       setIsScooterShowroomModalOpen(false);
+      setIsFashionBoutiqueModalOpen(false);
       setActiveSpecialModal('none');
       setActiveTeleportKioskModal('none');
       setIsRealEstateCatalogModalOpen(true);
     };
     const onCloseRealEstateCatalogModal = () => {
       setIsRealEstateCatalogModalOpen(false);
+    };
+    const onOpenGrandCasinoModal = (e: Event) => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      const evDetail = (
+        e as CustomEvent<{ tab?: CasinoTab; slotVariant?: CasinoSlotGameVariant }>
+      ).detail;
+      const requestedTab = evDetail?.tab;
+      if (
+        requestedTab === 'slots' ||
+        requestedTab === 'roulette' ||
+        requestedTab === 'blackjack' ||
+        requestedTab === 'cashier' ||
+        requestedTab === 'bar'
+      ) {
+        setGrandCasinoInitialTab(requestedTab);
+      }
+      const reqVariant = evDetail?.slotVariant;
+      if (
+        reqVariant === 'lucky_draw' ||
+        reqVariant === 'classic_reels' ||
+        reqVariant === 'multi_line_3x3' ||
+        reqVariant === 'fortune_wheel'
+      ) {
+        setGrandCasinoSlotVariant(reqVariant);
+      }
+      setIsKioskModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsPersonalBagModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsScooterShowroomModalOpen(false);
+      setIsFashionBoutiqueModalOpen(false);
+      setIsRealEstateCatalogModalOpen(false);
+      setActiveSpecialModal('none');
+      setActiveTeleportKioskModal('none');
+      setIsGrandCasinoModalOpen(true);
+    };
+    const onCloseGrandCasinoModal = () => {
+      setIsGrandCasinoModalOpen(false);
     };
     const onCityTramRideProgress = (e: Event) => {
       const detail = (
@@ -2558,9 +2830,19 @@ export default function App() {
       }
       setIsCafeInteriorLoading(false);
     };
+    const onCasinoInteriorReady = () => {
+      if (casinoLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(casinoLoadingTimeoutRef.current);
+        casinoLoadingTimeoutRef.current = null;
+      }
+      setIsCasinoInteriorLoading(false);
+    };
     window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
     window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
     window.addEventListener('cafe-interior-ready', onCafeInteriorReady);
+    window.addEventListener('enter-grand-casino-interior', onEnterGrandCasinoInterior);
+    window.addEventListener('exit-grand-casino-interior', onExitGrandCasinoInterior);
+    window.addEventListener('casino-interior-ready', onCasinoInteriorReady);
     window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
     window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
     window.addEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
@@ -2580,12 +2862,29 @@ export default function App() {
     window.addEventListener('close-teleport-kiosk-modal', onCloseTeleportKioskModal);
     window.addEventListener('open-scooter-showroom-modal', onOpenScooterShowroomModal);
     window.addEventListener('close-scooter-showroom-modal', onCloseScooterShowroomModal);
+    window.addEventListener('open-fashion-boutique-modal', onOpenFashionBoutiqueModal);
+    window.addEventListener('close-fashion-boutique-modal', onCloseFashionBoutiqueModal);
     window.addEventListener('open-realestate-catalog-modal', onOpenRealEstateCatalogModal);
     window.addEventListener('close-realestate-catalog-modal', onCloseRealEstateCatalogModal);
+    window.addEventListener('open-grand-casino-modal', onOpenGrandCasinoModal);
+    window.addEventListener('close-grand-casino-modal', onCloseGrandCasinoModal);
     window.addEventListener('city-tram-ride-progress', onCityTramRideProgress);
     window.addEventListener('city-tram-ride-complete', onCityTramRideComplete);
     const onScooterDismounted = () => setEquippedScooterKind(null);
+    const onScooterMounted = (e: Event) => {
+      const kind = (e as CustomEvent<{ kind?: UrbanScooterKind }>).detail?.kind;
+      if (kind === 'electric_scooter_bike' || kind === 'push_kick_scooter') {
+        setEquippedScooterKind(kind);
+        setPreferredScooterKind(kind);
+        try {
+          window.localStorage.setItem('bb_preferred_scooter_kind_v1', kind);
+        } catch {
+          // ignore storage errors
+        }
+      }
+    };
     window.addEventListener('scooter-dismounted', onScooterDismounted);
+    window.addEventListener('scooter-mounted', onScooterMounted);
     return () => {
       window.removeEventListener('toggle-kiosk-ui', onToggleKiosk);
       window.removeEventListener('close-kiosk-ui', onCloseKiosk);
@@ -2596,9 +2895,16 @@ export default function App() {
         window.clearTimeout(cafeLoadingTimeoutRef.current);
         cafeLoadingTimeoutRef.current = null;
       }
+      if (casinoLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(casinoLoadingTimeoutRef.current);
+        casinoLoadingTimeoutRef.current = null;
+      }
       window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
       window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
       window.removeEventListener('cafe-interior-ready', onCafeInteriorReady);
+      window.removeEventListener('enter-grand-casino-interior', onEnterGrandCasinoInterior);
+      window.removeEventListener('exit-grand-casino-interior', onExitGrandCasinoInterior);
+      window.removeEventListener('casino-interior-ready', onCasinoInteriorReady);
       window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
       window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
       window.removeEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
@@ -2618,11 +2924,16 @@ export default function App() {
       window.removeEventListener('close-teleport-kiosk-modal', onCloseTeleportKioskModal);
       window.removeEventListener('open-scooter-showroom-modal', onOpenScooterShowroomModal);
       window.removeEventListener('close-scooter-showroom-modal', onCloseScooterShowroomModal);
+      window.removeEventListener('open-fashion-boutique-modal', onOpenFashionBoutiqueModal);
+      window.removeEventListener('close-fashion-boutique-modal', onCloseFashionBoutiqueModal);
       window.removeEventListener('open-realestate-catalog-modal', onOpenRealEstateCatalogModal);
       window.removeEventListener('close-realestate-catalog-modal', onCloseRealEstateCatalogModal);
+      window.removeEventListener('open-grand-casino-modal', onOpenGrandCasinoModal);
+      window.removeEventListener('close-grand-casino-modal', onCloseGrandCasinoModal);
       window.removeEventListener('city-tram-ride-progress', onCityTramRideProgress);
       window.removeEventListener('city-tram-ride-complete', onCityTramRideComplete);
       window.removeEventListener('scooter-dismounted', onScooterDismounted);
+      window.removeEventListener('scooter-mounted', onScooterMounted);
     };
   }, [openMerchantInChatSession]);
 
@@ -2955,6 +3266,9 @@ export default function App() {
   useEffect(() => {
     if (hud.worldMode === 'warzone') {
       setIsDailyMissionsModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
+      setIsInsideGrandCasino(false);
+      setIsCasinoInteriorLoading(false);
     }
   }, [hud.worldMode]);
 
@@ -3402,6 +3716,134 @@ export default function App() {
     [dispatchBuddyAction, grantPlayerXp, cyonBalance, respiteBalance],
   );
 
+  const handleOrderCasinoLoungeDrink = useCallback(
+    (drinkName: string, costLul: number, xpReward: number): { ok: boolean; message: string } => {
+      const safeCost = Math.max(0, Math.floor(costLul));
+      if (hudRef.current.gold < safeCost) {
+        soundEngine.playHit();
+        return {
+          ok: false,
+          message: `Need ${safeCost} LUL to order ${drinkName}.`,
+        };
+      }
+      const nextLul = Math.max(0, hudRef.current.gold - safeCost);
+      soundEngine.playUiConfirm();
+      soundEngine.playPickup();
+      dispatchBuddyAction(`adjustPlayerLul:${-safeCost}`);
+      setHud((prev) => ({ ...prev, gold: nextLul }));
+      const account = hudRef.current.nearWalletId || '';
+      if (account) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: account,
+          lulBalance: nextLul,
+          cyonBalance,
+          respiteBalance,
+        });
+      }
+      if (xpReward > 0) {
+        grantPlayerXp(xpReward, `LOUNGE BAR: ${drinkName.toUpperCase()}`);
+      }
+      dispatchBuddyAction(`socialTalk:Ordered ${drinkName} (+${xpReward} XP)!`);
+      return { ok: true, message: `Served ${drinkName}! +${xpReward} XP` };
+    },
+    [dispatchBuddyAction, grantPlayerXp, cyonBalance, respiteBalance],
+  );
+
+  const handleCasinoSettleTableGame = useCallback(
+    (payoutLul: number, xpGained: number, announceHeadline?: string) => {
+      if (payoutLul > 0) {
+        const nextLul = hudRef.current.gold + payoutLul;
+        dispatchBuddyAction(`adjustPlayerLul:${payoutLul}`);
+        setHud((prev) => ({ ...prev, gold: nextLul }));
+        const account = hudRef.current.nearWalletId || '';
+        if (account) {
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: account,
+            lulBalance: nextLul,
+            cyonBalance,
+            respiteBalance: respiteBalanceRef.current,
+          });
+        }
+        if (announceHeadline) {
+          dispatchBuddyAction(`socialTalk:${announceHeadline}`);
+        }
+      }
+      if (xpGained > 0) {
+        grantPlayerXp(xpGained, 'GRAND CASINO');
+      }
+    },
+    [dispatchBuddyAction, grantPlayerXp, cyonBalance],
+  );
+
+  const handleCasinoDebitRespiteStake = useCallback(
+    (stakeRespite: number): { ok: boolean; message: string } => {
+      const safeBet = Math.round(Math.max(0.5, stakeRespite) * 100) / 100;
+      if (!Number.isFinite(safeBet) || respiteBalanceRef.current + 1e-6 < safeBet) {
+        return {
+          ok: false,
+          message: `INSUFFICIENT RESPITE · NEED ${safeBet.toFixed(2)} RESPITE`,
+        };
+      }
+      const nextRespite = Math.max(
+        0,
+        Math.round((respiteBalanceRef.current - safeBet) * 100) / 100,
+      );
+      respiteBalanceRef.current = nextRespite;
+      setRespiteBalance(nextRespite);
+
+      const accountKey =
+        (hudRef.current.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
+      writeCasinoRespiteDelta(accountKey, readCasinoRespiteDelta(accountKey) - safeBet);
+
+      const account = hudRef.current.nearWalletId || '';
+      if (account) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: account,
+          lulBalance: hudRef.current.gold,
+          cyonBalance: cyonBalanceRef.current,
+          respiteBalance: nextRespite,
+        });
+      }
+      return { ok: true, message: `STAKED ${safeBet.toFixed(2)} RESPITE` };
+    },
+    [playerUid, readCasinoRespiteDelta, writeCasinoRespiteDelta],
+  );
+
+  const handleCasinoSettleRespiteWin = useCallback(
+    (payoutRespite: number, xpGained: number, announceHeadline?: string) => {
+      if (payoutRespite > 0) {
+        const safePayout = Math.round(payoutRespite * 100) / 100;
+        const nextRespite = Math.max(
+          0,
+          Math.round((respiteBalanceRef.current + safePayout) * 100) / 100,
+        );
+        respiteBalanceRef.current = nextRespite;
+        setRespiteBalance(nextRespite);
+
+        const accountKey =
+          (hudRef.current.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
+        writeCasinoRespiteDelta(accountKey, readCasinoRespiteDelta(accountKey) + safePayout);
+
+        const account = hudRef.current.nearWalletId || '';
+        if (account) {
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: account,
+            lulBalance: hudRef.current.gold,
+            cyonBalance: cyonBalanceRef.current,
+            respiteBalance: nextRespite,
+          });
+        }
+        if (announceHeadline) {
+          dispatchBuddyAction(`socialTalk:${announceHeadline}`);
+        }
+      }
+      if (xpGained > 0) {
+        grantPlayerXp(xpGained, 'GRAND CASINO SLOTS');
+      }
+    },
+    [dispatchBuddyAction, grantPlayerXp, playerUid, readCasinoRespiteDelta, writeCasinoRespiteDelta],
+  );
+
   useEffect(() => {
     const onAppCafeAction = (ev: Event) => {
       const act = (ev as CustomEvent<string>).detail;
@@ -3418,9 +3860,16 @@ export default function App() {
       document.body.dataset.playerLevel = String(levelProgress.level);
       document.body.dataset.playerXp = String(levelProgress.totalXp);
       document.body.dataset.cafeInterior = String(isInsideGlasshouseCafe);
+      document.body.dataset.casinoInterior = String(isInsideGrandCasino);
       document.body.dataset.cafeShiftWorking = String(cafeShiftState.isWorking);
     }
-  }, [levelProgress.level, levelProgress.totalXp, isInsideGlasshouseCafe, cafeShiftState.isWorking]);
+  }, [
+    levelProgress.level,
+    levelProgress.totalXp,
+    isInsideGlasshouseCafe,
+    isInsideGrandCasino,
+    cafeShiftState.isWorking,
+  ]);
 
   useEffect(() => {
     const effectiveMode =
@@ -3432,11 +3881,13 @@ export default function App() {
               onboardingStep === 'subwallet_naming' ||
               onboardingStep === 'provisioning_subwallet'
             ? 'character_select'
-            : activeSpecialModal === 'none' && isInsideGlasshouseCafe
-              ? 'cafe_interior'
-              : activeSpecialModal === 'none' && isInsidePrivateHouse
-                ? 'house_visit'
-                : activeSpecialModal;
+            : activeSpecialModal === 'none' && isInsideGrandCasino
+              ? 'casino_interior'
+              : activeSpecialModal === 'none' && isInsideGlasshouseCafe
+                ? 'cafe_interior'
+                : activeSpecialModal === 'none' && isInsidePrivateHouse
+                  ? 'house_visit'
+                  : activeSpecialModal;
     const syncDetail = {
       mode: effectiveMode,
       flyTargetMode: plazaFlyTargetMode,
@@ -3474,6 +3925,7 @@ export default function App() {
     onboardingStep,
     plazaFlyTargetMode,
     activeSpecialModal,
+    isInsideGrandCasino,
     isInsideGlasshouseCafe,
     isInsidePrivateHouse,
     isSampleHouseView,
@@ -3625,7 +4077,12 @@ export default function App() {
       if (liveRespiteStr !== null) {
         const parsedRespite = Number(liveRespiteStr);
         if (Number.isFinite(parsedRespite)) {
-          setRespiteBalance(parsedRespite);
+          const adjusted = Math.max(
+            0,
+            Math.round((parsedRespite + readCasinoRespiteDelta(targetAccount)) * 100) / 100,
+          );
+          respiteBalanceRef.current = adjusted;
+          setRespiteBalance(adjusted);
         }
       }
 
@@ -3871,7 +4328,12 @@ export default function App() {
       const estateRespite = Number(onChainEstate?.respite_balance || '0') || 0;
       const onChainRespite = Math.max(0, Number(onChainEstate?.respite_balance || '0') || 0, estateRespite, Number(onChainRespiteRaw || '0') || 0);
       if (hasAuthoritativeOnChainBalance) {
-        setRespiteBalance(onChainRespite);
+        const adjustedOnChainRespite = Math.max(
+          0,
+          Math.round((onChainRespite + readCasinoRespiteDelta(normalizedWallet)) * 100) / 100,
+        );
+        respiteBalanceRef.current = adjustedOnChainRespite;
+        setRespiteBalance(adjustedOnChainRespite);
       }
       if (onChainEstate && Array.isArray(onChainEstate.family_contracts) && onChainEstate.family_contracts.length > 0) {
         setRecruitedFamilyMembers(
@@ -4565,7 +5027,9 @@ export default function App() {
 
     // Play as Guest Flow: Enter Central Plaza without registration (Exchange / Purchases / Mint gated)
     setPlayerUid('');
-    setRespiteBalance(0);
+    const guestRespite = Math.max(0, readCasinoRespiteDelta('guest'));
+    respiteBalanceRef.current = guestRespite;
+    setRespiteBalance(guestRespite);
     setCyonBalance(0);
     setNearTestnetBalance(0);
     setHasHouseOwnership(false);
@@ -4895,7 +5359,14 @@ export default function App() {
     if (gameState !== 'playing' || onboardingStep !== 'completed') return;
     if (hud.worldMode === 'warzone') return;
     if (caughtFishBucket.length === 0) return;
-    if (activeSpecialModal !== 'none' || isSocialChatModalOpen || isKioskModalOpen) return;
+    if (
+      activeSpecialModal !== 'none' ||
+      isSocialChatModalOpen ||
+      isKioskModalOpen ||
+      isGrandCasinoModalOpen
+    ) {
+      return;
+    }
     if (lastCaughtFishToast) return;
     persistKaiPhoneState({ ...kaiPhoneState, called: true });
     setKaiIncomingCall(true);
@@ -4911,6 +5382,7 @@ export default function App() {
     activeSpecialModal,
     isSocialChatModalOpen,
     isKioskModalOpen,
+    isGrandCasinoModalOpen,
     lastCaughtFishToast,
   ]);
 
@@ -6203,6 +6675,21 @@ export default function App() {
         </div>
       )}
 
+      {/* Grand Casino Lazy-Loading Overlay */}
+      {isPreloadComplete && !isWorldLoading && isCasinoInteriorLoading && (
+        <div
+          data-casino-loading="true"
+          className="fixed inset-0 z-[140] bg-[#160b0d] flex flex-col items-center justify-center gap-4 select-none pointer-events-auto"
+        >
+          <div className="-skew-x-12 px-8 py-4 bg-[#facc15] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase">
+            <span className="skew-x-12 inline-block">ENTERING CASINO...</span>
+          </div>
+          <p className="text-xs sm:text-sm font-black tracking-widest uppercase text-amber-200/90">
+            Preparing Luxury Grand Casino Interior
+          </p>
+        </div>
+      )}
+
       {/* Solid Full Scene Transition Loading Overlay */}
       {isPreloadComplete && isWorldLoading && (
         <div
@@ -6274,6 +6761,7 @@ export default function App() {
               <HudAudioVolumeControl
                 contextId="landing"
                 popoverPlacement="bottom"
+                hideMusicButton
                 isMusicMuted={isMusicMuted}
                 isSfxMuted={isMuted}
                 musicVolumePct={musicVolumePct}
@@ -6956,6 +7444,7 @@ export default function App() {
       {isPreloadComplete &&
         onboardingStep === 'completed' &&
         tutorialStage === 'go_to_hana' &&
+        !isInsideGrandCasino &&
         !isInsideGlasshouseCafe &&
         !isInsidePrivateHouse &&
         activeSpecialModal === 'none' &&
@@ -7105,9 +7594,10 @@ export default function App() {
              ================================================================= */}
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
 
-            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House & Glasshouse Cafe interior) */}
+            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House, Glasshouse Cafe & Grand Casino interior) */}
             {!isInsidePrivateHouse &&
               !isInsideGlasshouseCafe &&
+              !isInsideGrandCasino &&
               activeSpecialModal !== 'npc_merchant' &&
               !isSocialChatModalOpen &&
               peacefulUiState.minimapRadarVisible &&
@@ -7585,6 +8075,7 @@ export default function App() {
           )}
 
 
+
           {/* =================================================================
               3C-2. PRIVATE HOUSE WALK-IN TOP HUD BAR (DECORATE, INVITE FRIEND, EXIT ROOM)
              ================================================================= */}
@@ -8028,6 +8519,7 @@ export default function App() {
               <HudAudioVolumeControl
                 contextId="warzone"
                 popoverPlacement="top"
+                hideMusicButton
                 isMusicMuted={isMusicMuted}
                 isSfxMuted={isMuted}
                 musicVolumePct={musicVolumePct}
@@ -8560,13 +9052,57 @@ export default function App() {
           )}
 
           {/* =================================================================
-              3G. BOTTOM-RIGHT: MUSIC & SOUND TOGGLE BUTTONS (City / Safezone / Interiors)
+              3G. BOTTOM-RIGHT: QUICK MOUNT SCOOTER & SOUND CONTROLS (City / Safezone / Interiors)
              ================================================================= */}
           {playMode !== 'editor' && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
-            <div className="fixed bottom-16 sm:bottom-3 right-3 z-30 pointer-events-auto select-none">
+            <div className="fixed bottom-16 sm:bottom-3 right-3 z-30 pointer-events-auto select-none flex items-center gap-2.5">
+              <HudQuickMountScooterControl
+                ownedScooterIds={ownedScooterIds}
+                equippedScooterKind={equippedScooterKind}
+                preferredScooterKind={preferredScooterKind}
+                canMountOutdoors={
+                  worldMode !== 'warzone' &&
+                  hud.worldMode !== 'warzone' &&
+                  !isInsidePrivateHouse &&
+                  !isInsideGlasshouseCafe &&
+                  !isInsideGrandCasino &&
+                  activeSpecialModal === 'none' &&
+                  !hud.isRidingCityTram &&
+                  hud.controlMode !== 'tank'
+                }
+                popoverPlacement="top"
+                onEquipScooter={(kind) => {
+                  soundEngine.playUiClick();
+                  setPreferredScooterKind(kind);
+                  try {
+                    window.localStorage.setItem('bb_preferred_scooter_kind_v1', kind);
+                  } catch {
+                    // ignore storage errors
+                  }
+                  dispatchBuddyAction(`equipScooter:${kind}`);
+                }}
+                onDismountScooter={() => {
+                  soundEngine.playUiClick();
+                  dispatchBuddyAction('unequipScooter');
+                }}
+                onLocateShowroom={() => {
+                  soundEngine.playUiClick();
+                  window.dispatchEvent(
+                    new CustomEvent('set-tutorial-waypoint', {
+                      detail: {
+                        target: 'coord',
+                        x: -97.355,
+                        z: -4.574,
+                        color: '#22ff5e',
+                      },
+                    }),
+                  );
+                }}
+              />
               <HudAudioVolumeControl
                 contextId="city"
                 popoverPlacement="top"
+                hideMusicButton
                 isMusicMuted={isMusicMuted}
                 isSfxMuted={isMuted}
                 musicVolumePct={musicVolumePct}
@@ -11080,10 +11616,8 @@ export default function App() {
                           soundEngine.playUiClick();
                           if (isEquipped) {
                             dispatchBuddyAction('unequipScooter');
-                            setEquippedScooterKind(null);
                           } else {
                             dispatchBuddyAction(`equipScooter:${v.kind}`);
-                            setEquippedScooterKind(v.kind);
                           }
                           setIsGearModalOpen(false);
                         }}
@@ -11198,7 +11732,7 @@ export default function App() {
                 }`}
               >
                 <div className="skew-x-6 flex items-center gap-1">
-                  <span>ITEMS ({ownedMerchantItemIds.length})</span>
+                  <span>ITEMS ({ownedMerchantItemIds.length + ownedApparelIds.length})</span>
                 </div>
               </button>
             </div>
@@ -11220,8 +11754,86 @@ export default function App() {
           {/* Bag Body */}
           <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
             {personalBagTab === 'equipment' && (() => {
+              const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
+                ownedApparelIds.includes(apparel.id),
+              );
               return (
                 <div className="space-y-3">
+                  {/* Wardrobe & Apparel Section inside Personal Bag */}
+                  <div className="p-3 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_#000] space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Shirt className="w-4 h-4 text-[#0284c7] shrink-0" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-900">
+                          WARDROBE &amp; APPAREL ({ownedWardrobeItems.length})
+                        </span>
+                      </div>
+                      {equippedTorsoItemId && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEquipApparel(null)}
+                          className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[9.5px] font-black uppercase border border-black cursor-pointer whitespace-nowrap"
+                        >
+                          Default Top
+                        </button>
+                      )}
+                    </div>
+
+                    {ownedWardrobeItems.length === 0 ? (
+                      <div className="p-3 bg-white border border-dashed border-slate-300 text-center space-y-1">
+                        <div className="text-[11px] font-black uppercase text-slate-600">
+                          No Clothing in Bag Yet
+                        </div>
+                        <p className="text-[10.5px] font-bold text-slate-500">
+                          Visit the Fashion &amp; Apparel Boutique kiosk on Central Plaza to buy outfits into your Bag.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {ownedWardrobeItems.map((apparel) => {
+                          const isEquippedNow = equippedTorsoItemId === apparel.id;
+                          return (
+                            <div
+                              key={apparel.id}
+                              data-bag-apparel-row={apparel.id}
+                              className="p-2.5 bg-white border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-xs font-black text-slate-900 truncate">
+                                  {apparel.name}
+                                </div>
+                                <div className="text-[10px] font-bold text-slate-500 mt-0.5">
+                                  <span>Torso Slot</span>
+                                  <span aria-hidden="true"> · </span>
+                                  <span>{characterGender === 'female' ? 'Female Fit' : 'Male Fit'}</span>
+                                  <span aria-hidden="true"> · </span>
+                                  <span className={isEquippedNow ? 'text-emerald-700 font-black' : 'text-slate-600'}>
+                                    {isEquippedNow ? 'Wearing Now' : 'In Bag'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                data-bag-equip-apparel-btn={apparel.id}
+                                onClick={() => handleToggleEquipApparel(apparel.id)}
+                                className={`-skew-x-6 px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
+                                  isEquippedNow
+                                    ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                                    : 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
+                                }`}
+                              >
+                                <span className="skew-x-6 inline-block">
+                                  {isEquippedNow ? 'TAKE OFF' : 'WEAR'}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Quick Summary of Bag Capacity */}
                   <div className="p-3 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between">
                     <div>
@@ -11387,19 +11999,55 @@ export default function App() {
             )}
 
             {personalBagTab === 'items' && (() => {
+              const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
+                ownedApparelIds.includes(apparel.id),
+              );
               const ownedPersonalItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
                 ownedMerchantItemIds.includes(item.id),
               );
               const bagOwnedCounts = countOwnedMerchantItems(ownedMerchantItemIds);
               return (
                 <div className="space-y-2">
-                  {ownedPersonalItems.length === 0 ? (
+                  {ownedWardrobeItems.map((apparel) => {
+                    const isEquippedNow = equippedTorsoItemId === apparel.id;
+                    return (
+                      <div
+                        key={apparel.id}
+                        className="p-2.5 bg-slate-50 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between gap-2.5"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-black uppercase text-black truncate">
+                            {apparel.name}
+                          </div>
+                          <div className="text-[10.5px] font-bold text-slate-600 mt-0.5">
+                            <span>Apparel · Torso</span>
+                            <span aria-hidden="true"> · </span>
+                            <span>{isEquippedNow ? 'Wearing Now' : 'Stored in Bag'}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEquipApparel(apparel.id)}
+                          className={`-skew-x-6 px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer whitespace-nowrap shrink-0 ${
+                            isEquippedNow
+                              ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                              : 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
+                          }`}
+                        >
+                          <span className="skew-x-6 inline-block">
+                            {isEquippedNow ? 'TAKE OFF' : 'WEAR'}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {ownedPersonalItems.length === 0 && ownedWardrobeItems.length === 0 ? (
                     <div className="p-6 bg-slate-50 border-2 border-dashed border-slate-300 text-center space-y-1.5">
                       <div className="text-xs font-black uppercase text-slate-600">
                         NO COLLECTIBLE ITEMS YET
                       </div>
                       <p className="text-[11px] font-bold text-slate-500">
-                        Purchase furniture &amp; personal items from Merchant Hana (Plaza) or Kai (Beachfront).
+                        Purchase outfits at the Fashion Boutique or furniture &amp; personal items from Merchant Hana (Plaza) or Kai (Beachfront).
                       </p>
                     </div>
                   ) : (
@@ -11507,7 +12155,9 @@ export default function App() {
           isPersonalBagModalOpen ||
           isNearWalletSelectorOpen ||
           isScooterShowroomModalOpen ||
+          isFashionBoutiqueModalOpen ||
           isRealEstateCatalogModalOpen ||
+          isGrandCasinoModalOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
         }
@@ -11751,7 +12401,9 @@ export default function App() {
           isNearWalletSelectorOpen ||
           isDailyMissionsModalOpen ||
           isScooterShowroomModalOpen ||
+          isFashionBoutiqueModalOpen ||
           isRealEstateCatalogModalOpen ||
+          isGrandCasinoModalOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none' ||
           activeCafeModal !== 'none' ||
@@ -11935,6 +12587,21 @@ export default function App() {
         onDebitStake={handleArcadeSlotDebitStake}
         onSettleSpin={handleArcadeSlotSettleSpin}
       />
+      <GrandCasinoModal
+        isOpen={isGrandCasinoModalOpen && hud.worldMode !== 'warzone'}
+        onClose={() => setIsGrandCasinoModalOpen(false)}
+        initialTab={grandCasinoInitialTab}
+        slotVariant={grandCasinoSlotVariant}
+        lulBalance={hud.gold}
+        respiteBalance={respiteBalance}
+        levelProgress={levelProgress}
+        onDebitStake={handleArcadeSlotDebitStake}
+        onDebitSlotRespite={handleCasinoDebitRespiteStake}
+        onSettleSlots={handleArcadeSlotSettleSpin}
+        onSettleSlotRespite={handleCasinoSettleRespiteWin}
+        onSettleTableGame={handleCasinoSettleTableGame}
+        onOrderLoungeDrink={handleOrderCasinoLoungeDrink}
+      />
       <DailyMissionsModal
         isOpen={isDailyMissionsModalOpen && hud.worldMode !== 'warzone'}
         onClose={() => {
@@ -11961,6 +12628,9 @@ export default function App() {
           }
           if (isInsideGlasshouseCafe) {
             dispatchBuddyAction('exitGlasshouseCafe');
+          }
+          if (isInsideGrandCasino) {
+            dispatchBuddyAction('exitGrandCasino');
           }
           if (hud.worldMode === 'warzone') return;
           const def = DAILY_MISSIONS_CATALOG.find((m) => m.id === missionId);
@@ -12163,6 +12833,19 @@ export default function App() {
             txHash: buyRes.txHash,
           });
           return { ok: true };
+        }}
+      />
+      <FashionBoutiqueModal
+        isOpen={isFashionBoutiqueModalOpen && hud.worldMode !== 'warzone'}
+        onClose={() => setIsFashionBoutiqueModalOpen(false)}
+        lulBalance={hud.gold}
+        characterGender={characterGender}
+        ownedApparelIds={ownedApparelIds}
+        equippedTorsoItemId={equippedTorsoItemId}
+        onPurchaseApparelToBag={handlePurchaseFashionApparelToBag}
+        onOpenPersonalBag={() => {
+          setPersonalBagTab('equipment');
+          setIsPersonalBagModalOpen(true);
         }}
       />
       <RealEstateCatalogModal

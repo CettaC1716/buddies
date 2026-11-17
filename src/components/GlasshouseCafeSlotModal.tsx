@@ -1,5 +1,26 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Coins, RotateCw, Sparkles, Trophy, X } from 'lucide-react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import {
+  BookOpen,
+  Coffee,
+  Coins,
+  FastForward,
+  Minus,
+  Play,
+  Plus,
+  RotateCw,
+  Sparkles,
+  Trophy,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
   ARCADE_SLOT_BET_TIERS,
@@ -11,6 +32,32 @@ import {
   spinArcadeSlotReels,
 } from '../game/buddiesArcadeSlots';
 import type { PlayerLevelProgress } from '../game/buddiesCafeRules';
+
+interface WinningBeamLine {
+  coords: ReadonlyArray<{ col: number; row: number }>;
+  colorHex: string;
+}
+
+interface RecentCafeHit {
+  player: string;
+  symbolLabel: string;
+  amountLul: number;
+}
+
+const INITIAL_CAFE_RECENT_HITS: RecentCafeHit[] = [
+  { player: 'HANA', symbolLabel: '3x DIAMOND', amountLul: 100 },
+  { player: 'KAI', symbolLabel: '3x STAR', amountLul: 60 },
+  { player: 'MILO', symbolLabel: '2x LUCKY 7', amountLul: 20 },
+  { player: 'SORA', symbolLabel: '3x BELL', amountLul: 40 },
+];
+
+const CELL_HEIGHT_PX = 108;
+const VISIBLE_ROWS = 3;
+
+const pickRandomCafeSymbol = (): ArcadeSlotSymbolId => {
+  const idx = Math.floor(Math.random() * ARCADE_SLOT_STRIP.length);
+  return ARCADE_SLOT_STRIP[idx] ?? 'cherry';
+};
 
 const SlotSymbolArtwork: React.FC<{ id: ArcadeSlotSymbolId; sizeClass?: string }> = ({
   id,
@@ -302,6 +349,59 @@ const SlotSymbolArtwork: React.FC<{ id: ArcadeSlotSymbolId; sizeClass?: string }
   }
 };
 
+const CafeReelSymbolTile: React.FC<{
+  symbolId: ArcadeSlotSymbolId;
+  isCenterRow: boolean;
+  highlighted: boolean;
+  wonMultiplier?: number;
+}> = ({ symbolId, isCenterRow, highlighted, wonMultiplier }) => {
+  const spec = ARCADE_SLOT_SYMBOLS.find((s) => s.id === symbolId);
+  const showCornerBadge = highlighted || (isCenterRow && symbolId === 'seven');
+
+  return (
+    <div
+      className={`relative w-full max-w-[196px] h-[88px] rounded-xl border-[2.5px] flex flex-col items-center justify-center pb-2.5 transition-transform duration-150 ${
+        highlighted
+          ? 'bg-gradient-to-b from-[#fef08a] via-[#fbbf24] to-[#f59e0b] border-[#fffbeb] ring-3 ring-[#b8ff3c] scale-[1.04] shadow-[0_4px_0_#3b1806]'
+          : isCenterRow
+            ? 'bg-gradient-to-b from-[#fffdf7] via-[#fef3c7] to-[#fde68a] border-[#78350f] shadow-[0_3px_0_#451a03]'
+            : 'bg-gradient-to-b from-[#fdf6e7]/90 to-[#f5ead4]/90 border-[#cbb894] opacity-80'
+      }`}
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-1 rounded-lg border border-[#78350f]/15"
+      />
+
+      {showCornerBadge && (
+        <div
+          className={`absolute -top-2 -right-2 z-10 px-1.5 py-0.5 rounded-lg border-2 border-[#14161d] font-mono-tabular font-black text-[9.5px] uppercase shadow-[0_2px_0_#14161d] whitespace-nowrap ${
+            highlighted ? 'bg-[#b8ff3c] text-[#14161d]' : 'bg-[#1e212b] text-[#fec83e]'
+          }`}
+        >
+          {highlighted && wonMultiplier ? `${wonMultiplier}X` : '50X'}
+        </div>
+      )}
+
+      <SlotSymbolArtwork id={symbolId} sizeClass="w-12 h-12 sm:w-13 sm:h-13" />
+
+      <div
+        className={`absolute -bottom-2 inset-x-3 py-0.5 px-1.5 rounded-full border-2 text-center shadow-[0_2px_0_#3b1806] ${
+          highlighted
+            ? 'bg-gradient-to-b from-[#d9f99d] to-[#65a30d] border-white text-[#14161d]'
+            : isCenterRow
+              ? 'bg-gradient-to-b from-[#7c2d12] to-[#3b1806] border-[#fef3c7] text-[#fffbeb]'
+              : 'bg-[#573614] border-[#efe4ce] text-[#fef3c7]'
+        }`}
+      >
+        <span className="block text-[9px] font-black uppercase tracking-wider truncate">
+          {spec?.label ?? symbolId}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 export interface GlasshouseCafeSlotModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -319,24 +419,175 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
   onDebitStake,
   onSettleSpin,
 }) => {
+  const jackpotGradId = useId();
+  const mountedRef = useRef(true);
+  const timersRef = useRef<number[]>([]);
+  const rafIdsRef = useRef<number[]>([]);
+
   const [selectedBet, setSelectedBet] = useState<number>(5);
   const [reels, setReels] = useState<[ArcadeSlotSymbolId, ArcadeSlotSymbolId, ArcadeSlotSymbolId]>([
     'seven',
     'diamond',
     'star',
   ]);
-  const [lockedReels, setLockedReels] = useState<[boolean, boolean, boolean]>([true, true, true]);
+  const [reelTapes, setReelTapes] = useState<
+    [ArcadeSlotSymbolId[], ArcadeSlotSymbolId[], ArcadeSlotSymbolId[]]
+  >(() => [
+    ['cherry', 'seven', 'coffee'],
+    ['bell', 'diamond', 'cherry'],
+    ['coffee', 'star', 'bell'],
+  ]);
+  const currentMatrixRef = useRef<
+    [ArcadeSlotSymbolId[], ArcadeSlotSymbolId[], ArcadeSlotSymbolId[]]
+  >(reelTapes);
+  const stripDomRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null, HTMLDivElement | null]>(
+    [null, null, null],
+  );
+  const [spinningCols, setSpinningCols] = useState<[boolean, boolean, boolean]>([
+    false,
+    false,
+    false,
+  ]);
   const [isSpinning, setIsSpinning] = useState(false);
+  const [isTurbo, setIsTurbo] = useState(false);
+  const [isAutoSpin, setIsAutoSpin] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => !soundEngine.muted);
+  const [isPaytableOpen, setIsPaytableOpen] = useState(false);
+
   const [lastResult, setLastResult] = useState<ArcadeSlotEvaluation | null>(null);
+  const [lastWinLul, setLastWinLul] = useState<number>(0);
+  const [statusMessage, setStatusMessage] = useState<string>('Pick your stake and press Spin');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [sessionStats, setSessionStats] = useState({ spins: 0, bestWinLul: 0, netLul: 0 });
+  const [recentHits, setRecentHits] = useState<RecentCafeHit[]>(INITIAL_CAFE_RECENT_HITS);
+  const [winningCellKeys, setWinningCellKeys] = useState<Set<string>>(() => new Set());
+  const [winningBeams, setWinningBeams] = useState<WinningBeamLine[]>([]);
+
+  const isAutoSpinRef = useRef(false);
+  isAutoSpinRef.current = isAutoSpin;
+  const isTurboRef = useRef(false);
+  isTurboRef.current = isTurbo;
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
 
   const pendingSettlementRef = useRef<{ evaluation: ArcadeSlotEvaluation; betLul: number } | null>(
     null,
   );
   const onSettleSpinRef = useRef(onSettleSpin);
   onSettleSpinRef.current = onSettleSpin;
-  const timersRef = useRef<number[]>([]);
+  const handleSpinRef = useRef<() => void>(() => {});
+
+  const paylineCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const particleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const particlesRef = useRef<
+    Array<{
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      size: number;
+      color: string;
+      alpha: number;
+      rot: number;
+      vRot: number;
+    }>
+  >([]);
+  const particleRafRef = useRef<number | null>(null);
+
+  const playCabinetClick = useCallback(() => {
+    if (soundEnabledRef.current) soundEngine.playUiClick();
+  }, []);
+
+  const playCabinetTick = useCallback((step = 0) => {
+    if (soundEnabledRef.current) soundEngine.playSlotReelTick(step);
+  }, []);
+
+  const playCabinetReelLock = useCallback((colIdx: number, excited = false) => {
+    if (soundEnabledRef.current) soundEngine.playSlotReelLock(colIdx, excited);
+  }, []);
+
+  const triggerCoinParticleBurst = useCallback((count = 36) => {
+    const canvas = particleCanvasRef.current;
+    if (!canvas) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const cx = canvas.width * 0.5;
+    const cy = canvas.height * 0.44;
+    const palette = ['#fec83e', '#fde047', '#f59e0b', '#b8ff3c', '#84cc16'];
+
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 8 + 3.2;
+      particlesRef.current.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 5,
+        size: Math.random() * 8.5 + 6,
+        color: palette[i % palette.length] ?? '#fec83e',
+        alpha: 1,
+        rot: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 14,
+      });
+    }
+
+    if (particleRafRef.current !== null) return;
+
+    const renderParticles = () => {
+      const c = particleCanvasRef.current;
+      if (!c) {
+        particleRafRef.current = null;
+        return;
+      }
+      const ctx = c.getContext('2d');
+      if (!ctx) {
+        particleRafRef.current = null;
+        return;
+      }
+      ctx.clearRect(0, 0, c.width, c.height);
+
+      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+        const p = particlesRef.current[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.28;
+        p.rot += p.vRot;
+        p.alpha -= 0.015;
+
+        if (p.alpha <= 0 || p.y > c.height + 20) {
+          particlesRef.current.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rot * Math.PI) / 180);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size, p.size * 0.74, 0, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = '#3b1806';
+        ctx.stroke();
+        ctx.fillStyle = '#3b1806';
+        ctx.font = '900 8px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('L', 0, 0.5);
+        ctx.restore();
+      }
+
+      if (particlesRef.current.length > 0) {
+        particleRafRef.current = window.requestAnimationFrame(renderParticles);
+      } else {
+        particleRafRef.current = null;
+        ctx.clearRect(0, 0, c.width, c.height);
+      }
+    };
+
+    particleRafRef.current = window.requestAnimationFrame(renderParticles);
+  }, []);
 
   const clearTimers = useCallback(() => {
     for (const id of timersRef.current) {
@@ -344,124 +595,352 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
       window.clearInterval(id);
     }
     timersRef.current = [];
+    for (const rid of rafIdsRef.current) {
+      window.cancelAnimationFrame(rid);
+    }
+    rafIdsRef.current = [];
+    for (let i = 0; i < 3; i++) {
+      const stripEl = stripDomRefs.current[i];
+      if (stripEl) {
+        stripEl.style.setProperty('transform', 'translateY(0px)');
+      }
+    }
   }, []);
 
   const flushPendingSettlement = useCallback(() => {
     const pending = pendingSettlementRef.current;
     if (!pending) return;
     pendingSettlementRef.current = null;
-    onSettleSpinRef.current(pending.evaluation, pending.betLul);
+    const { evaluation, betLul } = pending;
+    onSettleSpinRef.current(evaluation, betLul);
     setSessionStats((prev) => ({
       spins: prev.spins + 1,
-      bestWinLul: Math.max(prev.bestWinLul, pending.evaluation.payoutLul),
-      netLul: prev.netLul + pending.evaluation.netDeltaLul,
+      bestWinLul: Math.max(prev.bestWinLul, evaluation.payoutLul),
+      netLul: prev.netLul + evaluation.netDeltaLul,
     }));
-    setLastResult(pending.evaluation);
-    setReels(pending.evaluation.reels);
-    setLockedReels([true, true, true]);
+    setLastResult(evaluation);
+    setLastWinLul(evaluation.payoutLul);
+    setStatusMessage(`${evaluation.headline} · +${evaluation.xpGained} XP`);
+    setReels(evaluation.reels);
+    setSpinningCols([false, false, false]);
     setIsSpinning(false);
+
+    if (evaluation.payoutLul > 0 && evaluation.matchedSymbol) {
+      const countPrefix =
+        evaluation.outcomeKind === 'jackpot' || evaluation.outcomeKind === 'triple' ? '3x' : '2x';
+      setRecentHits((prev) => [
+        {
+          player: 'YOU',
+          symbolLabel: `${countPrefix} ${evaluation.matchedSymbol!.label}`,
+          amountLul: evaluation.payoutLul,
+        },
+        ...prev.slice(0, 3),
+      ]);
+    }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimers();
+      if (particleRafRef.current !== null) {
+        window.cancelAnimationFrame(particleRafRef.current);
+        particleRafRef.current = null;
+      }
+      flushPendingSettlement();
+    };
+  }, [clearTimers, flushPendingSettlement]);
+
+  useEffect(() => {
     if (!isOpen) {
+      setIsAutoSpin(false);
+      setIsPaytableOpen(false);
       clearTimers();
       flushPendingSettlement();
       setErrorMsg(null);
     }
   }, [isOpen, clearTimers, flushPendingSettlement]);
 
-  useEffect(() => {
-    return () => {
-      clearTimers();
-      flushPendingSettlement();
-    };
-  }, [clearTimers, flushPendingSettlement]);
+  const drawLaserPaylines = useCallback((beams: ReadonlyArray<WinningBeamLine>) => {
+    const canvas = paylineCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (beams.length === 0) return;
+
+    const colW = canvas.width / 3;
+    const rowH = canvas.height / VISIBLE_ROWS;
+
+    for (const beam of beams) {
+      ctx.beginPath();
+      beam.coords.forEach((pt, idx) => {
+        const x = pt.col * colW + colW * 0.5;
+        const y = pt.row * rowH + rowH * 0.5;
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = '#3b1806';
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      ctx.strokeStyle = beam.colorHex;
+      ctx.lineWidth = 4.5;
+      ctx.shadowColor = beam.colorHex;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+
+      ctx.strokeStyle = '#fffbeb';
+      ctx.lineWidth = 1.6;
+      ctx.shadowBlur = 0;
+      ctx.stroke();
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    drawLaserPaylines(winningBeams);
+    const onResize = () => drawLaserPaylines(winningBeams);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isOpen, winningBeams, drawLaserPaylines]);
+
+  const scheduleAutoSpinNext = useCallback(() => {
+    if (!isAutoSpinRef.current || !mountedRef.current) return;
+    const delay = isTurboRef.current ? 420 : 920;
+    const tid = window.setTimeout(() => {
+      if (mountedRef.current && isAutoSpinRef.current) {
+        handleSpinRef.current();
+      }
+    }, delay);
+    timersRef.current.push(tid);
+  }, []);
 
   const handleSpin = useCallback(() => {
-    if (isSpinning) return;
+    if (isSpinning || isPaytableOpen) return;
     setErrorMsg(null);
 
     const spin = spinArcadeSlotReels(selectedBet, lulBalance);
     if (!spin.ok || !spin.evaluation) {
-      soundEngine.playHit();
+      if (soundEnabledRef.current) soundEngine.playHit();
       setErrorMsg(spin.message);
+      setStatusMessage(spin.message);
+      setIsAutoSpin(false);
       return;
     }
 
     const debit = onDebitStake(spin.betLul);
     if (!debit.ok) {
-      soundEngine.playHit();
+      if (soundEnabledRef.current) soundEngine.playHit();
       setErrorMsg(debit.message);
+      setStatusMessage(debit.message);
+      setIsAutoSpin(false);
       return;
     }
 
+    clearTimers();
     const targetEval = spin.evaluation;
     const betLul = spin.betLul;
     pendingSettlementRef.current = { evaluation: targetEval, betLul };
+
     setLastResult(null);
+    setLastWinLul(0);
+    setWinningCellKeys(new Set());
+    setWinningBeams([]);
     setIsSpinning(true);
-    setLockedReels([false, false, false]);
-    soundEngine.playUiConfirm();
+    setSpinningCols([true, true, true]);
+    setStatusMessage(`Spinning Reels (${betLul} LUL)...`);
 
-    const stripLen = ARCADE_SLOT_STRIP.length;
-    let tickStep = 0;
-    const lockFlags: [boolean, boolean, boolean] = [false, false, false];
+    if (soundEnabledRef.current) {
+      soundEngine.playCasinoLeverPull();
+    }
 
-    const intervalId = window.setInterval(() => {
-      tickStep++;
-      setReels((prev) => [
-        lockFlags[0] ? prev[0] : ARCADE_SLOT_STRIP[(tickStep * 3) % stripLen],
-        lockFlags[1] ? prev[1] : ARCADE_SLOT_STRIP[(tickStep * 5 + 9) % stripLen],
-        lockFlags[2] ? prev[2] : ARCADE_SLOT_STRIP[(tickStep * 7 + 19) % stripLen],
-      ]);
-      if (tickStep % 2 === 0) {
-        soundEngine.playUiClick();
-      }
-    }, 75);
-    timersRef.current.push(intervalId);
+    const targetCols: [ArcadeSlotSymbolId[], ArcadeSlotSymbolId[], ArcadeSlotSymbolId[]] = [
+      [pickRandomCafeSymbol(), targetEval.reels[0], pickRandomCafeSymbol()],
+      [pickRandomCafeSymbol(), targetEval.reels[1], pickRandomCafeSymbol()],
+      [pickRandomCafeSymbol(), targetEval.reels[2], pickRandomCafeSymbol()],
+    ];
 
-    const lockAt = (idx: 0 | 1 | 2, delayMs: number) => {
-      const tid = window.setTimeout(() => {
-        lockFlags[idx] = true;
-        setLockedReels([lockFlags[0], lockFlags[1], lockFlags[2]]);
+    const intermediateLen = isTurboRef.current ? 10 : 18;
+    const fullTapes: [ArcadeSlotSymbolId[], ArcadeSlotSymbolId[], ArcadeSlotSymbolId[]] = [
+      [],
+      [],
+      [],
+    ];
+    for (let c = 0; c < 3; c++) {
+      const prevCol = currentMatrixRef.current[c] ?? ['cherry', 'seven', 'coffee'];
+      const mid: ArcadeSlotSymbolId[] = Array.from({ length: intermediateLen }, () =>
+        pickRandomCafeSymbol(),
+      );
+      fullTapes[c] = [...prevCol, ...mid, ...targetCols[c]];
+    }
+
+    setReelTapes(fullTapes);
+
+    const baseDur = isTurboRef.current ? 440 : 880;
+    const stagger = isTurboRef.current ? 150 : 320;
+    let stoppedCount = 0;
+
+    const easeOutBack = (t: number) => {
+      const c1 = 1.55;
+      const c3 = c1 + 1;
+      return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    };
+
+    for (let colIdx = 0; colIdx < 3; colIdx++) {
+      const totalDist = (fullTapes[colIdx].length - VISIBLE_ROWS) * CELL_HEIGHT_PX;
+      const duration = baseDur + colIdx * stagger;
+      const startTime = performance.now();
+      let lastTick = 0;
+
+      const stepCol = (now: number) => {
+        if (!mountedRef.current) return;
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const stripEl = stripDomRefs.current[colIdx];
+
+        if (progress < 0.92 && now - lastTick > (isTurboRef.current ? 55 : 80)) {
+          playCabinetTick(colIdx);
+          lastTick = now;
+        }
+
+        const eased =
+          progress < 0.82
+            ? (progress / 0.82) * 0.88
+            : 0.88 + easeOutBack((progress - 0.82) / 0.18) * 0.12;
+
+        if (stripEl) {
+          stripEl.style.setProperty('transform', `translateY(${-totalDist * eased}px)`);
+        }
+
+        if (progress < 1) {
+          const rid = window.requestAnimationFrame(stepCol);
+          rafIdsRef.current.push(rid);
+          return;
+        }
+
+        if (stripEl) {
+          stripEl.style.setProperty('transform', 'translateY(0px)');
+        }
+
+        setSpinningCols((prev) => {
+          const next: [boolean, boolean, boolean] = [...prev];
+          next[colIdx] = false;
+          return next;
+        });
+        setReelTapes((prev) => {
+          const next: [ArcadeSlotSymbolId[], ArcadeSlotSymbolId[], ArcadeSlotSymbolId[]] = [
+            prev[0],
+            prev[1],
+            prev[2],
+          ];
+          next[colIdx] = targetCols[colIdx];
+          return next;
+        });
         setReels((prev) => {
           const next: [ArcadeSlotSymbolId, ArcadeSlotSymbolId, ArcadeSlotSymbolId] = [
             prev[0],
             prev[1],
             prev[2],
           ];
-          next[idx] = targetEval.reels[idx];
+          next[colIdx] = targetEval.reels[colIdx];
           return next;
         });
-        soundEngine.playUiClick();
 
-        if (idx === 2) {
-          window.clearInterval(intervalId);
-          flushPendingSettlement();
-          if (targetEval.outcomeKind === 'jackpot' || targetEval.outcomeKind === 'triple') {
-            soundEngine.playVictory();
-            soundEngine.playPickup();
-          } else if (targetEval.outcomeKind === 'pair_win') {
-            soundEngine.playOrderBell();
-          } else if (targetEval.outcomeKind === 'push') {
-            soundEngine.playUiConfirm();
-          } else {
-            soundEngine.playHit();
-          }
+        const isPairTension = colIdx === 1 && targetEval.reels[0] === targetEval.reels[1];
+        playCabinetReelLock(colIdx, isPairTension || (colIdx === 2 && targetEval.payoutLul > 0));
+        if (isPairTension) {
+          setStatusMessage('Pair Locked · Waiting Reel 3...');
         }
-      }, delayMs);
-      timersRef.current.push(tid);
-    };
 
-    lockAt(0, 620);
-    lockAt(1, 1020);
-    lockAt(2, 1420);
-  }, [isSpinning, selectedBet, lulBalance, onDebitStake, flushPendingSettlement]);
+        stoppedCount += 1;
+        if (stoppedCount === 3) {
+          currentMatrixRef.current = targetCols;
+          flushPendingSettlement();
+
+          if (targetEval.matchedSymbol) {
+            const matchedId = targetEval.matchedSymbol.id;
+            const hitKeys = new Set<string>();
+            const hitCols: Array<{ col: number; row: number }> = [];
+            ([0, 1, 2] as const).forEach((c) => {
+              if (targetEval.reels[c] === matchedId) {
+                hitKeys.add(`${c}-1`);
+                hitCols.push({ col: c, row: 1 });
+              }
+            });
+            setWinningCellKeys(hitKeys);
+            if (hitCols.length >= 2) {
+              setWinningBeams([
+                {
+                  coords: hitCols,
+                  colorHex:
+                    targetEval.outcomeKind === 'jackpot' || targetEval.outcomeKind === 'triple'
+                      ? '#b8ff3c'
+                      : '#fec83e',
+                },
+              ]);
+            }
+          }
+
+          if (soundEnabledRef.current) {
+            if (targetEval.outcomeKind === 'jackpot' || targetEval.outcomeKind === 'triple') {
+              soundEngine.playCasinoJackpotFanfare(targetEval.outcomeKind === 'jackpot');
+              soundEngine.playPickup();
+            } else if (targetEval.outcomeKind === 'pair_win') {
+              soundEngine.playOrderBell();
+            } else if (targetEval.outcomeKind === 'push') {
+              soundEngine.playUiConfirm();
+            } else {
+              soundEngine.playHit();
+            }
+          }
+
+          if (targetEval.payoutLul > 0) {
+            triggerCoinParticleBurst(
+              targetEval.outcomeKind === 'jackpot'
+                ? 68
+                : targetEval.outcomeKind === 'triple'
+                  ? 44
+                  : 24,
+            );
+          }
+
+          scheduleAutoSpinNext();
+        }
+      };
+
+      const rid = window.requestAnimationFrame(stepCol);
+      rafIdsRef.current.push(rid);
+    }
+  }, [
+    isSpinning,
+    isPaytableOpen,
+    selectedBet,
+    lulBalance,
+    onDebitStake,
+    clearTimers,
+    playCabinetTick,
+    playCabinetReelLock,
+    flushPendingSettlement,
+    triggerCoinParticleBurst,
+    scheduleAutoSpinNext,
+  ]);
+
+  handleSpinRef.current = handleSpin;
 
   const handleClose = useCallback(() => {
+    setIsAutoSpin(false);
+    setIsPaytableOpen(false);
     clearTimers();
     flushPendingSettlement();
-    soundEngine.playUiCancel();
+    if (soundEnabledRef.current) soundEngine.playUiCancel();
     onClose();
   }, [clearTimers, flushPendingSettlement, onClose]);
 
@@ -471,18 +950,30 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
       if (e.code === 'Escape') {
         e.preventDefault();
         e.stopImmediatePropagation();
-        handleClose();
-      } else if (e.code === 'Space' || e.code === 'Enter') {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        handleSpin();
+        if (isPaytableOpen) {
+          setIsPaytableOpen(false);
+        } else {
+          handleClose();
+        }
+      } else if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !isPaytableOpen) {
+        const tag = (document.activeElement?.tagName || '').toUpperCase();
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          handleSpinRef.current();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [isOpen, handleClose, handleSpin]);
+  }, [isOpen, isPaytableOpen, handleClose]);
 
   if (!isOpen) return null;
+
+  const currentBetIdx = Math.max(
+    0,
+    ARCADE_SLOT_BET_TIERS.indexOf(selectedBet as (typeof ARCADE_SLOT_BET_TIERS)[number]),
+  );
 
   const isWinningOutcome =
     lastResult !== null &&
@@ -490,316 +981,612 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
       lastResult.outcomeKind === 'triple' ||
       lastResult.outcomeKind === 'pair_win');
 
-  const isMatchedReel = (idx: 0 | 1 | 2): boolean => {
-    if (!lastResult || !lastResult.matchedSymbol) return false;
-    return reels[idx] === lastResult.matchedSymbol.id;
-  };
-
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="NEO-STRIKE SLOTS"
       data-cafe-slot-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/65 pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 overflow-y-auto pointer-events-auto"
     >
-      <div className="w-full max-w-[620px] max-h-[calc(100vh-1.5rem)] overflow-y-auto bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
-        {/* Header matching Glasshouse Cafe Modal design — preserved intact */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
-          <div className="flex items-center gap-2.5">
-            <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border-2 border-black text-[10px] font-black uppercase">
-              LV {levelProgress.level}
-            </span>
-            <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white">
-              NEO-STRIKE SLOTS
-            </h2>
-          </div>
+      {/* Full-Viewport Golden LUL Coin Particle Burst Canvas */}
+      <canvas
+        ref={particleCanvasRef}
+        className="pointer-events-none fixed inset-0 w-screen h-screen z-[80]"
+        aria-hidden="true"
+      />
 
-          <div className="flex items-center gap-2">
-            <div
-              data-slot-lul-balance="true"
-              className="px-2.5 py-1 bg-[#fec83e] text-[#14161d] border-2 border-black font-mono-tabular font-black text-xs flex items-center gap-1"
-            >
-              <Coins className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-              {lulBalance} LUL
-            </div>
+      <div className="w-full max-w-[1120px] mx-auto my-auto cafe-slot-perspective-stage flex flex-col items-center relative text-[#14161d] px-1 sm:px-3">
+        {/* =====================================================================
+            UPPER 3D BEVELED CAFE CHASSIS & WARM CREAM RECESSED CABINET SCREEN
+            ===================================================================== */}
+        <div className="w-full cafe-slot-cabinet-outer-3d">
+          <div className="w-full cafe-slot-cabinet-screen p-2.5 sm:p-3.5">
+            {/* Tactile 3D Red Close Button Pinned to Top-Right Bezel */}
             <button
               type="button"
               data-cafe-slot-close-btn="true"
               onClick={handleClose}
               aria-label="Close Slot Machine"
-              className="w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+              className="slot-tactile-btn absolute top-2.5 right-2.5 z-50 w-9 h-9 rounded-xl bg-gradient-to-b from-[#ff554a] to-[#dc2626] border-[2.5px] border-[#14161d] shadow-[0_4px_0_#14161d] flex items-center justify-center text-white hover:brightness-105"
             >
               <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
             </button>
-          </div>
-        </div>
 
-        {/* Redesigned Tactile Arcade Kiosk Body */}
-        <div className="bg-gradient-to-b from-[#fdf6e7] to-[#f5ead4] text-[#14161d]">
-          {/* Wooden Arcade Booth with Scalloped Green Awning */}
-          <div className="p-3.5 pb-2">
-            <div className="rounded-2xl overflow-hidden border-[3px] border-[#3b1806] shadow-[0_5px_0_#3b1806]">
-              {/* Striped Green Canopy Awning + Wooden Marquee Sign */}
-              <div className="relative pt-2.5 pb-3.5 px-3 overflow-hidden bg-[repeating-linear-gradient(90deg,#84cc16_0px,#84cc16_38px,#16a34a_38px,#16a34a_76px)] border-b-[3px] border-[#14532d]">
-                {/* Top Sunlit Sheen */}
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-white/40 to-transparent"
-                />
-
-                {/* Center Wooden Jackpot Plaque */}
-                <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-b from-[#b45309] via-[#9a3412] to-[#7c2d12] border-[2.5px] border-[#fef3c7] shadow-[0_3px_0_#451a03]">
-                  <div className="flex items-center gap-1.5">
-                    <Trophy className="w-3.5 h-3.5 text-[#fde047] shrink-0" aria-hidden="true" />
-                    <span className="text-[11px] font-black uppercase tracking-wider text-[#fef08a] drop-shadow-[0_1px_0_#451a03] whitespace-nowrap">
-                      777 Jackpot Pays 50x
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[10.5px] font-extrabold text-[#ffedd5] whitespace-nowrap">
-                    <span>Center Payline</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="text-[#fde047]">2x Pair</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="text-[#bef264]">3x Triple</span>
-                  </div>
-                </div>
-
-                {/* Scalloped Valance Trim along Bottom of Awning */}
-                <svg
-                  viewBox="0 0 480 12"
-                  preserveAspectRatio="none"
-                  aria-hidden="true"
-                  className="absolute inset-x-0 bottom-0 w-full h-2.5 text-[#7c2d12]"
-                >
-                  <path
-                    d="M0,12 L0,2 Q20,12 40,2 Q60,12 80,2 Q100,12 120,2 Q140,12 160,2 Q180,12 200,2 Q220,12 240,2 Q260,12 280,2 Q300,12 320,2 Q340,12 360,2 Q380,12 400,2 Q420,12 440,2 Q460,12 480,2 L480,12 Z"
-                    fill="currentColor"
-                  />
-                </svg>
+            {/* TOP CHASING 19-BULB WARM ESPRESSO & AMBER JACKPOT MARQUEE */}
+            <header className="relative mb-2.5 cafe-slot-marquee-frame rounded-2xl p-2 sm:p-2.5 sm:pr-12">
+              <div
+                className="flex justify-between items-center px-3 sm:px-6 mb-2"
+                aria-hidden="true"
+              >
+                {Array.from({ length: 19 }).map((_, idx) => (
+                  <div key={idx} className="cafe-slot-lamp-3d" />
+                ))}
               </div>
 
-              {/* Warm Wood-Plank Reel Stage */}
-              <div className="relative px-3.5 pt-3.5 pb-3 bg-[repeating-linear-gradient(90deg,rgba(69,26,3,0.16)_0px,rgba(69,26,3,0.16)_2px,transparent_2px,transparent_48px),linear-gradient(180deg,#8c2d0e_0%,#b45309_52%,#7c2d12_100%)]">
-                {/* 3 Cream-Beveled Reel Windows with Overlapping Glossy Plaques */}
-                <div className="grid grid-cols-3 gap-3 pb-2.5">
-                  {([0, 1, 2] as const).map((idx) => {
-                    const symId = reels[idx];
-                    const symSpec = ARCADE_SLOT_SYMBOLS.find((s) => s.id === symId);
-                    const locked = lockedReels[idx];
-                    const highlighted = locked && isMatchedReel(idx);
-                    const showTopJackpotTag = symId === 'seven' && locked;
+              <div className="flex flex-col lg:flex-row items-center justify-between gap-2 px-1 sm:px-2">
+                {/* DIAMOND 20X TIER */}
+                <div className="flex items-center gap-2 bg-gradient-to-b from-[#451a03] to-[#290f02] border-2 border-[#fbbf24] px-3.5 py-1.5 rounded-xl shadow-[0_3px_0_#1e0a01] w-full lg:w-auto justify-center">
+                  <span className="text-xs font-black text-[#fde68a] tracking-wider uppercase whitespace-nowrap">
+                    DIAMOND 20X:
+                  </span>
+                  <span className="font-mono-tabular text-base sm:text-lg font-black text-[#fffbeb] whitespace-nowrap">
+                    {selectedBet * 20} LUL
+                  </span>
+                </div>
+
+                {/* 777 GRAND JACKPOT CENTERPIECE */}
+                <div className="text-center px-4 sm:px-6 py-1.5 rounded-2xl border-[2.5px] border-[#fef3c7] bg-gradient-to-b from-[#9a3412] via-[#7c2d12] to-[#3b1806] shadow-[0_4px_0_#240d02,inset_0_2px_3px_rgba(255,251,235,0.35)] flex-1 max-w-xl relative">
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 flex items-center justify-center">
+                    <div className="px-3 py-0.5 bg-[#14161d] rounded-full border-2 border-[#fef3c7] shadow-[0_2px_0_#000] flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="px-1.5 py-0.2 bg-[#b8ff3c] text-[#14161d] rounded text-[9px] font-black uppercase">
+                        LV {levelProgress.level}
+                      </span>
+                      <span className="text-[10px] font-black tracking-wider text-white uppercase">
+                        NEO-STRIKE SLOTS
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center gap-1.5 pt-1">
+                    <Trophy className="w-3.5 h-3.5 text-[#fde047] shrink-0" aria-hidden="true" />
+                    <span className="text-[11px] sm:text-xs font-black tracking-widest text-[#fef08a] uppercase whitespace-nowrap">
+                      777 JACKPOT PAYS 50X
+                    </span>
+                    <Trophy className="w-3.5 h-3.5 text-[#fde047] shrink-0" aria-hidden="true" />
+                  </div>
+
+                  <svg
+                    viewBox="0 0 420 42"
+                    className="w-full max-w-[380px] h-8 sm:h-10 mx-auto overflow-visible"
+                    role="img"
+                    aria-label={`777 Jackpot ${selectedBet * 50} LUL`}
+                  >
+                    <defs>
+                      <linearGradient id={`${jackpotGradId}-cafe-jp`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#fffbeb" />
+                        <stop offset="45%" stopColor="#fde047" />
+                        <stop offset="100%" stopColor="#f59e0b" />
+                      </linearGradient>
+                    </defs>
+                    <text
+                      x="212"
+                      y="34"
+                      textAnchor="middle"
+                      className="font-mono-tabular"
+                      fontWeight="900"
+                      fontSize="31"
+                      fill="#240d02"
+                    >
+                      {selectedBet * 50} LUL
+                    </text>
+                    <text
+                      x="210"
+                      y="32"
+                      textAnchor="middle"
+                      className="font-mono-tabular"
+                      fontWeight="900"
+                      fontSize="31"
+                      fill={`url(#${jackpotGradId}-cafe-jp)`}
+                      stroke="#451a03"
+                      strokeWidth="0.9"
+                    >
+                      {selectedBet * 50} LUL
+                    </text>
+                  </svg>
+                </div>
+
+                {/* BLITZ STAR 12X TIER */}
+                <div className="flex items-center gap-2 bg-gradient-to-b from-[#1a3a18] to-[#0f240e] border-2 border-[#b8ff3c] px-3.5 py-1.5 rounded-xl shadow-[0_3px_0_#091708] w-full lg:w-auto justify-center">
+                  <span className="text-xs font-black text-[#bef264] tracking-wider uppercase whitespace-nowrap">
+                    STAR 12X:
+                  </span>
+                  <span className="font-mono-tabular text-base sm:text-lg font-black text-[#f7fee7] whitespace-nowrap">
+                    {selectedBet * 12} LUL
+                  </span>
+                </div>
+              </div>
+            </header>
+
+            {/* CENTER INTERACTIVE 3-COLUMN CABINET STAGE */}
+            <section className="grid grid-cols-12 gap-2.5 sm:gap-3 items-stretch relative">
+              {/* LEFT STATUS & UTILITY PANEL */}
+              <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2 cafe-slot-wood-frame rounded-2xl p-2.5">
+                <div className="flex-1 lg:flex-initial text-center bg-gradient-to-b from-[#fffdf7] to-[#fde68a] border-[2.5px] border-[#3b1806] rounded-xl p-2.5 shadow-[0_3px_0_#3b1806] flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-black text-[#78350f] uppercase tracking-wider whitespace-nowrap">
+                    {isWinningOutcome && lastResult ? 'Hit Multiplier' : 'Top Jackpot'}
+                  </span>
+                  <div className="font-mono-tabular text-2xl sm:text-3xl font-black text-[#3b1806] my-0.5 tracking-tight">
+                    {isWinningOutcome && lastResult ? `${lastResult.multiplier}X` : '50X'}
+                  </div>
+                  <span className="text-[9.5px] text-[#4d7c0f] font-black tracking-wider uppercase whitespace-nowrap">
+                    Center Payline
+                  </span>
+                </div>
+
+                <div className="cafe-slot-btn-socket-3d flex-1 lg:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playCabinetClick();
+                      setIsPaytableOpen(true);
+                    }}
+                    className="w-full slot-tactile-btn cafe-slot-btn-cream rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-black text-[#3b1806] uppercase tracking-wider whitespace-nowrap"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-[#9a3412] shrink-0" aria-hidden="true" />
+                    <span>Paytable</span>
+                  </button>
+                </div>
+
+                <div className="cafe-slot-btn-socket-3d flex-1 lg:flex-initial">
+                  <button
+                    type="button"
+                    data-active={soundEnabled}
+                    onClick={() => {
+                      const next = !soundEnabled;
+                      setSoundEnabled(next);
+                      if (next) soundEngine.playUiClick();
+                    }}
+                    className="w-full slot-tactile-btn cafe-slot-btn-cream rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-black uppercase tracking-wider whitespace-nowrap text-[#3b1806]"
+                  >
+                    {soundEnabled ? (
+                      <Volume2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <VolumeX className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    )}
+                    <span>{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
+                  </button>
+                </div>
+
+                <div className="hidden lg:flex flex-col items-center justify-center text-[#fef3c7] pt-1.5 border-t border-[#fef3c7]/25 text-center">
+                  <Coffee className="w-4 h-4 text-[#fde047]" aria-hidden="true" />
+                  <span className="text-[9px] font-black tracking-wider text-[#ffedd5] mt-1 uppercase">
+                    Glasshouse Cafe
+                  </span>
+                </div>
+              </aside>
+
+              {/* CENTER 3D CURVED CYLINDRICAL 3x3 CREAM REEL VIEWPORT */}
+              <div className="col-span-12 lg:col-span-8 relative rounded-2xl overflow-hidden cafe-slot-reels-viewport h-[324px]">
+                <canvas
+                  ref={paylineCanvasRef}
+                  className="pointer-events-none absolute inset-0 w-full h-full z-30"
+                />
+
+                {/* Center Payline Illuminated Guide Bar */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-[108px] border-y-[2.5px] border-[#d97706]/80 bg-gradient-to-r from-[#fde68a]/40 via-[#fffbeb]/60 to-[#fde68a]/40 z-10 flex items-center justify-between px-1"
+                >
+                  <div className="w-0 h-0 border-y-[7px] border-y-transparent border-l-[10px] border-l-[#b45309]" />
+                  <div className="w-0 h-0 border-y-[7px] border-y-transparent border-r-[10px] border-r-[#b45309]" />
+                </div>
+
+                <div className="grid grid-cols-3 h-[324px] relative divide-x-[3px] divide-[#78350f]/45 z-20">
+                  {([0, 1, 2] as const).map((colIdx) => {
+                    const colSpinning = spinningCols[colIdx];
+                    const tape = reelTapes[colIdx];
 
                     return (
                       <div
-                        key={idx}
-                        data-slot-reel={idx}
-                        data-slot-symbol={symId}
-                        className={`relative flex flex-col items-center justify-center h-28 pb-3 rounded-xl border-[3px] transition-transform duration-150 ${
-                          highlighted
-                            ? 'bg-gradient-to-b from-[#fef08a] via-[#fbbf24] to-[#f59e0b] border-[#fffbeb] ring-3 ring-[#b8ff3c] -translate-y-0.5 shadow-[0_5px_0_#451a03]'
-                            : locked
-                              ? 'bg-gradient-to-b from-[#fffdf7] via-[#fef3c7] to-[#fde68a] border-[#fffbeb] shadow-[0_4px_0_#451a03]'
-                              : 'bg-gradient-to-b from-[#fffbeb] via-[#fef3c7] to-[#fed7aa] border-[#fde68a] opacity-95 scale-[0.98] shadow-[0_3px_0_#451a03]'
+                        key={colIdx}
+                        data-slot-reel={colIdx}
+                        data-slot-symbol={reels[colIdx]}
+                        className={`relative overflow-hidden h-[324px] cafe-slot-reel-drum-3d ${
+                          colSpinning ? 'shadow-[inset_0_0_24px_rgba(217,119,6,0.28)]' : ''
                         }`}
                       >
                         <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-1 rounded-lg border border-amber-900/15"
-                        />
-
-                        {(highlighted || showTopJackpotTag) && (
-                          <div
-                            className={`absolute -top-2 -right-2 z-10 px-1.5 py-0.5 rounded-lg border-2 border-[#1e293b] font-mono-tabular font-black text-[9.5px] uppercase shadow-[0_2px_0_#0f172a] ${
-                              highlighted
-                                ? 'bg-[#b8ff3c] text-[#14161d]'
-                                : 'bg-[#0ea5e9] text-white'
-                            }`}
-                          >
-                            {highlighted && lastResult ? `${lastResult.multiplier}x` : '50x'}
-                          </div>
-                        )}
-
-                        <div
-                          className={`transition-transform duration-150 ${
-                            !locked ? 'scale-95 opacity-90' : highlighted ? 'scale-105' : ''
+                          ref={(el) => {
+                            stripDomRefs.current[colIdx] = el;
+                          }}
+                          className={`will-change-transform absolute top-0 left-0 w-full ${
+                            colSpinning ? 'slot-spinning-blur' : ''
                           }`}
                         >
-                          <SlotSymbolArtwork id={symId} sizeClass="w-16 h-16" />
-                        </div>
-
-                        {/* Overlapping Glossy Bottom Plaque */}
-                        <div
-                          className={`absolute -bottom-2.5 inset-x-2.5 py-0.5 px-1.5 rounded-full border-2 text-center shadow-[0_2px_0_#451a03] ${
-                            highlighted
-                              ? 'bg-gradient-to-b from-[#bef264] to-[#65a30d] border-white text-[#14161d]'
-                              : 'bg-gradient-to-b from-[#fbbf24] via-[#f59e0b] to-[#c2410c] border-[#fffbeb] text-white'
-                          }`}
-                        >
-                          <span className="block text-[9.5px] font-black uppercase tracking-wider truncate drop-shadow-[0_1px_0_rgba(69,26,3,0.65)]">
-                            {symSpec?.label}
-                          </span>
+                          {tape.map((symId, rowIdx) => {
+                            const isCenterRow = !colSpinning && rowIdx === 1;
+                            const isHighlighted =
+                              !colSpinning && winningCellKeys.has(`${colIdx}-${rowIdx}`);
+                            return (
+                              <div
+                                key={`${colIdx}-${rowIdx}-${symId}`}
+                                className="h-[108px] flex items-center justify-center px-2 sm:px-3 select-none"
+                              >
+                                <CafeReelSymbolTile
+                                  symbolId={symId}
+                                  isCenterRow={isCenterRow}
+                                  highlighted={isHighlighted}
+                                  wonMultiplier={lastResult?.multiplier}
+                                />
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })}
                 </div>
+              </div>
 
-                {/* Wooden Counter Ledge Outcome Readout */}
+              {/* RIGHT STATUS & SESSION LEDGER PANEL */}
+              <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2 cafe-slot-wood-frame rounded-2xl p-2.5">
+                <div className="flex-1 lg:flex-initial bg-[#2b1003] border-2 border-[#d97706] rounded-xl p-2 shadow-[inset_0_3px_8px_rgba(0,0,0,0.75)]">
+                  <h4 className="text-[9.5px] font-black tracking-wider text-[#fde68a] uppercase text-center border-b border-[#78350f] pb-1 mb-1.5">
+                    Recent Hits
+                  </h4>
+                  <div className="text-[10.5px] space-y-1 font-mono-tabular text-[#ffedd5] leading-tight">
+                    {recentHits.map((hit, idx) => (
+                      <div key={`${hit.player}-${idx}`} className="flex justify-between gap-1">
+                        <span
+                          className={`truncate ${
+                            hit.player === 'YOU' ? 'text-[#b8ff3c] font-black' : 'text-[#fde68a]'
+                          }`}
+                        >
+                          {hit.player}
+                        </span>
+                        <span className="text-[#bef264] font-black whitespace-nowrap">
+                          +{hit.amountLul} LUL
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 lg:flex-initial bg-gradient-to-b from-[#fffdf7] to-[#efe4ce] border-2 border-[#3b1806] rounded-xl p-2 text-[10.5px] font-mono-tabular font-black text-[#451a03] space-y-0.5 shadow-[0_3px_0_#3b1806]">
+                  <div className="flex justify-between">
+                    <span className="text-[#78350f]">Spins</span>
+                    <span>{sessionStats.spins}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#78350f]">Best</span>
+                    <span>{sessionStats.bestWinLul} LUL</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#78350f]">Net</span>
+                    <span
+                      className={
+                        sessionStats.netLul > 0
+                          ? 'text-[#15803d]'
+                          : sessionStats.netLul < 0
+                            ? 'text-[#b91c1c]'
+                            : 'text-[#451a03]'
+                      }
+                    >
+                      {sessionStats.netLul >= 0 ? `+${sessionStats.netLul}` : sessionStats.netLul}{' '}
+                      LUL
+                    </span>
+                  </div>
+                </div>
+
                 <div
                   data-slot-outcome-banner="true"
-                  className={`mt-2.5 px-3 py-2 rounded-xl border-2 text-center text-xs font-black uppercase tracking-wider transition-colors ${
+                  className={`flex-1 lg:flex-initial rounded-xl border-2 px-2 py-2 text-center text-[10.5px] font-black uppercase tracking-wide flex items-center justify-center gap-1 leading-tight ${
                     isSpinning
-                      ? 'bg-[#451a03] border-[#fbbf24] text-[#fef08a]'
-                      : lastResult === null
-                        ? 'bg-[#451a03]/90 border-[#d97706] text-[#ffedd5]'
-                        : isWinningOutcome
-                          ? 'bg-gradient-to-b from-[#d9f99d] to-[#84cc16] border-[#14532d] text-[#14161d] shadow-[0_2px_0_#14532d]'
-                          : lastResult.outcomeKind === 'push'
-                            ? 'bg-gradient-to-b from-[#fef08a] to-[#f59e0b] border-[#451a03] text-[#14161d]'
-                            : 'bg-[#3b1806] border-[#9a3412] text-[#fed7aa]'
+                      ? 'bg-[#3b1806] border-[#fbbf24] text-[#fef08a]'
+                      : isWinningOutcome
+                        ? 'bg-gradient-to-b from-[#d9f99d] to-[#84cc16] border-[#14532d] text-[#14161d] shadow-[0_2px_0_#14532d]'
+                        : lastResult?.outcomeKind === 'push'
+                          ? 'bg-gradient-to-b from-[#fef08a] to-[#f59e0b] border-[#3b1806] text-[#14161d]'
+                          : 'bg-[#2b1003] border-[#d97706] text-[#ffedd5]'
                   }`}
                 >
-                  <span className="inline-flex items-center justify-center gap-1.5">
-                    {isWinningOutcome && !isSpinning && (
-                      <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    )}
-                    <span>
-                      {isSpinning
-                        ? `Spinning Reels (${selectedBet} LUL)...`
-                        : lastResult
-                          ? `${lastResult.headline} · +${lastResult.xpGained} XP`
-                          : 'Pick your stake and press Spin'}
-                    </span>
+                  {isWinningOutcome && !isSpinning && (
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  )}
+                  <span>{statusMessage}</span>
+                </div>
+              </aside>
+            </section>
+
+            {/* DIGITAL WARM ESPRESSO READOUTS: LUL BALANCE & WIN */}
+            <section className="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              <div
+                data-slot-lul-balance="true"
+                className="flex items-center justify-between gap-2 px-4 py-2 cafe-slot-led-box rounded-xl"
+              >
+                <div className="flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-[#fec83e] shrink-0" aria-hidden="true" />
+                  <span className="text-xs sm:text-sm font-black text-[#fde68a] tracking-wider uppercase whitespace-nowrap">
+                    CREDITS:
                   </span>
+                  {lulBalance < ARCADE_SLOT_MIN_BET_LUL && !isSpinning && (
+                    <span className="hidden sm:inline text-[10.5px] font-bold text-[#fca5a5] truncate">
+                      Min {ARCADE_SLOT_MIN_BET_LUL} LUL · Work shift or use Cafe ATM
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono-tabular text-xl sm:text-2xl font-black text-[#fec83e] tracking-wide whitespace-nowrap">
+                  {lulBalance} LUL
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-2 cafe-slot-led-box rounded-xl">
+                <span className="text-xs sm:text-sm font-black text-[#bef264] tracking-wider uppercase whitespace-nowrap">
+                  WIN:
+                </span>
+                <span className="font-mono-tabular text-xl sm:text-2xl font-black text-[#b8ff3c] tracking-wide whitespace-nowrap">
+                  {lastWinLul} LUL
+                </span>
+              </div>
+            </section>
+
+            {errorMsg && (
+              <div className="mt-2 px-3 py-1.5 rounded-xl bg-[#fee2e2] border-2 border-[#7f1d1d] text-xs font-black text-[#991b1b] text-center">
+                {errorMsg}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* =====================================================================
+            3D MECHANICAL RECESSED HINGE SEAM
+            ===================================================================== */}
+        <div className="cafe-slot-hinge-neck-3d" aria-hidden="true" />
+
+        {/* =====================================================================
+            LOWER 3D FORWARD-JUTTING WARM CREAM CONSOLE DECK + FRONT BUMPER LIP
+            ===================================================================== */}
+        <div className="w-[99%] sm:w-[102%] flex flex-col items-center">
+          <footer className="w-full cafe-slot-tactile-console-3d px-3 py-3 sm:px-5 sm:py-3.5">
+            <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2.5 sm:gap-3">
+              {/* Left Auxiliary Controls in Recessed 3D Sockets: TURBO & AUTO SPIN */}
+              <div className="flex items-center gap-2">
+                <div className="cafe-slot-btn-socket-3d">
+                  <button
+                    type="button"
+                    data-active={isTurbo}
+                    onClick={() => {
+                      playCabinetClick();
+                      setIsTurbo((prev) => !prev);
+                    }}
+                    className="slot-tactile-btn cafe-slot-btn-cream px-3 py-2.5 rounded-xl text-xs font-black text-[#3b1806] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <FastForward className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>Turbo</span>
+                  </button>
+                </div>
+
+                <div className="cafe-slot-btn-socket-3d">
+                  <button
+                    type="button"
+                    data-active={isAutoSpin}
+                    onClick={() => {
+                      playCabinetClick();
+                      const next = !isAutoSpin;
+                      setIsAutoSpin(next);
+                      if (next && !isSpinning) {
+                        handleSpin();
+                      }
+                    }}
+                    className="slot-tactile-btn cafe-slot-btn-amber px-3 py-2.5 rounded-xl text-xs font-black text-[#3b1806] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <RotateCw
+                      className={`w-3.5 h-3.5 shrink-0 ${isAutoSpin ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span>{isAutoSpin ? 'Stop Auto' : 'Auto Spin'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Center Recessed Stake Rocker + Direct Tier Buttons (2 / 5 / 10 / 25 LUL) */}
+              <div className="flex items-center bg-[#3b1806] border-[2.5px] border-[#d97706] rounded-2xl p-1.5 shadow-[inset_0_3px_8px_rgba(0,0,0,0.75)] gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  disabled={isSpinning || currentBetIdx <= 0}
+                  onClick={() => {
+                    playCabinetClick();
+                    const nextTier = ARCADE_SLOT_BET_TIERS[Math.max(0, currentBetIdx - 1)] ?? 2;
+                    setSelectedBet(nextTier);
+                    setErrorMsg(null);
+                  }}
+                  aria-label="Decrease Stake"
+                  className="slot-tactile-btn w-8 h-9 rounded-lg cafe-slot-btn-cream text-[#3b1806] flex items-center justify-center disabled:opacity-45"
+                >
+                  <Minus className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {ARCADE_SLOT_BET_TIERS.map((tier) => {
+                    const active = selectedBet === tier;
+                    const affordable = lulBalance >= tier;
+                    return (
+                      <button
+                        key={tier}
+                        type="button"
+                        disabled={isSpinning}
+                        data-slot-bet-btn={tier}
+                        onClick={() => {
+                          playCabinetClick();
+                          setSelectedBet(tier);
+                          setErrorMsg(null);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg border-2 font-mono-tabular font-black text-center cursor-pointer transition-transform duration-100 active:translate-y-0.5 whitespace-nowrap ${
+                          active
+                            ? 'bg-gradient-to-b from-[#fde047] via-[#f59e0b] to-[#c2410c] border-[#fffbeb] text-white shadow-[0_2px_0_#1e0a01]'
+                            : affordable
+                              ? 'bg-[#fffdf7] hover:bg-[#fef3c7] border-[#9a3412] text-[#3b1806]'
+                              : 'bg-[#573614] border-[#78350f] text-[#cbb894]'
+                        }`}
+                      >
+                        <div className="text-xs font-black leading-tight">{tier}</div>
+                        <div className="text-[8.5px] font-black uppercase leading-none opacity-90">
+                          LUL
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isSpinning || currentBetIdx >= ARCADE_SLOT_BET_TIERS.length - 1}
+                  onClick={() => {
+                    playCabinetClick();
+                    const nextTier =
+                      ARCADE_SLOT_BET_TIERS[
+                        Math.min(ARCADE_SLOT_BET_TIERS.length - 1, currentBetIdx + 1)
+                      ] ?? 25;
+                    setSelectedBet(nextTier);
+                    setErrorMsg(null);
+                  }}
+                  aria-label="Increase Stake"
+                  className="slot-tactile-btn w-8 h-9 rounded-lg cafe-slot-btn-cream text-[#3b1806] flex items-center justify-center disabled:opacity-45"
+                >
+                  <Plus className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                </button>
+              </div>
+
+              {/* Max Bet Button in Recessed 3D Socket */}
+              <div className="cafe-slot-btn-socket-3d">
+                <button
+                  type="button"
+                  disabled={isSpinning}
+                  onClick={() => {
+                    playCabinetClick();
+                    let bestTier: number = ARCADE_SLOT_BET_TIERS[0];
+                    for (const tier of ARCADE_SLOT_BET_TIERS) {
+                      if (lulBalance >= tier) bestTier = tier;
+                    }
+                    setSelectedBet(bestTier);
+                    setErrorMsg(null);
+                  }}
+                  className="slot-tactile-btn cafe-slot-btn-amber px-3 py-2.5 rounded-xl text-xs font-black text-[#3b1806] uppercase tracking-wider whitespace-nowrap disabled:opacity-50"
+                >
+                  Max Bet
+                </button>
+              </div>
+
+              {/* Giant 3D Extruded Botanical Lime-Green Dome SPIN Button */}
+              <div className="cafe-slot-btn-socket-3d flex-1 lg:flex-initial ml-auto">
+                <button
+                  type="button"
+                  disabled={isSpinning || lulBalance < ARCADE_SLOT_MIN_BET_LUL}
+                  data-slot-spin-btn="true"
+                  onClick={handleSpin}
+                  className="w-full slot-tactile-btn cafe-slot-btn-spin-lime min-w-[175px] sm:min-w-[215px] h-13 sm:h-14 rounded-xl px-4 flex items-center justify-center gap-2 text-[#14161d] font-black text-base sm:text-lg uppercase tracking-wider whitespace-nowrap"
+                >
+                  <span className="font-mono-tabular">
+                    {isSpinning ? 'SPINNING...' : `SPIN (${selectedBet} LUL)`}
+                  </span>
+                  <Play
+                    className="w-4 h-4 text-[#14161d] fill-[#14161d] shrink-0"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+            </div>
+          </footer>
+
+          {/* Physical 3D Extruded Front Espresso & Charcoal Bumper Lip with Warm Gold-Lime Vent */}
+          <div className="w-full cafe-slot-console-front-lip-3d">
+            <div className="cafe-slot-console-vent" />
+          </div>
+
+          {/* Grounded 3D Floor Shadow Beneath the Cabinet */}
+          <div className="cafe-slot-floor-shadow-3d" aria-hidden="true" />
+        </div>
+
+        {/* =====================================================================
+            WARM CREAM & ESPRESSO PAYTABLE OVERLAY MODAL
+            ===================================================================== */}
+        {isPaytableOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Neo-Strike Slots Paytable"
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4"
+            onClick={() => setIsPaytableOpen(false)}
+          >
+            <div
+              className="w-full max-w-xl bg-gradient-to-b from-[#fffdf7] via-[#fdf6e7] to-[#f5ead4] border-[3px] border-[#14161d] ring-3 ring-[#d97706] rounded-3xl overflow-hidden shadow-[0_18px_45px_rgba(0,0,0,0.85)] text-[#14161d]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-3.5 bg-[#1e212b] border-b-[3px] border-[#14161d] text-white">
+                <div className="flex items-center gap-2.5">
+                  <Trophy className="w-5 h-5 text-[#fec83e]" aria-hidden="true" />
+                  <h3 className="text-base sm:text-lg font-black uppercase tracking-wider">
+                    Neo-Strike Slots · Paytable
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPaytableOpen(false)}
+                  aria-label="Close Paytable"
+                  className="w-8 h-8 rounded-lg bg-[#ff3b30] hover:bg-[#ff554a] border-2 border-black text-white flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {ARCADE_SLOT_SYMBOLS.map((spec) => {
+                    const isJackpot = spec.id === 'seven';
+                    return (
+                      <div
+                        key={spec.id}
+                        className={`rounded-2xl border-2 p-3 flex flex-col items-center text-center ${
+                          isJackpot
+                            ? 'bg-gradient-to-b from-[#fffbeb] to-[#fde68a] border-[#b45309] shadow-[0_3px_0_#78350f]'
+                            : 'bg-[#fffdf7] border-[#cbb894] shadow-[0_3px_0_#a89068]'
+                        }`}
+                      >
+                        <SlotSymbolArtwork id={spec.id} sizeClass="w-11 h-11" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-[#3b1806] mt-1">
+                          {spec.label}
+                        </span>
+                        <span className="font-mono-tabular text-xs font-black text-[#9a3412] mt-1">
+                          3x Center = {spec.tripleMultiplier}x
+                        </span>
+                        <span className="font-mono-tabular text-[11px] font-bold text-[#573614]">
+                          2x Any Pair = {spec.pairMultiplier}x
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="bg-[#efe4ce] border-2 border-[#cbb894] rounded-2xl p-3.5 text-xs leading-relaxed text-[#451a03] space-y-1">
+                  <p>
+                    <strong className="font-black text-[#3b1806]">Center Payline:</strong> Match 3
+                    identical symbols across the illuminated middle row for up to{' '}
+                    <span className="font-mono-tabular font-black text-[#9a3412]">50x</span> your
+                    LUL stake, or any 2 matching symbols on the center line for a pair payout.
+                  </p>
+                  <p>
+                    <strong className="font-black text-[#3b1806]">XP Rewards:</strong> Every spin
+                    awards Cafe progression XP (<span className="font-mono-tabular">+2 XP</span>{' '}
+                    base, <span className="font-mono-tabular">+5 XP</span> pair,{' '}
+                    <span className="font-mono-tabular">+10 XP</span> triple,{' '}
+                    <span className="font-mono-tabular">+25 XP</span> 777 Jackpot).
+                  </p>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Lower Control & Paytable Deck */}
-          <div className="px-3.5 pb-3.5 pt-1.5 space-y-2.5">
-            {errorMsg && (
-              <div className="px-3 py-2 rounded-xl bg-[#fee2e2] border-2 border-[#7f1d1d] text-xs font-black text-[#991b1b]">
-                {errorMsg}
-              </div>
-            )}
-
-            {/* Tactile Stake Tier Picker + Glossy Primary Spin CTA */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-stretch">
-              <div className="sm:col-span-7 grid grid-cols-4 gap-2">
-                {ARCADE_SLOT_BET_TIERS.map((tier) => {
-                  const active = selectedBet === tier;
-                  const affordable = lulBalance >= tier;
-                  return (
-                    <button
-                      key={tier}
-                      type="button"
-                      disabled={isSpinning}
-                      data-slot-bet-btn={tier}
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setSelectedBet(tier);
-                        setErrorMsg(null);
-                      }}
-                      className={`relative py-2 px-1.5 rounded-xl border-[2.5px] font-mono-tabular font-black text-center cursor-pointer transition-transform duration-150 active:translate-y-0.5 whitespace-nowrap ${
-                        active
-                          ? 'bg-gradient-to-b from-[#fde047] via-[#f59e0b] to-[#c2410c] border-[#451a03] text-white -translate-y-0.5 shadow-[0_3px_0_#451a03] ring-2 ring-[#fef08a]'
-                          : affordable
-                            ? 'bg-gradient-to-b from-[#fffdf7] to-[#fde68a] hover:from-[#fffbeb] hover:to-[#fcd34d] border-[#78350f] text-[#451a03] shadow-[0_3px_0_#78350f]'
-                            : 'bg-[#efe8d8] border-[#cbbfa8] text-[#8c7f6a]'
-                      }`}
-                    >
-                      <div
-                        className={`text-sm font-black leading-tight ${
-                          active ? 'drop-shadow-[0_1px_0_#451a03]' : ''
-                        }`}
-                      >
-                        {tier}
-                      </div>
-                      <div
-                        className={`text-[9.5px] font-black uppercase leading-tight ${
-                          active ? 'text-[#fef9c3]' : affordable ? 'text-[#92400e]' : 'text-[#8c7f6a]'
-                        }`}
-                      >
-                        LUL
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                disabled={isSpinning || lulBalance < ARCADE_SLOT_MIN_BET_LUL}
-                data-slot-spin-btn="true"
-                onClick={handleSpin}
-                className="relative sm:col-span-5 py-2.5 px-4 rounded-xl border-[3px] font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-transform duration-150 active:translate-y-0.5 whitespace-nowrap enabled:bg-gradient-to-b enabled:from-[#d9f99d] enabled:via-[#84cc16] enabled:to-[#4d7c0f] enabled:hover:brightness-105 enabled:border-[#1a2e05] enabled:text-[#14161d] enabled:shadow-[0_4px_0_#1a2e05] disabled:bg-[#e5dec9] disabled:border-[#a89f88] disabled:text-[#78716c] disabled:cursor-not-allowed"
-              >
-                <RotateCw
-                  className={`w-4 h-4 stroke-[2.8] shrink-0 ${isSpinning ? 'animate-spin' : ''}`}
-                  aria-hidden="true"
-                />
-                <span className="font-mono-tabular">
-                  {isSpinning ? 'Spinning...' : `Spin (${selectedBet} LUL)`}
-                </span>
-              </button>
-            </div>
-
-            {lulBalance < ARCADE_SLOT_MIN_BET_LUL && !isSpinning && (
-              <p className="text-[11px] font-bold text-[#78350f] text-center bg-[#fef3c7]/80 border border-[#f59e0b]/50 rounded-lg py-1 px-2.5">
-                Need at least {ARCADE_SLOT_MIN_BET_LUL} LUL to play. Work a barista shift or cash out Shift Bucks at the Cafe ATM.
-              </p>
-            )}
-
-            {/* Warm Cream Paytable Tiles */}
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-              {ARCADE_SLOT_SYMBOLS.map((spec) => {
-                const isMatchedTile = lastResult?.matchedSymbol?.id === spec.id;
-                const isJackpotSymbol = spec.id === 'seven';
-                return (
-                  <div
-                    key={spec.id}
-                    className={`flex flex-col items-center py-1.5 px-1 rounded-xl border-2 transition-colors ${
-                      isMatchedTile
-                        ? 'bg-[#ecfccb] border-[#4d7c0f] shadow-[0_2px_0_#365314]'
-                        : isJackpotSymbol
-                          ? 'bg-gradient-to-b from-[#fffbeb] to-[#fde68a] border-[#b45309] shadow-[0_2px_0_#78350f]'
-                          : 'bg-[#fffdf7] border-[#d6c5a3] shadow-[0_2px_0_#b8a47e]'
-                    }`}
-                  >
-                    <SlotSymbolArtwork id={spec.id} sizeClass="w-8 h-8" />
-                    <div className="mt-0.5 text-[10px] font-black font-mono-tabular text-[#451a03] whitespace-nowrap">
-                      3x: {spec.tripleMultiplier}x
-                    </div>
-                    <div className="text-[9px] font-bold font-mono-tabular text-[#92400e] whitespace-nowrap">
-                      2x: {spec.pairMultiplier}x
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Clean Session Ledger Strip */}
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-[#efe4ce] border border-[#cbb894] text-[11px] font-extrabold font-mono-tabular text-[#573614]">
-              <span>Spins: {sessionStats.spins}</span>
-              <span aria-hidden="true" className="text-[#a88b60]">·</span>
-              <span>Best Win: {sessionStats.bestWinLul} LUL</span>
-              <span aria-hidden="true" className="text-[#a88b60]">·</span>
-              <span
-                className={
-                  sessionStats.netLul > 0
-                    ? 'text-[#15803d] font-black'
-                    : sessionStats.netLul < 0
-                      ? 'text-[#b91c1c] font-black'
-                      : 'text-[#573614] font-black'
-                }
-              >
-                Net: {sessionStats.netLul >= 0 ? `+${sessionStats.netLul}` : sessionStats.netLul} LUL
-              </span>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

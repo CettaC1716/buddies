@@ -37,6 +37,7 @@ import {
   createPushKickScooter3D,
 } from './buddiesUrbanScooterBuilder';
 import { buildRealEstateAndFurnitureKiosk3D } from './buddiesRealEstateKioskBuilder';
+import { buildFashionAndApparelKiosk3D } from './buddiesFashionKioskBuilder';
 import {
   PLANET_CURVATURE_STRENGTH,
   PLANET_HALF_EXTENT,
@@ -778,6 +779,7 @@ export function upgradeMeshToBlitzWorldMaterial(
       `,
       side: THREE.DoubleSide,
     });
+    mat.userData.windUniforms = windUniforms;
     uniformCache.set(cacheKey, mat);
   }
 
@@ -1004,13 +1006,21 @@ export function createZeroDrawCallPlazaCafeStyler(
       mesh.castShadow = !isSoftwareGl && Boolean(opts?.castShadow);
       mesh.receiveShadow = !isSoftwareGl && (opts?.receiveShadow ?? true);
       mesh.raycast = () => {};
+      const encodedBounceOrWind =
+        opts?.botanicalWindRole === 'leaf'
+          ? -1.25
+          : opts?.botanicalWindRole === 'stem'
+          ? -0.75
+          : hasEmissive
+          ? 0.02
+          : 0.08;
       upgradeMeshToBlitzWorldMaterial(
         mesh,
         windUniforms,
         effectiveTintHex,
-        hasEmissive ? 0.02 : 0.08,
+        encodedBounceOrWind,
       );
-      if (strokeW > 0.002 && !opts?.doubleSided) {
+      if (strokeW > 0.002 && !opts?.doubleSided && !opts?.botanicalWindRole) {
         const st = createBlitzStrokeMesh(geo, Math.min(strokeW, 0.009), '#12121e');
         if (st) {
           st.raycast = () => {};
@@ -1037,6 +1047,8 @@ function getOrCreateBakedVertexColorWorldMaterial(
   let cached = bakedVertexColorWorldMatCache.get(cacheKeyObj);
   if (cached) return cached;
 
+  const sharedWind = srcMat.userData?.windUniforms as Partial<BlitzWindUniforms> | undefined;
+
   cached = new THREE.ShaderMaterial({
     uniforms: {
       uShadowColor: { value: new THREE.Color('#2a2b36') },
@@ -1045,24 +1057,72 @@ function getOrCreateBakedVertexColorWorldMaterial(
       uLightColor: srcMat.uniforms.uLightColor,
       uShadowStep: { value: 0.15 },
       uHighlightStep: { value: 0.6 },
+      uWindPhase: sharedWind?.uWindPhase ?? { value: 0 },
+      uWindDirection: sharedWind?.uWindDirection ?? { value: new THREE.Vector2(0.7071, 0.7071) },
+      uWindStrength: sharedWind?.uWindStrength ?? { value: 0.5 },
+      uWindGust: sharedWind?.uWindGust ?? { value: 0 },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aColorAndBounce;
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
       varying vec3 vBaseColor;
       varying float vBounceStrength;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
+      varying vec2 vBotanicalUv;
+      varying float vBotanicalLeafMask;
+
       void main() {
         vBaseColor = aColorAndBounce.rgb;
-        vBounceStrength = aColorAndBounce.a;
+        float rawTag = aColorAndBounce.a;
+        float isBotanicalWind = step(rawTag, -0.5);
+        float isBotanicalLeaf = step(rawTag, -1.0);
+        vBounceStrength = mix(rawTag, 0.14, isBotanicalWind);
+        vBotanicalUv = uv;
+        vBotanicalLeafMask = isBotanicalLeaf;
+
         #ifdef USE_INSTANCING
           mat4 worldMat = modelMatrix * instanceMatrix;
         #else
           mat4 worldMat = modelMatrix;
         #endif
         vec4 worldPosition = worldMat * vec4(position, 1.0);
+        vec3 worldNorm = normalize(mat3(worldMat) * normal);
+
+        // Kai's Beach Coconut Palm progressive GPU vertex wind sway & margin flutter
+        // adapted seamlessly to potted botanical stems (uv.y: 0..0.24) & broadleaf blades (uv.y: 0.24..1.0)
+        if (isBotanicalWind > 0.5) {
+          vec2 windDir = length(uWindDirection) > 0.001 ? normalize(uWindDirection) : vec2(0.7071, 0.7071);
+          float arcFactor = smoothstep(0.03, 1.0, uv.y);
+          float edgeFlutter = abs(uv.x - 0.5) * 2.0 * smoothstep(0.30, 0.96, uv.y) * isBotanicalLeaf;
+          float seedPhase = worldPosition.x * 1.35 + worldPosition.z * 1.18 + uv.y * 2.15;
+          float phase = uWindPhase * 0.92 + seedPhase;
+          float windAmp = 0.42 + uWindStrength * 0.88;
+
+          float sway = (sin(phase) * 0.068 + uWindGust * 0.046) * windAmp * arcFactor;
+          float crossSway = cos(phase * 0.74 + seedPhase * 0.45) * 0.024 * windAmp * arcFactor;
+          float flutter = sin(phase * 2.35 + uv.x * 6.4) * 0.022 * windAmp * edgeFlutter;
+
+          worldPosition.x += windDir.x * sway - windDir.y * crossSway;
+          worldPosition.z += windDir.y * sway + windDir.x * crossSway;
+          worldPosition.y += (sin(phase * 0.86) * 0.026 * arcFactor + flutter) * windAmp;
+
+          worldNorm = normalize(
+            worldNorm +
+            vec3(
+              windDir.x * sway * 1.55 + (uv.x - 0.5) * flutter * 5.2,
+              -abs(sway) * 0.60,
+              windDir.y * sway * 1.55 + (uv.x - 0.5) * flutter * 5.2
+            ) * isBotanicalLeaf
+          );
+        }
+
         vWorldPos = worldPosition.xyz;
-        vWorldNormal = normalize(mat3(worldMat) * normal);
+        vWorldNormal = worldNorm;
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
       }
     `,
@@ -1078,6 +1138,8 @@ function getOrCreateBakedVertexColorWorldMaterial(
       varying float vBounceStrength;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
+      varying vec2 vBotanicalUv;
+      varying float vBotanicalLeafMask;
 
       float blitzHalftone(vec2 coord, float scale, float radius) {
         float c = cos(0.785398);
@@ -1092,7 +1154,35 @@ function getOrCreateBakedVertexColorWorldMaterial(
         vec3 albedo = vBaseColor;
         vec3 N = normalize(vWorldNormal);
         vec3 L = normalize(uLightDirection);
+        if (vBotanicalLeafMask > 0.5 && !gl_FrontFacing) {
+          N = -N;
+        }
         float ndl = dot(N, L);
+
+        if (vBotanicalLeafMask > 0.5) {
+          // Kai's Beach 3-tone curved V-fold leaf shading + subtle warm lime midrib & lateral veins
+          float leafLit = smoothstep(0.02, 0.86, ndl);
+          float leafShadow = smoothstep(-0.48, 0.28, ndl);
+          vec3 deepEmerald = albedo * vec3(0.46, 0.64, 0.48);
+          vec3 sunlitLime = mix(albedo * vec3(1.24, 1.32, 0.88), vec3(0.45, 0.82, 0.24), 0.34);
+          vec3 midribLime = mix(sunlitLime, vec3(0.74, 0.94, 0.42), 0.52);
+
+          float distCenter = abs(vBotanicalUv.x - 0.5);
+          float tipTaper = 1.0 - smoothstep(0.55, 0.99, vBotanicalUv.y) * 0.58;
+          float midribMask = 1.0 - smoothstep(0.0, 0.028 * tipTaper + 0.006, distCenter);
+          float veinCoord = (vBotanicalUv.y - distCenter * 0.36) * 7.5;
+          float lateralVein = (1.0 - smoothstep(0.0, 0.085, abs(fract(veinCoord) - 0.5))) *
+            smoothstep(0.02, 0.12, distCenter) *
+            (1.0 - smoothstep(0.36, 0.50, distCenter));
+
+          vec3 leafCol = mix(deepEmerald, albedo, leafShadow);
+          leafCol = mix(leafCol, sunlitLime, leafLit * 0.68);
+          vec3 veinedCol = mix(leafCol, midribLime, clamp(midribMask * 0.52 + lateralVein * 0.22, 0.0, 0.65));
+          gl_FragColor = vec4(veinedCol * uLightColor, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          return;
+        }
 
         float litFactor = clamp((ndl - uShadowStep) / max(0.001, uHighlightStep - uShadowStep), 0.0, 1.0);
         float shadowFactor = 1.0 - litFactor;
@@ -4203,6 +4293,13 @@ export interface LoadedBlitzAssets {
   bulletGltf: GLTF | null;
   charBuddiesGltf: GLTF | null;
   manCharacterBuddiesGltf: GLTF | null;
+  playerFemaleGlb?: GLTF | null;
+  playerMaleGlb?: GLTF | null;
+  customLocomotionGlb?: GLTF | null;
+  hanaCustomGlb?: GLTF | null;
+  kaiCustomGlb?: GLTF | null;
+  ambientFemaleNpcGlb?: GLTF | null;
+  ambientMaleNpcGlb?: GLTF | null;
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
@@ -4229,11 +4326,13 @@ let loadedCafeWorkGltf: GLTF | null = null;
 let loadedCafeEatGltf: GLTF | null = null;
 let loadedSleepingGltf: GLTF | null = null;
 let loadedBenchLoungeGltf: GLTF | null = null;
+const loadedCustomLocomotionGltf: GLTF | null = null;
+let loadedManCharacterBuddiesGltf: GLTF | null = null;
 let loadedChairCasualGltf: GLTF | null = null;
 let loadedSunLoungerGltf: GLTF | null = null;
 let loadedFishingCarryGltf: GLTF | null = null;
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 46;
+const BLITZ_3D_TOTAL_ASSET_TASKS = 52;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4275,6 +4374,12 @@ export async function loadAllRealBlitzAssets(
     charBuddiesGltf: GLTF | null,
     manCharacterBuddiesGltf: GLTF | null,
     fishingRodGltf?: GLTF | null,
+    playerFemaleGlb?: GLTF | null,
+    hanaCustomGlb?: GLTF | null,
+    ambientFemaleNpcGlb?: GLTF | null,
+    ambientMaleNpcGlb?: GLTF | null,
+    kaiCustomGlb?: GLTF | null,
+    playerMaleGlb?: GLTF | null,
   ) => void,
 ): Promise<LoadedBlitzAssets> {
   if (cachedLoadedBlitzAssets) {
@@ -4286,6 +4391,12 @@ export async function loadAllRealBlitzAssets(
           cached.charBuddiesGltf,
           cached.manCharacterBuddiesGltf,
           cached.fishingRodGltf,
+          cached.playerFemaleGlb,
+          cached.hanaCustomGlb,
+          cached.ambientFemaleNpcGlb,
+          cached.ambientMaleNpcGlb,
+          cached.kaiCustomGlb,
+          cached.playerMaleGlb,
         );
       });
     }
@@ -4299,6 +4410,12 @@ export async function loadAllRealBlitzAssets(
             loaded.charBuddiesGltf,
             loaded.manCharacterBuddiesGltf,
             loaded.fishingRodGltf,
+            loaded.playerFemaleGlb,
+            loaded.hanaCustomGlb,
+            loaded.ambientFemaleNpcGlb,
+            loaded.ambientMaleNpcGlb,
+            loaded.kaiCustomGlb,
+            loaded.playerMaleGlb,
           );
         })
         .catch(() => {});
@@ -4667,7 +4784,48 @@ export async function loadAllRealBlitzAssets(
     .catch(() => {});
 
   const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
-  const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb');
+  const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb').then(
+    (gltf) => {
+      loadedManCharacterBuddiesGltf = gltf;
+      return gltf;
+    },
+  );
+  const playerFemaleGlbPromise = loadOptionalGltf(
+    encodeURI('/assets/character_custom_idle_runway_catwalk_stylish_11 (3).glb'),
+  ).then((gltf) => {
+    if (gltf?.scene) {
+      gltf.scene.userData.useMixamoLocomotionSuite = true;
+    }
+    return gltf;
+  });
+  const playerMaleGlbPromise = loadOptionalGltf(
+    encodeURI('/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb'),
+  ).then((gltf) => {
+    if (gltf?.scene) {
+      gltf.scene.userData.useMixamoLocomotionSuite = true;
+    }
+    return gltf;
+  });
+  const hanaCustomGlbPromise = loadOptionalGltf('/assets/character_custom_idle_elegan_kalem_4.glb');
+  const kaiCustomGlbPromise = loadOptionalGltf(
+    encodeURI('/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (1).glb'),
+  );
+  const ambientFemaleNpcGlbPromise = loadOptionalGltf(
+    '/assets/character_custom_sit_formal_tenang_2.glb',
+  ).then((gltf) => {
+    if (gltf?.scene) {
+      gltf.scene.userData.useMixamoLocomotionSuite = true;
+    }
+    return gltf;
+  });
+  const ambientMaleNpcGlbPromise = loadOptionalGltf(
+    '/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+  ).then((gltf) => {
+    if (gltf?.scene) {
+      gltf.scene.userData.useMixamoLocomotionSuite = true;
+    }
+    return gltf;
+  });
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   const cafeWorkGltfPromise = loadOptionalGltf('/assets/cafe-work-anims.glb').then((gltf) => {
     loadedCafeWorkGltf = gltf;
@@ -4694,10 +4852,55 @@ export async function loadAllRealBlitzAssets(
     return gltf;
   });
   if (onCharacterGltfReady) {
-    Promise.all([charBuddiesPromise, manCharacterBuddiesPromise, fishingRodPromise, cafeWorkGltfPromise, cafeEatGltfPromise, sleepingClipPromise, benchLoungeGltfPromise, chairCasualGltfPromise, sunLoungerGltfPromise, fishingCarryGltfPromise, jumpClipPromise, jumpIdleClipPromise, idleClipPromise, kaiIdleClipPromise, hanaIdleClipPromise])
-      .then(([charGltf, manGltf, rodGltf]) => {
-        onCharacterGltfReady(charGltf, manGltf, rodGltf);
-      })
+    Promise.all([
+      charBuddiesPromise,
+      manCharacterBuddiesPromise,
+      fishingRodPromise,
+      playerFemaleGlbPromise,
+      hanaCustomGlbPromise,
+      ambientFemaleNpcGlbPromise,
+      ambientMaleNpcGlbPromise,
+      kaiCustomGlbPromise,
+      playerMaleGlbPromise,
+      cafeWorkGltfPromise,
+      cafeEatGltfPromise,
+      sleepingClipPromise,
+      benchLoungeGltfPromise,
+      chairCasualGltfPromise,
+      sunLoungerGltfPromise,
+      fishingCarryGltfPromise,
+      scooterBikeClipPromise,
+      jumpClipPromise,
+      jumpIdleClipPromise,
+      idleClipPromise,
+      kaiIdleClipPromise,
+      hanaIdleClipPromise,
+    ])
+      .then(
+        ([
+          charGltf,
+          manGltf,
+          rodGltf,
+          playerFemaleGltf,
+          hanaCustomGltf,
+          ambientFemaleNpcGltf,
+          ambientMaleNpcGltf,
+          kaiCustomGltf,
+          playerMaleGltf,
+        ]) => {
+          onCharacterGltfReady(
+            charGltf,
+            manGltf,
+            rodGltf,
+            playerFemaleGltf,
+            hanaCustomGltf,
+            ambientFemaleNpcGltf,
+            ambientMaleNpcGltf,
+            kaiCustomGltf,
+            playerMaleGltf,
+          );
+        },
+      )
       .catch(() => {});
   }
 
@@ -4738,6 +4941,12 @@ export async function loadAllRealBlitzAssets(
     loadOptionalGltf('/assets/buddies/models/blitz-shell.glb'),
     charBuddiesPromise,
     manCharacterBuddiesPromise,
+    playerFemaleGlbPromise,
+    playerMaleGlbPromise,
+    hanaCustomGlbPromise,
+    kaiCustomGlbPromise,
+    ambientFemaleNpcGlbPromise,
+    ambientMaleNpcGlbPromise,
     loadOptionalGltf('/assets/ar99-assault.glb'),
     fishingRodPromise,
     trackAssetTask(
@@ -4800,6 +5009,12 @@ export async function loadAllRealBlitzAssets(
       bulletGltf,
       charBuddiesGltf,
       manCharacterBuddiesGltf,
+      playerFemaleGlb,
+      playerMaleGlb,
+      hanaCustomGlb,
+      kaiCustomGlb,
+      ambientFemaleNpcGlb,
+      ambientMaleNpcGlb,
       ar99AssaultGltf,
       fishingRodGltf,
       playerTrackPoints,
@@ -4857,6 +5072,12 @@ export async function loadAllRealBlitzAssets(
         bulletGltf,
         charBuddiesGltf,
         manCharacterBuddiesGltf,
+        playerFemaleGlb,
+        playerMaleGlb,
+        hanaCustomGlb,
+        kaiCustomGlb,
+        ambientFemaleNpcGlb,
+        ambientMaleNpcGlb,
         ar99AssaultGltf,
         fishingRodGltf,
         playerTrackPoints,
@@ -4864,7 +5085,7 @@ export async function loadAllRealBlitzAssets(
         sleepingClip,
         jumpClip,
         scooterBikeClip,
-          jumpIdleClip,
+        jumpIdleClip,
         idleClip,
         kaiIdleClip,
         hanaIdleClip,
@@ -7932,6 +8153,7 @@ export function getDefaultCharacterGender(): CharacterGender {
 
 export interface CharBuddiesGlbRigController {
   sourceGltf?: GLTF;
+  isCustomSkeleton?: boolean;
   glbRoot: THREE.Group;
   mixer: THREE.AnimationMixer;
   clips: Map<string, THREE.AnimationClip>;
@@ -10255,6 +10477,7 @@ export function buildBlitzDropPickupMesh(
 }
 
 interface SanitizedCharBuddiesTemplate {
+  isCustomSkeleton: boolean;
   clips: Map<string, THREE.AnimationClip>;
   bindQuats: Map<string, THREE.Quaternion>;
   boxCarryUpperQuats: Map<string, THREE.Quaternion>;
@@ -10268,6 +10491,10 @@ interface SanitizedCharBuddiesTemplate {
 }
 
 const cachedCharBuddiesTemplates = new WeakMap<GLTF, SanitizedCharBuddiesTemplate>();
+const blitzStylizedCharUniforms = {
+  uLightDirection: { value: getBlitzDefaultLightDirection() },
+  uLightColor: { value: new THREE.Color('#fff4c8') },
+};
 const _armAimTargetWorldDir = new THREE.Vector3();
 const _armAimParentWorldQuat = new THREE.Quaternion();
 const _armAimLocalDir = new THREE.Vector3();
@@ -10311,10 +10538,14 @@ const _ikLocalDeltaQuat = new THREE.Quaternion();
 const FOOT_GROUNDING_BONE_NAMES = [
   'LeftToeBase',
   'RightToeBase',
+  'LeftToes',
+  'RightToes',
   'LeftFoot',
   'RightFoot',
   'LeftToe_End',
   'RightToe_End',
+  'LeftToesNull',
+  'RightToesNull',
 ] as const;
 
 const UPRIGHT_STABILIZE_BONES: readonly [string, number, number][] = [
@@ -10442,6 +10673,707 @@ function convertToTripoAnimeCharacterMaterial(mat: THREE.Material): THREE.Materi
     alphaTest: stdMat.alphaTest ?? 0,
     toneMapped: false,
   });
+}
+
+function convertToStylizedPlayerCharacterMaterial(
+  mat: THREE.Material,
+  isHairMeshHint = false,
+  isBodySkinMeshHint = false,
+): THREE.Material {
+  const srcMat = mat as THREE.MeshBasicMaterial & THREE.MeshStandardMaterial;
+  const baseMap = srcMat.map ?? null;
+  if (baseMap) {
+    baseMap.colorSpace = THREE.SRGBColorSpace;
+    baseMap.anisotropy = 8;
+    baseMap.minFilter = THREE.LinearMipmapLinearFilter;
+    baseMap.magFilter = THREE.LinearFilter;
+    baseMap.needsUpdate = true;
+  }
+  const lowerName = (srcMat.name || '').toLowerCase();
+  const isOutlineMat = lowerName.includes('outline');
+  if (isOutlineMat) {
+    const isCutoutOutline = lowerName.includes('cutout') || Boolean(srcMat.map);
+    if (isCutoutOutline) {
+      // Crisp, razor-thin opaque anime hair outline with smoothed alpha silhouette
+      const thinHairOutlineMat = new THREE.MeshBasicMaterial({
+        name: srcMat.name,
+        map: baseMap,
+        color: new THREE.Color('#211c24'),
+        side: srcMat.side ?? THREE.FrontSide,
+        transparent: false,
+        opacity: 1,
+        alphaTest: 0.50,
+        depthWrite: true,
+        toneMapped: false,
+      });
+      thinHairOutlineMat.customProgramCacheKey = () => 'blitz-stylized-player-hair-outline-v5';
+      thinHairOutlineMat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          /* glsl */ `
+          #include <begin_vertex>
+          transformed += normal * 0.00135;
+          `,
+        );
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          /* glsl */ `
+          #ifdef USE_MAP
+            vec4 centerTap = texture2D( map, vMapUv, 1.65 );
+            vec2 r1 = vec2( 0.0040 );
+            float a1 = texture2D( map, vMapUv + vec2( r1.x, 0.0 ), 1.9 ).a;
+            float a2 = texture2D( map, vMapUv - vec2( r1.x, 0.0 ), 1.9 ).a;
+            float a3 = texture2D( map, vMapUv + vec2( 0.0, r1.y ), 1.9 ).a;
+            float a4 = texture2D( map, vMapUv - vec2( 0.0, r1.y ), 1.9 ).a;
+            float smoothAlpha = centerTap.a * 0.56 + ( a1 + a2 + a3 + a4 ) * 0.11;
+            diffuseColor.a *= mix( centerTap.a, smoothAlpha, 0.50 );
+          #endif
+          `,
+        );
+      };
+      thinHairOutlineMat.needsUpdate = true;
+      return thinHairOutlineMat;
+    }
+    // Crisp, razor-thin opaque anime ink outline matching world props (no blurry gray alpha halo)
+    const thinOutlineMat = new THREE.MeshBasicMaterial({
+      name: srcMat.name,
+      color: new THREE.Color('#1c1a24'),
+      side: srcMat.side ?? THREE.FrontSide,
+      transparent: false,
+      opacity: 1,
+      depthWrite: true,
+      toneMapped: false,
+    });
+    thinOutlineMat.customProgramCacheKey = () => 'blitz-stylized-player-thin-outline-v2';
+    thinOutlineMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+        #include <begin_vertex>
+        // Pull inverted-hull normals inward so zero-offset seam verts tuck cleanly behind base mesh
+        transformed += normal * 0.00125;
+        `,
+      );
+    };
+    thinOutlineMat.needsUpdate = true;
+    return thinOutlineMat;
+  }
+
+  const isSkinMat = lowerName.includes('skin');
+  const isHairMat =
+    !isSkinMat &&
+    (isHairMeshHint ||
+      Boolean(srcMat.alphaTest && srcMat.alphaTest > 0.1) ||
+      lowerName.includes('a1f8751f') ||
+      lowerName.includes('hair'));
+  const isCutoutHair = isHairMat && Boolean(srcMat.alphaTest && srcMat.alphaTest > 0.05);
+  const animeMat = new THREE.MeshBasicMaterial({
+    name: srcMat.name,
+    map: baseMap,
+    color: srcMat.color ? srcMat.color.clone() : new THREE.Color(0xffffff),
+    side: srcMat.side ?? THREE.FrontSide,
+    transparent: Boolean(srcMat.transparent),
+    opacity: srcMat.opacity ?? 1,
+    alphaTest: isCutoutHair ? 0.52 : (srcMat.alphaTest ?? 0),
+    toneMapped: false,
+  });
+  animeMat.customProgramCacheKey = () =>
+    isSkinMat
+      ? isBodySkinMeshHint
+        ? 'blitz-stylized-player-bodyskin-v8'
+        : 'blitz-stylized-player-skin-v8'
+      : isHairMat
+        ? 'blitz-stylized-player-hair-v6'
+        : 'blitz-stylized-player-cloth-v5';
+  animeMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uStylizedLightDir = blitzStylizedCharUniforms.uLightDirection;
+    shader.uniforms.uStylizedLightColor = blitzStylizedCharUniforms.uLightColor;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        varying vec3 vStylizedWorldNormal;
+        varying vec3 vStylizedViewVec;
+        `,
+      )
+      .replace(
+        '#include <project_vertex>',
+        /* glsl */ `
+        #include <project_vertex>
+        #if defined ( USE_ENVMAP ) || defined ( USE_SKINNING )
+          vStylizedWorldNormal = normalize( ( vec4( normalize( transformedNormal ), 0.0 ) * viewMatrix ).xyz );
+        #else
+          vStylizedWorldNormal = normalize( mat3( modelMatrix ) * normal );
+        #endif
+        vStylizedViewVec = normalize( -mvPosition.xyz );
+        `,
+      );
+
+    let fragShader = shader.fragmentShader.replace(
+      '#include <common>',
+      /* glsl */ `
+      #include <common>
+      uniform vec3 uStylizedLightDir;
+      uniform vec3 uStylizedLightColor;
+      varying vec3 vStylizedWorldNormal;
+      varying vec3 vStylizedViewVec;
+      `,
+    );
+
+    if (isHairMat) {
+      // Gently tame high-frequency 1024px strand noise while keeping sculpted clump definition
+      fragShader = fragShader.replace(
+        '#include <map_fragment>',
+        /* glsl */ `
+        #ifdef USE_MAP
+          vec4 centerTap = texture2D( map, vMapUv, 1.05 );
+          vec2 r1 = vec2( 0.0028 );
+          vec2 r2 = vec2( 0.0062 );
+          vec4 t1 = texture2D( map, vMapUv + vec2( r1.x, 0.0 ), 1.35 );
+          vec4 t2 = texture2D( map, vMapUv - vec2( r1.x, 0.0 ), 1.35 );
+          vec4 t3 = texture2D( map, vMapUv + vec2( 0.0, r1.y ), 1.35 );
+          vec4 t4 = texture2D( map, vMapUv - vec2( 0.0, r1.y ), 1.35 );
+          vec4 t5 = texture2D( map, vMapUv + vec2( r2.x * 0.7, r2.y * 0.7 ), 1.55 );
+          vec4 t6 = texture2D( map, vMapUv + vec2( -r2.x * 0.7, r2.y * 0.7 ), 1.55 );
+          vec4 t7 = texture2D( map, vMapUv + vec2( r2.x * 0.7, -r2.y * 0.7 ), 1.55 );
+          vec4 t8 = texture2D( map, vMapUv + vec2( -r2.x * 0.7, -r2.y * 0.7 ), 1.55 );
+          float w0 = 0.30;
+          float w1 = 0.11 * step( 0.42, t1.a );
+          float w2 = 0.11 * step( 0.42, t2.a );
+          float w3 = 0.11 * step( 0.42, t3.a );
+          float w4 = 0.11 * step( 0.42, t4.a );
+          float w5 = 0.065 * step( 0.42, t5.a );
+          float w6 = 0.065 * step( 0.42, t6.a );
+          float w7 = 0.065 * step( 0.42, t7.a );
+          float w8 = 0.065 * step( 0.42, t8.a );
+          float wSum = max( w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8, 0.001 );
+          vec3 smoothRgb = (
+            centerTap.rgb * w0 +
+            t1.rgb * w1 + t2.rgb * w2 + t3.rgb * w3 + t4.rgb * w4 +
+            t5.rgb * w5 + t6.rgb * w6 + t7.rgb * w7 + t8.rgb * w8
+          ) / wSum;
+          float smoothAlpha = centerTap.a * 0.62 + ( t1.a + t2.a + t3.a + t4.a ) * 0.095;
+          vec4 sampledDiffuseColor = vec4( smoothRgb, mix( centerTap.a, smoothAlpha, 0.44 ) );
+          #ifdef DECODE_VIDEO_TEXTURE
+            sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
+          #endif
+          diffuseColor *= sampledDiffuseColor;
+        #endif
+        `,
+      );
+    } else if (isSkinMat && isBodySkinMeshHint) {
+      // Remove harsh posterized baked muscle/knuckle blotches in skin_shading.png on arms, hands, neck, legs & ears
+      // by referencing the character's own clean center-forehead skin texel so neck-to-face tone matches 100% seamlessly
+      fragShader = fragShader.replace(
+        '#include <map_fragment>',
+        /* glsl */ `
+        #ifdef USE_MAP
+          vec4 rawSkinTap = texture2D( map, vMapUv );
+          vec4 cleanForeheadSkin = texture2D( map, vec2( 0.785, 0.28 ), 0.0 );
+          vec3 cleanBodySkinRgb = mix( cleanForeheadSkin.rgb, rawSkinTap.rgb, 0.045 );
+          cleanBodySkinRgb = max( cleanBodySkinRgb, cleanForeheadSkin.rgb * 0.972 );
+          vec4 sampledDiffuseColor = vec4( cleanBodySkinRgb, rawSkinTap.a );
+          #ifdef DECODE_VIDEO_TEXTURE
+            sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
+          #endif
+          diffuseColor *= sampledDiffuseColor;
+        #endif
+        `,
+      );
+    }
+
+    shader.fragmentShader = fragShader.replace(
+      '#include <opaque_fragment>',
+      /* glsl */ `
+      vec3 baseCol = max( outgoingLight, vec3( 0.0 ) );
+      ${
+        isHairMat
+          ? /* glsl */ `
+      // Color-Adaptive Anime Hair Pass:
+      // - Dark/black hair matches Hana's matte charcoal anime look (zero shiny strand glare)
+      // - Warm/blonde hair lifts dark grooves into warm golden-caramel painted clumps
+      float rawHairLuma0 = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      float warmBlondeMask = smoothstep( 0.06, 0.18, rawHairLuma0 ) * smoothstep( 0.01, 0.08, baseCol.r - baseCol.b );
+      float darkHairMask = 1.0 - smoothstep( 0.16, 0.38, rawHairLuma0 );
+
+      vec3 blondeLifted = mix( baseCol, max( baseCol, vec3( 0.25, 0.15, 0.06 ) ), 0.34 );
+      blondeLifted = pow( blondeLifted + vec3( 0.012 ), vec3( 0.84 ) ) * 0.98;
+      baseCol = mix( baseCol, blondeLifted, warmBlondeMask );
+
+      float rawHairLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      float darkHairGlare = max( rawHairLuma - 0.042, 0.0 ) * darkHairMask;
+      float tamedHairLuma = rawHairLuma - darkHairGlare * 0.58;
+      float bandedHairLuma = floor( tamedHairLuma * 5.5 + 0.5 ) / 5.5;
+      float targetHairLuma = mix( tamedHairLuma, bandedHairLuma, 0.24 );
+      float hairExcess = max( targetHairLuma - 0.65, 0.0 );
+      float matteHairLuma = targetHairLuma - hairExcess * 0.32;
+      if ( rawHairLuma > 0.0005 ) {
+        baseCol *= ( matteHairLuma / rawHairLuma );
+      }
+      baseCol = max( baseCol, vec3( 0.018, 0.019, 0.025 ) );
+      float finalHairLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      baseCol = clamp( mix( vec3( finalHairLuma ), baseCol, mix( 1.04, 1.12, warmBlondeMask ) ), 0.0, 1.04 );
+      `
+          : isSkinMat
+            ? /* glsl */ `
+      // Hana Skin Match: protect dark eyes/lashes/brows while smoothing airbrushed pores into fair ivory-peach
+      float rawSkinLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      float skinMask = smoothstep( 0.12, 0.30, rawSkinLuma );
+      vec3 fairSkin = pow( clamp( baseCol, vec3( 0.0 ), vec3( 1.0 ) ), vec3( 0.77 ) ) * 1.03;
+      baseCol = mix( baseCol, fairSkin, 0.64 * skinMask );
+      float fairLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      baseCol = mix( vec3( fairLuma ), baseCol, mix( 1.0, 0.78, skinMask ) );
+      float skinExcess = max( fairLuma - 0.72, 0.0 );
+      float matteSkinLuma = fairLuma - skinExcess * 0.48;
+      if ( fairLuma > 0.0005 ) {
+        baseCol *= ( matteSkinLuma / fairLuma );
+      }
+      baseCol = clamp( baseCol * mix( vec3( 1.0 ), vec3( 1.005, 0.990, 0.982 ), skinMask ), 0.0, 1.04 );
+      `
+            : /* glsl */ `
+      // Matte Anime Clothing Pass: eliminate glossy baked latex glare on dark tops/hair while keeping whites crisp
+      float rawClothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      float darkFabricMask = 1.0 - smoothstep( 0.24, 0.52, rawClothLuma );
+      float darkGlareExcess = max( rawClothLuma - 0.042, 0.0 ) * darkFabricMask;
+      float tamedClothLuma = rawClothLuma - darkGlareExcess * 0.58;
+      if ( rawClothLuma > 0.0005 ) {
+        baseCol *= ( tamedClothLuma / rawClothLuma );
+      }
+      // Subtle 2-3 band painted tonal simplification + soft-knee bright white protection + charcoal floor
+      float clothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      float bandedClothLuma = floor( clothLuma * 6.0 + 0.5 ) / 6.0;
+      float targetClothLuma = mix( clothLuma, bandedClothLuma, 0.26 );
+      float brightClothExcess = max( targetClothLuma - 0.74, 0.0 );
+      targetClothLuma -= brightClothExcess * 0.42;
+      if ( clothLuma > 0.0005 ) {
+        baseCol *= ( targetClothLuma / clothLuma );
+      }
+      baseCol = max( baseCol, vec3( 0.018, 0.019, 0.025 ) );
+      float finalClothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
+      baseCol = clamp( mix( vec3( finalClothLuma ), baseCol, 1.04 ), 0.0, 1.02 );
+      `
+      }
+
+      // Clean 2-Band Buddies Blitz Anime Cel Shading (zero plastic specular, natural overhead-3/4 skin shadow placement)
+      vec3 N = normalize( vStylizedWorldNormal ) * ( gl_FrontFacing ? 1.0 : -1.0 );
+      vec3 viewWorld = normalize( ( vec4( normalize( vStylizedViewVec ), 0.0 ) * viewMatrix ).xyz );
+      vec3 worldL = normalize( uStylizedLightDir );
+      ${
+        isSkinMat
+          ? /* glsl */ `
+      // Blend world sun with an elevated camera-front-3/4 key vector so top of forearms, backs of hands,
+      // and face stay cleanly lit while undersides, inner palms, and under-chin hold soft dimensional shadow
+      vec3 camKeyL = normalize( viewWorld + vec3( 0.16, 0.86, 0.0 ) );
+      vec3 L = normalize( mix( worldL, camKeyL, 0.44 ) );
+      float ndl = dot( N, L );
+      float celLit = smoothstep( -0.26, 0.34, ndl );
+      float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
+      float hemiShade = mix( 0.955, 1.02, hemi );
+      vec3 shadowTint = vec3( 0.918, 0.812, 0.796 );
+      vec3 litTint = mix( vec3( 1.022 ), uStylizedLightColor, 0.11 );
+      vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
+      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.6 ) * smoothstep( -0.05, 0.85, N.y );
+      vec3 rimScale = vec3( 0.030, 0.026, 0.028 );
+      `
+          : /* glsl */ `
+      vec3 L = worldL;
+      float ndl = dot( N, L );
+      float celLit = smoothstep( ${isHairMat ? '-0.12, 0.22' : '-0.08, 0.16'}, ndl );
+      float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
+      float hemiShade = mix( ${isHairMat ? '0.92' : '0.90'}, 1.04, hemi );
+      vec3 shadowTint = ${isHairMat ? 'vec3( 0.78, 0.75, 0.82 )' : 'vec3( 0.72, 0.74, 0.83 )'};
+      vec3 litTint = mix( vec3( 1.00 ), uStylizedLightColor, 0.22 );
+      vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
+      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.4 ) * smoothstep( -0.1, 0.8, N.y );
+      vec3 rimScale = ${isHairMat ? 'vec3( 0.06, 0.055, 0.05 )' : 'vec3( 0.04, 0.045, 0.055 )'};
+      `
+      }
+      outgoingLight = min( shadedCol + baseCol * rimScale * rim, vec3( 1.02 ) );
+      #include <opaque_fragment>
+      `,
+    );
+  };
+  animeMat.needsUpdate = true;
+  return animeMat;
+}
+
+const PELVIS_ROOT_TO_MIXAMO_BONE_MAP: readonly [string, string][] = [
+  ['Hip', 'Hips'],
+  ['Spine', 'Spine'],
+  ['Spine01', 'Spine1'],
+  ['Spine02', 'Spine2'],
+  ['Neck', 'Neck'],
+  ['Head', 'Head'],
+  ['LeftShoulder', 'LeftShoulder'],
+  ['LeftArm', 'LeftArm'],
+  ['LeftForeArm', 'LeftForeArm'],
+  ['LeftHand', 'LeftHand'],
+  ['LeftThumb1', 'LeftHandThumb1'],
+  ['LeftThumb2', 'LeftHandThumb2'],
+  ['LeftThumb3', 'LeftHandThumb3'],
+  ['LeftIndex1', 'LeftHandIndex1'],
+  ['LeftIndex2', 'LeftHandIndex2'],
+  ['LeftIndex3', 'LeftHandIndex3'],
+  ['LeftOthers1', 'LeftHandMiddle1'],
+  ['LeftOthers2', 'LeftHandMiddle2'],
+  ['LeftOthers3', 'LeftHandMiddle3'],
+  ['RightShoulder', 'RightShoulder'],
+  ['RightArm', 'RightArm'],
+  ['RightForeArm', 'RightForeArm'],
+  ['RightHand', 'RightHand'],
+  ['RightThumb1', 'RightHandThumb1'],
+  ['RightThumb2', 'RightHandThumb2'],
+  ['RightThumb3', 'RightHandThumb3'],
+  ['RightIndex1', 'RightHandIndex1'],
+  ['RightIndex2', 'RightHandIndex2'],
+  ['RightIndex3', 'RightHandIndex3'],
+  ['RightOthers1', 'RightHandMiddle1'],
+  ['RightOthers2', 'RightHandMiddle2'],
+  ['RightOthers3', 'RightHandMiddle3'],
+  ['LeftUpLeg', 'LeftUpLeg'],
+  ['LeftLeg', 'LeftLeg'],
+  ['LeftFoot', 'LeftFoot'],
+  ['LeftToes', 'LeftToeBase'],
+  ['RightUpLeg', 'RightUpLeg'],
+  ['RightLeg', 'RightLeg'],
+  ['RightFoot', 'RightFoot'],
+  ['RightToes', 'RightToeBase'],
+];
+
+const PELVIS_TO_MIXAMO_SHORT_MAP = new Map<string, string>(PELVIS_ROOT_TO_MIXAMO_BONE_MAP);
+
+const NON_UPRIGHT_MIXAMO_CLIP_RE =
+  /^(?:sitting|driving|scooter_bike_idle|sleeping|bench_lounge|cafe_coffee|cafe_tray|cafe_serve|dying|death_)/i;
+
+interface PelvisRootMixamoRetargetContext {
+  srcRoot: THREE.Object3D;
+  tgtRoot: THREE.Object3D;
+  srcBones: Map<string, THREE.Bone>;
+  srcLocalBindQuats: Map<string, THREE.Quaternion>;
+  srcLocalBindPositions: Map<string, THREE.Vector3>;
+  srcWorldBindQuats: Map<string, THREE.Quaternion>;
+  tgtLocalBindQuats: Map<THREE.Object3D, THREE.Quaternion>;
+  tgtLocalBindPositions: Map<THREE.Object3D, THREE.Vector3>;
+  tgtWorldBindQuats: Map<string, THREE.Quaternion>;
+  activePairs: [string, string, THREE.Object3D, THREE.Bone][];
+  srcHipsBone: THREE.Bone | null;
+  srcHipsWorldBindPos: THREE.Vector3;
+  tgtHipTransNode: THREE.Object3D | null;
+  tgtSpineTransNode: THREE.Object3D | null;
+  tgtHipWorldBindPos: THREE.Vector3;
+  tgtSpineOffsetFromHipBind: THREE.Vector3;
+  hipsHeightRatio: number;
+}
+
+function cloneLightweightTransformTree(
+  src: THREE.Object3D,
+  sanitizeNames: boolean,
+): THREE.Object3D {
+  const dst = new THREE.Object3D();
+  dst.name = sanitizeNames ? THREE.PropertyBinding.sanitizeNodeName(src.name) : src.name;
+  dst.position.copy(src.position);
+  dst.quaternion.copy(src.quaternion);
+  dst.scale.copy(src.scale);
+  for (let i = 0; i < src.children.length; i++) {
+    const child = src.children[i];
+    if ((child as THREE.Mesh).isMesh && child.children.length === 0) continue;
+    dst.add(cloneLightweightTransformTree(child, sanitizeNames));
+  }
+  return dst;
+}
+
+function createPelvisRootMixamoRetargetContext(
+  srcMixamoBindRoot: THREE.Object3D,
+  tgtPelvisBindRoot: THREE.Object3D,
+): PelvisRootMixamoRetargetContext | null {
+  const srcRoot = cloneLightweightTransformTree(srcMixamoBindRoot, true);
+  const tgtRoot = cloneLightweightTransformTree(tgtPelvisBindRoot, false);
+  srcRoot.updateMatrixWorld(true);
+  tgtRoot.updateMatrixWorld(true);
+
+  const srcBones = new Map<string, THREE.Bone>();
+  const srcLocalBindQuats = new Map<string, THREE.Quaternion>();
+  const srcLocalBindPositions = new Map<string, THREE.Vector3>();
+  const srcWorldBindQuats = new Map<string, THREE.Quaternion>();
+  srcRoot.traverse((o) => {
+    if (o.name.startsWith('mixamorig')) {
+      const shortName = stripMixamoPrefix(o.name);
+      srcBones.set(shortName, o as THREE.Bone);
+      srcLocalBindQuats.set(shortName, o.quaternion.clone());
+      srcLocalBindPositions.set(shortName, o.position.clone());
+      const wq = new THREE.Quaternion();
+      o.getWorldQuaternion(wq);
+      srcWorldBindQuats.set(shortName, wq);
+    }
+  });
+
+  const tgtLocalBindQuats = new Map<THREE.Object3D, THREE.Quaternion>();
+  const tgtLocalBindPositions = new Map<THREE.Object3D, THREE.Vector3>();
+  tgtRoot.traverse((o) => {
+    tgtLocalBindQuats.set(o, o.quaternion.clone());
+    tgtLocalBindPositions.set(o, o.position.clone());
+  });
+
+  const activePairs: [string, string, THREE.Object3D, THREE.Bone][] = [];
+  const tgtWorldBindQuats = new Map<string, THREE.Quaternion>();
+  for (const [tgtName, srcShortName] of PELVIS_ROOT_TO_MIXAMO_BONE_MAP) {
+    const sBone = srcBones.get(srcShortName);
+    const tBone = tgtRoot.getObjectByName(tgtName);
+    if (!sBone || !tBone || !tBone.parent) continue;
+    const wq = new THREE.Quaternion();
+    tBone.getWorldQuaternion(wq);
+    tgtWorldBindQuats.set(tgtName, wq);
+    activePairs.push([tgtName, srcShortName, tBone, sBone]);
+  }
+  if (activePairs.length === 0) return null;
+
+  const srcHipsBone = srcBones.get('Hips') ?? null;
+  const srcHipsWorldBindPos = new THREE.Vector3(0, 0.526, 0);
+  if (srcHipsBone) {
+    srcHipsBone.getWorldPosition(srcHipsWorldBindPos);
+  }
+
+  const tgtHipTransNode = tgtRoot.getObjectByName('Hip_Translation') ?? null;
+  const tgtSpineTransNode = tgtRoot.getObjectByName('Spine_Translation') ?? null;
+  const tgtHipNode = tgtRoot.getObjectByName('Hip') ?? tgtHipTransNode;
+  const tgtSpineNode = tgtRoot.getObjectByName('Spine') ?? tgtSpineTransNode;
+  const tgtHipWorldBindPos = new THREE.Vector3(0, 0.8367, -0.0074);
+  const tgtSpineWorldBindPos = new THREE.Vector3(0, 0.8654, 0);
+  if (tgtHipNode) tgtHipNode.getWorldPosition(tgtHipWorldBindPos);
+  if (tgtSpineNode) tgtSpineNode.getWorldPosition(tgtSpineWorldBindPos);
+  const tgtSpineOffsetFromHipBind = tgtSpineWorldBindPos.clone().sub(tgtHipWorldBindPos);
+  const hipsHeightRatio =
+    srcHipsWorldBindPos.y > 0.1 && tgtHipWorldBindPos.y > 0.1
+      ? tgtHipWorldBindPos.y / srcHipsWorldBindPos.y
+      : 1.59;
+
+  return {
+    srcRoot,
+    tgtRoot,
+    srcBones,
+    srcLocalBindQuats,
+    srcLocalBindPositions,
+    srcWorldBindQuats,
+    tgtLocalBindQuats,
+    tgtLocalBindPositions,
+    tgtWorldBindQuats,
+    activePairs,
+    srcHipsBone,
+    srcHipsWorldBindPos,
+    tgtHipTransNode,
+    tgtSpineTransNode,
+    tgtHipWorldBindPos,
+    tgtSpineOffsetFromHipBind,
+    hipsHeightRatio,
+  };
+}
+
+function retargetMixamoClipWithContext(
+  srcClip: THREE.AnimationClip,
+  ctx: PelvisRootMixamoRetargetContext,
+  outClipName: string,
+  applyUprightStabilize: boolean,
+): THREE.AnimationClip | null {
+  let bestTimes: ArrayLike<number> | null = null;
+  for (const tr of srcClip.tracks) {
+    if (tr.name.endsWith('.quaternion') && (!bestTimes || tr.times.length > bestTimes.length)) {
+      bestTimes = tr.times;
+    }
+  }
+  if (!bestTimes || bestTimes.length === 0) return null;
+  const refTimes = new Float32Array(bestTimes);
+
+  // Reset reusable source & target transform trees cleanly to bind pose before sampling
+  for (const [shortName, sBone] of ctx.srcBones.entries()) {
+    const bq = ctx.srcLocalBindQuats.get(shortName);
+    const bp = ctx.srcLocalBindPositions.get(shortName);
+    if (bq) sBone.quaternion.copy(bq);
+    if (bp) sBone.position.copy(bp);
+  }
+  for (const [tObj, bq] of ctx.tgtLocalBindQuats.entries()) {
+    tObj.quaternion.copy(bq);
+    const bp = ctx.tgtLocalBindPositions.get(tObj);
+    if (bp) tObj.position.copy(bp);
+  }
+  ctx.srcRoot.updateMatrixWorld(true);
+  ctx.tgtRoot.updateMatrixWorld(true);
+
+  const evalClip = srcClip.clone();
+  evalClip.tracks = evalClip.tracks.filter(
+    (tr) => tr.name.endsWith('.quaternion') || /Hips\.position$/i.test(tr.name),
+  );
+  const srcMixer = new THREE.AnimationMixer(ctx.srcRoot);
+  const srcAct = srcMixer.clipAction(evalClip);
+  srcAct.play();
+
+  const outQuatBuffers = ctx.activePairs.map(() => new Float32Array(refTimes.length * 4));
+  const outHipTransVals =
+    ctx.tgtHipTransNode?.parent && ctx.srcHipsBone ? new Float32Array(refTimes.length * 3) : null;
+  const outSpineTransVals =
+    ctx.tgtSpineTransNode?.parent && ctx.srcHipsBone ? new Float32Array(refTimes.length * 3) : null;
+
+  const qSrcW = new THREE.Quaternion();
+  const qDelta = new THREE.Quaternion();
+  const qHipsWorldDelta = new THREE.Quaternion();
+  const qDesTgtW = new THREE.Quaternion();
+  const qParentW = new THREE.Quaternion();
+  const qLocalOut = new THREE.Quaternion();
+  const vSrcHipsW = new THREE.Vector3();
+  const vDesHipW = new THREE.Vector3();
+  const vDesSpineW = new THREE.Vector3();
+  const vLocalPos = new THREE.Vector3();
+
+  for (let f = 0; f < refTimes.length; f++) {
+    srcMixer.setTime(refTimes[f]);
+    if (applyUprightStabilize) {
+      stabilizeCharBuddiesUprightPosture(ctx.srcBones, ctx.srcLocalBindQuats, 0);
+    }
+    ctx.srcRoot.updateMatrixWorld(true);
+
+    qHipsWorldDelta.identity();
+    if (ctx.srcHipsBone) {
+      const sHipsBindW = ctx.srcWorldBindQuats.get('Hips');
+      if (sHipsBindW) {
+        ctx.srcHipsBone.getWorldQuaternion(qSrcW);
+        qHipsWorldDelta.copy(sHipsBindW).invert().premultiply(qSrcW);
+      }
+      ctx.srcHipsBone.getWorldPosition(vSrcHipsW);
+      vDesHipW
+        .copy(vSrcHipsW)
+        .sub(ctx.srcHipsWorldBindPos)
+        .multiplyScalar(ctx.hipsHeightRatio)
+        .add(ctx.tgtHipWorldBindPos);
+      vDesSpineW
+        .copy(ctx.tgtSpineOffsetFromHipBind)
+        .applyQuaternion(qHipsWorldDelta)
+        .add(vDesHipW);
+
+      const posBase = f * 3;
+      if (outHipTransVals && ctx.tgtHipTransNode?.parent) {
+        ctx.tgtHipTransNode.parent.updateWorldMatrix(true, false);
+        vLocalPos.copy(vDesHipW);
+        ctx.tgtHipTransNode.parent.worldToLocal(vLocalPos);
+        ctx.tgtHipTransNode.position.copy(vLocalPos);
+        ctx.tgtHipTransNode.updateMatrixWorld(true);
+        outHipTransVals[posBase] = vLocalPos.x;
+        outHipTransVals[posBase + 1] = vLocalPos.y;
+        outHipTransVals[posBase + 2] = vLocalPos.z;
+      }
+      if (outSpineTransVals && ctx.tgtSpineTransNode?.parent) {
+        ctx.tgtSpineTransNode.parent.updateWorldMatrix(true, false);
+        vLocalPos.copy(vDesSpineW);
+        ctx.tgtSpineTransNode.parent.worldToLocal(vLocalPos);
+        ctx.tgtSpineTransNode.position.copy(vLocalPos);
+        ctx.tgtSpineTransNode.updateMatrixWorld(true);
+        outSpineTransVals[posBase] = vLocalPos.x;
+        outSpineTransVals[posBase + 1] = vLocalPos.y;
+        outSpineTransVals[posBase + 2] = vLocalPos.z;
+      }
+    }
+
+    for (let p = 0; p < ctx.activePairs.length; p++) {
+      const [tgtName, srcShortName, tBone, sBone] = ctx.activePairs[p];
+      const outVals = outQuatBuffers[p];
+      const sBindW = ctx.srcWorldBindQuats.get(srcShortName)!;
+      const tBindW = ctx.tgtWorldBindQuats.get(tgtName)!;
+      sBone.getWorldQuaternion(qSrcW);
+      qDelta.copy(sBindW).invert().premultiply(qSrcW);
+      qDesTgtW.copy(qDelta).multiply(tBindW).normalize();
+
+      tBone.parent!.updateWorldMatrix(true, false);
+      tBone.parent!.getWorldQuaternion(qParentW);
+      qLocalOut.copy(qParentW).invert().multiply(qDesTgtW).normalize();
+      tBone.quaternion.copy(qLocalOut);
+      tBone.updateMatrixWorld(false);
+
+      const base = f * 4;
+      if (f > 0) {
+        const prevDot =
+          outVals[base - 4] * qLocalOut.x +
+          outVals[base - 3] * qLocalOut.y +
+          outVals[base - 2] * qLocalOut.z +
+          outVals[base - 1] * qLocalOut.w;
+        if (prevDot < 0) {
+          qLocalOut.set(-qLocalOut.x, -qLocalOut.y, -qLocalOut.z, -qLocalOut.w);
+        }
+      }
+      outVals[base] = qLocalOut.x;
+      outVals[base + 1] = qLocalOut.y;
+      outVals[base + 2] = qLocalOut.z;
+      outVals[base + 3] = qLocalOut.w;
+    }
+  }
+
+  srcMixer.stopAllAction();
+  const outTracks: THREE.KeyframeTrack[] = [];
+  if (outHipTransVals) {
+    outTracks.push(
+      new THREE.VectorKeyframeTrack('Hip_Translation.position', refTimes, outHipTransVals),
+    );
+  }
+  if (outSpineTransVals) {
+    outTracks.push(
+      new THREE.VectorKeyframeTrack('Spine_Translation.position', refTimes, outSpineTransVals),
+    );
+  }
+  for (let p = 0; p < ctx.activePairs.length; p++) {
+    const [tgtName] = ctx.activePairs[p];
+    outTracks.push(
+      new THREE.QuaternionKeyframeTrack(`${tgtName}.quaternion`, refTimes, outQuatBuffers[p]),
+    );
+  }
+  return new THREE.AnimationClip(outClipName, srcClip.duration, outTracks);
+}
+
+function retargetMixamoClipToPelvisRoot(
+  srcClip: THREE.AnimationClip,
+  srcMixamoBindRoot: THREE.Object3D,
+  tgtPelvisBindRoot: THREE.Object3D,
+  outClipName: string,
+  applyUprightStabilize = true,
+): THREE.AnimationClip | null {
+  const ctx = createPelvisRootMixamoRetargetContext(srcMixamoBindRoot, tgtPelvisBindRoot);
+  if (!ctx) return null;
+  return retargetMixamoClipWithContext(srcClip, ctx, outClipName, applyUprightStabilize);
+}
+
+class LazyMixamoPelvisClipMap extends Map<string, THREE.AnimationClip> {
+  private readonly pendingSrcClips: Map<string, THREE.AnimationClip>;
+  private readonly retargetCtx: PelvisRootMixamoRetargetContext;
+
+  constructor(
+    pendingSrcClips: Map<string, THREE.AnimationClip>,
+    retargetCtx: PelvisRootMixamoRetargetContext,
+  ) {
+    super();
+    this.pendingSrcClips = pendingSrcClips;
+    this.retargetCtx = retargetCtx;
+  }
+
+  override has(key: string): boolean {
+    return super.has(key) || this.pendingSrcClips.has(key);
+  }
+
+  override get(key: string): THREE.AnimationClip | undefined {
+    const existing = super.get(key);
+    if (existing) return existing;
+    const pending = this.pendingSrcClips.get(key);
+    if (!pending) return undefined;
+    this.pendingSrcClips.delete(key);
+    const applyUprightStabilize = !NON_UPRIGHT_MIXAMO_CLIP_RE.test(key);
+    const retargeted = retargetMixamoClipWithContext(
+      pending,
+      this.retargetCtx,
+      key,
+      applyUprightStabilize,
+    );
+    if (retargeted && retargeted.tracks.length > 0) {
+      super.set(key, retargeted);
+      return retargeted;
+    }
+    return undefined;
+  }
 }
 
 function retargetMixamoClipBetweenBindPoses(
@@ -10600,6 +11532,324 @@ function retargetMixamoClipBetweenBindPoses(
   return new THREE.AnimationClip(clip.name, clip.duration, outTracks);
 }
 
+/**
+ * Welds open wrist boundary rings between `hands_skin` and `torso_*_skin` (position, normal, and
+ * 50/50 ForeArm-Hand skin weights) and tucks open-boundary edges of `*_skin_Outline` / `ears_*_Outline`
+ * inward along their inverted-hull normals so wrist/collar skin seams never show black outline rings or gaps.
+ */
+function sanitizeCustomCharacterSkinSeams(sceneRoot: THREE.Object3D): void {
+  if (sceneRoot.userData?.__skinSeamsSanitized) return;
+  sceneRoot.userData = sceneRoot.userData || {};
+  sceneRoot.userData.__skinSeamsSanitized = true;
+
+  type OpenBoundaryTopology = {
+    posAttr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+    nrmAttr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined;
+    vKeys: string[];
+    indicesByKey: Map<string, number[]>;
+    openBoundaryKeys: Set<string>;
+    oneRingKeys: Set<string>;
+  };
+
+  const analyzeOpenBoundaryTopology = (
+    geo: THREE.BufferGeometry,
+  ): OpenBoundaryTopology | null => {
+    const posAttr = geo.getAttribute('position');
+    if (!posAttr || posAttr.count === 0) return null;
+    const nrmAttr = geo.getAttribute('normal');
+    const vKeys: string[] = new Array(posAttr.count);
+    const indicesByKey = new Map<string, number[]>();
+    for (let i = 0; i < posAttr.count; i++) {
+      const k = `${Math.round(posAttr.getX(i) * 2000)},${Math.round(posAttr.getY(i) * 2000)},${Math.round(posAttr.getZ(i) * 2000)}`;
+      vKeys[i] = k;
+      let bucket = indicesByKey.get(k);
+      if (!bucket) {
+        bucket = [];
+        indicesByKey.set(k, bucket);
+      }
+      bucket.push(i);
+    }
+
+    const edgeCounts = new Map<string, number>();
+    const neighborsByKey = new Map<string, Set<string>>();
+    const addNeighbor = (a: string, b: string) => {
+      let s = neighborsByKey.get(a);
+      if (!s) {
+        s = new Set<string>();
+        neighborsByKey.set(a, s);
+      }
+      s.add(b);
+    };
+    const recordTri = (i0: number, i1: number, i2: number) => {
+      const triKeys = [vKeys[i0], vKeys[i1], vKeys[i2]];
+      for (let e = 0; e < 3; e++) {
+        const ka = triKeys[e];
+        const kb = triKeys[(e + 1) % 3];
+        if (!ka || !kb || ka === kb) continue;
+        const edgeKey = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+        edgeCounts.set(edgeKey, (edgeCounts.get(edgeKey) ?? 0) + 1);
+        addNeighbor(ka, kb);
+        addNeighbor(kb, ka);
+      }
+    };
+
+    const idxAttr = geo.getIndex();
+    if (idxAttr) {
+      for (let t = 0; t + 2 < idxAttr.count; t += 3) {
+        recordTri(idxAttr.getX(t), idxAttr.getX(t + 1), idxAttr.getX(t + 2));
+      }
+    } else {
+      for (let t = 0; t + 2 < posAttr.count; t += 3) {
+        recordTri(t, t + 1, t + 2);
+      }
+    }
+
+    const openBoundaryKeys = new Set<string>();
+    for (const [edgeKey, count] of edgeCounts.entries()) {
+      if (count === 1) {
+        const sep = edgeKey.indexOf('|');
+        if (sep > 0) {
+          openBoundaryKeys.add(edgeKey.slice(0, sep));
+          openBoundaryKeys.add(edgeKey.slice(sep + 1));
+        }
+      }
+    }
+
+    const oneRingKeys = new Set<string>();
+    for (const openKey of openBoundaryKeys) {
+      const nbrs = neighborsByKey.get(openKey);
+      if (!nbrs) continue;
+      for (const nk of nbrs) {
+        if (!openBoundaryKeys.has(nk)) {
+          oneRingKeys.add(nk);
+        }
+      }
+    }
+
+    return { posAttr, nrmAttr, vKeys, indicesByKey, openBoundaryKeys, oneRingKeys };
+  };
+
+  const meshesByLowerName = new Map<string, THREE.Mesh>();
+  const torsoSkinMeshes: THREE.Mesh[] = [];
+  const skinOutlineMeshes: THREE.Mesh[] = [];
+
+  sceneRoot.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    const mesh = node as THREE.Mesh;
+    const lower = (mesh.name || '').toLowerCase();
+    if (lower) {
+      meshesByLowerName.set(lower, mesh);
+    }
+    if (lower.startsWith('torso_') && lower.endsWith('_skin')) {
+      torsoSkinMeshes.push(mesh);
+    }
+    if (
+      lower.endsWith('_skin_outline') ||
+      (lower.startsWith('ears_') && lower.endsWith('_outline'))
+    ) {
+      skinOutlineMeshes.push(mesh);
+    }
+  });
+
+  const findArmBonePair = (
+    mesh: THREE.Mesh,
+    sampleVertIdx: number,
+  ): { foreArmIdx: number; handIdx: number } | null => {
+    const skinned = mesh as THREE.SkinnedMesh;
+    const bones = skinned.skeleton?.bones;
+    const jntAttr = mesh.geometry.getAttribute('skinIndex');
+    if (!bones || !jntAttr || sampleVertIdx >= jntAttr.count) return null;
+    let sidePrefix: 'Left' | 'Right' | null = null;
+    const slotIndices = [
+      jntAttr.getX(sampleVertIdx),
+      jntAttr.getY(sampleVertIdx),
+      jntAttr.getZ(sampleVertIdx),
+      jntAttr.getW(sampleVertIdx),
+    ];
+    for (const bIdx of slotIndices) {
+      const bName = bones[bIdx]?.name || '';
+      if (bName.startsWith('Right')) {
+        sidePrefix = 'Right';
+        break;
+      }
+      if (bName.startsWith('Left')) {
+        sidePrefix = 'Left';
+        break;
+      }
+    }
+    if (!sidePrefix) return null;
+    const foreArmIdx = bones.findIndex((b) => b.name === `${sidePrefix}ForeArm`);
+    const handIdx = bones.findIndex((b) => b.name === `${sidePrefix}Hand`);
+    if (foreArmIdx < 0 || handIdx < 0) return null;
+    return { foreArmIdx, handIdx };
+  };
+
+  const setWristHalfWeights = (
+    geo: THREE.BufferGeometry,
+    vertIndices: readonly number[],
+    foreArmIdx: number,
+    handIdx: number,
+  ) => {
+    const jntAttr = geo.getAttribute('skinIndex');
+    const wgtAttr = geo.getAttribute('skinWeight');
+    if (!jntAttr || !wgtAttr) return;
+    for (const vi of vertIndices) {
+      jntAttr.setXYZW(vi, foreArmIdx, handIdx, 0, 0);
+      wgtAttr.setXYZW(vi, 128 / 255, 127 / 255, 0, 0);
+    }
+    jntAttr.needsUpdate = true;
+    wgtAttr.needsUpdate = true;
+  };
+
+  // 1. Weld open wrist boundary rings between `hands_skin` and any `torso_*_skin` mesh
+  const handsMesh = meshesByLowerName.get('hands_skin');
+  const handsOutlineMesh = meshesByLowerName.get('hands_skin_outline');
+  if (handsMesh && torsoSkinMeshes.length > 0) {
+    const hTopo = analyzeOpenBoundaryTopology(handsMesh.geometry);
+    const hOutPosAttr = handsOutlineMesh?.geometry.getAttribute('position');
+    if (hTopo && hTopo.openBoundaryKeys.size > 0) {
+      for (const torsoMesh of torsoSkinMeshes) {
+        const tTopo = analyzeOpenBoundaryTopology(torsoMesh.geometry);
+        if (!tTopo || tTopo.openBoundaryKeys.size === 0) continue;
+        const torsoOutlineMesh = meshesByLowerName.get(
+          `${(torsoMesh.name || '').toLowerCase()}_outline`,
+        );
+        const tOutPosAttr = torsoOutlineMesh?.geometry.getAttribute('position');
+        let weldedAny = false;
+
+        for (const hKey of hTopo.openBoundaryKeys) {
+          const hVerts = hTopo.indicesByKey.get(hKey);
+          if (!hVerts || hVerts.length === 0) continue;
+          const h0 = hVerts[0];
+          const hx = hTopo.posAttr.getX(h0);
+          const hy = hTopo.posAttr.getY(h0);
+          const hz = hTopo.posAttr.getZ(h0);
+
+          let bestTKey: string | null = null;
+          let bestDist = 0.014;
+          for (const tKey of tTopo.openBoundaryKeys) {
+            const tVerts = tTopo.indicesByKey.get(tKey);
+            if (!tVerts || tVerts.length === 0) continue;
+            const t0 = tVerts[0];
+            const d = Math.hypot(
+              hx - tTopo.posAttr.getX(t0),
+              hy - tTopo.posAttr.getY(t0),
+              hz - tTopo.posAttr.getZ(t0),
+            );
+            if (d < bestDist) {
+              bestDist = d;
+              bestTKey = tKey;
+            }
+          }
+          if (!bestTKey) continue;
+          const tVerts = tTopo.indicesByKey.get(bestTKey)!;
+          const t0 = tVerts[0];
+          const tx = tTopo.posAttr.getX(t0);
+          const ty = tTopo.posAttr.getY(t0);
+          const tz = tTopo.posAttr.getZ(t0);
+          const mx = 0.5 * (hx + tx);
+          const my = 0.5 * (hy + ty);
+          const mz = 0.5 * (hz + tz);
+
+          let nx = 0;
+          let ny = 0;
+          let nz = 0;
+          if (hTopo.nrmAttr && tTopo.nrmAttr) {
+            nx = hTopo.nrmAttr.getX(h0) + tTopo.nrmAttr.getX(t0);
+            ny = hTopo.nrmAttr.getY(h0) + tTopo.nrmAttr.getY(t0);
+            nz = hTopo.nrmAttr.getZ(h0) + tTopo.nrmAttr.getZ(t0);
+            const nLen = Math.hypot(nx, ny, nz);
+            if (nLen > 1e-5) {
+              nx /= nLen;
+              ny /= nLen;
+              nz /= nLen;
+            }
+          }
+
+          for (const vi of hVerts) {
+            const dx = mx - hTopo.posAttr.getX(vi);
+            const dy = my - hTopo.posAttr.getY(vi);
+            const dz = mz - hTopo.posAttr.getZ(vi);
+            hTopo.posAttr.setXYZ(vi, mx, my, mz);
+            if (hOutPosAttr && vi < hOutPosAttr.count) {
+              hOutPosAttr.setXYZ(
+                vi,
+                hOutPosAttr.getX(vi) + dx,
+                hOutPosAttr.getY(vi) + dy,
+                hOutPosAttr.getZ(vi) + dz,
+              );
+            }
+            if (hTopo.nrmAttr && (nx !== 0 || ny !== 0 || nz !== 0)) {
+              hTopo.nrmAttr.setXYZ(vi, nx, ny, nz);
+            }
+          }
+          for (const vi of tVerts) {
+            const dx = mx - tTopo.posAttr.getX(vi);
+            const dy = my - tTopo.posAttr.getY(vi);
+            const dz = mz - tTopo.posAttr.getZ(vi);
+            tTopo.posAttr.setXYZ(vi, mx, my, mz);
+            if (tOutPosAttr && vi < tOutPosAttr.count) {
+              tOutPosAttr.setXYZ(
+                vi,
+                tOutPosAttr.getX(vi) + dx,
+                tOutPosAttr.getY(vi) + dy,
+                tOutPosAttr.getZ(vi) + dz,
+              );
+            }
+            if (tTopo.nrmAttr && (nx !== 0 || ny !== 0 || nz !== 0)) {
+              tTopo.nrmAttr.setXYZ(vi, nx, ny, nz);
+            }
+          }
+
+          const hBones = findArmBonePair(handsMesh, h0);
+          const tBones = findArmBonePair(torsoMesh, t0);
+          if (hBones && tBones) {
+            setWristHalfWeights(handsMesh.geometry, hVerts, hBones.foreArmIdx, hBones.handIdx);
+            setWristHalfWeights(torsoMesh.geometry, tVerts, tBones.foreArmIdx, tBones.handIdx);
+          }
+          weldedAny = true;
+        }
+
+        if (weldedAny) {
+          hTopo.posAttr.needsUpdate = true;
+          tTopo.posAttr.needsUpdate = true;
+          if (hTopo.nrmAttr) hTopo.nrmAttr.needsUpdate = true;
+          if (tTopo.nrmAttr) tTopo.nrmAttr.needsUpdate = true;
+          if (hOutPosAttr) hOutPosAttr.needsUpdate = true;
+          if (tOutPosAttr) tOutPosAttr.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  // 2. Tuck open-boundary rings on inverted-hull skin outline meshes (`*_skin_Outline` & `ears_*_Outline`)
+  // inward along their inward-facing normals so wrist, sleeve, ankle & neck skin cuts never draw black rings
+  for (const outMesh of skinOutlineMeshes) {
+    const topo = analyzeOpenBoundaryTopology(outMesh.geometry);
+    if (!topo || !topo.nrmAttr || topo.openBoundaryKeys.size === 0) continue;
+    let moved = false;
+    for (let i = 0; i < topo.posAttr.count; i++) {
+      const k = topo.vKeys[i];
+      const tuck = topo.openBoundaryKeys.has(k)
+        ? 0.0036
+        : topo.oneRingKeys.has(k)
+          ? 0.0014
+          : 0;
+      if (tuck <= 0) continue;
+      topo.posAttr.setXYZ(
+        i,
+        topo.posAttr.getX(i) + topo.nrmAttr.getX(i) * tuck,
+        topo.posAttr.getY(i) + topo.nrmAttr.getY(i) * tuck,
+        topo.posAttr.getZ(i) + topo.nrmAttr.getZ(i) * tuck,
+      );
+      moved = true;
+    }
+    if (moved) {
+      topo.posAttr.needsUpdate = true;
+    }
+  }
+}
+
 function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTemplate {
   const cachedCharBuddiesTemplate = cachedCharBuddiesTemplates.get(gltf);
   if (cachedCharBuddiesTemplate) {
@@ -10609,26 +11859,75 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   let hipsBindY = 0.54;
   let hipsBindZ = -0.0019;
   const validNodeNames = new Set<string>();
-  const convertedMats = new Map<THREE.Material, THREE.Material>();
-  const getAnimeMat = (m: THREE.Material): THREE.Material => {
-    let conv = convertedMats.get(m);
+  const bindNodesByName = new Map<string, THREE.Object3D>();
+  let hasMixamoHips = false;
+  let hasCustomPelvisRoot = false;
+  let hasToonInkOutlineMat = false;
+  let isMaleCustomCharacter = false;
+  gltf.scene.traverse((node) => {
+    if (node.name) {
+      validNodeNames.add(node.name);
+      const sanitizedName = THREE.PropertyBinding.sanitizeNodeName(node.name);
+      validNodeNames.add(sanitizedName);
+      bindNodesByName.set(node.name, node);
+      if (sanitizedName && !bindNodesByName.has(sanitizedName)) {
+        bindNodesByName.set(sanitizedName, node);
+      }
+      if (stripMixamoPrefix(node.name) === 'Hips') hasMixamoHips = true;
+      if (node.name === 'PelvisRoot') hasCustomPelvisRoot = true;
+      if (
+        /^head_1\d\d/i.test(node.name) ||
+        /(?:1m|2m)(?:highres)?(?:pbr|_|$)/i.test(node.name)
+      ) {
+        isMaleCustomCharacter = true;
+      }
+    }
+    if ((node as THREE.Mesh).isMesh) {
+      const m = (node as THREE.Mesh).material;
+      const mats = Array.isArray(m) ? m : m ? [m] : [];
+      for (const matItem of mats) {
+        if (matItem?.name?.toLowerCase().includes('tooninkoutline')) {
+          hasToonInkOutlineMat = true;
+        }
+      }
+    }
+  });
+  const isCustomSkeleton = !hasMixamoHips && (hasCustomPelvisRoot || hasToonInkOutlineMat);
+  if (isCustomSkeleton) {
+    sanitizeCustomCharacterSkinSeams(gltf.scene);
+  }
+  const convertedMats = new Map<string, THREE.Material>();
+  const getAnimeMat = (
+    m: THREE.Material,
+    isHairMeshHint: boolean,
+    isBodySkinMeshHint: boolean,
+  ): THREE.Material => {
+    const cacheKey = `${m.uuid}:${isHairMeshHint ? 1 : 0}:${isBodySkinMeshHint ? 1 : 0}`;
+    let conv = convertedMats.get(cacheKey);
     if (!conv) {
-      conv = convertToTripoAnimeCharacterMaterial(m);
-      convertedMats.set(m, conv);
+      conv = isCustomSkeleton
+        ? convertToStylizedPlayerCharacterMaterial(m, isHairMeshHint, isBodySkinMeshHint)
+        : convertToTripoAnimeCharacterMaterial(m);
+      convertedMats.set(cacheKey, conv);
     }
     return conv;
   };
   gltf.scene.traverse((node) => {
-    if (node.name) {
-      validNodeNames.add(node.name);
-      validNodeNames.add(THREE.PropertyBinding.sanitizeNodeName(node.name));
-    }
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
+      const lowerMeshName = (mesh.name || '').toLowerCase();
+      const isOutlineMesh = lowerMeshName.includes('outline');
+      const isHairMeshHint = lowerMeshName.includes('hair') && !isOutlineMesh;
+      const isBodySkinMeshHint =
+        !isOutlineMesh &&
+        !lowerMeshName.startsWith('head') &&
+        (lowerMeshName.endsWith('_skin') || lowerMeshName.startsWith('ears_'));
       if (Array.isArray(mesh.material)) {
-        mesh.material = mesh.material.map(getAnimeMat);
+        mesh.material = mesh.material.map((m) =>
+          getAnimeMat(m, isHairMeshHint, isBodySkinMeshHint),
+        );
       } else if (mesh.material) {
-        mesh.material = getAnimeMat(mesh.material);
+        mesh.material = getAnimeMat(mesh.material, isHairMeshHint, isBodySkinMeshHint);
       }
     }
     if ((node as THREE.Bone).isBone && stripMixamoPrefix(node.name) === 'Hips') {
@@ -10640,7 +11939,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
   });
   const maxAllowedHipsY = Math.max(0.85, hipsBindY * 1.35);
-  const clips = new Map<string, THREE.AnimationClip>();
+  let clips: Map<string, THREE.AnimationClip> = new Map<string, THREE.AnimationClip>();
   for (const rawClip of gltf.animations) {
     // Filter out any animation tracks whose target bone/node does not exist on the model
     // so THREE.PropertyBinding / AnimationMixer never logs "No target node found for track" warnings
@@ -10649,25 +11948,283 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
       return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
     });
-    for (const track of rawClip.tracks) {
-      // Lock root-motion X and Z on Hips.position so walk.001 & run.001 animate 100% in-place,
-      // and clamp Hips Y to anatomical bounds so no track can ever push the character out of view
-      if (/Hips\.position$/i.test(track.name)) {
-        const vals = track.values;
-        for (let i = 0; i < vals.length; i += 3) {
-          vals[i] = hipsBindX;
-          const rawY = vals[i + 1];
-          if (!Number.isFinite(rawY) || rawY > maxAllowedHipsY) {
-            vals[i + 1] = hipsBindY * 0.62;
-          } else if (rawY < 0.05) {
-            vals[i + 1] = 0.06;
+    if (!isCustomSkeleton) {
+      for (const track of rawClip.tracks) {
+        // Lock root-motion X and Z on Hips.position so walk.001 & run.001 animate 100% in-place,
+        // and clamp Hips Y to anatomical bounds so no track can ever push the character out of view
+        if (/Hips\.position$/i.test(track.name)) {
+          const vals = track.values;
+          for (let i = 0; i < vals.length; i += 3) {
+            vals[i] = hipsBindX;
+            const rawY = vals[i + 1];
+            if (!Number.isFinite(rawY) || rawY > maxAllowedHipsY) {
+              vals[i + 1] = hipsBindY * 0.62;
+            } else if (rawY < 0.05) {
+              vals[i + 1] = 0.06;
+            }
+            vals[i + 2] = hipsBindZ;
           }
-          vals[i + 2] = hipsBindZ;
         }
       }
     }
     clips.set(rawClip.name, rawClip);
   }
+  if (isCustomSkeleton) {
+    const mixamoBindGltfSrc =
+      loadedManCharacterBuddiesGltf ??
+      cachedLoadedBlitzAssets?.manCharacterBuddiesGltf ??
+      cachedLoadedBlitzAssets?.charBuddiesGltf ??
+      null;
+    const useMixamoLocomotionSuite = Boolean(gltf.scene.userData?.useMixamoLocomotionSuite);
+    let installedMixamoSuite = false;
+    if (useMixamoLocomotionSuite && mixamoBindGltfSrc && mixamoBindGltfSrc !== gltf) {
+      const mixamoSuite = getSanitizedCharBuddiesTemplate(mixamoBindGltfSrc);
+      const retargetCtx = createPelvisRootMixamoRetargetContext(
+        mixamoBindGltfSrc.scene,
+        gltf.scene,
+      );
+      if (retargetCtx && mixamoSuite.clips.size > 0) {
+        const lazyClips = new LazyMixamoPelvisClipMap(new Map(mixamoSuite.clips), retargetCtx);
+        for (const [nativeName, nativeClip] of clips.entries()) {
+          if (!lazyClips.has(nativeName)) {
+            lazyClips.set(nativeName, nativeClip);
+          }
+        }
+        clips = lazyClips;
+        installedMixamoSuite = true;
+      }
+    }
+    if (!installedMixamoSuite) {
+    // Map embedded animations onto canonical clip names using distinct cloned AnimationClips
+    // and inherit missing Walk/Run/Idle/Sit/Laying clips from the shared PelvisRoot locomotion GLB
+    // so single-pose custom NPC GLBs can also patrol, idle, and sit seamlessly.
+    const findNativeClip = (prefixRe: RegExp): THREE.AnimationClip | undefined => {
+      for (const [clipName, clip] of clips.entries()) {
+        if (prefixRe.test(clipName)) return clip;
+      }
+      return undefined;
+    };
+    const sharedLocomotionGltf =
+      loadedCustomLocomotionGltf ?? cachedLoadedBlitzAssets?.customLocomotionGlb ?? null;
+    const findSharedClip = (prefixRe: RegExp): THREE.AnimationClip | undefined => {
+      if (!sharedLocomotionGltf || sharedLocomotionGltf === gltf) return undefined;
+      for (const rawShared of sharedLocomotionGltf.animations) {
+        if (!prefixRe.test(rawShared.name)) continue;
+        const cloned = rawShared.clone();
+        cloned.tracks = cloned.tracks.filter((track) => {
+          const dotIdx = track.name.indexOf('.');
+          const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+          return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+        });
+        if (cloned.tracks.length > 0) return cloned;
+      }
+      return undefined;
+    };
+    const registerAliasClip = (
+      srcClip: THREE.AnimationClip | undefined,
+      canonicalName: string,
+    ) => {
+      if (!srcClip || clips.has(canonicalName)) return;
+      const cloned = srcClip.clone();
+      cloned.name = canonicalName;
+      clips.set(canonicalName, cloned);
+    };
+    const buildCalmMaleIdleFromShared = (
+      sharedIdle: THREE.AnimationClip,
+    ): THREE.AnimationClip => {
+      const neutralLowerNodes = new Set([
+        'PelvisRoot',
+        'Hip',
+        'Hip_Translation',
+        'Spine',
+        'Spine_Translation',
+        'LeftUpLeg',
+        'LeftLeg',
+        'LeftFoot',
+        'LeftToeBase',
+        'RightUpLeg',
+        'RightLeg',
+        'RightFoot',
+        'RightToeBase',
+      ]);
+      const subtleBreathUpperNodes = new Map<string, number>([
+        ['Spine01', 0.06],
+        ['Spine02', 0.06],
+        ['Neck', 0.05],
+        ['Head', 0.055],
+        ['LeftShoulder', 0.035],
+        ['RightShoulder', 0.035],
+        ['LeftArm', 0.025],
+        ['RightArm', 0.025],
+      ]);
+      const idleTimes = new Float32Array([0, 1.4, 2.8]);
+      const synthesizedTracks: THREE.KeyframeTrack[] = [];
+      const q0 = new THREE.Quaternion();
+      const qMid = new THREE.Quaternion();
+      const v0 = new THREE.Vector3();
+      const vMid = new THREE.Vector3();
+
+      for (const track of sharedIdle.tracks) {
+        const dotIdx = track.name.indexOf('.');
+        const nodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+        const propName = dotIdx > 0 ? track.name.slice(dotIdx + 1) : '';
+        const bindNode = bindNodesByName.get(nodeName);
+        if (propName === 'quaternion' && track.values.length >= 4) {
+          q0.set(
+            track.values[0],
+            track.values[1],
+            track.values[2],
+            track.values[3],
+          ).normalize();
+          if (neutralLowerNodes.has(nodeName) && bindNode) {
+            q0.slerp(bindNode.quaternion, 0.88).normalize();
+            qMid.copy(q0);
+          } else {
+            qMid.copy(q0);
+            const breathBlend = subtleBreathUpperNodes.get(nodeName) ?? 0;
+            if (breathBlend > 0 && bindNode) {
+              qMid.slerp(bindNode.quaternion, breathBlend).normalize();
+            }
+          }
+          if (q0.dot(qMid) < 0) {
+            qMid.set(-qMid.x, -qMid.y, -qMid.z, -qMid.w);
+          }
+          synthesizedTracks.push(
+            new THREE.QuaternionKeyframeTrack(
+              track.name,
+              idleTimes,
+              new Float32Array([
+                q0.x, q0.y, q0.z, q0.w,
+                qMid.x, qMid.y, qMid.z, qMid.w,
+                q0.x, q0.y, q0.z, q0.w,
+              ]),
+            ),
+          );
+        } else if (propName === 'position' && track.values.length >= 3) {
+          v0.set(track.values[0], track.values[1], track.values[2]);
+          if (neutralLowerNodes.has(nodeName) && bindNode) {
+            v0.lerp(bindNode.position, 0.88);
+          }
+          vMid.copy(v0);
+          synthesizedTracks.push(
+            new THREE.VectorKeyframeTrack(
+              track.name,
+              idleTimes,
+              new Float32Array([
+                v0.x, v0.y, v0.z,
+                vMid.x, vMid.y, vMid.z,
+                v0.x, v0.y, v0.z,
+              ]),
+            ),
+          );
+        }
+      }
+      return new THREE.AnimationClip('Idle_Male_Calm', 2.8, synthesizedTracks);
+    };
+    const dampenMalePelvisSway = (
+      locoClip: THREE.AnimationClip,
+    ): THREE.AnimationClip => {
+      const swayDampByNode = new Map<string, number>([
+        ['Hip', 0.45],
+        ['Spine', 0.42],
+        ['Spine01', 0.25],
+      ]);
+      const adapted = locoClip.clone();
+      const qCur = new THREE.Quaternion();
+      const qPrev = new THREE.Quaternion();
+      for (const track of adapted.tracks) {
+        if (!track.name.endsWith('.quaternion')) continue;
+        const dotIdx = track.name.indexOf('.');
+        const nodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+        const dampFactor = swayDampByNode.get(nodeName) ?? 0;
+        const bindNode = bindNodesByName.get(nodeName);
+        if (dampFactor <= 0 || !bindNode) continue;
+        const vals = track.values;
+        for (let i = 0; i + 3 < vals.length; i += 4) {
+          qCur.set(vals[i], vals[i + 1], vals[i + 2], vals[i + 3]).normalize();
+          qCur.slerp(bindNode.quaternion, dampFactor).normalize();
+          if (i >= 4 && qPrev.dot(qCur) < 0) {
+            qCur.set(-qCur.x, -qCur.y, -qCur.z, -qCur.w);
+          }
+          vals[i] = qCur.x;
+          vals[i + 1] = qCur.y;
+          vals[i + 2] = qCur.z;
+          vals[i + 3] = qCur.w;
+          qPrev.copy(qCur);
+        }
+      }
+      return adapted;
+    };
+
+    const preferSharedLocomotion = Boolean(gltf.scene.userData?.preferSharedLocomotionClips);
+    const nativeIdle = preferSharedLocomotion ? undefined : findNativeClip(/^Idle/i);
+    const sharedIdleRaw = !nativeIdle ? findSharedClip(/^Idle/i) : undefined;
+    const idleSrc =
+      nativeIdle ??
+      (sharedIdleRaw
+        ? isMaleCustomCharacter
+           ? buildCalmMaleIdleFromShared(sharedIdleRaw)
+           : sharedIdleRaw
+        : gltf.animations[0]);
+    const nativeWalk = preferSharedLocomotion ? undefined : findNativeClip(/^Walk/i);
+    const sharedWalkRaw = !nativeWalk ? findSharedClip(/^Walk/i) : undefined;
+    const walkSrc =
+      nativeWalk ??
+      (sharedWalkRaw
+        ? isMaleCustomCharacter
+          ? dampenMalePelvisSway(sharedWalkRaw)
+          : sharedWalkRaw
+        : idleSrc);
+    const nativeRun = preferSharedLocomotion ? undefined : findNativeClip(/^Run/i);
+    const sharedRunRaw = !nativeRun ? findSharedClip(/^Run/i) : undefined;
+    const runSrc =
+      nativeRun ??
+      (sharedRunRaw
+        ? isMaleCustomCharacter
+          ? dampenMalePelvisSway(sharedRunRaw)
+          : sharedRunRaw
+        : walkSrc);
+    const sitSrc =
+      (preferSharedLocomotion ? undefined : findNativeClip(/^Sit/i)) ??
+      findSharedClip(/^Sit/i) ??
+      idleSrc;
+    const laySrc =
+      (preferSharedLocomotion ? undefined : findNativeClip(/^Laying/i)) ??
+      findSharedClip(/^Laying/i) ??
+      sitSrc;
+
+    for (const idleAlias of ['idle.001', 'rifle_idle.001', 'rifle_aiming_idle.001', 'pistol_idle.001', 'fishing_idle.001']) {
+      registerAliasClip(idleSrc, idleAlias);
+    }
+    for (const walkAlias of ['walk.001', 'walk_rifle.001', 'pistol_walk.001']) {
+      registerAliasClip(walkSrc, walkAlias);
+    }
+    for (const runAlias of ['run.001', 'run_rifle.001', 'sprint_forward.001', 'pistol_run.001', 'jogging_with_box.001', 'unarmed_jump.001', 'unarmed_jump_idle.001', 'jump_up.001']) {
+      registerAliasClip(runSrc, runAlias);
+    }
+    for (const sitAlias of ['sitting.001', 'driving.001', 'scooter_bike_idle.001']) {
+      registerAliasClip(sitSrc, sitAlias);
+    }
+    for (const layAlias of ['sleeping.001', 'bench_lounge.001']) {
+      registerAliasClip(laySrc, layAlias);
+    }
+
+    // Retarget Kai's signature Mixamo idle (`kai_idle.001`) onto PelvisRoot custom skeletons
+    // so Merchant Kai keeps his exact original idle posture & breathing when using his new custom GLB.
+    const kaiIdleClipSrc = loadedKaiIdleClip ?? cachedLoadedBlitzAssets?.kaiIdleClip ?? null;
+    if (kaiIdleClipSrc && mixamoBindGltfSrc && !clips.has('kai_idle.001')) {
+      const retargetedKaiIdle = retargetMixamoClipToPelvisRoot(
+        kaiIdleClipSrc,
+        mixamoBindGltfSrc.scene,
+        gltf.scene,
+        'kai_idle.001',
+      );
+      if (retargetedKaiIdle && retargetedKaiIdle.tracks.length > 0) {
+        clips.set('kai_idle.001', retargetedKaiIdle);
+      }
+    }
+    }
+  } else {
   // Merge retargetable beach/bed clips (`sleeping-anim.glb`, `bench-lounge-anim.glb`,
   // `chair-casual-anim.glb`, `sun-lounger-anim.glb`), dynamically adapting from each
   // clip's Mixamo reference bind pose onto this character template so Female & Male align cleanly.
@@ -10924,6 +12481,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       if (retargeted.tracks.length) clips.set(cafeClipName, retargeted);
     }
   }
+  }
   const fallbackFireClip = clips.get('rifle_aiming_idle.001') ?? clips.get('rifle_idle.001');
   if (!clips.has('fire.001') && fallbackFireClip) {
     clips.set('fire.001', fallbackFireClip);
@@ -10953,7 +12511,12 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   gltf.scene.traverse((node) => {
     if ((node as THREE.Bone).isBone) {
       const shortName = stripMixamoPrefix(node.name);
-      bindQuats.set(shortName, node.quaternion.clone());
+      const bq = node.quaternion.clone();
+      bindQuats.set(shortName, bq);
+      const mixamoAlias = PELVIS_TO_MIXAMO_SHORT_MAP.get(shortName);
+      if (mixamoAlias && !bindQuats.has(mixamoAlias)) {
+        bindQuats.set(mixamoAlias, bq.clone());
+      }
     }
   });
 
@@ -10962,7 +12525,8 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     for (const track of boxCarryClip.tracks) {
       const dotIdx = track.name.lastIndexOf('.quaternion');
       if (dotIdx > 0 && track.values.length >= 4) {
-        const shortName = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const rawShort = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const shortName = PELVIS_TO_MIXAMO_SHORT_MAP.get(rawShort) ?? rawShort;
         if (isUpperBodyFireBone(shortName)) {
           boxCarryUpperQuats.set(
             shortName,
@@ -10983,7 +12547,8 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     for (const track of fireClip.tracks) {
       const dotIdx = track.name.lastIndexOf('.quaternion');
       if (dotIdx > 0 && track.values.length >= 4) {
-        const shortName = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const rawShort = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const shortName = PELVIS_TO_MIXAMO_SHORT_MAP.get(rawShort) ?? rawShort;
         if (isUpperBodyFireBone(shortName)) {
           fireUpperQuats.set(
             shortName,
@@ -11003,7 +12568,8 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     for (const track of fishingIdleClip.tracks) {
       const dotIdx = track.name.lastIndexOf('.quaternion');
       if (dotIdx > 0 && track.values.length >= 4) {
-        const shortName = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const rawShort = stripMixamoPrefix(track.name.slice(0, dotIdx));
+        const shortName = PELVIS_TO_MIXAMO_SHORT_MAP.get(rawShort) ?? rawShort;
         const isFinger =
           (shortName.startsWith('RightHand') && shortName !== 'RightHand') ||
           (shortName.startsWith('LeftHand') && shortName !== 'LeftHand');
@@ -11046,6 +12612,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   }
 
   const template: SanitizedCharBuddiesTemplate = {
+    isCustomSkeleton,
     clips,
     bindQuats,
     boxCarryUpperQuats,
@@ -11345,9 +12912,9 @@ function orientScooterHandOnGrip(
   blend: number,
 ) {
   const hand = ctrl.bones.get(`${side}Hand`);
-  const mid1 = ctrl.bones.get(`${side}HandMiddle1`);
-  const idx1 = ctrl.bones.get(`${side}HandIndex1`);
-  const pinky1 = ctrl.bones.get(`${side}HandPinky1`);
+  const mid1 = ctrl.bones.get(`${side}HandMiddle1`) ?? ctrl.bones.get(`${side}Others1`);
+  const idx1 = ctrl.bones.get(`${side}HandIndex1`) ?? ctrl.bones.get(`${side}Index1`);
+  const pinky1 = ctrl.bones.get(`${side}HandPinky1`) ?? ctrl.bones.get(`${side}Others1`);
   if (!hand || !mid1) return;
 
   hand.updateWorldMatrix(true, true);
@@ -11407,7 +12974,7 @@ function orientScooterFootSole(
   blend: number,
 ) {
   const foot = ctrl.bones.get(`${side}Foot`);
-  const toe = ctrl.bones.get(`${side}ToeBase`);
+  const toe = ctrl.bones.get(`${side}ToeBase`) ?? ctrl.bones.get(`${side}Toes`);
   if (!foot || !toe) return;
   foot.updateWorldMatrix(true, true);
   foot.getWorldPosition(_scooterIkRootPos);
@@ -11435,7 +13002,9 @@ function applyScooterRiderGlbRig(
   ctrl.glbRoot.position.y = ctrl.baseRootY;
 
   // Strip any FBX clip root tilt (e.g. idle-2.fbx Hips pitch) right from mount blend start.
-  stabilizeCharBuddiesUprightPosture(ctrl.bones, ctrl.bindQuats, 0);
+  if (!ctrl.isCustomSkeleton) {
+    stabilizeCharBuddiesUprightPosture(ctrl.bones, ctrl.bindQuats, 0);
+  }
   for (const name of SCOOTER_LIMB_RESET_BONES) {
     const bone = ctrl.bones.get(name);
     const bindQ = ctrl.bindQuats.get(name);
@@ -11447,14 +13016,17 @@ function applyScooterRiderGlbRig(
     if (bone && bindQ) bone.quaternion.slerp(bindQ, bp);
   }
 
-  rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine')!, 1, 0, 0, pose.torsoPitchRad * 0.30, bp);
-  rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine1')!, 1, 0, 0, pose.torsoPitchRad * 0.35, bp);
-  rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine2')!, 1, 0, 0, pose.torsoPitchRad * 0.35, bp);
+  const sp0 = ctrl.bones.get('Spine');
+  const sp1 = ctrl.bones.get('Spine1') ?? ctrl.bones.get('Spine01');
+  const sp2 = ctrl.bones.get('Spine2') ?? ctrl.bones.get('Spine02');
+  if (sp0) rotateBoneAroundBodyLocalAxis(bodyGroup, sp0, 1, 0, 0, pose.torsoPitchRad * 0.30, bp);
+  if (sp1) rotateBoneAroundBodyLocalAxis(bodyGroup, sp1, 1, 0, 0, pose.torsoPitchRad * 0.35, bp);
+  if (sp2) rotateBoneAroundBodyLocalAxis(bodyGroup, sp2, 1, 0, 0, pose.torsoPitchRad * 0.35, bp);
 
   if (Math.abs(pose.torsoYawRad) > 1e-4) {
-    rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine')!, 0, 1, 0, pose.torsoYawRad * 0.30, bp);
-    rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine1')!, 0, 1, 0, pose.torsoYawRad * 0.35, bp);
-    rotateBoneAroundBodyLocalAxis(bodyGroup, ctrl.bones.get('Spine2')!, 0, 1, 0, pose.torsoYawRad * 0.35, bp);
+    if (sp0) rotateBoneAroundBodyLocalAxis(bodyGroup, sp0, 0, 1, 0, pose.torsoYawRad * 0.30, bp);
+    if (sp1) rotateBoneAroundBodyLocalAxis(bodyGroup, sp1, 0, 1, 0, pose.torsoYawRad * 0.35, bp);
+    if (sp2) rotateBoneAroundBodyLocalAxis(bodyGroup, sp2, 0, 1, 0, pose.torsoYawRad * 0.35, bp);
   }
 
   const headRelYaw = pose.headLookYawRad - pose.torsoYawRad;
@@ -11605,11 +13177,16 @@ function sampleMixamoHandPalmLocal(
   wristBone.getWorldPosition(_palmWristLocal);
   bodyGroup.worldToLocal(_palmWristLocal);
 
-  const midBone = ctrl.bones.get(`${prefix}Middle1`);
-  const indexBone = ctrl.bones.get(`${prefix}Index1`);
-  const index3Bone = ctrl.bones.get(`${prefix}Index3`);
-  const pinkyBone = ctrl.bones.get(`${prefix}Pinky1`);
-  const pinky3Bone = ctrl.bones.get(`${prefix}Pinky3`);
+  const midBone =
+    ctrl.bones.get(`${prefix}Middle1`) ?? ctrl.bones.get(isRightHand ? 'RightOthers1' : 'LeftOthers1');
+  const indexBone =
+    ctrl.bones.get(`${prefix}Index1`) ?? ctrl.bones.get(isRightHand ? 'RightIndex1' : 'LeftIndex1');
+  const index3Bone =
+    ctrl.bones.get(`${prefix}Index3`) ?? ctrl.bones.get(isRightHand ? 'RightIndex3' : 'LeftIndex3');
+  const pinkyBone =
+    ctrl.bones.get(`${prefix}Pinky1`) ?? ctrl.bones.get(isRightHand ? 'RightOthers1' : 'LeftOthers1');
+  const pinky3Bone =
+    ctrl.bones.get(`${prefix}Pinky3`) ?? ctrl.bones.get(isRightHand ? 'RightOthers3' : 'LeftOthers3');
 
   if (indexBone && index3Bone && pinkyBone && pinky3Bone) {
     indexBone.getWorldPosition(_palmIndexLocal);
@@ -11897,7 +13474,9 @@ function solveTwoBoneArmPalmIkLocal(
   const armBone = ctrl.bones.get(isRightHand ? 'RightArm' : 'LeftArm');
   const foreArmBone = ctrl.bones.get(isRightHand ? 'RightForeArm' : 'LeftForeArm');
   const wristBone = ctrl.bones.get(isRightHand ? 'RightHand' : 'LeftHand');
-  const midBone = ctrl.bones.get(isRightHand ? 'RightHandMiddle1' : 'LeftHandMiddle1');
+  const midBone =
+    ctrl.bones.get(isRightHand ? 'RightHandMiddle1' : 'LeftHandMiddle1') ??
+    ctrl.bones.get(isRightHand ? 'RightOthers1' : 'LeftOthers1');
   if (!armBone || !foreArmBone || !wristBone || !armBone.parent || !foreArmBone.parent) {
     return;
   }
@@ -12041,8 +13620,13 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   glbRoot.traverse((node) => {
     if ((node as THREE.Bone).isBone) {
       const bone = node as THREE.Bone;
+      const shortName = stripMixamoPrefix(bone.name);
       bones.set(bone.name, bone);
-      bones.set(stripMixamoPrefix(bone.name), bone);
+      bones.set(shortName, bone);
+      const mixamoAlias = PELVIS_TO_MIXAMO_SHORT_MAP.get(shortName);
+      if (mixamoAlias && !bones.has(mixamoAlias)) {
+        bones.set(mixamoAlias, bone);
+      }
     }
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
@@ -12087,9 +13671,9 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     glbRoot.position.set(0, baseRootY, 0);
     tempMeasureHost.updateMatrixWorld(true);
     const bFoot = bones.get('LeftFoot');
-    const bToe = bones.get('LeftToeBase');
+    const bToe = bones.get('LeftToeBase') ?? bones.get('LeftToes');
     const bHand = bones.get('LeftHand');
-    const bMid1 = bones.get('LeftHandMiddle1');
+    const bMid1 = bones.get('LeftHandMiddle1') ?? bones.get('LeftOthers1');
     if (bFoot && bToe) {
       bFoot.getWorldPosition(_scooterIkBodyPosA);
       bToe.getWorldPosition(_scooterIkBodyPosB);
@@ -12141,7 +13725,9 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     initialAct.play();
     mixer.update(0.001);
     if (!isSeatedRider) {
-      stabilizeCharBuddiesUprightPosture(bones, template.bindQuats, 0);
+      if (!template.isCustomSkeleton) {
+        stabilizeCharBuddiesUprightPosture(bones, template.bindQuats, 0);
+      }
       glbRoot.position.y = baseRootY;
       glbRoot.updateWorldMatrix(true, true);
       const initMinFootY = measureLowestFootBoneLocalY(bones, glbRoot);
@@ -12153,6 +13739,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
 
   rig.customGlbController = {
     sourceGltf: gltf,
+    isCustomSkeleton: template.isCustomSkeleton,
     glbRoot,
     mixer,
     clips: template.clips,
@@ -12195,6 +13782,330 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     fishingCastTimer: 0,
     meshes,
   };
+
+  const desiredTorsoUrl = bodyGroup.userData?.desiredTorsoAssetUrl as string | null | undefined;
+  if (desiredTorsoUrl) {
+    void setBuddyRigEquippedTorsoByUrl(rig, desiredTorsoUrl);
+  }
+}
+
+interface StoredRigDefaultTorsoState {
+  defaultClothingMeshes: THREE.Mesh[];
+  skinMeshes: Array<{
+    mesh: THREE.Mesh;
+    originalIndex: THREE.BufferAttribute | null;
+  }>;
+}
+
+const modularApparelGltfPromiseCache = new Map<string, Promise<GLTF | null>>();
+
+function prepareModularApparelGltfMaterials(gltf: GLTF): GLTF {
+  if (gltf.scene.userData?.modularApparelPrepared) {
+    return gltf;
+  }
+  const convertedMats = new Map<string, THREE.Material>();
+  gltf.scene.traverse((node) => {
+    if ((node as THREE.Mesh).isMesh) {
+      const mesh = node as THREE.Mesh;
+      const lowerName = (mesh.name || '').toLowerCase();
+      const isOutline = lowerName.includes('outline');
+      const isSkin = !isOutline && lowerName.endsWith('_skin');
+      const convertOne = (m: THREE.Material): THREE.Material => {
+        const key = `${m.uuid}:${isSkin ? 1 : 0}`;
+        let conv = convertedMats.get(key);
+        if (!conv) {
+          conv = convertToStylizedPlayerCharacterMaterial(m, false, isSkin);
+          convertedMats.set(key, conv);
+        }
+        return conv;
+      };
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map(convertOne);
+      } else if (mesh.material) {
+        mesh.material = convertOne(mesh.material);
+      }
+    }
+  });
+  gltf.scene.userData.modularApparelPrepared = true;
+  return gltf;
+}
+
+/**
+ * Loads and caches a modular apparel `.glb` (such as `/assets/torso_dropscience_hiphop_24_iap_1_3B9D82F3.glb`),
+ * converting its clothing and outline materials to match the stylized player avatar shader pipeline.
+ */
+export function loadModularApparelGltf(assetUrl: string): Promise<GLTF | null> {
+  const normalizedUrl = encodeURI(assetUrl.trim());
+  const existing = modularApparelGltfPromiseCache.get(normalizedUrl);
+  if (existing) {
+    return existing;
+  }
+  const loader = new GLTFLoader();
+  const promise = new Promise<GLTF | null>((resolve) => {
+    loader.load(
+      normalizedUrl,
+      (gltf) => {
+        resolve(prepareModularApparelGltfMaterials(gltf));
+      },
+      undefined,
+      () => {
+        modularApparelGltfPromiseCache.delete(normalizedUrl);
+        resolve(null);
+      },
+    );
+  });
+  modularApparelGltfPromiseCache.set(normalizedUrl, promise);
+  return promise;
+}
+
+function createTrimmedTorsoSkinIndexBuffer(
+  geometry: THREE.BufferGeometry,
+  origIndex: THREE.BufferAttribute,
+  sleeveCutoffAbsX: number,
+  collarKeepMinY: number,
+  hemCoverMinY: number,
+): THREE.BufferAttribute {
+  const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!posAttr) {
+    return origIndex;
+  }
+  const srcArr = origIndex.array;
+  const kept: number[] = [];
+  for (let i = 0; i + 2 < origIndex.count; i += 3) {
+    const ia = Number(srcArr[i]);
+    const ib = Number(srcArr[i + 1]);
+    const ic = Number(srcArr[i + 2]);
+    const xa = Math.abs(posAttr.getX(ia));
+    const xb = Math.abs(posAttr.getX(ib));
+    const xc = Math.abs(posAttr.getX(ic));
+    const ya = posAttr.getY(ia);
+    const yb = posAttr.getY(ib);
+    const yc = posAttr.getY(ic);
+    const avgAbsX = (xa + xb + xc) / 3;
+    const maxAbsX = Math.max(xa, xb, xc);
+    const avgY = (ya + yb + yc) / 3;
+
+    const isNeckSkin = avgAbsX < 0.19 && avgY >= collarKeepMinY;
+    const isExposedLowerArmSkin = maxAbsX >= sleeveCutoffAbsX;
+    const isExposedLowerWaistSkin = avgAbsX < 0.22 && avgY < hemCoverMinY + 0.015;
+
+    if (isNeckSkin || isExposedLowerArmSkin || isExposedLowerWaistSkin) {
+      kept.push(ia, ib, ic);
+    }
+  }
+  const IndexCtor = posAttr.count > 65535 ? Uint32Array : Uint16Array;
+  return new THREE.BufferAttribute(new IndexCtor(kept), 1);
+}
+
+/**
+ * Synchronously binds a loaded modular torso `GLTF` onto an upgraded `BuddyCharacterRig`
+ * (or restores the avatar's default built-in top when `torsoGltf === null`).
+ */
+export function applyEquippedTorsoToBuddyRig(
+  rig: BuddyCharacterRig,
+  torsoGltf: GLTF | null,
+): boolean {
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
+  }
+  const glbRoot = controller.glbRoot;
+
+  let storedState = glbRoot.userData.defaultTorsoState as StoredRigDefaultTorsoState | undefined;
+  if (!storedState) {
+    const defaultClothingMeshes: THREE.Mesh[] = [];
+    const skinMeshes: StoredRigDefaultTorsoState['skinMeshes'] = [];
+    glbRoot.traverse((node) => {
+      if (!(node as THREE.Mesh).isMesh) return;
+      const mesh = node as THREE.Mesh;
+      if (mesh.userData?.isCustomEquippedTorso) return;
+      const lower = (mesh.name || '').toLowerCase();
+      if (!lower.startsWith('torso_')) return;
+      if (lower.includes('_skin')) {
+        skinMeshes.push({
+          mesh,
+          originalIndex: mesh.geometry.getIndex(),
+        });
+      } else {
+        defaultClothingMeshes.push(mesh);
+      }
+    });
+    storedState = { defaultClothingMeshes, skinMeshes };
+    glbRoot.userData.defaultTorsoState = storedState;
+  }
+
+  // Remove and dispose any previously attached custom torso meshes on this rig
+  const prevAttached = (glbRoot.userData.attachedCustomTorsoMeshes ?? []) as THREE.Mesh[];
+  if (prevAttached.length > 0) {
+    for (const oldMesh of prevAttached) {
+      if (oldMesh.parent) {
+        oldMesh.parent.remove(oldMesh);
+      }
+      oldMesh.geometry?.dispose();
+    }
+    const attachedSet = new Set<THREE.Mesh>(prevAttached);
+    controller.meshes = controller.meshes.filter((entry) => !attachedSet.has(entry.mesh));
+    glbRoot.userData.attachedCustomTorsoMeshes = [];
+  }
+
+  // Restore default built-in top & full skin index buffers when unequipping
+  if (!torsoGltf) {
+    for (const defMesh of storedState.defaultClothingMeshes) {
+      defMesh.visible = true;
+    }
+    for (const skinEntry of storedState.skinMeshes) {
+      skinEntry.mesh.visible = true;
+      const currentIdx = skinEntry.mesh.geometry.getIndex();
+      if (currentIdx && currentIdx !== skinEntry.originalIndex) {
+        skinEntry.mesh.geometry.setIndex(skinEntry.originalIndex);
+      }
+    }
+    return true;
+  }
+
+  prepareModularApparelGltfMaterials(torsoGltf);
+
+  const sourceSkinnedMeshes: THREE.SkinnedMesh[] = [];
+  let maxAbsX = 0;
+  let minY = Infinity;
+  let maxCollarY = -Infinity;
+  let hasOwnSkinMesh = false;
+
+  torsoGltf.scene.traverse((node) => {
+    if ((node as THREE.SkinnedMesh).isSkinnedMesh) {
+      const sm = node as THREE.SkinnedMesh;
+      sourceSkinnedMeshes.push(sm);
+      const lower = (sm.name || '').toLowerCase();
+      if (lower.includes('_skin')) {
+        hasOwnSkinMesh = true;
+      } else if (!lower.includes('outline')) {
+        const pos = sm.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+        if (pos) {
+          for (let i = 0; i < pos.count; i++) {
+            const ax = Math.abs(pos.getX(i));
+            const y = pos.getY(i);
+            if (ax > maxAbsX) maxAbsX = ax;
+            if (y < minY) minY = y;
+            if (ax < 0.14 && y > maxCollarY) maxCollarY = y;
+          }
+        }
+      }
+    }
+  });
+
+  if (sourceSkinnedMeshes.length === 0) {
+    return false;
+  }
+
+  const hostParent: THREE.Object3D =
+    storedState.defaultClothingMeshes[0]?.parent ?? glbRoot;
+
+  const newlyAttached: THREE.Mesh[] = [];
+  for (const srcSm of sourceSkinnedMeshes) {
+    const srcBones = srcSm.skeleton?.bones ?? [];
+    const srcInverses = srcSm.skeleton?.boneInverses ?? [];
+    if (srcBones.length === 0) continue;
+
+    const mappedBones: THREE.Bone[] = [];
+    let allMapped = true;
+    for (let bi = 0; bi < srcBones.length; bi++) {
+      const boneName = srcBones[bi].name;
+      const targetBone =
+        controller.bones.get(boneName) ??
+        controller.bones.get(stripMixamoPrefix(boneName));
+      if (!targetBone) {
+        allMapped = false;
+        break;
+      }
+      mappedBones.push(targetBone);
+    }
+    if (!allMapped) continue;
+
+    const clonedGeom = srcSm.geometry.clone();
+    const clonedMesh = new THREE.SkinnedMesh(clonedGeom, srcSm.material);
+    clonedMesh.name = srcSm.name || 'CustomEquippedTorsoMesh';
+    clonedMesh.userData.isCustomEquippedTorso = true;
+    clonedMesh.castShadow = false;
+    clonedMesh.receiveShadow = false;
+    clonedMesh.frustumCulled = false;
+    clonedMesh.bindMode = srcSm.bindMode;
+
+    const clonedInverses = srcInverses.map((inv) => inv.clone());
+    const boundSkeleton = new THREE.Skeleton(mappedBones, clonedInverses);
+    clonedMesh.bind(boundSkeleton, srcSm.bindMatrix.clone());
+
+    hostParent.add(clonedMesh);
+    newlyAttached.push(clonedMesh);
+    controller.meshes.push({ mesh: clonedMesh, defaultMat: clonedMesh.material });
+  }
+
+  if (newlyAttached.length === 0) {
+    return false;
+  }
+
+  glbRoot.userData.attachedCustomTorsoMeshes = newlyAttached;
+
+  // Hide avatar's default built-in top clothing + outline
+  for (const defMesh of storedState.defaultClothingMeshes) {
+    defMesh.visible = false;
+  }
+
+  // Mask inner occluded chest/midriff/bicep skin triangles while keeping neck & exposed forearms + welded wrists seamless
+  if (hasOwnSkinMesh) {
+    for (const skinEntry of storedState.skinMeshes) {
+      skinEntry.mesh.visible = false;
+    }
+  } else {
+    const sleeveCutoffAbsX = maxAbsX > 0.2 ? Math.max(0.18, maxAbsX - 0.048) : 0.18;
+    const collarKeepMinY = Number.isFinite(maxCollarY) ? Math.min(1.31, maxCollarY - 0.04) : 1.295;
+    const hemCoverMinY = Number.isFinite(minY) ? minY : 0.78;
+    for (const skinEntry of storedState.skinMeshes) {
+      skinEntry.mesh.visible = true;
+      if (skinEntry.originalIndex) {
+        const trimmedIdx = createTrimmedTorsoSkinIndexBuffer(
+          skinEntry.mesh.geometry,
+          skinEntry.originalIndex,
+          sleeveCutoffAbsX,
+          collarKeepMinY,
+          hemCoverMinY,
+        );
+        skinEntry.mesh.geometry.setIndex(trimmedIdx);
+      }
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Sets (or clears when `torsoAssetUrl` is empty/null) the equipped modular torso `.glb`
+ * on a `BuddyCharacterRig`, automatically persisting across gender switches and async GLB loads.
+ */
+export async function setBuddyRigEquippedTorsoByUrl(
+  rig: BuddyCharacterRig,
+  torsoAssetUrl: string | null | undefined,
+): Promise<boolean> {
+  const cleanUrl = torsoAssetUrl?.trim() ? torsoAssetUrl.trim() : null;
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.desiredTorsoAssetUrl = cleanUrl;
+  }
+  const nextSeq = ((rig.bodyGroupRef?.userData?.torsoEquipSeq as number | undefined) ?? 0) + 1;
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.torsoEquipSeq = nextSeq;
+  }
+
+  if (!cleanUrl) {
+    return applyEquippedTorsoToBuddyRig(rig, null);
+  }
+
+  const torsoGltf = await loadModularApparelGltf(cleanUrl);
+  if (rig.bodyGroupRef && rig.bodyGroupRef.userData.torsoEquipSeq !== nextSeq) {
+    return false;
+  }
+  if (!torsoGltf) {
+    return false;
+  }
+  return applyEquippedTorsoToBuddyRig(rig, torsoGltf);
 }
 
 const SIT_VARIANT_CLIP_MAP: Record<SitAnimVariant, string> = {
@@ -12923,7 +14834,7 @@ function stepCharBuddiesGlbRigController(
     isSleeping ||
     Boolean(scooterRidePose) ||
     isCafeWorkPose;
-  if (!isSeatedOrPiloting) {
+  if (!isSeatedOrPiloting && !ctrl.isCustomSkeleton) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving
       ? Math.max(-0.055, Math.min(0.055, -strafeDir * 0.038 + yawRateRad * 0.008))
@@ -13694,7 +15605,14 @@ export function buildProceduralBuddyAvatar(
   isSoftwareGl: boolean,
   isSeatedRider = false,
   preferredGender?: CharacterGender,
+  isPlayerAvatar = false,
 ): BuddyCharacterRig {
+  if (windUniforms?.uLightDirection) {
+    blitzStylizedCharUniforms.uLightDirection.value.copy(windUniforms.uLightDirection.value);
+  }
+  if (windUniforms?.uLightColor) {
+    blitzStylizedCharUniforms.uLightColor.value.copy(windUniforms.uLightColor.value);
+  }
   bodyGroup.rotation.order = 'YXZ';
   if (bodyGroup.parent) {
     bodyGroup.parent.rotation.order = 'YXZ';
@@ -13864,10 +15782,16 @@ export function buildProceduralBuddyAvatar(
   };
 
   const resolvedGender = preferredGender ?? activeDefaultCharacterGender;
+  const femaleDefaultGltf = isPlayerAvatar
+    ? cachedLoadedBlitzAssets?.playerFemaleGlb ?? cachedLoadedBlitzAssets?.charBuddiesGltf
+    : cachedLoadedBlitzAssets?.charBuddiesGltf;
+  const maleDefaultGltf = isPlayerAvatar
+    ? cachedLoadedBlitzAssets?.playerMaleGlb ?? cachedLoadedBlitzAssets?.manCharacterBuddiesGltf
+    : cachedLoadedBlitzAssets?.manCharacterBuddiesGltf;
   const defaultGltf =
     resolvedGender === 'male'
-      ? cachedLoadedBlitzAssets?.manCharacterBuddiesGltf ?? cachedLoadedBlitzAssets?.charBuddiesGltf
-      : cachedLoadedBlitzAssets?.charBuddiesGltf;
+      ? maleDefaultGltf ?? femaleDefaultGltf
+      : femaleDefaultGltf ?? maleDefaultGltf;
   if (defaultGltf) {
     upgradeBuddyRigWithCharBuddiesGlb(rig, defaultGltf);
   }
@@ -16283,9 +18207,32 @@ export function createCurvedPlanetEnvironment(
   // 4B-2. ARCHITECTURAL MODEL SHEET: URBAN SCOOTER & E-MOBILITY SHOWROOM KIOSK
   //       (Renovated Central Plaza West Kiosk + 2 Non-Rideable Front Display Scooters:
   //        Modern Urban Electric Scooter `screen_8a1fbcde.png` & Modern Urban Push Scooter `screen_e2bde276.png`)
-  //       Placed along the West Plaza border at local (-10.2, 2.50, -1.2), facing East (+X) toward Central Plaza.
+  //       Placed along the West Plaza border at local (-10.2, 2.50, -4.4), facing East (+X) toward Central Plaza.
   // -------------------------------------------------------------------------
   buildUrbanScooterShowroomKiosk3D({
+    westPlantGroup,
+    isSoftwareGl,
+    sharedClearGlassMat: sharedLobbyClearGlassMat,
+    createMitredPolylineStripGeometry,
+    addLobbyPart,
+    createBlitzStrokeMesh,
+    textures: {
+      steelRoofTex: lobbySteelRoofTex,
+      granitePaverTex: lobbyGranitePaverTex,
+      verticalTimberTex: lobbyVerticalTimberTex,
+      timberTex: lobbyTimberTex,
+      concreteTex: lobbyConcreteTex,
+      louverTex: lobbyLouverTex,
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // 4B-3. ARCHITECTURAL MODEL SHEET: MODERN FASHION & APPAREL BOUTIQUE KIOSK
+  //       (Kios Toko Baju & Butik Pakaian Modern — `screen_aad784ba.png` & `screenshot_12_60bb245f.png`)
+  //       Placed along the West Plaza border at local (-10.2, 2.50, +5.0), facing East (+X) toward Central Plaza,
+  //       achieving exact 9.40m center-to-center symmetry across Real Estate (-13.8), Scooter (-4.4), & Fashion (+5.0).
+  // -------------------------------------------------------------------------
+  buildFashionAndApparelKiosk3D({
     westPlantGroup,
     isSoftwareGl,
     sharedClearGlassMat: sharedLobbyClearGlassMat,
@@ -16618,11 +18565,12 @@ export function createCurvedPlanetEnvironment(
   );
 
   // Circular Bronze Commemorative Seal Inlay embedded in front entrance promenade ("Commemorative Seal Inlay")
+  // Sized compactly (outer radius 0.365 at z = 3.52 -> north edge 3.155 > step edge 3.09) so it never clips steps or walls
   addChToonPart(
     civicHallGrp,
-    new THREE.CylinderGeometry(0.76, 0.78, 0.036, 20),
+    new THREE.CylinderGeometry(0.35, 0.365, 0.036, 24),
     COL_CH_STONE,
-    [0, 0.078, 3.48],
+    [0, 0.078, 3.52],
     [0, 0, 0],
     0,
     lobbyConcreteTex,
@@ -16631,9 +18579,9 @@ export function createCurvedPlanetEnvironment(
   );
   addChToonPart(
     civicHallGrp,
-    new THREE.CylinderGeometry(0.64, 0.64, 0.036, 20),
+    new THREE.CylinderGeometry(0.29, 0.29, 0.036, 24),
     '#ffffff',
-    [0, 0.098, 3.48],
+    [0, 0.098, 3.52],
     [0, 0, 0],
     0,
     chSealMedalTex,
@@ -16656,7 +18604,6 @@ export function createCurvedPlanetEnvironment(
 
   // --- PART 2: STONE RETAINING BALUSTRADES, LEAF-PETAL SHRUB & PINK/PURPLE FLOWER PLANTERS ---
   const chLeafPalette = ['#4d8545', '#5f9955', '#3e7037', '#6eab63'];
-  const chHydrangeaPink = ['#e89bb5', '#d982a0', '#f2b3c8'];
   const civicPinkPalette: [string, string][] = [
     ['#f288b6', '#c75b89'],
     ['#fa9ec6', '#cf6e98'],
@@ -16852,35 +18799,84 @@ export function createCurvedPlanetEnvironment(
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.14, 0.18, 0.55, 8), '#2c353d', [lampX, 0.65, lampZ], [0, 0, 0], 0.008);
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.065, 0.095, 2.35, 8), '#2c353d', [lampX, 2.05, lampZ], [0, 0, 0], 0.009);
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.96, 6), '#2c353d', [lampX, 2.95, lampZ], [0, 0, Math.PI / 2], 0.007, undefined, 1.0, false);
-    // Twin hanging flower baskets on lamppost crossarm
+    // Twin hanging flower baskets on lamppost crossarm (using staircase leaf-petal shrub style + pink petals + trailing leaves)
     for (const bSide of [-1, 1]) {
       const bx = lampX + bSide * 0.38;
       addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.16, 0.10, 0.18, 8), '#8c6239', [bx, 2.52, lampZ], [0, 0, 0], 0.007, undefined, 1.0, false);
-      const bLeaf = new THREE.DodecahedronGeometry(0.16, 1);
-      bLeaf.scale(1.15, 0.75, 1.15);
-      addChToonPart(civicHallGrp, bLeaf, chLeafPalette[0], [bx, 2.64, lampZ], [0, 0, 0], 0.006, undefined, 1.0, false);
-      addChToonPart(civicHallGrp, new THREE.DodecahedronGeometry(0.11, 0), chHydrangeaPink[0], [bx, 2.74, lampZ], [0, 0, 0], 0.005, undefined, 1.0, false);
+      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.172, 0.162, 0.032, 8), '#a47445', [bx, 2.61, lampZ], [0, 0, 0], 0.006, undefined, 1.0, false);
+      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.148, 0.142, 0.02, 8), '#4a3525', [bx, 2.615, lampZ], [0, 0, 0], 0, undefined, 1.0, false);
+
+      // Central & rim staircase-style leaf-petal shrub tufts inside basket
+      tmpShrubPos.set(bx, 2.66, lampZ);
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, bSide > 0 ? 0.65 : 2.15);
+      tmpShrubScale.set(0.138, 0.114, 0.138);
+      civicPlanterShrubMatrices.push(
+        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+      );
+      for (let t = 0; t < 3; t++) {
+        const ang = (t * Math.PI * 2) / 3 + (bSide > 0 ? 0.35 : -0.35);
+        tmpShrubPos.set(bx + Math.cos(ang) * 0.068, 2.635, lampZ + Math.sin(ang) * 0.068);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, ang + 0.9);
+        tmpShrubScale.set(0.102, 0.086, 0.102);
+        civicPlanterShrubMatrices.push(
+          new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+        );
+      }
+
+      // Pink flower petal clusters crowning the hanging basket
+      tmpShrubPos.set(bx, 2.74, lampZ);
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, bSide > 0 ? 1.2 : 2.8);
+      tmpShrubScale.set(0.095, 0.078, 0.095);
+      civicPlanterFlowerSpecs.push({
+        matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+        mainHex: civicPinkPalette[0][0],
+        depthHex: civicPinkPalette[0][1],
+      });
+      for (let p = 0; p < 3; p++) {
+        const pAng = (p * Math.PI * 2) / 3 + 0.85;
+        const [pmHex, pdHex] = civicPinkPalette[(p + 1) % civicPinkPalette.length];
+        tmpShrubPos.set(bx + Math.cos(pAng) * 0.068, 2.70, lampZ + Math.sin(pAng) * 0.068);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, pAng + 0.4);
+        tmpShrubScale.set(0.076, 0.064, 0.076);
+        civicPlanterFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          mainHex: pmHex,
+          depthHex: pdHex,
+        });
+      }
+
+      // Trailing leaf-petal vine cascades draping over the basket rim
+      for (let v = 0; v < 3; v++) {
+        const vAng = v * 2.09 + (bSide > 0 ? 0.5 : 1.5);
+        const dirX = Math.cos(vAng);
+        const dirZ = Math.sin(vAng);
+        addChToonPart(
+          civicHallGrp,
+          new THREE.CylinderGeometry(0.007, 0.005, 0.24, 5),
+          '#1e682d',
+          [bx + dirX * 0.148, 2.49, lampZ + dirZ * 0.148],
+          [dirZ * 0.14, 0, -dirX * 0.14],
+          0,
+          undefined,
+          1.0,
+          false,
+        );
+        const nodeCount = v === 0 ? 4 : 3;
+        for (let n = 0; n < nodeCount; n++) {
+          const reach = 0.142 + (n === 1 ? 0.014 : 0.004);
+          const leafScale = 0.068 - n * 0.010;
+          tmpShrubPos.set(bx + dirX * reach, 2.58 - n * 0.075, lampZ + dirZ * reach);
+          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, vAng + n * 1.15);
+          tmpShrubScale.set(leafScale, leafScale * 0.92, leafScale);
+          civicPlanterShrubMatrices.push(
+            new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          );
+        }
+      }
     }
     // Top warm glowing lantern head
     addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.17, 0.12, 0.38, 4), '#ffe896', [lampX, 3.42, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
     addChToonPart(civicHallGrp, new THREE.ConeGeometry(0.22, 0.20, 4), '#2c353d', [lampX, 3.70, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
-  }
-
-  if (civicPlanterShrubMatrices.length > 0) {
-    civicHallGrp.add(
-      createPlazaLeafPetalShrubInstanced(
-        civicPlanterShrubMatrices,
-        'LobbyCivicPlanterLeafPetalShrubs',
-      ),
-    );
-  }
-  if (civicPlanterFlowerSpecs.length > 0) {
-    civicHallGrp.add(
-      createPlazaFlowerPetalClusterInstanced(
-        civicPlanterFlowerSpecs,
-        'LobbyCivicPlanterFlowerPetals',
-      ),
-    );
   }
 
   // --- PART 3: MAIN ONE-STORY NEOCLASSICAL CIVIC HALL BODY, EXPOSED BRICK QUOINS & PORTICO STEPS ---
@@ -17073,13 +19069,125 @@ export function createCurvedPlanetEnvironment(
       );
     }
 
-    // Wooden Window Flower Box + Lush Green & Pink Blooms under the Sill
+    // Wooden Window Flower Box + Staircase-Style Leaf-Petal Shrubs, Pink/Lilac Petals & Trailing Vines
     addChToonPart(wGrp, new THREE.BoxGeometry(1.04, 0.22, 0.26), COL_CH_WOOD, [0, -0.68, 0.11], [0, 0, 0], 0.007, lobbyTimberTex);
-    for (const bx of [-0.32, 0.0, 0.32]) {
-      const bushG = new THREE.DodecahedronGeometry(0.15, 1);
-      bushG.scale(1.15, 0.80, 1.05);
-      addChToonPart(wGrp, bushG, chLeafPalette[0], [bx, -0.52, 0.13], [0, bx, 0], 0.006, undefined, 1.0, false);
-      addChToonPart(wGrp, new THREE.DodecahedronGeometry(0.10, 0), chHydrangeaPink[0], [bx, -0.42, 0.16], [0, 0, 0], 0.005, undefined, 1.0, false);
+    addChToonPart(wGrp, new THREE.BoxGeometry(0.96, 0.03, 0.19), '#4a3525', [0, -0.575, 0.11], [0, 0, 0], 0, undefined, 1.0, false);
+
+    const cosR = Math.cos(rotY);
+    const sinR = Math.sin(rotY);
+    const pushWindowShrub = (
+      lx: number,
+      ly: number,
+      lz: number,
+      yaw: number,
+      sx: number,
+      sy: number,
+      sz: number,
+    ) => {
+      tmpShrubPos.set(
+        wx + lx * cosR + lz * sinR,
+        1.92 + ly,
+        wz - lx * sinR + lz * cosR,
+      );
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, rotY + yaw);
+      tmpShrubScale.set(sx, sy, sz);
+      civicPlanterShrubMatrices.push(
+        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+      );
+    };
+    const pushWindowFlower = (
+      lx: number,
+      ly: number,
+      lz: number,
+      yaw: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      mainHex: string,
+      depthHex: string,
+    ) => {
+      tmpShrubPos.set(
+        wx + lx * cosR + lz * sinR,
+        1.92 + ly,
+        wz - lx * sinR + lz * cosR,
+      );
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, rotY + yaw);
+      tmpShrubScale.set(sx, sy, sz);
+      civicPlanterFlowerSpecs.push({
+        matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+        mainHex,
+        depthHex,
+      });
+    };
+
+    // Main leaf-petal shrub tufts + front-lip filler tufts inside the window planter
+    const winShrubXs = [-0.34, -0.115, 0.115, 0.34];
+    for (let sIdx = 0; sIdx < winShrubXs.length; sIdx++) {
+      pushWindowShrub(winShrubXs[sIdx], -0.495, 0.145, sIdx * 1.45 + 0.35, 0.132, 0.106, 0.112);
+    }
+    const winSubXs = [-0.23, 0.0, 0.23];
+    for (let sIdx = 0; sIdx < winSubXs.length; sIdx++) {
+      pushWindowShrub(winSubXs[sIdx], -0.532, 0.185, sIdx * 1.85 + 1.1, 0.100, 0.082, 0.090);
+    }
+
+    // Pink & Lilac-Purple flower petal clusters crowning the window box
+    const winPrimaryXs = [-0.32, 0.0, 0.32];
+    for (let pIdx = 0; pIdx < winPrimaryXs.length; pIdx++) {
+      const [mHex, dHex] = civicPinkPalette[pIdx % civicPinkPalette.length];
+      pushWindowFlower(
+        winPrimaryXs[pIdx],
+        -0.408,
+        0.155,
+        pIdx * 1.62 + 0.5,
+        0.096,
+        0.080,
+        0.090,
+        mHex,
+        dHex,
+      );
+    }
+    const winCompXs = [-0.16, 0.16];
+    for (let cIdx = 0; cIdx < winCompXs.length; cIdx++) {
+      const [mHex, dHex] =
+        cIdx % 2 === 0 ? civicLilacPalette[0] : civicPinkPalette[1];
+      pushWindowFlower(
+        winCompXs[cIdx],
+        -0.430,
+        0.175,
+        cIdx * 2.1 + 0.9,
+        0.078,
+        0.066,
+        0.074,
+        mHex,
+        dHex,
+      );
+    }
+
+    // Gentle trailing leaf-petal cascades draping over the front lip of the window box
+    for (const vx of [-0.22, 0.22]) {
+      addChToonPart(
+        wGrp,
+        new THREE.CylinderGeometry(0.006, 0.0045, 0.18, 5),
+        '#1e682d',
+        [vx, -0.65, 0.246],
+        [0.10, 0, 0],
+        0,
+        undefined,
+        1.0,
+        false,
+      );
+      for (let n = 0; n < 3; n++) {
+        const lScale = 0.060 - n * 0.009;
+        pushWindowShrub(
+          vx + (n === 1 ? 0.01 : 0),
+          -0.575 - n * 0.064,
+          0.246 + (n === 1 ? 0.010 : 0.004),
+          n * 1.2 + (vx > 0 ? 0.6 : 1.7),
+          lScale,
+          lScale * 0.90,
+          lScale,
+        );
+      }
     }
   };
 
@@ -17092,6 +19200,23 @@ export function createCurvedPlanetEnvironment(
   // 2 West/Left Side Windows (facing West -X)
   buildCivicShutteredWindow(-4.48, 0.82, -Math.PI / 2);
   buildCivicShutteredWindow(-4.48, -1.55, -Math.PI / 2);
+
+  if (civicPlanterShrubMatrices.length > 0) {
+    civicHallGrp.add(
+      createPlazaLeafPetalShrubInstanced(
+        civicPlanterShrubMatrices,
+        'LobbyCivicPlanterLeafPetalShrubs',
+      ),
+    );
+  }
+  if (civicPlanterFlowerSpecs.length > 0) {
+    civicHallGrp.add(
+      createPlazaFlowerPetalClusterInstanced(
+        civicPlanterFlowerSpecs,
+        'LobbyCivicPlanterFlowerPetals',
+      ),
+    );
+  }
 
   // --- PART 6: PITCHED SLATE-TILE GABLE ROOF, ARCHED ATTIC VENTS, RED-BRICK CHIMNEY & IVY VINES ---
   // Left & Right Side Gable Triangles (spanning z in [-3.23 .. +2.13], rising from y = 3.68m to ridge y = 5.42m at z = -0.55)
@@ -17293,6 +19418,16 @@ export function createCurvedPlanetEnvironment(
   //    bold BackSide Toon Outlines (createBlitzStrokeMesh) and chunky low-poly
   //    foliage & blossoms that bake 100% into the static plaza mesh (High FPS).
   // -------------------------------------------------------------------------
+  const lamppostBasketShrubMatrices: THREE.Matrix4[] = [];
+  const lamppostBasketFlowerSpecs: PlazaFlowerClusterSpec[] = [];
+  const lampBasketPinkPalette: [string, string][] = [
+    ['#f48fb8', '#c85a88'],
+    ['#ff9ec7', '#d46896'],
+    ['#ee79ab', '#bd4c7d'],
+    ['#ffb0d2', '#da739e'],
+  ];
+  const tmpLampLocalVec = new THREE.Vector3();
+
   const buildUrbanPromenadeLampPole = (lx: number, lz: number, rotY: number) => {
     const lGrp = new THREE.Group();
     lGrp.position.set(lx, 2.50, lz);
@@ -17357,11 +19492,21 @@ export function createCurvedPlanetEnvironment(
     addToonLampPart(lGrp, new THREE.CylinderGeometry(0.086, 0.086, 0.045, 8), COL_IRON_ACCENT, [0, 2.86, 0], [0, 0, 0], 0.007, false);
     addToonLampPart(lGrp, new THREE.CylinderGeometry(0.094, 0.072, 0.10, 8), COL_IRON_DARK, [0, 3.24, 0], [0, 0, 0], 0.008, false);
 
-    // E. Wrought-Iron Crossarm, S-Scroll Brackets & Twin Suspended Toon Flower Baskets
+    // E. Wrought-Iron Crossarm, S-Scroll Brackets & Twin Suspended Flower Baskets
     const crossarmGrp = new THREE.Group();
     const armYaw = -0.28;
     crossarmGrp.rotation.y = armYaw;
     lGrp.add(crossarmGrp);
+
+    const totalArmYaw = rotY + armYaw;
+    const toWestPlantPos = (cx: number, cy: number, cz: number): THREE.Vector3 => {
+      tmpLampLocalVec.set(cx, cy, cz).applyAxisAngle(shrubUpAxis, totalArmYaw);
+      return tmpShrubPos.set(
+        lx + tmpLampLocalVec.x,
+        2.50 + tmpLampLocalVec.y,
+        lz + tmpLampLocalVec.z,
+      );
+    };
 
     addToonLampPart(crossarmGrp, new THREE.BoxGeometry(0.14, 0.13, 0.15), COL_IRON_DARK, [0, 3.31, 0], [0, 0, 0], 0.008, false);
     addToonLampPart(
@@ -17373,9 +19518,6 @@ export function createCurvedPlanetEnvironment(
       0.0075,
       false,
     );
-
-    const foliageColors = ['#468c3b', '#529e46', '#3b7a31', '#5ead50'];
-    const blossomColors = ['#f7a4c6', '#ef88b2', '#fcc8df', '#e678a5'];
 
     for (const side of [-1, 1]) {
       const zSign = side;
@@ -17409,7 +19551,7 @@ export function createCurvedPlanetEnvironment(
         false,
       );
 
-      // F. Suspended Low-Poly Toon Wicker Flower Basket
+      // F. Suspended Wicker Flower Basket with Staircase-Style Leaf-Petal Shrub, Pink Flower Petals & Trailing Leaves
       const basketZ = zSign * 0.46;
       const hookY = 3.28;
       const rimY = 2.66;
@@ -17436,7 +19578,7 @@ export function createCurvedPlanetEnvironment(
         chainMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirVec);
       }
 
-      // Wicker Basket Bowl + Rim Collar (with bold Toon Outline)
+      // Wicker Basket Bowl + Rim Collar + Dark Soil Bed
       addToonLampPart(
         crossarmGrp,
         new THREE.CylinderGeometry(0.215, 0.135, 0.24, 8),
@@ -17455,76 +19597,119 @@ export function createCurvedPlanetEnvironment(
         0.008,
         false,
       );
+      addToonLampPart(
+        crossarmGrp,
+        new THREE.CylinderGeometry(0.202, 0.195, 0.024, 8),
+        '#4a3525',
+        [0, 2.665, basketZ],
+        [0, 0, 0],
+        0,
+        false,
+      );
 
-      // Chunky Blitz Toon-Outlined Green Foliage Cushions inside Basket
-      const foliagePuffs: [number, number, number, number, number][] = [
-        [0.0, 2.74, 0.0, 0.165, 0.74],
-        [-0.11, 2.69, 0.08, 0.125, 0.78],
-        [0.11, 2.69, -0.08, 0.125, 0.78],
-        [0.10, 2.70, 0.10, 0.12, 0.76],
-        [-0.10, 2.70, -0.10, 0.12, 0.76],
-      ];
-      for (let fIdx = 0; fIdx < foliagePuffs.length; fIdx++) {
-        const [fx, fy, fz, fRad, fSy] = foliagePuffs[fIdx];
-        const fGeo = new THREE.IcosahedronGeometry(fRad, 1);
-        fGeo.scale(1.10, fSy, 1.10);
-        addToonLampPart(
-          crossarmGrp,
-          fGeo,
-          foliageColors[fIdx % foliageColors.length],
-          [fx, fy, basketZ + fz],
-          [0, fIdx * 0.7, 0],
-          0.0085,
-          false,
+      // 1) Staircase-Style Leaf-Petal Bush Mound (`createPlazaLeafPetalShrubInstanced`)
+      const seedBase = Math.abs(lx * 0.31 + lz * 0.17) + (side > 0 ? 1.35 : 0.25);
+      toWestPlantPos(0, 2.72, basketZ);
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 1.9) % (Math.PI * 2));
+      tmpShrubScale.set(0.205, 0.168, 0.205);
+      lamppostBasketShrubMatrices.push(
+        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+      );
+
+      for (let t = 0; t < 4; t++) {
+        const tAng = (t * Math.PI) / 2 + (side > 0 ? 0.35 : -0.35);
+        toWestPlantPos(Math.cos(tAng) * 0.095, 2.685, basketZ + Math.sin(tAng) * 0.095);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + t * 1.47) % (Math.PI * 2));
+        tmpShrubScale.set(0.148, 0.122, 0.148);
+        lamppostBasketShrubMatrices.push(
+          new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
         );
       }
 
-      // Chunky Blitz Toon-Outlined Pink Flower Globes on Basket Crown
-      const blossomSpots: [number, number, number, number][] = [
-        [0.0, 2.83, 0.0, 0.082],
-        [-0.10, 2.78, 0.07, 0.072],
-        [0.10, 2.78, -0.06, 0.072],
-        [0.08, 2.76, 0.10, 0.068],
-        [-0.09, 2.76, -0.09, 0.068],
+      // 2) Lush Pink Flower Petal Clusters (`createPlazaFlowerPetalClusterInstanced`)
+      toWestPlantPos(0, 2.835, basketZ);
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 2.3 + 0.6) % (Math.PI * 2));
+      tmpShrubScale.set(0.132, 0.108, 0.132);
+      lamppostBasketFlowerSpecs.push({
+        matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+        mainHex: lampBasketPinkPalette[0][0],
+        depthHex: lampBasketPinkPalette[0][1],
+      });
+
+      const pinkRingSpots: [number, number, number, number][] = [
+        [-0.092, 2.775, 0.068, 0.106],
+        [0.096, 2.775, -0.062, 0.106],
+        [0.068, 2.760, 0.094, 0.098],
+        [-0.072, 2.760, -0.090, 0.098],
       ];
-      for (let bIdx = 0; bIdx < blossomSpots.length; bIdx++) {
-        const [bx, by, bz, bRad] = blossomSpots[bIdx];
-        const bGeo = new THREE.DodecahedronGeometry(bRad, 1);
-        bGeo.scale(1.14, 0.82, 1.14);
-        addToonLampPart(
-          crossarmGrp,
-          bGeo,
-          blossomColors[bIdx % blossomColors.length],
-          [bx, by, basketZ + bz],
-          [0.2 * bIdx, bIdx * 0.9, 0],
-          0.0075,
-          false,
-        );
+      for (let pIdx = 0; pIdx < pinkRingSpots.length; pIdx++) {
+        const [px, py, pz, pScale] = pinkRingSpots[pIdx];
+        const [pmHex, pdHex] = lampBasketPinkPalette[(pIdx + 1) % lampBasketPinkPalette.length];
+        toWestPlantPos(px, py, basketZ + pz);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + pIdx * 1.63) % (Math.PI * 2));
+        tmpShrubScale.set(pScale, pScale * 0.84, pScale);
+        lamppostBasketFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          mainHex: pmHex,
+          depthHex: pdHex,
+        });
       }
 
-      // Stylized Toon-Outlined Trailing Green Ivy Vines
-      const vineTrails: [number, number, number][] = [
-        [0.04, zSign * 0.18, 5],
-        [-0.14, zSign * 0.06, 4],
+      // 3) Cascading Trailing Leaf-Petal Vines & Rim Blossom Accents draping below the wicker bowl
+      const trailingVineAngles = [
+        zSign > 0 ? 0.42 : -0.42,
+        zSign > 0 ? 2.18 : -2.18,
+        zSign > 0 ? -1.22 : 1.22,
+        Math.PI * 0.92 * zSign,
       ];
-      for (let vIdx = 0; vIdx < vineTrails.length; vIdx++) {
-        const [vxBase, vzBase, nodeCount] = vineTrails[vIdx];
+      for (let vIdx = 0; vIdx < trailingVineAngles.length; vIdx++) {
+        const vAng = trailingVineAngles[vIdx];
+        const dirX = Math.cos(vAng);
+        const dirZ = Math.sin(vAng);
+        const nodeCount = vIdx % 2 === 0 ? 4 : 3;
+        const vineLen = nodeCount === 4 ? 0.36 : 0.27;
+
+        // Slender dark-emerald vine stem draping over the rim
+        addToonLampPart(
+          crossarmGrp,
+          new THREE.CylinderGeometry(0.0085, 0.0055, vineLen, 5),
+          '#1e682d',
+          [dirX * 0.198, 2.61 - vineLen * 0.5, basketZ + dirZ * 0.198],
+          [dirZ * 0.15, 0, -dirX * 0.15],
+          0,
+          false,
+        );
+
         for (let n = 0; n < nodeCount; n++) {
-          const vy = 2.58 - n * 0.082;
-          const swayX = vxBase + Math.sin(n * 1.2 + vIdx) * 0.018;
-          const swayZ = basketZ + vzBase + Math.cos(n * 0.9 + vIdx) * 0.015;
-          const leafR = 0.046 - n * 0.005;
-          const leafGeo = new THREE.DodecahedronGeometry(leafR, 0);
-          leafGeo.scale(1.18, 0.82, 0.82);
-          addToonLampPart(
-            crossarmGrp,
-            leafGeo,
-            foliageColors[(vIdx + n) % foliageColors.length],
-            [swayX, vy, swayZ],
-            [0.25, n * 0.8, 0.2],
-            0.006,
-            false,
+          const vy = 2.60 - n * 0.098;
+          const radialReach = 0.195 + (n === 1 ? 0.020 : n === 2 ? 0.014 : 0.004);
+          const swayTangential = Math.sin(n * 1.35 + vIdx) * 0.018;
+          const vx = dirX * radialReach - dirZ * swayTangential;
+          const vz = basketZ + dirZ * radialReach + dirX * swayTangential;
+          const leafScale = 0.096 - n * 0.013;
+
+          toWestPlantPos(vx, vy, vz);
+          tmpShrubQuat.setFromAxisAngle(
+            shrubUpAxis,
+            (seedBase + vIdx * 1.3 + n * 1.05) % (Math.PI * 2),
           );
+          tmpShrubScale.set(leafScale, leafScale * 0.92, leafScale);
+          lamppostBasketShrubMatrices.push(
+            new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          );
+        }
+
+        // Accent pink flower petals nestled at the top of two trailing cascades
+        if (vIdx < 2) {
+          const [tmHex, tdHex] = lampBasketPinkPalette[(vIdx + 2) % lampBasketPinkPalette.length];
+          toWestPlantPos(dirX * 0.195, 2.635, basketZ + dirZ * 0.195);
+          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + vIdx * 2.1) % (Math.PI * 2));
+          tmpShrubScale.set(0.076, 0.066, 0.076);
+          lamppostBasketFlowerSpecs.push({
+            matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+            mainHex: tmHex,
+            depthHex: tdHex,
+          });
         }
       }
     }
@@ -17584,6 +19769,22 @@ export function createCurvedPlanetEnvironment(
   buildUrbanPromenadeLampPole(-12.4, 11.6, Math.PI / 2);
   for (const lz of [-28.5, -12.4, 12.4, 21.6]) {
     buildUrbanPromenadeLampPole(12.4, lz, -Math.PI / 2);
+  }
+  if (lamppostBasketShrubMatrices.length > 0) {
+    westPlantGroup.add(
+      createPlazaLeafPetalShrubInstanced(
+        lamppostBasketShrubMatrices,
+        'LobbyLamppostBasketLeafPetalShrubs',
+      ),
+    );
+  }
+  if (lamppostBasketFlowerSpecs.length > 0) {
+    westPlantGroup.add(
+      createPlazaFlowerPetalClusterInstanced(
+        lamppostBasketFlowerSpecs,
+        'LobbyLamppostBasketPinkFlowerPetals',
+      ),
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -17868,7 +20069,47 @@ export function createCurvedPlanetEnvironment(
       );
     }
 
-    // 3. BLITZ TOON/CEL-SHADED PLANTER BOXES & CHUNKY TOON FOLIAGE/BLOSSOMS
+    // 3. SLATTED WOODEN PLANTER BOXES WITH STAIRCASE-STYLE LEAF-PETAL SHRUBS, PINK/PURPLE PETALS & TRAILING VINES
+    const benchShrubMatrices: THREE.Matrix4[] = [];
+    const benchFlowerSpecs: PlazaFlowerClusterSpec[] = [];
+
+    const pushBenchShrub = (
+      sxPos: number,
+      syPos: number,
+      szPos: number,
+      yaw: number,
+      sx: number,
+      sy: number,
+      sz: number,
+    ) => {
+      tmpShrubPos.set(sxPos, syPos, szPos);
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, yaw);
+      tmpShrubScale.set(sx, sy, sz);
+      benchShrubMatrices.push(
+        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+      );
+    };
+    const pushBenchFlower = (
+      fxPos: number,
+      fyPos: number,
+      fzPos: number,
+      yaw: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      mainHex: string,
+      depthHex: string,
+    ) => {
+      tmpShrubPos.set(fxPos, fyPos, fzPos);
+      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, yaw);
+      tmpShrubScale.set(sx, sy, sz);
+      benchFlowerSpecs.push({
+        matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+        mainHex,
+        depthHex,
+      });
+    };
+
     const buildSlattedWoodenPlanterBox = (
       px: number,
       pz: number,
@@ -17949,145 +20190,185 @@ export function createCurvedPlanetEnvironment(
         false,
       );
 
-      // Blitz Toon/Cel-Shaded Foliage Mounds, Pink Hydrangea Globes, Lavender Spikes & Ivy Vines
-      // Matches the exact cel-shaded green & black-outlined style of the staircase shrubs!
-      const leafColors = ['#468c3b', '#529e46', '#3b7a31', '#5ead50'];
-      const pinkColors = ['#f7a4c6', '#ef88b2', '#fcc8df', '#e678a5'];
-      const lavenderColors = ['#7c52b8', '#9268cf', '#683fa3', '#a67fe0'];
-
+      // 1) Staircase-Style Leaf-Petal Shrub Mounds + Pink/Lilac Petal Clusters + Lavender Plume Spires
       for (let c = 0; c < clusterCount; c++) {
         const u = clusterCount === 1 ? 0 : c / (clusterCount - 1) - 0.5;
-        const cx = u * (widthX - 0.44);
+        const cx = px + u * (widthX - 0.46);
+        const cz = pz;
 
-        // 1) Chunky Blitz Toon-Outlined Green Foliage Cushions (same style as staircase shrubs)
-        const foliageOffsets: [number, number, number, number, number][] = [
-          [0.0, heightY + 0.05, 0.0, 0.175, 0.70],
-          [-0.12, heightY + 0.03, 0.09, 0.14, 0.74],
-          [0.12, heightY + 0.03, 0.08, 0.14, 0.74],
-          [-0.10, heightY + 0.04, -0.09, 0.135, 0.72],
-          [0.10, heightY + 0.04, -0.09, 0.135, 0.72],
+        // Primary center leaf-petal bush dome
+        const mainR = clusterCount === 1 ? 0.184 : 0.172;
+        pushBenchShrub(
+          cx,
+          heightY + 0.088,
+          cz,
+          c * 1.73 + 0.45,
+          mainR,
+          mainR * 0.80,
+          clusterCount === 1 ? mainR : mainR * 0.88,
+        );
+
+        // 4 shoulder leaf-petal tufts filling the corners of the planter bed
+        const shoulderOffsets: [number, number][] = [
+          [-0.12, 0.072],
+          [0.12, 0.068],
+          [-0.105, -0.072],
+          [0.105, -0.072],
         ];
-        for (let f = 0; f < foliageOffsets.length; f++) {
-          const [ox, oy, oz, rad, sy] = foliageOffsets[f];
-          const fGeo = new THREE.IcosahedronGeometry(rad, 1);
-          fGeo.scale(1.12, sy, 1.08);
-          addToonBenchPart(
-            pBoxGrp,
-            fGeo,
-            leafColors[(c + f) % leafColors.length],
-            [cx + ox, oy, oz],
-            [0, (c + f) * 0.8, 0],
-            0.0095,
-            false,
+        for (let f = 0; f < shoulderOffsets.length; f++) {
+          const [ox, oz] = shoulderOffsets[f];
+          pushBenchShrub(
+            cx + ox,
+            heightY + 0.052,
+            cz + oz,
+            (c + 1) * 1.15 + f * 1.38,
+            0.130,
+            0.104,
+            0.118,
           );
         }
 
-        // 2) Chunky Blitz Toon-Outlined Pink Hydrangea Globes
-        const hydrangeaPositions: [number, number, number, number][] =
-          clusterCount === 1
-            ? [
-                [-0.09, heightY + 0.16, 0.06, 0.118],
-                [0.10, heightY + 0.18, 0.02, 0.128],
-                [-0.02, heightY + 0.15, -0.08, 0.108],
-              ]
-            : [
-                [-0.11, heightY + 0.16, 0.04, 0.120],
-                [0.11, heightY + 0.18, -0.03, 0.126],
-              ];
-        for (let h = 0; h < hydrangeaPositions.length; h++) {
-          const [hx, hy, hz, hRad] = hydrangeaPositions[h];
-          const hGeo = new THREE.DodecahedronGeometry(hRad, 1);
-          hGeo.scale(1.14, 0.88, 1.14);
-          addToonBenchPart(
-            pBoxGrp,
-            hGeo,
-            pinkColors[(c + h) % pinkColors.length],
-            [cx + hx, hy, hz],
-            [0.2 * h, h * 1.1, 0],
-            0.0085,
-            false,
-          );
-          const capGeo = new THREE.DodecahedronGeometry(hRad * 0.56, 0);
-          capGeo.scale(1.1, 0.65, 1.1);
-          addToonBenchPart(
-            pBoxGrp,
-            capGeo,
-            '#fde0ee',
-            [cx + hx, hy + hRad * 0.52, hz],
-            [0, h * 0.7, 0],
-            0,
-            false,
+        // Primary & companion Pink / Lilac-Purple flower petal clusters crowning the bush
+        const [pinkMainA, pinkDepthA] = civicPinkPalette[c % civicPinkPalette.length];
+        pushBenchFlower(
+          cx - 0.068,
+          heightY + 0.212,
+          cz + 0.036,
+          c * 1.48 + 0.6,
+          0.112,
+          0.094,
+          0.112,
+          pinkMainA,
+          pinkDepthA,
+        );
+
+        const [secMain, secDepth] =
+          c % 2 === 0
+            ? civicPinkPalette[(c + 1) % civicPinkPalette.length]
+            : civicLilacPalette[c % civicLilacPalette.length];
+        pushBenchFlower(
+          cx + 0.084,
+          heightY + 0.194,
+          cz - 0.024,
+          c * 2.05 + 1.3,
+          0.098,
+          0.082,
+          0.098,
+          secMain,
+          secDepth,
+        );
+
+        if (clusterCount === 1) {
+          const [frontMain, frontDepth] = civicLilacPalette[1];
+          pushBenchFlower(
+            cx + 0.014,
+            heightY + 0.184,
+            cz + 0.088,
+            2.4,
+            0.088,
+            0.074,
+            0.088,
+            frontMain,
+            frontDepth,
           );
         }
 
-        // 3) Stylized Toon Lavender Spikes
-        const spikeCount = clusterCount === 1 ? 6 : 5;
-        for (let s = 0; s < spikeCount; s++) {
-          const sFrac = s / (spikeCount - 1) - 0.5;
-          const sx = cx + sFrac * 0.22;
-          const sz = (s % 2 === 0 ? -1 : 1) * 0.045;
-          const stemH = 0.26 + (1 - Math.abs(sFrac)) * 0.10;
-          const tiltZ = -sFrac * 0.16;
-          const tiltX = (s % 2 === 0 ? -1 : 1) * 0.07;
+        // Upright Purple Lavender Plume Spires rising from the crown (matching Manor flowerbeds)
+        const [lavMainA, lavDepthA] =
+          civicLavenderSpirePalette[c % civicLavenderSpirePalette.length];
+        pushBenchFlower(
+          cx + 0.010,
+          heightY + 0.285,
+          cz - 0.038,
+          c * 1.31 + 0.85,
+          0.076,
+          0.158,
+          0.076,
+          lavMainA,
+          lavDepthA,
+        );
+        const [lavMainB, lavDepthB] =
+          civicLavenderSpirePalette[(c + 1) % civicLavenderSpirePalette.length];
+        pushBenchFlower(
+          cx - 0.082,
+          heightY + 0.252,
+          cz - 0.048,
+          c * 1.92 + 2.0,
+          0.062,
+          0.132,
+          0.062,
+          lavMainB,
+          lavDepthB,
+        );
+      }
 
-          addToonBenchPart(
-            pBoxGrp,
-            new THREE.CylinderGeometry(0.009, 0.012, stemH, 5),
-            '#48753e',
-            [sx, heightY + 0.06 + stemH * 0.5, sz],
-            [tiltX, 0, tiltZ],
-            0.004,
-            false,
+      // Bridge leaf-petal tufts between rear clusters so the 2.06m planter reads as one lush hedge
+      if (clusterCount > 1) {
+        for (const uBridge of [-0.25, 0.25]) {
+          const bx = px + uBridge * (widthX - 0.46);
+          pushBenchShrub(
+            bx,
+            heightY + 0.068,
+            pz,
+            uBridge > 0 ? 0.95 : 2.35,
+            0.146,
+            0.116,
+            0.132,
           );
-          for (let b = 0; b < 3; b++) {
-            const bHeight = heightY + 0.12 + stemH * 0.45 + b * 0.058;
-            const bRad = 0.027 - b * 0.004;
-            const budGeo = new THREE.DodecahedronGeometry(bRad, 0);
-            budGeo.scale(0.88, 1.45, 0.88);
-            addToonBenchPart(
-              pBoxGrp,
-              budGeo,
-              lavenderColors[(s + b) % lavenderColors.length],
-              [sx - Math.sin(tiltZ) * (b * 0.04), bHeight, sz + Math.sin(tiltX) * (b * 0.04)],
-              [tiltX, s * 0.5, tiltZ],
-              0.005,
-              false,
-            );
-          }
+          const [bMain, bDepth] =
+            uBridge < 0 ? civicLilacPalette[0] : civicPinkPalette[2];
+          pushBenchFlower(
+            bx,
+            heightY + 0.184,
+            pz + 0.02,
+            uBridge > 0 ? 1.55 : 0.45,
+            0.084,
+            0.072,
+            0.084,
+            bMain,
+            bDepth,
+          );
         }
       }
 
-      // 4) Stylized Toon-Outlined Cascading Green Ivy Vines
-      const vineOffsets: [number, number, number][] =
+      // 2) Trailing Leaf-Petal Vine Cascades draping over the wooden planter rim
+      const vineSpecs: [number, number, number, number, number][] =
         clusterCount === 1
           ? [
-              [-0.14, halfD + 0.02, 5],
-              [0.12, halfD + 0.02, 4],
-              [halfW + 0.02, -0.06, 5],
-              [halfW + 0.02, 0.10, 4],
+              [-0.13, halfD + 0.016, 4, 0.12, 0.0],
+              [0.12, halfD + 0.016, 3, 0.12, 0.0],
+              [halfW + 0.016, -0.07, 4, 0.0, -0.12],
+              [halfW + 0.016, 0.10, 3, 0.0, -0.12],
             ]
           : [
-              [-0.72, -halfD - 0.02, 5],
-              [-0.18, -halfD - 0.02, 4],
-              [0.32, -halfD - 0.02, 5],
-              [0.78, -halfD - 0.02, 4],
-              [-halfW - 0.02, 0.04, 5],
+              [-0.72, -halfD - 0.016, 4, -0.12, 0.0],
+              [-0.18, -halfD - 0.016, 3, -0.12, 0.0],
+              [0.32, -halfD - 0.016, 4, -0.12, 0.0],
+              [0.78, -halfD - 0.016, 3, -0.12, 0.0],
+              [-halfW - 0.016, 0.04, 4, 0.0, 0.12],
             ];
-      for (let v = 0; v < vineOffsets.length; v++) {
-        const [vx, vz, vNodes] = vineOffsets[v];
+      for (let v = 0; v < vineSpecs.length; v++) {
+        const [vx, vz, vNodes, tiltX, tiltZ] = vineSpecs[v];
+        const stemLen = vNodes * 0.066;
+        addLobbyPart(
+          pBoxGrp,
+          new THREE.CylinderGeometry(0.006, 0.0045, stemLen, 5),
+          '#1e682d',
+          [vx, heightY - 0.01 - stemLen * 0.45, vz],
+          [tiltX, 0, tiltZ],
+          0,
+        );
         for (let n = 0; n < vNodes; n++) {
-          const vy = heightY - 0.02 - n * 0.072;
-          const vRad = 0.048 - n * 0.005;
-          const vGeo = new THREE.DodecahedronGeometry(vRad, 0);
-          vGeo.scale(1.15, 0.85, 0.75);
-          addToonBenchPart(
-            pBoxGrp,
-            vGeo,
-            leafColors[(v + n) % leafColors.length],
-            [vx + Math.sin(n * 1.3 + v) * 0.012, vy, vz],
-            [0.2 * n, v * 0.6, 0.15 * n],
-            0.006,
-            false,
+          const vy = heightY - 0.005 - n * 0.068;
+          const lScale = 0.066 - n * 0.009;
+          pushBenchShrub(
+            px + vx + Math.sin(n * 1.2 + v) * 0.008,
+            vy,
+            pz + vz + Math.cos(n * 1.1 + v) * 0.008,
+            v * 0.95 + n * 1.18,
+            lScale,
+            lScale * 0.90,
+            lScale,
           );
         }
       }
@@ -18095,6 +20376,23 @@ export function createCurvedPlanetEnvironment(
 
     buildSlattedWoodenPlanterBox(0.0, -0.58, 2.06, 0.46, 0.62, 3);
     buildSlattedWoodenPlanterBox(1.38, -0.06, 0.56, 0.54, 0.62, 1);
+
+    if (benchShrubMatrices.length > 0) {
+      bGrp.add(
+        createPlazaLeafPetalShrubInstanced(
+          benchShrubMatrices,
+          'LobbyBenchPlanterLeafPetalShrubs',
+        ),
+      );
+    }
+    if (benchFlowerSpecs.length > 0) {
+      bGrp.add(
+        createPlazaFlowerPetalClusterInstanced(
+          benchFlowerSpecs,
+          'LobbyBenchPlanterFlowerPetals',
+        ),
+      );
+    }
   };
 
   // Place 2 aligned Blitz Toon/Cel-Shaded Vintage Park Benches with Planter Boxes along the East-North Plaza Promenade
@@ -19405,18 +21703,9 @@ export function createCurvedPlanetEnvironment(
     endpointGrp.rotation.y = rotY;
     cityTransitNetworkGroup.add(endpointGrp);
 
-    addLobbyPart(
-      endpointGrp,
-      new THREE.CylinderGeometry(0.92, 0.98, 0.06, 20),
-      '#272c35',
-      [0, 0.03, 0],
-      [0, 0, 0],
-      0.008,
-    );
-
     const blackKiosk = buildBlackCityTransitKioskMesh(windUniforms, isSoftwareGl);
     blackKiosk.name = `CityTransitKiosk3D_${stationId}`;
-    blackKiosk.position.set(0, 0.05, 0);
+    blackKiosk.position.set(0, 0.0, 0);
     blackKiosk.userData.isTeleportKiosk = true;
     blackKiosk.userData.isCityTransitKiosk = true;
     blackKiosk.userData.stationId = stationId;
@@ -30796,8 +33085,8 @@ export function buildBlackCityTransitKioskMesh(
     side: THREE.BackSide,
   });
 
-  // Human-relative scale so total monolith height is ~2.02m (matching 1980mm model sheet)
-  const S = 1.02;
+  // Sleek tall urban totem scale (~2.71m total height, proportional circular base)
+  const S = 1.12;
 
   const addPart = (
     geom: THREE.BufferGeometry,
@@ -30839,53 +33128,65 @@ export function buildBlackCityTransitKioskMesh(
   const COL_MONOLITH_BLACK = '#1a1d24';
   const COL_MONOLITH_CHARCOAL = '#242933';
   const COL_SWEEP_METALLIC = '#2f3542';
+  const COL_BASE_SLATE = '#475569';
+  const COL_BASE_PLATINUM = '#64748b';
   const COL_DEEP_RECESS = '#0e1015';
   const COL_READER_GOLD = '#d97706';
   const COL_TRIM_SILVER = '#94a3b8';
 
   // -------------------------------------------------------------------------
-  // 1. INTEGRATED OVAL / CHAMFERED TRAPEZOIDAL FLOOR BASEPLATE (700mm x 1200mm)
+  // 1. PROPORTIONAL TRUE-ROUND CIRCULAR ARCHITECTURAL PEDESTAL BASE (1:1 X/Z, ZERO BLACK OVAL SHADOW)
   // -------------------------------------------------------------------------
   addPart(
-    new THREE.CylinderGeometry(0.32, 0.35, 0.044, 24),
-    COL_DEEP_RECESS,
-    [0, 0.022, -0.14],
+    new THREE.CylinderGeometry(0.49, 0.52, 0.052, 32),
+    COL_BASE_SLATE,
+    [0, 0.026, 0.0],
     [0, 0, 0],
-    [1.0, 1.0, 1.70],
+    [1.0, 1.0, 1.0],
     0.008,
-    0.55,
-    0.22,
+    0.46,
+    0.30,
   );
   addPart(
-    new THREE.CylinderGeometry(0.26, 0.315, 0.040, 24),
-    COL_MONOLITH_CHARCOAL,
-    [0, 0.058, -0.11],
+    new THREE.CylinderGeometry(0.44, 0.46, 0.016, 32),
+    COL_BASE_PLATINUM,
+    [0, 0.058, 0.0],
     [0, 0, 0],
-    [1.0, 1.0, 1.54],
-    0.008,
+    [1.0, 1.0, 1.0],
+    0,
+    0.34,
     0.42,
-    0.30,
+  );
+  addPart(
+    new THREE.CylinderGeometry(0.39, 0.425, 0.042, 32),
+    COL_SWEEP_METALLIC,
+    [0, 0.084, 0.0],
+    [0, 0, 0],
+    [1.0, 1.0, 1.0],
+    0.007,
+    0.40,
+    0.34,
   );
 
   // -------------------------------------------------------------------------
-  // 2. LOWER S-CURVED PEDESTAL SWEEP (Floor to 800mm Reader Lip)
+  // 2. TALLER LOWER S-CURVED PEDESTAL SWEEP (Base to 1.05m Reader Lip)
   // -------------------------------------------------------------------------
   // Lower forward-leaning column core
   addPart(
-    new THREE.BoxGeometry(0.64, 0.78, 0.28),
+    new THREE.BoxGeometry(0.62, 0.98, 0.28),
     COL_MONOLITH_BLACK,
-    [0, 0.43, 0.02],
-    [0.22, 0, 0],
+    [0, 0.56, 0.02],
+    [0.16, 0, 0],
     [1, 1, 1],
     0.012,
   );
   // Sculpted side ergonomic sweep cheeks on lower pedestal
   for (const sxSign of [-1, 1] as const) {
     addPart(
-      new THREE.BoxGeometry(0.05, 0.76, 0.31),
+      new THREE.BoxGeometry(0.05, 0.96, 0.31),
       COL_SWEEP_METALLIC,
-      [sxSign * 0.325, 0.44, 0.02],
-      [0.22, 0, 0],
+      [sxSign * 0.315, 0.57, 0.02],
+      [0.16, 0, 0],
       [1, 1, 1],
       0,
       0.32,
@@ -30894,13 +33195,13 @@ export function buildBlackCityTransitKioskMesh(
   }
 
   // -------------------------------------------------------------------------
-  // 3. PROTRUDING ANGLED READER SHELF & TICKET / TAP READER (780mm - 940mm)
+  // 3. PROTRUDING ANGLED READER SHELF & TICKET / TAP READER (Elevated Ergonomic Height)
   // -------------------------------------------------------------------------
   // Main forward-projecting reader knee block
   addPart(
     new THREE.BoxGeometry(0.76, 0.18, 0.36),
     COL_MONOLITH_CHARCOAL,
-    [0, 0.85, 0.13],
+    [0, 1.06, 0.13],
     [-0.18, 0, 0],
     [1, 1, 1],
     0.010,
@@ -30909,7 +33210,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.72, 0.06, 0.28),
     COL_MONOLITH_BLACK,
-    [0, 0.76, 0.14],
+    [0, 0.97, 0.14],
     [0.28, 0, 0],
     [1, 1, 1],
     0.008,
@@ -30918,7 +33219,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.16, 0.012, 0.018),
     COL_TRIM_SILVER,
-    [-0.16, 0.905, 0.305],
+    [-0.16, 1.115, 0.305],
     [-0.18, 0, 0],
     [1, 1, 1],
     0,
@@ -30926,7 +33227,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.19, 0.036, 0.025),
     COL_DEEP_RECESS,
-    [-0.16, 0.865, 0.312],
+    [-0.16, 1.075, 0.312],
     [-0.18, 0, 0],
     [1, 1, 1],
     0,
@@ -30934,7 +33235,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.15, 0.010, 0.032),
     COL_SWEEP_METALLIC,
-    [-0.16, 0.855, 0.316],
+    [-0.16, 1.065, 0.316],
     [-0.18, 0, 0],
     [1, 1, 1],
     0,
@@ -30943,7 +33244,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.11, 0.010, 0.018),
     COL_TRIM_SILVER,
-    [0.16, 0.915, 0.303],
+    [0.16, 1.125, 0.303],
     [-0.18, 0, 0],
     [1, 1, 1],
     0,
@@ -30951,7 +33252,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.115, 0.095, 0.026),
     COL_DEEP_RECESS,
-    [0.16, 0.855, 0.312],
+    [0.16, 1.065, 0.312],
     [-0.18, 0, 0],
     [1, 1, 1],
     0,
@@ -30959,7 +33260,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.076, 0.064, 0.030),
     COL_READER_GOLD,
-    [0.16, 0.855, 0.316],
+    [0.16, 1.065, 0.316],
     [-0.18, 0, 0],
     [1, 1, 1],
     0,
@@ -30968,13 +33269,13 @@ export function buildBlackCityTransitKioskMesh(
   );
 
   // -------------------------------------------------------------------------
-  // 4. UPPER ERGONOMIC SWEPT MONOLITH HEAD (900mm Touchscreen + 210mm Top Header)
+  // 4. TALLER UPPER ERGONOMIC SWEPT MONOLITH HEAD (Portrait Touchscreen + Top Header)
   // -------------------------------------------------------------------------
   // Main upper monolith cabinet tilted slightly back (-0.09 rad)
   addPart(
-    new THREE.BoxGeometry(0.76, 1.06, 0.23),
+    new THREE.BoxGeometry(0.76, 1.26, 0.23),
     COL_MONOLITH_BLACK,
-    [0, 1.44, 0.03],
+    [0, 1.75, 0.03],
     [-0.09, 0, 0],
     [1, 1, 1],
     0.012,
@@ -30982,9 +33283,9 @@ export function buildBlackCityTransitKioskMesh(
   // Brushed metallic ergonomic side sweep cheek ribs along upper cabinet
   for (const sxSign of [-1, 1] as const) {
     addPart(
-      new THREE.BoxGeometry(0.048, 1.04, 0.25),
+      new THREE.BoxGeometry(0.048, 1.24, 0.25),
       COL_SWEEP_METALLIC,
-      [sxSign * 0.382, 1.44, 0.03],
+      [sxSign * 0.382, 1.75, 0.03],
       [-0.09, 0, 0],
       [1, 1, 1],
       0,
@@ -30992,11 +33293,11 @@ export function buildBlackCityTransitKioskMesh(
       0.42,
     );
   }
-  // Tapered Top Crown Hood (120mm top profile)
+  // Tapered Top Crown Hood
   addPart(
     new THREE.BoxGeometry(0.74, 0.08, 0.18),
     COL_MONOLITH_CHARCOAL,
-    [0, 1.98, -0.01],
+    [0, 2.39, -0.01],
     [-0.09, 0, 0],
     [1, 1, 1],
     0.008,
@@ -31006,7 +33307,7 @@ export function buildBlackCityTransitKioskMesh(
     addPart(
       new THREE.CylinderGeometry(0.038, 0.038, 0.024, 14),
       COL_DEEP_RECESS,
-      [spkX, 1.88, 0.105],
+      [spkX, 2.28, 0.098],
       [Math.PI / 2 - 0.09, 0, 0],
       [1, 1, 1],
       0,
@@ -31014,7 +33315,7 @@ export function buildBlackCityTransitKioskMesh(
     addPart(
       new THREE.CylinderGeometry(0.024, 0.024, 0.028, 12),
       COL_SWEEP_METALLIC,
-      [spkX, 1.88, 0.107],
+      [spkX, 2.28, 0.100],
       [Math.PI / 2 - 0.09, 0, 0],
       [1, 1, 1],
       0,
@@ -31023,9 +33324,9 @@ export function buildBlackCityTransitKioskMesh(
 
   // Deep Recessed Portrait Touchscreen Bezel Frame
   addPart(
-    new THREE.BoxGeometry(0.64, 0.84, 0.028),
+    new THREE.BoxGeometry(0.64, 1.00, 0.028),
     COL_DEEP_RECESS,
-    [0, 1.39, 0.142],
+    [0, 1.69, 0.142],
     [-0.09, 0, 0],
     [1, 1, 1],
     0.006,
@@ -31034,11 +33335,11 @@ export function buildBlackCityTransitKioskMesh(
   // -------------------------------------------------------------------------
   // 5. REAR ELEVATION: SERVICE ACCESS PANEL, LOUVER VENTS & CONDUIT PORT
   // -------------------------------------------------------------------------
-  // Rear Service Access Door (820mm section)
+  // Rear Service Access Door
   addPart(
-    new THREE.BoxGeometry(0.50, 0.72, 0.022),
+    new THREE.BoxGeometry(0.50, 0.88, 0.022),
     COL_MONOLITH_CHARCOAL,
-    [0, 1.38, -0.085],
+    [0, 1.69, -0.085],
     [-0.09, 0, 0],
     [1, 1, 1],
     0.005,
@@ -31047,14 +33348,14 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.CylinderGeometry(0.018, 0.018, 0.026, 10),
     COL_TRIM_SILVER,
-    [0.19, 1.44, -0.095],
+    [0.19, 1.75, -0.095],
     [Math.PI / 2 - 0.09, 0, 0],
     [1, 1, 1],
     0,
   );
   // Upper & Middle Dual Louver Vent Grilles on Rear Cabinet
-  for (const ventY of [1.82, 0.98]) {
-    const ventZ = ventY > 1.4 ? -0.118 : -0.052;
+  for (const ventY of [2.18, 1.20]) {
+    const ventZ = ventY > 1.7 ? -0.122 : -0.052;
     for (const vxOff of [-0.13, 0.13]) {
       for (let slot = 0; slot < 4; slot++) {
         addPart(
@@ -31070,10 +33371,10 @@ export function buildBlackCityTransitKioskMesh(
   }
   // Lower Pedestal Rear Conduit Panel, Vent & Conduit Connection Port
   addPart(
-    new THREE.BoxGeometry(0.34, 0.54, 0.022),
+    new THREE.BoxGeometry(0.34, 0.68, 0.022),
     COL_MONOLITH_CHARCOAL,
-    [0, 0.42, -0.11],
-    [0.22, 0, 0],
+    [0, 0.55, -0.11],
+    [0.16, 0, 0],
     [1, 1, 1],
     0.004,
   );
@@ -31081,8 +33382,8 @@ export function buildBlackCityTransitKioskMesh(
     addPart(
       new THREE.BoxGeometry(0.16, 0.012, 0.024),
       COL_DEEP_RECESS,
-      [0, 0.26 + slot * 0.022, -0.145],
-      [0.22, 0, 0],
+      [0, 0.34 + slot * 0.022, -0.142],
+      [0.16, 0, 0],
       [1, 1, 1],
       0,
     );
@@ -31091,7 +33392,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.BoxGeometry(0.075, 0.075, 0.028),
     COL_DEEP_RECESS,
-    [-0.06, 0.12, -0.18],
+    [-0.06, 0.16, -0.17],
     [0, 0, 0],
     [1, 1, 1],
     0,
@@ -31099,7 +33400,7 @@ export function buildBlackCityTransitKioskMesh(
   addPart(
     new THREE.CylinderGeometry(0.022, 0.022, 0.032, 10),
     COL_TRIM_SILVER,
-    [0.06, 0.12, -0.18],
+    [0.06, 0.16, -0.17],
     [Math.PI / 2, 0, 0],
     [1, 1, 1],
     0,
@@ -31194,10 +33495,10 @@ export function buildBlackCityTransitKioskMesh(
   };
 
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.58 * S, 0.78 * S),
+    new THREE.PlaneGeometry(0.58 * S, 0.94 * S),
     new THREE.MeshBasicMaterial({ map: makeTransitScreenTexture() }),
   );
-  screenMesh.position.set(0, 1.39 * S, 0.158 * S);
+  screenMesh.position.set(0, 1.69 * S, 0.158 * S);
   screenMesh.rotation.x = -0.09;
   kioskRoot.add(screenMesh);
 
@@ -31206,12 +33507,12 @@ export function buildBlackCityTransitKioskMesh(
     new THREE.BoxGeometry(0.62 * S, 0.022 * S, 0.024 * S),
     new THREE.MeshBasicMaterial({ color: 0x00f2ff }),
   );
-  cyanLedStrip.position.set(0, 0.755 * S, 0.285 * S);
+  cyanLedStrip.position.set(0, 0.965 * S, 0.285 * S);
   kioskRoot.add(cyanLedStrip);
 
-  // Cyan selection foot ring on the floor (#00f2ff) when approached or clicked
+  // Concentric cyan selection foot ring around the round base (#00f2ff) when approached or clicked
   const kioskGreenFootRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.76, 0.94, 36),
+    new THREE.RingGeometry(0.62, 0.76, 36),
     new THREE.MeshBasicMaterial({
       color: 0x00f2ff,
       side: THREE.DoubleSide,
@@ -31221,7 +33522,7 @@ export function buildBlackCityTransitKioskMesh(
     }),
   );
   kioskGreenFootRing.rotation.x = -Math.PI / 2;
-  kioskGreenFootRing.position.set(0, 0.025, -0.08);
+  kioskGreenFootRing.position.set(0, 0.025, 0);
   kioskGreenFootRing.name = 'KioskGreenFootRing';
   kioskGreenFootRing.visible = false;
   kioskRoot.add(kioskGreenFootRing);

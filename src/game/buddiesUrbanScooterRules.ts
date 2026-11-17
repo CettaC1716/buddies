@@ -264,12 +264,12 @@ export const URBAN_SCOOTER_SHOP_LAYOUT = {
   westPlantOriginZ: 0.0,
   kioskLocalX: -10.2,
   kioskLocalY: 2.50,
-  kioskLocalZ: -1.2,
+  kioskLocalZ: -4.4,
   kioskRotY: Math.PI / 2,
   kioskScale: 1.48,
   worldCenterX: -100.7,
   worldBaseY: 2.50,
-  worldCenterZ: -1.2,
+  worldCenterZ: -4.4,
   // Outdoor A-Frame Sign positioned outside front-right (North-East) corner, keeping entrance door clear
   aFrameSignLocal: {
     x: 1.66,
@@ -365,7 +365,7 @@ const _scooterMarkerWorld = kioskLocalToWorldPose(
  */
 export const URBAN_SCOOTER_SHOP_TRIGGER = {
   x: _scooterMarkerWorld.x, // -97.355
-  z: _scooterMarkerWorld.z, // -4.574
+  z: _scooterMarkerWorld.z, // -7.774
   deckY: URBAN_SCOOTER_SHOP_LAYOUT.worldBaseY, // 2.50
   markerOffsetY: 0.38, // Low floating 3D triangle ~38cm above the plaza tiles
   triggerRadius: 3.45,
@@ -419,7 +419,7 @@ export function computeScooterShopWorldColliders(): StaticWorldStructureObb[] {
     {
       id: 'lobby_scooter_kiosk_body',
       x: -100.55,
-      z: -1.2,
+      z: URBAN_SCOOTER_SHOP_LAYOUT.worldCenterZ,
       halfX: 2.62,
       halfZ: 3.30,
       rotY: 0,

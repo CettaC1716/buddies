@@ -13,6 +13,7 @@ export interface HudAudioVolumeControlProps {
   onToggleSfxMute: () => void;
   onChangeMusicVolumePct: (nextPct: number) => void;
   onChangeSfxVolumePct: (nextPct: number) => void;
+  hideMusicButton?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export function HudAudioVolumeControl({
   onToggleSfxMute,
   onChangeMusicVolumePct,
   onChangeSfxVolumePct,
+  hideMusicButton = true,
 }: HudAudioVolumeControlProps) {
   const [isMixerOpen, setIsMixerOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -47,6 +49,27 @@ export function HudAudioVolumeControl({
       closeHoverTimerRef.current = null;
     }
   };
+
+  const openMixerPopover = () => {
+    setIsMixerOpen(true);
+    window.dispatchEvent(
+      new CustomEvent('hud-corner-popover-open', { detail: 'audio' }),
+    );
+  };
+
+  useEffect(() => {
+    const onOtherPopoverOpen = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail && detail !== 'audio') {
+        clearHoverTimer();
+        setIsMixerOpen(false);
+      }
+    };
+    window.addEventListener('hud-corner-popover-open', onOtherPopoverOpen);
+    return () => {
+      window.removeEventListener('hud-corner-popover-open', onOtherPopoverOpen);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isMixerOpen) return;
@@ -91,7 +114,7 @@ export function HudAudioVolumeControl({
       onPointerEnter={(e) => {
         if (e.pointerType === 'mouse') {
           clearHoverTimer();
-          setIsMixerOpen(true);
+          openMixerPopover();
         }
       }}
       onPointerLeave={(e) => {
@@ -228,54 +251,56 @@ export function HudAudioVolumeControl({
       )}
 
       {/* Compact Neo-Brutalist Music Button `[🎵]` */}
-      <button
-        type="button"
-        data-hud-music-toggle="true"
-        aria-expanded={isMixerOpen}
-        onClick={(e) => {
-          e.currentTarget.blur();
-          if (!isMixerOpen) {
-            setIsMixerOpen(true);
-            return;
+      {!hideMusicButton && (
+        <button
+          type="button"
+          data-hud-music-toggle="true"
+          aria-expanded={isMixerOpen}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            if (!isMixerOpen) {
+              openMixerPopover();
+              return;
+            }
+            onToggleMusicMute();
+          }}
+          onWheel={(e) => {
+            e.preventDefault();
+            const step = e.deltaY < 0 ? 5 : -5;
+            onChangeMusicVolumePct(clampAudioVolumePct(effectiveMusicPct + step));
+          }}
+          aria-label={
+            isMixerOpen
+              ? isMusicMuted
+                ? 'Unmute Music'
+                : 'Mute Music'
+              : `Adjust Music Volume (${effectiveMusicPct}%)`
           }
-          onToggleMusicMute();
-        }}
-        onWheel={(e) => {
-          e.preventDefault();
-          const step = e.deltaY < 0 ? 5 : -5;
-          onChangeMusicVolumePct(clampAudioVolumePct(effectiveMusicPct + step));
-        }}
-        aria-label={
-          isMixerOpen
-            ? isMusicMuted
-              ? 'Unmute Music'
-              : 'Mute Music'
-            : `Adjust Music Volume (${effectiveMusicPct}%)`
-        }
-        title={`Music: ${effectiveMusicPct}% (Click to adjust / mute)`}
-        className="-skew-x-6 relative w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
-      >
-        <span className="skew-x-6 relative flex items-center justify-center">
-          <Music
-            className={`w-4 h-4 ${
-              effectiveMusicPct === 0 ? 'text-slate-300' : 'text-[#b8ff3c]'
-            }`}
-          />
-          {effectiveMusicPct === 0 && (
-            <span className="absolute w-5 h-[2px] bg-red-400 rotate-[-45deg] rounded" />
-          )}
-        </span>
-        {/* Bottom miniature level bar inside button */}
-        <span
-          aria-hidden="true"
-          className="absolute bottom-[2px] left-1 right-1 h-[2.5px] bg-white/15 overflow-hidden"
+          title={`Music: ${effectiveMusicPct}% (Click to adjust / mute)`}
+          className="-skew-x-6 relative w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
         >
+          <span className="skew-x-6 relative flex items-center justify-center">
+            <Music
+              className={`w-4 h-4 ${
+                effectiveMusicPct === 0 ? 'text-slate-300' : 'text-[#b8ff3c]'
+              }`}
+            />
+            {effectiveMusicPct === 0 && (
+              <span className="absolute w-5 h-[2px] bg-red-400 rotate-[-45deg] rounded" />
+            )}
+          </span>
+          {/* Bottom miniature level bar inside button */}
           <span
-            className="block h-full bg-[#b8ff3c]"
-            style={{ width: `${effectiveMusicPct}%` }}
-          />
-        </span>
-      </button>
+            aria-hidden="true"
+            className="absolute bottom-[2px] left-1 right-1 h-[2.5px] bg-white/15 overflow-hidden"
+          >
+            <span
+              className="block h-full bg-[#b8ff3c]"
+              style={{ width: `${effectiveMusicPct}%` }}
+            />
+          </span>
+        </button>
+      )}
 
       {/* Compact Neo-Brutalist Sound FX Button `[🔊]` */}
       <button
@@ -285,7 +310,7 @@ export function HudAudioVolumeControl({
         onClick={(e) => {
           e.currentTarget.blur();
           if (!isMixerOpen) {
-            setIsMixerOpen(true);
+            openMixerPopover();
             return;
           }
           onToggleSfxMute();

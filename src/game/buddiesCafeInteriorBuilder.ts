@@ -152,7 +152,7 @@ function createBakedVertexColorGeometry(
  * bakes per-mesh albedo tint into vertex colors (`vertexColors: true`) and quantizes
  * roughness/metalness tiers so differently colored props share one draw call per PBR tier.
  */
-function consolidateCafeStaticGroupMaterials(
+export function consolidateCafeStaticGroupMaterials(
   group: THREE.Object3D,
   options?: { disableCastShadow?: boolean; foldLightClearcoat?: boolean },
 ): void {
@@ -249,6 +249,7 @@ function consolidateCafeStaticGroupMaterials(
     }
     obj.geometry = coloredGeo;
 
+    const windRole = (m.userData?.botanicalWindRole as 'leaf' | 'stem' | undefined) ?? '';
     const bucketKey = [
       usePhysical ? 'P' : 'S',
       m.map?.uuid ?? '',
@@ -263,6 +264,7 @@ function consolidateCafeStaticGroupMaterials(
       String(m.side),
       emissiveHex,
       qEmissiveInt,
+      windRole,
     ].join('|');
 
     let sharedMat = consolidatedMatCache.get(bucketKey);
@@ -293,6 +295,9 @@ function consolidateCafeStaticGroupMaterials(
         sharedMat = new THREE.MeshPhysicalMaterial(commonParams);
       } else {
         sharedMat = new THREE.MeshStandardMaterial(commonParams);
+      }
+      if (windRole) {
+        sharedMat.userData.botanicalWindRole = windRole;
       }
       consolidatedMatCache.set(bucketKey, sharedMat);
     }
@@ -332,7 +337,7 @@ function makeHanaToonMesh(
   return mesh;
 }
 
-function createInteriorCafeStyler(withCrispInkOutlines = true): CafeAssetStyler {
+export function createInteriorCafeStyler(withCrispInkOutlines = true): CafeAssetStyler {
   const clearGlassMat = new THREE.MeshPhysicalMaterial({
     color: '#dff6ff',
     transparent: true,
@@ -371,6 +376,7 @@ function createInteriorCafeStyler(withCrispInkOutlines = true): CafeAssetStyler 
         opts?.doubleSided ? '1' : '0',
         (opts?.emissiveHex ?? '').toLowerCase(),
         (opts?.emissiveIntensity ?? 0).toFixed(2),
+        opts?.botanicalWindRole ?? '',
       ].join('|');
 
       let sharedMat = matCache.get(cacheKey);
@@ -401,6 +407,9 @@ function createInteriorCafeStyler(withCrispInkOutlines = true): CafeAssetStyler 
         } else {
           sharedMat = new THREE.MeshStandardMaterial(matParams);
         }
+        if (opts?.botanicalWindRole) {
+          sharedMat.userData.botanicalWindRole = opts.botanicalWindRole;
+        }
         matCache.set(cacheKey, sharedMat);
       }
 
@@ -408,7 +417,7 @@ function createInteriorCafeStyler(withCrispInkOutlines = true): CafeAssetStyler 
       mesh.castShadow = opts?.castShadow ?? false;
       mesh.receiveShadow = opts?.receiveShadow ?? true;
       mesh.raycast = () => {};
-      if (withCrispInkOutlines && strokeW > 0 && !opts?.doubleSided) {
+      if (withCrispInkOutlines && strokeW > 0 && !opts?.doubleSided && !opts?.botanicalWindRole) {
         const stroke = createBlitzStrokeMesh(geo, Math.min(strokeW, 0.008), '#12121e');
         if (stroke) {
           stroke.raycast = () => {};
@@ -1186,10 +1195,45 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     disableCastShadow: true,
     foldLightClearcoat: true,
   });
+  const cafeBotanicalPhaseUniform = { value: 0 };
   bakeStaticGroupMeshes(staticIndoorGroup, { minShadowCasterSpan: 999 });
   for (const child of staticIndoorGroup.children) {
-    if (child instanceof THREE.Mesh && child.material === styler.frostedGlassMat) {
-      child.renderOrder = 2;
+    if (child instanceof THREE.Mesh) {
+      if (child.material === styler.frostedGlassMat) {
+        child.renderOrder = 2;
+      }
+      const role = child.material?.userData?.botanicalWindRole as 'leaf' | 'stem' | undefined;
+      if (role && child.material instanceof THREE.MeshStandardMaterial) {
+        const isLeafFlag = role === 'leaf' ? '1.0' : '0.0';
+        const windMat = child.material;
+        windMat.customProgramCacheKey = () => `cafe-indoor-botanical-wind-${role}-v1`;
+        windMat.onBeforeCompile = (shader) => {
+          shader.uniforms.uCafeBotanicalPhase = cafeBotanicalPhaseUniform;
+          shader.vertexShader = shader.vertexShader
+            .replace(
+              '#include <common>',
+              `#include <common>
+uniform float uCafeBotanicalPhase;`,
+            )
+            .replace(
+              '#include <begin_vertex>',
+              `#include <begin_vertex>
+{
+  vec3 wPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+  float arcFactor = smoothstep( 0.03, 1.0, uv.y );
+  float edgeFlutter = abs( uv.x - 0.5 ) * 2.0 * smoothstep( 0.30, 0.96, uv.y ) * ${isLeafFlag};
+  float seedPhase = wPos.x * 1.45 + wPos.z * 1.25 + uv.y * 2.15;
+  float phase = uCafeBotanicalPhase + seedPhase;
+  float sway = sin( phase ) * 0.032 * arcFactor;
+  float crossSway = cos( phase * 0.76 + seedPhase * 0.45 ) * 0.014 * arcFactor;
+  float flutter = sin( phase * 2.25 + uv.x * 6.2 ) * 0.011 * edgeFlutter;
+  transformed.x += 0.78 * sway - 0.62 * crossSway;
+  transformed.z += 0.62 * sway + 0.78 * crossSway;
+  transformed.y += sin( phase * 0.85 ) * 0.012 * arcFactor + flutter;
+}`,
+            );
+        };
+      }
     }
   }
 
@@ -1338,6 +1382,7 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
     activeOrderCategory: 'drink' | 'pastry' | null = null,
     activeStationKind: CafeStationInteractionKind | null = null,
   ) => {
+    cafeBotanicalPhaseUniform.value = timeSec * 1.55;
     const isNearExit = activeStationKind === 'exit_door';
     exitPad.pulseMat.color.set(isNearExit ? '#b8ff3c' : '#38bdf8');
     exitPad.innerDiscMat.color.set(isNearExit ? '#84cc16' : '#0ea5e9');

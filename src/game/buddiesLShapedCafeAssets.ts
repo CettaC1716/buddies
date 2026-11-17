@@ -27,6 +27,7 @@ export interface CafeAssetStyler {
       emissiveIntensity?: number;
       castShadow?: boolean;
       receiveShadow?: boolean;
+      botanicalWindRole?: 'leaf' | 'stem';
     },
   ) => THREE.Mesh;
   clearGlassMat: THREE.Material;
@@ -431,40 +432,128 @@ export function makeTurnedLatheGeo(profile: Array<[number, number]>, segs = 28):
   return lathe;
 }
 
-/** Sculpted folded & gracefully arched botanical leaf (`Ro` in Hana's House) calibrated for veined leaf texture. */
+/**
+ * Sculpted 3D V-fold & gracefully arching broadleaf geometry adapted from Kai's Beach
+ * coconut palm dynamic frond architecture while preserving the exact ovate / Monstera broadleaf silhouette.
+ */
 export function makeCurvedBotanicalLeafGeo(
   length: number,
   width: number,
-  opts: { fold?: number; arch?: number; notched?: boolean } = {},
+  opts: {
+    fold?: number;
+    arch?: number;
+    rise?: number;
+    roll?: number;
+    notched?: boolean;
+    windBaseV?: number;
+    seed?: number;
+  } = {},
 ): THREE.BufferGeometry {
-  const fold = opts.fold ?? 0.22;
-  const arch = opts.arch ?? 0.14;
-  const cols = 6;
-  const rows = 8;
+  const fold = opts.fold ?? 0.32;
+  const arch = opts.arch ?? 0.24;
+  const rise = opts.rise ?? 0.11;
+  const roll = opts.roll ?? 0;
+  const windBaseV = Math.max(0, Math.min(0.85, opts.windBaseV ?? 0));
+  const seed = opts.seed ?? 0;
+  const cols = 8;
+  const rows = 14;
   const geo = new THREE.PlaneGeometry(width, length, cols, rows);
   geo.translate(0, length * 0.5, 0);
   const pos = geo.attributes.position;
   const uv = geo.attributes.uv;
 
+  const cosR = Math.cos(roll);
+  const sinR = Math.sin(roll);
+
   for (let i = 0; i < pos.count; i++) {
     const rawX = pos.getX(i);
-    const y = pos.getY(i);
-    const t = Math.max(0, Math.min(1, y / Math.max(0.001, length))); // 0 base -> 1 tip
-    const uLat = rawX / Math.max(0.001, width * 0.5); // -1 .. +1
-    // Ovate leaf silhouette envelope
-    let widthEnv = Math.sin(Math.pow(t, 0.68) * Math.PI);
-    // Monstera fenestration notches on outer edge bands
-    if (opts.notched && Math.abs(uLat) > 0.55) {
-      const notchWave = Math.sin(t * Math.PI * 5.0);
-      if (notchWave < -0.25) {
-        widthEnv *= 0.42;
-      }
+    const rawY = pos.getY(i);
+    const t = Math.max(0, Math.min(1, rawY / Math.max(0.001, length))); // 0 at stem junction -> 1 at leaf tip
+    const uLat = rawX / Math.max(0.001, width * 0.5); // -1 .. +1 (0 = central midrib)
+    const absU = Math.abs(uLat);
+
+    // Broad ovate leaf silhouette envelope (tapers cleanly into petiole stem at t = 0 and pointed apex at t = 1)
+    let widthEnv = Math.sin(Math.pow(t, 0.66) * Math.PI);
+    // Smooth organic scalloped Monstera fenestration indentations along outer margin (no jagged step sawteeth)
+    if (opts.notched && absU > 0.38) {
+      const marginMask = Math.min(1, (absU - 0.38) / 0.52);
+      const lobePhase = t * Math.PI * 5.2 - 0.35;
+      const cleft = Math.max(0, -Math.sin(lobePhase));
+      const smoothCleft = cleft * cleft * (3 - 2 * cleft);
+      const midSpanMask = Math.sin(t * Math.PI);
+      widthEnv *= 1 - 0.44 * smoothCleft * marginMask * midSpanMask;
     }
-    const x = rawX * Math.max(0.06, widthEnv);
-    const foldZ = Math.abs(uLat) * fold * width * 0.5 * (1 - t * 0.35);
-    const archZ = -arch * length * t * t;
-    pos.setXYZ(i, x, y * (1 - 0.14 * t * t), foldZ + archZ);
-    uv.setXY(i, uLat * 0.5 + 0.5, t);
+
+    const basePinch = 0.035 * (1 - Math.min(1, t * 5.5));
+    const localX = rawX * Math.max(basePinch, widthEnv);
+
+    // Kai-inspired parabolic crown rise + graceful outward tip droop + keeled V-fold midrib + subtle margin wave
+    const vFoldBell = Math.sin(Math.pow(t, 0.48) * Math.PI * 0.94);
+    const vFoldZ = -Math.pow(absU, 0.86) * fold * width * 0.52 * vFoldBell;
+    const archCurveZ =
+      -Math.sin(t * Math.PI * 0.58) * rise * length + Math.pow(t, 2.15) * arch * length;
+    const marginWaveZ =
+      Math.sin(t * Math.PI * 2.4 + seed * 1.7 + uLat * 0.8) *
+      absU *
+      width *
+      0.032 *
+      Math.sin(t * Math.PI);
+    const rawZ = vFoldZ + archCurveZ + marginWaveZ;
+
+    // Apply subtle natural organic roll around the midrib axis so leaves never sit rigidly flat
+    const rolledX = localX * cosR - vFoldZ * sinR * 0.45;
+    const rolledZ = localX * sinR * 0.55 + rawZ;
+    const curvedY = rawY * (1 - 0.14 * t * t);
+
+    pos.setXYZ(i, rolledX, curvedY, rolledZ);
+    uv.setXY(i, uLat * 0.5 + 0.5, windBaseV + t * (1 - windBaseV));
+  }
+
+  geo.computeVertexNormals();
+  // Accentuate Kai-style 3D V-fold wing normal contrast across the central midrib crease
+  const norm = geo.attributes.normal;
+  if (norm) {
+    for (let i = 0; i < norm.count; i++) {
+      const u = uv.getX(i);
+      const sideSign = u < 0.495 ? -1 : u > 0.505 ? 1 : 0;
+      const nx = norm.getX(i) + sideSign * 0.28;
+      const ny = norm.getY(i) + 0.08;
+      const nz = norm.getZ(i);
+      const len = Math.hypot(nx, ny, nz) || 1;
+      norm.setXYZ(i, nx / len, ny / len, nz / len);
+    }
+    norm.needsUpdate = true;
+  }
+  return geo;
+}
+
+function makeTaperedPetioleStemGeo(
+  curve: THREE.CatmullRomCurve3,
+  baseRadius = 0.016,
+  tipRadius = 0.0095,
+  windTipV = 0.24,
+): THREE.BufferGeometry {
+  const tubularSegments = 12;
+  const radialSegments = 7;
+  const geo = new THREE.TubeGeometry(curve, tubularSegments, 1, radialSegments, false);
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  const ringStride = radialSegments + 1;
+  const centerPt = new THREE.Vector3();
+
+  for (let ti = 0; ti <= tubularSegments; ti++) {
+    const s = ti / tubularSegments;
+    curve.getPointAt(s, centerPt);
+    const radius = baseRadius + (tipRadius - baseRadius) * Math.pow(s, 0.78);
+    const vWind = s * windTipV;
+    for (let ri = 0; ri < ringStride; ri++) {
+      const idx = ti * ringStride + ri;
+      const dx = pos.getX(idx) - centerPt.x;
+      const dy = pos.getY(idx) - centerPt.y;
+      const dz = pos.getZ(idx) - centerPt.z;
+      pos.setXYZ(idx, centerPt.x + dx * radius, centerPt.y + dy * radius, centerPt.z + dz * radius);
+      uv.setXY(idx, 0.5, vWind);
+    }
   }
   geo.computeVertexNormals();
   return geo;
@@ -479,9 +568,11 @@ function addPart(
   rot: [number, number, number] = [0, 0, 0],
   strokeW = 0.005,
   opts?: Parameters<CafeAssetStyler['styleOpaque']>[4],
+  rotOrder: THREE.EulerOrder = 'XYZ',
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(geo);
   mesh.position.set(pos[0], pos[1], pos[2]);
+  mesh.rotation.order = rotOrder;
   mesh.rotation.set(rot[0], rot[1], rot[2]);
   styler.styleOpaque(mesh, geo, colorHex, strokeW, opts);
   parent.add(mesh);
@@ -1698,12 +1789,19 @@ export function buildRoundOakBistroTable(
       addPart(
         g,
         styler,
-        makeCurvedBotanicalLeafGeo(0.11, 0.065, { fold: 0.25, arch: 0.18 }),
+        makeCurvedBotanicalLeafGeo(0.11, 0.065, {
+          fold: 0.28,
+          arch: 0.22,
+          rise: 0.10,
+          roll: (lf - 1) * 0.12,
+          seed: lf + 1,
+        }),
         '#4ca146',
         [Math.cos(ang) * 0.015, 0.89, -0.10 + Math.sin(ang) * 0.015],
-        [0.48, -ang, 0],
-        0.002,
-        { tex: leaf, doubleSided: true },
+        [0.52, -ang + Math.PI / 2, 0],
+        0,
+        { tex: leaf, doubleSided: true, botanicalWindRole: 'leaf' },
+        'YXZ',
       );
     }
   }
@@ -1814,40 +1912,61 @@ export function buildPottedMonsteraOnStand(
 
   const leafColors = variant === 'monstera' ? ['#4a9e4e', '#5cb55f', '#3c8540'] : ['#529e4c', '#64b25c', '#41833c'];
   const leafCount = variant === 'monstera' ? 8 : 10;
-  const leafLen = variant === 'monstera' ? 0.38 : 0.30;
+  const leafLen = variant === 'monstera' ? 0.39 : 0.31;
   const leafW = variant === 'monstera' ? 0.34 : 0.22;
+  const stemWindTipV = 0.24;
 
   for (let i = 0; i < leafCount; i++) {
-    const ang = (i / leafCount) * Math.PI * 2 + (i % 2) * 0.24;
-    const tier = i % 2;
-    const stemH = (variant === 'fiddle' ? 0.56 : 0.40) + tier * 0.24;
-    const reachR = 0.20 + (1 - tier) * 0.14;
+    const tier = i % 2; // 0 = lower/outer spreading tier, 1 = upper/inner crown tier (Kai palm layered crown principle)
+    const angJitter = Math.sin(i * 2.39996) * 0.14;
+    const ang = (i / leafCount) * Math.PI * 2 + tier * 0.28 + angJitter;
+    const stemH = (variant === 'fiddle' ? 0.55 : 0.40) + tier * 0.23 + Math.cos(i * 1.7) * 0.025;
+    const reachR = 0.19 + (1 - tier) * 0.14 + Math.sin(i * 1.9) * 0.018;
     const lx = Math.cos(ang) * reachR;
     const lz = Math.sin(ang) * reachR;
+    const tipY = 0.54 + stemH * 0.86;
 
-    // Graceful arching TubeGeometry petiole stem
+    // Gracefully arching, organically tapered petiole stem anchored in pot soil (s=0) -> welded to leaf base (s=1)
     const petioleCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.54, 0),
-      new THREE.Vector3(lx * 0.45, 0.54 + stemH * 0.58, lz * 0.45),
-      new THREE.Vector3(lx, 0.54 + stemH * 0.86, lz),
+      new THREE.Vector3(lx * 0.08, 0.535, lz * 0.08),
+      new THREE.Vector3(lx * 0.36, 0.54 + stemH * 0.48, lz * 0.36),
+      new THREE.Vector3(lx * 0.74, 0.54 + stemH * 0.75, lz * 0.74),
+      new THREE.Vector3(lx, tipY, lz),
     ]);
-    addPart(g, styler, new THREE.TubeGeometry(petioleCurve, 10, 0.015, 7, false), '#3b7335', [0, 0, 0], [0, 0, 0], 0.002);
+    addPart(
+      g,
+      styler,
+      makeTaperedPetioleStemGeo(petioleCurve, 0.016, 0.0095, stemWindTipV),
+      '#3b7335',
+      [0, 0, 0],
+      [0, 0, 0],
+      0,
+      { roughness: 0.56, botanicalWindRole: 'stem' },
+    );
 
-    // Sculpted folded, veined botanical leaf blade!
-    const leafGeo = makeCurvedBotanicalLeafGeo(leafLen, leafW, {
-      fold: 0.26,
-      arch: variant === 'monstera' ? 0.22 : 0.15,
+    // Sculpted 3D V-fold, arched & naturally rolled botanical broadleaf blade radiating outward along its stem
+    const naturalRoll = (i % 2 === 0 ? 1 : -1) * (0.11 + (i % 3) * 0.035);
+    const leafScaleVar = 0.94 + ((i * 37) % 5) * 0.032;
+    const leafGeo = makeCurvedBotanicalLeafGeo(leafLen * leafScaleVar, leafW * leafScaleVar, {
+      fold: variant === 'monstera' ? 0.34 : 0.30,
+      arch: variant === 'monstera' ? 0.30 : 0.24,
+      rise: variant === 'monstera' ? 0.13 : 0.10,
+      roll: naturalRoll,
       notched: variant === 'monstera',
+      windBaseV: stemWindTipV,
+      seed: i + (variant === 'monstera' ? 0.5 : 3.2),
     });
+    const outwardPitch = (tier === 0 ? 0.84 : 0.56) + ((i % 3) - 1) * 0.055;
     addPart(
       g,
       styler,
       leafGeo,
       leafColors[i % leafColors.length],
-      [lx, 0.54 + stemH * 0.85, lz],
-      [Math.PI * 0.34 + (1 - tier) * 0.14, -ang + Math.PI / 2, 0],
-      0.003,
-      { tex: leaf, roughness: 0.44, doubleSided: true },
+      [lx, tipY, lz],
+      [outwardPitch, -ang + Math.PI / 2, 0],
+      0,
+      { tex: leaf, roughness: 0.44, doubleSided: true, botanicalWindRole: 'leaf' },
+      'YXZ',
     );
   }
   g.scale.setScalar(scale);
@@ -1885,12 +2004,19 @@ export function buildHangingMacrameFern(styler: CafeAssetStyler, dropLen = 0.72,
   ], 20);
   addPart(g, styler, basketGeo, '#a67442', [0, 0.04, 0], [0, 0, 0], 0.004, { roughness: 0.72 });
 
-  // 16 Radiating sculpted cascading fern fronds (curved leaf geometry instead of cones!)
+  // 16 Radiating sculpted cascading fern fronds (curved 3D V-fold geometry radiating 360 deg via YXZ)
   const fernPalette = ['#4b923f', '#5ea64f', '#3b7a32'];
   for (let i = 0; i < 16; i++) {
     const ang = (i / 16) * Math.PI * 2;
-    const pitch = i % 2 === 0 ? 1.15 : 1.52;
-    const frondGeo = makeCurvedBotanicalLeafGeo(0.46, 0.16, { fold: 0.18, arch: 0.28, notched: true });
+    const pitch = i % 2 === 0 ? 1.12 : 1.44;
+    const frondGeo = makeCurvedBotanicalLeafGeo(0.46, 0.16, {
+      fold: 0.26,
+      arch: 0.34,
+      rise: 0.12,
+      roll: (i % 2 === 0 ? 1 : -1) * 0.10,
+      notched: true,
+      seed: i,
+    });
     addPart(
       g,
       styler,
@@ -1898,8 +2024,9 @@ export function buildHangingMacrameFern(styler: CafeAssetStyler, dropLen = 0.72,
       fernPalette[i % fernPalette.length],
       [Math.cos(ang) * 0.14, 0.08, Math.sin(ang) * 0.14],
       [pitch, -ang + Math.PI / 2, 0],
-      0.003,
-      { tex: leaf, roughness: 0.48, doubleSided: true },
+      0,
+      { tex: leaf, roughness: 0.48, doubleSided: true, botanicalWindRole: 'leaf' },
+      'YXZ',
     );
   }
   g.scale.setScalar(scale);
@@ -1913,19 +2040,26 @@ export function buildWisteriaCluster(styler: CafeAssetStyler, dropH = 0.68, scal
   const leafPalette = ['#4b8a42', '#5c9e50', '#3d7536'];
   const wisteriaPalette = ['#9b7ede', '#b398eb', '#8060cc', '#cbb5f5'];
 
-  // Layered canopy of 5 curved foliage leaves
+  // Layered canopy of 5 curved foliage leaves radiating outward
   for (let i = 0; i < 5; i++) {
     const ang = (i / 5) * Math.PI * 2;
-    const leafGeo = makeCurvedBotanicalLeafGeo(0.30, 0.18, { fold: 0.2, arch: 0.16 });
+    const leafGeo = makeCurvedBotanicalLeafGeo(0.30, 0.18, {
+      fold: 0.28,
+      arch: 0.24,
+      rise: 0.10,
+      roll: (i % 2 === 0 ? 1 : -1) * 0.12,
+      seed: i + 0.7,
+    });
     addPart(
       g,
       styler,
       leafGeo,
       leafPalette[i % leafPalette.length],
       [Math.cos(ang) * 0.08, 0.04, Math.sin(ang) * 0.08],
-      [1.15, -ang + Math.PI / 2, 0],
-      0.003,
-      { tex: leaf, roughness: 0.5, doubleSided: true },
+      [1.08, -ang + Math.PI / 2, 0],
+      0,
+      { tex: leaf, roughness: 0.5, doubleSided: true, botanicalWindRole: 'leaf' },
+      'YXZ',
     );
   }
 

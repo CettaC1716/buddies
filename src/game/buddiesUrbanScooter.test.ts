@@ -22,6 +22,13 @@ import {
   prepareStudioFurnitureGroup,
   rasterizeTexturedGroupToBuffer,
 } from '../components/furniture3dRasterizer';
+import { computeRealEstateKioskWorldColliders } from './buddiesRealEstateKioskRules';
+import {
+  FASHION_APPAREL_KIOSK_LAYOUT,
+  computeFashionKioskWorldColliders,
+  computeWestPromenadeKioskSymmetryMetrics,
+} from './buddiesFashionKioskRules';
+import { buildFashionAndApparelKiosk3D } from './buddiesFashionKioskBuilder';
 
 test('4-view industrial model sheet dimensions match Electric Scooter Bike & Push Kick Scooter specs', () => {
   // Electric Scooter Bike (`screen_8a1fbcde.png`)
@@ -268,3 +275,50 @@ test('low 3D interaction triangle sits clear beside A-Frame sign and NFT Explore
     'https://testnet.nearblocks.io/nft-token/market.buddiesblitz.testnet/nep245%3Avehicle%3Aurban_push_kick_scooter',
   );
 });
+
+test('West Promenade 3 kiosks (Real Estate, Scooter, Fashion) have exact symmetrical spacing and disjoint OBB colliders', () => {
+  const sym = computeWestPromenadeKioskSymmetryMetrics();
+  assert.equal(sym.northRealEstateZ, -13.8);
+  assert.equal(sym.centerScooterZ, -4.4);
+  assert.equal(sym.southFashionZ, 5.0);
+  assert.equal(sym.northToCenterSpanM, 9.4);
+  assert.equal(sym.centerToSouthSpanM, 9.4);
+  assert.equal(sym.isSymmetrical, true);
+
+  // Build Fashion & Apparel Boutique Kiosk 3D group and verify key architectural & merchandising sub-assemblies
+  const westPlantGroup = new THREE.Group();
+  const fashionKiosk = buildFashionAndApparelKiosk3D({
+    westPlantGroup,
+    isSoftwareGl: true,
+    sharedClearGlassMat: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.3 }),
+    createMitredPolylineStripGeometry: () => new THREE.BoxGeometry(1, 0.2, 1),
+    addLobbyPart: (parent, geo, colorHex, pos, rot = [0, 0, 0]) => {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: colorHex }));
+      m.position.set(pos[0], pos[1], pos[2]);
+      m.rotation.set(rot[0], rot[1], rot[2]);
+      parent.add(m);
+      return m;
+    },
+    createBlitzStrokeMesh: () => null,
+    textures: {},
+  });
+
+  assert.equal(fashionKiosk.position.z, FASHION_APPAREL_KIOSK_LAYOUT.kioskLocalZ);
+  assert.ok(fashionKiosk.getObjectByName('FashionMannequinTrenchCoat'));
+  assert.ok(fashionKiosk.getObjectByName('FashionMannequinALineDress'));
+  assert.ok(fashionKiosk.getObjectByName('FashionMannequinTailoredMidi'));
+  assert.ok(fashionKiosk.getObjectByName('FashionBoutiqueMainGarmentRack'));
+  assert.ok(fashionKiosk.getObjectByName('FashionBoutiqueSideGarmentRack'));
+  assert.ok(fashionKiosk.getObjectByName('FashionApparelAccessoriesDisplay'));
+  assert.ok(fashionKiosk.getObjectByName('FashionBoutiqueAFrameSidewalkSign'));
+
+  // Verify the 3 kiosk body OBB colliders sit cleanly separated along Z and clear of South lamppost w4 (z = 11.6)
+  const reBody = computeRealEstateKioskWorldColliders().find((c) => c.id === 'lobby_realestate_kiosk_body')!;
+  const scBody = computeScooterShopWorldColliders().find((c) => c.id === 'lobby_scooter_kiosk_body')!;
+  const faBody = computeFashionKioskWorldColliders().find((c) => c.id === 'lobby_fashion_kiosk_body')!;
+
+  assert.ok(reBody.z + reBody.halfZ < scBody.z - scBody.halfZ, 'Real Estate and Scooter kiosk bodies must not overlap');
+  assert.ok(scBody.z + scBody.halfZ < faBody.z - faBody.halfZ, 'Scooter and Fashion kiosk bodies must not overlap');
+  assert.ok(faBody.z + faBody.halfZ < 11.6 - 0.28, 'Fashion kiosk body must sit cleanly North of lamppost w4');
+});
+

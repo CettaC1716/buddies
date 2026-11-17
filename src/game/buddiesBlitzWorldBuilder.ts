@@ -26,8 +26,9 @@ import {
   computeRealEstateKioskWorldColliders,
   REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
 } from './buddiesRealEstateKioskRules';
+import { computeFashionKioskWorldColliders } from './buddiesFashionKioskRules';
 
-export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v54';
+export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v55';
 
 /**
  * Single 180°-Rotationally Symmetric Base Section Generator (`buildTeamBaseQuadrant`):
@@ -593,6 +594,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'lobby_glasshouse_l_wing', x: -98.10, z: 18.60, halfX: 5.25, halfZ: 4.65, rotY: 0, heightY: 9.6, mat: 'metal' },
     ...computeRealEstateKioskWorldColliders(),
     ...computeScooterShopWorldColliders(),
+    ...computeFashionKioskWorldColliders(),
     {
       id: 'npc_merchant_hana',
       x: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,

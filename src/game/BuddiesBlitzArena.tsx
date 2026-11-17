@@ -259,6 +259,7 @@ import {
   stepBlitzPlaneAnimation,
   buildProceduralBuddyAvatar,
   upgradeBuddyRigWithCharBuddiesGlb,
+  setBuddyRigEquippedTorsoByUrl,
   CharacterGender,
   setDefaultCharacterGender,
   getDefaultCharacterGender,
@@ -370,6 +371,29 @@ import {
   REAL_ESTATE_CATALOG_TRIGGER,
   REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
 } from './buddiesRealEstateKioskRules';
+import { FASHION_BOUTIQUE_SHOP_TRIGGER } from './buddiesFashionKioskRules';
+import {
+  CASINO_INTERIOR_BOUNDS,
+  CASINO_INTERIOR_COLLIDERS,
+  CASINO_INTERIOR_SEAT_SPOTS,
+  CASINO_ORIGIN_Y,
+  CASINO_SLOT_VARIANT_META,
+  CASINO_STAFF_NPC_PLACEMENTS,
+  CASINO_STATION_TARGETS,
+  GRAND_CASINO_DOOR_TRIGGER,
+  clampCasinoInteriorPosition,
+  computeCasinoSeatStandUpPosition,
+  getCasinoGameKindForSeat,
+  getCasinoSlotGameVariantForSeatId,
+  resolveNearestCasinoPromptOrSeat,
+  type CasinoInteriorSeatSpot,
+  type CasinoSlotGameVariant,
+  type CasinoStationInteractionKind,
+} from './buddiesGrandCasinoRules';
+import {
+  buildGrandCasinoInterior,
+  type CasinoInteriorSceneHandle,
+} from './buddiesGrandCasinoInteriorBuilder';
 import {
   NAMEPLATE_SCREEN_SPEC,
   syncScreenSpaceBillboardQuad,
@@ -741,6 +765,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     scooterShopPromptBtn.setAttribute('data-scooter-shop-floating-btn', 'true');
 
+    const DOCK_ICON_FASHION_HANGER_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6a2 2 0 1 0-2-2c0 1.1.9 2 2 2v2.2L3.6 14a1.6 1.6 0 0 0 .9 2.9h15a1.6 1.6 0 0 0 .9-2.9L12 8.2"/></svg>`;
+    const FASHION_BOUTIQUE_BTN_HTML = getGameStyleBottomDockHtml(
+      'FASHION BOUTIQUE',
+      '#38bdf8',
+      DOCK_ICON_FASHION_HANGER_SVG,
+      'E',
+    );
+    const fashionBoutiquePromptBtn = createPromptButton(
+      FASHION_BOUTIQUE_BTN_HTML,
+      'FASHION BOUTIQUE [E]',
+      'openFashionBoutique',
+    );
+    fashionBoutiquePromptBtn.setAttribute('data-fashion-boutique-floating-btn', 'true');
+
     const DOCK_ICON_CATALOG_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9 21v-6h6v6"/></svg>`;
     const REAL_ESTATE_CATALOG_BTN_HTML = getGameStyleBottomDockHtml(
       'PROPERTY CATALOG',
@@ -768,6 +806,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     enterModelHousePromptBtn.setAttribute('data-enter-model-house-floating-btn', 'true');
 
+    const ENTER_GRAND_CASINO_BTN_HTML = getGameStyleBottomDockHtml(
+      'ENTER CASINO',
+      '#facc15',
+      DOCK_ICON_DOOR_SVG,
+      'E',
+    );
+    const enterGrandCasinoPromptBtn = createPromptButton(
+      ENTER_GRAND_CASINO_BTN_HTML,
+      'ENTER CASINO [E]',
+      'enterGrandCasino',
+    );
+    enterGrandCasinoPromptBtn.setAttribute('data-enter-grand-casino-floating-btn', 'true');
+
     const getCafeStationBtnHtml = (
       label: string,
       accentHex = '#b8ff3c',
@@ -780,6 +831,60 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       'cafeStationInteract',
     );
     cafeStationPromptBtn.setAttribute('data-cafe-station-floating-btn', 'true');
+
+    const casinoStationPromptBtn = createPromptButton(
+      getCafeStationBtnHtml('SPIN ROULETTE', '#facc15', DOCK_ICON_SLOT_SVG),
+      'CASINO INTERACT [E]',
+      'casinoStationInteract',
+    );
+    casinoStationPromptBtn.setAttribute('data-casino-station-floating-btn', 'true');
+
+    const triggerCasinoStationAction = (stationKind: CasinoStationInteractionKind | null) => {
+      if (!stationKind) return;
+      if (
+        stationKind === 'slot_machine' ||
+        stationKind === 'blackjack_table' ||
+        stationKind === 'roulette_table'
+      ) {
+        if (
+          !playerUnit?.isSitting ||
+          !activeCasinoSeatedSpot ||
+          getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind) !== stationKind
+        ) {
+          soundEngine.playHit();
+          if (playerUnit) {
+            playerUnit.saluteSign.updateText('DUDUK DULU!', 'DUDUK DI KURSI UNTUK BERMAIN', '#facc15', 1);
+            playerUnit.saluteTimer = 1.6;
+            playerUnit.saluteSign.sprite.visible = true;
+          }
+          return;
+        }
+      }
+      soundEngine.playUiClick();
+      if (stationKind === 'exit_door') {
+        window.dispatchEvent(new CustomEvent('exit-grand-casino-interior'));
+        return;
+      }
+      const tabMap: Record<
+        Exclude<CasinoStationInteractionKind, 'exit_door'>,
+        'roulette' | 'blackjack' | 'slots' | 'cashier' | 'bar'
+      > = {
+        roulette_table: 'roulette',
+        blackjack_table: 'blackjack',
+        slot_machine: 'slots',
+        cashier_cage: 'cashier',
+        luxury_bar: 'bar',
+      };
+      const slotVariant: CasinoSlotGameVariant | undefined =
+        stationKind === 'slot_machine' && activeCasinoSeatedSpot
+          ? getCasinoSlotGameVariantForSeatId(activeCasinoSeatedSpot.id)
+          : undefined;
+      window.dispatchEvent(
+        new CustomEvent('open-grand-casino-modal', {
+          detail: { tab: tabMap[stationKind], slotVariant },
+        }),
+      );
+    };
 
     // Green Holographic Ground Selection Ring for Clicked Character (#22c55e)
     const characterSelectionRing = new THREE.Mesh(
@@ -1399,6 +1504,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         return;
       }
+      if (npcCameraMode === 'casino_interior' && playerUnit) {
+        if (playerUnit.isSitting && activeCasinoSeatedSpot) {
+          const standPos = computeCasinoSeatStandUpPosition(activeCasinoSeatedSpot);
+          playerUnit.x = standPos.x;
+          playerUnit.z = standPos.z;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          activeCasinoSeatedSpot = null;
+          playerUnit.isSitting = false;
+          soundEngine.playUiClick();
+          emitHudImmediately();
+        } else if (currentNearestCasinoSeat) {
+          soundEngine.playUiClick();
+          activeCasinoSeatedSpot = currentNearestCasinoSeat;
+          playerUnit.x = currentNearestCasinoSeat.x;
+          playerUnit.z = currentNearestCasinoSeat.z;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = currentNearestCasinoSeat.yaw;
+          playerUnit.isSitting = true;
+          emitHudImmediately();
+        }
+        return;
+      }
       if (playerUnit?.isSitting && activeSeatedSpot) {
         standUpFromLobbySeat();
       } else if (currentNearestLobbySeat) {
@@ -1521,6 +1650,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   | 'house_interior'
                   | 'house_visit'
                   | 'cafe_interior'
+                  | 'casino_interior'
                   | 'character_select';
                 flyTargetMode?: 'character_select' | 'gameplay';
                 flySessionId?: number;
@@ -3244,6 +3374,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isSoftwareGl,
         false,
         preferredGender,
+        isPlayer,
       );
       const {
         headMesh,
@@ -3709,7 +3840,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const assets = loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
       const charGlb = assets?.charBuddiesGltf ?? earlyLoadedCharGltf;
+      const ambientFemaleGlb =
+        assets?.ambientFemaleNpcGlb ?? earlyLoadedAmbientFemaleGlb ?? charGlb;
       const manGlb = assets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
+      const ambientMaleGlb =
+        assets?.ambientMaleNpcGlb ?? earlyLoadedAmbientMaleGlb ?? manGlb;
       const fishingRodGlb = assets?.fishingRodGltf;
       let upgradedThisFrame = false;
 
@@ -3754,7 +3889,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
 
         // Stagger shared GLB cloning to at most 1 nearby NPC per frame so Safezone FPS never spikes.
-        const targetGlb = npc.preset.gender === 'male' ? manGlb : charGlb;
+        const targetGlb = npc.preset.gender === 'male' ? ambientMaleGlb : ambientFemaleGlb;
         const needAvatarUpgrade = Boolean(targetGlb) && !npc.glbUpgraded;
         const needRodUpgrade =
           !npc.rodUpgraded &&
@@ -3885,6 +4020,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     scene.add(scooterShopChevron.group);
 
+    // Compact ring-less 3D interaction triangle beside the Fashion & Apparel Boutique wooden A-Frame sign
+    const fashionShopChevron = buildCompactInteractiveChevronMarker(0.18, 0.34, '#38bdf8');
+    fashionShopChevron.group.name = 'FashionBoutiqueInteractionChevron';
+    fashionShopChevron.group.position.set(
+      FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+      FASHION_BOUTIQUE_SHOP_TRIGGER.deckY + FASHION_BOUTIQUE_SHOP_TRIGGER.markerOffsetY,
+      FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+    );
+    scene.add(fashionShopChevron.group);
+
     // Compact ring-less 3D interaction triangle beside the Real Estate & Furniture Showroom wooden A-Frame sign
     const realEstateCatalogChevron = buildCompactInteractiveChevronMarker(0.18, 0.34, '#38bdf8');
     realEstateCatalogChevron.group.name = 'RealEstateCatalogInteractionChevron';
@@ -3904,6 +4049,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z,
     );
     scene.add(modelHouseDoorChevron.group);
+
+    // Compact ring-less 3D interaction triangle ("segitiga interaksi untuk masuk ke bangunan casino") in front of Grand Casino entrance steps
+    const grandCasinoDoorChevron = buildCompactInteractiveChevronMarker(0.18, 0.34, '#38bdf8');
+    grandCasinoDoorChevron.group.name = 'GrandCasinoDoorInteractionChevron';
+    grandCasinoDoorChevron.group.position.set(
+      GRAND_CASINO_DOOR_TRIGGER.x,
+      GRAND_CASINO_DOOR_TRIGGER.deckY + GRAND_CASINO_DOOR_TRIGGER.markerOffsetY,
+      GRAND_CASINO_DOOR_TRIGGER.z,
+    );
+    scene.add(grandCasinoDoorChevron.group);
 
     // Lazy-loaded Glasshouse Cafe Interior: defer procedural mesh/texture construction
     // and WebGL shader compilation until the player actually enters the cafe.
@@ -3966,6 +4121,78 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       cafeInteriorShadersCompiled = false;
       syncCafeCustomerWorkShiftVisuals();
       return builtCafe;
+    };
+
+    // Lazy-loaded Luxury Single-Story Grand Casino Interior (World Origin y = CASINO_ORIGIN_Y)
+    interface CasinoStaffNpcRuntime {
+      id: string;
+      root: THREE.Group;
+      bodyGroup: THREE.Group;
+      rig: BuddyCharacterRig;
+      phaseOffsetSec: number;
+      phaseApplied: boolean;
+    }
+    let casinoInterior: CasinoInteriorSceneHandle | null = null;
+    let casinoStaffNpcs: CasinoStaffNpcRuntime[] = [];
+    let syncCasinoStaffNpcsFrame: (resetStepClock?: boolean) => void = () => {};
+    let casinoInteriorShadersCompiled = false;
+    let pendingCasinoActivationToken = 0;
+
+    const ensureCasinoInteriorLoaded = (): CasinoInteriorSceneHandle => {
+      if (casinoInterior) return casinoInterior;
+      const builtCasino = buildGrandCasinoInterior();
+      builtCasino.root.visible = false;
+      scene.add(builtCasino.root);
+
+      // Spawn 3D Female Plaza NPCs for all 6 Grand Casino Staff Stations (Cashier, Bartender, 3 Blackjack Dealers, Roulette Croupier)
+      casinoStaffNpcs = CASINO_STAFF_NPC_PLACEMENTS.map((placement, idx) => {
+        const staffRoot = new THREE.Group();
+        staffRoot.name = `CasinoStaffFemaleNpc_${placement.id}`;
+        staffRoot.position.set(placement.x, placement.y, placement.z);
+        staffRoot.scale.setScalar(0.55);
+
+        const staffShadow = new THREE.Mesh(shadowDiscGeo, avatarContactShadowMat);
+        staffShadow.position.y = 0.025;
+        staffShadow.scale.setScalar(0.68);
+        staffShadow.renderOrder = 1;
+        staffRoot.add(staffShadow);
+
+        const staffBodyGroup = new THREE.Group();
+        staffBodyGroup.rotation.order = 'YXZ';
+        staffBodyGroup.rotation.set(0, placement.rotY, 0);
+        staffBodyGroup.scale.setScalar(0.98);
+        staffRoot.add(staffBodyGroup);
+
+        const staffRig = buildProceduralBuddyAvatar(
+          staffBodyGroup,
+          'red',
+          windUniforms,
+          isSoftwareGl,
+          false,
+          'female',
+        );
+        staffRig.weaponRigGroup.visible = false;
+        staffRig.pistolGroup.visible = false;
+        staffRig.rifleGroup.visible = false;
+        staffRig.bazookaGroup.visible = false;
+        if (staffRig.laserGroup) staffRig.laserGroup.visible = false;
+        if (staffRig.gatlingGroup) staffRig.gatlingGroup.visible = false;
+
+        builtCasino.root.add(staffRoot);
+        return {
+          id: placement.id,
+          root: staffRoot,
+          bodyGroup: staffBodyGroup,
+          rig: staffRig,
+          phaseOffsetSec: idx * 0.67,
+          phaseApplied: false,
+        };
+      });
+      syncCasinoStaffNpcsFrame(true);
+
+      casinoInterior = builtCasino;
+      casinoInteriorShadersCompiled = false;
+      return builtCasino;
     };
 
     // =========================================================================
@@ -6509,10 +6736,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       | 'house_interior'
       | 'house_visit'
       | 'cafe_interior'
+      | 'casino_interior'
       | 'character_select' = initialMpAppSync?.mode ?? 'landing_tour';
     let npcCameraLocation: 'lobby_cafe' | 'beach_house' = 'lobby_cafe';
     let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
     let savedOutdoorCafePos: { x: number; z: number; yaw: number } | null = null;
+    let savedOutdoorCasinoPos: { x: number; z: number; yaw: number } | null = null;
     let cafeWorkShiftActive = Boolean(initialMpAppSync?.isWorkingCafeShift);
     let activeCafeOrderLabel = initialMpAppSync?.activeCafeOrderLabel ?? '';
     let activeCafeOrderAccent = initialMpAppSync?.activeCafeOrderAccent ?? '#b8ff3c';
@@ -6567,6 +6796,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     let activeCafeSeatedSpot: CafeInteriorSeatSpot | null = null;
     let currentNearestCafeSeat: CafeInteriorSeatSpot | null = null;
+    let casinoVisitCamYaw: number = INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.defaultYaw;
+    let casinoVisitCamPitch: number = INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.defaultPitch;
+    let casinoVisitCamDist: number = INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.defaultDist;
+    let isOrbitingCasinoVisitCamera = false;
+    let casinoVisitOrbitDragStart = {
+      x: 0,
+      y: 0,
+      yaw: casinoVisitCamYaw,
+      pitch: casinoVisitCamPitch,
+    };
+    let activeCasinoSeatedSpot: CasinoInteriorSeatSpot | null = null;
+    let currentNearestCasinoSeat: CasinoInteriorSeatSpot | null = null;
     let mpOnboardingCompleted = initialMpAppSync?.onboardingCompleted ?? false;
     let mpLocalGender: CharacterGender =
       initialMpAppSync?.characterGender ?? getDefaultCharacterGender();
@@ -6590,6 +6831,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let lastLandingCameraPose = computeLandingCityTourPose(0);
 
     const getLocalMultiplayerZoneKey = (): string => {
+      if (npcCameraMode === 'casino_interior') {
+        return 'casino:grand';
+      }
       if (npcCameraMode === 'cafe_interior') {
         return 'cafe:glasshouse';
       }
@@ -6613,6 +6857,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             | 'house_interior'
             | 'house_visit'
             | 'cafe_interior'
+            | 'casino_interior'
             | 'character_select';
           flyTargetMode?: 'character_select' | 'gameplay';
           flySessionId?: number;
@@ -6738,6 +6983,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           detail.mode === 'house_interior' || detail.mode === 'house_visit';
         const wasCafeMode = npcCameraMode === 'cafe_interior';
         const isCafeMode = detail.mode === 'cafe_interior';
+        const wasCasinoMode = npcCameraMode === 'casino_interior';
+        const isCasinoMode = detail.mode === 'casino_interior';
         const prevMode = npcCameraMode;
         if (pendingFurnitureMove && detail.mode !== 'house_interior') {
           resolvePendingFurnitureMove(false);
@@ -6886,7 +7133,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else if (wasCafeMode && !isCafeMode && playerUnit) {
           pendingCafeActivationToken++;
           if (cafeInterior) cafeInterior.root.visible = false;
-          syncIndoorOutdoorSceneVisibility(true);
+          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCasinoMode);
           activeCafeSeatedSpot = null;
           playerUnit.isSitting = false;
           playerUnit.root.scale.setScalar(1.0);
@@ -6898,6 +7145,132 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         } else if (cafeInterior) {
           cafeInterior.root.visible = isCafeMode;
+        }
+        if (isCasinoMode && !wasCasinoMode && playerUnit) {
+          const nearDoorNow =
+            getPlanetShortestDistance(
+              playerUnit.x,
+              playerUnit.z,
+              GRAND_CASINO_DOOR_TRIGGER.x,
+              GRAND_CASINO_DOOR_TRIGGER.z,
+            ) <= 4.5;
+          savedOutdoorCasinoPos = nearDoorNow
+            ? { x: playerUnit.x, z: playerUnit.z, yaw: 0 }
+            : { x: GRAND_CASINO_DOOR_TRIGGER.x + 0.55, z: GRAND_CASINO_DOOR_TRIGGER.z, yaw: 0 };
+          activeCasinoSeatedSpot = null;
+          playerUnit.isSitting = false;
+          playerUnit.isSleeping = false;
+          playerUnit.x = CASINO_INTERIOR_BOUNDS.spawnX;
+          playerUnit.z = CASINO_INTERIOR_BOUNDS.spawnZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = CASINO_INTERIOR_BOUNDS.spawnYaw;
+          playerUnit.visualYaw = CASINO_INTERIOR_BOUNDS.spawnYaw;
+          playerUnit.root.position.set(playerUnit.x, CASINO_ORIGIN_Y, playerUnit.z);
+          playerUnit.root.rotation.set(0, 0, 0);
+          playerUnit.root.scale.setScalar(0.55);
+          if (windUniforms.uCurvatureStrength) windUniforms.uCurvatureStrength.value = 0;
+          casinoVisitCamYaw = INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.defaultYaw;
+          casinoVisitCamPitch = INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.defaultPitch;
+          casinoVisitCamDist = INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.defaultDist;
+
+          syncIndoorOutdoorSceneVisibility(false);
+          const casinoActivationToken = ++pendingCasinoActivationToken;
+          const dispatchCasinoReadyAfterPaint = () => {
+            window.requestAnimationFrame(() => {
+              if (
+                isDisposed ||
+                casinoActivationToken !== pendingCasinoActivationToken ||
+                npcCameraMode !== 'casino_interior'
+              ) {
+                return;
+              }
+              window.dispatchEvent(new CustomEvent('casino-interior-ready'));
+            });
+          };
+
+          if (!casinoInterior || !casinoInteriorShadersCompiled) {
+            window.requestAnimationFrame(() => {
+              window.setTimeout(() => {
+                void (async () => {
+                  if (
+                    isDisposed ||
+                    casinoActivationToken !== pendingCasinoActivationToken ||
+                    npcCameraMode !== 'casino_interior'
+                  ) {
+                    return;
+                  }
+                  const loadedCasino = ensureCasinoInteriorLoaded();
+                  loadedCasino.root.visible = true;
+                  syncCasinoStaffNpcsFrame(true);
+                  syncIndoorOutdoorSceneVisibility(false);
+
+                  const initPose = computeIndoorRoomOrbitCameraPose({
+                    roomKind: 'casino_interior',
+                    originY: CASINO_ORIGIN_Y,
+                    anchorX: playerUnit?.x ?? CASINO_INTERIOR_BOUNDS.spawnX,
+                    anchorZ: playerUnit?.z ?? CASINO_INTERIOR_BOUNDS.spawnZ,
+                    yaw: casinoVisitCamYaw,
+                    pitch: casinoVisitCamPitch,
+                    dist: casinoVisitCamDist,
+                  });
+                  camera.fov = initPose.fovDeg;
+                  camera.updateProjectionMatrix();
+                  camera.position.set(initPose.camX, initPose.camY, initPose.camZ);
+                  camera.lookAt(initPose.lookX, initPose.lookY, initPose.lookZ);
+                  camera.updateMatrixWorld();
+                  scene.updateMatrixWorld(true);
+
+                  if (!casinoInteriorShadersCompiled) {
+                    try {
+                      const asyncRenderer = renderer as THREE.WebGLRenderer & {
+                        compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<void>;
+                      };
+                      if (typeof asyncRenderer.compileAsync === 'function') {
+                        await asyncRenderer.compileAsync(scene, camera);
+                      } else {
+                        renderer.compile(scene, camera);
+                      }
+                    } catch {
+                      try {
+                        renderer.compile(scene, camera);
+                      } catch {
+                        // Safe fallback if WebGL pre-compile throws in software/restricted contexts
+                      }
+                    }
+                    if (
+                      isDisposed ||
+                      casinoActivationToken !== pendingCasinoActivationToken ||
+                      npcCameraMode !== 'casino_interior'
+                    ) {
+                      return;
+                    }
+                    casinoInteriorShadersCompiled = true;
+                  }
+                  dispatchCasinoReadyAfterPaint();
+                })();
+              }, 16);
+            });
+          } else {
+            casinoInterior.root.visible = true;
+            syncCasinoStaffNpcsFrame(true);
+            dispatchCasinoReadyAfterPaint();
+          }
+        } else if (wasCasinoMode && !isCasinoMode && playerUnit) {
+          pendingCasinoActivationToken++;
+          if (casinoInterior) casinoInterior.root.visible = false;
+          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCafeMode);
+          activeCasinoSeatedSpot = null;
+          playerUnit.isSitting = false;
+          playerUnit.root.scale.setScalar(1.0);
+          if (savedOutdoorCasinoPos) {
+            playerUnit.x = savedOutdoorCasinoPos.x;
+            playerUnit.z = savedOutdoorCasinoPos.z;
+            playerUnit.yaw = savedOutdoorCasinoPos.yaw;
+            savedOutdoorCasinoPos = null;
+          }
+        } else if (casinoInterior) {
+          casinoInterior.root.visible = isCasinoMode;
         }
         houseInteriorRoomGrp.visible = isHouseMode;
         if (isHouseMode) {
@@ -7593,16 +7966,82 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       loadedBlitzAssets?.charBuddiesGltf ?? null;
     let earlyLoadedManGltf: LoadedBlitzAssets['manCharacterBuddiesGltf'] =
       loadedBlitzAssets?.manCharacterBuddiesGltf ?? null;
+    let earlyLoadedPlayerFemaleGltf: LoadedBlitzAssets['playerFemaleGlb'] =
+      loadedBlitzAssets?.playerFemaleGlb ?? null;
+    let earlyLoadedPlayerMaleGltf: LoadedBlitzAssets['playerMaleGlb'] =
+      loadedBlitzAssets?.playerMaleGlb ?? null;
+    let earlyLoadedHanaGlb: LoadedBlitzAssets['hanaCustomGlb'] =
+      loadedBlitzAssets?.hanaCustomGlb ?? null;
+    let earlyLoadedKaiGlb: LoadedBlitzAssets['kaiCustomGlb'] =
+      loadedBlitzAssets?.kaiCustomGlb ?? null;
+    let earlyLoadedAmbientFemaleGlb: LoadedBlitzAssets['ambientFemaleNpcGlb'] =
+      loadedBlitzAssets?.ambientFemaleNpcGlb ?? null;
+    let earlyLoadedAmbientMaleGlb: LoadedBlitzAssets['ambientMaleNpcGlb'] =
+      loadedBlitzAssets?.ambientMaleNpcGlb ?? null;
+
+    syncCasinoStaffNpcsFrame = (resetStepClock = false) => {
+      if (casinoStaffNpcs.length === 0) return;
+      const assets = loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
+      const plazaFemaleGlb =
+        assets?.ambientFemaleNpcGlb ??
+        earlyLoadedAmbientFemaleGlb ??
+        assets?.hanaCustomGlb ??
+        earlyLoadedHanaGlb ??
+        assets?.charBuddiesGltf ??
+        earlyLoadedCharGltf;
+      const hasMixamoLocomotionBase = Boolean(
+        assets?.manCharacterBuddiesGltf ??
+          earlyLoadedManGltf ??
+          assets?.charBuddiesGltf ??
+          earlyLoadedCharGltf,
+      );
+      const nowMs = performance.now();
+      for (let i = 0; i < casinoStaffNpcs.length; i++) {
+        const npc = casinoStaffNpcs[i];
+        if (
+          plazaFemaleGlb &&
+          hasMixamoLocomotionBase &&
+          npc.rig.customGlbController?.sourceGltf !== plazaFemaleGlb
+        ) {
+          upgradeBuddyRigWithCharBuddiesGlb(npc.rig, plazaFemaleGlb);
+          npc.rig.weaponRigGroup.visible = false;
+          npc.rig.pistolGroup.visible = false;
+          npc.rig.rifleGroup.visible = false;
+          npc.rig.bazookaGroup.visible = false;
+          if (npc.rig.laserGroup) npc.rig.laserGroup.visible = false;
+          if (npc.rig.gatlingGroup) npc.rig.gatlingGroup.visible = false;
+          npc.phaseApplied = false;
+        }
+        if (resetStepClock && npc.rig.customGlbController) {
+          npc.rig.customGlbController.lastStepTimeMs = nowMs;
+        }
+        npc.rig.weaponRigGroup.visible = false;
+        npc.rig.pistolGroup.visible = false;
+        updateCharacterWeaponStance(npc.rig, 'unarmed', 0, false, false, 0, 0);
+        if (!npc.phaseApplied && npc.rig.customGlbController) {
+          npc.rig.customGlbController.mixer.update(npc.phaseOffsetSec);
+          npc.rig.customGlbController.lastStepTimeMs = nowMs;
+          npc.phaseApplied = true;
+        }
+      }
+    };
 
     const resolveAvatarGlbForGender = (
       gender?: CharacterGender,
       assetsOverride?: LoadedBlitzAssets | null,
+      isPlayerAvatar = false,
     ) => {
       const targetGender = gender ?? getDefaultCharacterGender();
       const assets =
         assetsOverride ?? loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
-      const femaleGlb = assets?.charBuddiesGltf ?? earlyLoadedCharGltf;
-      const maleGlb = assets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
+      const npcFemaleGlb = assets?.charBuddiesGltf ?? earlyLoadedCharGltf;
+      const playerFemaleGlb =
+        assets?.playerFemaleGlb ?? earlyLoadedPlayerFemaleGltf ?? npcFemaleGlb;
+      const femaleGlb = isPlayerAvatar ? playerFemaleGlb : npcFemaleGlb;
+      const npcMaleGlb = assets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
+      const playerMaleGlb =
+        assets?.playerMaleGlb ?? earlyLoadedPlayerMaleGltf ?? npcMaleGlb;
+      const maleGlb = isPlayerAvatar ? playerMaleGlb : npcMaleGlb;
       return targetGender === 'male' ? (maleGlb ?? femaleGlb) : (femaleGlb ?? maleGlb);
     };
 
@@ -7612,7 +8051,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     ): boolean => {
       const assets =
         assetsOverride ?? loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
-      const charGlb = resolveAvatarGlbForGender(unit.avatarGender, assets);
+      const charGlb = resolveAvatarGlbForGender(unit.avatarGender, assets, unit.isPlayer);
       if (!charGlb) return false;
       upgradeBuddyRigWithCharBuddiesGlb(
         unit.rig,
@@ -9880,12 +10319,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const projectiles = projectilePool.slots;
     let staggeredUpgradeRafId = 0;
 
-    loadAllRealBlitzAssets(renderer, (charGltf, manGltf, rodGltf) => {
-      if (isDisposed) return;
-      earlyLoadedCharGltf = charGltf;
-      earlyLoadedManGltf = manGltf;
-      const earlyCharGltf =
-        getDefaultCharacterGender() === 'male' ? manGltf ?? charGltf : charGltf;
+    loadAllRealBlitzAssets(
+      renderer,
+      (
+        charGltf,
+        manGltf,
+        rodGltf,
+        playerFemaleGltf,
+        hanaCustomGltf,
+        ambientFemaleNpcGltf,
+        ambientMaleNpcGltf,
+        kaiCustomGltf,
+        playerMaleGltf,
+      ) => {
+        if (isDisposed) return;
+        earlyLoadedCharGltf = charGltf;
+        earlyLoadedManGltf = manGltf;
+        earlyLoadedPlayerFemaleGltf = playerFemaleGltf ?? null;
+        earlyLoadedPlayerMaleGltf = playerMaleGltf ?? null;
+        earlyLoadedHanaGlb = hanaCustomGltf ?? null;
+        earlyLoadedKaiGlb = kaiCustomGltf ?? null;
+        earlyLoadedAmbientFemaleGlb = ambientFemaleNpcGltf ?? null;
+        earlyLoadedAmbientMaleGlb = ambientMaleNpcGltf ?? null;
+      const earlyCharGltf = resolveAvatarGlbForGender(
+        getDefaultCharacterGender(),
+        undefined,
+        true,
+      );
       if (earlyCharGltf && playerUnit) {
         upgradeBuddyRigWithCharBuddiesGlb(
           playerUnit.rig,
@@ -9922,19 +10382,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       let staggerIdx = 0;
       const stepStaggeredUpgrades = () => {
         if (isDisposed) return;
-        const activeChar =
-          getDefaultCharacterGender() === 'male'
-            ? earlyLoadedManGltf ?? earlyLoadedCharGltf
-            : earlyLoadedCharGltf;
+        const activeChar = resolveAvatarGlbForGender(
+          getDefaultCharacterGender(),
+          undefined,
+          true,
+        );
         if (staggerIdx < pendingUnits.length) {
           const b = pendingUnits[staggerIdx++];
           ensureBuddyUnitGlbUpgraded(b);
           staggeredUpgradeRafId = requestAnimationFrame(stepStaggeredUpgrades);
-        } else if (earlyLoadedCharGltf || earlyLoadedManGltf) {
-          if (earlyLoadedCharGltf) {
-            upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, earlyLoadedCharGltf);
+        } else if (earlyLoadedCharGltf || earlyLoadedManGltf || earlyLoadedHanaGlb || earlyLoadedKaiGlb) {
+          const hanaEarlyGltf = earlyLoadedHanaGlb ?? earlyLoadedCharGltf;
+          if (hanaEarlyGltf) {
+            upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, hanaEarlyGltf);
           }
-          const kaiEarlyGltf = earlyLoadedManGltf ?? earlyLoadedCharGltf;
+          const kaiEarlyGltf = earlyLoadedKaiGlb ?? earlyLoadedManGltf ?? earlyLoadedCharGltf;
           if (kaiEarlyGltf) {
             upgradeBuddyRigWithCharBuddiesGlb(beachHouseNpc.npcRig, kaiEarlyGltf);
           }
@@ -9943,7 +10405,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (activeChar) {
             tanks.forEach((t) => {
               if (t.riderGroup.userData.riderRig) {
-                upgradeBuddyRigWithCharBuddiesGlb(t.riderGroup.userData.riderRig, activeChar);
+                const riderGlb = t.occupiedByPlayer
+                  ? activeChar
+                  : resolveAvatarGlbForGender(getDefaultCharacterGender(), undefined, false);
+                upgradeBuddyRigWithCharBuddiesGlb(t.riderGroup.userData.riderRig, riderGlb);
               }
             });
           }
@@ -9962,15 +10427,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         populateMilitaryBaseGardenTreesFromGlb(redBase.baseGroup, assets, windUniforms, isSoftwareGl);
 
         // 2. Populate any active Tanks & Dump Trucks with real buddy-tank.glb or dump-truck.glb (without concrete pipes!)
-        const activeCharGltf =
-          getDefaultCharacterGender() === 'male'
-            ? assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf
-            : assets.charBuddiesGltf;
+        const activePlayerCharGltf = resolveAvatarGlbForGender(
+          getDefaultCharacterGender(),
+          assets,
+          true,
+        );
+        const activeNpcCharGltf = resolveAvatarGlbForGender(
+          getDefaultCharacterGender(),
+          assets,
+          false,
+        );
         tanks.forEach((t) => {
           if (t.riderGroup.userData.riderRig) {
             upgradeBuddyRigWithCharBuddiesGlb(
               t.riderGroup.userData.riderRig,
-              activeCharGltf,
+              t.occupiedByPlayer ? activePlayerCharGltf : activeNpcCharGltf,
             );
           }
           if (t.vehicleKind === 'plane') return;
@@ -10053,11 +10524,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
         upgradeBuddyRigWithCharBuddiesGlb(
           lobbyCafeNpc.npcRig,
-          assets.charBuddiesGltf,
+          assets.hanaCustomGlb ?? assets.charBuddiesGltf,
         );
         upgradeBuddyRigWithCharBuddiesGlb(
           beachHouseNpc.npcRig,
-          assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf,
+          assets.kaiCustomGlb ?? assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf,
         );
         lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
         beachHouseNpc.npcRig.weaponRigGroup.visible = false;
@@ -11917,6 +12388,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.z = exitPos.z;
         activeSeatedSpot = null;
         isOrbitingSeatedCamera = false;
+      } else if (playerUnit.isSitting && activeCafeSeatedSpot) {
+        const exitPos = computeCafeSeatStandUpPosition(activeCafeSeatedSpot);
+        playerUnit.x = exitPos.x;
+        playerUnit.z = exitPos.z;
+        activeCafeSeatedSpot = null;
+        isOrbitingSeatedCamera = false;
+      } else if (playerUnit.isSitting && activeCasinoSeatedSpot) {
+        const exitPos = computeCasinoSeatStandUpPosition(activeCasinoSeatedSpot);
+        playerUnit.x = exitPos.x;
+        playerUnit.z = exitPos.z;
+        activeCasinoSeatedSpot = null;
+        isOrbitingSeatedCamera = false;
       }
       playerUnit.isSitting = false;
       playerUnit.isDriving = false;
@@ -12504,14 +12987,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.isDriving = false;
         activeSeatedSpot = null;
         clearCharacterSelection();
-        const activeMountChar =
-          getDefaultCharacterGender() === 'male'
-            ? earlyLoadedManGltf ?? earlyLoadedCharGltf
-            : earlyLoadedCharGltf;
+        const activeMountChar = resolveAvatarGlbForGender(
+          getDefaultCharacterGender(),
+          loadedBlitzAssets,
+          true,
+        );
         if (activeMountChar && nearestTank.riderGroup.userData.riderRig) {
+          const desiredTorsoUrl = playerUnit.bodyGroup?.userData?.desiredTorsoAssetUrl as
+            | string
+            | null
+            | undefined;
+          if (nearestTank.riderGroup.userData.riderRig.bodyGroupRef) {
+            nearestTank.riderGroup.userData.riderRig.bodyGroupRef.userData.desiredTorsoAssetUrl =
+              desiredTorsoUrl ?? null;
+          }
           upgradeBuddyRigWithCharBuddiesGlb(
             nearestTank.riderGroup.userData.riderRig,
             activeMountChar,
+          );
+          void setBuddyRigEquippedTorsoByUrl(
+            nearestTank.riderGroup.userData.riderRig,
+            desiredTorsoUrl ?? null,
           );
         }
         nearestTank.riderGroup.visible = nearestTank.vehicleKind !== 'truck';
@@ -12797,10 +13293,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (promptOverlay) {
         promptOverlay.setAttribute('data-character-gender', nextGender);
       }
-      const charGltfRef = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
-      const manGltfRef = loadedBlitzAssets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
-      const targetGltf =
-        nextGender === 'male' ? manGltfRef ?? charGltfRef : charGltfRef;
+      const targetGltf = resolveAvatarGlbForGender(nextGender, loadedBlitzAssets, true);
       if (targetGltf && playerUnit) {
         upgradeBuddyRigWithCharBuddiesGlb(
           playerUnit.rig,
@@ -12838,7 +13331,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.saluteTimer = 1.8;
         playerUnit.saluteSign.updateText(
           nextGender === 'male' ? 'KARAKTER PRIA AKTIF' : 'KARAKTER WANITA AKTIF',
-          nextGender === 'male' ? 'MANCHARACTERBUDDIES.GLB' : 'CHARBUDDIES.GLB',
+          nextGender === 'male' ? 'MANCHARACTERBUDDIES.GLB' : 'CHARACTER_CUSTOM_5ANIMS.GLB',
           nextGender === 'male' ? '#38bdf8' : '#b8ff3c',
           1,
         );
@@ -12952,6 +13445,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.z,
       );
       handle.root.rotation.set(0, playerUnit.yaw + Math.PI / 2, 0);
+      window.dispatchEvent(
+        new CustomEvent('scooter-mounted', { detail: { kind } }),
+      );
     };
 
     const handleUnequipScooter = () => dismountScooter();
@@ -13145,10 +13641,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       playerUnit.isDriving = false;
       activeSeatedSpot = null;
       clearCharacterSelection();
-      const activeMountChar =
-        getDefaultCharacterGender() === 'male'
-          ? earlyLoadedManGltf ?? earlyLoadedCharGltf
-          : earlyLoadedCharGltf;
+      const activeMountChar = resolveAvatarGlbForGender(
+        getDefaultCharacterGender(),
+        loadedBlitzAssets,
+        true,
+      );
       if (activeMountChar && newVeh.riderGroup.userData.riderRig) {
         upgradeBuddyRigWithCharBuddiesGlb(
           newVeh.riderGroup.userData.riderRig,
@@ -13736,6 +14233,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         return;
       }
+      if (document.querySelector('[data-grand-casino-modal="true"]')) {
+        resetAllPlayerMovementInputs();
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('close-grand-casino-modal'));
+        }
+        return;
+      }
       if (isKioskModalOpenCanvas) {
         if (e.code === 'Escape' || e.code === 'KeyB') {
           e.preventDefault();
@@ -13880,6 +14385,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             return;
           }
         }
+        if (npcCameraMode === 'casino_interior' && playerUnit) {
+          if (playerUnit.isSitting && activeCasinoSeatedSpot) {
+            triggerCasinoStationAction(getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind));
+            return;
+          }
+          const casinoTarget = resolveNearestCasinoPromptOrSeat(playerUnit.x, playerUnit.z);
+          if (casinoTarget.target === 'seat' && casinoTarget.seatSpot) {
+            currentNearestCasinoSeat = casinoTarget.seatSpot;
+            triggerSitOrStandAction();
+            return;
+          }
+          if (casinoTarget.target === 'station' && casinoTarget.stationKind) {
+            triggerCasinoStationAction(casinoTarget.stationKind);
+            return;
+          }
+        }
         if (npcCameraMode === 'house_visit' && playerUnit) {
           const distToExitDoor = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
           if (distToExitDoor <= 1.85) {
@@ -13956,6 +14477,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           return;
         }
 
+        // 0B-2b. Central Plaza Fashion & Apparel Boutique Kiosk A-Frame Sign Trigger
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          getPlanetShortestDistance(
+            actorX,
+            actorZ,
+            FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+            FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+          ) <= FASHION_BOUTIQUE_SHOP_TRIGGER.triggerRadius
+        ) {
+          soundEngine.playUiClick();
+          clearCharacterSelection();
+          window.dispatchEvent(new CustomEvent('open-fashion-boutique-modal'));
+          return;
+        }
+
         // 0B-3. Central Plaza Real Estate & Furniture Showroom A-Frame Sign Catalog Trigger
         if (worldModeRef.current !== 'warzone' && npcCameraMode === 'none') {
           const distRealEstateCatalog = getPlanetShortestDistance(
@@ -14007,6 +14545,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               },
             }),
           );
+          return;
+        }
+
+        // 0B-5. Grand Casino Valet Entrance Triangle ("segitiga interaksi untuk masuk ke bangunan casino")
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          getPlanetShortestDistance(
+            actorX,
+            actorZ,
+            GRAND_CASINO_DOOR_TRIGGER.x,
+            GRAND_CASINO_DOOR_TRIGGER.z,
+          ) <= GRAND_CASINO_DOOR_TRIGGER.triggerRadius
+        ) {
+          soundEngine.playUiClick();
+          clearCharacterSelection();
+          window.dispatchEvent(new CustomEvent('enter-grand-casino-interior'));
           return;
         }
 
@@ -14259,6 +14814,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         return;
       }
 
+      if (npcCameraMode === 'casino_interior') {
+        if (isOrbitingCasinoVisitCamera) {
+          const dx = e.clientX - casinoVisitOrbitDragStart.x;
+          const dy = e.clientY - casinoVisitOrbitDragStart.y;
+          casinoVisitCamYaw = casinoVisitOrbitDragStart.yaw - dx * 0.007;
+          casinoVisitCamPitch = clamp(
+            casinoVisitOrbitDragStart.pitch + dy * 0.0055,
+            INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.minPitch,
+            INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.maxPitch,
+          );
+        }
+        return;
+      }
+
       if (npcCameraMode === 'house_visit') {
         if (isOrbitingHouseVisitCamera) {
           const dx = e.clientX - houseVisitOrbitDragStart.x;
@@ -14374,6 +14943,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           y: e.clientY,
           yaw: cafeVisitCamYaw,
           pitch: cafeVisitCamPitch,
+        };
+        return;
+      }
+
+      if (npcCameraMode === 'casino_interior') {
+        isOrbitingCasinoVisitCamera = true;
+        casinoVisitOrbitDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          yaw: casinoVisitCamYaw,
+          pitch: casinoVisitCamPitch,
         };
         return;
       }
@@ -14590,6 +15170,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
+        // 1B-2. Central Plaza Fashion & Apparel Boutique A-Frame Sign & Low 3D Interaction Triangle Click
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          fashionShopChevron.group.visible
+        ) {
+          fashionShopChevron.group.updateWorldMatrix(true, false);
+          fashionShopChevron.group.getWorldPosition(scratchKioskWorldPos);
+          const fx = scratchKioskWorldPos.x;
+          const fy = scratchKioskWorldPos.y;
+          const fz = scratchKioskWorldPos.z;
+          const fashionHitBox = new THREE.Box3(
+            new THREE.Vector3(fx - 1.35, fy - 0.55, fz - 1.15),
+            new THREE.Vector3(fx + 1.05, fy + 1.45, fz + 1.25),
+          );
+          if (raycaster.ray.intersectsBox(fashionHitBox)) {
+            const actorX = mountedTank ? mountedTank.x : playerUnit.x;
+            const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
+            if (
+              getPlanetShortestDistance(
+                actorX,
+                actorZ,
+                FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+                FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+              ) <= 15.0
+            ) {
+              soundEngine.playUiClick();
+              clearCharacterSelection();
+              window.dispatchEvent(new CustomEvent('open-fashion-boutique-modal'));
+              return;
+            }
+          }
+        }
+
         // 1C. Central Plaza Real Estate & Furniture Showroom A-Frame Sign & Low 3D Interaction Triangle Click
         if (
           worldModeRef.current !== 'warzone' &&
@@ -14662,6 +15276,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   },
                 }),
               );
+              return;
+            }
+          }
+        }
+
+        // 1E. Grand Casino Valet Entrance 3D Triangle Click
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          grandCasinoDoorChevron.group.visible
+        ) {
+          grandCasinoDoorChevron.group.updateWorldMatrix(true, false);
+          grandCasinoDoorChevron.group.getWorldPosition(scratchKioskWorldPos);
+          const gcX = scratchKioskWorldPos.x;
+          const gcY = scratchKioskWorldPos.y;
+          const gcZ = scratchKioskWorldPos.z;
+          const grandCasinoHitBox = new THREE.Box3(
+            new THREE.Vector3(gcX - 1.25, gcY - 0.65, gcZ - 1.25),
+            new THREE.Vector3(gcX + 1.25, gcY + 1.55, gcZ + 1.25),
+          );
+          if (raycaster.ray.intersectsBox(grandCasinoHitBox)) {
+            const actorX = mountedTank ? mountedTank.x : playerUnit.x;
+            const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
+            if (
+              getPlanetShortestDistance(
+                actorX,
+                actorZ,
+                GRAND_CASINO_DOOR_TRIGGER.x,
+                GRAND_CASINO_DOOR_TRIGGER.z,
+              ) <= 15.0
+            ) {
+              soundEngine.playUiClick();
+              clearCharacterSelection();
+              window.dispatchEvent(new CustomEvent('enter-grand-casino-interior'));
               return;
             }
           }
@@ -15030,6 +15678,67 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isPointerDown = false;
         return;
       }
+      if (npcCameraMode === 'casino_interior') {
+        const dragDist = Math.hypot(
+          e.clientX - casinoVisitOrbitDragStart.x,
+          e.clientY - casinoVisitOrbitDragStart.y,
+        );
+        const isCasinoModalOpenDom = Boolean(
+          document.querySelector('[data-grand-casino-modal="true"]'),
+        );
+        if (
+          dragDist < 6 &&
+          !isKioskModalOpenCanvas &&
+          !isCasinoModalOpenDom &&
+          renderer.domElement
+        ) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const projectCasinoMarkerDist = (wx: number, wy: number, wz: number) => {
+            scratchPickupPt.set(wx, wy, wz).project(camera);
+            if (scratchPickupPt.z > 1) return Infinity;
+            const sx = rect.left + (scratchPickupPt.x * 0.5 + 0.5) * rect.width;
+            const sy = rect.top + (-scratchPickupPt.y * 0.5 + 0.5) * rect.height;
+            return Math.hypot(e.clientX - sx, e.clientY - sy);
+          };
+          const casinoClickTargets: Array<{
+            kind: CasinoStationInteractionKind;
+            x: number;
+            markerY: number;
+            z: number;
+          }> = [
+            { kind: 'exit_door', ...CASINO_STATION_TARGETS.exitDoor },
+            { kind: 'cashier_cage', ...CASINO_STATION_TARGETS.cashierCage },
+            { kind: 'luxury_bar', ...CASINO_STATION_TARGETS.luxuryBar },
+            { kind: 'roulette_table', ...CASINO_STATION_TARGETS.rouletteTable },
+            { kind: 'blackjack_table', ...CASINO_STATION_TARGETS.blackjackCenter },
+            { kind: 'blackjack_table', ...CASINO_STATION_TARGETS.blackjackMidRight },
+            { kind: 'blackjack_table', ...CASINO_STATION_TARGETS.blackjackEastSalon },
+            { kind: 'slot_machine', ...CASINO_STATION_TARGETS.slotWestBank },
+            { kind: 'slot_machine', ...CASINO_STATION_TARGETS.slotIslandBank },
+            { kind: 'slot_machine', ...CASINO_STATION_TARGETS.slotNorthBank },
+            { kind: 'slot_machine', ...CASINO_STATION_TARGETS.slotEastBank },
+          ];
+          let bestClickedKind: CasinoStationInteractionKind | null = null;
+          let bestScreenDist = 90;
+          for (const tgt of casinoClickTargets) {
+            const dScreen = projectCasinoMarkerDist(
+              tgt.x,
+              CASINO_ORIGIN_Y + tgt.markerY,
+              tgt.z,
+            );
+            if (dScreen <= bestScreenDist) {
+              bestScreenDist = dScreen;
+              bestClickedKind = tgt.kind;
+            }
+          }
+          if (bestClickedKind) {
+            triggerCasinoStationAction(bestClickedKind);
+          }
+        }
+        isOrbitingCasinoVisitCamera = false;
+        isPointerDown = false;
+        return;
+      }
       if (npcCameraMode === 'house_visit') {
         isOrbitingHouseVisitCamera = false;
         isPointerDown = false;
@@ -15073,6 +15782,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           cafeVisitCamDist + Math.sign(e.deltaY) * 0.3,
           INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.minDist,
           INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.maxDist,
+        );
+        return;
+      }
+      if (npcCameraMode === 'casino_interior') {
+        casinoVisitCamDist = clamp(
+          casinoVisitCamDist + Math.sign(e.deltaY) * 0.3,
+          INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.minDist,
+          INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.maxDist,
         );
         return;
       }
@@ -15184,6 +15901,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       else if (act === 'equipScooter:push_kick_scooter')
         handleEquipScooter('push_kick_scooter');
       else if (act === 'unequipScooter') handleUnequipScooter();
+      else if (act.startsWith('setEquippedTorso:')) {
+        const rawTorsoUrl = act.slice('setEquippedTorso:'.length).trim();
+        const nextTorsoUrl = rawTorsoUrl.length > 0 ? rawTorsoUrl : null;
+        if (playerUnit) {
+          void setBuddyRigEquippedTorsoByUrl(playerUnit.rig, nextTorsoUrl);
+        }
+        if (mountedTank?.riderGroup.userData.riderRig) {
+          void setBuddyRigEquippedTorsoByUrl(
+            mountedTank.riderGroup.userData.riderRig,
+            nextTorsoUrl,
+          );
+        }
+      }
       else if (act === 'qcBoardVehicle:tank') handleQcBoardVehicle('tank');
       else if (act === 'qcBoardVehicle:super_tank') handleQcBoardVehicle('super_tank');
       else if (act === 'qcBoardVehicle:truck') handleQcBoardVehicle('truck');
@@ -15291,10 +16021,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           playerUnit.isDriving = false;
           activeSeatedSpot = null;
           clearCharacterSelection();
-          const activeMountChar =
-            getDefaultCharacterGender() === 'male'
-              ? earlyLoadedManGltf ?? earlyLoadedCharGltf
-              : earlyLoadedCharGltf;
+          const activeMountChar = resolveAvatarGlbForGender(
+            getDefaultCharacterGender(),
+            loadedBlitzAssets,
+            true,
+          );
           if (activeMountChar && newPlane.riderGroup.userData.riderRig) {
             upgradeBuddyRigWithCharBuddiesGlb(
               newPlane.riderGroup.userData.riderRig,
@@ -15909,6 +16640,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         soundEngine.playUiClick();
         clearCharacterSelection();
         window.dispatchEvent(new CustomEvent('open-scooter-showroom-modal'));
+      } else if (act === 'openFashionBoutique') {
+        soundEngine.playUiClick();
+        clearCharacterSelection();
+        window.dispatchEvent(new CustomEvent('open-fashion-boutique-modal'));
       } else if (act === 'openRealEstateCatalog') {
         soundEngine.playUiClick();
         clearCharacterSelection();
@@ -15926,6 +16661,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             },
           }),
         );
+      } else if (act === 'enterGrandCasino') {
+        soundEngine.playUiClick();
+        clearCharacterSelection();
+        window.dispatchEvent(new CustomEvent('enter-grand-casino-interior'));
+      } else if (act === 'exitGrandCasino') {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('exit-grand-casino-interior'));
+      } else if (act === 'casinoStationInteract' && playerUnit) {
+        if (playerUnit.isSitting && activeCasinoSeatedSpot) {
+          triggerCasinoStationAction(getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind));
+        } else {
+          const st = resolveNearestCasinoPromptOrSeat(playerUnit.x, playerUnit.z);
+          if (st.target === 'station' && st.stationKind) {
+            triggerCasinoStationAction(st.stationKind);
+          }
+        }
       } else if (act === 'exitGlasshouseCafe') {
         soundEngine.playUiClick();
         window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
@@ -17691,6 +18442,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         cafeExteriorDoorPad.group.visible = false;
         houseExteriorDoorPad.group.visible = false;
         scooterShopChevron.group.visible = false;
+        fashionShopChevron.group.visible = false;
+        realEstateCatalogChevron.group.visible = false;
+        modelHouseDoorChevron.group.visible = false;
+        grandCasinoDoorChevron.group.visible = false;
         shorelineFishing3DGroup.visible = false;
         for (let i = 0; i < trees.length; i++) {
           trees[i].mesh.visible = false;
@@ -17886,7 +18641,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isFlatIndoorRoomTick =
         npcCameraMode === 'house_visit' ||
         npcCameraMode === 'house_interior' ||
-        npcCameraMode === 'cafe_interior';
+        npcCameraMode === 'cafe_interior' ||
+        npcCameraMode === 'casino_interior';
       if (!isFlatIndoorRoomTick) {
         blitzGrassSystem.update(
           npcCameraMode === 'landing_tour' || activeFlyPose
@@ -18095,19 +18851,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           joyMag > 0.06 &&
           npcCameraMode !== 'house_visit' &&
           npcCameraMode !== 'house_interior' &&
-          npcCameraMode !== 'cafe_interior'
+          npcCameraMode !== 'cafe_interior' &&
+          npcCameraMode !== 'casino_interior'
         ) {
           const mirrorSign =
             !isEditorOrPeacefulCamera && (playerUnit?.team ?? 'blue') === 'red' ? -1 : 1;
           moveX = mobileJoyRight * mirrorSign;
           moveZ = -mobileJoyForward * mirrorSign;
         }
-        if (npcCameraMode === 'house_visit' || npcCameraMode === 'cafe_interior') {
+        if (
+          npcCameraMode === 'house_visit' ||
+          npcCameraMode === 'cafe_interior' ||
+          npcCameraMode === 'casino_interior'
+        ) {
           if (isTextInputFocused) {
             moveX = 0;
             moveZ = 0;
           } else {
-            const activeYaw = npcCameraMode === 'cafe_interior' ? cafeVisitCamYaw : houseVisitCamYaw;
+            const activeYaw =
+              npcCameraMode === 'cafe_interior'
+                ? cafeVisitCamYaw
+                : npcCameraMode === 'casino_interior'
+                  ? casinoVisitCamYaw
+                  : houseVisitCamYaw;
             const inFwd =
               joyMag > 0.06
                 ? mobileJoyForward
@@ -19494,7 +20260,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const spec = BUDDY_CLASSES[playerUnit.classId];
             const playerRoadBoost = evaluateRoadSurfaceSpeedBoost(playerUnit.x, playerUnit.z);
             const moveSpeed =
-              npcCameraMode === 'house_visit' || npcCameraMode === 'cafe_interior'
+              npcCameraMode === 'house_visit' ||
+              npcCameraMode === 'cafe_interior' ||
+              npcCameraMode === 'casino_interior'
                 ? isBoosting
                   ? 4.4
                   : 3.0
@@ -19624,6 +20392,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 activeCafeSeatedSpot = null;
                 playerUnit.isSitting = false;
               }
+              if (activeCasinoSeatedSpot) {
+                const standPos = computeCasinoSeatStandUpPosition(
+                  activeCasinoSeatedSpot,
+                  moveX / inputLen,
+                  moveZ / inputLen,
+                );
+                playerUnit.x = standPos.x;
+                playerUnit.z = standPos.z;
+                activeCasinoSeatedSpot = null;
+                playerUnit.isSitting = false;
+              }
               if (playerUnit.isSleeping && activeSleepSpot) {
                 playerUnit.x = activeSleepSpot.wakeX;
                 playerUnit.z = activeSleepSpot.wakeZ;
@@ -19650,6 +20429,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 playerUnit.z = activeCafeSeatedSpot.z;
                 playerUnit.yaw = activeCafeSeatedSpot.yaw;
               }
+              if (playerUnit.isSitting && activeCasinoSeatedSpot) {
+                playerUnit.x = activeCasinoSeatedSpot.x;
+                playerUnit.z = activeCasinoSeatedSpot.z;
+                playerUnit.yaw = activeCasinoSeatedSpot.yaw;
+              }
               if (playerUnit.isSitting && activeSeatedSpot) {
                 // Pin to the seated ANCHOR (same computation as sitOnLobbySeat) — pinning
                 // to the raw spot coords previously stomped the seated placement every
@@ -19666,8 +20450,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               }
             }
 
-            // Resolve character collision against solid buildings/pipes/trees and pushable props/crates (skip when seated on a bench or inside elevated private house / glasshouse cafe)
-            if (npcCameraMode === 'cafe_interior') {
+            // Resolve character collision against solid buildings/pipes/trees and pushable props/crates (skip when seated on a bench or inside elevated private house / glasshouse cafe / grand casino)
+            if (npcCameraMode === 'casino_interior') {
+              const clampedPos = clampCasinoInteriorPosition(playerUnit.x, playerUnit.z);
+              playerUnit.x = clampedPos.x;
+              playerUnit.z = clampedPos.z;
+              if (!playerUnit.isSitting) {
+                for (const c of CASINO_INTERIOR_COLLIDERS) {
+                  pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
+                }
+              }
+            } else if (npcCameraMode === 'cafe_interior') {
               const clampedPos = clampCafeInteriorPosition(playerUnit.x, playerUnit.z);
               playerUnit.x = clampedPos.x;
               playerUnit.z = clampedPos.z;
@@ -19792,7 +20585,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             } else if (
               npcCameraMode === 'house_visit' ||
               npcCameraMode === 'house_interior' ||
-              npcCameraMode === 'cafe_interior'
+              npcCameraMode === 'cafe_interior' ||
+              npcCameraMode === 'casino_interior'
             ) {
               if (inputLen > 0.01) {
                 playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
@@ -22751,7 +23545,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isFlatIndoorRoomMode =
         npcCameraMode === 'house_visit' ||
         npcCameraMode === 'house_interior' ||
-        npcCameraMode === 'cafe_interior';
+        npcCameraMode === 'cafe_interior' ||
+        npcCameraMode === 'casino_interior';
       const planetPivotX =
         isFlatIndoorRoomMode ||
         isFullMapOverview ||
@@ -23295,6 +24090,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.lookAt(cafePose.lookX, cafePose.lookY, cafePose.lookZ);
           camera.updateMatrixWorld();
         }
+      } else if (npcCameraMode === 'casino_interior') {
+        if (casinoInterior) casinoInterior.root.visible = true;
+        const activeCasinoStationForVisuals =
+          playerUnit?.isSitting && activeCasinoSeatedSpot
+            ? getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind)
+            : playerUnit
+              ? resolveNearestCasinoPromptOrSeat(playerUnit.x, playerUnit.z).stationKind
+              : null;
+        casinoInterior?.updateVisuals(
+          timeSec,
+          activeCasinoStationForVisuals,
+          playerUnit?.x,
+          playerUnit?.z,
+        );
+        syncCasinoStaffNpcsFrame(false);
+        if (playerUnit) {
+          playerUnit.root.visible = true;
+          const casinoPose = computeIndoorRoomOrbitCameraPose({
+            roomKind: 'casino_interior',
+            originY: CASINO_ORIGIN_Y,
+            anchorX: playerUnit.x,
+            anchorZ: playerUnit.z,
+            yaw: casinoVisitCamYaw,
+            pitch: casinoVisitCamPitch,
+            dist: casinoVisitCamDist,
+          });
+          if (camera.fov !== casinoPose.fovDeg) {
+            camera.fov = casinoPose.fovDeg;
+            camera.updateProjectionMatrix();
+          }
+          camera.up.set(0, 1, 0);
+          camera.position.set(casinoPose.camX, casinoPose.camY, casinoPose.camZ);
+          camera.lookAt(casinoPose.lookX, casinoPose.lookY, casinoPose.lookZ);
+          camera.updateMatrixWorld();
+        }
       } else {
         if (playerUnit && playerUnit.alive && !mountedTank) {
           playerUnit.root.visible = true;
@@ -23786,8 +24616,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
 
         // Step & interpolate up to 24 active remote players in the current zone
-        const charGltfForPeers = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
-        const manGltfForPeers = loadedBlitzAssets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
+        const charGltfForPeers =
+          loadedBlitzAssets?.playerFemaleGlb ??
+          earlyLoadedPlayerFemaleGltf ??
+          loadedBlitzAssets?.charBuddiesGltf ??
+          earlyLoadedCharGltf;
+        const manGltfForPeers =
+          loadedBlitzAssets?.playerMaleGlb ??
+          earlyLoadedPlayerMaleGltf ??
+          loadedBlitzAssets?.manCharacterBuddiesGltf ??
+          earlyLoadedManGltf;
         const localActorX = mountedTank ? mountedTank.x : (playerUnit?.x ?? 0);
         const localActorZ = mountedTank ? mountedTank.z : (playerUnit?.z ?? 0);
 
@@ -24942,6 +25780,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.root.scale.setScalar(0.55);
           continue;
         }
+        if (b.isPlayer && npcCameraMode === 'casino_interior') {
+          const seatLiftCasino =
+            b.isSitting && activeCasinoSeatedSpot ? activeCasinoSeatedSpot.seatLiftY : 0;
+          b.bodyGroup.position.y =
+            (floatY + b.jumpOffset + bHitPose.hopY) * 0.55 + seatLiftCasino;
+          b.root.position.set(b.x, CASINO_ORIGIN_Y, b.z);
+          b.root.rotation.set(0, 0, 0);
+          b.root.scale.setScalar(0.55);
+          continue;
+        }
         if (b.isPlayer && (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')) {
           const sleepLiftY =
             b.isSleeping && activeSleepSpot ? activeSleepSpot.sleepLiftY : 0;
@@ -24968,13 +25816,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
       }
 
-      // Align Real-Time Online Remote Player Avatars onto Curved Planet Surface (or House/Cafe Floor)
+      // Align Real-Time Online Remote Player Avatars onto Curved Planet Surface (or House/Cafe/Casino Floor)
       const isLocalInHouseAlign =
         npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
       const isLocalInCafeAlign = npcCameraMode === 'cafe_interior';
+      const isLocalInCasinoAlign = npcCameraMode === 'casino_interior';
       for (const av of remotePlayerAvatars.values()) {
         if (!av.root.visible) continue;
-        if (isLocalInCafeAlign) {
+        if (isLocalInCasinoAlign) {
+          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
+          av.root.position.set(av.renderX, CASINO_ORIGIN_Y, av.renderZ);
+          av.root.rotation.set(0, 0, 0);
+          av.root.scale.setScalar(0.55);
+        } else if (isLocalInCafeAlign) {
           av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
           av.root.position.set(av.renderX, CAFE_ORIGIN_Y, av.renderZ);
           av.root.rotation.set(0, 0, 0);
@@ -25032,6 +25886,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         worldModeRef.current !== 'warzone' &&
         cityArenaMode !== 'warzone' &&
         npcCameraMode !== 'cafe_interior' &&
+        npcCameraMode !== 'casino_interior' &&
         npcCameraMode !== 'house_interior' &&
         npcCameraMode !== 'house_visit';
       updateCityAmbientNpcsFrame(
@@ -25056,7 +25911,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isPlayerInHouseVisual =
         npcCameraMode === 'house_visit' ||
         npcCameraMode === 'house_interior' ||
-        npcCameraMode === 'cafe_interior';
+        npcCameraMode === 'cafe_interior' ||
+        npcCameraMode === 'casino_interior';
       const playerRodGrp = playerUnit?.rig.fishingRodGroup;
       const playerRodTipAnchor = playerRodGrp?.userData.rodTipAnchor as THREE.Object3D | undefined;
       const landingElapsedMs = performance.now() - shorelineFishingSync.landingStartWallMs;
@@ -26608,9 +27464,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         exitHouseRoomPromptBtn.style.display = 'none';
         enterCafePromptBtn.style.display = 'none';
         scooterShopPromptBtn.style.display = 'none';
+        fashionBoutiquePromptBtn.style.display = 'none';
         realEstateCatalogPromptBtn.style.display = 'none';
         enterModelHousePromptBtn.style.display = 'none';
+        enterGrandCasinoPromptBtn.style.display = 'none';
         cafeStationPromptBtn.style.display = 'none';
+        casinoStationPromptBtn.style.display = 'none';
         socialSpeechBubbleEl.style.display = 'none';
         bottomSitActionBtn.style.display = 'none';
         bottomSleepActionBtn.style.display = 'none';
@@ -26656,6 +27515,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         | 'nearby_entity' = 'none';
       let desiredNearbyDockEntity: UnifiedDockProximityCandidate | null = null;
       let cafeSeatMinDist: number | null = null;
+      let casinoSeatMinDist: number | null = null;
       const claimBottomDock = (btn: HTMLButtonElement): boolean => {
         if (bottomDockOccupied) {
           btn.style.display = 'none';
@@ -26791,6 +27651,51 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         scooterShopChevron.chevronArrow.rotation.y = scooterPulseNow * 1.65;
       }
 
+      // Animate Central Plaza Fashion & Apparel Boutique A-Frame low 3D interaction triangle
+      const isFashionBoutiqueModalOpenDom = Boolean(
+        document.querySelector('[data-fashion-boutique-modal="true"]'),
+      );
+      const distToFashionBoutique = getPlanetShortestDistance(
+        actorX,
+        actorZ,
+        FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+        FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+      );
+      const showFashionShopChevron =
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        distToFashionBoutique <= 46;
+      const isNearFashionBoutique =
+        showFashionShopChevron &&
+        !isKioskModalOpenCanvas &&
+        !isFashionBoutiqueModalOpenDom &&
+        distToFashionBoutique <= FASHION_BOUTIQUE_SHOP_TRIGGER.triggerRadius;
+      fashionShopChevron.group.visible = showFashionShopChevron;
+      if (showFashionShopChevron) {
+        const fashionTerrainY = getTerrainElevation(
+          FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+          FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+        );
+        applyPlanetCurvatureToObject(
+          fashionShopChevron.group,
+          FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+          fashionTerrainY + FASHION_BOUTIQUE_SHOP_TRIGGER.markerOffsetY,
+          FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+          camFollowPos.x,
+          camFollowPos.z,
+          0,
+          PLANET_CURVATURE_STRENGTH,
+        );
+        const fashionPulseNow = performance.now() * 0.001;
+        fashionShopChevron.chevronMat.color.copy(
+          isNearFashionBoutique ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+        );
+        fashionShopChevron.chevronArrow.scale.setScalar(isNearFashionBoutique ? 1.16 : 1.0);
+        fashionShopChevron.chevronArrow.position.y =
+          Math.sin(fashionPulseNow * 3.6 + 0.8) * 0.065;
+        fashionShopChevron.chevronArrow.rotation.y = fashionPulseNow * 1.65 + 0.5;
+      }
+
       // Animate Central Plaza Real Estate & Furniture Showroom A-Frame low 3D interaction triangle
       const isRealEstateCatalogModalOpenDom = Boolean(
         document.querySelector('[data-realestate-catalog-modal="true"]'),
@@ -26877,6 +27782,55 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         modelHouseDoorChevron.chevronArrow.scale.setScalar(isNearModelHouseDoor ? 1.16 : 1.0);
         modelHouseDoorChevron.chevronArrow.position.y = Math.sin(mhPulseNow * 3.6 + 1.1) * 0.065;
         modelHouseDoorChevron.chevronArrow.rotation.y = mhPulseNow * 1.65 + 0.8;
+      }
+
+      // Animate Grand Casino Entrance 3D Triangle ("segitiga interaksi untuk masuk ke bangunan casino")
+      const isGrandCasinoModalOpenDom = Boolean(
+        document.querySelector('[data-grand-casino-modal="true"]'),
+      );
+      const distToGrandCasinoDoor = getPlanetShortestDistance(
+        actorX,
+        actorZ,
+        GRAND_CASINO_DOOR_TRIGGER.x,
+        GRAND_CASINO_DOOR_TRIGGER.z,
+      );
+      const showGrandCasinoDoorChevron =
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        distToGrandCasinoDoor <= 48;
+      const isNearGrandCasinoDoor =
+        showGrandCasinoDoorChevron &&
+        !isKioskModalOpenCanvas &&
+        !isGrandCasinoModalOpenDom &&
+        distToGrandCasinoDoor <= GRAND_CASINO_DOOR_TRIGGER.triggerRadius;
+      grandCasinoDoorChevron.group.visible = showGrandCasinoDoorChevron;
+      if (showGrandCasinoDoorChevron) {
+        const casinoDoorTerrainY = getTerrainElevation(
+          GRAND_CASINO_DOOR_TRIGGER.x,
+          GRAND_CASINO_DOOR_TRIGGER.z,
+        );
+        applyPlanetCurvatureToObject(
+          grandCasinoDoorChevron.group,
+          GRAND_CASINO_DOOR_TRIGGER.x,
+          casinoDoorTerrainY +
+            GRAND_CASINO_DOOR_TRIGGER.deckY +
+            GRAND_CASINO_DOOR_TRIGGER.markerOffsetY,
+          GRAND_CASINO_DOOR_TRIGGER.z,
+          camFollowPos.x,
+          camFollowPos.z,
+          0,
+          PLANET_CURVATURE_STRENGTH,
+        );
+        const gcPulseNow = performance.now() * 0.001;
+        grandCasinoDoorChevron.chevronMat.color.copy(
+          isNearGrandCasinoDoor ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+        );
+        grandCasinoDoorChevron.chevronArrow.scale.setScalar(
+          isNearGrandCasinoDoor ? 1.16 : 1.0,
+        );
+        grandCasinoDoorChevron.chevronArrow.position.y =
+          Math.sin(gcPulseNow * 3.6 + 1.5) * 0.065;
+        grandCasinoDoorChevron.chevronArrow.rotation.y = gcPulseNow * 1.65 + 1.1;
       }
 
       // Animate compact ring-less 3D triangles above Outdoor Base Plot Kiosks & City Transit Kiosks
@@ -26971,7 +27925,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           | undefined;
         if (!tChev) {
           tChev = buildCompactInteractiveChevronMarker(0.13, 0.25, '#38bdf8');
-          tChev.group.position.set(0, 2.38, 0.04);
+          tChev.group.position.set(0, 3.04, 0.04);
           tMesh.add(tChev.group);
           tMesh.userData.interactiveChevron = tChev;
         }
@@ -27085,6 +28039,78 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       } else {
         cafeStationPromptBtn.style.display = 'none';
+      }
+
+      // Contextual Grand Casino Station & Seat Unified Arbiter inside Luxury Single-Story Casino Hall ('casino_interior')
+      if (npcCameraMode === 'casino_interior' && !isKioskModalOpenCanvas && !isGrandCasinoModalOpenDom) {
+        if (playerUnit.isSitting && activeCasinoSeatedSpot) {
+          currentNearestCasinoSeat = null;
+          const seatedGameKind = getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind);
+          const seatedSlotMeta =
+            CASINO_SLOT_VARIANT_META[getCasinoSlotGameVariantForSeatId(activeCasinoSeatedSpot.id)];
+          let label = seatedSlotMeta.promptLabel;
+          let accentHex = seatedSlotMeta.accentHex;
+          let iconSvg = DOCK_ICON_SLOT_SVG;
+          if (seatedGameKind === 'roulette_table') {
+            label = 'SPIN ROULETTE';
+            accentHex = '#facc15';
+            iconSvg = DOCK_ICON_SLOT_SVG;
+          } else if (seatedGameKind === 'blackjack_table') {
+            label = 'PLAY BLACKJACK';
+            accentHex = '#38bdf8';
+            iconSvg = DOCK_ICON_ROSTER_SVG;
+          }
+          casinoStationPromptBtn.innerHTML = getCafeStationBtnHtml(
+            label,
+            accentHex,
+            iconSvg,
+            '#0b0d13',
+          );
+          claimBottomDock(casinoStationPromptBtn);
+        } else {
+          const casinoWinner = resolveNearestCasinoPromptOrSeat(playerUnit.x, playerUnit.z);
+          currentNearestCasinoSeat = casinoWinner.target === 'seat' ? casinoWinner.seatSpot : null;
+          if (casinoWinner.target === 'station' && casinoWinner.stationKind) {
+            let label = 'EXIT CASINO';
+            let accentHex = '#ef4444';
+            let iconSvg = DOCK_ICON_EXIT_SVG;
+            let badgeTextHex = '#ffffff';
+            if (casinoWinner.stationKind === 'cashier_cage') {
+              label = 'CASHIER CAGE';
+              accentHex = '#f59e0b';
+              iconSvg = DOCK_ICON_ATM_SVG;
+              badgeTextHex = '#0b0d13';
+            } else if (casinoWinner.stationKind === 'luxury_bar') {
+              label = 'LOUNGE BAR';
+              accentHex = '#b8ff3c';
+              iconSvg = DOCK_ICON_CAFE_CUP_SVG;
+              badgeTextHex = '#0b0d13';
+            }
+            casinoStationPromptBtn.innerHTML = getCafeStationBtnHtml(
+              label,
+              accentHex,
+              iconSvg,
+              badgeTextHex,
+            );
+            claimBottomDock(casinoStationPromptBtn);
+          } else if (casinoWinner.target === 'seat') {
+            casinoStationPromptBtn.style.display = 'none';
+            if (!bottomDockOccupied) {
+              bottomDockOccupied = true;
+              desiredUnifiedDockAction = 'sit';
+              casinoSeatMinDist = casinoWinner.seatSpot
+                ? Math.hypot(
+                    playerUnit.x - casinoWinner.seatSpot.x,
+                    playerUnit.z - casinoWinner.seatSpot.z,
+                  )
+                : null;
+            }
+          } else {
+            casinoStationPromptBtn.style.display = 'none';
+          }
+        }
+      } else {
+        casinoStationPromptBtn.style.display = 'none';
       }
 
       // House Interior Exit Door Ring+Triangle & Bed Sleep Action Bar ('house_visit' / 'house_interior')
@@ -27388,6 +28414,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         scooterShopPromptBtn.style.display = 'none';
       }
 
+      if (!isAlreadySeatedOutdoors && isNearFashionBoutique) {
+        claimBottomDock(fashionBoutiquePromptBtn);
+      } else {
+        fashionBoutiquePromptBtn.style.display = 'none';
+      }
+
       if (!isAlreadySeatedOutdoors && isNearRealEstateCatalog) {
         claimBottomDock(realEstateCatalogPromptBtn);
       } else {
@@ -27398,6 +28430,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         claimBottomDock(enterModelHousePromptBtn);
       } else {
         enterModelHousePromptBtn.style.display = 'none';
+      }
+
+      if (!isAlreadySeatedOutdoors && isNearGrandCasinoDoor) {
+        claimBottomDock(enterGrandCasinoPromptBtn);
+      } else {
+        enterGrandCasinoPromptBtn.style.display = 'none';
       }
 
       if (!isAlreadySeatedOutdoors && nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
@@ -27544,8 +28582,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             ind.blueCoin.visible = !isWinningSeat;
           }
         }
+      } else if (npcCameraMode === 'casino_interior' && !isKioskModalOpenCanvas) {
+        currentNearestCafeSeat = null;
+        for (let si = 0; si < seatIndicatorBtns.length; si++) {
+          seatIndicatorBtns[si].btn.style.display = 'none';
+          if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
+        }
+        bottomSitActionBtn.style.display = 'none';
+        for (let ci = 0; ci < CASINO_INTERIOR_SEAT_SPOTS.length; ci++) {
+          const sp = CASINO_INTERIOR_SEAT_SPOTS[ci];
+          const ind = casinoInterior?.floorSpotIndicators[ci];
+          if (ind) {
+            const isActiveHere = Boolean(
+              playerUnit.isSitting && activeCasinoSeatedSpot?.id === sp.id,
+            );
+            const isWinningSeat = Boolean(
+              !playerUnit.isSitting &&
+                desiredUnifiedDockAction === 'sit' &&
+                currentNearestCasinoSeat?.id === sp.id,
+            );
+            ind.coinRoot.visible = !isActiveHere;
+            ind.greenCoin.visible = isWinningSeat;
+            ind.blueCoin.visible = !isWinningSeat;
+          }
+        }
       } else {
         currentNearestCafeSeat = null;
+        currentNearestCasinoSeat = null;
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
           seatIndicatorBtns[si].btn.style.display = 'none';
@@ -27590,6 +28653,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const nearbyCandidates: UnifiedDockProximityCandidate[] = [];
           const isIndoorFlat =
             npcCameraMode === 'cafe_interior' ||
+            npcCameraMode === 'casino_interior' ||
             npcCameraMode === 'house_visit' ||
             npcCameraMode === 'house_interior';
 
@@ -27691,9 +28755,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             desiredUnifiedDockAction === 'sit'
               ? npcCameraMode === 'cafe_interior'
                 ? cafeSeatMinDist
-                : currentNearestLobbySeat
-                  ? bestLobbySeatDist
-                  : null
+                : npcCameraMode === 'casino_interior'
+                  ? casinoSeatMinDist
+                  : currentNearestLobbySeat
+                    ? bestLobbySeatDist
+                    : null
               : null;
 
           const dockResolution = resolveUnifiedBottomDockProximity({
@@ -27743,19 +28809,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const bx = playerUnit.x;
         const bz = playerUnit.z;
         const proj =
-          npcCameraMode === 'cafe_interior'
+          npcCameraMode === 'casino_interior'
             ? projectFlatRoomToScreenPixels(
                 bx,
-                CAFE_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
+                CASINO_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
                 bz,
               )
-            : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
-              ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
-              : projectWorldToScreenPixels(
+            : npcCameraMode === 'cafe_interior'
+              ? projectFlatRoomToScreenPixels(
                   bx,
-                  getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95),
+                  CAFE_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
                   bz,
-                );
+                )
+              : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
+                ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
+                : projectWorldToScreenPixels(
+                    bx,
+                    getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95),
+                    bz,
+                  );
         const sx = proj.visible ? proj.x : Math.round(w * 0.5);
         const sy = proj.visible ? proj.y : Math.round(h * 0.38);
         socialSpeechBubbleEl.style.display = 'block';
@@ -28396,6 +29468,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const prevPlayerVis = playerUnit ? playerUnit.root.visible : false;
       const prevSelRingVis = characterSelectionRing.visible;
       const prevCafeVis = cafeInterior?.root.visible ?? false;
+      const prevCasinoVis = casinoInterior?.root.visible ?? false;
       const prevCafeCustVis = cafeCustomerNpcRoot?.visible ?? false;
       const prevCafeBubbleVis = cafeInterior?.customerBubbleGroup.visible ?? false;
       const prevHouseVis = houseInteriorRoomGrp.visible;
@@ -28404,8 +29477,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const prevCafeExtPadVis = cafeExteriorDoorPad.group.visible;
       const prevHouseExtPadVis = houseExteriorDoorPad.group.visible;
       const prevScooterChevVis = scooterShopChevron.group.visible;
+      const prevFashionChevVis = fashionShopChevron.group.visible;
       const prevRealEstateCatalogChevVis = realEstateCatalogChevron.group.visible;
       const prevModelHouseDoorChevVis = modelHouseDoorChevron.group.visible;
+      const prevGrandCasinoDoorChevVis = grandCasinoDoorChevron.group.visible;
       const prevHouseExitPadVis = houseInteriorExitDoorPad.group.visible;
       const prevHanaGrpVis = Boolean(lobbyCafeNpc?.npcGrp?.visible);
       const prevHanaExclVis = Boolean(lobbyCafeNpc?.exclamationGroup?.visible);
@@ -28483,8 +29558,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       cafeExteriorDoorPad.group.visible = false;
       houseExteriorDoorPad.group.visible = false;
       scooterShopChevron.group.visible = false;
+      fashionShopChevron.group.visible = false;
       realEstateCatalogChevron.group.visible = false;
       modelHouseDoorChevron.group.visible = false;
+      grandCasinoDoorChevron.group.visible = false;
       houseInteriorExitDoorPad.group.visible = false;
       lobbySeatCoinMeshes.forEach((m) => {
         m.coinRoot.visible = false;
@@ -28582,6 +29659,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         fov = 46,
       ): string => {
         if (cafeInterior) cafeInterior.root.visible = false;
+        if (casinoInterior) casinoInterior.root.visible = false;
         houseInteriorRoomGrp.visible = false;
         hideAllMarkersAndSprites();
         alignOutdoorWorldFlat(lookAt[0], lookAt[2]);
@@ -28683,6 +29761,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         syncHousePlacedFurnitureMeshes();
         const prevSampleZonesVis = sampleHouseZonesGrp ? sampleHouseZonesGrp.visible : false;
         if (cafeInterior) cafeInterior.root.visible = false;
+        if (casinoInterior) casinoInterior.root.visible = false;
         houseInteriorRoomGrp.visible = true;
         houseVisitWallGrp.visible = true;
         if (sampleHouseZonesGrp) sampleHouseZonesGrp.visible = true;
@@ -28697,6 +29776,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         // 9. jobs_cafe & cafe_glasshouse: Clean Glasshouse Cafe view (reuse interior when loaded,
         // otherwise capture exterior Glasshouse Cafe landmark so startup stays lazy)
         houseInteriorRoomGrp.visible = false;
+        if (casinoInterior) casinoInterior.root.visible = false;
         let cafeSnapUrl: string;
         if (cafeInterior) {
           cafeInterior.root.visible = true;
@@ -28772,6 +29852,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           cafeInterior.root.visible = prevCafeVis;
           cafeInterior.customerBubbleGroup.visible = prevCafeBubbleVis;
         }
+        if (casinoInterior) {
+          casinoInterior.root.visible = prevCasinoVis;
+        }
         if (cafeCustomerNpcRoot) {
           cafeCustomerNpcRoot.visible = prevCafeCustVis;
         }
@@ -28781,8 +29864,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         cafeExteriorDoorPad.group.visible = prevCafeExtPadVis;
         houseExteriorDoorPad.group.visible = prevHouseExtPadVis;
         scooterShopChevron.group.visible = prevScooterChevVis;
+        fashionShopChevron.group.visible = prevFashionChevVis;
         realEstateCatalogChevron.group.visible = prevRealEstateCatalogChevVis;
         modelHouseDoorChevron.group.visible = prevModelHouseDoorChevVis;
+        grandCasinoDoorChevron.group.visible = prevGrandCasinoDoorChevVis;
         houseInteriorExitDoorPad.group.visible = prevHouseExitPadVis;
         if (lobbyCafeNpc?.npcGrp) {
           lobbyCafeNpc.npcGrp.visible = prevHanaGrpVis;
@@ -28935,6 +30020,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       animeSparkleMat.dispose();
       curvedPlanetEnv.dispose();
       cafeInterior?.dispose();
+      casinoInterior?.dispose();
       cityTram.dispose();
       blitzGrassSystem.dispose();
       blitzExplosionSystem.dispose();

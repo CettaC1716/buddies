@@ -240,10 +240,6 @@ export function sanitizeDailyMissionsState(
   return next;
 }
 
-export function getDailyMissionDefinition(id: DailyMissionId): DailyMissionDefinition {
-  return MISSION_MAP[id];
-}
-
 export interface RecordMissionProgressResult {
   nextState: DailyMissionsState;
   changed: boolean;

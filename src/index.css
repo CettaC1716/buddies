@@ -100,3 +100,1098 @@ body {
   transform-origin: 50% 12%;
   animation: bb-bell-ring 1.1s ease-in-out infinite;
 }
+
+/* ============================================================================
+   GRAND ROYALE 3D CASINO SLOT CABINET & TACTILE CONSOLE DECK
+   ============================================================================ */
+@layer components {
+  .font-cinzel {
+    font-family: 'Cinzel', serif;
+  }
+
+  .font-playfair {
+    font-family: 'Playfair Display', serif;
+  }
+
+  .slot-perspective-stage {
+    color-scheme: dark;
+    perspective: 1150px;
+    perspective-origin: 50% 44%;
+    --slot-accent-primary: #d946ef;
+    --slot-accent-secondary: #06b6d4;
+    --slot-accent-bright: #00f0ff;
+    --slot-marquee-top: #2c1445;
+    --slot-marquee-mid: #190b2a;
+    --slot-marquee-bot: #0e0619;
+    --slot-drum-mid: #1d243b;
+    --slot-drum-glow: rgba(168, 85, 247, 0.22);
+  }
+
+  .slot-perspective-stage[data-slot-bank="classic_reels"] {
+    --slot-accent-primary: #f43f5e;
+    --slot-accent-secondary: #06b6d4;
+    --slot-accent-bright: #38bdf8;
+    --slot-marquee-top: #3a1229;
+    --slot-marquee-mid: #210a19;
+    --slot-marquee-bot: #11050d;
+    --slot-drum-mid: #261a32;
+    --slot-drum-glow: rgba(244, 63, 94, 0.22);
+  }
+
+  .slot-perspective-stage[data-slot-bank="fortune_wheel"] {
+    --slot-accent-primary: #a855f7;
+    --slot-accent-secondary: #10b981;
+    --slot-accent-bright: #34d399;
+    --slot-marquee-top: #182e2a;
+    --slot-marquee-mid: #101f21;
+    --slot-marquee-bot: #081014;
+    --slot-drum-mid: #162930;
+    --slot-drum-glow: rgba(16, 185, 129, 0.22);
+  }
+
+  /* Physical 3D Brushed Gunmetal & Titanium Outer Bezel Chassis */
+  .slot-cabinet-outer-3d {
+    transform: perspective(1250px) rotateX(3.6deg);
+    transform-origin: bottom center;
+    border-radius: 32px;
+    padding: 10px;
+    background-color: #1e2536;
+    background-image: linear-gradient(
+      180deg,
+      #475569 0%,
+      #273043 14%,
+      #161b28 55%,
+      #0c0f18 100%
+    );
+    border-top: 3px solid #94a3b8;
+    border-left: 3px solid #475569;
+    border-right: 3px solid #475569;
+    border-bottom: 5px solid #06080e;
+    box-shadow:
+      0 26px 55px rgba(0, 0, 0, 0.82),
+      0 0 36px rgba(168, 85, 247, 0.38),
+      0 0 26px rgba(6, 182, 212, 0.28),
+      inset 0 2px 3px rgba(255, 255, 255, 0.35),
+      inset 0 -4px 8px rgba(0, 0, 0, 0.85);
+    position: relative;
+  }
+
+  /* Inner Recessed Neon Rim & Dark Curved Glass Screen */
+  .slot-cabinet-screen {
+    border-radius: 23px;
+    background-color: #131724;
+    background-image: linear-gradient(
+      180deg,
+      #1d2334 0%,
+      #141826 48%,
+      #0c0f19 100%
+    );
+    border: 2.5px solid #38bdf8;
+    box-shadow:
+      0 0 0 2px var(--slot-accent-primary),
+      0 0 22px rgba(56, 189, 248, 0.35),
+      inset 0 8px 24px rgba(0, 0, 0, 0.85),
+      inset 0 -8px 22px rgba(0, 0, 0, 0.85);
+    position: relative;
+  }
+
+  /* Realistic Curved Arcade Glass Diagonal Glare */
+  .slot-cabinet-screen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 21px;
+    background-image: linear-gradient(
+      132deg,
+      rgba(255, 255, 255, 0.13) 0%,
+      rgba(125, 211, 252, 0.05) 18%,
+      transparent 40%
+    );
+    pointer-events: none;
+    z-index: 35;
+  }
+
+  .slot-gilded-frame {
+    background-color: #121622;
+    background-image: linear-gradient(180deg, #1b2233 0%, #111622 55%, #0b0e17 100%);
+    border: 2px solid rgba(56, 189, 248, 0.65);
+    box-shadow:
+      0 8px 18px rgba(0, 0, 0, 0.78),
+      0 0 14px rgba(6, 182, 212, 0.2),
+      inset 0 2px 2px rgba(255, 255, 255, 0.16),
+      inset 0 -4px 10px rgba(0, 0, 0, 0.75);
+  }
+
+  .slot-marquee-frame {
+    background-color: #180b28;
+    background-image: linear-gradient(
+      180deg,
+      var(--slot-marquee-top) 0%,
+      var(--slot-marquee-mid) 55%,
+      var(--slot-marquee-bot) 100%
+    );
+    border: 2.5px solid #e879f9;
+    box-shadow:
+      0 8px 20px rgba(0, 0, 0, 0.8),
+      0 0 28px rgba(217, 70, 239, 0.45),
+      inset 0 2px 4px rgba(255, 255, 255, 0.22),
+      inset 0 -8px 18px rgba(0, 0, 0, 0.8);
+  }
+
+  @keyframes slotBulbFlicker {
+    0% { opacity: 0.62; filter: brightness(0.92); }
+    100% { opacity: 1; filter: brightness(1.42); }
+  }
+
+  .slot-lamp-3d {
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background-color: #f0abfc;
+    background-image: radial-gradient(circle at 35% 30%, #ffffff 0%, #f0abfc 42%, #c026d3 100%);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow: 0 0 7px 2px #d946ef, 0 2px 3px rgba(0, 0, 0, 0.8);
+    animation: slotBulbFlicker 1.35s infinite alternate ease-in-out;
+  }
+
+  .slot-lamp-3d:nth-child(even) {
+    background-color: #67e8f9;
+    background-image: radial-gradient(circle at 35% 30%, #ffffff 0%, #a5f3fc 42%, #06b6d4 100%);
+    box-shadow: 0 0 7px 2px #22d3ee, 0 2px 3px rgba(0, 0, 0, 0.8);
+    animation-delay: 0.65s;
+    animation-duration: 1.05s;
+  }
+
+  /* Mechanical Recessed Hinge Seam Between Screen & Sloped Console */
+  .slot-hinge-neck-3d {
+    width: 96%;
+    height: 10px;
+    background-color: #07090f;
+    background-image: linear-gradient(180deg, #04060a 0%, #0f172a 55%, #38bdf8 100%);
+    border-left: 3px solid #1e293b;
+    border-right: 3px solid #1e293b;
+    box-shadow: inset 0 4px 6px rgba(0, 0, 0, 0.95), 0 0 14px rgba(56, 189, 248, 0.45);
+  }
+
+  /* Steep Forward-Jutting 3D Trapezoid Console Deck */
+  .slot-tactile-console-3d {
+    transform: perspective(560px) rotateX(29deg);
+    transform-origin: top center;
+    background-color: #1c2230;
+    background-image: linear-gradient(
+      180deg,
+      #364156 0%,
+      #252d3d 22%,
+      #171c28 68%,
+      #0e121b 100%
+    );
+    border-top: 3px solid #7dd3fc;
+    border-left: 4px solid #64748b;
+    border-right: 4px solid #64748b;
+    border-bottom: 2px solid #334155;
+    box-shadow:
+      inset 0 4px 8px rgba(186, 230, 253, 0.35),
+      inset 0 -10px 18px rgba(0, 0, 0, 0.85),
+      0 -6px 20px rgba(0, 0, 0, 0.75);
+    border-radius: 10px 10px 18px 18px;
+    position: relative;
+  }
+
+  .slot-tactile-console-3d::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 42%;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 100%);
+    pointer-events: none;
+    border-radius: 8px 8px 0 0;
+  }
+
+  /* Physical 3D Extruded Front Metallic Bumper Lip of the Sloped Deck */
+  .slot-console-front-lip-3d {
+    margin-top: -4px;
+    height: 20px;
+    border-radius: 0 0 22px 22px;
+    background-color: #0b0f18;
+    background-image: linear-gradient(180deg, #1e293b 0%, #0f1420 48%, #06080e 100%);
+    border-left: 4px solid #334155;
+    border-right: 4px solid #334155;
+    border-bottom: 3px solid #020408;
+    box-shadow:
+      0 18px 34px rgba(0, 0, 0, 0.92),
+      0 6px 24px rgba(6, 182, 212, 0.32),
+      inset 0 2px 2px rgba(148, 163, 184, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    position: relative;
+    z-index: 20;
+  }
+
+  /* Grounded 3D Floor Shadow Under Machine (Replaces Full-Screen Black Overlay) */
+  .slot-floor-shadow-3d {
+    width: 94%;
+    height: 22px;
+    margin-top: -6px;
+    border-radius: 9999px;
+    background-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.88) 0%,
+      rgba(6, 182, 212, 0.22) 42%,
+      transparent 76%
+    );
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  .slot-console-vent {
+    width: 100%;
+    height: 5px;
+    background-color: #00f0ff;
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      #00f0ff 22%,
+      #e0f2fe 50%,
+      #00f0ff 78%,
+      transparent 100%
+    );
+    box-shadow: 0 0 14px #00f0ff, 0 0 26px rgba(6, 182, 212, 0.95);
+    border-radius: 9999px;
+  }
+
+  /* Recessed Socket Wells on Console Deck so Buttons Protrude Physically in 3D */
+  .slot-btn-socket-3d {
+    padding: 4px;
+    border-radius: 16px;
+    background-color: #070a11;
+    border-top: 1px solid rgba(0, 0, 0, 0.9);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+    box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.95);
+  }
+
+  .slot-tactile-btn {
+    transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.12s ease, filter 0.12s ease;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .slot-tactile-btn:active:not(:disabled) {
+    transform: translateY(5px) scale(0.985);
+  }
+
+  @keyframes slotSpinPulse {
+    0% {
+      box-shadow:
+        0 9px 0 #06371b,
+        0 14px 20px rgba(0, 0, 0, 0.88),
+        0 0 22px rgba(34, 197, 94, 0.55),
+        inset 0 3px 6px rgba(255, 255, 255, 0.82),
+        inset 0 -4px 8px rgba(0, 0, 0, 0.55);
+    }
+    100% {
+      box-shadow:
+        0 9px 0 #06371b,
+        0 16px 26px rgba(0, 0, 0, 0.92),
+        0 0 38px rgba(74, 222, 128, 0.92),
+        0 0 18px rgba(6, 182, 212, 0.65),
+        inset 0 4px 8px #ffffff,
+        inset 0 -4px 8px rgba(0, 0, 0, 0.55);
+    }
+  }
+
+  .slot-btn-spin-emerald {
+    background-color: #16a34a;
+    background-image: linear-gradient(180deg, #86efac 0%, #22c55e 32%, #15803d 78%, #064e3b 100%);
+    border: 2.5px solid #a5f3fc;
+    transform: translateY(-2px);
+    animation: slotSpinPulse 2.2s infinite ease-in-out alternate;
+  }
+
+  .slot-btn-spin-emerald:active:not(:disabled) {
+    transform: translateY(6px) scale(0.98);
+    box-shadow:
+      0 2px 0 #06371b,
+      0 4px 10px rgba(0, 0, 0, 0.9),
+      0 0 18px rgba(34, 197, 94, 0.6),
+      inset 0 2px 4px rgba(255, 255, 255, 0.55);
+  }
+
+  .slot-btn-spin-emerald:disabled {
+    filter: grayscale(0.45) brightness(0.72);
+    cursor: not-allowed;
+    transform: translateY(4px);
+    box-shadow: 0 3px 0 #06371b, 0 4px 8px rgba(0, 0, 0, 0.8);
+    animation: none;
+  }
+
+  .slot-btn-gold {
+    background-color: #ca8a04;
+    background-image: linear-gradient(180deg, #fef08a 0%, #facc15 28%, #ca8a04 76%, #713f12 100%);
+    border: 2px solid #fef9c3;
+    transform: translateY(-1px);
+    box-shadow:
+      0 7px 0 #422006,
+      0 10px 14px rgba(0, 0, 0, 0.8),
+      inset 0 2px 4px rgba(255, 255, 255, 0.9),
+      inset 0 -3px 5px rgba(69, 26, 3, 0.6);
+  }
+
+  .slot-btn-gold[data-active="true"] {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #422006, 0 3px 6px rgba(0, 0, 0, 0.8), 0 0 16px #eab308;
+    border-color: #ffffff;
+  }
+
+  .slot-btn-steel {
+    background-color: #1e293b;
+    background-image: linear-gradient(180deg, #64748b 0%, #334155 30%, #1e293b 75%, #0f172a 100%);
+    border: 2px solid #38bdf8;
+    transform: translateY(-1px);
+    box-shadow:
+      0 6px 0 #070b14,
+      0 9px 12px rgba(0, 0, 0, 0.78),
+      inset 0 2px 3px rgba(255, 255, 255, 0.45),
+      0 0 10px rgba(6, 182, 212, 0.3);
+  }
+
+  .slot-btn-steel[data-active="true"] {
+    transform: translateY(3px);
+    box-shadow: 0 2px 0 #070b14, 0 0 16px #00f0ff;
+    border-color: #00f0ff;
+  }
+
+  /* 3D Curved Cylindrical Reel Housing (Eliminates Flat Pitch-Black Void) */
+  .slot-reels-viewport {
+    background-color: #14192b;
+    background-image: linear-gradient(
+      180deg,
+      #090c15 0%,
+      var(--slot-drum-mid) 30%,
+      #252d47 50%,
+      var(--slot-drum-mid) 70%,
+      #090c15 100%
+    );
+    box-shadow:
+      inset 0 26px 32px -8px rgba(2, 4, 10, 0.92),
+      inset 0 -26px 32px -8px rgba(2, 4, 10, 0.92),
+      0 0 26px var(--slot-drum-glow);
+    position: relative;
+  }
+
+  /* Individual 3D Cylindrical Drum Column Shading */
+  .slot-reel-drum-3d {
+    background-image:
+      linear-gradient(
+        180deg,
+        rgba(4, 6, 12, 0.78) 0%,
+        rgba(30, 41, 68, 0.14) 24%,
+        rgba(255, 255, 255, 0.06) 50%,
+        rgba(30, 41, 68, 0.14) 76%,
+        rgba(4, 6, 12, 0.78) 100%
+      ),
+      linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0.45) 0%,
+        rgba(125, 211, 252, 0.05) 50%,
+        rgba(0, 0, 0, 0.45) 100%
+      );
+    box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+  }
+
+  .slot-reels-viewport::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 36px;
+    background-image: linear-gradient(
+      180deg,
+      rgba(5, 8, 16, 0.86) 0%,
+      rgba(5, 8, 16, 0.35) 58%,
+      transparent 100%
+    );
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  .slot-reels-viewport::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 36px;
+    background-image: linear-gradient(
+      0deg,
+      rgba(5, 8, 16, 0.86) 0%,
+      rgba(5, 8, 16, 0.35) 58%,
+      transparent 100%
+    );
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  .slot-spinning-blur {
+    filter: blur(2px);
+    transform: scaleY(1.08);
+    opacity: 0.92;
+  }
+
+  @keyframes slotSymbolWinGlow {
+    0% {
+      transform: scale(1.05);
+      filter: drop-shadow(0 0 10px #ffe600) drop-shadow(0 0 18px #f59e0b) brightness(1.16);
+    }
+    100% {
+      transform: scale(1.18);
+      filter: drop-shadow(0 0 14px #ffffff) drop-shadow(0 0 28px #d946ef) brightness(1.38);
+    }
+  }
+
+  .slot-symbol-win-highlight {
+    animation: slotSymbolWinGlow 0.75s infinite alternate ease-in-out;
+    z-index: 22;
+  }
+
+  .slot-led-box {
+    background-color: #070b12;
+    background-image: linear-gradient(180deg, #05080f 0%, #0c1320 55%, #060a11 100%);
+    border-top: 2px solid #0f172a;
+    border-left: 2px solid #1e293b;
+    border-right: 2px solid #1e293b;
+    border-bottom: 2px solid #475569;
+    box-shadow:
+      inset 0 4px 12px rgba(0, 0, 0, 0.95),
+      0 0 14px rgba(6, 182, 212, 0.2);
+  }
+
+  /* =========================================================================
+     BOTANICAL GLASSHOUSE CAFE — NEO-STRIKE 3D SLOT CABINET (WARM CREAM & ESPRESSO)
+     Mirrors the Grand Casino 3D cabinet geometry in the Cafe's warm palette
+     ========================================================================= */
+  .cafe-slot-perspective-stage {
+    perspective: 1150px;
+    perspective-origin: 50% 44%;
+  }
+
+  /* Physical 3D Roasted Espresso, Charcoal & Warm Brass Outer Chassis */
+  .cafe-slot-cabinet-outer-3d {
+    transform: perspective(1250px) rotateX(3.4deg);
+    transform-origin: bottom center;
+    border-radius: 30px;
+    padding: 10px;
+    background-color: #1e212b;
+    background-image: linear-gradient(
+      180deg,
+      #2c303e 0%,
+      #1e212b 16%,
+      #14161d 60%,
+      #0c0e13 100%
+    );
+    border-top: 3px solid #fdf6e7;
+    border-left: 3px solid #14161d;
+    border-right: 3px solid #14161d;
+    border-bottom: 6px solid #07080b;
+    box-shadow:
+      0 26px 52px rgba(0, 0, 0, 0.8),
+      0 8px 0 #000000,
+      inset 0 2px 3px rgba(255, 253, 247, 0.28),
+      inset 0 -4px 8px rgba(0, 0, 0, 0.85);
+    position: relative;
+  }
+
+  /* Warm Cream & Parchment Inner Recessed Cabinet Screen */
+  .cafe-slot-cabinet-screen {
+    border-radius: 22px;
+    background-color: #fdf6e7;
+    background-image: linear-gradient(
+      180deg,
+      #fffdf7 0%,
+      #fdf6e7 52%,
+      #f5ead4 100%
+    );
+    border: 3px solid #3b1806;
+    box-shadow:
+      0 0 0 2px #d97706,
+      inset 0 4px 14px rgba(120, 53, 15, 0.16),
+      inset 0 -6px 16px rgba(120, 53, 15, 0.18);
+    position: relative;
+  }
+
+  /* Sunlit Curved Glass Diagonal Sheen */
+  .cafe-slot-cabinet-screen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 19px;
+    background-image: linear-gradient(
+      132deg,
+      rgba(255, 255, 255, 0.52) 0%,
+      rgba(254, 243, 199, 0.18) 20%,
+      transparent 42%
+    );
+    pointer-events: none;
+    z-index: 35;
+  }
+
+  /* Warm Roasted Mahogany & Brass Marquee Header */
+  .cafe-slot-marquee-frame {
+    background-color: #7c2d12;
+    background-image: linear-gradient(
+      180deg,
+      #b45309 0%,
+      #8c2d0e 52%,
+      #451a03 100%
+    );
+    border: 3px solid #3b1806;
+    box-shadow:
+      0 5px 0 #3b1806,
+      inset 0 2px 3px rgba(254, 243, 199, 0.55),
+      inset 0 -6px 14px rgba(36, 13, 2, 0.72);
+  }
+
+  .cafe-slot-lamp-3d {
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background-color: #fde047;
+    background-image: radial-gradient(circle at 35% 30%, #ffffff 0%, #fef08a 42%, #d97706 100%);
+    border: 1.5px solid #451a03;
+    box-shadow: 0 0 7px 1px rgba(251, 191, 36, 0.85), 0 2px 2px rgba(0, 0, 0, 0.55);
+    animation: slotBulbFlicker 1.35s infinite alternate ease-in-out;
+  }
+
+  .cafe-slot-lamp-3d:nth-child(even) {
+    background-color: #b8ff3c;
+    background-image: radial-gradient(circle at 35% 30%, #ffffff 0%, #d9f99d 42%, #65a30d 100%);
+    box-shadow: 0 0 7px 1px rgba(132, 204, 22, 0.85), 0 2px 2px rgba(0, 0, 0, 0.55);
+    animation-delay: 0.65s;
+    animation-duration: 1.05s;
+  }
+
+  /* Warm Espresso & Parchment Side / Bezel Frame */
+  .cafe-slot-wood-frame {
+    background-color: #8c2d0e;
+    background-image: linear-gradient(180deg, #b45309 0%, #8c2d0e 52%, #5c2008 100%);
+    border: 3px solid #3b1806;
+    box-shadow:
+      0 5px 0 #3b1806,
+      inset 0 2px 2px rgba(254, 243, 199, 0.45),
+      inset 0 -4px 10px rgba(36, 13, 2, 0.65);
+  }
+
+  /* 3D Curved Cylindrical Cream-Ivory Reel Housing */
+  .cafe-slot-reels-viewport {
+    background-color: #fffdf7;
+    background-image: linear-gradient(
+      180deg,
+      #e6d3b1 0%,
+      #fef3c7 22%,
+      #fffdf7 50%,
+      #fef3c7 78%,
+      #e6d3b1 100%
+    );
+    border: 3px solid #3b1806;
+    box-shadow:
+      0 5px 0 #3b1806,
+      inset 0 22px 26px -8px rgba(69, 26, 3, 0.42),
+      inset 0 -22px 26px -8px rgba(69, 26, 3, 0.42);
+    position: relative;
+  }
+
+  .cafe-slot-reel-drum-3d {
+    background-image:
+      linear-gradient(
+        180deg,
+        rgba(69, 26, 3, 0.28) 0%,
+        rgba(254, 243, 199, 0.12) 24%,
+        rgba(255, 255, 255, 0.65) 50%,
+        rgba(254, 243, 199, 0.12) 76%,
+        rgba(69, 26, 3, 0.28) 100%
+      ),
+      linear-gradient(
+        90deg,
+        rgba(120, 53, 15, 0.16) 0%,
+        rgba(255, 253, 247, 0.35) 50%,
+        rgba(120, 53, 15, 0.16) 100%
+      );
+    box-shadow: inset 0 0 18px rgba(120, 53, 15, 0.18);
+  }
+
+  .cafe-slot-reels-viewport::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    background-image: linear-gradient(
+      180deg,
+      rgba(59, 24, 6, 0.48) 0%,
+      rgba(59, 24, 6, 0.14) 60%,
+      transparent 100%
+    );
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  .cafe-slot-reels-viewport::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    background-image: linear-gradient(
+      0deg,
+      rgba(59, 24, 6, 0.48) 0%,
+      rgba(59, 24, 6, 0.14) 60%,
+      transparent 100%
+    );
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  /* Recessed Warm Espresso Readout Box */
+  .cafe-slot-led-box {
+    background-color: #3b1806;
+    background-image: linear-gradient(180deg, #2b1003 0%, #451a03 55%, #2b1003 100%);
+    border: 2.5px solid #3b1806;
+    outline: 1.5px solid #d97706;
+    box-shadow:
+      inset 0 4px 10px rgba(0, 0, 0, 0.72),
+      0 3px 0 #3b1806;
+  }
+
+  /* Mechanical Recessed Hinge Seam Between Screen & Sloped Cream Console */
+  .cafe-slot-hinge-neck-3d {
+    width: 96%;
+    height: 10px;
+    background-color: #1e212b;
+    background-image: linear-gradient(180deg, #0c0e13 0%, #3b1806 55%, #d97706 100%);
+    border-left: 3px solid #14161d;
+    border-right: 3px solid #14161d;
+    box-shadow: inset 0 4px 6px rgba(0, 0, 0, 0.85);
+  }
+
+  /* Sloped Warm Cream & Parchment 3D Console Deck */
+  .cafe-slot-tactile-console-3d {
+    transform: perspective(560px) rotateX(24deg);
+    transform-origin: top center;
+    background-color: #f5ead4;
+    background-image: linear-gradient(
+      180deg,
+      #fffdf7 0%,
+      #fdf6e7 28%,
+      #f5ead4 72%,
+      #e6d5b8 100%
+    );
+    border-top: 3px solid #d97706;
+    border-left: 4px solid #14161d;
+    border-right: 4px solid #14161d;
+    border-bottom: 2px solid #3b1806;
+    box-shadow:
+      inset 0 4px 8px rgba(255, 255, 255, 0.85),
+      inset 0 -8px 14px rgba(120, 53, 15, 0.24),
+      0 -4px 16px rgba(0, 0, 0, 0.45);
+    border-radius: 10px 10px 18px 18px;
+    position: relative;
+  }
+
+  /* Extruded Front Espresso & Charcoal Bumper Lip */
+  .cafe-slot-console-front-lip-3d {
+    margin-top: -4px;
+    height: 20px;
+    border-radius: 0 0 22px 22px;
+    background-color: #1e212b;
+    background-image: linear-gradient(180deg, #451a03 0%, #1e212b 48%, #14161d 100%);
+    border-left: 4px solid #14161d;
+    border-right: 4px solid #14161d;
+    border-bottom: 4px solid #000000;
+    box-shadow:
+      0 16px 32px rgba(0, 0, 0, 0.85),
+      inset 0 2px 2px rgba(254, 243, 199, 0.32);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    position: relative;
+    z-index: 20;
+  }
+
+  .cafe-slot-console-vent {
+    width: 100%;
+    height: 5px;
+    background-color: #fec83e;
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      #f59e0b 18%,
+      #b8ff3c 50%,
+      #f59e0b 82%,
+      transparent 100%
+    );
+    box-shadow: 0 0 12px rgba(254, 200, 62, 0.85);
+    border-radius: 9999px;
+  }
+
+  .cafe-slot-floor-shadow-3d {
+    width: 94%;
+    height: 20px;
+    margin-top: -5px;
+    border-radius: 9999px;
+    background-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.82) 0%,
+      rgba(59, 24, 6, 0.35) 45%,
+      transparent 76%
+    );
+    filter: blur(5px);
+    pointer-events: none;
+  }
+
+  /* Recessed Warm Wood Socket Wells on Console Deck */
+  .cafe-slot-btn-socket-3d {
+    padding: 4px;
+    border-radius: 15px;
+    background-color: #cbb894;
+    background-image: linear-gradient(180deg, #b8a178 0%, #dfd0b2 100%);
+    border-top: 1.5px solid #8c734b;
+    border-bottom: 1.5px solid #fffdf7;
+    box-shadow: inset 0 3px 6px rgba(59, 24, 6, 0.38);
+  }
+
+  /* Tactile Cream & Espresso Auxiliary Button */
+  .cafe-slot-btn-cream {
+    background-color: #fffdf7;
+    background-image: linear-gradient(180deg, #ffffff 0%, #fef3c7 48%, #fde68a 100%);
+    border: 2.5px solid #451a03;
+    transform: translateY(-1px);
+    box-shadow:
+      0 5px 0 #451a03,
+      0 7px 10px rgba(59, 24, 6, 0.3),
+      inset 0 2px 2px #ffffff;
+  }
+
+  .cafe-slot-btn-cream[data-active="true"] {
+    transform: translateY(3px);
+    background-image: linear-gradient(180deg, #fde047 0%, #f59e0b 55%, #c2410c 100%);
+    color: #ffffff;
+    border-color: #3b1806;
+    box-shadow: 0 2px 0 #3b1806, 0 0 12px rgba(245, 158, 11, 0.55);
+  }
+
+  /* Tactile Warm Amber-Gold Button */
+  .cafe-slot-btn-amber {
+    background-color: #f59e0b;
+    background-image: linear-gradient(180deg, #fde047 0%, #f59e0b 48%, #c2410c 100%);
+    border: 2.5px solid #451a03;
+    transform: translateY(-1px);
+    box-shadow:
+      0 5px 0 #451a03,
+      0 7px 10px rgba(59, 24, 6, 0.35),
+      inset 0 2px 3px rgba(255, 255, 255, 0.8);
+  }
+
+  .cafe-slot-btn-amber[data-active="true"] {
+    transform: translateY(3px);
+    background-image: linear-gradient(180deg, #d9f99d 0%, #84cc16 55%, #4d7c0f 100%);
+    border-color: #1a2e05;
+    box-shadow: 0 2px 0 #1a2e05, 0 0 14px rgba(132, 204, 22, 0.65);
+  }
+
+  /* Giant Extruded Botanical Lime-Green Dome SPIN Button */
+  @keyframes cafeSlotSpinPulse {
+    0% {
+      box-shadow:
+        0 7px 0 #1a2e05,
+        0 11px 16px rgba(26, 46, 5, 0.45),
+        inset 0 3px 5px rgba(255, 255, 255, 0.85),
+        inset 0 -3px 6px rgba(26, 46, 5, 0.35);
+    }
+    100% {
+      box-shadow:
+        0 7px 0 #1a2e05,
+        0 13px 22px rgba(26, 46, 5, 0.55),
+        0 0 22px rgba(184, 255, 60, 0.72),
+        inset 0 4px 7px #ffffff,
+        inset 0 -3px 6px rgba(26, 46, 5, 0.35);
+    }
+  }
+
+  .cafe-slot-btn-spin-lime {
+    background-color: #84cc16;
+    background-image: linear-gradient(180deg, #ecfccb 0%, #b8ff3c 32%, #84cc16 74%, #4d7c0f 100%);
+    border: 3px solid #1a2e05;
+    transform: translateY(-2px);
+    animation: cafeSlotSpinPulse 2.2s infinite ease-in-out alternate;
+  }
+
+  .cafe-slot-btn-spin-lime:active:not(:disabled) {
+    transform: translateY(5px) scale(0.985);
+    box-shadow:
+      0 2px 0 #1a2e05,
+      0 4px 8px rgba(0, 0, 0, 0.45),
+      inset 0 2px 4px rgba(255, 255, 255, 0.6);
+  }
+
+  .cafe-slot-btn-spin-lime:disabled {
+    background-image: linear-gradient(180deg, #e5dec9 0%, #d6cbb3 100%);
+    border-color: #8c7f6a;
+    color: #78716c;
+    cursor: not-allowed;
+    transform: translateY(3px);
+    box-shadow: 0 2px 0 #8c7f6a;
+    animation: none;
+  }
+
+  /* =========================================================================
+     AURA 3D LUXURY ROULETTE TABLE — FIXED TACTILE 3D CABINET & FELT ELEVATION
+     ========================================================================= */
+  .roulette-stage-fixed {
+    color-scheme: dark;
+  }
+
+  /* Grounded Soft Contact Floor Shadow Under Table */
+  .roulette-table-contact-shadow {
+    background-image: radial-gradient(
+      ellipse at center,
+      rgba(2, 6, 14, 0.85) 0%,
+      rgba(4, 10, 20, 0.45) 54%,
+      rgba(0, 0, 0, 0) 78%
+    );
+  }
+
+  /* Level 1: Handcrafted Dark Saddle-Brown Padded Leather Armrest / Rim */
+  .roulette-leather-rail {
+    background-color: #241208;
+    background-image: linear-gradient(180deg, #3b2011 0%, #2a160b 48%, #160904 100%);
+    border-top: 3px solid #633820;
+    border-left: 2px solid #4a2815;
+    border-right: 2px solid #4a2815;
+    border-bottom: 10px solid #110602;
+    box-shadow:
+      0 32px 64px -12px rgba(0, 0, 0, 0.85),
+      0 14px 28px rgba(0, 0, 0, 0.72),
+      inset 0 4px 7px rgba(255, 232, 205, 0.25),
+      inset 0 -8px 16px rgba(0, 0, 0, 0.92);
+  }
+
+  /* Level 2: Inner Polished Mahogany Wood Apron with Inlaid Brass Accent */
+  .roulette-mahogany-apron {
+    background-color: #421b0e;
+    background-image: linear-gradient(90deg, #3d180c 0%, #652a17 42%, #4a1e10 72%, #341409 100%);
+    border-top: 2px solid rgba(244, 211, 140, 0.34);
+    border-left: 1.5px solid rgba(184, 140, 52, 0.28);
+    border-right: 1.5px solid rgba(184, 140, 52, 0.28);
+    border-bottom: 4px solid #210b04;
+    box-shadow:
+      inset 0 2px 5px rgba(255, 236, 195, 0.26),
+      inset 0 -5px 12px rgba(0, 0, 0, 0.88),
+      0 4px 10px rgba(0, 0, 0, 0.65);
+  }
+
+  /* Level 3: Recessed Monte Carlo Emerald Felt Playing Surface */
+  .roulette-felt-well {
+    background-color: #084629;
+    background-image:
+      radial-gradient(ellipse at 54% 38%, rgba(18, 114, 68, 0.45) 0%, rgba(8, 70, 41, 0.15) 58%, rgba(3, 34, 19, 0.62) 100%),
+      linear-gradient(145deg, #0c5835 0%, #09472a 52%, #04331d 100%);
+    border: 2px solid #042816;
+    box-shadow:
+      inset 0 10px 26px rgba(0, 0, 0, 0.76),
+      inset 0 2px 6px rgba(0, 0, 0, 0.9),
+      0 1px 0 rgba(229, 193, 88, 0.22);
+  }
+
+  /* Tactile 3D Gold Spin Button */
+  .roulette-spin-btn-3d {
+    background-color: #ca8a04;
+    background-image: linear-gradient(180deg, #fef08a 0%, #facc15 36%, #ca8a04 82%, #854d0e 100%);
+    border: 1.5px solid #fef9c3;
+    box-shadow:
+      0 5px 0 #5c3409,
+      0 0 20px rgba(250, 204, 21, 0.45),
+      inset 0 2px 3px rgba(255, 255, 255, 0.8);
+  }
+
+  .roulette-spin-btn-3d:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow:
+      0 2px 0 #5c3409,
+      0 0 12px rgba(250, 204, 21, 0.4),
+      inset 0 2px 3px rgba(255, 255, 255, 0.6);
+  }
+
+  /* Tactile 3D Dark Obsidian Action Buttons (UNDO / CLEAR / DOUBLE / REBET) */
+  .roulette-action-btn-3d {
+    background-color: #091811;
+    background-image: linear-gradient(180deg, #132b20 0%, #08150f 100%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 3px 0 #030b07,
+      inset 0 1px 1px rgba(255, 255, 255, 0.14);
+  }
+
+  .roulette-action-btn-3d:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #030b07;
+  }
+
+  /* =========================================================================
+     CASINO GLASSMORPHISM DIMMED BACKDROP SCRIM (FLAT COMPOSITOR LAYER)
+     ========================================================================= */
+  .casino-glassmorph-scrim {
+    background-color: rgba(6, 10, 18, 0.48);
+    background-image: radial-gradient(
+      ellipse at 50% 46%,
+      rgba(14, 28, 26, 0.34) 0%,
+      rgba(6, 11, 20, 0.64) 65%,
+      rgba(3, 6, 12, 0.82) 100%
+    );
+    backdrop-filter: blur(10px) saturate(118%);
+    -webkit-backdrop-filter: blur(10px) saturate(118%);
+  }
+
+  /* =========================================================================
+     ROYALE VIP 3D PERSPECTIVE BLACKJACK TABLE (CURVED SEMI-CIRCULAR RAIL)
+     ========================================================================= */
+  .bj-viewport-3d {
+    color-scheme: dark;
+    perspective: 1120px;
+    perspective-origin: 50% 18%;
+  }
+
+  .bj-tilted-table-stage {
+    transform: rotateX(22deg) scale(0.97);
+    border-radius: 22px 22px 580px 580px;
+    background-color: transparent;
+  }
+
+  /* Padded Leather Semi-Circular Armrest Rail with 3D Lower Mahogany Lip */
+  .bj-bumper-rail {
+    border-radius: 22px 22px 580px 580px;
+    background-color: #2b140d;
+    background-image: radial-gradient(ellipse at 50% 118%, #4d2817 0%, #2e150d 52%, #150805 100%);
+    border-top: 3px solid #6b3522;
+    border-left: 3px solid #582b1b;
+    border-right: 3px solid #582b1b;
+    border-bottom: 12px solid #130603;
+    box-shadow:
+      0 36px 70px -8px rgba(0, 0, 0, 0.88),
+      0 16px 32px rgba(0, 0, 0, 0.72),
+      inset 0 4px 6px rgba(255, 230, 160, 0.24),
+      inset 0 -8px 16px rgba(0, 0, 0, 0.95);
+  }
+
+  /* Metallic Gold-Brass Trim Channel Following Semi-Circular Rail */
+  .bj-brass-channel-bevel {
+    border-radius: 15px 15px 560px 560px;
+    background-color: #8c6424;
+    background-image: linear-gradient(180deg, #c5a059 0%, #7d5921 40%, #ffd978 70%, #583b10 100%);
+    box-shadow:
+      inset 0 2px 4px rgba(255, 255, 255, 0.55),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.82),
+      0 3px 6px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Monte Carlo Spotlight Felt Surface (Backed by Force-Dark-Proof SVG Felt) */
+  .bj-felt-surface {
+    border-radius: 11px 11px 540px 540px;
+    background-color: #0b4a32;
+    box-shadow:
+      inset 0 10px 28px rgba(0, 0, 0, 0.68),
+      inset 0 -10px 24px rgba(0, 0, 0, 0.58);
+  }
+
+  /* Casino Top Dealer Hardware Bar */
+  .bj-dealer-top-bar {
+    background-color: #1f130e;
+    background-image: linear-gradient(180deg, #24150f 0%, #331e16 48%, #180c08 100%);
+    border-bottom: 3px solid #8e682d;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.65);
+  }
+
+  /* Dealer Chip Wells Rack Tube */
+  .bj-dealer-rack-tube {
+    background-color: #101216;
+    background-image: linear-gradient(180deg, #0d0e11 0%, #202428 50%, #0c0d10 100%);
+    box-shadow:
+      inset 0 3px 6px rgba(0, 0, 0, 0.92),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+
+  /* Bottom Embedded Brass & Walnut Chip Groove Tray */
+  .bj-chip-groove-tray {
+    border-radius: 20px 20px 180px 180px;
+    background-color: #271a0b;
+    background-image: radial-gradient(ellipse at 50% 45%, #4f3b1e 0%, #271a0b 78%, #170d05 100%);
+    border: 2px solid #856128;
+    box-shadow:
+      inset 0 5px 10px rgba(0, 0, 0, 0.85),
+      inset 0 -1px 2px rgba(255, 215, 100, 0.28),
+      0 6px 16px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Glossy Metallic Tactile Casino Action Buttons */
+  .bj-tactile-btn {
+    background-color: #15171b;
+    background-image: linear-gradient(180deg, #2d3038 0%, #16181d 60%, #0c0e11 100%);
+    border: 1.5px solid #8a6830;
+    box-shadow:
+      0 4px 0 #07080a,
+      0 6px 10px rgba(0, 0, 0, 0.7),
+      inset 0 1px 1px rgba(255, 255, 255, 0.32);
+  }
+
+  .bj-tactile-btn:hover:not(:disabled) {
+    filter: brightness(1.14);
+    border-color: #fbbf24;
+  }
+
+  .bj-tactile-btn:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #07080a, inset 0 2px 5px rgba(0, 0, 0, 0.85);
+  }
+
+  .bj-deal-btn {
+    background-color: #059669;
+    background-image: linear-gradient(180deg, #34d399 0%, #059669 52%, #064e3b 100%);
+    border: 2px solid #a7f3d0;
+    box-shadow:
+      0 5px 0 #033325,
+      0 0 20px rgba(16, 185, 129, 0.55),
+      inset 0 1px 2px rgba(255, 255, 255, 0.65);
+  }
+
+  .bj-deal-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .bj-deal-btn:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow:
+      0 2px 0 #033325,
+      0 0 14px rgba(16, 185, 129, 0.45);
+  }
+
+  @keyframes bjCardDealIn {
+    0% {
+      opacity: 0.25;
+      transform: translateY(-22px) scale(0.84);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .bj-card-deal-anim {
+    animation: bjCardDealIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}

@@ -2,8 +2,11 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { handleFishAttestRequest } from './api/fish-attest.ts';
+import { handleHanaClaimAttestRequest } from './api/hana-claim-attest.ts';
 import { handleNearRelayerRequest } from './api/near-relayer.ts';
 import { handleNpcAgentRequest } from './api/npc-agent.ts';
+import { handleNpcTradeRequest } from './api/npc-trade.ts';
 import { isValidPrivyAppId } from './src/lib/privyAuthConfig.ts';
 
 function privyUnusedOptionalPeerStubPlugin(options: { stubInactivePrivyInDev: boolean }): Plugin {
@@ -137,6 +140,56 @@ function nearSubAccountRelayerDevPlugin(): Plugin {
           }
         });
       });
+
+      const mountJsonPostRoute = (
+        routePath: string,
+        handlerFn: (
+          body: Record<string, unknown>,
+        ) => Promise<{ status: number; payload: Record<string, unknown> }>,
+        label: string,
+      ) => {
+        server.middlewares.use(routePath, (req, res, next) => {
+          if (req.method !== 'POST') {
+            next();
+            return;
+          }
+          let rawBody = '';
+          req.on('error', () => {
+            if (!res.writableEnded) {
+              res.statusCode = 400;
+              res.end();
+            }
+          });
+          req.on('data', (chunk) => {
+            rawBody += String(chunk);
+          });
+          req.on('end', async () => {
+            if (res.writableEnded) return;
+            try {
+              const parsed = rawBody ? JSON.parse(rawBody) : {};
+              const out = await handlerFn(parsed);
+              if (res.writableEnded) return;
+              res.statusCode = out.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(out.payload));
+            } catch (err) {
+              if (res.writableEnded) return;
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: err instanceof Error ? err.message : `${label} middleware error`,
+                }),
+              );
+            }
+          });
+        });
+      };
+
+      mountJsonPostRoute('/api/fish-attest', handleFishAttestRequest, 'Fish attest');
+      mountJsonPostRoute('/api/hana-claim-attest', handleHanaClaimAttestRequest, 'Hana claim attest');
+      mountJsonPostRoute('/api/npc-trade', handleNpcTradeRequest, 'NPC trade');
     },
   };
 }
@@ -204,6 +257,7 @@ export default defineConfig(({ command, mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      allowedHosts: true,
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };

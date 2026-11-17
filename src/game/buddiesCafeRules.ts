@@ -1389,7 +1389,7 @@ export function computeCafeExteriorMistFactor(localX: number, localZ: number): n
   return Math.min(0.88, 0.30 + smoothstep01(0.15, 9.0, distOutside) * 0.58);
 }
 
-export type IndoorOrbitRoomKind = 'cafe_interior' | 'house_visit';
+export type IndoorOrbitRoomKind = 'cafe_interior' | 'house_visit' | 'casino_interior';
 
 export const HOUSE_VISIT_INDOOR_BOUNDS = {
   minX: -5.3,
@@ -1399,6 +1399,14 @@ export const HOUSE_VISIT_INDOOR_BOUNDS = {
   spawnX: 0.0,
   spawnZ: 0.65,
   spawnYaw: Math.PI / 2,
+} as const;
+
+export const CASINO_INDOOR_CAMERA_BOUNDS = {
+  minX: -9.85,
+  maxX: 9.85,
+  minZ: -6.85,
+  maxZ: 6.85,
+  interiorMaxZ: 6.85,
 } as const;
 
 export const INDOOR_ORBIT_CAMERA_CONFIG = {
@@ -1436,6 +1444,22 @@ export const INDOOR_ORBIT_CAMERA_CONFIG = {
     wallMargin: 0.42,
     wallLookShiftFactor: 0.32,
     maxWallLookShift: 0.55,
+  },
+  casino_interior: {
+    fovDeg: 54,
+    defaultYaw: 0.06,
+    defaultPitch: 0.48,
+    defaultDist: 6.45,
+    minPitch: 0.14,
+    maxPitch: 0.92,
+    minDist: 2.5,
+    maxDist: 9.2,
+    lookHeightOffset: 0.98,
+    minCamHeightOffset: 0.58,
+    maxCamHeightOffset: 4.68,
+    wallMargin: 0.40,
+    wallLookShiftFactor: 0.30,
+    maxWallLookShift: 0.72,
   },
 } as const;
 
@@ -1531,18 +1555,31 @@ export function computeIndoorRoomOrbitCameraPose(
           rawCamZ,
           cfg.wallMargin,
         )
-      : {
-          x: clampNum(
-            rawCamX,
-            HOUSE_VISIT_INDOOR_BOUNDS.minX + cfg.wallMargin,
-            HOUSE_VISIT_INDOOR_BOUNDS.maxX - cfg.wallMargin,
-          ),
-          z: clampNum(
-            rawCamZ,
-            HOUSE_VISIT_INDOOR_BOUNDS.minZ + cfg.wallMargin,
-            HOUSE_VISIT_INDOOR_BOUNDS.maxZ - cfg.wallMargin,
-          ),
-        };
+      : input.roomKind === 'casino_interior'
+        ? {
+            x: clampNum(
+              rawCamX,
+              CASINO_INDOOR_CAMERA_BOUNDS.minX + cfg.wallMargin,
+              CASINO_INDOOR_CAMERA_BOUNDS.maxX - cfg.wallMargin,
+            ),
+            z: clampNum(
+              rawCamZ,
+              CASINO_INDOOR_CAMERA_BOUNDS.minZ + cfg.wallMargin,
+              CASINO_INDOOR_CAMERA_BOUNDS.maxZ - cfg.wallMargin,
+            ),
+          }
+        : {
+            x: clampNum(
+              rawCamX,
+              HOUSE_VISIT_INDOOR_BOUNDS.minX + cfg.wallMargin,
+              HOUSE_VISIT_INDOOR_BOUNDS.maxX - cfg.wallMargin,
+            ),
+            z: clampNum(
+              rawCamZ,
+              HOUSE_VISIT_INDOOR_BOUNDS.minZ + cfg.wallMargin,
+              HOUSE_VISIT_INDOOR_BOUNDS.maxZ - cfg.wallMargin,
+            ),
+          };
 
   const pushX = clampedCamXZ.x - rawCamX;
   const pushZ = clampedCamXZ.z - rawCamZ;
@@ -1561,18 +1598,31 @@ export function computeIndoorRoomOrbitCameraPose(
   const clampedLookXZ =
     input.roomKind === 'cafe_interior'
       ? clampCafeInteriorPosition(rawLookX, rawLookZ, cfg.wallMargin)
-      : {
-          x: clampNum(
-            rawLookX,
-            HOUSE_VISIT_INDOOR_BOUNDS.minX + cfg.wallMargin,
-            HOUSE_VISIT_INDOOR_BOUNDS.maxX - cfg.wallMargin,
-          ),
-          z: clampNum(
-            rawLookZ,
-            HOUSE_VISIT_INDOOR_BOUNDS.minZ + cfg.wallMargin,
-            HOUSE_VISIT_INDOOR_BOUNDS.maxZ - cfg.wallMargin,
-          ),
-        };
+      : input.roomKind === 'casino_interior'
+        ? {
+            x: clampNum(
+              rawLookX,
+              CASINO_INDOOR_CAMERA_BOUNDS.minX + cfg.wallMargin,
+              CASINO_INDOOR_CAMERA_BOUNDS.maxX - cfg.wallMargin,
+            ),
+            z: clampNum(
+              rawLookZ,
+              CASINO_INDOOR_CAMERA_BOUNDS.minZ + cfg.wallMargin,
+              CASINO_INDOOR_CAMERA_BOUNDS.interiorMaxZ - cfg.wallMargin,
+            ),
+          }
+        : {
+            x: clampNum(
+              rawLookX,
+              HOUSE_VISIT_INDOOR_BOUNDS.minX + cfg.wallMargin,
+              HOUSE_VISIT_INDOOR_BOUNDS.maxX - cfg.wallMargin,
+            ),
+            z: clampNum(
+              rawLookZ,
+              HOUSE_VISIT_INDOOR_BOUNDS.minZ + cfg.wallMargin,
+              HOUSE_VISIT_INDOOR_BOUNDS.maxZ - cfg.wallMargin,
+            ),
+          };
 
   const actualHoriz = Math.hypot(
     clampedCamXZ.x - clampedLookXZ.x,

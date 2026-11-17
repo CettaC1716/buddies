@@ -3186,6 +3186,288 @@ class SoundEngine {
     motorOsc.start(now);
     motorOsc.stop(now + 0.075);
   }
+
+  /**
+   * Mechanical slot cabinet pull-lever latch + spring release whoosh.
+   */
+  public playCasinoLeverPull(): void {
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+
+    // 1. Spring latch snap (260Hz -> 120Hz)
+    const latchOsc = ctx.createOscillator();
+    const latchGain = ctx.createGain();
+    latchOsc.type = 'triangle';
+    latchOsc.frequency.setValueAtTime(260, now);
+    latchOsc.frequency.exponentialRampToValueAtTime(115, now + 0.09);
+    latchGain.gain.setValueAtTime(0.0001, now);
+    latchGain.gain.linearRampToValueAtTime(0.16 * vol, now + 0.008);
+    latchGain.gain.exponentialRampToValueAtTime(0.0002, now + 0.11);
+    latchOsc.connect(latchGain);
+    latchGain.connect(out);
+    latchOsc.start(now);
+    latchOsc.stop(now + 0.12);
+
+    // 2. Ratchet gear zip (420Hz -> 780Hz)
+    const gearOsc = ctx.createOscillator();
+    const gearGain = ctx.createGain();
+    gearOsc.type = 'sine';
+    gearOsc.frequency.setValueAtTime(420, now + 0.04);
+    gearOsc.frequency.exponentialRampToValueAtTime(780, now + 0.14);
+    gearGain.gain.setValueAtTime(0.0001, now + 0.04);
+    gearGain.gain.linearRampToValueAtTime(0.085 * vol, now + 0.06);
+    gearGain.gain.exponentialRampToValueAtTime(0.0002, now + 0.16);
+    gearOsc.connect(gearGain);
+    gearGain.connect(out);
+    gearOsc.start(now + 0.04);
+    gearOsc.stop(now + 0.17);
+  }
+
+  /**
+   * Subtle high-frequency mechanical reel spin tick (throttled for rapid intervals).
+   */
+  public playSlotReelTick(pitchOffset = 0): void {
+    if (this.isThrottled('slot-reel-tick', 45)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    lpf.frequency.setValueAtTime(2100, now);
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    const baseHz = 520 + pitchOffset * 35 + Math.random() * 25;
+    osc.frequency.setValueAtTime(baseHz, now);
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.55, now + 0.025);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.036 * vol, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.028);
+    osc.connect(gain);
+    gain.connect(lpf);
+    osc.start(now);
+    osc.stop(now + 0.032);
+  }
+
+  /**
+   * Heavy staggered reel-lock mechanical clunk; ascends pitch per column and adds bright ping on near-miss pair.
+   */
+  public playSlotReelLock(reelIndex: number, isPairTension = false): void {
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+
+    const thudFreq = 195 + reelIndex * 32;
+    const thudOsc = ctx.createOscillator();
+    const thudGain = ctx.createGain();
+    thudOsc.type = 'triangle';
+    thudOsc.frequency.setValueAtTime(thudFreq, now);
+    thudOsc.frequency.exponentialRampToValueAtTime(72, now + 0.085);
+    thudGain.gain.setValueAtTime(0.0001, now);
+    thudGain.gain.linearRampToValueAtTime(0.18 * vol, now + 0.006);
+    thudGain.gain.exponentialRampToValueAtTime(0.0002, now + 0.095);
+    thudOsc.connect(thudGain);
+    thudGain.connect(out);
+    thudOsc.start(now);
+    thudOsc.stop(now + 0.11);
+
+    const chimeHz = isPairTension ? 1046.5 : 440 + reelIndex * 110;
+    const chimeOsc = ctx.createOscillator();
+    const chimeGain = ctx.createGain();
+    chimeOsc.type = 'sine';
+    chimeOsc.frequency.setValueAtTime(chimeHz, now);
+    chimeGain.gain.setValueAtTime(0.0001, now);
+    chimeGain.gain.linearRampToValueAtTime((isPairTension ? 0.12 : 0.065) * vol, now + 0.005);
+    chimeGain.gain.exponentialRampToValueAtTime(0.0002, now + (isPairTension ? 0.22 : 0.11));
+    chimeOsc.connect(chimeGain);
+    chimeGain.connect(out);
+    chimeOsc.start(now);
+    chimeOsc.stop(now + (isPairTension ? 0.24 : 0.12));
+  }
+
+  /**
+   * Snappy pentatonic arcade blip for Lucky Draw perimeter LED chase.
+   */
+  public playLuckyChaseStep(stepIndex: number): void {
+    if (this.isThrottled('lucky-chase-step', 45)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    lpf.frequency.setValueAtTime(2400, now);
+
+    const scale = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+    const freq = scale[((stepIndex % scale.length) + scale.length) % scale.length];
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.052 * vol, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+    osc.connect(gain);
+    gain.connect(lpf);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  /**
+   * Crisp wooden/brass wheel peg-flick click synced to Fortune Wheel flapper bounces.
+   */
+  public playWheelPegTick(speed01 = 0.5): void {
+    if (this.isThrottled('wheel-peg-tick', 36)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    lpf.frequency.setValueAtTime(2200, now);
+
+    const s = clamp(speed01, 0, 1);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    const startHz = 620 + s * 280;
+    osc.frequency.setValueAtTime(startHz, now);
+    osc.frequency.exponentialRampToValueAtTime(210, now + 0.032);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime((0.055 + s * 0.035) * vol, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.038);
+    osc.connect(gain);
+    gain.connect(lpf);
+    osc.start(now);
+    osc.stop(now + 0.042);
+  }
+
+  /**
+   * Ceramic poker chip clink when selecting or placing chips on Roulette/Blackjack.
+   */
+  public playCasinoChipClink(chips = 1): void {
+    if (this.isThrottled('casino-chip-clink', 32)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    lpf.frequency.setValueAtTime(3600, now);
+
+    const hits = Math.min(2, Math.max(1, chips));
+    for (let i = 0; i < hits; i += 1) {
+      const t0 = now + i * 0.026;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const pitch = 2150 + i * 240 + Math.random() * 90;
+      osc.frequency.setValueAtTime(pitch, t0);
+      osc.frequency.exponentialRampToValueAtTime(1450, t0 + 0.036);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(0.055 * vol, t0 + 0.003);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.045);
+      osc.connect(gain);
+      gain.connect(lpf);
+      osc.start(t0);
+      osc.stop(t0 + 0.05);
+    }
+  }
+
+  /**
+   * Ivory roulette ball track clatter / pocket bounce click.
+   */
+  public playRouletteBallBounce(intensity01 = 0.5): void {
+    if (this.isThrottled('roulette-ball-bounce', 48)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    lpf.frequency.setValueAtTime(2900, now);
+
+    const k = clamp(intensity01, 0, 1);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1250 + k * 420, now);
+    osc.frequency.exponentialRampToValueAtTime(520, now + 0.024);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime((0.03 + k * 0.035) * vol, now + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.028);
+    osc.connect(gain);
+    gain.connect(lpf);
+    osc.start(now);
+    osc.stop(now + 0.032);
+  }
+
+  /**
+   * Crisp paper card flick / flip SFX for Blackjack deal & hit.
+   */
+  public playCardDealFlip(): void {
+    if (this.isThrottled('card-deal-flip', 35)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const lpf = this.createWarmUiLowpass(ctx, now);
+    lpf.frequency.setValueAtTime(1900, now);
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + 0.045);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.048 * vol, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+    osc.connect(gain);
+    gain.connect(lpf);
+    osc.start(now);
+    osc.stop(now + 0.055);
+  }
+
+  /**
+   * Bright sparkling anime-arcade win fanfare for casino payouts & jackpots.
+   */
+  public playCasinoJackpotFanfare(isBigWin = false): void {
+    const ctx = this.ensureCtx();
+    if (!ctx || this._muted) return;
+    const vol = clamp(this._masterVolume, 0, 1);
+    if (vol <= 0.0001) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+
+    const notes = isBigWin
+      ? [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98]
+      : [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, idx) => {
+      const t0 = now + idx * 0.055;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = idx === notes.length - 1 ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(0.11 * vol, t0 + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0002, t0 + (idx === notes.length - 1 ? 0.34 : 0.16));
+      osc.connect(gain);
+      gain.connect(out);
+      osc.start(t0);
+      osc.stop(t0 + 0.36);
+    });
+  }
 }
 
 export function computeExplosionDucking(
