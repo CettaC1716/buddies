@@ -65,11 +65,14 @@ describe('Fashion & Apparel Boutique Kiosk Trigger, Bag Purchase & Wardrobe Equi
     assert.equal(modalBlocked.canInteract, false);
   });
 
-  it('maintains exact 9.40m symmetry across the three West Promenade kiosks', () => {
+  it('maintains exact 6.75m symmetry across the three West Promenade arcade bays', () => {
     const metrics = computeWestPromenadeKioskSymmetryMetrics();
     assert.equal(metrics.isSymmetrical, true);
-    assert.equal(metrics.northToCenterSpanM, 9.4);
-    assert.equal(metrics.centerToSouthSpanM, 9.4);
+    assert.equal(metrics.northScooterZ, -11.15);
+    assert.equal(metrics.centerRealEstateZ, -4.4);
+    assert.equal(metrics.southFashionZ, 2.35);
+    assert.equal(metrics.northToCenterSpanM, 6.75);
+    assert.equal(metrics.centerToSouthSpanM, 6.75);
   });
 
   it('stores purchased apparel into Personal Bag first and toggles equip/unequip cleanly', () => {

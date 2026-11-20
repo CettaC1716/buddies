@@ -1,14 +1,24 @@
 import * as THREE from 'three';
 import {
   evaluateAmusementBoardwalkElevation,
+  getNeTamanRiaShorelineX,
   isPointOnAmusementOverwaterPier,
 } from './buddiesAmusementParkRules';
+import { evaluateCentralParkElevation } from './buddiesCentralParkRules';
 import {
   evaluateGrandCasinoHillClear,
   evaluateGrandCasinoPavedPlatformSdf,
   evaluateGrandCasinoValetLoopSdf,
   isPointOnGrandCasinoCrosswalk,
 } from './buddiesGrandCasinoRules';
+import {
+  COASTAL_HILL_RIDGE_ELEV_Y,
+  COASTAL_HILL_ROAD_HALF_WIDTH,
+  COASTAL_HILL_WALKABLE_HALF_WIDTH,
+  evaluateCoastalHillRoadSample,
+  evaluateHillVillaDrivewayApronSdf,
+  evaluateHillVillaPlateauSdf,
+} from './buddiesCoastalHillsRules';
 
 /**
  * Flat Ground Map (Original Buddies Blitz / Blitz World):
@@ -17,11 +27,12 @@ import {
 export const PLANET_CURVATURE_STRENGTH = 0.0;
 
 /**
- * Playable flat arena bounds [-130, +130] in X and Z (expanded 3-part North-Central-South arena
- * with Base Outer Ring Roads & Impassable Outer Perimeter Hill Embankment).
+ * Playable arena bounds [-156, +156] in X and Z (expanded 3-part North-Central-South arena
+ * with Base Outer Ring Roads, San Francisco-style Coastal Switchbacks, Twin Peaks Scenic Ridge Loop,
+ * and 3 flat +8.50m Hilltop Villa Plateaus).
  */
-export const PLANET_HALF_EXTENT = 130.0;
-export const PLANET_WORLD_PERIOD = 260.0;
+export const PLANET_HALF_EXTENT = 156.0;
+export const PLANET_WORLD_PERIOD = 312.0;
 
 /**
  * Legacy constants kept at 0.0 (no carved rivers or bridges in the flat Blitz world).
@@ -40,6 +51,61 @@ export interface PlanetBridgeSpec {
 }
 
 export const PLANET_BRIDGES: readonly PlanetBridgeSpec[] = [];
+
+/**
+ * Shared world geometry & walkable bounds for the SE Beachfront Stilt Timber Cabin
+ * ("Rumah Papan Panggung Tepi Pantai"), synchronized between 3D mesh builder, ground elevation,
+ * ocean barrier, OBB colliders, and underwater ecology exclusions.
+ */
+export const BEACHFRONT_STILT_CABIN_SPEC = {
+  centerX: 108.4,
+  centerZ: 85.2,
+  deckTopY: 0.96,
+  deckMinX: 104.7,
+  deckMaxX: 113.2,
+  deckMinZ: 81.2,
+  deckMaxZ: 89.2,
+  stairMinX: 103.5,
+  stairMaxX: 104.7,
+  stairMinZ: 83.2,
+  stairMaxZ: 85.6,
+  cabinBodyMinX: 106.8,
+  cabinBodyMaxX: 110.9,
+  cabinBodyMinZ: 82.0,
+  cabinBodyMaxZ: 86.8,
+} as const;
+
+export function isPointOnBeachfrontStiltCabinDeck(worldX: number, worldZ: number): boolean {
+  const c = BEACHFRONT_STILT_CABIN_SPEC;
+  return (
+    worldX >= c.deckMinX &&
+    worldX <= c.deckMaxX - 0.35 &&
+    worldZ >= c.deckMinZ + 0.35 &&
+    worldZ <= c.deckMaxZ - 0.35
+  );
+}
+
+export function evaluateBeachfrontStiltCabinElevation(worldX: number, worldZ: number): number {
+  const c = BEACHFRONT_STILT_CABIN_SPEC;
+  if (
+    worldX >= c.deckMinX &&
+    worldX <= c.deckMaxX &&
+    worldZ >= c.deckMinZ &&
+    worldZ <= c.deckMaxZ
+  ) {
+    return c.deckTopY;
+  }
+  if (
+    worldX >= c.stairMinX &&
+    worldX <= c.stairMaxX &&
+    worldZ >= c.stairMinZ &&
+    worldZ <= c.stairMaxZ
+  ) {
+    const t = Math.max(0, Math.min(1, (worldX - c.stairMinX) / (c.stairMaxX - c.stairMinX)));
+    return c.deckTopY * t;
+  }
+  return 0.0;
+}
 
 /**
  * Clamps a world coordinate cleanly within the flat arena bounds [-PLANET_HALF_EXTENT, +PLANET_HALF_EXTENT]
@@ -226,11 +292,11 @@ function smin(a: number, b: number, k: number): number {
 
 /**
  * Signed distance to the Widened West Elevated Lobby & Skin Shop Plaza ("Lobby Area & Toko-Toko Skin"):
- * - Widened to span x in [-104.5, -76.5], z in [-38.0, +38.0] (28m x 76m elevated plaza at y = +1.40m)
+ * - Set back -2.25m to span x in [-110.75, -78.75], z in [-38.0, +38.0] (aligned flush with Tennis Court Fence -78.82)
  * - Returns < 0.0 inside the elevated lobby platform
  */
 export function evaluateWestPowerPlantSdf(worldX: number, worldZ: number): number {
-  return sdRoundedBox2D(worldX, worldZ, -90.5, 0.0, 14.0, 38.0, 2.4);
+  return sdRoundedBox2D(worldX, worldZ, -94.75, 0.0, 16.0, 38.0, 2.4);
 }
 
 /**
@@ -261,13 +327,22 @@ export function evaluateEmbankmentTierOffsets(
   const westCornerBulge =
     smoothstep(-54.0, -90.0, px) * smoothstep(62.0, 102.0, Math.abs(pz)) * 11.5;
   const westPlantClear =
-    smoothstep(-76.0, -104.0, px) * (1.0 - smoothstep(36.0, 44.0, Math.abs(pz))) * 9.5;
+    smoothstep(-78.25, -108.75, px) *
+    (1.0 - smoothstep(-110.6, -111.7, px)) *
+    (1.0 - smoothstep(37.0, 42.5, Math.abs(pz))) *
+    16.0;
   const tennisClubClear =
     smoothstep(-74.0, -102.0, px) *
     (12.2 - 1.7 * smoothstep(-106.0, -112.0, px)) *
     smoothstep(35.0, 41.0, pz) *
     (1.0 - smoothstep(75.0, 82.0, pz));
   const grandCasinoClear = evaluateGrandCasinoHillClear(px, pz);
+  // Keep North & South rear collector roads (|z| = 108 ± 3.9, x in [-60..+96]) 100% flat and clear of hill toes
+  const rearRoadClear =
+    smoothstep(-68.0, -58.0, px) *
+    (1.0 - smoothstep(95.0, 100.5, px)) *
+    (1.0 - smoothstep(111.8, 114.8, Math.abs(pz))) *
+    5.8;
   // Smoothly open the East side at x >= 101.5 where the shifted Coastal Concrete Seawall & Open Ocean sit
   const eastCoastalOpen = smoothstep(96.5, 102.0, px) * 92.0;
   const d0 =
@@ -276,6 +351,7 @@ export function evaluateEmbankmentTierOffsets(
     westPlantClear -
     tennisClubClear -
     grandCasinoClear -
+    rearRoadClear -
     eastCoastalOpen;
 
   const w1 =
@@ -309,38 +385,47 @@ export function evaluateEmbankmentTierOffsets(
 
 /**
  * Signed distance to the Impassable Outer Map Boundary:
- * - Returns < 0.0 inside the playable arena (including the Harbor Dock and Coastal Seawall promenade)
- * - Returns >= 0.0 on the North/West/South 4-level stepped hill embankment (`t1 >= 0`)
- *   OR past the East Coastal Seawall / Harbor Quay edge into the Open East Ocean (`worldX >= 109.2`).
+ * - Returns < 0.0 inside the playable arena, coastal switchbacks, Twin Peaks Ridge Highway,
+ *   and all 3 flat Hilltop Villa Plateaus (connected smoothly across wide driveway aprons).
+ * - Returns >= 0.0 on impassable outer hill bluffs/guardrails OR East Open Ocean past shoreline.
  */
 export function evaluateOuterEmbankmentSdf(worldX: number, worldZ: number): number {
   const { t1 } = evaluateEmbankmentTierOffsets(worldX, worldZ);
-  const eastOceanBarrier = isPointOnAmusementOverwaterPier(worldX, worldZ)
-    ? -4.0
-    : worldX - 109.2;
-  return Math.max(t1, eastOceanBarrier);
+  const shorelineX = getNeTamanRiaShorelineX(worldZ);
+  const eastOceanBarrier =
+    isPointOnAmusementOverwaterPier(worldX, worldZ) ||
+    isPointOnBeachfrontStiltCabinDeck(worldX, worldZ)
+      ? -4.0
+      : worldX - (shorelineX - 0.8);
+  const baseWalkSdf = Math.max(t1, eastOceanBarrier);
+  const hillRoad = evaluateCoastalHillRoadSample(worldX, worldZ);
+  const hillRoadWalkSdf = hillRoad.distToCenterM - COASTAL_HILL_WALKABLE_HALF_WIDTH;
+  const plateauWalkSdf = evaluateHillVillaPlateauSdf(worldX, worldZ);
+  const drivewayApronSdf = evaluateHillVillaDrivewayApronSdf(worldX, worldZ);
+  const coastalWalkUnion = Math.min(hillRoadWalkSdf, Math.min(plateauWalkSdf, drivewayApronSdf));
+  return Math.min(baseWalkSdf, coastalWalkUnion);
 }
 
 function evalMirroredCentralSCurveDist(px: number, az: number): number {
-  // 1. Wind Farm S-Bend (West side x = -70..-25, curving around West Super DropZone & Oasis Lake)
-  const s1 = sdSegment2D(px, az, -70.0, 15.0, -52.0, 15.0);
+  // 1. Wind Farm S-Bend (West side x = -66.5..-25, ending cleanly inside Ring Road so caps never bulge)
+  const s1 = sdSegment2D(px, az, -66.5, 15.0, -52.0, 15.0);
   const s2 = sdSegment2D(px, az, -52.0, 15.0, -41.0, 26.0);
   const s3 = sdSegment2D(px, az, -41.0, 26.0, -25.0, 26.0);
 
-  // 2. Central Forest S-Bend & Equator Crossing (x = -25..+19, framing Central DropZone & Power Core)
-  const s4 = sdSegment2D(px, az, -25.0, 26.0, -13.0, 14.0);
-  const s5 = sdSegment2D(px, az, -13.0, 0.0, -13.0, 14.0);
-  const s6 = sdSegment2D(px, az, -13.0, 14.0, 9.0, 14.0);
-  const s7 = sdSegment2D(px, az, 9.0, 14.0, 19.0, 24.0);
+  // 2. Central Forest S-Bend & Equator Crossing (x = -25..+19, framing enlarged Central Urban Plaza)
+  const s4 = sdSegment2D(px, az, -25.0, 26.0, -14.2, 15.6);
+  const s5 = sdSegment2D(px, az, -14.2, 0.0, -14.2, 15.6);
+  const s6 = sdSegment2D(px, az, -14.2, 15.6, 8.0, 15.6);
+  const s7 = sdSegment2D(px, az, 8.0, 15.6, 18.5, 26.5);
 
-  // 3. Expanded East Warzone S-Curve & Symmetric North/South Base Collector Connectors (x = +19..+70)
-  const s8 = sdSegment2D(px, az, 19.0, 24.0, 42.0, 24.0);
+  // 3. Expanded East Warzone S-Curve & Symmetric North/South Base Collector Connectors (x = +18.5..+66.5)
+  const s8 = sdSegment2D(px, az, 18.5, 26.5, 43.5, 26.5);
   const s9 = sdSegment2D(px, az, -25.0, 26.0, -18.0, 33.0);
-  const s10 = sdSegment2D(px, az, -18.0, 33.0, -18.0, 52.0);
-  const s11 = sdSegment2D(px, az, 19.0, 24.0, 19.0, 52.0);
-  const s12 = sdSegment2D(px, az, 42.0, 24.0, 52.0, 15.0);
-  const s13 = sdSegment2D(px, az, 52.0, 15.0, 70.0, 15.0);
-  const s14 = sdSegment2D(px, az, 42.0, 24.0, 42.0, 52.0);
+  const s10 = sdSegment2D(px, az, -18.0, 33.0, -18.0, 49.5);
+  const s11 = sdSegment2D(px, az, 19.0, 26.5, 19.0, 49.5);
+  const s12 = sdSegment2D(px, az, 43.5, 26.5, 54.5, 15.0);
+  const s13 = sdSegment2D(px, az, 54.5, 15.0, 66.5, 15.0);
+  const s14 = sdSegment2D(px, az, 42.0, 26.5, 42.0, 49.5);
 
   return Math.min(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14);
 }
@@ -357,16 +442,13 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   const px = worldX;
   const az = Math.abs(worldZ);
 
-  // 1. Complete Outer Ring Highway Loop (x = ±70.0, z = ±52.0) & Harbor Dock Entrance Spurs
-  const dWest = sdSegment2D(px, az, -70.0, 0.0, -70.0, 44.0);
-  const dEast = sdSegment2D(px, az, 70.0, 0.0, 70.0, 44.0);
-  const dCollector = sdSegment2D(px, az, -62.0, 52.0, 62.0, 52.0);
+  // 1. Complete Ring Highway Loop for City Tram + Parallel Inner Car Lane:
+  //    Centerline = rounded box (x = ±70.0, z = ±52.0, R = 8.0m corners).
+  //    Outer curb stays at +3.90m (|x| = 73.90, |z| = 55.90); inner curb extends inward to -7.80m
+  //    (|x| = 62.20, |z| = 44.20) so a full car lane runs beside the tram track up to the inner zebra crossings.
+  const dTramRingBox = sdRoundedBox2D(px, az, 0.0, 0.0, 70.0, 52.0, 8.0);
+  const dTramRingRoad = Math.abs(dTramRingBox + 1.95) - 5.85;
   const dHarborTurn = sdSegment2D(px, az, 70.0, 15.0, 76.5, 15.0);
-
-  const dCornerW =
-    px <= -62.0 && az >= 44.0 ? Math.abs(Math.hypot(px + 62.0, az - 44.0) - 8.0) : 999.0;
-  const dCornerE =
-    px >= 62.0 && az >= 44.0 ? Math.abs(Math.hypot(px - 62.0, az - 44.0) - 8.0) : 999.0;
 
   // 2. 4-Base Complex Ring & Dividing Roads ("masing-masing base dipisahkan dengan jalan raya seperti komplek"):
   //    - 4 Base Plots centered at x = -45.0, -15.0, +15.0, +45.0 (|z| in [64.2, 99.2])
@@ -376,30 +458,25 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   const dComplexDiv1 = sdSegment2D(px, az, -30.0, 52.0, -30.0, 108.0);
   const dComplexDiv2 = sdSegment2D(px, az, 0.0, 52.0, 0.0, 108.0);
   const dComplexDiv3 = sdSegment2D(px, az, 30.0, 52.0, 30.0, 108.0);
-  const dBaseRear = sdSegment2D(px, az, -60.0, 108.0, 60.0, 108.0);
+  const dBaseRear = sdSegment2D(px, az, -60.0, 108.0, 96.0, 108.0);
   const dGateDrive1 = sdSegment2D(px, az, -45.0, 52.0, -45.0, 64.2);
   const dGateDrive2 = sdSegment2D(px, az, -15.0, 52.0, -15.0, 64.2);
   const dGateDrive3 = sdSegment2D(px, az, 15.0, 52.0, 15.0, 64.2);
   const dGateDrive4 = sdSegment2D(px, az, 45.0, 52.0, 45.0, 64.2);
 
-  const dOuterAndBaseRing =
+  const dOuterAndBaseRing = Math.min(
+    dTramRingRoad,
     Math.min(
-      Math.min(
-        dWest,
-        dEast,
-        dCollector,
-        dHarborTurn,
-        dCornerW,
-        dCornerE,
-        dBaseWestOuter,
-        dBaseEastOuter,
-        dComplexDiv1,
-        dComplexDiv2,
-        dComplexDiv3,
-        dBaseRear,
-      ) - 3.9,
-      Math.min(dGateDrive1, dGateDrive2, dGateDrive3, dGateDrive4) - 2.6,
-    );
+      dHarborTurn,
+      dBaseWestOuter,
+      dBaseEastOuter,
+      dComplexDiv1,
+      dComplexDiv2,
+      dComplexDiv3,
+      dBaseRear,
+    ) - 3.9,
+    Math.min(dGateDrive1, dGateDrive2, dGateDrive3, dGateDrive4) - 2.6,
+  );
 
   // 3. Mirrored Central S-Curve Warzone Roads (cutting through Wind Farm, Forest, and East Warzone)
   const dCentralSCurve = evalMirroredCentralSCurveDist(px, az) - 4.2;
@@ -407,7 +484,13 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   // 4. Grand Casino Semi-Circular Valet Drop-Off Loop (North of Central Plaza, x <= -60.0, z in [-76.4, -50.8])
   const dCasinoValetLoop = evaluateGrandCasinoValetLoopSdf(px, worldZ);
 
-  return Math.min(Math.min(dOuterAndBaseRing, dCentralSCurve), dCasinoValetLoop);
+  // 5. Mirrored San Francisco-Style Coastal Switchbacks & Twin Peaks Scenic Ridge Loop
+  const dCoastalHillRoad = evaluateCoastalHillRoadSample(px, worldZ).roadSdfM;
+
+  return Math.min(
+    Math.min(Math.min(dOuterAndBaseRing, dCentralSCurve), dCasinoValetLoop),
+    dCoastalHillRoad,
+  );
 }
 
 export interface ZebraCrosswalkZoneSpec {
@@ -419,18 +502,17 @@ export interface ZebraCrosswalkZoneSpec {
 }
 
 /**
- * Exact 13 North-South Mirrored Zebra Crosswalk zones matching the GLSL terrain shader
+ * Exact 12 North-South Mirrored Zebra Crosswalk zones matching the GLSL terrain shader
  * (`evalZebraCrosswalk` in buddiesBlitzShadersAndAssets.ts).
  */
 export const ZEBRA_CROSSWALK_ZONES: readonly ZebraCrosswalkZoneSpec[] = [
-  { cx: -18.0, cz: 46.5, hx: 3.2, hz: 2.2, mirroredZ: true },
-  { cx: 19.0, cz: 46.5, hx: 3.2, hz: 2.2, mirroredZ: true },
-  { cx: 42.0, cz: 46.5, hx: 3.2, hz: 2.2, mirroredZ: true },
-  { cx: 73.2, cz: 15.0, hx: 2.2, hz: 3.2, mirroredZ: true },
+  { cx: -18.0, cz: 42.0, hx: 3.2, hz: 2.2, mirroredZ: true },
+  { cx: 19.0, cz: 42.0, hx: 3.2, hz: 2.2, mirroredZ: true },
+  { cx: 42.0, cz: 42.0, hx: 3.2, hz: 2.2, mirroredZ: true },
   { cx: -60.0, cz: 15.0, hx: 2.2, hz: 3.2, mirroredZ: true },
   { cx: 60.0, cz: 15.0, hx: 2.2, hz: 3.2, mirroredZ: true },
-  { cx: -70.0, cz: 0.0, hx: 3.2, hz: 2.2, mirroredZ: false },
-  { cx: 70.0, cz: 0.0, hx: 3.2, hz: 2.2, mirroredZ: false },
+  { cx: -68.05, cz: 8.6, hx: 5.2, hz: 2.2, mirroredZ: true },
+  { cx: 68.05, cz: 0.0, hx: 5.2, hz: 2.2, mirroredZ: false },
   { cx: -60.0, cz: 58.0, hx: 3.2, hz: 2.2, mirroredZ: true },
   { cx: -30.0, cz: 58.0, hx: 3.2, hz: 2.2, mirroredZ: true },
   { cx: 0.0, cz: 58.0, hx: 3.2, hz: 2.2, mirroredZ: true },
@@ -501,8 +583,8 @@ export function evaluateSeHarborSdf(
   // 2. Continuous East Coastal Concrete Seawall Promenade ("beton area pesisir laut") [101.5..110.0] x [-180.0..+180.0]
   const dCoastalWall = sdRoundedBox2D(px, pz, 105.75, 0.0, 4.25, 180.0, 0.8);
   const concreteSdf = Math.min(dHarborDock, dCoastalWall);
-  // 3. Open East Ocean extending continuously from x = 110.0 ("ujung dermaga") to the East horizon of the map
-  const waterSdf = 110.0 - px;
+  // 3. Open East Ocean starting at x = 110.0 (and curving smoothly out to 126.5m on NE Taman Ria reclaimed beach)
+  const waterSdf = getNeTamanRiaShorelineX(pz) - px;
   return { concreteSdf, waterSdf };
 }
 
@@ -515,26 +597,167 @@ function evalModelEstateBaseDirtSdf(px: number, pz: number): number {
   return Math.min(dPlot0, dSpur0);
 }
 
+export const OUTER_TRAM_SIDEWALK_WIDTH_M = 4.4;
+
+/**
+ * Signed distance to the 4.40m-wide paved urban sidewalk hugging the outer perimeter
+ * of the Autonomous City Tram ring road (`x = ±70.0, z = ±52.0, R = 8.0m` corners),
+ * matched 1:1 to the width of the main zebra crosswalks (`2 * 2.20m = 4.40m`) while
+ * leaving all crossroad intersections, Harbor turn spurs, Grand Casino, Central Plaza,
+ * Tennis Club, Beachfront Halte, and SE Beachfront walkway open.
+ */
+export function evaluateOuterTramSidewalkSdf(px: number, pz: number): number {
+  const dTram = sdRoundedBox2D(px, pz, 0.0, 0.0, 70.0, 52.0, 8.0);
+  let d = Math.abs(dTram - 6.13) - 2.2;
+
+  // Exclude West straight already built by Plaza/Casino/Tennis and NW Grand Casino lot
+  d = Math.max(d, -sdRoundedBox2D(px, pz, -91.965, 0.0, 18.035, 110.0, 0.0));
+  d = Math.max(d, -sdRoundedBox2D(px, pz, -86.965, -74.05, 23.035, 35.95, 0.0));
+
+  // Exclude N/S vertical complex crossroads (x = ±60, ±30, 0) & gate driveway spurs (x = ±45, ±15)
+  const az = Math.abs(pz);
+  if (az > 54.0) {
+    for (const rx of [-60.0, -30.0, 0.0, 30.0, 60.0] as const) {
+      d = Math.max(d, -sdRoundedBox2D(px, az, rx, 59.5, 3.93, 5.5, 0.0));
+    }
+    for (const gx of [-45.0, -15.0, 15.0, 45.0] as const) {
+      d = Math.max(d, -sdRoundedBox2D(px, az, gx, 59.5, 2.63, 5.5, 0.0));
+    }
+  }
+
+  // Exclude East Harbor entrance asphalt spurs (z = ±15.0, x >= 73.5)
+  d = Math.max(d, -sdRoundedBox2D(px, az, 77.5, 15.0, 4.0, 3.93, 0.0));
+
+  // Exclude raised +0.26m Beachfront Harbor Halte platform and SE Beachfront Urban Walkway
+  d = Math.max(d, -sdRoundedBox2D(px, pz, 79.675, 29.5, 3.525, 9.3, 0.0));
+  d = Math.max(d, -sdRoundedBox2D(px, pz, 85.01, 60.225, 9.99, 14.775, 0.0));
+
+  return d;
+}
+
+/**
+ * Returns true when `(worldX, worldZ)` lies on the 4.40m outer tramway pedestrian sidewalk.
+ */
+export function isPointOnOuterTramSidewalk(worldX: number, worldZ: number): boolean {
+  return evaluateOuterTramSidewalkSdf(worldX, worldZ) <= 0.02;
+}
+
+/**
+ * Builds a flat horizontal polygon slab in `(worldX, worldZ)` spanning `[yBottom, yTop]`
+ * with metric planar UVs so procedural paver/cobblestone textures tile without distortion.
+ */
+export function createHorizontalPolygonSlabGeometry(
+  ptsWorldXZ: readonly [number, number][],
+  yBottom: number,
+  yTop: number,
+  uvTileMeters = 2.4,
+  uvMapper?: (wx: number, wz: number) => [number, number],
+): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  for (let i = 0; i < ptsWorldXZ.length; i++) {
+    const [wx, wz] = ptsWorldXZ[i];
+    if (i === 0) shape.moveTo(wx, -wz);
+    else shape.lineTo(wx, -wz);
+  }
+  shape.closePath();
+
+  const depth = Math.max(0.01, yTop - yBottom);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 12,
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, yBottom, 0);
+
+  const pos = geo.getAttribute('position');
+  const uv = geo.getAttribute('uv');
+  if (pos && uv) {
+    for (let i = 0; i < pos.count; i++) {
+      const wx = pos.getX(i);
+      const wz = pos.getZ(i);
+      if (uvMapper) {
+        const [u, v] = uvMapper(wx, wz);
+        uv.setXY(i, u, v);
+      } else {
+        uv.setXY(i, wx / uvTileMeters, wz / uvTileMeters);
+      }
+    }
+    uv.needsUpdate = true;
+  }
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+export const INNER_TRAM_SIDEWALK_WIDTH_M = 4.4;
+
+/**
+ * Signed distance to the 4.40m-wide paved urban sidewalk hugging the inner perimeter
+ * of the widened City Tram + Car ring road (`|x| in [57.80 .. 62.20]`, `|z| in [39.80 .. 44.20]`),
+ * aligned 1:1 with the inner S-curve zebra crosswalks while leaving intersecting streets
+ * and the 3 shifted inner Halte decks (`Central Plaza`, `North Residence`, `South Residence`) clear.
+ */
+export function evaluateInnerTramSidewalkSdf(px: number, pz: number): number {
+  const dTram = sdRoundedBox2D(px, pz, 0.0, 0.0, 70.0, 52.0, 8.0);
+  let d = Math.abs(dTram + 10.0) - 2.2;
+
+  // Exclude West & East S-curve road entrances at z = ±15.0 (half-width 4.20m + 0.03m seam)
+  const ax = Math.abs(px);
+  const az = Math.abs(pz);
+  if (ax > 57.0 && ax < 63.0) {
+    d = Math.max(d, -sdRoundedBox2D(ax, az, 60.0, 15.0, 3.0, 4.23, 0.0));
+  }
+
+  // Exclude the 3 North & South S-curve road entrances (x = -18.0, +19.0, +42.0)
+  if (az > 39.0 && az < 45.0) {
+    for (const sx of [-18.0, 19.0, 42.0] as const) {
+      d = Math.max(d, -sdRoundedBox2D(px, az, sx, 42.0, 4.23, 3.0, 0.0));
+    }
+  }
+
+  // Exclude the 3 shifted inner Halte raised boarding decks (+0.26m)
+  d = Math.max(d, -sdRoundedBox2D(px, pz, -58.9, 0.0, 3.35, 9.2, 0.0));
+  d = Math.max(d, -sdRoundedBox2D(px, pz, 3.5, -40.87, 9.2, 3.35, 0.0));
+  d = Math.max(d, -sdRoundedBox2D(px, pz, -36.5, 40.87, 9.2, 3.35, 0.0));
+
+  return d;
+}
+
+/**
+ * Returns true when `(worldX, worldZ)` lies on the 4.40m inner tramway pedestrian sidewalk.
+ */
+export function isPointOnInnerTramSidewalk(worldX: number, worldZ: number): boolean {
+  return evaluateInnerTramSidewalkSdf(worldX, worldZ) <= 0.02;
+}
+
 export function evaluateHaltePlatformSdf(px: number, pz: number): number {
-  // Central Halte: center (-61.66, 0.0), halfExtents (3.6, 9.4)
-  const dCentral = sdRoundedBox2D(px, pz, -61.66, 0.0, 3.6, 9.4, 0.4);
-  // North Residence Halte: center (6.5, -44.67), halfExtents (9.4, 3.6)
-  const dNorth = sdRoundedBox2D(px, pz, 6.5, -44.67, 9.4, 3.6, 0.4);
-  // South Residence Halte: center (-36.5, 44.67), halfExtents (9.4, 3.6)
-  const dSouth = sdRoundedBox2D(px, pz, -36.5, 44.67, 9.4, 3.6, 0.4);
+  // Central Halte (shifted inward flush to |x| = 62.20 curb): center (-58.90, 0.0), halfExtents (3.6, 9.4)
+  const dCentral = sdRoundedBox2D(px, pz, -58.9, 0.0, 3.6, 9.4, 0.4);
+  // North Residence Halte (shifted inward flush to |z| = 44.20 curb & clear of x = 19 street): center (3.5, -40.87)
+  const dNorth = sdRoundedBox2D(px, pz, 3.5, -40.87, 9.4, 3.6, 0.4);
+  // South Residence Halte (shifted inward flush to |z| = 44.20 curb): center (-36.5, 40.87)
+  const dSouth = sdRoundedBox2D(px, pz, -36.5, 40.87, 9.4, 3.6, 0.4);
   // Beachfront Harbor Halte: center (79.63, 29.5), halfExtents (3.6, 9.4)
   const dBeach = sdRoundedBox2D(px, pz, 79.63, 29.5, 3.6, 9.4, 0.4);
-  // Central Plaza Roadside Pedestrian Sidewalk (worldX in [-76.65 .. -73.85], worldZ in [-38.2 .. +38.2])
-  const dPlazaSidewalk = sdRoundedBox2D(px, pz, -75.25, 0.0, 1.45, 38.2, 0.2);
+  // Central Plaza Roadside Pedestrian Sidewalk (widened 4.80m span worldX in [-78.86 .. -73.90], worldZ in [-38.2 .. +38.2])
+  const dPlazaSidewalk = sdRoundedBox2D(px, pz, -76.38, 0.0, 2.48, 38.2, 0.2);
   // Standalone Scenic Clay Tennis Court & Full-Width Perimeter Sidewalks (worldX in [-104.40 .. -73.85], worldZ in [+38.10 .. +65.70])
   const dTennisClub = sdRoundedBox2D(px, pz, -89.20, 51.90, 15.20, 13.70, 0.3);
   // North-of-Plaza Grand Casino, Median Island, South Connector & Curved North Garden
   const dGrandCasino = evaluateGrandCasinoPavedPlatformSdf(px, pz);
+  // 4.40m Outer & Inner Tram Ring Sidewalks around all un-built tram loop perimeters
+  const dOuterTramSidewalk = evaluateOuterTramSidewalkSdf(px, pz);
+  const dInnerTramSidewalk = evaluateInnerTramSidewalkSdf(px, pz);
   return Math.min(
-    dGrandCasino,
+    Math.min(dOuterTramSidewalk, dInnerTramSidewalk),
     Math.min(
-      dTennisClub,
-      Math.min(dPlazaSidewalk, Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)))),
+      dGrandCasino,
+      Math.min(
+        dTennisClub,
+        Math.min(dPlazaSidewalk, Math.min(dCentral, Math.min(dNorth, Math.min(dSouth, dBeach)))),
+      ),
     ),
   );
 }
@@ -582,8 +805,18 @@ export function evaluateBlitzGrassMask(worldX: number, worldZ: number): number {
   const hardPadSdf = Math.min(dModelEstateDirt, dConstructionYardDirt);
   const padSafe = smoothstep(-0.3, 0.5, hardPadSdf);
 
-  const embSdf = evaluateOuterEmbankmentSdf(px, pz);
-  const embSafe = 1.0 - smoothstep(-0.6, 0.8, embSdf);
+  // Match GLSL evaluateOuterEmbankmentSdf grass suppression east of x = 109.2 while allowing lush grass on flat Hilltop Villa Plateaus
+  const { t1: embT1 } = evaluateEmbankmentTierOffsets(px, pz);
+  const embSdf = Math.max(embT1, px - 109.2);
+  const plateauSdf = evaluateHillVillaPlateauSdf(px, pz);
+  const plateauGrassMask = 1.0 - smoothstep(-0.2, 0.6, plateauSdf);
+  const embSafe = Math.max(1.0 - smoothstep(-0.6, 0.8, embSdf), plateauGrassMask);
+  const hillRoad = evaluateCoastalHillRoadSample(px, pz);
+  const hillRoadSafe = smoothstep(
+    COASTAL_HILL_ROAD_HALF_WIDTH - 0.15,
+    COASTAL_HILL_ROAD_HALF_WIDTH + 0.85,
+    hillRoad.distToCenterM,
+  );
 
   const halteSdf = evaluateHaltePlatformSdf(px, pz);
   const halteSafe = smoothstep(-0.2, 0.6, halteSdf);
@@ -592,7 +825,15 @@ export function evaluateBlitzGrassMask(worldX: number, worldZ: number): number {
     0.0,
     Math.min(
       1.0,
-      grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe * halteSafe,
+      grassMask *
+        roadSafe *
+        hillRoadSafe *
+        lakeSafe *
+        harborSafe *
+        westPlantSafe *
+        padSafe *
+        embSafe *
+        halteSafe,
     ),
   );
 }
@@ -611,9 +852,43 @@ export function evaluatePlanetWaterField(worldX: number, worldZ: number): number
   return 1.0 - smoothstep(-0.4, 0.4, getPlanetWaterSdf(worldX, worldZ));
 }
 
+export const EAST_WATER_SURFACE_Y = -0.16;
+export const HARBOR_SEABED_DEEP_Y = -1.65;
+
+/**
+ * Returns 1.0 along the open golden sandy beaches (NE Taman Ria z in [-104.2..-46.2]
+ * and SE Coastal Beachfront z in [+46.2..+104.2]) and 0.0 along the concrete Harbor Quay
+ * (z in [-46.2..+46.2]) and N/S concrete seawall tails (|z| > 104.2).
+ * Matches GLSL evaluateEastCoastalSandyMask(float z) 1:1.
+ */
+export function evaluateEastCoastalSandyMask(worldZ: number): number {
+  const neSandy =
+    smoothstep(-104.2, -101.8, worldZ) * (1.0 - smoothstep(-48.5, -46.2, worldZ));
+  const seSandy =
+    smoothstep(46.2, 48.5, worldZ) * (1.0 - smoothstep(102.0, 104.2, worldZ));
+  return Math.max(neSandy, seSandy);
+}
+
+/**
+ * Evaluates the East Sea / Harbor seabed elevation drop (0.0m -> -1.65m) matching GLSL 1:1:
+ * - Sandy beaches (NE Taman Ria & SE Beachfront): gentle slope `smoothstep(0.35, -14.0, waterSdf)`
+ *   creating a crystal-clear 0.2m-0.9m shallow reef/sand zone before reaching -1.65m deep ocean.
+ * - Concrete Harbor Quay (z in [-46.2..+46.2]) & N/S seawall tails: steep drop
+ *   `smoothstep(0.15, -1.2, waterSdf)` -> -1.65m so ground never pokes through the quay wall.
+ */
+export function evaluateHarborSeabedDrop(worldX: number, worldZ: number): number {
+  const { waterSdf } = evaluateSeHarborSdf(worldX, worldZ);
+  if (waterSdf >= 0.35) return 0.0;
+  const sandySlope = HARBOR_SEABED_DEEP_Y * smoothstep(0.35, -14.0, waterSdf);
+  const quayDrop = HARBOR_SEABED_DEEP_Y * smoothstep(0.15, -1.2, waterSdf);
+  const sandyMask = evaluateEastCoastalSandyMask(worldZ);
+  return quayDrop + (sandySlope - quayDrop) * sandyMask;
+}
+
 /**
  * Base procedural ground elevation:
  * - 0.0m across the flat playable arena, Harbor Dock, and East Coastal Seawall
+ * - Sloped sandy seabed (0.0m -> -1.65m over 14m) off NE Taman Ria & SE Beachfront, and steep -1.65m drop at Harbor Quay
  * - -1.55m 3-level concave lake basin depression ("level cekungan danau") inside the Oasis Lake (`evaluateNwLakeSdf`)
  * - +1.40m on the West Elevated Concrete Power Plant Platform (`x in [-98.5, -78.5], z in [-35.0, +35.0]`)
  * - Rises into a 4-level stepped contour hill embankment ("Tanggul Bukit dengan Lekukan Level", +11.4m)
@@ -622,22 +897,22 @@ export function evaluatePlanetWaterField(worldX: number, worldZ: number): number
 export function getBaseProceduralGroundElevation(worldX: number, worldZ: number): number {
   const westPlantSdf = evaluateWestPowerPlantSdf(worldX, worldZ);
   let westPlantElev = (1.0 - smoothstep(-0.45, -0.15, westPlantSdf)) * 2.5;
-  // Urban Plaza to Street Staircase (20m wide: worldZ in [-10.00 .. +10.00], worldX in [-85.30 .. -75.20]):
-  // - Upper Flight (worldX in [-85.30 .. -81.80]): descends from +2.50m Plaza Level to +1.32m Mid-Landing
-  // - Mid-Landing (worldX in [-81.80 .. -80.40]): flat granite landing at +1.32m
-  // - Lower Flight (worldX in [-80.40 .. -76.90]): descends from +1.32m to +0.08m Urban Sidewalk
-  // - Bottom Urban Sidewalk (worldX in [-76.90 .. -75.20]): +0.08m concrete sidewalk stepping down to 0.00m street level
-  if (worldX >= -85.35 && worldX <= -75.20 && worldZ >= -10.00 && worldZ <= 10.00) {
-    if (worldX <= -81.80) {
-      const upperT = smoothstep(-85.30, -81.80, worldX);
+  // Urban Plaza to Street Staircase (20m wide: worldZ in [-10.00 .. +10.00], worldX in [-87.55 .. -73.93]):
+  // - Upper Flight (worldX in [-87.55 .. -84.05]): descends from +2.50m Plaza Level to +1.32m Mid-Landing
+  // - Mid-Landing (worldX in [-84.05 .. -82.65]): flat granite landing at +1.32m
+  // - Lower Flight (worldX in [-82.65 .. -79.15]): descends from +1.32m to +0.08m Urban Sidewalk
+  // - Bottom Widened Urban Sidewalk (worldX in [-79.15 .. -73.93]): +0.08m concrete sidewalk stepping down at -73.93 curb
+  if (worldX >= -87.60 && worldX <= -73.85 && worldZ >= -10.00 && worldZ <= 10.00) {
+    if (worldX <= -84.05) {
+      const upperT = smoothstep(-87.55, -84.05, worldX);
       westPlantElev = 2.50 - upperT * (2.50 - 1.32);
-    } else if (worldX <= -80.40) {
+    } else if (worldX <= -82.65) {
       westPlantElev = 1.32;
-    } else if (worldX <= -76.90) {
-      const lowerT = smoothstep(-80.40, -76.90, worldX);
+    } else if (worldX <= -79.15) {
+      const lowerT = smoothstep(-82.65, -79.15, worldX);
       westPlantElev = 1.32 - lowerT * (1.32 - 0.08);
     } else {
-      const curbT = smoothstep(-76.90, -75.25, worldX);
+      const curbT = smoothstep(-74.65, -73.93, worldX);
       westPlantElev = 0.08 * (1.0 - curbT);
     }
   }
@@ -671,26 +946,26 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
   }
 
   // Halte Raised Boarding Platform Decks (+0.26m) & Sloped Access Ramps:
-  // 1) Central Plaza Halte: worldX in [-64.97, -58.37], worldZ in [-7.70, +7.70], ramps at |worldZ| in [7.70, 9.20]
-  // 2) North Residence Halte: worldX in [-1.20, 14.20] (ramps to [-2.70, 15.70]), worldZ in [-47.97, -41.37]
-  // 3) South Residence Halte: worldX in [-44.20, -28.80] (ramps to [-45.70, -27.30]), worldZ in [41.37, 47.97]
+  // 1) Central Plaza Halte: worldX in [-62.20, -55.60], worldZ in [-7.70, +7.70], ramps at |worldZ| in [7.70, 9.20]
+  // 2) North Residence Halte: worldX in [-4.20, 11.20] (ramps to [-5.70, 12.70]), worldZ in [-44.17, -37.57]
+  // 3) South Residence Halte: worldX in [-44.20, -28.80] (ramps to [-45.70, -27.30]), worldZ in [37.57, 44.17]
   // 4) Beachfront Harbor Halte: worldX in [76.31, 82.95], worldZ in [21.80, 37.20] (ramps to [20.30, 38.70])
   let haltePlatformElev = 0.0;
   const absHalteZ = Math.abs(worldZ);
-  if (worldX >= -65.15 && worldX <= -58.15 && absHalteZ <= 9.25) {
+  if (worldX >= -62.38 && worldX <= -55.38 && absHalteZ <= 9.25) {
     const xMask =
-      smoothstep(-65.15, -64.85, worldX) * (1.0 - smoothstep(-58.48, -58.15, worldX));
+      smoothstep(-62.38, -62.08, worldX) * (1.0 - smoothstep(-55.71, -55.38, worldX));
     const zRampMask = 1.0 - smoothstep(7.68, 9.20, absHalteZ);
     haltePlatformElev = 0.26 * xMask * zRampMask;
-  } else if (worldZ <= -41.15 && worldZ >= -48.15 && worldX >= -2.75 && worldX <= 15.75) {
+  } else if (worldZ <= -37.35 && worldZ >= -44.35 && worldX >= -5.75 && worldX <= 12.75) {
     const zMask =
-      smoothstep(41.15, 41.45, absHalteZ) * (1.0 - smoothstep(47.85, 48.15, absHalteZ));
-    const dxFromCenter = Math.abs(worldX - 6.5);
+      smoothstep(37.35, 37.65, absHalteZ) * (1.0 - smoothstep(44.05, 44.35, absHalteZ));
+    const dxFromCenter = Math.abs(worldX - 3.5);
     const xRampMask = 1.0 - smoothstep(7.68, 9.20, dxFromCenter);
     haltePlatformElev = 0.26 * zMask * xRampMask;
-  } else if (worldZ >= 41.15 && worldZ <= 48.15 && worldX >= -45.75 && worldX <= -27.25) {
+  } else if (worldZ >= 37.35 && worldZ <= 44.35 && worldX >= -45.75 && worldX <= -27.25) {
     const zMask =
-      smoothstep(41.15, 41.45, absHalteZ) * (1.0 - smoothstep(47.85, 48.15, absHalteZ));
+      smoothstep(37.35, 37.65, absHalteZ) * (1.0 - smoothstep(44.05, 44.35, absHalteZ));
     const dxFromCenter = Math.abs(worldX - -36.5);
     const xRampMask = 1.0 - smoothstep(7.68, 9.20, dxFromCenter);
     haltePlatformElev = 0.26 * zMask * xRampMask;
@@ -712,17 +987,44 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
     lakeBasinDepression = lakeStep1 + lakeStep2 + lakeStep3;
   }
 
+  const harborDrop = evaluateHarborSeabedDrop(worldX, worldZ);
   const neAmusementBoardwalkElev = evaluateAmusementBoardwalkElevation(worldX, worldZ);
-  const baseArenaElev =
-    Math.max(westPlantElev, seBoardwalkElev, neAmusementBoardwalkElev, haltePlatformElev) -
-    lakeBasinDepression;
+  const stiltCabinDeckElev = evaluateBeachfrontStiltCabinElevation(worldX, worldZ);
+  const centralParkElev = evaluateCentralParkElevation(worldX, worldZ);
+  const baseLandElev =
+    Math.max(
+      westPlantElev,
+      seBoardwalkElev,
+      haltePlatformElev,
+      centralParkElev,
+    ) -
+    lakeBasinDepression +
+    harborDrop;
+  let baseArenaElev =
+    neAmusementBoardwalkElev > 0.0
+      ? Math.max(baseLandElev, neAmusementBoardwalkElev)
+      : baseLandElev;
+  if (stiltCabinDeckElev > 0.0) {
+    baseArenaElev = Math.max(baseArenaElev, stiltCabinDeckElev);
+  }
   const { t1, t2, t3, t4 } = evaluateEmbankmentTierOffsets(worldX, worldZ);
-  if (t1 <= -0.1) return baseArenaElev;
-  const step1 = smoothstep(0.0, 1.45, t1) * 3.2;
-  const step2 = smoothstep(0.0, 1.50, t2) * 2.9;
-  const step3 = smoothstep(0.0, 1.55, t3) * 2.7;
-  const step4 = smoothstep(0.0, 1.60, t4) * 2.6;
-  return Math.max(baseArenaElev, step1 + step2 + step3 + step4);
+  let coastalHillBaseElev = 0.0;
+  if (t1 > -0.1) {
+    const b1 = smoothstep(0.0, 4.4, t1) * 4.8;
+    const b2 = smoothstep(-0.5, 6.2, t2) * 3.2;
+    const b3 = smoothstep(-0.5, 7.6, t3) * 2.2;
+    const b4 = smoothstep(-0.5, 9.2, t4) * 1.4;
+    coastalHillBaseElev = b1 + b2 + b3 + b4;
+  }
+  const plateauSdf = evaluateHillVillaPlateauSdf(worldX, worldZ);
+  const plateauMask = 1.0 - smoothstep(-0.05, 5.8, plateauSdf);
+  const withPlateauElev =
+    coastalHillBaseElev + (COASTAL_HILL_RIDGE_ELEV_Y - coastalHillBaseElev) * plateauMask;
+  const hillRoad = evaluateCoastalHillRoadSample(worldX, worldZ);
+  const coastalTerrainElev =
+    withPlateauElev + (hillRoad.roadElevY - withPlateauElev) * hillRoad.cutAlpha;
+  if (coastalTerrainElev <= 0.0001) return baseArenaElev;
+  return Math.max(baseArenaElev, coastalTerrainElev);
 }
 
 /**

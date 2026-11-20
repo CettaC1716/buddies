@@ -150,3 +150,116 @@ test('detects all 6 interactive casino station zones and arbitrates seats cleanl
   assert.equal(rouletteWinner.seatSpot?.id, rouletteSeat.id);
   assert.equal(getCasinoGameKindForSeat(rouletteSeat.chairKind), 'roulette_table');
 });
+
+test('buildGrandCasino3D constructs Beaux-Arts textured limestone, mansard slate, verdigris dome, and instanced foliage cleanly', async () => {
+  const THREE = await import('three');
+  const { buildGrandCasino3D } = await import('./buddiesGrandCasinoBuilder');
+  const { updateCityWindowNightLighting } = await import('./buddiesNightLightingRules');
+  const { bakeStaticGroupMeshes, createBlitzStrokeMesh, upgradeMeshToBlitzWorldMaterial } = await import('./buddiesBlitzShadersAndAssets');
+
+  const origDocument = (globalThis as { document?: unknown }).document;
+  const noop = () => {};
+  const stubCtx = new Proxy(
+    {
+      createLinearGradient: () => ({ addColorStop: noop }),
+      createRadialGradient: () => ({ addColorStop: noop }),
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      measureText: () => ({ width: 100 }),
+    },
+    {
+      get(target, prop) {
+        if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+        return noop;
+      },
+      set() {
+        return true;
+      },
+    },
+  );
+  (globalThis as { document?: unknown }).document = {
+    createElement: () => ({ width: 256, height: 256, getContext: () => stubCtx }),
+  };
+
+  try {
+    const windUniforms = {
+      uTime: { value: 0 },
+      uWindPhase: { value: 0 },
+      uWindDirection: { value: new THREE.Vector2(0.7071, 0.7071) },
+      uWindStrength: { value: 0.3 },
+      uWindGust: { value: 0.15 },
+      uLightDirection: { value: new THREE.Vector3(0.4, 0.85, 0.3).normalize() },
+      uLightColor: { value: new THREE.Color('#fff4c8') },
+      uShadowColor: { value: new THREE.Color('#3b6e52') },
+    };
+    const glassMat = new THREE.MeshBasicMaterial({ color: '#cceef5', transparent: true, opacity: 0.45 });
+    const casino = buildGrandCasino3D({
+      windUniforms,
+      isSoftwareGl: false,
+      sharedGlassMat: glassMat,
+      tagFrostedGlassGeometry: (geo) => geo,
+      upgradeMeshToBlitzWorldMaterial,
+      createBlitzStrokeMesh,
+      bakeStaticGroupMeshes,
+      createLeafPetalShrubInstanced: (matrices, meshName) => {
+        const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), matrices.length);
+        inst.name = meshName;
+        return inst;
+      },
+      createFlowerPetalClusterInstanced: (specs, meshName) => {
+        const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), specs.length);
+        inst.name = meshName;
+        return inst;
+      },
+    });
+    assert.equal(casino.group.name, 'NorthGrandCasinoDistrict3D');
+    let bakedMeshes = 0;
+    let shrubsCount = 0;
+    casino.group.traverse((o) => {
+      if (o instanceof THREE.InstancedMesh && o.name === 'GrandCasinoLeafPetalShrubsInstanced') {
+        shrubsCount = o.count;
+      } else if (o instanceof THREE.Mesh) {
+        bakedMeshes++;
+      }
+    });
+    assert.ok(bakedMeshes >= 5 && bakedMeshes <= 24, `Expected batched static Casino meshes, got ${bakedMeshes}`);
+    assert.ok(shrubsCount >= 18, `Expected >= 18 topiary/garden shrub instances, got ${shrubsCount}`);
+
+    // Verify Casino 3D windows stay cool sky-tinted in daytime (0 emissive) and stagger lit vs off at night
+    const upperInst = casino.group.getObjectByName('GrandCasinoUpperWindowsInstanced') as InstanceType<typeof THREE.InstancedMesh> | undefined;
+    assert.ok(upperInst, 'Expected GrandCasinoUpperWindowsInstanced batch');
+    const emissiveAttr = upperInst.geometry.getAttribute('instanceEmissive') as InstanceType<typeof THREE.InstancedBufferAttribute> | undefined;
+    assert.ok(emissiveAttr, 'Expected per-instance instanceEmissive attribute on Casino InstancedMesh');
+    updateCityWindowNightLighting(casino.group, 0.02, 0);
+    const upperMat = upperInst.material as InstanceType<typeof THREE.MeshStandardMaterial>;
+    assert.equal(upperMat.emissiveIntensity, 0, 'Casino upper windows must have 0 emissive during daytime');
+    const dayWinCol = new THREE.Color();
+    upperInst.getColorAt(0, dayWinCol);
+    assert.ok(dayWinCol.b > dayWinCol.r, 'Daytime Casino window tint should be cool blue-sky rather than warm yellow');
+    for (let i = 0; i < upperInst.count; i++) {
+      assert.equal(emissiveAttr.getX(i), 0, 'Daytime per-instance emissive R must be 0');
+      assert.equal(emissiveAttr.getY(i), 0, 'Daytime per-instance emissive G must be 0');
+    }
+
+    updateCityWindowNightLighting(casino.group, 1.0, 2.0);
+    const nightLitCols = new Set<string>();
+    const tmpCol = new THREE.Color();
+    let litEmissiveCount = 0;
+    let offEmissiveCount = 0;
+    for (let i = 0; i < upperInst.count; i++) {
+      upperInst.getColorAt(i, tmpCol);
+      nightLitCols.add(tmpCol.getHexString());
+      if (emissiveAttr.getX(i) > 0.2) litEmissiveCount++;
+      else if (emissiveAttr.getX(i) === 0 && emissiveAttr.getY(i) === 0 && emissiveAttr.getZ(i) === 0) {
+        offEmissiveCount++;
+      }
+    }
+    assert.ok(nightLitCols.size >= 2, 'Night Casino upper windows must display staggered lit vs dark rooms');
+    assert.ok(litEmissiveCount >= 3, `Expected multiple self-illuminated Casino upper windows at night, got ${litEmissiveCount}`);
+    assert.ok(offEmissiveCount >= 1, `Expected dark unlit Casino upper windows with 0 emissive, got ${offEmissiveCount}`);
+
+    casino.dispose();
+    glassMat.dispose();
+  } finally {
+    (globalThis as { document?: unknown }).document = origDocument;
+  }
+});

@@ -3,46 +3,42 @@ import { REAL_ESTATE_FURNITURE_KIOSK_LAYOUT } from './buddiesRealEstateKioskRule
 import { URBAN_SCOOTER_SHOP_LAYOUT } from './buddiesUrbanScooterRules';
 
 /**
- * Architectural Model Sheet Specification (`screen_aad784ba.png` & `screenshot_12_60bb245f.png`):
- * COMPACT GLASS & STEEL FASHION & APPAREL BOUTIQUE KIOSK
- * ("Kios Toko Baju & Butik Pakaian Modern")
+ * Unified 3-Bay Civic Commercial Arcade — Bay 1 (Left / South) Fashion & Apparel Outfit Kiosk
+ * ("Kios Butik Busana").
  *
- * Anchored inside `westPlantGroup` (`(-90.5, 0, 0)`) at local `(-10.2, 2.50, +5.0)`,
- * rotated `+Math.PI / 2` so local `+Z` faces East (`+X`) onto Central Plaza (`y = 2.50m`),
- * and local `+X` faces North (`-Z`) toward the Urban Scooter Showroom (`z = -4.4`) and
- * Real Estate & Furniture Kiosk (`z = -13.8`) with exact `9.40m` center-to-center symmetry.
+ * Bay 1 center sits at `world = (-100.10, 2.50, +2.35)` (`arcade localX = -6.75`),
+ * rotated `+Math.PI / 2` so local `+Z` faces East (`+X`) onto Central Plaza (`y = 2.50m`).
  */
 export const FASHION_APPAREL_KIOSK_LAYOUT = {
-  westPlantOriginX: -90.5,
+  westPlantOriginX: -92.75,
   westPlantOriginZ: 0.0,
-  kioskLocalX: -10.2,
+  kioskLocalX: -13.60,
   kioskLocalY: 2.50,
-  kioskLocalZ: 5.0,
+  kioskLocalZ: 2.35,
   kioskRotY: Math.PI / 2,
-  kioskScale: 1.48,
-  worldCenterX: -100.7,
+  kioskScale: 1.0,
+  worldCenterX: -106.35,
   worldBaseY: 2.50,
-  worldCenterZ: 5.0,
-  // Stepped Granite Plaza Paver Base (`Granite Plaza Paver Base` in all 4 views of `screen_aad784ba.png`)
-  granitePaverBaseWidthLocal: 5.18,
-  granitePaverBaseDepthLocal: 4.12,
-  granitePaverBaseHeightLocal: 0.075,
-  // Front-Right Glass Entrance Door span in kiosk-local X
-  entranceDoorLocalXMin: 0.78,
-  entranceDoorLocalXMax: 2.04,
-  entranceDoorFrontLocalZ: 1.54,
-  // Wooden A-Frame Sidewalk Sign ("FASHION & APPAREL BOUTIQUE") on Granite Paver Base front-right corner
+  worldCenterZ: 2.35,
+  granitePaverBaseWidthLocal: 6.75,
+  granitePaverBaseDepthLocal: 2.45,
+  granitePaverBaseHeightLocal: 0.045,
+  // Front-Right Glass Entrance Door span in bay-local X
+  entranceDoorLocalXMin: 1.65,
+  entranceDoorLocalXMax: 2.95,
+  entranceDoorFrontLocalZ: 2.50,
+  // Wooden A-Frame Sidewalk Sign ("FASHION & APPAREL BOUTIQUE") on front cobblestone apron
   aFrameSignLocal: {
-    x: 1.88,
-    y: 0.075,
-    z: 1.94,
+    x: 1.60,
+    y: 0.045,
+    z: 4.05,
     rotY: 0.30,
   },
   // Low 3D interaction chevron ("segitiga interaksi") beside the front-right A-Frame sign on open plaza pavers
   interactionMarkerLocal: {
-    x: 2.34,
+    x: 2.20,
     y: 0.0,
-    z: 2.24,
+    z: 4.85,
   },
 } as const;
 
@@ -89,7 +85,7 @@ export const FASHION_BOUTIQUE_SHOP_TRIGGER = {
   z: FASHION_INTERACTION_MARKER_WORLD.z,
   deckY: FASHION_APPAREL_KIOSK_LAYOUT.worldBaseY,
   markerOffsetY: 0.38,
-  triggerRadius: 2.85,
+  triggerRadius: 2.55,
 } as const;
 
 export function evaluateFashionBoutiqueProximity(
@@ -248,27 +244,27 @@ export function toggleEquipFashionApparel(
 }
 
 /**
- * Returns the center-to-center spacing metrics across the 3 West Promenade kiosks:
- * 1. North: Real Estate & Furniture Showroom (`z = -13.8`)
- * 2. Center: Urban Scooter Showroom (`z = -4.4`)
- * 3. South: Fashion & Apparel Boutique (`z = +5.0`)
+ * Returns the center-to-center bay spacing metrics across the unified 3-bay Civic Commercial Arcade:
+ * 1. Bay 3 (North, `z = -11.15`): Urban Scooter & Mobility
+ * 2. Bay 2 (Center, `z = -4.40`): Real Estate & Design Studio
+ * 3. Bay 1 (South, `z = +2.35`): Fashion & Apparel Boutique
  */
 export function computeWestPromenadeKioskSymmetryMetrics(): {
-  northRealEstateZ: number;
-  centerScooterZ: number;
+  northScooterZ: number;
+  centerRealEstateZ: number;
   southFashionZ: number;
   northToCenterSpanM: number;
   centerToSouthSpanM: number;
   isSymmetrical: boolean;
 } {
-  const northRealEstateZ = REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.worldCenterZ;
-  const centerScooterZ = URBAN_SCOOTER_SHOP_LAYOUT.worldCenterZ;
+  const northScooterZ = URBAN_SCOOTER_SHOP_LAYOUT.worldCenterZ;
+  const centerRealEstateZ = REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.worldCenterZ;
   const southFashionZ = FASHION_APPAREL_KIOSK_LAYOUT.worldCenterZ;
-  const northToCenterSpanM = +(centerScooterZ - northRealEstateZ).toFixed(3);
-  const centerToSouthSpanM = +(southFashionZ - centerScooterZ).toFixed(3);
+  const northToCenterSpanM = +(centerRealEstateZ - northScooterZ).toFixed(3);
+  const centerToSouthSpanM = +(southFashionZ - centerRealEstateZ).toFixed(3);
   return {
-    northRealEstateZ,
-    centerScooterZ,
+    northScooterZ,
+    centerRealEstateZ,
     southFashionZ,
     northToCenterSpanM,
     centerToSouthSpanM,
@@ -277,8 +273,8 @@ export function computeWestPromenadeKioskSymmetryMetrics(): {
 }
 
 /**
- * Builds synchronized static OBB colliders for the Central Plaza
- * Fashion & Apparel Boutique Kiosk and its outdoor wooden A-Frame sidewalk sign.
+ * Builds synchronized static OBB collider for Bay 1's outdoor wooden A-Frame sidewalk sign
+ * (main arcade shell collider is provided by `computeRealEstateKioskWorldColliders`).
  */
 export function computeFashionKioskWorldColliders(): StaticWorldStructureObb[] {
   const signWorld = fashionKioskLocalToWorldPose(
@@ -290,23 +286,13 @@ export function computeFashionKioskWorldColliders(): StaticWorldStructureObb[] {
 
   return [
     {
-      id: 'lobby_fashion_kiosk_body',
-      x: -100.55,
-      z: FASHION_APPAREL_KIOSK_LAYOUT.worldCenterZ,
-      halfX: 2.62,
-      halfZ: 3.30,
-      rotY: 0,
-      heightY: 6.9,
-      mat: 'metal',
-    },
-    {
       id: 'lobby_fashion_kiosk_sign',
       x: +signWorld.x.toFixed(2),
       z: +signWorld.z.toFixed(2),
-      halfX: 0.42,
-      halfZ: 0.42,
+      halfX: 0.34,
+      halfZ: 0.34,
       rotY: 0,
-      heightY: 3.92,
+      heightY: 3.55,
       mat: 'wood',
     },
   ];

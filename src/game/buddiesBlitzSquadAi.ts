@@ -19,15 +19,24 @@ import {
   WorldCrateKind,
   IndividualCommanderBaseState,
   isTankClimbableProp,
+  isBenchOrSeatStructureId,
 } from './buddiesBlitzRules';
+import type { AuditedWorldCollidersSet } from './buddiesCharacterCollisionRules';
 import {
   evaluateOuterEmbankmentSdf,
+  evaluateRoadNetworkSdf,
+  evaluateHaltePlatformSdf,
+  ZEBRA_CROSSWALK_ZONES,
   evaluateSeHarborSdf,
   evaluateNwLakeSdf,
   getPlanetShortestDelta,
   getPlanetShortestDistance,
   wrapPlanetCoord,
 } from './buddiesPlanetCurvature';
+import {
+  GRAND_CASINO_MASTERPLAN,
+  evaluateGrandCasinoPavedPlatformSdf,
+} from './buddiesGrandCasinoRules';
 import {
   BuddyUnit,
   TankVehicle,
@@ -39,14 +48,46 @@ import {
 } from './buddiesBlitzTypes';
 
 /**
- * Rebuilds the cached 2D A* Navigation Grids for Foot Units (`BuddyUnit`) and Tracked Vehicles (`TankVehicle`).
+ * Returns true if `(worldX, worldZ)` sits inside a painted Zebra Crosswalk curb-to-curb corridor
+ * (bridging the slight overhang between road half-width `3.9m..4.2m` and painted stripe half-span `3.2m`).
+ */
+export function isPointOnPedestrianCrosswalkCorridor(worldX: number, worldZ: number): boolean {
+  const az = Math.abs(worldZ);
+  for (let i = 0; i < ZEBRA_CROSSWALK_ZONES.length; i++) {
+    const zc = ZEBRA_CROSSWALK_ZONES[i];
+    const testZ = zc.mirroredZ ? az : worldZ;
+    // Extend along the road-crossing axis beyond the 4.2m S-curve / 3.9m ring asphalt half-width
+    // so crosswalk entries never get pinched shut on the 1.5m nav grid.
+    const padX = zc.hx >= zc.hz ? 1.45 : 0.35;
+    const padZ = zc.hz > zc.hx ? 1.45 : 0.35;
+    if (Math.abs(worldX - zc.cx) <= zc.hx + padX && Math.abs(testZ - zc.cz) <= zc.hz + padZ) {
+      return true;
+    }
+  }
+  for (const zc of GRAND_CASINO_MASTERPLAN.valetLoop.throatCrosswalks) {
+    if (Math.abs(worldX - zc.cx) <= zc.hx + 0.65 && Math.abs(worldZ - zc.cz) <= zc.hz + 1.25) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Rebuilds the cached 2D A* Navigation Grids for Foot Units (`BuddyUnit`),
+ * Tracked Vehicles (`TankVehicle`), and Law-Abiding Island Citizens (`pedestrianGrid`).
  */
 export function buildArenaNavGrids(params: {
   staticStructures: ReadonlyArray<StaticWorldStructureObb>;
-  trees: ReadonlyArray<DestructibleTree>;
-  activeMapProps: ReadonlyArray<ActiveMapPropPhysics>;
-}): { footGrid: AStarNavGrid; vehicleGrid: AStarNavGrid } {
-  const { staticStructures, trees, activeMapProps } = params;
+  trees: ReadonlyArray<Pick<DestructibleTree, 'x' | 'z' | 'scale' | 'alive'>>;
+  activeMapProps: ReadonlyArray<
+    Pick<
+      ActiveMapPropPhysics,
+      'alive' | 'category' | 'kind' | 'scale' | 'x' | 'z' | 'halfX' | 'halfZ' | 'rotY' | 'radius'
+    >
+  >;
+  auditedWorld?: AuditedWorldCollidersSet;
+}): { footGrid: AStarNavGrid; vehicleGrid: AStarNavGrid; pedestrianGrid: AStarNavGrid } {
+  const { staticStructures, trees, activeMapProps, auditedWorld } = params;
   const footGrid = createAStarNavGrid(-112, 112, -112, 112, 1.5);
   const vehicleGrid = createAStarNavGrid(-112, 112, -112, 112, 1.5);
   const footPad = 0.5;
@@ -72,19 +113,33 @@ export function buildArenaNavGrids(params: {
   }
 
   // 2. Rasterize Static World OBB Structures
+  const rasterizedFootIds = auditedWorld ? new Set<string>() : null;
   for (let i = 0; i < staticStructures.length; i++) {
     const st = staticStructures[i];
     if (st.id.endsWith('_gate')) continue;
     const isThinGateOrFence = st.id.includes('_fence_') || st.id.startsWith('gate_post_');
-    rasterizeObbObstacleToNavGrid(
-      footGrid,
-      st.x,
-      st.z,
-      st.halfX,
-      st.halfZ,
-      st.rotY,
-      isThinGateOrFence ? 0.28 : footPad,
-    );
+    const footStructurePad = st.id.startsWith('tennis_fence_')
+      ? 0.36
+      : isThinGateOrFence
+        ? 0.28
+        : footPad;
+    const replacedByAuditedCircle =
+      Boolean(auditedWorld) &&
+      (st.id === 'central_park_stone_fountain' ||
+        st.id === 'central_park_duck_pond' ||
+        st.id.startsWith('cozy_cafe_table_'));
+    if (!replacedByAuditedCircle) {
+      rasterizeObbObstacleToNavGrid(
+        footGrid,
+        st.x,
+        st.z,
+        st.halfX,
+        st.halfZ,
+        st.rotY,
+        footStructurePad,
+      );
+      rasterizedFootIds?.add(st.id);
+    }
     rasterizeObbObstacleToNavGrid(
       vehicleGrid,
       st.x,
@@ -94,6 +149,38 @@ export function buildArenaNavGrids(params: {
       st.rotY,
       isThinGateOrFence ? 0.38 : vehiclePad,
     );
+  }
+
+  // 2b. Sync audited non-seat obstacles (Halte signs, streetlamps, municipal props, circular basins)
+  // into footGrid & pedestrianGrid using careful pole clearance so sidewalks stay navigable.
+  if (auditedWorld) {
+    for (let i = 0; i < auditedWorld.obbs.length; i++) {
+      const st = auditedWorld.obbs[i];
+      if (
+        st.id.endsWith('_gate') ||
+        isBenchOrSeatStructureId(st.id) ||
+        rasterizedFootIds?.has(st.id)
+      ) {
+        continue;
+      }
+      const isPole =
+        st.id.startsWith('city_traffic_sign_') ||
+        st.id.startsWith('city_lamp_') ||
+        st.id.startsWith('traffic_signal_');
+      const pad = isPole
+        ? 0.35
+        : st.id.startsWith('tennis_fence_')
+          ? 0.36
+          : st.id.includes('_fence_') || st.id.startsWith('gate_post_')
+            ? 0.28
+            : 0.42;
+      rasterizeObbObstacleToNavGrid(footGrid, st.x, st.z, st.halfX, st.halfZ, st.rotY, pad);
+    }
+    for (let i = 0; i < auditedWorld.circles.length; i++) {
+      const c = auditedWorld.circles[i];
+      const pad = c.id.startsWith('central_park_bed_') ? 0.35 : 0.42;
+      rasterizeCircleObstacleToNavGrid(footGrid, c.x, c.z, c.radius, pad);
+    }
   }
 
   // 3. Rasterize Living Tree Trunks
@@ -131,7 +218,59 @@ export function buildArenaNavGrids(params: {
     }
   }
 
-  return { footGrid, vehicleGrid };
+  // 5. Build Pedestrian Traffic NavGrid: strongly prefers Zebra Crosswalks, Roadside Sidewalks,
+  // Halte platforms, Plaza stairs, Casino Promenade, and Coastal Seawall while heavily penalizing
+  // non-crosswalk asphalt highways (anti-jaywalking).
+  const pedestrianGrid = createAStarNavGrid(
+    footGrid.minX,
+    footGrid.maxX,
+    footGrid.minZ,
+    footGrid.maxZ,
+    footGrid.cellSize,
+  );
+  pedestrianGrid.blocked.set(footGrid.blocked);
+  const cellCosts = new Float32Array(pedestrianGrid.cols * pedestrianGrid.rows);
+  const minCellCost = 0.55;
+  for (let row = 0; row < pedestrianGrid.rows; row++) {
+    const wz = pedestrianGrid.minZ + (row + 0.5) * pedestrianGrid.cellSize;
+    for (let col = 0; col < pedestrianGrid.cols; col++) {
+      const wx = pedestrianGrid.minX + (col + 0.5) * pedestrianGrid.cellSize;
+      const idx = row * pedestrianGrid.cols + col;
+      const roadSdf = evaluateRoadNetworkSdf(wx, wz);
+      const onCrosswalk = isPointOnPedestrianCrosswalkCorridor(wx, wz);
+      if (onCrosswalk) {
+        cellCosts[idx] = 0.55;
+      } else if (roadSdf <= 0.25) {
+        // Non-crosswalk active tramway/asphalt road: severe traffic violation cost
+        cellCosts[idx] = 48.0;
+      } else {
+        const harborConcreteSdf = evaluateSeHarborSdf(wx, wz).concreteSdf;
+        const onCenterSidewalk = roadSdf > 1.05 && roadSdf <= 4.35;
+        const onCurbTransition = roadSdf <= 1.05;
+        const onHalte = evaluateHaltePlatformSdf(wx, wz) <= 0.65;
+        const onCasinoPromenade = evaluateGrandCasinoPavedPlatformSdf(wx, wz) <= 0.55;
+        const onWestPlaza = wx <= -74.0 && wx >= -110.75 && Math.abs(wz) <= 44.5;
+        const onEastPromenade =
+          harborConcreteSdf <= 0.55 || (wx >= 76.0 && Math.abs(wz) <= 104.0);
+        if (onCenterSidewalk || onHalte || onCasinoPromenade || onWestPlaza || onEastPromenade) {
+          cellCosts[idx] = 0.6;
+        } else if (onCurbTransition) {
+          // Gentle curb buffer so pedestrians walk centered along the sidewalk rather than hugging asphalt
+          cellCosts[idx] = 0.95;
+        } else if (evaluateNwLakeSdf(wx, wz) <= 5.2) {
+          // Lakeshore perimeter footpath around Centered Oasis Lake
+          cellCosts[idx] = 0.78;
+        } else {
+          // Unpaved central park / grass lawns (discourage rambling off paved walkways)
+          cellCosts[idx] = 1.45;
+        }
+      }
+    }
+  }
+  pedestrianGrid.cellCosts = cellCosts;
+  pedestrianGrid.minCellCost = minCellCost;
+
+  return { footGrid, vehicleGrid, pedestrianGrid };
 }
 
 export interface AStarPageableAgent {

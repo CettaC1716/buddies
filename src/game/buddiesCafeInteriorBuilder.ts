@@ -8,6 +8,7 @@ import {
   type CafeStationInteractionKind,
 } from './buddiesCafeRules';
 import { bakeStaticGroupMeshes, createBlitzStrokeMesh } from './buddiesBlitzShadersAndAssets';
+import { computeInstancedBoundingVolumes } from './buddiesHubRenderOptimizer';
 import {
   type CafeAssetStyler,
   buildBentwoodRattanChair,
@@ -960,12 +961,16 @@ export function buildBotanicalGlasshouseCafeInterior(): CafeInteriorSceneHandle 
   cafeSun.position.set(7, 13, 9);
   root.add(cafeSun);
 
-  const counterWarmPt = new THREE.PointLight('#fde68a', 1.10, 12);
-  counterWarmPt.position.set(-0.2, 2.75, -2.9);
+  // Counter PointLight seated -0.27m below the 3 brass pendant dome shades (2.34..2.54m) over front counter
+  const counterWarmPt = new THREE.PointLight('#fde68a', 1.32, 13.5, 1.35);
+  counterWarmPt.position.set(-0.45, 2.08, -2.05);
+  counterWarmPt.castShadow = false;
   root.add(counterWarmPt);
 
-  const wingWarmPt = new THREE.PointLight('#fef3c7', 0.85, 9);
-  wingWarmPt.position.set(4.2, 2.95, 7.4);
+  // Wing PointLight seated cleanly below 3.85m eaves & hanging ferns over L-wing bistro alcove
+  const wingWarmPt = new THREE.PointLight('#fef3c7', 1.12, 11.5, 1.35);
+  wingWarmPt.position.set(4.45, 2.68, 7.45);
+  wingWarmPt.castShadow = false;
   root.add(wingWarmPt);
 
   // 2. 1:1 IDENTICAL L-SHAPED GLASSHOUSE ARCHITECTURE SHELL (180-deg rotated to match Exterior South Plaza!)
@@ -1303,14 +1308,107 @@ uniform float uCafeBotanicalPhase;`,
     interactiveMarkers.arcadeSlot.group,
   );
 
-  // 9. Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (shared geometry & material per variant)
-  const coinResourceCache: CompactSeatCoinResourceCache = new Map();
+  // 9. GPU-Instanced Compact Floating Seat Discs for Main Hall + Left Wing Bistro Chairs (all seats -> 2 draw calls!)
+  const cafeSeatCount = CAFE_INTERIOR_SEAT_SPOTS.length;
+  const cafeOuterCoinGeo = new THREE.CylinderGeometry(1, 1, 1, 24);
+  cafeOuterCoinGeo.rotateX(Math.PI / 2);
+  const cafeOuterCoinMat = new THREE.MeshBasicMaterial({
+    color: '#ffffff',
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+    fog: false,
+  });
+  const cafeOuterCoinInst = new THREE.InstancedMesh(cafeOuterCoinGeo, cafeOuterCoinMat, Math.max(1, cafeSeatCount));
+  cafeOuterCoinInst.count = cafeSeatCount;
+  cafeOuterCoinInst.name = 'CafeSeatOuterCoinInstanced';
+  cafeOuterCoinInst.raycast = () => {};
+  root.add(cafeOuterCoinInst);
+
+  const cafeInnerCoinGeo = new THREE.CylinderGeometry(0.68, 0.68, 1, 20);
+  cafeInnerCoinGeo.rotateX(Math.PI / 2);
+  const cafeInnerCoinMat = new THREE.MeshBasicMaterial({
+    color: '#ffffff',
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    fog: false,
+  });
+  const cafeInnerCoinInst = new THREE.InstancedMesh(cafeInnerCoinGeo, cafeInnerCoinMat, Math.max(1, cafeSeatCount));
+  cafeInnerCoinInst.count = cafeSeatCount;
+  cafeInnerCoinInst.name = 'CafeSeatInnerCoinInstanced';
+  cafeInnerCoinInst.raycast = () => {};
+  root.add(cafeInnerCoinInst);
+
   const floorSpotIndicators = CAFE_INTERIOR_SEAT_SPOTS.map((spot) => {
-    const { coinRoot, blueCoin, greenCoin } = buildCompactSeatIndicatorPair(1.0, coinResourceCache);
+    const coinRoot = new THREE.Group();
     coinRoot.position.set(spot.x, spot.indicatorHeightY, spot.z);
-    root.add(coinRoot);
+    const blueCoin = new THREE.Group();
+    const greenCoin = new THREE.Group();
+    greenCoin.visible = false;
+    coinRoot.add(blueCoin, greenCoin);
     return { coinRoot, blueCoin, greenCoin };
   });
+
+  const coinPosTmp = new THREE.Vector3();
+  const coinQuatTmp = new THREE.Quaternion();
+  const coinScaleTmp = new THREE.Vector3();
+  const coinMatTmp = new THREE.Matrix4();
+  const coinYAxis = new THREE.Vector3(0, 1, 0);
+  const cafeBlueOuterCol = new THREE.Color('#38bdf8');
+  const cafeBlueInnerCol = new THREE.Color('#7dd3fc');
+  const cafeGreenOuterCol = new THREE.Color('#b8ff3c');
+  const cafeGreenInnerCol = new THREE.Color('#d9f99d');
+
+  const syncCafeSeatCoinInstances = (timeSec: number) => {
+    for (let idx = 0; idx < cafeSeatCount; idx++) {
+      const spot = CAFE_INTERIOR_SEAT_SPOTS[idx];
+      const entry = floorSpotIndicators[idx];
+      if (!entry.coinRoot.visible) {
+        coinPosTmp.set(spot.x, spot.indicatorHeightY, spot.z);
+        coinQuatTmp.identity();
+        coinScaleTmp.set(0, 0, 0);
+        coinMatTmp.compose(coinPosTmp, coinQuatTmp, coinScaleTmp);
+        cafeOuterCoinInst.setMatrixAt(idx, coinMatTmp);
+        cafeInnerCoinInst.setMatrixAt(idx, coinMatTmp);
+        cafeOuterCoinInst.setColorAt(idx, cafeBlueOuterCol);
+        cafeInnerCoinInst.setColorAt(idx, cafeBlueInnerCol);
+        continue;
+      }
+      const isGreen = entry.greenCoin.visible;
+      const baseY = spot.indicatorHeightY ?? 0.73;
+      const posY = baseY + Math.sin(timeSec * 3.4 + idx * 0.9) * 0.024;
+      const rotY = timeSec * 2.1 + idx * 0.6;
+      entry.coinRoot.position.y = posY;
+      entry.coinRoot.rotation.y = rotY;
+
+      const r = isGreen
+        ? CAFE_GLOBAL_SCALE_SPEC.interiorSeatIndicatorGreenRadiusM
+        : CAFE_GLOBAL_SCALE_SPEC.interiorSeatIndicatorBlueRadiusM;
+      const thick = isGreen ? 0.020 : 0.018;
+      const innerThick = thick + 0.003;
+
+      coinPosTmp.set(spot.x, posY, spot.z);
+      coinQuatTmp.setFromAxisAngle(coinYAxis, rotY);
+
+      coinScaleTmp.set(r, r, thick);
+      coinMatTmp.compose(coinPosTmp, coinQuatTmp, coinScaleTmp);
+      cafeOuterCoinInst.setMatrixAt(idx, coinMatTmp);
+      cafeOuterCoinInst.setColorAt(idx, isGreen ? cafeGreenOuterCol : cafeBlueOuterCol);
+
+      coinScaleTmp.set(r, r, innerThick);
+      coinMatTmp.compose(coinPosTmp, coinQuatTmp, coinScaleTmp);
+      cafeInnerCoinInst.setMatrixAt(idx, coinMatTmp);
+      cafeInnerCoinInst.setColorAt(idx, isGreen ? cafeGreenInnerCol : cafeBlueInnerCol);
+    }
+    cafeOuterCoinInst.instanceMatrix.needsUpdate = true;
+    cafeInnerCoinInst.instanceMatrix.needsUpdate = true;
+    if (cafeOuterCoinInst.instanceColor) cafeOuterCoinInst.instanceColor.needsUpdate = true;
+    if (cafeInnerCoinInst.instanceColor) cafeInnerCoinInst.instanceColor.needsUpdate = true;
+  };
+  syncCafeSeatCoinInstances(0);
+  computeInstancedBoundingVolumes(cafeOuterCoinInst, { padding: 0.25, frustumCulled: true });
+  computeInstancedBoundingVolumes(cafeInnerCoinInst, { padding: 0.25, frustumCulled: true });
 
   // 10. AI Customer Order Sign Quad Overhead (camera-aligned constant-screen-size billboard)
   const customerBubbleCanvas = document.createElement('canvas');
@@ -1458,11 +1556,7 @@ uniform float uCafeBotanicalPhase;`,
       Math.sin(timeSec * 4.2) * 0.036;
     interactiveMarkers.pastryDisplayCase.chevronArrow.rotation.y = timeSec * 2.0;
 
-    floorSpotIndicators.forEach((entry, idx) => {
-      const baseY = CAFE_INTERIOR_SEAT_SPOTS[idx]?.indicatorHeightY ?? 0.73;
-      entry.coinRoot.position.y = baseY + Math.sin(timeSec * 3.4 + idx * 0.9) * 0.024;
-      entry.coinRoot.rotation.y = timeSec * 2.1 + idx * 0.6;
-    });
+    syncCafeSeatCoinInstances(timeSec);
   };
 
   const ownedTextures: THREE.Texture[] = [

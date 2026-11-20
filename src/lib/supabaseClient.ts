@@ -21,6 +21,11 @@ import {
   type FishingWaterZoneId,
 } from '../game/buddiesFishingMarket';
 import type { NpcTreasuryLedger } from '../game/buddiesMerchantPricing';
+import {
+  reconcileWorldPeerPacket,
+  resolveContrastingTextColor,
+  sanitizeHexColor,
+} from '../game/buddiesRemotePresenceSync';
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
@@ -100,6 +105,10 @@ export interface DbSocialMessageRow {
   message: string;
   bubble_color: string;
   created_at: string;
+  client_msg_id?: string;
+  bubble_text_color?: string;
+  room_id?: string;
+  is_broadcast?: boolean;
 }
 
 export interface DbHouseInteriorRow {
@@ -876,26 +885,168 @@ export async function insertSocialMessageToSupabase(params: {
   }
 }
 
+let activeSocialChatChannel: RealtimeChannel | null = null;
+let isSocialChatChannelSubscribed = false;
+
 /**
- * Subscribes to live Supabase Realtime `INSERT` events on `bb_social_messages`.
+ * Broadcasts an instant social chat message over Supabase Realtime Broadcast (`bb_social_messages_live`)
+ * so peers see messages in <50ms while PostgreSQL INSERT persistence finishes in parallel.
+ */
+export function broadcastSocialChatMessage(params: {
+  clientMsgId?: string;
+  senderName?: string;
+  sender_name?: string;
+  senderNearAccount?: string | null;
+  sender_near_account?: string | null;
+  recipientName?: string | null;
+  recipient_name?: string | null;
+  message: string;
+  bubbleColor?: string;
+  bubble_color?: string;
+  bubbleTextColor?: string;
+  bubble_text_color?: string;
+  createdAt?: string;
+  roomId?: string;
+  room_id?: string;
+}): boolean {
+  if (!supabase || !activeSocialChatChannel || !isSocialChatChannelSubscribed) return false;
+  const cleanMsg = params.message.replace(/[<>]/g, '').trim().slice(0, 280);
+  if (!cleanMsg) return false;
+
+  const sender = params.senderName || params.sender_name || 'COMMANDER';
+  const senderAccount = params.senderNearAccount ?? params.sender_near_account;
+  const recipient = params.recipientName ?? params.recipient_name;
+  const bg = sanitizeHexColor(params.bubbleColor || params.bubble_color, '#38bdf8');
+  const txt = sanitizeHexColor(
+    params.bubbleTextColor || params.bubble_text_color,
+    resolveContrastingTextColor(bg),
+  );
+  const clientMsgId =
+    params.clientMsgId ||
+    `bc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+  try {
+    void activeSocialChatChannel.send({
+      type: 'broadcast',
+      event: 'social_chat',
+      payload: {
+        id: clientMsgId,
+        client_msg_id: clientMsgId,
+        sender_name: sanitizeDisplayName(sender),
+        sender_near_account: senderAccount ? sanitizeAccountId(senderAccount) : null,
+        recipient_name: recipient ? sanitizeDisplayName(recipient) : null,
+        message: cleanMsg,
+        bubble_color: bg,
+        bubble_text_color: txt,
+        created_at: params.createdAt || new Date().toISOString(),
+        room_id: params.roomId || params.room_id || 'city',
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Unsubscribes a social chat channel and clears active broadcast tracking.
+ */
+export function unsubscribeSocialMessagesRealtime(channel: RealtimeChannel | null): void {
+  if (!channel) return;
+  if (activeSocialChatChannel === channel) {
+    activeSocialChatChannel = null;
+    isSocialChatChannelSubscribed = false;
+  }
+  try {
+    void channel.unsubscribe();
+  } catch {
+    // ignore unsubscribe errors
+  }
+}
+
+/**
+ * Subscribes to live Supabase Realtime `INSERT` events AND fast Broadcast events
+ * on `bb_social_messages_live`.
  */
 export function subscribeToSocialMessagesRealtime(
   onNewMessage: (row: DbSocialMessageRow) => void,
 ): RealtimeChannel | null {
   if (!supabase) return null;
   try {
+    if (activeSocialChatChannel) {
+      unsubscribeSocialMessagesRealtime(activeSocialChatChannel);
+    }
     const channel = supabase
-      .channel('bb_social_messages_live')
+      .channel('bb_social_messages_live', {
+        config: {
+          broadcast: { self: false, ack: false },
+        },
+      })
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'bb_social_messages' },
         (payload) => {
           if (payload.new) {
-            onNewMessage(payload.new as DbSocialMessageRow);
+            const raw = payload.new as DbSocialMessageRow;
+            const bg = sanitizeHexColor(raw.bubble_color, '#ffffff');
+            onNewMessage({
+              ...raw,
+              bubble_color: bg,
+              bubble_text_color: sanitizeHexColor(
+                raw.bubble_text_color,
+                resolveContrastingTextColor(bg),
+              ),
+              is_broadcast: false,
+            });
           }
         },
       )
-      .subscribe();
+      .on('broadcast', { event: 'social_chat' }, ({ payload }) => {
+        if (!payload || typeof payload !== 'object') return;
+        const raw = payload as Partial<DbSocialMessageRow>;
+        const cleanMsg = typeof raw.message === 'string' ? raw.message.replace(/[<>]/g, '').trim().slice(0, 280) : '';
+        if (!cleanMsg) return;
+        const sender =
+          typeof raw.sender_name === 'string' && raw.sender_name.trim()
+            ? sanitizeDisplayName(raw.sender_name)
+            : 'CITIZEN';
+        const bg = sanitizeHexColor(raw.bubble_color, '#ffffff');
+        const txt = sanitizeHexColor(raw.bubble_text_color, resolveContrastingTextColor(bg));
+        const cid =
+          typeof raw.client_msg_id === 'string' && raw.client_msg_id
+            ? raw.client_msg_id
+            : typeof raw.id === 'string' && raw.id
+              ? raw.id
+              : `bc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        onNewMessage({
+          id: cid,
+          client_msg_id: cid,
+          sender_name: sender,
+          sender_near_account:
+            typeof raw.sender_near_account === 'string' && raw.sender_near_account
+              ? sanitizeAccountId(raw.sender_near_account)
+              : null,
+          recipient_name:
+            typeof raw.recipient_name === 'string' && raw.recipient_name.trim()
+              ? sanitizeDisplayName(raw.recipient_name)
+              : null,
+          message: cleanMsg,
+          bubble_color: bg,
+          bubble_text_color: txt,
+          created_at:
+            typeof raw.created_at === 'string' && raw.created_at
+              ? raw.created_at
+              : new Date().toISOString(),
+          room_id: typeof raw.room_id === 'string' ? raw.room_id : undefined,
+          is_broadcast: true,
+        });
+      })
+      .subscribe((status) => {
+        if (activeSocialChatChannel === channel) {
+          isSocialChatChannelSubscribed = status === 'SUBSCRIBED';
+        }
+      });
+    activeSocialChatChannel = channel;
     return channel;
   } catch {
     return null;
@@ -1392,6 +1543,35 @@ export interface WorldMultiplayerPeerState {
   emoteClip: string;
   chatBubbleText: string | null;
   updatedAtMs: number;
+  seq?: number;
+  sentAtMs?: number;
+  emoteSeq?: number;
+  emoteStartedAtMs?: number;
+  emoteDurationMs?: number;
+  seatLiftY?: number;
+  chatBubbleSeq?: number;
+  chatBubbleBgColor?: string | null;
+  chatBubbleTextColor?: string | null;
+}
+
+export interface WorldMultiplayerEmoteEvent {
+  fromSessionId: string;
+  zoneKey: MultiplayerZoneKey;
+  emoteClip: string;
+  emoteSeq: number;
+  emoteDurationMs: number;
+  sentAtMs: number;
+}
+
+export interface WorldMultiplayerChatEvent {
+  fromSessionId: string;
+  zoneKey: MultiplayerZoneKey;
+  displayName: string;
+  chatBubbleText: string;
+  chatBubbleSeq: number;
+  chatBubbleBgColor: string;
+  chatBubbleTextColor: string;
+  sentAtMs: number;
 }
 
 export interface WorldMultiplayerShotEvent {
@@ -1416,6 +1596,8 @@ export interface WorldMultiplayerController {
     forcePresenceTrack?: boolean,
   ) => void;
   broadcastShot: (shot: Omit<WorldMultiplayerShotEvent, 'fromSessionId'>) => void;
+  broadcastEmote?: (emote: Omit<WorldMultiplayerEmoteEvent, 'fromSessionId'>) => void;
+  broadcastChat?: (chat: Omit<WorldMultiplayerChatEvent, 'fromSessionId'>) => void;
   unsubscribe: () => void;
 }
 
@@ -1450,6 +1632,8 @@ export function getOrCreateTabMultiplayerSessionId(): string {
 export function subscribeToWorldMultiplayer(handlers: {
   onPeersChange: (peers: WorldMultiplayerPeerState[]) => void;
   onRemoteShot?: (shot: WorldMultiplayerShotEvent) => void;
+  onRemoteEmote?: (emote: WorldMultiplayerEmoteEvent) => void;
+  onRemoteChat?: (chat: WorldMultiplayerChatEvent) => void;
 }): WorldMultiplayerController {
   const sessionId = getOrCreateTabMultiplayerSessionId();
 
@@ -1459,12 +1643,16 @@ export function subscribeToWorldMultiplayer(handlers: {
       sessionId,
       publishLocalPose: () => {},
       broadcastShot: () => {},
+      broadcastEmote: () => {},
+      broadcastChat: () => {},
       unsubscribe: () => {},
     };
   }
 
   let isSubscribed = false;
   let lastPresenceTrackMs = 0;
+  let lastBroadcastSentAtMs = 0;
+  let outgoingSeq = 0;
   let lastTrackedZoneKey = '';
   let lastTrackedName = '';
   let lastTrackedGender = '';
@@ -1475,6 +1663,10 @@ export function subscribeToWorldMultiplayer(handlers: {
   const sanitizePeer = (raw: Partial<WorldMultiplayerPeerState>, keyFallback?: string): WorldMultiplayerPeerState | null => {
     const sid = typeof raw.sessionId === 'string' && raw.sessionId ? raw.sessionId : keyFallback || '';
     if (!sid || sid === sessionId) return null;
+    const rawBg = typeof raw.chatBubbleBgColor === 'string' && raw.chatBubbleBgColor ? sanitizeHexColor(raw.chatBubbleBgColor, '#ffffff') : null;
+    const rawTxt = typeof raw.chatBubbleTextColor === 'string' && raw.chatBubbleTextColor
+      ? sanitizeHexColor(raw.chatBubbleTextColor, resolveContrastingTextColor(rawBg ?? '#ffffff'))
+      : null;
     return {
       sessionId: sid,
       nearAccountId: typeof raw.nearAccountId === 'string' && raw.nearAccountId ? raw.nearAccountId : null,
@@ -1512,9 +1704,22 @@ export function subscribeToWorldMultiplayer(handlers: {
       isCafeWorker: Boolean(raw.isCafeWorker),
       cafePreparing: Boolean(raw.cafePreparing),
       level: Math.max(1, Math.min(999, Math.floor(Number.isFinite(raw.level) ? Number(raw.level) : 1))),
-      emoteClip: typeof raw.emoteClip === 'string' ? raw.emoteClip.slice(0, 40) : '',
+      emoteClip: typeof raw.emoteClip === 'string' ? raw.emoteClip.slice(0, 48) : '',
       chatBubbleText: typeof raw.chatBubbleText === 'string' && raw.chatBubbleText ? raw.chatBubbleText.slice(0, 64) : null,
       updatedAtMs: Date.now(),
+      seq: Number.isFinite(raw.seq) ? Math.max(0, Math.floor(Number(raw.seq))) : 0,
+      sentAtMs: Number.isFinite(raw.sentAtMs)
+        ? Number(raw.sentAtMs)
+        : Number.isFinite(raw.updatedAtMs)
+          ? Number(raw.updatedAtMs)
+          : 0,
+      emoteSeq: Number.isFinite(raw.emoteSeq) ? Math.max(0, Math.floor(Number(raw.emoteSeq))) : 0,
+      emoteStartedAtMs: Number.isFinite(raw.emoteStartedAtMs) ? Number(raw.emoteStartedAtMs) : 0,
+      emoteDurationMs: Number.isFinite(raw.emoteDurationMs) ? Math.max(0, Number(raw.emoteDurationMs)) : 0,
+      seatLiftY: Number.isFinite(raw.seatLiftY) ? Number(raw.seatLiftY) : undefined,
+      chatBubbleSeq: Number.isFinite(raw.chatBubbleSeq) ? Math.max(0, Math.floor(Number(raw.chatBubbleSeq))) : 0,
+      chatBubbleBgColor: rawBg,
+      chatBubbleTextColor: rawTxt,
     };
   };
 
@@ -1543,6 +1748,7 @@ export function subscribeToWorldMultiplayer(handlers: {
       try {
         const state = channel.presenceState<Partial<WorldMultiplayerPeerState>>();
         const presentKeys = new Set<string>();
+        const now = Date.now();
         for (const [key, entries] of Object.entries(state)) {
           if (key === sessionId || !Array.isArray(entries) || entries.length === 0) continue;
           presentKeys.add(key);
@@ -1550,28 +1756,10 @@ export function subscribeToWorldMultiplayer(handlers: {
           const clean = sanitizePeer(latest, key);
           if (!clean) continue;
           const existing = peersById.get(clean.sessionId);
-          // Only overwrite position from coarse Presence if we don't have a fresher Broadcast packet (<1.8s old)
-          if (!existing || Date.now() - existing.updatedAtMs > 1800 || existing.zoneKey !== clean.zoneKey) {
-            peersById.set(clean.sessionId, clean);
-          } else {
-            existing.displayName = clean.displayName;
-            existing.gender = clean.gender;
-            existing.nearAccountId = clean.nearAccountId;
-            existing.inWorld = clean.inWorld;
-            existing.hasClaimedBase = clean.hasClaimedBase;
-            existing.isCafeWorker = clean.isCafeWorker;
-            existing.cafePreparing = clean.cafePreparing;
-            existing.level = clean.level;
-            existing.emoteClip = clean.emoteClip;
-            // NOTE: do NOT bump existing.updatedAtMs here. That timestamp belongs to the
-            // fresher Broadcast pose; refreshing it without new position data made the
-            // renderer treat a stale pose as brand new (visible backward judder ~every 3s).
-            // Liveness is maintained by the peer's own pose broadcasts (<=1.1s idle,
-            // 2.4s heartbeat), so pruning clocks stay correct without this bump.
-          }
+          const merged = reconcileWorldPeerPacket(existing, clean, 'presence', now);
+          peersById.set(clean.sessionId, merged);
         }
         // Immediately prune disconnected peers no longer in Presence (unless they broadcast <2.5s ago while joining)
-        const now = Date.now();
         for (const [sid, peer] of peersById.entries()) {
           if (!presentKeys.has(sid) && now - peer.updatedAtMs > 2500) {
             peersById.delete(sid);
@@ -1599,8 +1787,72 @@ export function subscribeToWorldMultiplayer(handlers: {
         if (!payload || typeof payload !== 'object') return;
         const clean = sanitizePeer(payload as Partial<WorldMultiplayerPeerState>);
         if (!clean) return;
-        peersById.set(clean.sessionId, clean);
+        const existing = peersById.get(clean.sessionId);
+        const merged = reconcileWorldPeerPacket(existing, clean, 'broadcast', Date.now());
+        if (merged === existing) return;
+        peersById.set(clean.sessionId, merged);
         emitActivePeers();
+      })
+      .on('broadcast', { event: 'peer_emote' }, ({ payload }) => {
+        if (!payload || typeof payload !== 'object') return;
+        const raw = payload as Partial<WorldMultiplayerEmoteEvent>;
+        const sid = typeof raw.fromSessionId === 'string' ? raw.fromSessionId : '';
+        if (!sid || sid === sessionId) return;
+        const evt: WorldMultiplayerEmoteEvent = {
+          fromSessionId: sid,
+          zoneKey: typeof raw.zoneKey === 'string' ? raw.zoneKey : 'city',
+          emoteClip: typeof raw.emoteClip === 'string' ? raw.emoteClip.slice(0, 48) : '',
+          emoteSeq: Number.isFinite(raw.emoteSeq) ? Math.max(0, Math.floor(Number(raw.emoteSeq))) : 0,
+          emoteDurationMs: Number.isFinite(raw.emoteDurationMs) ? Math.max(0, Number(raw.emoteDurationMs)) : 0,
+          sentAtMs: Number.isFinite(raw.sentAtMs) ? Number(raw.sentAtMs) : Date.now(),
+        };
+        const existing = peersById.get(sid);
+        if (existing && evt.emoteSeq >= (existing.emoteSeq ?? 0)) {
+          peersById.set(sid, {
+            ...existing,
+            emoteClip: evt.emoteClip,
+            emoteSeq: evt.emoteSeq,
+            emoteStartedAtMs: evt.sentAtMs,
+            emoteDurationMs: evt.emoteDurationMs,
+            updatedAtMs: Date.now(),
+          });
+          emitActivePeers();
+        }
+        handlers.onRemoteEmote?.(evt);
+      })
+      .on('broadcast', { event: 'peer_chat' }, ({ payload }) => {
+        if (!payload || typeof payload !== 'object') return;
+        const raw = payload as Partial<WorldMultiplayerChatEvent>;
+        const sid = typeof raw.fromSessionId === 'string' ? raw.fromSessionId : '';
+        if (!sid || sid === sessionId) return;
+        const bg = sanitizeHexColor(raw.chatBubbleBgColor, '#ffffff');
+        const txt = sanitizeHexColor(raw.chatBubbleTextColor, resolveContrastingTextColor(bg));
+        const cleanText =
+          typeof raw.chatBubbleText === 'string' ? raw.chatBubbleText.trim().slice(0, 64) : '';
+        if (!cleanText) return;
+        const evt: WorldMultiplayerChatEvent = {
+          fromSessionId: sid,
+          zoneKey: typeof raw.zoneKey === 'string' ? raw.zoneKey : 'city',
+          displayName: (typeof raw.displayName === 'string' && raw.displayName.trim() ? raw.displayName.trim() : 'CITIZEN').slice(0, 28),
+          chatBubbleText: cleanText,
+          chatBubbleSeq: Number.isFinite(raw.chatBubbleSeq) ? Math.max(0, Math.floor(Number(raw.chatBubbleSeq))) : 1,
+          chatBubbleBgColor: bg,
+          chatBubbleTextColor: txt,
+          sentAtMs: Number.isFinite(raw.sentAtMs) ? Number(raw.sentAtMs) : Date.now(),
+        };
+        const existing = peersById.get(sid);
+        if (existing && evt.chatBubbleSeq >= (existing.chatBubbleSeq ?? 0)) {
+          peersById.set(sid, {
+            ...existing,
+            chatBubbleText: evt.chatBubbleText,
+            chatBubbleSeq: evt.chatBubbleSeq,
+            chatBubbleBgColor: evt.chatBubbleBgColor,
+            chatBubbleTextColor: evt.chatBubbleTextColor,
+            updatedAtMs: Date.now(),
+          });
+          emitActivePeers();
+        }
+        handlers.onRemoteChat?.(evt);
       })
       .on('broadcast', { event: 'peer_shot' }, ({ payload }) => {
         if (!payload || typeof payload !== 'object' || !handlers.onRemoteShot) return;
@@ -1625,7 +1877,9 @@ export function subscribeToWorldMultiplayer(handlers: {
         if (status === 'SUBSCRIBED') {
           isSubscribed = true;
           if (latestLocalPose) {
-            lastPresenceTrackMs = Date.now();
+            const now = Date.now();
+            lastPresenceTrackMs = now;
+            lastBroadcastSentAtMs = now;
             channel.track(latestLocalPose).catch(() => {});
             channel
               .send({
@@ -1641,19 +1895,27 @@ export function subscribeToWorldMultiplayer(handlers: {
     // Background-tab heartbeat so idle or unfocused tabs remain alive & visible to other devices
     const heartbeatTimer = setInterval(() => {
       if (!isSubscribed || !latestLocalPose) return;
-      const refreshed: WorldMultiplayerPeerState = {
-        ...latestLocalPose,
-        vx: typeof document !== 'undefined' && document.hidden ? 0 : latestLocalPose.vx,
-        vz: typeof document !== 'undefined' && document.hidden ? 0 : latestLocalPose.vz,
-        updatedAtMs: Date.now(),
-      };
-      channel
-        .send({
-          type: 'broadcast',
-          event: 'peer_pose',
-          payload: refreshed,
-        })
-        .catch(() => {});
+      const now = Date.now();
+      if (now - lastBroadcastSentAtMs >= 2100) {
+        outgoingSeq += 1;
+        lastBroadcastSentAtMs = now;
+        const refreshed: WorldMultiplayerPeerState = {
+          ...latestLocalPose,
+          vx: typeof document !== 'undefined' && document.hidden ? 0 : latestLocalPose.vx,
+          vz: typeof document !== 'undefined' && document.hidden ? 0 : latestLocalPose.vz,
+          seq: outgoingSeq,
+          sentAtMs: now,
+          updatedAtMs: now,
+        };
+        latestLocalPose = refreshed;
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'peer_pose',
+            payload: refreshed,
+          })
+          .catch(() => {});
+      }
       emitActivePeers();
     }, 2400);
 
@@ -1661,14 +1923,18 @@ export function subscribeToWorldMultiplayer(handlers: {
       sessionId,
       publishLocalPose: (pose, forcePresenceTrack = false) => {
         const now = Date.now();
+        outgoingSeq += 1;
         const packet: WorldMultiplayerPeerState = {
           sessionId,
           ...pose,
+          seq: pose.seq ?? outgoingSeq,
+          sentAtMs: pose.sentAtMs ?? now,
           updatedAtMs: now,
         };
         latestLocalPose = packet;
         if (!isSubscribed) return;
 
+        lastBroadcastSentAtMs = now;
         channel
           .send({
             type: 'broadcast',
@@ -1705,6 +1971,50 @@ export function subscribeToWorldMultiplayer(handlers: {
           })
           .catch(() => {});
       },
+      broadcastEmote: (emote) => {
+        if (latestLocalPose) {
+          latestLocalPose = {
+            ...latestLocalPose,
+            emoteClip: emote.emoteClip,
+            emoteSeq: emote.emoteSeq,
+            emoteStartedAtMs: emote.sentAtMs,
+            emoteDurationMs: emote.emoteDurationMs,
+          };
+        }
+        if (!isSubscribed) return;
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'peer_emote',
+            payload: {
+              fromSessionId: sessionId,
+              ...emote,
+            } satisfies WorldMultiplayerEmoteEvent,
+          })
+          .catch(() => {});
+      },
+      broadcastChat: (chat) => {
+        if (latestLocalPose) {
+          latestLocalPose = {
+            ...latestLocalPose,
+            chatBubbleText: chat.chatBubbleText,
+            chatBubbleSeq: chat.chatBubbleSeq,
+            chatBubbleBgColor: chat.chatBubbleBgColor,
+            chatBubbleTextColor: chat.chatBubbleTextColor,
+          };
+        }
+        if (!isSubscribed) return;
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'peer_chat',
+            payload: {
+              fromSessionId: sessionId,
+              ...chat,
+            } satisfies WorldMultiplayerChatEvent,
+          })
+          .catch(() => {});
+      },
       unsubscribe: () => {
         isSubscribed = false;
         clearInterval(heartbeatTimer);
@@ -1718,6 +2028,8 @@ export function subscribeToWorldMultiplayer(handlers: {
       sessionId,
       publishLocalPose: () => {},
       broadcastShot: () => {},
+      broadcastEmote: () => {},
+      broadcastChat: () => {},
       unsubscribe: () => {},
     };
   }

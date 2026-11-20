@@ -20,6 +20,7 @@ import {
   WorldMode,
   SafezonePlotAccessMode,
 } from './buddiesBlitzRules';
+import type { ClickToWalkHudSummary } from './buddiesClickToWalkRules';
 import {
   BuddyCharacterRig,
   BlitzWeaponId,
@@ -245,6 +246,8 @@ export interface HudSnapshot {
   safezonePlotAccessMode?: SafezonePlotAccessMode;
   safezoneAllowedFriends?: string[];
   safezonePlotOwnerId?: string | null;
+  // Click-to-Walk / Minimap Autopilot Telemetry
+  clickToWalk?: ClickToWalkHudSummary;
 }
 
 export interface BuddiesBlitzArenaProps {

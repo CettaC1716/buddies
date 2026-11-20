@@ -64,6 +64,24 @@ import {
   CITY_TRAM_SPEC,
   sampleCityTramTrackAtDistance,
   evaluateCityTramConsistState,
+  PLAZA_TRAFFIC_SIGNAL_SPEC,
+  CITY_TRAFFIC_SIGNAL_POLE_SPECS,
+  CITY_TRAFFIC_SIGN_SPECS,
+  createInitialPlazaTrafficSignalState,
+  evaluatePlazaCrosswalkWalkStates,
+  evaluateEastHarborCrosswalkWalkState,
+  stepPlazaTrafficSignalState,
+  stepCityTramTrafficSpeedAndDistance,
+  shouldPedestrianYieldForTramOrSignal,
+  CITY_VIEW_OVERVIEW_DEFAULTS,
+  CITY_VIEW_DISTRICTS,
+  getCityViewDistrictById,
+  parseCityViewHash,
+  getCityViewTargetHash,
+  getAdjacentCityViewDistrictId,
+  computeCityViewOrbitCameraPose,
+  pickCityViewDistrictAtWorldPoint,
+  computeCityViewFlyPose,
   INDIVIDUAL_BASE_LEVEL_SPECS,
   BASE_SKIN_THEMES,
   BASE_GARDEN_PRESETS,
@@ -218,6 +236,7 @@ import {
   resolveEnemyPublicPadShieldBarrier2D,
   pickRandomTeamShieldedCratePadSpawn,
   computeTeamMirrorCameraPose,
+  computeNpcDialoguePortraitPose,
   computeCameraRelativeMovementVector,
   SAFEZONE_CITY_HALTE_SPAWN,
   evaluateCitySafezoneModeRules,
@@ -238,25 +257,34 @@ import {
   buildWarzoneRaiderSpawnPlan,
   pickWarzoneRaiderRespawnCoord,
   CITY_AMBIENT_NPC_PRESETS,
+  CAFE_MIRA_INTERIOR_PRESET,
   stepCityAmbientNpcSchedule,
   resolveUnifiedBottomDockProximity,
 } from './buddiesBlitzRules';
 import { applyGrassChunkSyncedFogOfWar3D } from './buddiesBlitzMinimap';
 import {
   buildStaticWorldStructuresList,
+  DEFAULT_ARENA_MAP_LAYOUT,
   getPropBaseHeight,
   HALTE_GOLDEN_SCALE_CONFIG,
   isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
+import { buildArenaNavGrids, isPointOnPedestrianCrosswalkCorridor } from './buddiesBlitzSquadAi';
+import { FASHION_BOUTIQUE_SHOP_TRIGGER } from './buddiesFashionKioskRules';
+import { URBAN_SCOOTER_SHOP_TRIGGER } from './buddiesUrbanScooterRules';
 import {
   evaluateRoadNetworkSdf,
   evaluateBlitzGrassMask,
   evaluateNwLakeSdf,
   evaluateSeHarborSdf,
   evaluateOuterEmbankmentSdf,
+  isPointOnZebraCrosswalk,
   isPointOnAsphaltRoadOrZebraCross,
+  isPointOnOuterTramSidewalk,
+  isPointOnInnerTramSidewalk,
   getBaseProceduralGroundElevation,
 } from './buddiesPlanetCurvature';
+import { isPointOnGrandCasinoCrosswalk } from './buddiesGrandCasinoRules';
 import {
   computeExplosionDucking,
   getTacticalAudioSpec,
@@ -1488,12 +1516,12 @@ test('resolveSolidCratePush2D and resolveCrateVsCrateCollision2D enforce rigid s
   assert.ok(crateHit.bvx > 5.0, 'Struck crate is knocked forward by the thrown/pushed crate');
 });
 
-test('evaluateCityTramConsistState keeps enlarged 1.25x 2-car articulated tram (car1, joint, car2 & all 4 corners) inside the asphalt road around every turn', () => {
+test('evaluateCityTramConsistState keeps enlarged 2-car articulated tram (car1, joint, car2 & all 4 corners) inside the asphalt road around every turn', () => {
   assert.equal(CITY_TRAM_SPEC.carCount, 2);
-  // Enlarged 1.25x proportional to standing Buddy character:
-  assert.equal(CITY_TRAM_SPEC.carLength, 9.00);
-  assert.equal(CITY_TRAM_SPEC.carWidth, 3.58);
-  assert.equal(CITY_TRAM_SPEC.carHeight, 4.42);
+  // Real-world calibrated 5.25m-tall, 4.10m-wide, 10.50m-long per-car articulated streetcar:
+  assert.equal(CITY_TRAM_SPEC.carLength, 10.50);
+  assert.equal(CITY_TRAM_SPEC.carWidth, 4.10);
+  assert.equal(CITY_TRAM_SPEC.carHeight, 5.25);
   const initial = evaluateCityTramConsistState(0);
   const totalLen = initial.totalTrackLength;
   assert.ok(totalLen > 350 && totalLen < 500, `Closed tram loop length should be ~410m, got ${totalLen}`);
@@ -3366,7 +3394,7 @@ test('Global Movement Speed & Road Speed Boost: +45% Infantry/Harvester speed, r
   assert.ok(Math.abs(AI_BASE_FOOT_SPEED - 5.0) < 1e-6);
   assert.equal(CRATE_CARRY_SPEED_MULTIPLIER, 0.94);
 
-  // Off-road (0, 0 is grass island) vs On-road (-13, 0 is asphalt highway) vs Zebra Crosswalk (-18, 46.5)
+  // Off-road (0, 0 is grass island) vs On-road (-13, 0 is asphalt highway) vs Zebra Crosswalk (-18, 42.0)
   const offRoadSurface = evaluateRoadSurfaceSpeedBoost(0, 0);
   assert.equal(offRoadSurface.onRoadOrZebra, false);
   assert.equal(offRoadSurface.speedMultiplier, 1.0);
@@ -3397,7 +3425,7 @@ test('Global Movement Speed & Road Speed Boost: +45% Infantry/Harvester speed, r
   assert.equal(roadSurface.onRoadOrZebra, true);
   assert.equal(roadSurface.speedMultiplier, 1.2);
 
-  const zebraSurface = evaluateRoadSurfaceSpeedBoost(-18.0, 46.5);
+  const zebraSurface = evaluateRoadSurfaceSpeedBoost(-18.0, 42.0);
   assert.equal(zebraSurface.onZebraCrosswalk, true);
   assert.equal(zebraSurface.onRoadOrZebra, true);
   assert.equal(zebraSurface.speedMultiplier, 1.2);
@@ -4180,31 +4208,31 @@ test('Claimed Base Plot Gate Authorization: sliding gate opens for plot owner, c
   assert.equal(redRing.hexString, '#ff3b30');
   assert.equal(redRing.hexInt, 0xff3b30);
 
-  // 6. Two Lobby Portal Circles on flat plaza (-84.0, ±15.0) (Gapura 1 = WARZONE with ['RED TEAM', 'BLUE TEAM']; Gapura 2 = SAFEZONE with ['ENTER CITY'])
-  const warzonePortalStep = evaluateLobbyFactionPortalStep(-84.0, -15.0);
+  // 6. Two Lobby Portal Circles on flat plaza (-86.25, ±15.0) (Gapura 1 = WARZONE with ['RED TEAM', 'BLUE TEAM']; Gapura 2 = SAFEZONE with ['ENTER CITY'])
+  const warzonePortalStep = evaluateLobbyFactionPortalStep(-86.25, -15.0);
   assert.ok(warzonePortalStep);
   assert.equal(warzonePortalStep.portalKind, 'warzone');
   assert.deepEqual(warzonePortalStep.floatingButtons, ['RED TEAM', 'BLUE TEAM']);
   assert.equal(warzonePortalStep.floatingButtonLabel, 'RED TEAM');
   assert.equal(warzonePortalStep.autoTeleportOnStep, false);
   assert.equal(warzonePortalStep.requiresFloatingButtonClick, true);
-  assert.equal(warzonePortalStep.portalWorldX, -84.0);
+  assert.equal(warzonePortalStep.portalWorldX, -86.25);
   assert.equal(warzonePortalStep.portalWorldZ, -15.0);
 
-  const safezonePortalStep = evaluateLobbyFactionPortalStep(-84.0, 15.0);
+  const safezonePortalStep = evaluateLobbyFactionPortalStep(-86.25, 15.0);
   assert.ok(safezonePortalStep);
   assert.equal(safezonePortalStep.portalKind, 'safezone');
   assert.deepEqual(safezonePortalStep.floatingButtons, ['ENTER CITY']);
   assert.equal(safezonePortalStep.floatingButtonLabel, 'ENTER CITY');
   assert.equal(safezonePortalStep.autoTeleportOnStep, false);
   assert.equal(safezonePortalStep.requiresFloatingButtonClick, true);
-  assert.equal(safezonePortalStep.portalWorldX, -84.0);
+  assert.equal(safezonePortalStep.portalWorldX, -86.25);
   assert.equal(safezonePortalStep.portalWorldZ, 15.0);
   assert.equal(safezonePortalStep.safezoneSpawnX, SAFEZONE_CITY_HALTE_SPAWN.x);
   assert.equal(safezonePortalStep.safezoneSpawnZ, SAFEZONE_CITY_HALTE_SPAWN.z);
 
   assert.equal(
-    evaluateLobbyFactionPortalStep(-85.5, 0.0),
+    evaluateLobbyFactionPortalStep(-87.75, 0.0),
     null,
     'Stepping outside the portal circle returns null so the floating portal button disappears',
   );
@@ -4235,6 +4263,10 @@ test('Claimed Base Plot Gate Authorization: sliding gate opens for plot owner, c
     6.2,
   );
   assert.equal(boardAtHalte.canBoard, true, 'Player spawned at Halte Trem is immediately within Ride Tram range');
+  assert.ok(
+    Math.abs(tramAtHalte.car1.x - -65.0) < 0.5,
+    `Tram at Central Halte runs along Halte-side inner track x=-65.0 (got ${tramAtHalte.car1.x.toFixed(2)})`,
+  );
 });
 
 test('Safezone Non-Military Plot Claiming & Kiosk Gate Access Settings (PUBLIC, FRIENDS ONLY, PRIVATE)', () => {
@@ -4370,7 +4402,7 @@ test('Lobby & Safezone Combat HUD Cleanup, Hand Weapon Visibility, and Live City
   assert.equal(lobbyState.populationAndLivesBarVisible, false);
   assert.equal(lobbyState.harvesterContractBadgeVisible, false);
   assert.equal(lobbyState.bottomRightWeaponAndHpHudVisible, false);
-  assert.equal(lobbyState.minimapRadarVisible, false, 'Minimap Radar hidden inside Lobby room');
+  assert.equal(lobbyState.minimapRadarVisible, true, 'Minimap Radar visible at open Central Plaza so City View trigger is accessible');
   assert.equal(lobbyState.lobbyGoldExchangeButtonVisible, true, 'Gold Exchange button shown inside Lobby');
   assert.equal(lobbyState.handWeaponMeshVisible, false, 'Pistol/weapon in character hand hidden inside Lobby');
   assert.equal(lobbyState.externalCombatObjectsVisible, false, 'Crates, weapon pads, barrels, turrets & combat AI hidden');
@@ -4434,17 +4466,18 @@ test('Lobby & Safezone Combat HUD Cleanup, Hand Weapon Visibility, and Live City
   assert.equal(warzoneState.cityKiosksAndUnitsVisible, true);
 });
 
-test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West/Left x=-63.4) on Concrete Platform, Lobby Wall Boundary (-76.2), and Ghost Movement Fix', () => {
-  // 1. Halte Trem concrete platform stays at [-64.97, -58.37] (width 6.6m, centerX = -61.67, Z length = 15.4m),
-  //    Roof Canopy is moved to the Right/East side (canopyCenterX = -60.45, near grass),
-  //    and the 2 LOBBY return rings are moved to the Left/West side (x = -63.4, near tram track).
+test('Swapped Halte Canopy (East/Right x=-57.68) & 2 Crate-Pad LOBBY Rings (West/Left x=-60.52) on Concrete Platform, Lobby Wall Boundary (-76.2), and Ghost Movement Fix', () => {
+  // 1. Halte Trem concrete platform sits at [-62.20, -55.60] (width 6.6m, centerX = -58.90, Z length = 15.4m),
+  //    flush along the widened Tram+Car Ring Road inner curb (|x| = 62.20),
+  //    Roof Canopy is on the Right/East side (canopyCenterX = -57.68, near grass),
+  //    and the 2 LOBBY return rings sit on the Left/West side (x = -60.52, near street curb).
   assert.equal(LOBBY_TRAM_SHELTER_SPEC.centralPlatformLength, 15.4);
   assert.equal(LOBBY_TRAM_SHELTER_SPEC.platformLength, 18.4);
   assert.equal(LOBBY_TRAM_SHELTER_SPEC.platformWidth, 6.6);
-  assert.equal(LOBBY_TRAM_SHELTER_SPEC.platformCenterX, -61.67);
-  assert.equal(LOBBY_TRAM_SHELTER_SPEC.westEdgeX, -64.97);
-  assert.equal(LOBBY_TRAM_SHELTER_SPEC.eastEdgeX, -58.37);
-  assert.equal(LOBBY_TRAM_SHELTER_SPEC.canopyCenterX, -60.45);
+  assert.equal(LOBBY_TRAM_SHELTER_SPEC.platformCenterX, -58.9);
+  assert.equal(LOBBY_TRAM_SHELTER_SPEC.westEdgeX, -62.2);
+  assert.equal(LOBBY_TRAM_SHELTER_SPEC.eastEdgeX, -55.6);
+  assert.equal(LOBBY_TRAM_SHELTER_SPEC.canopyCenterX, -57.68);
   assert.equal(LOBBY_TRAM_SHELTER_SPEC.canopyLength, 15.4, 'Roof canopy length remains unchanged');
   assert.equal(LOBBY_TRAM_SHELTER_SPEC.canopyWidth, 2.58, 'Roof canopy width remains unchanged');
   assert.equal(LOBBY_TRAM_SHELTER_SPEC.canopyHeight, 3.35, 'Roof canopy height remains unchanged');
@@ -4471,16 +4504,16 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
     );
   }
 
-  // 2. Exactly 2 Crate-Pad-style LOBBY return circles on the West/Left side of the Halte concrete deck (x = -63.4, z = ±4.6, radius = 1.45), 100% on concrete deck and 0% on asphalt road
+  // 2. Exactly 2 Crate-Pad-style LOBBY return circles on the West/Left side of the Halte concrete deck (x = -60.52, z = ±4.6, radius = 1.45), 100% on concrete deck and 0% on asphalt road
   assert.equal(LOBBY_TRAM_RETURN_PADS.length, 2);
   const [northPad, southPad] = LOBBY_TRAM_RETURN_PADS;
   assert.equal(northPad.id, 'north_lobby_pad');
-  assert.equal(northPad.x, -63.4);
+  assert.equal(northPad.x, -60.52);
   assert.equal(northPad.z, -4.6);
   assert.equal(northPad.radius, 1.45);
   assert.equal(northPad.style, 'crate_pad_hologram');
   assert.equal(southPad.id, 'south_lobby_pad');
-  assert.equal(southPad.x, -63.4);
+  assert.equal(southPad.x, -60.52);
   assert.equal(southPad.z, 4.6);
   assert.equal(southPad.radius, 1.45);
   assert.equal(southPad.style, 'crate_pad_hologram');
@@ -4492,7 +4525,7 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
     );
     assert.ok(
       pad.x - pad.radius >= platformWestEdgeX && pad.x + pad.radius <= platformEastEdgeX,
-      `${pad.id} sits 100% within the concrete platform width [-64.97, -58.37]`,
+      `${pad.id} sits 100% within the concrete platform width [-62.20, -55.60]`,
     );
     assert.ok(
       Math.abs(pad.z) + pad.radius <= platformHalfZ,
@@ -4522,12 +4555,12 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
     assert.equal(isUnitNearLobbyTramReturnPad(pad.x, pad.z), true);
   }
 
-  // 3. Lobby Concrete Wall Boundary (maxX = -76.2) & Scene Isolation prevents ENTER CITY / Lobby Safezone leak on grass/road outside wall
-  assert.equal(LOBBY_SAFEZONE_BOUNDS.maxX, -76.2);
+  // 3. Lobby Concrete Wall Boundary (maxX = -78.45) & Scene Isolation prevents ENTER CITY / Lobby Safezone leak on grass/road outside wall
+  assert.equal(LOBBY_SAFEZONE_BOUNDS.maxX, -78.45);
   assert.equal(
     isPointInsideLobbySafezone(-74.0, 15.0, 'lobby'),
     false,
-    'Walking on grass outside Lobby concrete wall (x = -74.0 > -76.2) is NEVER inside Lobby Safezone',
+    'Walking on grass outside Lobby concrete wall (x = -74.0 > -78.45) is NEVER inside Lobby Safezone',
   );
   assert.equal(
     isPointInsideLobbySafezone(-80.0, 15.0, 'warzone'),
@@ -4542,10 +4575,10 @@ test('Swapped Halte Canopy (East/Right x=-60.45) & 2 Crate-Pad LOBBY Rings (West
 
   // 4. Both Lobby Gapura Portals (WARZONE & SAFEZONE) sit 100% on the flat upper Lobby plaza (elevation === 2.50m across full radius) with Crate Pad visual style
   const [warzonePortal, safezonePortal] = LOBBY_FACTION_PORTALS;
-  assert.equal(warzonePortal.x, -84.0);
+  assert.equal(warzonePortal.x, -86.25);
   assert.equal(warzonePortal.z, -15.0);
   assert.equal(warzonePortal.style, 'crate_pad_hologram');
-  assert.equal(safezonePortal.x, -84.0);
+  assert.equal(safezonePortal.x, -86.25);
   assert.equal(safezonePortal.z, 15.0);
   assert.equal(safezonePortal.style, 'crate_pad_hologram');
 
@@ -5000,7 +5033,7 @@ test('Cutaway House Studio: 10cm Grid + 25cm Wall Snap, 2D SAT OBB Collision, Sp
   assert.ok(moodyNight.explanationText.length > 15);
 });
 
-test('Procedural interior 3D furniture builders and charbuddies.glb humanoid avatar asset', async () => {
+test('Procedural interior 3D furniture builders and mixamo-locomotion-anim.glb / custom avatar assets', async () => {
   const fs = await import('node:fs');
   const {
     BUDDIES_FURNITURE_BUILDERS,
@@ -5034,202 +5067,47 @@ test('Procedural interior 3D furniture builders and charbuddies.glb humanoid ava
     assert.ok(meshGrp.children.length > 0, `Catalog item '${catId}' builds non-empty 3D group`);
   }
 
-  // 4. Verify both Female (public/assets/charbuddies.glb, 15 meshes) & Male (public/assets/mancharacterbuddies.glb, 13 meshes) 3D human character GLBs have 20 animations & 65 Mixamo joints
-  const glbStat = fs.statSync('public/assets/charbuddies.glb');
-  assert.ok(glbStat.size > 5_000_000, 'charbuddies.glb (Female character) exists in public/assets/charbuddies.glb');
-  const glbBuf = fs.readFileSync('public/assets/charbuddies.glb');
-  assert.equal(glbBuf.toString('utf8', 0, 4), 'glTF');
-  const glbJsonLen = glbBuf.readUInt32LE(12);
-  const glbJson = JSON.parse(glbBuf.toString('utf8', 20, 20 + glbJsonLen));
-  assert.equal(glbJson.meshes.length, 15, 'charbuddies.glb contains 15 female human character meshes');
-  assert.equal(glbJson.skins[0].joints.length, 65, 'charbuddies.glb contains 65 Mixamo skeleton joints');
-  assert.equal(glbJson.animations.length, 72, 'charbuddies.glb contains 72 animations across Female Basic, Rifle 8-Way, Pistol Locomotion Packs, Sitting.fbx, Fishing Pack, and Driving.fbx');
-  const femAnimNames = new Set(glbJson.animations.map((a: { name: string }) => a.name));
-  assert.ok(femAnimNames.has('sitting.001'), "charbuddies.glb has 'sitting.001' (Sitting.fbx)");
-  assert.ok(femAnimNames.has('driving.001'), "charbuddies.glb has 'driving.001' (Driving.fbx)");
-
-  const expectedFemaleBasicLocomotionFrames: Record<string, number> = {
-    'idle.001': 251,
-    'walk.001': 30,
-    'run.001': 22,
-    'unarmed_jump.001': 51,
-    'unarmed_strafe_left.001': 21,
-    'unarmed_strafe_right.001': 21,
-    'unarmed_walk_strafe_left.001': 29,
-    'unarmed_walk_strafe_right.001': 29,
-    'unarmed_turn_left.001': 36,
-    'unarmed_turn_right.001': 36,
-  };
-  for (const [clipName, expectedFrames] of Object.entries(expectedFemaleBasicLocomotionFrames)) {
-    const animObj = glbJson.animations.find((a: { name: string }) => a.name === clipName);
-    assert.ok(animObj, `charbuddies.glb contains Female Basic Locomotion clip '${clipName}'`);
-    const timeAccessor = glbJson.accessors[animObj.samplers[0].input];
-    assert.equal(
-      timeAccessor.count,
-      expectedFrames,
-      `charbuddies.glb '${clipName}' has full 30 FPS keyframe count (${expectedFrames})`,
-    );
-  }
-
-  const manGlbStat = fs.statSync('public/assets/mancharacterbuddies.glb');
-  assert.ok(manGlbStat.size > 5_000_000, 'mancharacterbuddies.glb (Male character) exists in public/assets/mancharacterbuddies.glb');
-  const manGlbBuf = fs.readFileSync('public/assets/mancharacterbuddies.glb');
-  assert.equal(manGlbBuf.toString('utf8', 0, 4), 'glTF');
-  const manGlbJsonLen = manGlbBuf.readUInt32LE(12);
-  const manGlbJson = JSON.parse(manGlbBuf.toString('utf8', 20, 20 + manGlbJsonLen));
-  assert.equal(manGlbJson.meshes.length, 13, 'mancharacterbuddies.glb contains 13 male human character meshes');
-  assert.equal(manGlbJson.skins[0].joints.length, 65, 'mancharacterbuddies.glb contains 65 Mixamo skeleton joints');
-  assert.equal(manGlbJson.animations.length, 72, 'mancharacterbuddies.glb contains 72 animations across Unarmed, Rifle 8-Way, Pistol Locomotion Packs, Sitting_(1).fbx, Fishing Pack, and Driving.fbx');
-
-  const expectedMaleBasicLocomotionFrames: Record<string, number> = {
-    'idle.001': 251,
-    'walk.001': 32,
-    'run.001': 22,
-    'unarmed_jump.001': 66,
-    'unarmed_strafe_left.001': 21,
-    'unarmed_strafe_right.001': 21,
-    'unarmed_walk_strafe_left.001': 32,
-    'unarmed_walk_strafe_right.001': 32,
-    'unarmed_turn_left.001': 29,
-    'unarmed_turn_right.001': 29,
-  };
-  for (const [clipName, expectedFrames] of Object.entries(expectedMaleBasicLocomotionFrames)) {
-    const animObj = manGlbJson.animations.find((a: { name: string }) => a.name === clipName);
-    assert.ok(animObj, `mancharacterbuddies.glb contains Male Basic Locomotion clip '${clipName}'`);
-    const timeAccessor = manGlbJson.accessors[animObj.samplers[0].input];
-    assert.equal(
-      timeAccessor.count,
-      expectedFrames,
-      `mancharacterbuddies.glb '${clipName}' has full 30 FPS keyframe count (${expectedFrames})`,
-    );
-  }
-
-  const expectedPistolLocomotionFrames: Record<string, number> = {
-    'pistol_idle.001': 41,
-    'pistol_kneeling_idle.001': 115,
-    'pistol_walk.001': 25,
-    'pistol_walk_backward.001': 32,
-    'pistol_walk_arc.001': 23,
-    'pistol_walk_backward_arc.001': 19,
-    'pistol_run.001': 16,
-    'pistol_run_backward.001': 17,
-    'pistol_run_arc.001': 19,
-    'pistol_run_backward_arc.001': 16,
-    'pistol_strafe_left.001': 18,
-    'pistol_strafe_right.001': 19,
-    'pistol_jump.001': 61,
-  };
-  for (const [clipName, expectedFrames] of Object.entries(expectedPistolLocomotionFrames)) {
-    const femAnimObj = glbJson.animations.find((a: { name: string }) => a.name === clipName);
-    assert.ok(femAnimObj, `charbuddies.glb contains Pistol Locomotion clip '${clipName}'`);
-    assert.equal(
-      glbJson.accessors[femAnimObj.samplers[0].input].count,
-      expectedFrames,
-      `charbuddies.glb '${clipName}' has full 30 FPS keyframe count (${expectedFrames})`,
-    );
-    const manAnimObj = manGlbJson.animations.find((a: { name: string }) => a.name === clipName);
-    assert.ok(manAnimObj, `mancharacterbuddies.glb contains Pistol Locomotion clip '${clipName}'`);
-    assert.equal(
-      manGlbJson.accessors[manAnimObj.samplers[0].input].count,
-      expectedFrames,
-      `mancharacterbuddies.glb '${clipName}' has full 30 FPS keyframe count (${expectedFrames})`,
-    );
-  }
-
-  const expectedRifleLocomotionFrames: Record<string, number> = {
-    'rifle_idle.001': 64,
-    'rifle_aiming_idle.001': 64,
-    'rifle_idle_alt.001': 64,
-    'rifle_crouch_aiming_idle.001': 64,
-    'run_rifle.001': 16,
-    'run_forward_left.001': 16,
-    'run_forward_right.001': 16,
-    'strafe.001': 16,
-    'strafe_right.001': 16,
-    'stepping_backward.001': 16,
-    'run_backward_left.001': 16,
-    'run_backward_right.001': 16,
-    'sprint_forward.001': 16,
-    'sprint_forward_left.001': 16,
-    'sprint_forward_right.001': 16,
-    'sprint_left.001': 16,
-    'sprint_right.001': 16,
-    'sprint_backward.001': 16,
-    'sprint_backward_left.001': 16,
-    'sprint_backward_right.001': 16,
-    'stepping_forward.001': 31,
-    'walk_forward_left.001': 31,
-    'walk_forward_right.001': 31,
-    'walk_left.001': 31,
-    'strafing.001': 31,
-    'walk_backward.001': 31,
-    'walk_backward_left.001': 31,
-    'walk_backward_right.001': 31,
-    'crouch_walking.001': 31,
-    'crouch_walk_left.001': 31,
-    'crouch_walk_right.001': 31,
-    'crouch_walk_backward.001': 31,
-    'rifle_turn_left.001': 31,
-    'rifle_turn.001': 31,
-    'rifle_crouch_turn.001': 39,
-    'rifle_crouch_turn_right.001': 39,
-    'jump_up.001': 17,
-    'fall.001': 31,
-    'jumping_down.001': 21,
-    'dying.001': 104,
-    'death_from_right.001': 100,
-    'death_from_back_headshot.001': 112,
-  };
-  for (const [clipName, expectedFrames] of Object.entries(expectedRifleLocomotionFrames)) {
-    const femAnimObj = glbJson.animations.find((a: { name: string }) => a.name === clipName);
-    assert.ok(femAnimObj, `charbuddies.glb contains Rifle 8-Way Locomotion clip '${clipName}'`);
-    assert.equal(
-      glbJson.accessors[femAnimObj.samplers[0].input].count,
-      expectedFrames,
-      `charbuddies.glb '${clipName}' has full 30 FPS keyframe count (${expectedFrames})`,
-    );
-    const manAnimObj = manGlbJson.animations.find((a: { name: string }) => a.name === clipName);
-    assert.ok(manAnimObj, `mancharacterbuddies.glb contains Rifle 8-Way Locomotion clip '${clipName}'`);
-    assert.equal(
-      manGlbJson.accessors[manAnimObj.samplers[0].input].count,
-      expectedFrames,
-      `mancharacterbuddies.glb '${clipName}' has full 30 FPS keyframe count (${expectedFrames})`,
-    );
-  }
-
-  const femDrivingAnim = glbJson.animations.find((a: { name: string }) => a.name === 'driving.001');
-  const manDrivingAnim = manGlbJson.animations.find((a: { name: string }) => a.name === 'driving.001');
-  assert.ok(femDrivingAnim, "charbuddies.glb contains 'driving.001' (Piloting.fbx)");
-  assert.ok(manDrivingAnim, "mancharacterbuddies.glb contains 'driving.001' (Piloting.fbx)");
+  // 4. Verify animation-only Mixamo locomotion bank (public/assets/mixamo-locomotion-anim.glb)
+  //    carries 65 Mixamo skeleton bind nodes, 0 dead meshes/textures, and all 72 clips.
+  const mixamoStat = fs.statSync('public/assets/mixamo-locomotion-anim.glb');
+  assert.ok(
+    mixamoStat.size > 300_000 && mixamoStat.size < 2_500_000,
+    'mixamo-locomotion-anim.glb exists with compact animation-only size (~1.2 MB)',
+  );
+  const mixamoBuf = fs.readFileSync('public/assets/mixamo-locomotion-anim.glb');
+  assert.equal(mixamoBuf.toString('utf8', 0, 4), 'glTF');
+  const mixamoJsonLen = mixamoBuf.readUInt32LE(12);
+  const mixamoJson = JSON.parse(mixamoBuf.toString('utf8', 20, 20 + mixamoJsonLen));
   assert.equal(
-    glbJson.accessors[femDrivingAnim.samplers[0].input].count,
-    292,
-    "charbuddies.glb 'driving.001' has full 30 FPS Piloting.fbx keyframe count (292)",
+    (mixamoJson.meshes ?? []).length,
+    0,
+    'mixamo-locomotion-anim.glb strips legacy meshes (0 meshes)',
   );
   assert.equal(
-    manGlbJson.accessors[manDrivingAnim.samplers[0].input].count,
-    292,
-    "mancharacterbuddies.glb 'driving.001' has full 30 FPS Piloting.fbx keyframe count (292)",
+    (mixamoJson.textures ?? []).length,
+    0,
+    'mixamo-locomotion-anim.glb strips legacy textures (0 textures)',
   );
-
-  const femBoxJogAnim = glbJson.animations.find((a: { name: string }) => a.name === 'jogging_with_box.001');
-  const manBoxJogAnim = manGlbJson.animations.find((a: { name: string }) => a.name === 'jogging_with_box.001');
-  assert.ok(femBoxJogAnim, "charbuddies.glb contains 'jogging_with_box.001' (Jogging_With_Box.fbx)");
-  assert.ok(manBoxJogAnim, "mancharacterbuddies.glb contains 'jogging_with_box.001' (Jogging_With_Box.fbx)");
+  const mixamoNodeNames = new Set<string>(
+    (mixamoJson.nodes ?? []).map((n: { name?: string }) => n.name ?? ''),
+  );
+  const mixamoJointCount = [...mixamoNodeNames].filter((n) => n.startsWith('mixamorig')).length;
+  assert.equal(mixamoJointCount, 65, 'mixamo-locomotion-anim.glb preserves all 65 Mixamo joints');
   assert.equal(
-    glbJson.accessors[femBoxJogAnim.samplers[0].input].count,
-    24,
-    "charbuddies.glb 'jogging_with_box.001' has full 30 FPS Jogging_With_Box.fbx keyframe count (24)",
+    mixamoJson.animations.length,
+    72,
+    'mixamo-locomotion-anim.glb contains all 72 Mixamo animations',
   );
-  assert.equal(
-    manGlbJson.accessors[manBoxJogAnim.samplers[0].input].count,
-    24,
-    "mancharacterbuddies.glb 'jogging_with_box.001' has full 30 FPS Jogging_With_Box.fbx keyframe count (24)",
-  );
+  const mixamoAnimMap = new Map<
+    string,
+    { name: string; samplers: Array<{ input: number }>; channels: unknown[] }
+  >(mixamoJson.animations.map((a: { name: string; samplers: Array<{ input: number }>; channels: unknown[] }) => [a.name, a]));
 
-  const manAnimNames = new Set(manGlbJson.animations.map((a: { name: string }) => a.name));
-  assert.equal(femAnimNames.has('wave_goodbye_01.001'), false, "old 'wave_goodbye_01.001' clip removed from charbuddies.glb");
-  assert.equal(manAnimNames.has('wave_goodbye_01.001'), false, "old 'wave_goodbye_01.001' clip removed from mancharacterbuddies.glb");
+  assert.equal(
+    mixamoAnimMap.has('wave_goodbye_01.001'),
+    false,
+    "old 'wave_goodbye_01.001' clip removed from mixamo-locomotion-anim.glb",
+  );
   for (const requiredClip of [
     'idle.001',
     'walk.001',
@@ -5248,6 +5126,8 @@ test('Procedural interior 3D furniture builders and charbuddies.glb humanoid ava
     'unarmed_turn_right.001',
     'rifle_idle.001',
     'rifle_aiming_idle.001',
+    'rifle_idle_alt.001',
+    'rifle_crouch_aiming_idle.001',
     'run_rifle.001',
     'run_forward_left.001',
     'run_forward_right.001',
@@ -5264,18 +5144,47 @@ test('Procedural interior 3D furniture builders and charbuddies.glb humanoid ava
     'sprint_backward.001',
     'sprint_backward_left.001',
     'sprint_backward_right.001',
+    'stepping_forward.001',
+    'walk_forward_left.001',
+    'walk_forward_right.001',
+    'walk_left.001',
+    'strafing.001',
+    'walk_backward.001',
+    'walk_backward_left.001',
+    'walk_backward_right.001',
+    'crouch_walking.001',
+    'crouch_walk_left.001',
+    'crouch_walk_right.001',
+    'crouch_walk_backward.001',
+    'rifle_turn_left.001',
+    'rifle_turn.001',
+    'rifle_crouch_turn.001',
+    'rifle_crouch_turn_right.001',
+    'jump_up.001',
+    'fall.001',
+    'jumping_down.001',
+    'dying.001',
+    'death_from_right.001',
+    'death_from_back_headshot.001',
     'pistol_idle.001',
+    'pistol_kneeling_idle.001',
     'pistol_walk.001',
     'pistol_walk_backward.001',
+    'pistol_walk_arc.001',
+    'pistol_walk_backward_arc.001',
     'pistol_run.001',
     'pistol_run_backward.001',
     'pistol_run_arc.001',
+    'pistol_run_backward_arc.001',
     'pistol_strafe_left.001',
     'pistol_strafe_right.001',
     'pistol_jump.001',
   ]) {
-    assert.ok(femAnimNames.has(requiredClip), `charbuddies.glb has '${requiredClip}'`);
-    assert.ok(manAnimNames.has(requiredClip), `mancharacterbuddies.glb has '${requiredClip}'`);
+    const animObj = mixamoAnimMap.get(requiredClip);
+    assert.ok(animObj, `mixamo-locomotion-anim.glb has '${requiredClip}'`);
+    assert.ok(animObj.channels.length > 0, `mixamo-locomotion-anim.glb '${requiredClip}' has channels`);
+    const timeAccessor = mixamoJson.accessors[animObj.samplers[0].input];
+    assert.ok(timeAccessor.count >= 2, `mixamo-locomotion-anim.glb '${requiredClip}' has keyframes`);
   }
 
   const { setDefaultCharacterGender, getDefaultCharacterGender } = await import(
@@ -5287,21 +5196,17 @@ test('Procedural interior 3D furniture builders and charbuddies.glb humanoid ava
   setDefaultCharacterGender('female');
   assert.equal(getDefaultCharacterGender(), 'female');
 
-  // 5. Verify consolidated bufferViews in both charbuddies.glb and mancharacterbuddies.glb (no redundant .fbx parsing)
+  // 5. Verify consolidated bufferViews in mixamo-locomotion-anim.glb and custom compressed player GLBs
   assert.ok(
-    glbJson.bufferViews.length < 200,
-    `charbuddies.glb animation bufferViews consolidated (${glbJson.bufferViews.length} < 200)`,
-  );
-  assert.ok(
-    manGlbJson.bufferViews.length < 200,
-    `mancharacterbuddies.glb animation bufferViews consolidated (${manGlbJson.bufferViews.length} < 200)`,
+    mixamoJson.bufferViews.length < 200,
+    `mixamo-locomotion-anim.glb animation bufferViews consolidated (${mixamoJson.bufferViews.length} < 200)`,
   );
 
-  // 6. Verify public/assets/ar99-assault.glb binary structure (5 tripo_part meshes + 5 embedded textures, decimated to 8,804 triangles / 2.53 MB)
+  // 6. Verify public/assets/ar99-assault.glb binary structure (5 tripo_part meshes + 5 embedded textures, Draco+WebP ~200 KB)
   const ar99Stat = fs.statSync('public/assets/ar99-assault.glb');
   assert.ok(
-    ar99Stat.size > 2_000_000 && ar99Stat.size < 3_500_000,
-    'ar99-assault.glb exists in public/assets/ar99-assault.glb with decimated low-poly size (~2.53 MB)',
+    ar99Stat.size > 50_000 && ar99Stat.size < 1_000_000,
+    'ar99-assault.glb exists in public/assets/ar99-assault.glb with Draco+WebP compressed low-poly size (~200 KB)',
   );
   const ar99Buf = fs.readFileSync('public/assets/ar99-assault.glb');
   assert.equal(ar99Buf.toString('utf8', 0, 4), 'glTF');
@@ -5369,10 +5274,11 @@ test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB collider
   assert.ok(byId.get('halte_ticket_machine'), 'Halte ticket machine collider must be registered');
   assert.ok(byId.get('halte_passenger_bench'), 'Halte passenger bench collider must be registered');
 
-  // 3. Street & industrial props are calibrated to Halte-ratio heights and footprints
-  assert.equal(getPropBaseHeight('bench'), 1.2528);
-  assert.equal(getPropBaseHeight('recycle_bin'), 1.22);
-  assert.equal(getPropBaseHeight('hydrant'), 1.18);
+  // 3. Street & industrial props are calibrated to avatar scale (~3.30m standing avatar)
+  assert.equal(getPropBaseHeight('bench'), 1.096);
+  assert.equal(getPropBaseHeight('recycle_bin'), 1.44);
+  assert.equal(getPropBaseHeight('hydrant'), 1.39);
+  assert.equal(getPropBaseHeight('barricade'), 1.68);
   assert.equal(getPropBaseHeight('traffic_cone'), 0.86);
   assert.ok((getPropCollisionSpec('bench', 1.0).halfX ?? 99) < 0.85);
 });
@@ -5507,12 +5413,12 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
   assert.equal(beachSpec.spawnZ, 29.5);
 
   const northSpec = getCityTransitDestinationById('north_residence');
-  assert.equal(northSpec.shelterX, 6.5);
-  assert.equal(northSpec.shelterZ, -46.8);
-  assert.equal(northSpec.spawnX, 6.5);
-  assert.equal(northSpec.spawnZ, -46.4);
-  assert.equal(northSpec.kioskX, 6.5);
-  assert.equal(northSpec.kioskZ, -44.95);
+  assert.equal(northSpec.shelterX, 3.5);
+  assert.equal(northSpec.shelterZ, -43.0);
+  assert.equal(northSpec.spawnX, 3.5);
+  assert.equal(northSpec.spawnZ, -42.6);
+  assert.equal(northSpec.kioskX, 3.5);
+  assert.equal(northSpec.kioskZ, -41.15);
 
   // 2. Proximity evaluation detects each of the 5 City Transit Kiosks within <= 3.5m
   for (const stationId of [
@@ -5533,8 +5439,8 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
     assert.equal(prox.station?.id, stationId);
   }
 
-  // 3. In Warzone mode, only the standalone Warzone exit kiosk (-60.55, 2.8) triggers
-  const warzoneExitProx = evaluateNearestCityTransitKioskProximity(-60.55, 1.5, 'warzone', 3.5);
+  // 3. In Warzone mode, only the standalone Warzone exit kiosk (-57.78, 2.8) triggers
+  const warzoneExitProx = evaluateNearestCityTransitKioskProximity(-57.78, 1.5, 'warzone', 3.5);
   assert.equal(warzoneExitProx.isNear, true);
   assert.equal(warzoneExitProx.station?.id, 'warzone_arena');
 
@@ -6128,12 +6034,109 @@ test('Warzone hostile Raider squad spawns on opposing team with mixed humanoid a
   assert.ok(Math.hypot(respawnFar.x - -18, respawnFar.z - -20) >= 18);
 });
 
-test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on safe unobstructed walkways', () => {
-  assert.equal(CITY_AMBIENT_NPC_PRESETS.length, 2);
+test('Island citizens roam the entire map with multi-district activities and valid A* pathfinding across every leg', () => {
+  assert.equal(CITY_AMBIENT_NPC_PRESETS.length, 6);
+  const presetIds = new Set(CITY_AMBIENT_NPC_PRESETS.map((p) => p.id));
+  for (const requiredId of [
+    'city_plaza_raka',
+    'city_plaza_nadia',
+    'citizen_mira',
+    'citizen_bima',
+    'citizen_tari',
+    'citizen_kenji',
+  ]) {
+    assert.ok(presetIds.has(requiredId), `Missing district citizen preset ${requiredId}`);
+  }
   const genders = new Set(CITY_AMBIENT_NPC_PRESETS.map((p) => p.gender));
   assert.ok(genders.has('male') && genders.has('female'));
+  const tints = new Set(CITY_AMBIENT_NPC_PRESETS.map((p) => p.clothingTintHex));
+  assert.equal(tints.size, CITY_AMBIENT_NPC_PRESETS.length, 'Every citizen should have a distinct tint');
+  const raka = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'city_plaza_raka')!;
+  const mira = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'citizen_mira')!;
+  const bima = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'citizen_bima')!;
+  assert.equal(raka.baseGlbVariant, 'player');
+  assert.equal(raka.disableClothingTint, true);
+  assert.equal(raka.idleOverrideClip, 'raka_idle.001');
+  assert.equal(raka.walkOverrideClip, 'raka_walk.001');
+  assert.equal(raka.runOverrideClip, 'raka_run.001');
+  assert.equal(raka.sitOverrideClip, 'raka_sit.001');
+  assert.ok(
+    raka.equippedHairUrl && raka.equippedTorsoUrl && raka.equippedLegsUrl && raka.equippedFeetUrl,
+    'Raka uses full 4-piece modular outfit GLBs',
+  );
+  assert.equal(mira.baseGlbVariant, 'player');
+  assert.equal(mira.disableClothingTint, true);
+  assert.equal(mira.idleOverrideClip, 'mira_idle.001');
+  assert.equal(mira.walkOverrideClip, 'mira_walk.001');
+  assert.equal(mira.runOverrideClip, 'mira_run.001');
+  assert.equal(mira.sitOverrideClip, 'mira_sit.001');
+  assert.ok(
+    mira.equippedHairUrl && mira.equippedTorsoUrl && mira.equippedLegsUrl && mira.equippedFeetUrl,
+    'Mira uses full 4-piece modular outfit GLBs',
+  );
+  assert.equal(bima.disableClothingTint, true);
+  assert.equal(bima.idleOverrideClip, 'bima_idle.001');
+  assert.equal(bima.walkOverrideClip, 'bima_walk.001');
+  assert.equal(bima.runOverrideClip, 'bima_run.001');
+  assert.equal(bima.sitOverrideClip, 'bima_sit.001');
+  assert.ok(
+    bima.equippedHairUrl && bima.equippedTorsoUrl && bima.equippedLegsUrl && bima.equippedFeetUrl,
+    'Bima uses full 4-piece modular outfit GLBs',
+  );
+  const nadia = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'city_plaza_nadia')!;
+  const tari = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'citizen_tari')!;
+  const kenji = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'citizen_kenji')!;
+  assert.equal(nadia.idleOverrideClip, 'nadia_idle.001');
+  assert.equal(nadia.walkOverrideClip, 'nadia_walk.001');
+  assert.equal(nadia.runOverrideClip, 'nadia_run.001');
+  assert.equal(nadia.sitOverrideClip, 'nadia_sit.001');
+  assert.ok(
+    nadia.waypoints.every((w) => w.moveMode === 'walk' && (w.speedMps ?? nadia.speedMps) <= 2.2),
+    'Nadia walks calmly on the West side instead of running around',
+  );
+  assert.equal(
+    nadia.waypoints.some((w) => w.activity === 'fishing'),
+    false,
+    'Nadia never fishes in her chic trousers and heels outfit',
+  );
+  assert.equal(tari.idleOverrideClip, 'tari_idle.001');
+  assert.equal(tari.walkOverrideClip, 'tari_walk.001');
+  assert.equal(tari.runOverrideClip, 'tari_run.001');
+  assert.equal(tari.baseGlbVariant, 'player');
+  assert.equal(tari.disableClothingTint, true);
+  assert.equal(tari.equippedCostumeUrl, '/assets/outfit/tari/tari-costume.glb');
+  assert.equal(tari.sitOverrideClip, 'tari_sit.001');
+  assert.equal(
+    tari.waypoints.some((w) => w.activity === 'fishing'),
+    false,
+    'Tari never fishes in her formal boutique costume & heels',
+  );
+  assert.ok(
+    tari.waypoints.some((w) => w.activity === 'sit_relax'),
+    'Tari visits a sit_relax waypoint where her custom sit pose plays',
+  );
+  assert.equal(kenji.idleOverrideClip, 'kenji_idle.001');
+  assert.equal(kenji.walkOverrideClip, 'kenji_walk.001');
+  assert.equal(kenji.runOverrideClip, 'kenji_run.001');
+  assert.equal(kenji.sitOverrideClip, 'kenji_sit.001');
+  assert.ok(
+    kenji.waypoints.every((w) => w.moveMode === 'walk' && (w.speedMps ?? kenji.speedMps) <= 2.2),
+    'Kenji walks calmly between Tennis Club, Cafe, and NW Lake without running',
+  );
   for (const preset of CITY_AMBIENT_NPC_PRESETS) {
-    assert.ok(preset.waypoints.every((wp) => wp.x <= -74 && wp.z >= -30 && wp.z <= 22));
+    assert.notEqual(preset.activity, 'jog_exercise', `${preset.id} must not jog around`);
+    assert.ok(preset.speedMps <= 2.2, `${preset.id} walking speed must stay <= 2.2 m/s`);
+    for (const wp of preset.waypoints) {
+      assert.notEqual(wp.moveMode, 'jog', `${preset.id} stop ${wp.label ?? ''} must walk only`);
+      assert.ok(
+        (wp.speedMps ?? preset.speedMps) <= 2.2,
+        `${preset.id} leg speed must stay <= 2.2 m/s`,
+      );
+      assert.ok(
+        wp.x >= -102 && wp.x <= -24 && wp.z >= -86 && wp.z <= 66,
+        `${preset.id} must stay on the West side of the map (got ${wp.x}, ${wp.z})`,
+      );
+    }
   }
 
   const staticStructures = buildStaticWorldStructuresList({
@@ -6144,16 +6147,110 @@ test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on s
     isSafezoneMode: true,
   });
 
+  const trees = DEFAULT_ARENA_MAP_LAYOUT.props
+    .filter((p) => p.kind === 'tree_gold' || p.kind === 'tree_purple')
+    .map((p) => ({
+      id: p.id,
+      propId: p.id,
+      isPurple: p.kind === 'tree_purple',
+      x: p.x,
+      z: p.z,
+      scale: p.scale,
+      hp: 100,
+      maxHp: 100,
+      alive: true,
+      hitFlashTimer: 0,
+      jiggleTimer: 0,
+      jiggleIntensity: 0,
+      jiggleDirX: 0,
+      jiggleDirZ: 0,
+      mesh: new THREE.Group(),
+    }));
+  const activeMapProps = DEFAULT_ARENA_MAP_LAYOUT.props
+    .filter((p) => p.kind !== 'tree_gold' && p.kind !== 'tree_purple')
+    .map((p) => {
+      const spec = getPropCollisionSpec(p.kind, p.scale);
+      return {
+        id: p.id,
+        kind: p.kind,
+        wrapper: new THREE.Group(),
+        x: p.x,
+        z: p.z,
+        vx: 0,
+        vz: 0,
+        rotY: p.rotY,
+        rotVelY: 0,
+        scale: p.scale,
+        category: spec.category,
+        materialTag: spec.materialTag,
+        radius: spec.radius,
+        halfX: spec.halfX,
+        halfZ: spec.halfZ,
+        heightY: 2.0,
+        mass: spec.mass,
+        restitution: spec.restitution,
+        destructible: spec.destructible,
+        hp: spec.maxHp,
+        maxHp: spec.maxHp,
+        shootImpulse: spec.shootImpulse,
+        canJiggleOnHit: spec.canJiggleOnHit,
+        alive: true,
+        jiggleTimer: 0,
+        jiggleDirX: 0,
+        jiggleDirZ: 0,
+      };
+    });
+
+  const { footGrid } = buildArenaNavGrids({
+    staticStructures,
+    trees,
+    activeMapProps,
+  });
+
   for (const preset of CITY_AMBIENT_NPC_PRESETS) {
-    assert.ok(preset.waypoints.length >= 1, `${preset.id} missing waypoints`);
+    assert.ok(preset.waypoints.length >= 5, `${preset.id} must have rich West-district stops`);
+    const minX = Math.min(...preset.waypoints.map((wp) => wp.x));
+    const maxX = Math.max(...preset.waypoints.map((wp) => wp.x));
+    const minZ = Math.min(...preset.waypoints.map((wp) => wp.z));
+    const maxZ = Math.max(...preset.waypoints.map((wp) => wp.z));
+    assert.ok(
+      minX >= -102 && maxX <= -24 && minZ >= -86 && maxZ <= 66 && maxZ - minZ >= 45,
+      `${preset.id} must span West-side landmarks cleanly (x=[${minX},${maxX}], z=[${minZ},${maxZ}])`,
+    );
     for (const wp of preset.waypoints) {
+      const wpAct = wp.activity ?? preset.activity;
+      const dur = wp.durationSec ?? preset.pauseSecAtWaypoint;
+      if (wpAct === 'sit_relax') {
+        assert.ok(dur >= 20, `${preset.id} sit stop "${wp.label ?? ''}" must linger >= 20s (got ${dur}s)`);
+      } else if (wpAct === 'sightseeing') {
+        assert.ok(dur >= 14, `${preset.id} sightseeing stop "${wp.label ?? ''}" must linger >= 14s (got ${dur}s)`);
+      } else if (wpAct === 'fishing') {
+        assert.ok(dur >= 20, `${preset.id} fishing stop "${wp.label ?? ''}" must linger >= 20s (got ${dur}s)`);
+      } else {
+        assert.ok(dur >= 10, `${preset.id} cafe stop "${wp.label ?? ''}" must linger >= 10s (got ${dur}s)`);
+      }
+    }
+
+    for (const wp of preset.waypoints) {
+      const distFashion = Math.hypot(wp.x - FASHION_BOUTIQUE_SHOP_TRIGGER.x, wp.z - FASHION_BOUTIQUE_SHOP_TRIGGER.z);
+      assert.ok(
+        distFashion > FASHION_BOUTIQUE_SHOP_TRIGGER.triggerRadius + 1.0,
+        `${preset.id} overlaps Fashion Boutique trigger (${wp.x}, ${wp.z}) dist=${distFashion.toFixed(2)}`,
+      );
+      const distScooter = Math.hypot(wp.x - URBAN_SCOOTER_SHOP_TRIGGER.x, wp.z - URBAN_SCOOTER_SHOP_TRIGGER.z);
+      assert.ok(
+        distScooter > URBAN_SCOOTER_SHOP_TRIGGER.triggerRadius + 1.0,
+        `${preset.id} overlaps Scooter Showroom trigger (${wp.x}, ${wp.z}) dist=${distScooter.toFixed(2)}`,
+      );
+
       assert.ok(evaluateOuterEmbankmentSdf(wp.x, wp.z) < -1.0, `${preset.id} outside playable embankment (${wp.x}, ${wp.z})`);
       assert.ok(evaluateNwLakeSdf(wp.x, wp.z) >= 0.85, `${preset.id} inside NW Lake slope (${wp.x}, ${wp.z}) sdf=${evaluateNwLakeSdf(wp.x, wp.z).toFixed(2)}`);
       assert.ok(evaluateSeHarborSdf(wp.x, wp.z).waterSdf >= 0.5, `${preset.id} inside East Ocean (${wp.x}, ${wp.z})`);
       assert.equal(isInsideSouthPlazaGlasshouseFootprint(wp.x, wp.z), false, `${preset.id} inside Glasshouse footprint (${wp.x}, ${wp.z})`);
       assert.ok(evaluateRoadNetworkSdf(wp.x, wp.z) > 0.25, `${preset.id} on Tram/Asphalt road (${wp.x}, ${wp.z}) sdf=${evaluateRoadNetworkSdf(wp.x, wp.z).toFixed(2)}`);
 
-      if (preset.activity !== 'sit_relax') {
+      const wpActivity = wp.activity ?? preset.activity;
+      if (wpActivity !== 'sit_relax') {
         for (const st of staticStructures) {
           if (pointInObb2D(wp.x, wp.z, st.x, st.z, st.halfX + 0.35, st.halfZ + 0.35, st.rotY)) {
             assert.fail(`${preset.id} waypoint (${wp.x}, ${wp.z}) overlaps static structure ${st.id}`);
@@ -6161,42 +6258,78 @@ test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on s
         }
       }
     }
-    // Check interpolated path points along closed loop to ensure patrol paths don't cut through walls or water
-    if (preset.waypoints.length > 1) {
+
+    // Verify A* pathfinding solves cleanly between EVERY consecutive stop in multi-stop itineraries
+    if (preset.waypoints.length >= 2) {
       for (let i = 0; i < preset.waypoints.length; i++) {
         const a = preset.waypoints[i];
         const b = preset.waypoints[(i + 1) % preset.waypoints.length];
-        for (const t of [0.25, 0.5, 0.75]) {
-          const sx = a.x + (b.x - a.x) * t;
-          const sz = a.z + (b.z - a.z) * t;
-          assert.ok(evaluateNwLakeSdf(sx, sz) >= 0.85, `${preset.id} path sample (${sx}, ${sz}) hits NW Lake`);
-          assert.ok(evaluateSeHarborSdf(sx, sz).waterSdf >= 0.5, `${preset.id} path sample (${sx}, ${sz}) hits Ocean`);
-          assert.equal(isInsideSouthPlazaGlasshouseFootprint(sx, sz), false, `${preset.id} path sample (${sx}, ${sz}) hits Glasshouse`);
-          for (const st of staticStructures) {
-            if (pointInObb2D(sx, sz, st.x, st.z, st.halfX + 0.2, st.halfZ + 0.2, st.rotY)) {
-              assert.fail(`${preset.id} path sample (${sx}, ${sz}) hits static structure ${st.id}`);
-            }
-          }
+        const pathRes = findPathAStar(footGrid, a.x, a.z, b.x, b.z, {
+          allowDiagonal: true,
+          maxIterations: 9000,
+        });
+        assert.equal(
+          pathRes.reachedGoal,
+          true,
+          `${preset.id} A* path failed from (${a.x},${a.z}) -> (${b.x},${b.z}) (expanded=${pathRes.expandedCount})`,
+        );
+        assert.ok(pathRes.waypoints.length >= 2, `${preset.id} leg ${i} expected multi-node A* route`);
+        for (const node of pathRes.waypoints) {
+          assert.ok(
+            evaluateNwLakeSdf(node.x, node.z) >= 0.1,
+            `${preset.id} A* node (${node.x.toFixed(1)}, ${node.z.toFixed(1)}) enters NW Lake`,
+          );
+          assert.ok(
+            evaluateSeHarborSdf(node.x, node.z).waterSdf >= 0.1,
+            `${preset.id} A* node (${node.x.toFixed(1)}, ${node.z.toFixed(1)}) enters East Ocean`,
+          );
+          assert.equal(
+            isInsideSouthPlazaGlasshouseFootprint(node.x, node.z),
+            false,
+            `${preset.id} A* node (${node.x.toFixed(1)}, ${node.z.toFixed(1)}) enters Glasshouse`,
+          );
         }
       }
     }
   }
 
-  // Verify pure schedule stepping for moving walker, jogger, and stationary sitter/angler
-  const walker = CITY_AMBIENT_NPC_PRESETS.find((p) => p.activity === 'walk_patrol')!;
-  const step1 = stepCityAmbientNpcSchedule({
+  // Verify A* schedule stepping with obstacle navigation, tram yielding, and sitting transition
+  const walker = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'city_plaza_raka')!;
+  const oasisStopIdx = walker.waypoints.findIndex((wp) => wp.x > -55);
+  assert.ok(oasisStopIdx > 0, 'Expected Raka West-side loop to include cross-road Oasis stop');
+  const startStopIdx = oasisStopIdx - 1;
+  const stepAStar = stepCityAmbientNpcSchedule({
     preset: walker,
-    x: walker.waypoints[0].x,
-    z: walker.waypoints[0].z,
+    x: walker.waypoints[startStopIdx].x,
+    z: walker.waypoints[startStopIdx].z,
     yaw: 0,
-    waypointIdx: 1,
+    waypointIdx: oasisStopIdx,
     pauseTimer: 0,
     elapsedSec: 1.0,
-    dt: 0.5,
+    dt: 0.25,
+    navGrid: footGrid,
   });
-  assert.equal(step1.isMoving, true);
-  assert.ok(step1.speedMps > 0);
-  assert.ok(Number.isFinite(step1.x) && Number.isFinite(step1.z) && Number.isFinite(step1.yaw));
+  assert.equal(stepAStar.isMoving, true);
+  assert.ok(stepAStar.navPath.length >= 2);
+  assert.ok(stepAStar.speedMps > 0);
+  assert.ok(Number.isFinite(stepAStar.x) && Number.isFinite(stepAStar.z) && Number.isFinite(stepAStar.yaw));
+
+  const yieldStep = stepCityAmbientNpcSchedule({
+    preset: walker,
+    x: walker.waypoints[startStopIdx].x,
+    z: walker.waypoints[startStopIdx].z,
+    yaw: 0,
+    waypointIdx: oasisStopIdx,
+    pauseTimer: 0,
+    elapsedSec: 1.5,
+    dt: 0.25,
+    navGrid: footGrid,
+    navPath: stepAStar.navPath,
+    yieldForHazard: true,
+  });
+  assert.equal(yieldStep.isMoving, false);
+  assert.equal(yieldStep.speedMps, 0);
+  assert.equal(yieldStep.x, walker.waypoints[startStopIdx].x);
 
   const sitStep = stepCityAmbientNpcSchedule({
     preset: {
@@ -6208,7 +6341,7 @@ test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on s
       activity: 'sit_relax',
       speedMps: 0,
       pauseSecAtWaypoint: 0,
-      waypoints: [{ x: 2.0, z: -29.5, yaw: -Math.PI / 2 }],
+      waypoints: [{ x: 2.0, z: -29.5, yaw: -Math.PI / 2, activity: 'sit_relax', label: 'BENCH' }],
     },
     x: 2.0,
     z: -29.5,
@@ -6220,6 +6353,80 @@ test('City ambient citizen NPC presets keep exactly 2 Central Plaza walkers on s
   });
   assert.equal(sitStep.isSitting, true);
   assert.equal(sitStep.isMoving, false);
+
+  // Verify Cafe order -> walk -> seated drink-holding transition on Tari's West-side itinerary
+  const cafeBuyStopIdx = tari.waypoints.findIndex((w) => w.holdingCafeItemId === 'iced_latte');
+  assert.ok(cafeBuyStopIdx >= 0, 'Tari itinerary should include buying an Iced Latte at Cafe');
+  const afterBuyStep = stepCityAmbientNpcSchedule({
+    preset: tari,
+    x: tari.waypoints[cafeBuyStopIdx].x,
+    z: tari.waypoints[cafeBuyStopIdx].z,
+    yaw: 0,
+    waypointIdx: cafeBuyStopIdx,
+    pauseTimer: 0,
+    elapsedSec: 3.0,
+    dt: 0.1,
+  });
+  assert.equal(afterBuyStep.activeHoldingCafeItemId, 'iced_latte');
+  assert.equal(afterBuyStep.isMoving, false);
+
+  const carryWalkStep = stepCityAmbientNpcSchedule({
+    preset: tari,
+    x: tari.waypoints[cafeBuyStopIdx].x,
+    z: tari.waypoints[cafeBuyStopIdx].z,
+    yaw: 0,
+    waypointIdx: cafeBuyStopIdx + 1,
+    pauseTimer: 0,
+    elapsedSec: 9.0,
+    dt: 0.1,
+    navGrid: footGrid,
+  });
+  assert.equal(carryWalkStep.isMoving, true);
+  assert.equal(
+    carryWalkStep.activeHoldingCafeItemId,
+    'iced_latte',
+    'Tari carries her Iced Latte from Cafe to her bench seat',
+  );
+
+  const afterStandWalkStep = stepCityAmbientNpcSchedule({
+    preset: tari,
+    x: tari.waypoints[cafeBuyStopIdx + 1].x,
+    z: tari.waypoints[cafeBuyStopIdx + 1].z,
+    yaw: 0,
+    waypointIdx: cafeBuyStopIdx + 2,
+    pauseTimer: 0,
+    elapsedSec: 25.0,
+    dt: 0.1,
+    navGrid: footGrid,
+  });
+  assert.equal(afterStandWalkStep.isMoving, true);
+  assert.equal(
+    afterStandWalkStep.activeHoldingCafeItemId,
+    null,
+    'Tari puts the finished cup away when walking toward Grand Casino',
+  );
+
+  // Verify Glasshouse Cafe interior Mira walks smoothly (never stays static or snaps 1.8m early)
+  assert.ok(CAFE_MIRA_INTERIOR_PRESET.speedMps > 0, 'Interior Mira walks naturally between cafe spots');
+  assert.ok(CAFE_MIRA_INTERIOR_PRESET.waypoints.length >= 4);
+  const interiorChairIdx = CAFE_MIRA_INTERIOR_PRESET.waypoints.findIndex((w) => w.activity === 'sit_relax');
+  assert.ok(interiorChairIdx > 0, 'Interior Mira includes bistro sitting stops');
+  const approachingChair = stepCityAmbientNpcSchedule({
+    preset: CAFE_MIRA_INTERIOR_PRESET,
+    x: CAFE_MIRA_INTERIOR_PRESET.waypoints[interiorChairIdx].x + 1.2,
+    z: CAFE_MIRA_INTERIOR_PRESET.waypoints[interiorChairIdx].z,
+    yaw: Math.PI,
+    waypointIdx: interiorChairIdx,
+    pauseTimer: 0,
+    elapsedSec: 4.0,
+    dt: 0.1,
+  });
+  assert.equal(
+    approachingChair.isMoving,
+    true,
+    'Interior Mira keeps walking calmly toward her cafe chair instead of snapping from 1.2m away',
+  );
+  assert.equal(approachingChair.isSitting, false);
 });
 
 test('Unified bottom dock arbitrates nearby merchants, ambient NPCs, players, hysteresis, and benches', () => {
@@ -6315,5 +6522,639 @@ test('Unified bottom dock arbitrates nearby merchants, ambient NPCs, players, hy
   }
 });
 
+test('Weighted pedestrian A* & smoothNavWaypoints follow painted crosswalks and sidewalks without getting stuck at bench colliders', () => {
+  const dummyGroup = new THREE.Group();
+  const staticStructures = buildStaticWorldStructuresList({
+    blueBase: { baseGroup: dummyGroup, hqX: 0, hqZ: 81.7 },
+    redBase: { baseGroup: dummyGroup, hqX: 0, hqZ: -81.7 },
+    blueCommanderBases: createIndividualCommanderBasesState('blue'),
+    redCommanderBases: createIndividualCommanderBasesState('red'),
+    isSafezoneMode: true,
+  });
+  const trees = DEFAULT_ARENA_MAP_LAYOUT.props
+    .filter((p) => p.kind.startsWith('tree_'))
+    .map((p) => ({
+      x: p.x,
+      z: p.z,
+      scale: p.scale,
+      alive: true,
+    }));
+  const activeMapProps = DEFAULT_ARENA_MAP_LAYOUT.props
+    .filter((p) => !p.kind.startsWith('tree_'))
+    .map((p) => {
+      const colSpec = getPropCollisionSpec(p.kind, p.scale);
+      return {
+        kind: p.kind,
+        x: p.x,
+        z: p.z,
+        rotY: p.rotY,
+        scale: p.scale,
+        alive: true,
+        category: colSpec.category,
+        radius: colSpec.radius,
+        halfX: colSpec.halfX,
+        halfZ: colSpec.halfZ,
+      };
+    });
+
+  const { pedestrianGrid } = buildArenaNavGrids({
+    staticStructures,
+    trees,
+    activeMapProps,
+  });
+  assert.ok(pedestrianGrid.cellCosts);
+  assert.equal(pedestrianGrid.minCellCost, 0.55);
+
+  // Check crosswalk vs asphalt road vs grass cost invariant (cellCosts uses Float32Array)
+  // Plaza crosswalk sits beside the Halte North & South ramps at (-68.05, ±8.60)
+  const crosswalkIdx =
+    Math.floor((-8.6 - pedestrianGrid.minZ) / pedestrianGrid.cellSize) * pedestrianGrid.cols +
+    Math.floor((-68.0 - pedestrianGrid.minX) / pedestrianGrid.cellSize);
+  const jaywalkIdx =
+    Math.floor((22 - pedestrianGrid.minZ) / pedestrianGrid.cellSize) * pedestrianGrid.cols +
+    Math.floor((-68.0 - pedestrianGrid.minX) / pedestrianGrid.cellSize);
+  assert.ok(Math.abs(pedestrianGrid.cellCosts[crosswalkIdx] - 0.55) < 1e-6);
+  assert.ok(Math.abs(pedestrianGrid.cellCosts[jaywalkIdx] - 48.0) < 1e-6);
+
+  // Check smoothed weighted A* walks straight across the relocated North Plaza Zebra Crosswalk (-68.05, -8.60)
+  const rawCross = findPathAStar(pedestrianGrid, -75.25, -8.0, -44.2, -2.0, {
+    allowDiagonal: true,
+    maxIterations: 22500,
+    smoothPath: false,
+  });
+  assert.equal(rawCross.reachedGoal, true);
+  assert.ok(
+    rawCross.waypoints.some((w) => Math.abs(w.x + 68.05) <= 5.5 && Math.abs(w.z + 8.6) <= 2.6),
+    'Raw Plaza-to-Oasis route must traverse the relocated (-68.05, -8.60) Zebra Crosswalk',
+  );
+  const smoothedCross = findPathAStar(pedestrianGrid, -75.25, -8.0, -44.2, -2.0, {
+    allowDiagonal: true,
+    maxIterations: 22500,
+    smoothPath: true,
+  });
+  assert.equal(smoothedCross.reachedGoal, true);
+  assert.ok(smoothedCross.waypoints.length >= 2 && smoothedCross.waypoints.length < 18);
+  // First straight leg from (-75.25, -8.0) -> smoothedCross.waypoints[0] must cross x = -68.05 on Zebra stripes
+  const p0x = -75.25;
+  const p0z = -8.0;
+  const p1 = smoothedCross.waypoints[0];
+  const tCross = (-68.05 - p0x) / Math.max(1e-4, p1.x - p0x);
+  const crossZ = p0z + tCross * (p1.z - p0z);
+  assert.equal(
+    isPointOnZebraCrosswalk(-68.05, crossZ),
+    true,
+    `Smoothed Plaza-to-Oasis route must cross on relocated North Zebra at (-68.05, ${crossZ.toFixed(2)})`,
+  );
+
+  // Full 600s multi-citizen simulation verifying 0 stuck replans and law-abiding traffic flow
+  const dt = 0.05;
+  const steps = 12000;
+  for (const preset of CITY_AMBIENT_NPC_PRESETS) {
+    let x = preset.waypoints[0].x;
+    let z = preset.waypoints[0].z;
+    let yaw = preset.waypoints[0].yaw ?? 0;
+    let wpIdx = 1 % preset.waypoints.length;
+    let pauseTimer = 0.5;
+    let navPath: Array<{ x: number; z: number }> = [];
+    let navWpIdx = 0;
+    let goalKey = '';
+    let stuckTimer = 0;
+    let lastPX = x;
+    let lastPZ = z;
+    let movingSteps = 0;
+    let nonCrosswalkRoadSteps = 0;
+    let crosswalkSteps = 0;
+    let stuckReplanCount = 0;
+    const visited = new Set<number>([0]);
+
+    for (let s = 0; s < steps; s++) {
+      const prevWpIdx = wpIdx;
+      const prevGoalKey = goalKey;
+      const prevStuckTimer = stuckTimer;
+      let replanned = false;
+      const res = stepCityAmbientNpcSchedule({
+        preset,
+        x,
+        z,
+        yaw,
+        waypointIdx: wpIdx,
+        pauseTimer,
+        elapsedSec: s * dt,
+        dt,
+        navGrid: pedestrianGrid,
+        navPath,
+        navWaypointIndex: navWpIdx,
+        navPathGoalKey: goalKey,
+        stuckTimer,
+        lastProgressX: lastPX,
+        lastProgressZ: lastPZ,
+        canReplan: true,
+        onReplan: () => {
+          replanned = true;
+        },
+      });
+      if (replanned && prevGoalKey === res.navPathGoalKey && prevStuckTimer > 1.0) {
+        stuckReplanCount++;
+      }
+      x = res.x;
+      z = res.z;
+      yaw = res.yaw;
+      wpIdx = res.waypointIdx;
+      pauseTimer = res.pauseTimer;
+      navPath = res.navPath;
+      navWpIdx = res.navWaypointIndex;
+      goalKey = res.navPathGoalKey;
+      stuckTimer = res.stuckTimer;
+      lastPX = res.lastProgressX;
+      lastPZ = res.lastProgressZ;
+      if (res.waypointIdx !== prevWpIdx) {
+        visited.add((res.waypointIdx - 1 + preset.waypoints.length) % preset.waypoints.length);
+      }
+      if (res.isMoving) {
+        movingSteps++;
+        const roadSdf = evaluateRoadNetworkSdf(x, z);
+        const onZebra =
+          isPointOnZebraCrosswalk(x, z) ||
+          isPointOnGrandCasinoCrosswalk(x, z) ||
+          isPointOnPedestrianCrosswalkCorridor(x, z);
+        if (onZebra) {
+          crosswalkSteps++;
+        } else if (roadSdf <= -0.1) {
+          nonCrosswalkRoadSteps++;
+        }
+      }
+    }
+
+    const nonCrosswalkPct = movingSteps > 0 ? (nonCrosswalkRoadSteps * 100) / movingSteps : 0;
+    assert.equal(stuckReplanCount, 0, `${preset.id} must have zero stuck replans`);
+    if (preset.speedMps <= 0.01 || preset.waypoints.length <= 1) {
+      assert.equal(movingSteps, 0, `${preset.id} is stationary and must not walk`);
+      assert.equal(x, preset.waypoints[0].x, `${preset.id} remains at stationary anchor x`);
+      assert.equal(z, preset.waypoints[0].z, `${preset.id} remains at stationary anchor z`);
+    } else {
+      assert.equal(
+        visited.size,
+        preset.waypoints.length,
+        `${preset.id} must complete all itinerary stops (visited ${visited.size}/${preset.waypoints.length})`,
+      );
+      assert.ok(crosswalkSteps > 200, `${preset.id} must use Zebra Crosswalks (${crosswalkSteps})`);
+      assert.ok(
+        nonCrosswalkPct < 0.5,
+        `${preset.id} non-crosswalk asphalt ratio must stay <0.5% (got ${nonCrosswalkPct.toFixed(2)}%)`,
+      );
+    }
+  }
+});
+
+test('computeNpcDialoguePortraitPose frames roaming citizens like Hana (right-side screen portrait, eye-level waist-up, facing camera)', () => {
+  const aspect = 16 / 9;
+  const cam = new THREE.PerspectiveCamera(BUDDIES_CONSTANTS.camera.fov, aspect, 0.1, 500);
+
+  // 1. Exact parity with Hana (+X facing)
+  const hanaLike = computeNpcDialoguePortraitPose({
+    npcX: -92.0,
+    npcY: 0.4,
+    npcZ: -3.5,
+    frontDirX: 1,
+    frontDirZ: 0,
+    aspect,
+  });
+  assert.ok(Math.abs(hanaLike.cameraPos.x - (-92.0 + 2.42)) < 1e-6);
+  assert.ok(Math.abs(hanaLike.cameraPos.y - 3.14) < 1e-6);
+  assert.ok(Math.abs(hanaLike.lookAtPos.y - 3.10) < 1e-6);
+
+  // 2. Arbitrary horizontal directions keep NPC centered on the right half (ndc.x ~ +0.44)
+  for (const [fx, fz] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, -1],
+  ]) {
+    const pose = computeNpcDialoguePortraitPose({
+      npcX: 12.5,
+      npcY: 0.8,
+      npcZ: -24.0,
+      frontDirX: fx,
+      frontDirZ: fz,
+      aspect,
+    });
+    const dist = Math.hypot(
+      pose.cameraPos.x - pose.lookAtPos.x,
+      pose.cameraPos.z - pose.lookAtPos.z,
+    );
+    assert.ok(Math.abs(dist - 2.42) < 1e-5, `Expected 2.42m optical distance, got ${dist}`);
+
+    cam.fov = pose.fovDeg;
+    cam.aspect = aspect;
+    cam.updateProjectionMatrix();
+    cam.position.set(pose.cameraPos.x, pose.cameraPos.y, pose.cameraPos.z);
+    cam.lookAt(pose.lookAtPos.x, pose.lookAtPos.y, pose.lookAtPos.z);
+    cam.updateMatrixWorld();
+
+    const projectedNpc = new THREE.Vector3(12.5, 0.8 + 2.7, -24.0).project(cam);
+    assert.ok(
+      projectedNpc.x > 0.35 && projectedNpc.x < 0.52,
+      `Expected right-half NDC framing (~+0.44), got ${projectedNpc.x}`,
+    );
+
+    // Avatar +Z rotated by faceCamYaw must point directly toward cameraPos
+    const npcFwdX = Math.sin(pose.faceCamYaw);
+    const npcFwdZ = Math.cos(pose.faceCamYaw);
+    const toCamX = pose.cameraPos.x - 12.5;
+    const toCamZ = pose.cameraPos.z - -24.0;
+    const toCamLen = Math.hypot(toCamX, toCamZ);
+    const dot = (npcFwdX * toCamX + npcFwdZ * toCamZ) / toCamLen;
+    assert.ok(dot > 0.9999, `NPC facing yaw should look straight at camera, dot=${dot}`);
+  }
+
+  // 3. Sitting citizen lowers camera framing smoothly while preserving sitLiftY
+  const seated = computeNpcDialoguePortraitPose({
+    npcX: -78.98,
+    npcY: 0.5,
+    npcZ: -17.65,
+    frontDirX: -1,
+    frontDirZ: 0,
+    aspect,
+    isSitting: true,
+    sitLiftY: 0.02,
+  });
+  assert.ok(Math.abs(seated.lookAtPos.y - (0.5 + 2.70 - 0.38)) < 1e-5);
+
+  // 4. Scaled indoor citizen portrait (e.g. Mira at 0.55x scale inside Glasshouse Cafe) scales offsets proportionately
+  const scaledCafe = computeNpcDialoguePortraitPose({
+    npcX: -3.15,
+    npcY: 215.0,
+    npcZ: 0.55,
+    frontDirX: 0.8,
+    frontDirZ: 0.6,
+    aspect,
+    npcScale: 0.55,
+  });
+  assert.ok(Math.abs(scaledCafe.lookAtPos.y - (215.0 + 2.70 * 0.55)) < 1e-5);
+  assert.ok(Math.abs(scaledCafe.cameraPos.y - (215.0 + 2.74 * 0.55)) < 1e-5);
+  const scaledDist = Math.hypot(scaledCafe.cameraPos.x - -3.15, scaledCafe.cameraPos.z - 0.55);
+  assert.ok(scaledDist < 2.0 && scaledDist > 1.2, `Expected 0.55x scaled portrait dist ~1.45m, got ${scaledDist}`);
+});
+
+test('Mapped Traffic Signal Poles & Road Signage clear roadways, crosswalks, stairs, and pedestrian walkways cleanly', () => {
+  assert.equal(CITY_TRAFFIC_SIGNAL_POLE_SPECS.length, 6);
+  assert.ok(
+    CITY_TRAFFIC_SIGN_SPECS.length >= 14 && CITY_TRAFFIC_SIGN_SPECS.length <= 24,
+    `Expected curated clutter-free signage count in [14..24], got ${CITY_TRAFFIC_SIGN_SPECS.length}`,
+  );
+  assert.equal(
+    CITY_TRAFFIC_SIGN_SPECS.some((s) => s.kind === 'no_parking'),
+    false,
+    'No-parking clutter should be removed when traffic cars are absent',
+  );
+  assert.equal(
+    CITY_TRAFFIC_SIGN_SPECS.filter((s) => s.kind === 'halte_stop').length,
+    4,
+    'Expected exactly 1 halte_stop sign per Halte station',
+  );
+
+  for (const pole of CITY_TRAFFIC_SIGNAL_POLE_SPECS) {
+    assert.ok(
+      evaluateRoadNetworkSdf(pole.x, pole.z) > 0.15,
+      `Signal pole ${pole.id} at (${pole.x}, ${pole.z}) must stand off asphalt`,
+    );
+    assert.equal(
+      isPointOnZebraCrosswalk(pole.x, pole.z),
+      false,
+      `Signal pole ${pole.id} at (${pole.x}, ${pole.z}) must not block zebra crosswalk`,
+    );
+    // Poles on the Halte side cantilevering over the tram track must clear the 5.59m pantograph envelope
+    if (Math.abs(pole.x) < 62.2) {
+      assert.ok(
+        pole.boomHeightY >= 6.4,
+        `Inner tram signal ${pole.id} boomHeightY (${pole.boomHeightY}) must clear tram pantograph`,
+      );
+    }
+  }
+
+  for (let i = 0; i < CITY_TRAFFIC_SIGN_SPECS.length; i++) {
+    const sign = CITY_TRAFFIC_SIGN_SPECS[i];
+    const roadSdf = evaluateRoadNetworkSdf(sign.x, sign.z);
+    assert.ok(
+      roadSdf >= 0.35,
+      `Traffic sign ${sign.id} at (${sign.x}, ${sign.z}) must clear asphalt curb >= 0.35m (got ${roadSdf.toFixed(2)})`,
+    );
+    assert.equal(
+      isPointOnZebraCrosswalk(sign.x, sign.z) || isPointOnGrandCasinoCrosswalk(sign.x, sign.z),
+      false,
+      `Traffic sign ${sign.id} at (${sign.x}, ${sign.z}) must not block any zebra crosswalk`,
+    );
+    // Zero signs blocking Central Plaza lower staircase landing & crosswalk entrance
+    const blocksPlazaStairLanding =
+      sign.x >= -76.9 && sign.x <= -73.85 && Math.abs(sign.z) < 12.5;
+    assert.equal(
+      blocksPlazaStairLanding,
+      false,
+      `Traffic sign ${sign.id} must not obstruct Central Plaza stair landing`,
+    );
+    // All sidewalk signs must stay inside the curb/furnishing strip (<= 0.65m off asphalt)
+    const onPlazaSidewalk = sign.x >= -76.65 && sign.x <= -73.85 && Math.abs(sign.z) <= 38.2;
+    if (
+      onPlazaSidewalk ||
+      isPointOnOuterTramSidewalk(sign.x, sign.z) ||
+      isPointOnInnerTramSidewalk(sign.x, sign.z)
+    ) {
+      assert.ok(
+        roadSdf <= 0.65,
+        `Sidewalk sign ${sign.id} (${sign.x}, ${sign.z}) must sit on curb strip <= 0.65m off road (got ${roadSdf.toFixed(2)}m)`,
+      );
+    }
+    // Twin-blade wayfinding posts must run parallel to their sidewalk curb so blades never protrude across pedestrians
+    if (sign.kind === 'street_wayfinding') {
+      if (Math.abs(sign.x) > 70.0) {
+        assert.ok(
+          Math.abs(Math.cos(sign.rotY)) < 0.05,
+          `N-S wayfinding sign ${sign.id} blade must align along Z curb (rotY=${sign.rotY})`,
+        );
+      } else {
+        assert.ok(
+          Math.abs(Math.sin(sign.rotY)) < 0.05,
+          `E-W wayfinding sign ${sign.id} blade must align along X curb (rotY=${sign.rotY})`,
+        );
+      }
+    }
+    for (const pole of CITY_TRAFFIC_SIGNAL_POLE_SPECS) {
+      const dPole = Math.hypot(sign.x - pole.x, sign.z - pole.z);
+      assert.ok(
+        dPole >= 3.5,
+        `Traffic sign ${sign.id} too close (${dPole.toFixed(2)}m) to signal pole ${pole.id}`,
+      );
+    }
+    for (let j = i + 1; j < CITY_TRAFFIC_SIGN_SPECS.length; j++) {
+      const other = CITY_TRAFFIC_SIGN_SPECS[j];
+      const dSign = Math.hypot(sign.x - other.x, sign.z - other.z);
+      assert.ok(
+        dSign >= 6.0,
+        `Traffic signs ${sign.id} & ${other.id} too close (${dSign.toFixed(2)}m < 6.0m)`,
+      );
+    }
+  }
+});
+
+test('Active Plaza & East Harbor Traffic Signal Cycles + Stop Bars + Pedestrian Safety Interlock', () => {
+  const sample0 = evaluateCityTramConsistState(0);
+  const clearTramState = sample0; // Car 1 far away on North straight or test-selected distance
+
+  // 1. Pedestrian demand triggers Green -> Amber -> Red after minGreenSec
+  let sig = createInitialPlazaTrafficSignalState();
+  for (let i = 0; i < 30; i++) {
+    sig = stepPlazaTrafficSignalState(sig, 0.2, {
+      hasWaitingPedestrian: true,
+      hasPedestrianInsideCrosswalk: false,
+      tramState: clearTramState,
+    });
+  }
+  assert.equal(sig.phase, 'tram_amber');
+  for (let i = 0; i < 10; i++) {
+    sig = stepPlazaTrafficSignalState(sig, 0.2, {
+      hasWaitingPedestrian: true,
+      hasPedestrianInsideCrosswalk: false,
+      tramState: clearTramState,
+    });
+  }
+  assert.equal(sig.phase, 'tram_red');
+  assert.equal(sig.redLightStopCount, 1);
+
+  // 2. Walk light is LOCKED OFF if tram is physically occupying North Plaza Crosswalk (-11.4 .. -5.8)
+  let northOccDist = 0;
+  for (let d = 0; d < sample0.totalTrackLength; d += 1.0) {
+    const st = evaluateCityTramConsistState(d);
+    if (Math.abs(st.car1.x - -65.0) < 1.0 && Math.abs(st.car1.z - -8.6) < 1.2) {
+      northOccDist = d;
+      break;
+    }
+  }
+  const occupyingNorthState = evaluateCityTramConsistState(northOccDist);
+  const interlocked = evaluatePlazaCrosswalkWalkStates(sig, occupyingNorthState);
+  assert.equal(interlocked.tramInNorthCrosswalk, true);
+  assert.equal(interlocked.northWalkAllowed, false);
+
+  // When tram is held safely behind North Stop Bar (departing Halte z = +4.6 -> nose <= -5.4), North Walk is allowed
+  const halteDist = findCityTramLeadDistanceNearHalte();
+  const halteState = evaluateCityTramConsistState(halteDist);
+  const clearWalk = evaluatePlazaCrosswalkWalkStates(sig, halteState);
+  assert.equal(clearWalk.tramInNorthCrosswalk, false);
+  assert.equal(clearWalk.northWalkAllowed, true);
+
+  // 3. Departing Halte under tram_red stops the tram smoothly behind northStopBarZ (-5.40) without entering z = -8.60
+  let curDist = halteDist;
+  let curSpeed: number = CITY_TRAM_SPEC.cruiseSpeed;
+  for (let step = 0; step < 30; step++) {
+    const st = evaluateCityTramConsistState(curDist);
+    const res = stepCityTramTrafficSpeedAndDistance({
+      distanceMeters: curDist,
+      currentSpeedMps: curSpeed,
+      dt: 0.1,
+      tramState: st,
+      signalState: sig,
+      holdAtSafezoneHalte: false,
+      pedestrians: [],
+    });
+    curDist = res.distanceMeters;
+    curSpeed = res.speedMps;
+  }
+  const stoppedNorthSt = evaluateCityTramConsistState(curDist);
+  const stoppedNoseZ = stoppedNorthSt.car1.z + stoppedNorthSt.car1.forwardZ * (CITY_TRAM_SPEC.carLength * 0.5);
+  assert.ok(curSpeed < 0.25, `Expected tram halted at North Stop Bar, got speed=${curSpeed}`);
+  assert.ok(
+    stoppedNoseZ >= PLAZA_TRAFFIC_SIGNAL_SPEC.northStopBarZ - 0.7 && stoppedNoseZ <= PLAZA_TRAFFIC_SIGNAL_SPEC.northStopBarZ + 1.0,
+    `Expected tram nose stopped behind North Stop Bar (-5.40), got noseZ=${stoppedNoseZ}`,
+  );
+
+  // 4. East Harbor southbound tram stops behind eastStopBarZ (-3.20) when eastSignalState is tram_red
+  let eastApproachDist = 0;
+  for (let d = 0; d < sample0.totalTrackLength; d += 0.5) {
+    const st = evaluateCityTramConsistState(d);
+    if (Math.abs(st.car1.x - 65.0) < 1.0 && st.car1.forwardZ > 0.8 && st.car1.z >= -16.5 && st.car1.z <= -15.0) {
+      eastApproachDist = d;
+      break;
+    }
+  }
+  let eDist = eastApproachDist;
+  let eSpeed: number = CITY_TRAM_SPEC.cruiseSpeed;
+  const eastRed = createInitialPlazaTrafficSignalState('tram_red', 1.0);
+  for (let step = 0; step < 35; step++) {
+    const st = evaluateCityTramConsistState(eDist);
+    const res = stepCityTramTrafficSpeedAndDistance({
+      distanceMeters: eDist,
+      currentSpeedMps: eSpeed,
+      dt: 0.1,
+      tramState: st,
+      signalState: createInitialPlazaTrafficSignalState('tram_green', 0),
+      eastSignalState: eastRed,
+      holdAtSafezoneHalte: false,
+      pedestrians: [],
+    });
+    eDist = res.distanceMeters;
+    eSpeed = res.speedMps;
+  }
+  const stoppedEastSt = evaluateCityTramConsistState(eDist);
+  const stoppedEastNoseZ = stoppedEastSt.car1.z + stoppedEastSt.car1.forwardZ * (CITY_TRAM_SPEC.carLength * 0.5);
+  assert.ok(eSpeed < 0.25, `Expected southbound tram halted at East Stop Bar, got speed=${eSpeed}`);
+  assert.ok(
+    stoppedEastNoseZ <= PLAZA_TRAFFIC_SIGNAL_SPEC.eastStopBarZ + 0.7 &&
+      stoppedEastNoseZ >= PLAZA_TRAFFIC_SIGNAL_SPEC.eastStopBarZ - 1.2,
+    `Expected East tram nose stopped behind -3.20 stop bar, got noseZ=${stoppedEastNoseZ}`,
+  );
+  const eastWalkWhenStopped = evaluateEastHarborCrosswalkWalkState(eastRed, stoppedEastSt);
+  assert.equal(eastWalkWhenStopped.tramInCrosswalk, false);
+  assert.equal(eastWalkWhenStopped.walkAllowed, true);
+
+  // 5. Emergency pedestrian nose braking prevents hitting any NPC stepping ahead anywhere on the track
+  const emergencyCheck = stepCityTramTrafficSpeedAndDistance({
+    distanceMeters: halteDist,
+    currentSpeedMps: CITY_TRAM_SPEC.cruiseSpeed,
+    dt: 0.1,
+    tramState: halteState,
+    signalState: createInitialPlazaTrafficSignalState('tram_green', 0),
+    holdAtSafezoneHalte: false,
+    pedestrians: [{ x: -65.0, z: halteState.car1.z - CITY_TRAM_SPEC.carLength * 0.5 - 3.5 }],
+  });
+  assert.equal(emergencyCheck.emergencyBraking, true);
+  assert.ok(emergencyCheck.speedMps < CITY_TRAM_SPEC.cruiseSpeed);
+
+  // 6. Pedestrian yields both on Plaza sidewalk during tram_green AND inside car lane before tram track,
+  //    but is allowed to cross freely under tram_red when crosswalk is clear
+  const westGreen = createInitialPlazaTrafficSignalState('tram_green', 1.0);
+  assert.equal(
+    shouldPedestrianYieldForTramOrSignal({
+      x: -74.6,
+      z: -8.6,
+      probeX: -72.5,
+      probeZ: -8.6,
+      tramState: clearTramState,
+      signalState: westGreen,
+    }),
+    true,
+  );
+  // Stepping from parallel outer car lane (-68.5) across the inner tram track (-65.0) while tram approaches
+  assert.equal(
+    shouldPedestrianYieldForTramOrSignal({
+      x: -68.5,
+      z: -8.6,
+      probeX: -65.5,
+      probeZ: -8.6,
+      tramState: halteState,
+      signalState: westGreen,
+    }),
+    true,
+  );
+  // Crossing allowed cleanly during tram_red with Halte-parked tram
+  assert.equal(
+    shouldPedestrianYieldForTramOrSignal({
+      x: -74.6,
+      z: -8.6,
+      probeX: -72.5,
+      probeZ: -8.6,
+      tramState: halteState,
+      signalState: sig,
+    }),
+    false,
+  );
+});
+
+test('City View Overview & 8 District Group Spotlights: hash routing, orbital clamps, 3D picking & fly interpolation', () => {
+  const expectedIds = [
+    'plaza',
+    'casino',
+    'tennis',
+    'kai_pantai',
+    'dermaga',
+    'taman_ria',
+    'north_residence',
+    'south_residence',
+  ] as const;
+  assert.equal(CITY_VIEW_DISTRICTS.length, expectedIds.length);
+
+  const seenSlugs = new Set<string>();
+  for (let i = 0; i < expectedIds.length; i++) {
+    const d = CITY_VIEW_DISTRICTS[i];
+    assert.equal(d.id, expectedIds[i]);
+    assert.equal(seenSlugs.has(d.hashSlug), false, `Duplicate slug ${d.hashSlug}`);
+    seenSlugs.add(d.hashSlug);
+    assert.ok(d.pickRadiusM >= 14);
+    assert.equal(d.neighborIds.length, 2);
+    for (const nid of d.neighborIds) {
+      assert.equal(getCityViewDistrictById(nid).id, nid);
+    }
+
+    // Picking at the district's lookAt point selects that district cleanly
+    const picked = pickCityViewDistrictAtWorldPoint(d.lookAtPos.x, d.lookAtPos.z);
+    assert.ok(picked, `Expected 3D click pick for ${d.id}`);
+    assert.equal(picked.id, d.id);
+
+    // Default orbital focus pose stays elevated cleanly above terrain
+    const pose = computeCityViewOrbitCameraPose({ target: d.id });
+    assert.ok(pose.cameraPos.y > d.lookAtPos.y + 8.0, `Elevated 3/4 view expected for ${d.id}`);
+    assert.equal(pose.fov, CITY_VIEW_OVERVIEW_DEFAULTS.fov);
+  }
+
+  // Open empty corner beyond pick radii returns null
+  assert.equal(pickCityViewDistrictAtWorldPoint(0, 0), null);
+
+  // Hash parser handles Kota, all district slugs, and Plaza store aliases
+  assert.equal(parseCityViewHash('#kota'), 'kota');
+  assert.equal(parseCityViewHash('#plaza'), 'plaza');
+  assert.equal(parseCityViewHash('#toko1'), 'plaza');
+  assert.equal(parseCityViewHash('#kai-pantai'), 'kai_pantai');
+  assert.equal(parseCityViewHash('#dermaga'), 'dermaga');
+  assert.equal(parseCityViewHash('#taman-ria'), 'taman_ria');
+  assert.equal(parseCityViewHash('#north-residence'), 'north_residence');
+  assert.equal(parseCityViewHash('#south-residence'), 'south_residence');
+  assert.equal(parseCityViewHash('#unknown-xyz'), null);
+  assert.equal(getCityViewTargetHash('kota'), '#kota');
+  assert.equal(getCityViewTargetHash('kai_pantai'), '#kai-pantai');
+
+  // Prev / Next wrap around cleanly across all 8 groups
+  assert.equal(getAdjacentCityViewDistrictId('kota', 1), 'plaza');
+  assert.equal(getAdjacentCityViewDistrictId('kota', -1), 'south_residence');
+  assert.equal(getAdjacentCityViewDistrictId('south_residence', 1), 'plaza');
+  assert.equal(getAdjacentCityViewDistrictId('plaza', -1), 'south_residence');
+
+  // Overview pan/pitch/zoom clamping respects safe arena boundaries
+  const overviewClamped = computeCityViewOrbitCameraPose({
+    target: 'kota',
+    pitch: 9.0,
+    dist: 999,
+    panX: 500,
+    panZ: -500,
+  });
+  assert.equal(overviewClamped.lookAtPos.x, CITY_VIEW_OVERVIEW_DEFAULTS.panLimit);
+  assert.equal(overviewClamped.lookAtPos.z, -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit);
+  assert.ok(overviewClamped.cameraPos.y > 140);
+
+  // Smooth cubic fly transition arrives cleanly at destination at progress = 1
+  const startOverview = computeCityViewOrbitCameraPose({ target: 'kota' });
+  const endCasino = computeCityViewOrbitCameraPose({ target: 'casino' });
+  const mid = computeCityViewFlyPose({
+    startCamPos: startOverview.cameraPos,
+    startLookAtPos: startOverview.lookAtPos,
+    startFov: startOverview.fov,
+    targetCamPos: endCasino.cameraPos,
+    targetLookAtPos: endCasino.lookAtPos,
+    targetFov: endCasino.fov,
+    progress01: 0.5,
+  });
+  const end = computeCityViewFlyPose({
+    startCamPos: startOverview.cameraPos,
+    startLookAtPos: startOverview.lookAtPos,
+    startFov: startOverview.fov,
+    targetCamPos: endCasino.cameraPos,
+    targetLookAtPos: endCasino.lookAtPos,
+    targetFov: endCasino.fov,
+    progress01: 1.0,
+  });
+  assert.equal(mid.isComplete, false);
+  assert.ok(mid.cameraPos.y > (startOverview.cameraPos.y + endCasino.cameraPos.y) * 0.5);
+  assert.equal(end.isComplete, true);
+  assert.ok(Math.abs(end.cameraPos.x - endCasino.cameraPos.x) < 1e-6);
+  assert.ok(Math.abs(end.lookAtPos.z - endCasino.lookAtPos.z) < 1e-6);
+});
 
 

@@ -6,6 +6,10 @@ import {
   type BuddiesLetter,
 } from '../lib/supabaseClient';
 import { getNearBlocksTxUrl } from '../lib/nearClient';
+import {
+  mergeRealtimeSocialChatMessage,
+  resolveBubbleStyle,
+} from '../game/buddiesRemotePresenceSync';
 
 export interface NearbyEntityUser {
   id: number | string;
@@ -23,6 +27,7 @@ export interface NearbyEntityUser {
 
 export interface ChatMessage {
   id: string;
+  clientMsgId?: string;
   senderId?: string;
   senderName: string;
   recipientId?: string;
@@ -30,6 +35,9 @@ export interface ChatMessage {
   isSelf?: boolean;
   text: string;
   timestamp: string;
+  createdAtMs?: number;
+  bubbleBgColor?: string;
+  bubbleTextColor?: string;
   type: 'public' | 'private';
 }
 
@@ -156,44 +164,17 @@ export function deduplicateChatMessages(
   playerName: string,
   playerUid?: string | null,
 ): ChatMessage[] {
-  const seenIds = new Set<string>();
-  const result: ChatMessage[] = [];
-
+  let result: ChatMessage[] = [];
   for (const rawMsg of messages) {
     if (!rawMsg || !rawMsg.id) continue;
-    if (seenIds.has(rawMsg.id)) continue;
-    seenIds.add(rawMsg.id);
-
-    const resolvedIsSelf = isOwnChatMessage(rawMsg, playerName, playerUid);
-    const normalizedMsg: ChatMessage = {
-      ...rawMsg,
-      isSelf: resolvedIsSelf,
-    };
-
-    // Deduplicate optimistic local send ("pub-..." or "priv-...") against echoed DB realtime row
-    if (resolvedIsSelf) {
-      const cleanText = normalizedMsg.text.trim();
-      const cleanRecipient = simplifyDisplayName(normalizedMsg.recipientName || '').toLowerCase();
-      const duplicateIdx = result.findIndex((existing) => {
-        if (!existing.isSelf) return false;
-        if (existing.type !== normalizedMsg.type) return false;
-        if (existing.text.trim() !== cleanText) return false;
-        const existingRecipient = simplifyDisplayName(existing.recipientName || '').toLowerCase();
-        if (existingRecipient !== cleanRecipient) return false;
-        const isOneOptimisticAndOneDb =
-          (existing.id.startsWith('pub-') || existing.id.startsWith('priv-')) !==
-          (normalizedMsg.id.startsWith('pub-') || normalizedMsg.id.startsWith('priv-'));
-        return isOneOptimisticAndOneDb || existing.timestamp === normalizedMsg.timestamp;
-      });
-      if (duplicateIdx >= 0) {
-        result[duplicateIdx] = normalizedMsg;
-        continue;
-      }
-    }
-
-    result.push(normalizedMsg);
+    const merged = mergeRealtimeSocialChatMessage(result, rawMsg, {
+      localPlayerName: playerName,
+      localPlayerUid: playerUid,
+      isOwnFn: (m) => isOwnChatMessage(m, playerName, playerUid),
+      simplifyNameFn: simplifyDisplayName,
+    });
+    result = merged.nextMessages;
   }
-
   return result;
 }
 
@@ -660,6 +641,10 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 ) : (
                   publicMessages.map((msg) => {
                     const isSelf = Boolean(msg.isSelf);
+                    const peerBubbleStyle =
+                      !isSelf && msg.bubbleBgColor
+                        ? resolveBubbleStyle(msg.bubbleBgColor, msg.bubbleTextColor)
+                        : null;
                     return (
                       <div
                         key={msg.id}
@@ -684,10 +669,15 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                                   backgroundColor: playerBubbleBgColor,
                                   color: playerBubbleTextColor,
                                 }
-                              : undefined
+                              : peerBubbleStyle
+                                ? {
+                                    backgroundColor: peerBubbleStyle.bgColor,
+                                    color: peerBubbleStyle.textColor,
+                                  }
+                                : undefined
                           }
                           className={`max-w-[85%] px-3 py-2 text-xs font-bold leading-snug border-2 border-black shadow-[2px_2px_0px_#000] ${
-                            isSelf ? '' : 'bg-white text-black'
+                            isSelf || peerBubbleStyle ? '' : 'bg-white text-black'
                           }`}
                         >
                           {msg.text}

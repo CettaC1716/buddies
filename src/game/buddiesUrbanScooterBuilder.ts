@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {
   ELECTRIC_SCOOTER_BIKE_SPEC,
   PUSH_KICK_SCOOTER_SPEC,
@@ -750,7 +751,7 @@ function getKickGeometricGripDeckTexture(): THREE.Texture {
   return cachedKickGripDeckTex;
 }
 
-function getShowroomAFrameSignTexture(): THREE.Texture {
+export function getShowroomAFrameSignTexture(): THREE.Texture {
   if (cachedShowroomAFrameTex) return cachedShowroomAFrameTex;
   const { canvas, ctx } = makeCanvas2d(256, 384);
   if (!canvas || !ctx) {
@@ -833,7 +834,7 @@ function getShowroomFasciaTexture(): THREE.Texture {
   return cachedShowroomFasciaTex;
 }
 
-function getShowroomBackwallGraphicTexture(): THREE.Texture {
+export function getShowroomBackwallGraphicTexture(): THREE.Texture {
   if (cachedShowroomBackwallTex) return cachedShowroomBackwallTex;
   const { canvas, ctx } = makeCanvas2d(512, 256);
   if (!canvas || !ctx) {
@@ -1794,7 +1795,7 @@ function createContouredErgonomicGripGeo(length: number, radius: number): THREE.
  * Builds a precision twin-V-spoke scooter wheel assembly centered at `(0, 0, 0)` in the YZ plane
  * (axle along X axis) with high-res treaded pneumatic/PU tires and hollow ventilated rotor rings.
  */
-function buildSpokeWheelAssembly(
+export function buildSpokeWheelAssembly(
   helper: ScooterToonPartHelper,
   outerRadius: number,
   tireTubeRadius: number,
@@ -4328,7 +4329,7 @@ export function createPushKickScooter3D(
  * Helper: Builds a sculpted Urban Commuter Helmet with Tinted Visor & Cyan Accent Stripe
  * for the Scooter Showroom interior shelves and podiums.
  */
-function addShowroomUrbanHelmet(
+export function addShowroomUrbanHelmet(
   helper: ScooterToonPartHelper,
   parent: THREE.Object3D,
   pos: [number, number, number],
@@ -4448,14 +4449,51 @@ export function buildUrbanScooterShowroomKiosk3D(
     false,
   );
 
-  // 4 Corner Dark Charcoal Steel Columns (`x = ±2.14, z = ±1.54`) + Upper Mitred Steel Architrave Ring
+  const createMiteredShowroomFrameGeo = (
+    outerW: number,
+    outerH: number,
+    frameThick: number,
+    depth: number,
+    bevel = 0.005,
+  ): THREE.BufferGeometry => {
+    const hw = outerW * 0.5;
+    const hh = outerH * 0.5;
+    const iw = Math.max(0.05, hw - frameThick);
+    const ih = Math.max(0.05, hh - frameThick);
+    const outer = new THREE.Shape();
+    outer.moveTo(-hw, -hh);
+    outer.lineTo(hw, -hh);
+    outer.lineTo(hw, hh);
+    outer.lineTo(-hw, hh);
+    outer.closePath();
+    const inner = new THREE.Path();
+    inner.moveTo(-iw, -ih);
+    inner.lineTo(-iw, ih);
+    inner.lineTo(iw, ih);
+    inner.lineTo(iw, -ih);
+    inner.closePath();
+    outer.holes.push(inner);
+    const extrudeDepth = Math.max(0.006, depth - bevel * 2);
+    const geo = new THREE.ExtrudeGeometry(outer, {
+      depth: extrudeDepth,
+      bevelEnabled: bevel > 0,
+      bevelThickness: bevel,
+      bevelSize: bevel,
+      bevelSegments: 2,
+      curveSegments: 1,
+    });
+    geo.translate(0, 0, -extrudeDepth * 0.5);
+    return geo;
+  };
+
+  // 4 Corner Chamfered Charcoal Steel Columns (`x = ±2.14, z = ±1.54`) + Upper Mitred Steel Architrave Ring
   for (const cx of [-2.14, 2.14]) {
     for (const cz of [-1.54, 1.54]) {
       partHelper.addPart(
         scooterShopGrp,
-        new THREE.BoxGeometry(0.20, 2.62, 0.20),
+        new RoundedBoxGeometry(0.20, 2.60, 0.20, 2, 0.014),
         COL_KIOSK_STEEL,
-        [cx, 1.51, cz],
+        [cx, 1.50, cz],
         [0, 0, 0],
         0.011,
         opts.textures.steelRoofTex,
@@ -4482,9 +4520,9 @@ export function buildUrbanScooterShowroomKiosk3D(
   for (const mx of [-0.72, 0.72]) {
     partHelper.addPart(
       scooterShopGrp,
-      new THREE.BoxGeometry(0.12, 2.54, 0.14),
+      new RoundedBoxGeometry(0.12, 2.46, 0.14, 2, 0.010),
       COL_KIOSK_STEEL,
-      [mx, 1.48, 1.54],
+      [mx, 1.44, 1.54],
       [0, 0, 0],
       0.009,
       opts.textures.steelRoofTex,
@@ -4492,60 +4530,191 @@ export function buildUrbanScooterShowroomKiosk3D(
   }
   partHelper.addPart(
     scooterShopGrp,
-    new THREE.BoxGeometry(2.86, 0.06, 0.12),
+    new RoundedBoxGeometry(2.70, 0.06, 0.12, 2, 0.008),
     COL_KIOSK_STEEL,
-    [-0.71, 0.24, 1.54],
+    [-0.69, 0.24, 1.54],
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(scooterShopGrp, 1.30, 2.40, [-1.43, 1.48, 1.54], [0, 0, 0]);
-  addGlassPane(scooterShopGrp, 1.32, 2.40, [0.0, 1.48, 1.54], [0, 0, 0]);
+  addGlassPane(scooterShopGrp, 1.30, 2.38, [-1.43, 1.47, 1.54], [0, 0, 0]);
+  addGlassPane(scooterShopGrp, 1.32, 2.38, [0.0, 1.47, 1.54], [0, 0, 0]);
 
-  // Right Bay Framed Glass Entrance Door (`x in [+0.78 .. +2.04]`)
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.08, 2.40, 0.08), '#3b424c', [0.82, 1.42, 1.54], [0, 0, 0], 0.007);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.08, 2.40, 0.08), '#3b424c', [2.00, 1.42, 1.54], [0, 0, 0], 0.007);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(1.24, 0.09, 0.08), '#3b424c', [1.41, 2.58, 1.54], [0, 0, 0], 0.007);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(1.24, 0.08, 0.08), '#3b424c', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
+  // Right Bay Mitered Framed Glass Entrance Door (`x in [+0.78 .. +2.04]`) + Bent Tubular Pull Handle
+  partHelper.addPart(
+    scooterShopGrp,
+    createMiteredShowroomFrameGeo(1.26, 2.41, 0.085, 0.08, 0.006),
+    '#3b424c',
+    [1.41, 1.415, 1.54],
+    [0, 0, 0],
+    0.007,
+  );
   addGlassPane(scooterShopGrp, 1.10, 2.24, [1.41, 1.42, 1.54], [0, 0, 0]);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.04, 0.22, 0.09), '#cbd5e1', [0.90, 1.18, 1.56], [0, 0, 0], 0.005, undefined, 1.0, false);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.14, 0.035, 0.12), '#e2e8f0', [0.95, 1.20, 1.59], [0, 0, 0], 0.005, undefined, 1.0, false);
+  const kioskPullGeo = new THREE.TubeGeometry(
+    new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.90, 1.04, 1.57),
+      new THREE.Vector3(0.90, 1.07, 1.66),
+      new THREE.Vector3(0.90, 1.33, 1.66),
+      new THREE.Vector3(0.90, 1.36, 1.57),
+    ]),
+    14,
+    0.016,
+    8,
+    false,
+  );
+  partHelper.addPart(scooterShopGrp, kioskPullGeo, '#cbd5e1', [0, 0, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
+  for (const hy of [1.04, 1.36]) {
+    partHelper.addPart(
+      scooterShopGrp,
+      new THREE.CylinderGeometry(0.022, 0.022, 0.025, 10),
+      '#e2e8f0',
+      [0.90, hy, 1.58],
+      [Math.PI / 2, 0, 0],
+      0.004,
+      undefined,
+      1.0,
+      false,
+    );
+  }
 
   // 3) Side Profile Panoramic Glass Walls (`±X = ±2.14`)
   for (const sideX of [-2.14, 2.14]) {
     for (const mz of [-0.52, 0.48]) {
-      partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.14, 2.54, 0.12), COL_KIOSK_STEEL, [sideX, 1.48, mz], [0, 0, 0], 0.009, opts.textures.steelRoofTex);
+      partHelper.addPart(
+        scooterShopGrp,
+        new RoundedBoxGeometry(0.14, 2.46, 0.12, 2, 0.010),
+        COL_KIOSK_STEEL,
+        [sideX, 1.44, mz],
+        [0, 0, 0],
+        0.009,
+        opts.textures.steelRoofTex,
+      );
     }
-    partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.12, 0.06, 2.86), COL_KIOSK_STEEL, [sideX, 0.24, 0.0], [0, 0, 0], 0.007);
-    addGlassPane(scooterShopGrp, 2.86, 2.40, [sideX, 1.48, 0.0], [0, Math.PI / 2, 0]);
+    partHelper.addPart(
+      scooterShopGrp,
+      new RoundedBoxGeometry(0.12, 0.06, 2.86, 2, 0.008),
+      COL_KIOSK_STEEL,
+      [sideX, 0.24, 0.0],
+      [0, 0, 0],
+      0.007,
+    );
+    addGlassPane(scooterShopGrp, 2.86, 2.38, [sideX, 1.47, 0.0], [0, Math.PI / 2, 0]);
   }
 
-  // 4) Rear Elevation (`-Z = -1.52`): Solid Vertical Timber Cladding, Staff Door, Grille & Utility Conduits
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(4.06, 2.56, 0.16), COL_KIOSK_WOOD, [0, 1.49, -1.52], [0, 0, 0], 0.012, opts.textures.verticalTimberTex, 1.6);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(1.16, 2.16, 0.04), COL_KIOSK_STEEL, [-1.02, 1.29, -1.62], [0, 0, 0], 0.010);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(1.02, 2.04, 0.04), '#c8ccd2', [-1.02, 1.29, -1.66], [0, 0, 0], 0.008, opts.textures.concreteTex, 1.8);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.14, 0.05, 0.06), '#2b3036', [-0.62, 1.22, -1.70], [0, 0, 0], 0.005);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.84, 0.72, 0.06), '#47505c', [1.18, 0.68, -1.63], [0, 0, 0], 0.010, opts.textures.louverTex, 1.0);
-  partHelper.addPart(scooterShopGrp, new THREE.CylinderGeometry(0.024, 0.024, 2.36, 8), '#64748b', [0.32, 1.46, -1.63], [0, 0, 0], 0.005, undefined, 1.0, false);
-  partHelper.addPart(scooterShopGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.78, 8), '#64748b', [0.71, 0.30, -1.63], [0, 0, Math.PI / 2], 0.005, undefined, 1.0, false);
+  // 4) Rear Elevation (`-Z = -1.52`): Beveled Timber Cladding, Mitered Staff Door Trim, Grille & Curved Conduits
+  partHelper.addPart(
+    scooterShopGrp,
+    new RoundedBoxGeometry(4.06, 2.54, 0.16, 2, 0.012),
+    COL_KIOSK_WOOD,
+    [0, 1.48, -1.52],
+    [0, 0, 0],
+    0.012,
+    opts.textures.verticalTimberTex,
+    1.6,
+  );
+  partHelper.addPart(
+    scooterShopGrp,
+    createMiteredShowroomFrameGeo(1.18, 2.16, 0.08, 0.045, 0.005),
+    COL_KIOSK_STEEL,
+    [-1.02, 1.29, -1.61],
+    [0, 0, 0],
+    0.010,
+  );
+  partHelper.addPart(
+    scooterShopGrp,
+    new RoundedBoxGeometry(1.02, 2.02, 0.04, 2, 0.006),
+    '#c8ccd2',
+    [-1.02, 1.29, -1.622],
+    [0, 0, 0],
+    0.008,
+    opts.textures.concreteTex,
+    1.8,
+  );
+  partHelper.addPart(
+    scooterShopGrp,
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.62, 1.22, -1.64),
+        new THREE.Vector3(-0.62, 1.22, -1.68),
+        new THREE.Vector3(-0.74, 1.22, -1.68),
+      ]),
+      8,
+      0.015,
+      8,
+      false,
+    ),
+    '#2b3036',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.004,
+  );
+  partHelper.addPart(
+    scooterShopGrp,
+    new RoundedBoxGeometry(0.84, 0.72, 0.06, 2, 0.008),
+    '#47505c',
+    [1.18, 0.68, -1.62],
+    [0, 0, 0],
+    0.010,
+    opts.textures.louverTex,
+    1.0,
+  );
+  partHelper.addPart(
+    scooterShopGrp,
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.32, 2.64, -1.63),
+        new THREE.Vector3(0.32, 0.36, -1.63),
+        new THREE.Vector3(0.38, 0.30, -1.63),
+        new THREE.Vector3(1.10, 0.30, -1.63),
+      ]),
+      18,
+      0.024,
+      8,
+      false,
+    ),
+    '#64748b',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.005,
+    undefined,
+    1.0,
+    false,
+  );
 
-  // 5) Cantilevered Sloped Canopy Roof, Integrated LED Spotlights & Architectural Showroom Fascia Plaque
+  // 5) Cantilevered Sloped Canopy Roof, Integrated LED Spotlights & Mitered Architectural Fascia Plaque
   const roofGrp = new THREE.Group();
   roofGrp.position.set(0, 2.84, 0.14);
   roofGrp.rotation.x = -0.055;
   scooterShopGrp.add(roofGrp);
 
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.16, 0.18, 4.18), COL_KIOSK_STEEL, [0, 0.04, 0], [0, 0, 0], 0.013, opts.textures.steelRoofTex, 2.4);
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), '#1e2228', [0, 0.15, 0], [0, 0, 0], 0.010);
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
-  // Subtle cyan trim line along front canopy edge
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.18, 0.024, 0.03), COL_CYAN_ACCENT, [0, 0.04, 2.095], [0, 0, 0], 0, undefined, 1.0, false);
-  // Front Architectural Showroom Fascia Signboard ("URBAN SCOOTER SHOWROOM")
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(3.48, 0.44, 0.09), '#1b2028', [-0.36, 0.36, 1.88], [0.055, 0, 0], 0.008);
   partHelper.addPart(
     roofGrp,
-    new THREE.PlaneGeometry(3.34, 0.38),
+    new RoundedBoxGeometry(5.16, 0.18, 4.18, 2, 0.018),
+    COL_KIOSK_STEEL,
+    [0, 0.04, 0],
+    [0, 0, 0],
+    0.013,
+    opts.textures.steelRoofTex,
+    2.4,
+  );
+  partHelper.addPart(roofGrp, new RoundedBoxGeometry(5.26, 0.06, 4.28, 2, 0.012), '#1e2228', [0, 0.15, 0], [0, 0, 0], 0.010);
+  partHelper.addPart(roofGrp, new RoundedBoxGeometry(4.92, 0.04, 3.94, 2, 0.008), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
+  // Subtle chamfered cyan trim line along front canopy edge
+  partHelper.addPart(roofGrp, new RoundedBoxGeometry(5.14, 0.024, 0.03, 2, 0.006), COL_CYAN_ACCENT, [0, 0.04, 2.095], [0, 0, 0], 0, undefined, 1.0, false);
+  // Front Architectural Showroom Fascia Signboard ("URBAN SCOOTER SHOWROOM")
+  partHelper.addPart(roofGrp, new RoundedBoxGeometry(3.46, 0.42, 0.08, 2, 0.010), '#1b2028', [-0.36, 0.36, 1.88], [0.055, 0, 0], 0.008);
+  partHelper.addPart(
+    roofGrp,
+    createMiteredShowroomFrameGeo(3.52, 0.48, 0.045, 0.10, 0.006),
+    '#2a323e',
+    [-0.36, 0.36, 1.88],
+    [0.055, 0, 0],
+    0.006,
+  );
+  partHelper.addPart(
+    roofGrp,
+    new THREE.PlaneGeometry(3.36, 0.38),
     '#ffffff',
-    [-0.36, 0.36, 1.932],
+    [-0.36, 0.36, 1.93],
     [0.055, 0, 0],
     0,
     getShowroomFasciaTexture(),
@@ -4561,15 +4730,32 @@ export function buildUrbanScooterShowroomKiosk3D(
 
   // 6) URBAN SCOOTER SHOWROOM INTERIOR ARCHITECTURE (Visible through 3-sided glass walls)
   // Rear Interior Wall + Timber Accent Slat Wall
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(0.14, 2.38, 1.48), COL_KIOSK_WOOD, [-1.92, 1.40, -0.45], [0, 0, 0], 0.009, opts.textures.verticalTimberTex, 1.5);
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(3.84, 2.42, 0.08), '#222832', [0, 1.42, -1.36], [0, 0, 0], 0.008);
-  // Backlit E-Mobility Blueprint Feature Wall Panel (`x = -0.58, y = 1.66, z = -1.30`)
-  partHelper.addPart(scooterShopGrp, new THREE.BoxGeometry(2.16, 1.08, 0.05), '#111827', [-0.58, 1.68, -1.30], [0, 0, 0], 0.006);
+  partHelper.addPart(
+    scooterShopGrp,
+    new RoundedBoxGeometry(0.14, 2.38, 1.48, 2, 0.010),
+    COL_KIOSK_WOOD,
+    [-1.92, 1.40, -0.45],
+    [0, 0, 0],
+    0.009,
+    opts.textures.verticalTimberTex,
+    1.5,
+  );
+  partHelper.addPart(scooterShopGrp, new RoundedBoxGeometry(3.84, 2.42, 0.08, 2, 0.010), '#222832', [0, 1.42, -1.36], [0, 0, 0], 0.008);
+  // Backlit E-Mobility Blueprint Feature Wall Panel (`x = -0.58, y = 1.68, z = -1.30`) in mitered bezel
+  partHelper.addPart(scooterShopGrp, new RoundedBoxGeometry(2.14, 1.06, 0.04, 2, 0.008), '#111827', [-0.58, 1.68, -1.30], [0, 0, 0], 0.006);
+  partHelper.addPart(
+    scooterShopGrp,
+    createMiteredShowroomFrameGeo(2.20, 1.12, 0.055, 0.06, 0.005),
+    '#222a36',
+    [-0.58, 1.68, -1.295],
+    [0, 0, 0],
+    0.006,
+  );
   partHelper.addPart(
     scooterShopGrp,
     new THREE.PlaneGeometry(2.06, 0.98),
     '#ffffff',
-    [-0.58, 1.68, -1.27],
+    [-0.58, 1.68, -1.275],
     [0, 0, 0],
     0,
     getShowroomBackwallGraphicTexture(),
@@ -4577,12 +4763,12 @@ export function buildUrbanScooterShowroomKiosk3D(
     false,
   );
 
-  // 4-Bay Smart Lithium Battery Swap Charging Station (`x = +1.18, y = 0.22 .. 1.92, z = -1.16`)
+  // 4-Bay Smart Lithium Battery Swap Charging Station (`x = +1.18, y = 0.22 .. 1.92, z = -1.14`)
   const chargerDockGrp = new THREE.Group();
   chargerDockGrp.position.set(1.18, 0.22, -1.14);
   scooterShopGrp.add(chargerDockGrp);
-  partHelper.addPart(chargerDockGrp, new THREE.BoxGeometry(0.92, 1.68, 0.36), '#1e2530', [0, 0.84, 0], [0, 0, 0], 0.008);
-  partHelper.addPart(chargerDockGrp, new THREE.BoxGeometry(0.94, 0.05, 0.38), COL_CYAN_ACCENT, [0, 1.66, 0], [0, 0, 0], 0, undefined, 1.0, false);
+  partHelper.addPart(chargerDockGrp, new RoundedBoxGeometry(0.92, 1.66, 0.36, 2, 0.016), '#1e2530', [0, 0.83, 0], [0, 0, 0], 0.008);
+  partHelper.addPart(chargerDockGrp, new RoundedBoxGeometry(0.94, 0.05, 0.38, 2, 0.010), COL_CYAN_ACCENT, [0, 1.67, 0], [0, 0, 0], 0, undefined, 1.0, false);
   for (const [bx, by] of [
     [-0.22, 0.62],
     [0.22, 0.62],
@@ -4590,17 +4776,17 @@ export function buildUrbanScooterShowroomKiosk3D(
     [0.22, 1.18],
   ] as [number, number][]) {
     // Removable black & cyan scooter battery module
-    partHelper.addPart(chargerDockGrp, new THREE.BoxGeometry(0.30, 0.38, 0.14), '#0f172a', [bx, by, 0.14], [0, 0, 0], 0.004, undefined, 1.0, false);
-    addLuminousScooterPart(partHelper, chargerDockGrp, new THREE.BoxGeometry(0.22, 0.035, 0.15), '#22d3ee', '#22d3ee', 0.9, [bx, by + 0.11, 0.145]);
+    partHelper.addPart(chargerDockGrp, new RoundedBoxGeometry(0.30, 0.38, 0.14, 2, 0.012), '#0f172a', [bx, by, 0.14], [0, 0, 0], 0.004, undefined, 1.0, false);
+    addLuminousScooterPart(partHelper, chargerDockGrp, new RoundedBoxGeometry(0.22, 0.035, 0.025, 2, 0.005), '#22d3ee', '#22d3ee', 0.9, [bx, by + 0.11, 0.205]);
   }
 
-  // Left Window Showcase Podium: Compact Folded Push Scooter (`85cm` folded geometry!) + 2 Urban Helmets
+  // Left Window Showcase Podium: Compact Folded Push Scooter (`85cm` folded geometry!)
   const leftPodiumGrp = new THREE.Group();
   leftPodiumGrp.position.set(-1.38, 0.22, 0.56);
   scooterShopGrp.add(leftPodiumGrp);
-  partHelper.addPart(leftPodiumGrp, new THREE.BoxGeometry(1.12, 0.42, 0.68), '#262c36', [0, 0.21, 0], [0, 0, 0], 0.008);
-  partHelper.addPart(leftPodiumGrp, new THREE.BoxGeometry(1.16, 0.05, 0.72), COL_KIOSK_WOOD, [0, 0.445, 0], [0, 0, 0], 0.006, opts.textures.timberTex);
-  partHelper.addPart(leftPodiumGrp, new THREE.BoxGeometry(1.14, 0.02, 0.70), COL_CYAN_ACCENT, [0, 0.41, 0], [0, 0, 0], 0, undefined, 1.0, false);
+  partHelper.addPart(leftPodiumGrp, new RoundedBoxGeometry(1.12, 0.40, 0.68, 2, 0.014), '#262c36', [0, 0.20, 0], [0, 0, 0], 0.008);
+  partHelper.addPart(leftPodiumGrp, new RoundedBoxGeometry(1.14, 0.025, 0.70, 2, 0.008), COL_CYAN_ACCENT, [0, 0.412, 0], [0, 0, 0], 0, undefined, 1.0, false);
+  partHelper.addPart(leftPodiumGrp, new RoundedBoxGeometry(1.16, 0.05, 0.72, 2, 0.010), COL_KIOSK_WOOD, [0, 0.45, 0], [0, 0, 0], 0.006, opts.textures.timberTex);
 
   const indoorFoldedKick = createPushKickScooter3D({
     partHelper,
@@ -4608,35 +4794,35 @@ export function buildUrbanScooterShowroomKiosk3D(
     parked: false,
     includeContactShadow: false,
   });
-  indoorFoldedKick.root.position.set(0, 0.47, 0.04);
+  indoorFoldedKick.root.position.set(0, 0.475, 0.04);
   indoorFoldedKick.root.rotation.y = Math.PI * 0.46;
   indoorFoldedKick.root.scale.setScalar(0.95);
   leftPodiumGrp.add(indoorFoldedKick.root);
 
-  // Center Showroom Tech & NFT Counter (`x = -0.10, z = -0.12`)
+  // Center Showroom Tech & NFT Counter (`x = -0.08, z = -0.18`)
   const counterGrp = new THREE.Group();
   counterGrp.position.set(-0.08, 0.22, -0.18);
   scooterShopGrp.add(counterGrp);
-  partHelper.addPart(counterGrp, new THREE.BoxGeometry(1.36, 0.76, 0.58), '#2b313c', [0, 0.38, 0], [0, 0, 0], 0.008);
-  partHelper.addPart(counterGrp, new THREE.BoxGeometry(1.42, 0.06, 0.64), COL_KIOSK_WOOD, [0, 0.79, 0], [0, 0, 0], 0.007, opts.textures.timberTex);
-  partHelper.addPart(counterGrp, new THREE.BoxGeometry(1.38, 0.03, 0.02), COL_CYAN_ACCENT, [0, 0.72, 0.295], [0, 0, 0], 0, undefined, 1.0, false);
+  partHelper.addPart(counterGrp, new RoundedBoxGeometry(1.36, 0.76, 0.58, 2, 0.014), '#2b313c', [0, 0.38, 0], [0, 0, 0], 0.008);
+  partHelper.addPart(counterGrp, new RoundedBoxGeometry(1.42, 0.06, 0.64, 2, 0.012), COL_KIOSK_WOOD, [0, 0.79, 0], [0, 0, 0], 0.007, opts.textures.timberTex);
+  partHelper.addPart(counterGrp, new RoundedBoxGeometry(1.38, 0.03, 0.025, 2, 0.006), COL_CYAN_ACCENT, [0, 0.72, 0.295], [0, 0, 0], 0, undefined, 1.0, false);
   // Sleek NFT Terminal Screen + Urban Helmets on Counter
-  partHelper.addPart(counterGrp, new THREE.BoxGeometry(0.34, 0.24, 0.04), '#0f172a', [0.34, 0.96, 0.06], [-0.28, -0.18, 0], 0.005);
-  addLuminousScooterPart(partHelper, counterGrp, new THREE.PlaneGeometry(0.29, 0.19), '#22d3ee', '#22d3ee', 0.65, [0.336, 0.962, 0.082], [-0.28, -0.18, 0]);
+  partHelper.addPart(counterGrp, new RoundedBoxGeometry(0.34, 0.24, 0.04, 2, 0.008), '#0f172a', [0.34, 0.96, 0.06], [-0.28, -0.18, 0], 0.005);
+  addLuminousScooterPart(partHelper, counterGrp, new THREE.PlaneGeometry(0.29, 0.19), '#22d3ee', '#22d3ee', 0.65, [0.336, 0.962, 0.084], [-0.28, -0.18, 0]);
   addShowroomUrbanHelmet(partHelper, counterGrp, [-0.38, 0.82, 0.02], 0.35, '#f1f5f9', COL_CYAN_ACCENT);
   addShowroomUrbanHelmet(partHelper, counterGrp, [-0.02, 0.82, 0.04], -0.22, '#272d38', '#38bdf8');
 
-  // Right Side Window Gear & Spare Wheel Display Rack (`x = +1.48, z = +0.02`)
+  // Right Side Window Gear & Spare Wheel Display Rack (`x = +1.52, z = +0.02`)
   const gearRackGrp = new THREE.Group();
   gearRackGrp.position.set(1.52, 0.22, 0.02);
   gearRackGrp.rotation.y = Math.PI / 2;
   scooterShopGrp.add(gearRackGrp);
-  partHelper.addPart(gearRackGrp, new THREE.BoxGeometry(1.24, 0.08, 0.46), COL_KIOSK_WOOD, [0, 0.04, 0], [0, 0, 0], 0.007, opts.textures.timberTex);
+  partHelper.addPart(gearRackGrp, new RoundedBoxGeometry(1.24, 0.08, 0.46, 2, 0.012), COL_KIOSK_WOOD, [0, 0.04, 0], [0, 0, 0], 0.007, opts.textures.timberTex);
   for (const ux of [-0.56, 0.56]) {
     partHelper.addPart(gearRackGrp, new THREE.CylinderGeometry(0.022, 0.022, 1.56, 8), '#64748b', [ux, 0.82, 0], [0, 0, 0], 0.004, undefined, 1.0, false);
   }
   for (const sy of [0.58, 1.08, 1.56]) {
-    partHelper.addPart(gearRackGrp, new THREE.BoxGeometry(1.22, 0.05, 0.44), COL_KIOSK_WOOD, [0, sy, 0], [0, 0, 0], 0.006, opts.textures.timberTex);
+    partHelper.addPart(gearRackGrp, new RoundedBoxGeometry(1.22, 0.05, 0.44, 2, 0.010), COL_KIOSK_WOOD, [0, sy, 0], [0, 0, 0], 0.006, opts.textures.timberTex);
   }
   addShowroomUrbanHelmet(partHelper, gearRackGrp, [-0.30, 1.11, 0.02], 0.12, '#f8fafc', COL_CYAN_ACCENT);
   addShowroomUrbanHelmet(partHelper, gearRackGrp, [0.28, 1.11, 0.02], -0.15, '#334155', COL_CYAN_ACCENT);
@@ -4658,12 +4844,13 @@ export function buildUrbanScooterShowroomKiosk3D(
   signGrp.rotation.y = URBAN_SCOOTER_SHOP_LAYOUT.aFrameSignLocal.rotY;
   scooterShopGrp.add(signGrp);
 
+  partHelper.addPart(signGrp, new THREE.CylinderGeometry(0.018, 0.018, 0.60, 8), COL_KIOSK_STEEL, [0, 0.87, 0], [0, 0, Math.PI / 2], 0.004);
   for (const sideZ of [-1, 1]) {
     const legAngle = sideZ * 0.20;
     const panelZ = sideZ * 0.11;
     partHelper.addPart(
       signGrp,
-      new THREE.BoxGeometry(0.58, 0.88, 0.04),
+      createMiteredShowroomFrameGeo(0.58, 0.88, 0.048, 0.042, 0.005),
       COL_KIOSK_STEEL,
       [0, 0.44, panelZ],
       [-legAngle, 0, 0],
@@ -4672,13 +4859,24 @@ export function buildUrbanScooterShowroomKiosk3D(
     );
     partHelper.addPart(
       signGrp,
-      new THREE.BoxGeometry(0.49, 0.68, 0.048),
-      '#ffffff',
-      [0, 0.48, panelZ + sideZ * 0.006],
+      new RoundedBoxGeometry(0.49, 0.78, 0.024, 2, 0.005),
+      '#e2e8f0',
+      [0, 0.44, panelZ],
       [-legAngle, 0, 0],
-      0.005,
+      0.004,
+      undefined,
+      1.0,
+      false,
+    );
+    partHelper.addPart(
+      signGrp,
+      new THREE.PlaneGeometry(0.47, 0.68),
+      '#ffffff',
+      [0, 0.48, panelZ + sideZ * 0.014],
+      sideZ < 0 ? [legAngle, Math.PI, 0] : [-legAngle, 0, 0],
+      0,
       getShowroomAFrameSignTexture(),
-      0.3,
+      0.2,
       false,
     );
   }

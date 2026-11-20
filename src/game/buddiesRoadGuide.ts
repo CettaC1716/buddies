@@ -1,3 +1,5 @@
+import { COASTAL_HILL_EVAL_SEGMENTS } from './buddiesCoastalHillsRules';
+
 /**
  * Road-following guide routes for scooter owners.
  *
@@ -79,18 +81,18 @@ for (const s of [1, -1] as const) {
   const collectorXs = [-62, -60, -45, -30, -18, -15, 0, 15, 19, 30, 42, 45, 60, 62];
   chain(collectorXs.map((x) => [x, 52 * s] as const));
 
-  // Central S-curve avenue (the middle road through the city).
+  // Central S-curve avenue (the middle road through the city, expanded around Central Urban Plaza).
   chain([
     [-70, 15 * s],
     [-52, 15 * s],
     [-41, 26 * s],
     [-25, 26 * s],
-    [-13, 14 * s],
-    [-13, 0],
-    [9, 14 * s],
-    [19, 24 * s],
-    [42, 24 * s],
-    [52, 15 * s],
+    [-14.2, 15.6 * s],
+    [-14.2, 0],
+    [8.0, 15.6 * s],
+    [18.5, 26.5 * s],
+    [43.5, 26.5 * s],
+    [54.5, 15.0 * s],
     [70, 15 * s],
   ]);
   // S-curve branches up to the collector.
@@ -99,8 +101,8 @@ for (const s of [1, -1] as const) {
     [-18, 33 * s],
     [-18, 52 * s],
   ]);
-  edge(19, 24 * s, 19, 52 * s);
-  edge(42, 24 * s, 42, 52 * s);
+  edge(19, 26.5 * s, 19, 52 * s);
+  edge(42, 26.5 * s, 42, 52 * s);
 
   // Residence complex: dividers, outer roads, rear road, gate drives.
   for (const x of [-60, -30, 0, 30, 60]) {
@@ -112,7 +114,12 @@ for (const s of [1, -1] as const) {
     [0, 108 * s],
     [30, 108 * s],
     [60, 108 * s],
+    [96, 108 * s],
   ]);
+  // San Francisco-inspired coastal switchbacks & Ridge Highway (both halves meet cleanly at [-126.5, 0])
+  chain(
+    COASTAL_HILL_EVAL_SEGMENTS.map((pt) => [pt.x, pt.az * s] as readonly [number, number]),
+  );
   for (const x of [-45, -15, 15, 45]) {
     edge(x, 52 * s, x, 64.2 * s);
   }

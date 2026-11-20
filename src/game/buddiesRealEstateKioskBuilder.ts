@@ -1,5 +1,11 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { REAL_ESTATE_FURNITURE_KIOSK_LAYOUT } from './buddiesRealEstateKioskRules';
+import { computeDeterministicWindowSeed, tagCityWindowMesh } from './buddiesNightLightingRules';
+
+function makeRoundedReBox(w: number, h: number, d: number, r = 0.012, seg = 2): THREE.BufferGeometry {
+  return new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w * 0.42, h * 0.42, d * 0.42));
+}
 
 export interface RealEstateKioskBuilderOptions {
   westPlantGroup: THREE.Group;
@@ -35,7 +41,7 @@ export interface RealEstateKioskBuilderOptions {
   };
 }
 
-interface KioskPartHelper {
+export interface KioskPartHelper {
   addPart(
     parent: THREE.Object3D,
     geo: THREE.BufferGeometry,
@@ -48,6 +54,17 @@ interface KioskPartHelper {
     castShad?: boolean,
   ): THREE.Mesh;
 }
+
+export type KioskLuminousPartFn = (
+  parent: THREE.Object3D,
+  geo: THREE.BufferGeometry,
+  colorHex: string,
+  emissiveHex: string,
+  emissiveIntensity: number,
+  pos: [number, number, number],
+  rot?: [number, number, number],
+  tex?: THREE.Texture,
+) => THREE.Mesh;
 
 let _cachedAFrameSignTex: THREE.Texture | null = null;
 let _cachedBlueprintFrameTex: THREE.Texture | null = null;
@@ -86,7 +103,7 @@ function makeFallbackDataTex(r: number, g: number, b: number): THREE.DataTexture
  * Procedural Wooden A-Frame Sidewalk Sign Face (`REAL ESTATE & INTERIOR STUDIO`)
  * matching Quadrant 2 & Quadrant 4 of `screen_722f4ee5.png`.
  */
-function getRealEstateAFrameSignTexture(): THREE.Texture {
+export function getRealEstateAFrameSignTexture(): THREE.Texture {
   if (_cachedAFrameSignTex) return _cachedAFrameSignTex;
   const { canvas, ctx } = createCanvas2D(256, 360);
   if (!ctx) {
@@ -160,7 +177,7 @@ function getRealEstateAFrameSignTexture(): THREE.Texture {
  * Large Framed Master Architectural Floorplan Blueprint mounted behind the Consultation Desk
  * (matching Quadrant 1 Front Elevation View in `screen_722f4ee5.png`).
  */
-function getMasterFloorplanBlueprintTexture(): THREE.Texture {
+export function getMasterFloorplanBlueprintTexture(): THREE.Texture {
   if (_cachedBlueprintFrameTex) return _cachedBlueprintFrameTex;
   const { canvas, ctx } = createCanvas2D(384, 256);
   if (!ctx) {
@@ -243,7 +260,7 @@ function getMasterFloorplanBlueprintTexture(): THREE.Texture {
  * Row of 3 Framed Architectural & Interior Design Prints visible through the North Panoramic Side Glass
  * (matching Quadrant 2 Side Profile Elevation View in `screen_722f4ee5.png`).
  */
-function getInteriorGalleryPrintTextures(): [THREE.Texture, THREE.Texture, THREE.Texture] {
+export function getInteriorGalleryPrintTextures(): [THREE.Texture, THREE.Texture, THREE.Texture] {
   if (_cachedGalleryFrameTexes) return _cachedGalleryFrameTexes;
 
   const buildPrint = (variant: 0 | 1 | 2): THREE.Texture => {
@@ -318,7 +335,7 @@ function getInteriorGalleryPrintTextures(): [THREE.Texture, THREE.Texture, THREE
   return _cachedGalleryFrameTexes;
 }
 
-function getConsultationMonitorScreenTexture(): THREE.Texture {
+export function getConsultationMonitorScreenTexture(): THREE.Texture {
   if (_cachedCadScreenTex) return _cachedCadScreenTex;
   const { canvas, ctx } = createCanvas2D(256, 160);
   if (!ctx) {
@@ -378,6 +395,405 @@ function getConsultationMonitorScreenTexture(): THREE.Texture {
  *  3. Rear Elevation View (`-Z` West Wall): Solid Vertical Timber Cladding, Rear Staff Door,
  *     Exterior Ventilation Grille, and Electrical Utility Conduits + twin junction boxes.
  */
+export function buildRealEstateArchitecturalScaleModel(
+  parent: THREE.Object3D,
+  partHelper: KioskPartHelper,
+  addLuminousPart: KioskLuminousPartFn,
+  pos: [number, number, number],
+  textures: { timberTex?: THREE.Texture; concreteTex?: THREE.Texture },
+): THREE.Group {
+  const COL_OAK_LIGHT = '#d8ad7c';
+  const COL_TIMBER_DARK = '#8c5a32';
+  const scaleModelGrp = new THREE.Group();
+  scaleModelGrp.name = 'RealEstateArchitecturalScaleModel';
+  scaleModelGrp.position.set(pos[0], pos[1], pos[2]);
+  parent.add(scaleModelGrp);
+
+  partHelper.addPart(
+    scaleModelGrp,
+    makeRoundedReBox(1.34, 0.72, 0.80, 0.020),
+    COL_OAK_LIGHT,
+    [0, 0.36, 0],
+    [0, 0, 0],
+    0.008,
+    textures.timberTex,
+    1.2,
+  );
+  partHelper.addPart(
+    scaleModelGrp,
+    makeRoundedReBox(1.58, 0.07, 1.00, 0.018),
+    '#ede8dc',
+    [0, 0.755, 0],
+    [0, 0, 0],
+    0.008,
+    textures.concreteTex,
+    0.8,
+  );
+  partHelper.addPart(
+    scaleModelGrp,
+    makeRoundedReBox(1.42, 0.036, 0.86, 0.012),
+    '#7fb069',
+    [0, 0.808, 0],
+    [0, 0, 0],
+    0.006,
+    undefined,
+    0.6,
+    false,
+  );
+  partHelper.addPart(
+    scaleModelGrp,
+    makeRoundedReBox(0.24, 0.016, 0.30, 0.005),
+    '#dfd9cc',
+    [0.08, 0.829, 0.27],
+    [0, 0, 0],
+    0,
+    undefined,
+    0.4,
+    false,
+  );
+  partHelper.addPart(
+    scaleModelGrp,
+    makeRoundedReBox(0.36, 0.016, 0.26, 0.005),
+    '#d4cfc2',
+    [-0.34, 0.829, 0.28],
+    [0, 0, 0],
+    0,
+    undefined,
+    0.4,
+    false,
+  );
+
+  const houseMinGrp = new THREE.Group();
+  houseMinGrp.position.set(-0.02, 0.820, -0.03);
+  scaleModelGrp.add(houseMinGrp);
+
+  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.82, 0.22, 0.46, 0.012), '#f8f5ec', [0.04, 0.11, -0.02], [0, 0, 0], 0.006);
+  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.34, 0.20, 0.24, 0.010), '#efeadd', [-0.30, 0.095, 0.14], [0, 0, 0], 0.005);
+  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.56, 0.20, 0.40, 0.012), '#fcfaf3', [0.12, 0.32, -0.02], [0, 0, 0], 0.006);
+
+  const mainRoofGeo = new THREE.ConeGeometry(0.46, 0.17, 4);
+  mainRoofGeo.rotateY(Math.PI / 4);
+  mainRoofGeo.scale(1.06, 1.0, 0.78);
+  partHelper.addPart(houseMinGrp, mainRoofGeo, '#464d57', [0.12, 0.505, -0.02], [0, 0, 0], 0.006);
+
+  const lowerWingRoofGeo = new THREE.ConeGeometry(0.28, 0.12, 4);
+  lowerWingRoofGeo.rotateY(Math.PI / 4);
+  lowerWingRoofGeo.scale(0.96, 1.0, 0.78);
+  partHelper.addPart(houseMinGrp, lowerWingRoofGeo, '#525a66', [-0.26, 0.25, 0.08], [0, 0, 0], 0.005);
+
+  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.08, 0.13, 0.02), COL_TIMBER_DARK, [0.08, 0.07, 0.215], [0, 0, 0], 0.003, undefined, 0.4, false);
+  for (const [wx, wy, wz] of [
+    [0.27, 0.11, 0.215],
+    [-0.10, 0.11, 0.215],
+    [0.01, 0.32, 0.185],
+    [0.24, 0.32, 0.185],
+    [0.455, 0.12, -0.02],
+    [0.405, 0.32, -0.02],
+  ] as [number, number, number][]) {
+    const isSideWin = wx > 0.39;
+    addLuminousPart(
+      houseMinGrp,
+      new THREE.BoxGeometry(isSideWin ? 0.02 : 0.11, 0.085, isSideWin ? 0.12 : 0.02),
+      '#fef3c7',
+      '#fde68a',
+      0.64,
+      [wx, wy, wz],
+    );
+  }
+
+  for (const [tx, tz, tr] of [
+    [-0.56, -0.24, 0.105],
+    [-0.58, 0.20, 0.088],
+    [0.54, 0.22, 0.100],
+    [0.56, -0.22, 0.090],
+  ] as [number, number, number][]) {
+    partHelper.addPart(
+      scaleModelGrp,
+      new THREE.CylinderGeometry(0.016, 0.020, 0.11, 6),
+      '#7c5333',
+      [tx, 0.875, tz],
+      [0, 0, 0],
+      0,
+      undefined,
+      0.4,
+      false,
+    );
+    partHelper.addPart(
+      scaleModelGrp,
+      new THREE.SphereGeometry(tr, 10, 8),
+      '#4f8a4b',
+      [tx, 0.96 + tr * 0.35, tz],
+      [0, 0, 0],
+      0.004,
+      undefined,
+      0.5,
+      false,
+    );
+  }
+  partHelper.addPart(
+    scaleModelGrp,
+    makeRoundedReBox(1.24, 0.06, 0.065, 0.022),
+    '#589454',
+    [0, 0.848, -0.36],
+    [0, 0, 0],
+    0.003,
+    undefined,
+    0.4,
+    false,
+  );
+  return scaleModelGrp;
+}
+
+export function buildRealEstateConsultationDeskZone(
+  parent: THREE.Object3D,
+  partHelper: KioskPartHelper,
+  addLuminousPart: KioskLuminousPartFn,
+  pos: [number, number, number],
+  textures: { timberTex?: THREE.Texture },
+): THREE.Group {
+  const COL_STEEL = '#2b3036';
+  const COL_TIMBER = '#c28a54';
+  const COL_TIMBER_DARK = '#8c5a32';
+  const COL_OAK_LIGHT = '#d8ad7c';
+  const consultGrp = new THREE.Group();
+  consultGrp.name = 'RealEstateConsultationDeskZone';
+  consultGrp.position.set(pos[0], pos[1], pos[2]);
+  parent.add(consultGrp);
+
+  partHelper.addPart(
+    consultGrp,
+    makeRoundedReBox(1.42, 0.06, 0.64, 0.018),
+    COL_OAK_LIGHT,
+    [0, 0.75, 0],
+    [0, 0, 0],
+    0.008,
+    textures.timberTex,
+    1.2,
+  );
+  // Modesty panel rabbet-inset cleanly inside gables (top/bottom clear of side gable Y)
+  partHelper.addPart(
+    consultGrp,
+    makeRoundedReBox(1.26, 0.64, 0.055, 0.012),
+    COL_TIMBER,
+    [0, 0.37, 0.26],
+    [0, 0, 0],
+    0.007,
+    textures.timberTex,
+    1.2,
+  );
+  for (const dxSide of [-0.66, 0.66]) {
+    partHelper.addPart(
+      consultGrp,
+      makeRoundedReBox(0.07, 0.72, 0.60, 0.014),
+      COL_TIMBER_DARK,
+      [dxSide, 0.36, 0],
+      [0, 0, 0],
+      0.007,
+      textures.timberTex,
+      1.2,
+    );
+  }
+
+  const monGrp = new THREE.Group();
+  monGrp.position.set(0.32, 0.78, 0.04);
+  monGrp.rotation.y = -0.24;
+  consultGrp.add(monGrp);
+  partHelper.addPart(monGrp, makeRoundedReBox(0.16, 0.018, 0.12, 0.006), '#94a3b8', [0, 0.009, 0], [0, 0, 0], 0.003, undefined, 0.4, false);
+  partHelper.addPart(monGrp, makeRoundedReBox(0.04, 0.14, 0.03, 0.008), '#cbd5e1', [0, 0.08, -0.02], [-0.12, 0, 0], 0.003, undefined, 0.4, false);
+  partHelper.addPart(monGrp, makeRoundedReBox(0.48, 0.31, 0.03, 0.010), '#1e293b', [0, 0.25, 0], [0, 0, 0], 0.006);
+  addLuminousPart(
+    monGrp,
+    new THREE.PlaneGeometry(0.44, 0.27),
+    '#ffffff',
+    '#38bdf8',
+    0.32,
+    [0, 0.25, 0.018],
+    [0, 0, 0],
+    getConsultationMonitorScreenTexture(),
+  );
+  partHelper.addPart(consultGrp, makeRoundedReBox(0.26, 0.035, 0.19, 0.008), '#f8fafc', [-0.36, 0.795, 0.06], [0, 0.16, 0], 0.004, undefined, 0.4, false);
+  partHelper.addPart(consultGrp, makeRoundedReBox(0.14, 0.16, 0.10, 0.012), COL_STEEL, [-0.52, 0.855, -0.08], [0, 0.22, 0], 0.004, undefined, 0.4, false);
+
+  for (const stoolX of [-0.34, 0.34]) {
+    const stGrp = new THREE.Group();
+    stGrp.position.set(stoolX, 0, 0.56);
+    consultGrp.add(stGrp);
+    partHelper.addPart(stGrp, new THREE.CylinderGeometry(0.18, 0.19, 0.024, 14), '#94a3b8', [0, 0.014, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
+    partHelper.addPart(stGrp, new THREE.CylinderGeometry(0.026, 0.026, 0.48, 10), '#cbd5e1', [0, 0.26, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
+    partHelper.addPart(stGrp, new THREE.TorusGeometry(0.12, 0.012, 6, 16), '#94a3b8', [0, 0.22, 0], [Math.PI / 2, 0, 0], 0, undefined, 0.4, false);
+    partHelper.addPart(
+      stGrp,
+      new THREE.CylinderGeometry(0.185, 0.175, 0.065, 16),
+      COL_TIMBER,
+      [0, 0.52, 0],
+      [0, 0, 0],
+      0.006,
+      textures.timberTex,
+      1.0,
+    );
+  }
+
+  const agentChairGrp = new THREE.Group();
+  agentChairGrp.position.set(0.18, 0, -0.42);
+  consultGrp.add(agentChairGrp);
+  partHelper.addPart(agentChairGrp, new THREE.CylinderGeometry(0.20, 0.20, 0.025, 12), '#334155', [0, 0.015, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
+  partHelper.addPart(agentChairGrp, new THREE.CylinderGeometry(0.028, 0.028, 0.42, 10), '#64748b', [0, 0.23, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
+  const backSpineCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.43, 0),
+    new THREE.Vector3(0, 0.43, -0.17),
+    new THREE.Vector3(0, 0.68, -0.19),
+  ]);
+  partHelper.addPart(agentChairGrp, new THREE.TubeGeometry(backSpineCurve, 10, 0.018, 8, false), '#64748b', [0, 0, 0], [0, 0, 0], 0.003, undefined, 0.4, false);
+  partHelper.addPart(agentChairGrp, makeRoundedReBox(0.42, 0.065, 0.40, 0.020), '#3b424d', [0, 0.46, 0], [0, 0, 0], 0.006);
+  partHelper.addPart(agentChairGrp, makeRoundedReBox(0.40, 0.44, 0.065, 0.020), '#3b424d', [0, 0.69, -0.18], [-0.08, 0, 0], 0.006);
+  return consultGrp;
+}
+
+export function buildShowroomFurnitureLoungeVignette(
+  parent: THREE.Object3D,
+  partHelper: KioskPartHelper,
+  addLuminousPart: KioskLuminousPartFn,
+  pos: [number, number, number],
+  textures: { timberTex?: THREE.Texture },
+): THREE.Group {
+  const COL_STEEL = '#2b3036';
+  const COL_TIMBER_DARK = '#8c5a32';
+  const COL_OAK_LIGHT = '#d8ad7c';
+  const furnZoneGrp = new THREE.Group();
+  furnZoneGrp.name = 'ShowroomInteriorFurnitureVignette';
+  furnZoneGrp.position.set(pos[0], pos[1], pos[2]);
+  parent.add(furnZoneGrp);
+
+  partHelper.addPart(
+    furnZoneGrp,
+    new THREE.CylinderGeometry(0.68, 0.68, 0.014, 24),
+    '#d9d2c3',
+    [-0.04, 0.008, 0.02],
+    [0, 0, 0],
+    0.004,
+    undefined,
+    0.6,
+    false,
+  );
+
+  const chairGrp = new THREE.Group();
+  chairGrp.position.set(0.18, 0.016, -0.22);
+  chairGrp.rotation.y = -0.52;
+  furnZoneGrp.add(chairGrp);
+
+  for (const [lx, lz, rx, rz] of [
+    [-0.22, -0.20, -0.18, 0.16],
+    [0.22, -0.20, -0.18, -0.16],
+    [-0.22, 0.20, 0.18, 0.16],
+    [0.22, 0.20, 0.18, -0.16],
+  ] as [number, number, number, number][]) {
+    partHelper.addPart(
+      chairGrp,
+      new THREE.CylinderGeometry(0.020, 0.013, 0.34, 8),
+      COL_TIMBER_DARK,
+      [lx, 0.17, lz],
+      [rx, 0, rz],
+      0.004,
+      undefined,
+      0.5,
+      false,
+    );
+  }
+  partHelper.addPart(chairGrp, makeRoundedReBox(0.58, 0.13, 0.54, 0.045, 3), '#59626e', [0, 0.365, 0.02], [0.04, 0, 0], 0.007);
+  partHelper.addPart(chairGrp, makeRoundedReBox(0.56, 0.48, 0.13, 0.045, 3), '#4b535e', [0, 0.60, -0.20], [-0.24, 0, 0], 0.007);
+  for (const armS of [-1, 1]) {
+    partHelper.addPart(
+      chairGrp,
+      makeRoundedReBox(0.10, 0.21, 0.48, 0.036, 3),
+      '#525b67',
+      [armS * 0.28, 0.495, -0.01],
+      [0.05, 0, armS * -0.08],
+      0.006,
+    );
+  }
+  partHelper.addPart(chairGrp, makeRoundedReBox(0.32, 0.18, 0.09, 0.035, 3), '#d4a373', [0, 0.49, -0.11], [-0.20, 0, 0], 0.005);
+
+  const sideTableGrp = new THREE.Group();
+  sideTableGrp.position.set(-0.24, 0.016, 0.24);
+  furnZoneGrp.add(sideTableGrp);
+  partHelper.addPart(
+    sideTableGrp,
+    new THREE.CylinderGeometry(0.28, 0.27, 0.04, 20),
+    COL_OAK_LIGHT,
+    [0, 0.39, 0],
+    [0, 0, 0],
+    0.006,
+    textures.timberTex,
+    1.1,
+  );
+  partHelper.addPart(
+    sideTableGrp,
+    new THREE.CylinderGeometry(0.20, 0.20, 0.02, 16),
+    COL_TIMBER_DARK,
+    [0, 0.12, 0],
+    [0, 0, 0],
+    0.004,
+  );
+  for (const ang of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
+    partHelper.addPart(
+      sideTableGrp,
+      new THREE.CylinderGeometry(0.018, 0.015, 0.38, 8),
+      COL_TIMBER_DARK,
+      [Math.cos(ang) * 0.19, 0.195, Math.sin(ang) * 0.19],
+      [0, 0, 0],
+      0.004,
+      undefined,
+      0.5,
+      false,
+    );
+  }
+  partHelper.addPart(sideTableGrp, new THREE.BoxGeometry(0.18, 0.028, 0.14), '#f8fafc', [-0.04, 0.424, 0.02], [0, 0.28, 0], 0.003, undefined, 0.4, false);
+  partHelper.addPart(sideTableGrp, new THREE.CylinderGeometry(0.032, 0.028, 0.06, 10), '#e2e8f0', [0.10, 0.44, -0.05], [0, 0, 0], 0.003, undefined, 0.4, false);
+
+  const lampGrp = new THREE.Group();
+  lampGrp.position.set(0.32, 0.016, -0.58);
+  lampGrp.rotation.y = -0.35;
+  furnZoneGrp.add(lampGrp);
+  partHelper.addPart(lampGrp, new THREE.CylinderGeometry(0.15, 0.16, 0.03, 16), COL_STEEL, [0, 0.016, 0], [0, 0, 0], 0.005);
+  const lampCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.03, 0),
+    new THREE.Vector3(0, 0.95, 0.02),
+    new THREE.Vector3(-0.04, 1.54, 0.18),
+    new THREE.Vector3(-0.10, 1.66, 0.44),
+  ]);
+  partHelper.addPart(
+    lampGrp,
+    new THREE.TubeGeometry(lampCurve, 18, 0.016, 8, false),
+    '#475569',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.004,
+    undefined,
+    0.4,
+    false,
+  );
+  partHelper.addPart(
+    lampGrp,
+    new THREE.ConeGeometry(0.16, 0.20, 16),
+    '#f5efe2',
+    [-0.10, 1.58, 0.46],
+    [0.24, 0, 0],
+    0.005,
+    undefined,
+    0.4,
+    false,
+  );
+  addLuminousPart(
+    lampGrp,
+    new THREE.SphereGeometry(0.055, 10, 8),
+    '#fffbeb',
+    '#fde68a',
+    0.78,
+    [-0.10, 1.51, 0.47],
+  );
+  return furnZoneGrp;
+}
+
 export function buildRealEstateAndFurnitureKiosk3D(
   opts: RealEstateKioskBuilderOptions,
 ): THREE.Group {
@@ -385,7 +801,6 @@ export function buildRealEstateAndFurnitureKiosk3D(
   const COL_STEEL_DARK = '#1e2228';
   const COL_TIMBER = '#c28a54';
   const COL_TIMBER_DARK = '#8c5a32';
-  const COL_OAK_LIGHT = '#d8ad7c';
   const COL_GRANITE_OUTER = '#c8c5bc';
   const COL_GRANITE_INNER = '#e4dfd4';
   const COL_WARM_WALL = '#f4efe4';
@@ -443,18 +858,29 @@ export function buildRealEstateAndFurnitureKiosk3D(
     return mesh;
   };
 
+  let glassPaneCounter = 0;
   const addGlassPane = (
     parent: THREE.Object3D,
     w: number,
     h: number,
     pos: [number, number, number],
     rot: [number, number, number] = [0, 0, 0],
+    windowId?: string,
   ): THREE.Mesh => {
+    const id = windowId ?? `realestate_kiosk_storefront_${glassPaneCounter++}`;
     const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), opts.sharedClearGlassMat);
+    gMesh.name = `RealEstateKioskStorefrontGlass_${id}`;
     gMesh.position.set(pos[0], pos[1], pos[2]);
     gMesh.rotation.set(rot[0], rot[1], rot[2]);
     gMesh.castShadow = false;
     gMesh.receiveShadow = false;
+    tagCityWindowMesh(gMesh, {
+      id,
+      kind: 'storefront',
+      seed: computeDeterministicWindowSeed(id),
+      baseColorHex: '#d6f4ff',
+      baseOpacity: 0.30,
+    });
     parent.add(gMesh);
     return gMesh;
   };
@@ -559,7 +985,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
         new THREE.CylinderGeometry(0.065, 0.065, 0.02, 10),
         COL_LED_WARM,
         '#ffe59e',
-        0.85,
+        0.62,
         [lx, 2.655, lz],
       );
     }
@@ -588,15 +1014,15 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(kioskGrp, 1.30, 2.38, [-1.43, 1.47, 1.54], [0, 0, 0]);
-  addGlassPane(kioskGrp, 1.32, 2.38, [0.0, 1.47, 1.54], [0, 0, 0]);
+  addGlassPane(kioskGrp, 1.25, 2.38, [-1.41, 1.47, 1.54], [0, 0, 0], 'realestate_front_left');
+  addGlassPane(kioskGrp, 1.32, 2.38, [0.0, 1.47, 1.54], [0, 0, 0], 'realestate_front_center');
 
   // Right Bay Framed Glass Entrance Door (`x in [+0.78 .. +2.04]`) + Brushed Steel Pull Handle
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.09), '#383f49', [0.82, 1.42, 1.54], [0, 0, 0], 0.007);
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.09), '#383f49', [2.00, 1.42, 1.54], [0, 0, 0], 0.007);
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(1.24, 0.09, 0.09), '#383f49', [1.41, 2.58, 1.54], [0, 0, 0], 0.007);
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(1.24, 0.08, 0.09), '#383f49', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
-  addGlassPane(kioskGrp, 1.10, 2.24, [1.41, 1.42, 1.54], [0, 0, 0]);
+  addGlassPane(kioskGrp, 1.09, 2.22, [1.41, 1.415, 1.54], [0, 0, 0], 'realestate_front_door');
   // Vertical architectural stainless tubular door pull handle + lock escutcheon
   partHelper.addPart(
     kioskGrp,
@@ -648,8 +1074,8 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(kioskGrp, 0.90, 2.38, [2.14, 1.47, 0.98], [0, Math.PI / 2, 0]);
-  addGlassPane(kioskGrp, 0.88, 2.38, [2.14, 1.47, -0.01], [0, Math.PI / 2, 0]);
+  addGlassPane(kioskGrp, 0.89, 2.38, [2.14, 1.47, 0.99], [0, Math.PI / 2, 0], 'realestate_north_front');
+  addGlassPane(kioskGrp, 0.86, 2.38, [2.14, 1.47, -0.01], [0, Math.PI / 2, 0], 'realestate_north_center');
   // Rear bay Timber Cladding Accent on `+X` side + lower louver grille (exact Quadrant 4 isometric match!)
   partHelper.addPart(
     kioskGrp,
@@ -691,7 +1117,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(kioskGrp, 1.24, 2.38, [-2.14, 1.47, 0.82], [0, -Math.PI / 2, 0]);
+  addGlassPane(kioskGrp, 1.23, 2.38, [-2.14, 1.47, 0.82], [0, -Math.PI / 2, 0], 'realestate_south_front');
   partHelper.addPart(
     kioskGrp,
     new THREE.BoxGeometry(0.16, 2.48, 1.54),
@@ -833,7 +1259,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
         new THREE.CylinderGeometry(0.075, 0.075, 0.028, 10),
         COL_LED_WARM,
         '#ffe59e',
-        0.95,
+        0.68,
         [sx, -0.082, sz],
       );
     }
@@ -845,7 +1271,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
         new THREE.CylinderGeometry(0.070, 0.070, 0.028, 10),
         COL_LED_WARM,
         '#ffe59e',
-        0.95,
+        0.68,
         [sxSide, -0.082, szSide],
       );
     }
@@ -855,246 +1281,25 @@ export function buildRealEstateAndFurnitureKiosk3D(
   // 6. INTERIOR ZONE A: REAL ESTATE ARCHITECTURAL SCALE MODEL (`Maket Rumah 2-Lantai`)
   //    Centered behind the Front-Left / Center Display Window (`x = -1.06, z = 0.68`)
   // =========================================================================
-  const scaleModelGrp = new THREE.Group();
-  scaleModelGrp.name = 'RealEstateArchitecturalScaleModel';
-  scaleModelGrp.position.set(-1.06, 0.22, 0.68);
-  kioskGrp.add(scaleModelGrp);
-
-  // Pedestal Cabinet Base + cantilevered cream-stone architect table top
-  partHelper.addPart(
-    scaleModelGrp,
-    new THREE.BoxGeometry(1.34, 0.72, 0.80),
-    COL_OAK_LIGHT,
-    [0, 0.36, 0],
-    [0, 0, 0],
-    0.008,
-    opts.textures.timberTex,
-    1.2,
-  );
-  partHelper.addPart(
-    scaleModelGrp,
-    new THREE.BoxGeometry(1.58, 0.07, 1.00),
-    '#ede8dc',
-    [0, 0.755, 0],
-    [0, 0, 0],
-    0.008,
-    opts.textures.concreteTex,
-    0.8,
-  );
-
-  // Landscaped Green Architectural Turf Base + Stone Driveway/Walkway (`y = 0.81`)
-  partHelper.addPart(
-    scaleModelGrp,
-    new THREE.BoxGeometry(1.42, 0.036, 0.86),
-    '#7fb069',
-    [0, 0.808, 0],
-    [0, 0, 0],
-    0.006,
-    undefined,
-    0.6,
-    false,
-  );
-  partHelper.addPart(
-    scaleModelGrp,
-    new THREE.BoxGeometry(0.24, 0.012, 0.30),
-    '#dfd9cc',
-    [0.08, 0.832, 0.27],
-    [0, 0, 0],
-    0,
-    undefined,
-    0.4,
-    false,
-  );
-  partHelper.addPart(
-    scaleModelGrp,
-    new THREE.BoxGeometry(0.36, 0.012, 0.26),
-    '#d4cfc2',
-    [-0.34, 0.832, 0.28],
-    [0, 0, 0],
-    0,
-    undefined,
-    0.4,
-    false,
-  );
-
-  // Two-Story Miniature Luxury House (`Maket Rumah`) with Pitched Roofs & Warm Lit Windows
-  const houseMinGrp = new THREE.Group();
-  houseMinGrp.position.set(-0.02, 0.826, -0.03);
-  scaleModelGrp.add(houseMinGrp);
-
-  // Ground floor main wing + projecting garage/porch wing + upper second story
-  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.82, 0.22, 0.46), '#f8f5ec', [0.04, 0.11, -0.02], [0, 0, 0], 0.006);
-  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.34, 0.19, 0.24), '#efeadd', [-0.30, 0.095, 0.14], [0, 0, 0], 0.005);
-  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.56, 0.20, 0.40), '#fcfaf3', [0.12, 0.32, -0.02], [0, 0, 0], 0.006);
-
-  // Pitched Slate-Charcoal Gable Roofs (`ConeGeometry` 4-sided hipped/pitched architectural roofs)
-  const mainRoofGeo = new THREE.ConeGeometry(0.46, 0.17, 4);
-  mainRoofGeo.rotateY(Math.PI / 4);
-  mainRoofGeo.scale(1.06, 1.0, 0.78);
-  partHelper.addPart(houseMinGrp, mainRoofGeo, '#464d57', [0.12, 0.505, -0.02], [0, 0, 0], 0.006);
-
-  const lowerWingRoofGeo = new THREE.ConeGeometry(0.28, 0.12, 4);
-  lowerWingRoofGeo.rotateY(Math.PI / 4);
-  lowerWingRoofGeo.scale(0.96, 1.0, 0.78);
-  partHelper.addPart(houseMinGrp, lowerWingRoofGeo, '#525a66', [-0.26, 0.25, 0.08], [0, 0, 0], 0.005);
-
-  // Warm Glowing Miniature House Windows & Timber Front Door
-  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.08, 0.13, 0.02), COL_TIMBER_DARK, [0.08, 0.07, 0.215], [0, 0, 0], 0.003, undefined, 0.4, false);
-  for (const [wx, wy, wz] of [
-    [0.27, 0.11, 0.215],
-    [-0.10, 0.11, 0.215],
-    [0.01, 0.32, 0.185],
-    [0.24, 0.32, 0.185],
-    [0.455, 0.12, -0.02],
-    [0.405, 0.32, -0.02],
-  ] as [number, number, number][]) {
-    const isSideWin = wx > 0.39;
-    addLuminousPart(
-      houseMinGrp,
-      new THREE.BoxGeometry(isSideWin ? 0.02 : 0.11, 0.085, isSideWin ? 0.12 : 0.02),
-      '#fef3c7',
-      '#fde68a',
-      0.95,
-      [wx, wy, wz],
-    );
-  }
-
-  // Miniature Architectural Trees & Perimeter Hedges on the Scale Model Plinth
-  for (const [tx, tz, tr] of [
-    [-0.56, -0.24, 0.105],
-    [-0.58, 0.20, 0.088],
-    [0.54, 0.22, 0.100],
-    [0.56, -0.22, 0.090],
-  ] as [number, number, number][]) {
-    partHelper.addPart(
-      scaleModelGrp,
-      new THREE.CylinderGeometry(0.016, 0.020, 0.11, 6),
-      '#7c5333',
-      [tx, 0.875, tz],
-      [0, 0, 0],
-      0,
-      undefined,
-      0.4,
-      false,
-    );
-    partHelper.addPart(
-      scaleModelGrp,
-      new THREE.SphereGeometry(tr, 10, 8),
-      '#4f8a4b',
-      [tx, 0.96 + tr * 0.35, tz],
-      [0, 0, 0],
-      0.004,
-      undefined,
-      0.5,
-      false,
-    );
-  }
-  // Low trimmed garden hedge along back of miniature estate
-  partHelper.addPart(
-    scaleModelGrp,
-    new THREE.BoxGeometry(1.24, 0.055, 0.06),
-    '#589454',
-    [0, 0.852, -0.36],
-    [0, 0, 0],
-    0.003,
-    undefined,
-    0.4,
-    false,
+  buildRealEstateArchitecturalScaleModel(
+    kioskGrp,
+    partHelper,
+    addLuminousPart,
+    [-1.06, 0.22, 0.68],
+    opts.textures,
   );
 
   // =========================================================================
   // 7. INTERIOR ZONE B: REAL ESTATE CONSULTATION DESK, CAD MONITOR, STOOLS & BLUEPRINT
   //    Positioned behind the Center-Right Front Bay (`x = 0.72, z = -0.58`)
   // =========================================================================
-  const consultGrp = new THREE.Group();
-  consultGrp.name = 'RealEstateConsultationDeskZone';
-  consultGrp.position.set(0.62, 0.22, -0.58);
-  kioskGrp.add(consultGrp);
-
-  // Warm Oak Architectural Consultation Desk (`1.42m W x 0.76m H x 0.64m D`)
-  partHelper.addPart(
-    consultGrp,
-    new THREE.BoxGeometry(1.42, 0.06, 0.64),
-    COL_OAK_LIGHT,
-    [0, 0.75, 0],
-    [0, 0, 0],
-    0.008,
-    opts.textures.timberTex,
-    1.2,
+  buildRealEstateConsultationDeskZone(
+    kioskGrp,
+    partHelper,
+    addLuminousPart,
+    [0.62, 0.22, -0.58],
+    opts.textures,
   );
-  partHelper.addPart(
-    consultGrp,
-    new THREE.BoxGeometry(1.30, 0.70, 0.06),
-    COL_TIMBER,
-    [0, 0.37, 0.26],
-    [0, 0, 0],
-    0.007,
-    opts.textures.timberTex,
-    1.2,
-  );
-  for (const dxSide of [-0.66, 0.66]) {
-    partHelper.addPart(
-      consultGrp,
-      new THREE.BoxGeometry(0.07, 0.72, 0.60),
-      COL_TIMBER_DARK,
-      [dxSide, 0.36, 0],
-      [0, 0, 0],
-      0.007,
-      opts.textures.timberTex,
-      1.2,
-    );
-  }
-
-  // Sleek Desktop CAD / Property Listing Monitor + Stand + Keyboard + Property Brochure Stand
-  const monGrp = new THREE.Group();
-  monGrp.position.set(0.32, 0.78, 0.04);
-  monGrp.rotation.y = -0.24;
-  consultGrp.add(monGrp);
-  partHelper.addPart(monGrp, new THREE.BoxGeometry(0.16, 0.018, 0.12), '#94a3b8', [0, 0.009, 0], [0, 0, 0], 0.003, undefined, 0.4, false);
-  partHelper.addPart(monGrp, new THREE.BoxGeometry(0.04, 0.14, 0.03), '#cbd5e1', [0, 0.08, -0.02], [-0.12, 0, 0], 0.003, undefined, 0.4, false);
-  partHelper.addPart(monGrp, new THREE.BoxGeometry(0.48, 0.31, 0.03), '#1e293b', [0, 0.25, 0], [0, 0, 0], 0.006);
-  addLuminousPart(
-    monGrp,
-    new THREE.PlaneGeometry(0.44, 0.27),
-    '#ffffff',
-    '#38bdf8',
-    0.32,
-    [0, 0.25, 0.018],
-    [0, 0, 0],
-    getConsultationMonitorScreenTexture(),
-  );
-  // Property catalog binder & brochure holder on left of desk
-  partHelper.addPart(consultGrp, new THREE.BoxGeometry(0.26, 0.035, 0.19), '#f8fafc', [-0.36, 0.798, 0.06], [0, 0.16, 0], 0.004, undefined, 0.4, false);
-  partHelper.addPart(consultGrp, new THREE.BoxGeometry(0.14, 0.16, 0.10), COL_STEEL, [-0.52, 0.86, -0.08], [0, 0.22, 0], 0.004, undefined, 0.4, false);
-
-  // 2 Chrome-Pedestal Consultation Client Stools in front of desk (matching Quadrant 1 & 4)
-  for (const stoolX of [-0.34, 0.34]) {
-    const stGrp = new THREE.Group();
-    stGrp.position.set(stoolX, 0, 0.56);
-    consultGrp.add(stGrp);
-    partHelper.addPart(stGrp, new THREE.CylinderGeometry(0.18, 0.19, 0.024, 14), '#94a3b8', [0, 0.014, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
-    partHelper.addPart(stGrp, new THREE.CylinderGeometry(0.026, 0.026, 0.48, 10), '#cbd5e1', [0, 0.26, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
-    partHelper.addPart(stGrp, new THREE.TorusGeometry(0.12, 0.012, 6, 16), '#94a3b8', [0, 0.22, 0], [Math.PI / 2, 0, 0], 0, undefined, 0.4, false);
-    partHelper.addPart(
-      stGrp,
-      new THREE.CylinderGeometry(0.185, 0.175, 0.065, 16),
-      COL_TIMBER,
-      [0, 0.52, 0],
-      [0, 0, 0],
-      0.006,
-      opts.textures.timberTex,
-      1.0,
-    );
-  }
-
-  // Executive Agent Chair behind Consultation Desk
-  const agentChairGrp = new THREE.Group();
-  agentChairGrp.position.set(0.18, 0, -0.42);
-  consultGrp.add(agentChairGrp);
-  partHelper.addPart(agentChairGrp, new THREE.CylinderGeometry(0.20, 0.20, 0.025, 12), '#334155', [0, 0.015, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
-  partHelper.addPart(agentChairGrp, new THREE.CylinderGeometry(0.028, 0.028, 0.42, 10), '#64748b', [0, 0.23, 0], [0, 0, 0], 0.004, undefined, 0.4, false);
-  partHelper.addPart(agentChairGrp, new THREE.BoxGeometry(0.42, 0.06, 0.40), '#3b424d', [0, 0.46, 0], [0, 0, 0], 0.006);
-  partHelper.addPart(agentChairGrp, new THREE.BoxGeometry(0.40, 0.44, 0.06), '#3b424d', [0, 0.69, -0.18], [-0.08, 0, 0], 0.006);
 
   // Large Framed Master Architectural Floorplan Blueprint on Rear Interior Wall (`z = -1.34`, Quadrant 1)
   partHelper.addPart(
@@ -1123,145 +1328,12 @@ export function buildRealEstateAndFurnitureKiosk3D(
   //    Arched Floor Lamp + Row of 3 Framed Architectural/Interior Wall Prints
   //    (Exact Quadrant 2 Side Profile & Quadrant 4 Isometric Match!)
   // =========================================================================
-  const furnZoneGrp = new THREE.Group();
-  furnZoneGrp.name = 'ShowroomInteriorFurnitureVignette';
-  furnZoneGrp.position.set(1.36, 0.22, 0.56);
-  kioskGrp.add(furnZoneGrp);
-
-  // Soft woven circular showroom area rug (`y = 0.012`, disjoint from `y = 0.22` slab)
-  partHelper.addPart(
-    furnZoneGrp,
-    new THREE.CylinderGeometry(0.68, 0.68, 0.014, 24),
-    '#d9d2c3',
-    [-0.04, 0.008, 0.02],
-    [0, 0, 0],
-    0.004,
-    undefined,
-    0.6,
-    false,
-  );
-
-  // Sculpted Mid-Century Designer Lounge Armchair (`x = 0.18, z = -0.22`, angled toward coffee table & panoramic glass)
-  const chairGrp = new THREE.Group();
-  chairGrp.position.set(0.18, 0.016, -0.22);
-  chairGrp.rotation.y = -0.52;
-  furnZoneGrp.add(chairGrp);
-
-  // 4 splayed tapered walnut legs
-  for (const [lx, lz, rx, rz] of [
-    [-0.22, -0.20, -0.18, 0.16],
-    [0.22, -0.20, -0.18, -0.16],
-    [-0.22, 0.20, 0.18, 0.16],
-    [0.22, 0.20, 0.18, -0.16],
-  ] as [number, number, number, number][]) {
-    partHelper.addPart(
-      chairGrp,
-      new THREE.CylinderGeometry(0.020, 0.013, 0.34, 8),
-      COL_TIMBER_DARK,
-      [lx, 0.17, lz],
-      [rx, 0, rz],
-      0.004,
-      undefined,
-      0.5,
-      false,
-    );
-  }
-  // Curved upholstered seat cushion + reclined shell backrest + sculpted side armrests + warm accent pillow
-  partHelper.addPart(chairGrp, new THREE.BoxGeometry(0.58, 0.12, 0.54), '#59626e', [0, 0.36, 0.02], [0.04, 0, 0], 0.007);
-  partHelper.addPart(chairGrp, new THREE.BoxGeometry(0.56, 0.48, 0.12), '#4b535e', [0, 0.60, -0.20], [-0.24, 0, 0], 0.007);
-  for (const armS of [-1, 1]) {
-    partHelper.addPart(
-      chairGrp,
-      new THREE.BoxGeometry(0.09, 0.22, 0.48),
-      '#525b67',
-      [armS * 0.28, 0.48, -0.01],
-      [0.05, 0, armS * -0.08],
-      0.006,
-    );
-  }
-  partHelper.addPart(chairGrp, new THREE.BoxGeometry(0.32, 0.18, 0.09), '#d4a373', [0, 0.49, -0.11], [-0.20, 0, 0], 0.005);
-
-  // Round Minimalist Walnut Coffee Side Table (`x = -0.24, z = 0.24`)
-  const sideTableGrp = new THREE.Group();
-  sideTableGrp.position.set(-0.24, 0.016, 0.24);
-  furnZoneGrp.add(sideTableGrp);
-  partHelper.addPart(
-    sideTableGrp,
-    new THREE.CylinderGeometry(0.28, 0.27, 0.04, 20),
-    COL_OAK_LIGHT,
-    [0, 0.39, 0],
-    [0, 0, 0],
-    0.006,
-    opts.textures.timberTex,
-    1.1,
-  );
-  partHelper.addPart(
-    sideTableGrp,
-    new THREE.CylinderGeometry(0.20, 0.20, 0.02, 16),
-    COL_TIMBER_DARK,
-    [0, 0.12, 0],
-    [0, 0, 0],
-    0.004,
-  );
-  for (const ang of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
-    partHelper.addPart(
-      sideTableGrp,
-      new THREE.CylinderGeometry(0.018, 0.015, 0.38, 8),
-      COL_TIMBER_DARK,
-      [Math.cos(ang) * 0.19, 0.195, Math.sin(ang) * 0.19],
-      [0, 0, 0],
-      0.004,
-      undefined,
-      0.5,
-      false,
-    );
-  }
-  // Hardcover architecture lookbook + ceramic cup on coffee table
-  partHelper.addPart(sideTableGrp, new THREE.BoxGeometry(0.18, 0.028, 0.14), '#f8fafc', [-0.04, 0.424, 0.02], [0, 0.28, 0], 0.003, undefined, 0.4, false);
-  partHelper.addPart(sideTableGrp, new THREE.CylinderGeometry(0.032, 0.028, 0.06, 10), '#e2e8f0', [0.10, 0.44, -0.05], [0, 0, 0], 0.003, undefined, 0.4, false);
-
-  // Designer Arched Floor Reading Lamp (`x = 0.34, z = -0.58`) arching over the Lounge Armchair
-  const lampGrp = new THREE.Group();
-  lampGrp.position.set(0.32, 0.016, -0.58);
-  lampGrp.rotation.y = -0.35;
-  furnZoneGrp.add(lampGrp);
-  partHelper.addPart(lampGrp, new THREE.CylinderGeometry(0.15, 0.16, 0.03, 16), COL_STEEL, [0, 0.016, 0], [0, 0, 0], 0.005);
-  const lampCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0, 0.03, 0),
-    new THREE.Vector3(0, 0.95, 0.02),
-    new THREE.Vector3(-0.04, 1.54, 0.18),
-    new THREE.Vector3(-0.10, 1.66, 0.44),
-  ]);
-  partHelper.addPart(
-    lampGrp,
-    new THREE.TubeGeometry(lampCurve, 18, 0.016, 8, false),
-    '#475569',
-    [0, 0, 0],
-    [0, 0, 0],
-    0.004,
-    undefined,
-    0.4,
-    false,
-  );
-  // Warm conical designer lampshade + glowing bulb disc
-  partHelper.addPart(
-    lampGrp,
-    new THREE.ConeGeometry(0.16, 0.20, 16),
-    '#f5efe2',
-    [-0.10, 1.58, 0.46],
-    [0.24, 0, 0],
-    0.005,
-    undefined,
-    0.4,
-    false,
-  );
-  addLuminousPart(
-    lampGrp,
-    new THREE.SphereGeometry(0.055, 10, 8),
-    '#fffbeb',
-    '#fde68a',
-    1.1,
-    [-0.10, 1.51, 0.47],
+  buildShowroomFurnitureLoungeVignette(
+    kioskGrp,
+    partHelper,
+    addLuminousPart,
+    [1.36, 0.22, 0.56],
+    opts.textures,
   );
 
   // Row of 3 Framed Architectural / Interior Design Prints visible through `+X` Panoramic Side Glass (Quadrant 2)

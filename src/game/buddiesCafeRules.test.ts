@@ -238,8 +238,8 @@ test('Global Cafe Scale Spec matches true rendered GLB avatar heights (3.312m Pl
 });
 
 test('South Plaza L-Shaped Glasshouse Cafe contains zero overlapping map trees and aligns lampposts w3 & w4 horizontally at z = 11.6', () => {
-  assert.equal(isInsideSouthPlazaGlasshouseFootprint(-99.9, 25.4), true);
-  assert.equal(isInsideSouthPlazaGlasshouseFootprint(-93.3, 11.6), false);
+  assert.equal(isInsideSouthPlazaGlasshouseFootprint(-102.15, 25.4), true);
+  assert.equal(isInsideSouthPlazaGlasshouseFootprint(-95.55, 11.6), false);
 
   const overlappingProps = DEFAULT_ARENA_MAP_LAYOUT.props.filter((p) =>
     isInsideSouthPlazaGlasshouseFootprint(p.x, p.z),
@@ -260,8 +260,8 @@ test('South Plaza L-Shaped Glasshouse Cafe contains zero overlapping map trees a
   assert.equal(lampW3.z, 11.6);
   assert.equal(lampW4.z, 11.6);
   assert.equal(lampW3.z, lampW4.z);
-  assert.equal(lampW3.x, -93.3);
-  assert.equal(lampW4.x, -102.9);
+  assert.equal(lampW3.x, -95.55);
+  assert.equal(lampW4.x, -109.15);
 });
 
 test('South Plaza L-Shaped Glasshouse Cafe merges 2,000+ raw 3D meshes into Central Plaza with +0 net extra static draw calls', () => {

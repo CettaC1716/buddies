@@ -117,11 +117,11 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
 ];
 
 export const CAFE_EXTERIOR_DOOR_TRIGGER = {
-  x: -88.30,
+  x: -90.55,
   z: 22.35,
   deckY: 2.5,
   triggerRadius: 2.85,
-  exitSpawnX: -88.30,
+  exitSpawnX: -90.55,
   exitSpawnZ: 20.55,
   exitSpawnYaw: Math.PI,
 } as const;

@@ -70,24 +70,24 @@ test('2 front outdoor scooter displays are non-rideable static props and leave e
   assert.equal(kickDisp.isRideable, false);
   assert.equal(kickDisp.currency, 'RESPITE');
 
-  // Both displays sit strictly in front of the Left & Center display windows (`localX < entranceDoorLocalXMin`)
-  assert.ok(bikeDisp.localX + bikeDisp.plinthHalfWidthLocal < URBAN_SCOOTER_SHOP_LAYOUT.entranceDoorLocalXMin);
-  assert.ok(kickDisp.localX + kickDisp.plinthHalfWidthLocal < URBAN_SCOOTER_SHOP_LAYOUT.entranceDoorLocalXMin);
+  // Both displays sit strictly to the right of Bay 3's double doors (`localX > entranceDoorLocalXMax`)
+  assert.ok(bikeDisp.localX - bikeDisp.plinthHalfWidthLocal > URBAN_SCOOTER_SHOP_LAYOUT.entranceDoorLocalXMax);
+  assert.ok(kickDisp.localX - kickDisp.plinthHalfWidthLocal > URBAN_SCOOTER_SHOP_LAYOUT.entranceDoorLocalXMax);
 
-  // Check world coordinates sit cleanly on the Central Plaza upper deck (`y = 2.50m`) in front of `x = -98.42` glass
+  // Check world coordinates sit cleanly on the cobblestone apron (`y = 2.545m`) East of `x = -97.60` glass
   const bikeWorld = kioskLocalToWorldPose(bikeDisp.localX, bikeDisp.localY, bikeDisp.localZ, bikeDisp.localRotY);
   const kickWorld = kioskLocalToWorldPose(kickDisp.localX, kickDisp.localY, kickDisp.localZ, kickDisp.localRotY);
 
-  assert.equal(bikeWorld.y, 2.5);
-  assert.equal(kickWorld.y, 2.5);
-  assert.ok(bikeWorld.x > -98.0 && bikeWorld.x < -94.0);
-  assert.ok(kickWorld.x > -98.0 && kickWorld.x < -94.0);
-  assert.ok(Math.hypot(bikeWorld.x - kickWorld.x, bikeWorld.z - kickWorld.z) > 1.85);
+  assert.equal(bikeWorld.y, 2.545);
+  assert.equal(kickWorld.y, 2.545);
+  assert.ok(bikeWorld.x > -103.75 && bikeWorld.x < -101.25);
+  assert.ok(kickWorld.x > -103.75 && kickWorld.x < -101.25);
+  assert.ok(Math.hypot(bikeWorld.x - kickWorld.x, bikeWorld.z - kickWorld.z) > 1.35);
 
   const colliders = computeScooterShopWorldColliders();
   assert.equal(colliders.length, 4);
   for (const col of colliders) {
-    assert.ok(col.heightY > 3.5, `Expected Central Plaza collider ${col.id} above y=2.50m deck`);
+    assert.ok(col.heightY > 3.1, `Expected Central Plaza collider ${col.id} above y=2.50m deck`);
   }
 });
 
@@ -244,8 +244,8 @@ test('low 3D interaction triangle sits clear beside A-Frame sign and NFT Explore
   assert.equal(atMarker.distanceM, 0);
 
   const nearbyPlaza = evaluateUrbanScooterShopProximity(
-    URBAN_SCOOTER_SHOP_TRIGGER.x + 2.4,
-    URBAN_SCOOTER_SHOP_TRIGGER.z + 1.2,
+    URBAN_SCOOTER_SHOP_TRIGGER.x + 1.6,
+    URBAN_SCOOTER_SHOP_TRIGGER.z + 0.9,
   );
   assert.equal(nearbyPlaza.isNear, true);
 
@@ -276,16 +276,16 @@ test('low 3D interaction triangle sits clear beside A-Frame sign and NFT Explore
   );
 });
 
-test('West Promenade 3 kiosks (Real Estate, Scooter, Fashion) have exact symmetrical spacing and disjoint OBB colliders', () => {
+test('West Promenade 3 arcade bays (Fashion, Real Estate, Scooter) have exact symmetrical spacing and disjoint OBB colliders', () => {
   const sym = computeWestPromenadeKioskSymmetryMetrics();
-  assert.equal(sym.northRealEstateZ, -13.8);
-  assert.equal(sym.centerScooterZ, -4.4);
-  assert.equal(sym.southFashionZ, 5.0);
-  assert.equal(sym.northToCenterSpanM, 9.4);
-  assert.equal(sym.centerToSouthSpanM, 9.4);
+  assert.equal(sym.northScooterZ, -11.15);
+  assert.equal(sym.centerRealEstateZ, -4.4);
+  assert.equal(sym.southFashionZ, 2.35);
+  assert.equal(sym.northToCenterSpanM, 6.75);
+  assert.equal(sym.centerToSouthSpanM, 6.75);
   assert.equal(sym.isSymmetrical, true);
 
-  // Build Fashion & Apparel Boutique Kiosk 3D group and verify key architectural & merchandising sub-assemblies
+  // Build Fashion & Apparel Boutique helper check
   const westPlantGroup = new THREE.Group();
   const fashionKiosk = buildFashionAndApparelKiosk3D({
     westPlantGroup,
@@ -312,13 +312,17 @@ test('West Promenade 3 kiosks (Real Estate, Scooter, Fashion) have exact symmetr
   assert.ok(fashionKiosk.getObjectByName('FashionApparelAccessoriesDisplay'));
   assert.ok(fashionKiosk.getObjectByName('FashionBoutiqueAFrameSidewalkSign'));
 
-  // Verify the 3 kiosk body OBB colliders sit cleanly separated along Z and clear of South lamppost w4 (z = 11.6)
-  const reBody = computeRealEstateKioskWorldColliders().find((c) => c.id === 'lobby_realestate_kiosk_body')!;
-  const scBody = computeScooterShopWorldColliders().find((c) => c.id === 'lobby_scooter_kiosk_body')!;
-  const faBody = computeFashionKioskWorldColliders().find((c) => c.id === 'lobby_fashion_kiosk_body')!;
+  // Verify the unified arcade body and bay props clear South lamppost w4 (z = 11.6) and each other cleanly
+  const arcadeBody = computeRealEstateKioskWorldColliders().find((c) => c.id === 'lobby_kiosk_arcade_body')!;
+  const dock = computeScooterShopWorldColliders().find((c) => c.id === 'lobby_scooter_charging_dock')!;
+  const scSign = computeScooterShopWorldColliders().find((c) => c.id === 'lobby_scooter_kiosk_sign')!;
+  const reSign = computeRealEstateKioskWorldColliders().find((c) => c.id === 'lobby_realestate_kiosk_sign')!;
+  const faSign = computeFashionKioskWorldColliders().find((c) => c.id === 'lobby_fashion_kiosk_sign')!;
 
-  assert.ok(reBody.z + reBody.halfZ < scBody.z - scBody.halfZ, 'Real Estate and Scooter kiosk bodies must not overlap');
-  assert.ok(scBody.z + scBody.halfZ < faBody.z - faBody.halfZ, 'Scooter and Fashion kiosk bodies must not overlap');
-  assert.ok(faBody.z + faBody.halfZ < 11.6 - 0.28, 'Fashion kiosk body must sit cleanly North of lamppost w4');
+  assert.ok(arcadeBody.z + arcadeBody.halfZ < 11.6 - 0.28, 'Arcade body must sit cleanly North of lamppost w4');
+  assert.ok(arcadeBody.z - arcadeBody.halfZ > -19.2 + 0.28, 'Arcade body must sit cleanly South of lamppost w2');
+  assert.ok(arcadeBody.x + arcadeBody.halfX < dock.x - dock.halfX, 'Charging dock must sit East of arcade wall');
+  assert.ok(scSign.z + scSign.halfZ < reSign.z - reSign.halfZ, 'Scooter and Real Estate signs must not overlap');
+  assert.ok(reSign.z + reSign.halfZ < faSign.z - faSign.halfZ, 'Real Estate and Fashion signs must not overlap');
 });
 

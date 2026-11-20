@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAFE_GLOBAL_SCALE_SPEC } from './buddiesCafeRules';
+import { computeDeterministicWindowSeed, tagCityWindowMesh } from './buddiesNightLightingRules';
 
 export interface CafeAssetStyler {
   styleOpaque: (
@@ -79,8 +80,13 @@ export function createUnifiedPlazaAndConservatoryGlassMaterial(): THREE.MeshPhys
     depthWrite: false,
   });
 
-  mat.customProgramCacheKey = () => 'plaza-unified-clear-and-frosted-glass-v1';
+  const nightUniform = { value: 0.0 };
+  mat.userData.cityGlassNightUniform = nightUniform;
+  mat.userData.preserveSharedMaterial = true;
+
+  mat.customProgramCacheKey = () => 'plaza-unified-clear-and-frosted-glass-v2';
   mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uNightFactor01 = nightUniform;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -97,6 +103,7 @@ vFrostWorldPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;`,
       .replace(
         '#include <common>',
         `#include <common>
+uniform float uNightFactor01;
 varying vec3 vFrostWorldPos;
 float cafeUniFrostHash31( vec3 p ) {
   p = fract( p * 0.1031 );
@@ -128,7 +135,8 @@ float cafeUniFrostSmoothNoise( vec3 x ) {
       )
       .replace(
         '#include <opaque_fragment>',
-        `if ( vFrostMaskFlag > 0.5 ) {
+        `float cafeNightGlowFade = smoothstep( 0.05, 0.72, clamp( uNightFactor01, 0.0, 1.0 ) );
+if ( vFrostMaskFlag > 0.5 ) {
   vec3 frostViewDir = normalize( vViewPosition );
   float frostNdotV = abs( dot( normalize( normal ), frostViewDir ) );
   float frostFresnel = pow( clamp( 1.0 - frostNdotV, 0.0, 1.0 ), 2.0 );
@@ -137,8 +145,15 @@ float cafeUniFrostSmoothNoise( vec3 x ) {
   float frostDiag = 0.5 + 0.5 * sin( ( vFrostWorldPos.x * 0.85 + vFrostWorldPos.y * 1.25 + vFrostWorldPos.z * 0.85 ) * 2.9 );
   float frostPattern = clamp( frostCloud + frostSatin + frostDiag * 0.10, 0.0, 1.0 );
   vec3 milkyFrostTint = mix( vec3( 0.83, 0.93, 0.98 ), vec3( 0.96, 0.99, 1.0 ), frostPattern );
-  outgoingLight = mix( outgoingLight, milkyFrostTint, clamp( 0.32 + frostPattern * 0.18 + frostFresnel * 0.34, 0.0, 0.84 ) );
-  diffuseColor.a = clamp( 0.24 + frostPattern * 0.11 + frostFresnel * 0.22, 0.24, 0.54 );
+  vec3 nightAmberFrost = mix( vec3( 0.98, 0.84, 0.58 ), vec3( 1.0, 0.93, 0.78 ), frostPattern );
+  vec3 finalFrostTint = mix( milkyFrostTint, nightAmberFrost, cafeNightGlowFade * 0.62 );
+  outgoingLight = mix( outgoingLight, finalFrostTint, clamp( 0.32 + frostPattern * 0.18 + frostFresnel * 0.34 + cafeNightGlowFade * 0.10, 0.0, 0.86 ) );
+  diffuseColor.a = clamp( 0.24 + frostPattern * 0.11 + frostFresnel * 0.22 + cafeNightGlowFade * 0.05, 0.24, 0.52 );
+} else if ( cafeNightGlowFade > 0.001 ) {
+  vec3 clearViewDir = normalize( vViewPosition );
+  float clearNdotV = abs( dot( normalize( normal ), clearViewDir ) );
+  float clearFresnel = pow( clamp( 1.0 - clearNdotV, 0.0, 1.0 ), 2.2 );
+  outgoingLight = mix( outgoingLight, vec3( 1.0, 0.88, 0.66 ), clamp( clearFresnel * 0.26 * cafeNightGlowFade, 0.0, 0.26 ) );
 }
 #include <opaque_fragment>`,
       );
@@ -168,8 +183,13 @@ export function createFrostedConservatoryGlassMaterial(): THREE.MeshPhysicalMate
     fog: false,
   });
 
-  mat.customProgramCacheKey = () => 'cafe-double-sided-frosted-glass-v2';
+  const nightUniform = { value: 0.0 };
+  mat.userData.cityGlassNightUniform = nightUniform;
+  mat.userData.preserveSharedMaterial = true;
+
+  mat.customProgramCacheKey = () => 'cafe-double-sided-frosted-glass-v3';
   mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uNightFactor01 = nightUniform;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -186,6 +206,7 @@ vFrostWorldPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;`,
       .replace(
         '#include <common>',
         `#include <common>
+uniform float uNightFactor01;
 varying vec3 vFrostWorldPos;
 float cafeFrostHash31( vec3 p ) {
   p = fract( p * 0.1031 );
@@ -214,6 +235,7 @@ float cafeFrostSmoothNoise( vec3 x ) {
       .replace(
         '#include <opaque_fragment>',
         `{
+  float cafeNightGlowFade = smoothstep( 0.05, 0.72, clamp( uNightFactor01, 0.0, 1.0 ) );
   vec3 frostViewDir = normalize( vViewPosition );
   float frostNdotV = abs( dot( normalize( normal ), frostViewDir ) );
   float frostFresnel = pow( clamp( 1.0 - frostNdotV, 0.0, 1.0 ), 2.0 );
@@ -222,8 +244,10 @@ float cafeFrostSmoothNoise( vec3 x ) {
   float frostDiag = 0.5 + 0.5 * sin( ( vFrostWorldPos.x * 0.85 + vFrostWorldPos.y * 1.25 + vFrostWorldPos.z * 0.85 ) * 2.9 );
   float frostPattern = clamp( frostCloud + frostSatin + frostDiag * 0.10, 0.0, 1.0 );
   vec3 milkyFrostTint = mix( vec3( 0.83, 0.93, 0.98 ), vec3( 0.96, 0.99, 1.0 ), frostPattern );
-  outgoingLight = mix( outgoingLight, milkyFrostTint, clamp( 0.32 + frostPattern * 0.18 + frostFresnel * 0.34, 0.0, 0.84 ) );
-  diffuseColor.a = clamp( 0.24 + frostPattern * 0.11 + frostFresnel * 0.22, 0.24, 0.54 );
+  vec3 nightAmberFrost = mix( vec3( 0.98, 0.84, 0.58 ), vec3( 1.0, 0.93, 0.78 ), frostPattern );
+  vec3 finalFrostTint = mix( milkyFrostTint, nightAmberFrost, cafeNightGlowFade * 0.62 );
+  outgoingLight = mix( outgoingLight, finalFrostTint, clamp( 0.32 + frostPattern * 0.18 + frostFresnel * 0.34 + cafeNightGlowFade * 0.10, 0.0, 0.86 ) );
+  diffuseColor.a = clamp( 0.24 + frostPattern * 0.11 + frostFresnel * 0.22 + cafeNightGlowFade * 0.05, 0.24, 0.52 );
 }
 #include <opaque_fragment>`,
       );
@@ -243,6 +267,7 @@ export function createDefaultCafeAssetStyler(): CafeAssetStyler {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
+  clearGlassMat.userData.preserveSharedMaterial = true;
   const frostedGlassMat = createFrostedConservatoryGlassMaterial();
 
   const outlineMat = new THREE.MeshBasicMaterial({
@@ -430,6 +455,149 @@ export function makeTurnedLatheGeo(profile: Array<[number, number]>, segs = 28):
   }
   lathe.computeVertexNormals();
   return lathe;
+}
+
+/** Orthogonal polyline ribbon extruded with exact 45-degree mitered corners and rounded bevels. */
+function makeOrthoMitredStripGeo(
+  pts: ReadonlyArray<readonly [number, number]>,
+  halfW: number,
+  height: number,
+  bevel = 0.012,
+  centerY = true,
+  uvScale = 0.5,
+): THREE.BufferGeometry {
+  // Collapse consecutive duplicate/collinear points so every turn is crisp 90 deg
+  const clean: [number, number][] = [];
+  for (const [x, z] of pts) {
+    const sy = -z;
+    if (clean.length === 0) {
+      clean.push([x, sy]);
+      continue;
+    }
+    const prev = clean[clean.length - 1];
+    if (Math.hypot(x - prev[0], sy - prev[1]) < 1e-4) continue;
+    if (clean.length >= 2) {
+      const pp = clean[clean.length - 2];
+      const dx1 = prev[0] - pp[0];
+      const dy1 = prev[1] - pp[1];
+      const dx2 = x - prev[0];
+      const dy2 = sy - prev[1];
+      if (Math.abs(dx1 * dy2 - dy1 * dx2) < 1e-4) {
+        clean[clean.length - 1] = [x, sy];
+        continue;
+      }
+    }
+    clean.push([x, sy]);
+  }
+  if (clean.length < 2) return makeRoundedBoxGeo(Math.max(0.05, halfW * 2), height, Math.max(0.05, halfW * 2), bevel, 2, uvScale);
+
+  const b = Math.max(0, Math.min(bevel, halfW * 0.42, height * 0.36));
+  const hw = Math.max(0.005, halfW - b);
+  const segTangents: [number, number][] = [];
+  const segNormals: [number, number][] = [];
+  for (let i = 0; i < clean.length - 1; i++) {
+    const dx = clean[i + 1][0] - clean[i][0];
+    const dy = clean[i + 1][1] - clean[i][1];
+    const len = Math.max(1e-5, Math.hypot(dx, dy));
+    const tx = dx / len;
+    const ty = dy / len;
+    segTangents.push([tx, ty]);
+    segNormals.push([-ty, tx]);
+  }
+
+  const leftPts: THREE.Vector2[] = [];
+  const rightPts: THREE.Vector2[] = [];
+  for (let i = 0; i < clean.length; i++) {
+    const [px, py] = clean[i];
+    if (i === 0) {
+      const [nx, ny] = segNormals[0];
+      const [tx, ty] = segTangents[0];
+      // Inset endpoints along tangent by bevel so beveled length stays exact
+      leftPts.push(new THREE.Vector2(px + tx * b + nx * hw, py + ty * b + ny * hw));
+      rightPts.push(new THREE.Vector2(px + tx * b - nx * hw, py + ty * b - ny * hw));
+    } else if (i === clean.length - 1) {
+      const [nx, ny] = segNormals[segNormals.length - 1];
+      const [tx, ty] = segTangents[segTangents.length - 1];
+      leftPts.push(new THREE.Vector2(px - tx * b + nx * hw, py - ty * b + ny * hw));
+      rightPts.push(new THREE.Vector2(px - tx * b - nx * hw, py - ty * b - ny * hw));
+    } else {
+      const [n1x, n1y] = segNormals[i - 1];
+      const [n2x, n2y] = segNormals[i];
+      leftPts.push(new THREE.Vector2(px + (n1x + n2x) * hw, py + (n1y + n2y) * hw));
+      rightPts.push(new THREE.Vector2(px - (n1x + n2x) * hw, py - (n1y + n2y) * hw));
+    }
+  }
+
+  const shape = new THREE.Shape([...leftPts, ...rightPts.reverse()]);
+  shape.closePath();
+  const coreDepth = Math.max(0.005, height - 2 * b);
+  const raw = new THREE.ExtrudeGeometry(shape, {
+    depth: coreDepth,
+    bevelEnabled: b > 0.001,
+    bevelThickness: b,
+    bevelSize: b,
+    bevelSegments: b > 0.001 ? 2 : 1,
+  });
+  raw.rotateX(-Math.PI / 2);
+  raw.translate(0, centerY ? -coreDepth * 0.5 : b, 0);
+  return applyBoxProjectedUvs(raw, uvScale);
+}
+
+/** Insets an orthogonal (X, -Z) closed polygon inward by `delta` and extrudes with beveled edges. */
+function makeExtrudedPlanShapeGeo(
+  outerXZ: ReadonlyArray<readonly [number, number]>,
+  height: number,
+  bevel = 0.015,
+  centerY = false,
+  uvScale = 0.55,
+  holeXZ?: ReadonlyArray<readonly [number, number]>,
+): THREE.BufferGeometry {
+  const offsetPoly = (ptsXZ: ReadonlyArray<readonly [number, number]>, delta: number): THREE.Vector2[] => {
+    const pts = ptsXZ.map(([x, z]) => [x, -z] as [number, number]);
+    const n = pts.length;
+    let area2 = 0;
+    for (let i = 0; i < n; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[(i + 1) % n];
+      area2 += x0 * y1 - x1 * y0;
+    }
+    const sign = area2 >= 0 ? 1 : -1;
+    const out: THREE.Vector2[] = [];
+    for (let i = 0; i < n; i++) {
+      const pPrev = pts[(i - 1 + n) % n];
+      const pCur = pts[i];
+      const pNext = pts[(i + 1) % n];
+      const l1 = Math.max(1e-5, Math.hypot(pCur[0] - pPrev[0], pCur[1] - pPrev[1]));
+      const l2 = Math.max(1e-5, Math.hypot(pNext[0] - pCur[0], pNext[1] - pCur[1]));
+      const n1x = sign * (-(pCur[1] - pPrev[1]) / l1);
+      const n1y = sign * ((pCur[0] - pPrev[0]) / l1);
+      const n2x = sign * (-(pNext[1] - pCur[1]) / l2);
+      const n2y = sign * ((pNext[0] - pCur[0]) / l2);
+      out.push(new THREE.Vector2(pCur[0] + (n1x + n2x) * delta, pCur[1] + (n1y + n2y) * delta));
+    }
+    return out;
+  };
+
+  const b = Math.max(0, Math.min(bevel, height * 0.36));
+  const shape = new THREE.Shape(offsetPoly(outerXZ, b));
+  shape.closePath();
+  if (holeXZ && holeXZ.length >= 3) {
+    // Inset outward from the interior void so bevel expands cleanly to target opening
+    const hole = new THREE.Path(offsetPoly(holeXZ, -b));
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+  const coreDepth = Math.max(0.005, height - 2 * b);
+  const raw = new THREE.ExtrudeGeometry(shape, {
+    depth: coreDepth,
+    bevelEnabled: b > 0.001,
+    bevelThickness: b,
+    bevelSize: b,
+    bevelSegments: b > 0.001 ? 2 : 1,
+  });
+  raw.rotateX(-Math.PI / 2);
+  raw.translate(0, centerY ? -coreDepth * 0.5 : b, 0);
+  return applyBoxProjectedUvs(raw, uvScale);
 }
 
 /**
@@ -1436,10 +1604,18 @@ export function buildCurvedBakeryDisplayCase(styler: CafeAssetStyler, flutedTex?
   const curvedGlassGeo = new THREE.CylinderGeometry(D * 0.85, D * 0.85, W - 0.04, 22, 1, true, 0, Math.PI * 0.46);
   curvedGlassGeo.rotateZ(Math.PI / 2);
   const curvedGlassMesh = new THREE.Mesh(curvedGlassGeo, styler.clearGlassMat);
+  curvedGlassMesh.name = 'CafeBakeryDisplayCaseGlass';
   curvedGlassMesh.position.set(0, 0.25, -D * 0.36);
   curvedGlassMesh.castShadow = false;
   curvedGlassMesh.receiveShadow = false;
   curvedGlassMesh.raycast = () => {};
+  tagCityWindowMesh(curvedGlassMesh, {
+    id: 'cafe_bakery_case_glass',
+    kind: 'storefront',
+    seed: computeDeterministicWindowSeed('cafe_bakery_case_glass'),
+    baseColorHex: '#dff6ff',
+    baseOpacity: 0.22,
+  });
   g.add(curvedGlassMesh);
 
   // 3 Illuminated Pastry Shelves with Sculpted Golden Croissants, Glazed Cinnamon Rolls & Domed Muffins
@@ -1535,10 +1711,10 @@ export function buildBrassPendantLamp(styler: CafeAssetStyler, dropHeight = 1.25
     clearcoat: 0.45,
     doubleSided: true,
   });
-  // Warm glowing Edison filament bulb
+  // Warm glowing Edison filament bulb (balanced warm glow without washing out pastries below)
   addPart(g, styler, new THREE.SphereGeometry(0.065, 14, 12), '#fff1b8', [0, -0.01, 0], [0, 0, 0], 0.002, {
-    emissiveHex: '#fde047',
-    emissiveIntensity: 0.98,
+    emissiveHex: '#ffe59e',
+    emissiveIntensity: 0.74,
     roughness: 0.18,
   });
   return g;
@@ -1566,17 +1742,17 @@ export function buildHangingChalkboardMenu(
   });
   if (styler.preserveTextures === false) {
     // Crisp 3D chalk header & 2-column menu/price strips so Zero-Draw-Call vertex-color baking keeps legible chalkboard detail
-    addPart(g, styler, new THREE.BoxGeometry(0.56, 0.065, 0.006), '#f3efe0', [0, height * 0.34, 0.020], [0, 0, 0], 0);
-    addPart(g, styler, new THREE.BoxGeometry(0.76, 0.014, 0.006), '#d4af37', [0, height * 0.24, 0.020], [0, 0, 0], 0);
+    addPart(g, styler, makeRoundedBoxGeo(0.56, 0.065, 0.006, 0.002, 1), '#f3efe0', [0, height * 0.34, 0.020], [0, 0, 0], 0);
+    addPart(g, styler, makeRoundedBoxGeo(0.76, 0.014, 0.006, 0.002, 1), '#d4af37', [0, height * 0.24, 0.020], [0, 0, 0], 0);
     for (let row = 0; row < 4; row++) {
       const ry = height * 0.09 - row * (height * 0.145);
       // Left coffee column (item + gold price)
-      addPart(g, styler, new THREE.BoxGeometry(width * 0.26, 0.036, 0.006), '#e7e2d3', [-width * 0.28, ry, 0.020], [0, 0, 0], 0);
-      addPart(g, styler, new THREE.BoxGeometry(width * 0.09, 0.036, 0.006), '#facc15', [-width * 0.07, ry, 0.020], [0, 0, 0], 0);
+      addPart(g, styler, makeRoundedBoxGeo(width * 0.26, 0.036, 0.006, 0.002, 1), '#e7e2d3', [-width * 0.28, ry, 0.020], [0, 0, 0], 0);
+      addPart(g, styler, makeRoundedBoxGeo(width * 0.09, 0.036, 0.006, 0.002, 1), '#facc15', [-width * 0.07, ry, 0.020], [0, 0, 0], 0);
       // Right pastry column (item + gold price)
-      addPart(g, styler, new THREE.BoxGeometry(width * 0.26, 0.036, 0.006), row === 0 ? '#a7f3d0' : '#e7e2d3', [width * 0.17, ry, 0.020], [0, 0, 0], 0);
+      addPart(g, styler, makeRoundedBoxGeo(width * 0.26, 0.036, 0.006, 0.002, 1), row === 0 ? '#a7f3d0' : '#e7e2d3', [width * 0.17, ry, 0.020], [0, 0, 0], 0);
       if (row > 0) {
-        addPart(g, styler, new THREE.BoxGeometry(width * 0.09, 0.036, 0.006), '#facc15', [width * 0.38, ry, 0.020], [0, 0, 0], 0);
+        addPart(g, styler, makeRoundedBoxGeo(width * 0.09, 0.036, 0.006, 0.002, 1), '#facc15', [width * 0.38, ry, 0.020], [0, 0, 0], 0);
       }
     }
   }
@@ -2063,22 +2239,45 @@ export function buildWisteriaCluster(styler: CafeAssetStyler, dropH = 0.68, scal
     );
   }
 
-  // 3 Layered drooping flower racemes made of overlapping blossom florets
+  // Central calyx crown node uniting all 5 leaves & 3 drooping raceme stems cleanly
+  addPart(g, styler, new THREE.SphereGeometry(0.038, 10, 8), '#4a7a3f', [0, 0.05, 0], [0, 0, 0], 0, {
+    roughness: 0.65,
+    botanicalWindRole: 'stem',
+  });
+
+  // 3 Layered drooping flower racemes welded via continuous curved TubeGeometry peduncles
   const subOffsets: [number, number, number][] = [
     [0, 1.0, 0],
     [-0.12, 0.78, 0.08],
     [0.12, 0.82, -0.06],
   ];
-  const blossomGeo = new THREE.SphereGeometry(0.052, 9, 7);
+  const blossomGeo = new THREE.SphereGeometry(0.058, 9, 7);
   subOffsets.forEach(([ox, factor, oz], rIdx) => {
     const h = dropH * factor;
-    const tiers = 5;
+    const stemCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.052, 0),
+      new THREE.Vector3(ox * 0.55, 0.015, oz * 0.55),
+      new THREE.Vector3(ox, -0.06 - h * 0.35, oz),
+      new THREE.Vector3(ox, -0.08 - h * 0.96, oz),
+    ]);
+    addPart(
+      g,
+      styler,
+      new THREE.TubeGeometry(stemCurve, 12, 0.013, 6, false),
+      '#4a7a3f',
+      [0, 0, 0],
+      [0, 0, 0],
+      0,
+      { roughness: 0.65, botanicalWindRole: 'stem' },
+    );
+
+    const tiers = 6;
     for (let t = 0; t < tiers; t++) {
       const frac = t / (tiers - 1);
-      const y = -0.08 - frac * h;
-      const tierSpread = (1 - frac * 0.72) * 0.068 * factor;
-      const beadCount = frac > 0.75 ? 1 : 3;
-      const beadScale = (1.0 - frac * 0.45) * factor;
+      const y = -0.045 - frac * h;
+      const tierSpread = (1 - frac * 0.78) * 0.042 * factor;
+      const beadCount = frac > 0.72 ? 1 : 3;
+      const beadScale = (1.0 - frac * 0.42) * factor;
       for (let b = 0; b < beadCount; b++) {
         const bAng = (b / Math.max(1, beadCount)) * Math.PI * 2 + rIdx * 0.9 + t * 0.7;
         const bx = ox + (beadCount === 1 ? 0 : Math.cos(bAng) * tierSpread);
@@ -2113,22 +2312,26 @@ export function buildCompleteEspressoBarAssembly(
   const COUNTER_W = 5.2;
   // Shifted forward from 0.92 -> 1.74 (+0.82m) so the counter's back face sits 100% flush on the front border of the dark walnut barista floor (-2.47m), giving a spacious 1.76m clear barista workspace!
   const FRONT_Z = 1.74;
-  const WING_Z = 0.49;
-  const WING_LEN = 2.46;
   const { oak, metal, stoneware } = getSharedTextures(styler);
 
-  // A. Rounded Fluted Oak Front Barista Counter + L-Wing (with genuine 3D vertical oak flutes!)
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W, 0.92, 0.92, 0.024, 3), '#ad753f', [0, 0.46, FRONT_Z], [0, 0, 0], 0.005, {
-    tex: flutedTex,
+  // A. Continuous C-shaped Fluted Oak Barista Counter + L-Wing + Back Credenza (single seamless mitered extrusion!)
+  const carcassProfileXZ: [number, number][] = [
+    [-COUNTER_W * 0.5, -1.67],
+    [COUNTER_W * 0.5, -1.67],
+    [COUNTER_W * 0.5, -0.59],
+    [-COUNTER_W * 0.5 + 0.92, -0.59],
+    [-COUNTER_W * 0.5 + 0.92, FRONT_Z - 0.46],
+    [COUNTER_W * 0.5, FRONT_Z - 0.46],
+    [COUNTER_W * 0.5, FRONT_Z + 0.46],
+    [-COUNTER_W * 0.5, FRONT_Z + 0.46],
+  ];
+  addPart(g, styler, makeExtrudedPlanShapeGeo(carcassProfileXZ, 0.92, 0.020, false, 0.55), '#ad753f', [0, 0, 0], [0, 0, 0], 0.005, {
+    tex: flutedTex ?? oak,
     roughness: 0.56,
     clearcoat: 0.16,
   });
-  addPart(g, styler, makeRoundedBoxGeo(0.92, 0.92, WING_LEN, 0.024, 3), '#ad753f', [-COUNTER_W * 0.5 + 0.46, 0.46, WING_Z], [0, 0, 0], 0.005, {
-    tex: flutedTex,
-    roughness: 0.56,
-    clearcoat: 0.16,
-  });
-  const fluteGeo = new THREE.BoxGeometry(0.055, 0.82, 0.022);
+
+  const fluteGeo = makeRoundedBoxGeo(0.055, 0.82, 0.022, 0.007, 1);
   let fluteIdx = 0;
   for (let fx = -COUNTER_W * 0.5 + 0.14; fx <= COUNTER_W * 0.5 - 0.14; fx += 0.145) {
     addPart(
@@ -2143,7 +2346,7 @@ export function buildCompleteEspressoBarAssembly(
     );
     fluteIdx++;
   }
-  const sideFluteGeo = new THREE.BoxGeometry(0.022, 0.82, 0.055);
+  const sideFluteGeo = makeRoundedBoxGeo(0.022, 0.82, 0.055, 0.007, 1);
   for (let fz = -0.66; fz <= FRONT_Z + 0.36; fz += 0.145) {
     addPart(
       g,
@@ -2158,14 +2361,18 @@ export function buildCompleteEspressoBarAssembly(
     fluteIdx++;
   }
 
-  // Bullnose Rounded White Carrara Marble Countertops with glossy clearcoat
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W + 0.16, 0.09, 1.08, 0.026, 3), '#f5f2eb', [0, 0.965, FRONT_Z], [0, 0, 0], 0.005, {
-    tex: marbleTex,
-    roughness: 0.26,
-    clearcoat: 0.62,
-    clearcoatRoughness: 0.18,
-  });
-  addPart(g, styler, makeRoundedBoxGeo(1.06, 0.09, WING_LEN + 0.10, 0.026, 3), '#f5f2eb', [-COUNTER_W * 0.5 + 0.46, 0.965, WING_Z], [0, 0, 0], 0.005, {
+  // Continuous C-shaped Bullnose White Carrara Marble Countertop with glossy clearcoat
+  const marbleProfileXZ: [number, number][] = [
+    [-COUNTER_W * 0.5 - 0.08, -1.78],
+    [COUNTER_W * 0.5 + 0.06, -1.78],
+    [COUNTER_W * 0.5 + 0.06, -0.54],
+    [-COUNTER_W * 0.5 + 0.99, -0.54],
+    [-COUNTER_W * 0.5 + 0.99, FRONT_Z - 0.54],
+    [COUNTER_W * 0.5 + 0.08, FRONT_Z - 0.54],
+    [COUNTER_W * 0.5 + 0.08, FRONT_Z + 0.54],
+    [-COUNTER_W * 0.5 - 0.08, FRONT_Z + 0.54],
+  ];
+  addPart(g, styler, makeExtrudedPlanShapeGeo(marbleProfileXZ, 0.09, 0.022, false, 0.42), '#f5f2eb', [0, 0.92, 0], [0, 0, 0], 0.005, {
     tex: marbleTex,
     roughness: 0.26,
     clearcoat: 0.62,
@@ -2208,19 +2415,9 @@ export function buildCompleteEspressoBarAssembly(
   pastryCase.position.set(1.52, 1.01, FRONT_Z - 0.02);
   g.add(pastryCase);
 
-  // B. Back Espresso Credenza Wall (z = -0.95) + Full-Depth Rear Cabinet & Marble Infill (zero rear gap to conservatory wall!)
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W, 0.92, 0.72, 0.022, 3), '#a8703c', [0, 0.46, -0.95], [0, 0, 0], 0.005, {
-    tex: oak,
-    tintTex: true,
-    roughness: 0.56,
-  });
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W, 0.92, 0.42, 0.016, 2), '#966232', [0, 0.46, -1.46], [0, 0, 0], 0.004, {
-    tex: oak,
-    tintTex: true,
-    roughness: 0.58,
-  });
+  // B. Back Espresso Credenza Wall Stainless Undercounter Doors (carcass & marble already continuous in C-shape above!)
   for (const fx of [-1.2, -0.45]) {
-    addPart(g, styler, makeRoundedBoxGeo(0.68, 0.76, 0.045, 0.014, 2), '#b8c2ce', [fx, 0.45, -0.58], [0, 0, 0], 0.003, {
+    addPart(g, styler, makeRoundedBoxGeo(0.68, 0.76, 0.045, 0.014, 2), '#b8c2ce', [fx, 0.46, -0.58], [0, 0, 0], 0.003, {
       tex: metal,
       tintTex: true,
       metalness: 0.5,
@@ -2228,14 +2425,9 @@ export function buildCompleteEspressoBarAssembly(
       clearcoat: 0.35,
     });
   }
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W + 0.12, 0.09, 1.24, 0.024, 3), '#f5f2eb', [0, 0.965, -1.16], [0, 0, 0], 0.005, {
-    tex: marbleTex,
-    roughness: 0.26,
-    clearcoat: 0.62,
-  });
 
-  // Full-height rear architectural backing behind walnut menu wall so zero empty cavity exists behind the bar
-  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W - 0.10, 1.88, 0.40, 0.018, 2), '#7c4e29', [0, 1.86, -1.46], [0, 0, 0], 0.004, {
+  // Full-height rear architectural backing behind walnut menu wall starting cleanly atop marble (y = 1.01)
+  addPart(g, styler, makeRoundedBoxGeo(COUNTER_W - 0.10, 1.79, 0.40, 0.018, 2), '#7c4e29', [0, 1.905, -1.46], [0, 0, 0], 0.004, {
     tex: oak,
     tintTex: true,
     roughness: 0.56,
@@ -2569,12 +2761,12 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
   }
 
   // Side Casing Recessed Grip Handle & 12 Horizontal Ventilation Louver Slots (Left & Right Sides)
-  const sideLouverGeo = new THREE.BoxGeometry(0.010, 0.008, 0.125);
+  const sideLouverGeo = makeRoundedBoxGeo(0.010, 0.008, 0.125, 0.0025, 1);
   for (const side of [-1, 1]) {
     addPart(g, styler, makeRoundedBoxGeo(0.012, 0.048, 0.125, 0.004, 1), COL_SLATE_DARK, [side * 0.396, 0.65, -0.02], [0, 0, 0], 0.002, {
       roughness: 0.5,
     });
-    addPart(g, styler, new THREE.BoxGeometry(0.014, 0.022, 0.098), COL_CHARCOAL, [side * 0.398, 0.65, -0.02], [0, 0, 0], 0);
+    addPart(g, styler, makeRoundedBoxGeo(0.014, 0.022, 0.098, 0.003, 1), COL_CHARCOAL, [side * 0.398, 0.65, -0.02], [0, 0, 0], 0);
     for (let v = 0; v < 12; v++) {
       addPart(g, styler, sideLouverGeo, '#3b4352', [side * 0.396, 0.13 + v * 0.022, -0.14], [0, 0, 0], 0, {
         roughness: 0.6,
@@ -2610,7 +2802,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     metalness: 0.55,
     roughness: 0.26,
   });
-  addPart(g, styler, new THREE.BoxGeometry(0.005, 0.017, 0.018), '#0f172a', [-0.245, 0.375, 0.237], [0.071, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.005, 0.017, 0.018, 0.0015, 1), '#0f172a', [-0.245, 0.375, 0.237], [0.071, 0, 0], 0);
 
   // 4. Top Illuminated "ATM // CASH" Header Canopy Box (y = 1.52 .. 1.75m, overhanging to z = +0.23m)
   addPart(g, styler, makeRoundedBoxGeo(0.67, 0.23, 0.21, 0.014, 2), COL_SILVER_BODY, [0, 1.635, 0.125], [0, 0, 0], 0.004, {
@@ -2637,7 +2829,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
   } else {
     // Clean 3D micro-bar typography silhouette for vertex-baked exterior views (+0 draw calls)
     for (const gx of [-0.19, -0.11, -0.01, 0.02, 0.13, 0.21]) {
-      addPart(g, styler, new THREE.BoxGeometry(gx === -0.01 || gx === 0.02 ? 0.012 : 0.055, 0.048, 0.006), '#f8fafc', [gx, 1.635, 0.241], [0, 0, gx === -0.01 || gx === 0.02 ? -0.28 : 0], 0, {
+      addPart(g, styler, makeRoundedBoxGeo(gx === -0.01 || gx === 0.02 ? 0.012 : 0.055, 0.048, 0.006, 0.002, 1), '#f8fafc', [gx, 1.635, 0.241], [0, 0, gx === -0.01 || gx === 0.02 ? -0.28 : 0], 0, {
         emissiveHex: '#e0f2fe',
         emissiveIntensity: 0.35,
       });
@@ -2662,7 +2854,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     emissiveHex: '#0284c7',
     emissiveIntensity: 0.5,
   });
-  const soffitDotGeo = new THREE.BoxGeometry(0.016, 0.006, 0.008);
+  const soffitDotGeo = makeRoundedBoxGeo(0.016, 0.006, 0.008, 0.002, 1);
   for (const side of [-1, 1]) {
     for (let k = 0; k < 4; k++) {
       addPart(g, styler, soffitDotGeo, '#334155', [side * (0.13 + k * 0.032), 1.478, 0.174], [0.22, 0, 0], 0);
@@ -2732,7 +2924,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     metalness: 0.52,
     roughness: 0.28,
   });
-  addPart(transFascia, styler, new THREE.BoxGeometry(0.132, 0.009, 0.020), '#0f172a', [-0.165, 0.004, 0.028], [0, 0, 0], 0);
+  addPart(transFascia, styler, makeRoundedBoxGeo(0.132, 0.009, 0.020, 0.002, 1), '#0f172a', [-0.165, 0.004, 0.028], [0, 0, 0], 0);
 
   // Card Insertion Slot with Green LED Beacon Throat (Right)
   addPart(transFascia, styler, makeRoundedBoxGeo(0.148, 0.062, 0.018, 0.006, 2), COL_CHARCOAL, [0.175, -0.002, 0.025], [0, 0, 0], 0.002);
@@ -2742,7 +2934,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     roughness: 0.20,
     clearcoat: 0.70,
   });
-  addPart(transFascia, styler, new THREE.BoxGeometry(0.086, 0.008, 0.026), '#052e16', [0.175, -0.002, 0.032], [0, 0, 0], 0);
+  addPart(transFascia, styler, makeRoundedBoxGeo(0.086, 0.008, 0.026, 0.002, 1), '#052e16', [0.175, -0.002, 0.032], [0, 0, 0], 0);
 
   // 8. Cantilevered Keypad Ledge + Shielded 4x4 PIN Keypad + Contactless NFC / RFID Reader Pad
   const keypadLedge = new THREE.Group();
@@ -2771,7 +2963,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     roughness: 0.30,
   });
   // 4x4 Tactile Metallic PIN Keys (including Cancel Red, Clear Yellow, Enter Green on column 4)
-  const pinKeyGeo = new THREE.BoxGeometry(0.026, 0.010, 0.020);
+  const pinKeyGeo = makeRoundedBoxGeo(0.026, 0.010, 0.020, 0.0025, 1);
   const actionKeyColors = ['#ef4444', '#facc15', '#22c55e', '#e2e8f0'];
   for (let row = 0; row < 4; row++) {
     for (let col = 0; col < 4; col++) {
@@ -2813,12 +3005,12 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     metalness: 0.20,
   });
   addPart(g, styler, makeRoundedBoxGeo(0.43, 0.090, 0.036, 0.008, 2), COL_SLATE_DARK, [0, 0.772, 0.312], [0, 0, 0], 0.003);
-  addPart(g, styler, new THREE.BoxGeometry(0.37, 0.056, 0.026), '#111827', [0, 0.772, 0.320], [0, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.37, 0.056, 0.026, 0.004, 1), '#111827', [0, 0.772, 0.320], [0, 0, 0], 0);
   addPart(g, styler, makeRoundedBoxGeo(0.35, 0.038, 0.022, 0.004, 1), COL_CHROME, [0, 0.772, 0.323], [0, 0, 0], 0.002, {
     metalness: 0.52,
     roughness: 0.28,
   });
-  addPart(g, styler, new THREE.BoxGeometry(0.31, 0.008, 0.026), '#0f172a', [0, 0.772, 0.325], [0, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.31, 0.008, 0.026, 0.002, 1), '#0f172a', [0, 0.772, 0.325], [0, 0, 0], 0);
 
   // 10. Rear Heavy-Duty Reinforced Steel Vault Service Door (REAR ELEVATION VIEW, z = -0.28m)
   addPart(g, styler, makeRoundedBoxGeo(0.56, 1.34, 0.016, 0.006, 2), COL_SILVER_PANEL, [0, 0.77, -0.282], [0, 0, 0], 0.004, {
@@ -2833,7 +3025,7 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
       metalness: 0.55,
       roughness: 0.28,
     });
-    addPart(g, styler, new THREE.BoxGeometry(0.048, 0.11, 0.010), COL_CHROME, [-0.262, hy, -0.288], [0, 0, 0], 0.002);
+    addPart(g, styler, makeRoundedBoxGeo(0.048, 0.11, 0.010, 0.0025, 1), COL_CHROME, [-0.262, hy, -0.288], [0, 0, 0], 0.002);
   }
   // Dual Combination Dial / Digital Locks + Key Tumbler Lock
   for (const dy of [0.98, 0.76]) {
@@ -2847,10 +3039,10 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     });
   }
   addPart(g, styler, new THREE.CylinderGeometry(0.018, 0.018, 0.018, 12), COL_CHROME, [0.165, 0.76, -0.292], [Math.PI / 2, 0, 0], 0.002);
-  addPart(g, styler, new THREE.BoxGeometry(0.008, 0.055, 0.014), COL_CHARCOAL, [0.165, 0.72, -0.293], [0, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.008, 0.055, 0.014, 0.002, 1), COL_CHARCOAL, [0.165, 0.72, -0.293], [0, 0, 0], 0);
 
   // Rear Ventilation Louvers + Ethernet LAN Port + Power Conduit + Circuit Breaker Switch
-  const rearLouverGeo = new THREE.BoxGeometry(0.13, 0.008, 0.010);
+  const rearLouverGeo = makeRoundedBoxGeo(0.13, 0.008, 0.010, 0.002, 1);
   for (let i = 0; i < 5; i++) {
     addPart(g, styler, rearLouverGeo, '#3b4352', [-0.08, 1.08 + i * 0.022, -0.290], [0, 0, 0], 0);
   }
@@ -2860,9 +3052,9 @@ export function buildStandardBankCashAtm(styler: CafeAssetStyler, scale = 1.0): 
     }
   }
   // Ethernet LAN, Power Socket & Breaker Switch
-  addPart(g, styler, new THREE.BoxGeometry(0.042, 0.042, 0.014), COL_CHARCOAL, [-0.07, 0.14, -0.291], [0, 0, 0], 0.001);
-  addPart(g, styler, new THREE.BoxGeometry(0.052, 0.042, 0.014), COL_CHARCOAL, [-0.14, 0.14, -0.291], [0, 0, 0], 0.001);
-  addPart(g, styler, new THREE.BoxGeometry(0.016, 0.024, 0.018), '#ef4444', [-0.195, 0.14, -0.293], [0, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.042, 0.042, 0.014, 0.003, 1), COL_CHARCOAL, [-0.07, 0.14, -0.291], [0, 0, 0], 0.001);
+  addPart(g, styler, makeRoundedBoxGeo(0.052, 0.042, 0.014, 0.003, 1), COL_CHARCOAL, [-0.14, 0.14, -0.291], [0, 0, 0], 0.001);
+  addPart(g, styler, makeRoundedBoxGeo(0.016, 0.024, 0.018, 0.003, 1), '#ef4444', [-0.195, 0.14, -0.293], [0, 0, 0], 0);
 
   g.scale.setScalar(scale);
   return g;
@@ -3191,13 +3383,13 @@ export function buildStandaloneArcadeCabinet(styler: CafeAssetStyler, scale = 1.
   } else {
     // 3D geometric neon typography bars for vertex-baked views
     for (const gx of [-0.21, -0.13, -0.05, 0.04, 0.12, 0.20]) {
-      addPart(g, styler, new THREE.BoxGeometry(0.055, 0.036, 0.006), '#67e8f9', [gx, 1.728, 0.229], [0, 0, 0], 0, {
+      addPart(g, styler, makeRoundedBoxGeo(0.055, 0.036, 0.006, 0.002, 1), '#67e8f9', [gx, 1.728, 0.229], [0, 0, 0], 0, {
         emissiveHex: '#22d3ee',
         emissiveIntensity: 0.5,
       });
     }
     for (const gx of [-0.11, -0.03, 0.05, 0.12]) {
-      addPart(g, styler, new THREE.BoxGeometry(0.05, 0.024, 0.006), '#f472b6', [gx, 1.682, 0.229], [0, 0, 0], 0, {
+      addPart(g, styler, makeRoundedBoxGeo(0.05, 0.024, 0.006, 0.002, 1), '#f472b6', [gx, 1.682, 0.229], [0, 0, 0], 0, {
         emissiveHex: '#ec4899',
         emissiveIntensity: 0.5,
       });
@@ -3210,7 +3402,7 @@ export function buildStandaloneArcadeCabinet(styler: CafeAssetStyler, scale = 1.
   speakerSoffit.rotation.x = 0.38;
   g.add(speakerSoffit);
   addPart(speakerSoffit, styler, makeRoundedBoxGeo(0.65, 0.085, 0.04, 0.005, 1), COL_BEZEL_SLATE, [0, 0, 0], [0, 0, 0], 0.002);
-  const slotGeo = new THREE.BoxGeometry(0.14, 0.006, 0.008);
+  const slotGeo = makeRoundedBoxGeo(0.14, 0.006, 0.008, 0.002, 1);
   for (const side of [-1, 1]) {
     for (let s = 0; s < 4; s++) {
       addPart(speakerSoffit, styler, slotGeo, '#0f1319', [side * 0.18, -0.018 + s * 0.012, 0.018], [0, 0, 0], 0);
@@ -3380,7 +3572,7 @@ export function buildStandaloneArcadeCabinet(styler: CafeAssetStyler, scale = 1.
 
   // 9. Rear Elevation ("Tampak Belakang", z = -0.30m): Upper Louvers, Flush Service Maintenance Door & Power Conduit Port
   // Upper Ventilation Cooling Louvers (2 columns of 6 horizontal slots)
-  const rearLouverGeo = new THREE.BoxGeometry(0.20, 0.010, 0.010);
+  const rearLouverGeo = makeRoundedBoxGeo(0.20, 0.010, 0.010, 0.002, 1);
   for (const lx of [-0.14, 0.14]) {
     for (let i = 0; i < 6; i++) {
       addPart(g, styler, rearLouverGeo, '#14171f', [lx, 1.41 + i * 0.024, -0.302], [0, 0, 0], 0);
@@ -3396,22 +3588,22 @@ export function buildStandaloneArcadeCabinet(styler: CafeAssetStyler, scale = 1.
   });
   // Left-side dual service door hinges
   for (const hy of [1.12, 0.54]) {
-    addPart(g, styler, new THREE.BoxGeometry(0.018, 0.065, 0.016), '#151820', [-0.23, hy, -0.305], [0, 0, 0], 0.002);
+    addPart(g, styler, makeRoundedBoxGeo(0.018, 0.065, 0.016, 0.003, 1), '#151820', [-0.23, hy, -0.305], [0, 0, 0], 0.002);
   }
   // Right-side Keylock cylinder + keyhole slot
   addPart(g, styler, new THREE.CylinderGeometry(0.018, 0.018, 0.016, 12), COL_CHROME, [0.175, 0.78, -0.306], [Math.PI / 2, 0, 0], 0.002, {
     metalness: 0.6,
   });
-  addPart(g, styler, new THREE.BoxGeometry(0.006, 0.028, 0.018), '#0f172a', [0.175, 0.76, -0.307], [0, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.006, 0.028, 0.018, 0.0015, 1), '#0f172a', [0.175, 0.76, -0.307], [0, 0, 0], 0);
 
   // Lower Left Cooling Louvers & Lower Right Power Cable Conduit Entry Port
-  const lowerLouverGeo = new THREE.BoxGeometry(0.18, 0.010, 0.010);
+  const lowerLouverGeo = makeRoundedBoxGeo(0.18, 0.010, 0.010, 0.002, 1);
   for (let i = 0; i < 5; i++) {
     addPart(g, styler, lowerLouverGeo, '#14171f', [-0.16, 0.10 + i * 0.022, -0.302], [0, 0, 0], 0);
   }
   addPart(g, styler, makeRoundedBoxGeo(0.14, 0.11, 0.014, 0.004, 1), '#1b1f28', [0.17, 0.14, -0.302], [0, 0, 0], 0.002);
-  addPart(g, styler, new THREE.BoxGeometry(0.036, 0.048, 0.016), '#0f172a', [0.17, 0.135, -0.305], [0, 0, 0], 0.001);
-  addPart(g, styler, new THREE.BoxGeometry(0.016, 0.022, 0.018), '#ef4444', [0.17, 0.135, -0.307], [0, 0, 0], 0);
+  addPart(g, styler, makeRoundedBoxGeo(0.036, 0.048, 0.016, 0.003, 1), '#0f172a', [0.17, 0.135, -0.305], [0, 0, 0], 0.001);
+  addPart(g, styler, makeRoundedBoxGeo(0.016, 0.022, 0.018, 0.003, 1), '#ef4444', [0.17, 0.135, -0.307], [0, 0, 0], 0);
 
   g.scale.setScalar(scale);
   return g;
@@ -3482,15 +3674,12 @@ export function buildLShapedGlasshouseArchitecture(
   const xOpposite = sx === -1 ? cfg.xEast : cfg.xWest;
   const xJunction = cfg.xWingEast;
 
-  const mainW = cfg.xEast - cfg.xWest;
   const mainD = Math.abs(cfg.zBack - cfg.zRecessed);
-  const mainMidX = (cfg.xWest + cfg.xEast) * 0.5;
   const mainMidZ = (cfg.zBack + cfg.zRecessed) * 0.5;
 
   const wingW = Math.abs(xOuterWing - xJunction);
   const wingD = Math.abs(cfg.zWingTip - cfg.zRecessed);
   const wingMidX = (xOuterWing + xJunction) * 0.5;
-  const wingMidZ = (cfg.zWingTip + cfg.zRecessed) * 0.5;
 
   const RIDGE_Z = mainMidZ;
   const RIDGE_X = wingMidX;
@@ -3501,22 +3690,47 @@ export function buildLShapedGlasshouseArchitecture(
   const inwardX = (u: number) => RIDGE_X - sx * u * halfWingW;
   const outerX = (u: number) => RIDGE_X + sx * u * halfWingW;
 
-  // 1. L-SHAPED SANDSTONE APRON, COURTYARD PATIO & HERRINGBONE PARQUET FLOOR
+  // 1. CONTINUOUS L-SHAPED SANDSTONE APRON, COURTYARD PATIO & HERRINGBONE PARQUET FLOOR
+  const xOppIn = xOpposite + sx * 0.08;
+  const xOutIn = xOuterWing - sx * 0.08;
+  const xJuncIn = xJunction + sx * 0.08;
+  const zBackIn = cfg.zBack + dir * 0.08;
+  const zTipIn = cfg.zWingTip - dir * 0.08;
+  const zRecIn = cfg.zRecessed - dir * 0.08;
+
   if (cfg.includeStoneApronAndPorch) {
-    addPart(parent, styler, makeRoundedBoxGeo(mainW + 0.70, 0.045, mainD + 0.70, 0.015, 2), COL_STONE_APRON, [mainMidX, cfg.floorY + 0.02, mainMidZ], [0, 0, 0], 0.006, {
-      tex: flagstoneTex,
-      roughness: 0.85,
-    });
-    addPart(parent, styler, makeRoundedBoxGeo(wingW + 0.70, 0.045, wingD + 0.40, 0.015, 2), COL_STONE_APRON, [wingMidX, cfg.floorY + 0.02, wingMidZ - dir * 0.2], [0, 0, 0], 0.006, {
-      tex: flagstoneTex,
-      roughness: 0.85,
-    });
-    // Entrance porch stepping out onto courtyard
-    addPart(parent, styler, makeRoundedBoxGeo(4.40, 0.052, 1.80, 0.018, 2), '#cfc6b6', [cfg.doorX, cfg.floorY + 0.025, cfg.zRecessed + dir * 0.85], [0, 0, 0], 0.006, {
+    const apronOuterXZ: [number, number][] = [
+      [xOpposite - sx * 0.35, cfg.zBack - dir * 0.35],
+      [xOuterWing + sx * 0.35, cfg.zBack - dir * 0.35],
+      [xOuterWing + sx * 0.35, cfg.zWingTip + dir * 0.35],
+      [xJunction - sx * 0.35, cfg.zWingTip + dir * 0.35],
+      [xJunction - sx * 0.35, cfg.zRecessed + dir * 0.35],
+      [xOpposite - sx * 0.35, cfg.zRecessed + dir * 0.35],
+    ];
+    const apronHoleXZ: [number, number][] = [
+      [xOpposite + sx * 0.055, cfg.zBack + dir * 0.055],
+      [xOuterWing - sx * 0.055, cfg.zBack + dir * 0.055],
+      [xOuterWing - sx * 0.055, cfg.zWingTip - dir * 0.055],
+      [xJunction + sx * 0.055, cfg.zWingTip - dir * 0.055],
+      [xJunction + sx * 0.055, cfg.zRecessed - dir * 0.055],
+      [xOpposite + sx * 0.055, cfg.zRecessed - dir * 0.055],
+    ];
+    addPart(
+      parent,
+      styler,
+      makeExtrudedPlanShapeGeo(apronOuterXZ, 0.042, 0.012, false, 0.35, apronHoleXZ),
+      COL_STONE_APRON,
+      [0, cfg.floorY - 0.002, 0],
+      [0, 0, 0],
+      0.006,
+      { tex: flagstoneTex, roughness: 0.85 },
+    );
+    // Two-tier entrance porch starting cleanly outside the sandstone apron edge (`zRecessed + dir * 0.35`)
+    addPart(parent, styler, makeRoundedBoxGeo(4.40, 0.024, 1.40, 0.010, 2), '#cfc6b6', [cfg.doorX, cfg.floorY + 0.032, cfg.zRecessed + dir * 1.05], [0, 0, 0], 0.006, {
       tex: flagstoneTex,
       roughness: 0.84,
     });
-    addPart(parent, styler, makeRoundedBoxGeo(4.65, 0.028, 2.02, 0.012, 2), COL_STONE_TRIM, [cfg.doorX, cfg.floorY + 0.014, cfg.zRecessed + dir * 0.85], [0, 0, 0], 0.005, {
+    addPart(parent, styler, makeRoundedBoxGeo(4.65, 0.022, 1.62, 0.010, 2), COL_STONE_TRIM, [cfg.doorX, cfg.floorY + 0.009, cfg.zRecessed + dir * 1.16], [0, 0, 0], 0.005, {
       roughness: 0.88,
     });
   }
@@ -3531,19 +3745,13 @@ export function buildLShapedGlasshouseArchitecture(
       tex: flagstoneTex,
       roughness: 0.86,
     });
-    addPart(patioHost, styler, makeRoundedBoxGeo(3.4, 0.06, 1.35, 0.018, 2), '#cfc6b6', [cfg.doorX, cfg.floorY + 0.02, cfg.zRecessed + dir * 0.72], [0, 0, 0], 0, {
+    addPart(patioHost, styler, makeRoundedBoxGeo(3.4, 0.048, 1.35, 0.018, 2), '#cfc6b6', [cfg.doorX, cfg.floorY + 0.025, cfg.zRecessed + dir * 0.72], [0, 0, 0], 0, {
       tex: flagstoneTex,
       roughness: 0.84,
     });
   }
 
   // Continuous Seamless Monolithic L-Shaped Honey-Oak Herringbone Parquet Floor
-  const xOppIn = xOpposite + sx * 0.08;
-  const xOutIn = xOuterWing - sx * 0.08;
-  const xJuncIn = xJunction + sx * 0.08;
-  const zBackIn = cfg.zBack + dir * 0.08;
-  const zTipIn = cfg.zWingTip - dir * 0.08;
-  const zRecIn = cfg.zRecessed - dir * 0.08;
   const lFloorShape = new THREE.Shape([
     new THREE.Vector2(xOppIn, -zBackIn),
     new THREE.Vector2(xOutIn, -zBackIn),
@@ -3645,7 +3853,71 @@ export function buildLShapedGlasshouseArchitecture(
     }
   }
 
-  // 2. DARK BRONZE ROUNDED PANELLED KNEE-WALLS, MULLIONS & ARCHED WINDOW BAYS
+  // 2. DARK BRONZE CONTINUOUS MITERED KNEE-WALLS, PILASTERS, MULLIONS & ARCHED WINDOW BAYS
+  const doorGapEdgeOpp = cfg.doorX + (xOpposite > cfg.doorX ? cfg.doorHalfW + 0.082 : -(cfg.doorHalfW + 0.082));
+  const doorGapEdgeJunc = cfg.doorX + (xJunction > cfg.doorX ? cfg.doorHalfW + 0.082 : -(cfg.doorHalfW + 0.082));
+  const wallPerimeterPts: [number, number][] = [
+    [doorGapEdgeOpp, cfg.zRecessed],
+    [xOpposite, cfg.zRecessed],
+    [xOpposite, cfg.zBack],
+    [xOuterWing, cfg.zBack],
+    [xOuterWing, cfg.zWingTip],
+    [xJunction, cfg.zWingTip],
+    [xJunction, cfg.zRecessed],
+    [doorGapEdgeJunc, cfg.zRecessed],
+  ];
+
+  // Continuous 45-degree mitered horizontal ribbons (zero corner overlaps or Z-fighting!)
+  addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.14, 0.14, 0.018, true, 0.5), COL_BRONZE_DARK, [0, cfg.floorY + 0.11, 0], [0, 0, 0], 0.005, {
+    metalness: 0.28,
+    roughness: 0.46,
+  });
+  const kneeWallH = Math.max(0.18, cfg.kneeH - 0.224);
+  addPart(
+    parent,
+    styler,
+    makeOrthoMitredStripGeo(wallPerimeterPts, 0.11, kneeWallH, 0.016, true, 0.5),
+    COL_BRONZE,
+    [0, cfg.floorY + 0.18 + kneeWallH * 0.5, 0],
+    [0, 0, 0],
+    0.006,
+    { metalness: 0.24, roughness: 0.52 },
+  );
+  addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.135, 0.085, 0.020, true, 0.5), COL_BRONZE_DARK, [0, cfg.floorY + cfg.kneeH, 0], [0, 0, 0], 0.005, {
+    metalness: 0.28,
+    roughness: 0.45,
+  });
+  addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.11, 0.14, 0.022, true, 0.5), COL_BRONZE, [0, cfg.floorY + cfg.eavesY, 0], [0, 0, 0], 0.006, {
+    metalness: 0.26,
+    roughness: 0.46,
+  });
+  addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.13, 0.06, 0.016, true, 0.5), COL_BRONZE_DARK, [0, cfg.floorY + cfg.eavesY + 0.102, 0], [0, 0, 0], 0.005, {
+    metalness: 0.28,
+    roughness: 0.45,
+  });
+
+  // Single welded corner pilasters seated cleanly between sill coping & eaves beam
+  const pilasterH = Math.max(0.4, cfg.eavesY - cfg.kneeH - 0.116);
+  const pilasterY = cfg.floorY + cfg.kneeH + 0.044 + pilasterH * 0.5;
+  const cornerPilasterGeo = makeRoundedBoxGeo(0.155, pilasterH, 0.155, 0.022, 2);
+  const cornerVerts: [number, number][] = [
+    [xOpposite, cfg.zRecessed],
+    [xOpposite, cfg.zBack],
+    [xOuterWing, cfg.zBack],
+    [xOuterWing, cfg.zWingTip],
+    [xJunction, cfg.zWingTip],
+    [xJunction, cfg.zRecessed],
+  ];
+  for (const [cx, cz] of cornerVerts) {
+    addPart(parent, styler, cornerPilasterGeo, COL_BRONZE, [cx, pilasterY, cz], [0, 0, 0], 0.005, {
+      metalness: 0.26,
+      roughness: 0.46,
+    });
+  }
+
+  const bayMullionGeo = makeRoundedBoxGeo(0.11, pilasterH, 0.14, 0.020, 2);
+  const dadoCenterLocalY = 0.18 + kneeWallH * 0.5;
+  const dadoH = Math.max(0.12, kneeWallH - 0.08);
   const buildWallSegmentWithBays = (x1: number, z1: number, x2: number, z2: number, bays: number) => {
     const dx = x2 - x1;
     const dz = z2 - z1;
@@ -3656,55 +3928,45 @@ export function buildLShapedGlasshouseArchitecture(
     wallGrp.rotation.y = -Math.atan2(dz, dx);
     parent.add(wallGrp);
 
-    // Rounded Plinth + Knee-Wall + Chamfered Sill Coping + Eaves Cornice
-    addPart(wallGrp, styler, makeRoundedBoxGeo(len + 0.04, 0.14, 0.28, 0.02, 2), COL_BRONZE_DARK, [0, 0.11, 0], [0, 0, 0], 0.005, {
-      metalness: 0.28,
-      roughness: 0.46,
-    });
-    addPart(wallGrp, styler, makeRoundedBoxGeo(len, cfg.kneeH - 0.18, 0.22, 0.018, 2), COL_BRONZE, [0, 0.18 + (cfg.kneeH - 0.18) * 0.5, 0], [0, 0, 0], 0.006, {
-      metalness: 0.24,
-      roughness: 0.52,
-    });
-    addPart(wallGrp, styler, makeRoundedBoxGeo(len + 0.06, 0.085, 0.27, 0.022, 2), COL_BRONZE_DARK, [0, cfg.kneeH, 0], [0, 0, 0], 0.005, {
-      metalness: 0.28,
-      roughness: 0.45,
-    });
-    addPart(wallGrp, styler, makeRoundedBoxGeo(len + 0.08, 0.14, 0.22, 0.025, 2), COL_BRONZE, [0, cfg.eavesY, 0], [0, 0, 0], 0.006, {
-      metalness: 0.26,
-      roughness: 0.46,
-    });
-    addPart(wallGrp, styler, makeRoundedBoxGeo(len + 0.12, 0.06, 0.26, 0.018, 2), COL_BRONZE_DARK, [0, cfg.eavesY + 0.09, 0], [0, 0, 0], 0.005, {
-      metalness: 0.28,
-      roughness: 0.45,
-    });
-
     const bayW = len / bays;
-    const glassH = cfg.eavesY - cfg.kneeH - 0.06;
-    const glassMidY = cfg.kneeH + glassH * 0.5 + 0.03;
+    const glassH = cfg.eavesY - cfg.kneeH - 0.12;
+    const glassMidY = cfg.kneeH + 0.045 + glassH * 0.5;
 
-    const pane = new THREE.Mesh(prepFrostGeo(new THREE.PlaneGeometry(len - 0.08, glassH)), archGlassMat);
+    const paneId = `cafe_wall_${x1.toFixed(1)}_${z1.toFixed(1)}_${x2.toFixed(1)}_${z2.toFixed(1)}`;
+    const pane = new THREE.Mesh(prepFrostGeo(new THREE.PlaneGeometry(Math.max(0.2, len - 0.22), glassH)), archGlassMat);
+    pane.name = `CafeConservatoryWallGlass_${paneId}`;
     pane.position.set(0, glassMidY, 0);
     pane.castShadow = false;
     pane.receiveShadow = false;
     pane.renderOrder = 2;
     pane.raycast = () => {};
+    tagCityWindowMesh(pane, {
+      id: paneId,
+      kind: 'conservatory',
+      seed: computeDeterministicWindowSeed(paneId),
+      baseColorHex: '#d6f4ff',
+      baseOpacity: 0.34,
+    });
     wallGrp.add(pane);
 
     for (let b = 0; b <= bays; b++) {
       const mx = -len * 0.5 + b * bayW;
-      addPart(wallGrp, styler, makeRoundedBoxGeo(0.11, cfg.eavesY - 0.04, 0.14, 0.022, 2), COL_BRONZE, [mx, cfg.eavesY * 0.5, 0], [0, 0, 0], 0.005, {
-        metalness: 0.26,
-        roughness: 0.46,
-      });
+      // Intermediate bay mullions only (corners use corner pilasters and doorway uses door jambs)
+      if (b > 0 && b < bays) {
+        addPart(wallGrp, styler, bayMullionGeo, COL_BRONZE, [mx, pilasterY - cfg.floorY, 0], [0, 0, 0], 0.005, {
+          metalness: 0.26,
+          roughness: 0.46,
+        });
+      }
       if (b < bays) {
         const bx = mx + bayW * 0.5;
-        // Beveled raised dado panel inset on knee-wall
-        addPart(wallGrp, styler, makeRoundedBoxGeo(Math.max(0.24, bayW - 0.24), cfg.kneeH - 0.34, 0.25, 0.02, 2), COL_PANEL_INSET, [bx, 0.42, 0], [0, 0, 0], 0.004, {
+        // Beveled raised dado panel inset cleanly within knee-wall height
+        addPart(wallGrp, styler, makeRoundedBoxGeo(Math.max(0.24, bayW - 0.24), dadoH, 0.25, 0.02, 2), COL_PANEL_INSET, [bx, dadoCenterLocalY, 0], [0, 0, 0], 0.004, {
           roughness: 0.55,
         });
-        // Smooth Victorian segmental transom arch
+        // Smooth Victorian segmental transom arch tucked inside pilasters
         const archPts: THREE.Vector3[] = [];
-        const halfSpan = Math.max(0.2, (bayW - 0.14) * 0.5);
+        const halfSpan = Math.max(0.18, (bayW - 0.20) * 0.5);
         for (let s = 0; s <= 12; s++) {
           const ang = Math.PI * (1 - s / 12);
           archPts.push(new THREE.Vector3(bx + Math.cos(ang) * halfSpan, cfg.eavesY - 0.46 + Math.sin(ang) * 0.38, 0));
@@ -3740,12 +4002,12 @@ export function buildLShapedGlasshouseArchitecture(
   parent.add(doorGrp);
 
   for (const sx of [-cfg.doorHalfW, cfg.doorHalfW]) {
-    addPart(doorGrp, styler, makeRoundedBoxGeo(0.16, cfg.eavesY + 0.08, 0.22, 0.025, 2), COL_BRONZE_DARK, [sx, (cfg.eavesY + 0.08) * 0.5, 0], [0, 0, 0], 0.006, {
+    addPart(doorGrp, styler, makeRoundedBoxGeo(0.16, cfg.eavesY - 0.082, 0.22, 0.025, 2), COL_BRONZE_DARK, [sx, 0.010 + (cfg.eavesY - 0.082) * 0.5, 0], [0, 0, 0], 0.006, {
       metalness: 0.28,
       roughness: 0.44,
     });
   }
-  addPart(doorGrp, styler, makeRoundedBoxGeo(cfg.doorHalfW * 2 + 0.22, 0.15, 0.22, 0.025, 2), COL_BRONZE_DARK, [0, cfg.eavesY, 0], [0, 0, 0], 0.006, {
+  addPart(doorGrp, styler, makeRoundedBoxGeo(cfg.doorHalfW * 2 + 0.166, 0.148, 0.228, 0.025, 2), COL_BRONZE_DARK, [0, cfg.eavesY, 0], [0, 0, 0], 0.006, {
     metalness: 0.28,
     roughness: 0.44,
   });
@@ -3773,11 +4035,19 @@ export function buildLShapedGlasshouseArchitecture(
     );
   }
   const fanGlass = new THREE.Mesh(prepFrostGeo(new THREE.CircleGeometry(cfg.doorHalfW - 0.04, 22, 0, Math.PI)), archGlassMat);
+  fanGlass.name = 'CafeConservatoryDoorFanGlass';
   fanGlass.position.set(0, cfg.eavesY, 0);
   fanGlass.castShadow = false;
   fanGlass.receiveShadow = false;
   fanGlass.renderOrder = 2;
   fanGlass.raycast = () => {};
+  tagCityWindowMesh(fanGlass, {
+    id: 'cafe_door_fanlight',
+    kind: 'conservatory',
+    seed: computeDeterministicWindowSeed('cafe_door_fanlight'),
+    baseColorHex: '#d6f4ff',
+    baseOpacity: 0.34,
+  });
   doorGrp.add(fanGlass);
 
   // Twin Open Glass Double Doors swung outward toward courtyard (`dir`)
@@ -3790,20 +4060,29 @@ export function buildLShapedGlasshouseArchitecture(
 
     const leafW = cfg.doorHalfW - 0.08;
     const leafCenterX = -side * leafW * 0.5;
-    addPart(leafPivot, styler, makeRoundedBoxGeo(leafW, 0.72, 0.07, 0.015, 2), COL_BRONZE, [leafCenterX, 0.36, 0], [0, 0, 0], 0.004);
+    addPart(leafPivot, styler, makeRoundedBoxGeo(Math.max(0.16, leafW - 0.15), 0.72, 0.058, 0.015, 2), COL_BRONZE, [leafCenterX, 0.36, 0], [0, 0, 0], 0.004);
     addPart(leafPivot, styler, makeRoundedBoxGeo(0.09, cfg.eavesY - 0.16, 0.07, 0.015, 2), COL_BRONZE_DARK, [leafCenterX - side * (leafW * 0.5 - 0.04), (cfg.eavesY - 0.16) * 0.5, 0], [0, 0, 0], 0.004);
     addPart(leafPivot, styler, makeRoundedBoxGeo(0.09, cfg.eavesY - 0.16, 0.07, 0.015, 2), COL_BRONZE_DARK, [leafCenterX + side * (leafW * 0.5 - 0.04), (cfg.eavesY - 0.16) * 0.5, 0], [0, 0, 0], 0.004);
-    addPart(leafPivot, styler, makeRoundedBoxGeo(leafW, 0.11, 0.07, 0.015, 2), COL_BRONZE_DARK, [leafCenterX, cfg.eavesY - 0.20, 0], [0, 0, 0], 0.004);
+    addPart(leafPivot, styler, makeRoundedBoxGeo(Math.max(0.16, leafW - 0.15), 0.11, 0.062, 0.015, 2), COL_BRONZE_DARK, [leafCenterX, cfg.eavesY - 0.20, 0], [0, 0, 0], 0.004);
     addPart(leafPivot, styler, new THREE.CylinderGeometry(0.018, 0.018, 0.34, 8), '#d4af37', [leafCenterX - side * (leafW * 0.36), 1.32, dir * 0.055], [0, 0, 0], 0.003, {
       metalness: 0.75,
       roughness: 0.24,
     });
+    const dPaneId = `cafe_door_leaf_${side > 0 ? 'r' : 'l'}`;
     const dPane = new THREE.Mesh(prepFrostGeo(new THREE.PlaneGeometry(leafW - 0.18, cfg.eavesY - 0.98)), archGlassMat);
+    dPane.name = `CafeConservatoryDoorPane_${dPaneId}`;
     dPane.position.set(leafCenterX, 1.92, 0);
     dPane.castShadow = false;
     dPane.receiveShadow = false;
     dPane.renderOrder = 2;
     dPane.raycast = () => {};
+    tagCityWindowMesh(dPane, {
+      id: dPaneId,
+      kind: 'conservatory',
+      seed: computeDeterministicWindowSeed(dPaneId),
+      baseColorHex: '#d6f4ff',
+      baseOpacity: 0.34,
+    });
     leafPivot.add(dPane);
   }
 
@@ -3866,10 +4145,18 @@ export function buildLShapedGlasshouseArchitecture(
   roofGlassGeo.setAttribute('position', new THREE.Float32BufferAttribute(roofGlassPos, 3));
   roofGlassGeo.computeVertexNormals();
   const roofGlassMesh = new THREE.Mesh(prepFrostGeo(roofGlassGeo), archGlassMat);
+  roofGlassMesh.name = 'CafeConservatoryVaultRoofGlass';
   roofGlassMesh.castShadow = false;
   roofGlassMesh.receiveShadow = false;
   roofGlassMesh.renderOrder = 2;
   roofGlassMesh.raycast = () => {};
+  tagCityWindowMesh(roofGlassMesh, {
+    id: 'cafe_vault_roof_glass',
+    kind: 'conservatory',
+    seed: computeDeterministicWindowSeed('cafe_vault_roof_glass'),
+    baseColorHex: '#d6f4ff',
+    baseOpacity: 0.34,
+  });
   parent.add(roofGlassMesh);
 
   // Curved Glazed Barrel-Vault Gable End Caps
@@ -3882,7 +4169,9 @@ export function buildLShapedGlasshouseArchitecture(
     }
     const gShape = new THREE.Shape(pts);
     gShape.closePath();
+    const gableId = isWingGable ? 'cafe_gable_wing' : 'cafe_gable_main';
     const gablePane = new THREE.Mesh(prepFrostGeo(new THREE.ShapeGeometry(gShape)), archGlassMat);
+    gablePane.name = `CafeConservatoryGableGlass_${gableId}`;
     gablePane.castShadow = false;
     gablePane.receiveShadow = false;
     gablePane.renderOrder = 2;
@@ -3893,6 +4182,13 @@ export function buildLShapedGlasshouseArchitecture(
       gablePane.rotation.y = Math.PI / 2;
     }
     gablePane.raycast = () => {};
+    tagCityWindowMesh(gablePane, {
+      id: gableId,
+      kind: 'conservatory',
+      seed: computeDeterministicWindowSeed(gableId),
+      baseColorHex: '#d6f4ff',
+      baseOpacity: 0.34,
+    });
     parent.add(gablePane);
 
     const arcPts: THREE.Vector3[] = [];
@@ -3906,12 +4202,13 @@ export function buildLShapedGlasshouseArchitecture(
       }
     }
     addPart(parent, styler, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(arcPts), 20, 0.062, 8, false), COL_BRONZE_DARK, [0, 0, 0], [0, 0, 0], 0.005);
+    const gableBaseY = cfg.floorY + cfg.eavesY + 0.132;
     for (const frac of [-0.5, 0, 0.5]) {
-      const h = vaultY(Math.abs(frac)) - (cfg.floorY + cfg.eavesY);
+      const h = Math.max(0.08, vaultY(Math.abs(frac)) - gableBaseY);
       if (isWingGable) {
-        addPart(parent, styler, makeRoundedBoxGeo(0.06, h, 0.08, 0.012, 2), COL_BRONZE, [RIDGE_X + frac * halfWingW, cfg.floorY + cfg.eavesY + h * 0.5, cfg.zWingTip], [0, 0, 0], 0.004);
+        addPart(parent, styler, makeRoundedBoxGeo(0.06, h, 0.08, 0.012, 2), COL_BRONZE, [RIDGE_X + frac * halfWingW, gableBaseY + h * 0.5, cfg.zWingTip], [0, 0, 0], 0.004);
       } else {
-        addPart(parent, styler, makeRoundedBoxGeo(0.08, h, 0.06, 0.012, 2), COL_BRONZE, [xOpposite, cfg.floorY + cfg.eavesY + h * 0.5, RIDGE_Z + frac * halfMainD], [0, 0, 0], 0.004);
+        addPart(parent, styler, makeRoundedBoxGeo(0.08, h, 0.06, 0.012, 2), COL_BRONZE, [xOpposite, gableBaseY + h * 0.5, RIDGE_Z + frac * halfMainD], [0, 0, 0], 0.004);
       }
     }
   };
@@ -3964,33 +4261,74 @@ export function buildLShapedGlasshouseArchitecture(
   addVaultArchRib(hipPts, 0.060);
   addVaultArchRib(valleyPts, 0.060);
 
-  // Horizontal Mid-Vault Purlins following the L-contour at u = 0.55
+  // Continuous Mitered Horizontal Mid-Vault Purlins following L-contour at u = 0.55
   const midU = 0.55;
   const midY = vaultY(midU);
-  const addPurlin = (x1: number, z1: number, x2: number, z2: number) => {
-    const len = Math.hypot(x2 - x1, z2 - z1);
-    if (len < 0.05) return;
-    addPart(
-      parent,
-      styler,
-      makeRoundedBoxGeo(len, 0.06, 0.06, 0.012, 2),
-      COL_BRONZE_LIGHT,
-      [(x1 + x2) * 0.5, midY, (z1 + z2) * 0.5],
-      [0, -Math.atan2(z2 - z1, x2 - x1), 0],
-      0.004,
-    );
-  };
-  addPurlin(inwardX(midU), RIDGE_Z + dir * midU * halfMainD, xOpposite, RIDGE_Z + dir * midU * halfMainD);
-  addPurlin(outerX(midU), RIDGE_Z - dir * midU * halfMainD, xOpposite, RIDGE_Z - dir * midU * halfMainD);
-  addPurlin(inwardX(midU), cfg.zWingTip, inwardX(midU), RIDGE_Z + dir * midU * halfMainD);
-  addPurlin(outerX(midU), cfg.zWingTip, outerX(midU), RIDGE_Z - dir * midU * halfMainD);
+  const purlinInnerZ = RIDGE_Z + dir * midU * halfMainD;
+  const purlinOuterZ = RIDGE_Z - dir * midU * halfMainD;
+  addPart(
+    parent,
+    styler,
+    makeOrthoMitredStripGeo(
+      [
+        [xOpposite, purlinInnerZ],
+        [inwardX(midU), purlinInnerZ],
+        [inwardX(midU), cfg.zWingTip],
+      ],
+      0.03,
+      0.06,
+      0.012,
+      true,
+      0.5,
+    ),
+    COL_BRONZE_LIGHT,
+    [0, midY, 0],
+    [0, 0, 0],
+    0.004,
+  );
+  addPart(
+    parent,
+    styler,
+    makeOrthoMitredStripGeo(
+      [
+        [xOpposite, purlinOuterZ],
+        [outerX(midU), purlinOuterZ],
+        [outerX(midU), cfg.zWingTip],
+      ],
+      0.03,
+      0.06,
+      0.012,
+      true,
+      0.5,
+    ),
+    COL_BRONZE_LIGHT,
+    [0, midY, 0],
+    [0, 0, 0],
+    0.004,
+  );
 
-  // Continuous Rounded Ridge Beams + Cresting Spikes + Lathe Spire Finials
-  const ewRidgeLen = Math.abs(xOpposite - RIDGE_X);
-  const nsRidgeLen = Math.abs(RIDGE_Z - cfg.zWingTip);
+  // Continuous Mitered L-Shaped Ridge Beam + Cresting Spikes + Lathe Spire Finials
   const ridgeBeamY = cfg.floorY + cfg.ridgeY + 0.04;
-  addPart(parent, styler, makeRoundedBoxGeo(ewRidgeLen, 0.14, 0.14, 0.025, 2), COL_BRONZE_DARK, [(RIDGE_X + xOpposite) * 0.5, ridgeBeamY, RIDGE_Z], [0, 0, 0], 0.005);
-  addPart(parent, styler, makeRoundedBoxGeo(0.14, 0.14, nsRidgeLen, 0.025, 2), COL_BRONZE_DARK, [RIDGE_X, ridgeBeamY, (cfg.zWingTip + RIDGE_Z) * 0.5], [0, 0, 0], 0.005);
+  addPart(
+    parent,
+    styler,
+    makeOrthoMitredStripGeo(
+      [
+        [xOpposite, RIDGE_Z],
+        [RIDGE_X, RIDGE_Z],
+        [RIDGE_X, cfg.zWingTip],
+      ],
+      0.07,
+      0.14,
+      0.022,
+      true,
+      0.45,
+    ),
+    COL_BRONZE_DARK,
+    [0, ridgeBeamY, 0],
+    [0, 0, 0],
+    0.005,
+  );
 
   const spikeGeo = makeTurnedLatheGeo([[0, 0], [0.055, 0], [0.022, 0.09], [0.042, 0.14], [0, 0.24]], 8);
   const xMinR = Math.min(RIDGE_X, xOpposite);
@@ -4105,7 +4443,7 @@ export function buildWallMountedWorkShiftBoard(
   addPart(
     g,
     styler,
-    new THREE.BoxGeometry(W - 0.08, 0.010, 0.026),
+    makeRoundedBoxGeo(W - 0.08, 0.010, 0.026, 0.003, 1),
     '#e0f2fe',
     [0, H - 0.008, D * 0.5 + 0.048],
     [0, 0, 0],
@@ -4114,20 +4452,25 @@ export function buildWallMountedWorkShiftBoard(
   );
 
   // 4. 3D Relief Accessories on Right Bay (x in [+0.42 .. +0.80]):
-  // 4A. Key Peg Rack with 2 Interlocking Rails & Brass Key Tags (5 top + 4 second row)
+  // 4A. Key Peg Rack with 2 Interlocking Rails & Brass Key Rings/Tags (5 top + 4 second row)
   for (const ry of [0.69, 0.58]) {
-    addPart(g, styler, new THREE.BoxGeometry(0.36, 0.014, 0.014), '#cbd5e1', [0.61, ry, D * 0.5 + 0.012], [0, 0, 0], 0.002, {
+    addPart(g, styler, makeRoundedBoxGeo(0.36, 0.014, 0.014, 0.004, 1), '#cbd5e1', [0.61, ry, D * 0.5 + 0.012], [0, 0, 0], 0.002, {
       metalness: 0.55,
       roughness: 0.28,
     });
   }
   const tagGeo = makeRoundedBoxGeo(0.034, 0.056, 0.010, 0.008, 2);
   const pegGeo = new THREE.CylinderGeometry(0.004, 0.004, 0.018, 8);
+  const keyRingGeo = new THREE.TorusGeometry(0.009, 0.0025, 6, 12);
   for (let i = 0; i < 5; i++) {
     const kx = 0.47 + i * 0.068;
     addPart(g, styler, pegGeo, '#94a3b8', [kx, 0.69, D * 0.5 + 0.018], [Math.PI / 2, 0, 0], 0);
     if (i !== 3) {
-      addPart(g, styler, tagGeo, '#caa252', [kx, 0.648, D * 0.5 + 0.018], [0, 0, 0], 0.002, {
+      addPart(g, styler, keyRingGeo, '#d4af37', [kx, 0.684, D * 0.5 + 0.021], [0, 0, 0], 0.001, {
+        metalness: 0.72,
+        roughness: 0.24,
+      });
+      addPart(g, styler, tagGeo, '#caa252', [kx, 0.654, D * 0.5 + 0.021], [0, 0, 0], 0.002, {
         metalness: 0.66,
         roughness: 0.28,
       });
@@ -4136,7 +4479,11 @@ export function buildWallMountedWorkShiftBoard(
   for (let i = 0; i < 4; i++) {
     const kx = 0.47 + i * 0.068;
     addPart(g, styler, pegGeo, '#94a3b8', [kx, 0.58, D * 0.5 + 0.018], [Math.PI / 2, 0, 0], 0);
-    addPart(g, styler, tagGeo, '#c49a47', [kx, 0.538, D * 0.5 + 0.018], [0, 0, 0], 0.002, {
+    addPart(g, styler, keyRingGeo, '#d4af37', [kx, 0.574, D * 0.5 + 0.021], [0, 0, 0], 0.001, {
+      metalness: 0.72,
+      roughness: 0.24,
+    });
+    addPart(g, styler, tagGeo, '#c49a47', [kx, 0.544, D * 0.5 + 0.021], [0, 0, 0], 0.002, {
       metalness: 0.66,
       roughness: 0.28,
     });
@@ -4155,7 +4502,7 @@ export function buildWallMountedWorkShiftBoard(
   }
 
   // 4C. Clear Acrylic Document Pocket (`x = 0.61, y = 0.185`) + White Shift Sheet Insert
-  addPart(g, styler, new THREE.BoxGeometry(0.28, 0.19, 0.008), '#f8fafc', [0.61, 0.19, D * 0.5 + 0.011], [0, 0, 0], 0.002, {
+  addPart(g, styler, makeRoundedBoxGeo(0.28, 0.19, 0.008, 0.002, 1), '#f8fafc', [0.61, 0.19, D * 0.5 + 0.011], [0, 0, 0], 0.002, {
     roughness: 0.65,
   });
   const acrylicPocket = new THREE.Mesh(
@@ -4200,11 +4547,9 @@ export function buildJoinedShiftBoardCounterWing(
   const g = new THREE.Group();
   const { oak, metal } = getSharedTextures(styler);
 
-  // Local origin: x = 0 sits at the exact right face of the bartender back credenza (`x = +2.60` in bar local space).
-  // Overlap `-0.03m` into the bartender credenza so there is 0.00m side seam, and span `W = 2.08m` to the right!
-  // Depth spans from front face `z = +0.49` (matching bartender back credenza front face `-0.95 + 0.36 = -0.59`) all the way back to `z = -0.52` (flush against conservatory rear wall, 0.00m rear gap!).
-  const W = 2.08;
-  const cx = W * 0.5 - 0.02;
+  // Local origin: x = 0 sits cleanly abutting the right face of the bartender back credenza (`x = +2.60` in bar local space).
+  const W = 2.06;
+  const cx = W * 0.5 + 0.005;
   const D = 1.02;
   const cz = -0.02;
 
@@ -4230,8 +4575,8 @@ export function buildJoinedShiftBoardCounterWing(
     });
   }
 
-  // 2. Continuous Bullnose White Carrara Marble Countertop (`y = 0.965m`, seamlessly joining bartender marble slab!)
-  addPart(g, styler, makeRoundedBoxGeo(W + 0.08, 0.09, D + 0.08, 0.024, 3), '#f5f2eb', [cx + 0.02, 0.965, cz], [0, 0, 0], 0.005, {
+  // 2. Continuous Bullnose White Carrara Marble Countertop (`y = 0.965m`, starting flush cleanly after bartender marble edge +0.06m)
+  addPart(g, styler, makeRoundedBoxGeo(W, 0.09, D + 0.08, 0.024, 3), '#f5f2eb', [cx + 0.065, 0.965, cz], [0, 0, 0], 0.005, {
     tex: marbleTex,
     roughness: 0.26,
     clearcoat: 0.62,

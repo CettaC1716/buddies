@@ -1,4 +1,11 @@
 import { clamp, CollisionMaterialTag, computeCollisionAudioParams } from './buddiesBlitzRules';
+import {
+  type AmbientSoundscapeInput,
+  computeAmbientSoundscapeMix,
+  computeAmbientWaveCycleEnvelope,
+  computeFootstepSynthSpec,
+  type FootstepSurfaceType,
+} from './buddiesAmbientAudioRules';
 
 /**
  * Authentic Buddies Blitz Audio & Physics Impact Sound Engine
@@ -436,6 +443,30 @@ class SoundEngine {
   private _sfxVolume = 1.0;
   private _musicVolume = 1.0;
 
+  // Ambient Nature Soundscape Engine (Ocean Swell, Lake Shimmer, Rain Hush, Stereo Birds & Gulls)
+  private ambientGraphReady = false;
+  private ambientBusGain: GainNode | null = null;
+  private ambientBrownSource: AudioBufferSourceNode | null = null;
+  private ambientPinkSource: AudioBufferSourceNode | null = null;
+  private oceanSwellFilter: BiquadFilterNode | null = null;
+  private oceanSwellGain: GainNode | null = null;
+  private oceanFoamBand: BiquadFilterNode | null = null;
+  private oceanFoamCutoff: BiquadFilterNode | null = null;
+  private oceanFoamGain: GainNode | null = null;
+  private lakeBandFilter: BiquadFilterNode | null = null;
+  private lakeGainNode: GainNode | null = null;
+  private rainLowPassFilter: BiquadFilterNode | null = null;
+  private rainGainNode: GainNode | null = null;
+  private lastAmbientParamUpdateMs = 0;
+  private nextSongbirdAtMs = 0;
+  private nextSeagullAtMs = 0;
+
+  private get effectiveAmbientBusGain(): number {
+    return this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0
+      ? 0
+      : 0.44 * this._sfxVolume * this._masterVolume;
+  }
+
   private get effectiveSfxGain(): number {
     return this._muted || this._sfxVolume <= 0
       ? 0
@@ -464,6 +495,7 @@ class SoundEngine {
         this.masterInputGain.gain.setValueAtTime(this.effectiveSfxGain, this.ctx.currentTime);
       }
     }
+    this.syncAmbientBusGain();
   }
 
   /** Music-only mute: silences the BGM buses and session tracks while
@@ -515,6 +547,7 @@ class SoundEngine {
         this.ctx.currentTime,
       );
     }
+    this.syncAmbientBusGain();
   }
 
   public setMusicVolume(vol: number): void {
@@ -549,6 +582,7 @@ class SoundEngine {
         0.05,
       );
     }
+    this.syncAmbientBusGain();
     this.syncSessionMusicPlayback();
   }
 
@@ -2038,6 +2072,7 @@ class SoundEngine {
     for (const key of Array.from(this.activeLoops.keys())) {
       this.stopLoop(key);
     }
+    this.silenceAmbientBeds();
   }
 
   private isThrottled(tag: string, throttleMs: number): boolean {
@@ -3467,6 +3502,507 @@ class SoundEngine {
       osc.start(t0);
       osc.stop(t0 + 0.36);
     });
+  }
+
+  // ============================================================================
+  // PROCEDURAL DIEGETIC AMBIENT SOUNDSCAPE & SURFACE-AWARE FOOTSTEPS
+  // ============================================================================
+
+  private syncAmbientBusGain(): void {
+    if (this.ctx && this.ambientBusGain) {
+      this.ambientBusGain.gain.setTargetAtTime(
+        this.effectiveAmbientBusGain,
+        this.ctx.currentTime,
+        0.06,
+      );
+    }
+  }
+
+  private silenceAmbientBeds(): void {
+    if (!this.ctx || !this.ambientGraphReady) return;
+    const now = this.ctx.currentTime;
+    this.oceanSwellGain?.gain.setTargetAtTime(0, now, 0.08);
+    this.oceanFoamGain?.gain.setTargetAtTime(0, now, 0.08);
+    this.lakeGainNode?.gain.setTargetAtTime(0, now, 0.08);
+    this.rainGainNode?.gain.setTargetAtTime(0, now, 0.08);
+  }
+
+  /**
+   * Generates a 4.0s seamless stereo looping noise buffer (Pink or Brown noise with gentle
+   * L/R decorrelation and cosine loop-wrap crossfade so continuous waves/rain have zero clicks).
+   */
+  private createSeamlessStereoNoiseBuffer(
+    ctx: AudioContext,
+    kind: 'pink' | 'brown',
+    durationSec = 4.0,
+  ): AudioBuffer {
+    const sr = ctx.sampleRate || 48000;
+    const length = Math.max(1024, Math.floor(sr * durationSec));
+    const fadeSamples = Math.floor(sr * 0.4);
+    const totalGen = length + fadeSamples;
+    const buf = ctx.createBuffer(2, length, sr);
+
+    const makeMonoTrack = (): Float32Array => {
+      const raw = new Float32Array(totalGen);
+      if (kind === 'pink') {
+        let b0 = 0;
+        let b1 = 0;
+        let b2 = 0;
+        let b3 = 0;
+        let b4 = 0;
+        let b5 = 0;
+        let b6 = 0;
+        for (let i = 0; i < totalGen; i++) {
+          const white = Math.random() * 2 - 1;
+          b0 = 0.99886 * b0 + white * 0.0555179;
+          b1 = 0.99332 * b1 + white * 0.0750759;
+          b2 = 0.96900 * b2 + white * 0.1538520;
+          b3 = 0.86650 * b3 + white * 0.3104856;
+          b4 = 0.55000 * b4 + white * 0.5329522;
+          b5 = -0.7616 * b5 - white * 0.0168980;
+          const pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+          b6 = white * 0.115926;
+          raw[i] = clamp(pink * 0.32, -1, 1);
+        }
+      } else {
+        let lastOut = 0;
+        for (let i = 0; i < totalGen; i++) {
+          const white = Math.random() * 2 - 1;
+          lastOut = (lastOut + 0.036 * white) / 1.036;
+          raw[i] = clamp(lastOut * 4.2, -1, 1);
+        }
+      }
+      const out = new Float32Array(length);
+      for (let i = 0; i < length; i++) {
+        out[i] = raw[i];
+      }
+      // Equal-power overlap crossfade across loop boundary [0 .. fadeSamples)
+      for (let i = 0; i < fadeSamples; i++) {
+        const t = i / Math.max(1, fadeSamples);
+        const a = Math.sin(t * Math.PI * 0.5);
+        const b = Math.cos(t * Math.PI * 0.5);
+        out[i] = raw[i] * a + raw[length + i] * b;
+      }
+      return out;
+    };
+
+    const chL = makeMonoTrack();
+    const chR = makeMonoTrack();
+    const dstL = buf.getChannelData(0);
+    const dstR = buf.getChannelData(1);
+    for (let i = 0; i < length; i++) {
+      // Subtle stereo correlation (0.68 common mid + 0.32 spatial diff)
+      dstL[i] = clamp(chL[i] * 0.72 + chR[i] * 0.28, -1, 1);
+      dstR[i] = clamp(chR[i] * 0.72 + chL[i] * 0.28, -1, 1);
+    }
+    return buf;
+  }
+
+  private ensureAmbientGraph(ctx: AudioContext): boolean {
+    if (this.ambientGraphReady) return true;
+    if (
+      typeof ctx.createBufferSource !== 'function' ||
+      typeof ctx.createBiquadFilter !== 'function' ||
+      typeof ctx.createGain !== 'function'
+    ) {
+      return false;
+    }
+
+    const now = ctx.currentTime;
+    const busGain = ctx.createGain();
+    busGain.gain.setValueAtTime(this.effectiveAmbientBusGain, now);
+    busGain.connect(ctx.destination);
+    this.ambientBusGain = busGain;
+
+    const brownBuf = this.createSeamlessStereoNoiseBuffer(ctx, 'brown', 4.0);
+    const pinkBuf = this.createSeamlessStereoNoiseBuffer(ctx, 'pink', 4.0);
+
+    const brownSrc = ctx.createBufferSource();
+    brownSrc.buffer = brownBuf;
+    brownSrc.loop = true;
+
+    const pinkSrc = ctx.createBufferSource();
+    pinkSrc.buffer = pinkBuf;
+    pinkSrc.loop = true;
+
+    // 1a. Ocean Surf Low Swell (warm 185-470Hz tide breathing)
+    const swellLpf = ctx.createBiquadFilter();
+    swellLpf.type = 'lowpass';
+    swellLpf.frequency.setValueAtTime(260, now);
+    swellLpf.Q.setValueAtTime(0.55, now);
+
+    const swellGain = ctx.createGain();
+    swellGain.gain.setValueAtTime(0, now);
+    brownSrc.connect(swellLpf);
+    swellLpf.connect(swellGain);
+    swellGain.connect(busGain);
+
+    // 1b. Ocean Shoreline Foam Wash (filtered sandy surf sizzle 680-2350Hz)
+    const foamBpf = ctx.createBiquadFilter();
+    foamBpf.type = 'bandpass';
+    foamBpf.frequency.setValueAtTime(1280, now);
+    foamBpf.Q.setValueAtTime(0.65, now);
+
+    const foamCutoff = ctx.createBiquadFilter();
+    foamCutoff.type = 'lowpass';
+    foamCutoff.frequency.setValueAtTime(2200, now);
+    foamCutoff.Q.setValueAtTime(0.55, now);
+
+    const foamGain = ctx.createGain();
+    foamGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(foamBpf);
+    foamBpf.connect(foamCutoff);
+    foamCutoff.connect(foamGain);
+    foamGain.connect(busGain);
+
+    // 2. NW Oasis Lake & Plaza Pond Tranquil Ripple (~21dB calmer than surf)
+    const lakeBpf = ctx.createBiquadFilter();
+    lakeBpf.type = 'bandpass';
+    lakeBpf.frequency.setValueAtTime(1950, now);
+    lakeBpf.Q.setValueAtTime(0.7, now);
+
+    const lakeGain = ctx.createGain();
+    lakeGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(lakeBpf);
+    lakeBpf.connect(lakeGain);
+    lakeGain.connect(busGain);
+
+    // 3. Soft Drizzle Rain Hush (filtered lowpass rain mist)
+    const rainLpf = ctx.createBiquadFilter();
+    rainLpf.type = 'lowpass';
+    rainLpf.frequency.setValueAtTime(1900, now);
+    rainLpf.Q.setValueAtTime(0.5, now);
+
+    const rainGain = ctx.createGain();
+    rainGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(rainLpf);
+    rainLpf.connect(rainGain);
+    rainGain.connect(busGain);
+
+    brownSrc.start(now);
+    pinkSrc.start(now);
+
+    this.ambientBrownSource = brownSrc;
+    this.ambientPinkSource = pinkSrc;
+    this.oceanSwellFilter = swellLpf;
+    this.oceanSwellGain = swellGain;
+    this.oceanFoamBand = foamBpf;
+    this.oceanFoamCutoff = foamCutoff;
+    this.oceanFoamGain = foamGain;
+    this.lakeBandFilter = lakeBpf;
+    this.lakeGainNode = lakeGain;
+    this.rainLowPassFilter = rainLpf;
+    this.rainGainNode = rainGain;
+    this.ambientGraphReady = true;
+    return true;
+  }
+
+  private triggerAmbientSongbird(ctx: AudioContext, gainScale: number): void {
+    if (!this.ambientBusGain || gainScale <= 0.02) return;
+    const now = ctx.currentTime;
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.setValueAtTime((Math.random() * 2 - 1) * 0.78, now);
+      panner.connect(this.ambientBusGain);
+    }
+    const dest: AudioNode = panner || this.ambientBusGain;
+
+    const noteCount = 2 + Math.floor(Math.random() * 3);
+    const basePitchHz = 2400 + Math.random() * 1950;
+    let cursor = now + 0.02;
+
+    for (let i = 0; i < noteCount; i++) {
+      const dur = 0.048 + Math.random() * 0.062;
+      const gap = 0.055 + Math.random() * 0.085;
+      const fStart = basePitchHz * (0.9 + Math.random() * 0.24);
+      const fEnd = fStart * (Math.random() < 0.65 ? 1.18 + Math.random() * 0.18 : 0.84);
+      const peakGain = clamp((0.028 + Math.random() * 0.018) * gainScale, 0.002, 0.065);
+
+      const osc = ctx.createOscillator();
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(fStart, cursor);
+      osc.frequency.exponentialRampToValueAtTime(clamp(fEnd, 1200, 6800), cursor + dur);
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, cursor);
+      g.gain.linearRampToValueAtTime(peakGain, cursor + dur * 0.28);
+      g.gain.exponentialRampToValueAtTime(0.00015, cursor + dur);
+
+      osc.connect(g);
+      g.connect(dest);
+      osc.onended = () => {
+        g.disconnect();
+        if (panner && i === noteCount - 1) panner.disconnect();
+      };
+      osc.start(cursor);
+      osc.stop(cursor + dur + 0.015);
+      cursor += dur + gap;
+    }
+  }
+
+  private triggerAmbientSeagull(ctx: AudioContext, gainScale: number): void {
+    if (!this.ambientBusGain || gainScale <= 0.02) return;
+    const now = ctx.currentTime;
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.setValueAtTime(0.28 + Math.random() * 0.56, now);
+      panner.connect(this.ambientBusGain);
+    }
+    const dest: AudioNode = panner || this.ambientBusGain;
+
+    const cries = Math.random() < 0.55 ? 2 : 3;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1820, now);
+    filter.Q.setValueAtTime(1.45, now);
+    filter.connect(dest);
+
+    let cursor = now + 0.02;
+    for (let i = 0; i < cries; i++) {
+      const dur = 0.2 + Math.random() * 0.09;
+      const gap = 0.14 + Math.random() * 0.11;
+      const peakHz = 2050 + Math.random() * 340 - i * 95;
+      const endHz = 1360 + Math.random() * 140 - i * 45;
+      const peakGain = clamp((0.036 + Math.random() * 0.016) * gainScale, 0.002, 0.075);
+
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(peakHz * 0.86, cursor);
+      osc.frequency.exponentialRampToValueAtTime(peakHz, cursor + dur * 0.24);
+      osc.frequency.exponentialRampToValueAtTime(endHz, cursor + dur);
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, cursor);
+      g.gain.linearRampToValueAtTime(peakGain, cursor + dur * 0.22);
+      g.gain.exponentialRampToValueAtTime(0.0002, cursor + dur);
+
+      osc.connect(g);
+      g.connect(filter);
+      osc.onended = () => {
+        g.disconnect();
+        if (i === cries - 1) {
+          filter.disconnect();
+          panner?.disconnect();
+        }
+      };
+      osc.start(cursor);
+      osc.stop(cursor + dur + 0.02);
+      cursor += dur + gap;
+    }
+  }
+
+  /**
+   * Steps continuous ocean waves, lake shimmer, gentle drizzle hush, and natural stereo birds
+   * cleanly without per-frame allocations (parameter automation throttled to ~15Hz).
+   */
+  public updateAmbientSoundscape(input: AmbientSoundscapeInput, timeSec: number): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) {
+      this.silenceAmbientBeds();
+      return;
+    }
+    if (!this.userInteracted && !this.ctx) {
+      return;
+    }
+    const ctx = this.ensureCtx();
+    if (!ctx || ctx.state !== 'running') {
+      return;
+    }
+
+    const nowMs = performance.now();
+    if (nowMs - this.lastAmbientParamUpdateMs < 62) {
+      return;
+    }
+    this.lastAmbientParamUpdateMs = nowMs;
+
+    if (!this.ensureAmbientGraph(ctx)) {
+      return;
+    }
+
+    const mix = computeAmbientSoundscapeMix(input);
+    const wave = computeAmbientWaveCycleEnvelope(timeSec, mix.oceanFoamCutoffHz);
+    const now = ctx.currentTime;
+    const ramp = 0.09;
+
+    const surfBase = mix.oceanSurfGain * mix.uiDuckMultiplier;
+    this.oceanSwellFilter?.frequency.setTargetAtTime(wave.swellCutoffHz, now, ramp);
+    this.oceanSwellGain?.gain.setTargetAtTime(surfBase * 0.26 * wave.swellGain01, now, ramp);
+
+    this.oceanFoamCutoff?.frequency.setTargetAtTime(wave.foamCutoffHz, now, ramp);
+    this.oceanFoamGain?.gain.setTargetAtTime(surfBase * 0.14 * wave.foamGain01, now, ramp);
+
+    this.lakeGainNode?.gain.setTargetAtTime(
+      mix.lakeWaterGain * mix.uiDuckMultiplier * 0.048,
+      now,
+      ramp,
+    );
+
+    this.rainLowPassFilter?.frequency.setTargetAtTime(mix.rainLowPassHz, now, ramp);
+    this.rainGainNode?.gain.setTargetAtTime(
+      mix.rainBedGain * mix.uiDuckMultiplier * 0.085,
+      now,
+      ramp,
+    );
+
+    // Schedule organic stereo forest songbirds
+    if (mix.songbirdRatePerMin > 0.2 && mix.songbirdGain > 0.02) {
+      const avgIntervalMs = 60000 / mix.songbirdRatePerMin;
+      if (this.nextSongbirdAtMs <= 0) {
+        this.nextSongbirdAtMs = nowMs + avgIntervalMs * (0.25 + Math.random() * 0.6);
+      } else if (nowMs >= this.nextSongbirdAtMs) {
+        this.triggerAmbientSongbird(ctx, mix.songbirdGain * mix.uiDuckMultiplier);
+        this.nextSongbirdAtMs = nowMs + avgIntervalMs * (0.55 + Math.random() * 0.9);
+      }
+    } else {
+      this.nextSongbirdAtMs = 0;
+    }
+
+    // Schedule sparse coastal seagulls
+    if (mix.seagullRatePerMin > 0.15 && mix.seagullGain > 0.02) {
+      const avgIntervalMs = 60000 / mix.seagullRatePerMin;
+      if (this.nextSeagullAtMs <= 0) {
+        this.nextSeagullAtMs = nowMs + avgIntervalMs * (0.3 + Math.random() * 0.65);
+      } else if (nowMs >= this.nextSeagullAtMs) {
+        this.triggerAmbientSeagull(ctx, mix.seagullGain * mix.uiDuckMultiplier);
+        this.nextSeagullAtMs = nowMs + avgIntervalMs * (0.6 + Math.random() * 0.8);
+      }
+    } else {
+      this.nextSeagullAtMs = 0;
+    }
+  }
+
+  /**
+   * Synthesizes a light, surface-matched footstep foley transient synchronized to stride phase:
+   * - `'sand'`: soft damp/granular crunch (`1.1-2.4kHz`, no sub thud)
+   * - `'grass'`: crisp airy meadow rustle (`2.5-3.9kHz`)
+   * - `'wood'`: warm hollow timber plank tap (`185->94Hz` body + grain)
+   * - `'stone_road'`: tight rubber sneaker tap (`158->74Hz` + crisp click)
+   * - `'water'`: soft shallow wade ripple
+   */
+  public playSurfaceFootstep(
+    surface: FootstepSurfaceType,
+    speedNorm = 0.65,
+    stepParity = 0,
+  ): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    if (this.isThrottled('ambient-surface-footstep', 145)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || ctx.state !== 'running') return;
+    if (!this.ensureAmbientGraph(ctx) || !this.ambientBusGain) return;
+
+    const spec = computeFootstepSynthSpec(surface, speedNorm, stepParity);
+    const now = ctx.currentTime;
+    const pitchJitter = 0.93 + Math.random() * 0.14;
+    const levelJitter = 0.88 + Math.random() * 0.24;
+
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.setValueAtTime(spec.panOffset, now);
+      panner.connect(this.ambientBusGain);
+    }
+    const dest: AudioNode = panner || this.ambientBusGain;
+
+    // 1. Primary surface texture grain / brush from Pink Noise
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = this.ensurePinkNoiseBuffer(ctx);
+    noiseSrc.playbackRate.setValueAtTime(pitchJitter, now);
+
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = spec.noiseFilterType;
+    bpf.frequency.setValueAtTime(spec.noiseFreqHz * pitchJitter, now);
+    bpf.Q.setValueAtTime(spec.noiseQ, now);
+
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.0001, now);
+    nGain.gain.linearRampToValueAtTime(spec.noiseGain * levelJitter, now + 0.008);
+    nGain.gain.exponentialRampToValueAtTime(0.0002, now + spec.noiseDurationSec);
+
+    let pendingDisconnects = spec.bodyGain > 0.002 ? 2 : 1;
+    const releasePanner = () => {
+      pendingDisconnects -= 1;
+      if (pendingDisconnects <= 0) {
+        panner?.disconnect();
+      }
+    };
+
+    noiseSrc.connect(bpf);
+    bpf.connect(nGain);
+    nGain.connect(dest);
+    noiseSrc.onended = () => {
+      bpf.disconnect();
+      nGain.disconnect();
+      releasePanner();
+    };
+    noiseSrc.start(now, Math.random() * 0.65, spec.noiseDurationSec + 0.02);
+
+    // 2. Subtle sole contact body (prominent on boardwalk timber & stone, near-silent on sand/grass)
+    if (spec.bodyGain > 0.002) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(spec.bodyFreqStartHz * pitchJitter, now);
+      osc.frequency.exponentialRampToValueAtTime(
+        Math.max(40, spec.bodyFreqEndHz * pitchJitter),
+        now + spec.bodyDurationSec,
+      );
+
+      const bGain = ctx.createGain();
+      bGain.gain.setValueAtTime(0.0001, now);
+      bGain.gain.linearRampToValueAtTime(spec.bodyGain * levelJitter, now + 0.004);
+      bGain.gain.exponentialRampToValueAtTime(0.0002, now + spec.bodyDurationSec);
+
+      osc.connect(bGain);
+      bGain.connect(dest);
+      osc.onended = () => {
+        bGain.disconnect();
+        releasePanner();
+      };
+      osc.start(now);
+      osc.stop(now + spec.bodyDurationSec + 0.015);
+    }
+  }
+
+  public disposeAmbientSoundscape(): void {
+    if (this.ambientBrownSource) {
+      try {
+        this.ambientBrownSource.stop();
+        this.ambientBrownSource.disconnect();
+      } catch {
+        // ignore if already stopped
+      }
+      this.ambientBrownSource = null;
+    }
+    if (this.ambientPinkSource) {
+      try {
+        this.ambientPinkSource.stop();
+        this.ambientPinkSource.disconnect();
+      } catch {
+        // ignore if already stopped
+      }
+      this.ambientPinkSource = null;
+    }
+    this.oceanSwellFilter?.disconnect();
+    this.oceanSwellGain?.disconnect();
+    this.oceanFoamBand?.disconnect();
+    this.oceanFoamCutoff?.disconnect();
+    this.oceanFoamGain?.disconnect();
+    this.lakeBandFilter?.disconnect();
+    this.lakeGainNode?.disconnect();
+    this.rainLowPassFilter?.disconnect();
+    this.rainGainNode?.disconnect();
+    this.ambientBusGain?.disconnect();
+
+    this.oceanSwellFilter = null;
+    this.oceanSwellGain = null;
+    this.oceanFoamBand = null;
+    this.oceanFoamCutoff = null;
+    this.oceanFoamGain = null;
+    this.lakeBandFilter = null;
+    this.lakeGainNode = null;
+    this.rainLowPassFilter = null;
+    this.rainGainNode = null;
+    this.ambientBusGain = null;
+    this.ambientGraphReady = false;
+    this.nextSongbirdAtMs = 0;
+    this.nextSeagullAtMs = 0;
   }
 }
 

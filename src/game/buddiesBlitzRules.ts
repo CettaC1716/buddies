@@ -7,6 +7,7 @@ import {
   isPointOnZebraCrosswalk,
   isPointOnAsphaltRoadOrZebraCross,
 } from './buddiesPlanetCurvature';
+import type { CafeMenuItemId } from './buddiesCafeRules';
 
 export interface Vec3 {
   x: number;
@@ -271,6 +272,83 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPresetConfig> =
     viewportFilterOpacity: 0.08,
   },
 };
+
+export type WeatherConditionKey = 'cerah' | 'berangin' | 'kabut' | 'hujan';
+export type RainIntensityTier = 'ringan' | 'deras';
+
+export interface WeatherPresetConfig {
+  key: WeatherConditionKey;
+  label: string;
+  shortLabel: string;
+  windStrength: number;
+  fogDensity: number;
+  rainRate01: number;
+  overcast01: number;
+  petalDrift01: number;
+}
+
+export const WEATHER_PRESETS: Record<WeatherConditionKey, WeatherPresetConfig> = {
+  cerah: {
+    key: 'cerah',
+    label: 'Cerah',
+    shortLabel: 'Cerah',
+    windStrength: 0.32,
+    fogDensity: 0.00045,
+    rainRate01: 0,
+    overcast01: 0,
+    petalDrift01: 0,
+  },
+  berangin: {
+    key: 'berangin',
+    label: 'Berangin',
+    shortLabel: 'Berangin',
+    windStrength: 1.45,
+    fogDensity: 0.00055,
+    rainRate01: 0,
+    overcast01: 0.14,
+    petalDrift01: 1.0,
+  },
+  kabut: {
+    key: 'kabut',
+    label: 'Kabut',
+    shortLabel: 'Kabut',
+    windStrength: 0.18,
+    fogDensity: 0.0125,
+    rainRate01: 0,
+    overcast01: 0.62,
+    petalDrift01: 0.04,
+  },
+  hujan: {
+    key: 'hujan',
+    label: 'Hujan',
+    shortLabel: 'Hujan',
+    windStrength: 0.92,
+    fogDensity: 0.0038,
+    rainRate01: 0.85,
+    overcast01: 0.78,
+    petalDrift01: 0.28,
+  },
+};
+
+export const TIME_PHASE_LABELS: Record<LightingPresetKey, string> = {
+  dawn: 'Fajar',
+  day: 'Siang',
+  dusk: 'Senja',
+  night: 'Malam',
+};
+
+export const TIME_PHASE_DEFAULT_HOURS: Record<LightingPresetKey, number> = {
+  dawn: 5.75,
+  day: 12.75,
+  dusk: 18.0,
+  night: 23.0,
+};
+
+export const CITY_LIGHTS_SCALE_BOUNDS = {
+  min: 0.5,
+  max: 2.5,
+  default: 1.0,
+} as const;
 
 export function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
@@ -3720,6 +3798,10 @@ export interface AStarNavGrid {
   cols: number;
   rows: number;
   blocked: Uint8Array;
+  /** Optional per-cell traversal multiplier (>0, default 1.0) for pedestrian lane/crosswalk preference. */
+  cellCosts?: Float32Array;
+  /** Minimum cell cost across cellCosts so weighted A* heuristic stays admissible. */
+  minCellCost?: number;
 }
 
 export function createAStarNavGrid(
@@ -3881,6 +3963,145 @@ const DIRS_8WAY: ReadonlyArray< readonly [number, number, number] > = [
 ];
 
 /**
+ * Shared classifier for static bench / chair / lounger colliders that sitting NPCs may exempt
+ * around their target seat waypoint.
+ */
+export function isBenchOrSeatStructureId(id: string): boolean {
+  return id.includes('bench') || id.includes('chair') || id.includes('lounger');
+}
+
+function checkNavSegmentClear(
+  grid: AStarNavGrid,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  maxAllowedSegmentCost: number,
+  exemptEndRadiusM = 0,
+): boolean {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const segLen = Math.hypot(dx, dz);
+  if (segLen <= 1e-4) return true;
+  const invLen = 1.0 / segLen;
+  const nx = -dz * invLen;
+  const nz = dx * invLen;
+  const stepSize = Math.max(0.25, grid.cellSize * 0.35);
+  const steps = Math.max(2, Math.ceil(segLen / stepSize));
+  const latClear = 0.38;
+  const exemptSq = exemptEndRadiusM > 0 ? exemptEndRadiusM * exemptEndRadiusM : 0;
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const px = ax + dx * t;
+    const pz = az + dz * t;
+    if (exemptSq > 0) {
+      const ex = px - bx;
+      const ez = pz - bz;
+      if (ex * ex + ez * ez <= exemptSq) continue;
+    }
+    const cCenter = worldToNavGridCell(grid, px, pz);
+    const idxCenter = cCenter.gz * grid.cols + cCenter.gx;
+    if (grid.blocked[idxCenter] !== 0) return false;
+    if (grid.cellCosts && grid.cellCosts[idxCenter] > maxAllowedSegmentCost) return false;
+    const cLeft = worldToNavGridCell(grid, px + nx * latClear, pz + nz * latClear);
+    const idxLeft = cLeft.gz * grid.cols + cLeft.gx;
+    if (grid.blocked[idxLeft] !== 0) return false;
+    if (grid.cellCosts && grid.cellCosts[idxLeft] > maxAllowedSegmentCost) return false;
+    const cRight = worldToNavGridCell(grid, px - nx * latClear, pz - nz * latClear);
+    const idxRight = cRight.gz * grid.cols + cRight.gx;
+    if (grid.blocked[idxRight] !== 0) return false;
+    if (grid.cellCosts && grid.cellCosts[idxRight] > maxAllowedSegmentCost) return false;
+  }
+  return true;
+}
+
+function canWalkNavSegmentWithoutDetourViolation(
+  grid: AStarNavGrid,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  maxAllowedSegmentCost: number,
+): boolean {
+  return checkNavSegmentClear(grid, ax, az, bx, bz, maxAllowedSegmentCost, 0);
+}
+
+/**
+ * Checks whether a direct pedestrian steering segment on `grid` is clear of blocked cells and
+ * high-cost non-crosswalk asphalt roads, optionally exempting the destination seat cell.
+ */
+export function isDirectNavGridSegmentClear(
+  grid: AStarNavGrid,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  exemptEndSitGoal = false,
+): boolean {
+  let maxAllowedCost = Infinity;
+  if (grid.cellCosts) {
+    const cStart = worldToNavGridCell(grid, ax, az);
+    const cEnd = worldToNavGridCell(grid, bx, bz);
+    const startCost = grid.cellCosts[cStart.gz * grid.cols + cStart.gx];
+    const endCost = grid.cellCosts[cEnd.gz * grid.cols + cEnd.gx];
+    maxAllowedCost = Math.max(12.0, Math.max(startCost, endCost) * 1.15);
+  }
+  return checkNavSegmentClear(grid, ax, az, bx, bz, maxAllowedCost, exemptEndSitGoal ? 2.25 : 0);
+}
+
+/**
+ * Collapses grid-aligned staircase zigzags into clean straight segments while respecting
+ * both solid obstacles and pedestrian traffic-lane cost boundaries (never cutting corners onto asphalt roads).
+ */
+export function smoothNavWaypoints(
+  grid: AStarNavGrid,
+  startX: number,
+  startZ: number,
+  rawWaypoints: ReadonlyArray<{ x: number; z: number }>,
+): Array<{ x: number; z: number }> {
+  if (rawWaypoints.length <= 2) {
+    return rawWaypoints.map((w) => ({ x: w.x, z: w.z }));
+  }
+  const pts: Array<{ x: number; z: number }> = [{ x: startX, z: startZ }, ...rawWaypoints];
+  const nodeCosts = grid.cellCosts
+    ? pts.map((p) => {
+        const c = worldToNavGridCell(grid, p.x, p.z);
+        return grid.cellCosts![c.gz * grid.cols + c.gx];
+      })
+    : null;
+  const smoothed: Array<{ x: number; z: number }> = [];
+  let anchor = 0;
+  while (anchor < pts.length - 1) {
+    let farthest = anchor + 1;
+    let spanMaxCost = nodeCosts ? nodeCosts[anchor] : 1.0;
+    for (let cand = anchor + 2; cand < pts.length; cand++) {
+      if (nodeCosts) {
+        spanMaxCost = Math.max(spanMaxCost, nodeCosts[cand - 1]);
+      }
+      const endCost = nodeCosts ? Math.max(spanMaxCost, nodeCosts[cand]) : 1.0;
+      // Preserve crosswalk & curb separation: never let a shortcut cross a cell more expensive than the spanned route
+      const maxAllowed = Math.min(7.5, endCost * 1.15 + 0.12);
+      const effectiveAllowed = endCost >= 7.5 ? endCost * 1.08 : maxAllowed;
+      if (
+        canWalkNavSegmentWithoutDetourViolation(
+          grid,
+          pts[anchor].x,
+          pts[anchor].z,
+          pts[cand].x,
+          pts[cand].z,
+          effectiveAllowed,
+        )
+      ) {
+        farthest = cand;
+      }
+    }
+    smoothed.push({ x: pts[farthest].x, z: pts[farthest].z });
+    anchor = farthest;
+  }
+  return smoothed;
+}
+
+/**
  * Runs A* pathfinding on `grid`:
  * - Uses a binary min-heap (`AStarBinaryHeap`) for the open set
  * - Tracks `g` as the cost so far
@@ -3897,10 +4118,13 @@ export function findPathAStar(
   options?: {
     allowDiagonal?: boolean;
     maxIterations?: number;
+    smoothPath?: boolean;
   },
 ): AStarPathResult {
   const allowDiagonal = options?.allowDiagonal ?? true;
   const maxIterations = options?.maxIterations ?? 8192;
+  const hasCosts = Boolean(grid.cellCosts);
+  const hScale = hasCosts ? Math.max(0.05, grid.minCellCost ?? 1.0) : 1.0;
 
   const rawStart = worldToNavGridCell(grid, startX, startZ);
   const rawGoal = worldToNavGridCell(grid, goalX, goalZ);
@@ -3935,7 +4159,7 @@ export function findPathAStar(
   const dirs = allowDiagonal ? DIRS_8WAY : DIRS_4WAY;
 
   const openHeap = new AStarBinaryHeap();
-  const hStart = computeH(startCell.gx, startCell.gz, goalCell.gx, goalCell.gz);
+  const hStart = computeH(startCell.gx, startCell.gz, goalCell.gx, goalCell.gz) * hScale;
   gScore[startIdx] = 0;
   openHeap.push({
     idx: startIdx,
@@ -3989,11 +4213,14 @@ export function findPathAStar(
         }
       }
 
-      const tentativeG = currG + stepCost;
+      const costScale = grid.cellCosts
+        ? 0.5 * (grid.cellCosts[currIdx] + grid.cellCosts[nIdx])
+        : 1.0;
+      const tentativeG = currG + stepCost * costScale;
       if (tentativeG + 1e-6 < gScore[nIdx]) {
         gScore[nIdx] = tentativeG;
         parent[nIdx] = currIdx;
-        const h = computeH(nx, nz, goalCell.gx, goalCell.gz);
+        const h = computeH(nx, nz, goalCell.gx, goalCell.gz) * hScale;
         openHeap.push({
           idx: nIdx,
           g: tentativeG,
@@ -4018,7 +4245,7 @@ export function findPathAStar(
   revIndices.reverse();
 
   const cellPath: Array<{ gx: number; gz: number }> = [];
-  const waypoints: Array<{ x: number; z: number }> = [];
+  let waypoints: Array<{ x: number; z: number }> = [];
   for (let i = 0; i < revIndices.length; i++) {
     const idx = revIndices[i];
     const gx = idx % cols;
@@ -4031,6 +4258,10 @@ export function findPathAStar(
 
   if (reachedGoal && isNavGridCellWalkable(grid, rawGoal.gx, rawGoal.gz) && waypoints.length > 0) {
     waypoints[waypoints.length - 1] = { x: goalX, z: goalZ };
+  }
+
+  if (options?.smoothPath && waypoints.length > 2) {
+    waypoints = smoothNavWaypoints(grid, startX, startZ, waypoints);
   }
 
   return {
@@ -5386,21 +5617,21 @@ export interface CityTramConsistState {
  */
 export const CITY_TRAM_SPEC = {
   carCount: 2,
-  carLength: 9.00,
-  carWidth: 3.58,
-  carHeight: 4.42,
-  carBogieSpan: 5.625,
+  carLength: 10.50,
+  carWidth: 4.10,
+  carHeight: 5.25,
+  carBogieSpan: 6.56,
   jointLength: 1.50,
-  carCenterSpacing: 10.50, // carLength (9.00) + jointLength (1.50)
+  carCenterSpacing: 12.00, // carLength (10.50) + jointLength (1.50)
   cruiseSpeed: 8.2,
   railGauge: 1.80,
 } as const;
 
 const CITY_TRAM_CORNER_WAYPOINTS: readonly CityTramCornerWaypoint[] = [
-  { x: -70.0, z: -52.0, filletRadius: 8.0 }, // NW Highway-Collector Curve (exact R=8.0m road arc)
-  { x: 70.0, z: -52.0, filletRadius: 8.0 },  // NE Collector-East Highway Curve (exact R=8.0m road arc)
-  { x: 70.0, z: 52.0, filletRadius: 8.0 },   // SE East Highway-Collector Curve (exact R=8.0m road arc)
-  { x: -70.0, z: 52.0, filletRadius: 8.0 },  // SW Collector-Highway Curve (exact R=8.0m road arc)
+  { x: -65.0, z: -47.0, filletRadius: 3.0 }, // NW Inner Halte-Side Tram Curve (adjacent to |x|=62.2, |z|=44.2 curb)
+  { x: 65.0, z: -47.0, filletRadius: 3.0 },  // NE Inner Halte-Side Tram Curve
+  { x: 65.0, z: 47.0, filletRadius: 3.0 },   // SE Inner Halte-Side Tram Curve
+  { x: -65.0, z: 47.0, filletRadius: 3.0 },  // SW Inner Halte-Side Tram Curve
 ];
 
 interface CompiledTramSegment {
@@ -6157,6 +6388,512 @@ export function computeCityTramDisembarkPosition(
     z: carPose.z + rightZ * (sideSign * lateralOffset),
     yaw: carPose.yaw,
   };
+}
+
+export type PlazaTrafficSignalPhase = 'tram_green' | 'tram_amber' | 'tram_red';
+
+export interface PlazaTrafficSignalState {
+  phase: PlazaTrafficSignalPhase;
+  phaseElapsedSec: number;
+  redLightStopCount: number;
+}
+
+export const PLAZA_TRAFFIC_SIGNAL_SPEC = {
+  crosswalkMinX: -73.9,
+  crosswalkMaxX: -62.2,
+  northCrosswalkZ: -8.6,
+  southCrosswalkZ: 8.6,
+  crosswalkHalfZ: 2.2,
+  northStopBarZ: -5.4,
+  southStopBarZ: 11.8,
+  eastCrosswalkMinX: 62.2,
+  eastCrosswalkMaxX: 73.9,
+  eastCrosswalkZ: 0.0,
+  eastStopBarZ: -3.2,
+  minGreenSec: 4.5,
+  autoCycleGreenSec: 16.0,
+  amberDurationSec: 1.6,
+  redDurationSec: 6.2,
+  maxRedHoldSec: 10.5,
+} as const;
+
+export interface CityTrafficSignalPoleSpec {
+  id: string;
+  zone: 'plaza_north' | 'plaza_south' | 'east_harbor';
+  x: number;
+  y: number;
+  z: number;
+  /** Which direction (+1 = +X, -1 = -X) the curved cantilever arm reaches over the road. */
+  armDirX: -1 | 1;
+  armReachM: number;
+  boomHeightY: number;
+}
+
+/**
+ * Exact positions of the 6 Curved Steel Cantilever Traffic Signal Poles
+ * covering Central Plaza's Dual Crosswalks (z = ±8.60) and East Harbor Crosswalk (z = 0.0),
+ * with higher 6.45m booms over the Halte-adjacent tram corridor to clear the 5.59m pantograph.
+ */
+export const CITY_TRAFFIC_SIGNAL_POLE_SPECS: readonly CityTrafficSignalPoleSpec[] = [
+  { id: 'plaza_north_inner', zone: 'plaza_north', x: -61.82, y: 0.085, z: -10.15, armDirX: -1, armReachM: 3.18, boomHeightY: 7.25 },
+  { id: 'plaza_north_outer', zone: 'plaza_north', x: -74.22, y: 0.085, z: -11.05, armDirX: 1, armReachM: 3.15, boomHeightY: 5.65 },
+  { id: 'plaza_south_inner', zone: 'plaza_south', x: -61.82, y: 0.085, z: 10.15, armDirX: -1, armReachM: 3.18, boomHeightY: 7.25 },
+  { id: 'plaza_south_outer', zone: 'plaza_south', x: -74.22, y: 0.085, z: 11.05, armDirX: 1, armReachM: 3.15, boomHeightY: 5.65 },
+  { id: 'east_harbor_inner', zone: 'east_harbor', x: 61.82, y: 0.085, z: 2.85, armDirX: 1, armReachM: 3.18, boomHeightY: 7.25 },
+  { id: 'east_harbor_outer', zone: 'east_harbor', x: 74.22, y: 0.085, z: 2.85, armDirX: -1, armReachM: 3.15, boomHeightY: 5.65 },
+];
+
+export type CityTrafficSignKind =
+  | 'tram_lane_only'
+  | 'stop'
+  | 'do_not_enter'
+  | 'no_parking'
+  | 'tram_crossing'
+  | 'pedestrian_warning'
+  | 'pedestrian_crosswalk'
+  | 'sharp_curve'
+  | 'halte_stop'
+  | 'speed_limit_30'
+  | 'speed_limit_50'
+  | 'street_wayfinding';
+
+export interface CityTrafficSignSpec {
+  id: string;
+  kind: CityTrafficSignKind;
+  x: number;
+  y: number;
+  z: number;
+  rotY: number;
+  label?: string;
+  subLabel?: string;
+}
+
+/**
+ * Curated city road signage aligned strictly along curb furnishing strips (0.35m–0.65m off asphalt)
+ * or Halte deck corners, keeping pedestrian sidewalks, Plaza stair landings, and crosswalks wide open.
+ */
+export const CITY_TRAFFIC_SIGN_SPECS: readonly CityTrafficSignSpec[] = [
+  // Dedicated Inner Tram Corridor ("TREM ONLY") - 1 clean sign per clockwise ring leg on curb strip
+  { id: 'sign_tram_west_s', kind: 'tram_lane_only', x: -61.72, y: 0.085, z: 34.0, rotY: 0 },
+  { id: 'sign_tram_north_w', kind: 'tram_lane_only', x: -48.0, y: 0.085, z: -43.72, rotY: -Math.PI / 2 },
+  { id: 'sign_tram_east_n', kind: 'tram_lane_only', x: 61.72, y: 0.085, z: -34.0, rotY: Math.PI },
+  { id: 'sign_tram_south_e', kind: 'tram_lane_only', x: 48.0, y: 0.085, z: 43.72, rotY: Math.PI / 2 },
+
+  // Halte Boarding Info (exactly 1 sign per Halte, clear of boarding ramps, shelters & walkways)
+  { id: 'sign_halte_plaza', kind: 'halte_stop', x: -56.25, y: 0.26, z: -7.8, rotY: -Math.PI / 2 },
+  { id: 'sign_halte_north_res', kind: 'halte_stop', x: 13.30, y: 0.085, z: -43.72, rotY: 0 },
+  { id: 'sign_halte_south_res', kind: 'halte_stop', x: -46.30, y: 0.085, z: 43.72, rotY: Math.PI },
+  { id: 'sign_halte_harbor', kind: 'halte_stop', x: 74.38, y: 0.085, z: 39.2, rotY: 0 },
+
+  // Symmetric Pedestrian & Crosswalk Warnings on Outer Curb Strips (zero stair/crosswalk obstruction)
+  { id: 'sign_pedwarn_plaza_n', kind: 'pedestrian_warning', x: -74.32, y: 0.085, z: -17.8, rotY: Math.PI },
+  { id: 'sign_pedwarn_plaza_s', kind: 'pedestrian_warning', x: -74.32, y: 0.085, z: 17.8, rotY: 0 },
+  { id: 'sign_ped_north_blvd', kind: 'pedestrian_crosswalk', x: 4.45, y: 0.085, z: -56.42, rotY: Math.PI / 2 },
+  { id: 'sign_ped_south_blvd', kind: 'pedestrian_crosswalk', x: -4.45, y: 0.085, z: 56.42, rotY: -Math.PI / 2 },
+
+  // Essential Urban Slow-Zone & Harbor Tram Crossing Alerts
+  { id: 'sign_speed_30_plaza_n', kind: 'speed_limit_30', x: -74.32, y: 0.085, z: -35.5, rotY: Math.PI },
+  { id: 'sign_speed_30_plaza_s', kind: 'speed_limit_30', x: -74.32, y: 0.085, z: 35.5, rotY: 0 },
+  { id: 'sign_warn_harbor_n_in', kind: 'tram_crossing', x: 74.38, y: 0.085, z: -25.0, rotY: Math.PI },
+
+  // Twin-Blade Emerald Wayfinding Signposts (blades oriented parallel to sidewalk curb!)
+  {
+    id: 'sign_wayfind_plaza_nw',
+    kind: 'street_wayfinding',
+    x: -74.32,
+    y: 0.085,
+    z: -25.8,
+    rotY: Math.PI / 2,
+    label: 'GRAND CASINO ->',
+    subLabel: '<- CENTRAL PLAZA',
+  },
+  {
+    id: 'sign_wayfind_plaza_sw',
+    kind: 'street_wayfinding',
+    x: -74.32,
+    y: 0.085,
+    z: 25.8,
+    rotY: Math.PI / 2,
+    label: 'CENTRAL PLAZA ->',
+    subLabel: '<- CAFE & TENNIS',
+  },
+  {
+    id: 'sign_wayfind_harbor_e',
+    kind: 'street_wayfinding',
+    x: 74.38,
+    y: 0.085,
+    z: -6.0,
+    rotY: -Math.PI / 2,
+    label: 'BEACH HARBOR ->',
+    subLabel: '<- TAMAN RIA',
+  },
+  {
+    id: 'sign_wayfind_north_blvd',
+    kind: 'street_wayfinding',
+    x: -10.5,
+    y: 0.085,
+    z: -56.42,
+    rotY: Math.PI,
+    label: 'GRAND CASINO ->',
+    subLabel: '<- TAMAN TENGAH',
+  },
+  {
+    id: 'sign_wayfind_south_blvd',
+    kind: 'street_wayfinding',
+    x: 21.85,
+    y: 0.085,
+    z: 56.42,
+    rotY: 0,
+    label: 'BEACHFRONT ->',
+    subLabel: '<- CENTRAL PLAZA',
+  },
+];
+
+export function createInitialPlazaTrafficSignalState(
+  initialPhase: PlazaTrafficSignalPhase = 'tram_green',
+  initialElapsedSec = 0,
+): PlazaTrafficSignalState {
+  return {
+    phase: initialPhase,
+    phaseElapsedSec: initialElapsedSec,
+    redLightStopCount: 0,
+  };
+}
+
+function evalInnerHalteTramTrackDist(worldX: number, worldZ: number): number {
+  const dx = Math.abs(worldX) - 62.0;
+  const dz = Math.abs(worldZ) - 44.0;
+  const outside = Math.hypot(Math.max(dx, 0), Math.max(dz, 0));
+  const inside = Math.min(Math.max(dx, dz), 0);
+  const signedOffset = outside + inside - 3.0;
+  return Math.abs(signedOffset);
+}
+
+function isTramConsistOccupyingCorridorZBand(
+  tramState: CityTramConsistState,
+  corridorX: number,
+  zMin: number,
+  zMax: number,
+): boolean {
+  const halfLen = CITY_TRAM_SPEC.carLength * 0.5 + 0.6;
+  const cars = [tramState.car1, tramState.car2] as const;
+  for (let i = 0; i < cars.length; i++) {
+    const car = cars[i];
+    if (Math.abs(car.x - corridorX) > 2.4) continue;
+    const carMinZ = car.z - Math.abs(car.forwardZ) * halfLen;
+    const carMaxZ = car.z + Math.abs(car.forwardZ) * halfLen;
+    if (carMaxZ >= zMin && carMinZ <= zMax) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Evaluates whether pedestrians may safely walk across Central Plaza's North (`z = -8.60`)
+ * and South (`z = +8.60`) crosswalks based on the live traffic signal and physical track occupancy.
+ */
+export function evaluatePlazaCrosswalkWalkStates(
+  signal: PlazaTrafficSignalState,
+  tramState: CityTramConsistState,
+): {
+  northWalkAllowed: boolean;
+  southWalkAllowed: boolean;
+  tramInNorthCrosswalk: boolean;
+  tramInSouthCrosswalk: boolean;
+} {
+  const tramInNorthCrosswalk = isTramConsistOccupyingCorridorZBand(tramState, -65.0, -11.4, -5.8);
+  const tramInSouthCrosswalk = isTramConsistOccupyingCorridorZBand(tramState, -65.0, 5.8, 11.4);
+  const isRedForTram = signal.phase === 'tram_red';
+  return {
+    northWalkAllowed: isRedForTram && !tramInNorthCrosswalk,
+    southWalkAllowed: isRedForTram && !tramInSouthCrosswalk,
+    tramInNorthCrosswalk,
+    tramInSouthCrosswalk,
+  };
+}
+
+/**
+ * Evaluates whether pedestrians may safely cross East Harbor's Crosswalk (`z = 0.0`, `x ≈ +68.05`)
+ * without conflicting with the southbound tram (`x = +65.0`).
+ */
+export function evaluateEastHarborCrosswalkWalkState(
+  signal: PlazaTrafficSignalState,
+  tramState: CityTramConsistState,
+): {
+  walkAllowed: boolean;
+  tramInCrosswalk: boolean;
+} {
+  const tramInCrosswalk = isTramConsistOccupyingCorridorZBand(tramState, 65.0, -2.8, 2.8);
+  return {
+    walkAllowed: signal.phase === 'tram_red' && !tramInCrosswalk,
+    tramInCrosswalk,
+  };
+}
+
+/**
+ * Advances an actuated + periodic intersection traffic light cycle:
+ * - Responds when pedestrians/players wait at the crosswalk after minimum green clearance,
+ *   or cycles periodically so the tram visibly obeys red lights even on quiet patrols.
+ * - Extends the red phase while any pedestrian is mid-crossing (up to `maxRedHoldSec`).
+ */
+export function stepPlazaTrafficSignalState(
+  prev: PlazaTrafficSignalState,
+  dt: number,
+  params: {
+    hasWaitingPedestrian: boolean;
+    hasPedestrianInsideCrosswalk: boolean;
+    tramState?: CityTramConsistState;
+  },
+): PlazaTrafficSignalState {
+  const stepDt = Math.max(0, Math.min(0.2, dt));
+  const nextElapsed = prev.phaseElapsedSec + stepDt;
+  const spec = PLAZA_TRAFFIC_SIGNAL_SPEC;
+
+  if (prev.phase === 'tram_green') {
+    const canDemandTrigger =
+      params.hasWaitingPedestrian && nextElapsed >= spec.minGreenSec;
+    const autoTrigger = nextElapsed >= spec.autoCycleGreenSec;
+    if (canDemandTrigger || autoTrigger) {
+      return {
+        phase: 'tram_amber',
+        phaseElapsedSec: 0,
+        redLightStopCount: prev.redLightStopCount,
+      };
+    }
+    return { ...prev, phaseElapsedSec: nextElapsed };
+  }
+
+  if (prev.phase === 'tram_amber') {
+    if (nextElapsed >= spec.amberDurationSec) {
+      return {
+        phase: 'tram_red',
+        phaseElapsedSec: 0,
+        redLightStopCount: prev.redLightStopCount + 1,
+      };
+    }
+    return { ...prev, phaseElapsedSec: nextElapsed };
+  }
+
+  // phase === 'tram_red'
+  const walkHoldExpired = nextElapsed >= spec.maxRedHoldSec;
+  const readyToRelease =
+    walkHoldExpired || (nextElapsed >= spec.redDurationSec && !params.hasPedestrianInsideCrosswalk);
+  if (readyToRelease) {
+    return {
+      phase: 'tram_green',
+      phaseElapsedSec: 0,
+      redLightStopCount: prev.redLightStopCount,
+    };
+  }
+  return { ...prev, phaseElapsedSec: nextElapsed };
+}
+
+/**
+ * Advances the City Tram speed & loop position smoothly while obeying:
+ * - Active Red/Amber stop bars at Central Plaza crosswalks (`z = +11.80` South / `z = -5.40` North)
+ * - Active Red/Amber stop bar at East Harbor crosswalk (`z = -3.20` for southbound `forwardZ > 0`)
+ * - Emergency pedestrian-ahead track protection anywhere on the loop so no NPC is struck
+ * - Safezone Halte boarding hold
+ */
+export function stepCityTramTrafficSpeedAndDistance(params: {
+  distanceMeters: number;
+  currentSpeedMps: number;
+  dt: number;
+  tramState: CityTramConsistState;
+  signalState: PlazaTrafficSignalState;
+  eastSignalState?: PlazaTrafficSignalState;
+  holdAtSafezoneHalte: boolean;
+  hasSouthWaiter?: boolean;
+  pedestrians: ReadonlyArray<{ x: number; z: number }>;
+}): { distanceMeters: number; speedMps: number; stoppedBySignal: boolean; emergencyBraking: boolean } {
+  const { dt, tramState, signalState, pedestrians } = params;
+  const stepDt = Math.max(0, Math.min(0.2, dt));
+  const maxSpeed: number = CITY_TRAM_SPEC.cruiseSpeed;
+
+  let desiredSpeed: number = maxSpeed;
+  let stoppedBySignal = false;
+  let emergencyBraking = false;
+
+  const applyStopBarApproach = (distToBar: number) => {
+    const requiredStopDist = (params.currentSpeedMps * params.currentSpeedMps) / (2 * 10.5);
+    const canStopCleanly = distToBar >= requiredStopDist - 0.15 || params.currentSpeedMps <= 1.2;
+    if (distToBar >= -0.6 && distToBar <= 22.0 && canStopCleanly) {
+      if (distToBar <= 0.35) {
+        desiredSpeed = 0;
+        stoppedBySignal = true;
+      } else {
+        const brakeLimited = Math.sqrt(Math.max(0, 2 * 5.2 * Math.max(0, distToBar - 0.25)));
+        desiredSpeed = Math.min(desiredSpeed, brakeLimited);
+        stoppedBySignal = desiredSpeed < 0.25;
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // 1A. West Northbound Track: Central Plaza Traffic Signals (x ≈ -65.0, forwardZ < -0.5)
+  const car1 = tramState.car1;
+  const car1NoseZ = car1.z + car1.forwardZ * (CITY_TRAM_SPEC.carLength * 0.5);
+  const onWestNorthbound = Math.abs(car1.x - -65.0) < 2.2 && car1.forwardZ < -0.5;
+  if (
+    onWestNorthbound &&
+    (signalState.phase === 'tram_amber' || signalState.phase === 'tram_red')
+  ) {
+    const westBars = [
+      PLAZA_TRAFFIC_SIGNAL_SPEC.southStopBarZ,
+      PLAZA_TRAFFIC_SIGNAL_SPEC.northStopBarZ,
+    ] as const;
+    for (let bi = 0; bi < westBars.length; bi++) {
+      if (applyStopBarApproach(car1NoseZ - westBars[bi])) {
+        break;
+      }
+    }
+  }
+
+  // 1B. East Southbound Track: East Harbor Traffic Signal (x ≈ +65.0, forwardZ > +0.5)
+  const eastSignal = params.eastSignalState;
+  const onEastSouthbound = Math.abs(car1.x - 65.0) < 2.2 && car1.forwardZ > 0.5;
+  if (
+    eastSignal &&
+    onEastSouthbound &&
+    (eastSignal.phase === 'tram_amber' || eastSignal.phase === 'tram_red')
+  ) {
+    applyStopBarApproach(PLAZA_TRAFFIC_SIGNAL_SPEC.eastStopBarZ - car1NoseZ);
+  }
+
+  // 2. Emergency pedestrian sensor ahead of Car 1's front nose anywhere along the entire loop
+  const noseHalfLen = CITY_TRAM_SPEC.carLength * 0.5;
+  for (let i = 0; i < pedestrians.length; i++) {
+    const ped = pedestrians[i];
+    const dx = ped.x - car1.x;
+    const dz = ped.z - car1.z;
+    const longAhead = dx * car1.forwardX + dz * car1.forwardZ;
+    const latDist = Math.abs(-dx * car1.forwardZ + dz * car1.forwardX);
+    if (longAhead >= noseHalfLen - 0.8 && longAhead <= noseHalfLen + 9.0 && latDist <= 2.75) {
+      desiredSpeed = 0;
+      emergencyBraking = true;
+      break;
+    }
+  }
+
+  if (params.holdAtSafezoneHalte) {
+    desiredSpeed = 0;
+  }
+
+  let nextSpeed = params.currentSpeedMps;
+  if (nextSpeed > desiredSpeed) {
+    const decelRate = emergencyBraking ? 18.0 : 10.5;
+    nextSpeed = Math.max(desiredSpeed, nextSpeed - decelRate * stepDt);
+  } else if (nextSpeed < desiredSpeed) {
+    nextSpeed = Math.min(desiredSpeed, nextSpeed + 5.6 * stepDt);
+  }
+
+  const totalLen = Math.max(1, tramState.totalTrackLength);
+  const nextDistance = (params.distanceMeters + nextSpeed * stepDt) % totalLen;
+
+  return {
+    distanceMeters: nextDistance < 0 ? nextDistance + totalLen : nextDistance,
+    speedMps: nextSpeed,
+    stoppedBySignal: stoppedBySignal && nextSpeed < 0.25,
+    emergencyBraking,
+  };
+}
+
+/**
+ * Evaluates whether a pedestrian about to step onto a road or cross the inner tram track
+ * should wait on the curb / lane divider for an approaching tram or red pedestrian signal.
+ */
+export function shouldPedestrianYieldForTramOrSignal(params: {
+  x: number;
+  z: number;
+  probeX: number;
+  probeZ: number;
+  tramState: CityTramConsistState;
+  signalState: PlazaTrafficSignalState;
+  eastSignalState?: PlazaTrafficSignalState;
+}): boolean {
+  const { x, z, probeX, probeZ, tramState, signalState, eastSignalState } = params;
+  const npcRoadSdf = evaluateRoadNetworkSdf(x, z);
+  const probeRoadSdf = evaluateRoadNetworkSdf(probeX, probeZ);
+  const steppingOntoRoad = npcRoadSdf > 0.15 && npcRoadSdf <= 3.8 && probeRoadSdf <= 0.25;
+
+  const npcTrackDist = evalInnerHalteTramTrackDist(x, z);
+  const probeTrackDist = evalInnerHalteTramTrackDist(probeX, probeZ);
+  const steppingOntoTramTrack = npcTrackDist > 1.95 && probeTrackDist <= 2.85;
+
+  // Compute physical OBB distance + 20m forward sweep ahead of Car 1 nose
+  const minDistToTramConsist = (tx: number, tz: number): number => {
+    let best = Infinity;
+    const cars = [tramState.car1, tramState.car2] as const;
+    const halfLen = CITY_TRAM_SPEC.carLength * 0.5;
+    const halfWid = CITY_TRAM_SPEC.carWidth * 0.5;
+    for (let i = 0; i < cars.length; i++) {
+      const car = cars[i];
+      const dx = tx - car.x;
+      const dz = tz - car.z;
+      const rightX = -car.forwardZ;
+      const rightZ = car.forwardX;
+      const lLong = Math.abs(dx * car.forwardX + dz * car.forwardZ);
+      const lLat = Math.abs(dx * rightX + dz * rightZ);
+      const obbDist = Math.hypot(Math.max(0, lLong - halfLen), Math.max(0, lLat - halfWid));
+      if (obbDist < best) best = obbDist;
+    }
+    return best;
+  };
+
+  // Never freeze if already standing inside the tram track box; finish crossing fast
+  if (npcTrackDist <= 1.85) {
+    return false;
+  }
+
+  // 1A. Plaza Signalized Crosswalks (North z = -8.60 & South z = +8.60)
+  const inPlazaCrossBand =
+    x >= -76.5 &&
+    x <= -59.5 &&
+    Math.abs(Math.abs(z) - PLAZA_TRAFFIC_SIGNAL_SPEC.southCrosswalkZ) <= 3.6;
+  if (inPlazaCrossBand && (steppingOntoRoad || steppingOntoTramTrack)) {
+    const walkStates = evaluatePlazaCrosswalkWalkStates(signalState, tramState);
+    const walkAllowed = z < 0 ? walkStates.northWalkAllowed : walkStates.southWalkAllowed;
+    const crossingClosing =
+      signalState.phase === 'tram_red' &&
+      signalState.phaseElapsedSec >= PLAZA_TRAFFIC_SIGNAL_SPEC.redDurationSec - 1.2;
+    if (!walkAllowed || (steppingOntoRoad && crossingClosing)) {
+      return true;
+    }
+  }
+
+  // 1B. East Harbor Signalized Crosswalk (z = 0.0, x ≈ +68.05)
+  const inEastHarborCrossBand =
+    eastSignalState &&
+    x >= 59.5 &&
+    x <= 76.5 &&
+    Math.abs(z - PLAZA_TRAFFIC_SIGNAL_SPEC.eastCrosswalkZ) <= 3.6;
+  if (inEastHarborCrossBand && (steppingOntoRoad || steppingOntoTramTrack)) {
+    const eastWalk = evaluateEastHarborCrosswalkWalkState(eastSignalState, tramState);
+    const eastClosing =
+      eastSignalState.phase === 'tram_red' &&
+      eastSignalState.phaseElapsedSec >= PLAZA_TRAFFIC_SIGNAL_SPEC.redDurationSec - 1.2;
+    if (!eastWalk.walkAllowed || (steppingOntoRoad && eastClosing)) {
+      return true;
+    }
+  }
+
+  // 2. General Tram Track & Curb Yielding anywhere around the city loop
+  if (!steppingOntoRoad && !steppingOntoTramTrack) {
+    return false;
+  }
+  if (minDistToTramConsist(probeX, probeZ) < 6.2 || minDistToTramConsist(x, z) < 6.5) {
+    return true;
+  }
+  const c1 = tramState.car1;
+  const noseX = c1.x + c1.forwardX * (CITY_TRAM_SPEC.carLength * 0.5);
+  const noseZ = c1.z + c1.forwardZ * (CITY_TRAM_SPEC.carLength * 0.5);
+  const dxAhead = probeX - noseX;
+  const dzAhead = probeZ - noseZ;
+  const longAhead = dxAhead * c1.forwardX + dzAhead * c1.forwardZ;
+  const latAhead = Math.abs(-dxAhead * c1.forwardZ + dzAhead * c1.forwardX);
+  return longAhead >= -1.0 && longAhead <= 20.0 && latAhead <= 3.4;
 }
 
 export function setSafezonePlotAccessMode(
@@ -7994,8 +8731,8 @@ export function purchaseCrateAirdropWithGold(
 // CHUNK-SYNCED FOG OF WAR & PERSONAL COMMAND CENTER RADAR COVERAGE
 // ============================================================================
 
-/** Half-extent (in meters) of the calibrated square radar map [-125, +125] x [-125, +125]. */
-export const RADAR_WORLD_HALF_EXTENT = 125.0;
+/** Half-extent (in meters) of the calibrated square radar map [-152, +152] x [-152, +152]. */
+export const RADAR_WORLD_HALF_EXTENT = 152.0;
 
 /** 3D Grass Chunk streaming outer radius (`21.0m`) around player */
 export const GRASS_CHUNK_STREAM_RADIUS = 21.0;
@@ -8148,7 +8885,7 @@ export function evaluateCommandCenterRadarSpec(
   radarActive = true,
 ): CommandCenterRadarSpec {
   const lv: 1 | 2 | 3 = buildingLevel >= 3 ? 3 : buildingLevel === 2 ? 2 : 1;
-  const fullMapSpan = RADAR_WORLD_HALF_EXTENT * 2.0; // 250.0m
+  const fullMapSpan = RADAR_WORLD_HALF_EXTENT * 2.0; // 304.0m
   if (!radarActive) {
     const coveragePct: 45 | 75 | 100 = lv === 3 ? 100 : lv === 2 ? 75 : 45;
     return {
@@ -11174,14 +11911,14 @@ export function evaluateContinuousLaserBeamStep(
 // ZERO FRIENDLY-FIRE, NEP-171 GAMEPASS SESSION BASES & PUBLIC WARZONE PADS
 // ============================================================================
 
-export const LOBBY_SAFEZONE_MAX_X = -76.2;
+export const LOBBY_SAFEZONE_MAX_X = -78.45;
 
 export const LOBBY_SAFEZONE_BOUNDS = {
-  minX: -104.5,
+  minX: -110.75,
   maxX: LOBBY_SAFEZONE_MAX_X,
   minZ: -38.5,
   maxZ: 38.5,
-  spawnX: -85.5,
+  spawnX: -87.75,
   spawnZ: 0.0,
 } as const;
 
@@ -11210,7 +11947,7 @@ export const LOBBY_FACTION_PORTALS: readonly LobbyFactionPortalSpec[] = [
     team: 'red',
     portalKind: 'warzone',
     style: 'crate_pad_hologram',
-    x: -84.0,
+    x: -86.25,
     z: -15.0,
     radius: 2.65,
     label: 'GATE 1: WARZONE ARENA',
@@ -11228,7 +11965,7 @@ export const LOBBY_FACTION_PORTALS: readonly LobbyFactionPortalSpec[] = [
     team: 'blue',
     portalKind: 'safezone',
     style: 'crate_pad_hologram',
-    x: -84.0,
+    x: -86.25,
     z: 15.0,
     radius: 2.65,
     label: 'GATE 2: SAFEZONE CITY',
@@ -11237,7 +11974,7 @@ export const LOBBY_FACTION_PORTALS: readonly LobbyFactionPortalSpec[] = [
     subtitle: 'STAND IN CIRCLE -> CLICK [ENTER CITY] (PEACEFUL CITY & TRAM)',
     sectorLabel: 'SAFEZONE CITY · TRAM SHELTER & SOCIAL PLAZA',
     colorHex: '#00a8ff',
-    targetSpawnX: -63.4,
+    targetSpawnX: -60.52,
     targetSpawnZ: 4.6,
     targetYaw: Math.PI,
   },
@@ -11269,7 +12006,7 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
   {
     id: 'north_lobby_pad',
     side: 'north',
-    x: -63.4,
+    x: -60.52,
     z: -4.6,
     radius: 1.45,
     colorHex: '#38bdf8',
@@ -11279,7 +12016,7 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
   {
     id: 'south_lobby_pad',
     side: 'south',
-    x: -63.4,
+    x: -60.52,
     z: 4.6,
     radius: 1.45,
     colorHex: '#38bdf8',
@@ -11289,13 +12026,13 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
 ] as const;
 
 export const LOBBY_TRAM_SHELTER_SPEC = {
-  shelterCenterX: -63.8,
+  shelterCenterX: -61.03,
   shelterCenterZ: 0.0,
-  westEdgeX: -64.97,
-  eastEdgeX: -58.37,
-  canopyCenterX: -60.45,
+  westEdgeX: -62.2,
+  eastEdgeX: -55.6,
+  canopyCenterX: -57.68,
   canopyCenterZ: 0.0,
-  platformCenterX: -61.67,
+  platformCenterX: -58.9,
   platformCenterZ: 0.0,
   platformLength: 18.4,
   centralPlatformLength: 15.4,
@@ -11303,9 +12040,9 @@ export const LOBBY_TRAM_SHELTER_SPEC = {
   canopyLength: 15.4,
   canopyWidth: 2.58,
   canopyHeight: 3.35,
-  returnPadX: -63.4,
+  returnPadX: -60.52,
   returnPadZ: -4.6,
-  southReturnPadX: -63.4,
+  southReturnPadX: -60.52,
   southReturnPadZ: 4.6,
   returnPadRadius: 1.45,
   returnPads: LOBBY_TRAM_RETURN_PADS,
@@ -11341,10 +12078,10 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   // 4 BLUE TEAM PADS (SOUTH GRASS ISLAND CORNERS, z > 0)
   {
     id: 'public_pad_blue_sw',
-    x: -54.0,
-    z: 38.0,
-    worldX: -54.0,
-    worldZ: 38.0,
+    x: -53.2,
+    z: 34.5,
+    worldX: -53.2,
+    worldZ: 34.5,
     team: 'blue',
     teamBias: 'blue',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11366,9 +12103,9 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   {
     id: 'public_pad_blue_ce',
     x: 9.5,
-    z: 41.5,
+    z: 34.5,
     worldX: 9.5,
-    worldZ: 41.5,
+    worldZ: 34.5,
     team: 'blue',
     teamBias: 'blue',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11377,10 +12114,10 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   },
   {
     id: 'public_pad_blue_se',
-    x: 54.0,
-    z: 38.0,
-    worldX: 54.0,
-    worldZ: 38.0,
+    x: 53.2,
+    z: 34.5,
+    worldX: 53.2,
+    worldZ: 34.5,
     team: 'blue',
     teamBias: 'blue',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11390,10 +12127,10 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   // 4 RED TEAM PADS (NORTH GRASS ISLAND CORNERS, z < 0 — 100% North-South Mirrored)
   {
     id: 'public_pad_red_nw',
-    x: -54.0,
-    z: -38.0,
-    worldX: -54.0,
-    worldZ: -38.0,
+    x: -53.2,
+    z: -34.5,
+    worldX: -53.2,
+    worldZ: -34.5,
     team: 'red',
     teamBias: 'red',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11402,10 +12139,10 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   },
   {
     id: 'public_pad_red_cw',
-    x: -27.5,
-    z: -41.5,
-    worldX: -27.5,
-    worldZ: -41.5,
+    x: -32.0,
+    z: -35.0,
+    worldX: -32.0,
+    worldZ: -35.0,
     team: 'red',
     teamBias: 'red',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11426,10 +12163,10 @@ export const PUBLIC_WARZONE_CRATE_PADS: readonly PublicWarzoneCratePadSpec[] = [
   },
   {
     id: 'public_pad_red_ne',
-    x: 54.0,
-    z: -38.0,
-    worldX: 54.0,
-    worldZ: -38.0,
+    x: 53.2,
+    z: -34.5,
+    worldX: 53.2,
+    worldZ: -34.5,
     team: 'red',
     teamBias: 'red',
     shieldRadius: PUBLIC_PAD_SHIELD_RADIUS,
@@ -11635,7 +12372,7 @@ export function getUnitFootRingTeamColor(team: 'blue' | 'red'): {
 export type CityArenaMode = 'warzone' | 'safezone';
 
 export const SAFEZONE_CITY_HALTE_SPAWN = {
-  x: -63.4,
+  x: -60.52,
   z: 4.6,
   yaw: Math.PI,
   label: 'HALTE TREM DEPAN CENTRAL PLAZA (SAFEZONE CITY)',
@@ -11724,12 +12461,10 @@ export function evaluateLobbyAndSafezonePeacefulState(params: {
     populationAndLivesBarVisible: combatVisible,
     harvesterContractBadgeVisible: combatVisible,
     bottomRightWeaponAndHpHudVisible: combatVisible,
-    // The minimap belongs to the city/warzone, not to the lobby room. Keying
-    // it to the lobby-safezone BOUNDS made it flicker on/off while walking
-    // around Central Plaza (spawn + Hana + kiosk all sit inside that box);
-    // hide it only in the lobby room itself. Interiors and chat sessions
-    // gate it separately in App.
-    minimapRadarVisible: params.worldMode !== 'lobby',
+    // Central Plaza (`worldMode === 'lobby'`) is open-air on the same city map, so the
+    // minimap stays visible outdoors across Plaza, Safezone, and Warzone (interiors & chat
+    // gate it separately in App.tsx) and doubles as the click trigger for City View Mode.
+    minimapRadarVisible: true,
     lobbyGoldExchangeButtonVisible: isInsideLobby,
     handWeaponMeshVisible: combatVisible,
     externalCombatObjectsVisible: combatVisible,
@@ -11743,7 +12478,7 @@ export function evaluateLobbyAndSafezonePeacefulState(params: {
 
 /**
  * Finds the exact City Tram lead distance (meters along the closed loop) where Car 1
- * is stopped right alongside the Modern Urban Tram Stop Shelter in front of the Lobby (`x ≈ -70.0, z ≈ 0.8`).
+ * is stopped right alongside the Modern Urban Tram Stop Shelter at Central Plaza (`x ≈ -65.0, z ≈ 4.6`).
  */
 export function findCityTramLeadDistanceNearHalte(): number {
   const sample0 = evaluateCityTramConsistState(0);
@@ -11754,7 +12489,7 @@ export function findCityTramLeadDistanceNearHalte(): number {
   for (let i = 0; i < steps; i++) {
     const d = (i / steps) * totalLen;
     const st = evaluateCityTramConsistState(d);
-    const err = Math.hypot(st.car1.x - -70.0, st.car1.z - SAFEZONE_CITY_HALTE_SPAWN.z);
+    const err = Math.hypot(st.car1.x - -65.0, st.car1.z - SAFEZONE_CITY_HALTE_SPAWN.z);
     if (err < bestScore) {
       bestScore = err;
       bestDist = d;
@@ -12760,6 +13495,67 @@ export function computeTeamMirrorCameraPose(params: {
   };
 }
 
+export interface NpcDialoguePortraitPoseInput {
+  npcX: number;
+  npcY: number;
+  npcZ: number;
+  frontDirX: number;
+  frontDirZ: number;
+  aspect: number;
+  fovDeg?: number;
+  isSitting?: boolean;
+  sitLiftY?: number;
+  npcScale?: number;
+}
+
+export interface NpcDialoguePortraitPoseResult {
+  cameraPos: Vec3;
+  lookAtPos: Vec3;
+  fovDeg: number;
+  /** Three.js Y rotation (radians) turning local +Z forward toward the portrait camera. */
+  faceCamYaw: number;
+}
+
+/**
+ * Frames any City NPC (Hana/Kai merchants or roaming district citizens) in the
+ * right-side waist-up ("setengah badan") portrait view so the left-side dialogue
+ * drawer remains unobstructed.
+ */
+export function computeNpcDialoguePortraitPose(
+  input: NpcDialoguePortraitPoseInput,
+): NpcDialoguePortraitPoseResult {
+  const fovDeg = input.fovDeg ?? BUDDIES_CONSTANTS.camera.fov;
+  const rawLen = Math.hypot(input.frontDirX, input.frontDirZ);
+  const fx = rawLen > 1e-4 ? input.frontDirX / rawLen : 1;
+  const fz = rawLen > 1e-4 ? input.frontDirZ / rawLen : 0;
+  const scale = input.npcScale ?? 1.0;
+  const npcCamDist = 2.42 * scale;
+  const halfFovTan = Math.tan(((fovDeg * Math.PI) / 180) * 0.5);
+  const activeAspect = Math.max(1.0, Math.min(2.4, input.aspect || 1.6));
+  const lateralShift = 0.44 * npcCamDist * halfFovTan * activeAspect;
+  // Camera looks along (-fx, 0, -fz); screen-left horizontal axis is (-fz, +fx),
+  // offsetting the optical axis so the NPC lands around ndc.x ~ +0.44 (right half).
+  const lookAtX = input.npcX - fz * lateralShift;
+  const lookAtZ = input.npcZ + fx * lateralShift;
+  const camX = lookAtX + fx * npcCamDist;
+  const camZ = lookAtZ + fz * npcCamDist;
+  const sitDrop = input.isSitting ? (0.40 - (input.sitLiftY ?? 0)) * scale : 0;
+  return {
+    cameraPos: {
+      x: camX,
+      y: input.npcY + 2.74 * scale - sitDrop,
+      z: camZ,
+    },
+    lookAtPos: {
+      x: lookAtX,
+      y: input.npcY + 2.70 * scale - sitDrop,
+      z: lookAtZ,
+    },
+    fovDeg,
+    faceCamYaw: Math.atan2(camX - input.npcX, camZ - input.npcZ),
+  };
+}
+
 /**
  * Converts screen-relative WASD / Arrow Key input (`inputForward`: W=+1, S=-1; `inputRight`: D=+1, A=-1)
  * into world-space `(moveX, moveZ)` aligned with the active camera POV:
@@ -13156,15 +13952,15 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
       'Main elevated civic promenade featuring Hana Cafe, token exchange, and the central Halte tram station.',
     heroImageUrl: '/docs/hero-2-tram-station.jpg',
     thumbnailUrl: '/docs/hero-2-tram-station.jpg',
-    kioskX: -61.95,
+    kioskX: -59.18,
     kioskY: 0.26,
     kioskZ: 0.0,
     kioskRotY: -Math.PI / 2,
-    spawnX: -88.55,
+    spawnX: -90.80,
     spawnZ: -9.4,
     spawnYaw: Math.PI / 2,
     hasHalteShelter: true,
-    shelterX: -63.8,
+    shelterX: -61.03,
     shelterZ: 0.0,
     shelterRotY: -Math.PI / 2,
     tramTrackDistance: 44.0,
@@ -13193,7 +13989,7 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     shelterX: 77.5,
     shelterZ: 29.5,
     shelterRotY: -Math.PI / 2,
-    tramTrackDistance: 270.0,
+    tramTrackDistance: 295.0,
   },
   {
     id: 'kai_fish_market',
@@ -13254,18 +14050,18 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
       'Northern residential boulevard along the tram rail loop with 4 claimable House Plots and gated citizen estates.',
     heroImageUrl: '/docs/hero-3-house-interior.jpg',
     thumbnailUrl: '/docs/hero-3-house-interior.jpg',
-    kioskX: 6.5,
+    kioskX: 3.5,
     kioskY: 0.26,
-    kioskZ: -44.95,
+    kioskZ: -41.15,
     kioskRotY: Math.PI,
-    spawnX: 6.5,
-    spawnZ: -46.4,
+    spawnX: 3.5,
+    spawnZ: -42.6,
     spawnYaw: -Math.PI / 2,
     hasHalteShelter: true,
-    shelterX: 6.5,
-    shelterZ: -46.8,
+    shelterX: 3.5,
+    shelterZ: -43.0,
     shelterRotY: Math.PI,
-    tramTrackDistance: 165.0,
+    tramTrackDistance: 164.0,
   },
   {
     id: 'south_residence',
@@ -13282,16 +14078,16 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     thumbnailUrl: '/docs/hero-7-crate-stacking-pad.jpg',
     kioskX: -36.5,
     kioskY: 0.26,
-    kioskZ: 44.95,
+    kioskZ: 41.15,
     kioskRotY: 0,
     spawnX: -36.5,
-    spawnZ: 46.4,
+    spawnZ: 42.6,
     spawnYaw: Math.PI / 2,
     hasHalteShelter: true,
     shelterX: -36.5,
-    shelterZ: 46.8,
+    shelterZ: 43.0,
     shelterRotY: 0,
-    tramTrackDistance: 375.0,
+    tramTrackDistance: 413.0,
   },
   {
     id: 'warzone_arena',
@@ -13306,12 +14102,12 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
       'Optional Red vs Blue tactical combat mini-game with crate stacking pads, vehicles, and live multiplayer squads.',
     heroImageUrl: '/docs/hero-8-weapon-armory.jpg',
     thumbnailUrl: '/docs/hero-8-weapon-armory.jpg',
-    kioskX: -60.55,
+    kioskX: -57.78,
     kioskY: 0.26,
     kioskZ: 2.8,
     kioskRotY: -Math.PI / 2,
-    spawnX: -54.0,
-    spawnZ: 38.0,
+    spawnX: -53.2,
+    spawnZ: 34.5,
     spawnYaw: Math.PI / 2,
     hasHalteShelter: false,
     tramTrackDistance: 215.0,
@@ -13339,7 +14135,7 @@ export interface CityTransitKioskProximityResult {
 
 export const CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC = {
   stationId: 'central_plaza' as CityTransitStationId,
-  kioskX: -86.55,
+  kioskX: -88.80,
   kioskY: 2.5,
   kioskZ: -9.4,
   kioskRotY: -Math.PI / 2,
@@ -13615,7 +14411,7 @@ export const LANDING_TOUR_WAYPOINTS: readonly LandingTourWaypoint[] = [
   },
   {
     id: 'plaza_information_center',
-    lookAt: { x: -84.0, y: 1.8, z: -12.0 },
+    lookAt: { x: -86.25, y: 1.8, z: -12.0 },
     orbitRadius: 19.0,
     cameraHeight: 10.2,
     baseOrbitYaw: 5.5,
@@ -13942,56 +14738,292 @@ export interface CityAmbientNpcWaypoint {
   x: number;
   z: number;
   yaw?: number;
+  /** Activity performed upon reaching this stop (e.g. sit_relax, fishing, sightseeing, cafe_hangout). */
+  activity?: CityAmbientNpcActivity;
+  /** Optional travel locomotion mode toward this stop ('walk' | 'jog'). */
+  moveMode?: 'walk' | 'jog';
+  /** Dynamic bottom-dock status label shown when player meets citizen at/heading to this stop. */
+  label?: string;
+  /** Dwell time (seconds) spent doing the activity at this stop before pathfinding onward. */
+  durationSec?: number;
+  /** Optional custom travel speed (m/s) toward this stop. */
+  speedMps?: number;
+  /** Seat surface offset when sitting on a bench or beach chair. */
+  seatLiftY?: number;
+  /** Optional Cafe food/drink prop carried or sipped during this stop (or carried between Cafe counter & seat). */
+  holdingCafeItemId?: CafeMenuItemId;
 }
 
 export interface CityAmbientNpcPreset {
   id: string;
   displayName: string;
   activityLabel: string;
+  roleTitle?: string;
   gender: AvatarGlbGender;
+  /** Optional base GLB override ('player' uses fuller skin coverage compatible with shorts/crop tops). */
+  baseGlbVariant?: 'default' | 'player';
   teamTint: 'blue' | 'red';
+  /** Reserved future dedicated model path without breaking Stage 1 presets. */
+  customModelUrl?: string;
+  /** Optional modular full-costume .glb (bundled torso/legs/feet/hands/neck) applied over PelvisRoot skeleton. */
+  equippedCostumeUrl?: string;
+  /** Optional modular hair .glb applied over PelvisRoot skeleton. */
+  equippedHairUrl?: string;
+  /** Optional modular outerwear .glb applied over PelvisRoot skeleton. */
+  equippedTorsoUrl?: string;
+  /** Optional modular bottoms/shorts .glb applied over PelvisRoot skeleton. */
+  equippedLegsUrl?: string;
+  /** Optional modular footwear .glb applied over PelvisRoot skeleton. */
+  equippedFeetUrl?: string;
+  /** Non-skin clothing color tint for distinct silhouette identification. */
+  clothingTintHex?: string;
+  /** Disable runtime tinting when the NPC wears full custom-textured outfit assets. */
+  disableClothingTint?: boolean;
+  /** Reserved per-NPC custom idle animation clip name for future packs. */
+  idleOverrideClip?: string;
+  /** Optional per-NPC custom walk animation clip name. */
+  walkOverrideClip?: string;
+  /** Optional per-NPC custom run/jog animation clip name. */
+  runOverrideClip?: string;
+  /** Optional per-NPC custom sit animation clip name. */
+  sitOverrideClip?: string;
   activity: CityAmbientNpcActivity;
   speedMps: number;
   pauseSecAtWaypoint: number;
+  /** Optional custom arrival snap radius (meters) for tight indoor rooms. */
+  arrivalRadiusM?: number;
   seatLiftY?: number;
   waypoints: readonly CityAmbientNpcWaypoint[];
 }
 
 export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
-  // Strictly 2 Central Plaza ambient citizens (keeps city lightweight when multiplayer fills)
   {
     id: 'city_plaza_raka',
     displayName: 'Raka',
-    activityLabel: 'PLAZA STROLL',
+    activityLabel: 'WEST PLAZA EXPLORER',
+    roleTitle: 'Boutique, Cafe & Transit Regular',
     gender: 'male',
+    baseGlbVariant: 'player',
     teamTint: 'blue',
+    equippedHairUrl: '/assets/outfit/raka/blitz_hair_valbotq_12_18181D54.glb',
+    equippedTorsoUrl: '/assets/outfit/raka/blitz_torso_colorpop_bunny_club_1_7DF6EF18.glb',
+    equippedLegsUrl: '/assets/outfit/raka/blitz_legs_festive_1_2_FB88CC4F.glb',
+    equippedFeetUrl: '/assets/outfit/bima/blitz_feet_warrior_trainers_1_36A44F38.glb',
+    clothingTintHex: '#2563eb',
+    disableClothingTint: true,
+    idleOverrideClip: 'raka_idle.001',
+    walkOverrideClip: 'raka_walk.001',
+    runOverrideClip: 'raka_run.001',
+    sitOverrideClip: 'raka_sit.001',
     activity: 'walk_patrol',
-    speedMps: 2.35,
-    pauseSecAtWaypoint: 1.8,
+    speedMps: 1.55,
+    pauseSecAtWaypoint: 18.0,
     waypoints: [
-      { x: -75.25, z: -28.0 },
-      { x: -75.25, z: -6.0 },
-      { x: -75.25, z: 18.0 },
-      { x: -75.25, z: -6.0 },
+      { x: -95.65, z: -4.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'BROWSING INTERIOR STUDIO', durationSec: 16.0 },
+      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING CAFE DONUT', durationSec: 10.5, holdingCafeItemId: 'donut' },
+      { x: -86.55, z: 19.1, yaw: 0.0, moveMode: 'walk', activity: 'cafe_hangout', label: 'ENJOYING DONUT AT PATIO', durationSec: 17.0, holdingCafeItemId: 'donut' },
+      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS BENCH REST', durationSec: 26.0, seatLiftY: 0.0 },
+      { x: -93.85, z: -11.0, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'CHECKING SCOOTER DISPLAYS', durationSec: 18.0 },
+      { x: -77.2, z: -70.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'VISITING GRAND CASINO', durationSec: 16.0 },
+      { x: -78.59, z: -56.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO BENCH REST', durationSec: 24.0, seatLiftY: 0.12 },
+      { x: -77.2, z: 50.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'TENNIS CLUB PROMENADE', durationSec: 16.5 },
     ],
   },
   {
     id: 'city_plaza_nadia',
     displayName: 'Nadia',
-    activityLabel: 'PLAZA STROLL',
+    activityLabel: 'FASHION & LIFESTYLE',
+    roleTitle: 'West District Columnist & Shopper',
     gender: 'female',
     teamTint: 'red',
+    clothingTintHex: '#ec4899',
     activity: 'walk_patrol',
-    speedMps: 2.2,
-    pauseSecAtWaypoint: 2.2,
+    speedMps: 1.50,
+    pauseSecAtWaypoint: 18.0,
+    idleOverrideClip: 'nadia_idle.001',
+    walkOverrideClip: 'nadia_walk.001',
+    runOverrideClip: 'nadia_run.001',
+    sitOverrideClip: 'nadia_sit.001',
     waypoints: [
-      { x: -92.0, z: -21.2 },
-      { x: -81.5, z: -21.2 },
-      { x: -81.5, z: -18.6 },
-      { x: -92.0, z: -18.6 },
+      { x: -81.23, z: -24.85, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'PLAZA BENCH REST', durationSec: 25.0, seatLiftY: 0.02 },
+      { x: -97.05, z: 4.3, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'BROWSING FASHION BOUTIQUE', durationSec: 18.0 },
+      { x: -95.65, z: -5.3, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'VIEWING INTERIOR DESIGNS', durationSec: 17.0 },
+      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING CARAMEL LATTE', durationSec: 10.5, holdingCafeItemId: 'latte' },
+      { x: -86.55, z: 13.3, yaw: 0.0, moveMode: 'walk', activity: 'cafe_hangout', label: 'SIPPING LATTE AT PATIO', durationSec: 16.5, holdingCafeItemId: 'latte' },
+      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS SCENIC BENCH', durationSec: 26.0, seatLiftY: 0.0 },
+      { x: -77.2, z: -70.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'GRAND CASINO FOYER', durationSec: 17.5 },
+      { x: -78.59, z: -84.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO PROMENADE BENCH', durationSec: 26.0, seatLiftY: 0.12 },
+    ],
+  },
+  {
+    id: 'citizen_mira',
+    displayName: 'Mira',
+    activityLabel: 'CAFE & SKETCH STROLL',
+    roleTitle: 'Streetwear Illustrator',
+    gender: 'female',
+    baseGlbVariant: 'player',
+    teamTint: 'red',
+    equippedHairUrl: '/assets/outfit/mira/blitz_hair_draped_hair_1_43391F7E.glb',
+    equippedTorsoUrl: '/assets/outfit/mira/blitz_torso_resort_modern_6_5DC8FAA4.glb',
+    equippedLegsUrl: '/assets/outfit/mira/blitz_legs_dspastelgothdistressed_shorts_DDA37A46.glb',
+    equippedFeetUrl: '/assets/outfit/mira/blitz_feet_elska_sneakers_705A72B0.glb',
+    clothingTintHex: '#c026d3',
+    disableClothingTint: true,
+    idleOverrideClip: 'mira_idle.001',
+    walkOverrideClip: 'mira_walk.001',
+    runOverrideClip: 'mira_run.001',
+    sitOverrideClip: 'mira_sit.001',
+    activity: 'walk_patrol',
+    speedMps: 1.55,
+    pauseSecAtWaypoint: 18.0,
+    waypoints: [
+      { x: -87.45, z: 16.2, yaw: -Math.PI * 0.45, moveMode: 'walk', activity: 'cafe_hangout', label: 'GLASSHOUSE TERRACE', durationSec: 15.0 },
+      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ORDERING CINNAMON ROLL', durationSec: 10.5, holdingCafeItemId: 'cinnamon_roll' },
+      { x: -86.55, z: 15.2, yaw: 0.0, moveMode: 'walk', activity: 'cafe_hangout', label: 'SKETCHING AT PATIO', durationSec: 17.0, holdingCafeItemId: 'cinnamon_roll' },
+      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS SKETCHBENCH', durationSec: 26.0, seatLiftY: 0.0, holdingCafeItemId: 'cinnamon_roll' },
+      { x: -97.05, z: 4.9, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'SKETCHING BOUTIQUE LOOKS', durationSec: 18.0 },
+      { x: -81.23, z: -16.05, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'PLAZA BENCH SKETCHING', durationSec: 24.0, seatLiftY: 0.02 },
+      { x: -95.65, z: -4.9, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'BROWSING INTERIOR STUDIO', durationSec: 16.5 },
+      { x: -78.59, z: -56.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO BENCH SKETCHBOOK', durationSec: 24.0, seatLiftY: 0.12 },
+    ],
+  },
+  {
+    id: 'citizen_bima',
+    displayName: 'Bima',
+    activityLabel: 'SCOOTER & SPORT FAN',
+    roleTitle: 'Urban Mobility & Tennis Fan',
+    gender: 'male',
+    teamTint: 'red',
+    equippedHairUrl: '/assets/outfit/bima/blitz_hair_trend_autumn_edit_2_9582695C.glb',
+    equippedTorsoUrl: '/assets/outfit/bima/blitz_torso_sport_goth_top_2_A2601584.glb',
+    equippedLegsUrl: '/assets/outfit/bima/blitz_legs_urban_2_9A943FA4.glb',
+    equippedFeetUrl: '/assets/outfit/bima/blitz_feet_warrior_trainers_1_36A44F38.glb',
+    clothingTintHex: '#ea580c',
+    disableClothingTint: true,
+    idleOverrideClip: 'bima_idle.001',
+    walkOverrideClip: 'bima_walk.001',
+    runOverrideClip: 'bima_run.001',
+    sitOverrideClip: 'bima_sit.001',
+    activity: 'walk_patrol',
+    speedMps: 1.65,
+    pauseSecAtWaypoint: 18.0,
+    waypoints: [
+      { x: -100.25, z: -14.8, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'INSPECTING DISPLAY SCOOTERS', durationSec: 18.0 },
+      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING DOUBLE ESPRESSO', durationSec: 10.5, holdingCafeItemId: 'espresso' },
+      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS ESPRESSO BREAK', durationSec: 26.0, seatLiftY: 0.0, holdingCafeItemId: 'espresso' },
+      { x: -77.2, z: 50.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'WATCHING TENNIS COURT', durationSec: 19.0 },
+      { x: -77.2, z: -60.5, yaw: Math.PI * 0.75, moveMode: 'walk', activity: 'sightseeing', label: 'CASINO VALET WALK', durationSec: 16.0 },
+    ],
+  },
+  {
+    id: 'citizen_tari',
+    displayName: 'Tari',
+    activityLabel: 'BOUTIQUE & CASINO GUEST',
+    roleTitle: 'Fashion Patron & Lounge Socialite',
+    gender: 'female',
+    baseGlbVariant: 'player',
+    teamTint: 'blue',
+    equippedCostumeUrl: '/assets/outfit/tari/tari-costume.glb',
+    clothingTintHex: '#0d9488',
+    disableClothingTint: true,
+    idleOverrideClip: 'tari_idle.001',
+    walkOverrideClip: 'tari_walk.001',
+    runOverrideClip: 'tari_run.001',
+    sitOverrideClip: 'tari_sit.001',
+    activity: 'walk_patrol',
+    speedMps: 1.50,
+    pauseSecAtWaypoint: 18.0,
+    waypoints: [
+      { x: -101.25, z: 5.3, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'ADMIRING BOUTIQUE DRESSES', durationSec: 19.0 },
+      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ORDERING ICED LATTE', durationSec: 10.5, holdingCafeItemId: 'iced_latte' },
+      { x: -81.23, z: -17.65, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'SIPPING ICED LATTE', durationSec: 26.0, seatLiftY: 0.02, holdingCafeItemId: 'iced_latte' },
+      { x: -77.2, z: -70.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'VISITING GRAND CASINO', durationSec: 18.0 },
+      { x: -78.59, z: -56.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO PLAZA LOUNGE', durationSec: 26.0, seatLiftY: 0.12 },
+      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS SCENIC REST', durationSec: 24.0, seatLiftY: 0.0 },
+    ],
+  },
+  {
+    id: 'citizen_kenji',
+    displayName: 'Kenji',
+    activityLabel: 'TENNIS & LAKE REGULAR',
+    roleTitle: 'Tennis Spectator & Lake Angler',
+    gender: 'male',
+    teamTint: 'red',
+    clothingTintHex: '#dc2626',
+    activity: 'walk_patrol',
+    speedMps: 1.60,
+    pauseSecAtWaypoint: 18.0,
+    idleOverrideClip: 'kenji_idle.001',
+    walkOverrideClip: 'kenji_walk.001',
+    runOverrideClip: 'kenji_run.001',
+    sitOverrideClip: 'kenji_sit.001',
+    waypoints: [
+      { x: -80.4, z: 50.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'TENNIS COURTSIDE', durationSec: 19.0 },
+      { x: -88.8, z: 64.2, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'TENNIS SOUTH GATE', durationSec: 16.0 },
+      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING BUTTER CROISSANT', durationSec: 10.5, holdingCafeItemId: 'croissant' },
+      { x: -86.24, z: -30.41, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CLOCK TOWER BENCH SNACK', durationSec: 25.0, seatLiftY: -0.05, holdingCafeItemId: 'croissant' },
+      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS BENCH REST', durationSec: 22.0, seatLiftY: 0.0 },
+      { x: -42.5, z: -8.5, yaw: 0.0, moveMode: 'walk', activity: 'fishing', label: 'NW LAKE FISHING', durationSec: 26.0 },
+      { x: -28.0, z: -16.0, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'fishing', label: 'NORTH BANK CAST', durationSec: 24.0 },
     ],
   },
 ];
+
+/**
+ * Interior Glasshouse Cafe schedule for Mira so she strolls calmly between the espresso counter,
+ * botanical lounge views, and bistro armchairs with comfortable multi-cycle linger pauses.
+ */
+export const CAFE_MIRA_INTERIOR_PRESET: CityAmbientNpcPreset = {
+  id: 'citizen_mira',
+  displayName: 'Mira',
+  activityLabel: 'GLASSHOUSE CAFE',
+  roleTitle: 'Streetwear Illustrator',
+  gender: 'female',
+  baseGlbVariant: 'player',
+  teamTint: 'red',
+  equippedHairUrl: '/assets/outfit/mira/blitz_hair_draped_hair_1_43391F7E.glb',
+  equippedTorsoUrl: '/assets/outfit/mira/blitz_torso_resort_modern_6_5DC8FAA4.glb',
+  equippedLegsUrl: '/assets/outfit/mira/blitz_legs_dspastelgothdistressed_shorts_DDA37A46.glb',
+  equippedFeetUrl: '/assets/outfit/mira/blitz_feet_elska_sneakers_705A72B0.glb',
+  clothingTintHex: '#c026d3',
+  disableClothingTint: true,
+  idleOverrideClip: 'mira_idle.001',
+  walkOverrideClip: 'mira_walk.001',
+  runOverrideClip: 'mira_run.001',
+  sitOverrideClip: 'mira_sit.001',
+  activity: 'cafe_hangout',
+  speedMps: 0.85,
+  pauseSecAtWaypoint: 16.0,
+  arrivalRadiusM: 0.45,
+  waypoints: [
+    { x: -3.15, z: 0.55, yaw: 0.85 - Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BROWSING GLASSHOUSE CAFE', durationSec: 16.0 },
+    { x: -1.65, z: -0.95, yaw: Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ORDERING HOT MOCHA', durationSec: 12.0, holdingCafeItemId: 'hot_mocha' },
+    { x: -4.62, z: -0.65, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'SIPPING MOCHA AT BISTRO', durationSec: 24.0, seatLiftY: 0.19, holdingCafeItemId: 'hot_mocha' },
+    { x: 4.46, z: 1.55, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'SKETCHING AT EAST BISTRO', durationSec: 22.0, seatLiftY: 0.19 },
+    { x: 2.60, z: 3.10, yaw: -Math.PI * 0.3, moveMode: 'walk', activity: 'sightseeing', label: 'ADMIRING CONSERVATORY PLANTS', durationSec: 16.0 },
+  ],
+};
+
+export interface CityAmbientNpcLocalAvoidanceSample {
+  x: number;
+  z: number;
+  dirX: number;
+  dirZ: number;
+  distToSteer: number;
+  distToFinal: number;
+  isFinalTarget: boolean;
+  avoidSide: number;
+  avoidTimer: number;
+}
+
+export interface CityAmbientNpcLocalAvoidanceDecision {
+  dirX: number;
+  dirZ: number;
+  speedScale: number;
+  avoidSide: number;
+  avoidTimer: number;
+  blocked: boolean;
+}
 
 export interface CityAmbientNpcStepInput {
   preset: CityAmbientNpcPreset;
@@ -14002,6 +15034,31 @@ export interface CityAmbientNpcStepInput {
   pauseTimer: number;
   elapsedSec: number;
   dt: number;
+  /** Optional shared 2D A* NavGrid for obstacle-free cross-map pathfinding. */
+  navGrid?: AStarNavGrid | null;
+  navPath?: Array<{ x: number; z: number }>;
+  navWaypointIndex?: number;
+  navPathGoalKey?: string;
+  stuckTimer?: number;
+  lastProgressX?: number;
+  lastProgressZ?: number;
+  avoidSide?: number;
+  avoidTimer?: number;
+  yieldForHazard?: boolean;
+  separationX?: number;
+  separationZ?: number;
+  isDirectTargetClear?: (
+    fromX: number,
+    fromZ: number,
+    toX: number,
+    toZ: number,
+    isSitGoal: boolean,
+  ) => boolean;
+  localAvoidance?: (
+    sample: CityAmbientNpcLocalAvoidanceSample,
+  ) => CityAmbientNpcLocalAvoidanceDecision;
+  canReplan?: boolean;
+  onReplan?: () => void;
 }
 
 export interface CityAmbientNpcStepResult {
@@ -14011,8 +15068,20 @@ export interface CityAmbientNpcStepResult {
   speedMps: number;
   isMoving: boolean;
   isSitting: boolean;
+  activeActivity: CityAmbientNpcActivity;
+  activeStatusLabel: string;
+  activeSeatLiftY: number;
+  activeHoldingCafeItemId: CafeMenuItemId | null;
   waypointIdx: number;
   pauseTimer: number;
+  navPath: Array<{ x: number; z: number }>;
+  navWaypointIndex: number;
+  navPathGoalKey: string;
+  stuckTimer: number;
+  lastProgressX: number;
+  lastProgressZ: number;
+  avoidSide: number;
+  avoidTimer: number;
 }
 
 function normalizeRadiansSigned(angle: number): number {
@@ -14022,8 +15091,39 @@ function normalizeRadiansSigned(angle: number): number {
   return a;
 }
 
+function computeAmbientDwellYawOffset(
+  activity: CityAmbientNpcActivity,
+  elapsedSec: number,
+): number {
+  switch (activity) {
+    case 'sit_relax':
+      return Math.sin(elapsedSec * 0.30) * 0.11;
+    case 'fishing':
+      return Math.sin(elapsedSec * 0.34) * 0.07;
+    case 'cafe_hangout':
+      return Math.sin(elapsedSec * 0.42) * 0.18 + Math.sin(elapsedSec * 0.19) * 0.07;
+    default:
+      // Unhurried multi-angle scan so browsing shop windows and displays looks natural.
+      return Math.sin(elapsedSec * 0.38) * 0.32 + Math.sin(elapsedSec * 0.17) * 0.16;
+  }
+}
+
+function resolveAmbientHoldingCafeItemId(
+  prevWp: CityAmbientNpcWaypoint | undefined,
+  targetWp: CityAmbientNpcWaypoint | undefined,
+  isDwelling: boolean,
+): CafeMenuItemId | null {
+  if (isDwelling) {
+    return prevWp?.holdingCafeItemId ?? null;
+  }
+  return prevWp?.holdingCafeItemId && targetWp?.holdingCafeItemId
+    ? prevWp.holdingCafeItemId
+    : null;
+}
+
 /**
- * Advances one ambient city citizen along their patrol/jog/fishing/bench schedule.
+ * Advances one island citizen along their multi-district daily itinerary using
+ * real A* NavGrid pathfinding across Plaza stairs, avenues, lakeshore, and beaches.
  */
 export function stepCityAmbientNpcSchedule(
   input: CityAmbientNpcStepInput,
@@ -14031,6 +15131,15 @@ export function stepCityAmbientNpcSchedule(
   const { preset, elapsedSec } = input;
   const dt = Math.max(0, Math.min(0.25, Number.isFinite(input.dt) ? input.dt : 0));
   const waypoints = preset.waypoints;
+  let navPath = input.navPath ?? [];
+  let navWaypointIndex = input.navWaypointIndex ?? 0;
+  let navPathGoalKey = input.navPathGoalKey ?? '';
+  let stuckTimer = input.stuckTimer ?? 0;
+  let lastProgressX = input.lastProgressX ?? input.x;
+  let lastProgressZ = input.lastProgressZ ?? input.z;
+  let avoidSide = input.avoidSide ?? 0;
+  let avoidTimer = Math.max(0, input.avoidTimer ?? 0);
+
   if (waypoints.length === 0) {
     return {
       x: input.x,
@@ -14039,21 +15148,35 @@ export function stepCityAmbientNpcSchedule(
       speedMps: 0,
       isMoving: false,
       isSitting: preset.activity === 'sit_relax',
+      activeActivity: preset.activity,
+      activeStatusLabel: preset.activityLabel,
+      activeSeatLiftY: preset.seatLiftY ?? 0,
+      activeHoldingCafeItemId: null,
       waypointIdx: 0,
       pauseTimer: 0,
+      navPath,
+      navWaypointIndex,
+      navPathGoalKey,
+      stuckTimer: 0,
+      lastProgressX,
+      lastProgressZ,
+      avoidSide: 0,
+      avoidTimer: 0,
     };
   }
 
   const safeIdx =
     ((input.waypointIdx % waypoints.length) + waypoints.length) % waypoints.length;
   const targetWp = waypoints[safeIdx];
+  const prevWp = waypoints[(safeIdx - 1 + waypoints.length) % waypoints.length];
 
   if (waypoints.length === 1 || preset.speedMps <= 0.01) {
+    const soloActivity = targetWp.activity ?? preset.activity;
     const baseYaw = targetWp.yaw ?? input.yaw;
     const gazeOffset =
-      preset.activity === 'sit_relax'
+      soloActivity === 'sit_relax'
         ? Math.sin(elapsedSec * 0.55) * 0.14
-        : preset.activity === 'fishing'
+        : soloActivity === 'fishing'
           ? Math.sin(elapsedSec * 0.45) * 0.08
           : 0;
     return {
@@ -14062,65 +15185,338 @@ export function stepCityAmbientNpcSchedule(
       yaw: baseYaw + gazeOffset,
       speedMps: 0,
       isMoving: false,
-      isSitting: preset.activity === 'sit_relax',
+      isSitting: soloActivity === 'sit_relax',
+      activeActivity: soloActivity,
+      activeStatusLabel: targetWp.label ?? preset.activityLabel,
+      activeSeatLiftY: targetWp.seatLiftY ?? preset.seatLiftY ?? 0,
+      activeHoldingCafeItemId: targetWp.holdingCafeItemId ?? null,
       waypointIdx: 0,
       pauseTimer: 0,
+      navPath: [],
+      navWaypointIndex: 0,
+      navPathGoalKey: '',
+      stuckTimer: 0,
+      lastProgressX: targetWp.x,
+      lastProgressZ: targetWp.z,
+      avoidSide: 0,
+      avoidTimer: 0,
     };
   }
 
+  // Dwelling at the previous arrived stop performing its activity (sitting, fishing, cafe, sightseeing)
   if (input.pauseTimer > 0) {
     const nextPause = Math.max(0, input.pauseTimer - dt);
-    const prevWp = waypoints[(safeIdx - 1 + waypoints.length) % waypoints.length];
+    const stopActivity = prevWp.activity ?? preset.activity;
+    const isSittingNow = stopActivity === 'sit_relax';
+    const gazeOffset = computeAmbientDwellYawOffset(stopActivity, elapsedSec);
     const desiredYaw =
       prevWp.yaw !== undefined
-        ? prevWp.yaw + Math.sin(elapsedSec * 0.9) * 0.18
-        : input.yaw + Math.sin(elapsedSec * 0.7) * 0.004;
+        ? prevWp.yaw + gazeOffset
+        : input.yaw + Math.sin(elapsedSec * 0.45) * 0.004;
     return {
       x: input.x,
       z: input.z,
       yaw: desiredYaw,
       speedMps: 0,
       isMoving: false,
-      isSitting: false,
+      isSitting: isSittingNow,
+      activeActivity: stopActivity,
+      activeStatusLabel: prevWp.label ?? preset.activityLabel,
+      activeSeatLiftY: prevWp.seatLiftY ?? preset.seatLiftY ?? 0,
+      activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, true),
       waypointIdx: safeIdx,
       pauseTimer: nextPause,
+      navPath: nextPause > 0 ? navPath : [],
+      navWaypointIndex: 0,
+      navPathGoalKey: nextPause > 0 ? navPathGoalKey : '',
+      stuckTimer: 0,
+      lastProgressX: input.x,
+      lastProgressZ: input.z,
+      avoidSide: 0,
+      avoidTimer: 0,
     };
   }
 
-  const dx = targetWp.x - input.x;
-  const dz = targetWp.z - input.z;
-  const dist = Math.hypot(dx, dz);
-  const stepDist = preset.speedMps * dt;
+  const moveSpeed = Math.max(0.5, targetWp.speedMps ?? preset.speedMps);
+  const targetGoalActivity = targetWp.activity ?? preset.activity;
+  const travelActivity: CityAmbientNpcActivity =
+    targetWp.moveMode === 'jog' ? 'jog_exercise' : 'walk_patrol';
+  const travelStatusLabel = targetWp.label ?? preset.activityLabel;
 
-  if (dist <= Math.max(0.22, stepDist)) {
+  // Politely yield at crosswalks when a city tram is approaching
+  if (input.yieldForHazard) {
+    return {
+      x: input.x,
+      z: input.z,
+      yaw: input.yaw,
+      speedMps: 0,
+      isMoving: false,
+      isSitting: false,
+      activeActivity: travelActivity,
+      activeStatusLabel: travelStatusLabel,
+      activeSeatLiftY: 0,
+      activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, false),
+      waypointIdx: safeIdx,
+      pauseTimer: 0,
+      navPath,
+      navWaypointIndex,
+      navPathGoalKey,
+      stuckTimer: 0,
+      lastProgressX: input.x,
+      lastProgressZ: input.z,
+      avoidSide,
+      avoidTimer,
+    };
+  }
+
+  const totalDx = targetWp.x - input.x;
+  const totalDz = targetWp.z - input.z;
+  const distToFinal = Math.hypot(totalDx, totalDz);
+  const baseArrivalRadius =
+    preset.arrivalRadiusM ?? (targetGoalActivity === 'sit_relax' ? 1.85 : 1.15);
+  const arrivalRadius = Math.max(baseArrivalRadius, moveSpeed * dt);
+
+  if (distToFinal <= arrivalRadius) {
     const nextIdx = (safeIdx + 1) % waypoints.length;
+    const dwellDuration = targetWp.durationSec ?? preset.pauseSecAtWaypoint;
     return {
       x: targetWp.x,
       z: targetWp.z,
       yaw: targetWp.yaw ?? input.yaw,
       speedMps: 0,
       isMoving: false,
-      isSitting: false,
+      isSitting: targetGoalActivity === 'sit_relax',
+      activeActivity: targetGoalActivity,
+      activeStatusLabel: travelStatusLabel,
+      activeSeatLiftY: targetWp.seatLiftY ?? preset.seatLiftY ?? 0,
+      activeHoldingCafeItemId: targetWp.holdingCafeItemId ?? null,
       waypointIdx: nextIdx,
-      pauseTimer: preset.pauseSecAtWaypoint,
+      pauseTimer: dwellDuration,
+      navPath: [],
+      navWaypointIndex: 0,
+      navPathGoalKey: '',
+      stuckTimer: 0,
+      lastProgressX: targetWp.x,
+      lastProgressZ: targetWp.z,
+      avoidSide: 0,
+      avoidTimer: 0,
     };
   }
 
-  const targetYaw = Math.atan2(-dz, dx);
+  // Steer via A* pathfinder (preferring sidewalks & Zebra Crosswalks when using pedestrianGrid)
+  let steerX = targetWp.x;
+  let steerZ = targetWp.z;
+  const isSitGoal = targetGoalActivity === 'sit_relax';
+  if (input.navGrid) {
+    const goalKey = `${safeIdx}:${targetWp.x.toFixed(1)},${targetWp.z.toFixed(1)}`;
+    const movedSinceCheck = Math.hypot(input.x - lastProgressX, input.z - lastProgressZ);
+    if (movedSinceCheck > 0.35) {
+      lastProgressX = input.x;
+      lastProgressZ = input.z;
+      stuckTimer = 0;
+    } else {
+      stuckTimer += dt;
+    }
+
+    const stuckTriggered = stuckTimer > 0.6;
+    const needPlan =
+      navPath.length === 0 ||
+      navPathGoalKey !== goalKey ||
+      navWaypointIndex >= navPath.length ||
+      stuckTriggered;
+
+    if (needPlan) {
+      if (input.canReplan === false && (navPath.length === 0 || navPathGoalKey !== goalKey)) {
+        // Wait cleanly for this citizen's frame replan budget instead of blind straight-line jaywalking
+        return {
+          x: input.x,
+          z: input.z,
+          yaw: input.yaw,
+          speedMps: 0,
+          isMoving: false,
+          isSitting: false,
+          activeActivity: travelActivity,
+          activeStatusLabel: travelStatusLabel,
+          activeSeatLiftY: 0,
+          activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, false),
+          waypointIdx: safeIdx,
+          pauseTimer: 0,
+          navPath,
+          navWaypointIndex,
+          navPathGoalKey,
+          stuckTimer: 0,
+          lastProgressX: input.x,
+          lastProgressZ: input.z,
+          avoidSide,
+          avoidTimer,
+        };
+      }
+      if (input.canReplan !== false) {
+        input.onReplan?.();
+        const res = findPathAStar(input.navGrid, input.x, input.z, targetWp.x, targetWp.z, {
+          allowDiagonal: true,
+          maxIterations: 22500,
+          smoothPath: true,
+        });
+        navPath =
+          res.waypoints.length > 0
+            ? res.waypoints
+            : [{ x: targetWp.x, z: targetWp.z }];
+        navWaypointIndex = 0;
+        navPathGoalKey = goalKey;
+        if (stuckTriggered) {
+          // Flip avoidance side when pinned in a tight corridor so the NPC tries the opposite detour
+          if (avoidSide !== 0) {
+            avoidSide = -avoidSide;
+            avoidTimer = 0.65;
+          }
+          stuckTimer = 0;
+          lastProgressX = input.x;
+          lastProgressZ = input.z;
+        } else {
+          stuckTimer = 0;
+          lastProgressX = input.x;
+          lastProgressZ = input.z;
+        }
+      }
+    }
+
+    while (navPath.length > 0 && navWaypointIndex < navPath.length - 1) {
+      const wp = navPath[navWaypointIndex];
+      const wpDx = wp.x - input.x;
+      const wpDz = wp.z - input.z;
+      const wpDist = Math.hypot(wpDx, wpDz);
+      if (wpDist < 0.65) {
+        navWaypointIndex++;
+        continue;
+      }
+      const nextWp = navPath[navWaypointIndex + 1];
+      const segX = nextWp.x - wp.x;
+      const segZ = nextWp.z - wp.z;
+      const passedWaypoint =
+        wpDist < 1.85 &&
+        (-wpDx * segX + -wpDz * segZ) > 0 &&
+        isDirectNavGridSegmentClear(input.navGrid, input.x, input.z, nextWp.x, nextWp.z, false);
+      if (passedWaypoint) {
+        navWaypointIndex++;
+      } else {
+        break;
+      }
+    }
+
+    if (navPath.length > 0 && navWaypointIndex < navPath.length) {
+      const node = navPath[navWaypointIndex];
+      const isFinalAStarNode = navWaypointIndex >= navPath.length - 1;
+      const distToNode = Math.hypot(node.x - input.x, node.z - input.z);
+      const nodeToTargetDist = Math.hypot(targetWp.x - node.x, targetWp.z - node.z);
+      // Only take the direct-to-target approach shortcut if the segment is genuinely clear of static obstacles
+      const wantsDirectShortcut =
+        isFinalAStarNode &&
+        ((distToFinal <= 3.8 &&
+          (distToNode <= 0.95 || distToFinal <= nodeToTargetDist + 0.15)) ||
+          (targetGoalActivity !== 'sit_relax' && distToFinal < 2.8 && distToNode <= 1.25));
+      const directShortcutClear =
+        wantsDirectShortcut &&
+        isDirectNavGridSegmentClear(
+          input.navGrid,
+          input.x,
+          input.z,
+          targetWp.x,
+          targetWp.z,
+          isSitGoal,
+        ) &&
+        (input.isDirectTargetClear
+          ? input.isDirectTargetClear(input.x, input.z, targetWp.x, targetWp.z, isSitGoal)
+          : true);
+      if (directShortcutClear) {
+        steerX = targetWp.x;
+        steerZ = targetWp.z;
+      } else {
+        steerX = node.x;
+        steerZ = node.z;
+      }
+    }
+  }
+
+  let dx = steerX - input.x;
+  let dz = steerZ - input.z;
+  let dist = Math.hypot(dx, dz);
+  if (dist < 0.05) {
+    dx = totalDx;
+    dz = totalDz;
+    dist = Math.max(0.05, distToFinal);
+  }
+
+  const invDist = 1.0 / dist;
+  let dirX = dx * invDist;
+  let dirZ = dz * invDist;
+  if (input.separationX || input.separationZ) {
+    const sx = input.separationX ?? 0;
+    const sz = input.separationZ ?? 0;
+    const bx = dirX + sx * 0.45;
+    const bz = dirZ + sz * 0.45;
+    const blen = Math.hypot(bx, bz);
+    if (blen > 0.05) {
+      dirX = bx / blen;
+      dirZ = bz / blen;
+    }
+  }
+
+  let effectiveSpeed = moveSpeed;
+  let steppedMoving = true;
+  if (input.localAvoidance) {
+    const isFinalTarget =
+      Math.hypot(steerX - targetWp.x, steerZ - targetWp.z) <= 0.05;
+    const avoidRes = input.localAvoidance({
+      x: input.x,
+      z: input.z,
+      dirX,
+      dirZ,
+      distToSteer: dist,
+      distToFinal,
+      isFinalTarget,
+      avoidSide,
+      avoidTimer,
+    });
+    dirX = avoidRes.dirX;
+    dirZ = avoidRes.dirZ;
+    avoidSide = avoidRes.avoidSide;
+    avoidTimer = avoidRes.avoidTimer;
+    effectiveSpeed = moveSpeed * clamp(avoidRes.speedScale, 0, 1);
+    if (effectiveSpeed <= 0.05) {
+      steppedMoving = false;
+    }
+  }
+
+  const stepDist = steppedMoving ? Math.min(dist, effectiveSpeed * dt) : 0;
+  const nextX = steppedMoving ? input.x + dirX * stepDist : input.x;
+  const nextZ = steppedMoving ? input.z + dirZ * stepDist : input.z;
+  const targetYaw = Math.atan2(-dirZ, dirX);
   const dYaw = normalizeRadiansSigned(targetYaw - input.yaw);
   const maxTurnStep = 7.5 * dt;
   const nextYaw = input.yaw + Math.max(-maxTurnStep, Math.min(maxTurnStep, dYaw));
-  const invDist = 1.0 / dist;
 
   return {
-    x: input.x + dx * invDist * stepDist,
-    z: input.z + dz * invDist * stepDist,
+    x: nextX,
+    z: nextZ,
     yaw: nextYaw,
-    speedMps: preset.speedMps,
-    isMoving: true,
+    speedMps: steppedMoving ? effectiveSpeed : 0,
+    isMoving: steppedMoving,
     isSitting: false,
+    activeActivity: travelActivity,
+    activeStatusLabel: travelStatusLabel,
+    activeSeatLiftY: 0,
+    activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, false),
     waypointIdx: safeIdx,
     pauseTimer: 0,
+    navPath,
+    navWaypointIndex,
+    navPathGoalKey,
+    stuckTimer,
+    lastProgressX,
+    lastProgressZ,
+    avoidSide,
+    avoidTimer,
   };
 }
 
@@ -14181,6 +15577,366 @@ export function resolveUnifiedBottomDockProximity(input: {
   }
 
   return { winner: 'none' };
+}
+
+// ============================================================================
+// CITY VIEW OVERVIEW & DISTRICT GROUP SPOTLIGHT CAMERA (CERRIA-STYLE SIGHTSEEING)
+// ============================================================================
+
+export type CityViewDistrictId =
+  | 'plaza'
+  | 'casino'
+  | 'tennis'
+  | 'kai_pantai'
+  | 'dermaga'
+  | 'taman_ria'
+  | 'north_residence'
+  | 'south_residence';
+
+export type CityViewTargetId = 'kota' | CityViewDistrictId;
+
+export interface CityViewDistrictSpec {
+  id: CityViewDistrictId;
+  hashSlug: string;
+  aliases: readonly string[];
+  label: string;
+  fullTitle: string;
+  subtitle: string;
+  lookAtPos: Vec3;
+  markerHeightOffset: number;
+  defaultYaw: number;
+  defaultPitch: number;
+  defaultDist: number;
+  minDist: number;
+  maxDist: number;
+  pickRadiusM: number;
+  neighborIds: readonly [CityViewDistrictId, CityViewDistrictId];
+}
+
+export const CITY_VIEW_OVERVIEW_DEFAULTS = {
+  lookAtPos: { x: -6.0, y: 0.0, z: 0.0 } as Vec3,
+  yaw: -0.45,
+  pitch: 0.78, // ~44.7 deg elevated aerial overview matching Cerria Town's Kota angle
+  minPitch: 0.32,
+  maxPitch: 1.44, // allows steep near-vertical bird's-eye top-down inspection
+  dist: 158.0,
+  minDist: 28.0,
+  maxDist: 265.0,
+  panLimit: 138.0,
+  fov: 42,
+} as const;
+
+export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
+  {
+    id: 'plaza',
+    hashSlug: 'plaza',
+    aliases: ['toko1', 'toko2', 'toko3', 'cafe', 'balai', 'central-plaza'],
+    label: 'Plaza',
+    fullTitle: 'Central Plaza',
+    subtitle: 'Civic Hall, Shops, Cafe & Halte',
+    lookAtPos: { x: -87.75, y: 3.0, z: -2.0 },
+    markerHeightOffset: 11.5,
+    defaultYaw: 0.95,
+    defaultPitch: 0.44,
+    defaultDist: 50.0,
+    minDist: 24.0,
+    maxDist: 92.0,
+    pickRadiusM: 25.0,
+    neighborIds: ['casino', 'tennis'],
+  },
+  {
+    id: 'casino',
+    hashSlug: 'casino',
+    aliases: ['grand-casino'],
+    label: 'Casino',
+    fullTitle: 'Grand Casino',
+    subtitle: 'Resort & Valet Loop Utara',
+    lookAtPos: { x: -83.5, y: 5.0, z: -69.5 },
+    markerHeightOffset: 12.8,
+    defaultYaw: 0.87,
+    defaultPitch: 0.44,
+    defaultDist: 56.0,
+    minDist: 26.0,
+    maxDist: 96.0,
+    pickRadiusM: 22.0,
+    neighborIds: ['plaza', 'north_residence'],
+  },
+  {
+    id: 'tennis',
+    hashSlug: 'tennis',
+    aliases: ['tenis', 'tennis-court'],
+    label: 'Tennis',
+    fullTitle: 'Tennis Club',
+    subtitle: 'Arena Tenis Central Plaza',
+    lookAtPos: { x: -88.8, y: 1.5, z: 50.6 },
+    markerHeightOffset: 6.2,
+    defaultYaw: 1.05,
+    defaultPitch: 0.50,
+    defaultDist: 36.0,
+    minDist: 20.0,
+    maxDist: 72.0,
+    pickRadiusM: 16.0,
+    neighborIds: ['plaza', 'south_residence'],
+  },
+  {
+    id: 'kai_pantai',
+    hashSlug: 'kai-pantai',
+    aliases: ['kai', 'pantai', 'beach'],
+    label: 'Kai Pantai',
+    fullTitle: 'Kai Pantai',
+    subtitle: 'Pantai Tenggara & Fish Market',
+    lookAtPos: { x: 88.5, y: 2.2, z: 68.0 },
+    markerHeightOffset: 8.5,
+    defaultYaw: 0.98,
+    defaultPitch: 0.44,
+    defaultDist: 48.0,
+    minDist: 24.0,
+    maxDist: 88.0,
+    pickRadiusM: 22.0,
+    neighborIds: ['dermaga', 'south_residence'],
+  },
+  {
+    id: 'dermaga',
+    hashSlug: 'dermaga',
+    aliases: ['harbor', 'pelabuhan', 'pier'],
+    label: 'Dermaga',
+    fullTitle: 'Dermaga Harbor',
+    subtitle: 'Dermaga Beton & Halte Timur',
+    lookAtPos: { x: 86.0, y: 2.5, z: 12.0 },
+    markerHeightOffset: 8.5,
+    defaultYaw: 1.95,
+    defaultPitch: 0.44,
+    defaultDist: 52.0,
+    minDist: 24.0,
+    maxDist: 92.0,
+    pickRadiusM: 22.0,
+    neighborIds: ['taman_ria', 'kai_pantai'],
+  },
+  {
+    id: 'taman_ria',
+    hashSlug: 'taman-ria',
+    aliases: ['amusement', 'park', 'bianglala'],
+    label: 'Taman Ria',
+    fullTitle: 'Taman Ria',
+    subtitle: 'Bianglala & Taman Hiburan Pesisir',
+    lookAtPos: { x: 95.5, y: 5.2, z: -55.0 },
+    markerHeightOffset: 15.5,
+    defaultYaw: 2.35,
+    defaultPitch: 0.42,
+    defaultDist: 62.0,
+    minDist: 28.0,
+    maxDist: 105.0,
+    pickRadiusM: 24.0,
+    neighborIds: ['dermaga', 'north_residence'],
+  },
+  {
+    id: 'north_residence',
+    hashSlug: 'north-residence',
+    aliases: ['north', 'utara'],
+    label: 'North Residence',
+    fullTitle: 'North Residence',
+    subtitle: 'Boulevard & Klaster Hunian Utara',
+    lookAtPos: { x: 0.0, y: 3.0, z: -70.0 },
+    markerHeightOffset: 10.5,
+    defaultYaw: 0.38,
+    defaultPitch: 0.46,
+    defaultDist: 58.0,
+    minDist: 28.0,
+    maxDist: 105.0,
+    pickRadiusM: 26.0,
+    neighborIds: ['taman_ria', 'casino'],
+  },
+  {
+    id: 'south_residence',
+    hashSlug: 'south-residence',
+    aliases: ['south', 'selatan'],
+    label: 'South Residence',
+    fullTitle: 'South Residence',
+    subtitle: 'Avenue Selatan & Model Estate',
+    lookAtPos: { x: -12.0, y: 3.0, z: 70.0 },
+    markerHeightOffset: 10.5,
+    defaultYaw: 2.78,
+    defaultPitch: 0.46,
+    defaultDist: 58.0,
+    minDist: 28.0,
+    maxDist: 105.0,
+    pickRadiusM: 26.0,
+    neighborIds: ['tennis', 'kai_pantai'],
+  },
+];
+
+export function getCityViewDistrictById(
+  id: CityViewDistrictId | string | null | undefined,
+): CityViewDistrictSpec {
+  return CITY_VIEW_DISTRICTS.find((d) => d.id === id) ?? CITY_VIEW_DISTRICTS[0];
+}
+
+/**
+ * Parses URL hash slugs (`#kota`, `#plaza`, `#kai-pantai`, `#toko1`..`#toko3`, etc.)
+ * into a City View target without hijacking unrelated hashes.
+ */
+export function parseCityViewHash(hash: string | null | undefined): CityViewTargetId | null {
+  const clean = (hash ?? '').replace(/^#/, '').trim().toLowerCase();
+  if (!clean) return null;
+  if (clean === 'kota' || clean === 'overview' || clean === 'city') {
+    return 'kota';
+  }
+  for (let i = 0; i < CITY_VIEW_DISTRICTS.length; i++) {
+    const d = CITY_VIEW_DISTRICTS[i];
+    if (d.hashSlug === clean || d.id === clean || d.aliases.includes(clean)) {
+      return d.id;
+    }
+  }
+  return null;
+}
+
+export function getCityViewTargetHash(target: CityViewTargetId): string {
+  if (target === 'kota') return '#kota';
+  return `#${getCityViewDistrictById(target).hashSlug}`;
+}
+
+export function getAdjacentCityViewDistrictId(
+  current: CityViewTargetId,
+  direction: -1 | 1,
+): CityViewDistrictId {
+  if (current === 'kota') {
+    return direction > 0
+      ? CITY_VIEW_DISTRICTS[0].id
+      : CITY_VIEW_DISTRICTS[CITY_VIEW_DISTRICTS.length - 1].id;
+  }
+  const idx = CITY_VIEW_DISTRICTS.findIndex((d) => d.id === current);
+  if (idx < 0) return CITY_VIEW_DISTRICTS[0].id;
+  const n = CITY_VIEW_DISTRICTS.length;
+  return CITY_VIEW_DISTRICTS[(idx + direction + n) % n].id;
+}
+
+export function getCityViewDefaultOrbit(target: CityViewTargetId): {
+  yaw: number;
+  pitch: number;
+  dist: number;
+  panX: number;
+  panZ: number;
+} {
+  if (target === 'kota') {
+    return {
+      yaw: CITY_VIEW_OVERVIEW_DEFAULTS.yaw,
+      pitch: CITY_VIEW_OVERVIEW_DEFAULTS.pitch,
+      dist: CITY_VIEW_OVERVIEW_DEFAULTS.dist,
+      panX: CITY_VIEW_OVERVIEW_DEFAULTS.lookAtPos.x,
+      panZ: CITY_VIEW_OVERVIEW_DEFAULTS.lookAtPos.z,
+    };
+  }
+  const d = getCityViewDistrictById(target);
+  return {
+    yaw: d.defaultYaw,
+    pitch: d.defaultPitch,
+    dist: d.defaultDist,
+    panX: d.lookAtPos.x,
+    panZ: d.lookAtPos.z,
+  };
+}
+
+/**
+ * Computes orbital camera pose for either City Overview (`kota`) or a focused district group,
+ * keeping pitch/zoom/pan smoothly clamped inside safe sightseeing limits.
+ */
+export function computeCityViewOrbitCameraPose(params: {
+  target: CityViewTargetId;
+  yaw?: number;
+  pitch?: number;
+  dist?: number;
+  panX?: number;
+  panZ?: number;
+}): {
+  cameraPos: Vec3;
+  lookAtPos: Vec3;
+  fov: number;
+} {
+  const isOverview = params.target === 'kota';
+  const spec = isOverview ? null : getCityViewDistrictById(params.target);
+
+  const yaw = params.yaw ?? (isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.yaw : spec!.defaultYaw);
+  const pitch = clamp(
+    params.pitch ?? (isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.pitch : spec!.defaultPitch),
+    isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.minPitch : 0.22,
+    isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.maxPitch : 1.18,
+  );
+  const dist = clamp(
+    params.dist ?? (isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.dist : spec!.defaultDist),
+    isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.minDist : spec!.minDist,
+    isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.maxDist : spec!.maxDist,
+  );
+
+  const lookAtX = isOverview
+    ? clamp(
+        params.panX ?? CITY_VIEW_OVERVIEW_DEFAULTS.lookAtPos.x,
+        -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+        CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+      )
+    : spec!.lookAtPos.x;
+  const lookAtY = isOverview ? CITY_VIEW_OVERVIEW_DEFAULTS.lookAtPos.y : spec!.lookAtPos.y;
+  const lookAtZ = isOverview
+    ? clamp(
+        params.panZ ?? CITY_VIEW_OVERVIEW_DEFAULTS.lookAtPos.z,
+        -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+        CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+      )
+    : spec!.lookAtPos.z;
+
+  const cosPitch = Math.cos(pitch);
+  const cameraPos: Vec3 = {
+    x: lookAtX + Math.sin(yaw) * cosPitch * dist,
+    y: lookAtY + Math.sin(pitch) * dist,
+    z: lookAtZ + Math.cos(yaw) * cosPitch * dist,
+  };
+
+  return {
+    cameraPos,
+    lookAtPos: { x: lookAtX, y: lookAtY, z: lookAtZ },
+    fov: CITY_VIEW_OVERVIEW_DEFAULTS.fov,
+  };
+}
+
+/**
+ * Resolves a clicked 3D ground point inside City Overview (`kota`) to the nearest matching district group,
+ * allowing direct click-to-highlight anywhere on the 3D canvas like Cerria Town.
+ */
+export function pickCityViewDistrictAtWorldPoint(
+  worldX: number,
+  worldZ: number,
+): CityViewDistrictSpec | null {
+  let best: CityViewDistrictSpec | null = null;
+  let bestScore = Infinity;
+  for (let i = 0; i < CITY_VIEW_DISTRICTS.length; i++) {
+    const d = CITY_VIEW_DISTRICTS[i];
+    const dist = Math.hypot(worldX - d.lookAtPos.x, worldZ - d.lookAtPos.z);
+    if (dist <= d.pickRadiusM && dist < bestScore) {
+      bestScore = dist;
+      best = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Smooth eased cubic camera flight curve between City View states and gameplay camera poses.
+ */
+export function computeCityViewFlyPose(params: {
+  startCamPos: Vec3;
+  startLookAtPos: Vec3;
+  startFov: number;
+  targetCamPos: Vec3;
+  targetLookAtPos: Vec3;
+  targetFov: number;
+  progress01: number;
+}): {
+  cameraPos: Vec3;
+  lookAtPos: Vec3;
+  fov: number;
+  eased01: number;
+  isComplete: boolean;
+} {
+  return computePlazaFlyToPose(params);
 }
 
 

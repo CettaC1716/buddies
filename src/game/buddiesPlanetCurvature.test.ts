@@ -5,6 +5,10 @@ import {
   PLANET_CURVATURE_STRENGTH,
   PLANET_RIVERBED_DEPTH,
   PLANET_WATER_SURFACE_Y,
+  EAST_WATER_SURFACE_Y,
+  HARBOR_SEABED_DEEP_Y,
+  evaluateEastCoastalSandyMask,
+  evaluateHarborSeabedDrop,
   wrapPlanetCoord,
   getPlanetShortestDelta,
   getRawGroundElevation,
@@ -26,9 +30,34 @@ import {
   ZEBRA_CROSSWALK_ZONES,
   isPointOnZebraCrosswalk,
   isPointOnAsphaltRoadOrZebraCross,
+  OUTER_TRAM_SIDEWALK_WIDTH_M,
+  evaluateOuterTramSidewalkSdf,
+  isPointOnOuterTramSidewalk,
+  INNER_TRAM_SIDEWALK_WIDTH_M,
+  evaluateInnerTramSidewalkSdf,
+  isPointOnInnerTramSidewalk,
+  createHorizontalPolygonSlabGeometry,
   applyTerrainSculptBrush,
   resetTerrainSculptGrid,
+  BEACHFRONT_STILT_CABIN_SPEC,
+  isPointOnBeachfrontStiltCabinDeck,
+  evaluateBeachfrontStiltCabinElevation,
+  getBaseProceduralGroundElevation,
 } from './buddiesPlanetCurvature';
+import {
+  bakeStaticGroupMeshes,
+  createBlitzStrokeMesh,
+  createUnifiedWaterSurfaceMaterial,
+  upgradeMeshToBlitzWorldMaterial,
+  type BlitzWindUniforms,
+} from './buddiesBlitzShadersAndAssets';
+import { buildStaticWorldStructuresList } from './buddiesBlitzWorldBuilder';
+import {
+  generateUnderwaterEcologyPlacements,
+  isPointClearOfPierAndQuay,
+} from './buddiesUnderwaterEcology';
+import { buildSouthEastCoastalBeachfront3D } from './buddiesCoastalBeachBuilder';
+import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 
 test('PLANET_CURVATURE_STRENGTH is 0.0 for 100% flat Buddies Blitz ground', () => {
   assert.equal(PLANET_CURVATURE_STRENGTH, 0.0);
@@ -37,10 +66,11 @@ test('PLANET_CURVATURE_STRENGTH is 0.0 for 100% flat Buddies Blitz ground', () =
   assert.equal(computePlanetYOffset(25, 12, 5, 12), 0.0);
 });
 
-test('wrapPlanetCoord clamps within [-130, +130] and getPlanetShortestDelta is flat Euclidean delta', () => {
+test('wrapPlanetCoord clamps within [-156, +156] and getPlanetShortestDelta is flat Euclidean delta', () => {
   assert.equal(wrapPlanetCoord(24), 24);
-  assert.equal(wrapPlanetCoord(145), 130);
-  assert.equal(wrapPlanetCoord(-145), -130);
+  assert.equal(wrapPlanetCoord(145), 145);
+  assert.equal(wrapPlanetCoord(175), 156);
+  assert.equal(wrapPlanetCoord(-175), -156);
 
   // Flat Euclidean delta without toroidal wrapping jump
   assert.equal(getPlanetShortestDelta(48, -48), 96);
@@ -88,17 +118,31 @@ test('getRawGroundElevation and getTerrainElevation are flat (0.0m) in playable 
     assert.equal(getBridgeDeckElevation(x, z), -Infinity);
   }
 
-  // Outer Perimeter Hill Embankment ("Tanggul Bukit") rises sharply around the North, West, and South map boundaries
+  // Outer Coastal Hills rise around North, West, and South borders; Switchbacks, Ridge Highway & Villa Plateaus are walkable
   assert.ok(evaluateOuterEmbankmentSdf(0, 0) < -80);
-  assert.ok(evaluateOuterEmbankmentSdf(0, 123) > 4.0);
-  assert.ok(evaluateOuterEmbankmentSdf(0, -123) > 4.0);
+  assert.ok(evaluateOuterEmbankmentSdf(0, 115.5) > 0.5);
+  assert.ok(evaluateOuterEmbankmentSdf(0, -115.5) > 0.5);
+  assert.ok(evaluateOuterEmbankmentSdf(0, 154) > 2.0);
+  assert.ok(evaluateOuterEmbankmentSdf(0, -154) > 2.0);
   assert.ok(evaluateOuterEmbankmentSdf(-112, 0) > 4.0);
+  assert.ok(evaluateOuterEmbankmentSdf(-153, 0) > 1.5);
   // East boundary (x > 109.2) is the Impassable Open Ocean / Coastal Seawall ("ujung dermaga")
   assert.ok(evaluateOuterEmbankmentSdf(118, 0) > 4.0);
-  assert.ok(getTerrainElevation(0, 123) > 5.0);
-  assert.ok(getTerrainElevation(0, -123) > 5.0);
-  assert.ok(getTerrainElevation(-124, 0) > 5.0);
-  assert.ok(getTerrainElevation(-112, 55) > 5.0);
+
+  // Walkable +8.50m Twin Peaks Ridge Highway & 3 flat (+8.50m) Hilltop Villa Plateaus
+  assert.ok(evaluateOuterEmbankmentSdf(0, 125) < -3.0);
+  assert.ok(evaluateOuterEmbankmentSdf(0, -125) < -3.0);
+  assert.ok(evaluateOuterEmbankmentSdf(-140, 0) < -3.0);
+  assert.ok(evaluateOuterEmbankmentSdf(-126.5, 0) < -3.0);
+  assert.equal(getTerrainElevation(0, 125), 8.5);
+  assert.equal(getTerrainElevation(0, -125), 8.5);
+  assert.equal(getTerrainElevation(-140, 0), 8.5);
+  assert.equal(getTerrainElevation(-126.5, 0), 8.5);
+  assert.ok(getTerrainElevation(-112, 55) > 4.0);
+  assert.ok(evaluateBlitzGrassMask(0, 125) > 0.85, 'South Villa Plateau should grow lush grass');
+  assert.ok(evaluateBlitzGrassMask(0, -125) > 0.85, 'North Villa Plateau should grow lush grass');
+  assert.ok(evaluateBlitzGrassMask(-140, 0) > 0.85, 'West Villa Plateau should grow lush grass');
+  assert.equal(evaluateBlitzGrassMask(-126.5, 0), 0.0, 'Ridge highway must have zero grass');
 
   // Widened West Elevated Concrete Lobby & Shopping Plaza Platform is raised (+2.50m) across x ∈ [-104.5, -76.5], z ∈ [-38, +38]
   assert.ok(evaluateWestPowerPlantSdf(-88.5, 0.0) < -5.0);
@@ -106,9 +150,9 @@ test('getRawGroundElevation and getTerrainElevation are flat (0.0m) in playable 
   assert.ok(Math.abs(getRawGroundElevation(-96.0, 0.0) - 2.50) < 0.05);
   assert.ok(Math.abs(getTerrainElevation(-96.0, 0.0) - 2.50) < 0.05);
   // Urban Plaza to Street Staircase (20m wide: z in [-10, +10]) descends from +2.50m Plaza through +1.32m Mid-Landing to 0.0m Street
-  assert.ok(Math.abs(getTerrainElevation(-81.1, 0.0) - 1.32) < 0.05);
-  assert.ok(getTerrainElevation(-78.5, 0.0) > 0.40 && getTerrainElevation(-78.5, 0.0) < 1.10);
-  assert.equal(getTerrainElevation(-74.0, 0.0), 0.0);
+  assert.ok(Math.abs(getTerrainElevation(-83.35, 0.0) - 1.32) < 0.05);
+  assert.ok(getTerrainElevation(-80.75, 0.0) > 0.40 && getTerrainElevation(-80.75, 0.0) < 1.10);
+  assert.equal(getTerrainElevation(-73.8, 0.0), 0.0);
 
   // Central-West Oasis Lake has a real 3-Level Concave Basin Depression ("level cekungan danau", down to -1.55m at center)
   assert.ok(getRawGroundElevation(-31.0, 0.0) < -1.45);
@@ -161,6 +205,15 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   }
   assert.ok(evaluateRoadNetworkSdf(0, 108) < 0);
   assert.ok(evaluateRoadNetworkSdf(0, -108) < 0);
+  assert.ok(evaluateRoadNetworkSdf(80, 108) < 0, 'Extended South rear road must reach East coast');
+  assert.ok(evaluateRoadNetworkSdf(80, -108) < 0, 'Extended North rear road must reach East coast');
+  assert.ok(evaluateRoadNetworkSdf(96, 108) < 0);
+  assert.ok(evaluateRoadNetworkSdf(96, -108) < 0);
+  assert.equal(getTerrainElevation(80, 108), 0.0);
+  assert.equal(getTerrainElevation(80, -108), 0.0);
+  assert.ok(evaluateRoadNetworkSdf(-126.5, 0) < 0, 'Twin Peaks West crest road must register on road SDF');
+  assert.ok(evaluateRoadNetworkSdf(-15.0, 144.5) < 0, 'South Ridge road must register on road SDF');
+  assert.ok(evaluateRoadNetworkSdf(-15.0, -144.5) < 0, 'North Ridge road must register on road SDF');
 
   // 100% North-South Mirror Symmetry: evaluateRoadNetworkSdf(x, -z) === evaluateRoadNetworkSdf(x, +z)
   for (const [rx, rz] of [
@@ -207,13 +260,34 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   assert.ok(seaEast.waterSdf < 0);
   assert.ok(evaluatePlanetWaterField(120, 0) > 0.9);
   assert.ok(evaluatePlanetWaterField(120, 95) > 0.9);
+
+  // 4. Reclaimed NE Taman Ria Golden Sand Land vs Over-Water Pier Bay & Open Ocean
+  const reclaimedSand = evaluateSeHarborSdf(120, -75);
+  assert.ok(reclaimedSand.waterSdf > 5.0, 'Reclaimed NE Taman Ria sand at (120, -75) must be dry land');
+  assert.ok(evaluateOuterEmbankmentSdf(120, -75) < -4.0, 'Player must be able to walk onto reclaimed NE sand');
+  assert.equal(evaluateBlitzGrassMask(120, -75), 0.0, 'Reclaimed NE beach sand must have zero grass');
+
+  const bumperArenaReclaimed = evaluateSeHarborSdf(113.0, -90.5);
+  assert.ok(bumperArenaReclaimed.waterSdf > 10.0, 'Bumper Car Arena east edge at x=113 sits cleanly on reclaimed sand');
+  assert.ok(evaluateOuterEmbankmentSdf(113.0, -90.5) < -10.0);
+
+  // Ocean beyond reclaimed NE shoreline (x >= 129) remains ocean water & impassable outside pier
+  assert.ok(evaluateSeHarborSdf(129, -75).waterSdf < 0);
+  assert.ok(evaluateOuterEmbankmentSdf(129, -75) > 1.5);
+  assert.ok(evaluatePlanetWaterField(129, -75) > 0.9);
+
+  // Bianglala Over-Water Pier (z = -32.5) stays over open ocean (waterSdf < 0) while walkable via pier deck
+  assert.ok(evaluateSeHarborSdf(118.2, -32.5).waterSdf < -5.0);
+  assert.ok(evaluateOuterEmbankmentSdf(118.2, -32.5) < 0.0);
+  assert.equal(getTerrainElevation(118.2, -32.5), 1.1);
+  assert.equal(getTerrainElevation(127.4, -26.6), 1.1);
 });
 
 test('evaluateBlitzGrassMask preserves zero grass inside the single intact Bottom-Left Model Estate Base and renders lush green lawn across all 7 emptied base lots and Warzone islands', () => {
-  // Open Warzone islands ((0, 0), (-53.5, 0.0), (60.0, 0.0)) have lush green grass (> 0.85)
+  // Open Warzone islands ((0, 0), (-53.5, 0.0), (53.5, 0.0)) have lush green grass (> 0.85)
   assert.ok(evaluateBlitzGrassMask(0, 0) > 0.85);
   assert.ok(evaluateBlitzGrassMask(-53.5, 0.0) > 0.85);
-  assert.ok(evaluateBlitzGrassMask(60.0, 0.0) > 0.85);
+  assert.ok(evaluateBlitzGrassMask(53.5, 0.0) > 0.85);
 
   // 1. Intact Bottom-Left Model Estate Base (plotX = -45.0, z in [64.2..99.2]) & its front driveway spur (z = 57.0) have grassMask === 0.0
   assert.equal(evaluateBlitzGrassMask(-45.0, 86.0), 0.0);
@@ -256,9 +330,9 @@ test('evaluateBlitzGrassMask preserves zero grass inside the single intact Botto
   assert.ok(evaluateBlitzGrassMask(66.5, 82.0) > 0.85);
   assert.ok(evaluateBlitzGrassMask(-66.5, -82.0) > 0.85);
 
-  // Lush InfiniteGrass on West Wind Farm hills (-58.0, -36.0), Central Forest pockets (0.0, 32.0), and widened East Warzone (46.0, 0.0)
-  assert.ok(evaluateBlitzGrassMask(-58.0, -36.0) > 0.85);
-  assert.ok(evaluateBlitzGrassMask(-58.0, 36.0) > 0.85);
+  // Lush InfiniteGrass on West Wind Farm hills (-54.0, ±32.0), Central Forest pockets (0.0, 32.0), and widened East Warzone (46.0, 0.0)
+  assert.ok(evaluateBlitzGrassMask(-54.0, -32.0) > 0.85);
+  assert.ok(evaluateBlitzGrassMask(-54.0, 32.0) > 0.85);
   assert.ok(evaluateBlitzGrassMask(0.0, 32.0) > 0.85);
   assert.ok(evaluateBlitzGrassMask(0.0, -32.0) > 0.85);
   assert.ok(evaluateBlitzGrassMask(46.0, 0.0) > 0.85);
@@ -295,8 +369,8 @@ test('applyTerrainSculptBrush raises, lowers, and flattens terrain elevation cle
   assert.equal(sample.finalY, 0);
 });
 
-test('isPointOnZebraCrosswalk and isPointOnAsphaltRoadOrZebraCross detect all 13 zebra crosswalks and asphalt highways with N/S symmetry', () => {
-  assert.equal(ZEBRA_CROSSWALK_ZONES.length, 13);
+test('isPointOnZebraCrosswalk and isPointOnAsphaltRoadOrZebraCross detect all 12 zebra crosswalks and asphalt highways with N/S symmetry', () => {
+  assert.equal(ZEBRA_CROSSWALK_ZONES.length, 12);
   for (const zone of ZEBRA_CROSSWALK_ZONES) {
     assert.equal(isPointOnZebraCrosswalk(zone.cx, zone.cz), true);
     assert.equal(isPointOnZebraCrosswalk(zone.cx, -zone.cz), true);
@@ -310,5 +384,503 @@ test('isPointOnZebraCrosswalk and isPointOnAsphaltRoadOrZebraCross detect all 13
 
   // Asphalt highway at (-13, 0) is on asphalt road
   assert.equal(isPointOnAsphaltRoadOrZebraCross(-13, 0), true);
+});
+
+test('Outer Tram Ring Sidewalk spans 4.40m matching main zebra crosswalks and suppresses grass cleanly', () => {
+  assert.equal(OUTER_TRAM_SIDEWALK_WIDTH_M, 4.4);
+  const collectorMidpointsX = [-51.85, -38.15, -21.85, -8.15, 8.15, 21.85, 38.15, 51.85];
+
+  for (const mx of collectorMidpointsX) {
+    for (const sz of [-58.13, 58.13]) {
+      assert.equal(
+        isPointOnOuterTramSidewalk(mx, sz),
+        true,
+        `Expected collector sidewalk block at (${mx}, ${sz})`,
+      );
+      assert.ok(
+        evaluateOuterTramSidewalkSdf(mx, sz) <= 0,
+        `Expected negative SDF inside sidewalk block (${mx}, ${sz})`,
+      );
+      assert.equal(
+        evaluateBlitzGrassMask(mx, sz),
+        0.0,
+        `Expected zero grass inside outer tram sidewalk at (${mx}, ${sz})`,
+      );
+    }
+  }
+
+  // East-Central, SW corner, NE corner, and Beachfront Halte apron
+  for (const [sx, sz] of [
+    [76.13, 0.0],
+    [-68.5, 58.5],
+    [76.13, -30.0],
+    [75.0, 29.5],
+  ] as const) {
+    assert.equal(isPointOnOuterTramSidewalk(sx, sz), true, `Expected sidewalk at (${sx}, ${sz})`);
+    assert.equal(evaluateBlitzGrassMask(sx, sz), 0.0, `Expected zero grass at (${sx}, ${sz})`);
+  }
+
+  // Exclusions: crossroads, gate drives, East Harbor spurs, Beachfront Halte, SE Beachfront walkway, NW Casino, West Plaza
+  for (const [ex, ez] of [
+    [-60.0, -58.0],
+    [-45.0, -58.0],
+    [-30.0, 58.0],
+    [-15.0, 58.0],
+    [0.0, -58.0],
+    [76.13, -15.0],
+    [76.13, 15.0],
+    [79.6, 29.5],
+    [76.6, 52.0],
+    [-76.0, -58.13],
+    [-76.0, 0.0],
+  ] as const) {
+    assert.equal(
+      isPointOnOuterTramSidewalk(ex, ez),
+      false,
+      `Expected excluded zone at (${ex}, ${ez}) not to be marked as outer tram sidewalk`,
+    );
+  }
+});
+
+test('createHorizontalPolygonSlabGeometry produces finite positions, normals, and metric planar UVs', () => {
+  const slab = createHorizontalPolygonSlabGeometry(
+    [
+      [-2.2, -4.4],
+      [2.2, -4.4],
+      [2.2, 4.4],
+      [-2.2, 4.4],
+    ],
+    -0.06,
+    0.09,
+    2.2,
+  );
+  const pos = slab.getAttribute('position');
+  const norm = slab.getAttribute('normal');
+  const uv = slab.getAttribute('uv');
+  assert.ok(pos && pos.count > 0);
+  assert.ok(norm && norm.count === pos.count);
+  assert.ok(uv && uv.count === pos.count);
+
+  slab.computeBoundingBox();
+  assert.ok(slab.boundingBox);
+  assert.ok(Math.abs(slab.boundingBox.min.y - -0.06) < 1e-4);
+  assert.ok(Math.abs(slab.boundingBox.max.y - 0.09) < 1e-4);
+
+  for (let i = 0; i < pos.count; i++) {
+    assert.ok(Number.isFinite(pos.getX(i)) && Number.isFinite(pos.getY(i)) && Number.isFinite(pos.getZ(i)));
+    assert.ok(Number.isFinite(uv.getX(i)) && Number.isFinite(uv.getY(i)));
+  }
+  slab.dispose();
+});
+
+test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cleanly beside the preserved tram track', () => {
+  assert.equal(INNER_TRAM_SIDEWALK_WIDTH_M, 4.4);
+
+  // Preserved Tram Track Centerline & Outer Boundary (+3.90m)
+  assert.ok(evaluateRoadNetworkSdf(-70.0, 0.0) < -3.0);
+  assert.ok(evaluateRoadNetworkSdf(70.0, 0.0) < -3.0);
+  assert.ok(evaluateRoadNetworkSdf(0.0, 52.0) < -3.0);
+  assert.ok(evaluateRoadNetworkSdf(0.0, -52.0) < -3.0);
+
+  // Newly widened parallel Car Lane inside the tram track (-3.90m .. -7.80m) across West, East, North & South
+  for (const [cx, cz] of [
+    [-64.5, -25.0],
+    [-64.5, 25.0],
+    [64.5, -25.0],
+    [64.5, 25.0],
+    [0.0, -46.5],
+    [0.0, 46.5],
+    [-40.0, -46.5],
+    [40.0, 46.5],
+  ] as const) {
+    assert.ok(evaluateRoadNetworkSdf(cx, cz) < -1.0, `Expected widened car lane on asphalt at (${cx}, ${cz})`);
+    assert.equal(evaluateBlitzGrassMask(cx, cz), 0.0, `Expected zero grass inside widened car lane at (${cx}, ${cz})`);
+  }
+
+  // Relocated N/S Plaza zebra crosswalks beside Halte ramps ((-68.05, ±8.6)),
+  // East Harbor crosswalk at (68.05, 0), and inner S-curve zebra crosswalks at (x, ±42.0)
+  assert.equal(isPointOnZebraCrosswalk(-65.0, 0.0), false);
+  assert.equal(isPointOnZebraCrosswalk(-65.0, -8.6), true);
+  assert.equal(isPointOnZebraCrosswalk(-70.0, -8.6), true);
+  assert.equal(isPointOnZebraCrosswalk(-65.0, 8.6), true);
+  assert.equal(isPointOnZebraCrosswalk(-70.0, 8.6), true);
+  assert.equal(isPointOnZebraCrosswalk(65.0, 0.0), true);
+  assert.equal(isPointOnZebraCrosswalk(70.0, 0.0), true);
+  for (const sx of [-18.0, 19.0, 42.0]) {
+    assert.equal(isPointOnZebraCrosswalk(sx, 42.0), true);
+    assert.equal(isPointOnZebraCrosswalk(sx, -42.0), true);
+  }
+
+  // 4.40m Inner Tram Ring Sidewalk across all 4 straight segments & 4 inner L-corners + zero grass
+  for (const [ix, iz] of [
+    [-60.0, -30.0],
+    [-60.0, 30.0],
+    [-60.0, -10.0],
+    [-60.0, 10.0],
+    [60.0, 0.0],
+    [60.0, -30.0],
+    [60.0, 30.0],
+    [-40.0, -42.0],
+    [-9.5, -42.0],
+    [13.7, -42.0],
+    [30.0, -42.0],
+    [-25.0, 42.0],
+    [0.0, 42.0],
+    [30.0, 42.0],
+    [-59.0, -41.0],
+    [59.0, -41.0],
+    [59.0, 41.0],
+    [-59.0, 41.0],
+  ] as const) {
+    assert.equal(isPointOnInnerTramSidewalk(ix, iz), true, `Expected inner tram sidewalk at (${ix}, ${iz})`);
+    assert.ok(evaluateInnerTramSidewalkSdf(ix, iz) <= 0.0, `Expected negative SDF on inner sidewalk at (${ix}, ${iz})`);
+    assert.equal(evaluateBlitzGrassMask(ix, iz), 0.0, `Expected zero grass on inner sidewalk at (${ix}, ${iz})`);
+  }
+
+  // Exclusions: intersecting S-curve roads & shifted inner Halte decks
+  for (const [ex, ez] of [
+    [-60.0, -15.0],
+    [-60.0, 15.0],
+    [60.0, -15.0],
+    [60.0, 15.0],
+    [-18.0, -42.0],
+    [19.0, -42.0],
+    [42.0, -42.0],
+    [-18.0, 42.0],
+    [19.0, 42.0],
+    [42.0, 42.0],
+    [-58.9, 0.0],
+    [3.5, -40.87],
+    [-36.5, 40.87],
+  ] as const) {
+    assert.equal(
+      isPointOnInnerTramSidewalk(ex, ez),
+      false,
+      `Expected street/Halte exclusion at (${ex}, ${ez}) not to be marked as inner sidewalk`,
+    );
+  }
+});
+
+test('East coastal seabed slopes gently from 0.0m shoreline through crystal shallows to -1.65m ocean while Harbor Quay & seawalls drop steeply', () => {
+  resetTerrainSculptGrid();
+  assert.equal(EAST_WATER_SURFACE_Y, -0.16);
+  assert.equal(HARBOR_SEABED_DEEP_Y, -1.65);
+
+  // 1. SE Beachfront (z = 75.0 in [+46.2..+104.2]): smooth 14m sandy seabed slope
+  assert.equal(evaluateEastCoastalSandyMask(75.0), 1.0);
+  const seDry = getTerrainElevation(108.5, 75.0);
+  const seShore = getTerrainElevation(110.0, 75.0);
+  const seShallowNear = getTerrainElevation(114.5, 75.0);
+  const seShallowMid = getTerrainElevation(117.5, 75.0);
+  const seDeep = getTerrainElevation(124.5, 75.0);
+
+  assert.equal(seDry, 0.0);
+  assert.ok(seShore > -0.02 && seShore <= 0.0, `SE shoreline expected near 0.0m, got ${seShore}`);
+  // Crystal shallow water depth (WATER_Y - bedY) spans 0.2m..0.9m before dropping to -1.65m
+  const depthNear = EAST_WATER_SURFACE_Y - seShallowNear;
+  const depthMid = EAST_WATER_SURFACE_Y - seShallowMid;
+  assert.ok(depthNear >= 0.2 && depthNear <= 0.55, `Expected 0.2-0.55m shallow depth at x=114.5, got ${depthNear}`);
+  assert.ok(depthMid >= 0.65 && depthMid <= 0.95, `Expected 0.65-0.95m mid shallow depth at x=117.5, got ${depthMid}`);
+  assert.ok(seShore > seShallowNear && seShallowNear > seShallowMid && seShallowMid > seDeep);
+  assert.ok(Math.abs(seDeep - -1.65) < 1e-5, `Expected -1.65m deep ocean at x=124.5, got ${seDeep}`);
+
+  // 2. NE Taman Ria Beach (z = -75.0 in [-105.5..-45.5]): reclaimed shoreline at x = 126.5 slopes smoothly to -1.65m
+  assert.equal(evaluateEastCoastalSandyMask(-75.0), 1.0);
+  assert.equal(getTerrainElevation(120.0, -75.0), 0.0);
+  const neShore = getTerrainElevation(126.5, -75.0);
+  const neShallow = getTerrainElevation(132.5, -75.0);
+  const neDeep = getTerrainElevation(141.0, -75.0);
+  const neShallowDepth = EAST_WATER_SURFACE_Y - neShallow;
+  assert.ok(neShore > -0.02 && neShore <= 0.0, `NE shoreline expected near 0.0m, got ${neShore}`);
+  assert.ok(neShallowDepth >= 0.35 && neShallowDepth <= 0.80, `Expected crystal NE shallow depth, got ${neShallowDepth}`);
+  assert.ok(Math.abs(neDeep - -1.65) < 1e-5, `Expected -1.65m deep ocean at NE x=141, got ${neDeep}`);
+
+  // 3. Harbor Quay (z in [-45.5..+46.2]) & North/South seawall tails (|z| > 104.2) keep steep -1.65m drop
+  for (const quayZ of [-32.5, 0.0, 30.0, -120.0, 120.0]) {
+    assert.equal(evaluateEastCoastalSandyMask(quayZ), 0.0, `Expected quay/seawall mask 0 at z=${quayZ}`);
+    const quayDrop = evaluateHarborSeabedDrop(111.3, quayZ);
+    assert.ok(Math.abs(quayDrop - -1.65) < 1e-5, `Expected steep -1.65m drop at (111.3, ${quayZ}), got ${quayDrop}`);
+  }
+
+  // 4. Overwater Bianglala Pier & Gazebo Jetty retain +1.10m walkable deck above -1.65m seabed
+  assert.equal(getTerrainElevation(118.2, -32.5), 1.1);
+  assert.equal(getTerrainElevation(127.4, -26.6), 1.1);
+  assert.ok(Math.abs(evaluateHarborSeabedDrop(118.2, -32.5) - -1.65) < 1e-5);
+});
+
+test('createUnifiedWaterSurfaceMaterial configures Beer-Lambert depth, Voronoi foam, Fresnel/sun glint, weather uniforms, and Linear THREE.Fog', () => {
+  const windUniforms: BlitzWindUniforms = {
+    uTime: { value: 0 },
+    uWindPhase: { value: 0 },
+    uWindDirection: { value: new THREE.Vector2(Math.SQRT1_2, Math.SQRT1_2) },
+    uWindStrength: { value: 0.35 },
+    uWindGust: { value: 0.0 },
+    uLightDirection: { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() },
+    uLightColor: { value: new THREE.Color('#fff4c8') },
+    uShadowColor: { value: new THREE.Color('#3b6e52') },
+  };
+
+  for (const kind of ['ocean', 'lake'] as const) {
+    const mat = createUnifiedWaterSurfaceMaterial({ kind, windUniforms });
+    assert.equal(mat.transparent, true);
+    assert.equal(mat.depthWrite, false);
+    assert.equal(mat.fog, true);
+    for (const uniformKey of [
+      'uTime',
+      'uSunDirection',
+      'uSunColor',
+      'uSkyColor',
+      'uFogColor',
+      'uRainFactor',
+      'uTimeOfDayNightFactor',
+      'fogColor',
+      'fogNear',
+      'fogFar',
+    ]) {
+      assert.ok(uniformKey in mat.uniforms, `Missing uniform ${uniformKey} on ${kind} water material`);
+    }
+    assert.ok(mat.vertexShader.includes('#include <fog_pars_vertex>'));
+    assert.ok(mat.vertexShader.includes('#include <fog_vertex>'));
+    assert.ok(mat.fragmentShader.includes('#include <fog_pars_fragment>'));
+    assert.ok(mat.fragmentShader.includes('#include <fog_fragment>'));
+    assert.ok(mat.fragmentShader.includes('evalVoronoiFoamLace'));
+    assert.ok(mat.fragmentShader.includes('evalWaterRainRipples'));
+    assert.ok(mat.fragmentShader.includes('pow(max(ndoth, 1e-4), 96.0)'));
+    assert.ok(mat.fragmentShader.includes('-0.16'));
+    mat.dispose();
+  }
+});
+
+test('BEACHFRONT_STILT_CABIN_SPEC provides walkable elevated deck, West stairs, and East ocean balcony', () => {
+  const c = BEACHFRONT_STILT_CABIN_SPEC;
+  assert.equal(c.centerX, 108.4);
+  assert.equal(c.centerZ, 85.2);
+  assert.equal(c.deckTopY, 0.96);
+
+  // West veranda & East overwater balcony sit cleanly at +0.96m and pass embankment walkability
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(105.6, 84.4), true);
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(112.0, 85.2), true);
+  assert.equal(evaluateBeachfrontStiltCabinElevation(112.0, 85.2), c.deckTopY);
+  assert.equal(getBaseProceduralGroundElevation(112.0, 85.2), c.deckTopY);
+  assert.ok(
+    evaluateOuterEmbankmentSdf(112.0, 85.2) < 0,
+    'East ocean-facing balcony of BeachfrontStiltTimberCabin should remain walkable',
+  );
+
+  // Outside cabin deck over open ocean stays blocked by outer embankment SDF
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(114.5, 85.2), false);
+  assert.ok(evaluateOuterEmbankmentSdf(114.5, 85.2) > 0);
+
+  // West sand-to-porch staircase ramps smoothly from 0 -> deckTopY
+  const stairMidX = (c.stairMinX + c.stairMaxX) * 0.5;
+  const stairMidZ = (c.stairMinZ + c.stairMaxZ) * 0.5;
+  assert.ok(Math.abs(evaluateBeachfrontStiltCabinElevation(stairMidX, stairMidZ) - c.deckTopY * 0.5) < 1e-6);
+  assert.ok(Math.abs(getBaseProceduralGroundElevation(stairMidX, stairMidZ) - c.deckTopY * 0.5) < 1e-6);
+});
+
+test('buildStaticWorldStructuresList registers cabin body and railings while keeping stairs and veranda navigable', () => {
+  const structures = buildStaticWorldStructuresList({
+    blueBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: 86 },
+    redBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: -86 },
+    blueCommanderBases: [],
+    redCommanderBases: [],
+    isSafezoneMode: true,
+  });
+
+  const byId = new Map(structures.map((s) => [s.id, s]));
+  for (const id of [
+    'beach_stilt_cabin_body',
+    'beach_stilt_cabin_rail_n',
+    'beach_stilt_cabin_rail_s',
+    'beach_stilt_cabin_rail_e',
+    'beach_stilt_cabin_rail_w_n',
+    'beach_stilt_cabin_rail_w_s',
+    'beach_stilt_cabin_stair_rail_n',
+    'beach_stilt_cabin_stair_rail_s',
+  ]) {
+    assert.ok(byId.has(id), `Expected collider ${id} in static structures`);
+  }
+
+  const hitsCabinCollider = (x: number, z: number): boolean =>
+    structures.some(
+      (s) =>
+        s.id.startsWith('beach_stilt_cabin_') &&
+        Math.abs(x - s.x) < s.halfX &&
+        Math.abs(z - s.z) < s.halfZ,
+    );
+
+  assert.equal(hitsCabinCollider(108.8, 84.4), true, 'Interior cabin room must remain solid');
+  assert.equal(hitsCabinCollider(104.2, 84.4), false, 'West stair entry must stay unobstructed');
+  assert.equal(hitsCabinCollider(105.6, 84.4), false, 'West front veranda must stay unobstructed');
+  assert.equal(hitsCabinCollider(112.0, 85.2), false, 'East ocean-facing balcony must stay unobstructed');
+});
+
+test('Underwater ecology avoids BeachfrontStiltTimberCabin piling footprint [106.5..113.5] x [81.5..89.0]', () => {
+  assert.equal(isPointClearOfPierAndQuay(109.5, 85.2, 0), false);
+  assert.equal(isPointClearOfPierAndQuay(115.0, 85.2, 0), true);
+
+  const { pebbles, coralsAndKelp } = generateUnderwaterEcologyPlacements();
+  for (const sample of [...pebbles, ...coralsAndKelp]) {
+    const insideCabinFootprint =
+      sample.x >= 106.5 && sample.x <= 113.5 && sample.z >= 81.5 && sample.z <= 89.0;
+    assert.equal(
+      insideCabinFootprint,
+      false,
+      `Ecology prop (${sample.x}, ${sample.z}) must not intersect cabin stilt pilings`,
+    );
+  }
+});
+
+test('Coastal Beachfront & Taman Ria render timber, shingles, and BeachfrontStiltTimberCabin with 3-map PBR materials and zero black outlines or cel shaders', () => {
+  const origDocument = (globalThis as { document?: unknown }).document;
+  const noop = () => {};
+  const stubCtx = new Proxy(
+    {
+      createLinearGradient: () => ({ addColorStop: noop }),
+      createRadialGradient: () => ({ addColorStop: noop }),
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      measureText: () => ({ width: 100 }),
+    },
+    {
+      get(target, prop) {
+        if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+        return noop;
+      },
+      set() {
+        return true;
+      },
+    },
+  );
+  if (!origDocument) {
+    (globalThis as { document?: unknown }).document = {
+      createElement: () => ({ width: 256, height: 256, getContext: () => stubCtx }),
+    };
+  }
+
+  const stubTex = new THREE.DataTexture(new Uint8Array([220, 210, 195, 255]), 1, 1, THREE.RGBAFormat);
+  stubTex.needsUpdate = true;
+
+  try {
+    const windUniforms: BlitzWindUniforms = {
+      uTime: { value: 0 },
+      uWindPhase: { value: 0 },
+      uWindDirection: { value: new THREE.Vector2(Math.SQRT1_2, Math.SQRT1_2) },
+      uWindStrength: { value: 0.35 },
+      uWindGust: { value: 0.0 },
+      uLightDirection: { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() },
+      uLightColor: { value: new THREE.Color('#fff4c8') },
+      uShadowColor: { value: new THREE.Color('#3b6e52') },
+    };
+
+    const strokedGeos = new Set<THREE.BufferGeometry>();
+    const celUpgradedMeshes = new Set<THREE.Mesh>();
+
+    const spyCreateStroke: typeof createBlitzStrokeMesh = (geo, strokeWidth, strokeColorHex) => {
+      strokedGeos.add(geo);
+      return createBlitzStrokeMesh(geo, strokeWidth, strokeColorHex);
+    };
+    const spyUpgradeMat = (
+      mesh: THREE.Mesh,
+      wind: typeof windUniforms,
+      tintHex?: string,
+      bounceStrength?: number,
+    ) => {
+      celUpgradedMeshes.add(mesh);
+      upgradeMeshToBlitzWorldMaterial(mesh, wind, tintHex, bounceStrength);
+    };
+
+    const parentGroup = new THREE.Group();
+    const roadsGroup = new THREE.Group();
+    const beachHandle = buildSouthEastCoastalBeachfront3D({
+      parentGroup,
+      roadsGroup,
+      windUniforms,
+      isSoftwareGl: false,
+      lobbyConcreteTex: stubTex,
+      lobbyLouverTex: stubTex,
+      createBlitzStrokeMesh: spyCreateStroke,
+      upgradeMeshToBlitzWorldMaterial: spyUpgradeMat,
+    });
+
+    const cabin = beachHandle.seBeachGroup.getObjectByName('BeachfrontStiltTimberCabin');
+    assert.ok(cabin, 'Expected BeachfrontStiltTimberCabin group in SE Beachfront');
+    assert.equal(cabin.position.x, BEACHFRONT_STILT_CABIN_SPEC.centerX);
+    assert.equal(cabin.position.z, BEACHFRONT_STILT_CABIN_SPEC.centerZ);
+
+    let beachPbrMeshCount = 0;
+    const beachPbrMats = new Set<THREE.MeshStandardMaterial>();
+    beachHandle.seBeachGroup.traverse((obj) => {
+      if (!(obj as THREE.Mesh).isMesh) return;
+      const mesh = obj as THREE.Mesh;
+      const mat = mesh.material;
+      if (mat instanceof THREE.MeshStandardMaterial && mat.bumpMap && mat.roughnessMap && mat.map) {
+        beachPbrMeshCount++;
+        beachPbrMats.add(mat);
+        assert.notEqual(mat.map.uuid, mat.bumpMap.uuid);
+        assert.notEqual(mat.map.uuid, mat.roughnessMap.uuid);
+        assert.ok(mat.bumpScale >= 0.030 && mat.bumpScale <= 0.050, `Unexpected bumpScale ${mat.bumpScale}`);
+        assert.ok(mat.metalness <= 0.05);
+        assert.equal(mat.fog, true);
+        assert.equal(mesh.receiveShadow, true);
+        assert.equal(celUpgradedMeshes.has(mesh), false, 'PBR wood must not be overridden by cel shader');
+        assert.equal(strokedGeos.has(mesh.geometry), false, 'PBR wood must not have cartoon stroke mesh');
+        assert.equal(
+          mesh.children.some((c) => Boolean(c.userData?.isModelStroke)),
+          false,
+          'PBR wood mesh must not carry black cartoon stroke child',
+        );
+      }
+    });
+    assert.ok(beachPbrMeshCount >= 90, `Expected >= 90 PBR wood/cabin meshes, got ${beachPbrMeshCount}`);
+    assert.ok(beachPbrMats.size <= 28, `Expected tightly cached PBR materials, got ${beachPbrMats.size}`);
+
+    // Verify Coastal Amusement Park PBR timber + static batching budget
+    strokedGeos.clear();
+    celUpgradedMeshes.clear();
+    const parkHandle = buildCoastalAmusementPark3D({
+      windUniforms,
+      isSoftwareGl: false,
+      upgradeMeshToBlitzWorldMaterial: spyUpgradeMat,
+      createBlitzStrokeMesh: spyCreateStroke,
+      bakeStaticGroupMeshes,
+    });
+
+    let parkTotalMeshes = 0;
+    let parkPbrWoodMeshes = 0;
+    let parkInstancedBatches = 0;
+    parkHandle.group.traverse((obj) => {
+      if ((obj as THREE.InstancedMesh).isInstancedMesh) {
+        parkInstancedBatches++;
+      }
+      if (!(obj as THREE.Mesh).isMesh) return;
+      const mesh = obj as THREE.Mesh;
+      if (!(obj as THREE.InstancedMesh).isInstancedMesh) {
+        parkTotalMeshes++;
+      }
+      const mat = mesh.material;
+      if (mat instanceof THREE.MeshStandardMaterial && mat.bumpMap && mat.roughnessMap && mat.map) {
+        parkPbrWoodMeshes++;
+        assert.ok(mat.bumpScale >= 0.032 && mat.bumpScale <= 0.045, `Unexpected park bumpScale ${mat.bumpScale}`);
+        assert.equal(mat.metalness, 0.02);
+        assert.equal(mat.fog, true);
+        assert.equal(mesh.receiveShadow, true);
+        assert.equal(celUpgradedMeshes.has(mesh), false, 'Park PBR wood must not get cel shader override');
+        assert.equal(
+          mesh.children.some((c) => Boolean(c.userData?.isModelStroke)),
+          false,
+          'Park PBR wood must not carry black cartoon stroke child',
+        );
+      }
+    });
+    assert.ok(parkInstancedBatches >= 14, `Expected >= 14 instanced batches in park, got ${parkInstancedBatches}`);
+    assert.ok(parkPbrWoodMeshes >= 6, `Expected >= 6 PBR wood batches/parts in park, got ${parkPbrWoodMeshes}`);
+    assert.ok(parkTotalMeshes <= 145, `Expected <= 145 non-instanced park meshes after baking, got ${parkTotalMeshes}`);
+    parkHandle.dispose();
+  } finally {
+    stubTex.dispose();
+    if (!origDocument) {
+      delete (globalThis as { document?: unknown }).document;
+    }
+  }
 });
 

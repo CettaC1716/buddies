@@ -784,6 +784,7 @@ export interface CafeWorkShiftBottomDockProps {
   onTriggerSitOrStand?: () => void;
   onOpenEntityProfile?: (entity: NearbyEntityUser) => void;
   onTalkMerchant?: (entity: NearbyEntityUser) => void;
+  onTalkCitizen?: (entity: NearbyEntityUser) => void;
   onWhisperEntity?: (entity: NearbyEntityUser) => void;
   onCycleNearbyEntity?: () => void;
   onOpenRotaModal: () => void;
@@ -805,6 +806,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
   onTriggerSitOrStand,
   onOpenEntityProfile,
   onTalkMerchant,
+  onTalkCitizen,
   onWhisperEntity,
   onCycleNearbyEntity,
   onOpenRotaModal,
@@ -857,6 +859,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         nearbyEntity.id === 'npc_kai' ||
         nearbyEntity.id === 'npc_beach'),
   );
+  const isCitizenNpcEntity = Boolean(nearbyEntity && nearbyEntity.isNpc && !isMerchantEntity);
   const isWhisperablePlayer = Boolean(
     nearbyEntity &&
       !nearbyEntity.isNpc &&
@@ -867,6 +870,8 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
     nearbyEntity &&
       (entityLower.includes('hana') ||
         entityLower.includes('nadia') ||
+        entityLower.includes('mira') ||
+        entityLower.includes('tari') ||
         (nearbyEntity.isNpc && nearbyEntity.gender === 'female')),
   );
 
@@ -1017,6 +1022,22 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-nearby-entity-talk-btn="true"
               onClick={() => onTalkMerchant?.(nearbyEntity)}
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            >
+              <div className="flex items-center gap-2.5 w-full">
+                <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                </span>
+                <span className="flex-1 text-left text-[#facc15]">Talk</span>
+              </div>
+            </button>
+          )}
+
+          {isCitizenNpcEntity && nearbyEntity && (
+            <button
+              type="button"
+              data-nearby-citizen-talk-btn="true"
+              onClick={() => onTalkCitizen?.(nearbyEntity)}
               className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
             >
               <div className="flex items-center gap-2.5 w-full">

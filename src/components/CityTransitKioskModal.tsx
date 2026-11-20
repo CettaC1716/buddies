@@ -543,7 +543,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   src={
                     kioskThumbnails.jobs_cafe ||
                     kioskThumbnails.cafe_glasshouse ||
-                    '/assets/aistudio/screenshot_7_5a2e994c.png'
+                    '/assets/aistudio/screenshot_7_5a2e994c.webp'
                   }
                   alt="Citizen Jobs - Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -600,7 +600,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   src={
                     kioskThumbnails.jobs_cafe ||
                     kioskThumbnails.cafe_glasshouse ||
-                    '/assets/aistudio/screenshot_7_5a2e994c.png'
+                    '/assets/aistudio/screenshot_7_5a2e994c.webp'
                   }
                   alt="Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

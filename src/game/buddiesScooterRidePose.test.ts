@@ -8,9 +8,9 @@ import {
 } from './buddiesScooterRidePose';
 import {
   SCOOTER_HANDLEBAR_SPECS,
-  SCOOTER_RIDE_MODEL_SCALE,
-  SCOOTER_RIDER_BACK_OFFSET_M,
-  SCOOTER_RIDER_LIFT_M,
+  SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M,
+  SCOOTER_RIDER_LIFT_BY_KIND_M,
+  SCOOTER_RIDE_MODEL_SCALE_BY_KIND,
 } from './buddiesUrbanScooterRules';
 
 function closeTo(actual: number, expected: number, epsilon = 1e-6): void {
@@ -82,20 +82,21 @@ test('electric_scooter_bike rig pose matches 2x saddle, floorboard, and steered 
     mountBlend: 1,
     steerAngleRad: 0,
   });
-  closeTo(straight.seatLiftY, SCOOTER_RIDER_LIFT_M.electric_scooter_bike, 1e-6);
-  closeTo(straight.seatBackOffsetZ, SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike, 1e-6);
+  closeTo(straight.seatLiftY, SCOOTER_RIDER_LIFT_BY_KIND_M.electric_scooter_bike, 1e-6);
+  closeTo(straight.seatBackOffsetZ, SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M.electric_scooter_bike, 1e-6);
   assert.ok(straight.torsoPitchRad >= 0 && straight.torsoPitchRad <= 0.22, 'e-bike rider stays upright');
 
-  // Convert bodyGroup-local back into scooter-world coordinates
+  // Convert bodyGroup-local back into scooter-world coordinates at 1.48x real-world bike scale
+  const eScale = SCOOTER_RIDE_MODEL_SCALE_BY_KIND.electric_scooter_bike;
   const worldLeftGripY = straight.leftGripBodyLocal.y + straight.seatLiftY;
   const worldLeftGripZ = straight.leftGripBodyLocal.z + straight.seatBackOffsetZ;
-  closeTo(straight.leftGripBodyLocal.x, 0.524, 1e-3);
-  closeTo(worldLeftGripY, 2.184, 1e-3);
-  closeTo(worldLeftGripZ, 0.48, 1e-3);
+  closeTo(straight.leftGripBodyLocal.x, 0.262 * eScale, 1e-3);
+  closeTo(worldLeftGripY, 1.092 * eScale, 1e-3);
+  closeTo(worldLeftGripZ, 0.24 * eScale, 1e-3);
 
   const worldLeftFootY = straight.leftFootSoleBodyLocal.y + straight.seatLiftY;
   const worldLeftFootZ = straight.leftFootSoleBodyLocal.z + straight.seatBackOffsetZ;
-  closeTo(worldLeftFootY, 0.49, 1e-3);
+  closeTo(worldLeftFootY, 0.245 * eScale, 1e-3);
   assert.ok(worldLeftFootZ > -0.2 && worldLeftFootZ < 0.45, 'feet stay squarely on bike floorboard');
 
   // Turning left (+steer > 0) pulls left grip back, pushes right grip forward, leans left (<0 roll)
@@ -106,9 +107,9 @@ test('electric_scooter_bike rig pose matches 2x saddle, floorboard, and steered 
     mountBlend: 1,
     steerAngleRad: 0.25,
     spec: {
-      modelScale: SCOOTER_RIDE_MODEL_SCALE,
-      seatLiftY: SCOOTER_RIDER_LIFT_M.electric_scooter_bike,
-      seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike,
+      modelScale: eScale,
+      seatLiftY: SCOOTER_RIDER_LIFT_BY_KIND_M.electric_scooter_bike,
+      seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M.electric_scooter_bike,
       handlebar: SCOOTER_HANDLEBAR_SPECS.electric_scooter_bike,
     },
   });

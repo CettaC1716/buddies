@@ -16,9 +16,9 @@
  */
 import {
   SCOOTER_HANDLEBAR_SPECS,
-  SCOOTER_RIDER_BACK_OFFSET_M,
-  SCOOTER_RIDER_LIFT_M,
-  SCOOTER_RIDE_MODEL_SCALE,
+  SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M,
+  SCOOTER_RIDER_LIFT_BY_KIND_M,
+  SCOOTER_RIDE_MODEL_SCALE_BY_KIND,
 } from './buddiesUrbanScooterRules';
 
 export interface KickScooterRidePose {
@@ -173,15 +173,15 @@ const DEFAULT_SCOOTER_SPECS: Record<
   ScooterRiderSpecInput
 > = {
   electric_scooter_bike: {
-    modelScale: SCOOTER_RIDE_MODEL_SCALE,
-    seatLiftY: SCOOTER_RIDER_LIFT_M.electric_scooter_bike,
-    seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M.electric_scooter_bike,
+    modelScale: SCOOTER_RIDE_MODEL_SCALE_BY_KIND.electric_scooter_bike,
+    seatLiftY: SCOOTER_RIDER_LIFT_BY_KIND_M.electric_scooter_bike,
+    seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M.electric_scooter_bike,
     handlebar: SCOOTER_HANDLEBAR_SPECS.electric_scooter_bike,
   },
   push_kick_scooter: {
-    modelScale: SCOOTER_RIDE_MODEL_SCALE,
-    seatLiftY: SCOOTER_RIDER_LIFT_M.push_kick_scooter,
-    seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M.push_kick_scooter,
+    modelScale: SCOOTER_RIDE_MODEL_SCALE_BY_KIND.push_kick_scooter,
+    seatLiftY: SCOOTER_RIDER_LIFT_BY_KIND_M.push_kick_scooter,
+    seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M.push_kick_scooter,
     handlebar: SCOOTER_HANDLEBAR_SPECS.push_kick_scooter,
   },
 };
@@ -263,7 +263,9 @@ export function computeScooterRiderRigPose(
     const leanFactor = 0.24 + 0.14 * clampNumber(absSpeed / 9.0, 0, 1);
     const leanRollZ = clampNumber(-steerAngleRad * leanFactor, -0.13, 0.13) * blend;
     const torsoPitchRad = 0.16 + 0.04 * clampNumber(absSpeed / 10.0, 0, 1);
-    const floorboardY = 0.49;
+    const floorboardY = 0.245 * spec.modelScale;
+    const floorboardStanceX = 0.12 * spec.modelScale;
+    const floorboardForwardZ = 0.08 * spec.modelScale;
 
     return {
       kind,
@@ -288,14 +290,14 @@ export function computeScooterRiderRigPose(
       leftGripBarAxisLocal,
       rightGripBarAxisLocal,
       leftFootSoleBodyLocal: {
-        x: 0.24,
+        x: floorboardStanceX,
         y: floorboardY - seatLiftY,
-        z: 0.16 - seatBackOffsetZ,
+        z: floorboardForwardZ - seatBackOffsetZ,
       },
       rightFootSoleBodyLocal: {
-        x: -0.24,
+        x: -floorboardStanceX,
         y: floorboardY - seatLiftY,
-        z: 0.16 - seatBackOffsetZ,
+        z: floorboardForwardZ - seatBackOffsetZ,
       },
       leftFootPitchRad: 0,
       rightFootPitchRad: 0,

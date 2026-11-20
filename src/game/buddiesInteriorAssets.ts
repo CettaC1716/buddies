@@ -1593,13 +1593,13 @@ function hc(): i.Group {
       Ft(
         [
           [0, 0],
-          [0.06, 0],
-          [0.1, 0.08],
-          [0.095, 0.16],
-          [0.04, 0.24],
-          [0.018, 0.27],
-          [0.018, 0.3],
-          [0, 0.3],
+          [0.055, 0],
+          [0.088, 0.065],
+          [0.084, 0.135],
+          [0.036, 0.20],
+          [0.016, 0.225],
+          [0.016, 0.25],
+          [0, 0.25],
         ],
         28,
       ),
@@ -1608,13 +1608,13 @@ function hc(): i.Group {
       0.02,
       { uv: 'keep' },
     )
-    .cyl(ro, -0.02, o + 0.34, 0.02, 0.006, 0.006, 0.08, { seg: 8 });
+    .cyl(ro, -0.02, o + 0.28, 0.02, 0.006, 0.006, 0.06, { seg: 8 });
   t.flush(e);
-  const a = new i.Mesh(new i.CylinderGeometry(0.12, 0.16, 0.2, 32, 1, true), yr);
-  a.position.set(-0.02, o + 0.44, 0.02);
+  const a = new i.Mesh(new i.CylinderGeometry(0.105, 0.14, 0.165, 32, 1, true), yr);
+  a.position.set(-0.02, o + 0.36, 0.02);
   a.castShadow = true;
   e.add(a);
-  const n = new i.Mesh(new i.CylinderGeometry(0.115, 0.155, 0.19, 32, 1, true), Ne.shade);
+  const n = new i.Mesh(new i.CylinderGeometry(0.10, 0.135, 0.155, 32, 1, true), Ne.shade);
   n.position.copy(a.position);
   e.add(n);
   lo(t, 0.12, o, -0.1, 0.9, 17, 6);
@@ -1867,31 +1867,31 @@ const JAPANDI_PANEL_GLOW = new i.MeshBasicMaterial({
 function Cc(): i.Group {
   const e = new i.Group();
   const t = O();
-  const o = 2.18;
-  const a = 2.42;
-  // Enlarged & slightly widened Japandi platform bedroom suite:
-  // warm backlight halo + full-width oak headboard wall panel with non-overlapping Z offsets (zero z-fighting)
-  t.box(JAPANDI_PANEL_GLOW, 0, 0.69, -a / 2 + 0.008, 3.36, 1.38, 0.008)
-    .box(R, 0, 0.67, -a / 2 + 0.032, 3.28, 1.34, 0.032, { r: 0.008 })
-    .box(Ks, -1.12, 0.67, -a / 2 + 0.054, 0.016, 1.28, 0.004)
-    .box(Ks, 1.12, 0.67, -a / 2 + 0.054, 0.016, 1.28, 0.004)
-    // Recessed dark plinth + low floating platform slab (lip extends past the mattress)
-    .box(en, 0, 0.045, 0.03, o + 0.06, 0.09, a - 0.22)
-    .box(R, 0, 0.17, 0.03, o + 0.3, 0.17, a + 0.02, { r: 0.016 });
+  const o = 1.82;
+  const a = 2.22;
+  // Proportional Japandi platform bedroom suite sized cleanly for the 1.82m indoor avatar:
+  // warm backlight halo + 2.56m oak headboard wall panel + beveled plinth
+  t.box(JAPANDI_PANEL_GLOW, 0, 0.62, -a / 2 + 0.008, 2.62, 1.18, 0.008)
+    .box(R, 0, 0.60, -a / 2 + 0.032, 2.56, 1.14, 0.032, { r: 0.008 })
+    .box(Ks, -0.90, 0.60, -a / 2 + 0.054, 0.016, 1.08, 0.004)
+    .box(Ks, 0.90, 0.60, -a / 2 + 0.054, 0.016, 1.08, 0.004)
+    // Recessed chamfered dark plinth + low floating platform slab
+    .box(en, 0, 0.045, 0.03, o + 0.04, 0.09, a - 0.22, { r: 0.014 })
+    .box(R, 0, 0.17, 0.03, o + 0.24, 0.17, a + 0.02, { r: 0.016 });
   // Upholstered fabric headboard cushion mounted proud of the oak panel
-  t.geo(_e, Je(o + 0.12, 0.62, 0.13, 0.05, 0.006), 0, 0.68, -a / 2 + 0.115)
-    .geo(Xs, Ee(We(o - 0.04, 0.27, a - 0.14, 0.075, 3)), 0, 0.38, 0.03)
-    .geo(Zs, Ee(We(o + 0.06, 0.28, a * 0.62, 0.1, 3)), 0, 0.42, 0.44)
-    .geo(Zs, Ee(We(o + 0.06, 0.075, 0.3, 0.035, 2)), 0, 0.58, -0.28, {
+  t.geo(_e, Je(o + 0.10, 0.54, 0.12, 0.045, 0.006), 0, 0.62, -a / 2 + 0.115)
+    .geo(Xs, Ee(We(o - 0.04, 0.26, a - 0.14, 0.075, 3)), 0, 0.375, 0.03)
+    .geo(Zs, Ee(We(o + 0.04, 0.27, a * 0.62, 0.095, 3)), 0, 0.415, 0.40)
+    .geo(Zs, Ee(We(o + 0.04, 0.07, 0.28, 0.035, 2)), 0, 0.565, -0.24, {
       rx: 0.18,
     });
   for (const n of [-1, 1]) {
-    t.geo(Xs, io(0.78, 0.46, 0.19), n * 0.52, 0.59, -a / 2 + 0.31, { rx: -1.18 });
+    t.geo(Xs, io(0.66, 0.40, 0.17), n * 0.44, 0.57, -a / 2 + 0.29, { rx: -1.18 });
   }
   for (const n of [-1, 1]) {
-    t.geo(dt, io(0.54, 0.38, 0.15), n * 0.44, 0.63, -a / 2 + 0.49, { rx: -1, rz: n * 0.06 });
+    t.geo(dt, io(0.46, 0.34, 0.14), n * 0.38, 0.60, -a / 2 + 0.45, { rx: -1, rz: n * 0.06 });
   }
-  t.geo(dt, Ee(We(o + 0.14, 0.04, 0.56, 0.016, 2)), 0, 0.565, a / 2 - 0.38);
+  t.geo(dt, Ee(We(o + 0.10, 0.036, 0.48, 0.016, 2)), 0, 0.555, a / 2 - 0.35);
   t.flush(e);
   return e;
 }
@@ -1920,9 +1920,9 @@ function kc(): i.Group {
     0.2,
     0.03,
     0.15,
-    { ry: 0.2 },
+    { ry: 0.2, r: 0.005 },
   );
-  Mc(e, t, -0.08, n, -0.04, 0.85, 0);
+  Mc(e, t, -0.08, n, -0.04, 0.66, 0);
   t.flush(e);
   return e;
 }
@@ -1935,7 +1935,7 @@ function zc(): i.Group {
   const a = 0.6;
   const n = 2.15;
   t.box(Ys, 0, n / 2 + 0.04, 0, o, n - 0.08, a, { r: 0.012 })
-    .box(Ae, 0, 0.04, 0, o - 0.04, 0.08, a - 0.06)
+    .box(Ae, 0, 0.04, 0, o - 0.04, 0.08, a - 0.06, { r: 0.010 })
     // Sliding doors (redesign Phase 2, sheet 2): oak door on the rear track,
     // warm-white door overlapping on the front track, handle-less
     .box(R, 0.38, n / 2 + 0.02, a / 2 + 0.008, 0.84, n - 0.24, 0.02, { r: 0.006 })
@@ -2101,9 +2101,9 @@ function Bc(): i.Group {
   const r = j('#232a38', { roughness: 0.3, envMapIntensity: 1 });
   t.box(R, 0, n - 0.02, 0, o, 0.04, a, { r: 0.01 });
   for (const l of [-1, 1]) {
-    t.box(D, l * (o / 2 - 0.08), (n - 0.04) / 2, 0, 0.03, n - 0.04, 0.03)
-      .box(D, l * (o / 2 - 0.08), 0.015, 0, 0.04, 0.03, a - 0.08)
-      .box(D, l * (o / 2 - 0.08), n - 0.06, 0, 0.04, 0.03, a - 0.08);
+    t.box(D, l * (o / 2 - 0.08), (n - 0.04) / 2, 0, 0.03, n - 0.04, 0.03, { r: 0.008 })
+      .box(D, l * (o / 2 - 0.08), 0.015, 0, 0.04, 0.03, a - 0.08, { r: 0.008 })
+      .box(D, l * (o / 2 - 0.08), n - 0.06, 0, 0.04, 0.03, a - 0.08, { r: 0.008 });
   }
   t.box(no('#b9bdc4', { roughness: 0.3 }), -0.08, n + 0.006, 0.1, 0.34, 0.012, 0.24, {
     r: 0.004,
@@ -2113,7 +2113,7 @@ function Bc(): i.Group {
       rx: -0.22,
     })
     .box(r, -0.08, n + 0.12, -0.024, 0.31, 0.2, 0.004, { rx: -0.22 })
-    .box(He[6], 0.35, n + 0.01, 0.12, 0.22, 0.02, 0.16, { ry: 0.3 })
+    .box(He[6], 0.35, n + 0.01, 0.12, 0.22, 0.02, 0.16, { ry: 0.3, r: 0.006 })
     .cyl(me[3], 0.3, n + 0.05, -0.16, 0.04, 0.035, 0.1, { seg: 14 });
   lo(t, -0.55, n, -0.18, 1, 23, 7);
   t.cyl(D, 0.55, n + 0.01, -0.18, 0.07, 0.08, 0.02, { seg: 20 })
@@ -2139,6 +2139,7 @@ function Pc(): i.Group {
     // across the centre of the base.
     t.box(D, Math.sin(a) * 0.175, 0.06, Math.cos(a) * 0.175, 0.04, 0.03, 0.25, {
       ry: a,
+      r: 0.008,
     }).sph(D, Math.sin(a) * 0.285, 0.03, Math.cos(a) * 0.285, 0.03, { seg: 8, seg2: 6 });
   }
   t.cyl(D, 0, 0.055, 0, 0.05, 0.055, 0.05, { seg: 16 })
@@ -2147,10 +2148,10 @@ function Pc(): i.Group {
     // posts land on it, so nothing under the cushion floats.
     .box(D, 0, 0.44, 0, 0.58, 0.025, 0.4, { r: 0.006 })
     .geo(_e, Je(0.48, 0.08, 0.46, 0.04, 0.01), 0, 0.47, 0.02)
-    .box(D, 0, 0.57, -0.2, 0.06, 0.28, 0.03, { rx: -0.12 })
+    .box(D, 0, 0.57, -0.2, 0.06, 0.28, 0.03, { rx: -0.12, r: 0.008 })
     .geo(_e, Je(0.44, 0.42, 0.07, 0.05, 0.006), 0, 0.8, -0.24, { rx: -0.12 });
   for (const o of [-1, 1]) {
-    t.box(D, o * 0.26, 0.57, 0, 0.03, 0.235, 0.03).box(D, o * 0.26, 0.7, 0.02, 0.05, 0.025, 0.26, {
+    t.box(D, o * 0.26, 0.57, 0, 0.03, 0.235, 0.03, { r: 0.007 }).box(D, o * 0.26, 0.7, 0.02, 0.05, 0.025, 0.26, {
       r: 0.01,
     });
   }
@@ -2335,8 +2336,8 @@ export const BUDDIES_ZONE_COLLIDERS: ReadonlyArray<{
   { x: -3.7, z: 2.97, ry: Math.PI, hw: 0.23, hd: 0.24 },
   { x: -2.8, z: 2.97, ry: Math.PI, hw: 0.23, hd: 0.24 },
   { x: -4.95, z: 3.35, ry: 0, hw: 0.2, hd: 0.2 },
-  // Bedroom zone (enlarged & slightly widened bed + bench)
-  { x: 3.35, z: -2.46, ry: 0, hw: 1.24, hd: 1.22 },
+  // Bedroom zone (proportional bed + bench)
+  { x: 3.35, z: -2.46, ry: 0, hw: 1.06, hd: 1.13 },
   { x: 1.76, z: -3.45, ry: 0, hw: 0.28, hd: 0.2 },
   { x: 4.94, z: -3.45, ry: 0, hw: 0.28, hd: 0.2 },
   { x: 3.35, z: -0.88, ry: 0, hw: 0.72, hd: 0.22 },
@@ -2487,15 +2488,63 @@ export function buildOriginalBuddiesCatalogFurnitureMesh(catalogId: string): i.G
   }
   if (catalogId === 'nft_holo_command_globe') {
     const grp = new i.Group();
-    const table = hc();
-    table.scale.setScalar(1.25);
-    grp.add(table);
+    const t = O();
+    const pedMat = j('#1e2432', { roughness: 0.36, metalness: 0.42, envMapIntensity: 0.9 });
+    const trimMat = j('#384152', { roughness: 0.28, metalness: 0.65, envMapIntensity: 1.0 });
+    const glowRingMat = ct('#00f5d4', 0.9);
+    // Dedicated turned Lathe emitter pedestal (no table lampshade intersecting the globe!)
+    t.geo(
+      pedMat,
+      Ee(
+        Ft(
+          [
+            [0, 0],
+            [0.26, 0],
+            [0.27, 0.025],
+            [0.21, 0.055],
+            [0.10, 0.11],
+            [0.08, 0.52],
+            [0.16, 0.60],
+            [0.25, 0.66],
+            [0.25, 0.71],
+            [0.21, 0.73],
+            [0, 0.73],
+          ],
+          32,
+        ),
+      ),
+      0,
+      0,
+      0,
+      { uv: 'box' },
+    )
+      .geo(
+        trimMat,
+        Ee(
+          Ft(
+            [
+              [0.19, 0.72],
+              [0.255, 0.72],
+              [0.255, 0.75],
+              [0.21, 0.76],
+              [0.18, 0.74],
+            ],
+            32,
+          ),
+        ),
+        0,
+        0,
+        0,
+        { uv: 'keep' },
+      )
+      .cyl(glowRingMat, 0, 0.758, 0, 0.175, 0.185, 0.018, { seg: 28 });
+    t.flush(grp);
     const globe = new i.Mesh(
-      new i.SphereGeometry(0.38, 20, 14),
+      new i.SphereGeometry(0.36, 20, 14),
       new i.MeshBasicMaterial({ color: '#00f5d4', wireframe: true }),
     );
     globe.name = 'HoloCommandGlobeSphere';
-    globe.position.set(0, 1.08, 0);
+    globe.position.set(0, 1.15, 0);
     grp.add(globe);
     return grp;
   }

@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import {
   BUDDIES_CONSTANTS,
-  LIGHTING_PRESETS,
   LightingPresetKey,
   stepCriticalDampedSpring3D,
   stepTurretYaw,
@@ -189,6 +188,13 @@ import {
   evaluateOpenWarzonePopulationBar,
   computeLandingCityTourPose,
   computePlazaFlyToPose,
+  CITY_VIEW_OVERVIEW_DEFAULTS,
+  getCityViewDistrictById,
+  getCityViewDefaultOrbit,
+  computeCityViewOrbitCameraPose,
+  computeCityViewFlyPose,
+  pickCityViewDistrictAtWorldPoint,
+  type CityViewTargetId,
   PUBLIC_PAD_SHIELD_RADIUS,
   evaluatePublicPadShieldZone,
   isUnitWeaponTriggerLockedInSafeShield,
@@ -211,9 +217,21 @@ import {
   buildWarzoneRaiderSpawnPlan,
   pickWarzoneRaiderRespawnCoord,
   CITY_AMBIENT_NPC_PRESETS,
+  CAFE_MIRA_INTERIOR_PRESET,
+  PLAZA_TRAFFIC_SIGNAL_SPEC,
+  createInitialPlazaTrafficSignalState,
+  evaluatePlazaCrosswalkWalkStates,
+  evaluateEastHarborCrosswalkWalkState,
+  stepPlazaTrafficSignalState,
+  stepCityTramTrafficSpeedAndDistance,
+  shouldPedestrianYieldForTramOrSignal,
   stepCityAmbientNpcSchedule,
+  computeNpcDialoguePortraitPose,
   resolveUnifiedBottomDockProximity,
+  RADAR_WORLD_HALF_EXTENT,
+  type CityAmbientNpcActivity,
   type CityAmbientNpcPreset,
+  type PlazaTrafficSignalState,
   type UnifiedDockProximityCandidate,
 } from './buddiesBlitzRules';
 import {
@@ -234,7 +252,11 @@ import {
   computeSpatialAudioGain,
   computeBuildBoxAudioGain,
 } from './audio';
-import { isPointOnAmusementOverwaterPier } from './buddiesAmusementParkRules';
+import {
+  classifyFootstepSurface,
+  resolveFootstepHalfCycleIndex,
+  type AmbientEnvironmentMode,
+} from './buddiesAmbientAudioRules';
 import {
   loadAllRealBlitzAssets,
   getCachedLoadedBlitzAssets,
@@ -243,6 +265,8 @@ import {
   applyPlanetCurvatureToObject,
   computePlanetYOffset,
   getTerrainElevation,
+  isPointOnOuterTramSidewalk,
+  isPointOnInnerTramSidewalk,
   wrapPlanetCoord,
   getPlanetShortestDelta,
   getPlanetShortestDistance,
@@ -260,6 +284,7 @@ import {
   buildProceduralBuddyAvatar,
   upgradeBuddyRigWithCharBuddiesGlb,
   setBuddyRigEquippedTorsoByUrl,
+  applyCitizenClothingTint,
   CharacterGender,
   setDefaultCharacterGender,
   getDefaultCharacterGender,
@@ -273,6 +298,7 @@ import {
   spawnRealBlitzPropFromGlb,
   stepRealBlitzPropsAnimation,
   getBlitzDefaultLightDirection,
+  getCachedLoadedCitizenGlbs,
   LoadedBlitzAssets,
   BlitzWindUniforms,
   createBlitzExplosionSystem,
@@ -302,6 +328,8 @@ import {
   getLv1SlateZincRoofTexture,
   getLv1HorizontalTimberCladdingTexture,
   getLv1AndoPlasterWallTexture,
+  getWaterCascadeSheetTexture,
+  getWaterBasinRippleTexture,
 } from './buddiesBlitzShadersAndAssets';
 import {
   buildOriginalBuddiesCatalogFurnitureMesh,
@@ -349,10 +377,14 @@ import {
 } from './buddiesCafeInteriorBuilder';
 import { findRoadRoute } from './buddiesRoadGuide';
 import {
+  buildCityLightingAndTrafficSystem,
+  type WeatherEnvStateContract,
+} from './buddiesCityLightingAndTrafficBuilder';
+import {
+  getScooterRideModelScale,
   SCOOTER_HANDLEBAR_SPECS,
-  SCOOTER_RIDE_MODEL_SCALE,
-  SCOOTER_RIDER_BACK_OFFSET_M,
-  SCOOTER_RIDER_LIFT_M,
+  SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M,
+  SCOOTER_RIDER_LIFT_BY_KIND_M,
   URBAN_SCOOTER_SHOP_TRIGGER,
   type UrbanScooterKind,
 } from './buddiesUrbanScooterRules';
@@ -395,10 +427,59 @@ import {
   type CasinoInteriorSceneHandle,
 } from './buddiesGrandCasinoInteriorBuilder';
 import {
+  SALON_EXTERIOR_DOOR_TRIGGER,
+  SALON_INTERIOR_BOUNDS,
+  SALON_INTERIOR_COLLIDERS,
+  SALON_INTERIOR_SEAT_SPOTS,
+  SALON_ORIGIN_Y,
+  SALON_ORBIT_CAMERA_CONFIG,
+  SALON_STATION_TARGETS,
+  clampSalonInteriorPosition,
+  computeSalonOrbitCameraPose,
+  computeSalonSeatStandUpPosition,
+  resolveNearestSalonPromptOrSeat,
+  resolveSalonInteriorFloorY,
+  type SalonInteriorSeatSpot,
+  type SalonStationInteractionKind,
+} from './buddiesBeautySalonRules';
+import {
+  buildBeautySalonInterior,
+  type SalonInteriorSceneHandle,
+} from './buddiesBeautySalonInteriorBuilder';
+import {
   NAMEPLATE_SCREEN_SPEC,
   syncScreenSpaceBillboardQuad,
   syncUprightCylindricalBillboard,
 } from './buddiesBillboardRules';
+import {
+  auditAndApplyFrustumCulling,
+  computeDistrictChunkCullRadius,
+  computeHouseInteriorLightRig,
+  createInstancedMeshWithOutline,
+  FixedPointLightPool,
+  InstancedWorldPropBatchManager,
+  LIGHTING_HYGIENE_LIMITS,
+  resolveOutdoorLightingState,
+  shouldStepCharacterDetailThisFrame,
+  type InstancedPropSlotBinding,
+  type InstancedTreeSlotBinding,
+} from './buddiesHubRenderOptimizer';
+import {
+  resolveSecondaryPhysicsLod,
+  type SecondaryPhysicsLodMode,
+} from './buddiesHairSpringPhysics';
+import {
+  POINT_LIGHT_AUDIT_SPECS,
+  ProximityPointLightManager,
+  computeProximityCameraFocus,
+} from './buddiesProximityLightManager';
+import {
+  buildHorizonCliffBackdrop3D,
+  enableSceneLinearFog,
+  evaluateHorizonFogAndFarClip,
+  syncSceneHorizonFogAndFarClip,
+  type HorizonCameraViewMode,
+} from './buddiesHorizonOptimizer';
 import {
   GameState,
   PlayMode,
@@ -429,11 +510,35 @@ import {
   evaluateChunkSynced3DFogOfWar,
   isPositionInsideDynamicCullingRadius,
 } from './buddiesBlitzMinimap';
+import { buildDynamicWeatherSystem3D } from './buddiesWeatherSystem';
 import {
   subscribeToWorldMultiplayer,
   type WorldMultiplayerPeerState,
+  type WorldMultiplayerEmoteEvent,
+  type WorldMultiplayerChatEvent,
   type WarzoneRealtimePeer,
 } from '../lib/supabaseClient';
+import {
+  DEFAULT_CHAT_BUBBLE_TTL_MS,
+  SOCIAL_EMOTE_SPECS,
+  computeLocalPoseBroadcastIntervalMs,
+  createPeerInterpolationState,
+  createRemoteChatBubbleState,
+  createRemoteEmoteState,
+  getActiveRemoteChatBubble,
+  getActiveRemoteEmoteClip,
+  isFlatIndoorZoneKey,
+  mergeRemoteChatBubbleState,
+  mergeRemoteEmoteState,
+  pushRemotePoseSample,
+  resolveBubbleStyle,
+  resolveLocalEmoteClip,
+  stepRemoteAvatarInterpolation,
+  type PeerInterpolationState,
+  type RemoteChatBubbleState,
+  type RemoteEmoteState,
+  type SocialEmoteId,
+} from './buddiesRemotePresenceSync';
 import {
   buildArenaNavGrids,
   computeUnitAStarSteeringDirection,
@@ -456,6 +561,55 @@ import {
   buildStaticWorldStructuresList,
   isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
+import { buildCentralBotanicalPark3D } from './buddiesCentralParkBuilder';
+import {
+  CENTRAL_PARK_SEAT_SPOTS,
+  getCentralParkGrassExclusionBoxes,
+} from './buddiesCentralParkRules';
+import { buildUnderwaterEcology3D } from './buddiesUnderwaterEcology';
+import {
+  AMBIENT_NPC_CAPSULE_RADIUS,
+  CAFE_INTERIOR_CHARACTER_RADIUS,
+  PLAYER_FOOT_CAPSULE_RADIUS,
+  computeLocalPedestrianAvoidance2D,
+  getAuditedStaticWorldStructures,
+  isSegmentClearOfAuditedStaticObstacles2D,
+  resolveAmbientNpcExemptSeatPoint,
+  resolveCapsuleVsCirclePushout2D,
+  resolveCharacterAgainstDynamicObstacles2D,
+  resolveExtendedWaterMarginGuard2D,
+  resolveGroundMoverAuditedCollisions2D,
+  resolveMultiIterationCapsuleCluster2D,
+  resolveStaircaseAndElevationGuard2D,
+  type CharacterCapsuleBody2D,
+  type DynamicCircleObstacle2D,
+  type DynamicObbObstacle2D,
+  type LocalPedestrianAvoidanceResult,
+  type PedestrianAvoidanceCapsule2D,
+} from './buddiesCharacterCollisionRules';
+import {
+  createCityWindowSpec,
+  tagCityWindowMesh,
+} from './buddiesWindowAuditRules';
+import { updateCityWindowNightLighting } from './buddiesNightLightingRules';
+import {
+  buildCityNavGrid,
+  cancelClickToWalkState,
+  createClickToWalkIndicator3D,
+  createIdleClickToWalkState,
+  hasManualMovementConflict,
+  isCleanClickTap,
+  pickClosestInteractiveSeatAtPoint,
+  planCityClickToWalkRoute,
+  planInteriorClickToWalkRoute,
+  startClickToWalkState,
+  stepClickToWalkSteering,
+  summarizeClickToWalkForHud,
+  type CityNavGridHandle,
+  type ClickToWalkPendingInteraction,
+  type ClickToWalkState,
+  type InteriorRoomKind,
+} from './buddiesClickToWalkRules';
 
 export type {
   GameState,
@@ -570,14 +724,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       powerPreference: 'high-performance',
     });
 
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+    const maxAllowedDpr = isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.25);
+    let currentAdaptiveDpr = maxAllowedDpr;
+    let smoothedFrameMs = 16.67;
+    let dprAdjustCooldownFrames = 0;
+    renderer.setPixelRatio(currentAdaptiveDpr);
     renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
-    // Enable real-time shadow maps on hardware GPUs; skip shadow pass on CPU software WebGL
+    // Enable real-time soft PCF shadow maps on hardware GPUs (replaces deprecated PCFSoftShadowMap in Three.js r186+); skip shadow pass on CPU software WebGL
     renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.BasicShadowMap;
+    renderer.shadowMap.type = !isSoftwareGl ? THREE.PCFShadowMap : THREE.BasicShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = !isSoftwareGl;
 
@@ -819,6 +977,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     enterGrandCasinoPromptBtn.setAttribute('data-enter-grand-casino-floating-btn', 'true');
 
+    const ENTER_BEAUTY_SALON_BTN_HTML = getGameStyleBottomDockHtml(
+      'ENTER SALON',
+      '#f9a8d4',
+      DOCK_ICON_DOOR_SVG,
+      'E',
+    );
+    const enterBeautySalonPromptBtn = createPromptButton(
+      ENTER_BEAUTY_SALON_BTN_HTML,
+      'ENTER SALON [E]',
+      'enterBeautySalon',
+    );
+    enterBeautySalonPromptBtn.setAttribute('data-enter-beauty-salon-floating-btn', 'true');
+
     const getCafeStationBtnHtml = (
       label: string,
       accentHex = '#b8ff3c',
@@ -838,6 +1009,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       'casinoStationInteract',
     );
     casinoStationPromptBtn.setAttribute('data-casino-station-floating-btn', 'true');
+
+    const salonStationPromptBtn = createPromptButton(
+      getCafeStationBtnHtml('EXIT SALON', '#ef4444', DOCK_ICON_EXIT_SVG, '#ffffff'),
+      'SALON INTERACT [E]',
+      'salonStationInteract',
+    );
+    salonStationPromptBtn.setAttribute('data-salon-station-floating-btn', 'true');
+
+    const triggerSalonStationAction = (stationKind: SalonStationInteractionKind | null) => {
+      if (!stationKind) return;
+      if (stationKind === 'exit_door') {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('exit-beauty-salon-interior'));
+      }
+    };
 
     const triggerCasinoStationAction = (stationKind: CasinoStationInteractionKind | null) => {
       if (!stationKind) return;
@@ -917,6 +1103,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     } | null = null;
     let selectedCharacterOriginPlayerPos = { x: 0, z: 0 };
 
+    interface RemoteSpeechBubbleBillboard {
+      sprite: THREE.Mesh;
+      updateText: (title: string, subtitle: string, accentHex: string, ratio?: number) => void;
+      updateBubble: (
+        displayName: string,
+        text: string,
+        bgColor: string,
+        textColor: string,
+      ) => void;
+    }
+
     interface RemotePlayerAvatar3D {
       sessionId: string;
       peer: WorldMultiplayerPeerState;
@@ -928,10 +1125,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       innerFootDiscMat: THREE.MeshBasicMaterial;
       overheadCrateGroup: THREE.Group;
       nameplate: ReturnType<typeof createGlassmorphicNameplate>;
-      saluteSign: ReturnType<typeof createBillboardSign>;
+      saluteSign: RemoteSpeechBubbleBillboard;
       renderX: number;
       renderZ: number;
       renderYaw: number;
+      renderJumpOffset: number;
       walkCycle: number;
       appliedGender: CharacterGender | null;
       hasGlbUpgraded: boolean;
@@ -948,9 +1146,340 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       scooterPose: ScooterRiderRigPose | null;
       lastLabelKey: string;
       lastBubbleText: string | null;
+      lastBubbleRenderKey: string;
+      emoteState: RemoteEmoteState;
+      chatBubbleState: RemoteChatBubbleState;
+      lastFishingPhase: WorldMultiplayerPeerState['fishingPhase'];
+      fishingCastRecoilTimer: number;
+      remotePunchTimer: number;
+      remoteKickTimer: number;
       hitFlashTimer: number;
     }
     const remotePlayerAvatars = new Map<string, RemotePlayerAvatar3D>();
+
+    const REMOTE_BUBBLE_QUAD_GEO = new THREE.PlaneGeometry(1, 1);
+    const createStyledRemoteChatBubbleBillboard = (
+      widthWorld: number,
+      heightWorld: number,
+    ): RemoteSpeechBubbleBillboard => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 176;
+      const ctx = canvas.getContext('2d')!;
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        fog: false,
+      });
+      const sprite = new THREE.Mesh(REMOTE_BUBBLE_QUAD_GEO, mat);
+      sprite.scale.set(widthWorld, heightWorld, 1);
+      sprite.renderOrder = 11;
+      sprite.castShadow = false;
+      sprite.receiveShadow = false;
+      sprite.raycast = () => {};
+
+      const wrapTextLines = (raw: string, maxWidthPx: number): string[] => {
+        const words = raw.trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return [''];
+        const lines: string[] = [];
+        let cur = '';
+        for (const w of words) {
+          const candidate = cur ? `${cur} ${w}` : w;
+          if (ctx.measureText(candidate).width <= maxWidthPx || !cur) {
+            cur = candidate;
+          } else {
+            lines.push(cur);
+            cur = w;
+            if (lines.length >= 2) break;
+          }
+        }
+        if (cur && lines.length < 2) {
+          lines.push(cur);
+        }
+        if (lines.length === 2 && words.join(' ').length > lines.join(' ').length) {
+          let second = lines[1];
+          while (second.length > 4 && ctx.measureText(`${second}...`).width > maxWidthPx) {
+            second = second.slice(0, -1);
+          }
+          lines[1] = `${second}...`;
+        }
+        return lines;
+      };
+
+      const updateBubble = (
+        displayName: string,
+        text: string,
+        bgColor: string,
+        textColor: string,
+      ) => {
+        const style = resolveBubbleStyle(bgColor, textColor);
+        ctx.clearRect(0, 0, 512, 176);
+
+        // Hard neo-brutalist comic shadow + bubble body
+        ctx.fillStyle = '#14161d';
+        ctx.beginPath();
+        ctx.roundRect(22, 34, 474, 114, 24);
+        ctx.fill();
+
+        ctx.fillStyle = style.bgColor;
+        ctx.beginPath();
+        ctx.roundRect(14, 26, 474, 114, 24);
+        ctx.fill();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#14161d';
+        ctx.stroke();
+
+        // Comic speech tail
+        ctx.fillStyle = style.bgColor;
+        ctx.beginPath();
+        ctx.moveTo(240, 136);
+        ctx.lineTo(256, 166);
+        ctx.lineTo(274, 136);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(239, 138);
+        ctx.lineTo(256, 166);
+        ctx.lineTo(275, 138);
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = '#14161d';
+        ctx.stroke();
+
+        // Sender pill badge on top edge
+        const cleanName = (displayName || 'CITIZEN').trim().slice(0, 18).toUpperCase();
+        ctx.font = '900 18px "Barlow", sans-serif';
+        const pillWidth = Math.min(260, Math.max(88, ctx.measureText(cleanName).width + 26));
+        ctx.fillStyle = '#14161d';
+        ctx.beginPath();
+        ctx.roundRect(30, 6, pillWidth, 30, 10);
+        ctx.fill();
+        ctx.fillStyle = '#facc15';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cleanName, 43, 22);
+
+        // Message body (1 or 2 crisp wrapped lines)
+        ctx.fillStyle = style.textColor;
+        ctx.font = '800 26px "Barlow", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lines = wrapTextLines(text, 432);
+        if (lines.length === 1) {
+          ctx.fillText(lines[0], 251, 88);
+        } else {
+          ctx.fillText(lines[0], 251, 70);
+          ctx.fillText(lines[1], 251, 106);
+        }
+        tex.needsUpdate = true;
+      };
+
+      const updateText = (title: string, subtitle: string, accentHex: string) => {
+        updateBubble(title, subtitle, '#11121a', accentHex || '#ffffff');
+      };
+
+      return { sprite, updateText, updateBubble };
+    };
+
+    const emoteBoneSnapshots = new WeakMap<BuddyCharacterRig, Map<string, THREE.Quaternion>>();
+    const emoteArmSnapshots = new WeakMap<
+      BuddyCharacterRig,
+      {
+        leftPos: THREE.Vector3;
+        leftRot: THREE.Euler;
+        rightPos: THREE.Vector3;
+        rightRot: THREE.Euler;
+      }
+    >();
+    const EMOTE_TOUCHED_BONES = [
+      'RightArm',
+      'RightForeArm',
+      'LeftArm',
+      'LeftForeArm',
+      'Spine2',
+      'Head',
+    ] as const;
+    const _emoteP0 = new THREE.Vector3();
+    const _emoteP1 = new THREE.Vector3();
+    const _emoteCurDir = new THREE.Vector3();
+    const _emoteDesDir = new THREE.Vector3();
+    const _emoteParentQ = new THREE.Quaternion();
+    const _emoteWorldDeltaQ = new THREE.Quaternion();
+    const _emoteLocalDeltaQ = new THREE.Quaternion();
+    const _emoteAdditiveEuler = new THREE.Euler();
+    const _emoteAdditiveQ = new THREE.Quaternion();
+
+    const restoreSocialEmoteOverlay = (rig: BuddyCharacterRig) => {
+      const boneSnap = emoteBoneSnapshots.get(rig);
+      if (boneSnap && rig.customGlbController) {
+        for (const [name, q] of boneSnap.entries()) {
+          const bone = rig.customGlbController.bones.get(name);
+          if (bone) {
+            bone.quaternion.copy(q);
+          }
+        }
+        emoteBoneSnapshots.delete(rig);
+      }
+      const armSnap = emoteArmSnapshots.get(rig);
+      if (armSnap) {
+        rig.leftArmPivot.position.copy(armSnap.leftPos);
+        rig.leftArmPivot.rotation.copy(armSnap.leftRot);
+        rig.rightArmPivot.position.copy(armSnap.rightPos);
+        rig.rightArmPivot.rotation.copy(armSnap.rightRot);
+        emoteArmSnapshots.delete(rig);
+      }
+    };
+
+    const swingBoneDirBodyLocal = (
+      bodyGroup: THREE.Group,
+      bone: THREE.Bone | undefined,
+      childBone: THREE.Bone | undefined,
+      bx: number,
+      by: number,
+      bz: number,
+    ) => {
+      if (!bone || !childBone || !bone.parent) return;
+      bone.parent.updateWorldMatrix(true, false);
+      bone.updateWorldMatrix(false, true);
+      bone.getWorldPosition(_emoteP0);
+      childBone.getWorldPosition(_emoteP1);
+      _emoteCurDir.subVectors(_emoteP1, _emoteP0);
+      if (_emoteCurDir.lengthSq() < 1e-6) return;
+      _emoteCurDir.normalize();
+
+      _emoteDesDir.set(bx, by, bz).transformDirection(bodyGroup.matrixWorld);
+      if (_emoteDesDir.lengthSq() < 1e-6) return;
+      _emoteDesDir.normalize();
+
+      _emoteWorldDeltaQ.setFromUnitVectors(_emoteCurDir, _emoteDesDir);
+      bone.parent.getWorldQuaternion(_emoteParentQ);
+      _emoteLocalDeltaQ
+        .copy(_emoteParentQ)
+        .invert()
+        .multiply(_emoteWorldDeltaQ)
+        .multiply(_emoteParentQ);
+      bone.quaternion.premultiply(_emoteLocalDeltaQ);
+      bone.updateWorldMatrix(false, true);
+    };
+
+    const applySocialEmotePoseOverlay = (
+      rig: BuddyCharacterRig,
+      bodyGroup: THREE.Group,
+      emoteClip: string,
+      elapsedSec: number,
+    ) => {
+      if (!emoteClip.startsWith('emote:')) return;
+      const emoteKind = emoteClip.slice('emote:'.length);
+      if (
+        emoteKind !== 'wave' &&
+        emoteKind !== 'cheer' &&
+        emoteKind !== 'dance' &&
+        emoteKind !== 'salute'
+      ) {
+        return;
+      }
+
+      const ctrl = rig.customGlbController;
+      if (ctrl) {
+        const snap = new Map<string, THREE.Quaternion>();
+        for (const name of EMOTE_TOUCHED_BONES) {
+          const bone = ctrl.bones.get(name);
+          if (bone) {
+            snap.set(name, bone.quaternion.clone());
+          }
+        }
+        emoteBoneSnapshots.set(rig, snap);
+
+        bodyGroup.updateWorldMatrix(true, false);
+        const rArm = ctrl.bones.get('RightArm');
+        const rFore = ctrl.bones.get('RightForeArm');
+        const rHand = ctrl.bones.get('RightHand');
+        const lArm = ctrl.bones.get('LeftArm');
+        const lFore = ctrl.bones.get('LeftForeArm');
+        const lHand = ctrl.bones.get('LeftHand');
+        const spine2 = ctrl.bones.get('Spine2');
+        const head = ctrl.bones.get('Head');
+
+        if (emoteKind === 'wave') {
+          const wave = Math.sin(elapsedSec * 9.5);
+          swingBoneDirBodyLocal(bodyGroup, rArm, rFore, -0.58, 0.72, 0.24);
+          swingBoneDirBodyLocal(bodyGroup, rFore, rHand, -0.35 + wave * 0.42, 0.92, 0.16);
+          if (head) {
+            _emoteAdditiveEuler.set(0.06, 0, wave * 0.08);
+            _emoteAdditiveQ.setFromEuler(_emoteAdditiveEuler);
+            head.quaternion.multiply(_emoteAdditiveQ);
+          }
+        } else if (emoteKind === 'cheer') {
+          const pump = Math.sin(elapsedSec * 10.5);
+          swingBoneDirBodyLocal(bodyGroup, rArm, rFore, -0.45, 0.85 + pump * 0.12, 0.2);
+          swingBoneDirBodyLocal(bodyGroup, rFore, rHand, -0.25, 0.95, 0.15 + pump * 0.18);
+          swingBoneDirBodyLocal(bodyGroup, lArm, lFore, 0.45, 0.85 - pump * 0.12, 0.2);
+          swingBoneDirBodyLocal(bodyGroup, lFore, lHand, 0.25, 0.95, 0.15 - pump * 0.18);
+          if (spine2) {
+            _emoteAdditiveEuler.set(-0.08 + Math.abs(pump) * 0.06, 0, 0);
+            _emoteAdditiveQ.setFromEuler(_emoteAdditiveEuler);
+            spine2.quaternion.multiply(_emoteAdditiveQ);
+          }
+        } else if (emoteKind === 'salute') {
+          swingBoneDirBodyLocal(bodyGroup, rArm, rFore, -0.68, 0.42, 0.42);
+          swingBoneDirBodyLocal(bodyGroup, rFore, rHand, 0.38, 0.72, 0.38);
+          if (head) {
+            _emoteAdditiveEuler.set(-0.04, 0.04, 0);
+            _emoteAdditiveQ.setFromEuler(_emoteAdditiveEuler);
+            head.quaternion.multiply(_emoteAdditiveQ);
+          }
+        } else if (emoteKind === 'dance') {
+          const groove = Math.sin(elapsedSec * 7.2);
+          const bounce = Math.sin(elapsedSec * 14.4);
+          swingBoneDirBodyLocal(bodyGroup, rArm, rFore, -0.52, 0.2 + groove * 0.55, 0.35);
+          swingBoneDirBodyLocal(bodyGroup, rFore, rHand, -0.18, 0.65 + groove * 0.3, 0.52);
+          swingBoneDirBodyLocal(bodyGroup, lArm, lFore, 0.52, 0.2 - groove * 0.55, 0.35);
+          swingBoneDirBodyLocal(bodyGroup, lFore, lHand, 0.18, 0.65 - groove * 0.3, 0.52);
+          if (spine2) {
+            _emoteAdditiveEuler.set(bounce * 0.05, groove * 0.14, groove * 0.09);
+            _emoteAdditiveQ.setFromEuler(_emoteAdditiveEuler);
+            spine2.quaternion.multiply(_emoteAdditiveQ);
+          }
+        }
+        return;
+      }
+
+      // Procedural rig fallback
+      emoteArmSnapshots.set(rig, {
+        leftPos: rig.leftArmPivot.position.clone(),
+        leftRot: rig.leftArmPivot.rotation.clone(),
+        rightPos: rig.rightArmPivot.position.clone(),
+        rightRot: rig.rightArmPivot.rotation.clone(),
+      });
+      const charRightArm = rig.leftArmPivot;
+      const charLeftArm = rig.rightArmPivot;
+      if (emoteKind === 'wave') {
+        const wave = Math.sin(elapsedSec * 9.5);
+        charRightArm.position.set(-0.58, 1.48, 0.12);
+        charRightArm.rotation.set(-2.55, 0.15, -0.45 + wave * 0.35);
+      } else if (emoteKind === 'cheer') {
+        const pump = Math.sin(elapsedSec * 10.5);
+        charRightArm.position.set(-0.56, 1.5, 0.1);
+        charRightArm.rotation.set(-2.7 + pump * 0.22, 0, -0.32);
+        charLeftArm.position.set(0.56, 1.5, 0.1);
+        charLeftArm.rotation.set(-2.7 - pump * 0.22, 0, 0.32);
+      } else if (emoteKind === 'salute') {
+        charRightArm.position.set(-0.52, 1.45, 0.18);
+        charRightArm.rotation.set(-2.15, -0.55, -0.2);
+      } else if (emoteKind === 'dance') {
+        const groove = Math.sin(elapsedSec * 7.2);
+        charRightArm.position.set(-0.58, 1.42, 0.14);
+        charRightArm.rotation.set(-1.55 + groove * 0.7, 0.3, -0.35);
+        charLeftArm.position.set(0.58, 1.42, 0.14);
+        charLeftArm.rotation.set(-1.55 - groove * 0.7, -0.3, 0.35);
+      }
+    };
 
     const clearCharacterSelection = () => {
       if (selectedCharacterTarget?.nameplate?.sprite) {
@@ -1024,7 +1553,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             playerUnit.x - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
             playerUnit.z - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
           );
-          const dHalte = Math.hypot(playerUnit.x - -61.95, playerUnit.z - 0.0);
+          const dHalte = Math.hypot(playerUnit.x - -59.18, playerUnit.z - 0.0);
           if (dInfo <= dHalte) {
             return infoKiosk;
           }
@@ -1137,13 +1666,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const LOBBY_SEAT_SPOTS: readonly LobbySeatSpot[] = [
       // North-East Integrated Concrete Planter Benches + Aligned Vintage Park Benches along East-North Promenade
-      { id: 'lobby_bench_en_1', x: -78.98, z: -24.85, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
-      { id: 'lobby_bench_en_2', x: -78.98, z: -23.25, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
-      // Municipal Hall & Clock Tower Cast-Iron Promenade Bench
-      { id: 'lobby_civic_bench_side', x: -83.99, z: -30.41, yaw: 0, seatLiftY: -0.05, indicatorHeightY: 1.08 },
+      { id: 'lobby_bench_en_1', x: -81.23, z: -24.85, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
+      { id: 'lobby_bench_en_2', x: -81.23, z: -23.25, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
+      // Municipal Hall & Clock Tower Cast-Iron Promenade Bench (1.25x -> ~0.78m seat height)
+      { id: 'lobby_civic_bench_side', x: -86.24, z: -30.41, yaw: 0, seatLiftY: 0.10, indicatorHeightY: 1.24 },
       // Vintage Park Bench & Planter Box next to East-North Vintage Lamppost
-      { id: 'lobby_vintage_bench_1', x: -78.98, z: -17.65, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
-      { id: 'lobby_vintage_bench_2', x: -78.98, z: -16.05, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
+      { id: 'lobby_vintage_bench_1', x: -81.23, z: -17.65, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
+      { id: 'lobby_vintage_bench_2', x: -81.23, z: -16.05, yaw: Math.PI, seatLiftY: 0.02, indicatorHeightY: 1.32 },
       // North Grand Casino Staging Promenade Vintage Park Benches (bench-only, facing East +X toward Valet Loop)
       { id: 'casino_vintage_bench_s', x: -78.59, z: -56.6, yaw: 0.0, seatLiftY: 0.12, indicatorHeightY: 1.42 },
       { id: 'casino_vintage_bench_n', x: -78.59, z: -84.6, yaw: 0.0, seatLiftY: 0.12, indicatorHeightY: 1.42 },
@@ -1158,8 +1687,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       { id: 'park_bench_521', x: 2.0, z: -29.5, yaw: -Math.PI / 2, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_522', x: -1.0, z: 29.8, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_523', x: -1.0, z: 34.2, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
-      { id: 'park_bench_524', x: 23.8, z: 0.0, yaw: Math.PI, seatLiftY: 0.0, indicatorHeightY: 1.25 },
-      { id: 'park_bench_525', x: 25.2, z: 0.0, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
+      { id: 'park_bench_524', x: -47.5, z: -10.2, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
+      { id: 'park_bench_525', x: -47.5, z: 10.2, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_526', x: -44.2, z: -2.0, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_527', x: -44.2, z: 2.0, yaw: 0.0, seatLiftY: 0.0, indicatorHeightY: 1.25 },
       { id: 'park_bench_528', x: -9.5, z: -44.6, yaw: Math.PI / 2, seatLiftY: 0.0, indicatorHeightY: 1.25 },
@@ -1191,6 +1720,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       { id: 'beach_chair_2', x: 96.2, z: 85.0, yaw: 0.05, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
       { id: 'beach_chair_3', x: 96.2, z: 88.2, yaw: -0.1, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
       { id: 'beach_chair_4', x: 97.5, z: 49.5, yaw: -0.2, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      ...CENTRAL_PARK_SEAT_SPOTS,
     ];
 
     // Bed sleep spots for the private-house bedroom (static zone bed at interior
@@ -1528,6 +2058,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
         return;
       }
+      if (npcCameraMode === 'salon_interior' && playerUnit) {
+        if (playerUnit.isSitting && activeSalonSeatedSpot) {
+          const standPos = computeSalonSeatStandUpPosition(activeSalonSeatedSpot);
+          playerUnit.x = standPos.x;
+          playerUnit.z = standPos.z;
+          salonCurrentFloorY = standPos.floorY;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          activeSalonSeatedSpot = null;
+          playerUnit.isSitting = false;
+          soundEngine.playUiClick();
+          emitHudImmediately();
+        } else if (currentNearestSalonSeat) {
+          soundEngine.playUiClick();
+          activeSalonSeatedSpot = currentNearestSalonSeat;
+          playerUnit.x = currentNearestSalonSeat.x;
+          playerUnit.z = currentNearestSalonSeat.z;
+          salonCurrentFloorY = currentNearestSalonSeat.floorY;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = currentNearestSalonSeat.yaw;
+          playerUnit.isSitting = true;
+          emitHudImmediately();
+        }
+        return;
+      }
       if (playerUnit?.isSitting && activeSeatedSpot) {
         standUpFromLobbySeat();
       } else if (currentNearestLobbySeat) {
@@ -1651,6 +2207,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   | 'house_visit'
                   | 'cafe_interior'
                   | 'casino_interior'
+                  | 'salon_interior'
                   | 'character_select';
                 flyTargetMode?: 'character_select' | 'gameplay';
                 flySessionId?: number;
@@ -1796,6 +2353,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('select-character-by-id', onSelectCharacterById);
 
+    const initialBubbleStyle = (() => {
+      try {
+        const raw = window.localStorage.getItem('bb_chat_bubble_style_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { bgColor?: string; textColor?: string };
+          return resolveBubbleStyle(parsed.bgColor, parsed.textColor);
+        }
+      } catch {
+        // ignore storage errors
+      }
+      return { bgColor: '#ffffff', textColor: '#0f172a' };
+    })();
+    let localBubbleBgColor = initialBubbleStyle.bgColor;
+    let localBubbleTextColor = initialBubbleStyle.textColor;
+
     const socialSpeechBubbleEl = document.createElement('div');
     socialSpeechBubbleEl.setAttribute('data-social-speech-bubble', 'true');
     socialSpeechBubbleEl.style.position = 'absolute';
@@ -1805,8 +2377,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     socialSpeechBubbleEl.style.pointerEvents = 'none';
     socialSpeechBubbleEl.style.userSelect = 'none';
     socialSpeechBubbleEl.style.padding = '5px 12px';
-    socialSpeechBubbleEl.style.background = '#ffffff';
-    socialSpeechBubbleEl.style.color = '#0f172a';
+    socialSpeechBubbleEl.style.background = localBubbleBgColor;
+    socialSpeechBubbleEl.style.color = localBubbleTextColor;
     socialSpeechBubbleEl.style.fontFamily = "'Barlow', sans-serif";
     socialSpeechBubbleEl.style.fontWeight = '800';
     socialSpeechBubbleEl.style.fontSize = '12px';
@@ -1822,12 +2394,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const onUpdateSocialBubbleStyle = (ev: Event) => {
       const detail = (ev as CustomEvent<{ bgColor?: string; textColor?: string }>).detail;
-      if (detail?.bgColor) {
-        socialSpeechBubbleEl.style.background = detail.bgColor;
-      }
-      if (detail?.textColor) {
-        socialSpeechBubbleEl.style.color = detail.textColor;
-      }
+      const nextStyle = resolveBubbleStyle(
+        detail?.bgColor ?? localBubbleBgColor,
+        detail?.textColor ?? localBubbleTextColor,
+      );
+      localBubbleBgColor = nextStyle.bgColor;
+      localBubbleTextColor = nextStyle.textColor;
+      socialSpeechBubbleEl.style.background = localBubbleBgColor;
+      socialSpeechBubbleEl.style.color = localBubbleTextColor;
     };
     window.addEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
 
@@ -1857,12 +2431,43 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     window.addEventListener('toggle-kiosk-ui', onKioskUiToggled);
     window.addEventListener('close-kiosk-ui', onKioskUiClosed);
     window.addEventListener('sync-kiosk-ui', onKioskUiSynced);
+    let activeCitizenDialogueId: string | null = null;
+    let citizenPortraitState: {
+      citizenId: string;
+      frontDirX: number;
+      frontDirZ: number;
+      blend01: number;
+      startCamPos: { x: number; y: number; z: number };
+      startLookAt: { x: number; y: number; z: number };
+      startFov: number;
+      faceCamYaw: number;
+    } | null = null;
+    let citizenReturnBlend01 = 0;
+    let citizenReturnFromCamPos = { x: 0, y: 0, z: 0 };
+    let citizenReturnFromLookAt = { x: 0, y: 0, z: 0 };
+    let citizenReturnFromFov: number = BUDDIES_CONSTANTS.camera.fov;
+    let lastRenderedCamPos = { x: 0, y: 0, z: 0 };
+    let lastRenderedLookAt = { x: 0, y: 0, z: 0 };
+    let lastRenderedFov: number = BUDDIES_CONSTANTS.camera.fov;
+    let hasLastRenderedCamPose = false;
+    const onCitizenDialogueOpenState = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ isOpen?: boolean; citizenId?: string | null }>;
+      activeCitizenDialogueId = customEv.detail?.isOpen
+        ? (customEv.detail.citizenId ?? null)
+        : null;
+    };
+    window.addEventListener('citizen-dialogue-open-state', onCitizenDialogueOpenState);
     let updateDirectDomPrompts: () => void = () => {};
 
     // 2. Scene, Camera & Authentic Buddies Blitz Warm Afternoon Sun Lighting
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#7fd8ff');
-    scene.fog = new THREE.FogExp2('#95e1ff', 0.00045);
+    const initialHorizonFog = evaluateHorizonFogAndFarClip({ mode: 'gameplay' });
+    scene.fog = new THREE.Fog(
+      initialHorizonFog.fogColorHex,
+      initialHorizonFog.fogNear,
+      initialHorizonFog.fogFar,
+    );
     scene.add(characterSelectionRing);
 
     // Procedural Makoto Shinkai / Ghibli Cel-Shaded Sky Dome Shader
@@ -2038,11 +2643,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       `,
     });
     const animeSkyDomeMesh = new THREE.Mesh(animeSkyGeo, animeSkyMat);
+    animeSkyDomeMesh.name = 'AnimeSkyDome';
     animeSkyDomeMesh.frustumCulled = false;
     animeSkyDomeMesh.renderOrder = -1000;
     scene.add(animeSkyDomeMesh);
 
-    // Volumetric 3D Cel-Shaded Horizon Cloud Ring (Ghibli / Shinkai 3D Puffed Cumulus)
+    // Volumetric 3D Cel-Shaded Horizon Cloud Ring (GPU-instanced 112 puffs -> 1 draw call!)
     const animeCloudRingGroup = new THREE.Group();
     const cloudPuffSharedGeo = new THREE.IcosahedronGeometry(1, 2);
     const cloudToonSteps = new Uint8Array([155, 215, 255]);
@@ -2059,36 +2665,47 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       depthWrite: false,
     });
     const cloudClusterCount = 16;
+    const cloudPuffSpecs: Array<[number, number, number, number, number, number]> = [
+      [0, 0, 0, 34, 21, 18],
+      [-24, -4, 3, 25, 16, 15],
+      [25, -3, 2, 26, 17, 15],
+      [-11, 10, -2, 24, 18, 16],
+      [12, 11, -1, 23, 17, 15],
+      [-38, -9, 5, 17, 11, 12],
+      [39, -8, 4, 18, 12, 12],
+    ];
+    const cloudPuffMatrices: THREE.Matrix4[] = [];
+    const cloudClusterHelper = new THREE.Object3D();
+    const cloudPuffLocalMat = new THREE.Matrix4();
+    const cloudPuffPosTmp = new THREE.Vector3();
+    const cloudPuffQuatIdent = new THREE.Quaternion();
+    const cloudPuffScaleTmp = new THREE.Vector3();
     for (let c = 0; c < cloudClusterCount; c++) {
-      const clusterGrp = new THREE.Group();
       const angle = (c / cloudClusterCount) * Math.PI * 2 + (c % 2 === 0 ? 0.08 : -0.06);
       const dist = 420 + (c % 3) * 35;
       const heightY = 48 + (c % 4) * 18;
-      clusterGrp.position.set(Math.cos(angle) * dist, heightY, Math.sin(angle) * dist);
-      clusterGrp.lookAt(0, heightY * 0.85, 0);
-
-      // Build 5-7 sculpted overlapping cumulus puffs per cluster
-      const puffSpecs: Array<[number, number, number, number, number, number]> = [
-        [0, 0, 0, 34, 21, 18],
-        [-24, -4, 3, 25, 16, 15],
-        [25, -3, 2, 26, 17, 15],
-        [-11, 10, -2, 24, 18, 16],
-        [12, 11, -1, 23, 17, 15],
-        [-38, -9, 5, 17, 11, 12],
-        [39, -8, 4, 18, 12, 12],
-      ];
-      for (const [px, py, pz, sx, sy, sz] of puffSpecs) {
-        const puff = new THREE.Mesh(cloudPuffSharedGeo, cloudPuffToonMat);
-        puff.position.set(px, py, pz);
-        puff.scale.set(sx, sy, sz);
-        puff.renderOrder = -999;
-        puff.frustumCulled = false;
-        clusterGrp.add(puff);
-      }
+      cloudClusterHelper.position.set(Math.cos(angle) * dist, heightY, Math.sin(angle) * dist);
+      cloudClusterHelper.lookAt(0, heightY * 0.85, 0);
       const clusterScale = 0.85 + (c % 3) * 0.22;
-      clusterGrp.scale.setScalar(clusterScale);
-      animeCloudRingGroup.add(clusterGrp);
+      cloudClusterHelper.scale.setScalar(clusterScale);
+      cloudClusterHelper.updateMatrix();
+      for (const [px, py, pz, sx, sy, sz] of cloudPuffSpecs) {
+        cloudPuffPosTmp.set(px, py, pz);
+        cloudPuffScaleTmp.set(sx, sy, sz);
+        cloudPuffLocalMat.compose(cloudPuffPosTmp, cloudPuffQuatIdent, cloudPuffScaleTmp);
+        cloudPuffMatrices.push(new THREE.Matrix4().multiplyMatrices(cloudClusterHelper.matrix, cloudPuffLocalMat));
+      }
     }
+    const cloudRingBatch = createInstancedMeshWithOutline({
+      geometry: cloudPuffSharedGeo,
+      material: cloudPuffToonMat,
+      matrices: cloudPuffMatrices,
+      name: 'AnimeHorizonCloudRingInstanced',
+      renderOrder: -999,
+      padding: 4.0,
+      lockStaticMatrix: true,
+    });
+    animeCloudRingGroup.add(cloudRingBatch.mesh);
     scene.add(animeCloudRingGroup);
 
     // Floating 4-Point Anime Star Sparkles Particle System
@@ -2142,6 +2759,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       blending: THREE.AdditiveBlending,
     });
     const animeSparklePoints = new THREE.Points(sparkleGeo, animeSparkleMat);
+    animeSparklePoints.name = 'AnimeSkySparkles';
     animeSparklePoints.frustumCulled = false;
     animeSparklePoints.renderOrder = -998;
     scene.add(animeSparklePoints);
@@ -2150,7 +2768,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       BUDDIES_CONSTANTS.camera.fov,
       (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight),
       BUDDIES_CONSTANTS.camera.near,
-      BUDDIES_CONSTANTS.camera.far,
+      initialHorizonFog.cameraFar,
     );
 
     // Post-processing chain engaged only while inside a house (visit + edit
@@ -2172,7 +2790,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const dirLight = new THREE.DirectionalLight('#ffe6b1', 2.05);
     dirLight.position.copy(blitzSunOffset);
     dirLight.castShadow = true;
-    const shadowMapRes = 1024;
+    const shadowMapRes = isSoftwareGl ? 1024 : 2048;
     dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
     const d = 36;
     const shadowTexelWorldSize = (d * 2) / shadowMapRes;
@@ -2189,86 +2807,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     dirLight.shadow.camera.right = d;
     dirLight.shadow.camera.top = d;
     dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.bias = -0.0004;
+    dirLight.shadow.bias = -0.00022;
+    dirLight.shadow.normalBias = 0.028;
+    dirLight.shadow.radius = isSoftwareGl ? 1.0 : 2.4;
+    dirLight.shadow.intensity = 0.88;
     let prevSnappedShadowX = Number.NaN;
     let prevSnappedShadowZ = Number.NaN;
     scene.add(dirLight);
     scene.add(dirLight.target);
 
+    let windUniformsRef: BlitzWindUniforms | null = null;
+    const weatherSystem = buildDynamicWeatherSystem3D({
+      scene,
+      hemiLight,
+      dirLight,
+      animeSkyUniforms,
+      cloudPuffToonMat,
+      animeSparkleMat,
+      isSoftwareGl,
+      initialPreset: lightingPresetRef.current,
+    });
     const applyLightingPreset = (presetKey: LightingPresetKey) => {
-      if (presetKey === 'day') {
-        dirLight.color.set('#ffe6b1');
-        dirLight.intensity = 2.05;
-        hemiLight.color.set('#fffdf0');
-        hemiLight.groundColor.set('#3d7068');
-        scene.background = new THREE.Color('#7fd8ff');
-        animeSkyUniforms.uZenithColor.value.set('#1b5eb8');
-        animeSkyUniforms.uMidSkyColor.value.set('#3b99f0');
-        animeSkyUniforms.uHorizonSkyColor.value.set('#8be0ff');
-        animeSkyUniforms.uHorizonGlowColor.value.set('#fff1cf');
-        animeSkyUniforms.uGroundBounceColor.value.set('#8ec8e8');
-        animeSkyUniforms.uSunColor.value.set('#fff9e6');
-        animeSkyUniforms.uCloudLitColor.value.set('#fffdf9');
-        animeSkyUniforms.uCloudMidColor.value.set('#d7e8ff');
-        animeSkyUniforms.uCloudShadowColor.value.set('#a6c2e8');
-        cloudPuffToonMat.color.set('#ffffff');
-        cloudPuffToonMat.emissive.set('#78b0e8');
-        if (scene.fog instanceof THREE.FogExp2) {
-          scene.fog.color.set('#95e1ff');
-          scene.fog.density = 0.00045;
-        }
-        return;
-      }
-      const p = LIGHTING_PRESETS[presetKey] || LIGHTING_PRESETS.day;
-      dirLight.color.set(p.lightColor);
-      dirLight.intensity = p.lightIntensity;
-      hemiLight.groundColor.set(p.shadowColor);
-      hemiLight.color.set(p.revealColor);
-      scene.background = new THREE.Color(p.fogColorA);
-      if (presetKey === 'dusk') {
-        animeSkyUniforms.uZenithColor.value.set('#2b2d6e');
-        animeSkyUniforms.uMidSkyColor.value.set('#8c4f7e');
-        animeSkyUniforms.uHorizonSkyColor.value.set('#f28b66');
-        animeSkyUniforms.uHorizonGlowColor.value.set('#ffd08a');
-        animeSkyUniforms.uGroundBounceColor.value.set('#7a4b66');
-        animeSkyUniforms.uSunColor.value.set('#ffe3a8');
-        animeSkyUniforms.uCloudLitColor.value.set('#ffe4bd');
-        animeSkyUniforms.uCloudMidColor.value.set('#d48ca6');
-        animeSkyUniforms.uCloudShadowColor.value.set('#6e5082');
-        cloudPuffToonMat.color.set('#ffe2bf');
-        cloudPuffToonMat.emissive.set('#8a527a');
-      } else if (presetKey === 'night') {
-        animeSkyUniforms.uZenithColor.value.set('#09132b');
-        animeSkyUniforms.uMidSkyColor.value.set('#142852');
-        animeSkyUniforms.uHorizonSkyColor.value.set('#284b7e');
-        animeSkyUniforms.uHorizonGlowColor.value.set('#4773aa');
-        animeSkyUniforms.uGroundBounceColor.value.set('#162947');
-        animeSkyUniforms.uSunColor.value.set('#d8ecff');
-        animeSkyUniforms.uCloudLitColor.value.set('#9ec2eb');
-        animeSkyUniforms.uCloudMidColor.value.set('#5173a3');
-        animeSkyUniforms.uCloudShadowColor.value.set('#273d66');
-        cloudPuffToonMat.color.set('#9fc2eb');
-        cloudPuffToonMat.emissive.set('#233b63');
-      } else {
-        animeSkyUniforms.uZenithColor.value.set('#2c589e');
-        animeSkyUniforms.uMidSkyColor.value.set('#629be0');
-        animeSkyUniforms.uHorizonSkyColor.value.set('#f5c0b8');
-        animeSkyUniforms.uHorizonGlowColor.value.set('#ffe8c2');
-        animeSkyUniforms.uGroundBounceColor.value.set('#96a8c9');
-        animeSkyUniforms.uSunColor.value.set('#fff3d1');
-        animeSkyUniforms.uCloudLitColor.value.set('#fff5eb');
-        animeSkyUniforms.uCloudMidColor.value.set('#dfcce8');
-        animeSkyUniforms.uCloudShadowColor.value.set('#9aa7cf');
-        cloudPuffToonMat.color.set('#fff5eb');
-        cloudPuffToonMat.emissive.set('#879bc7');
-      }
-      if (scene.fog instanceof THREE.FogExp2) {
-        scene.fog.color.set(p.fogColorA);
-        scene.fog.density = 0.00045;
-      }
+      weatherSystem.syncExternalPresetProp(presetKey, windUniformsRef);
     };
     applyLightingRef.current = applyLightingPreset;
-    applyLightingPreset(lightingPresetRef.current);
+    weatherSystem.syncExternalPresetProp(lightingPresetRef.current, null);
 
     const applyFovMode = (mode: 'webgl35' | 'ortho18') => {
       camera.fov = mode === 'ortho18' ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov : BUDDIES_CONSTANTS.camera.fov;
@@ -2292,6 +2855,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const inkOutlineMat = new THREE.MeshBasicMaterial({
       color: 0x12121e,
       side: THREE.BackSide,
+      fog: true,
     });
     const flashWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
     const frozenIceMat = makeToonMat(0x80e5ff);
@@ -2406,14 +2970,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       uShadowColor: { value: new THREE.Color('#3b6e52') },
       uPlanetPivot: { value: new THREE.Vector3(0, 0, 12.5) },
       uCurvatureStrength: { value: PLANET_CURVATURE_STRENGTH },
+      uDirShadowMapSize: { value: shadowMapRes },
     };
+    windUniformsRef = windUniforms;
+    applyLightingPreset(lightingPresetRef.current);
 
     const curvedPlanetEnv = createCurvedPlanetEnvironment(scene, windUniforms, isSoftwareGl);
+    const underwaterEcology = buildUnderwaterEcology3D(scene, windUniforms, isSoftwareGl);
 
     // 4A. Modern Urban Street Tram (100% Low-Floor LRV — 1 Rangkaian 2 Gerbong) circulating the road network
     const cityTram = createProceduralCityTramConsist(scene, windUniforms, isSoftwareGl);
     let cityTramDistance = 328.0; // Starts entering the South Collector Road curve right in front of Blue Base!
+    let cityTramCurrentSpeedMps: number = CITY_TRAM_SPEC.cruiseSpeed;
+    let plazaTrafficSignalState: PlazaTrafficSignalState = createInitialPlazaTrafficSignalState();
+    let eastTrafficSignalState: PlazaTrafficSignalState = createInitialPlazaTrafficSignalState(
+      'tram_green',
+      8.0,
+    );
     cityTram.update(cityTramDistance, 0, 0, 0, 0);
+
+    // 4A-1. 60 FPS GPU-Instanced 4-Tier City Illumination & Autonomous Signal-Compliant Traffic Fleet
+    const cityLightingAndTraffic = buildCityLightingAndTrafficSystem(
+      scene,
+      windUniforms,
+      isSoftwareGl,
+    );
 
     // 4A-2. Compact Floating Seat Discs above Plaza, Park, Casino & Beach Seats (unified with Cafe chair triggers)
     const lobbySeatCoinResourceCache: CompactSeatCoinResourceCache = new Map();
@@ -2929,6 +3510,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const publicWarzonePads = PUBLIC_WARZONE_CRATE_PADS.map((spec) =>
       buildPublicWarzoneCratePadMesh(spec),
     );
+    const horizonBackdrop = buildHorizonCliffBackdrop3D(scene, {
+      isSoftwareGl,
+      leafMaskTexture: loadedBlitzAssets?.treeFoliageTex ?? getSharedFallbackFoliageMaskTexture(),
+      windUniforms,
+    });
+    enableSceneLinearFog(scene);
 
     const INTERACT_ENTER_RADIUS = 2.6;
     const INTERACT_EXIT_RADIUS = 2.9;
@@ -2950,9 +3537,132 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let currentMapLayout: ArenaMapLayout = loadSavedLayout();
     const trees: DestructibleTree[] = [];
     const activeMapProps: ActiveMapPropPhysics[] = [];
+    const worldPropBatchManager = new InstancedWorldPropBatchManager('WorldMapInstancedProps');
+    scene.add(worldPropBatchManager.batchRootGroup);
+
+    type SharedPropTemplatePart = {
+      geometry: THREE.BufferGeometry;
+      material: THREE.Material;
+      castShadow: boolean;
+      receiveShadow: boolean;
+      isModelStroke: boolean;
+    };
+    let cachedRiverRockTemplateParts: SharedPropTemplatePart[] | null = null;
+    const getSharedRiverRockTemplateParts = (): SharedPropTemplatePart[] => {
+      if (cachedRiverRockTemplateParts) return cachedRiverRockTemplateParts;
+      const tmp = new THREE.Group();
+      const stoneGeo = new THREE.SphereGeometry(0.68, 9, 7);
+      const addStoneLobe = (
+        colorHex: string,
+        sx: number,
+        sy: number,
+        sz: number,
+        px: number,
+        py: number,
+        pz: number,
+        strokeW: number,
+      ) => {
+        const m = new THREE.Mesh(stoneGeo, new THREE.MeshToonMaterial({ color: colorHex }));
+        m.scale.set(sx, sy, sz);
+        m.position.set(px, py, pz);
+        upgradeMeshToBlitzWorldMaterial(m, windUniforms, colorHex, 0.22);
+        const st = createBlitzStrokeMesh(stoneGeo, strokeW);
+        if (st) m.add(st);
+        tmp.add(m);
+      };
+      addStoneLobe('#7b8d7e', 1.28, 0.74, 1.08, 0, 0.24, 0, 0.02);
+      addStoneLobe('#82cc59', 0.96, 0.4, 0.84, 0, 0.5, 0, 0.018);
+      addStoneLobe('#5f7063', 0.62, 0.46, 0.58, 0.65, 0.14, 0.32, 0.018);
+      bakeStaticGroupMeshes(tmp, { minShadowCasterSpan: 0.45 });
+      cachedRiverRockTemplateParts = [];
+      tmp.traverse((node) => {
+        const m = node as THREE.Mesh;
+        if (m.isMesh && !Array.isArray(m.material)) {
+          if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+          cachedRiverRockTemplateParts!.push({
+            geometry: m.geometry,
+            material: m.material,
+            castShadow: m.castShadow,
+            receiveShadow: m.receiveShadow,
+            isModelStroke: Boolean(m.userData?.isModelStroke),
+          });
+        }
+      });
+      stoneGeo.dispose();
+      return cachedRiverRockTemplateParts;
+    };
+
+    let cachedFlowerClusterTemplateParts: SharedPropTemplatePart[] | null = null;
+    const getSharedFlowerClusterTemplateParts = (): SharedPropTemplatePart[] => {
+      if (cachedFlowerClusterTemplateParts) return cachedFlowerClusterTemplateParts;
+      const tmp = new THREE.Group();
+      const stemGeo = new THREE.CylinderGeometry(0.032, 0.038, 0.28, 5);
+      const blossomGeo = new THREE.CylinderGeometry(0.2, 0.12, 0.08, 7);
+      const centerGeo = new THREE.SphereGeometry(0.085, 6, 6);
+      const stemMat = new THREE.MeshToonMaterial({ color: '#4ca854' });
+      const centerMat = new THREE.MeshBasicMaterial({ color: '#fff6a1' });
+      const colors = ['#2998ff', '#ffe033', '#ff70c6'];
+      for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2;
+        const rad = i === 0 ? 0.05 : 0.4 + (i % 2) * 0.24;
+        const bx = Math.cos(ang) * rad;
+        const bz = Math.sin(ang) * rad;
+        const h = 0.24 + (i % 3) * 0.07;
+
+        const stem = new THREE.Mesh(stemGeo, stemMat);
+        stem.position.set(bx, h * 0.5, bz);
+        upgradeMeshToBlitzWorldMaterial(stem, windUniforms, '#4ca854', 0.25);
+        tmp.add(stem);
+
+        const headCol = colors[i % colors.length];
+        const head = new THREE.Mesh(blossomGeo, new THREE.MeshBasicMaterial({ color: headCol }));
+        head.position.set(bx, h, bz);
+        upgradeMeshToBlitzWorldMaterial(head, windUniforms, headCol, 0.15);
+        tmp.add(head);
+
+        const center = new THREE.Mesh(centerGeo, centerMat);
+        center.position.set(bx, h + 0.05, bz);
+        upgradeMeshToBlitzWorldMaterial(center, windUniforms, '#fff6a1', 0.1);
+        tmp.add(center);
+      }
+      bakeStaticGroupMeshes(tmp, { minShadowCasterSpan: 0.45 });
+      cachedFlowerClusterTemplateParts = [];
+      tmp.traverse((node) => {
+        const m = node as THREE.Mesh;
+        if (m.isMesh && !Array.isArray(m.material)) {
+          if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+          cachedFlowerClusterTemplateParts!.push({
+            geometry: m.geometry,
+            material: m.material,
+            castShadow: m.castShadow,
+            receiveShadow: m.receiveShadow,
+            isModelStroke: Boolean(m.userData?.isModelStroke),
+          });
+        }
+      });
+      stemGeo.dispose();
+      blossomGeo.dispose();
+      centerGeo.dispose();
+      return cachedFlowerClusterTemplateParts;
+    };
+
+    const clonePropGroupFromTemplate = (parts: readonly SharedPropTemplatePart[]): THREE.Group => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
+        const m = new THREE.Mesh(p.geometry, p.material);
+        m.castShadow = p.castShadow;
+        m.receiveShadow = p.receiveShadow;
+        m.frustumCulled = true;
+        if (p.isModelStroke) m.userData.isModelStroke = true;
+        grp.add(m);
+      }
+      return grp;
+    };
     let navGridDirty = true;
     let cachedFootNavGrid: AStarNavGrid | null = null;
     let cachedVehicleNavGrid: AStarNavGrid | null = null;
+    let cachedPedestrianNavGrid: AStarNavGrid | null = null;
     const collisionCooldownMap = new Map<string, number>();
     let nextEntityId = 500;
     let editorRotY = 0;
@@ -3009,9 +3719,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             Math.hypot(prop.x - pad.x, prop.z - pad.z) <
             (pad.shieldRadius ?? PUBLIC_PAD_SHIELD_RADIUS) + 1.1,
         );
-        // Prevent any default tree/prop from spawning inside the widened East Halte Trem platform deck or inside the South Plaza L-Shaped Glasshouse Cafe
+        // Prevent any default tree/prop from spawning inside the Central Plaza Halte platform deck or inside the South Plaza L-Shaped Glasshouse Cafe
         const overlapsHaltePlatform =
-          prop.x >= -65.3 && prop.x <= -57.9 && Math.abs(prop.z) <= 9.6;
+          prop.x >= -62.5 && prop.x <= -55.3 && Math.abs(prop.z) <= 9.6;
         const overlapsGlasshouseCafe =
           prop.id === 491 || isInsideSouthPlazaGlasshouseFootprint(prop.x, prop.z);
         if (overlapsPublicShieldPad || overlapsHaltePlatform || overlapsGlasshouseCafe) {
@@ -3020,11 +3730,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       if (prop.kind === 'tree_purple' || prop.kind === 'tree_gold') {
         const isPurple = prop.kind === 'tree_purple';
+        const sidewalkLiftY =
+          isPointOnOuterTramSidewalk(prop.x, prop.z) || isPointOnInnerTramSidewalk(prop.x, prop.z)
+            ? 0.09
+            : 0;
         const grp = new THREE.Group();
-        grp.position.set(prop.x, 0, prop.z);
+        grp.position.set(prop.x, sidewalkLiftY, prop.z);
         grp.rotation.y = prop.rotY;
         grp.userData.baseRotY = prop.rotY;
-        grp.userData.extraLiftY = 0;
+        grp.userData.extraLiftY = sidewalkLiftY;
         const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
         shadow.name = 'ContactShadowDisc';
         shadow.position.y = 0.02;
@@ -3067,46 +3781,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       if (prop.kind === 'river_rock') {
-        const rockGrp = new THREE.Group();
+        const rockGrp = clonePropGroupFromTemplate(getSharedRiverRockTemplateParts());
         const sc = prop.scale;
-        const stoneGeo = new THREE.SphereGeometry(0.68, 9, 7);
-        const mainRock = new THREE.Mesh(
-          stoneGeo,
-          new THREE.MeshToonMaterial({ color: '#7b8d7e' }),
-        );
-        mainRock.scale.set(1.28 * sc, 0.74 * sc, 1.08 * sc);
-        mainRock.position.y = 0.24 * sc;
-        mainRock.frustumCulled = true;
-        upgradeMeshToBlitzWorldMaterial(mainRock, windUniforms, '#7b8d7e', 0.22);
-        const mainRockStroke = createBlitzStrokeMesh(stoneGeo, 0.02);
-        if (mainRockStroke) mainRock.add(mainRockStroke);
-        rockGrp.add(mainRock);
-
-        const mossCap = new THREE.Mesh(
-          stoneGeo,
-          new THREE.MeshToonMaterial({ color: '#82cc59' }),
-        );
-        mossCap.scale.set(0.96 * sc, 0.4 * sc, 0.84 * sc);
-        mossCap.position.set(0, 0.5 * sc, 0);
-        mossCap.frustumCulled = true;
-        upgradeMeshToBlitzWorldMaterial(mossCap, windUniforms, '#82cc59', 0.22);
-        const mossStroke = createBlitzStrokeMesh(stoneGeo, 0.018);
-        if (mossStroke) mossCap.add(mossStroke);
-        rockGrp.add(mossCap);
-
-        const sidePebble = new THREE.Mesh(
-          stoneGeo,
-          new THREE.MeshToonMaterial({ color: '#5f7063' }),
-        );
-        sidePebble.scale.set(0.62 * sc, 0.46 * sc, 0.58 * sc);
-        sidePebble.position.set(0.65 * sc, 0.14 * sc, 0.32 * sc);
-        sidePebble.frustumCulled = true;
-        upgradeMeshToBlitzWorldMaterial(sidePebble, windUniforms, '#5f7063', 0.22);
-        const pebbleStroke = createBlitzStrokeMesh(stoneGeo, 0.018);
-        if (pebbleStroke) sidePebble.add(pebbleStroke);
-        rockGrp.add(sidePebble);
-
-        bakeStaticGroupMeshes(rockGrp, { minShadowCasterSpan: 0.45 });
+        rockGrp.scale.setScalar(sc);
         rockGrp.position.set(prop.x, getTerrainElevation(prop.x, prop.z), prop.z);
         rockGrp.rotation.y = prop.rotY;
         rockGrp.userData.propId = prop.id;
@@ -3119,44 +3796,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       if (prop.kind === 'flower_cluster') {
-        const cluster = new THREE.Group();
+        const cluster = clonePropGroupFromTemplate(getSharedFlowerClusterTemplateParts());
         const sc = prop.scale;
-        const stemGeo = new THREE.CylinderGeometry(0.032, 0.038, 0.28, 5);
-        const blossomGeo = new THREE.CylinderGeometry(0.2, 0.12, 0.08, 7);
-        const centerGeo = new THREE.SphereGeometry(0.085, 6, 6);
-        const stemMat = new THREE.MeshToonMaterial({ color: '#4ca854' });
-        const centerMat = new THREE.MeshBasicMaterial({ color: '#fff6a1' });
-        const colors = ['#2998ff', '#ffe033', '#ff70c6'];
-        for (let i = 0; i < 6; i++) {
-          const ang = (i / 6) * Math.PI * 2;
-          const rad = i === 0 ? 0.05 : 0.4 + (i % 2) * 0.24;
-          const bx = Math.cos(ang) * rad;
-          const bz = Math.sin(ang) * rad;
-          const h = 0.24 + (i % 3) * 0.07;
-
-          const stem = new THREE.Mesh(stemGeo, stemMat);
-          stem.position.set(bx, h * 0.5, bz);
-          stem.frustumCulled = true;
-          upgradeMeshToBlitzWorldMaterial(stem, windUniforms, '#4ca854', 0.25);
-          cluster.add(stem);
-
-          const headCol = colors[(prop.id + i) % colors.length];
-          const head = new THREE.Mesh(
-            blossomGeo,
-            new THREE.MeshBasicMaterial({ color: headCol }),
-          );
-          head.position.set(bx, h, bz);
-          head.frustumCulled = true;
-          upgradeMeshToBlitzWorldMaterial(head, windUniforms, headCol, 0.15);
-          cluster.add(head);
-
-          const center = new THREE.Mesh(centerGeo, centerMat);
-          center.position.set(bx, h + 0.05, bz);
-          center.frustumCulled = true;
-          upgradeMeshToBlitzWorldMaterial(center, windUniforms, '#fff6a1', 0.1);
-          cluster.add(center);
-        }
-        bakeStaticGroupMeshes(cluster, { minShadowCasterSpan: 0.45 });
         cluster.scale.setScalar(sc);
         cluster.position.set(prop.x, getTerrainElevation(prop.x, prop.z), prop.z);
         cluster.rotation.y = prop.rotY;
@@ -3242,10 +3883,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isSoftwareGl,
       );
       if (wrapper) {
+        const sidewalkLiftY =
+          isPointOnOuterTramSidewalk(prop.x, prop.z) || isPointOnInnerTramSidewalk(prop.x, prop.z)
+            ? 0.09
+            : 0;
+        wrapper.position.y = sidewalkLiftY;
         wrapper.userData.propId = prop.id;
         wrapper.userData.worldX = prop.x;
         wrapper.userData.worldZ = prop.z;
         wrapper.userData.baseRotY = prop.rotY;
+        wrapper.userData.extraLiftY = sidewalkLiftY;
+        const propColSpec = getPropCollisionSpec(prop.kind, prop.scale);
+        if (propColSpec.category === 'pushable' || prop.kind === 'explosive_barrel') {
+          wrapper.userData.skipStaticInstancing = true;
+        }
         registerMapPropPhysics(prop, wrapper);
       }
     };
@@ -3303,10 +3954,77 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // 3. Spawn all trees & props from layout
+      // 3. Spawn all trees & props from layout, then promote repetitive props & trees into GPU-instanced batches
+      worldPropBatchManager.clear();
       layout.props.forEach((p) => spawnSingleMapProp(p));
+      worldPropBatchManager.promoteTreesToInstancedBatches(trees);
+      worldPropBatchManager.promoteStaticPropsToInstancedBatches(realPropsGroup.children, 2);
       scene.userData.__staticWorldAligned = false;
       navGridDirty = true;
+    };
+
+    type UnitFootRingVariant = 'blue' | 'red' | 'neutral' | 'selected';
+    const sharedUnitFootRingGeo = new THREE.RingGeometry(0.76, 0.86, 48);
+    const sharedUnitFootDiscGeo = new THREE.CircleGeometry(0.76, 48);
+    const sharedUnitFootRingMats: Record<UnitFootRingVariant, THREE.MeshBasicMaterial> = {
+      blue: new THREE.MeshBasicMaterial({
+        color: getUnitFootRingTeamColor('blue').hexInt,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      red: new THREE.MeshBasicMaterial({
+        color: getUnitFootRingTeamColor('red').hexInt,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      neutral: new THREE.MeshBasicMaterial({
+        color: 0xe2e8f0,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      selected: new THREE.MeshBasicMaterial({
+        color: 0x22c55e,
+        transparent: true,
+        opacity: 0.95,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    };
+    const sharedUnitFootDiscMats: Record<UnitFootRingVariant, THREE.MeshBasicMaterial> = {
+      blue: new THREE.MeshBasicMaterial({
+        color: getUnitFootRingTeamColor('blue').hexInt,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      red: new THREE.MeshBasicMaterial({
+        color: getUnitFootRingTeamColor('red').hexInt,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      neutral: new THREE.MeshBasicMaterial({
+        color: 0xe2e8f0,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      selected: new THREE.MeshBasicMaterial({
+        color: 0x22c55e,
+        transparent: true,
+        opacity: 0.2,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
     };
 
     // =========================================================================
@@ -3335,26 +4053,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       shadow.renderOrder = 1;
       root.add(shadow);
 
-      const footColorHex = getUnitFootRingTeamColor(team).hexInt;
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: footColorHex,
-        transparent: true,
-        opacity: 0.9,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      });
-      const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.76, 0.86, 48), ringMat);
+      const teamRing = new THREE.Mesh(sharedUnitFootRingGeo, sharedUnitFootRingMats[team]);
       teamRing.name = 'unitFootTeamRing';
       teamRing.rotation.x = -Math.PI / 2;
       teamRing.position.y = 0.04;
-      const innerFootDiscMat = new THREE.MeshBasicMaterial({
-        color: footColorHex,
-        transparent: true,
-        opacity: 0.14,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      });
-      const innerFootDisc = new THREE.Mesh(new THREE.CircleGeometry(0.76, 48), innerFootDiscMat);
+      const innerFootDisc = new THREE.Mesh(sharedUnitFootDiscGeo, sharedUnitFootDiscMats[team]);
       innerFootDisc.name = 'unitFootInnerGlowDisc';
       innerFootDisc.position.z = -0.005;
       teamRing.add(innerFootDisc);
@@ -3715,23 +4418,97 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       speedMps: number;
       isMoving: boolean;
       isSitting: boolean;
+      activeActivity: CityAmbientNpcActivity;
+      activeStatusLabel: string;
+      activeSeatLiftY: number;
+      activeHoldingCafeItemId: CafeMenuItemId | null;
+      navPath: Array<{ x: number; z: number }>;
+      navWaypointIndex: number;
+      navPathGoalKey: string;
+      stuckTimer: number;
+      lastProgressX: number;
+      lastProgressZ: number;
+      avoidSide: number;
+      avoidTimer: number;
       seedPhase: number;
       nextFishCastSec: number;
       glbUpgraded: boolean;
       rodUpgraded: boolean;
     }
 
+    const applyAmbientNpcClipOverrides = (
+      rig: ReturnType<typeof buildProceduralBuddyAvatar>,
+      preset: CityAmbientNpcPreset | null | undefined,
+      fallbackIdleClipName?: string,
+    ): void => {
+      const nextIdle = preset?.idleOverrideClip ?? fallbackIdleClipName;
+      if (rig.idleClipOverrideName !== nextIdle) rig.idleClipOverrideName = nextIdle;
+      if (rig.walkClipOverrideName !== preset?.walkOverrideClip) {
+        rig.walkClipOverrideName = preset?.walkOverrideClip;
+      }
+      if (rig.runClipOverrideName !== preset?.runOverrideClip) {
+        rig.runClipOverrideName = preset?.runOverrideClip;
+      }
+      if (rig.sitClipOverrideName !== preset?.sitOverrideClip) {
+        rig.sitClipOverrideName = preset?.sitOverrideClip;
+      }
+    };
+
     const resolveAmbientSeatBackShift = (x: number, z: number): number => {
-      if (Math.hypot(x - 2.0, z - -29.5) < 1.5) return 0.12;
-      if (Math.hypot(x - 96.2, z - 85.0) < 1.5) return 0.05;
+      if (
+        Math.hypot(x - 2.0, z - -34.5) < 1.5 ||
+        Math.hypot(x - 2.0, z - -29.5) < 1.5 ||
+        Math.hypot(x - -1.0, z - 29.8) < 1.5 ||
+        Math.hypot(x - -1.0, z - 34.2) < 1.5 ||
+        Math.hypot(x - -47.5, z - -10.2) < 1.5 ||
+        Math.hypot(x - -47.5, z - 10.2) < 1.5 ||
+        Math.hypot(x - -44.2, z - -2.0) < 1.5 ||
+        Math.hypot(x - -44.2, z - 2.0) < 1.5 ||
+        Math.hypot(x - -9.5, z - -44.6) < 1.5 ||
+        Math.hypot(x - -9.5, z - 44.6) < 1.5
+      ) {
+        return 0.12;
+      }
+      if (
+        Math.hypot(x - 96.2, z - 81.8) < 1.5 ||
+        Math.hypot(x - 96.2, z - 85.0) < 1.5 ||
+        Math.hypot(x - 96.2, z - 88.2) < 1.5 ||
+        Math.hypot(x - 97.5, z - 49.5) < 1.5
+      ) {
+        return 0.05;
+      }
       return 0;
+    };
+
+    const resolveCitizenRenderAnchor = (
+      npc: CityAmbientNpcController,
+      posX: number = npc.x,
+      posZ: number = npc.z,
+      fallbackYaw: number = npc.yaw,
+    ) => {
+      const arrivedStop =
+        npc.preset.waypoints[
+          (npc.waypointIdx - 1 + npc.preset.waypoints.length) % npc.preset.waypoints.length
+        ];
+      const seatFacingYaw = arrivedStop?.yaw ?? fallbackYaw;
+      const seatShift = npc.isSitting ? resolveAmbientSeatBackShift(posX, posZ) : 0;
+      const renderX = seatShift > 0 ? posX - Math.cos(seatFacingYaw) * seatShift : posX;
+      const renderZ = seatShift > 0 ? posZ + Math.sin(seatFacingYaw) * seatShift : posZ;
+      const groundY = getTerrainElevation(renderX, renderZ);
+      return { seatFacingYaw, renderX, groundY, renderZ };
     };
 
     const cityAmbientNpcs: CityAmbientNpcController[] = CITY_AMBIENT_NPC_PRESETS.map(
       (preset, idx) => {
-        const wp0 = preset.waypoints[0] ?? { x: 0, z: 0, yaw: 0 };
+        const startStopIdx =
+          preset.waypoints.length > 0 ? idx % preset.waypoints.length : 0;
+        const wp0 = preset.waypoints[startStopIdx] ?? { x: 0, z: 0, yaw: 0 };
         const initYaw = wp0.yaw ?? 0;
-        const initSitting = preset.activity === 'sit_relax';
+        const initActivity = wp0.activity ?? preset.activity;
+        const initSitting = initActivity === 'sit_relax';
+        const hasFishingStop =
+          preset.activity === 'fishing' ||
+          preset.waypoints.some((w) => w.activity === 'fishing');
 
         const root = new THREE.Group();
         root.name = `CityAmbientNpc_${preset.id}`;
@@ -3759,6 +4536,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           false,
           preset.gender,
         );
+        applyAmbientNpcClipOverrides(rig, preset);
         rig.weaponRigGroup.visible = false;
         rig.pistolGroup.visible = false;
 
@@ -3780,6 +4558,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         root.add(nameplate.sprite);
 
         const seedPhase = idx * 1.73;
+        const nextIdx =
+          preset.waypoints.length > 1
+            ? (startStopIdx + 1) % preset.waypoints.length
+            : 0;
         return {
           preset,
           root,
@@ -3790,19 +4572,101 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           x: wp0.x,
           z: wp0.z,
           yaw: initYaw,
-          waypointIdx: preset.waypoints.length > 1 ? 1 : 0,
-          pauseTimer: idx % 2 === 0 ? (idx % 5) * 0.45 : 0,
+          waypointIdx: nextIdx,
+          pauseTimer: 2.0 + (idx % 4) * 1.2,
           walkCycle: seedPhase,
           speedMps: 0,
           isMoving: false,
           isSitting: initSitting,
+          activeActivity: initActivity,
+          activeStatusLabel: wp0.label ?? preset.activityLabel,
+          activeSeatLiftY: wp0.seatLiftY ?? preset.seatLiftY ?? 0,
+          activeHoldingCafeItemId: wp0.holdingCafeItemId ?? null,
+          navPath: [],
+          navWaypointIndex: 0,
+          navPathGoalKey: '',
+          stuckTimer: 0,
+          lastProgressX: wp0.x,
+          lastProgressZ: wp0.z,
+          avoidSide: 0,
+          avoidTimer: 0,
           seedPhase,
           nextFishCastSec: 7.5 + (idx % 4) * 3.2,
           glbUpgraded: false,
-          rodUpgraded: preset.activity !== 'fishing',
+          rodUpgraded: !hasFishingStop,
         };
       },
     );
+
+    const secondaryLodFrustum = new THREE.Frustum();
+    const secondaryLodProjScreenMatrix = new THREE.Matrix4();
+    const secondaryLodCamPos = new THREE.Vector3();
+    const secondaryLodSphereScratch = new THREE.Sphere(new THREE.Vector3(), 3.0);
+    let hasSecondaryLodFrustum = false;
+    const syncSecondaryLodFrustum = () => {
+      camera.updateMatrixWorld();
+      secondaryLodProjScreenMatrix.multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
+      );
+      secondaryLodFrustum.setFromProjectionMatrix(secondaryLodProjScreenMatrix);
+      secondaryLodCamPos.copy(camera.position);
+      hasSecondaryLodFrustum = true;
+    };
+    const resolveRigSecondaryPhysicsLod = (
+      rootPos: THREE.Vector3,
+      isPlayer = false,
+      radiusMarginM = 3.0,
+    ): SecondaryPhysicsLodMode => {
+      if (isPlayer) return 'full';
+      if (!hasSecondaryLodFrustum) {
+        syncSecondaryLodFrustum();
+      }
+      secondaryLodSphereScratch.center.set(rootPos.x, rootPos.y + 0.95, rootPos.z);
+      secondaryLodSphereScratch.radius = radiusMarginM;
+      const inFrustum = secondaryLodFrustum.intersectsSphere(secondaryLodSphereScratch);
+      if (!inFrustum) return 'sleep';
+      const camDist = Math.hypot(
+        rootPos.x - secondaryLodCamPos.x,
+        rootPos.y + 0.95 - secondaryLodCamPos.y,
+        rootPos.z - secondaryLodCamPos.z,
+      );
+      return resolveSecondaryPhysicsLod({
+        cameraDistanceM: camDist,
+        inFrustum,
+        isPlayer: false,
+      });
+    };
+    const resolveWrappedWorldSecondaryLod = (
+      wx: number,
+      wy: number,
+      wz: number,
+      isPlayer = false,
+      isFlatIndoor = false,
+      pivotX = 0,
+      pivotZ = 0,
+    ): SecondaryPhysicsLodMode => {
+      if (isPlayer) return 'full';
+      if (!hasSecondaryLodFrustum) {
+        syncSecondaryLodFrustum();
+      }
+      const rx = isFlatIndoor ? wx : pivotX + getPlanetShortestDelta(wx, pivotX);
+      const rz = isFlatIndoor ? wz : pivotZ + getPlanetShortestDelta(wz, pivotZ);
+      secondaryLodSphereScratch.center.set(rx, wy + 0.95, rz);
+      secondaryLodSphereScratch.radius = 3.5;
+      const inFrustum = secondaryLodFrustum.intersectsSphere(secondaryLodSphereScratch);
+      if (!inFrustum) return 'sleep';
+      const camDist = Math.hypot(
+        rx - secondaryLodCamPos.x,
+        wy + 0.95 - secondaryLodCamPos.y,
+        rz - secondaryLodCamPos.z,
+      );
+      return resolveSecondaryPhysicsLod({
+        cameraDistanceM: camDist,
+        inFrustum,
+        isPlayer: false,
+      });
+    };
 
     const hideAllCityAmbientNpcs = () => {
       for (let i = 0; i < cityAmbientNpcs.length; i++) {
@@ -3812,6 +4676,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
     };
 
+    let npcAnimLodTick = 0;
+    const npcAvoidanceCapsulesScratch: PedestrianAvoidanceCapsule2D[] = [];
+    const npcAvoidanceResultScratch: LocalPedestrianAvoidanceResult = {
+      dirX: 0,
+      dirZ: 0,
+      speedScale: 1,
+      avoidSide: 0,
+      avoidTimer: 0,
+      blocked: false,
+    };
     const updateCityAmbientNpcsFrame = (
       dt: number,
       timeSec: number,
@@ -3825,7 +4699,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       planetPivotZ: number,
       kCurve: number,
       shouldShowAmbientNpcs: boolean,
+      portraitOverride?: { citizenId: string; faceCamYaw: number } | null,
     ) => {
+      npcAnimLodTick++;
       if (!shouldShowAmbientNpcs) {
         for (let i = 0; i < cityAmbientNpcs.length; i++) {
           const npc = cityAmbientNpcs[i];
@@ -3838,45 +4714,527 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         return;
       }
 
+      syncSecondaryLodFrustum();
       const assets = loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
-      const charGlb = assets?.charBuddiesGltf ?? earlyLoadedCharGltf;
+      const playerFemaleGlb = assets?.playerFemaleGlb ?? earlyLoadedPlayerFemaleGltf;
+      const playerMaleGlb = assets?.playerMaleGlb ?? earlyLoadedPlayerMaleGltf;
       const ambientFemaleGlb =
-        assets?.ambientFemaleNpcGlb ?? earlyLoadedAmbientFemaleGlb ?? charGlb;
-      const manGlb = assets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
+        assets?.ambientFemaleNpcGlb ??
+        earlyLoadedAmbientFemaleGlb ??
+        playerFemaleGlb;
       const ambientMaleGlb =
-        assets?.ambientMaleNpcGlb ?? earlyLoadedAmbientMaleGlb ?? manGlb;
+        assets?.ambientMaleNpcGlb ??
+        earlyLoadedAmbientMaleGlb ??
+        playerMaleGlb;
       const fishingRodGlb = assets?.fishingRodGltf;
+      const pedestrianNavGrid = getPedestrianNavGrid();
+      const tramStateNow = cityTram.getState();
+      const auditedWorld = getAuditedStaticWorldStructures(getStaticWorldStructures());
+      const sharedDynamicObbs: DynamicObbObstacle2D[] = [
+        {
+          x: tramStateNow.car1.x,
+          z: tramStateNow.car1.z,
+          halfX: CITY_TRAM_SPEC.carLength * 0.5,
+          halfZ: CITY_TRAM_SPEC.carWidth * 0.5,
+          rotY: tramStateNow.car1.yaw,
+          vx: tramStateNow.car1.forwardX * CITY_TRAM_SPEC.cruiseSpeed,
+          vz: tramStateNow.car1.forwardZ * CITY_TRAM_SPEC.cruiseSpeed,
+        },
+        {
+          x: tramStateNow.car2.x,
+          z: tramStateNow.car2.z,
+          halfX: CITY_TRAM_SPEC.carLength * 0.5,
+          halfZ: CITY_TRAM_SPEC.carWidth * 0.5,
+          rotY: tramStateNow.car2.yaw,
+          vx: tramStateNow.car2.forwardX * CITY_TRAM_SPEC.cruiseSpeed,
+          vz: tramStateNow.car2.forwardZ * CITY_TRAM_SPEC.cruiseSpeed,
+        },
+      ];
+      if (cityLightingAndTraffic.rootGroup.visible) {
+        const trafficBoxes = cityLightingAndTraffic.getVehicleCollisionBoxes();
+        for (let tvi = 0; tvi < trafficBoxes.length; tvi++) {
+          const box = trafficBoxes[tvi];
+          sharedDynamicObbs.push({
+            x: box.x,
+            z: box.z,
+            halfX: box.halfWidth,
+            halfZ: box.halfLength,
+            rotY: box.yaw,
+            vx: box.vx,
+            vz: box.vz,
+          });
+        }
+      }
+      const sharedDynamicCircles: DynamicCircleObstacle2D[] = [];
+      for (const tr of trees) {
+        if (!tr.alive) continue;
+        sharedDynamicCircles.push({ x: tr.x, z: tr.z, radius: 0.98 * tr.scale });
+      }
+      for (const standingNpc of [lobbyCafeNpc, beachHouseNpc]) {
+        if (!standingNpc?.npcGrp?.visible) continue;
+        sharedDynamicCircles.push({
+          x: standingNpc.npcGrp.position.x,
+          z: standingNpc.npcGrp.position.z,
+          radius: 0.56,
+        });
+      }
+      const solidBenchProps: Array<{
+        x: number;
+        z: number;
+        halfX?: number;
+        halfZ?: number;
+        rotY: number;
+        radius: number;
+        isBench: boolean;
+      }> = [];
+      for (const mp of activeMapProps) {
+        if (
+          !mp.alive ||
+          !mp.wrapper.visible ||
+          mp.category !== 'solid' ||
+          (mp.kind === 'explosive_barrel' && cityArenaMode === 'safezone')
+        ) {
+          continue;
+        }
+        const isBenchProp = mp.kind === 'bench';
+        if (!isBenchProp) {
+          if (mp.halfX !== undefined && mp.halfZ !== undefined) {
+            sharedDynamicObbs.push({
+              x: mp.x,
+              z: mp.z,
+              halfX: mp.halfX,
+              halfZ: mp.halfZ,
+              rotY: mp.rotY,
+            });
+          } else {
+            sharedDynamicCircles.push({ x: mp.x, z: mp.z, radius: mp.radius });
+          }
+        } else {
+          solidBenchProps.push({
+            x: mp.x,
+            z: mp.z,
+            halfX: mp.halfX,
+            halfZ: mp.halfZ,
+            rotY: mp.rotY,
+            radius: mp.radius,
+            isBench: true,
+          });
+        }
+      }
+
       let upgradedThisFrame = false;
+      let aStarCitizenPlansThisFrame = 0;
+
+      interface NpcFrameStepState {
+        npc: CityAmbientNpcController;
+        isTalkingWithPlayer: boolean;
+        prevX: number;
+        prevZ: number;
+        curX: number;
+        curZ: number;
+        vx: number;
+        vz: number;
+        exemptSeat: { x: number; z: number } | null;
+        stepped: ReturnType<typeof stepCityAmbientNpcSchedule>;
+      }
+      const steppedStates: NpcFrameStepState[] = [];
+      const invDt = dt > 1e-4 ? 1 / dt : 0;
+
+      const anchorPlayerForNpcCluster =
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        Boolean(playerUnit?.alive) &&
+        !mountedTank &&
+        ridingTramCarIdx === null;
+      npcAvoidanceCapsulesScratch.length = 0;
+      for (let j = 0; j < cityAmbientNpcs.length; j++) {
+        const other = cityAmbientNpcs[j];
+        npcAvoidanceCapsulesScratch.push({
+          id: other.preset.id,
+          x: other.x,
+          z: other.z,
+          vx: other.isMoving ? Math.cos(other.yaw) * other.speedMps : 0,
+          vz: other.isMoving ? -Math.sin(other.yaw) * other.speedMps : 0,
+          radius: AMBIENT_NPC_CAPSULE_RADIUS,
+          groundY: getTerrainElevation(other.x, other.z),
+          isSitting: other.isSitting,
+        });
+      }
+      if (anchorPlayerForNpcCluster && playerUnit) {
+        npcAvoidanceCapsulesScratch.push({
+          id: '__anchored_player__',
+          x: playerUnit.x,
+          z: playerUnit.z,
+          vx: playerUnit.vx,
+          vz: playerUnit.vz,
+          radius: PLAYER_FOOT_CAPSULE_RADIUS,
+          groundY: getTerrainElevation(playerUnit.x, playerUnit.z),
+        });
+      }
 
       for (let i = 0; i < cityAmbientNpcs.length; i++) {
         const npc = cityAmbientNpcs[i];
-        const stepped = stepCityAmbientNpcSchedule({
-          preset: npc.preset,
-          x: npc.x,
-          z: npc.z,
-          yaw: npc.yaw,
-          waypointIdx: npc.waypointIdx,
-          pauseTimer: npc.pauseTimer,
-          dt,
-          elapsedSec: timeSec + npc.seedPhase,
+        const prevX = npc.x;
+        const prevZ = npc.z;
+        const isTalkingWithPlayer = activeCitizenDialogueId === npc.preset.id;
+        let stepped: ReturnType<typeof stepCityAmbientNpcSchedule>;
+        if (isTalkingWithPlayer && !npc.isSitting) {
+          const targetTalkYaw =
+            portraitOverride && portraitOverride.citizenId === npc.preset.id
+              ? portraitOverride.faceCamYaw - Math.PI / 2
+              : Math.atan2(-(playerZ - npc.z), playerX - npc.x);
+          let dYaw = targetTalkYaw - npc.yaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          const maxTurnRate =
+            portraitOverride && portraitOverride.citizenId === npc.preset.id ? 12.0 : 7.5;
+          const turnStep = Math.max(-maxTurnRate * dt, Math.min(maxTurnRate * dt, dYaw));
+          stepped = {
+            x: npc.x,
+            z: npc.z,
+            yaw: npc.yaw + turnStep,
+            speedMps: 0,
+            isMoving: false,
+            isSitting: false,
+            activeActivity: npc.activeActivity,
+            activeStatusLabel: npc.activeStatusLabel,
+            activeSeatLiftY: npc.activeSeatLiftY,
+            activeHoldingCafeItemId: npc.activeHoldingCafeItemId,
+            waypointIdx: npc.waypointIdx,
+            pauseTimer: npc.pauseTimer,
+            navPath: npc.navPath,
+            navWaypointIndex: npc.navWaypointIndex,
+            navPathGoalKey: npc.navPathGoalKey,
+            stuckTimer: 0,
+            lastProgressX: npc.x,
+            lastProgressZ: npc.z,
+            avoidSide: 0,
+            avoidTimer: 0,
+          };
+        } else {
+          const fwdX = Math.cos(npc.yaw);
+          const fwdZ = -Math.sin(npc.yaw);
+          const preSteerExemptSeat = resolveAmbientNpcExemptSeatPoint(
+            npc.preset,
+            npc.waypointIdx,
+            npc.x,
+            npc.z,
+            npc.isSitting,
+          );
+          const npcGroundY = getTerrainElevation(npc.x, npc.z);
+
+          // Curb, lane-divider & red-light crosswalk safety: yield before stepping onto a roadway OR
+          // crossing from the parallel outer car lane onto the inner Halte-side tram track.
+          const nextNavNode =
+            npc.navPath.length > 0 && npc.navWaypointIndex < npc.navPath.length
+              ? npc.navPath[npc.navWaypointIndex]
+              : null;
+          const headingDx = (nextNavNode ? nextNavNode.x : npc.x + fwdX * 3.0) - npc.x;
+          const headingDz = (nextNavNode ? nextNavNode.z : npc.z + fwdZ * 3.0) - npc.z;
+          const headingDist = Math.hypot(headingDx, headingDz);
+          const probeDist = Math.min(3.4, Math.max(1.4, headingDist));
+          const probeX = headingDist > 0.05 ? npc.x + (headingDx / headingDist) * probeDist : npc.x;
+          const probeZ = headingDist > 0.05 ? npc.z + (headingDz / headingDist) * probeDist : npc.z;
+          const yieldForTram =
+            !npc.isSitting &&
+            npc.pauseTimer <= 0 &&
+            shouldPedestrianYieldForTramOrSignal({
+              x: npc.x,
+              z: npc.z,
+              probeX,
+              probeZ,
+              tramState: tramStateNow,
+              signalState: plazaTrafficSignalState,
+              eastSignalState: eastTrafficSignalState,
+            });
+
+          stepped = stepCityAmbientNpcSchedule({
+            preset: npc.preset,
+            x: npc.x,
+            z: npc.z,
+            yaw: npc.yaw,
+            waypointIdx: npc.waypointIdx,
+            pauseTimer: npc.pauseTimer,
+            dt,
+            elapsedSec: timeSec + npc.seedPhase,
+            navGrid: pedestrianNavGrid,
+            navPath: npc.navPath,
+            navWaypointIndex: npc.navWaypointIndex,
+            navPathGoalKey: npc.navPathGoalKey,
+            stuckTimer: npc.stuckTimer,
+            lastProgressX: npc.lastProgressX,
+            lastProgressZ: npc.lastProgressZ,
+            avoidSide: npc.avoidSide,
+            avoidTimer: npc.avoidTimer,
+            yieldForHazard: yieldForTram,
+            isDirectTargetClear: (fromX, fromZ, toX, toZ, isSitGoal) =>
+              isSegmentClearOfAuditedStaticObstacles2D({
+                fromX,
+                fromZ,
+                toX,
+                toZ,
+                radius: AMBIENT_NPC_CAPSULE_RADIUS,
+                audited: auditedWorld,
+                dynamicObbs: sharedDynamicObbs,
+                dynamicCircles: sharedDynamicCircles,
+                exemptSeatPoint: isSitGoal ? { x: toX, z: toZ } : preSteerExemptSeat,
+              }),
+            localAvoidance: (sample) =>
+              computeLocalPedestrianAvoidance2D(
+                {
+                  selfId: npc.preset.id,
+                  x: sample.x,
+                  z: sample.z,
+                  dirX: sample.dirX,
+                  dirZ: sample.dirZ,
+                  radius: AMBIENT_NPC_CAPSULE_RADIUS,
+                  selfGroundY: npcGroundY,
+                  distToSteerTarget: sample.distToSteer,
+                  distToFinal: sample.distToFinal,
+                  isFinalGoal: sample.isFinalTarget,
+                  dt,
+                  audited: auditedWorld,
+                  dynamicObbs: sharedDynamicObbs,
+                  dynamicCircles: sharedDynamicCircles,
+                  characterCapsules: npcAvoidanceCapsulesScratch,
+                  exemptSeatPoint: preSteerExemptSeat,
+                  stayOffNonCrosswalkRoads: true,
+                  avoidSide: sample.avoidSide,
+                  avoidTimer: sample.avoidTimer,
+                },
+                npcAvoidanceResultScratch,
+              ),
+            canReplan: aStarCitizenPlansThisFrame < 1,
+            onReplan: () => {
+              aStarCitizenPlansThisFrame++;
+            },
+          });
+        }
+
+        let curX = stepped.x;
+        let curZ = stepped.z;
+        let vx = stepped.isMoving ? (stepped.x - prevX) * invDt : 0;
+        let vz = stepped.isMoving ? (stepped.z - prevZ) * invDt : 0;
+        const exemptSeat = resolveAmbientNpcExemptSeatPoint(
+          npc.preset,
+          stepped.waypointIdx,
+          curX,
+          curZ,
+          stepped.isSitting,
+        );
+
+        // Enforce unified static world, shoreline/water, dynamic prop, and stair guard collisions
+        if (!stepped.isSitting && !isTalkingWithPlayer) {
+          const staticRes = resolveGroundMoverAuditedCollisions2D({
+            x: curX,
+            z: curZ,
+            vx,
+            vz,
+            radius: AMBIENT_NPC_CAPSULE_RADIUS,
+            audited: auditedWorld,
+            prevX,
+            prevZ,
+            waterMarginM: 0.22,
+            restitution: 0.0,
+            iterations: 2,
+            stayOffNonCrosswalkRoads: true,
+            exemptSeatPoint: exemptSeat,
+          });
+          curX = staticRes.x;
+          curZ = staticRes.z;
+          vx = staticRes.vx;
+          vz = staticRes.vz;
+
+          if (solidBenchProps.length > 0) {
+            const benchObbs: DynamicObbObstacle2D[] = [];
+            const benchCircles: DynamicCircleObstacle2D[] = [];
+            for (let bi = 0; bi < solidBenchProps.length; bi++) {
+              const bp = solidBenchProps[bi];
+              if (
+                exemptSeat &&
+                Math.hypot(bp.x - exemptSeat.x, bp.z - exemptSeat.z) <= 1.35
+              ) {
+                continue;
+              }
+              if (bp.halfX !== undefined && bp.halfZ !== undefined) {
+                benchObbs.push({
+                  x: bp.x,
+                  z: bp.z,
+                  halfX: bp.halfX,
+                  halfZ: bp.halfZ,
+                  rotY: bp.rotY,
+                });
+              } else {
+                benchCircles.push({ x: bp.x, z: bp.z, radius: bp.radius });
+              }
+            }
+            if (benchObbs.length > 0 || benchCircles.length > 0) {
+              const benchRes = resolveCharacterAgainstDynamicObstacles2D({
+                x: curX,
+                z: curZ,
+                vx,
+                vz,
+                radius: AMBIENT_NPC_CAPSULE_RADIUS,
+                obbs: benchObbs,
+                circles: benchCircles,
+                restitution: 0.0,
+              });
+              curX = benchRes.x;
+              curZ = benchRes.z;
+              vx = benchRes.vx;
+              vz = benchRes.vz;
+            }
+          }
+
+          const dynRes = resolveCharacterAgainstDynamicObstacles2D({
+            x: curX,
+            z: curZ,
+            vx,
+            vz,
+            radius: AMBIENT_NPC_CAPSULE_RADIUS,
+            obbs: sharedDynamicObbs,
+            circles: sharedDynamicCircles,
+            restitution: 0.0,
+          });
+          curX = dynRes.x;
+          curZ = dynRes.z;
+          vx = dynRes.vx;
+          vz = dynRes.vz;
+
+          if (getPlanetShortestDistance(prevX, prevZ, curX, curZ) <= 2.6) {
+            const stairGuard = resolveStaircaseAndElevationGuard2D({
+              prevX,
+              prevZ,
+              nextX: curX,
+              nextZ: curZ,
+              vx,
+              vz,
+              radius: AMBIENT_NPC_CAPSULE_RADIUS,
+            });
+            curX = stairGuard.x;
+            curZ = stairGuard.z;
+            vx = stairGuard.vx;
+            vz = stairGuard.vz;
+          }
+        }
+
+        steppedStates.push({
+          npc,
+          isTalkingWithPlayer,
+          prevX,
+          prevZ,
+          curX,
+          curZ,
+          vx,
+          vz,
+          exemptSeat,
+          stepped,
         });
-        npc.x = stepped.x;
-        npc.z = stepped.z;
+      }
+
+      // Multi-iteration solid capsule separation across ALL Town Folks NPCs & anchored Player capsule
+      const clusterBodies: CharacterCapsuleBody2D[] = steppedStates.map((st) => ({
+        id: st.npc.preset.id,
+        x: st.curX,
+        z: st.curZ,
+        vx: st.vx,
+        vz: st.vz,
+        radius: AMBIENT_NPC_CAPSULE_RADIUS,
+        groundY: getTerrainElevation(st.curX, st.curZ),
+        isSitting: st.stepped.isSitting,
+        isTalking: st.isTalkingWithPlayer,
+      }));
+      if (anchorPlayerForNpcCluster && playerUnit) {
+        clusterBodies.push({
+          id: '__anchored_player__',
+          x: playerUnit.x,
+          z: playerUnit.z,
+          vx: 0,
+          vz: 0,
+          radius: PLAYER_FOOT_CAPSULE_RADIUS,
+          groundY: getTerrainElevation(playerUnit.x, playerUnit.z),
+          immovable: true,
+        });
+      }
+      resolveMultiIterationCapsuleCluster2D(clusterBodies, 3);
+
+      for (let i = 0; i < steppedStates.length; i++) {
+        const st = steppedStates[i];
+        const body = clusterBodies[i];
+        const { npc, stepped, isTalkingWithPlayer } = st;
+        let finalX = body.x;
+        let finalZ = body.z;
+        if (
+          !stepped.isSitting &&
+          !isTalkingWithPlayer &&
+          (Math.abs(finalX - st.curX) > 1e-4 || Math.abs(finalZ - st.curZ) > 1e-4)
+        ) {
+          const postStatic = resolveGroundMoverAuditedCollisions2D({
+            x: finalX,
+            z: finalZ,
+            vx: body.vx,
+            vz: body.vz,
+            radius: AMBIENT_NPC_CAPSULE_RADIUS,
+            audited: auditedWorld,
+            prevX: st.curX,
+            prevZ: st.curZ,
+            waterMarginM: 0.22,
+            restitution: 0.0,
+            iterations: 1,
+            stayOffNonCrosswalkRoads: true,
+            exemptSeatPoint: st.exemptSeat,
+          });
+          finalX = postStatic.x;
+          finalZ = postStatic.z;
+        }
+
+        const wasMoving = npc.isMoving;
+        const actualDisplacement = getPlanetShortestDistance(st.prevX, st.prevZ, finalX, finalZ);
+        const actualSpeedMps = dt > 1e-4 ? actualDisplacement / dt : 0;
+        const expectedStepDist = stepped.speedMps * dt;
+        const moveRatio =
+          stepped.isMoving && expectedStepDist > 1e-4
+            ? Math.min(1.15, actualDisplacement / expectedStepDist)
+            : 0;
+        const effectiveIsMoving =
+          stepped.isMoving && actualSpeedMps >= 0.22 && moveRatio >= 0.18;
+        const effectiveSpeedMps = effectiveIsMoving ? actualSpeedMps : 0;
+
+        npc.x = finalX;
+        npc.z = finalZ;
         npc.yaw = stepped.yaw;
         npc.waypointIdx = stepped.waypointIdx;
         npc.pauseTimer = stepped.pauseTimer;
-        npc.speedMps = stepped.speedMps;
-        npc.isMoving = stepped.isMoving;
+        npc.speedMps = effectiveSpeedMps;
+        npc.isMoving = effectiveIsMoving;
         npc.isSitting = stepped.isSitting;
-        if (stepped.isMoving) {
-          npc.walkCycle += dt * (stepped.speedMps >= 6.35 ? 10.5 : 6.4);
+        npc.activeActivity = stepped.activeActivity;
+        npc.activeStatusLabel = stepped.activeStatusLabel;
+        npc.activeSeatLiftY = stepped.activeSeatLiftY;
+        npc.activeHoldingCafeItemId = stepped.activeHoldingCafeItemId;
+        npc.navPath = stepped.navPath;
+        npc.navWaypointIndex = stepped.navWaypointIndex;
+        npc.navPathGoalKey = stepped.navPathGoalKey;
+        npc.stuckTimer = stepped.stuckTimer;
+        npc.lastProgressX = stepped.lastProgressX;
+        npc.lastProgressZ = stepped.lastProgressZ;
+        npc.avoidSide = stepped.avoidSide;
+        npc.avoidTimer = stepped.avoidTimer;
+        if (effectiveIsMoving) {
+          const cadenceScale = Math.max(0.32, Math.min(1.05, moveRatio));
+          npc.walkCycle +=
+            dt *
+            (stepped.activeActivity === 'jog_exercise' || stepped.speedMps >= 4.5
+              ? 9.4
+              : 6.4) *
+            cadenceScale;
         }
 
         const seatConflict =
           npc.isSitting &&
           playerIsSitting &&
-          Math.hypot(playerX - stepped.x, playerZ - stepped.z) < 0.9;
-        const distFromFocus = Math.hypot(stepped.x - focusX, stepped.z - focusZ);
+          Math.hypot(playerX - finalX, playerZ - finalZ) < 0.9;
+        const distFromFocus = Math.hypot(finalX - focusX, finalZ - focusZ);
         const visibleNow = !seatConflict && distFromFocus <= 78.0;
         npc.root.visible = visibleNow;
 
@@ -3889,24 +5247,85 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
 
         // Stagger shared GLB cloning to at most 1 nearby NPC per frame so Safezone FPS never spikes.
-        const targetGlb = npc.preset.gender === 'male' ? ambientMaleGlb : ambientFemaleGlb;
+        const hasAnyFishingStop =
+          npc.preset.activity === 'fishing' ||
+          npc.preset.waypoints.some((w) => w.activity === 'fishing');
+        const citizenGlbs = getCachedLoadedCitizenGlbs();
+        const bespokeCitizenGlb =
+          npc.preset.id === 'city_plaza_raka'
+            ? ambientMaleGlb
+            : npc.preset.id === 'city_plaza_nadia'
+              ? ambientFemaleGlb
+              : npc.preset.id === 'citizen_mira'
+                ? (assets?.miraCustomGlb ?? citizenGlbs.miraCustomGlb)
+                : npc.preset.id === 'citizen_tari'
+                  ? (assets?.tariCustomGlb ?? citizenGlbs.tariCustomGlb)
+                  : npc.preset.id === 'citizen_bima'
+                    ? (assets?.bimaCustomGlb ?? citizenGlbs.bimaCustomGlb)
+                    : npc.preset.id === 'citizen_kenji'
+                      ? (assets?.kenjiCustomGlb ?? citizenGlbs.kenjiCustomGlb)
+                      : undefined;
+        const requiresBespokeCitizenGlb =
+          npc.preset.id === 'city_plaza_raka' ||
+          npc.preset.id === 'city_plaza_nadia' ||
+          npc.preset.id === 'citizen_mira' ||
+          npc.preset.id === 'citizen_tari' ||
+          npc.preset.id === 'citizen_bima' ||
+          npc.preset.id === 'citizen_kenji';
+        const targetGlb = requiresBespokeCitizenGlb
+          ? bespokeCitizenGlb
+          : npc.preset.baseGlbVariant === 'player'
+            ? npc.preset.gender === 'male'
+              ? playerMaleGlb ?? ambientMaleGlb
+              : playerFemaleGlb ?? ambientFemaleGlb
+            : npc.preset.gender === 'male'
+              ? ambientMaleGlb
+              : ambientFemaleGlb;
         const needAvatarUpgrade = Boolean(targetGlb) && !npc.glbUpgraded;
         const needRodUpgrade =
           !npc.rodUpgraded &&
-          npc.preset.activity === 'fishing' &&
+          hasAnyFishingStop &&
           Boolean(fishingRodGlb) &&
           Boolean(targetGlb);
-        if (!upgradedThisFrame && (needAvatarUpgrade || needRodUpgrade) && targetGlb) {
+        if ((!upgradedThisFrame || isTalkingWithPlayer) && (needAvatarUpgrade || needRodUpgrade) && targetGlb) {
+          const hasFullModularOutfit = Boolean(
+            npc.preset.equippedCostumeUrl ||
+              npc.preset.equippedHairUrl ||
+              npc.preset.equippedLegsUrl ||
+              npc.preset.equippedFeetUrl,
+          );
+          npc.bodyGroup.userData.desiredModularOutfit = hasFullModularOutfit
+            ? {
+                costumeUrl: npc.preset.equippedCostumeUrl,
+                hairUrl: npc.preset.equippedHairUrl,
+                torsoUrl: npc.preset.equippedTorsoUrl,
+                legsUrl: npc.preset.equippedLegsUrl,
+                feetUrl: npc.preset.equippedFeetUrl,
+              }
+            : undefined;
+          npc.bodyGroup.userData.desiredTorsoAssetUrl = hasFullModularOutfit
+            ? null
+            : (npc.preset.equippedTorsoUrl ?? null);
+          npc.bodyGroup.userData.citizenClothingTintHex =
+            npc.preset.disableClothingTint ? null : (npc.preset.clothingTintHex ?? null);
           upgradeBuddyRigWithCharBuddiesGlb(
             npc.rig,
             targetGlb,
             undefined,
-            npc.preset.activity === 'fishing' ? fishingRodGlb : undefined,
+            hasAnyFishingStop ? fishingRodGlb : undefined,
           );
+          applyAmbientNpcClipOverrides(npc.rig, npc.preset);
+          if (
+            npc.preset.clothingTintHex &&
+            !npc.preset.disableClothingTint &&
+            !npc.rig.customGlbController?.glbRoot?.userData?.isBlitzModularDoll
+          ) {
+            applyCitizenClothingTint(npc.rig, npc.preset.clothingTintHex);
+          }
           npc.rig.weaponRigGroup.visible = false;
           npc.rig.pistolGroup.visible = false;
           npc.glbUpgraded = true;
-          if (npc.preset.activity === 'fishing' && fishingRodGlb) {
+          if (hasAnyFishingStop && fishingRodGlb) {
             npc.rodUpgraded = true;
             npc.rig.fishingPoseState = {
               phase: 'nibble',
@@ -3922,20 +5341,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           upgradedThisFrame = true;
         }
 
-        const wp0Yaw = npc.preset.waypoints[0]?.yaw ?? stepped.yaw;
-        const seatShift = npc.isSitting
-          ? resolveAmbientSeatBackShift(stepped.x, stepped.z)
-          : 0;
-        const renderX =
-          seatShift > 0 ? stepped.x - Math.cos(wp0Yaw) * seatShift : stepped.x;
-        const renderZ =
-          seatShift > 0 ? stepped.z + Math.sin(wp0Yaw) * seatShift : stepped.z;
-        const groundY = getTerrainElevation(renderX, renderZ);
-        const renderYaw = npc.isSitting ? wp0Yaw : stepped.yaw;
+        const { seatFacingYaw, renderX, groundY, renderZ } = resolveCitizenRenderAnchor(
+          npc,
+          finalX,
+          finalZ,
+          stepped.yaw,
+        );
+        const renderYaw = npc.isSitting ? seatFacingYaw : stepped.yaw;
 
         npc.shadowMesh.visible = !npc.isSitting;
         npc.bodyGroup.rotation.set(0, renderYaw + Math.PI / 2, 0);
-        const sitLiftY = npc.isSitting ? (npc.preset.seatLiftY ?? 0) + 0.178 : 0;
+        const sitLiftY = npc.isSitting ? npc.activeSeatLiftY + 0.178 : 0;
         npc.bodyGroup.position.y = sitLiftY;
 
         applyPlanetCurvatureToObject(
@@ -3952,41 +5368,56 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npc.nameplate.sprite.visible = false;
 
         if (distFromFocus <= 52.0) {
+          const isCurrentlyFishing = npc.activeActivity === 'fishing' && !isTalkingWithPlayer;
           let castRecoil = 0;
-          if (npc.preset.activity === 'fishing' && npc.rodUpgraded) {
+          if (isCurrentlyFishing && npc.rodUpgraded) {
             if (timeSec >= npc.nextFishCastSec) {
               castRecoil = 0.9;
               npc.nextFishCastSec = timeSec + 11.5 + ((i * 2.17) % 5.5);
             }
           }
-          const stanceWeaponId =
-            npc.preset.activity === 'fishing' ? 'fishing_rod' : 'unarmed';
-          updateCharacterWeaponStance(
-            npc.rig,
-            stanceWeaponId,
-            npc.walkCycle,
-            stepped.isMoving,
+          const shouldStepDetail = shouldStepCharacterDetailThisFrame(
+            distFromFocus * distFromFocus,
+            npcAnimLodTick,
+            i,
             false,
-            0,
-            castRecoil,
-            0,
-            'right',
-            0,
-            0,
-            0.76,
-            0,
-            true,
-            'front',
-            1.0,
-            renderYaw,
-            stepped.speedMps,
-            npc.isSitting,
-            false,
-            false,
+            isTalkingWithPlayer || npc.isSitting || effectiveIsMoving || wasMoving || castRecoil > 0,
           );
-          if (npc.preset.activity !== 'fishing') {
-            npc.rig.weaponRigGroup.visible = false;
-            npc.rig.pistolGroup.visible = false;
+          if (shouldStepDetail || upgradedThisFrame) {
+            const stanceWeaponId = isCurrentlyFishing ? 'fishing_rod' : 'unarmed';
+            const npcSecondaryLod = resolveRigSecondaryPhysicsLod(npc.root.position, false, 3.0);
+            updateCharacterWeaponStance(
+              npc.rig,
+              stanceWeaponId,
+              npc.walkCycle,
+              effectiveIsMoving,
+              false,
+              0,
+              castRecoil,
+              0,
+              'right',
+              0,
+              0,
+              0.76,
+              0,
+              true,
+              'front',
+              1.0,
+              renderYaw,
+              effectiveSpeedMps,
+              npc.isSitting,
+              false,
+              false,
+              null,
+              'idle',
+              'chair',
+              isTalkingWithPlayer ? null : npc.activeHoldingCafeItemId,
+              npcSecondaryLod,
+            );
+            if (!isCurrentlyFishing) {
+              npc.rig.weaponRigGroup.visible = false;
+              npc.rig.pistolGroup.visible = false;
+            }
           }
         } else if (npc.rig.customGlbController) {
           npc.rig.customGlbController.lastStepTimeMs = nowMs;
@@ -4060,12 +5491,58 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     );
     scene.add(grandCasinoDoorChevron.group);
 
+    // Compact 3D interaction chevron in front of Central Urban Plaza Beauty & Glow Salon entrance
+    const beautySalonDoorChevron = buildCompactInteractiveChevronMarker(0.18, 0.34, '#38bdf8');
+    beautySalonDoorChevron.group.name = 'BeautySalonDoorInteractionChevron';
+    beautySalonDoorChevron.group.position.set(
+      SALON_EXTERIOR_DOOR_TRIGGER.doorX,
+      SALON_EXTERIOR_DOOR_TRIGGER.deckY + SALON_EXTERIOR_DOOR_TRIGGER.markerOffsetY,
+      SALON_EXTERIOR_DOOR_TRIGGER.doorZ - 0.55,
+    );
+    scene.add(beautySalonDoorChevron.group);
+
+    // 1:1 Central Botanical Park ("Taman Tengah"): Stone Fountain, Wisteria Gazebo, Duck Pond & Wind-Animated Flora
+    const centralPark = buildCentralBotanicalPark3D({
+      windUniforms,
+      isSoftwareGl,
+      leafMaskTexture: loadedBlitzAssets?.treeFoliageTex ?? getSharedFallbackFoliageMaskTexture(),
+      waterCascadeTex: getWaterCascadeSheetTexture(),
+      waterRippleTex: getWaterBasinRippleTexture(),
+      upgradeMeshToBlitzWorldMaterial,
+      createBlitzStrokeMesh,
+      bakeStaticGroupMeshes,
+    });
+    scene.add(centralPark.group);
+
+    const CAFE_MIRA_INTERIOR_X = -3.15;
+    const CAFE_MIRA_INTERIOR_Z = 0.55;
+    const CAFE_MIRA_INTERIOR_DEFAULT_YAW = 0.85;
+    const cafeMiraPreset = CAFE_MIRA_INTERIOR_PRESET;
+
     // Lazy-loaded Glasshouse Cafe Interior: defer procedural mesh/texture construction
     // and WebGL shader compilation until the player actually enters the cafe.
     let cafeInterior: CafeInteriorSceneHandle | null = null;
     let cafeCustomerNpcRoot: THREE.Group | null = null;
     let cafeCustomerRig: ReturnType<typeof buildProceduralBuddyAvatar> | null = null;
     let cafeCustomerGlbUpgraded = false;
+    let cafeMiraNpcRoot: THREE.Group | null = null;
+    let cafeMiraShadowMesh: THREE.Mesh | null = null;
+    let cafeMiraBodyGroup: THREE.Group | null = null;
+    let cafeMiraRig: ReturnType<typeof buildProceduralBuddyAvatar> | null = null;
+    let cafeMiraNameplate: ReturnType<typeof createGlassmorphicNameplate> | null = null;
+    let cafeMiraChevron: CompactInteractiveChevronMarker | null = null;
+    let cafeMiraGlbUpgraded = false;
+    let cafeMiraPortraitBlend01 = 0;
+    let cafeMiraCurrentYaw = CAFE_MIRA_INTERIOR_DEFAULT_YAW;
+    let cafeMiraX = CAFE_MIRA_INTERIOR_X;
+    let cafeMiraZ = CAFE_MIRA_INTERIOR_Z;
+    let cafeMiraWaypointIdx = 1;
+    let cafeMiraPauseTimer = 14.0;
+    let cafeMiraWalkCycle = 0;
+    let cafeMiraIsSitting = false;
+    let cafeMiraSeatLiftY = 0;
+    let cafeMiraHoldingItemId: CafeMenuItemId | null = null;
+    let cafeMiraStatusLabel = 'BROWSING GLASSHOUSE CAFE';
     let cafeInteriorShadersCompiled = false;
     let pendingCafeActivationToken = 0;
     let syncIndoorOutdoorSceneVisibility: (showOutdoor: boolean) => void = () => {};
@@ -4103,11 +5580,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isSoftwareGl,
         false,
       );
-      if (loadedBlitzAssets?.charBuddiesGltf) {
+      const cafeCustomerGltf =
+        loadedBlitzAssets?.ambientFemaleNpcGlb ??
+        earlyLoadedAmbientFemaleGlb ??
+        loadedBlitzAssets?.playerFemaleGlb ??
+        earlyLoadedPlayerFemaleGltf;
+      if (cafeCustomerGltf) {
         upgradeBuddyRigWithCharBuddiesGlb(
           custRig,
-          loadedBlitzAssets.charBuddiesGltf,
-          loadedBlitzAssets.ar99AssaultGltf,
+          cafeCustomerGltf,
+          loadedBlitzAssets?.ar99AssaultGltf,
         );
         cafeCustomerGlbUpgraded = true;
       } else {
@@ -4115,9 +5597,101 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       builtCafe.root.add(custRoot);
 
+      // Station Mira permanently inside Glasshouse Cafe lounge as well as outdoors on Cafe Terrace
+      const miraRoot = new THREE.Group();
+      miraRoot.name = 'CafeInteriorMiraNpc';
+      miraRoot.position.set(CAFE_MIRA_INTERIOR_X, 0, CAFE_MIRA_INTERIOR_Z);
+      miraRoot.scale.setScalar(0.55);
+
+      const miraShadow = new THREE.Mesh(shadowDiscGeo, avatarContactShadowMat);
+      miraShadow.position.y = 0.025;
+      miraShadow.scale.setScalar(0.72);
+      miraShadow.renderOrder = 1;
+      miraRoot.add(miraShadow);
+
+      const miraBodyGroup = new THREE.Group();
+      miraBodyGroup.rotation.order = 'YXZ';
+      miraBodyGroup.rotation.y = CAFE_MIRA_INTERIOR_DEFAULT_YAW;
+      miraBodyGroup.scale.setScalar(0.98);
+      if (cafeMiraPreset) {
+        miraBodyGroup.userData.desiredModularOutfit = {
+          hairUrl: cafeMiraPreset.equippedHairUrl,
+          torsoUrl: cafeMiraPreset.equippedTorsoUrl,
+          legsUrl: cafeMiraPreset.equippedLegsUrl,
+          feetUrl: cafeMiraPreset.equippedFeetUrl,
+        };
+        miraBodyGroup.userData.desiredTorsoAssetUrl = null;
+        miraBodyGroup.userData.citizenClothingTintHex = null;
+      }
+      miraRoot.add(miraBodyGroup);
+
+      const miraRig = buildProceduralBuddyAvatar(
+        miraBodyGroup,
+        'red',
+        windUniforms,
+        isSoftwareGl,
+        false,
+        'female',
+      );
+      miraRig.weaponRigGroup.visible = false;
+      miraRig.pistolGroup.visible = false;
+      miraRig.rifleGroup.visible = false;
+      miraRig.bazookaGroup.visible = false;
+      if (miraRig.laserGroup) miraRig.laserGroup.visible = false;
+      if (miraRig.gatlingGroup) miraRig.gatlingGroup.visible = false;
+      applyAmbientNpcClipOverrides(miraRig, cafeMiraPreset, 'mira_idle.001');
+
+      const cafeMiraGltf =
+        loadedBlitzAssets?.miraCustomGlb ?? getCachedLoadedCitizenGlbs().miraCustomGlb ?? null;
+      if (cafeMiraGltf) {
+        upgradeBuddyRigWithCharBuddiesGlb(
+          miraRig,
+          cafeMiraGltf,
+          loadedBlitzAssets?.ar99AssaultGltf,
+        );
+        applyAmbientNpcClipOverrides(miraRig, cafeMiraPreset, 'mira_idle.001');
+        cafeMiraGlbUpgraded = true;
+      } else {
+        cafeMiraGlbUpgraded = false;
+      }
+
+      const miraPlate = createGlassmorphicNameplate(
+        2.6,
+        0.66,
+        'MIRA',
+        'GLASSHOUSE CAFE',
+        false,
+      );
+      miraPlate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
+      miraPlate.sprite.visible = false;
+      miraRoot.add(miraPlate.sprite);
+
+      const miraChevron = buildCompactInteractiveChevronMarker(0.15, 0.28, '#38bdf8');
+      miraChevron.group.position.set(0, 3.68, 0);
+      miraRoot.add(miraChevron.group);
+
+      builtCafe.root.add(miraRoot);
+
       cafeInterior = builtCafe;
       cafeCustomerNpcRoot = custRoot;
       cafeCustomerRig = custRig;
+      cafeMiraNpcRoot = miraRoot;
+      cafeMiraShadowMesh = miraShadow;
+      cafeMiraBodyGroup = miraBodyGroup;
+      cafeMiraRig = miraRig;
+      cafeMiraNameplate = miraPlate;
+      cafeMiraChevron = miraChevron;
+      cafeMiraPortraitBlend01 = 0;
+      cafeMiraCurrentYaw = CAFE_MIRA_INTERIOR_DEFAULT_YAW;
+      cafeMiraX = CAFE_MIRA_INTERIOR_X;
+      cafeMiraZ = CAFE_MIRA_INTERIOR_Z;
+      cafeMiraWaypointIdx = 1;
+      cafeMiraPauseTimer = 14.0;
+      cafeMiraWalkCycle = 0;
+      cafeMiraIsSitting = false;
+      cafeMiraSeatLiftY = 0;
+      cafeMiraHoldingItemId = null;
+      cafeMiraStatusLabel = 'BROWSING GLASSHOUSE CAFE';
       cafeInteriorShadersCompiled = false;
       syncCafeCustomerWorkShiftVisuals();
       return builtCafe;
@@ -4193,6 +5767,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       casinoInterior = builtCasino;
       casinoInteriorShadersCompiled = false;
       return builtCasino;
+    };
+
+    // Lazy-loaded 2-Story Beauty & Glow / Glow Studio Salon Interior (World Origin y = SALON_ORIGIN_Y)
+    let salonInterior: SalonInteriorSceneHandle | null = null;
+    let salonInteriorShadersCompiled = false;
+    let pendingSalonActivationToken = 0;
+
+    const ensureSalonInteriorLoaded = (): SalonInteriorSceneHandle => {
+      if (salonInterior) return salonInterior;
+      const builtSalon = buildBeautySalonInterior();
+      builtSalon.root.visible = false;
+      scene.add(builtSalon.root);
+      salonInterior = builtSalon;
+      salonInteriorShadersCompiled = false;
+      return builtSalon;
     };
 
     // =========================================================================
@@ -4481,40 +6070,49 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       return m;
     };
 
-    // Dedicated Interior Multi-Zone Lighting Rig inside houseInteriorRoomGrp
-    // Calibrated alongside the global scene lights so the room is naturally warm & well-lit without washing out textures
-    const houseAmbientLight = new THREE.AmbientLight('#fff8eb', 0.25);
+    // Consolidated Indoor Room Lighting Rig (2-PointLight budget, self-contained so outdoor presets/shadows never leak indoors)
+    const houseAmbientLight = new THREE.AmbientLight('#fff8eb', 0.38);
     houseInteriorRoomGrp.add(houseAmbientLight);
 
-    const houseHemiLight = new THREE.HemisphereLight('#fffaf0', '#cbb694', 0.48);
+    const houseHemiLight = new THREE.HemisphereLight('#fffaf0', '#cbb694', 1.32);
     houseHemiLight.position.set(0, 6.0, 0);
     houseInteriorRoomGrp.add(houseHemiLight);
 
-    const houseSunLight = new THREE.DirectionalLight('#fff2da', 0.55);
+    const houseSunLight = new THREE.DirectionalLight('#fff2da', 1.25);
     houseSunLight.position.set(-8.0, 12.5, -5.0);
     houseInteriorRoomGrp.add(houseSunLight);
     houseInteriorRoomGrp.add(houseSunLight.target);
 
-    const houseCounterFillDirLight = new THREE.DirectionalLight('#eef4ff', 0.28);
+    const houseCounterFillDirLight = new THREE.DirectionalLight('#eef4ff', 0.42);
     houseCounterFillDirLight.position.set(8.5, 9.5, 6.5);
     houseInteriorRoomGrp.add(houseCounterFillDirLight);
     houseInteriorRoomGrp.add(houseCounterFillDirLight.target);
 
-    const houseCeilingLights = (
-      [
-        [-2.9, 3.65, -0.2, 0.42],
-        [0.0, 3.65, 0.85, 0.36],
-        [2.9, 3.65, -0.2, 0.42],
-      ] as const
-    ).map(([lx, ly, lz, baseInt]) => {
-      const pt = new THREE.PointLight('#ffe8bc', baseInt, 14.0, 1.15);
-      pt.position.set(lx, ly, lz);
-      houseInteriorRoomGrp.add(pt);
-      return pt;
-    });
+    const houseCeilingSpec = POINT_LIGHT_AUDIT_SPECS.houseInterior.ceilingFill;
+    const houseCeilingLights = [
+      (() => {
+        const pt = new THREE.PointLight(
+          houseCeilingSpec.colorHex,
+          houseCeilingSpec.baseIntensity,
+          houseCeilingSpec.distance,
+          houseCeilingSpec.decay,
+        );
+        pt.position.set(...houseCeilingSpec.position);
+        pt.castShadow = false;
+        houseInteriorRoomGrp.add(pt);
+        return pt;
+      })(),
+    ];
 
-    const houseWarmLampPointLight = new THREE.PointLight('#ffc882', 0.38, 11.0, 1.15);
-    houseWarmLampPointLight.position.set(-1.5, 2.2, -1.2);
+    const houseLampSpec = POINT_LIGHT_AUDIT_SPECS.houseInterior.warmLampAccent;
+    const houseWarmLampPointLight = new THREE.PointLight(
+      houseLampSpec.colorHex,
+      houseLampSpec.baseIntensity,
+      houseLampSpec.distance,
+      houseLampSpec.decay,
+    );
+    houseWarmLampPointLight.position.set(...houseLampSpec.position);
+    houseWarmLampPointLight.castShadow = false;
     houseInteriorRoomGrp.add(houseWarmLampPointLight);
 
     // 1. Cutaway Studio Plinth + Main Room Floor (10.6m x 7.4m)
@@ -4718,6 +6316,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     }
 
     // 3. Upper 4-Pane Transom / Clerestory Ribbon Window Band on Back Wall (`y = 2.90`)
+    let jpClerestoryIdx = 0;
     for (const [bayX0, bayX1] of [
       [-5.02, -2.52],
       [0.94, 5.02],
@@ -4734,15 +6333,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const paneW = (bayW - 0.18) / 2;
       for (const side of [-1, 1] as const) {
         const px = bayCx + side * (paneW / 2 + 0.025);
-        const glassPane = new THREE.Mesh(new THREE.BoxGeometry(paneW, 0.42, 0.04), windowGlassMat);
-        glassPane.position.set(px, 2.9, T + 0.045);
+        // Glass box proud of dark backing frame (`T + 0.080`) so never occluded inside frame volume
+        const glassPane = new THREE.Mesh(new THREE.BoxGeometry(paneW, 0.42, 0.034), windowGlassMat);
+        glassPane.position.set(px, 2.9, T + 0.072);
         glassPane.raycast = () => {};
+        tagCityWindowMesh(
+          glassPane,
+          createCityWindowSpec(
+            `cutaway-jp-clerestory-${jpClerestoryIdx}`,
+            'upper_floor',
+            '#c8dfeb',
+            2,
+            jpClerestoryIdx,
+          ),
+        );
+        jpClerestoryIdx += 1;
         japanesePavilionArchGrp.add(glassPane);
         addHouseArchPart(
           japanesePavilionArchGrp,
           new THREE.BoxGeometry(0.03, 0.44, 0.06),
           shojiWarmMat,
-          [px, 2.9, T + 0.05],
+          [px, 2.9, T + 0.076],
           0,
         );
       }
@@ -4789,11 +6400,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
     }
     const backGlass = new THREE.Mesh(
-      new THREE.PlaneGeometry(winBW - 0.08, winBH - 0.08),
+      new THREE.BoxGeometry(winBW - 0.08, winBH - 0.08, 0.024),
       windowGlassMat,
     );
     backGlass.position.set(winBCx, winBCy, T - L / 2);
     backGlass.raycast = () => {};
+    tagCityWindowMesh(
+      backGlass,
+      createCityWindowSpec('cutaway-jp-back-sliding', 'storefront', '#c8dfeb', 1, 0),
+    );
     japanesePavilionArchGrp.add(backGlass);
 
     // 2 Large Sliding Glass & Shoji Kumiko Panels inside `winB`
@@ -5327,6 +6942,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           uBaseColor: { value: baseColor },
           uLightColor: { value: new THREE.Color('#fff4d2') },
           uShadowColor: { value: new THREE.Color('#3b404e') },
+          uEmissive: { value: new THREE.Color(0x000000) },
+          uEmissiveIntensity: { value: 0.0 },
         },
         vertexShader: /* glsl */ `
           varying vec2 vUv;
@@ -5346,6 +6963,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           uniform vec3 uBaseColor;
           uniform vec3 uLightColor;
           uniform vec3 uShadowColor;
+          uniform vec3 uEmissive;
+          uniform float uEmissiveIntensity;
           varying vec2 vUv;
           varying vec3 vWorldNormal;
 
@@ -5377,7 +6996,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
             vec3 litColor = albedo * mix(vec3(1.0), uLightColor, 0.42) * (0.94 + 0.06 * litFactor);
             vec3 shadedColor = albedo * mix(vec3(0.76, 0.76, 0.80), uShadowColor * 1.45, 0.38);
-            vec3 finalRgb = mix(litColor, shadedColor, shadowBlend);
+            vec3 finalRgb = mix(litColor, shadedColor, shadowBlend) + uEmissive * uEmissiveIntensity;
 
             gl_FragColor = vec4(finalRgb, 1.0);
             #include <tonemapping_fragment>
@@ -5557,6 +7176,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     // Helper: 1:1 Plaza Mullioned 6-Pane Window with White Frame, Stone Lintel/Sill, Slate-Teal Glass (`lobbyWindowTex`),
     // Sage-Green Louvered Shutters (`lobbyLouverTex`) & Exterior Blooming Window Box (`buildCivicShutteredWindow`)
+    let plazaBayWindowSeq = 0;
     const buildPlazaShutteredWindowBay = (
       parent: THREE.Object3D,
       cx: number,
@@ -5565,7 +7185,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       rotY: number,
       winW = 1.18,
       winH = 1.48,
+      shutterOpts?: {
+        shutterWidth?: number;
+        omitLeftInterior?: boolean;
+        omitRightInterior?: boolean;
+        omitLeftExterior?: boolean;
+        omitRightExterior?: boolean;
+        windowId?: string;
+      },
     ) => {
+      const bayIdx = plazaBayWindowSeq++;
       const wGrp = new THREE.Group();
       wGrp.position.set(cx, cy, cz);
       wGrp.rotation.y = rotY;
@@ -5602,13 +7231,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         0.0048,
       );
 
-      // Deep Slate-Teal Reflective Glass Pane with Dark Olive-Steel Inner Frame (`#96bcc7` + `lobbyWindowTex`, 1:1 with line 16901)
-      addHouseArchPart(
+      // Deep Slate-Teal Reflective Glass Pane with Dark Olive-Steel Inner Frame (`#96bcc7` + `lobbyWindowTex`, tagged for night sync)
+      const glassPaneMesh = addHouseArchPart(
         wGrp,
         new THREE.BoxGeometry(winW - 0.14, winH - 0.14, 0.2),
         plazaWindowPaneMat,
         [0, 0, 0],
         0.0042,
+      );
+      tagCityWindowMesh(
+        glassPaneMesh,
+        createCityWindowSpec(
+          shutterOpts?.windowId ?? `cutaway-plaza-win-${bayIdx}`,
+          'civic',
+          '#96bcc7',
+          1,
+          bayIdx,
+        ),
       );
 
       // 6-Pane Crisp White Mullion Crossbars (`#f5f1e6`, 1 vertical, 2 horizontal — 1:1 with lines 16902-16905)
@@ -5629,12 +7268,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         );
       }
 
-      // Left & Right Sage-Green Louvered Wooden Shutters (`COL_CH_SAGE = #6b8c76` + `lobbyLouverTex`, 1:1 with lines 16908-16919)
-      const shutterW = 0.38;
+      // Left & Right Sage-Green Louvered Wooden Shutters (`zFace = ±0.135` proud of 0.24m stucco walls -> zero coplanar Z-fighting)
+      const shutterW = shutterOpts?.shutterWidth ?? 0.36;
       for (const sSide of [-1, 1] as const) {
-        const shX = sSide * (winW / 2 + shutterW / 2 + 0.03);
-        // Mounted on both interior (+z) and exterior (-z) wall faces so the iconic olive-green slatted shutters are always visible!
-        for (const zFace of [-0.09, 0.09] as const) {
+        const shX = sSide * (winW / 2 + shutterW / 2 + 0.025);
+        for (const zFace of [-0.135, 0.135] as const) {
+          const isExterior = zFace < 0;
+          if (sSide < 0 && isExterior && shutterOpts?.omitLeftExterior) continue;
+          if (sSide < 0 && !isExterior && shutterOpts?.omitLeftInterior) continue;
+          if (sSide > 0 && isExterior && shutterOpts?.omitRightExterior) continue;
+          if (sSide > 0 && !isExterior && shutterOpts?.omitRightInterior) continue;
           addHouseArchPart(
             wGrp,
             new THREE.BoxGeometry(shutterW, winH - 0.04, 0.06),
@@ -5743,8 +7386,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     addCutawayWallSegment(winB.x0, winB.x1, 2.5, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
     addCutawayWallSegment(-1.02, -0.58, 0.82, 2.5, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
 
-    buildPlazaShutteredWindowBay(plazaManorArchGrp, -1.68, 1.66, T - L / 2, 0, 1.18, 1.68);
-    buildPlazaShutteredWindowBay(plazaManorArchGrp, 0.08, 1.66, T - L / 2, 0, 1.18, 1.68);
+    buildPlazaShutteredWindowBay(plazaManorArchGrp, -1.68, 1.66, T - L / 2, 0, 1.18, 1.68, {
+      shutterWidth: 0.24,
+      windowId: 'cutaway-plaza-back-left',
+    });
+    buildPlazaShutteredWindowBay(plazaManorArchGrp, 0.08, 1.66, T - L / 2, 0, 1.18, 1.68, {
+      shutterWidth: 0.24,
+      omitRightInterior: true,
+      windowId: 'cutaway-plaza-back-right',
+    });
     // Stepped Terracotta Brick Patches above the Back Wall Windows
     addPlazaSteppedBrickPatch(plazaManorArchGrp, -3.55, 3.12, T + 0.02, 0);
     addPlazaSteppedBrickPatch(plazaManorArchGrp, 3.25, 3.12, T + 0.02, 0);
@@ -6690,19 +8340,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const applyHouseDaylightVisuals = (hour: number, _timeSec: number) => {
       const dl = evaluateRoomDaylightState(hour);
+      const rigLights = computeHouseInteriorLightRig(dl.dayFactor, dl.sunIntensity, dl.lampIntensity);
       houseSkyBackdropMat.color.set(dl.skyTopHex);
-      houseAmbientLight.intensity = 0.2 + dl.dayFactor * 0.1;
+      houseAmbientLight.intensity = rigLights.ambientIntensity;
       houseHemiLight.color.set('#fffaf0');
       houseHemiLight.groundColor.set('#cbb694');
-      houseHemiLight.intensity = 0.36 + dl.dayFactor * 0.22;
+      houseHemiLight.intensity = rigLights.hemiIntensity;
 
       houseSunLight.color.set(dl.sunColorHex);
-      houseSunLight.intensity = Math.max(0.2, dl.sunIntensity * 0.24);
+      houseSunLight.intensity = rigLights.sunIntensity;
       houseSunLight.position.set(
         dl.sunDir.x * 12,
         Math.max(11.5, dl.sunDir.y * 18),
         dl.sunDir.z * 12,
       );
+      houseCounterFillDirLight.intensity = rigLights.counterFillIntensity;
 
       // Update 3D Sun Orb along the tilted orbital arc (`Kc`, `#L551`)
       const clampedArcAngle = clamp(dl.sunAngleRad, 0, Math.PI);
@@ -6712,12 +8364,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       sunOrbGroup.position.copy(orbPos);
       sunOrbMat.color.set(dl.sunColorHex);
 
-      // Update Interior Ceiling Luminaires & Lamps (`uo = dl.lampIntensity`)
-      const ceilingBoost = 0.36 + dl.lampIntensity * 0.72;
-      houseCeilingLights.forEach((pt, idx) => {
-        pt.intensity = idx === 1 ? ceilingBoost * 0.88 : ceilingBoost;
+      // Update consolidated Interior Ceiling & Lamp PointLights (2-light budget)
+      houseCeilingLights.forEach((pt) => {
+        pt.intensity = rigLights.ceilingFillPointIntensity;
+        pt.distance = houseCeilingSpec.distance;
+        pt.decay = houseCeilingSpec.decay;
       });
-      houseWarmLampPointLight.intensity = 0.32 + dl.lampIntensity * 0.85;
+      houseWarmLampPointLight.intensity = rigLights.warmLampPointIntensity;
+      houseWarmLampPointLight.distance = houseLampSpec.distance;
+      houseWarmLampPointLight.decay = houseLampSpec.decay;
       lampWarmEmissiveMat.color
         .set('#f5e1b8')
         .lerp(new THREE.Color('#ffcf98'), dl.lampIntensity);
@@ -6728,7 +8383,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     applyHouseDaylightVisuals(houseCurrentDaylightHour, 0);
 
-    let npcCameraMode:
+    type ArenaNpcCameraMode =
       | 'none'
       | 'landing_tour'
       | 'fly_to_plaza'
@@ -6737,11 +8392,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       | 'house_visit'
       | 'cafe_interior'
       | 'casino_interior'
-      | 'character_select' = initialMpAppSync?.mode ?? 'landing_tour';
+      | 'salon_interior'
+      | 'character_select'
+      | 'city_view';
+    let npcCameraMode: ArenaNpcCameraMode = initialMpAppSync?.mode ?? 'landing_tour';
     let npcCameraLocation: 'lobby_cafe' | 'beach_house' = 'lobby_cafe';
     let savedOutdoorHousePos: { x: number; z: number; yaw: number } | null = null;
     let savedOutdoorCafePos: { x: number; z: number; yaw: number } | null = null;
     let savedOutdoorCasinoPos: { x: number; z: number; yaw: number } | null = null;
+    let savedOutdoorSalonPos: { x: number; z: number; yaw: number } | null = null;
     let cafeWorkShiftActive = Boolean(initialMpAppSync?.isWorkingCafeShift);
     let activeCafeOrderLabel = initialMpAppSync?.activeCafeOrderLabel ?? '';
     let activeCafeOrderAccent = initialMpAppSync?.activeCafeOrderAccent ?? '#b8ff3c';
@@ -6808,6 +8467,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     let activeCasinoSeatedSpot: CasinoInteriorSeatSpot | null = null;
     let currentNearestCasinoSeat: CasinoInteriorSeatSpot | null = null;
+    let salonVisitCamYaw: number = SALON_ORBIT_CAMERA_CONFIG.defaultYaw;
+    let salonVisitCamPitch: number = SALON_ORBIT_CAMERA_CONFIG.defaultPitch;
+    let salonVisitCamDist: number = SALON_ORBIT_CAMERA_CONFIG.defaultDist;
+    let isOrbitingSalonVisitCamera = false;
+    let salonVisitOrbitDragStart = {
+      x: 0,
+      y: 0,
+      yaw: salonVisitCamYaw,
+      pitch: salonVisitCamPitch,
+    };
+    let activeSalonSeatedSpot: SalonInteriorSeatSpot | null = null;
+    let currentNearestSalonSeat: SalonInteriorSeatSpot | null = null;
+    let salonCurrentFloorY = 0;
     let mpOnboardingCompleted = initialMpAppSync?.onboardingCompleted ?? false;
     let mpLocalGender: CharacterGender =
       initialMpAppSync?.characterGender ?? getDefaultCharacterGender();
@@ -6830,9 +8502,96 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let flyStartFov = 44;
     let lastLandingCameraPose = computeLandingCityTourPose(0);
 
+    // Interactive Cerria-Style City View State (Top-Down Overview & District Group Spotlight)
+    let cityViewTarget: CityViewTargetId = 'kota';
+    let cityViewOrbit = getCityViewDefaultOrbit('kota');
+    let isOrbitingCityView = false;
+    let isPanningCityView = false;
+    let cityViewDragStart = {
+      x: 0,
+      y: 0,
+      yaw: cityViewOrbit.yaw,
+      pitch: cityViewOrbit.pitch,
+      panX: cityViewOrbit.panX,
+      panZ: cityViewOrbit.panZ,
+    };
+    let cityViewFlyActive = false;
+    let cityViewExitingToPlayer = false;
+    let cityViewFlyStartMs = 0;
+    const cityViewFlyDurationMs = 920;
+    let cityViewFlyStartCamPos: Vec3 = { x: 0, y: 90, z: 90 };
+    let cityViewFlyStartLookAt: Vec3 = { x: 0, y: 0, z: 0 };
+    let cityViewFlyStartFov = 42;
+    let cityViewSavedPlayerCamPos: Vec3 = { x: -64, y: 12.8, z: 16 };
+    let cityViewSavedPlayerLookAt: Vec3 = { x: -75, y: 1.6, z: 0 };
+    let cityViewSavedPlayerFov = BUDDIES_CONSTANTS.camera.fov;
+    let cityViewLastAnchorSig = '';
+    const scratchCityAnchorProj = new THREE.Vector3();
+    const cityRayClickPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -2.5);
+
+    const cityViewFocusRingGroup = new THREE.Group();
+    cityViewFocusRingGroup.name = 'CityViewDistrictFocusRing3D';
+    cityViewFocusRingGroup.visible = false;
+    const cityViewFocusRingGeo = new THREE.RingGeometry(11.5, 13.0, 56);
+    cityViewFocusRingGeo.rotateX(-Math.PI / 2);
+    const cityViewFocusRingMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const cityViewFocusRingMesh = new THREE.Mesh(cityViewFocusRingGeo, cityViewFocusRingMat);
+    cityViewFocusRingGroup.add(cityViewFocusRingMesh);
+    scene.add(cityViewFocusRingGroup);
+
+    const precompileIndoorRoomShaders = async (
+      roomRoot: THREE.Object3D,
+      isStillActive: () => boolean,
+    ): Promise<boolean> => {
+      const asyncRenderer = renderer as THREE.WebGLRenderer & {
+        compileAsync?: (
+          s: THREE.Object3D,
+          c: THREE.Camera,
+          targetScene?: THREE.Scene | null,
+        ) => Promise<unknown>;
+      };
+      // Compile only the interior room subgraph (briefly detached during synchronous shader collection
+      // so room lights are not double-counted and hidden outdoor terrain/grass/road shaders keep their
+      // hardware PCF shadow sampler state intact).
+      const prevParent = roomRoot.parent;
+      const runScopedCompile = (useAsync: boolean): Promise<unknown> | void => {
+        if (prevParent) prevParent.remove(roomRoot);
+        try {
+          if (useAsync && typeof asyncRenderer.compileAsync === 'function') {
+            return asyncRenderer.compileAsync(roomRoot, camera, scene);
+          }
+          renderer.compile(roomRoot, camera, scene);
+          return undefined;
+        } finally {
+          if (prevParent && roomRoot.parent !== prevParent) {
+            prevParent.add(roomRoot);
+          }
+        }
+      };
+      try {
+        await runScopedCompile(true);
+      } catch {
+        try {
+          runScopedCompile(false);
+        } catch {
+          // Safe fallback if WebGL pre-compile throws in software/restricted contexts
+        }
+      }
+      return !isDisposed && isStillActive();
+    };
+
     const getLocalMultiplayerZoneKey = (): string => {
       if (npcCameraMode === 'casino_interior') {
         return 'casino:grand';
+      }
+      if (npcCameraMode === 'salon_interior') {
+        return 'salon:beauty_glow';
       }
       if (npcCameraMode === 'cafe_interior') {
         return 'cafe:glasshouse';
@@ -6858,6 +8617,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             | 'house_visit'
             | 'cafe_interior'
             | 'casino_interior'
+            | 'salon_interior'
             | 'character_select';
           flyTargetMode?: 'character_select' | 'gameplay';
           flySessionId?: number;
@@ -6985,6 +8745,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const isCafeMode = detail.mode === 'cafe_interior';
         const wasCasinoMode = npcCameraMode === 'casino_interior';
         const isCasinoMode = detail.mode === 'casino_interior';
+        const wasSalonMode = npcCameraMode === 'salon_interior';
+        const isSalonMode = detail.mode === 'salon_interior';
         const prevMode = npcCameraMode;
         if (pendingFurnitureMove && detail.mode !== 'house_interior') {
           resolvePendingFurnitureMove(false);
@@ -7096,28 +8858,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   camera.updateMatrixWorld();
                   scene.updateMatrixWorld(true);
 
-                  if (!cafeInteriorShadersCompiled) {
-                    try {
-                      const asyncRenderer = renderer as THREE.WebGLRenderer & {
-                        compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<void>;
-                      };
-                      if (typeof asyncRenderer.compileAsync === 'function') {
-                        await asyncRenderer.compileAsync(scene, camera);
-                      } else {
-                        renderer.compile(scene, camera);
-                      }
-                    } catch {
-                      try {
-                        renderer.compile(scene, camera);
-                      } catch {
-                        // Safe fallback if WebGL pre-compile throws in software/restricted contexts
-                      }
-                    }
-                    if (
-                      isDisposed ||
-                      activationToken !== pendingCafeActivationToken ||
-                      npcCameraMode !== 'cafe_interior'
-                    ) {
+                  if (!cafeInteriorShadersCompiled && cafeInterior) {
+                    const cafeRoot = cafeInterior.root;
+                    const stillActive = await precompileIndoorRoomShaders(
+                      cafeRoot,
+                      () =>
+                        activationToken === pendingCafeActivationToken &&
+                        npcCameraMode === 'cafe_interior',
+                    );
+                    if (!stillActive) {
                       return;
                     }
                     cafeInteriorShadersCompiled = true;
@@ -7133,7 +8882,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else if (wasCafeMode && !isCafeMode && playerUnit) {
           pendingCafeActivationToken++;
           if (cafeInterior) cafeInterior.root.visible = false;
-          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCasinoMode);
+          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCasinoMode && !isSalonMode);
           activeCafeSeatedSpot = null;
           playerUnit.isSitting = false;
           playerUnit.root.scale.setScalar(1.0);
@@ -7221,28 +8970,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   camera.updateMatrixWorld();
                   scene.updateMatrixWorld(true);
 
-                  if (!casinoInteriorShadersCompiled) {
-                    try {
-                      const asyncRenderer = renderer as THREE.WebGLRenderer & {
-                        compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<void>;
-                      };
-                      if (typeof asyncRenderer.compileAsync === 'function') {
-                        await asyncRenderer.compileAsync(scene, camera);
-                      } else {
-                        renderer.compile(scene, camera);
-                      }
-                    } catch {
-                      try {
-                        renderer.compile(scene, camera);
-                      } catch {
-                        // Safe fallback if WebGL pre-compile throws in software/restricted contexts
-                      }
-                    }
-                    if (
-                      isDisposed ||
-                      casinoActivationToken !== pendingCasinoActivationToken ||
-                      npcCameraMode !== 'casino_interior'
-                    ) {
+                  if (!casinoInteriorShadersCompiled && casinoInterior) {
+                    const casinoRoot = casinoInterior.root;
+                    const stillActive = await precompileIndoorRoomShaders(
+                      casinoRoot,
+                      () =>
+                        casinoActivationToken === pendingCasinoActivationToken &&
+                        npcCameraMode === 'casino_interior',
+                    );
+                    if (!stillActive) {
                       return;
                     }
                     casinoInteriorShadersCompiled = true;
@@ -7259,7 +8995,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         } else if (wasCasinoMode && !isCasinoMode && playerUnit) {
           pendingCasinoActivationToken++;
           if (casinoInterior) casinoInterior.root.visible = false;
-          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCafeMode);
+          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCafeMode && !isSalonMode);
           activeCasinoSeatedSpot = null;
           playerUnit.isSitting = false;
           playerUnit.root.scale.setScalar(1.0);
@@ -7271,6 +9007,124 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         } else if (casinoInterior) {
           casinoInterior.root.visible = isCasinoMode;
+        }
+        if (isSalonMode && !wasSalonMode && playerUnit) {
+          const nearSalonDoorNow =
+            Math.hypot(
+              playerUnit.x - SALON_EXTERIOR_DOOR_TRIGGER.x,
+              playerUnit.z - SALON_EXTERIOR_DOOR_TRIGGER.z,
+            ) <= SALON_EXTERIOR_DOOR_TRIGGER.triggerRadius + 2.5;
+          savedOutdoorSalonPos = nearSalonDoorNow
+            ? {
+                x: playerUnit.x,
+                z: playerUnit.z,
+                yaw: SALON_EXTERIOR_DOOR_TRIGGER.exitSpawnYaw,
+              }
+            : {
+                x: SALON_EXTERIOR_DOOR_TRIGGER.exitSpawnX,
+                z: SALON_EXTERIOR_DOOR_TRIGGER.exitSpawnZ,
+                yaw: SALON_EXTERIOR_DOOR_TRIGGER.exitSpawnYaw,
+              };
+          activeSalonSeatedSpot = null;
+          salonCurrentFloorY = 0;
+          playerUnit.isSitting = false;
+          playerUnit.isSleeping = false;
+          playerUnit.x = SALON_INTERIOR_BOUNDS.spawnX;
+          playerUnit.z = SALON_INTERIOR_BOUNDS.spawnZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = SALON_INTERIOR_BOUNDS.spawnYaw;
+          playerUnit.visualYaw = SALON_INTERIOR_BOUNDS.spawnYaw;
+          playerUnit.root.position.set(playerUnit.x, SALON_ORIGIN_Y, playerUnit.z);
+          playerUnit.root.rotation.set(0, 0, 0);
+          playerUnit.root.scale.setScalar(0.55);
+          if (windUniforms.uCurvatureStrength) windUniforms.uCurvatureStrength.value = 0;
+          salonVisitCamYaw = SALON_ORBIT_CAMERA_CONFIG.defaultYaw;
+          salonVisitCamPitch = SALON_ORBIT_CAMERA_CONFIG.defaultPitch;
+          salonVisitCamDist = SALON_ORBIT_CAMERA_CONFIG.defaultDist;
+
+          syncIndoorOutdoorSceneVisibility(false);
+          const salonActivationToken = ++pendingSalonActivationToken;
+          const dispatchSalonReadyAfterPaint = () => {
+            window.requestAnimationFrame(() => {
+              if (
+                isDisposed ||
+                salonActivationToken !== pendingSalonActivationToken ||
+                npcCameraMode !== 'salon_interior'
+              ) {
+                return;
+              }
+              window.dispatchEvent(new CustomEvent('beauty-salon-interior-ready'));
+            });
+          };
+
+          if (!salonInterior || !salonInteriorShadersCompiled) {
+            window.requestAnimationFrame(() => {
+              window.setTimeout(() => {
+                void (async () => {
+                  if (
+                    isDisposed ||
+                    salonActivationToken !== pendingSalonActivationToken ||
+                    npcCameraMode !== 'salon_interior'
+                  ) {
+                    return;
+                  }
+                  const loadedSalon = ensureSalonInteriorLoaded();
+                  loadedSalon.root.visible = true;
+                  syncIndoorOutdoorSceneVisibility(false);
+
+                  const initPose = computeSalonOrbitCameraPose({
+                    originY: SALON_ORIGIN_Y,
+                    anchorX: playerUnit?.x ?? SALON_INTERIOR_BOUNDS.spawnX,
+                    anchorZ: playerUnit?.z ?? SALON_INTERIOR_BOUNDS.spawnZ,
+                    floorY: 0,
+                    yaw: salonVisitCamYaw,
+                    pitch: salonVisitCamPitch,
+                    dist: salonVisitCamDist,
+                  });
+                  camera.fov = initPose.fovDeg;
+                  camera.updateProjectionMatrix();
+                  camera.position.set(initPose.camX, initPose.camY, initPose.camZ);
+                  camera.lookAt(initPose.lookX, initPose.lookY, initPose.lookZ);
+                  camera.updateMatrixWorld();
+                  scene.updateMatrixWorld(true);
+
+                  if (!salonInteriorShadersCompiled && salonInterior) {
+                    const stillActive = await precompileIndoorRoomShaders(
+                      salonInterior.root,
+                      () =>
+                        salonActivationToken === pendingSalonActivationToken &&
+                        npcCameraMode === 'salon_interior',
+                    );
+                    if (!stillActive) {
+                      return;
+                    }
+                    salonInteriorShadersCompiled = true;
+                  }
+                  dispatchSalonReadyAfterPaint();
+                })();
+              }, 16);
+            });
+          } else {
+            salonInterior.root.visible = true;
+            dispatchSalonReadyAfterPaint();
+          }
+        } else if (wasSalonMode && !isSalonMode && playerUnit) {
+          pendingSalonActivationToken++;
+          if (salonInterior) salonInterior.root.visible = false;
+          syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCafeMode && !isCasinoMode);
+          activeSalonSeatedSpot = null;
+          salonCurrentFloorY = 0;
+          playerUnit.isSitting = false;
+          playerUnit.root.scale.setScalar(1.0);
+          if (savedOutdoorSalonPos) {
+            playerUnit.x = savedOutdoorSalonPos.x;
+            playerUnit.z = savedOutdoorSalonPos.z;
+            playerUnit.yaw = savedOutdoorSalonPos.yaw;
+            savedOutdoorSalonPos = null;
+          }
+        } else if (salonInterior) {
+          salonInterior.root.visible = isSalonMode;
         }
         houseInteriorRoomGrp.visible = isHouseMode;
         if (isHouseMode) {
@@ -7534,6 +9388,110 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
     window.addEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
 
+    const restoreNormalCameraEnvelope = () => {
+      syncSceneHorizonFogAndFarClip({
+        scene,
+        camera,
+        mode: 'gameplay',
+        cameraHeightM: camera.position.y,
+        isSoftwareGl,
+      });
+      dirLight.shadow.camera.left = -d;
+      dirLight.shadow.camera.right = d;
+      dirLight.shadow.camera.top = d;
+      dirLight.shadow.camera.bottom = -d;
+      dirLight.shadow.camera.far = 122;
+      dirLight.shadow.camera.updateProjectionMatrix();
+      prevSnappedShadowX = Number.NaN;
+      prevSnappedShadowZ = Number.NaN;
+    };
+
+    const onSyncCityViewMode = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          action: 'enter' | 'select' | 'exit';
+          target?: CityViewTargetId;
+        }>
+      ).detail;
+      if (!detail) return;
+      if (detail.action === 'exit') {
+        if (npcCameraMode !== 'city_view') return;
+        isOrbitingCityView = false;
+        isPanningCityView = false;
+        cityViewExitingToPlayer = true;
+        cityViewFlyActive = true;
+        cityViewFlyStartMs = performance.now();
+        cityViewFlyStartCamPos = {
+          x: camera.position.x,
+          y: camera.position.y,
+          z: camera.position.z,
+        };
+        cityViewFlyStartLookAt = { ...lastRenderedLookAt };
+        cityViewFlyStartFov = camera.fov || CITY_VIEW_OVERVIEW_DEFAULTS.fov;
+        cityViewLastAnchorSig = '';
+        window.dispatchEvent(
+          new CustomEvent('city-view-anchors-updated', {
+            detail: { active: null, neighbors: [] },
+          }),
+        );
+        return;
+      }
+
+      // Enter or switch district target inside City View
+      if (npcCameraMode !== 'city_view') {
+        if (npcCameraMode !== 'none') return;
+        if (hasLastRenderedCamPose) {
+          cityViewSavedPlayerCamPos = { ...lastRenderedCamPos };
+          cityViewSavedPlayerLookAt = { ...lastRenderedLookAt };
+          cityViewSavedPlayerFov = lastRenderedFov;
+        } else {
+          cityViewSavedPlayerCamPos = {
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z,
+          };
+          cityViewSavedPlayerLookAt = {
+            x: playerUnit?.x ?? 0,
+            y: 1.5,
+            z: playerUnit?.z ?? 0,
+          };
+          cityViewSavedPlayerFov = camera.fov || BUDDIES_CONSTANTS.camera.fov;
+        }
+        resetAllPlayerMovementInputs();
+        isOrbitingOutdoorCamera = false;
+        isOrbitingSeatedCamera = false;
+        clearCharacterSelection();
+        npcCameraMode = 'city_view';
+      }
+
+      const nextTarget: CityViewTargetId = detail.target ?? 'kota';
+      cityViewTarget = nextTarget;
+      cityViewOrbit = getCityViewDefaultOrbit(nextTarget);
+      cityViewExitingToPlayer = false;
+      cityViewFlyActive = true;
+      cityViewFlyStartMs = performance.now();
+      cityViewFlyStartCamPos = {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      };
+      cityViewFlyStartLookAt = hasLastRenderedCamPose
+        ? { ...lastRenderedLookAt }
+        : {
+            x: playerUnit?.x ?? 0,
+            y: 1.5,
+            z: playerUnit?.z ?? 0,
+          };
+      cityViewFlyStartFov = camera.fov || BUDDIES_CONSTANTS.camera.fov;
+      cityViewLastAnchorSig = '';
+      window.dispatchEvent(
+        new CustomEvent('city-view-anchors-updated', {
+          detail: { active: null, neighbors: [] },
+        }),
+      );
+    };
+    window.addEventListener('sync-city-view-mode', onSyncCityViewMode);
+
     // =========================================================================
     // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
     // =========================================================================
@@ -7648,6 +9606,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Large floating property pinpoint disabled; kiosks use compact 3D overhead triangles only.
     };
     window.addEventListener('set-property-pinpoint', onSetPropertyPinpoint);
+
+    // =========================================================================
+    // CLICK-TO-WALK & MINIMAP AUTOPILOT WAYPOINT CONTROLLER (PEACEFUL CITY & INTERIORS)
+    // =========================================================================
+    const clickToWalkIndicator3D = createClickToWalkIndicator3D(scene, {
+      chevronCount: 16,
+    });
+    let clickToWalkState: ClickToWalkState = createIdleClickToWalkState();
+    let clickToWalkStartedMode: ArenaNpcCameraMode = 'none';
+    let cachedCityClickFootNav: CityNavGridHandle | null = null;
+    let cachedCityClickScooterNav: CityNavGridHandle | null = null;
+    let cachedCityClickNavDirty = true;
+    let cachedCityClickNavSafezone = true;
+    let clickToWalkPointerDown: {
+      pointerId: number;
+      x: number;
+      y: number;
+      mode: ArenaNpcCameraMode;
+      houseFurnitureClicked: boolean;
+    } | null = null;
+    let cancelClickToWalk: () => void = () => {
+      clickToWalkState = cancelClickToWalkState(clickToWalkState);
+      clickToWalkIndicator3D.root.visible = false;
+    };
+    let handleCleanClickToWalkTap: (
+      clientX: number,
+      clientY: number,
+      modeAtDown: ArenaNpcCameraMode,
+      houseFurnitureClicked: boolean,
+    ) => void = () => {};
 
     const onSetKaiTutorial = (_ev: Event) => {
       // Large floating tutorial pinpoint disabled; merchants & kiosks use compact 3D overhead triangles only.
@@ -7765,14 +9753,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       root.position.set(spawnX, 0, spawnZ);
       scene.add(root);
 
+      const FIGHTER_JET_BODY_SCALE = 1.70;
       const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
       shadow.name = 'ContactShadowDisc';
       shadow.position.y = 0.02;
-      shadow.scale.set(3.6 * VEHICLE_BODY_SCALE, 3.2 * VEHICLE_BODY_SCALE, 1);
+      shadow.scale.set(3.6 * FIGHTER_JET_BODY_SCALE, 3.2 * FIGHTER_JET_BODY_SCALE, 1);
       root.add(shadow);
 
       const bodyGroup = new THREE.Group();
-      bodyGroup.scale.setScalar(VEHICLE_BODY_SCALE);
+      bodyGroup.scale.setScalar(FIGHTER_JET_BODY_SCALE);
       root.add(bodyGroup);
 
       const stunMesh = createBlitzStunEffectMesh();
@@ -7787,9 +9776,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       riderGroup.visible = false;
       turretGroup.add(riderGroup);
       const planeRiderAvatar = new THREE.Group();
-      planeRiderAvatar.position.set(-0.12, -0.96, 0);
+      planeRiderAvatar.position.set(-0.08, -0.52, 0);
       planeRiderAvatar.rotation.y = Math.PI / 2;
-      planeRiderAvatar.scale.setScalar(1.12 / VEHICLE_BODY_SCALE);
+      planeRiderAvatar.scale.setScalar(1.42 / FIGHTER_JET_BODY_SCALE);
       riderGroup.add(planeRiderAvatar);
       riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         planeRiderAvatar,
@@ -7870,14 +9859,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       root.position.set(spawnX, getTerrainElevation(spawnX, spawnZ), spawnZ);
       scene.add(root);
 
+      const DUMP_TRUCK_BODY_SCALE = 1.45;
       const shadow = new THREE.Mesh(shadowDiscGeo, shadowDiscMat);
       shadow.name = 'ContactShadowDisc';
       shadow.position.y = 0.02;
-      shadow.scale.set(3.8 * VEHICLE_BODY_SCALE, 2.8 * VEHICLE_BODY_SCALE, 1);
+      shadow.scale.set(3.8 * DUMP_TRUCK_BODY_SCALE, 2.8 * DUMP_TRUCK_BODY_SCALE, 1);
       root.add(shadow);
 
       const bodyGroup = new THREE.Group();
-      bodyGroup.scale.setScalar(VEHICLE_BODY_SCALE);
+      bodyGroup.scale.setScalar(DUMP_TRUCK_BODY_SCALE);
       bodyGroup.rotation.y = initialYaw;
       root.add(bodyGroup);
 
@@ -7962,10 +9952,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     // Load all real bundled Blitz .glb models & .ktx2 textures via GLTFLoader + DRACOLoader + KTX2Loader
     let isDisposed = false;
-    let earlyLoadedCharGltf: LoadedBlitzAssets['charBuddiesGltf'] =
-      loadedBlitzAssets?.charBuddiesGltf ?? null;
-    let earlyLoadedManGltf: LoadedBlitzAssets['manCharacterBuddiesGltf'] =
-      loadedBlitzAssets?.manCharacterBuddiesGltf ?? null;
+    let earlyLoadedMixamoLocomotionGltf: LoadedBlitzAssets['mixamoLocomotionGltf'] =
+      loadedBlitzAssets?.mixamoLocomotionGltf ?? null;
     let earlyLoadedPlayerFemaleGltf: LoadedBlitzAssets['playerFemaleGlb'] =
       loadedBlitzAssets?.playerFemaleGlb ?? null;
     let earlyLoadedPlayerMaleGltf: LoadedBlitzAssets['playerMaleGlb'] =
@@ -7987,13 +9975,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         earlyLoadedAmbientFemaleGlb ??
         assets?.hanaCustomGlb ??
         earlyLoadedHanaGlb ??
-        assets?.charBuddiesGltf ??
-        earlyLoadedCharGltf;
+        assets?.playerFemaleGlb ??
+        earlyLoadedPlayerFemaleGltf;
       const hasMixamoLocomotionBase = Boolean(
-        assets?.manCharacterBuddiesGltf ??
-          earlyLoadedManGltf ??
-          assets?.charBuddiesGltf ??
-          earlyLoadedCharGltf,
+        assets?.mixamoLocomotionGltf ?? earlyLoadedMixamoLocomotionGltf,
       );
       const nowMs = performance.now();
       for (let i = 0; i < casinoStaffNpcs.length; i++) {
@@ -8029,19 +10014,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const resolveAvatarGlbForGender = (
       gender?: CharacterGender,
       assetsOverride?: LoadedBlitzAssets | null,
-      isPlayerAvatar = false,
+      _isPlayerAvatar = false,
     ) => {
       const targetGender = gender ?? getDefaultCharacterGender();
       const assets =
         assetsOverride ?? loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
-      const npcFemaleGlb = assets?.charBuddiesGltf ?? earlyLoadedCharGltf;
-      const playerFemaleGlb =
-        assets?.playerFemaleGlb ?? earlyLoadedPlayerFemaleGltf ?? npcFemaleGlb;
-      const femaleGlb = isPlayerAvatar ? playerFemaleGlb : npcFemaleGlb;
-      const npcMaleGlb = assets?.manCharacterBuddiesGltf ?? earlyLoadedManGltf;
-      const playerMaleGlb =
-        assets?.playerMaleGlb ?? earlyLoadedPlayerMaleGltf ?? npcMaleGlb;
-      const maleGlb = isPlayerAvatar ? playerMaleGlb : npcMaleGlb;
+      const femaleGlb =
+        assets?.playerFemaleGlb ??
+        earlyLoadedPlayerFemaleGltf ??
+        assets?.ambientFemaleNpcGlb ??
+        earlyLoadedAmbientFemaleGlb;
+      const maleGlb =
+        assets?.playerMaleGlb ??
+        earlyLoadedPlayerMaleGltf ??
+        assets?.ambientMaleNpcGlb ??
+        earlyLoadedAmbientMaleGlb;
       return targetGender === 'male' ? (maleGlb ?? femaleGlb) : (femaleGlb ?? maleGlb);
     };
 
@@ -8148,9 +10135,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       pose: ScooterRiderRigPose | null;
     }
     const buildScooterSpecInput = (kind: UrbanScooterKind) => ({
-      modelScale: SCOOTER_RIDE_MODEL_SCALE,
-      seatLiftY: SCOOTER_RIDER_LIFT_M[kind],
-      seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_M[kind],
+      modelScale: getScooterRideModelScale(kind),
+      seatLiftY: SCOOTER_RIDER_LIFT_BY_KIND_M[kind],
+      seatBackOffsetZ: SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M[kind],
       handlebar: SCOOTER_HANDLEBAR_SPECS[kind],
     });
     const applyScooterHandleLeanAndSteer = (
@@ -8167,11 +10154,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         handle.leanGroup.rotation.z = leanRollZ;
       }
     };
+    const computeTerrainSlopePitchX = (x: number, z: number, yaw: number): number => {
+      const fwdX = Math.cos(yaw);
+      const fwdZ = -Math.sin(yaw);
+      const sampleHalfM = 0.55;
+      const yFwd = getTerrainElevation(x + fwdX * sampleHalfM, z + fwdZ * sampleHalfM);
+      const yBack = getTerrainElevation(x - fwdX * sampleHalfM, z - fwdZ * sampleHalfM);
+      const rawPitch = -Math.atan2(yFwd - yBack, sampleHalfM * 2.0);
+      return Math.max(-0.34, Math.min(0.34, rawPitch));
+    };
     const applyScooterBodyTransform = (
       bodyGroup: THREE.Group,
       baseY: number,
       yaw: number,
       pose: ScooterRiderRigPose,
+      slopePitchX = 0,
     ) => {
       const cosR = Math.cos(pose.leanRollZ);
       const sinR = Math.sin(pose.leanRollZ);
@@ -8183,7 +10180,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         baseY + localY,
         localX * -Math.cos(yaw) - localZ * Math.sin(yaw),
       );
-      bodyGroup.rotation.set(0, yaw + Math.PI / 2, pose.leanRollZ, 'YXZ');
+      bodyGroup.rotation.set(slopePitchX, yaw + Math.PI / 2, pose.leanRollZ, 'YXZ');
     };
     let scooterRideState: ScooterRideState | null = null;
     let crateSpawnTimer = 0;
@@ -8221,6 +10218,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let qcForceWeaponVisible = false;
     let socialTalkMessage: string | null = null;
     let socialTalkTimer = 0;
+    let socialTalkSeq = 0;
+    let localEmoteSeq = 0;
+    let localActiveEmote: {
+      id: SocialEmoteId;
+      clip: string;
+      seq: number;
+      startedAtMs: number;
+      expiresAtMs: number;
+      durationMs: number;
+    } | null = null;
 
     let currentNearHouseDoorWorldPos: { x: number; z: number } | null = null;
     let currentNearHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
@@ -9116,26 +11123,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const activeOrdnanceDevices: ActiveOrdnanceDevice3D[] = [];
     let remoteWarzonePeers: WarzoneRealtimePeer[] = [];
     let remoteWorldPeers: WorldMultiplayerPeerState[] = [];
-    // Per-peer pose history for snapshot interpolation. Samples are stamped with the LOCAL
-    // receive time (never the sender's clock, which may be skewed), newest last, capped at 6.
-    interface PeerPoseSample {
-      x: number;
-      z: number;
-      vx: number;
-      vz: number;
-      yaw: number;
-      senderStampMs: number;
-      receivedAtMs: number;
-    }
-    const peerPoseHistory = new Map<string, PeerPoseSample[]>();
+    const peerInterpStates = new Map<string, PeerInterpolationState>();
     let lastLocalPoseBroadcastMs = 0;
     let lastBroadcastZoneKey = '';
     let lastBroadcastChatText: string | null = null;
+    let lastBroadcastChatSeq = 0;
+    let lastBroadcastBubbleStyleKey = '';
+    let lastBroadcastEmoteClip = '';
+    let lastBroadcastEmoteSeq = 0;
     let lastBroadcastYaw = 0;
+    let lastBroadcastMoving = false;
+    let lastBroadcastJumpOffset = 0;
     let lastBroadcastSitting = false;
+    let lastBroadcastSleeping = false;
+    let lastBroadcastDriving = false;
+    let lastBroadcastHiddenInVehicle = false;
     let lastBroadcastScooterKind: UrbanScooterKind | null = null;
     let lastBroadcastWeaponId = '';
     let lastBroadcastCarryingCrate = '';
+    let lastBroadcastFishingPhase: WorldMultiplayerPeerState['fishingPhase'] = 'idle';
+    let lastBroadcastIsReeling = false;
+    let lastBroadcastCafePreparing = false;
+    let lastBroadcastCafeWorker = false;
     let spawnRemoteShotRef:
       | ((shot: {
           fromTeam: 'blue' | 'red';
@@ -9239,11 +11248,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
       root.add(nameplate.sprite);
 
-      const saluteSign = createBillboardSign(3.4, 0.92);
+      const saluteSign = createStyledRemoteChatBubbleBillboard(3.5, 1.15);
       saluteSign.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY + 0.62, 0);
       saluteSign.sprite.visible = false;
       root.add(saluteSign.sprite);
 
+      const nowMs = Date.now();
       return {
         sessionId: peer.sessionId,
         peer,
@@ -9259,11 +11269,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         renderX: peer.x,
         renderZ: peer.z,
         renderYaw: peer.yaw,
+        renderJumpOffset: peer.jumpOffset ?? 0,
         walkCycle: 0,
         appliedGender: null,
         hasGlbUpgraded: false,
         lastLabelKey: `${peer.displayName}|${peer.nearAccountId ?? ''}`,
         lastBubbleText: null,
+        lastBubbleRenderKey: '',
+        emoteState: mergeRemoteEmoteState(
+          createRemoteEmoteState(),
+          {
+            emoteClip: peer.emoteClip,
+            emoteSeq: peer.emoteSeq,
+            emoteDurationMs: peer.emoteDurationMs,
+          },
+          nowMs,
+        ),
+        chatBubbleState: mergeRemoteChatBubbleState(
+          createRemoteChatBubbleState(),
+          {
+            text: peer.chatBubbleText,
+            seq: peer.chatBubbleSeq,
+            bgColor: peer.chatBubbleBgColor,
+            textColor: peer.chatBubbleTextColor,
+          },
+          nowMs,
+          DEFAULT_CHAT_BUBBLE_TTL_MS,
+        ),
+        lastFishingPhase: peer.fishingPhase,
+        fishingCastRecoilTimer: 0,
+        remotePunchTimer: 0,
+        remoteKickTimer: 0,
         hitFlashTimer: 0,
         scooterKind: null,
         scooterHandle: null,
@@ -9283,6 +11319,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (selectedCharacterTarget && selectedCharacterTarget.root === av.root) {
         clearCharacterSelection();
       }
+      restoreSocialEmoteOverlay(av.rig);
+      if (av.scooterHandle) {
+        scene.remove(av.scooterHandle.root);
+        av.scooterHandle = null;
+      }
       scene.remove(av.root);
       av.teamRing.geometry.dispose();
       av.ringMat.dispose();
@@ -9298,34 +11339,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const worldMultiplayer = subscribeToWorldMultiplayer({
       onPeersChange: (peers) => {
         remoteWorldPeers = peers;
-        // Feed the snapshot-interpolation history: one sample per genuinely new pose
-        // packet (deduped by the sender's stamp), stamped with local receive time.
+        // Feed the adaptive snapshot-interpolation buffer: ordered by sender seq/stamp,
+        // stamped on the local receive timeline to stay immune to sender clock skew.
         {
           const nowRecvMs = Date.now();
           const seenPeerIds = new Set<string>();
           for (const p of peers) {
             seenPeerIds.add(p.sessionId);
-            let hist = peerPoseHistory.get(p.sessionId);
-            if (!hist) {
-              hist = [];
-              peerPoseHistory.set(p.sessionId, hist);
+            let interpState = peerInterpStates.get(p.sessionId);
+            if (!interpState) {
+              interpState = createPeerInterpolationState();
+              peerInterpStates.set(p.sessionId, interpState);
             }
-            const lastSample = hist[hist.length - 1];
-            if (!lastSample || lastSample.senderStampMs !== p.updatedAtMs) {
-              hist.push({
+            pushRemotePoseSample(
+              interpState,
+              {
+                seq: p.seq,
                 x: p.x,
                 z: p.z,
                 vx: p.vx,
                 vz: p.vz,
                 yaw: p.yaw,
-                senderStampMs: p.updatedAtMs,
+                jumpOffset: p.jumpOffset,
+                senderStampMs: p.sentAtMs || p.updatedAtMs,
                 receivedAtMs: nowRecvMs,
-              });
-              if (hist.length > 6) hist.splice(0, hist.length - 6);
-            }
+                isSitting: p.isSitting,
+                isSleeping: p.emoteClip === 'bed:sleep',
+              },
+              {
+                isFlatIndoor: isFlatIndoorZoneKey(p.zoneKey),
+              },
+            );
           }
-          for (const sid of peerPoseHistory.keys()) {
-            if (!seenPeerIds.has(sid)) peerPoseHistory.delete(sid);
+          for (const sid of peerInterpStates.keys()) {
+            if (!seenPeerIds.has(sid)) peerInterpStates.delete(sid);
           }
         }
         remoteWarzonePeers = peers
@@ -9340,6 +11387,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             inWarzone: true,
             updatedAtMs: p.updatedAtMs,
           }));
+      },
+      onRemoteEmote: (evt: WorldMultiplayerEmoteEvent) => {
+        const av = remotePlayerAvatars.get(evt.fromSessionId);
+        if (!av) return;
+        const nowMs = Date.now();
+        av.emoteState = mergeRemoteEmoteState(
+          av.emoteState,
+          {
+            emoteClip: evt.emoteClip,
+            emoteSeq: evt.emoteSeq,
+            emoteDurationMs: evt.emoteDurationMs,
+          },
+          nowMs,
+        );
+        if (evt.emoteClip === 'emote:punch') {
+          av.remotePunchTimer = 0.28;
+        } else if (evt.emoteClip === 'emote:kick') {
+          av.remoteKickTimer = 0.36;
+        }
+      },
+      onRemoteChat: (evt: WorldMultiplayerChatEvent) => {
+        const av = remotePlayerAvatars.get(evt.fromSessionId);
+        if (!av) return;
+        av.chatBubbleState = mergeRemoteChatBubbleState(
+          av.chatBubbleState,
+          {
+            text: evt.chatBubbleText,
+            seq: evt.chatBubbleSeq,
+            bgColor: evt.chatBubbleBgColor,
+            textColor: evt.chatBubbleTextColor,
+          },
+          Date.now(),
+          DEFAULT_CHAT_BUBBLE_TTL_MS,
+        );
       },
       onRemoteShot: (shot) => {
         if (spawnRemoteShotRef) {
@@ -9471,10 +11552,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) &&
           typeof window !== 'undefined' &&
           new URLSearchParams(window.location.search).get('realestatecatalogspawn') === '1';
+        const devCoastSpawn =
+          Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) &&
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('coastspawn') === '1';
         if (devRealEstateCatalogSpawn) {
           startX = REAL_ESTATE_CATALOG_TRIGGER.x + 1.25;
           startZ = REAL_ESTATE_CATALOG_TRIGGER.z;
           startYaw = Math.PI;
+        } else if (devCoastSpawn) {
+          startX = 87.5;
+          startZ = -108.0;
+          startYaw = 0.0;
         } else if (devParkSpawn) {
           startX = 94.0;
           startZ = -32.8;
@@ -9522,6 +11611,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (initWorldMode === 'safezone' || initWorldMode === 'lobby') {
         cityTramDistance = findCityTramLeadDistanceNearHalte();
+        cityTramCurrentSpeedMps = 0;
         cityTram.update(cityTramDistance, 0, playerUnit.x, playerUnit.z, 0);
       }
 
@@ -9773,6 +11863,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       syncPadVisuals(redBase, redPadSlotsList[0], 'RED', redBaseHp);
     };
 
+    const applyUnitFootRingVariant = (
+      u: BuddyUnit,
+      variant: UnitFootRingVariant,
+      hexString: string,
+    ) => {
+      u.teamRing.visible = true;
+      const targetRingMat = sharedUnitFootRingMats[variant];
+      if (u.teamRing.material !== targetRingMat) {
+        u.teamRing.material = targetRingMat;
+      }
+      const innerDisc = u.teamRing.children[0] as THREE.Mesh | undefined;
+      if (innerDisc) {
+        const targetDiscMat = sharedUnitFootDiscMats[variant];
+        if (innerDisc.material !== targetDiscMat) {
+          innerDisc.material = targetDiscMat;
+        }
+      }
+      u.teamRing.userData.teamColorHex = hexString;
+    };
+
     const syncUnitFootRingTeamColor = (u: BuddyUnit | null | undefined) => {
       if (!u || !u.teamRing) return;
       const isLobbyOrSafezone = worldModeRef.current === 'lobby' || worldModeRef.current === 'safezone';
@@ -9780,93 +11890,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (u.isPlayer) {
         // Karakter Sendiri (Local Player):
         if (isLobbyOrSafezone) {
-          // Di Lobby & Safezone City: Hapus warna merah/biru bekas Warzone.
-          // Beri cincin warna netral lembut (putih/perak #e2e8f0 semi-transparan) secara permanen.
-          u.teamRing.visible = true;
-          const mat = u.teamRing.material as THREE.MeshBasicMaterial;
-          if (mat) {
-            if (mat.color && mat.color.getHex() !== 0xe2e8f0) {
-              mat.color.setHex(0xe2e8f0);
-            }
-            mat.opacity = 0.55;
-          }
-          const innerDisc = u.teamRing.children[0] as THREE.Mesh | undefined;
-          if (innerDisc && innerDisc.material) {
-            const innerMat = innerDisc.material as THREE.MeshBasicMaterial;
-            if (innerMat.color && innerMat.color.getHex() !== 0xe2e8f0) {
-              innerMat.color.setHex(0xe2e8f0);
-            }
-            innerMat.opacity = 0.12;
-          }
-          u.teamRing.userData.teamColorHex = '#e2e8f0';
+          // Di Lobby & Safezone City: Cincin netral lembut (#e2e8f0) tanpa warna tim Warzone.
+          applyUnitFootRingVariant(u, 'neutral', '#e2e8f0');
         } else {
-          // Di Warzone Arena: Baru gunakan cincin Merah atau Biru sesuai tim.
-          u.teamRing.visible = true;
+          // Di Warzone Arena: Cincin Merah atau Biru sesuai tim.
           const spec = getUnitFootRingTeamColor(u.team);
-          const mat = u.teamRing.material as THREE.MeshBasicMaterial;
-          if (mat) {
-            if (mat.color && mat.color.getHex() !== spec.hexInt) {
-              mat.color.setHex(spec.hexInt);
-            }
-            mat.opacity = 0.9;
-          }
-          const innerDisc = u.teamRing.children[0] as THREE.Mesh | undefined;
-          if (innerDisc && innerDisc.material) {
-            const innerMat = innerDisc.material as THREE.MeshBasicMaterial;
-            if (innerMat.color && innerMat.color.getHex() !== spec.hexInt) {
-              innerMat.color.setHex(spec.hexInt);
-            }
-            innerMat.opacity = 0.14;
-          }
-          u.teamRing.userData.teamColorHex = spec.hexString;
+          applyUnitFootRingVariant(u, u.team, spec.hexString);
         }
       } else {
         // Pemain Lain (Other Players / Buddy units):
         if (isLobbyOrSafezone) {
-          // Di Lobby & Safezone City: Normalnya tanpa cincin (visible = false).
-          // Cincin Hijau (#22c55e) di bawah kaki pemain lain hanya muncul saat pemain tersebut sedang diklik, dan hilang saat klik dilepas.
           const isSelected = selectedCharacterTarget && String(selectedCharacterTarget.id) === String(u.id);
           if (isSelected) {
-            u.teamRing.visible = true;
-            const mat = u.teamRing.material as THREE.MeshBasicMaterial;
-            if (mat) {
-              if (mat.color && mat.color.getHex() !== 0x22c55e) {
-                mat.color.setHex(0x22c55e);
-              }
-              mat.opacity = 0.95;
-            }
-            const innerDisc = u.teamRing.children[0] as THREE.Mesh | undefined;
-            if (innerDisc && innerDisc.material) {
-              const innerMat = innerDisc.material as THREE.MeshBasicMaterial;
-              if (innerMat.color && innerMat.color.getHex() !== 0x22c55e) {
-                innerMat.color.setHex(0x22c55e);
-              }
-              innerMat.opacity = 0.20;
-            }
-            u.teamRing.userData.teamColorHex = '#22c55e';
+            applyUnitFootRingVariant(u, 'selected', '#22c55e');
           } else {
             u.teamRing.visible = false;
           }
         } else {
-          // Di Warzone Arena: Tampilkan cincin Merah atau Biru sesuai tim.
-          u.teamRing.visible = true;
           const spec = getUnitFootRingTeamColor(u.team);
-          const mat = u.teamRing.material as THREE.MeshBasicMaterial;
-          if (mat) {
-            if (mat.color && mat.color.getHex() !== spec.hexInt) {
-              mat.color.setHex(spec.hexInt);
-            }
-            mat.opacity = 0.9;
-          }
-          const innerDisc = u.teamRing.children[0] as THREE.Mesh | undefined;
-          if (innerDisc && innerDisc.material) {
-            const innerMat = innerDisc.material as THREE.MeshBasicMaterial;
-            if (innerMat.color && innerMat.color.getHex() !== spec.hexInt) {
-              innerMat.color.setHex(spec.hexInt);
-            }
-            innerMat.opacity = 0.14;
-          }
-          u.teamRing.userData.teamColorHex = spec.hexString;
+          applyUnitFootRingVariant(u, u.team, spec.hexString);
         }
       }
 
@@ -10087,6 +12129,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       playerUnit.rig.pistolGroup.visible = false;
       syncUnitFootRingTeamColor(playerUnit);
       cityTramDistance = findCityTramLeadDistanceNearHalte();
+      cityTramCurrentSpeedMps = 0;
       cityTram.update(cityTramDistance, 0, playerUnit.x, playerUnit.z, 0);
       soundEngine.playPickup();
       spawnBurstParticles(playerUnit.x, 1.5, playerUnit.z, 18);
@@ -10322,8 +12365,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     loadAllRealBlitzAssets(
       renderer,
       (
-        charGltf,
-        manGltf,
+        mixamoLocomotionGltf,
         rodGltf,
         playerFemaleGltf,
         hanaCustomGltf,
@@ -10333,8 +12375,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerMaleGltf,
       ) => {
         if (isDisposed) return;
-        earlyLoadedCharGltf = charGltf;
-        earlyLoadedManGltf = manGltf;
+        earlyLoadedMixamoLocomotionGltf = mixamoLocomotionGltf;
         earlyLoadedPlayerFemaleGltf = playerFemaleGltf ?? null;
         earlyLoadedPlayerMaleGltf = playerMaleGltf ?? null;
         earlyLoadedHanaGlb = hanaCustomGltf ?? null;
@@ -10391,12 +12432,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const b = pendingUnits[staggerIdx++];
           ensureBuddyUnitGlbUpgraded(b);
           staggeredUpgradeRafId = requestAnimationFrame(stepStaggeredUpgrades);
-        } else if (earlyLoadedCharGltf || earlyLoadedManGltf || earlyLoadedHanaGlb || earlyLoadedKaiGlb) {
-          const hanaEarlyGltf = earlyLoadedHanaGlb ?? earlyLoadedCharGltf;
+        } else if (
+          earlyLoadedPlayerFemaleGltf ||
+          earlyLoadedPlayerMaleGltf ||
+          earlyLoadedHanaGlb ||
+          earlyLoadedKaiGlb
+        ) {
+          const hanaEarlyGltf =
+            earlyLoadedHanaGlb ?? earlyLoadedAmbientFemaleGlb ?? earlyLoadedPlayerFemaleGltf;
           if (hanaEarlyGltf) {
             upgradeBuddyRigWithCharBuddiesGlb(lobbyCafeNpc.npcRig, hanaEarlyGltf);
           }
-          const kaiEarlyGltf = earlyLoadedKaiGlb ?? earlyLoadedManGltf ?? earlyLoadedCharGltf;
+          const kaiEarlyGltf =
+            earlyLoadedKaiGlb ?? earlyLoadedAmbientMaleGlb ?? earlyLoadedPlayerMaleGltf;
           if (kaiEarlyGltf) {
             upgradeBuddyRigWithCharBuddiesGlb(beachHouseNpc.npcRig, kaiEarlyGltf);
           }
@@ -10420,6 +12468,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (isDisposed) return;
         loadedBlitzAssets = assets;
         document.body.dataset.assetsLoaded = 'true';
+        horizonBackdrop.setLeafMaskTexture?.(assets.treeFoliageTex);
 
         // 1. Rebuild all trees (8-10 units tall with lush canopies), courtyard garden trees & real .glb props from currentMapLayout
         rebuildMapFromLayout(currentMapLayout);
@@ -10524,11 +12573,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         });
         upgradeBuddyRigWithCharBuddiesGlb(
           lobbyCafeNpc.npcRig,
-          assets.hanaCustomGlb ?? assets.charBuddiesGltf,
+          assets.hanaCustomGlb ?? assets.ambientFemaleNpcGlb ?? assets.playerFemaleGlb,
         );
         upgradeBuddyRigWithCharBuddiesGlb(
           beachHouseNpc.npcRig,
-          assets.kaiCustomGlb ?? assets.manCharacterBuddiesGltf ?? assets.charBuddiesGltf,
+          assets.kaiCustomGlb ?? assets.ambientMaleNpcGlb ?? assets.playerMaleGlb,
         );
         lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
         beachHouseNpc.npcRig.weaponRigGroup.visible = false;
@@ -10564,8 +12613,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           tanks.push(createBlitzTankVehicle(3.8, 12.2, false, 'blue'));
         }
 
-        // 5. Compile all shaders and render 1 hidden warm-up frame before releasing the preload gate
+        // 5. Audit scene frustum culling safety & compile all shaders before releasing the preload gate
         try {
+          auditAndApplyFrustumCulling(scene);
+          enableSceneLinearFog(scene);
           scene.updateMatrixWorld(true);
           renderer.compile(scene, camera);
           renderer.render(scene, camera);
@@ -11187,15 +13238,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       muzzleFxGroup: THREE.Group;
       muzzleGlowMesh: THREE.Mesh;
       muzzleSparkSpikes: THREE.Mesh[];
-      muzzleLight: THREE.PointLight;
       hitFxGroup: THREE.Group;
       hitGlowMesh: THREE.Mesh;
       hitRingMesh: THREE.Mesh;
       hitSparkSpikes: THREE.Mesh[];
-      hitLight: THREE.PointLight;
+      glowColorHex: number;
     }
 
     const continuousLaserVisuals = new Map<number, ContinuousLaserBeamVisual>();
+    const laserPointLightPool = new FixedPointLightPool(scene, 2);
+    const proximityPointLightManager = new ProximityPointLightManager(scene);
+    const scratchProximityCamDir = new THREE.Vector3();
+    const scratchProximityFocus = { x: 0, y: 0, z: 0 };
 
     const getOrCreateContinuousLaserVisual = (
       unitId: number,
@@ -11258,11 +13312,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         muzzleFxGroup.add(spike);
         muzzleSparkSpikes.push(spike);
       }
-      const muzzleLight = new THREE.PointLight(glowColorHex, 2.2, 5.5);
-      muzzleFxGroup.add(muzzleLight);
       group.add(muzzleFxGroup);
 
-      // Hit-Point Light, Shock Ring & Radial Spark Assembly (sticks to closest raycast endPoint)
+      // Hit-Point Shock Ring & Radial Spark Assembly (sticks to closest raycast endPoint)
       const hitFxGroup = new THREE.Group();
       const hitCoreMesh = new THREE.Mesh(laserHitCoreSphereGeo, coreMat);
       const hitGlowMesh = new THREE.Mesh(laserHitGlowSphereGeo, outerMat);
@@ -11278,8 +13330,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         hitFxGroup.add(spike);
         hitSparkSpikes.push(spike);
       }
-      const hitLight = new THREE.PointLight(glowColorHex, 2.6, 6.5);
-      hitFxGroup.add(hitLight);
       group.add(hitFxGroup);
 
       scene.add(group);
@@ -11294,12 +13344,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         muzzleFxGroup,
         muzzleGlowMesh,
         muzzleSparkSpikes,
-        muzzleLight,
         hitFxGroup,
         hitGlowMesh,
         hitRingMesh,
         hitSparkSpikes,
-        hitLight,
+        glowColorHex,
       };
       continuousLaserVisuals.set(unitId, created);
       return created;
@@ -12373,6 +14422,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       playerUnit.saluteSign.updateText('EXITED TRAM!', 'COMBAT READY', '#00d2ff', 1);
       playerUnit.saluteSign.sprite.visible = true;
       ridingTramCarIdx = null;
+      cancelClickToWalk();
       return true;
     };
 
@@ -12923,6 +14973,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.root.position.set(playerUnit.x, getTerrainElevation(playerUnit.x, playerUnit.z), playerUnit.z);
         playerUnit.root.visible = true;
         mountedTank = null;
+        cancelClickToWalk();
         return;
       }
 
@@ -12948,6 +14999,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       if (tramBoard.canBoard && (!nearestTank || tramBoard.distanceMeters < bestDist)) {
         soundEngine.playPickup();
+        cancelClickToWalk();
         ridingTramCarIdx = tramBoard.carIndex;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
@@ -12986,6 +15038,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         playerUnit.isSitting = false;
         playerUnit.isDriving = false;
         activeSeatedSpot = null;
+        cancelClickToWalk();
         clearCharacterSelection();
         const activeMountChar = resolveAvatarGlbForGender(
           getDefaultCharacterGender(),
@@ -13389,6 +15442,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const dismountScooter = () => {
       if (!scooterRideState) return;
+      cancelClickToWalk();
       scene.remove(scooterRideState.handle.root);
       scooterRideState = null;
       if (playerUnit) {
@@ -13407,12 +15461,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       if (mountedTank || ridingTramCarIdx !== null) return;
       if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+      cancelClickToWalk();
       dismountScooter();
       const handle: ScooterRideHandle =
         kind === 'electric_scooter_bike'
           ? createElectricScooterBike3D({ parked: false })
           : createPushKickScooter3D({ parked: false, folded: false });
-      handle.root.scale.setScalar(SCOOTER_RIDE_MODEL_SCALE);
+      handle.root.scale.setScalar(getScooterRideModelScale(kind));
       handle.setParked(false);
       scene.add(handle.root);
       const initialPose = computeScooterRiderRigPose({
@@ -14267,6 +16322,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       keys[e.code] = true;
       if (gameStateRef.current !== 'playing') return;
 
+      if (npcCameraMode === 'city_view') {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('request-exit-city-view'));
+        }
+        return;
+      }
+
       if (e.code === 'Escape' || e.code === 'KeyP') {
         e.preventDefault();
         onTogglePause();
@@ -14335,6 +16398,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             cafeWorkShiftActive,
             activeCafeOrderCategory,
           );
+          const distToCafeMira = Math.hypot(
+            playerUnit.x - cafeMiraX,
+            playerUnit.z - cafeMiraZ,
+          );
+          if (
+            cafeMiraNpcRoot?.visible &&
+            (distToCafeMira <= 1.65 || (distToCafeMira <= 2.35 && cafeTarget.target === 'none'))
+          ) {
+            soundEngine.playUiClick();
+            window.dispatchEvent(
+              new CustomEvent('open-citizen-dialogue-ui', { detail: { citizenId: 'citizen_mira' } }),
+            );
+            return;
+          }
           if (cafeTarget.target === 'seat' && cafeTarget.seatSpot) {
             currentNearestCafeSeat = cafeTarget.seatSpot;
             triggerSitOrStandAction();
@@ -14398,6 +16475,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           if (casinoTarget.target === 'station' && casinoTarget.stationKind) {
             triggerCasinoStationAction(casinoTarget.stationKind);
+            return;
+          }
+        }
+        if (npcCameraMode === 'salon_interior' && playerUnit) {
+          if (playerUnit.isSitting && activeSalonSeatedSpot) {
+            triggerSitOrStandAction();
+            return;
+          }
+          const salonTarget = resolveNearestSalonPromptOrSeat(
+            playerUnit.x,
+            playerUnit.z,
+            salonCurrentFloorY,
+          );
+          if (salonTarget.target === 'seat' && salonTarget.seatSpot) {
+            currentNearestSalonSeat = salonTarget.seatSpot;
+            triggerSitOrStandAction();
+            return;
+          }
+          if (salonTarget.target === 'station' && salonTarget.stationKind) {
+            triggerSalonStationAction(salonTarget.stationKind);
             return;
           }
         }
@@ -14565,6 +16662,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           return;
         }
 
+        // 0B-6. Central Urban Plaza Beauty & Glow Salon Entrance Triangle
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          getPlanetShortestDistance(
+            actorX,
+            actorZ,
+            SALON_EXTERIOR_DOOR_TRIGGER.x,
+            SALON_EXTERIOR_DOOR_TRIGGER.z,
+          ) <= SALON_EXTERIOR_DOOR_TRIGGER.triggerRadius
+        ) {
+          soundEngine.playUiClick();
+          clearCharacterSelection();
+          window.dispatchEvent(new CustomEvent('enter-beauty-salon-interior'));
+          return;
+        }
+
         // 1. Black City Transit Kiosk & Merchant NPCs (Strictly disabled inside Warzone!)
         if (worldModeRef.current !== 'warzone') {
           const nearTransitStation = evaluateNearestCityTransitKioskProximity(
@@ -14608,6 +16722,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               soundEngine.playUiClick();
               window.dispatchEvent(
                 new CustomEvent('open-npc-merchant-ui', { detail: { location: 'beach_house' } }),
+              );
+              return;
+            }
+          }
+
+          // 3B. Interactive District Citizens (within 3.5m)
+          if (npcCameraMode === 'none' && !citizenPortraitState) {
+            let nearestCitizen: CityAmbientNpcController | null = null;
+            let nearestCitizenDist = 3.5;
+            for (let ci = 0; ci < cityAmbientNpcs.length; ci++) {
+              const cNpc = cityAmbientNpcs[ci];
+              if (!cNpc.root.visible) continue;
+              const d = getPlanetShortestDistance(actorX, actorZ, cNpc.x, cNpc.z);
+              if (d <= nearestCitizenDist) {
+                nearestCitizenDist = d;
+                nearestCitizen = cNpc;
+              }
+            }
+            if (nearestCitizen) {
+              soundEngine.playUiClick();
+              window.dispatchEvent(
+                new CustomEvent('open-citizen-dialogue-ui', {
+                  detail: { citizenId: nearestCitizen.preset.id },
+                }),
               );
               return;
             }
@@ -14800,6 +16938,46 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
     const onPointerMove = (e: PointerEvent) => {
       updateMouseWorldAim(e.clientX, e.clientY);
+      if (npcCameraMode === 'city_view') {
+        if (isOrbitingCityView) {
+          const dx = e.clientX - cityViewDragStart.x;
+          const dy = e.clientY - cityViewDragStart.y;
+          const yawDelta = -dx * 0.0065;
+          if (cityViewTarget === 'kota') {
+            cityViewOrbit.yaw = cityViewDragStart.yaw + yawDelta;
+            cityViewOrbit.pitch = clamp(
+              cityViewDragStart.pitch + dy * 0.0055,
+              CITY_VIEW_OVERVIEW_DEFAULTS.minPitch,
+              CITY_VIEW_OVERVIEW_DEFAULTS.maxPitch,
+            );
+          } else {
+            const dSpec = getCityViewDistrictById(cityViewTarget);
+            cityViewOrbit.yaw =
+              dSpec.defaultYaw +
+              clamp(cityViewDragStart.yaw - dSpec.defaultYaw + yawDelta, -1.15, 1.15);
+            cityViewOrbit.pitch = clamp(cityViewDragStart.pitch + dy * 0.005, 0.22, 1.12);
+          }
+        } else if (isPanningCityView && cityViewTarget === 'kota') {
+          const dx = e.clientX - cityViewDragStart.x;
+          const dy = e.clientY - cityViewDragStart.y;
+          const panScale = 0.0014 * cityViewOrbit.dist;
+          const cosY = Math.cos(cityViewOrbit.yaw);
+          const sinY = Math.sin(cityViewOrbit.yaw);
+          const worldDx = -dx * cosY - dy * sinY;
+          const worldDz = dx * sinY - dy * cosY;
+          cityViewOrbit.panX = clamp(
+            cityViewDragStart.panX + worldDx * panScale,
+            -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+            CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+          );
+          cityViewOrbit.panZ = clamp(
+            cityViewDragStart.panZ + worldDz * panScale,
+            -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+            CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+          );
+        }
+        return;
+      }
       if (npcCameraMode === 'cafe_interior') {
         if (isOrbitingCafeVisitCamera) {
           const dx = e.clientX - cafeVisitOrbitDragStart.x;
@@ -14823,6 +17001,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             casinoVisitOrbitDragStart.pitch + dy * 0.0055,
             INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.minPitch,
             INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.maxPitch,
+          );
+        }
+        return;
+      }
+
+      if (npcCameraMode === 'salon_interior') {
+        if (isOrbitingSalonVisitCamera) {
+          const dx = e.clientX - salonVisitOrbitDragStart.x;
+          const dy = e.clientY - salonVisitOrbitDragStart.y;
+          salonVisitCamYaw = salonVisitOrbitDragStart.yaw - dx * 0.007;
+          salonVisitCamPitch = clamp(
+            salonVisitOrbitDragStart.pitch + dy * 0.0055,
+            SALON_ORBIT_CAMERA_CONFIG.minPitch,
+            SALON_ORBIT_CAMERA_CONFIG.maxPitch,
           );
         }
         return;
@@ -14922,7 +17114,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const dy = e.clientY - seatedOrbitDragStart.y;
         seatedCameraYaw = seatedOrbitDragStart.yaw - dx * 0.007;
         seatedCameraPitch = clamp(seatedOrbitDragStart.pitch + dy * 0.0055, 0.06, 0.85);
-      } else if (isOrbitingOutdoorCamera && npcCameraMode === 'none') {
+      } else if (isOrbitingOutdoorCamera && npcCameraMode === 'none' && !citizenPortraitState) {
         const dx = e.clientX - outdoorOrbitDragStart.x;
         outdoorWorldCamYaw = outdoorOrbitDragStart.yaw - dx * 0.007;
         outdoorWorldCamPitchOffset = 0;
@@ -14936,7 +17128,52 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (gameStateRef.current !== 'playing') return;
       updateMouseWorldAim(e.clientX, e.clientY);
 
+      if (npcCameraMode === 'city_view') {
+        if (cityViewExitingToPlayer) return;
+        cityViewDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          yaw: cityViewOrbit.yaw,
+          pitch: cityViewOrbit.pitch,
+          panX: cityViewOrbit.panX,
+          panZ: cityViewOrbit.panZ,
+        };
+        if (e.button === 0) {
+          isOrbitingCityView = true;
+        } else if (e.button === 1 || e.button === 2) {
+          isPanningCityView = true;
+        }
+        return;
+      }
+
       if (npcCameraMode === 'cafe_interior') {
+        if (e.button === 0 && cafeMiraNpcRoot?.visible) {
+          raycaster.setFromCamera(mouseNdc, camera);
+          scratchCharHitPos.set(
+            cafeMiraX,
+            CAFE_ORIGIN_Y + (cafeMiraIsSitting ? 0.65 : 0.85),
+            cafeMiraZ,
+          );
+          if (raycaster.ray.distanceToPoint(scratchCharHitPos) <= 0.95) {
+            soundEngine.playUiClick();
+            window.dispatchEvent(
+              new CustomEvent('open-citizen-dialogue-ui', {
+                detail: { citizenId: 'citizen_mira' },
+              }),
+            );
+            isPointerDown = false;
+            return;
+          }
+        }
+        if (e.button === 0 && e.target === renderer.domElement) {
+          clickToWalkPointerDown = {
+            pointerId: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            mode: npcCameraMode,
+            houseFurnitureClicked: false,
+          };
+        }
         isOrbitingCafeVisitCamera = true;
         cafeVisitOrbitDragStart = {
           x: e.clientX,
@@ -14948,6 +17185,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       if (npcCameraMode === 'casino_interior') {
+        if (e.button === 0 && e.target === renderer.domElement) {
+          clickToWalkPointerDown = {
+            pointerId: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            mode: npcCameraMode,
+            houseFurnitureClicked: false,
+          };
+        }
         isOrbitingCasinoVisitCamera = true;
         casinoVisitOrbitDragStart = {
           x: e.clientX,
@@ -14958,7 +17204,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         return;
       }
 
+      if (npcCameraMode === 'salon_interior') {
+        if (e.button === 0 && e.target === renderer.domElement) {
+          clickToWalkPointerDown = {
+            pointerId: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            mode: npcCameraMode,
+            houseFurnitureClicked: false,
+          };
+        }
+        isOrbitingSalonVisitCamera = true;
+        salonVisitOrbitDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          yaw: salonVisitCamYaw,
+          pitch: salonVisitCamPitch,
+        };
+        return;
+      }
+
       if (npcCameraMode === 'house_visit') {
+        let houseFurnitureHitOnDown = false;
         if (e.button === 0) {
           // Check if player clicked on a furniture piece inside the room to interact/jiggle it
           raycaster.setFromCamera(mouseNdc, camera);
@@ -14969,9 +17236,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           if (hitInstId) {
             const hitItem = housePlacedItems.find((it) => it.instanceId === hitInstId);
             if (hitItem) {
+              houseFurnitureHitOnDown = true;
               soundEngine.playPickup();
               hitItem.vy = Math.max(hitItem.vy, 1.35);
             }
+          }
+          if (e.target === renderer.domElement) {
+            clickToWalkPointerDown = {
+              pointerId: e.pointerId,
+              x: e.clientX,
+              y: e.clientY,
+              mode: npcCameraMode,
+              houseFurnitureClicked: houseFurnitureHitOnDown,
+            };
           }
         }
         isOrbitingHouseVisitCamera = true;
@@ -15315,6 +17592,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
 
+        // 1F. Central Urban Plaza Beauty & Glow Salon Entrance 3D Triangle Click
+        if (
+          worldModeRef.current !== 'warzone' &&
+          npcCameraMode === 'none' &&
+          beautySalonDoorChevron.group.visible
+        ) {
+          beautySalonDoorChevron.group.updateWorldMatrix(true, false);
+          beautySalonDoorChevron.group.getWorldPosition(scratchKioskWorldPos);
+          const bsX = scratchKioskWorldPos.x;
+          const bsY = scratchKioskWorldPos.y;
+          const bsZ = scratchKioskWorldPos.z;
+          const salonHitBox = new THREE.Box3(
+            new THREE.Vector3(bsX - 1.25, bsY - 0.65, bsZ - 1.25),
+            new THREE.Vector3(bsX + 1.25, bsY + 1.55, bsZ + 1.25),
+          );
+          if (raycaster.ray.intersectsBox(salonHitBox)) {
+            const actorX = mountedTank ? mountedTank.x : playerUnit.x;
+            const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
+            if (
+              getPlanetShortestDistance(
+                actorX,
+                actorZ,
+                SALON_EXTERIOR_DOOR_TRIGGER.x,
+                SALON_EXTERIOR_DOOR_TRIGGER.z,
+              ) <= 15.0
+            ) {
+              soundEngine.playUiClick();
+              clearCharacterSelection();
+              window.dispatchEvent(new CustomEvent('enter-beauty-salon-interior'));
+              return;
+            }
+          }
+        }
+
         // 2. Base Command Plot Kiosks (Command Plot Claim / Base Upgrades in Warzone)
         const kioskHitBox = new THREE.Box3();
         for (const cp of [...blueBase.commanderPads, ...redBase.commanderPads]) {
@@ -15485,7 +17796,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isMerchant: false,
                 gender: npc.preset.gender,
                 team: npc.preset.teamTint,
-                status: npc.preset.activityLabel,
+                status: npc.activeStatusLabel,
                 root: npc.root,
                 nameplate: npc.nameplate,
                 isSelf: false,
@@ -15558,13 +17869,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           buddyUnits.forEach((b) => syncUnitFootRingTeamColor(b));
 
           // Flat green selection ring on the floor under the character's feet
-          const groundElev = getTerrainElevation(clickedCharacter.root.position.x, clickedCharacter.root.position.z);
+          const groundElev = getTerrainElevation(
+            clickedCharacter.root.position.x,
+            clickedCharacter.root.position.z,
+          );
           characterSelectionRing.position.set(
             clickedCharacter.root.position.x,
             groundElev + 0.04,
             clickedCharacter.root.position.z,
           );
           characterSelectionRing.visible = true;
+
+          const distToClickedChar = getPlanetShortestDistance(
+            playerUnit?.x ?? 0,
+            playerUnit?.z ?? 0,
+            clickedCharacter.root.position.x,
+            clickedCharacter.root.position.z,
+          );
 
           // Dispatch selection event to show unified bottom dock bar in React
           window.dispatchEvent(
@@ -15580,17 +17901,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   gender: clickedCharacter.gender,
                   isSelf: Boolean(clickedCharacter.isSelf),
                   team: clickedCharacter.team,
-                  distance: getPlanetShortestDistance(
-                    playerUnit?.x ?? 0,
-                    playerUnit?.z ?? 0,
-                    clickedCharacter.root.position.x,
-                    clickedCharacter.root.position.z,
-                  ),
+                  distance: distToClickedChar,
                   status: clickedCharacter.status,
                 },
               },
             }),
           );
+
+          if (clickedCharacter.isNpc && !clickedCharacter.isMerchant && distToClickedChar <= 16.0) {
+            window.dispatchEvent(
+              new CustomEvent('open-citizen-dialogue-ui', {
+                detail: { citizenId: String(clickedCharacter.id) },
+              }),
+            );
+          }
 
           isPointerDown = false;
           return;
@@ -15612,6 +17936,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             yaw: seatedCameraYaw,
             pitch: seatedCameraPitch,
           };
+          if (e.target === renderer.domElement) {
+            clickToWalkPointerDown = {
+              pointerId: e.pointerId,
+              x: e.clientX,
+              y: e.clientY,
+              mode: npcCameraMode,
+              houseFurnitureClicked: false,
+            };
+          }
         } else if (npcCameraMode === 'none') {
           isOrbitingOutdoorCamera = true;
           outdoorOrbitDragStart = {
@@ -15620,6 +17953,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             yaw: outdoorWorldCamYaw,
             pitch: outdoorWorldCamPitchOffset,
           };
+          if (e.target === renderer.domElement) {
+            clickToWalkPointerDown = {
+              pointerId: e.pointerId,
+              x: e.clientX,
+              y: e.clientY,
+              mode: npcCameraMode,
+              houseFurnitureClicked: false,
+            };
+          }
         }
 
         isPointerDown = true;
@@ -15638,11 +17980,63 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      const pendingClickTap = clickToWalkPointerDown;
+      if (!pendingClickTap || e.pointerId === pendingClickTap.pointerId) {
+        clickToWalkPointerDown = null;
+      }
+      const isCleanTapEvent = Boolean(
+        pendingClickTap &&
+          e.pointerId === pendingClickTap.pointerId &&
+          e.button === 0 &&
+          e.target === renderer.domElement &&
+          isCleanClickTap(pendingClickTap.x, pendingClickTap.y, e.clientX, e.clientY),
+      );
+
+      if (npcCameraMode === 'city_view') {
+        const dragDist = Math.hypot(
+          e.clientX - cityViewDragStart.x,
+          e.clientY - cityViewDragStart.y,
+        );
+        if (
+          e.button === 0 &&
+          e.target === renderer.domElement &&
+          isOrbitingCityView &&
+          dragDist < 6 &&
+          !cityViewFlyActive &&
+          !cityViewExitingToPlayer
+        ) {
+          updateMouseWorldAim(e.clientX, e.clientY);
+          raycaster.setFromCamera(mouseNdc, camera);
+          const hitPt = raycastOutdoorCityWorldPoint(cityRayClickPlane);
+          if (hitPt) {
+            const pickedDistrict =
+              cityViewTarget === 'kota'
+                ? pickCityViewDistrictAtWorldPoint(hitPt.x, hitPt.z)
+                : getCityViewDistrictById(cityViewTarget);
+            const started = navigateCityClickToWalk({
+              source: 'minimap',
+              rawX: hitPt.x,
+              rawZ: hitPt.z,
+              goalX: hitPt.x,
+              goalZ: hitPt.z,
+              label: pickedDistrict?.label ?? null,
+            });
+            if (started) {
+              soundEngine.playUiConfirm();
+            }
+          }
+        }
+        isOrbitingCityView = false;
+        isPanningCityView = false;
+        isPointerDown = false;
+        return;
+      }
       if (npcCameraMode === 'cafe_interior') {
         const dragDist = Math.hypot(
           e.clientX - cafeVisitOrbitDragStart.x,
           e.clientY - cafeVisitOrbitDragStart.y,
         );
+        let handledImmediateCafeClick = false;
         if (dragDist < 6 && cafeWorkShiftActive && cafeWorkAnimSync.phase === 'idle' && renderer.domElement) {
           const rect = renderer.domElement.getBoundingClientRect();
           const projectApplianceScreenDist = (wx: number, wy: number, wz: number) => {
@@ -15667,15 +18061,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             window.dispatchEvent(
               new CustomEvent('open-cafe-prep-modal', { detail: { category: 'pastry' } }),
             );
+            handledImmediateCafeClick = true;
           } else if (dDrink <= 95) {
             soundEngine.playUiClick();
             window.dispatchEvent(
               new CustomEvent('open-cafe-prep-modal', { detail: { category: 'drink' } }),
             );
+            handledImmediateCafeClick = true;
           }
         }
         isOrbitingCafeVisitCamera = false;
         isPointerDown = false;
+        if (!handledImmediateCafeClick && isCleanTapEvent && pendingClickTap) {
+          handleCleanClickToWalkTap(
+            e.clientX,
+            e.clientY,
+            pendingClickTap.mode,
+            pendingClickTap.houseFurnitureClicked,
+          );
+        }
         return;
       }
       if (npcCameraMode === 'casino_interior') {
@@ -15686,6 +18090,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const isCasinoModalOpenDom = Boolean(
           document.querySelector('[data-grand-casino-modal="true"]'),
         );
+        let handledImmediateCasinoClick = false;
         if (
           dragDist < 6 &&
           !isKioskModalOpenCanvas &&
@@ -15731,17 +18136,80 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               bestClickedKind = tgt.kind;
             }
           }
-          if (bestClickedKind) {
+          const canTriggerImmediate =
+            bestClickedKind === 'exit_door' ||
+            bestClickedKind === 'cashier_cage' ||
+            bestClickedKind === 'luxury_bar' ||
+            (bestClickedKind !== null &&
+              Boolean(
+                playerUnit?.isSitting &&
+                  activeCasinoSeatedSpot &&
+                  getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind) === bestClickedKind,
+              ));
+          if (bestClickedKind && canTriggerImmediate) {
             triggerCasinoStationAction(bestClickedKind);
+            handledImmediateCasinoClick = true;
           }
         }
         isOrbitingCasinoVisitCamera = false;
         isPointerDown = false;
+        if (!handledImmediateCasinoClick && isCleanTapEvent && pendingClickTap) {
+          handleCleanClickToWalkTap(
+            e.clientX,
+            e.clientY,
+            pendingClickTap.mode,
+            pendingClickTap.houseFurnitureClicked,
+          );
+        }
+        return;
+      }
+      if (npcCameraMode === 'salon_interior') {
+        const dragDist = Math.hypot(
+          e.clientX - salonVisitOrbitDragStart.x,
+          e.clientY - salonVisitOrbitDragStart.y,
+        );
+        let handledImmediateSalonClick = false;
+        if (dragDist < 6 && !isKioskModalOpenCanvas && renderer.domElement && salonCurrentFloorY < 1.95) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          scratchPickupPt
+            .set(
+              SALON_STATION_TARGETS.exitDoor.x,
+              SALON_ORIGIN_Y + SALON_STATION_TARGETS.exitDoor.markerY,
+              SALON_STATION_TARGETS.exitDoor.z,
+            )
+            .project(camera);
+          if (scratchPickupPt.z <= 1) {
+            const sx = rect.left + (scratchPickupPt.x * 0.5 + 0.5) * rect.width;
+            const sy = rect.top + (-scratchPickupPt.y * 0.5 + 0.5) * rect.height;
+            if (Math.hypot(e.clientX - sx, e.clientY - sy) <= 90) {
+              triggerSalonStationAction('exit_door');
+              handledImmediateSalonClick = true;
+            }
+          }
+        }
+        isOrbitingSalonVisitCamera = false;
+        isPointerDown = false;
+        if (!handledImmediateSalonClick && isCleanTapEvent && pendingClickTap) {
+          handleCleanClickToWalkTap(
+            e.clientX,
+            e.clientY,
+            pendingClickTap.mode,
+            pendingClickTap.houseFurnitureClicked,
+          );
+        }
         return;
       }
       if (npcCameraMode === 'house_visit') {
         isOrbitingHouseVisitCamera = false;
         isPointerDown = false;
+        if (isCleanTapEvent && pendingClickTap) {
+          handleCleanClickToWalkTap(
+            e.clientX,
+            e.clientY,
+            pendingClickTap.mode,
+            pendingClickTap.houseFurnitureClicked,
+          );
+        }
         return;
       }
 
@@ -15774,9 +18242,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         isOrbitingSeatedCamera = false;
         isOrbitingOutdoorCamera = false;
       }
+      if (isCleanTapEvent && pendingClickTap) {
+        handleCleanClickToWalkTap(
+          e.clientX,
+          e.clientY,
+          pendingClickTap.mode,
+          pendingClickTap.houseFurnitureClicked,
+        );
+      }
     };
 
     const onWheel = (e: WheelEvent) => {
+      if (npcCameraMode === 'city_view') {
+        if (cityViewExitingToPlayer) return;
+        const step = Math.sign(e.deltaY) * (cityViewTarget === 'kota' ? 9.5 : 3.8);
+        if (cityViewTarget === 'kota') {
+          cityViewOrbit.dist = clamp(
+            cityViewOrbit.dist + step,
+            CITY_VIEW_OVERVIEW_DEFAULTS.minDist,
+            CITY_VIEW_OVERVIEW_DEFAULTS.maxDist,
+          );
+        } else {
+          const dSpec = getCityViewDistrictById(cityViewTarget);
+          cityViewOrbit.dist = clamp(
+            cityViewOrbit.dist + step,
+            dSpec.minDist,
+            dSpec.maxDist,
+          );
+        }
+        return;
+      }
       if (npcCameraMode === 'cafe_interior') {
         cafeVisitCamDist = clamp(
           cafeVisitCamDist + Math.sign(e.deltaY) * 0.3,
@@ -15790,6 +18285,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           casinoVisitCamDist + Math.sign(e.deltaY) * 0.3,
           INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.minDist,
           INDOOR_ORBIT_CAMERA_CONFIG.casino_interior.maxDist,
+        );
+        return;
+      }
+      if (npcCameraMode === 'salon_interior') {
+        salonVisitCamDist = clamp(
+          salonVisitCamDist + Math.sign(e.deltaY) * 0.35,
+          SALON_ORBIT_CAMERA_CONFIG.minDist,
+          SALON_ORBIT_CAMERA_CONFIG.maxDist,
         );
         return;
       }
@@ -15835,6 +18338,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         editorZoom = clamp(editorZoom + Math.sign(e.deltaY) * 0.1, 0.35, 2.2);
       } else if (playerUnit?.isSitting && activeSeatedSpot) {
         seatedCameraDist = clamp(seatedCameraDist + Math.sign(e.deltaY) * 0.30, 2.2, 5.25);
+      } else if (npcCameraMode === 'npc_merchant' || citizenPortraitState) {
+        return;
       } else {
         // Batas kamera zoom-in (0.58) hingga batas maksimal zoom-out (0.86)
         cameraZoom = clamp(cameraZoom + Math.sign(e.deltaY) * 0.07, 0.58, 0.86);
@@ -16347,17 +18852,68 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (msg.length > 0 && playerUnit && playerUnit.alive) {
           soundEngine.playUiClick();
           socialTalkMessage = msg;
-          socialTalkTimer = 7.5;
+          socialTalkTimer = DEFAULT_CHAT_BUBBLE_TTL_MS / 1000;
+          socialTalkSeq += 1;
           socialSpeechBubbleEl.textContent = msg;
-          playerUnit.saluteTimer = 7.5;
-          playerUnit.saluteSign.updateText('SOCIAL TALK', msg, '#38bdf8', 1);
-          playerUnit.saluteSign.sprite.visible = true;
+          socialSpeechBubbleEl.style.background = localBubbleBgColor;
+          socialSpeechBubbleEl.style.color = localBubbleTextColor;
+          worldMultiplayer.broadcastChat?.({
+            zoneKey: getLocalMultiplayerZoneKey(),
+            displayName: playerCustomDisplayName || 'CITIZEN',
+            chatBubbleText: msg,
+            chatBubbleSeq: socialTalkSeq,
+            chatBubbleBgColor: localBubbleBgColor,
+            chatBubbleTextColor: localBubbleTextColor,
+            sentAtMs: Date.now(),
+          });
           emitHudImmediately();
+        }
+      } else if (act.startsWith('playEmote:')) {
+        const emoteId = act.slice('playEmote:'.length).trim() as SocialEmoteId;
+        const spec = SOCIAL_EMOTE_SPECS[emoteId];
+        if (spec && playerUnit && playerUnit.alive) {
+          soundEngine.playUiClick();
+          const nowMs = Date.now();
+          localEmoteSeq += 1;
+          if (emoteId === 'punch') {
+            playerUnit.punchTimer = 0.26;
+            playerUnit.punchHand = playerUnit.punchHand === 'right' ? 'left' : 'right';
+          } else if (emoteId === 'kick') {
+            playerUnit.kickTimer = 0.34;
+          }
+          localActiveEmote = {
+            id: spec.id,
+            clip: spec.clip,
+            seq: localEmoteSeq,
+            startedAtMs: nowMs,
+            expiresAtMs: nowMs + spec.durationMs,
+            durationMs: spec.durationMs,
+          };
+          worldMultiplayer.broadcastEmote?.({
+            zoneKey: getLocalMultiplayerZoneKey(),
+            emoteClip: spec.clip,
+            emoteSeq: localEmoteSeq,
+            emoteDurationMs: spec.durationMs,
+            sentAtMs: nowMs,
+          });
+          emitHudImmediately();
+        }
+      } else if (act === 'clearEmote') {
+        if (localActiveEmote) {
+          localEmoteSeq += 1;
+          localActiveEmote = null;
+          worldMultiplayer.broadcastEmote?.({
+            zoneKey: getLocalMultiplayerZoneKey(),
+            emoteClip: '',
+            emoteSeq: localEmoteSeq,
+            emoteDurationMs: 0,
+            sentAtMs: Date.now(),
+          });
         }
       } else if (act === 'stepIntoLobbyRedPortal' || act === 'stepIntoLobbyWarzonePortal') {
         if (mountedTank) handleToggleMountTank();
         ridingTramCarIdx = null;
-        playerUnit.x = -84.0;
+        playerUnit.x = -86.25;
         playerUnit.z = -15.0;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
@@ -16366,7 +18922,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (act === 'stepIntoLobbyBluePortal' || act === 'stepIntoLobbySafezonePortal') {
         if (mountedTank) handleToggleMountTank();
         ridingTramCarIdx = null;
-        playerUnit.x = -84.0;
+        playerUnit.x = -86.25;
         playerUnit.z = 15.0;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
@@ -16668,6 +19224,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (act === 'exitGrandCasino') {
         soundEngine.playUiClick();
         window.dispatchEvent(new CustomEvent('exit-grand-casino-interior'));
+      } else if (act === 'enterBeautySalon') {
+        soundEngine.playUiClick();
+        clearCharacterSelection();
+        window.dispatchEvent(new CustomEvent('enter-beauty-salon-interior'));
+      } else if (act === 'exitBeautySalon') {
+        soundEngine.playUiClick();
+        window.dispatchEvent(new CustomEvent('exit-beauty-salon-interior'));
+      } else if (act === 'salonStationInteract' && playerUnit) {
+        const st = resolveNearestSalonPromptOrSeat(playerUnit.x, playerUnit.z, salonCurrentFloorY);
+        if (st.target === 'station' && st.stationKind) {
+          triggerSalonStationAction(st.stationKind);
+        }
       } else if (act === 'casinoStationInteract' && playerUnit) {
         if (playerUnit.isSitting && activeCasinoSeatedSpot) {
           triggerCasinoStationAction(getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind));
@@ -16871,6 +19439,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       opacity: 0.88,
     });
     const catenaryLineMesh = new THREE.Line(catenaryLineGeo, catenaryLineMat);
+    catenaryLineMesh.name = 'ShorelineFishingLine';
     catenaryLineMesh.frustumCulled = false;
     shorelineFishing3DGroup.add(catenaryLineMesh);
 
@@ -17097,6 +19666,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (!container) return;
       const w = container.clientWidth || window.innerWidth;
       const h = container.clientHeight || window.innerHeight;
+      const clampedCap = isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.25);
+      currentAdaptiveDpr = Math.min(currentAdaptiveDpr, clampedCap);
+      renderer.setPixelRatio(currentAdaptiveDpr);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -17400,19 +19972,888 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       return structures;
     };
 
-    // Build & cache 2D A* Navigation Grids for Foot Units (BuddyUnit) and Tracked Vehicles (TankVehicle)
-    const getArenaNavGrid = (isTrackedTank: boolean): AStarNavGrid => {
-      if (navGridDirty || !cachedFootNavGrid || !cachedVehicleNavGrid) {
-        const { footGrid, vehicleGrid } = buildArenaNavGrids({
-          staticStructures: getStaticWorldStructures(),
+    // Build & cache 2D A* Navigation Grids for Foot Units, Tracked Vehicles, and Law-Abiding Citizens
+    const ensureArenaNavGridsBuilt = (): void => {
+      if (navGridDirty || !cachedFootNavGrid || !cachedVehicleNavGrid || !cachedPedestrianNavGrid) {
+        const staticStructures = getStaticWorldStructures();
+        const { footGrid, vehicleGrid, pedestrianGrid } = buildArenaNavGrids({
+          staticStructures,
           trees,
           activeMapProps,
+          auditedWorld: getAuditedStaticWorldStructures(staticStructures),
         });
         cachedFootNavGrid = footGrid;
         cachedVehicleNavGrid = vehicleGrid;
+        cachedPedestrianNavGrid = pedestrianGrid;
         navGridDirty = false;
+        cachedCityClickNavDirty = true;
       }
+    };
+
+    const getCityClickNavGrid = (forScooter: boolean): CityNavGridHandle => {
+      ensureArenaNavGridsBuilt();
+      const safezoneNow = cityArenaMode === 'safezone' || worldModeRef.current !== 'warzone';
+      if (cachedCityClickNavDirty || cachedCityClickNavSafezone !== safezoneNow) {
+        cachedCityClickFootNav = null;
+        cachedCityClickScooterNav = null;
+        cachedCityClickNavDirty = false;
+        cachedCityClickNavSafezone = safezoneNow;
+      }
+      if (forScooter) {
+        if (!cachedCityClickScooterNav) {
+          const staticStructures = getStaticWorldStructures();
+          cachedCityClickScooterNav = buildCityNavGrid({
+            mode: 'scooter',
+            worldMode: worldModeRef.current,
+            isSafezoneMode: safezoneNow,
+            staticStructures,
+            auditedWorld: getAuditedStaticWorldStructures(staticStructures),
+            trees,
+            activeMapProps,
+          });
+        }
+        return cachedCityClickScooterNav;
+      }
+      if (!cachedCityClickFootNav) {
+        const staticStructures = getStaticWorldStructures();
+        cachedCityClickFootNav = buildCityNavGrid({
+          mode: 'foot',
+          worldMode: worldModeRef.current,
+          isSafezoneMode: safezoneNow,
+          staticStructures,
+          auditedWorld: getAuditedStaticWorldStructures(staticStructures),
+          trees,
+          activeMapProps,
+        });
+      }
+      return cachedCityClickFootNav;
+    };
+
+    let lastClickToWalkSyncAtMs = 0;
+    let lastClickToWalkSyncDist = -1;
+    let lastClickToWalkSyncActive = false;
+
+    const syncClickToWalkToReact = (force = false) => {
+      const actorX = mountedTank ? mountedTank.x : playerUnit?.x ?? 0;
+      const actorZ = mountedTank ? mountedTank.z : playerUnit?.z ?? 0;
+      const summary = summarizeClickToWalkForHud(
+        clickToWalkState,
+        actorX,
+        actorZ,
+        Boolean(scooterRideState),
+      );
+      const nowMs = performance.now();
+      if (
+        !force &&
+        summary.active === lastClickToWalkSyncActive &&
+        Math.abs(summary.remainingDistanceM - lastClickToWalkSyncDist) < 1 &&
+        nowMs - lastClickToWalkSyncAtMs < 180
+      ) {
+        return;
+      }
+      lastClickToWalkSyncAtMs = nowMs;
+      lastClickToWalkSyncDist = summary.remainingDistanceM;
+      lastClickToWalkSyncActive = summary.active;
+      window.dispatchEvent(new CustomEvent('click-to-walk-sync', { detail: summary }));
+      if (force) {
+        emitHudImmediately();
+      }
+    };
+
+    cancelClickToWalk = () => {
+      const wasActive = clickToWalkState.active;
+      clickToWalkState = cancelClickToWalkState(clickToWalkState);
+      clickToWalkIndicator3D.root.visible = false;
+      if (wasActive) {
+        syncClickToWalkToReact(true);
+      }
+    };
+
+    const standUpBeforeAutoWalk = () => {
+      if (!playerUnit) return;
+      if (playerUnit.isSleeping && activeSleepSpot) {
+        wakeUpFromBed();
+      } else if (
+        playerUnit.isSitting &&
+        (activeSeatedSpot ||
+          activeCafeSeatedSpot ||
+          activeCasinoSeatedSpot ||
+          activeSalonSeatedSpot)
+      ) {
+        triggerSitOrStandAction();
+      }
+    };
+
+    const resolveClickToWalkGroundY = (
+      x: number,
+      z: number,
+      floorY?: number,
+    ): number => {
+      if (npcCameraMode === 'cafe_interior') return CAFE_ORIGIN_Y + 0.04;
+      if (npcCameraMode === 'casino_interior') return CASINO_ORIGIN_Y + 0.04;
+      if (npcCameraMode === 'salon_interior') {
+        return SALON_ORIGIN_Y + (floorY ?? salonCurrentFloorY) + 0.04;
+      }
+      if (npcCameraMode === 'house_visit') return HOUSE_ORIGIN_Y + 0.04;
+      return getTerrainElevation(x, z) + 0.04;
+    };
+
+    const navigateCityClickToWalk = (params: {
+      source: 'world' | 'minimap' | 'poi';
+      rawX: number;
+      rawZ: number;
+      goalX: number;
+      goalZ: number;
+      label?: string | null;
+      pendingInteraction?: ClickToWalkPendingInteraction;
+      exemptSeatPoint?: { x: number; z: number } | null;
+    }): boolean => {
+      if (!playerUnit || !playerUnit.alive) return false;
+      if (
+        worldModeRef.current === 'warzone' ||
+        playModeRef.current === 'editor' ||
+        mountedTank ||
+        ridingTramCarIdx !== null ||
+        shorelineFishingSync.phase !== 'idle'
+      ) {
+        return false;
+      }
+      if (npcCameraMode === 'city_view') {
+        if (!cityViewExitingToPlayer) {
+          window.dispatchEvent(new CustomEvent('request-exit-city-view'));
+        }
+      } else if (npcCameraMode !== 'none') {
+        return false;
+      }
+
+      standUpBeforeAutoWalk();
+      const onScooter = Boolean(scooterRideState);
+      const nav = getCityClickNavGrid(onScooter);
+      const plan = planCityClickToWalkRoute(
+        nav,
+        playerUnit.x,
+        playerUnit.z,
+        params.goalX,
+        params.goalZ,
+        { exemptSeatPoint: params.exemptSeatPoint },
+      );
+      if (!plan.reachable && plan.waypoints.length === 0) {
+        return false;
+      }
+      clickToWalkStartedMode = 'none';
+      clickToWalkState = startClickToWalkState({
+        source: params.source,
+        startX: playerUnit.x,
+        startZ: playerUnit.z,
+        rawTargetX: params.rawX,
+        rawTargetZ: params.rawZ,
+        targetX: plan.targetX,
+        targetZ: plan.targetZ,
+        waypoints: plan.waypoints,
+        targetLabel: params.label ?? null,
+        pendingInteraction: params.pendingInteraction ?? { kind: 'none' },
+        nowMs: performance.now(),
+      });
+      syncClickToWalkToReact(true);
+      return true;
+    };
+
+    const navigateInteriorClickToWalk = (params: {
+      room: InteriorRoomKind;
+      goalX: number;
+      goalZ: number;
+      goalFloorY?: number;
+      label?: string | null;
+      pendingInteraction?: ClickToWalkPendingInteraction;
+      exemptSeatId?: string | null;
+    }): boolean => {
+      if (!playerUnit || !playerUnit.alive) return false;
+      standUpBeforeAutoWalk();
+      const houseColliders =
+        params.room === 'house_visit'
+          ? [
+              ...(sampleHouseZonesGrp && sampleHouseZonesGrp.visible
+                ? BUDDIES_ZONE_COLLIDERS
+                : []),
+              ...housePlacedItems.flatMap((item) =>
+                buildFurnitureFootprintObbs(
+                  item.catalogId,
+                  item.sx,
+                  item.sz,
+                  item.sry,
+                ).map((obb, idx) => ({
+                  id: `${item.instanceId}_${idx}`,
+                  x: obb.x,
+                  z: obb.z,
+                  hw: obb.hw,
+                  hd: obb.hd,
+                  ry: obb.a,
+                })),
+              ),
+            ]
+          : undefined;
+      const plan = planInteriorClickToWalkRoute({
+        room: params.room,
+        startX: playerUnit.x,
+        startZ: playerUnit.z,
+        startFloorY: params.room === 'salon_interior' ? salonCurrentFloorY : 0,
+        goalX: params.goalX,
+        goalZ: params.goalZ,
+        goalFloorY: params.goalFloorY ?? 0,
+        cafeWorkShiftActive,
+        houseColliders,
+        exemptSeatId: params.exemptSeatId,
+      });
+      if (plan.waypoints.length === 0) return false;
+      clickToWalkStartedMode = npcCameraMode;
+      clickToWalkState = startClickToWalkState({
+        source: 'world',
+        startX: playerUnit.x,
+        startZ: playerUnit.z,
+        rawTargetX: params.goalX,
+        rawTargetZ: params.goalZ,
+        targetX: plan.targetX,
+        targetZ: plan.targetZ,
+        waypoints: plan.waypoints,
+        targetLabel: params.label ?? null,
+        pendingInteraction: params.pendingInteraction ?? { kind: 'none' },
+        nowMs: performance.now(),
+      });
+      syncClickToWalkToReact(true);
+      return true;
+    };
+
+    const collectRaycastableMeshes = (
+      roots: ReadonlyArray<THREE.Object3D>,
+      ignoreSet: Set<THREE.Object3D> | null,
+      out: THREE.Object3D[],
+    ) => {
+      const stack: THREE.Object3D[] = [];
+      for (let i = roots.length - 1; i >= 0; i--) {
+        const root = roots[i];
+        if (!root.visible || (ignoreSet && ignoreSet.has(root))) continue;
+        stack.push(root);
+      }
+      while (stack.length > 0) {
+        const obj = stack.pop()!;
+        if (!obj.visible || (ignoreSet && ignoreSet.has(obj))) continue;
+        if (
+          obj instanceof THREE.Sprite ||
+          obj instanceof THREE.Points ||
+          obj instanceof THREE.Line ||
+          obj instanceof THREE.LineSegments ||
+          obj instanceof THREE.LineLoop
+        ) {
+          continue;
+        }
+        if (obj instanceof THREE.Mesh) {
+          out.push(obj);
+        }
+        for (let ci = obj.children.length - 1; ci >= 0; ci--) {
+          stack.push(obj.children[ci]);
+        }
+      }
+    };
+
+    const scratchClickRaycastMeshes: THREE.Object3D[] = [];
+    const scratchClickGroundFallback = new THREE.Vector3();
+    const clickRaycastBox = new THREE.Box3();
+    const clickRaycastPos = new THREE.Vector3();
+
+    const raycastOutdoorCityWorldPoint = (
+      fallbackPlane: THREE.Plane,
+    ): { x: number; z: number } | null => {
+      scratchClickRaycastMeshes.length = 0;
+      const ignoreSet = new Set<THREE.Object3D>([
+        animeSkyDomeMesh,
+        animeCloudRingGroup,
+        animeSparklePoints,
+        tutorialWaypointGroup,
+        clickToWalkIndicator3D.root,
+        cityViewFocusRingGroup,
+        characterSelectionRing,
+        supplyDropBeaconGroup,
+        editorCursorGroup,
+        nukeTargetReticleGroup,
+        nukeCinematicRocketGroup,
+        shorelineFishing3DGroup,
+        playerUnit.root,
+      ]);
+      if (scooterRideState?.handle?.root) {
+        ignoreSet.add(scooterRideState.handle.root);
+      }
+      if (cafeInterior?.root) ignoreSet.add(cafeInterior.root);
+      if (casinoInterior?.root) ignoreSet.add(casinoInterior.root);
+      if (salonInterior?.root) ignoreSet.add(salonInterior.root);
+      ignoreSet.add(houseInteriorRoomGrp);
+
+      collectRaycastableMeshes(scene.children, ignoreSet, scratchClickRaycastMeshes);
+      const hits = raycaster.intersectObjects(scratchClickRaycastMeshes, false);
+      const worldHit = hits.find(
+        (h) =>
+          Math.abs(h.point.x) <= 128 &&
+          Math.abs(h.point.z) <= 128 &&
+          !h.object.name.includes('Horizon') &&
+          !h.object.name.includes('Sky'),
+      );
+      if (worldHit) {
+        return { x: worldHit.point.x, z: worldHit.point.z };
+      }
+      if (
+        raycaster.ray.intersectPlane(fallbackPlane, scratchClickGroundFallback) &&
+        Math.abs(scratchClickGroundFallback.x) <= 128 &&
+        Math.abs(scratchClickGroundFallback.z) <= 128
+      ) {
+        return { x: scratchClickGroundFallback.x, z: scratchClickGroundFallback.z };
+      }
+      return null;
+    };
+
+    handleCleanClickToWalkTap = (
+      clientX: number,
+      clientY: number,
+      modeAtDown: typeof npcCameraMode,
+      houseFurnitureClicked: boolean,
+    ) => {
+      if (gameStateRef.current !== 'playing') return;
+      if (playModeRef.current === 'editor') return;
+      if (npcCameraMode !== modeAtDown) return;
+      if (
+        isKioskModalOpenCanvas ||
+        Boolean(citizenPortraitState) ||
+        mountedTank ||
+        ridingTramCarIdx !== null ||
+        shorelineFishingSync.phase !== 'idle' ||
+        cafeWorkAnimSync.phase !== 'idle' ||
+        !playerUnit ||
+        !playerUnit.alive
+      ) {
+        return;
+      }
+
+      updateMouseWorldAim(clientX, clientY);
+      raycaster.setFromCamera(mouseNdc, camera);
+      scratchClickRaycastMeshes.length = 0;
+
+      // 1. Interior Rooms (Cafe, Casino, 2-Story Beauty Salon, House Visit)
+      if (npcCameraMode === 'cafe_interior' && cafeInterior?.root) {
+        if (
+          document.querySelector('[data-cafe-prep-modal="true"]') ||
+          document.querySelector('[data-cafe-barista-modal="true"]')
+        ) {
+          return;
+        }
+        collectRaycastableMeshes([cafeInterior.root], null, scratchClickRaycastMeshes);
+        const hits = raycaster.intersectObjects(scratchClickRaycastMeshes, false);
+        const validHit = hits.find((h) => {
+          const ly = h.point.y - CAFE_ORIGIN_Y;
+          return (
+            ly >= -0.25 &&
+            ly <= 2.35 &&
+            h.point.x >= CAFE_INTERIOR_BOUNDS.minX - 0.5 &&
+            h.point.x <= CAFE_INTERIOR_BOUNDS.maxX + 0.5 &&
+            h.point.z >= CAFE_INTERIOR_BOUNDS.minZ - 0.5 &&
+            h.point.z <= CAFE_INTERIOR_BOUNDS.maxZ + 0.5
+          );
+        });
+        if (!validHit) return;
+
+        if (!cafeWorkShiftActive) {
+          const seat = pickClosestInteractiveSeatAtPoint({
+            hitX: validHit.point.x,
+            hitZ: validHit.point.z,
+            seats: CAFE_INTERIOR_SEAT_SPOTS,
+            maxRadiusM: 1.45,
+          });
+          if (seat) {
+            if (playerUnit.isSitting && activeCafeSeatedSpot?.id === seat.id) {
+              cancelClickToWalk();
+              triggerSitOrStandAction();
+              return;
+            }
+            if (Math.hypot(playerUnit.x - seat.x, playerUnit.z - seat.z) <= 1.55) {
+              cancelClickToWalk();
+              if (playerUnit.isSitting) triggerSitOrStandAction();
+              currentNearestCafeSeat = seat;
+              triggerSitOrStandAction();
+              return;
+            }
+            const cafeApproach = computeCafeSeatStandUpPosition(seat);
+            soundEngine.playUiClick();
+            navigateInteriorClickToWalk({
+              room: 'cafe_interior',
+              goalX: cafeApproach.x,
+              goalZ: cafeApproach.z,
+              label: 'Cafe Seat',
+              exemptSeatId: seat.id,
+              pendingInteraction: {
+                kind: 'sit',
+                seatId: seat.id,
+                seatX: seat.x,
+                seatZ: seat.z,
+                label: 'Cafe Seat',
+              },
+            });
+            return;
+          }
+        }
+
+        soundEngine.playUiClick();
+        navigateInteriorClickToWalk({
+          room: 'cafe_interior',
+          goalX: validHit.point.x,
+          goalZ: validHit.point.z,
+        });
+        return;
+      }
+
+      if (npcCameraMode === 'casino_interior' && casinoInterior?.root) {
+        if (document.querySelector('[data-grand-casino-modal="true"]')) return;
+        collectRaycastableMeshes([casinoInterior.root], null, scratchClickRaycastMeshes);
+        const hits = raycaster.intersectObjects(scratchClickRaycastMeshes, false);
+        const validHit = hits.find((h) => {
+          const ly = h.point.y - CASINO_ORIGIN_Y;
+          return (
+            ly >= -0.25 &&
+            ly <= 2.65 &&
+            h.point.x >= CASINO_INTERIOR_BOUNDS.minX - 0.5 &&
+            h.point.x <= CASINO_INTERIOR_BOUNDS.maxX + 0.5 &&
+            h.point.z >= CASINO_INTERIOR_BOUNDS.minZ - 0.5 &&
+            h.point.z <= CASINO_INTERIOR_BOUNDS.maxZ + 0.5
+          );
+        });
+        if (!validHit) return;
+
+        const seat = pickClosestInteractiveSeatAtPoint({
+          hitX: validHit.point.x,
+          hitZ: validHit.point.z,
+          seats: CASINO_INTERIOR_SEAT_SPOTS,
+          maxRadiusM: 1.5,
+        });
+        if (seat) {
+          if (playerUnit.isSitting && activeCasinoSeatedSpot?.id === seat.id) {
+            cancelClickToWalk();
+            triggerSitOrStandAction();
+            return;
+          }
+          if (Math.hypot(playerUnit.x - seat.x, playerUnit.z - seat.z) <= 1.6) {
+            cancelClickToWalk();
+            if (playerUnit.isSitting) triggerSitOrStandAction();
+            currentNearestCasinoSeat = seat;
+            triggerSitOrStandAction();
+            return;
+          }
+          const casinoApproach = computeCasinoSeatStandUpPosition(seat);
+          soundEngine.playUiClick();
+          navigateInteriorClickToWalk({
+            room: 'casino_interior',
+            goalX: casinoApproach.x,
+            goalZ: casinoApproach.z,
+            label: 'Casino Seat',
+            exemptSeatId: seat.id,
+            pendingInteraction: {
+              kind: 'sit',
+              seatId: seat.id,
+              seatX: seat.x,
+              seatZ: seat.z,
+              label: 'Casino Seat',
+            },
+          });
+          return;
+        }
+
+        soundEngine.playUiClick();
+        navigateInteriorClickToWalk({
+          room: 'casino_interior',
+          goalX: validHit.point.x,
+          goalZ: validHit.point.z,
+        });
+        return;
+      }
+
+      if (npcCameraMode === 'salon_interior' && salonInterior?.root) {
+        if (document.querySelector('[data-beauty-salon-modal="true"]')) return;
+        collectRaycastableMeshes([salonInterior.root], null, scratchClickRaycastMeshes);
+        const hits = raycaster.intersectObjects(scratchClickRaycastMeshes, false);
+        const validHit = hits.find((h) => {
+          const ly = h.point.y - SALON_ORIGIN_Y;
+          return (
+            ly >= -0.25 &&
+            ly <= 4.8 &&
+            h.point.x >= SALON_INTERIOR_BOUNDS.minX - 0.5 &&
+            h.point.x <= SALON_INTERIOR_BOUNDS.maxX + 0.5 &&
+            h.point.z >= SALON_INTERIOR_BOUNDS.minZ - 0.5 &&
+            h.point.z <= SALON_INTERIOR_BOUNDS.maxZ + 0.5
+          );
+        });
+        if (!validHit) return;
+
+        const ly = validHit.point.y - SALON_ORIGIN_Y;
+        const inStairFootprint =
+          validHit.point.x >= -4.7 &&
+          validHit.point.x <= -0.2 &&
+          validHit.point.z >= -5.1 &&
+          validHit.point.z <= -1.8;
+        const goalFloorY =
+          ly >= 2.2
+            ? SALON_INTERIOR_BOUNDS.secondFloorY
+            : inStairFootprint && ly >= 0.45
+              ? 1.5
+              : 0;
+        const preferredFloorLevel: '1f' | '2f' = goalFloorY >= 1.95 ? '2f' : '1f';
+
+        const seat = pickClosestInteractiveSeatAtPoint({
+          hitX: validHit.point.x,
+          hitZ: validHit.point.z,
+          seats: SALON_INTERIOR_SEAT_SPOTS,
+          maxRadiusM: 1.55,
+          preferredFloorLevel,
+        });
+        if (seat) {
+          if (playerUnit.isSitting && activeSalonSeatedSpot?.id === seat.id) {
+            cancelClickToWalk();
+            triggerSitOrStandAction();
+            return;
+          }
+          if (
+            Math.hypot(playerUnit.x - seat.x, playerUnit.z - seat.z) <= 1.6 &&
+            Math.abs(salonCurrentFloorY - seat.floorY) < 0.8
+          ) {
+            cancelClickToWalk();
+            if (playerUnit.isSitting) triggerSitOrStandAction();
+            currentNearestSalonSeat = seat;
+            triggerSitOrStandAction();
+            return;
+          }
+          soundEngine.playUiClick();
+          navigateInteriorClickToWalk({
+            room: 'salon_interior',
+            goalX: seat.standUpX,
+            goalZ: seat.standUpZ,
+            goalFloorY: seat.floorY,
+            label: seat.floorLevel === '2f' ? '2F Spa Seat' : 'Salon Seat',
+            exemptSeatId: seat.id,
+            pendingInteraction: {
+              kind: 'sit',
+              seatId: seat.id,
+              seatX: seat.x,
+              seatZ: seat.z,
+              floorLevel: seat.floorLevel,
+              label: seat.floorLevel === '2f' ? '2F Spa Seat' : 'Salon Seat',
+            },
+          });
+          return;
+        }
+
+        soundEngine.playUiClick();
+        navigateInteriorClickToWalk({
+          room: 'salon_interior',
+          goalX: validHit.point.x,
+          goalZ: validHit.point.z,
+          goalFloorY,
+          label: goalFloorY >= 1.95 ? 'Glow Studio 2F' : undefined,
+        });
+        return;
+      }
+
+      if (npcCameraMode === 'house_visit') {
+        collectRaycastableMeshes([houseInteriorRoomGrp], null, scratchClickRaycastMeshes);
+        const hits = raycaster.intersectObjects(scratchClickRaycastMeshes, false);
+        const validHit = hits.find((h) => {
+          const ly = h.point.y - HOUSE_ORIGIN_Y;
+          return (
+            ly >= -0.25 &&
+            ly <= 2.35 &&
+            h.point.x >= CUTAWAY_ROOM_BOUNDS.minX - 0.5 &&
+            h.point.x <= CUTAWAY_ROOM_BOUNDS.maxX + 0.5 &&
+            h.point.z >= CUTAWAY_ROOM_BOUNDS.minZ - 0.5 &&
+            h.point.z <= CUTAWAY_ROOM_BOUNDS.maxZ + 0.5
+          );
+        });
+        if (!validHit) return;
+
+        const bed = pickClosestInteractiveSeatAtPoint({
+          hitX: validHit.point.x,
+          hitZ: validHit.point.z,
+          seats: HOUSE_BED_SLEEP_SPOTS,
+          maxRadiusM: 1.35,
+        });
+        if (bed) {
+          if (playerUnit.isSleeping && activeSleepSpot?.id === bed.id) {
+            cancelClickToWalk();
+            wakeUpFromBed();
+            return;
+          }
+          if (Math.hypot(playerUnit.x - bed.wakeX, playerUnit.z - bed.wakeZ) <= 1.25) {
+            cancelClickToWalk();
+            if (playerUnit.isSleeping) wakeUpFromBed();
+            sleepOnBed(bed);
+            return;
+          }
+          soundEngine.playUiClick();
+          navigateInteriorClickToWalk({
+            room: 'house_visit',
+            goalX: bed.wakeX,
+            goalZ: bed.wakeZ,
+            label: 'Bed',
+            pendingInteraction: {
+              kind: 'sleep',
+              bedId: bed.id,
+              bedX: bed.x,
+              bedZ: bed.z,
+              label: 'Bed',
+            },
+          });
+          return;
+        }
+
+        if (houseFurnitureClicked) return;
+        soundEngine.playUiClick();
+        navigateInteriorClickToWalk({
+          room: 'house_visit',
+          goalX: validHit.point.x,
+          goalZ: validHit.point.z,
+        });
+        return;
+      }
+
+      // 2. Outdoor City Click-to-Walk (Disabled in Warzone so combat clicks remain unchanged)
+      if (npcCameraMode !== 'none' || worldModeRef.current === 'warzone') return;
+
+      // 2A. Distant shop / entrance chevron boxes (> 15m from player; <= 15m already opened on pointerdown)
+      const doorCandidates: Array<{
+        grp: THREE.Object3D;
+        tx: number;
+        tz: number;
+        radius: number;
+        triggerId: string;
+        eventName: string;
+        eventDetail?: Record<string, unknown>;
+        label: string;
+      }> = [
+        {
+          grp: beautySalonDoorChevron.group,
+          tx: SALON_EXTERIOR_DOOR_TRIGGER.x,
+          tz: SALON_EXTERIOR_DOOR_TRIGGER.z,
+          radius: SALON_EXTERIOR_DOOR_TRIGGER.triggerRadius,
+          triggerId: 'beauty_salon_door',
+          eventName: 'enter-beauty-salon-interior',
+          label: 'Glow Studio',
+        },
+        {
+          grp: cafeExteriorDoorPad.group,
+          tx: CAFE_EXTERIOR_DOOR_TRIGGER.x,
+          tz: CAFE_EXTERIOR_DOOR_TRIGGER.z,
+          radius: CAFE_EXTERIOR_DOOR_TRIGGER.triggerRadius,
+          triggerId: 'cafe_door',
+          eventName: 'enter-glasshouse-cafe',
+          label: 'CozyBites Cafe',
+        },
+        {
+          grp: grandCasinoDoorChevron.group,
+          tx: GRAND_CASINO_DOOR_TRIGGER.x,
+          tz: GRAND_CASINO_DOOR_TRIGGER.z,
+          radius: GRAND_CASINO_DOOR_TRIGGER.triggerRadius,
+          triggerId: 'grand_casino_door',
+          eventName: 'enter-grand-casino-interior',
+          label: 'Grand Casino',
+        },
+        {
+          grp: modelHouseDoorChevron.group,
+          tx: PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x,
+          tz: PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z,
+          radius: PLAZA_MODEL_HOUSE_DOOR_TRIGGER.triggerRadius,
+          triggerId: 'model_house_door',
+          eventName: 'open-house-interior-ui',
+          eventDetail: {
+            team: null,
+            commanderIdx: null,
+            houseStyle: PLAZA_MODEL_HOUSE_DOOR_TRIGGER.houseStyle,
+            isSampleEntry: true,
+          },
+          label: 'Plaza Manor',
+        },
+        {
+          grp: scooterShopChevron.group,
+          tx: URBAN_SCOOTER_SHOP_TRIGGER.x,
+          tz: URBAN_SCOOTER_SHOP_TRIGGER.z,
+          radius: URBAN_SCOOTER_SHOP_TRIGGER.triggerRadius,
+          triggerId: 'scooter_showroom',
+          eventName: 'open-scooter-showroom-modal',
+          label: 'Scooter Shop',
+        },
+        {
+          grp: fashionShopChevron.group,
+          tx: FASHION_BOUTIQUE_SHOP_TRIGGER.x,
+          tz: FASHION_BOUTIQUE_SHOP_TRIGGER.z,
+          radius: FASHION_BOUTIQUE_SHOP_TRIGGER.triggerRadius,
+          triggerId: 'fashion_boutique',
+          eventName: 'open-fashion-boutique-modal',
+          label: 'Boutique',
+        },
+        {
+          grp: realEstateCatalogChevron.group,
+          tx: REAL_ESTATE_CATALOG_TRIGGER.x,
+          tz: REAL_ESTATE_CATALOG_TRIGGER.z,
+          radius: REAL_ESTATE_CATALOG_TRIGGER.triggerRadius,
+          triggerId: 'realestate_catalog',
+          eventName: 'open-realestate-catalog-modal',
+          label: 'Real Estate',
+        },
+      ];
+      for (const dc of doorCandidates) {
+        if (!dc.grp.visible) continue;
+        dc.grp.updateWorldMatrix(true, false);
+        dc.grp.getWorldPosition(clickRaycastPos);
+        clickRaycastBox.min.set(
+          clickRaycastPos.x - 1.35,
+          clickRaycastPos.y - 0.65,
+          clickRaycastPos.z - 1.35,
+        );
+        clickRaycastBox.max.set(
+          clickRaycastPos.x + 1.35,
+          clickRaycastPos.y + 1.65,
+          clickRaycastPos.z + 1.35,
+        );
+        if (raycaster.ray.intersectsBox(clickRaycastBox)) {
+          const distNow = getPlanetShortestDistance(playerUnit.x, playerUnit.z, dc.tx, dc.tz);
+          if (distNow <= dc.radius) {
+            soundEngine.playUiClick();
+            window.dispatchEvent(
+              new CustomEvent(dc.eventName, dc.eventDetail ? { detail: dc.eventDetail } : undefined),
+            );
+            return;
+          }
+          soundEngine.playUiClick();
+          navigateCityClickToWalk({
+            source: 'world',
+            rawX: dc.tx,
+            rawZ: dc.tz,
+            goalX: dc.tx,
+            goalZ: dc.tz,
+            label: dc.label,
+            pendingInteraction: {
+              kind: 'door_or_kiosk',
+              triggerId: dc.triggerId,
+              eventName: dc.eventName,
+              eventDetail: dc.eventDetail,
+              triggerRadius: dc.radius,
+              label: dc.label,
+            },
+          });
+          return;
+        }
+      }
+
+      // 2B. Raycast outdoor terrain, roads, bridges, ramps, stairs, plazas, boardwalks & buildings
+      const outdoorHit = raycastOutdoorCityWorldPoint(groundPlane);
+      if (!outdoorHit) {
+        return;
+      }
+      const targetWorldX = outdoorHit.x;
+      const targetWorldZ = outdoorHit.z;
+
+      // 2C. Check if clicked directly on an outdoor bench / beach chair / sun lounger
+      const clickedSeat = pickClosestInteractiveSeatAtPoint({
+        hitX: targetWorldX,
+        hitZ: targetWorldZ,
+        seats: LOBBY_SEAT_SPOTS,
+        maxRadiusM: 1.55,
+      });
+      if (clickedSeat && !scooterRideState) {
+        if (playerUnit.isSitting && activeSeatedSpot?.id === clickedSeat.id) {
+          cancelClickToWalk();
+          standUpFromLobbySeat();
+          return;
+        }
+        if (Math.hypot(playerUnit.x - clickedSeat.x, playerUnit.z - clickedSeat.z) <= 2.35) {
+          cancelClickToWalk();
+          if (playerUnit.isSitting) standUpFromLobbySeat();
+          sitOnLobbySeat(clickedSeat);
+          return;
+        }
+        const standPos = getLobbySeatStandUpPos(clickedSeat);
+        soundEngine.playUiClick();
+        navigateCityClickToWalk({
+          source: 'world',
+          rawX: clickedSeat.x,
+          rawZ: clickedSeat.z,
+          goalX: standPos.x,
+          goalZ: standPos.z,
+          label: 'Seat',
+          exemptSeatPoint: { x: clickedSeat.x, z: clickedSeat.z },
+          pendingInteraction: {
+            kind: 'sit',
+            seatId: clickedSeat.id,
+            seatX: clickedSeat.x,
+            seatZ: clickedSeat.z,
+            label: 'Seat',
+          },
+        });
+        return;
+      }
+
+      soundEngine.playUiClick();
+      navigateCityClickToWalk({
+        source: 'world',
+        rawX: targetWorldX,
+        rawZ: targetWorldZ,
+        goalX: targetWorldX,
+        goalZ: targetWorldZ,
+      });
+    };
+
+    const onClickToWalkNavigateEvent = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          x?: number;
+          z?: number;
+          rawX?: number;
+          rawZ?: number;
+          label?: string | null;
+          source?: 'minimap' | 'poi' | 'world';
+        }>
+      ).detail;
+      if (
+        !detail ||
+        typeof detail.x !== 'number' ||
+        !Number.isFinite(detail.x) ||
+        typeof detail.z !== 'number' ||
+        !Number.isFinite(detail.z)
+      ) {
+        return;
+      }
+      navigateCityClickToWalk({
+        source: detail.source ?? 'minimap',
+        rawX:
+          typeof detail.rawX === 'number' && Number.isFinite(detail.rawX)
+            ? detail.rawX
+            : detail.x,
+        rawZ:
+          typeof detail.rawZ === 'number' && Number.isFinite(detail.rawZ)
+            ? detail.rawZ
+            : detail.z,
+        goalX: detail.x,
+        goalZ: detail.z,
+        label: detail.label ?? null,
+      });
+    };
+
+    const onClickToWalkCancelEvent = () => {
+      cancelClickToWalk();
+    };
+
+    window.addEventListener('click-to-walk-navigate', onClickToWalkNavigateEvent);
+    window.addEventListener('click-to-walk-cancel', onClickToWalkCancelEvent);
+
+    const getArenaNavGrid = (isTrackedTank: boolean): AStarNavGrid => {
+      ensureArenaNavGridsBuilt();
       return isTrackedTank ? cachedVehicleNavGrid! : cachedFootNavGrid!;
+    };
+
+    const getPedestrianNavGrid = (): AStarNavGrid => {
+      ensureArenaNavGridsBuilt();
+      return cachedPedestrianNavGrid!;
     };
 
     let aStarRepathsThisFrame = 0;
@@ -17590,6 +21031,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       );
     };
 
+    // Track previous safe ground coordinate per foot/scooter key for smooth stair & cliff edge guarding
+    const lastSafeFootPosByKey = new Map<string, { x: number; z: number }>();
+
     // Unified 3D OBB + Multi-Sphere Compound Hull Physics Collision Resolver (Solid vs Pushable vs Breakable + Material Impact SFX)
     const resolveMoverWorldCollisions = (
       mover: {
@@ -17619,6 +21063,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             ? (mover.altitude ?? 0)
             : 0;
       const isAirbornePlane = isVehicle && mover.vehicleKind === 'plane' && moverAltitude > 1.25;
+      const prevSafeRaw =
+        !isVehicle && moverAltitude < 0.25 ? lastSafeFootPosByKey.get(moverKey) : undefined;
+      const prevSafe =
+        prevSafeRaw &&
+        getPlanetShortestDistance(mover.x, mover.z, prevSafeRaw.x, prevSafeRaw.z) <= 2.6
+          ? prevSafeRaw
+          : undefined;
       const moverTeam: 'blue' | 'red' = mover.team ?? (isPlayerControlled ? 'blue' : 'red');
       let moverOwnerCommanderId =
         mover.ownerCommanderId !== undefined
@@ -17636,43 +21087,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (aiDriver) moverOwnerCommanderId = aiDriver.ownerCommanderId;
       }
 
-      // 0. Shoreline & Outer Perimeter Hill Embankment ("Tanggul Bukit") Boundary:
+      // 0. Shoreline, Stilt Cabin / Pier Deck & Outer Perimeter Hill Embankment ("Tanggul Bukit") Boundary:
       //    - Tracked Tanks (`vehicleKind === 'tank'`) and Airborne Planes can freely cross the Centered Oasis Lake!
       //    - Foot characters (`BuddyUnit`) and wheeled Dump Trucks (`vehicleKind === 'truck'`) remain blocked by the Oasis Lake shoreline.
-      //    - All non-flying ground units & vehicles remain blocked from falling off the East Harbor Quay Wall into the deep sea.
+      //    - All non-flying ground units & vehicles remain blocked from falling off the East Harbor Quay Wall into the deep sea,
+      //      while both Taman Ria Overwater Pier and Beachfront Stilt Cabin Deck remain dry-walkable.
       //    - ALL units and vehicles (including Tanks, Trucks, Planes & Characters) are 100% blocked by the Outer Perimeter Hill Embankment ("Tanggul Bukit").
       const isTrackedTank = isVehicle && mover.vehicleKind === 'tank';
-      if (!isAirbornePlane) {
-        const lakeSdf = evaluateNwLakeSdf(mover.x, mover.z);
-        if (!isTrackedTank && lakeSdf < -0.1) {
-          const dx = mover.x - -31.0;
-          const dz = mover.z - 0.0;
-          const len = Math.max(0.01, Math.hypot(dx, dz));
-          const nx = dx / len;
-          const nz = dz / len;
-          const pushOut = -0.1 - lakeSdf;
-          mover.x = wrapPlanetCoord(mover.x + nx * pushOut);
-          mover.z = wrapPlanetCoord(mover.z + nz * pushOut);
-          const vn = mover.vx * nx + mover.vz * nz;
-          if (vn < 0) {
-            mover.vx -= vn * nx;
-            mover.vz -= vn * nz;
-          }
-        }
-        const harborWaterSdf = evaluateSeHarborSdf(mover.x, mover.z).waterSdf;
-        if (harborWaterSdf < -0.1 && !isPointOnAmusementOverwaterPier(mover.x, mover.z)) {
-          const nx = -1.0;
-          const nz = 0.0;
-          const pushOut = -0.1 - harborWaterSdf;
-          mover.x = wrapPlanetCoord(mover.x + nx * pushOut);
-          mover.z = wrapPlanetCoord(mover.z + nz * pushOut);
-          const vn = mover.vx * nx + mover.vz * nz;
-          if (vn < 0) {
-            mover.vx -= vn * nx;
-            mover.vz -= vn * nz;
-          }
-        }
+      const waterAndEmb = resolveExtendedWaterMarginGuard2D({
+        x: mover.x,
+        z: mover.z,
+        vx: mover.vx,
+        vz: mover.vz,
+        radius: moverRadius,
+        canTraverseLake: isTrackedTank,
+        isAirbornePlane,
+        prevX: prevSafe?.x,
+        prevZ: prevSafe?.z,
+        waterMarginM: isVehicle ? 0.1 : 0.16,
+      });
+      if (waterAndEmb.hitWater || waterAndEmb.hitEmbankment) {
+        mover.x = waterAndEmb.x;
+        mover.z = waterAndEmb.z;
+        mover.vx = waterAndEmb.vx;
+        mover.vz = waterAndEmb.vz;
+      }
 
+      if (!isAirbornePlane) {
         // 0A-2. Public Crate Pad Safe Shield Barrier: Enemy units/vehicles cannot step inside an opposing team's Shielded Crate Pad!
         // Strictly active ONLY in Warzone mode (`cityArenaMode === 'warzone'`); disabled in Safezone (Kota Damai) mode.
         if (cityArenaMode === 'warzone') {
@@ -17694,26 +21135,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // 0B. 100% Impassable Outer Perimeter Hill Embankment ("Tanggul Bukit") at all altitudes:
-      const embSdf = evaluateOuterEmbankmentSdf(mover.x, mover.z);
-      const embLimit = -Math.max(0.65, moverRadius);
-      if (embSdf > embLimit) {
-        const eps = 0.5;
-        const gx = evaluateOuterEmbankmentSdf(mover.x + eps, mover.z) - evaluateOuterEmbankmentSdf(mover.x - eps, mover.z);
-        const gz = evaluateOuterEmbankmentSdf(mover.x, mover.z + eps) - evaluateOuterEmbankmentSdf(mover.x, mover.z - eps);
-        const glen = Math.max(0.001, Math.hypot(gx, gz));
-        const nx = -gx / glen;
-        const nz = -gz / glen;
-        const pushIn = embSdf - embLimit;
-        mover.x = wrapPlanetCoord(mover.x + nx * pushIn);
-        mover.z = wrapPlanetCoord(mover.z + nz * pushIn);
-        const vn = mover.vx * nx + mover.vz * nz;
-        if (vn < 0) {
-          mover.vx -= vn * nx * 1.15;
-          mover.vz -= vn * nz * 1.15;
-        }
-      }
-
       // Build Multi-Sphere Compound Hull for elongated vehicles so Rear Truck Cargo Beds (-3.66m),
       // Front Bumpers (+3.59m), Tank Hulls, and Plane Noses/Tails/Wings NEVER clip into walls or buildings!
       const yaw = mover.hullYaw ?? 0;
@@ -17725,9 +21146,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const hullSpheres: Array<{ ox: number; oz: number; r: number }> =
         isVehicle && mover.vehicleKind === 'truck'
           ? [
-              { ox: 0, oz: 0, r: 1.82 },
-              { ox: -fwdX * 1.90, oz: -fwdZ * 1.90, r: 1.82 },
-              { ox: fwdX * 1.85, oz: fwdZ * 1.85, r: 1.82 },
+              { ox: 0, oz: 0, r: 2.28 },
+              { ox: -fwdX * 2.38, oz: -fwdZ * 2.38, r: 2.28 },
+              { ox: fwdX * 2.31, oz: fwdZ * 2.31, r: 2.28 },
             ]
           : isVehicle && mover.vehicleKind === 'tank'
             ? [
@@ -17737,16 +21158,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               ]
             : isVehicle && mover.vehicleKind === 'plane'
               ? [
-                  { ox: 0, oz: 0, r: 1.48 },
-                  { ox: -fwdX * 1.12, oz: -fwdZ * 1.12, r: 1.38 },
-                  { ox: fwdX * 1.08, oz: fwdZ * 1.08, r: 1.38 },
-                  { ox: rightX * 1.25, oz: rightZ * 1.25, r: 1.25 },
-                  { ox: -rightX * 1.25, oz: -rightZ * 1.25, r: 1.25 },
+                  { ox: 0, oz: 0, r: 2.17 },
+                  { ox: -fwdX * 1.64, oz: -fwdZ * 1.64, r: 2.02 },
+                  { ox: fwdX * 1.58, oz: fwdZ * 1.58, r: 2.02 },
+                  { ox: rightX * 1.83, oz: rightZ * 1.83, r: 1.83 },
+                  { ox: -rightX * 1.83, oz: -rightZ * 1.83, r: 1.83 },
                 ]
               : [{ ox: 0, oz: 0, r: moverRadius }];
 
-      // 1. Solid Static 3D OBB Colliders: Retaining Walls, Base Buildings, Watchtower/Guardhouse/Bunker, 8 Bastions, 8 Container Stacks & Construction Yard Equipment
-      const staticStructures = getStaticWorldStructures();
+      // 1. Solid Static 3D OBB + Circular Basin Colliders: Retaining Walls, Base Buildings, Plaza/Park/Beach Props, Streetlamps & Signs
+      const auditedWorld = getAuditedStaticWorldStructures(getStaticWorldStructures());
+      const staticStructures = auditedWorld.obbs;
+      let hitStaticPass1 = false;
       for (const st of staticStructures) {
         if (moverAltitude >= st.heightY) continue;
         const maxReach = st.halfX + st.halfZ + 5.5;
@@ -17798,6 +21221,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             0.28,
           );
           if (res.collided) {
+            hitStaticPass1 = true;
             mover.x = wrapPlanetCoord(res.x - hs.ox);
             mover.z = wrapPlanetCoord(res.z - hs.oz);
             mover.vx = res.vx;
@@ -17822,7 +21246,104 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
-      // 1B. Solid Standing NPC Merchant Body Colliders (Merchant Hana at Central Plaza & Merchant Kai at Beachfront Harbor)
+      // Circular static colliders (Central Park Fountain & Lily Pond, Cozy Bistro sets, Ontang-Anting, Botanical Beds)
+      for (const c of auditedWorld.circles) {
+        if (moverAltitude >= c.heightY) continue;
+        const maxReach = c.radius + 5.5;
+        if (Math.abs(mover.x - c.x) > maxReach || Math.abs(mover.z - c.z) > maxReach) continue;
+        for (const hs of hullSpheres) {
+          const sx = mover.x + hs.ox;
+          const sz = mover.z + hs.oz;
+          const res = resolveCapsuleVsCirclePushout2D(
+            sx,
+            sz,
+            mover.vx,
+            mover.vz,
+            hs.r,
+            c.x,
+            c.z,
+            c.radius,
+            0.24,
+            1.0,
+          );
+          if (res.collided) {
+            hitStaticPass1 = true;
+            mover.x = wrapPlanetCoord(res.x - hs.ox);
+            mover.z = wrapPlanetCoord(res.z - hs.oz);
+            mover.vx = res.vx;
+            mover.vz = res.vz;
+            if (
+              shouldPlayMoverCollisionSound(isVehicle, false, isPlayerControlled, res.impactSpeed, 0.85) &&
+              tryTriggerCooldown(`${moverKey}_${c.id}`, timeSec, 0.11)
+            ) {
+              soundEngine.playMaterialImpact(c.mat, res.impactSpeed);
+              spawnCollisionContactParticles(
+                c.x + res.normalX * c.radius,
+                moverAltitude + 0.75,
+                c.z + res.normalZ * c.radius,
+                res.normalX,
+                res.normalZ,
+                c.mat,
+                res.impactSpeed,
+              );
+              shakeTrauma = Math.min(1, shakeTrauma + Math.min(0.3, res.impactSpeed * 0.02));
+            }
+          }
+        }
+      }
+
+      // Corner depenetration convergence pass for on-foot/scooter movers when pressing into multi-wall corners
+      if (hitStaticPass1 && !isVehicle && moverAltitude < 0.5) {
+        const cornerFix = resolveGroundMoverAuditedCollisions2D({
+          x: mover.x,
+          z: mover.z,
+          vx: mover.vx,
+          vz: mover.vz,
+          radius: moverRadius,
+          moverAltitude,
+          audited: auditedWorld,
+          prevX: prevSafe?.x,
+          prevZ: prevSafe?.z,
+          waterMarginM: 0.16,
+          restitution: 0.0,
+          iterations: 2,
+          obbFilter: (st) => {
+            const gateMatch = /^(blue|red)_plot_([0-3])_gate$/.exec(st.id);
+            if (!gateMatch) return true;
+            const gateTeam = gateMatch[1] as 'blue' | 'red';
+            const gatePlotIdx = Number(gateMatch[2]);
+            const gatePlot = (gateTeam === 'blue' ? blueCommanderBases : redCommanderBases)[gatePlotIdx];
+            return !canUnitEnterCommanderBaseGate(
+              moverTeam,
+              moverOwnerCommanderId,
+              gateTeam,
+              gatePlotIdx,
+              nearSessionState,
+              {
+                isSafezoneMode: cityArenaMode === 'safezone',
+                plot: gatePlot,
+                unitWalletOrId: isPlayerControlled
+                  ? nearSessionState.accountId ?? nearSessionState.walletId ?? 'unverified-guest'
+                  : `visitor-${moverKey}`,
+                isPlotOwnerOverride:
+                  cityArenaMode === 'safezone'
+                    ? isPlayerControlled &&
+                      nearSessionState.claimedTeam === gateTeam &&
+                      nearSessionState.claimedPlotIndex === gatePlotIdx
+                    : undefined,
+              },
+            );
+          },
+        });
+        if (cornerFix.collided) {
+          mover.x = cornerFix.x;
+          mover.z = cornerFix.z;
+          mover.vx = cornerFix.vx;
+          mover.vz = cornerFix.vz;
+        }
+      }
+
+      // 1B. Solid Standing Merchant & Town Folks NPC Body Capsules (smooth tangential separation without bounce/jitter)
       if (worldModeRef.current !== 'warzone' && moverAltitude < 3.85) {
         for (const standingNpc of [lobbyCafeNpc, beachHouseNpc]) {
           if (!standingNpc?.npcGrp?.visible) continue;
@@ -17842,6 +21363,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               npcZ,
               0.56,
               0.22,
+            );
+            if (res.collided) {
+              mover.x = wrapPlanetCoord(res.x - hs.ox);
+              mover.z = wrapPlanetCoord(res.z - hs.oz);
+              mover.vx = res.vx;
+              mover.vz = res.vz;
+            }
+          }
+        }
+
+        const moverGroundY = getTerrainElevation(mover.x, mover.z);
+        for (let ni = 0; ni < cityAmbientNpcs.length; ni++) {
+          const citizen = cityAmbientNpcs[ni];
+          if (!citizen.root.visible) continue;
+          if (Math.abs(mover.x - citizen.x) > 4.5 || Math.abs(mover.z - citizen.z) > 4.5) continue;
+          if (Math.abs(moverGroundY - getTerrainElevation(citizen.x, citizen.z)) > 2.2) continue;
+          for (const hs of hullSpheres) {
+            const sx = mover.x + hs.ox;
+            const sz = mover.z + hs.oz;
+            const res = resolveCapsuleVsCirclePushout2D(
+              sx,
+              sz,
+              mover.vx,
+              mover.vz,
+              hs.r,
+              citizen.x,
+              citizen.z,
+              AMBIENT_NPC_CAPSULE_RADIUS,
+              0.0,
+              1.0,
             );
             if (res.collided) {
               mover.x = wrapPlanetCoord(res.x - hs.ox);
@@ -18118,9 +21669,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (Math.abs(moverAltitude - vehAlt) > 2.4) continue;
 
         const vehHalfX =
-          veh.vehicleKind === 'truck' ? 3.66 : veh.vehicleKind === 'tank' ? 2.48 : 2.52;
+          veh.vehicleKind === 'truck' ? 4.58 : veh.vehicleKind === 'tank' ? 2.48 : 3.69;
         const vehHalfZ =
-          veh.vehicleKind === 'truck' ? 1.76 : veh.vehicleKind === 'tank' ? 1.66 : 2.48;
+          veh.vehicleKind === 'truck' ? 2.20 : veh.vehicleKind === 'tank' ? 1.66 : 3.63;
         const vehRotY = -(veh.hullYaw ?? 0);
 
         for (const hs of hullSpheres) {
@@ -18248,6 +21799,57 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       }
 
+      // 3D. Solid Pooled AI City Traffic Vehicles OBB Collision
+      if (
+        moverAltitude < 2.2 &&
+        cityLightingAndTraffic.rootGroup.visible &&
+        (!isPlayerControlled || ridingTramCarIdx === null)
+      ) {
+        const trafficBoxes = cityLightingAndTraffic.getVehicleCollisionBoxes();
+        for (let tvi = 0; tvi < trafficBoxes.length; tvi++) {
+          const box = trafficBoxes[tvi];
+          for (const hs of hullSpheres) {
+            const sx = mover.x + hs.ox;
+            const sz = mover.z + hs.oz;
+            const res = resolveSolidObbCollision2D(
+              sx,
+              sz,
+              mover.vx - box.vx,
+              mover.vz - box.vz,
+              hs.r,
+              box.x,
+              box.z,
+              box.halfWidth,
+              box.halfLength,
+              box.yaw,
+              0.24,
+            );
+            if (res.collided) {
+              mover.x = wrapPlanetCoord(res.x - hs.ox);
+              mover.z = wrapPlanetCoord(res.z - hs.oz);
+              mover.vx = res.vx + box.vx * 0.45;
+              mover.vz = res.vz + box.vz * 0.45;
+              if (
+                shouldPlayMoverCollisionSound(isVehicle, false, isPlayerControlled, res.impactSpeed, 0.9) &&
+                tryTriggerCooldown(`${moverKey}_traffic_${box.id}`, timeSec, 0.16)
+              ) {
+                soundEngine.playMaterialImpact('metal', res.impactSpeed);
+                spawnCollisionContactParticles(
+                  res.contactX,
+                  moverAltitude + 0.85,
+                  res.contactZ,
+                  res.normalX,
+                  res.normalZ,
+                  'metal',
+                  res.impactSpeed,
+                );
+                shakeTrauma = Math.min(1, shakeTrauma + Math.min(0.2, res.impactSpeed * 0.016));
+              }
+            }
+          }
+        }
+      }
+
       // 4. Grounded Crates (Pushable when bumped by running character, Dump Truck, or full tank; Breakable if rammed hard!)
       for (let i = worldCrates.length - 1; i >= 0; i--) {
         const c = worldCrates[i];
@@ -18335,11 +21937,56 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
       }
+
+      // 5. Foot Staircase Cheek & Retaining Cliff Drop Guard + Safe Position Memory
+      if (!isVehicle && moverAltitude < 0.25) {
+        if (prevSafe) {
+          const stairGuard = resolveStaircaseAndElevationGuard2D({
+            prevX: prevSafe.x,
+            prevZ: prevSafe.z,
+            nextX: mover.x,
+            nextZ: mover.z,
+            vx: mover.vx,
+            vz: mover.vz,
+            radius: moverRadius,
+          });
+          if (stairGuard.clamped) {
+            mover.x = stairGuard.x;
+            mover.z = stairGuard.z;
+            mover.vx = stairGuard.vx;
+            mover.vz = stairGuard.vz;
+          }
+        }
+        lastSafeFootPosByKey.set(moverKey, { x: mover.x, z: mover.z });
+      }
     };
 
     resetArenaRef.current = () => {
       spawnInitialSquadsAndObjects();
       runElapsedSec = 0;
+    };
+
+    const syncDirShadowUniforms = (shadowActive: boolean) => {
+      if (
+        shadowActive &&
+        dirLight.castShadow &&
+        dirLight.shadow.map &&
+        windUniforms.uDirShadowMap &&
+        windUniforms.uDirShadowMatrix &&
+        windUniforms.uHasDirShadow
+      ) {
+        windUniforms.uDirShadowMap.value =
+          dirLight.shadow.map.depthTexture || dirLight.shadow.map.texture;
+        windUniforms.uDirShadowMatrix.value.copy(dirLight.shadow.matrix);
+        windUniforms.uHasDirShadow.value = 1.0;
+      } else {
+        if (windUniforms.uHasDirShadow) {
+          windUniforms.uHasDirShadow.value = 0.0;
+        }
+        if (windUniforms.uDirShadowMap) {
+          windUniforms.uDirShadowMap.value = null;
+        }
+      }
     };
 
     let rafId = 0;
@@ -18355,9 +22002,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     }[] = [
       // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + All 4 Halte Tram Platforms + 4 Public Warzone Crate Pads exclude grass
       { x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 },
-      { x: -61.67, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
-      { x: 6.5, z: -44.67, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
-      { x: -36.5, z: 44.67, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
+      { x: -58.9, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
+      { x: 3.5, z: -40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
+      { x: -36.5, z: 40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
       { x: 79.63, z: 29.5, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
       ...PUBLIC_WARZONE_CRATE_PADS.map((p) => ({
         x: p.worldX,
@@ -18389,6 +22036,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isDevBuild = Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
     const isFullMapOverview = isDevBuild && initialSearchParams?.get('fullmap') === '1';
+    const isFullMapOrtho = isFullMapOverview && initialSearchParams?.get('ortho') === '1';
     const planeViewMode = isDevBuild ? (initialSearchParams?.get('planeview') ?? null) : null;
     const skyshieldViewMode = isDevBuild
       ? (initialSearchParams?.get('skyshieldview') ?? null)
@@ -18410,16 +22058,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const cachedBeachfrontHarborHalte = scene.getObjectByName('ModernUrbanTramStopShelter_beachfront_harbor');
     const cachedCityTransitNetworkGroup = scene.getObjectByName('CityTransitNetworkGroup3D');
 
-    // Toggle all outdoor-world meshes/NPCs together so indoor scenes (`cafe_interior`,
-    // `house_interior`, `house_visit`) skip rendering the entire outdoor city & props.
+    // Toggle all outdoor-world meshes/lights/NPCs together so indoor scenes (`cafe_interior`,
+    // `casino_interior`, `house_interior`, `house_visit`) skip outdoor rendering, shadows, and directional lighting.
     syncIndoorOutdoorSceneVisibility = (showOutdoor: boolean) => {
+      const lightingIsolation = resolveOutdoorLightingState(
+        lightingPresetRef.current,
+        !showOutdoor,
+        isSoftwareGl,
+        '#ffe6b1',
+      );
+      hemiLight.visible = lightingIsolation.outdoorLightsVisible;
+      dirLight.visible = lightingIsolation.outdoorLightsVisible;
+      dirLight.castShadow = lightingIsolation.outdoorCastShadow;
+      if (windUniforms.uHasDirShadow && !showOutdoor) {
+        windUniforms.uHasDirShadow.value = 0.0;
+      }
       curvedPlanetEnv.groundMesh.visible = showOutdoor;
       curvedPlanetEnv.waterMesh.visible = showOutdoor;
+      underwaterEcology.group.visible = showOutdoor;
       curvedPlanetEnv.planetCoreMesh.visible = showOutdoor;
       curvedPlanetEnv.roadsGroup.visible = showOutdoor;
+      cityLightingAndTraffic.rootGroup.visible = showOutdoor;
       curvedPlanetEnv.natureGroup.visible = showOutdoor;
       curvedPlanetEnv.sunbeamGroup.visible = showOutdoor;
+      horizonBackdrop.group.visible = showOutdoor;
       realPropsGroup.visible = showOutdoor;
+      worldPropBatchManager.batchRootGroup.visible = showOutdoor;
       blueBase.baseGroup.visible = showOutdoor;
       redBase.baseGroup.visible = showOutdoor;
       blitzGrassSystem.grassMesh.visible = showOutdoor && !isFullMapOverview;
@@ -18428,6 +22092,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       animeCloudRingGroup.visible = showOutdoor;
       animeSparklePoints.visible = showOutdoor;
       cityTram.rootGroup.visible = showOutdoor;
+      centralPark.group.visible = showOutdoor;
       if (cachedHalteReturnPadsObj) cachedHalteReturnPadsObj.visible = showOutdoor;
       if (cachedCentralHalteShelterStructure) cachedCentralHalteShelterStructure.visible = showOutdoor;
       if (cachedNorthResidenceHalte) cachedNorthResidenceHalte.visible = showOutdoor;
@@ -18446,6 +22111,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         realEstateCatalogChevron.group.visible = false;
         modelHouseDoorChevron.group.visible = false;
         grandCasinoDoorChevron.group.visible = false;
+        beautySalonDoorChevron.group.visible = false;
         shorelineFishing3DGroup.visible = false;
         for (let i = 0; i < trees.length; i++) {
           trees[i].mesh.visible = false;
@@ -18508,6 +22174,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const state = gameStateRef.current;
       const currentPlayMode = playModeRef.current;
 
+      if (!isSoftwareGl && state === 'playing' && rawDt > 0.001 && rawDt < 0.25) {
+        const frameMs = Math.min(80, Math.max(4, rawDt * 1000));
+        smoothedFrameMs = smoothedFrameMs * 0.9 + frameMs * 0.1;
+        if (dprAdjustCooldownFrames > 0) {
+          dprAdjustCooldownFrames--;
+        } else {
+          const capDpr = Math.min(window.devicePixelRatio || 1, 1.25);
+          let nextDpr = currentAdaptiveDpr;
+          if (smoothedFrameMs > 22.0 && currentAdaptiveDpr > 0.85) {
+            nextDpr = currentAdaptiveDpr > 1.05 ? Math.min(1.0, capDpr) : 0.85;
+            dprAdjustCooldownFrames = 45;
+          } else if (smoothedFrameMs < 15.2 && currentAdaptiveDpr < capDpr) {
+            nextDpr = currentAdaptiveDpr < 0.95 ? Math.min(1.0, capDpr) : capDpr;
+            dprAdjustCooldownFrames = 90;
+          }
+          if (Math.abs(nextDpr - currentAdaptiveDpr) > 0.02) {
+            currentAdaptiveDpr = nextDpr;
+            const rw = container?.clientWidth || window.innerWidth;
+            const rh = container?.clientHeight || window.innerHeight;
+            renderer.setPixelRatio(currentAdaptiveDpr);
+            renderer.setSize(rw, rh, false);
+          }
+        }
+      }
+      syncSecondaryLodFrustum();
+
       // 1. InfiniteGrass & TreeLeaves Wind Shader Uniforms
       windUniforms.uTime.value = timeSec;
       windUniforms.uWindPhase.value = timeSec * 4.8;
@@ -18533,6 +22225,83 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const activeFocusUnit = mountedTank ? mountedTank : playerUnit;
       const tourPoseNow = computeLandingCityTourPose(timeSec);
+
+      // Compute City View Camera Pose (interpolated flight or live drag-orbit/pan)
+      if (
+        npcCameraMode === 'city_view' &&
+        cityViewTarget === 'kota' &&
+        !cityViewFlyActive &&
+        !cityViewExitingToPlayer
+      ) {
+        const panFwd =
+          (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) -
+          (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
+        const panSide =
+          (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) -
+          (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+        if (panFwd !== 0 || panSide !== 0) {
+          const panSpeed = 0.45 * cityViewOrbit.dist * dt;
+          const sinY = Math.sin(cityViewOrbit.yaw);
+          const cosY = Math.cos(cityViewOrbit.yaw);
+          const wx = panSide * cosY - panFwd * sinY;
+          const wz = -panSide * sinY - panFwd * cosY;
+          cityViewOrbit.panX = clamp(
+            cityViewOrbit.panX + wx * panSpeed,
+            -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+            CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+          );
+          cityViewOrbit.panZ = clamp(
+            cityViewOrbit.panZ + wz * panSpeed,
+            -CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+            CITY_VIEW_OVERVIEW_DEFAULTS.panLimit,
+          );
+        }
+      }
+      const cityViewTargetPose =
+        npcCameraMode === 'city_view'
+          ? cityViewExitingToPlayer
+            ? {
+                cameraPos: cityViewSavedPlayerCamPos,
+                lookAtPos: cityViewSavedPlayerLookAt,
+                fov: cityViewSavedPlayerFov,
+              }
+            : computeCityViewOrbitCameraPose({
+                target: cityViewTarget,
+                yaw: cityViewOrbit.yaw,
+                pitch: cityViewOrbit.pitch,
+                dist: cityViewOrbit.dist,
+                panX: cityViewOrbit.panX,
+                panZ: cityViewOrbit.panZ,
+              })
+          : null;
+      const cityViewFlyResult =
+        npcCameraMode === 'city_view' && cityViewFlyActive && cityViewTargetPose
+          ? computeCityViewFlyPose({
+              startCamPos: cityViewFlyStartCamPos,
+              startLookAtPos: cityViewFlyStartLookAt,
+              startFov: cityViewFlyStartFov,
+              targetCamPos: cityViewTargetPose.cameraPos,
+              targetLookAtPos: cityViewTargetPose.lookAtPos,
+              targetFov: cityViewTargetPose.fov,
+              progress01: clamp(
+                (now - cityViewFlyStartMs) /
+                  (cityViewExitingToPlayer ? 820 : cityViewFlyDurationMs),
+                0,
+                1,
+              ),
+            })
+          : null;
+      if (cityViewFlyResult?.isComplete && !cityViewExitingToPlayer) {
+        cityViewFlyActive = false;
+      }
+      const cityViewPoseNow =
+        npcCameraMode === 'city_view' && cityViewTargetPose
+          ? cityViewFlyResult ?? {
+              ...cityViewTargetPose,
+              eased01: 1,
+              isComplete: true,
+            }
+          : null;
       const flyDurationMs = 1550;
       const flyProgress01 =
         npcCameraMode === 'fly_to_plaza'
@@ -18602,12 +22371,88 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (npcCameraMode === 'landing_tour') {
         lastLandingCameraPose = tourPoseNow;
       }
+      const desiredPortraitCitizenId =
+        npcCameraMode === 'none' &&
+        worldModeRef.current !== 'warzone' &&
+        cityArenaMode !== 'warzone' &&
+        !isFullMapOverview &&
+        !parkViewMode &&
+        nukeStrikeState.phase === 'idle' &&
+        !activeTramRideCutscene?.active &&
+        !mountedTank
+          ? activeCitizenDialogueId
+          : null;
+      const activeCitizenPortraitNpc = desiredPortraitCitizenId
+        ? (cityAmbientNpcs.find((c) => c.preset.id === desiredPortraitCitizenId) ?? null)
+        : null;
+      if (activeCitizenPortraitNpc) {
+        if (!citizenPortraitState || citizenPortraitState.citizenId !== activeCitizenPortraitNpc.preset.id) {
+          const anchor = resolveCitizenRenderAnchor(activeCitizenPortraitNpc);
+          let dirX = 1;
+          let dirZ = 0;
+          if (activeCitizenPortraitNpc.isSitting) {
+            dirX = Math.cos(anchor.seatFacingYaw);
+            dirZ = -Math.sin(anchor.seatFacingYaw);
+          } else if (playerUnit) {
+            const toPlayerX = playerUnit.x - activeCitizenPortraitNpc.x;
+            const toPlayerZ = playerUnit.z - activeCitizenPortraitNpc.z;
+            const dLen = Math.hypot(toPlayerX, toPlayerZ);
+            if (dLen >= 0.15) {
+              dirX = toPlayerX / dLen;
+              dirZ = toPlayerZ / dLen;
+            } else {
+              dirX = Math.cos(activeCitizenPortraitNpc.yaw);
+              dirZ = -Math.sin(activeCitizenPortraitNpc.yaw);
+            }
+          }
+          const initLook = hasLastRenderedCamPose
+            ? { ...lastRenderedLookAt }
+            : { x: anchor.renderX, y: anchor.groundY + 1.5, z: anchor.renderZ };
+          const initCam = hasLastRenderedCamPose
+            ? { ...lastRenderedCamPos }
+            : { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+          citizenReturnBlend01 = 0;
+          citizenPortraitState = {
+            citizenId: activeCitizenPortraitNpc.preset.id,
+            frontDirX: dirX,
+            frontDirZ: dirZ,
+            blend01: 0,
+            startCamPos: initCam,
+            startLookAt: initLook,
+            startFov: hasLastRenderedCamPose ? lastRenderedFov : camera.fov,
+            faceCamYaw: Math.atan2(dirX, dirZ),
+          };
+        } else {
+          citizenPortraitState.blend01 = Math.min(
+            1,
+            citizenPortraitState.blend01 + Math.min(rawDt, 0.05) / 0.28,
+          );
+        }
+      } else {
+        if (citizenPortraitState) {
+          if (hasLastRenderedCamPose) {
+            citizenReturnFromCamPos = { ...lastRenderedCamPos };
+            citizenReturnFromLookAt = { ...lastRenderedLookAt };
+            citizenReturnFromFov = lastRenderedFov;
+            citizenReturnBlend01 = 1;
+          }
+          citizenPortraitState = null;
+        }
+        if (citizenReturnBlend01 > 0) {
+          citizenReturnBlend01 = Math.max(
+            0,
+            citizenReturnBlend01 - Math.min(rawDt, 0.05) / 0.24,
+          );
+        }
+      }
       const nukePrePose =
         nukeStrikeState.phase !== 'idle'
           ? computeNuclearStrikeCameraPose(nukeStrikeState)
           : null;
       const viewCenterX =
-        npcCameraMode === 'landing_tour'
+        npcCameraMode === 'city_view' && cityViewPoseNow
+          ? cityViewPoseNow.lookAtPos.x
+          : npcCameraMode === 'landing_tour'
           ? tourPoseNow.lookAtPos.x
           : activeFlyPose
           ? activeFlyPose.lookAtPos.x
@@ -18615,6 +22460,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ? npcCameraLocation === 'beach_house'
             ? 85.8
             : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x
+          : activeCitizenPortraitNpc
+          ? activeCitizenPortraitNpc.x
           : nukePrePose
           ? nukePrePose.focusPivotPos.x
           : currentPlayMode === 'editor'
@@ -18623,7 +22470,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ? activeFocusUnit.x
           : 0;
       const viewCenterZ =
-        npcCameraMode === 'landing_tour'
+        npcCameraMode === 'city_view' && cityViewPoseNow
+          ? cityViewPoseNow.lookAtPos.z
+          : npcCameraMode === 'landing_tour'
           ? tourPoseNow.lookAtPos.z
           : activeFlyPose
           ? activeFlyPose.lookAtPos.z
@@ -18631,6 +22480,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           ? npcCameraLocation === 'beach_house'
             ? 60.0
             : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z
+          : activeCitizenPortraitNpc
+          ? activeCitizenPortraitNpc.z
           : nukePrePose
           ? nukePrePose.focusPivotPos.z
           : currentPlayMode === 'editor'
@@ -18642,17 +22493,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'house_visit' ||
         npcCameraMode === 'house_interior' ||
         npcCameraMode === 'cafe_interior' ||
-        npcCameraMode === 'casino_interior';
+        npcCameraMode === 'casino_interior' ||
+        npcCameraMode === 'salon_interior';
       if (!isFlatIndoorRoomTick) {
         blitzGrassSystem.update(
-          npcCameraMode === 'landing_tour' || activeFlyPose
+          npcCameraMode === 'landing_tour' ||
+            npcCameraMode === 'city_view' ||
+            activeFlyPose
             ? viewCenterX
             : nukePrePose
             ? nukePrePose.focusPivotPos.x
             : activeFocusUnit
             ? activeFocusUnit.x
             : 0,
-          npcCameraMode === 'landing_tour' || activeFlyPose
+          npcCameraMode === 'landing_tour' ||
+            npcCameraMode === 'city_view' ||
+            activeFlyPose
             ? viewCenterZ
             : nukePrePose
             ? nukePrePose.focusPivotPos.z
@@ -18681,7 +22537,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         reusableGrassTramplers.push({
           x: v.x,
           z: v.z,
-          radius: v.vehicleKind === 'truck' ? 2.45 : 2.25,
+          radius: v.vehicleKind === 'truck' ? 3.06 : v.vehicleKind === 'plane' ? 3.30 : 2.25,
           weight: 1.0,
         });
       }
@@ -18706,9 +22562,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       blitzGrassSystem.setTramplers(reusableGrassTramplers);
 
       reusableGrassExclusions.length = 0;
-      // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Widened East Tram Shelter Platform at (-61.67, 0.0)
+      // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Shifted Central Plaza Halte Platform at (-58.90, 0.0)
       reusableGrassExclusions.push({ x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 });
-      reusableGrassExclusions.push({ x: -61.67, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
+      reusableGrassExclusions.push({ x: -58.9, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
       // Public Warzone Crate Pads exclude grass ONLY in Warzone mode (disabled in Safezone / Kota Damai mode)
       if (cityArenaMode === 'warzone') {
         for (let pi = 0; pi < PUBLIC_WARZONE_CRATE_PADS.length; pi++) {
@@ -18776,6 +22632,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           halfWidth: 0.92,
         });
       }
+      const centralParkExclusions = getCentralParkGrassExclusionBoxes();
+      for (let i = 0; i < centralParkExclusions.length; i++) {
+        reusableGrassExclusions.push(centralParkExclusions[i]);
+      }
       // Filter exclusion boxes to those overlapping the 26m grass streaming window around viewCenter
       filteredGrassExclusions.length = 0;
       for (let i = 0; i < reusableGrassExclusions.length; i++) {
@@ -18831,7 +22691,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           isFloatingButtonOrModalOpen:
             npcCameraMode === 'character_select' ||
             npcCameraMode === 'landing_tour' ||
-            npcCameraMode === 'fly_to_plaza',
+            npcCameraMode === 'fly_to_plaza' ||
+            Boolean(citizenPortraitState),
           moveSpeed: 1,
           playerTeam: playerUnit?.team ?? 'blue',
           isEditorOrPeacefulCamera,
@@ -18852,7 +22713,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           npcCameraMode !== 'house_visit' &&
           npcCameraMode !== 'house_interior' &&
           npcCameraMode !== 'cafe_interior' &&
-          npcCameraMode !== 'casino_interior'
+          npcCameraMode !== 'casino_interior' &&
+          npcCameraMode !== 'salon_interior'
         ) {
           const mirrorSign =
             !isEditorOrPeacefulCamera && (playerUnit?.team ?? 'blue') === 'red' ? -1 : 1;
@@ -18862,7 +22724,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (
           npcCameraMode === 'house_visit' ||
           npcCameraMode === 'cafe_interior' ||
-          npcCameraMode === 'casino_interior'
+          npcCameraMode === 'casino_interior' ||
+          npcCameraMode === 'salon_interior'
         ) {
           if (isTextInputFocused) {
             moveX = 0;
@@ -18873,7 +22736,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 ? cafeVisitCamYaw
                 : npcCameraMode === 'casino_interior'
                   ? casinoVisitCamYaw
-                  : houseVisitCamYaw;
+                  : npcCameraMode === 'salon_interior'
+                    ? salonVisitCamYaw
+                    : houseVisitCamYaw;
             const inFwd =
               joyMag > 0.06
                 ? mobileJoyForward
@@ -18891,7 +22756,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             moveX = inFwd * fwdX + inRight * rightX;
             moveZ = inFwd * fwdZ + inRight * rightZ;
           }
-        } else if (npcCameraMode === 'house_interior') {
+        } else if (
+          npcCameraMode === 'house_interior' ||
+          npcCameraMode === 'city_view' ||
+          citizenPortraitState
+        ) {
           moveX = 0;
           moveZ = 0;
         } else if (
@@ -19643,6 +23512,157 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             dismountScooter();
           }
 
+          let clickToWalkSpeedScale = 1.0;
+          if (clickToWalkState.active && playerUnit && playerUnit.alive) {
+            const isIndoorClickRoom =
+              npcCameraMode === 'cafe_interior' ||
+              npcCameraMode === 'casino_interior' ||
+              npcCameraMode === 'salon_interior' ||
+              npcCameraMode === 'house_visit';
+            const isExitingCityView =
+              npcCameraMode === 'city_view' && cityViewExitingToPlayer;
+            const expectedModeMatch =
+              (npcCameraMode === clickToWalkStartedMode &&
+                (npcCameraMode === 'none' || isIndoorClickRoom)) ||
+              (clickToWalkStartedMode === 'none' && isExitingCityView);
+            const manualConflict = hasManualMovementConflict({
+              moveX,
+              moveZ,
+              keys,
+              joystickMag: Math.hypot(mobileJoyRight, mobileJoyForward),
+            });
+            const blockedAutoWalk =
+              !expectedModeMatch ||
+              Boolean(mountedTank) ||
+              ridingTramCarIdx !== null ||
+              currentPlayMode === 'editor' ||
+              (worldModeRef.current === 'warzone' && npcCameraMode === 'none') ||
+              shorelineFishingSync.phase !== 'idle' ||
+              cafeWorkAnimSync.phase !== 'idle' ||
+              isKioskModalOpenCanvas ||
+              Boolean(citizenPortraitState);
+
+            const isRidingScooterNow = Boolean(scooterRideState);
+            const pendingSeatPt =
+              clickToWalkState.pendingInteraction.kind === 'sit'
+                ? {
+                    x: clickToWalkState.pendingInteraction.seatX,
+                    z: clickToWalkState.pendingInteraction.seatZ,
+                  }
+                : null;
+            const liveOutdoorCapsules =
+              npcCameraMode === 'none' && !isRidingScooterNow
+                ? [
+                    ...cityAmbientNpcs
+                      .filter((n) => n.root.visible)
+                      .map((n) => ({
+                        id: n.preset.id,
+                        x: n.x,
+                        z: n.z,
+                        vx: 0,
+                        vz: 0,
+                        radius: AMBIENT_NPC_CAPSULE_RADIUS,
+                      })),
+                    ...buddyUnits
+                      .filter((b) => b.alive && !b.isPlayer)
+                      .map((b) => ({
+                        id: `buddy_${b.id}`,
+                        x: b.x,
+                        z: b.z,
+                        vx: b.vx,
+                        vz: b.vz,
+                        radius: 0.65,
+                      })),
+                  ]
+                : undefined;
+
+            const stepRes = stepClickToWalkSteering({
+              state: clickToWalkState,
+              x: playerUnit.x,
+              z: playerUnit.z,
+              dt,
+              manualInputActive: manualConflict,
+              isBlockedMode: blockedAutoWalk,
+              arrivalRadius: isIndoorClickRoom
+                ? 0.38
+                : isRidingScooterNow
+                  ? 1.35
+                  : 0.72,
+              waypointReachRadius: isIndoorClickRoom
+                ? 0.42
+                : isRidingScooterNow
+                  ? 1.95
+                  : 1.05,
+              maxStuckSec: isIndoorClickRoom ? 3.2 : 2.6,
+              audited:
+                npcCameraMode === 'none'
+                  ? getCityClickNavGrid(isRidingScooterNow).audited
+                  : undefined,
+              characterCapsules: liveOutdoorCapsules,
+              exemptSeatPoint: pendingSeatPt,
+              isOnScooter: isRidingScooterNow,
+            });
+            clickToWalkState = stepRes.nextState;
+
+            if (stepRes.cancelledByManualInput || stepRes.cancelledByStuck || blockedAutoWalk) {
+              clickToWalkIndicator3D.root.visible = false;
+              syncClickToWalkToReact(true);
+            } else if (stepRes.arrived) {
+              clickToWalkIndicator3D.root.visible = false;
+              const pending = stepRes.pendingInteractionToTrigger;
+              if (pending?.kind === 'sit') {
+                if (npcCameraMode === 'cafe_interior') {
+                  const seat = CAFE_INTERIOR_SEAT_SPOTS.find((s) => s.id === pending.seatId);
+                  if (seat) {
+                    currentNearestCafeSeat = seat;
+                    triggerSitOrStandAction();
+                  }
+                } else if (npcCameraMode === 'casino_interior') {
+                  const seat = CASINO_INTERIOR_SEAT_SPOTS.find((s) => s.id === pending.seatId);
+                  if (seat) {
+                    currentNearestCasinoSeat = seat;
+                    triggerSitOrStandAction();
+                  }
+                } else if (npcCameraMode === 'salon_interior') {
+                  const seat = SALON_INTERIOR_SEAT_SPOTS.find((s) => s.id === pending.seatId);
+                  if (seat) {
+                    currentNearestSalonSeat = seat;
+                    triggerSitOrStandAction();
+                  }
+                } else if (npcCameraMode === 'none') {
+                  const seat = LOBBY_SEAT_SPOTS.find((s) => s.id === pending.seatId);
+                  if (seat) {
+                    sitOnLobbySeat(seat);
+                  }
+                }
+              } else if (pending?.kind === 'sleep' && npcCameraMode === 'house_visit') {
+                const bed = HOUSE_BED_SLEEP_SPOTS.find((b) => b.id === pending.bedId);
+                if (bed) {
+                  sleepOnBed(bed);
+                }
+              } else if (pending?.kind === 'door_or_kiosk') {
+                soundEngine.playUiClick();
+                clearCharacterSelection();
+                window.dispatchEvent(
+                  new CustomEvent(
+                    pending.eventName,
+                    pending.eventDetail ? { detail: pending.eventDetail } : undefined,
+                  ),
+                );
+              }
+              syncClickToWalkToReact(true);
+            } else {
+              moveX = stepRes.dirX;
+              moveZ = stepRes.dirZ;
+              clickToWalkSpeedScale =
+                npcCameraMode === 'salon_interior' &&
+                salonCurrentFloorY >= 0.1 &&
+                salonCurrentFloorY < 2.95
+                  ? Math.min(0.88, Math.max(0.55, stepRes.speedScale))
+                  : Math.max(0.45, stepRes.speedScale);
+            }
+          }
+
           if (mountedTank) {
             // =================================================================
             // A. DRIVING BLITZ TANK / DUMP TRUCK OR FLYING BLITZ PLANE MODE
@@ -20227,7 +24247,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               getTerrainElevation(playerUnit.x, playerUnit.z),
               playerUnit.z,
             );
-            st.handle.root.rotation.set(0, st.yaw + Math.PI / 2, 0);
+            const scooterSlopePitchX = computeTerrainSlopePitchX(
+              playerUnit.x,
+              playerUnit.z,
+              st.yaw,
+            );
+            st.handle.root.rotation.order = 'YXZ';
+            st.handle.root.rotation.set(scooterSlopePitchX, st.yaw + Math.PI / 2, 0);
             st.pose = computeScooterRiderRigPose({
               kind: st.kind,
               distanceM: st.pushDistanceM,
@@ -20250,7 +24276,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 rideTarget < st.speed - 0.6,
               );
             }
-            st.handle.spinWheels(rideDist, SCOOTER_RIDE_MODEL_SCALE);
+            st.handle.spinWheels(rideDist, getScooterRideModelScale(st.kind));
             activeSpeed = Math.abs(st.speed);
           } else if (playerUnit.alive) {
             // =================================================================
@@ -20403,6 +24429,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 activeCasinoSeatedSpot = null;
                 playerUnit.isSitting = false;
               }
+              if (activeSalonSeatedSpot) {
+                const standPos = computeSalonSeatStandUpPosition(activeSalonSeatedSpot);
+                playerUnit.x = standPos.x;
+                playerUnit.z = standPos.z;
+                salonCurrentFloorY = standPos.floorY;
+                activeSalonSeatedSpot = null;
+                playerUnit.isSitting = false;
+              }
               if (playerUnit.isSleeping && activeSleepSpot) {
                 playerUnit.x = activeSleepSpot.wakeX;
                 playerUnit.z = activeSleepSpot.wakeZ;
@@ -20417,8 +24451,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isOrbitingSeatedCamera = false;
                 playerUnit.isSitting = false;
               }
-              playerUnit.vx = (moveX / inputLen) * moveSpeed;
-              playerUnit.vz = (moveZ / inputLen) * moveSpeed;
+              const effectiveFootSpeed = moveSpeed * clickToWalkSpeedScale;
+              playerUnit.vx = (moveX / inputLen) * effectiveFootSpeed;
+              playerUnit.vz = (moveZ / inputLen) * effectiveFootSpeed;
               playerUnit.x = wrapPlanetCoord(playerUnit.x + playerUnit.vx * dt);
               playerUnit.z = wrapPlanetCoord(playerUnit.z + playerUnit.vz * dt);
             } else {
@@ -20433,6 +24468,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 playerUnit.x = activeCasinoSeatedSpot.x;
                 playerUnit.z = activeCasinoSeatedSpot.z;
                 playerUnit.yaw = activeCasinoSeatedSpot.yaw;
+              }
+              if (playerUnit.isSitting && activeSalonSeatedSpot) {
+                playerUnit.x = activeSalonSeatedSpot.x;
+                playerUnit.z = activeSalonSeatedSpot.z;
+                playerUnit.yaw = activeSalonSeatedSpot.yaw;
+                salonCurrentFloorY = activeSalonSeatedSpot.floorY;
               }
               if (playerUnit.isSitting && activeSeatedSpot) {
                 // Pin to the seated ANCHOR (same computation as sitOnLobbySeat) — pinning
@@ -20460,6 +24501,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
                 }
               }
+            } else if (npcCameraMode === 'salon_interior') {
+              if (!playerUnit.isSitting) {
+                const clampedSalon = clampSalonInteriorPosition(
+                  playerUnit.x,
+                  playerUnit.z,
+                  salonCurrentFloorY,
+                );
+                playerUnit.x = clampedSalon.x;
+                playerUnit.z = clampedSalon.z;
+                salonCurrentFloorY = clampedSalon.floorY;
+                const is1fGround = salonCurrentFloorY < 0.45;
+                const is2f = salonCurrentFloorY >= 1.95;
+                for (const c of SALON_INTERIOR_COLLIDERS) {
+                  if (
+                    c.floorLevel === 'all' ||
+                    (is2f && c.floorLevel === '2f') ||
+                    (is1fGround && c.floorLevel === '1f')
+                  ) {
+                    pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
+                  }
+                }
+                const postPushSalon = clampSalonInteriorPosition(
+                  playerUnit.x,
+                  playerUnit.z,
+                  salonCurrentFloorY,
+                );
+                playerUnit.x = postPushSalon.x;
+                playerUnit.z = postPushSalon.z;
+                salonCurrentFloorY = postPushSalon.floorY;
+              }
             } else if (npcCameraMode === 'cafe_interior') {
               const clampedPos = clampCafeInteriorPosition(playerUnit.x, playerUnit.z);
               playerUnit.x = clampedPos.x;
@@ -20468,6 +24539,52 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 for (const c of CAFE_INTERIOR_COLLIDERS) {
                   pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
                 }
+                if (cafeMiraNpcRoot?.visible) {
+                  const res = resolveCapsuleVsCirclePushout2D(
+                    playerUnit.x,
+                    playerUnit.z,
+                    playerUnit.vx,
+                    playerUnit.vz,
+                    CAFE_INTERIOR_CHARACTER_RADIUS,
+                    cafeMiraX,
+                    cafeMiraZ,
+                    CAFE_INTERIOR_CHARACTER_RADIUS,
+                    0.0,
+                    1.0,
+                  );
+                  if (res.collided) {
+                    playerUnit.x = res.x;
+                    playerUnit.z = res.z;
+                    playerUnit.vx = res.vx;
+                    playerUnit.vz = res.vz;
+                  }
+                }
+                if (cafeCustomerNpcRoot?.visible) {
+                  const res = resolveCapsuleVsCirclePushout2D(
+                    playerUnit.x,
+                    playerUnit.z,
+                    playerUnit.vx,
+                    playerUnit.vz,
+                    CAFE_INTERIOR_CHARACTER_RADIUS,
+                    CAFE_INTERIOR_BOUNDS.baristaCounterFrontX,
+                    CAFE_INTERIOR_BOUNDS.baristaCounterFrontZ,
+                    CAFE_INTERIOR_CHARACTER_RADIUS,
+                    0.0,
+                    1.0,
+                  );
+                  if (res.collided) {
+                    playerUnit.x = res.x;
+                    playerUnit.z = res.z;
+                    playerUnit.vx = res.vx;
+                    playerUnit.vz = res.vz;
+                  }
+                }
+                for (const c of CAFE_INTERIOR_COLLIDERS) {
+                  pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
+                }
+                const reClampedPos = clampCafeInteriorPosition(playerUnit.x, playerUnit.z);
+                playerUnit.x = reClampedPos.x;
+                playerUnit.z = reClampedPos.z;
               }
               if (cafeWorkShiftActive) {
                 const shiftClamped = clampCafeBaristaWorkShiftPosition(playerUnit.x, playerUnit.z);
@@ -20586,7 +24703,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               npcCameraMode === 'house_visit' ||
               npcCameraMode === 'house_interior' ||
               npcCameraMode === 'cafe_interior' ||
-              npcCameraMode === 'casino_interior'
+              npcCameraMode === 'casino_interior' ||
+              npcCameraMode === 'salon_interior'
             ) {
               if (inputLen > 0.01) {
                 playerUnit.yaw = Math.atan2(-playerUnit.vz, playerUnit.vx);
@@ -21798,13 +25916,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               b.isPlayer &&
               (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior');
             const isPlayerInCafeNow = b.isPlayer && npcCameraMode === 'cafe_interior';
+            const isPlayerInSalonNow = b.isPlayer && npcCameraMode === 'salon_interior';
             b.root.position.set(
               b.x,
-              isPlayerInCafeNow ? CAFE_ORIGIN_Y : isPlayerInHouseNow ? HOUSE_ORIGIN_Y : terrainY,
+              isPlayerInCafeNow
+                ? CAFE_ORIGIN_Y
+                : isPlayerInSalonNow
+                  ? SALON_ORIGIN_Y + salonCurrentFloorY
+                  : isPlayerInHouseNow
+                    ? HOUSE_ORIGIN_Y
+                    : terrainY,
               b.z,
             );
             if (b.isPlayer) {
-              b.root.scale.setScalar(isPlayerInCafeNow || isPlayerInHouseNow ? 0.55 : 1.0);
+              b.root.scale.setScalar(
+                isPlayerInCafeNow || isPlayerInHouseNow || isPlayerInSalonNow ? 0.55 : 1.0,
+              );
             }
             const scooterPose: ScooterRiderRigPose | null =
               b.isPlayer && scooterRideState
@@ -21841,6 +25968,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 floatY + b.jumpOffset + hitPose.hopY,
                 b.visualYaw,
                 scooterPose,
+                b.isPlayer ? computeTerrainSlopePitchX(b.x, b.z, b.visualYaw) : 0,
               );
             } else {
               const seatLift =
@@ -21856,15 +25984,47 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
 
             const speedMag = Math.hypot(b.vx, b.vz);
+            const prevWalkCycle = b.walkCycle;
             const walkSync = computeSynchronizedWalkCycleStep({
-              currentWalkCycle: b.walkCycle,
+              currentWalkCycle: prevWalkCycle,
               actualGroundSpeed: b.isPlayer && scooterRideState ? 0 : speedMag,
               dt,
               carryingCrate: b.carryingCrate !== 'none',
             });
             b.walkCycle = walkSync.nextWalkCycle;
             const isMoving = walkSync.isMoving;
-            if (isMoving && b.jumpOffset < 0.25 && Math.random() < 0.35) {
+            if (b.isPlayer) {
+              const prevStepIdx = resolveFootstepHalfCycleIndex(prevWalkCycle);
+              const nextStepIdx = resolveFootstepHalfCycleIndex(b.walkCycle);
+              if (
+                isMoving &&
+                nextStepIdx !== prevStepIdx &&
+                !scooterRideState &&
+                ridingTramCarIdx === null &&
+                !mountedTank &&
+                b.jumpOffset < 0.14 &&
+                !b.isSitting &&
+                !b.isSleeping
+              ) {
+                blitzGrassSystem.stampFootstep(b.x, b.z, 0.32);
+                const footEnvMode: AmbientEnvironmentMode =
+                  npcCameraMode === 'cafe_interior'
+                    ? 'cafe_interior'
+                    : npcCameraMode === 'casino_interior'
+                      ? 'casino_interior'
+                      : npcCameraMode === 'salon_interior'
+                        ? 'salon_interior'
+                        : isPlayerInHouseNow
+                          ? 'house_interior'
+                          : 'outdoor';
+                const footSurface = classifyFootstepSurface(b.x, b.z, footEnvMode);
+                soundEngine.playSurfaceFootstep(
+                  footSurface,
+                  clamp(speedMag / 16.0, 0.25, 1.0),
+                  nextStepIdx & 1,
+                );
+              }
+            } else if (isMoving && b.jumpOffset < 0.25 && Math.random() < 0.35) {
               blitzGrassSystem.stampFootstep(b.x, b.z, 0.32);
             }
             const unitRoadState = evaluateRoadSurfaceSpeedBoost(b.x, b.z);
@@ -21974,7 +26134,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   ? 'serve'
                   : 'idle'
               : 'idle';
+            if (b.isPlayer) {
+              restoreSocialEmoteOverlay(b.rig);
+              if (localActiveEmote) {
+                const nowEmoteMs = Date.now();
+                const interruptedByState =
+                  nowEmoteMs >= localActiveEmote.expiresAtMs ||
+                  speedMag > 0.35 ||
+                  b.jumpOffset > 0.05 ||
+                  unitIsSitting ||
+                  unitIsSleeping ||
+                  unitIsDriving ||
+                  Boolean(scooterPose && scooterPose.blend > 0.01) ||
+                  b.carryingCrate !== 'none' ||
+                  unitCafeWorkAction !== 'idle';
+                if (interruptedByState) {
+                  localActiveEmote = null;
+                }
+              }
+            }
             if (b.isPlayer || b.root.visible) {
+              const unitSecondaryLod: SecondaryPhysicsLodMode = b.isPlayer
+                ? 'full'
+                : resolveWrappedWorldSecondaryLod(
+                    b.x,
+                    terrainY,
+                    b.z,
+                    false,
+                    npcCameraMode === 'cafe_interior' ||
+                      npcCameraMode === 'casino_interior' ||
+                      npcCameraMode === 'house_interior' ||
+                      npcCameraMode === 'house_visit',
+                    camFollowPos.x,
+                    camFollowPos.z,
+                  );
               updateCharacterWeaponStance(
                 b.rig,
                 b.weaponId,
@@ -22001,7 +26194,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 unitCafeWorkAction,
                 b.isPlayer && activeSeatedSpot?.sitVariant ? activeSeatedSpot.sitVariant : 'chair',
                 b.isPlayer ? activeCafeConsumeItemId : null,
+                unitSecondaryLod,
               );
+              if (
+                b.isPlayer &&
+                localActiveEmote &&
+                localActiveEmote.id !== 'punch' &&
+                localActiveEmote.id !== 'kick' &&
+                !isMoving &&
+                b.weaponId === 'unarmed' &&
+                !activeCafeConsumeItemId
+              ) {
+                applySocialEmotePoseOverlay(
+                  b.rig,
+                  b.bodyGroup,
+                  localActiveEmote.clip,
+                  Math.max(0, (Date.now() - localActiveEmote.startedAtMs) / 1000),
+                );
+              }
             } else if (b.rig.customGlbController) {
               b.rig.customGlbController.lastStepTimeMs = now;
             }
@@ -22708,9 +26918,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               const vGroundY = getTerrainElevation(tv.x, tv.z);
               const vCenterY = vGroundY + (tv.altitude ?? 0) + 1.15;
               const tvHalfX =
-                tv.vehicleKind === 'truck' ? 3.66 : tv.vehicleKind === 'tank' ? 2.48 : 2.52;
+                tv.vehicleKind === 'truck' ? 4.58 : tv.vehicleKind === 'tank' ? 2.48 : 3.69;
               const tvHalfZ =
-                tv.vehicleKind === 'truck' ? 1.76 : tv.vehicleKind === 'tank' ? 1.66 : 2.48;
+                tv.vehicleKind === 'truck' ? 2.20 : tv.vehicleKind === 'tank' ? 1.66 : 3.63;
               if (
                 Math.abs(p.pos.y - vCenterY) <= 2.35 &&
                 pointInObb2D(p.pos.x, p.pos.z, tv.x, tv.z, tvHalfX, tvHalfZ, -(tv.hullYaw ?? 0), 0.22)
@@ -23454,18 +27664,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isCasinoViewMode = Boolean(parkViewMode && parkViewMode.startsWith('casino'));
       const finalLookX = isFullMapOverview
         ? 0
+        : npcCameraMode === 'city_view' && cityViewPoseNow
+          ? cityViewPoseNow.lookAtPos.x
         : isCasinoViewMode
           ? -80.0
-          : parkViewMode
-            ? 95.0
-            : wrapPlanetCoord(camFollowPos.x + mousePanCurrent.x + recoilOffset.x + shakeX);
+          : parkViewMode === 'coastal_ne'
+            ? 72.0
+            : parkViewMode === 'coastal_se'
+              ? 72.0
+              : parkViewMode === 'coastal_west'
+                ? -136.0
+                : parkViewMode === 'coastal_north_villa'
+                  ? -16.0
+                  : parkViewMode
+                    ? 95.0
+                    : wrapPlanetCoord(camFollowPos.x + mousePanCurrent.x + recoilOffset.x + shakeX);
       const finalLookZ = isFullMapOverview
         ? 0
+        : npcCameraMode === 'city_view' && cityViewPoseNow
+          ? cityViewPoseNow.lookAtPos.z
         : isCasinoViewMode
           ? -63.6
-          : parkViewMode
-            ? -56.0
-            : wrapPlanetCoord(camFollowPos.z + mousePanCurrent.z + recoilOffset.z + shakeZ);
+          : parkViewMode === 'coastal_ne'
+            ? -124.0
+            : parkViewMode === 'coastal_se'
+              ? 124.0
+              : parkViewMode === 'coastal_west'
+                ? -4.0
+                : parkViewMode === 'coastal_north_villa'
+                  ? -133.0
+                  : parkViewMode
+                    ? -56.0
+                    : wrapPlanetCoord(camFollowPos.z + mousePanCurrent.z + recoilOffset.z + shakeZ);
 
       // =======================================================================
       // 4A. STEP NUCLEAR LAUNCHER 4-PHASE SEQUENCE (MAP ZOOM-OUT -> ROCKET CHASE -> PRE-IMPACT RISE -> RETURN)
@@ -23546,7 +27776,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'house_visit' ||
         npcCameraMode === 'house_interior' ||
         npcCameraMode === 'cafe_interior' ||
-        npcCameraMode === 'casino_interior';
+        npcCameraMode === 'casino_interior' ||
+        npcCameraMode === 'salon_interior';
       const planetPivotX =
         isFlatIndoorRoomMode ||
         isFullMapOverview ||
@@ -23724,20 +27955,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         camera.far = 800;
         camera.up.set(0, 0, -1);
         camera.updateProjectionMatrix();
-        camera.position.set(0, 412, 0.001);
+        camera.position.set(0, 472, 0.001);
         camera.lookAt(0, 0, 0);
-        dirLight.shadow.camera.left = -148;
-        dirLight.shadow.camera.right = 148;
-        dirLight.shadow.camera.top = 148;
-        dirLight.shadow.camera.bottom = -148;
-        dirLight.shadow.camera.far = 395;
+        dirLight.shadow.camera.left = -176;
+        dirLight.shadow.camera.right = 176;
+        dirLight.shadow.camera.top = 176;
+        dirLight.shadow.camera.bottom = -176;
+        dirLight.shadow.camera.far = 520;
         dirLight.shadow.camera.updateProjectionMatrix();
       } else if (parkViewMode) {
-        scene.fog = null;
         editorCursorGroup.visible = false;
         playerUnit.root.visible = false;
         camera.up.set(0, 1, 0);
-        camera.far = 900;
+        const prevParkFov = camera.fov;
         if (parkViewMode === 'midway') {
           camera.fov = 42;
           camera.position.set(68.5, 13.8, -104.0);
@@ -23770,13 +28000,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.fov = 44;
           camera.position.set(-45.5, 31.0, -112.0);
           camera.lookAt(-83.5, 5.5, -73.5);
+        } else if (parkViewMode === 'coastal_ne') {
+          camera.fov = 44;
+          camera.position.set(126.0, 26.0, -86.0);
+          camera.lookAt(72.0, 4.2, -124.0);
+        } else if (parkViewMode === 'coastal_se') {
+          camera.fov = 44;
+          camera.position.set(124.0, 25.0, 86.0);
+          camera.lookAt(72.0, 4.2, 124.0);
+        } else if (parkViewMode === 'coastal_west') {
+          camera.fov = 44;
+          camera.position.set(-90.0, 34.0, 56.0);
+          camera.lookAt(-136.0, 7.5, -4.0);
+        } else if (parkViewMode === 'coastal_north_villa') {
+          camera.fov = 44;
+          camera.position.set(36.0, 29.0, -92.0);
+          camera.lookAt(-16.0, 7.5, -133.0);
         } else {
           // 1:1 Panoramic 3/4 Coastal Masterplan View matching Sheet 1 & Sheet 3
           camera.fov = 44;
           camera.position.set(71.5, 23.5, -117.5);
           camera.lookAt(95.5, 5.2, -55.0);
         }
-        camera.updateProjectionMatrix();
+        syncSceneHorizonFogAndFarClip({
+          scene,
+          camera,
+          mode: 'park_view',
+          cameraHeightM: camera.position.y,
+          isSoftwareGl,
+        });
+        if (camera.fov !== prevParkFov) {
+          camera.updateProjectionMatrix();
+        }
         dirLight.shadow.camera.left = -85;
         dirLight.shadow.camera.right = 85;
         dirLight.shadow.camera.top = 85;
@@ -23832,36 +28087,181 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         beachHouseNpc.exclamationGroup.visible = false;
 
         // Ensure standard 42-deg portrait FOV so waist-up ("setengah badan") framing is exact
-        const targetNpcFov = BUDDIES_CONSTANTS.camera.fov;
-        if (camera.fov !== targetNpcFov) {
-          camera.fov = targetNpcFov;
+        const portraitNpcX =
+          npcCameraLocation === 'beach_house'
+            ? 85.8
+            : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x;
+        const portraitNpcY =
+          npcCameraLocation === 'beach_house'
+            ? beachHouseNpc.npcGrp.position.y
+            : lobbyCafeNpc.npcGrp.position.y;
+        const portraitNpcZ =
+          npcCameraLocation === 'beach_house'
+            ? 60.0
+            : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z;
+        const portraitPose = computeNpcDialoguePortraitPose({
+          npcX: portraitNpcX,
+          npcY: portraitNpcY,
+          npcZ: portraitNpcZ,
+          frontDirX: 1,
+          frontDirZ: 0,
+          aspect: camera.aspect || 1.6,
+          fovDeg: BUDDIES_CONSTANTS.camera.fov,
+        });
+        if (camera.fov !== portraitPose.fovDeg) {
+          camera.fov = portraitPose.fovDeg;
           camera.updateProjectionMatrix();
         }
-        // Frame NPC (0.98 scale: waist y_local ~ 1.80m to head top y_local ~ 3.25m) to fill the right-side portrait box
-        // (head top at ~21% from top, waist at bottom, centered horizontally at ~72% screen width / ndc.x ~ +0.44)
-        const npcCamDist = 2.42;
-        const halfFovTan = Math.tan(THREE.MathUtils.degToRad(targetNpcFov * 0.5));
-        const activeAspect = clamp(camera.aspect || 1.6, 1.0, 2.4);
-        const lateralShiftZ = 0.44 * npcCamDist * halfFovTan * activeAspect;
-        const faceCamYaw = Math.atan2(npcCamDist, lateralShiftZ);
-
         camera.up.set(0, 1, 0);
         if (npcCameraLocation === 'beach_house') {
-          const npcX = 85.8;
-          const npcY = beachHouseNpc.npcGrp.position.y;
-          const npcZ = 60.0;
-          beachHouseNpc.npcGrp.rotation.y = faceCamYaw;
-          camera.position.set(npcX + npcCamDist, npcY + 2.74, npcZ + lateralShiftZ);
-          camera.lookAt(npcX, npcY + 2.70, npcZ + lateralShiftZ);
+          beachHouseNpc.npcGrp.rotation.y = portraitPose.faceCamYaw;
         } else {
-          const npcX = REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x;
-          const npcY = lobbyCafeNpc.npcGrp.position.y;
-          const npcZ = REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z;
-          lobbyCafeNpc.npcGrp.rotation.y = faceCamYaw;
-          camera.position.set(npcX + npcCamDist, npcY + 2.74, npcZ + lateralShiftZ);
-          camera.lookAt(npcX, npcY + 2.70, npcZ + lateralShiftZ);
+          lobbyCafeNpc.npcGrp.rotation.y = portraitPose.faceCamYaw;
         }
+        camera.position.set(
+          portraitPose.cameraPos.x,
+          portraitPose.cameraPos.y,
+          portraitPose.cameraPos.z,
+        );
+        camera.lookAt(
+          portraitPose.lookAtPos.x,
+          portraitPose.lookAtPos.y,
+          portraitPose.lookAtPos.z,
+        );
         camera.updateMatrixWorld();
+        lastRenderedCamPos = { ...portraitPose.cameraPos };
+        lastRenderedLookAt = { ...portraitPose.lookAtPos };
+        lastRenderedFov = portraitPose.fovDeg;
+        hasLastRenderedCamPose = true;
+      } else if (npcCameraMode === 'city_view' && cityViewPoseNow) {
+        if (playerUnit && playerUnit.alive && !mountedTank) {
+          playerUnit.root.visible = true;
+        }
+        tutorialWaypointGroup.visible = false;
+
+        const cityCamDist = Math.hypot(
+          cityViewPoseNow.cameraPos.x - cityViewPoseNow.lookAtPos.x,
+          cityViewPoseNow.cameraPos.y - cityViewPoseNow.lookAtPos.y,
+          cityViewPoseNow.cameraPos.z - cityViewPoseNow.lookAtPos.z,
+        );
+        syncSceneHorizonFogAndFarClip({
+          scene,
+          camera,
+          mode: cityViewTarget === 'kota' ? 'city_overview' : 'city_district',
+          cameraDistanceM: cityCamDist,
+          cameraHeightM: cityViewPoseNow.cameraPos.y,
+          targetFovDeg: cityViewPoseNow.fov,
+          isSoftwareGl,
+        });
+        camera.up.set(0, 1, 0);
+        camera.position.set(
+          cityViewPoseNow.cameraPos.x,
+          cityViewPoseNow.cameraPos.y,
+          cityViewPoseNow.cameraPos.z,
+        );
+        camera.lookAt(
+          cityViewPoseNow.lookAtPos.x,
+          cityViewPoseNow.lookAtPos.y,
+          cityViewPoseNow.lookAtPos.z,
+        );
+        camera.updateMatrixWorld();
+
+        const shadowHalfSpan = cityViewTarget === 'kota' ? 128 : 74;
+        if (Math.abs(dirLight.shadow.camera.right - shadowHalfSpan) > 1) {
+          dirLight.shadow.camera.left = -shadowHalfSpan;
+          dirLight.shadow.camera.right = shadowHalfSpan;
+          dirLight.shadow.camera.top = shadowHalfSpan;
+          dirLight.shadow.camera.bottom = -shadowHalfSpan;
+          dirLight.shadow.camera.far = 360;
+          dirLight.shadow.camera.updateProjectionMatrix();
+        }
+
+        lastRenderedCamPos = { ...cityViewPoseNow.cameraPos };
+        lastRenderedLookAt = { ...cityViewPoseNow.lookAtPos };
+        lastRenderedFov = cityViewPoseNow.fov;
+        hasLastRenderedCamPose = true;
+
+        // Subtle animated focus ring under active district (hidden in Overview or while exiting)
+        if (!cityViewExitingToPlayer && cityViewTarget !== 'kota') {
+          const dSpec = getCityViewDistrictById(cityViewTarget);
+          const baseGroundY = getTerrainElevation(dSpec.lookAtPos.x, dSpec.lookAtPos.z);
+          cityViewFocusRingGroup.visible = true;
+          cityViewFocusRingGroup.position.set(
+            dSpec.lookAtPos.x,
+            Math.max(0.18, baseGroundY + 0.16),
+            dSpec.lookAtPos.z,
+          );
+          const pulse = 1.0 + Math.sin(timeSec * 2.4) * 0.035;
+          cityViewFocusRingGroup.scale.setScalar(pulse);
+          cityViewFocusRingMat.opacity = 0.36 + Math.sin(timeSec * 2.4) * 0.1;
+        } else {
+          cityViewFocusRingGroup.visible = false;
+        }
+
+        // Complete exit fly back to the player's current position cleanly
+        if (cityViewExitingToPlayer && cityViewFlyResult?.isComplete) {
+          cityViewExitingToPlayer = false;
+          cityViewFlyActive = false;
+          cityViewFocusRingGroup.visible = false;
+          npcCameraMode = 'none';
+          restoreNormalCameraEnvelope();
+          if (playerUnit) {
+            const pGround = getTerrainElevation(playerUnit.x, playerUnit.z);
+            camFollowPos = { x: playerUnit.x, y: pGround + 1.0, z: playerUnit.z };
+            camFollowVel = { x: 0, y: 0, z: 0 };
+          }
+          window.dispatchEvent(new CustomEvent('city-view-exit-complete'));
+        } else if (!cityViewFlyActive && !cityViewExitingToPlayer && cityViewTarget !== 'kota') {
+          // Project active district label & up to 2 neighboring district labels to screen space
+          const dSpec = getCityViewDistrictById(cityViewTarget);
+          const projectAnchor = (spec: ReturnType<typeof getCityViewDistrictById>) => {
+            scratchCityAnchorProj
+              .set(
+                spec.lookAtPos.x,
+                spec.lookAtPos.y + spec.markerHeightOffset,
+                spec.lookAtPos.z,
+              )
+              .project(camera);
+            if (scratchCityAnchorProj.z < -1 || scratchCityAnchorProj.z > 1) return null;
+            const leftPct = (scratchCityAnchorProj.x * 0.5 + 0.5) * 100;
+            const topPct = (-scratchCityAnchorProj.y * 0.5 + 0.5) * 100;
+            if (leftPct < 6 || leftPct > 94 || topPct < 15 || topPct > 90) return null;
+            return {
+              id: spec.id,
+              label: spec.fullTitle,
+              subtitle: spec.subtitle,
+              leftPct: +leftPct.toFixed(1),
+              topPct: +topPct.toFixed(1),
+            };
+          };
+          const activeAnchor = projectAnchor(dSpec);
+          const neighborAnchors = dSpec.neighborIds
+            .map((nid) => projectAnchor(getCityViewDistrictById(nid)))
+            .filter((x): x is NonNullable<typeof x> => x !== null);
+          const sig = `${dSpec.id}|${activeAnchor?.leftPct ?? ''},${activeAnchor?.topPct ?? ''}|${neighborAnchors
+            .map((n) => `${n.id}:${n.leftPct},${n.topPct}`)
+            .join(';')}`;
+          if (sig !== cityViewLastAnchorSig) {
+            cityViewLastAnchorSig = sig;
+            window.dispatchEvent(
+              new CustomEvent('city-view-anchors-updated', {
+                detail: {
+                  active: activeAnchor,
+                  neighbors: neighborAnchors,
+                },
+              }),
+            );
+          }
+        } else {
+          if (cityViewLastAnchorSig !== '') {
+            cityViewLastAnchorSig = '';
+            window.dispatchEvent(
+              new CustomEvent('city-view-anchors-updated', {
+                detail: { active: null, neighbors: [] },
+              }),
+            );
+          }
+        }
       } else if (npcCameraMode === 'landing_tour') {
         if (playerUnit) {
           playerUnit.root.visible = false;
@@ -24054,7 +28454,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           activeCafeStationForVisuals,
         );
         if (cafeCustomerNpcRoot?.visible && cafeCustomerRig) {
-          const customerCharGltf = loadedBlitzAssets?.charBuddiesGltf ?? earlyLoadedCharGltf;
+          const customerCharGltf =
+            loadedBlitzAssets?.ambientFemaleNpcGlb ??
+            earlyLoadedAmbientFemaleGlb ??
+            loadedBlitzAssets?.playerFemaleGlb ??
+            earlyLoadedPlayerFemaleGltf;
           if (customerCharGltf && !cafeCustomerGlbUpgraded) {
             upgradeBuddyRigWithCharBuddiesGlb(
               cafeCustomerRig,
@@ -24066,8 +28470,133 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           cafeCustomerRig.rightArmPivot.rotation.x = -0.35 + Math.sin(timeSec * 2.8) * 0.12;
           updateCharacterWeaponStance(cafeCustomerRig, 'unarmed', 0, false, false, 0, 0);
         }
+        const isTalkingWithCafeMira = activeCitizenDialogueId === 'citizen_mira';
+        if (cafeMiraNpcRoot?.visible && cafeMiraBodyGroup && cafeMiraRig) {
+          const miraCharGltf =
+            loadedBlitzAssets?.miraCustomGlb ?? getCachedLoadedCitizenGlbs().miraCustomGlb ?? null;
+          if (miraCharGltf && !cafeMiraGlbUpgraded) {
+            upgradeBuddyRigWithCharBuddiesGlb(
+              cafeMiraRig,
+              miraCharGltf,
+              loadedBlitzAssets?.ar99AssaultGltf,
+            );
+            cafeMiraGlbUpgraded = true;
+          }
+          applyAmbientNpcClipOverrides(cafeMiraRig, cafeMiraPreset, 'mira_idle.001');
+          const nextInteriorWp =
+            cafeMiraPreset.waypoints[
+              ((cafeMiraWaypointIdx % cafeMiraPreset.waypoints.length) +
+                cafeMiraPreset.waypoints.length) %
+                cafeMiraPreset.waypoints.length
+            ];
+          const isPlayerOnMiraChair = Boolean(
+            playerUnit?.isSitting &&
+              activeCafeSeatedSpot &&
+              nextInteriorWp?.activity === 'sit_relax' &&
+              Math.hypot(
+                activeCafeSeatedSpot.x - nextInteriorWp.x,
+                activeCafeSeatedSpot.z - nextInteriorWp.z,
+              ) < 0.75,
+          );
+          const steppedInteriorMira = stepCityAmbientNpcSchedule({
+            preset: cafeMiraPreset,
+            x: cafeMiraX,
+            z: cafeMiraZ,
+            yaw: cafeMiraCurrentYaw - Math.PI / 2,
+            waypointIdx: cafeMiraWaypointIdx,
+            pauseTimer: cafeMiraPauseTimer,
+            elapsedSec: timeSec,
+            dt: isTalkingWithCafeMira ? 0 : dt,
+            yieldForHazard: isTalkingWithCafeMira || isPlayerOnMiraChair,
+          });
+          cafeMiraX = steppedInteriorMira.x;
+          cafeMiraZ = steppedInteriorMira.z;
+          cafeMiraWaypointIdx = steppedInteriorMira.waypointIdx;
+          cafeMiraPauseTimer = steppedInteriorMira.pauseTimer;
+          cafeMiraIsSitting = steppedInteriorMira.isSitting && !isTalkingWithCafeMira;
+          cafeMiraSeatLiftY = cafeMiraIsSitting ? steppedInteriorMira.activeSeatLiftY : 0;
+          cafeMiraHoldingItemId = steppedInteriorMira.activeHoldingCafeItemId;
+          cafeMiraStatusLabel = steppedInteriorMira.activeStatusLabel;
+          if (steppedInteriorMira.isMoving && !isTalkingWithCafeMira) {
+            cafeMiraWalkCycle += dt * steppedInteriorMira.speedMps * 3.1;
+          }
+          cafeMiraNpcRoot.position.set(cafeMiraX, 0, cafeMiraZ);
+          cafeMiraBodyGroup.position.y = cafeMiraIsSitting ? cafeMiraSeatLiftY : 0;
+          if (cafeMiraShadowMesh) {
+            cafeMiraShadowMesh.visible = !cafeMiraIsSitting;
+          }
+
+          if (isTalkingWithCafeMira && playerUnit) {
+            const toPlayerX = playerUnit.x - cafeMiraX;
+            const toPlayerZ = playerUnit.z - cafeMiraZ;
+            const dLen = Math.hypot(toPlayerX, toPlayerZ);
+            if (dLen >= 0.1) {
+              const targetTalkYaw = Math.atan2(toPlayerX, toPlayerZ);
+              const diff = Math.atan2(
+                Math.sin(targetTalkYaw - cafeMiraCurrentYaw),
+                Math.cos(targetTalkYaw - cafeMiraCurrentYaw),
+              );
+              cafeMiraCurrentYaw += diff * Math.min(1, dt * 8.5);
+            }
+          } else {
+            cafeMiraCurrentYaw = steppedInteriorMira.yaw + Math.PI / 2;
+          }
+          cafeMiraBodyGroup.rotation.y = cafeMiraCurrentYaw;
+          if (cafeMiraChevron) {
+            cafeMiraChevron.group.visible = !isTalkingWithCafeMira;
+            cafeMiraChevron.group.position.y = cafeMiraIsSitting ? 2.65 : 3.68;
+            const dCafeMira = playerUnit
+              ? Math.hypot(
+                  playerUnit.x - cafeMiraX,
+                  playerUnit.z - cafeMiraZ,
+                )
+              : Infinity;
+            const isNearCafeMira = dCafeMira <= 2.35;
+            cafeMiraChevron.chevronMat.color.copy(
+              isNearCafeMira ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+            );
+            cafeMiraChevron.chevronArrow.scale.setScalar(isNearCafeMira ? 1.15 : 1.0);
+            cafeMiraChevron.chevronArrow.position.y = Math.sin(timeSec * 3.6) * 0.08;
+            cafeMiraChevron.chevronArrow.rotation.y = timeSec * 1.65;
+          }
+          if (cafeMiraNameplate) {
+            cafeMiraNameplate.sprite.visible = false;
+          }
+          updateCharacterWeaponStance(
+            cafeMiraRig,
+            'unarmed',
+            cafeMiraWalkCycle,
+            steppedInteriorMira.isMoving && !isTalkingWithCafeMira,
+            false,
+            0,
+            0,
+            0,
+            'right',
+            0,
+            0,
+            0.76,
+            0,
+            true,
+            'front',
+            1.0,
+            cafeMiraCurrentYaw,
+            isTalkingWithCafeMira ? 0 : steppedInteriorMira.speedMps,
+            cafeMiraIsSitting,
+            false,
+            false,
+            null,
+            'idle',
+            'chair',
+            isTalkingWithCafeMira ? null : cafeMiraHoldingItemId,
+          );
+        }
+        if (isTalkingWithCafeMira) {
+          cafeMiraPortraitBlend01 = Math.min(1, cafeMiraPortraitBlend01 + Math.min(rawDt, 0.05) / 0.28);
+        } else if (cafeMiraPortraitBlend01 > 0) {
+          cafeMiraPortraitBlend01 = Math.max(0, cafeMiraPortraitBlend01 - Math.min(rawDt, 0.05) / 0.24);
+        }
         if (playerUnit) {
-          playerUnit.root.visible = true;
+          playerUnit.root.visible = !isTalkingWithCafeMira;
           const cafeAnchorX = cafeWorkShiftActive
             ? CAFE_INTERIOR_BOUNDS.baristaCounterFrontX
             : playerUnit.x;
@@ -24081,14 +28610,52 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             pitch: cafeVisitCamPitch,
             dist: cafeVisitCamDist,
           });
-          if (camera.fov !== cafePose.fovDeg) {
-            camera.fov = cafePose.fovDeg;
-            camera.updateProjectionMatrix();
+          if (cafeMiraPortraitBlend01 > 0.001 && cafeMiraBodyGroup) {
+            const pDirX = playerUnit.x - cafeMiraX;
+            const pDirZ = playerUnit.z - cafeMiraZ;
+            const pLen = Math.hypot(pDirX, pDirZ);
+            const portraitPose = computeNpcDialoguePortraitPose({
+              npcX: cafeMiraX,
+              npcY: CAFE_ORIGIN_Y + (cafeMiraIsSitting ? cafeMiraSeatLiftY * 0.55 : 0),
+              npcZ: cafeMiraZ,
+              frontDirX: pLen >= 0.1 ? pDirX / pLen : Math.sin(cafeMiraCurrentYaw),
+              frontDirZ: pLen >= 0.1 ? pDirZ / pLen : Math.cos(cafeMiraCurrentYaw),
+              aspect: camera.aspect || 1.6,
+              fovDeg: BUDDIES_CONSTANTS.camera.fov,
+              npcScale: 0.55,
+            });
+            if (isTalkingWithCafeMira) {
+              cafeMiraCurrentYaw = portraitPose.faceCamYaw;
+              cafeMiraBodyGroup.rotation.y = portraitPose.faceCamYaw;
+            }
+            const tBlend = 1 - Math.pow(1 - cafeMiraPortraitBlend01, 3);
+            const curFov = THREE.MathUtils.lerp(cafePose.fovDeg, portraitPose.fovDeg, tBlend);
+            if (Math.abs(camera.fov - curFov) > 0.02) {
+              camera.fov = curFov;
+              camera.updateProjectionMatrix();
+            }
+            camera.up.set(0, 1, 0);
+            camera.position.set(
+              THREE.MathUtils.lerp(cafePose.camX, portraitPose.cameraPos.x, tBlend),
+              THREE.MathUtils.lerp(cafePose.camY, portraitPose.cameraPos.y, tBlend),
+              THREE.MathUtils.lerp(cafePose.camZ, portraitPose.cameraPos.z, tBlend),
+            );
+            camera.lookAt(
+              THREE.MathUtils.lerp(cafePose.lookX, portraitPose.lookAtPos.x, tBlend),
+              THREE.MathUtils.lerp(cafePose.lookY, portraitPose.lookAtPos.y, tBlend),
+              THREE.MathUtils.lerp(cafePose.lookZ, portraitPose.lookAtPos.z, tBlend),
+            );
+            camera.updateMatrixWorld();
+          } else {
+            if (camera.fov !== cafePose.fovDeg) {
+              camera.fov = cafePose.fovDeg;
+              camera.updateProjectionMatrix();
+            }
+            camera.up.set(0, 1, 0);
+            camera.position.set(cafePose.camX, cafePose.camY, cafePose.camZ);
+            camera.lookAt(cafePose.lookX, cafePose.lookY, cafePose.lookZ);
+            camera.updateMatrixWorld();
           }
-          camera.up.set(0, 1, 0);
-          camera.position.set(cafePose.camX, cafePose.camY, cafePose.camZ);
-          camera.lookAt(cafePose.lookX, cafePose.lookY, cafePose.lookZ);
-          camera.updateMatrixWorld();
         }
       } else if (npcCameraMode === 'casino_interior') {
         if (casinoInterior) casinoInterior.root.visible = true;
@@ -24125,8 +28692,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.lookAt(casinoPose.lookX, casinoPose.lookY, casinoPose.lookZ);
           camera.updateMatrixWorld();
         }
+      } else if (npcCameraMode === 'salon_interior') {
+        if (salonInterior) salonInterior.root.visible = true;
+        const activeSalonStationForVisuals =
+          playerUnit && !playerUnit.isSitting
+            ? resolveNearestSalonPromptOrSeat(playerUnit.x, playerUnit.z, salonCurrentFloorY)
+                .stationKind
+            : null;
+        salonInterior?.updateVisuals(timeSec, activeSalonStationForVisuals, salonCurrentFloorY);
+        if (playerUnit) {
+          playerUnit.root.visible = true;
+          const salonPose = computeSalonOrbitCameraPose({
+            originY: SALON_ORIGIN_Y,
+            anchorX: playerUnit.x,
+            anchorZ: playerUnit.z,
+            floorY: salonCurrentFloorY,
+            yaw: salonVisitCamYaw,
+            pitch: salonVisitCamPitch,
+            dist: salonVisitCamDist,
+          });
+          if (camera.fov !== salonPose.fovDeg) {
+            camera.fov = salonPose.fovDeg;
+            camera.updateProjectionMatrix();
+          }
+          camera.up.set(0, 1, 0);
+          camera.position.set(salonPose.camX, salonPose.camY, salonPose.camZ);
+          camera.lookAt(salonPose.lookX, salonPose.lookY, salonPose.lookZ);
+          camera.updateMatrixWorld();
+        }
       } else {
-        if (playerUnit && playerUnit.alive && !mountedTank) {
+        if (playerUnit && playerUnit.alive && !mountedTank && !activeCitizenPortraitNpc) {
           playerUnit.root.visible = true;
         }
         const desiredPlayFov =
@@ -24180,6 +28775,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           activeTutorialWaypointTarget !== 'none' &&
           worldModeRef.current !== 'warzone' &&
           npcCameraMode === 'none' &&
+          !activeCitizenPortraitNpc &&
           playerUnit &&
           playerUnit.alive
         ) {
@@ -24199,7 +28795,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               targetX = scratchLiveObjPos.x;
               targetZ = scratchLiveObjPos.z;
             } else {
-              targetX = -61.95;
+              targetX = -59.18;
               targetZ = 0.0;
             }
           }
@@ -24395,6 +28991,69 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               }),
             );
           }
+        } else if (activeCitizenPortraitNpc && citizenPortraitState) {
+          if (playerUnit) {
+            playerUnit.root.visible = false;
+          }
+          activeCitizenPortraitNpc.root.visible = true;
+          activeCitizenPortraitNpc.nameplate.sprite.visible = false;
+          const anchor = resolveCitizenRenderAnchor(activeCitizenPortraitNpc);
+          const targetPose = computeNpcDialoguePortraitPose({
+            npcX: anchor.renderX,
+            npcY: anchor.groundY,
+            npcZ: anchor.renderZ,
+            frontDirX: citizenPortraitState.frontDirX,
+            frontDirZ: citizenPortraitState.frontDirZ,
+            aspect: camera.aspect || 1.6,
+            fovDeg: BUDDIES_CONSTANTS.camera.fov,
+            isSitting: activeCitizenPortraitNpc.isSitting,
+            sitLiftY: activeCitizenPortraitNpc.activeSeatLiftY,
+          });
+          citizenPortraitState.faceCamYaw = targetPose.faceCamYaw;
+          const t = 1 - Math.pow(1 - citizenPortraitState.blend01, 3);
+          const curFov = THREE.MathUtils.lerp(citizenPortraitState.startFov, targetPose.fovDeg, t);
+          if (Math.abs(camera.fov - curFov) > 0.02) {
+            camera.fov = curFov;
+            camera.updateProjectionMatrix();
+          }
+          const camX = THREE.MathUtils.lerp(
+            citizenPortraitState.startCamPos.x,
+            targetPose.cameraPos.x,
+            t,
+          );
+          const camY = THREE.MathUtils.lerp(
+            citizenPortraitState.startCamPos.y,
+            targetPose.cameraPos.y,
+            t,
+          );
+          const camZ = THREE.MathUtils.lerp(
+            citizenPortraitState.startCamPos.z,
+            targetPose.cameraPos.z,
+            t,
+          );
+          const lookX = THREE.MathUtils.lerp(
+            citizenPortraitState.startLookAt.x,
+            targetPose.lookAtPos.x,
+            t,
+          );
+          const lookY = THREE.MathUtils.lerp(
+            citizenPortraitState.startLookAt.y,
+            targetPose.lookAtPos.y,
+            t,
+          );
+          const lookZ = THREE.MathUtils.lerp(
+            citizenPortraitState.startLookAt.z,
+            targetPose.lookAtPos.z,
+            t,
+          );
+          camera.up.set(0, 1, 0);
+          camera.position.set(camX, camY, camZ);
+          camera.lookAt(lookX, lookY, lookZ);
+          camera.updateMatrixWorld();
+          lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+          lastRenderedLookAt = { x: lookX, y: lookY, z: lookZ };
+          lastRenderedFov = curFov;
+          hasLastRenderedCamPose = true;
         } else if (playerUnit && playerUnit.isSitting && activeSeatedSpot && state === 'playing') {
           // 3rd-Person Perspective Camera When Sitting on a Bench/Chair (matching Reference Image)
           const seatedFov = 50;
@@ -24415,6 +29074,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           camera.position.set(camX, camY, camZ);
           camera.lookAt(lookTargetX, lookTargetY, lookTargetZ);
           camera.updateMatrixWorld();
+          lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+          lastRenderedLookAt = { x: lookTargetX, y: lookTargetY, z: lookTargetZ };
+          lastRenderedFov = seatedFov;
+          hasLastRenderedCamPose = true;
           raycaster.setFromCamera(mouseNdc, camera);
           raycaster.ray.intersectPlane(groundPlane, aimWorldPoint);
         } else {
@@ -24483,21 +29146,62 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             }
           }
 
+          const baseCamX = finalLookX + relCamX;
+          const baseCamY = footY + relCamY;
+          const baseCamZ = finalLookZ + relCamZ;
+          const baseLookX = finalLookX + relLookX;
+          const baseLookY = footY + relLookY;
+          const baseLookZ = finalLookZ + relLookZ;
+          const retEase =
+            citizenReturnBlend01 > 0
+              ? citizenReturnBlend01 * citizenReturnBlend01 * (3 - 2 * citizenReturnBlend01)
+              : 0;
+          const applyFov = THREE.MathUtils.lerp(desiredPlayFov, citizenReturnFromFov, retEase);
+          if (Math.abs(camera.fov - applyFov) > 0.02) {
+            camera.fov = applyFov;
+            camera.updateProjectionMatrix();
+          }
+          const applyCamX = THREE.MathUtils.lerp(baseCamX, citizenReturnFromCamPos.x, retEase);
+          const applyCamY = THREE.MathUtils.lerp(baseCamY, citizenReturnFromCamPos.y, retEase);
+          const applyCamZ = THREE.MathUtils.lerp(baseCamZ, citizenReturnFromCamPos.z, retEase);
+          const applyLookX = THREE.MathUtils.lerp(baseLookX, citizenReturnFromLookAt.x, retEase);
+          const applyLookY = THREE.MathUtils.lerp(baseLookY, citizenReturnFromLookAt.y, retEase);
+          const applyLookZ = THREE.MathUtils.lerp(baseLookZ, citizenReturnFromLookAt.z, retEase);
           camera.up.set(0, 1, 0);
-          camera.position.set(
-            finalLookX + relCamX,
-            footY + relCamY,
-            finalLookZ + relCamZ,
-          );
-          camera.lookAt(
-            finalLookX + relLookX,
-            footY + relLookY,
-            finalLookZ + relLookZ,
-          );
+          camera.position.set(applyCamX, applyCamY, applyCamZ);
+          camera.lookAt(applyLookX, applyLookY, applyLookZ);
           camera.updateMatrixWorld();
+          lastRenderedCamPos = { x: applyCamX, y: applyCamY, z: applyCamZ };
+          lastRenderedLookAt = { x: applyLookX, y: applyLookY, z: applyLookZ };
+          lastRenderedFov = applyFov;
+          hasLastRenderedCamPose = true;
           raycaster.setFromCamera(mouseNdc, camera);
           raycaster.ray.intersectPlane(groundPlane, aimWorldPoint);
         }
+      }
+
+      if (
+        !buildingViewMode &&
+        !skyshieldViewMode &&
+        !planeViewMode &&
+        !isFullMapOverview &&
+        !parkViewMode &&
+        npcCameraMode !== 'city_view'
+      ) {
+        const horizonMode: HorizonCameraViewMode = isFlatIndoorRoomMode
+          ? 'indoor'
+          : npcCameraMode === 'landing_tour'
+            ? 'landing_tour'
+            : playerUnit && playerUnit.isSitting && activeSeatedSpot && state === 'playing'
+              ? 'seated'
+              : 'gameplay';
+        syncSceneHorizonFogAndFarClip({
+          scene,
+          camera,
+          mode: horizonMode,
+          cameraHeightM: camera.position.y,
+          isSoftwareGl,
+        });
       }
 
       // =======================================================================
@@ -24511,41 +29215,102 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const curVx = mountedTank ? mountedTank.vx : playerUnit.vx;
           const curVz = mountedTank ? mountedTank.vz : playerUnit.vz;
           const curChat = socialTalkTimer > 0 && socialTalkMessage ? socialTalkMessage : null;
+          const curBubbleStyleKey = `${localBubbleBgColor}|${localBubbleTextColor}`;
           const isActivelyMoving =
             Math.hypot(curVx, curVz) > 0.08 ||
             playerUnit.jumpOffset > 0.03 ||
             shorelineFishingSync.phase !== 'idle';
-          const zoneOrChatChanged =
-            localZoneKey !== lastBroadcastZoneKey || curChat !== lastBroadcastChatText;
-          // Turning in place and discrete state changes (sit/weapon/crate) used to ride the
-          // 1100ms idle cadence because isActivelyMoving only looks at vx/vz — peers saw
-          // rotations snap ~once per second. Give them a fast (45ms) lane instead.
           const curYawForBroadcast = mountedTank ? mountedTank.hullYaw : playerUnit.yaw;
           let yawDeltaForBroadcast = Math.abs(curYawForBroadcast - lastBroadcastYaw);
           if (yawDeltaForBroadcast > Math.PI) yawDeltaForBroadcast = Math.PI * 2 - yawDeltaForBroadcast;
           const curSittingForBroadcast = Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null;
+          const curSleepingForBroadcast = Boolean(playerUnit.isSleeping);
+          const curDrivingForBroadcast = Boolean(playerUnit.isDriving) || mountedTank !== null;
+          const curHiddenInVehicleForBroadcast = ridingTramCarIdx !== null;
           const curScooterForBroadcast = scooterRideState ? scooterRideState.kind : null;
-          const stateChangedForBroadcast =
+          const curCafePreparingForBroadcast = cafeWorkAnimSync.phase !== 'idle';
+
+          if (localActiveEmote && nowWallMs >= localActiveEmote.expiresAtMs) {
+            localActiveEmote = null;
+          }
+          const curEmoteClip = resolveLocalEmoteClip({
+            isSleeping: curSleepingForBroadcast,
+            cafeWorkPhase: cafeWorkAnimSync.phase,
+            cafeCategory: cafeWorkAnimSync.category,
+            consumeItemId: activeCafeConsumeItemId,
+            isCafeWorker: cafeWorkShiftActive,
+            isSitting: curSittingForBroadcast,
+            sitVariant: activeSeatedSpot?.sitVariant ?? null,
+            activeSocialEmoteClip: localActiveEmote?.clip ?? null,
+          });
+          const curEmoteSeq = localActiveEmote ? localActiveEmote.seq : localEmoteSeq;
+          const localSeatLiftY =
+            npcCameraMode === 'cafe_interior' && playerUnit.isSitting && activeCafeSeatedSpot
+              ? activeCafeSeatedSpot.seatLiftY
+              : npcCameraMode === 'casino_interior' && playerUnit.isSitting && activeCasinoSeatedSpot
+                ? activeCasinoSeatedSpot.seatLiftY
+                : npcCameraMode === 'salon_interior' && playerUnit.isSitting && activeSalonSeatedSpot
+                  ? activeSalonSeatedSpot.seatLiftY
+                  : curSleepingForBroadcast && activeSleepSpot
+                    ? activeSleepSpot.sleepLiftY
+                    : playerUnit.isSitting && activeSeatedSpot
+                      ? resolveOutdoorSeatLiftY(activeSeatedSpot)
+                      : 0;
+
+          const zoneChanged = localZoneKey !== lastBroadcastZoneKey;
+          const chatChanged =
+            curChat !== lastBroadcastChatText ||
+            (curChat !== null && socialTalkSeq !== lastBroadcastChatSeq) ||
+            (curChat !== null && curBubbleStyleKey !== lastBroadcastBubbleStyleKey);
+          const emoteChanged =
+            curEmoteClip !== lastBroadcastEmoteClip ||
+            (curEmoteClip !== '' && curEmoteSeq !== lastBroadcastEmoteSeq);
+          const discreteStateChanged =
             curSittingForBroadcast !== lastBroadcastSitting ||
+            curSleepingForBroadcast !== lastBroadcastSleeping ||
+            curDrivingForBroadcast !== lastBroadcastDriving ||
+            curHiddenInVehicleForBroadcast !== lastBroadcastHiddenInVehicle ||
             curScooterForBroadcast !== lastBroadcastScooterKind ||
             playerUnit.weaponId !== lastBroadcastWeaponId ||
-            playerUnit.carryingCrate !== lastBroadcastCarryingCrate;
-          const minIntervalMs = zoneOrChatChanged
-            ? 0
-            : stateChangedForBroadcast || yawDeltaForBroadcast > 0.05
-              ? 45
-              : isActivelyMoving
-                ? 88
-                : 1100;
+            playerUnit.carryingCrate !== lastBroadcastCarryingCrate ||
+            shorelineFishingSync.phase !== lastBroadcastFishingPhase ||
+            shorelineFishingSync.isReeling !== lastBroadcastIsReeling ||
+            curCafePreparingForBroadcast !== lastBroadcastCafePreparing ||
+            cafeWorkShiftActive !== lastBroadcastCafeWorker;
+
+          const minIntervalMs = computeLocalPoseBroadcastIntervalMs({
+            zoneChanged,
+            chatChanged,
+            emoteChanged,
+            discreteStateChanged,
+            stoppedMoving: lastBroadcastMoving && !isActivelyMoving,
+            landedJump: lastBroadcastJumpOffset > 0.03 && playerUnit.jumpOffset <= 0.03,
+            yawDeltaRad: yawDeltaForBroadcast,
+            isActivelyMoving,
+          });
           if (nowWallMs - lastLocalPoseBroadcastMs >= minIntervalMs) {
             lastLocalPoseBroadcastMs = nowWallMs;
             lastBroadcastZoneKey = localZoneKey;
             lastBroadcastChatText = curChat;
+            lastBroadcastChatSeq = socialTalkSeq;
+            lastBroadcastBubbleStyleKey = curBubbleStyleKey;
+            lastBroadcastEmoteClip = curEmoteClip;
+            lastBroadcastEmoteSeq = curEmoteSeq;
             lastBroadcastYaw = curYawForBroadcast;
+            lastBroadcastMoving = isActivelyMoving;
+            lastBroadcastJumpOffset = playerUnit.jumpOffset;
             lastBroadcastSitting = curSittingForBroadcast;
+            lastBroadcastSleeping = curSleepingForBroadcast;
+            lastBroadcastDriving = curDrivingForBroadcast;
+            lastBroadcastHiddenInVehicle = curHiddenInVehicleForBroadcast;
             lastBroadcastScooterKind = curScooterForBroadcast;
             lastBroadcastWeaponId = playerUnit.weaponId;
             lastBroadcastCarryingCrate = playerUnit.carryingCrate;
+            lastBroadcastFishingPhase = shorelineFishingSync.phase;
+            lastBroadcastIsReeling = shorelineFishingSync.isReeling;
+            lastBroadcastCafePreparing = curCafePreparingForBroadcast;
+            lastBroadcastCafeWorker = cafeWorkShiftActive;
+
             worldMultiplayer.publishLocalPose(
               {
                 nearAccountId: nearSessionState.walletConnected
@@ -24560,13 +29325,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 z: mountedTank ? mountedTank.z : playerUnit.z,
                 vx: curVx,
                 vz: curVz,
-                yaw: mountedTank ? mountedTank.hullYaw : playerUnit.yaw,
+                yaw: curYawForBroadcast,
                 jumpOffset: playerUnit.jumpOffset,
                 weaponId: playerUnit.weaponId,
                 carryingCrate: playerUnit.carryingCrate,
-                isSitting: Boolean(playerUnit.isSitting) || ridingTramCarIdx !== null,
-                isDriving: Boolean(playerUnit.isDriving) || mountedTank !== null,
-                isHiddenInVehicle: ridingTramCarIdx !== null,
+                isSitting: curSittingForBroadcast,
+                isDriving: curDrivingForBroadcast,
+                isHiddenInVehicle: curHiddenInVehicleForBroadcast,
                 scooterKind: curScooterForBroadcast,
                 fishingPhase: shorelineFishingSync.phase,
                 isReeling: shorelineFishingSync.isReeling,
@@ -24575,30 +29340,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                   nearSessionState.claimedTeam === playerUnit.team &&
                   nearSessionState.claimedPlotIndex !== null,
                 isCafeWorker: cafeWorkShiftActive,
-                cafePreparing: cafeWorkAnimSync.phase !== 'idle',
+                cafePreparing: curCafePreparingForBroadcast,
                 level: Math.max(1, parseInt(document.body.dataset.playerLevel || '1', 10) || 1),
-                emoteClip: playerUnit?.isSleeping
-                  ? 'bed:sleep'
-                  : cafeWorkAnimSync.phase === 'prep_act'
-                    ? cafeWorkAnimSync.category === 'pastry'
-                      ? 'cafe:tray'
-                      : 'cafe:coffee'
-                    : cafeWorkAnimSync.phase === 'serve_act'
-                      ? 'cafe:serve'
-                      : activeCafeConsumeItemId && !cafeWorkShiftActive
-                        ? playerUnit?.isSitting &&
-                          activeSeatedSpot?.sitVariant &&
-                          activeSeatedSpot.sitVariant !== 'chair'
-                          ? `eat:${activeCafeConsumeItemId}@${activeSeatedSpot.sitVariant}`
-                          : `eat:${activeCafeConsumeItemId}`
-                        : playerUnit?.isSitting &&
-                            activeSeatedSpot?.sitVariant &&
-                            activeSeatedSpot.sitVariant !== 'chair'
-                          ? CUSTOM_SIT_REMOTE_TABLE[activeSeatedSpot.sitVariant].emoteClip
-                          : '',
+                emoteClip: curEmoteClip,
+                emoteSeq: curEmoteSeq,
+                emoteStartedAtMs: localActiveEmote?.startedAtMs ?? 0,
+                emoteDurationMs: localActiveEmote?.durationMs ?? 0,
+                seatLiftY: localSeatLiftY,
                 chatBubbleText: curChat,
+                chatBubbleSeq: socialTalkSeq,
+                chatBubbleBgColor: curChat ? localBubbleBgColor : null,
+                chatBubbleTextColor: curChat ? localBubbleTextColor : null,
               },
-              zoneOrChatChanged,
+              zoneChanged || chatChanged || emoteChanged,
             );
           }
         }
@@ -24616,18 +29370,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
 
         // Step & interpolate up to 24 active remote players in the current zone
+        syncSecondaryLodFrustum();
         const charGltfForPeers =
           loadedBlitzAssets?.playerFemaleGlb ??
           earlyLoadedPlayerFemaleGltf ??
-          loadedBlitzAssets?.charBuddiesGltf ??
-          earlyLoadedCharGltf;
+          loadedBlitzAssets?.ambientFemaleNpcGlb ??
+          earlyLoadedAmbientFemaleGlb;
         const manGltfForPeers =
           loadedBlitzAssets?.playerMaleGlb ??
           earlyLoadedPlayerMaleGltf ??
-          loadedBlitzAssets?.manCharacterBuddiesGltf ??
-          earlyLoadedManGltf;
+          loadedBlitzAssets?.ambientMaleNpcGlb ??
+          earlyLoadedAmbientMaleGlb;
         const localActorX = mountedTank ? mountedTank.x : (playerUnit?.x ?? 0);
         const localActorZ = mountedTank ? mountedTank.z : (playerUnit?.z ?? 0);
+        const nowPeerWallMs = Date.now();
 
         for (let pi = 0; pi < remoteWorldPeers.length; pi++) {
           const peer = remoteWorldPeers[pi];
@@ -24665,7 +29421,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 peer.scooterKind === 'electric_scooter_bike'
                   ? createElectricScooterBike3D({ parked: false })
                   : createPushKickScooter3D({ parked: false, folded: false });
-              av.scooterHandle.root.scale.setScalar(SCOOTER_RIDE_MODEL_SCALE);
+              av.scooterHandle.root.scale.setScalar(getScooterRideModelScale(peer.scooterKind));
               av.scooterHandle.setParked(false);
               av.scooterHandle.root.visible = false;
               scene.add(av.scooterHandle.root);
@@ -24706,64 +29462,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
           }
 
-          // Snapshot interpolation (replaces chase-the-latest exponential smoothing):
-          // render the peer ~110ms in the past and interpolate between the two received
-          // poses bracketing that moment, on the LOCAL receive-time timeline — immune to
-          // sender clock skew and to per-packet jitter. If packets run late, dead-reckon
-          // briefly (<=150ms) from the newest pose instead of freezing.
-          const peerInHouse =
-            localZoneKey.startsWith('house:') || localZoneKey.startsWith('cafe:');
-          const poseHist = peerPoseHistory.get(peer.sessionId);
-          let sampleX = peer.x;
-          let sampleZ = peer.z;
-          let sampleYaw = peer.yaw;
-          if (poseHist && poseHist.length > 0) {
-            const renderMs = Date.now() - 110;
-            const newestSample = poseHist[poseHist.length - 1];
-            if (renderMs >= newestSample.receivedAtMs) {
-              const extraSec = Math.min(0.15, (renderMs - newestSample.receivedAtMs) / 1000);
-              sampleX = newestSample.x + newestSample.vx * extraSec;
-              sampleZ = newestSample.z + newestSample.vz * extraSec;
-              sampleYaw = newestSample.yaw;
-            } else {
-              let sampleA = poseHist[0];
-              let sampleB = poseHist[0];
-              for (let hi = 0; hi < poseHist.length; hi++) {
-                if (poseHist[hi].receivedAtMs <= renderMs) sampleA = poseHist[hi];
-                if (poseHist[hi].receivedAtMs >= renderMs) {
-                  sampleB = poseHist[hi];
-                  break;
-                }
-              }
-              if (sampleB !== sampleA && sampleB.receivedAtMs > sampleA.receivedAtMs) {
-                const t =
-                  (renderMs - sampleA.receivedAtMs) /
-                  (sampleB.receivedAtMs - sampleA.receivedAtMs);
-                if (peerInHouse) {
-                  sampleX = sampleA.x + (sampleB.x - sampleA.x) * t;
-                  sampleZ = sampleA.z + (sampleB.z - sampleA.z) * t;
-                } else {
-                  sampleX = wrapPlanetCoord(
-                    sampleA.x + getPlanetShortestDelta(sampleB.x, sampleA.x) * t,
-                  );
-                  sampleZ = wrapPlanetCoord(
-                    sampleA.z + getPlanetShortestDelta(sampleB.z, sampleA.z) * t,
-                  );
-                }
-                let sampleYawDelta = sampleB.yaw - sampleA.yaw;
-                while (sampleYawDelta > Math.PI) sampleYawDelta -= Math.PI * 2;
-                while (sampleYawDelta < -Math.PI) sampleYawDelta += Math.PI * 2;
-                sampleYaw = sampleA.yaw + sampleYawDelta * t;
-              } else {
-                sampleX = sampleA.x;
-                sampleZ = sampleA.z;
-                sampleYaw = sampleA.yaw;
-              }
-            }
+          const peerInFlatIndoor = isFlatIndoorZoneKey(localZoneKey);
+          let interpState = peerInterpStates.get(peer.sessionId);
+          if (!interpState) {
+            interpState = createPeerInterpolationState();
+            peerInterpStates.set(peer.sessionId, interpState);
           }
-          av.renderX = peerInHouse ? sampleX : wrapPlanetCoord(sampleX);
-          av.renderZ = peerInHouse ? sampleZ : wrapPlanetCoord(sampleZ);
-          av.renderYaw = sampleYaw;
+          const poseStep = stepRemoteAvatarInterpolation(interpState, {
+            nowMs: nowPeerWallMs,
+            dtSec: dt,
+            isFlatIndoor: peerInFlatIndoor,
+            fallbackPose: {
+              x: peer.x,
+              z: peer.z,
+              vx: peer.vx,
+              vz: peer.vz,
+              yaw: peer.yaw,
+              jumpOffset: peer.jumpOffset,
+              isSitting: peer.isSitting,
+              isSleeping: peer.emoteClip === 'bed:sleep',
+            },
+          });
+          av.renderX = poseStep.x;
+          av.renderZ = poseStep.z;
+          av.renderYaw = poseStep.yaw;
+          av.renderJumpOffset = poseStep.jumpOffset;
 
           av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0);
           av.overheadCrateGroup.visible =
@@ -24782,7 +29505,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           av.ringMat.color.setHex(desiredFootHex);
           av.innerFootDiscMat.color.setHex(desiredFootHex);
 
-          // Update Nameplate & Overhead Chat Speech Bubble
+          // Update Nameplate & Overhead Chat Speech Bubble (TTL + color preservation)
           const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}`;
           if (av.lastLabelKey !== nextLabelKey) {
             av.lastLabelKey = nextLabelKey;
@@ -24792,14 +29515,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peer.nearAccountId ? 'player_veteran' : 'player_rookie',
             );
           }
-          const distToPeer = localZoneKey.startsWith('house:')
+          const distToPeer = peerInFlatIndoor
             ? Math.hypot(localActorX - av.renderX, localActorZ - av.renderZ)
             : getPlanetShortestDistance(localActorX, localActorZ, av.renderX, av.renderZ);
           const isLocalSeatedSkyView = Boolean(
             playerUnit && playerUnit.isSitting && activeSeatedSpot,
           );
           const peerWithinChunk =
-            peerInHouse || isLocalSeatedSkyView || distToPeer <= 64.0;
+            peerInFlatIndoor || isLocalSeatedSkyView || distToPeer <= 64.0;
           av.root.visible = peerWithinChunk;
           if (!peerWithinChunk) {
             av.nameplate.sprite.visible = false;
@@ -24811,16 +29534,72 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
           av.nameplate.sprite.visible = false;
 
-          if (peer.chatBubbleText !== av.lastBubbleText) {
-            av.lastBubbleText = peer.chatBubbleText;
-            if (peer.chatBubbleText) {
-              av.saluteSign.updateText(peer.displayName, peer.chatBubbleText, '#38bdf8', -1);
+          av.chatBubbleState = mergeRemoteChatBubbleState(
+            av.chatBubbleState,
+            {
+              text: peer.chatBubbleText,
+              seq: peer.chatBubbleSeq,
+              bgColor: peer.chatBubbleBgColor,
+              textColor: peer.chatBubbleTextColor,
+            },
+            nowPeerWallMs,
+            DEFAULT_CHAT_BUBBLE_TTL_MS,
+          );
+          const activeBubble = getActiveRemoteChatBubble(av.chatBubbleState, nowPeerWallMs);
+          if (activeBubble) {
+            const renderKey = `${peer.displayName}|${activeBubble.text}|${activeBubble.bgColor}|${activeBubble.textColor}`;
+            if (renderKey !== av.lastBubbleRenderKey) {
+              av.lastBubbleRenderKey = renderKey;
+              av.lastBubbleText = activeBubble.text;
+              av.saluteSign.updateBubble?.(
+                peer.displayName,
+                activeBubble.text,
+                activeBubble.bgColor,
+                activeBubble.textColor,
+              );
             }
+          } else {
+            av.lastBubbleText = null;
           }
-          av.saluteSign.sprite.visible = Boolean(peer.chatBubbleText) && distToPeer <= 42.0;
+          av.saluteSign.sprite.visible = Boolean(activeBubble) && distToPeer <= 42.0;
+
+          // Merge & expire emote state reliably (prevents stuck emotes)
+          const prevEmoteSeq = av.emoteState.seenSeq;
+          const prevEmoteClip = av.emoteState.emoteClip;
+          av.emoteState = mergeRemoteEmoteState(
+            av.emoteState,
+            {
+              emoteClip: peer.emoteClip,
+              emoteSeq: peer.emoteSeq,
+              emoteDurationMs: peer.emoteDurationMs,
+            },
+            nowPeerWallMs,
+          );
+          const activeEmoteClip = getActiveRemoteEmoteClip(av.emoteState, nowPeerWallMs);
+          if (
+            activeEmoteClip === 'emote:punch' &&
+            (av.emoteState.seenSeq !== prevEmoteSeq || prevEmoteClip !== 'emote:punch')
+          ) {
+            av.remotePunchTimer = 0.28;
+          } else if (
+            activeEmoteClip === 'emote:kick' &&
+            (av.emoteState.seenSeq !== prevEmoteSeq || prevEmoteClip !== 'emote:kick')
+          ) {
+            av.remoteKickTimer = 0.36;
+          }
+          if (av.remotePunchTimer > 0) av.remotePunchTimer = Math.max(0, av.remotePunchTimer - dt);
+          if (av.remoteKickTimer > 0) av.remoteKickTimer = Math.max(0, av.remoteKickTimer - dt);
+
+          if (peer.fishingPhase === 'casting' && av.lastFishingPhase !== 'casting') {
+            av.fishingCastRecoilTimer = 0.42;
+          }
+          av.lastFishingPhase = peer.fishingPhase;
+          if (av.fishingCastRecoilTimer > 0) {
+            av.fishingCastRecoilTimer = Math.max(0, av.fishingCastRecoilTimer - dt);
+          }
 
           // Step walk animation & weapon/fishing stance (culled beyond 52m for 60 FPS budget)
-          const peerSpeed = Math.hypot(peer.vx, peer.vz);
+          const peerSpeed = poseStep.visualSpeedMps;
           const peerWalk = computeSynchronizedWalkCycleStep({
             currentWalkCycle: av.walkCycle,
             actualGroundSpeed: peer.scooterKind ? 0 : peerSpeed,
@@ -24863,7 +29642,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             av.rig.leftLegPivot.rotation.x = -pose.supportHipX * pose.blend;
             av.rig.rightLegPivot.rotation.x = -pose.pushHipX * pose.blend;
             av.bodyGroup.rotation.order = 'YXZ';
-            applyScooterBodyTransform(av.bodyGroup, peer.jumpOffset, av.renderYaw, pose);
+            applyScooterBodyTransform(av.bodyGroup, av.renderJumpOffset, av.renderYaw, pose);
             if (av.scooterHandle) {
               applyScooterHandleLeanAndSteer(
                 av.scooterHandle,
@@ -24872,7 +29651,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 false,
               );
             }
-          } else if (peer.jumpOffset > 0.08) {
+          } else if (av.renderJumpOffset > 0.08) {
             av.rig.leftLegPivot.rotation.x = -0.58;
             av.rig.rightLegPivot.rotation.x = 0.44;
           } else {
@@ -24902,14 +29681,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           };
 
           const peerCafeWorkAction: CafeWorkAnimAction =
-            peer.emoteClip === 'cafe:coffee'
+            activeEmoteClip === 'cafe:coffee'
               ? 'coffee'
-              : peer.emoteClip === 'cafe:tray'
+              : activeEmoteClip === 'cafe:tray'
                 ? 'tray'
-                : peer.emoteClip === 'cafe:serve'
+                : activeEmoteClip === 'cafe:serve'
                   ? 'serve'
                   : 'idle';
           if (distToPeer <= 52.0) {
+            restoreSocialEmoteOverlay(av.rig);
+            const peerSecondaryLod = resolveWrappedWorldSecondaryLod(
+              av.renderX,
+              peerInFlatIndoor ? av.root.position.y : getTerrainElevation(av.renderX, av.renderZ),
+              av.renderZ,
+              false,
+              peerInFlatIndoor,
+              finalLookX,
+              finalLookZ,
+            );
             updateCharacterWeaponStance(
               av.rig,
               peerWeaponId,
@@ -24917,11 +29706,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerWalk.isMoving,
               peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
               0,
-              0,
-              0,
+              av.fishingCastRecoilTimer > 0 ? 0.4 : 0,
+              av.remotePunchTimer,
               'right',
-              0,
-              peer.jumpOffset,
+              av.remoteKickTimer,
+              av.renderJumpOffset,
               peerWalk.legSwingAmplitude,
               0,
               true,
@@ -24931,12 +29720,45 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
               peerSpeed,
               peer.isSitting || peer.scooterKind === 'electric_scooter_bike',
               peer.isDriving,
-              peer.emoteClip === 'bed:sleep',
+              activeEmoteClip === 'bed:sleep',
               peer.scooterKind ? av.scooterPose : null,
               peerCafeWorkAction,
-              resolvePeerSitVariantAndLift(peer.emoteClip, peer.isSitting).variant,
-              parsePeerEatEmoteItemId(peer.emoteClip),
+              resolvePeerSitVariantAndLift(activeEmoteClip, peer.isSitting).variant,
+              parsePeerEatEmoteItemId(activeEmoteClip),
+              peerSecondaryLod,
             );
+            if (
+              activeEmoteClip.startsWith('emote:') &&
+              activeEmoteClip !== 'emote:punch' &&
+              activeEmoteClip !== 'emote:kick' &&
+              !peerWalk.isMoving &&
+              !peer.isSitting &&
+              !peer.isDriving &&
+              !peer.scooterKind &&
+              peerWeaponId === 'unarmed' &&
+              (peer.carryingCrate === 'none' || peer.carryingCrate === '')
+            ) {
+              applySocialEmotePoseOverlay(
+                av.rig,
+                av.bodyGroup,
+                activeEmoteClip,
+                Math.max(0, (nowPeerWallMs - av.emoteState.startedAtMs) / 1000),
+              );
+            }
+            if (peerWeaponId === 'fishing_rod' && av.rig.fishingRodGroup) {
+              const pRodFlex = av.rig.fishingRodGroup.userData.rodFlexPivot as THREE.Group | undefined;
+              const pCrank = av.rig.fishingRodGroup.userData.reelCrankMesh as THREE.Mesh | undefined;
+              if (pRodFlex) {
+                pRodFlex.rotation.x = Math.max(0, peer.rodBend) * 0.42;
+              }
+              if (pCrank) {
+                if (av.rig.fishingRodGroup.userData.hasFishingRodGlb) {
+                  pCrank.rotation.z = av.rig.fishingPoseState.reelAngle;
+                } else {
+                  pCrank.rotation.x = av.rig.fishingPoseState.reelAngle;
+                }
+              }
+            }
           } else if (av.rig.customGlbController) {
             av.rig.customGlbController.lastStepTimeMs = now;
           }
@@ -25035,13 +29857,88 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         eastSuperDropZoneGroup.visible = true;
       }
 
-      // Update Flat Ground Map, Splatmap, Wildflowers, Stones, Dandelions & Sunbeams
+      // Update Flat Ground Map, Splatmap, Wildflowers, Stones, Dandelions & Sunbeams with safe district chunk culling
       if (!isFlatIndoorRoomMode) {
-        curvedPlanetEnv.update(planetPivotX, planetPivotZ, camera.position, timeSec);
+        const districtCullRadius = computeDistrictChunkCullRadius({
+          isFlatIndoorRoomMode,
+          isFullMapOverview,
+          isCityView: npcCameraMode === 'city_view',
+          isParkView: Boolean(parkViewMode && !isCasinoViewMode),
+          isCasinoView: isCasinoViewMode,
+          isLandingTour: npcCameraMode === 'landing_tour',
+          isOrbit: false,
+        });
+        curvedPlanetEnv.update(
+          planetPivotX,
+          planetPivotZ,
+          camera.position,
+          timeSec,
+          districtCullRadius,
+        );
       }
 
-      // Advance & Articulate the 2-Car Modern Urban Street Tram (1 Rangkaian 2 Gerbong) along the closed road loop
-      // In Safezone Mode, if the tram is stopped at the Halte Trem and the player is nearby on foot, hold the tram at the Halte so they can easily click RIDE TRAM!
+      // Dynamic 24h Time-of-Day & GPU Weather Cycle (center particles on visible camera frustum & scale span to zoom)
+      const isWeatherCenterZero =
+        isFlatIndoorRoomMode ||
+        isFullMapOverview ||
+        Boolean(planeViewMode || skyshieldViewMode || buildingViewMode);
+      const weatherLookCamBiasX = clamp((camera.position.x - finalLookX) * 0.22, -26, 26);
+      const weatherLookCamBiasZ = clamp((camera.position.z - finalLookZ) * 0.22, -26, 26);
+      const weatherPivotX = isWeatherCenterZero
+        ? 0
+        : npcCameraMode === 'city_view'
+          ? finalLookX + weatherLookCamBiasX
+          : wrapPlanetCoord(finalLookX + weatherLookCamBiasX);
+      const weatherPivotZ = isWeatherCenterZero
+        ? 0
+        : npcCameraMode === 'city_view'
+          ? finalLookZ + weatherLookCamBiasZ
+          : wrapPlanetCoord(finalLookZ + weatherLookCamBiasZ);
+      const weatherSpanScale =
+        npcCameraMode === 'city_view'
+          ? 1.78
+          : clamp(zoomMult * 0.95 * (currentPlayMode === 'editor' ? editorZoom : 1.0), 1.0, 1.32);
+      const currentWeatherEnv = weatherSystem.update({
+        dt: state === 'paused' ? 0 : dt,
+        timeSec,
+        pivotX: weatherPivotX,
+        pivotZ: weatherPivotZ,
+        windUniforms,
+        isFlatIndoorRoomMode,
+        isShowcaseMode: Boolean(buildingViewMode || skyshieldViewMode || planeViewMode),
+        isFullMapOverview,
+        isCityView: npcCameraMode === 'city_view',
+        spanScale: weatherSpanScale,
+      });
+
+      const ambientEnvMode: AmbientEnvironmentMode =
+        npcCameraMode === 'cafe_interior'
+          ? 'cafe_interior'
+          : npcCameraMode === 'casino_interior'
+            ? 'casino_interior'
+            : npcCameraMode === 'salon_interior'
+              ? 'salon_interior'
+              : isFlatIndoorRoomMode
+                ? 'house_interior'
+                : 'outdoor';
+      const useCamListener =
+        npcCameraMode === 'city_view' || currentPlayMode === 'editor' || !playerUnit;
+      soundEngine.updateAmbientSoundscape(
+        {
+          listenerX: useCamListener ? finalLookX : playerUnit.x,
+          listenerZ: useCamListener ? finalLookZ : playerUnit.z,
+          timeOfDayHours: currentWeatherEnv.timeOfDayHours,
+          rainIntensity01: currentWeatherEnv.rainFactor01,
+          environmentMode: ambientEnvMode,
+          isUiModalOpen: Boolean(isKioskModalOpenCanvas || citizenPortraitState),
+          isCityView: npcCameraMode === 'city_view',
+          isFullMapOverview,
+        },
+        timeSec,
+      );
+
+      // Advance Central Plaza & East Harbor Traffic Lights + 2-Car Modern Urban Street Tram
+      // Obeys Halte safezone boarding hold, signalized stop bars, and emergency NPC track sensing.
       const preTramState = cityTram.getState();
       const isTramWaitingAtSafezoneHalte =
         cityArenaMode === 'safezone' &&
@@ -25050,23 +29947,128 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         ridingTramCarIdx === null &&
         playerUnit &&
         Math.hypot(playerUnit.x - SAFEZONE_CITY_HALTE_SPAWN.x, playerUnit.z - SAFEZONE_CITY_HALTE_SPAWN.z) < 7.5 &&
-        Math.hypot(preTramState.car1.x - -70.0, preTramState.car1.z - SAFEZONE_CITY_HALTE_SPAWN.z) < 2.8;
-      const tramStepDt =
-        isTramWaitingAtSafezoneHalte
-          ? 0
-          : state === 'playing' && currentPlayMode !== 'editor'
-          ? dt
-          : rawDt * 0.65;
-      cityTramDistance =
-        (cityTramDistance + CITY_TRAM_SPEC.cruiseSpeed * tramStepDt) %
-        preTramState.totalTrackLength;
+        Math.hypot(preTramState.car1.x - -65.0, preTramState.car1.z - SAFEZONE_CITY_HALTE_SPAWN.z) < 2.8;
+      const tramMotionDt =
+        state === 'playing' && currentPlayMode !== 'editor' ? dt : rawDt * 0.65;
+
+      let plazaHasNorthWaiter = false;
+      let plazaHasSouthWaiter = false;
+      let plazaHasCrosswalkWalker = false;
+      let eastHasWaiter = false;
+      let eastHasCrosswalkWalker = false;
+
+      const scanSignalCrosswalkPresence = (ux: number, uz: number) => {
+        if (ux >= -76.5 && ux <= -59.5) {
+          if (Math.abs(uz - PLAZA_TRAFFIC_SIGNAL_SPEC.northCrosswalkZ) <= 3.8) {
+            plazaHasNorthWaiter = true;
+            if (
+              ux >= PLAZA_TRAFFIC_SIGNAL_SPEC.crosswalkMinX &&
+              ux <= PLAZA_TRAFFIC_SIGNAL_SPEC.crosswalkMaxX
+            ) {
+              plazaHasCrosswalkWalker = true;
+            }
+          }
+          if (Math.abs(uz - PLAZA_TRAFFIC_SIGNAL_SPEC.southCrosswalkZ) <= 3.8) {
+            plazaHasSouthWaiter = true;
+            if (
+              ux >= PLAZA_TRAFFIC_SIGNAL_SPEC.crosswalkMinX &&
+              ux <= PLAZA_TRAFFIC_SIGNAL_SPEC.crosswalkMaxX
+            ) {
+              plazaHasCrosswalkWalker = true;
+            }
+          }
+        }
+        if (ux >= 59.5 && ux <= 76.5 && Math.abs(uz - PLAZA_TRAFFIC_SIGNAL_SPEC.eastCrosswalkZ) <= 3.8) {
+          eastHasWaiter = true;
+          if (
+            ux >= PLAZA_TRAFFIC_SIGNAL_SPEC.eastCrosswalkMinX &&
+            ux <= PLAZA_TRAFFIC_SIGNAL_SPEC.eastCrosswalkMaxX
+          ) {
+            eastHasCrosswalkWalker = true;
+          }
+        }
+      };
+
+      for (let ni = 0; ni < cityAmbientNpcs.length; ni++) {
+        const cNpc = cityAmbientNpcs[ni];
+        if (!cNpc.isSitting) {
+          scanSignalCrosswalkPresence(cNpc.x, cNpc.z);
+        }
+      }
+      if (playerUnit && playerUnit.alive && ridingTramCarIdx === null) {
+        scanSignalCrosswalkPresence(playerUnit.x, playerUnit.z);
+      }
+
+      plazaTrafficSignalState = stepPlazaTrafficSignalState(plazaTrafficSignalState, tramMotionDt, {
+        hasWaitingPedestrian: plazaHasNorthWaiter || plazaHasSouthWaiter,
+        hasPedestrianInsideCrosswalk: plazaHasCrosswalkWalker,
+        tramState: preTramState,
+      });
+      eastTrafficSignalState = stepPlazaTrafficSignalState(eastTrafficSignalState, tramMotionDt, {
+        hasWaitingPedestrian: eastHasWaiter,
+        hasPedestrianInsideCrosswalk: eastHasCrosswalkWalker,
+        tramState: preTramState,
+      });
+
+      const plazaWalkStates = evaluatePlazaCrosswalkWalkStates(plazaTrafficSignalState, preTramState);
+      const eastWalkState = evaluateEastHarborCrosswalkWalkState(eastTrafficSignalState, preTramState);
+      curvedPlanetEnv.updateCityTrafficSignals({
+        plazaPhase: plazaTrafficSignalState.phase,
+        plazaNorthWalkAllowed: plazaWalkStates.northWalkAllowed,
+        plazaSouthWalkAllowed: plazaWalkStates.southWalkAllowed,
+        eastPhase: eastTrafficSignalState.phase,
+        eastWalkAllowed: eastWalkState.walkAllowed,
+      });
+
+      const tramTrafficStep = stepCityTramTrafficSpeedAndDistance({
+        distanceMeters: cityTramDistance,
+        currentSpeedMps: cityTramCurrentSpeedMps,
+        dt: tramMotionDt,
+        tramState: preTramState,
+        signalState: plazaTrafficSignalState,
+        eastSignalState: eastTrafficSignalState,
+        holdAtSafezoneHalte: Boolean(isTramWaitingAtSafezoneHalte),
+        hasSouthWaiter: plazaHasSouthWaiter,
+        pedestrians: cityAmbientNpcs,
+      });
+      cityTramDistance = tramTrafficStep.distanceMeters;
+      cityTramCurrentSpeedMps = tramTrafficStep.speedMps;
+      const wheelSpinDt =
+        tramMotionDt * (cityTramCurrentSpeedMps / Math.max(0.1, CITY_TRAM_SPEC.cruiseSpeed));
       const liveTramState = cityTram.update(
         cityTramDistance,
-        tramStepDt,
+        wheelSpinDt,
         planetPivotX,
         planetPivotZ,
         kCurve,
       );
+      underwaterEcology.update(timeSec, windUniforms.uTime.value);
+      const liveCityIllum = cityLightingAndTraffic.update({
+        dt: tramMotionDt,
+        timeSec,
+        tramState: liveTramState,
+        plazaSignalState: plazaTrafficSignalState,
+        eastSignalState: eastTrafficSignalState,
+        fallbackPreset: lightingPresetRef.current,
+        weatherEnvState: scene.userData.weatherEnvState as WeatherEnvStateContract | undefined,
+        pedestrians: cityAmbientNpcs,
+        playerPose:
+          cityLightingAndTraffic.rootGroup.visible &&
+          ridingTramCarIdx === null &&
+          playerUnit.alive
+            ? { x: playerUnit.x, z: playerUnit.z, alive: playerUnit.alive }
+            : null,
+        planetPivotX,
+        planetPivotZ,
+        curvatureStrength: kCurve,
+      });
+      if (!isFlatIndoorRoomMode) {
+        const effectiveWindowNight =
+          liveCityIllum.windowGlow01 > 0.05
+            ? Math.min(1, Math.max(liveCityIllum.windowGlow01, liveCityIllum.nightFactor01))
+            : liveCityIllum.nightFactor01;
+        updateCityWindowNightLighting(scene, effectiveWindowNight, timeSec);
+      }
       if (ridingTramCarIdx !== null && playerUnit.alive) {
         const activeCar = ridingTramCarIdx === 0 ? liveTramState.car1 : liveTramState.car2;
         playerUnit.x = wrapPlanetCoord(activeCar.x);
@@ -25317,6 +30319,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const redGateDist = computeMinGateDistance(redBase.hqX, redBase.hqZ + 23.8);
       stepMilitaryBaseMasterplanAnimation(blueBase.baseGroup, dt, blueGateDist, blueAuthGateDists);
       stepMilitaryBaseMasterplanAnimation(redBase.baseGroup, dt, redGateDist, redAuthGateDists);
+      if (!isFlatIndoorRoomMode) {
+        const parkCullRadius = computeDistrictChunkCullRadius({
+          isFlatIndoorRoomMode,
+          isFullMapOverview,
+          isCityView: npcCameraMode === 'city_view',
+          isParkView: Boolean(parkViewMode && !isCasinoViewMode),
+          isCasinoView: isCasinoViewMode,
+          isLandingTour: npcCameraMode === 'landing_tour',
+          isOrbit: false,
+        });
+        const dxCp = Math.max(-8 - planetPivotX, 0, planetPivotX - 57);
+        const dzCp = Math.max(-19 - planetPivotZ, 0, planetPivotZ - 19);
+        const cpVis =
+          parkCullRadius <= 0 || dxCp * dxCp + dzCp * dzCp <= parkCullRadius * parkCullRadius;
+        centralPark.group.visible = cpVis;
+        if (cpVis) {
+          const weatherNight =
+            (scene.userData.weatherEnvState as { nightFactor01?: number } | undefined)?.nightFactor01 ?? 0;
+          const parkLampNight = Math.min(1, Math.max(weatherNight, liveCityIllum.streetLampBrightness01));
+          centralPark.update(timeSec, parkLampNight);
+        }
+      }
 
       // Step 35mm Skyshield Air & Ground Defense Turrets mounted atop all 4 corner bastions of each Base
       const stepBaseSkyshieldDefense = (
@@ -25496,12 +30520,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Align all Destructible Trees + Apply Elastic Tree Jiggle When Rammed or Shot!
       for (let i = 0; i < trees.length; i++) {
         const tr = trees[i];
-        if (!tr.alive) continue;
-        if (isFlatIndoorRoomMode) {
-          if (tr.mesh.visible) tr.mesh.visible = false;
+        const treeBinding = tr.mesh.userData.__instancedTreeBinding as
+          | InstancedTreeSlotBinding
+          | undefined;
+        if (!tr.alive) {
+          if (treeBinding) {
+            treeBinding.syncTransform(
+              tr.mesh.position.x,
+              tr.mesh.position.y,
+              tr.mesh.position.z,
+              tr.mesh.rotation.y,
+              false,
+            );
+          }
           continue;
         }
-        if (useAvatarChunkCulling) {
+        if (isFlatIndoorRoomMode) {
+          if (!treeBinding && tr.mesh.visible) tr.mesh.visible = false;
+          continue;
+        }
+        if (treeBinding) {
+          if (!tr.mesh.visible) {
+            tr.mesh.visible = true;
+            tr.mesh.userData.__needsChunkRealign = true;
+          }
+        } else if (useAvatarChunkCulling) {
           const tdx = getPlanetShortestDelta(tr.x, finalLookX);
           const tdz = getPlanetShortestDelta(tr.z, finalLookZ);
           const inChunk = tdx * tdx + tdz * tdz <= CHUNK_CULL_RADIUS_SQ;
@@ -25518,12 +30561,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           tr.mesh.userData.__needsChunkRealign = true;
         }
         const isJiggling = tr.jiggleTimer > 0;
-        if (
+        const needTreeSync =
           needFullStaticAlign ||
           isJiggling ||
           tr.mesh.userData.__wasJiggling ||
-          tr.mesh.userData.__needsChunkRealign
-        ) {
+          tr.mesh.userData.__needsChunkRealign;
+        if (needTreeSync) {
           applyPlanetCurvatureToObject(
             tr.mesh,
             tr.x,
@@ -25545,44 +30588,76 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           tr.mesh.rotation.x += tr.jiggleDirZ * sway;
           tr.mesh.rotation.z -= tr.jiggleDirX * sway;
         }
+        if (treeBinding && (needTreeSync || isJiggling)) {
+          treeBinding.syncTransform(
+            tr.mesh.position.x,
+            tr.mesh.position.y,
+            tr.mesh.position.z,
+            tr.mesh.rotation.y,
+            tr.alive && tr.mesh.visible,
+            tr.mesh.rotation.x,
+            tr.mesh.rotation.z,
+          );
+        }
       }
 
-      // Align all Real GLB Props (including Pushable Wheelbarrow, Cones, Barricades, Falling Warzone Barrels & Jiggle Tilt)
+      // Align all Real GLB Props (including Batched Static Props, Pushable Wheelbarrow, Cones, Barricades, Falling Barrels & Jiggle Tilt)
       for (let i = 0; i < realPropsGroup.children.length; i++) {
         if (isFlatIndoorRoomMode) break;
         const propWrapper = realPropsGroup.children[i];
-        if (!propWrapper.visible) continue;
+        const propBinding = propWrapper.userData.__instancedPropBinding as
+          | InstancedPropSlotBinding
+          | undefined;
+        if (!propWrapper.visible) {
+          if (propBinding && propWrapper.userData.__lastInstVis !== false) {
+            propWrapper.userData.__lastInstVis = false;
+            propBinding.syncTransform(
+              propWrapper.position.x,
+              propWrapper.position.y,
+              propWrapper.position.z,
+              propWrapper.rotation.y,
+              propWrapper.scale.x,
+              propWrapper.scale.y,
+              propWrapper.scale.z,
+              false,
+            );
+          }
+          continue;
+        }
         const wx = (propWrapper.userData.worldX as number) ?? propWrapper.position.x;
         const wz = (propWrapper.userData.worldZ as number) ?? propWrapper.position.z;
-        if (useAvatarChunkCulling) {
-          const pdx = getPlanetShortestDelta(wx, finalLookX);
-          const pdz = getPlanetShortestDelta(wz, finalLookZ);
-          const inChunk = pdx * pdx + pdz * pdz <= CHUNK_CULL_RADIUS_SQ;
-          if (!inChunk) {
-            if (!propWrapper.userData.__chunkCulledChildren) {
-              for (let ci = 0; ci < propWrapper.children.length; ci++) {
-                propWrapper.children[ci].visible = false;
+        if (!propBinding) {
+          if (useAvatarChunkCulling) {
+            const pdx = getPlanetShortestDelta(wx, finalLookX);
+            const pdz = getPlanetShortestDelta(wz, finalLookZ);
+            const inChunk = pdx * pdx + pdz * pdz <= CHUNK_CULL_RADIUS_SQ;
+            if (!inChunk) {
+              if (!propWrapper.userData.__chunkCulledChildren) {
+                for (let ci = 0; ci < propWrapper.children.length; ci++) {
+                  propWrapper.children[ci].visible = false;
+                }
+                propWrapper.userData.__chunkCulledChildren = true;
               }
-              propWrapper.userData.__chunkCulledChildren = true;
+              continue;
             }
-            continue;
-          }
-          if (propWrapper.userData.__chunkCulledChildren) {
+            if (propWrapper.userData.__chunkCulledChildren) {
+              for (let ci = 0; ci < propWrapper.children.length; ci++) {
+                propWrapper.children[ci].visible = true;
+              }
+              propWrapper.userData.__chunkCulledChildren = false;
+              propWrapper.userData.__alignedX = undefined;
+            }
+          } else if (propWrapper.userData.__chunkCulledChildren) {
             for (let ci = 0; ci < propWrapper.children.length; ci++) {
               propWrapper.children[ci].visible = true;
             }
             propWrapper.userData.__chunkCulledChildren = false;
             propWrapper.userData.__alignedX = undefined;
           }
-        } else if (propWrapper.userData.__chunkCulledChildren) {
-          for (let ci = 0; ci < propWrapper.children.length; ci++) {
-            propWrapper.children[ci].visible = true;
-          }
-          propWrapper.userData.__chunkCulledChildren = false;
-          propWrapper.userData.__alignedX = undefined;
         }
         const baseRotY = (propWrapper.userData.baseRotY as number) ?? 0;
         const fallOffsetY = (propWrapper.userData.fallOffsetY as number) ?? 0;
+        const extraLiftY = (propWrapper.userData.extraLiftY as number) ?? 0;
         const movedOrUnaligned =
           needFullStaticAlign ||
           propWrapper.userData.__alignedX !== wx ||
@@ -25594,7 +30669,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           applyPlanetCurvatureToObject(
             propWrapper,
             wx,
-            getTerrainElevation(wx, wz) + fallOffsetY,
+            getTerrainElevation(wx, wz) + fallOffsetY + extraLiftY,
             wz,
             planetPivotX,
             planetPivotZ,
@@ -25607,6 +30682,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           propWrapper.userData.__alignedFallY = fallOffsetY;
           propWrapper.userData.__wasJigglingProp = false;
         }
+        if (
+          propBinding &&
+          (movedOrUnaligned || propWrapper.userData.__lastInstVis !== propWrapper.visible)
+        ) {
+          propWrapper.userData.__lastInstVis = propWrapper.visible;
+          propBinding.syncTransform(
+            propWrapper.position.x,
+            propWrapper.position.y,
+            propWrapper.position.z,
+            propWrapper.rotation.y,
+            propWrapper.scale.x,
+            propWrapper.scale.y,
+            propWrapper.scale.z,
+            propWrapper.visible,
+            propWrapper.rotation.x,
+            propWrapper.rotation.z,
+          );
+        }
       }
       for (let i = 0; i < activeMapProps.length; i++) {
         const mp = activeMapProps[i];
@@ -25615,8 +30708,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         mp.wrapper.rotation.x += jWobble;
         mp.wrapper.rotation.z += jWobble * 0.8;
         mp.wrapper.userData.__wasJigglingProp = true;
+        const propBinding = mp.wrapper.userData.__instancedPropBinding as
+          | InstancedPropSlotBinding
+          | undefined;
+        if (propBinding) {
+          propBinding.syncTransform(
+            mp.wrapper.position.x,
+            mp.wrapper.position.y,
+            mp.wrapper.position.z,
+            mp.wrapper.rotation.y,
+            mp.wrapper.scale.x,
+            mp.wrapper.scale.y,
+            mp.wrapper.scale.z,
+            mp.wrapper.visible,
+            mp.wrapper.rotation.x,
+            mp.wrapper.rotation.z,
+          );
+        }
       }
-      stepRealBlitzPropsAnimation(realPropsGroup, timeSec);
+      if (!isFlatIndoorRoomMode) {
+        stepRealBlitzPropsAnimation(realPropsGroup, timeSec);
+      }
 
       // Align all Falling & Grounded Crates (with Pushable Rotation) and World Pickups
       for (let i = 0; i < worldCrates.length; i++) {
@@ -25790,6 +30902,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           b.root.scale.setScalar(0.55);
           continue;
         }
+        if (b.isPlayer && npcCameraMode === 'salon_interior') {
+          const seatLiftSalon =
+            b.isSitting && activeSalonSeatedSpot ? activeSalonSeatedSpot.seatLiftY : 0;
+          b.bodyGroup.position.y =
+            (floatY + b.jumpOffset + bHitPose.hopY) * 0.55 + seatLiftSalon;
+          b.root.position.set(b.x, SALON_ORIGIN_Y + salonCurrentFloorY, b.z);
+          b.root.rotation.set(0, 0, 0);
+          b.root.scale.setScalar(0.55);
+          continue;
+        }
         if (b.isPlayer && (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')) {
           const sleepLiftY =
             b.isSleeping && activeSleepSpot ? activeSleepSpot.sleepLiftY : 0;
@@ -25821,34 +30943,56 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior';
       const isLocalInCafeAlign = npcCameraMode === 'cafe_interior';
       const isLocalInCasinoAlign = npcCameraMode === 'casino_interior';
+      const isLocalInSalonAlign = npcCameraMode === 'salon_interior';
       for (const av of remotePlayerAvatars.values()) {
         if (!av.root.visible) continue;
+        const activePeerEmote = getActiveRemoteEmoteClip(av.emoteState, Date.now());
         if (isLocalInCasinoAlign) {
-          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
+          const casinoLift = av.peer.isSitting ? (av.peer.seatLiftY ?? 0.23) : 0;
+          av.bodyGroup.position.y = av.renderJumpOffset * 0.55 + casinoLift;
           av.root.position.set(av.renderX, CASINO_ORIGIN_Y, av.renderZ);
           av.root.rotation.set(0, 0, 0);
           av.root.scale.setScalar(0.55);
+        } else if (isLocalInSalonAlign) {
+          const salonLift = av.peer.isSitting ? (av.peer.seatLiftY ?? 0.18) : 0;
+          const peerPrevY =
+            typeof (av.root.userData as { salonFloorY?: number }).salonFloorY === 'number'
+              ? ((av.root.userData as { salonFloorY?: number }).salonFloorY as number)
+              : 0;
+          const peerFloorY = resolveSalonInteriorFloorY(av.renderX, av.renderZ, peerPrevY);
+          (av.root.userData as { salonFloorY?: number }).salonFloorY = peerFloorY;
+          av.bodyGroup.position.y = av.renderJumpOffset * 0.55 + salonLift;
+          av.root.position.set(av.renderX, SALON_ORIGIN_Y + peerFloorY, av.renderZ);
+          av.root.rotation.set(0, 0, 0);
+          av.root.scale.setScalar(0.55);
         } else if (isLocalInCafeAlign) {
-          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55;
+          const cafeLift = av.peer.isSitting ? (av.peer.seatLiftY ?? 0.19) : 0;
+          av.bodyGroup.position.y = av.renderJumpOffset * 0.55 + cafeLift;
           av.root.position.set(av.renderX, CAFE_ORIGIN_Y, av.renderZ);
           av.root.rotation.set(0, 0, 0);
           av.root.scale.setScalar(0.55);
         } else if (isLocalInHouseAlign) {
-          const peerSleepLiftY = av.peer.emoteClip === 'bed:sleep' ? 1.02 : 0;
-          av.bodyGroup.position.y = av.peer.jumpOffset * 0.55 + peerSleepLiftY;
+          const peerSleepLiftY =
+            activePeerEmote === 'bed:sleep' ? (av.peer.seatLiftY ?? 1.02) : 0;
+          av.bodyGroup.position.y = av.renderJumpOffset * 0.55 + peerSleepLiftY;
           av.root.position.set(av.renderX, HOUSE_ORIGIN_Y, av.renderZ);
           av.root.rotation.set(0, 0, 0);
           av.root.scale.setScalar(0.55);
         } else {
           const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
           if (av.peer.scooterKind && av.scooterPose) {
-            applyScooterBodyTransform(av.bodyGroup, av.peer.jumpOffset, av.renderYaw, av.scooterPose);
+            applyScooterBodyTransform(
+              av.bodyGroup,
+              av.renderJumpOffset,
+              av.renderYaw,
+              av.scooterPose,
+            );
           } else {
-            const peerSeatLiftY = resolvePeerSitVariantAndLift(
-              av.peer.emoteClip,
-              av.peer.isSitting,
-            ).peerLiftY;
-            av.bodyGroup.position.set(0, av.peer.jumpOffset + peerSeatLiftY, 0);
+            const peerSeatLiftY = av.peer.isSitting
+              ? (av.peer.seatLiftY ??
+                resolvePeerSitVariantAndLift(activePeerEmote, av.peer.isSitting).peerLiftY)
+              : 0;
+            av.bodyGroup.position.set(0, av.renderJumpOffset + peerSeatLiftY, 0);
             av.bodyGroup.rotation.set(0, av.renderYaw + Math.PI / 2, 0, 'YXZ');
           }
           if (av.scooterHandle) {
@@ -25858,7 +31002,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             const fwdDot =
               (av.renderX - av.scooterLastX) * Math.cos(av.renderYaw) +
               (av.renderZ - av.scooterLastZ) * -Math.sin(av.renderYaw);
-            av.scooterHandle.spinWheels(Math.max(-0.6, Math.min(0.6, fwdDot)), SCOOTER_RIDE_MODEL_SCALE);
+            av.scooterHandle.spinWheels(
+              Math.max(-0.6, Math.min(0.6, fwdDot)),
+              getScooterRideModelScale(av.scooterKind ?? 'electric_scooter_bike'),
+            );
             av.scooterLastX = av.renderX;
             av.scooterLastZ = av.renderZ;
           }
@@ -25887,6 +31034,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         cityArenaMode !== 'warzone' &&
         npcCameraMode !== 'cafe_interior' &&
         npcCameraMode !== 'casino_interior' &&
+        npcCameraMode !== 'salon_interior' &&
         npcCameraMode !== 'house_interior' &&
         npcCameraMode !== 'house_visit';
       updateCityAmbientNpcsFrame(
@@ -25902,6 +31050,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         planetPivotZ,
         kCurve,
         showOutdoorCityNpcs,
+        citizenPortraitState
+          ? {
+              citizenId: citizenPortraitState.citizenId,
+              faceCamYaw: citizenPortraitState.faceCamYaw,
+            }
+          : null,
       );
 
       // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
@@ -25912,7 +31066,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'house_visit' ||
         npcCameraMode === 'house_interior' ||
         npcCameraMode === 'cafe_interior' ||
-        npcCameraMode === 'casino_interior';
+        npcCameraMode === 'casino_interior' ||
+        npcCameraMode === 'salon_interior';
       const playerRodGrp = playerUnit?.rig.fishingRodGroup;
       const playerRodTipAnchor = playerRodGrp?.userData.rodTipAnchor as THREE.Object3D | undefined;
       const landingElapsedMs = performance.now() - shorelineFishingSync.landingStartWallMs;
@@ -26030,10 +31185,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             timeSec,
             shorelineFishingSync.zoneId,
           );
-          const baseWaterY =
-            shorelineFishingSync.zoneId === 'central_oasis'
-              ? -0.14
-              : Math.min(0.05, getTerrainElevation(targetLogicalX, targetLogicalZ) + 0.08);
+          const baseWaterY = -0.16;
           const nibbleDip =
             shorelineFishingSync.nibblePulse > 0.01
               ? -0.058 *
@@ -26305,6 +31457,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // 3E. REAL-TIME CONTINUOUS RAYCAST LASER BEAM UPDATE (FOLLOWS BARREL MUZZLE EVERY FRAME):
       // Computes beam startPoint directly from the character's weapon barrel tip (with hand/weapon stance & body rotation)
       // and endPoint from the closest 3D raycast intersection (enemies, vehicles, crates/peti, props, structures, or max range).
+      laserPointLightPool.beginFrame();
       for (let i = 0; i < buddyUnits.length; i++) {
         const b = buddyUnits[i];
         const isShooterActive =
@@ -26438,11 +31591,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         laserVis.coronaMesh.scale.set(coronaScale, visualLen, coronaScale);
         laserVis.coronaMat.opacity = beamStep.outerGlowOpacity * 0.44;
 
-        // 2. Update Muzzle Light & Spinning Spark Flare Assembly at startVisualPos
+        // 2. Update Muzzle Light (via FixedPool) & Spinning Spark Flare Assembly at startVisualPos
         laserVis.muzzleFxGroup.position.copy(startVisualPos);
         laserVis.muzzleFxGroup.quaternion.setFromUnitVectors(laserForwardAxis, beamVisualDir);
         laserVis.muzzleGlowMesh.scale.setScalar(beamStep.muzzlePulseScale);
-        laserVis.muzzleLight.intensity = 1.9 + beamStep.muzzlePulseScale * 0.65;
+        laserPointLightPool.submit({
+          x: startVisualPos.x,
+          y: startVisualPos.y,
+          z: startVisualPos.z,
+          colorHex: laserVis.glowColorHex,
+          intensity: 1.9 + beamStep.muzzlePulseScale * 0.65,
+          distance: 5.5,
+        });
         for (let si = 0; si < laserVis.muzzleSparkSpikes.length; si++) {
           const sp = laserVis.muzzleSparkSpikes[si];
           const baseAng = (si / laserVis.muzzleSparkSpikes.length) * Math.PI * 2;
@@ -26451,7 +31611,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           sp.scale.set(0.85, spLen, 0.85);
         }
 
-        // 3. Update Hit-Point Light, Shock Ring & Spinning Impact Spark Assembly at endVisualPos
+        // 3. Update Hit-Point Light (via FixedPool), Shock Ring & Spinning Impact Spark Assembly at endVisualPos
         laserVis.hitFxGroup.position.copy(endVisualPos);
         const hitNormVec = beamStep.hit
           ? scratchLaserHitNorm
@@ -26464,7 +31624,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         laserVis.hitRingMesh.visible = beamStep.hit;
         laserVis.hitRingMesh.scale.setScalar(hitScale * 1.15);
         laserVis.hitRingMesh.rotation.z = -timeSec * 22.0;
-        laserVis.hitLight.intensity = beamStep.hit ? 2.4 + beamStep.hitPulseScale * 0.8 : 1.1;
+        laserPointLightPool.submit({
+          x: endVisualPos.x,
+          y: endVisualPos.y,
+          z: endVisualPos.z,
+          colorHex: laserVis.glowColorHex,
+          intensity: beamStep.hit ? 2.4 + beamStep.hitPulseScale * 0.8 : 1.1,
+          distance: 6.5,
+        });
         for (let si = 0; si < laserVis.hitSparkSpikes.length; si++) {
           const sp = laserVis.hitSparkSpikes[si];
           const baseAng = (si / laserVis.hitSparkSpikes.length) * Math.PI * 2 + 0.25;
@@ -26748,6 +31915,36 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           }
         }
       }
+      laserPointLightPool.commitFrame(camera.position, !isFlatIndoorRoomMode && !isSoftwareGl);
+      camera.getWorldDirection(scratchProximityCamDir);
+      const proximityFocus = computeProximityCameraFocus(
+        {
+          viewCenterX,
+          viewCenterZ,
+          cameraPos: camera.position,
+          cameraLookDir: scratchProximityCamDir,
+          activeUnitPos: activeFocusUnit ?? playerUnit,
+          isFullMapOverview,
+          isParkView: Boolean(parkViewMode || isCasinoViewMode),
+          isShowcaseMode:
+            npcCameraMode !== 'none' ||
+            Boolean(skyshieldViewMode || buildingViewMode || planeViewMode),
+        },
+        scratchProximityFocus,
+      );
+      proximityPointLightManager.update({
+        focusPos: proximityFocus,
+        dt,
+        timeSec,
+        weatherEnvState: scene.userData.weatherEnvState as WeatherEnvStateContract | undefined,
+        fallbackPreset: lightingPresetRef.current,
+        activeAllowed: !isFlatIndoorRoomMode,
+        activeLaserCount: laserPointLightPool.getActiveCount(),
+        isSoftwareGl,
+        planetPivotX,
+        planetPivotZ,
+        curvatureStrength: kCurve,
+      });
 
       // 4A. Chunk-Synced 3D Fog of War:
       // Hide field objects (Crates, Coins/Pickups, Land Mines/Ordnance, Crate Pads) and Enemy (Red) Units & Vehicles
@@ -26761,7 +31958,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         ? -80.0
         : parkViewMode
           ? 92.0
-          : npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
+          : npcCameraMode === 'landing_tour' ||
+              npcCameraMode === 'fly_to_plaza' ||
+              npcCameraMode === 'npc_merchant' ||
+              Boolean(activeCitizenPortraitNpc)
             ? viewCenterX
             : activeFocusUnit
               ? activeFocusUnit.x
@@ -26770,7 +31970,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         ? -63.6
         : parkViewMode
           ? -62.0
-          : npcCameraMode === 'landing_tour' || npcCameraMode === 'fly_to_plaza'
+          : npcCameraMode === 'landing_tour' ||
+              npcCameraMode === 'fly_to_plaza' ||
+              npcCameraMode === 'npc_merchant' ||
+              Boolean(activeCitizenPortraitNpc)
             ? viewCenterZ
             : activeFocusUnit
               ? activeFocusUnit.z
@@ -26794,6 +31997,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         npcCameraMode === 'landing_tour' ||
         npcCameraMode === 'npc_merchant' ||
         npcCameraMode === 'house_interior' ||
+        Boolean(activeCitizenPortraitNpc) ||
         mountedTank
       ) {
         playerUnit.root.visible = false;
@@ -26905,13 +32109,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const shadowMoved =
           snappedLookX !== prevSnappedShadowX || snappedLookZ !== prevSnappedShadowZ;
 
-        if (shadowMoved || frameTickCount % 12 === 0 || frameTickCount <= 2) {
+        if (
+          shadowMoved ||
+          (!isSoftwareGl &&
+            frameTickCount % LIGHTING_HYGIENE_LIMITS.shadowUpdateMaxIntervalFrames === 0) ||
+          frameTickCount <= 2
+        ) {
           prevSnappedShadowX = snappedLookX;
           prevSnappedShadowZ = snappedLookZ;
+          const sunOffsetMult = isFullMapOverview ? 4.8 : 1.0;
           dirLight.position.set(
-            snappedLookX + blitzSunOffset.x,
-            snappedLookY + blitzSunOffset.y,
-            snappedLookZ + blitzSunOffset.z,
+            snappedLookX + blitzSunOffset.x * sunOffsetMult,
+            snappedLookY + blitzSunOffset.y * sunOffsetMult,
+            snappedLookZ + blitzSunOffset.z * sunOffsetMult,
           );
           dirLight.target.position.set(snappedLookX, snappedLookY, snappedLookZ);
           dirLight.updateMatrixWorld();
@@ -26919,19 +32129,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           dirLight.shadow.updateMatrices(dirLight);
           renderer.shadowMap.needsUpdate = true;
         }
+      } else if (isFlatIndoorRoomMode) {
+        prevSnappedShadowX = Number.NaN;
+        prevSnappedShadowZ = Number.NaN;
       }
 
-      if (
-        dirLight.shadow.map &&
-        windUniforms.uDirShadowMap &&
-        windUniforms.uDirShadowMatrix &&
-        windUniforms.uHasDirShadow
-      ) {
-        windUniforms.uDirShadowMap.value =
-          dirLight.shadow.map.depthTexture || dirLight.shadow.map.texture;
-        windUniforms.uDirShadowMatrix.value.copy(dirLight.shadow.matrix);
-        windUniforms.uHasDirShadow.value = 1.0;
-      }
+      syncDirShadowUniforms(!isSoftwareGl && !isFlatIndoorRoomMode);
 
       if (buildingViewMode) {
         const w = renderer.domElement.clientWidth || window.innerWidth;
@@ -27244,13 +32447,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             );
           }
           if (av.saluteSign.sprite.visible) {
-            av.saluteSign.sprite.position.y = anchorY + 0.62;
+            av.saluteSign.sprite.position.y = av.nameplate.sprite.visible
+              ? anchorY + 0.72
+              : anchorY + 0.36;
             syncScreenSpaceBillboardQuad(
               av.saluteSign.sprite,
               camera,
               vpH,
-              NAMEPLATE_SCREEN_SPEC.overheadSignWidthPx,
-              NAMEPLATE_SCREEN_SPEC.overheadSignHeightPx,
+              192,
+              66,
             );
           }
         }
@@ -27314,7 +32519,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           );
         }
 
-        renderer.render(scene, camera);
+        if (clickToWalkState.active && playerUnit && playerUnit.alive) {
+          const isIndoorView =
+            npcCameraMode === 'cafe_interior' ||
+            npcCameraMode === 'casino_interior' ||
+            npcCameraMode === 'salon_interior' ||
+            npcCameraMode === 'house_visit';
+          clickToWalkIndicator3D.update({
+            state: clickToWalkState,
+            playerX: playerUnit.x,
+            playerZ: playerUnit.z,
+            timeSec,
+            sampleGroundY: resolveClickToWalkGroundY,
+            scaleMultiplier:
+              npcCameraMode === 'city_view' ? 1.85 : isIndoorView ? 0.52 : 1.0,
+          });
+          syncClickToWalkToReact(false);
+        } else {
+          clickToWalkIndicator3D.root.visible = false;
+        }
+
+        if (isFullMapOrtho) {
+          debugOrthoCam.left = -RADAR_WORLD_HALF_EXTENT;
+          debugOrthoCam.right = RADAR_WORLD_HALF_EXTENT;
+          debugOrthoCam.top = RADAR_WORLD_HALF_EXTENT;
+          debugOrthoCam.bottom = -RADAR_WORLD_HALF_EXTENT;
+          debugOrthoCam.near = 1;
+          debugOrthoCam.far = 800;
+          debugOrthoCam.up.set(0, 0, -1);
+          debugOrthoCam.position.set(0, 420, 0);
+          debugOrthoCam.lookAt(0, 0, 0);
+          debugOrthoCam.updateProjectionMatrix();
+          renderer.render(scene, debugOrthoCam);
+        } else {
+          renderer.render(scene, camera);
+        }
       }
 
       // Smoothly rotate & bob the 3D Hologram shape on top of the Kiosk's side scale platform
@@ -27362,17 +32601,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       // Update 2D DOM floating prompt buttons with pixel-perfect Math.round() & Hysteresis at 60 FPS
       updateDirectDomPrompts();
 
-      if (
-        dirLight.shadow.map &&
-        windUniforms.uDirShadowMap &&
-        windUniforms.uDirShadowMatrix &&
-        windUniforms.uHasDirShadow
-      ) {
-        windUniforms.uDirShadowMap.value =
-          dirLight.shadow.map.depthTexture || dirLight.shadow.map.texture;
-        windUniforms.uDirShadowMatrix.value.copy(dirLight.shadow.matrix);
-        windUniforms.uHasDirShadow.value = 1.0;
-      }
+      syncDirShadowUniforms(!isSoftwareGl && !isFlatIndoorRoomMode);
 
       // 5. Periodic HUD Snapshot Sync (~4Hz periodic sync while event-driven emitHudImmediately() remains instant)
       hudSyncAccumulator += dt;
@@ -27517,7 +32746,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       let cafeSeatMinDist: number | null = null;
       let casinoSeatMinDist: number | null = null;
       const claimBottomDock = (btn: HTMLButtonElement): boolean => {
-        if (bottomDockOccupied) {
+        if (bottomDockOccupied || isFullMapOverview || parkViewMode) {
           btn.style.display = 'none';
           return false;
         }
@@ -27833,6 +33062,52 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         grandCasinoDoorChevron.chevronArrow.rotation.y = gcPulseNow * 1.65 + 1.1;
       }
 
+      // Animate Beauty & Glow Salon Entrance 3D Triangle in Central Urban Plaza
+      const distToBeautySalonDoor = getPlanetShortestDistance(
+        actorX,
+        actorZ,
+        SALON_EXTERIOR_DOOR_TRIGGER.x,
+        SALON_EXTERIOR_DOOR_TRIGGER.z,
+      );
+      const showBeautySalonDoorChevron =
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none' &&
+        distToBeautySalonDoor <= 48;
+      const isNearBeautySalonDoor =
+        showBeautySalonDoorChevron &&
+        !isKioskModalOpenCanvas &&
+        !isGrandCasinoModalOpenDom &&
+        distToBeautySalonDoor <= SALON_EXTERIOR_DOOR_TRIGGER.triggerRadius;
+      beautySalonDoorChevron.group.visible = showBeautySalonDoorChevron;
+      if (showBeautySalonDoorChevron) {
+        const salonDoorTerrainY = getTerrainElevation(
+          SALON_EXTERIOR_DOOR_TRIGGER.doorX,
+          SALON_EXTERIOR_DOOR_TRIGGER.doorZ - 0.55,
+        );
+        applyPlanetCurvatureToObject(
+          beautySalonDoorChevron.group,
+          SALON_EXTERIOR_DOOR_TRIGGER.doorX,
+          salonDoorTerrainY +
+            SALON_EXTERIOR_DOOR_TRIGGER.deckY +
+            SALON_EXTERIOR_DOOR_TRIGGER.markerOffsetY,
+          SALON_EXTERIOR_DOOR_TRIGGER.doorZ - 0.55,
+          camFollowPos.x,
+          camFollowPos.z,
+          0,
+          PLANET_CURVATURE_STRENGTH,
+        );
+        const bsPulseNow = performance.now() * 0.001;
+        beautySalonDoorChevron.chevronMat.color.copy(
+          isNearBeautySalonDoor ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+        );
+        beautySalonDoorChevron.chevronArrow.scale.setScalar(
+          isNearBeautySalonDoor ? 1.16 : 1.0,
+        );
+        beautySalonDoorChevron.chevronArrow.position.y =
+          Math.sin(bsPulseNow * 3.6 + 2.0) * 0.065;
+        beautySalonDoorChevron.chevronArrow.rotation.y = bsPulseNow * 1.65 + 1.4;
+      }
+
       // Animate compact ring-less 3D triangles above Outdoor Base Plot Kiosks & City Transit Kiosks
       const markerPulseNow = performance.now() * 0.001;
       const showOutdoorKioskMarkers =
@@ -27880,7 +33155,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         {
           mesh: scene.getObjectByName('HalteLobbyTeleportKiosk3D') ?? null,
           stationId: 'central_plaza',
-          kioskX: -61.95,
+          kioskX: -59.18,
           kioskZ: 0.0,
         },
         {
@@ -28111,6 +33386,51 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         }
       } else {
         casinoStationPromptBtn.style.display = 'none';
+      }
+
+      // Contextual Beauty Salon Exit & Seat Arbiter inside 2-Story Beauty & Glow Interior ('salon_interior')
+      let salonSeatMinDist: number | null = null;
+      if (npcCameraMode === 'salon_interior' && !isKioskModalOpenCanvas) {
+        if (playerUnit.isSitting && activeSalonSeatedSpot) {
+          salonStationPromptBtn.style.display = 'none';
+          currentNearestSalonSeat = null;
+          if (!bottomDockOccupied) {
+            bottomDockOccupied = true;
+            desiredUnifiedDockAction = 'stand_up';
+          }
+        } else {
+          const salonWinner = resolveNearestSalonPromptOrSeat(
+            playerUnit.x,
+            playerUnit.z,
+            salonCurrentFloorY,
+          );
+          currentNearestSalonSeat = salonWinner.target === 'seat' ? salonWinner.seatSpot : null;
+          if (salonWinner.target === 'station' && salonWinner.stationKind === 'exit_door') {
+            salonStationPromptBtn.innerHTML = getCafeStationBtnHtml(
+              'EXIT SALON',
+              '#ef4444',
+              DOCK_ICON_EXIT_SVG,
+              '#ffffff',
+            );
+            claimBottomDock(salonStationPromptBtn);
+          } else if (salonWinner.target === 'seat') {
+            salonStationPromptBtn.style.display = 'none';
+            if (!bottomDockOccupied) {
+              bottomDockOccupied = true;
+              desiredUnifiedDockAction = 'sit';
+              salonSeatMinDist = salonWinner.seatSpot
+                ? Math.hypot(
+                    playerUnit.x - salonWinner.seatSpot.x,
+                    playerUnit.z - salonWinner.seatSpot.z,
+                  )
+                : null;
+            }
+          } else {
+            salonStationPromptBtn.style.display = 'none';
+          }
+        }
+      } else {
+        salonStationPromptBtn.style.display = 'none';
       }
 
       // House Interior Exit Door Ring+Triangle & Bed Sleep Action Bar ('house_visit' / 'house_interior')
@@ -28438,6 +33758,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         enterGrandCasinoPromptBtn.style.display = 'none';
       }
 
+      if (!isAlreadySeatedOutdoors && isNearBeautySalonDoor) {
+        claimBottomDock(enterBeautySalonPromptBtn);
+      } else {
+        enterBeautySalonPromptBtn.style.display = 'none';
+      }
+
       if (!isAlreadySeatedOutdoors && nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
         claimBottomDock(enterHousePromptBtn);
       } else {
@@ -28606,9 +33932,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
             ind.blueCoin.visible = !isWinningSeat;
           }
         }
+      } else if (npcCameraMode === 'salon_interior' && !isKioskModalOpenCanvas) {
+        currentNearestCafeSeat = null;
+        currentNearestCasinoSeat = null;
+        for (let si = 0; si < seatIndicatorBtns.length; si++) {
+          seatIndicatorBtns[si].btn.style.display = 'none';
+          if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
+        }
+        bottomSitActionBtn.style.display = 'none';
+        for (let ci = 0; ci < SALON_INTERIOR_SEAT_SPOTS.length; ci++) {
+          const sp = SALON_INTERIOR_SEAT_SPOTS[ci];
+          const ind = salonInterior?.floorSpotIndicators[ci];
+          if (ind) {
+            const isActiveHere = Boolean(
+              playerUnit.isSitting && activeSalonSeatedSpot?.id === sp.id,
+            );
+            const isWinningSeat = Boolean(
+              !playerUnit.isSitting &&
+                desiredUnifiedDockAction === 'sit' &&
+                currentNearestSalonSeat?.id === sp.id,
+            );
+            ind.coinRoot.visible = !isActiveHere;
+            ind.greenCoin.visible = isWinningSeat;
+            ind.blueCoin.visible = !isWinningSeat;
+          }
+        }
       } else {
         currentNearestCafeSeat = null;
         currentNearestCasinoSeat = null;
+        currentNearestSalonSeat = null;
         bottomSitActionBtn.style.display = 'none';
         for (let si = 0; si < seatIndicatorBtns.length; si++) {
           seatIndicatorBtns[si].btn.style.display = 'none';
@@ -28654,6 +34006,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           const isIndoorFlat =
             npcCameraMode === 'cafe_interior' ||
             npcCameraMode === 'casino_interior' ||
+            npcCameraMode === 'salon_interior' ||
             npcCameraMode === 'house_visit' ||
             npcCameraMode === 'house_interior';
 
@@ -28707,9 +34060,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 isMerchant: false,
                 gender: npc.preset.gender,
                 team: npc.preset.teamTint,
-                status: npc.preset.activityLabel,
+                status: npc.activeStatusLabel,
               });
             }
+          } else if (
+            npcCameraMode === 'cafe_interior' &&
+            cafeMiraNpcRoot?.visible &&
+            !cafeWorkShiftActive
+          ) {
+            nearbyCandidates.push({
+              id: 'citizen_mira',
+              name: 'Mira',
+              distance: Math.hypot(actorX - cafeMiraX, actorZ - cafeMiraZ),
+              isNpc: true,
+              isMerchant: false,
+              gender: 'female',
+              team: 'red',
+              status: cafeMiraStatusLabel,
+            });
           }
 
           for (const av of remotePlayerAvatars.values()) {
@@ -28757,17 +34125,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 ? cafeSeatMinDist
                 : npcCameraMode === 'casino_interior'
                   ? casinoSeatMinDist
-                  : currentNearestLobbySeat
-                    ? bestLobbySeatDist
-                    : null
+                  : npcCameraMode === 'salon_interior'
+                    ? salonSeatMinDist
+                    : currentNearestLobbySeat
+                      ? bestLobbySeatDist
+                      : null
               : null;
 
           const dockResolution = resolveUnifiedBottomDockProximity({
             candidates: nearbyCandidates,
             previousEntityId: lastNearbyProximityEntityId,
             nearestSeatDistance: activeSeatDist,
-            enterRadiusMeters: 3.85,
-            exitRadiusMeters: 4.45,
+            enterRadiusMeters: npcCameraMode === 'cafe_interior' ? 2.35 : 3.85,
+            exitRadiusMeters: npcCameraMode === 'cafe_interior' ? 2.75 : 4.45,
           });
 
           if (dockResolution.winner === 'entity') {
@@ -28815,7 +34185,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 CASINO_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
                 bz,
               )
-            : npcCameraMode === 'cafe_interior'
+            : npcCameraMode === 'salon_interior'
+              ? projectFlatRoomToScreenPixels(
+                  bx,
+                  SALON_ORIGIN_Y +
+                    salonCurrentFloorY +
+                    (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
+                  bz,
+                )
+              : npcCameraMode === 'cafe_interior'
               ? projectFlatRoomToScreenPixels(
                   bx,
                   CAFE_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
@@ -29430,6 +34808,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
                 nearSessionState.claimedPlotIndex
               ]?.claimedByNearAccount ?? null
             : nearestKioskHud.plotState?.claimedByNearAccount ?? null,
+        clickToWalk: summarizeClickToWalkForHud(
+          clickToWalkState,
+          actorX,
+          actorZ,
+          Boolean(scooterRideState),
+        ),
       };
     };
     emitHudImmediately = () => {
@@ -29469,11 +34853,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const prevSelRingVis = characterSelectionRing.visible;
       const prevCafeVis = cafeInterior?.root.visible ?? false;
       const prevCasinoVis = casinoInterior?.root.visible ?? false;
+      const prevSalonVis = salonInterior?.root.visible ?? false;
       const prevCafeCustVis = cafeCustomerNpcRoot?.visible ?? false;
+      const prevCafeMiraVis = cafeMiraNpcRoot?.visible ?? false;
       const prevCafeBubbleVis = cafeInterior?.customerBubbleGroup.visible ?? false;
       const prevHouseVis = houseInteriorRoomGrp.visible;
       const prevHouseVisitWallsVis = houseVisitWallGrp.visible;
       const prevTutorialVis = tutorialWaypointGroup.visible;
+      const prevClickToWalkVis = clickToWalkIndicator3D.root.visible;
       const prevCafeExtPadVis = cafeExteriorDoorPad.group.visible;
       const prevHouseExtPadVis = houseExteriorDoorPad.group.visible;
       const prevScooterChevVis = scooterShopChevron.group.visible;
@@ -29481,6 +34868,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const prevRealEstateCatalogChevVis = realEstateCatalogChevron.group.visible;
       const prevModelHouseDoorChevVis = modelHouseDoorChevron.group.visible;
       const prevGrandCasinoDoorChevVis = grandCasinoDoorChevron.group.visible;
+      const prevBeautySalonDoorChevVis = beautySalonDoorChevron.group.visible;
       const prevHouseExitPadVis = houseInteriorExitDoorPad.group.visible;
       const prevHanaGrpVis = Boolean(lobbyCafeNpc?.npcGrp?.visible);
       const prevHanaExclVis = Boolean(lobbyCafeNpc?.exclamationGroup?.visible);
@@ -29555,6 +34943,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         av.root.visible = false;
       }
       tutorialWaypointGroup.visible = false;
+      clickToWalkIndicator3D.root.visible = false;
       cafeExteriorDoorPad.group.visible = false;
       houseExteriorDoorPad.group.visible = false;
       scooterShopChevron.group.visible = false;
@@ -29562,6 +34951,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       realEstateCatalogChevron.group.visible = false;
       modelHouseDoorChevron.group.visible = false;
       grandCasinoDoorChevron.group.visible = false;
+      beautySalonDoorChevron.group.visible = false;
       houseInteriorExitDoorPad.group.visible = false;
       lobbySeatCoinMeshes.forEach((m) => {
         m.coinRoot.visible = false;
@@ -29660,6 +35050,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       ): string => {
         if (cafeInterior) cafeInterior.root.visible = false;
         if (casinoInterior) casinoInterior.root.visible = false;
+        if (salonInterior) salonInterior.root.visible = false;
         houseInteriorRoomGrp.visible = false;
         hideAllMarkersAndSprites();
         alignOutdoorWorldFlat(lookAt[0], lookAt[2]);
@@ -29692,7 +35083,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
         // 1. travel_districts & central_plaza: Park City Tram at Halte Central Plaza & capture Halte + Stairs + Plaza Buildings
         const halteLeadDist = findCityTramLeadDistanceNearHalte();
-        cityTram.update(halteLeadDist, 0, -63.8, 0.0, 0);
+        cityTram.update(halteLeadDist, 0, -61.03, 0.0, 0);
         thumbnails.travel_districts = renderOutdoorSpot(
           [-53.8, 5.2, 8.8],
           [-64.8, 2.0, -0.4],
@@ -29762,6 +35153,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         const prevSampleZonesVis = sampleHouseZonesGrp ? sampleHouseZonesGrp.visible : false;
         if (cafeInterior) cafeInterior.root.visible = false;
         if (casinoInterior) casinoInterior.root.visible = false;
+        if (salonInterior) salonInterior.root.visible = false;
         houseInteriorRoomGrp.visible = true;
         houseVisitWallGrp.visible = true;
         if (sampleHouseZonesGrp) sampleHouseZonesGrp.visible = true;
@@ -29777,10 +35169,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         // otherwise capture exterior Glasshouse Cafe landmark so startup stays lazy)
         houseInteriorRoomGrp.visible = false;
         if (casinoInterior) casinoInterior.root.visible = false;
+        if (salonInterior) salonInterior.root.visible = false;
         let cafeSnapUrl: string;
         if (cafeInterior) {
           cafeInterior.root.visible = true;
           if (cafeCustomerNpcRoot) cafeCustomerNpcRoot.visible = false;
+          if (cafeMiraNpcRoot) cafeMiraNpcRoot.visible = false;
           cafeInterior.customerBubbleGroup.visible = false;
           cafeInterior.interactiveMarkers.atm.group.visible = false;
           cafeInterior.interactiveMarkers.workShiftBoard.group.visible = false;
@@ -29855,12 +35249,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         if (casinoInterior) {
           casinoInterior.root.visible = prevCasinoVis;
         }
+        if (salonInterior) {
+          salonInterior.root.visible = prevSalonVis;
+        }
         if (cafeCustomerNpcRoot) {
           cafeCustomerNpcRoot.visible = prevCafeCustVis;
+        }
+        if (cafeMiraNpcRoot) {
+          cafeMiraNpcRoot.visible = prevCafeMiraVis;
         }
         houseInteriorRoomGrp.visible = prevHouseVis;
         houseVisitWallGrp.visible = prevHouseVisitWallsVis;
         tutorialWaypointGroup.visible = prevTutorialVis;
+        clickToWalkIndicator3D.root.visible = prevClickToWalkVis;
         cafeExteriorDoorPad.group.visible = prevCafeExtPadVis;
         houseExteriorDoorPad.group.visible = prevHouseExtPadVis;
         scooterShopChevron.group.visible = prevScooterChevVis;
@@ -29868,6 +35269,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         realEstateCatalogChevron.group.visible = prevRealEstateCatalogChevVis;
         modelHouseDoorChevron.group.visible = prevModelHouseDoorChevVis;
         grandCasinoDoorChevron.group.visible = prevGrandCasinoDoorChevVis;
+        beautySalonDoorChevron.group.visible = prevBeautySalonDoorChevVis;
         houseInteriorExitDoorPad.group.visible = prevHouseExitPadVis;
         if (lobbyCafeNpc?.npcGrp) {
           lobbyCafeNpc.npcGrp.visible = prevHanaGrpVis;
@@ -29934,7 +35336,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         disposeRemotePlayerAvatar3D(av);
       }
       remotePlayerAvatars.clear();
+      REMOTE_BUBBLE_QUAD_GEO.dispose();
       soundEngine.stopAllLoops();
+      soundEngine.disposeAmbientSoundscape();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
@@ -29951,7 +35355,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('toggle-kiosk-ui', onKioskUiToggled);
       window.removeEventListener('close-kiosk-ui', onKioskUiClosed);
       window.removeEventListener('sync-kiosk-ui', onKioskUiSynced);
+      window.removeEventListener('citizen-dialogue-open-state', onCitizenDialogueOpenState);
       window.removeEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
+      window.removeEventListener('sync-city-view-mode', onSyncCityViewMode);
+      scene.remove(cityViewFocusRingGroup);
+      cityViewFocusRingGeo.dispose();
+      cityViewFocusRingMat.dispose();
       window.removeEventListener('clear-character-selection', onWindowClearCharacterSelection);
       window.removeEventListener('close-teleport-kiosk-ui', onCloseTeleportKioskUi);
       window.removeEventListener('select-teleport-kiosk', onSelectTeleportKioskEvent);
@@ -29966,9 +35375,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       window.removeEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
       window.removeEventListener('exit-glasshouse-cafe', onCancelCafeWorkAnim);
       window.removeEventListener('set-tutorial-waypoint', onSetTutorialWaypoint);
+      window.removeEventListener('click-to-walk-navigate', onClickToWalkNavigateEvent);
+      window.removeEventListener('click-to-walk-cancel', onClickToWalkCancelEvent);
       window.removeEventListener('set-property-pinpoint', onSetPropertyPinpoint);
       window.removeEventListener('set-kai-tutorial', onSetKaiTutorial);
       window.removeEventListener('trigger-sit-or-stand-action', onTriggerSitOrStandWindowEvent);
+      clickToWalkIndicator3D.dispose();
       scene.remove(tutorialWaypointGroup);
       tutorialChevronGeo.dispose();
       tutorialDestRingGeo.dispose();
@@ -29993,6 +35405,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       if (promptOverlay.parentElement) {
         promptOverlay.parentElement.removeChild(promptOverlay);
       }
+      horizonBackdrop.dispose();
       continuousLaserVisuals.forEach((vis) => {
         scene.remove(vis.group);
         vis.coreMat.dispose();
@@ -30018,10 +35431,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       sparkleGeo.dispose();
       animeSparkleTex.dispose();
       animeSparkleMat.dispose();
+      weatherSystem.dispose();
       curvedPlanetEnv.dispose();
+      underwaterEcology.dispose();
+      centralPark.dispose();
       cafeInterior?.dispose();
       casinoInterior?.dispose();
+      salonInterior?.dispose();
       cityTram.dispose();
+      cityLightingAndTraffic.dispose();
       blitzGrassSystem.dispose();
       blitzExplosionSystem.dispose();
 

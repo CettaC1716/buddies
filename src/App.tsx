@@ -15,7 +15,12 @@ import {
   X,
   ClipboardList,
   Shirt,
+  Navigation,
 } from 'lucide-react';
+import {
+  CITY_MINIMAP_POIS,
+  type ClickToWalkHudSummary,
+} from './game/buddiesClickToWalkRules';
 import {
   BuddiesBlitzArena,
   GameState,
@@ -23,8 +28,11 @@ import {
   HudSnapshot,
 } from './game/BuddiesBlitzArena';
 import {
-  LIGHTING_PRESETS,
+  CITY_LIGHTS_SCALE_BOUNDS,
   LightingPresetKey,
+  TIME_PHASE_DEFAULT_HOURS,
+  type RainIntensityTier,
+  type WeatherConditionKey,
   evaluateCommandCenterRadarSpec,
   worldCoordToRadarPercent,
   COMMANDER_PLOT_OFFSETS_X,
@@ -45,6 +53,12 @@ import {
   type HouseArchitectureStyle,
   parseOptionalHouseArchitectureStyle,
   resolveOwnedHouseStyle,
+  CITY_VIEW_DISTRICTS,
+  getAdjacentCityViewDistrictId,
+  getCityViewTargetHash,
+  parseCityViewHash,
+  type CityViewDistrictId,
+  type CityViewTargetId,
 } from './game/buddiesBlitzRules';
 import { soundEngine } from './game/audio';
 import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
@@ -58,13 +72,33 @@ import {
 } from './game/buddiesAssetPreloader';
 import { TacticalKioskModal } from './components/TacticalKioskModal';
 import { CityTransitKioskModal } from './components/CityTransitKioskModal';
+import { CitizenDialogueModal } from './components/CitizenDialogueModal';
+import {
+  type CitizenFriendshipStore,
+  type CitizenId,
+  type CitizenProfile,
+  getCitizenProfile,
+  loadCitizenFriendshipStore,
+  recordCitizenDailyGift,
+  recordCitizenDailyTalk,
+  resolveCanonicalCitizenId,
+  saveCitizenFriendshipStore,
+} from './game/buddiesCitizenRoles';
 import {
   SocialChatModal,
   NearbyEntityUser,
   ChatMessage,
+  isOwnChatMessage,
   shouldTriggerIncomingPrivateChatNotification,
   simplifyDisplayName,
 } from './components/SocialChatModal';
+import {
+  SOCIAL_EMOTE_QUICK_LIST,
+  mergeRealtimeSocialChatMessage,
+  parseSocialEmoteCommand,
+  resolveBubbleStyle,
+  sanitizeHexColor,
+} from './game/buddiesRemotePresenceSync';
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
 import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
@@ -212,6 +246,7 @@ import {
   saveNpcTreasuryLedgerToSupabase,
   fetchOrCreatePlayerProfile,
   fetchPlayerProfileByEmail,
+  broadcastSocialChatMessage,
   fetchRecentSocialMessages,
   insertSocialMessageToSupabase,
   createLetterForAccount,
@@ -221,6 +256,7 @@ import {
   signOutSupabaseAuth,
   subscribeToMarketTransactions,
   subscribeToSocialMessagesRealtime,
+  unsubscribeSocialMessagesRealtime,
   subscribeToSupabaseAuthUser,
   syncBasePlotToSupabase,
   syncFishMarketplaceListingsToSupabase,
@@ -269,11 +305,19 @@ import {
 } from './game/buddiesUrbanScooterRules';
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
 import { HudQuickMountScooterControl } from './components/HudQuickMountScooterControl';
+import { HudWeatherAndTimeControl } from './components/HudWeatherAndTimeControl';
+import {
+  evaluateWeatherAndTimeState,
+  getWeatherControlConfig,
+  normalizeHours24,
+  resolvePhaseFromHours,
+  setWeatherControlConfig,
+  subscribeWeatherDisplaySync,
+} from './game/buddiesWeatherSystem';
 import {
   clampAudioVolumePct,
   computeChannelStateAfterSliderChange,
   computeChannelStateAfterToggleMute,
-  REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
 } from './game/buddiesRealEstateKioskRules';
 
 const INITIAL_HUD: HudSnapshot = {
@@ -652,7 +696,17 @@ export default function App() {
   useEffect(() => {
     onboardingStepRef.current = onboardingStep;
   }, [onboardingStep]);
-  const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('day');
+  const initialWeatherCfg = getWeatherControlConfig();
+  const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>(initialWeatherCfg.phase);
+  const [timeOfDayHours, setTimeOfDayHours] = useState<number>(initialWeatherCfg.timeOfDayHours);
+  const [weatherCondition, setWeatherCondition] = useState<WeatherConditionKey>(
+    initialWeatherCfg.weatherCondition,
+  );
+  const [rainIntensityTier, setRainIntensityTier] = useState<RainIntensityTier>(
+    initialWeatherCfg.rainIntensityTier,
+  );
+  const [autoTimeCycle, setAutoTimeCycle] = useState<boolean>(initialWeatherCfg.autoCycleEnabled);
+  const [cityLightsScale, setCityLightsScale] = useState<number>(initialWeatherCfg.cityLightsScale);
   const [cameraFovMode, setCameraFovMode] = useState<'webgl35' | 'ortho18'>('webgl35');
   const [isMuted, setIsMuted] = useState<boolean>(() => {
     try {
@@ -713,6 +767,7 @@ export default function App() {
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
   const [isInsideGrandCasino, setIsInsideGrandCasino] = useState<boolean>(false);
+  const [isInsideBeautySalon, setIsInsideBeautySalon] = useState<boolean>(false);
   const [activeCafeModal, setActiveCafeModal] = useState<
     | 'none'
     | 'order'
@@ -774,10 +829,77 @@ export default function App() {
     activeSpecialModalRef.current = 'npc_merchant';
     setMerchantLocation(loc);
     setNpcOpenSeq((prev) => prev + 1);
+    setIsCitizenDialogueOpen(false);
     setIsSocialChatModalOpen(false);
     setIsDailyMissionsModalOpen(false);
     setSocialChatText('');
     setActiveSpecialModal('npc_merchant');
+    const merchantCitizenId: CitizenId = loc === 'beach_house' ? 'npc_kai' : 'npc_hana';
+    const talkSync = recordCitizenDailyTalk(citizenFriendshipStoreRef.current, merchantCitizenId);
+    citizenFriendshipStoreRef.current = talkSync.store;
+    setCitizenFriendshipStore(talkSync.store);
+    saveCitizenFriendshipStore(talkSync.store);
+  }, []);
+  const [citizenFriendshipStore, setCitizenFriendshipStore] = useState<CitizenFriendshipStore>(() =>
+    loadCitizenFriendshipStore(),
+  );
+  const citizenFriendshipStoreRef = useRef<CitizenFriendshipStore>(citizenFriendshipStore);
+  useEffect(() => {
+    citizenFriendshipStoreRef.current = citizenFriendshipStore;
+  }, [citizenFriendshipStore]);
+  const [isCitizenDialogueOpen, setIsCitizenDialogueOpen] = useState<boolean>(false);
+  const [activeCitizenId, setActiveCitizenId] = useState<CitizenId | null>(null);
+  const [citizenOpenSeq, setCitizenOpenSeq] = useState<number>(0);
+  const [citizenTalkedBonusJustAwarded, setCitizenTalkedBonusJustAwarded] =
+    useState<boolean>(false);
+
+  const activeCitizenProfile = getCitizenProfile(activeCitizenId);
+  const isCitizenChatBarMode =
+    isCitizenDialogueOpen &&
+    hud.worldMode !== 'warzone' &&
+    activeSpecialModal !== 'npc_merchant';
+  const isAnyNpcChatBarMode =
+    activeSpecialModal === 'npc_merchant' || isCitizenChatBarMode;
+  const activeNpcChatBarLabel =
+    activeSpecialModal === 'npc_merchant'
+      ? merchantLocation === 'lobby_cafe'
+        ? 'HANA'
+        : 'KAI'
+      : (activeCitizenProfile?.name.toUpperCase() ?? 'CITIZEN');
+  const activeNpcChatBarName =
+    activeSpecialModal === 'npc_merchant'
+      ? merchantLocation === 'lobby_cafe'
+        ? 'Hana'
+        : 'Kai'
+      : (activeCitizenProfile?.name ?? 'Citizen');
+
+  const openCitizenDialogueForId = useCallback((rawCitizenId: string | null | undefined) => {
+    if (hudRef.current.worldMode === 'warzone') return;
+    const canonical = resolveCanonicalCitizenId(rawCitizenId);
+    if (!canonical) return;
+    setIsKioskModalOpen(false);
+    setIsTargetMenuExpanded(false);
+    setIsProfileModalOpen(false);
+    setIsPersonalWalletModalOpen(false);
+    setIsPersonalBagModalOpen(false);
+    setIsDailyMissionsModalOpen(false);
+    setIsSocialChatModalOpen(false);
+    setIsScooterShowroomModalOpen(false);
+    setIsFashionBoutiqueModalOpen(false);
+    setIsRealEstateCatalogModalOpen(false);
+    setIsGrandCasinoModalOpen(false);
+    setActiveSpecialModal('none');
+    setActiveTeleportKioskModal('none');
+    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+
+    const talkRes = recordCitizenDailyTalk(citizenFriendshipStoreRef.current, canonical);
+    citizenFriendshipStoreRef.current = talkRes.store;
+    setCitizenFriendshipStore(talkRes.store);
+    saveCitizenFriendshipStore(talkRes.store);
+    setCitizenTalkedBonusJustAwarded(talkRes.awardedTodayBonus);
+    setActiveCitizenId(canonical);
+    setCitizenOpenSeq((prev) => prev + 1);
+    setIsCitizenDialogueOpen(true);
   }, []);
   const dailyMissionsAccountKey =
     (hud.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
@@ -1283,9 +1405,32 @@ export default function App() {
       setSocialChatText('');
     }
   }, [activeSpecialModal]);
-  const [chatBubbleBgColor, setChatBubbleBgColor] = useState<string>('#ffffff');
-  const [chatBubbleTextColor, setChatBubbleTextColor] = useState<string>('#0f172a');
+  const [chatBubbleBgColor, setChatBubbleBgColor] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem('bb_chat_bubble_style_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved) as { bgColor?: string };
+        return sanitizeHexColor(parsed.bgColor, '#ffffff');
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return '#ffffff';
+  });
+  const [chatBubbleTextColor, setChatBubbleTextColor] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem('bb_chat_bubble_style_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved) as { bgColor?: string; textColor?: string };
+        return resolveBubbleStyle(parsed.bgColor, parsed.textColor).textColor;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return '#0f172a';
+  });
   const [isSocialChatModalOpen, setIsSocialChatModalOpen] = useState<boolean>(false);
+  const [isEmotePickerOpen, setIsEmotePickerOpen] = useState<boolean>(false);
   const [isPersonalWalletModalOpen, setIsPersonalWalletModalOpen] = useState<boolean>(false);
   const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
   const [isGearModalOpen, setIsGearModalOpen] = useState<boolean>(false);
@@ -1432,6 +1577,7 @@ export default function App() {
     setMissionGuide(null);
     setMissionGuideDistanceM(null);
   };
+  const [clickToWalkSync, setClickToWalkSync] = useState<ClickToWalkHudSummary | null>(null);
   const [lastUnreadPrivateSender, setLastUnreadPrivateSender] = useState<NearbyEntityUser | null>(
     null,
   );
@@ -1659,8 +1805,10 @@ export default function App() {
     });
     void fetchRecentSocialMessages(30).then((rows) => {
       if (!mounted || rows.length === 0) return;
-      setChatMessages(
-        rows.map((msg) => ({
+      const st = socialChatStateRef.current;
+      const fetched: ChatMessage[] = rows.map((msg) => {
+        const style = resolveBubbleStyle(msg.bubble_color);
+        return {
           id: msg.id,
           senderId: msg.sender_near_account || undefined,
           senderName: msg.sender_name,
@@ -1670,9 +1818,25 @@ export default function App() {
             hour: '2-digit',
             minute: '2-digit',
           }),
+          createdAtMs: Date.parse(msg.created_at) || undefined,
+          bubbleBgColor: style.bgColor,
+          bubbleTextColor: style.textColor,
           type: msg.recipient_name ? 'private' : 'public',
-        })),
-      );
+        };
+      });
+      setChatMessages((prev) => {
+        let merged = [...fetched];
+        for (const existing of prev) {
+          merged = mergeRealtimeSocialChatMessage(merged, existing, {
+            localPlayerName: st.playerDisplayName,
+            localPlayerUid: st.playerUid,
+            isOwnFn: (m) => isOwnChatMessage(m, st.playerDisplayName, st.playerUid),
+            simplifyNameFn: simplifyDisplayName,
+          }).nextMessages;
+        }
+        chatMessagesRef.current = merged;
+        return merged;
+      });
     });
     void fetchNpcMerchantsFromSupabase().then((rows) => {
       if (!mounted || rows.length === 0) return;
@@ -1697,94 +1861,31 @@ export default function App() {
       }
     });
 
-    const realtimeChannel = subscribeToSocialMessagesRealtime((msg) => {
-      if (!mounted) return;
-      setChatMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        const msgType: 'public' | 'private' = msg.recipient_name ? 'private' : 'public';
-        const cleanMsgText = msg.message.trim();
-        const cleanMsgRecipient = (msg.recipient_name || '').trim().toLowerCase();
-
-        // If this realtime INSERT is the echo of our own optimistic message, upgrade its id in place
-        const optimisticIdx = prev.findIndex(
-          (m) =>
-            m.isSelf &&
-            (m.id.startsWith('pub-') || m.id.startsWith('priv-')) &&
-            m.type === msgType &&
-            m.text.trim() === cleanMsgText &&
-            (m.recipientName || '').trim().toLowerCase() === cleanMsgRecipient,
-        );
-        if (optimisticIdx >= 0) {
-          const next = [...prev];
-          next[optimisticIdx] = {
-            ...next[optimisticIdx],
-            id: msg.id,
-            senderId: msg.sender_near_account || next[optimisticIdx].senderId,
-          };
-          return next;
-        }
-
-        const incomingMsg: ChatMessage = {
-          id: msg.id,
-          senderId: msg.sender_near_account || undefined,
-          senderName: msg.sender_name,
-          recipientName: msg.recipient_name || undefined,
-          text: msg.message,
-          timestamp: new Date(msg.created_at).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          type: msgType,
-        };
-
-        const st = socialChatStateRef.current;
-        if (
-          shouldTriggerIncomingPrivateChatNotification({
-            message: incomingMsg,
-            localPlayerName: st.playerDisplayName,
-            localPlayerUid: st.playerUid,
-            isSocialChatModalOpen: st.isSocialChatModalOpen,
-            activeTab: st.selectedPrivateUser ? 'private' : 'public',
-            selectedPrivateUser: st.selectedPrivateUser,
-          })
-        ) {
-          const senderUser: NearbyEntityUser = {
-            id: incomingMsg.senderId || `peer-${incomingMsg.senderName}`,
-            nearAccountId: incomingMsg.senderId,
-            name: simplifyDisplayName(incomingMsg.senderName),
-            isNpc: false,
-            distance: 0,
-          };
-          window.setTimeout(() => {
-            soundEngine.playUiClick();
-            setUnreadPrivateCount((c) => c + 1);
-            setLastUnreadPrivateSender(senderUser);
-            setActivePrivateNotificationToast({
-              id: incomingMsg.id,
-              senderName: simplifyDisplayName(incomingMsg.senderName),
-              senderId: incomingMsg.senderId,
-              text: incomingMsg.text,
-              user: senderUser,
-            });
-          }, 0);
-        }
-
-        return [...prev, incomingMsg];
-      });
-    });
-
-    const onCustomIncomingSocialMessage = (ev: Event) => {
-      if (!mounted) return;
-      const detail = (ev as CustomEvent<ChatMessage>).detail;
-      if (!detail || !detail.id || !detail.text) return;
-      setChatMessages((prev) => {
-        if (prev.some((m) => m.id === detail.id)) return prev;
-        return [...prev, detail];
-      });
+    const handleIncomingSocialRow = (incomingMsg: ChatMessage) => {
       const st = socialChatStateRef.current;
+      const preview = mergeRealtimeSocialChatMessage(chatMessagesRef.current, incomingMsg, {
+        localPlayerName: st.playerDisplayName,
+        localPlayerUid: st.playerUid,
+        isOwnFn: (m) => isOwnChatMessage(m, st.playerDisplayName, st.playerUid),
+        simplifyNameFn: simplifyDisplayName,
+      });
+
+      setChatMessages((prev) => {
+        const res = mergeRealtimeSocialChatMessage(prev, incomingMsg, {
+          localPlayerName: st.playerDisplayName,
+          localPlayerUid: st.playerUid,
+          isOwnFn: (m) => isOwnChatMessage(m, st.playerDisplayName, st.playerUid),
+          simplifyNameFn: simplifyDisplayName,
+        });
+        chatMessagesRef.current = res.nextMessages;
+        return res.nextMessages;
+      });
+
       if (
+        !preview.isDuplicate &&
+        !preview.upgradedExisting &&
         shouldTriggerIncomingPrivateChatNotification({
-          message: detail,
+          message: incomingMsg,
           localPlayerName: st.playerDisplayName,
           localPlayerUid: st.playerUid,
           isSocialChatModalOpen: st.isSocialChatModalOpen,
@@ -1792,10 +1893,21 @@ export default function App() {
           selectedPrivateUser: st.selectedPrivateUser,
         })
       ) {
+        const notifKey =
+          incomingMsg.clientMsgId ||
+          `${simplifyDisplayName(incomingMsg.senderName).toLowerCase()}::${incomingMsg.text.trim()}`;
+        if (notifiedPrivateIdsRef.current.has(notifKey)) {
+          return;
+        }
+        notifiedPrivateIdsRef.current.add(notifKey);
+        if (notifiedPrivateIdsRef.current.size > 200) {
+          const oldest = notifiedPrivateIdsRef.current.values().next().value;
+          if (oldest) notifiedPrivateIdsRef.current.delete(oldest);
+        }
         const senderUser: NearbyEntityUser = {
-          id: detail.senderId || `peer-${detail.senderName}`,
-          nearAccountId: detail.senderId,
-          name: simplifyDisplayName(detail.senderName),
+          id: incomingMsg.senderId || `peer-${incomingMsg.senderName}`,
+          nearAccountId: incomingMsg.senderId,
+          name: simplifyDisplayName(incomingMsg.senderName),
           isNpc: false,
           distance: 0,
         };
@@ -1803,22 +1915,51 @@ export default function App() {
         setUnreadPrivateCount((c) => c + 1);
         setLastUnreadPrivateSender(senderUser);
         setActivePrivateNotificationToast({
-          id: detail.id,
-          senderName: simplifyDisplayName(detail.senderName),
-          senderId: detail.senderId,
-          text: detail.text,
+          id: incomingMsg.id,
+          senderName: simplifyDisplayName(incomingMsg.senderName),
+          senderId: incomingMsg.senderId,
+          text: incomingMsg.text,
           user: senderUser,
         });
       }
+    };
+
+    const realtimeChannel = subscribeToSocialMessagesRealtime((msg) => {
+      if (!mounted) return;
+      const msgType: 'public' | 'private' = msg.recipient_name ? 'private' : 'public';
+      const style = resolveBubbleStyle(msg.bubble_color, msg.bubble_text_color);
+      const parsedTime = Date.parse(msg.created_at);
+      const incomingMsg: ChatMessage = {
+        id: msg.id,
+        clientMsgId: msg.client_msg_id,
+        senderId: msg.sender_near_account || undefined,
+        senderName: msg.sender_name,
+        recipientName: msg.recipient_name || undefined,
+        text: msg.message,
+        timestamp: new Date(Number.isFinite(parsedTime) ? parsedTime : Date.now()).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        createdAtMs: Number.isFinite(parsedTime) ? parsedTime : Date.now(),
+        bubbleBgColor: style.bgColor,
+        bubbleTextColor: style.textColor,
+        type: msgType,
+      };
+      handleIncomingSocialRow(incomingMsg);
+    });
+
+    const onCustomIncomingSocialMessage = (ev: Event) => {
+      if (!mounted) return;
+      const detail = (ev as CustomEvent<ChatMessage>).detail;
+      if (!detail || !detail.id || !detail.text) return;
+      handleIncomingSocialRow(detail);
     };
     window.addEventListener('incoming-social-chat-message', onCustomIncomingSocialMessage);
 
     return () => {
       mounted = false;
       window.removeEventListener('incoming-social-chat-message', onCustomIncomingSocialMessage);
-      if (realtimeChannel) {
-        void realtimeChannel.unsubscribe();
-      }
+      unsubscribeSocialMessagesRealtime(realtimeChannel);
     };
   }, [merchantLocation]);
 
@@ -1826,6 +1967,8 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [profileTargetUser, setProfileTargetUser] = useState<NearbyEntityUser | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
+  const notifiedPrivateIdsRef = useRef<Set<string>>(new Set());
 
   const socialChatStateRef = useRef({
     playerDisplayName,
@@ -1864,6 +2007,7 @@ export default function App() {
       isKioskModalOpen ||
       isSocialChatModalOpen ||
       isProfileModalOpen ||
+      isCitizenDialogueOpen ||
       activeTeleportKioskModal !== 'none'
     ) {
       setIsPersonalWalletModalOpen(false);
@@ -1873,8 +2017,96 @@ export default function App() {
     isKioskModalOpen,
     isSocialChatModalOpen,
     isProfileModalOpen,
+    isCitizenDialogueOpen,
     activeTeleportKioskModal,
   ]);
+
+  useEffect(() => {
+    if (isCitizenDialogueOpen && hud.worldMode === 'warzone') {
+      setIsCitizenDialogueOpen(false);
+    }
+  }, [isCitizenDialogueOpen, hud.worldMode]);
+
+  type CityViewAnchorNode = {
+    id: CityViewDistrictId;
+    label: string;
+    subtitle: string;
+    leftPct: number;
+    topPct: number;
+  };
+  const [cityViewActive, setCityViewActive] = useState<boolean>(false);
+  const [cityViewTarget, setCityViewTarget] = useState<CityViewTargetId>('kota');
+  const [cityViewAnchors, setCityViewAnchors] = useState<{
+    active: CityViewAnchorNode | null;
+    neighbors: CityViewAnchorNode[];
+  }>({ active: null, neighbors: [] });
+  const cityViewInitialHashCheckedRef = useRef<boolean>(false);
+
+  const selectCityViewTarget = useCallback(
+    (nextTarget: CityViewTargetId, isInitialEnter = false) => {
+      soundEngine.playUiClick();
+      setCityViewActive(true);
+      setCityViewTarget(nextTarget);
+      window.dispatchEvent(
+        new CustomEvent('sync-city-view-mode', {
+          detail: {
+            action: isInitialEnter ? 'enter' : 'select',
+            target: nextTarget,
+          },
+        }),
+      );
+      if (typeof window !== 'undefined') {
+        const nextHash = getCityViewTargetHash(nextTarget);
+        if (window.location.hash.toLowerCase() !== nextHash) {
+          try {
+            window.history.replaceState(
+              null,
+              '',
+              `${window.location.pathname}${window.location.search}${nextHash}`,
+            );
+          } catch {
+            // ignore history restriction
+          }
+        }
+      }
+    },
+    [],
+  );
+
+  const exitCityViewMode = useCallback(() => {
+    if (!cityViewActive) return;
+    soundEngine.playUiClick();
+    setCityViewActive(false);
+    setCityViewAnchors({ active: null, neighbors: [] });
+    window.dispatchEvent(
+      new CustomEvent('sync-city-view-mode', {
+        detail: { action: 'exit' },
+      }),
+    );
+    if (typeof window !== 'undefined' && window.location.hash) {
+      try {
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}${window.location.search}`,
+        );
+      } catch {
+        // ignore history restriction
+      }
+    }
+  }, [cityViewActive]);
+
+  useEffect(() => {
+    const isOpenNow = isCitizenDialogueOpen && hud.worldMode !== 'warzone';
+    window.dispatchEvent(
+      new CustomEvent('citizen-dialogue-open-state', {
+        detail: {
+          isOpen: isOpenNow,
+          citizenId: isOpenNow ? activeCitizenId : null,
+        },
+      }),
+    );
+  }, [isCitizenDialogueOpen, activeCitizenId, hud.worldMode]);
   const [worldMode, setWorldMode] = useState<WorldMode>(() => {
     if (typeof window !== 'undefined') {
       const w = new URLSearchParams(window.location.search).get('world');
@@ -1884,6 +2116,90 @@ export default function App() {
     }
     return 'lobby';
   });
+
+  const handleCancelClickToWalk = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    soundEngine.playUiClick();
+    window.dispatchEvent(new CustomEvent('click-to-walk-cancel'));
+  }, []);
+
+  useEffect(() => {
+    const onPicked = (ev: Event) => {
+      const target = (ev as CustomEvent<{ target?: CityViewTargetId }>).detail?.target;
+      if (target) {
+        selectCityViewTarget(target);
+      }
+    };
+    const onAnchors = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          active: CityViewAnchorNode | null;
+          neighbors: CityViewAnchorNode[];
+        }>
+      ).detail;
+      if (detail) {
+        setCityViewAnchors({
+          active: detail.active ?? null,
+          neighbors: Array.isArray(detail.neighbors) ? detail.neighbors : [],
+        });
+      }
+    };
+    const onRequestExit = () => {
+      exitCityViewMode();
+    };
+    const onHashChange = () => {
+      const parsed = parseCityViewHash(window.location.hash);
+      if (
+        parsed &&
+        gameState === 'playing' &&
+        onboardingStep === 'completed' &&
+        worldMode !== 'warzone'
+      ) {
+        selectCityViewTarget(parsed, !cityViewActive);
+      }
+    };
+    window.addEventListener('city-view-district-picked', onPicked);
+    window.addEventListener('city-view-anchors-updated', onAnchors);
+    window.addEventListener('request-exit-city-view', onRequestExit);
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('city-view-district-picked', onPicked);
+      window.removeEventListener('city-view-anchors-updated', onAnchors);
+      window.removeEventListener('request-exit-city-view', onRequestExit);
+      window.removeEventListener('hashchange', onHashChange);
+    };
+  }, [
+    cityViewActive,
+    exitCityViewMode,
+    gameState,
+    onboardingStep,
+    selectCityViewTarget,
+    worldMode,
+  ]);
+
+  useEffect(() => {
+    if (cityViewActive && (worldMode === 'warzone' || gameState !== 'playing')) {
+      exitCityViewMode();
+    }
+  }, [cityViewActive, exitCityViewMode, gameState, worldMode]);
+
+  useEffect(() => {
+    if (
+      cityViewInitialHashCheckedRef.current ||
+      !isPreloadComplete ||
+      gameState !== 'playing' ||
+      onboardingStep !== 'completed' ||
+      worldMode === 'warzone' ||
+      typeof window === 'undefined'
+    ) {
+      return;
+    }
+    cityViewInitialHashCheckedRef.current = true;
+    const parsed = parseCityViewHash(window.location.hash);
+    if (parsed) {
+      selectCityViewTarget(parsed, true);
+    }
+  }, [gameState, isPreloadComplete, onboardingStep, selectCityViewTarget, worldMode]);
   const [worldInitialTeam, setWorldInitialTeam] = useState<'blue' | 'red'>('blue');
   const [worldTransitionCount, setWorldTransitionCount] = useState<number>(0);
   const [isWorldLoading, setIsWorldLoading] = useState<boolean>(false);
@@ -1891,6 +2207,8 @@ export default function App() {
   const cafeLoadingTimeoutRef = useRef<number | null>(null);
   const [isCasinoInteriorLoading, setIsCasinoInteriorLoading] = useState<boolean>(false);
   const casinoLoadingTimeoutRef = useRef<number | null>(null);
+  const [isSalonInteriorLoading, setIsSalonInteriorLoading] = useState<boolean>(false);
+  const salonLoadingTimeoutRef = useRef<number | null>(null);
   const [loadingTargetMode, setLoadingTargetMode] = useState<WorldMode | null>(null);
   const loadingTimeoutRef = useRef<number | null>(null);
   const loadingCommitTimeoutRef = useRef<number | null>(null);
@@ -1911,14 +2229,20 @@ export default function App() {
         window.clearTimeout(casinoLoadingTimeoutRef.current);
         casinoLoadingTimeoutRef.current = null;
       }
+      if (salonLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(salonLoadingTimeoutRef.current);
+        salonLoadingTimeoutRef.current = null;
+      }
       setIsKioskModalOpen(false);
       setIsGrandCasinoModalOpen(false);
       setActiveSpecialModal('none');
       setIsInsidePrivateHouse(false);
       setIsInsideGlasshouseCafe(false);
       setIsInsideGrandCasino(false);
+      setIsInsideBeautySalon(false);
       setIsCafeInteriorLoading(false);
       setIsCasinoInteriorLoading(false);
+      setIsSalonInteriorLoading(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -2027,6 +2351,103 @@ export default function App() {
   const dispatchBuddyAction = useCallback((actionName: string) => {
     window.dispatchEvent(new CustomEvent('buddy-action', { detail: actionName }));
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'bb_chat_bubble_style_v1',
+        JSON.stringify({ bgColor: chatBubbleBgColor, textColor: chatBubbleTextColor }),
+      );
+    } catch {
+      // ignore storage errors
+    }
+    window.dispatchEvent(
+      new CustomEvent('update-social-bubble-style', {
+        detail: { bgColor: chatBubbleBgColor, textColor: chatBubbleTextColor },
+      }),
+    );
+  }, [chatBubbleBgColor, chatBubbleTextColor, worldTransitionCount]);
+
+  const publishPlayerSocialMessage = useCallback(
+    (params: {
+      text: string;
+      recipient?: { id?: string | number; name: string } | null;
+      roomId?: string;
+    }) => {
+      const cleanText = params.text.trim();
+      if (!cleanText) return;
+      const nowMs = Date.now();
+      const nowStr = new Date(nowMs).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const senderLabel = playerDisplayName || 'YOU';
+      const senderAccount = hudRef.current.nearWalletId || playerUid || undefined;
+      const isPrivate = Boolean(params.recipient && params.recipient.name);
+      const clientMsgId = `${isPrivate ? 'priv' : 'pub'}-${nowMs}-${Math.random().toString(36).slice(2, 7)}`;
+
+      const newMsg: ChatMessage = {
+        id: clientMsgId,
+        clientMsgId,
+        senderId: senderAccount,
+        senderName: senderLabel,
+        recipientId: isPrivate && params.recipient?.id != null ? String(params.recipient.id) : undefined,
+        recipientName: isPrivate ? params.recipient?.name : undefined,
+        isSelf: true,
+        text: cleanText,
+        timestamp: nowStr,
+        createdAtMs: nowMs,
+        bubbleBgColor: chatBubbleBgColor,
+        bubbleTextColor: chatBubbleTextColor,
+        type: isPrivate ? 'private' : 'public',
+      };
+
+      setChatMessages((prev) => {
+        const merged = mergeRealtimeSocialChatMessage(prev, newMsg, {
+          localPlayerName: senderLabel,
+          localPlayerUid: senderAccount,
+          isOwnFn: (m) => isOwnChatMessage(m, senderLabel, senderAccount),
+          simplifyNameFn: simplifyDisplayName,
+        });
+        chatMessagesRef.current = merged.nextMessages;
+        return merged.nextMessages;
+      });
+
+      if (!isPrivate) {
+        dispatchBuddyAction(`socialTalk:${cleanText}`);
+      }
+
+      const createdIso = new Date(nowMs).toISOString();
+      const targetRoom = params.roomId || worldMode;
+      broadcastSocialChatMessage({
+        clientMsgId,
+        senderName: senderLabel,
+        senderNearAccount: senderAccount,
+        recipientName: isPrivate ? params.recipient?.name : null,
+        message: cleanText,
+        bubbleColor: chatBubbleBgColor,
+        bubbleTextColor: chatBubbleTextColor,
+        createdAt: createdIso,
+        roomId: targetRoom,
+      });
+      void insertSocialMessageToSupabase({
+        sender_name: senderLabel,
+        sender_near_account: senderAccount,
+        recipient_name: isPrivate ? params.recipient?.name : undefined,
+        message: cleanText,
+        bubble_color: chatBubbleBgColor,
+        room_id: targetRoom,
+      });
+    },
+    [
+      playerDisplayName,
+      playerUid,
+      chatBubbleBgColor,
+      chatBubbleTextColor,
+      worldMode,
+      dispatchBuddyAction,
+    ],
+  );
 
   useEffect(() => {
     const activeItemId =
@@ -2340,12 +2761,64 @@ export default function App() {
     }
   }, [musicVolumePct]);
 
+  useEffect(() => {
+    return subscribeWeatherDisplaySync((env) => {
+      setTimeOfDayHours(env.timeOfDayHours);
+      setLightingPreset((prev) => (prev === env.phase ? prev : env.phase));
+    });
+  }, []);
+
+  const handleSelectTimePhase = useCallback((phase: LightingPresetKey) => {
+    soundEngine.playUiClick();
+    const nextHours = TIME_PHASE_DEFAULT_HOURS[phase];
+    setLightingPreset(phase);
+    setTimeOfDayHours(nextHours);
+    setWeatherControlConfig({ phase, timeOfDayHours: nextHours });
+  }, []);
+
   const handleCycleLighting = useCallback(() => {
     soundEngine.playUiClick();
-    setLightingPreset((prev) => {
-      const idx = PRESET_ORDER.indexOf(prev);
-      return PRESET_ORDER[(idx + 1) % PRESET_ORDER.length];
-    });
+    const idx = PRESET_ORDER.indexOf(lightingPreset);
+    const next = PRESET_ORDER[(idx + 1) % PRESET_ORDER.length];
+    const nextHours = TIME_PHASE_DEFAULT_HOURS[next];
+    setLightingPreset(next);
+    setTimeOfDayHours(nextHours);
+    setWeatherControlConfig({ phase: next, timeOfDayHours: nextHours });
+  }, [lightingPreset]);
+
+  const handleChangeTimeOfDayHours = useCallback((hours: number) => {
+    const norm = normalizeHours24(hours);
+    const nextPhase = resolvePhaseFromHours(norm);
+    setTimeOfDayHours(norm);
+    setLightingPreset(nextPhase);
+    setWeatherControlConfig({ timeOfDayHours: norm, phase: nextPhase });
+  }, []);
+
+  const handleSelectWeatherCondition = useCallback((condition: WeatherConditionKey) => {
+    soundEngine.playUiClick();
+    setWeatherCondition(condition);
+    setWeatherControlConfig({ weatherCondition: condition });
+  }, []);
+
+  const handleSelectRainIntensityTier = useCallback((tier: RainIntensityTier) => {
+    soundEngine.playUiClick();
+    setRainIntensityTier(tier);
+    setWeatherControlConfig({ rainIntensityTier: tier });
+  }, []);
+
+  const handleToggleAutoTimeCycle = useCallback((enabled: boolean) => {
+    soundEngine.playUiClick();
+    setAutoTimeCycle(enabled);
+    setWeatherControlConfig({ autoCycleEnabled: enabled });
+  }, []);
+
+  const handleChangeCityLightsScale = useCallback((scale: number) => {
+    const clamped = Math.max(
+      CITY_LIGHTS_SCALE_BOUNDS.min,
+      Math.min(CITY_LIGHTS_SCALE_BOUNDS.max, scale),
+    );
+    setCityLightsScale(clamped);
+    setWeatherControlConfig({ cityLightsScale: clamped });
   }, []);
 
   const handleToggleFovMode = useCallback(() => {
@@ -2394,10 +2867,18 @@ export default function App() {
       const rawLoc = detail?.location ?? detail?.locationId;
       const loc: MerchantLocationId = rawLoc === 'beach_house' ? 'beach_house' : 'lobby_cafe';
       setIsKioskModalOpen(false);
+      setIsCitizenDialogueOpen(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       openMerchantInChatSession(loc);
+    };
+    const onOpenCitizenDialogue = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ citizenId?: string }>).detail;
+      openCitizenDialogueForId(detail?.citizenId);
+    };
+    const onCloseCitizenDialogue = () => {
+      setIsCitizenDialogueOpen(false);
     };
     const onOpenHouseInterior = (ev: Event) => {
       // The permanent Model Estate showcase plot is registered as claimed by a
@@ -2436,6 +2917,12 @@ export default function App() {
       setIsKioskModalOpen(false);
       setIsSocialChatModalOpen(false);
       setIsDailyMissionsModalOpen(false);
+      setIsInsideGlasshouseCafe(false);
+      setIsCafeInteriorLoading(false);
+      setIsInsideGrandCasino(false);
+      setIsCasinoInteriorLoading(false);
+      setIsInsideBeautySalon(false);
+      setIsSalonInteriorLoading(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setHouseEntryScanState('scanning');
@@ -2469,6 +2956,8 @@ export default function App() {
       setIsGrandCasinoModalOpen(false);
       setIsInsideGrandCasino(false);
       setIsCasinoInteriorLoading(false);
+      setIsInsideBeautySalon(false);
+      setIsSalonInteriorLoading(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setActiveSpecialModal('none');
@@ -2512,6 +3001,8 @@ export default function App() {
       setIsInsidePrivateHouse(false);
       setIsInsideGlasshouseCafe(false);
       setIsCafeInteriorLoading(false);
+      setIsInsideBeautySalon(false);
+      setIsSalonInteriorLoading(false);
       setActiveCafeModal('none');
       if (casinoLoadingTimeoutRef.current !== null) {
         window.clearTimeout(casinoLoadingTimeoutRef.current);
@@ -2531,6 +3022,43 @@ export default function App() {
       setIsCasinoInteriorLoading(false);
       setIsInsideGrandCasino(false);
       setIsGrandCasinoModalOpen(false);
+    };
+    const onEnterBeautySalonInterior = () => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      setIsKioskModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsScooterShowroomModalOpen(false);
+      setIsRealEstateCatalogModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
+      setActiveTeleportKioskModal('none');
+      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+      setActiveSpecialModal('none');
+      setIsInsidePrivateHouse(false);
+      setIsInsideGlasshouseCafe(false);
+      setIsCafeInteriorLoading(false);
+      setIsInsideGrandCasino(false);
+      setIsCasinoInteriorLoading(false);
+      setActiveCafeModal('none');
+      if (salonLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(salonLoadingTimeoutRef.current);
+      }
+      setIsSalonInteriorLoading(true);
+      salonLoadingTimeoutRef.current = window.setTimeout(() => {
+        salonLoadingTimeoutRef.current = null;
+        setIsSalonInteriorLoading(false);
+      }, 4000);
+      setIsInsideBeautySalon(true);
+    };
+    const onExitBeautySalonInterior = () => {
+      if (salonLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(salonLoadingTimeoutRef.current);
+        salonLoadingTimeoutRef.current = null;
+      }
+      setIsSalonInteriorLoading(false);
+      setIsInsideBeautySalon(false);
     };
     const onStartCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
@@ -2599,6 +3127,7 @@ export default function App() {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
       if (customEv.detail?.user) {
         setIsKioskModalOpen(false);
+        setIsCitizenDialogueOpen(false);
         setIsSocialChatModalOpen(false);
         setIsPersonalWalletModalOpen(false);
         setActiveSpecialModal('none');
@@ -2616,6 +3145,7 @@ export default function App() {
       const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
       if (customEv.detail?.user && !customEv.detail.user.isNpc) {
         setIsKioskModalOpen(false);
+        setIsCitizenDialogueOpen(false);
         setIsProfileModalOpen(false);
         setIsPersonalWalletModalOpen(false);
         setActiveSpecialModal('none');
@@ -2652,6 +3182,7 @@ export default function App() {
             ? 'central_plaza'
             : k;
         setIsKioskModalOpen(false);
+        setIsCitizenDialogueOpen(false);
         setActiveSpecialModal('none');
         setIsSocialChatModalOpen(false);
         setActiveTeleportKioskModal(resolvedStationId);
@@ -2663,6 +3194,7 @@ export default function App() {
     const onOpenScooterShowroomModal = () => {
       if (hudRef.current.worldMode === 'warzone') return;
       setIsKioskModalOpen(false);
+      setIsCitizenDialogueOpen(false);
       setIsProfileModalOpen(false);
       setIsPersonalWalletModalOpen(false);
       setIsPersonalBagModalOpen(false);
@@ -2680,6 +3212,7 @@ export default function App() {
     const onOpenFashionBoutiqueModal = () => {
       if (hudRef.current.worldMode === 'warzone') return;
       setIsKioskModalOpen(false);
+      setIsCitizenDialogueOpen(false);
       setIsProfileModalOpen(false);
       setIsPersonalWalletModalOpen(false);
       setIsPersonalBagModalOpen(false);
@@ -2700,6 +3233,7 @@ export default function App() {
       const tab = (e as CustomEvent<{ tab?: RealEstateCatalogTabId }>).detail?.tab;
       setRealEstateCatalogTab(tab === 'furniture' || tab === 'market' ? tab : 'house');
       setIsKioskModalOpen(false);
+      setIsCitizenDialogueOpen(false);
       setIsProfileModalOpen(false);
       setIsPersonalWalletModalOpen(false);
       setIsPersonalBagModalOpen(false);
@@ -2739,6 +3273,7 @@ export default function App() {
         setGrandCasinoSlotVariant(reqVariant);
       }
       setIsKioskModalOpen(false);
+      setIsCitizenDialogueOpen(false);
       setIsProfileModalOpen(false);
       setIsPersonalWalletModalOpen(false);
       setIsPersonalBagModalOpen(false);
@@ -2821,6 +3356,8 @@ export default function App() {
     window.addEventListener('toggle-kiosk-ui', onToggleKiosk);
     window.addEventListener('close-kiosk-ui', onCloseKiosk);
     window.addEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
+    window.addEventListener('open-citizen-dialogue-ui', onOpenCitizenDialogue);
+    window.addEventListener('close-citizen-dialogue-ui', onCloseCitizenDialogue);
     window.addEventListener('open-house-interior-ui', onOpenHouseInterior);
     window.addEventListener('exit-house-interior-ui', onExitHouseInterior);
     const onCafeInteriorReady = () => {
@@ -2837,12 +3374,22 @@ export default function App() {
       }
       setIsCasinoInteriorLoading(false);
     };
+    const onSalonInteriorReady = () => {
+      if (salonLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(salonLoadingTimeoutRef.current);
+        salonLoadingTimeoutRef.current = null;
+      }
+      setIsSalonInteriorLoading(false);
+    };
     window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
     window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
     window.addEventListener('cafe-interior-ready', onCafeInteriorReady);
     window.addEventListener('enter-grand-casino-interior', onEnterGrandCasinoInterior);
     window.addEventListener('exit-grand-casino-interior', onExitGrandCasinoInterior);
     window.addEventListener('casino-interior-ready', onCasinoInteriorReady);
+    window.addEventListener('enter-beauty-salon-interior', onEnterBeautySalonInterior);
+    window.addEventListener('exit-beauty-salon-interior', onExitBeautySalonInterior);
+    window.addEventListener('beauty-salon-interior-ready', onSalonInteriorReady);
     window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
     window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
     window.addEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
@@ -2889,6 +3436,8 @@ export default function App() {
       window.removeEventListener('toggle-kiosk-ui', onToggleKiosk);
       window.removeEventListener('close-kiosk-ui', onCloseKiosk);
       window.removeEventListener('open-npc-merchant-ui', onOpenNpcMerchant);
+      window.removeEventListener('open-citizen-dialogue-ui', onOpenCitizenDialogue);
+      window.removeEventListener('close-citizen-dialogue-ui', onCloseCitizenDialogue);
       window.removeEventListener('open-house-interior-ui', onOpenHouseInterior);
       window.removeEventListener('exit-house-interior-ui', onExitHouseInterior);
       if (cafeLoadingTimeoutRef.current !== null) {
@@ -2899,12 +3448,19 @@ export default function App() {
         window.clearTimeout(casinoLoadingTimeoutRef.current);
         casinoLoadingTimeoutRef.current = null;
       }
+      if (salonLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(salonLoadingTimeoutRef.current);
+        salonLoadingTimeoutRef.current = null;
+      }
       window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
       window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
       window.removeEventListener('cafe-interior-ready', onCafeInteriorReady);
       window.removeEventListener('enter-grand-casino-interior', onEnterGrandCasinoInterior);
       window.removeEventListener('exit-grand-casino-interior', onExitGrandCasinoInterior);
       window.removeEventListener('casino-interior-ready', onCasinoInteriorReady);
+      window.removeEventListener('enter-beauty-salon-interior', onEnterBeautySalonInterior);
+      window.removeEventListener('exit-beauty-salon-interior', onExitBeautySalonInterior);
+      window.removeEventListener('beauty-salon-interior-ready', onSalonInteriorReady);
       window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
       window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
       window.removeEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
@@ -2935,7 +3491,7 @@ export default function App() {
       window.removeEventListener('scooter-dismounted', onScooterDismounted);
       window.removeEventListener('scooter-mounted', onScooterMounted);
     };
-  }, [openMerchantInChatSession]);
+  }, [openMerchantInChatSession, openCitizenDialogueForId]);
 
   useEffect(() => {
     window.dispatchEvent(
@@ -2960,9 +3516,15 @@ export default function App() {
     };
     window.addEventListener('mission-guide-progress', onGuideProgress);
     window.addEventListener('mission-guide-arrived', onGuideArrived);
+    const onClickToWalkSync = (ev: Event) => {
+      const detail = (ev as CustomEvent<ClickToWalkHudSummary>).detail;
+      if (detail) setClickToWalkSync(detail);
+    };
+    window.addEventListener('click-to-walk-sync', onClickToWalkSync);
     return () => {
       window.removeEventListener('mission-guide-progress', onGuideProgress);
       window.removeEventListener('mission-guide-arrived', onGuideArrived);
+      window.removeEventListener('click-to-walk-sync', onClickToWalkSync);
     };
   }, []);
 
@@ -3861,6 +4423,7 @@ export default function App() {
       document.body.dataset.playerXp = String(levelProgress.totalXp);
       document.body.dataset.cafeInterior = String(isInsideGlasshouseCafe);
       document.body.dataset.casinoInterior = String(isInsideGrandCasino);
+      document.body.dataset.salonInterior = String(isInsideBeautySalon);
       document.body.dataset.cafeShiftWorking = String(cafeShiftState.isWorking);
     }
   }, [
@@ -3868,6 +4431,7 @@ export default function App() {
     levelProgress.totalXp,
     isInsideGlasshouseCafe,
     isInsideGrandCasino,
+    isInsideBeautySalon,
     cafeShiftState.isWorking,
   ]);
 
@@ -3883,11 +4447,13 @@ export default function App() {
             ? 'character_select'
             : activeSpecialModal === 'none' && isInsideGrandCasino
               ? 'casino_interior'
-              : activeSpecialModal === 'none' && isInsideGlasshouseCafe
-                ? 'cafe_interior'
-                : activeSpecialModal === 'none' && isInsidePrivateHouse
-                  ? 'house_visit'
-                  : activeSpecialModal;
+              : activeSpecialModal === 'none' && isInsideBeautySalon
+                ? 'salon_interior'
+                : activeSpecialModal === 'none' && isInsideGlasshouseCafe
+                  ? 'cafe_interior'
+                  : activeSpecialModal === 'none' && isInsidePrivateHouse
+                    ? 'house_visit'
+                    : activeSpecialModal;
     const syncDetail = {
       mode: effectiveMode,
       flyTargetMode: plazaFlyTargetMode,
@@ -3926,6 +4492,7 @@ export default function App() {
     plazaFlyTargetMode,
     activeSpecialModal,
     isInsideGrandCasino,
+    isInsideBeautySalon,
     isInsideGlasshouseCafe,
     isInsidePrivateHouse,
     isSampleHouseView,
@@ -5223,6 +5790,22 @@ export default function App() {
       ) {
         return;
       }
+      if (cityViewActive) {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          exitCityViewMode();
+        } else if (e.code === 'ArrowLeft') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, -1));
+        } else if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, 1));
+        }
+        return;
+      }
       if (activeTeleportKioskModal !== 'none') {
         if (e.code === 'Escape') {
           e.preventDefault();
@@ -5237,6 +5820,14 @@ export default function App() {
           e.preventDefault();
           e.stopImmediatePropagation();
           setActiveSpecialModal('none');
+        }
+        return;
+      }
+      if (isCitizenDialogueOpen) {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setIsCitizenDialogueOpen(false);
         }
         return;
       }
@@ -5317,6 +5908,7 @@ export default function App() {
     isPreloadComplete,
     gameState,
     activeSpecialModal,
+    isCitizenDialogueOpen,
     isProfileModalOpen,
     isSocialChatModalOpen,
     isKioskModalOpen,
@@ -5325,6 +5917,10 @@ export default function App() {
     handleToggleAudio,
     handleCycleLighting,
     handleToggleFovMode,
+    cityViewActive,
+    cityViewTarget,
+    exitCityViewMode,
+    selectCityViewTarget,
   ]);
 
   const playerRadarDot = hud.radarDots.find((d) => d.kind === 'player');
@@ -5361,6 +5957,7 @@ export default function App() {
     if (caughtFishBucket.length === 0) return;
     if (
       activeSpecialModal !== 'none' ||
+      isCitizenDialogueOpen ||
       isSocialChatModalOpen ||
       isKioskModalOpen ||
       isGrandCasinoModalOpen
@@ -6109,7 +6706,12 @@ export default function App() {
     nearbyWaterZone.canFish,
   ]);
 
-  const currentPresetConfig = LIGHTING_PRESETS[lightingPreset];
+  const currentAtmosphereViewportTint = evaluateWeatherAndTimeState({
+    timeOfDayHours,
+    weatherCondition,
+    rainIntensityTier,
+    cityLightsScale,
+  }).viewportTint;
   const isFullMapOverview =
     typeof window !== 'undefined' &&
     (new URLSearchParams(window.location.search).get('fullmap') === '1' ||
@@ -6690,6 +7292,21 @@ export default function App() {
         </div>
       )}
 
+      {/* Beauty & Glow Salon Lazy-Loading Overlay */}
+      {isPreloadComplete && !isWorldLoading && isSalonInteriorLoading && (
+        <div
+          data-salon-loading="true"
+          className="fixed inset-0 z-[140] bg-[#2a1d1b] flex flex-col items-center justify-center gap-4 select-none pointer-events-auto"
+        >
+          <div className="-skew-x-12 px-8 py-4 bg-[#f9a8d4] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase">
+            <span className="skew-x-12 inline-block">ENTERING BEAUTY SALON...</span>
+          </div>
+          <p className="text-xs sm:text-sm font-black tracking-widest uppercase text-pink-200/90">
+            Preparing Beauty &amp; Glow Studio Interior
+          </p>
+        </div>
+      )}
+
       {/* Solid Full Scene Transition Loading Overlay */}
       {isPreloadComplete && isWorldLoading && (
         <div
@@ -6725,8 +7342,8 @@ export default function App() {
         aria-hidden="true"
         className="fixed inset-0 pointer-events-none z-10 transition-colors duration-700"
         style={{
-          backgroundColor: currentPresetConfig.viewportFilterColor,
-          opacity: currentPresetConfig.viewportFilterOpacity,
+          backgroundColor: currentAtmosphereViewportTint.colorHex,
+          opacity: currentAtmosphereViewportTint.opacity,
         }}
       />
 
@@ -7444,7 +8061,9 @@ export default function App() {
       {isPreloadComplete &&
         onboardingStep === 'completed' &&
         tutorialStage === 'go_to_hana' &&
+        !cityViewActive &&
         !isInsideGrandCasino &&
+        !isInsideBeautySalon &&
         !isInsideGlasshouseCafe &&
         !isInsidePrivateHouse &&
         activeSpecialModal === 'none' &&
@@ -7521,6 +8140,7 @@ export default function App() {
       {isPreloadComplete &&
         gameState === 'playing' &&
         !isFullMapOverview &&
+        !cityViewActive &&
         onboardingStep === 'completed' &&
         !tramRideCutsceneUi?.active && (
         <div className="fixed inset-0 z-20 pointer-events-none">
@@ -7594,279 +8214,387 @@ export default function App() {
              ================================================================= */}
           <div className="fixed top-3 left-3 z-30 flex flex-col items-start gap-2 pointer-events-none">
 
-            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House, Glasshouse Cafe & Grand Casino interior) */}
+            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House, Glasshouse Cafe, Grand Casino & Beauty Salon interior) */}
             {!isInsidePrivateHouse &&
               !isInsideGlasshouseCafe &&
               !isInsideGrandCasino &&
+              !isInsideBeautySalon &&
               activeSpecialModal !== 'npc_merchant' &&
               !isSocialChatModalOpen &&
               peacefulUiState.minimapRadarVisible &&
               (() => {
                 const ccLevel = hud.commandCenterLevel ?? hud.baseBuildingLevel;
                 const radarSpec = evaluateCommandCenterRadarSpec(ccLevel, true);
+                const canOpenCityViewFromMinimap =
+                  worldMode !== 'warzone' && playMode !== 'editor';
+                const activeWalk = clickToWalkSync ?? hud.clickToWalk ?? null;
+                const showWalkOverlay = Boolean(canOpenCityViewFromMinimap && activeWalk?.active);
 
                 return (
-                  <div
-                    aria-label="Mini Radar Arena"
-                    data-radar-level={radarSpec.level}
-                    data-radar-active="true"
-                    className="pointer-events-auto relative w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 bg-[#070a0f] border-3 border-[#1a1a1a] ring-2 ring-white rounded-xl overflow-hidden shadow-[4px_4px_0_#1a1a1a] shrink-0"
-                  >
-                  {/* 1:1 Orthographic Top-Down Map of the Current 3-Part Mirrored Arena ([-125, +125]) */}
-                  <span className="absolute top-1 left-1 z-40 px-1 py-px bg-black/60 border border-white/40 rounded-sm text-[7px] font-black tracking-widest text-white pointer-events-none">
-                    {worldMode === 'warzone' ? 'WARZONE' : 'CITY MAP'}
-                  </span>
-                  {worldMode === 'warzone' ? (
-                    <img
-                      src="/assets/kiosk/radar_arena_map.png"
-                      alt="Arena Radar Map"
-                      draggable={false}
-                      className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                    />
-                  ) : (
-                    <div
-                      aria-hidden="true"
-                      className="absolute inset-0 select-none pointer-events-none"
-                      style={{
-                        backgroundColor: '#a5dcf5',
-                        backgroundImage:
-                          'linear-gradient(rgba(255,255,255,0.45) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.45) 1px, transparent 1px)',
-                        backgroundSize: '12.5% 12.5%',
+                  <div className="pointer-events-none flex flex-col items-start gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      aria-label={
+                        canOpenCityViewFromMinimap
+                          ? 'Buka City View'
+                          : 'Mini Radar Arena'
+                      }
+                      title={
+                        canOpenCityViewFromMinimap
+                          ? 'Tekan Mini Map untuk melihat City View & pilih lokasi jalan'
+                          : undefined
+                      }
+                      disabled={!canOpenCityViewFromMinimap}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        if (canOpenCityViewFromMinimap) {
+                          selectCityViewTarget('kota', true);
+                        }
                       }}
-                    />
-                  )}
+                      data-city-view-minimap-trigger={
+                        canOpenCityViewFromMinimap ? 'true' : undefined
+                      }
+                      data-radar-level={radarSpec.level}
+                      data-radar-active="true"
+                      className={`pointer-events-auto relative block p-0 text-left appearance-none w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 bg-[#070a0f] border-3 border-[#1a1a1a] ring-2 ring-white rounded-xl overflow-hidden shadow-[4px_4px_0_#1a1a1a] shrink-0 transition-transform ${
+                        canOpenCityViewFromMinimap
+                          ? 'cursor-pointer hover:ring-[#b8ff3c] active:scale-[0.98]'
+                          : ''
+                      }`}
+                    >
+                      {/* 1:1 Orthographic Top-Down Map of the Current 3-Part Mirrored Arena ([-125, +125]) */}
+                      <span className="absolute top-1 left-1 z-40 px-1 py-px bg-black/60 border border-white/40 rounded-sm text-[7px] font-black tracking-widest text-white pointer-events-none">
+                        {worldMode === 'warzone' ? 'WARZONE' : 'CITY MAP'}
+                      </span>
+                      {worldMode === 'warzone' ? (
+                        <img
+                          src="/assets/kiosk/radar_arena_map.webp"
+                          alt="Arena Radar Map"
+                          draggable={false}
+                          className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+                        />
+                      ) : (
+                        <>
+                          <img
+                            src="/assets/kiosk/city_minimap.webp"
+                            alt="City Map"
+                            draggable={false}
+                            className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+                          />
+                          <div
+                            aria-hidden="true"
+                            className="absolute inset-0 select-none pointer-events-none"
+                            style={{
+                              backgroundImage:
+                                'linear-gradient(rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px)',
+                              backgroundSize: '12.5% 12.5%',
+                            }}
+                          />
+                        </>
+                      )}
 
-                  {/* Dynamic Building Indicators for All Active Commander Base Plots (Model Estate Plot 0 + Any Claimed NEAR Session Base) */}
-                  {worldMode === 'warzone' &&
-                    (hud.activeBluePlotIndices ?? [0]).map((plotIdx) => {
-                    const pos = worldCoordToRadarPercent(
-                      COMMANDER_PLOT_OFFSETS_X[plotIdx] ?? -45.0,
-                      81.7,
-                    );
-                    return (
-                      <span
-                        key={`blue-base-radar-${plotIdx}`}
-                        data-radar-active-base={`blue-${plotIdx}`}
-                        style={{
-                          left: `${pos.leftPct}%`,
-                          top: `${pos.topPct}%`,
-                        }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-3.5 border border-[#00d2ff] bg-[#00d2ff]/45 rounded-[1px] pointer-events-none"
-                      />
-                    );
-                  })}
-                  {worldMode === 'warzone' &&
-                    (hud.activeRedPlotIndices ?? []).map((plotIdx) => {
-                    const pos = worldCoordToRadarPercent(
-                      COMMANDER_PLOT_OFFSETS_X[plotIdx] ?? -45.0,
-                      -81.7,
-                    );
-                    return (
-                      <span
-                        key={`red-base-radar-${plotIdx}`}
-                        data-radar-active-base={`red-${plotIdx}`}
-                        style={{
-                          left: `${pos.leftPct}%`,
-                          top: `${pos.topPct}%`,
-                        }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-3.5 border border-[#ff3b30] bg-[#ff3b30]/45 rounded-[1px] pointer-events-none"
-                      />
-                    );
-                  })}
+                      {/* Dynamic Building Indicators for All Active Commander Base Plots */}
+                      {worldMode === 'warzone' &&
+                        (hud.activeBluePlotIndices ?? [0]).map((plotIdx) => {
+                          const pos = worldCoordToRadarPercent(
+                            COMMANDER_PLOT_OFFSETS_X[plotIdx] ?? -45.0,
+                            81.7,
+                          );
+                          return (
+                            <span
+                              key={`blue-base-radar-${plotIdx}`}
+                              data-radar-active-base={`blue-${plotIdx}`}
+                              style={{
+                                left: `${pos.leftPct}%`,
+                                top: `${pos.topPct}%`,
+                              }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-3.5 border border-[#00d2ff] bg-[#00d2ff]/45 rounded-[1px] pointer-events-none"
+                            />
+                          );
+                        })}
+                      {worldMode === 'warzone' &&
+                        (hud.activeRedPlotIndices ?? []).map((plotIdx) => {
+                          const pos = worldCoordToRadarPercent(
+                            COMMANDER_PLOT_OFFSETS_X[plotIdx] ?? -45.0,
+                            -81.7,
+                          );
+                          return (
+                            <span
+                              key={`red-base-radar-${plotIdx}`}
+                              data-radar-active-base={`red-${plotIdx}`}
+                              style={{
+                                left: `${pos.leftPct}%`,
+                                top: `${pos.topPct}%`,
+                              }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-3.5 border border-[#ff3b30] bg-[#ff3b30]/45 rounded-[1px] pointer-events-none"
+                            />
+                          );
+                        })}
 
-                  {/* Lobby Faction Portals (North Red & South Blue) + Halte Trem Return Pad + 4 Public Warzone Crate Pads */}
-                  {worldMode === 'warzone' &&
-                    LOBBY_FACTION_PORTALS.map((portal) => {
-                    const pos = worldCoordToRadarPercent(portal.x, portal.z);
-                    return (
-                      <span
-                        key={portal.id}
-                        data-radar-portal={portal.team}
-                        style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
-                        className={`absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-white pointer-events-none ${
-                          portal.team === 'red' ? 'bg-[#ff3b30]' : 'bg-[#00d2ff]'
-                        }`}
-                      />
-                    );
-                  })}
-                  {worldMode === 'warzone' &&
-                    (() => {
-                    const tramShelterPos = worldCoordToRadarPercent(
-                      LOBBY_TRAM_SHELTER_SPEC.returnPadX,
-                      LOBBY_TRAM_SHELTER_SPEC.returnPadZ,
-                    );
-                    return (
-                      <span
-                        data-radar-tram-shelter="true"
-                        style={{ left: `${tramShelterPos.leftPct}%`, top: `${tramShelterPos.topPct}%` }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-xs bg-[#38bdf8] border border-white pointer-events-none"
-                      />
-                    );
-                  })()}
-                  {worldMode === 'warzone' &&
-                    PUBLIC_WARZONE_CRATE_PADS.map((pubPad) => {
-                    const pos = worldCoordToRadarPercent(pubPad.worldX, pubPad.worldZ);
-                    return (
-                      <span
-                        key={pubPad.id}
-                        data-radar-public-pad={pubPad.id}
-                        style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-[#facc15]/85 border border-[#1a1a1a] pointer-events-none"
-                      />
-                    );
-                  })}
+                      {worldMode === 'warzone' &&
+                        LOBBY_FACTION_PORTALS.map((portal) => {
+                          const pos = worldCoordToRadarPercent(portal.x, portal.z);
+                          return (
+                            <span
+                              key={portal.id}
+                              data-radar-portal={portal.team}
+                              style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
+                              className={`absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-white pointer-events-none ${
+                                portal.team === 'red' ? 'bg-[#ff3b30]' : 'bg-[#00d2ff]'
+                              }`}
+                            />
+                          );
+                        })}
+                      {worldMode === 'warzone' &&
+                        (() => {
+                          const tramShelterPos = worldCoordToRadarPercent(
+                            LOBBY_TRAM_SHELTER_SPEC.returnPadX,
+                            LOBBY_TRAM_SHELTER_SPEC.returnPadZ,
+                          );
+                          return (
+                            <span
+                              data-radar-tram-shelter="true"
+                              style={{
+                                left: `${tramShelterPos.leftPct}%`,
+                                top: `${tramShelterPos.topPct}%`,
+                              }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-xs bg-[#38bdf8] border border-white pointer-events-none"
+                            />
+                          );
+                        })()}
+                      {worldMode === 'warzone' &&
+                        PUBLIC_WARZONE_CRATE_PADS.map((pubPad) => {
+                          const pos = worldCoordToRadarPercent(pubPad.worldX, pubPad.worldZ);
+                          return (
+                            <span
+                              key={pubPad.id}
+                              data-radar-public-pad={pubPad.id}
+                              style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-[#facc15]/85 border border-[#1a1a1a] pointer-events-none"
+                            />
+                          );
+                        })}
 
-                  {/* CITY MAP landmarks - city mode only (warzone uses the radar overlays above) */}
-                  {worldMode !== 'warzone' && (
-                    <>
-                      {CITY_TRANSIT_DESTINATIONS.map((dest) => {
-                        const pos = worldCoordToRadarPercent(dest.kioskX, dest.kioskZ);
+                      {/* CITY MAP landmarks & POI badges (display-only; clicking minimap opens 3D City View) */}
+                      {worldMode !== 'warzone' && (
+                        <>
+                          {CITY_TRANSIT_DESTINATIONS.map((dest) => {
+                            const pos = worldCoordToRadarPercent(dest.kioskX, dest.kioskZ);
+                            return (
+                              <span
+                                key={`city-station-${dest.id}`}
+                                data-radar-city-station={dest.id}
+                                style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
+                                className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0284c7] border border-[#1a1a1a] pointer-events-none"
+                              />
+                            );
+                          })}
+                          {CITY_MINIMAP_POIS.map((poi) => {
+                            const pos = worldCoordToRadarPercent(poi.x, poi.z);
+                            return (
+                              <span
+                                key={`city-poi-${poi.id}`}
+                                data-radar-city-poi={poi.id}
+                                style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
+                                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20"
+                              >
+                                <span
+                                  className={`block w-2 h-2 rounded-full border border-[#1a1a1a] ${poi.colorClass}`}
+                                />
+                                <span
+                                  className={`absolute top-1/2 -translate-y-1/2 text-[6.5px] sm:text-[7px] font-black tracking-wide text-[#1a1a1a] whitespace-nowrap [text-shadow:0_1px_2px_#fff,0_0_3px_#fff] ${
+                                    poi.labelSide === 'left' ? 'right-[7px]' : 'left-[7px]'
+                                  }`}
+                                >
+                                  {poi.label}
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </>
+                      )}
+
+                      {/* Dashed Route Preview & Pulsing Destination Pin */}
+                      {showWalkOverlay &&
+                        activeWalk &&
+                        (() => {
+                          const playerDotNow = hud.radarDots.find((d) => d.kind === 'player');
+                          const routePts: Array<{ leftPct: number; topPct: number }> = [];
+                          if (playerDotNow) {
+                            routePts.push(worldCoordToRadarPercent(playerDotNow.x, playerDotNow.z));
+                          }
+                          for (const wp of activeWalk.waypoints) {
+                            routePts.push(worldCoordToRadarPercent(wp.x, wp.z));
+                          }
+                          const destPct = worldCoordToRadarPercent(
+                            activeWalk.targetX,
+                            activeWalk.targetZ,
+                          );
+                          const pointsStr = routePts
+                            .map((p) => `${p.leftPct.toFixed(2)},${p.topPct.toFixed(2)}`)
+                            .join(' ');
+                          return (
+                            <>
+                              {routePts.length >= 2 && (
+                                <svg
+                                  viewBox="0 0 100 100"
+                                  preserveAspectRatio="none"
+                                  data-minimap-route-preview="true"
+                                  className="absolute inset-0 w-full h-full z-20 pointer-events-none"
+                                >
+                                  <polyline
+                                    points={pointsStr}
+                                    fill="none"
+                                    stroke="#14161d"
+                                    strokeWidth="2.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    opacity="0.75"
+                                  />
+                                  <polyline
+                                    points={pointsStr}
+                                    fill="none"
+                                    stroke="#b8ff3c"
+                                    strokeWidth="1.55"
+                                    strokeDasharray="3.2 2.2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              )}
+                              <span
+                                data-minimap-walk-dest="true"
+                                style={{ left: `${destPct.leftPct}%`, top: `${destPct.topPct}%` }}
+                                className="absolute -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none flex items-center justify-center"
+                              >
+                                <span className="absolute w-3.5 h-3.5 rounded-full bg-[#b8ff3c]/55 animate-ping" />
+                                <span className="relative w-2.5 h-2.5 rounded-full bg-[#b8ff3c] border-2 border-[#14161d] shadow-[0_0_8px_#b8ff3c]" />
+                              </span>
+                            </>
+                          );
+                        })()}
+
+                      {/* Live Scanned Radar Dots */}
+                      {hud.radarDots.map((dot) => {
+                        const { leftPct, topPct } = worldCoordToRadarPercent(dot.x, dot.z);
+                        if (dot.kind === 'supply_drop') {
+                          return (
+                            <span
+                              key={dot.id}
+                              data-radar-dot="supply-drop-beacon"
+                              style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center z-30 pointer-events-none"
+                            >
+                              <span className="absolute inset-0 rounded-full border border-[#facc15]/80" />
+                              <span className="relative w-3 h-3 rounded-full bg-[#facc15] border-2 border-[#1a1a1a] shadow-[0_0_8px_#facc15]" />
+                            </span>
+                          );
+                        }
+                        if (dot.kind === 'tank_red') {
+                          return (
+                            <span
+                              key={dot.id}
+                              data-radar-dot="enemy-heavy-vehicle"
+                              style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center z-30 pointer-events-none"
+                            >
+                              <span className="absolute inset-0 rounded-full border border-[#ff1e27]/80" />
+                              <span className="relative w-3.5 h-3.5 rounded-full bg-[#ff1e27] border-2 border-[#ffe066] shadow-[0_0_8px_#ff1e27]" />
+                            </span>
+                          );
+                        }
+                        if (dot.kind === 'enemy') {
+                          return (
+                            <span
+                              key={dot.id}
+                              data-radar-dot="enemy-infantry"
+                              style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff3b30] ring-1 ring-[#ff9aa8] shadow-[0_0_6px_#ff3b30] z-20 pointer-events-none"
+                            />
+                          );
+                        }
+                        if (dot.kind === 'barrel') {
+                          return (
+                            <span
+                              key={dot.id}
+                              data-radar-dot="barrel"
+                              style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-[#ff6d00] border border-[#ffab40] shadow-[0_0_4px_#ff6d00] z-10 pointer-events-none"
+                            />
+                          );
+                        }
+                        if (dot.kind === 'pickup') {
+                          return (
+                            <span
+                              key={dot.id}
+                              data-radar-dot="pickup"
+                              style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#00e5ff] ring-1 ring-white shadow-[0_0_4px_#00e5ff] z-10 pointer-events-none"
+                            />
+                          );
+                        }
+                        if (
+                          dot.kind === 'crate_red' ||
+                          dot.kind === 'crate_super' ||
+                          dot.kind === 'crate_legend'
+                        ) {
+                          const crateBg =
+                            dot.kind === 'crate_legend'
+                              ? 'bg-[#d500f9] border-[#ea80fc]'
+                              : dot.kind === 'crate_super'
+                                ? 'bg-[#ffd600] border-white'
+                                : 'bg-[#ff9100] border-[#ffe082]';
+                          return (
+                            <span
+                              key={dot.id}
+                              data-radar-dot={dot.kind}
+                              style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                              className={`absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-[2px] border ${crateBg} shadow-[0_0_4px_rgba(0,0,0,0.5)] z-10 pointer-events-none`}
+                            />
+                          );
+                        }
+                        let dotStyle = 'w-2.5 h-2.5 bg-[#2979ff] rounded-full border border-white z-10';
+                        if (dot.kind === 'player') {
+                          dotStyle =
+                            'w-3 h-3 bg-[#b8ff3c] rounded-full ring-2 ring-[#1a1a1a] shadow-[0_0_6px_#b8ff3c] z-20';
+                        } else if (dot.kind === 'tank_blue') {
+                          dotStyle =
+                            'w-3 h-2.5 bg-[#00d2ff] border border-white rounded-xs shadow-[0_0_5px_#00d2ff] z-10';
+                        }
                         return (
                           <span
-                            key={`city-station-${dest.id}`}
-                            data-radar-city-station={dest.id}
-                            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
-                            className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0284c7] border border-[#1a1a1a] pointer-events-none"
+                            key={dot.id}
+                            style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                            className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none ${dotStyle}`}
                           />
                         );
                       })}
-                      {[
-                        {
-                          id: 'hana',
-                          label: 'HANA',
-                          x: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
-                          z: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
-                          cls: 'bg-[#b8ff3c]',
-                          side: 'right',
-                        },
-                        { id: 'cafe', label: 'CAFE', x: -88.3, z: 22.35, cls: 'bg-[#fb923c]', side: 'right' },
-                        { id: 'kai', label: 'KAI', x: 85.8, z: 60.0, cls: 'bg-[#facc15]', side: 'left' },
-                        { id: 'park', label: 'PARK', x: 101.0, z: -61.0, cls: 'bg-[#c084fc]', side: 'left' },
-                      ].map((poi) => {
-                        const pos = worldCoordToRadarPercent(poi.x, poi.z);
-                        return (
-                          <span
-                            key={`city-poi-${poi.id}`}
-                            data-radar-city-poi={poi.id}
-                            style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%` }}
-                            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20"
-                          >
-                            <span className={`block w-2 h-2 rounded-full border border-[#1a1a1a] ${poi.cls}`} />
-                            <span
-                              className={`absolute top-1/2 -translate-y-1/2 text-[7px] font-black tracking-wide text-[#1a1a1a] [text-shadow:0_1px_2px_#fff,0_0_3px_#fff] ${
-                                poi.side === 'left' ? 'right-[7px]' : 'left-[7px]'
-                              }`}
-                            >
-                              {poi.label}
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </>
-                  )}
+                    </button>
 
-                  {/* Always-On 100% Bright Minimap Radar (No Fog-of-War Mask) */}
-
-                  {/* Live Scanned Radar Dots (No Crates! Differentiated Small Pedestrian vs Large Heavy Vehicle Blinking Red Dots) */}
-                  {hud.radarDots.map((dot) => {
-                    const { leftPct, topPct } = worldCoordToRadarPercent(dot.x, dot.z);
-  if (dot.kind === 'supply_drop') {
-                      // Supply Drop Beacon Signal (Central Oasis / Harbor Dock)
-                      return (
-                        <span
-                          key={dot.id}
-                          data-radar-dot="supply-drop-beacon"
-                          style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center z-30 pointer-events-none"
-                        >
-                          <span className="absolute inset-0 rounded-full border border-[#facc15]/80" />
-                          <span className="relative w-3 h-3 rounded-full bg-[#facc15] border-2 border-[#1a1a1a] shadow-[0_0_8px_#facc15]" />
+                    {/* Live Walking Distance + Cancel Pill */}
+                    {showWalkOverlay && activeWalk && (
+                      <div
+                        data-click-to-walk-pill="true"
+                        className="pointer-events-auto flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#14161d]/95 text-white border-2 border-[#b8ff3c] shadow-[3px_3px_0_#14161d] text-[10px] font-bold max-w-[210px]"
+                      >
+                        <Navigation className="w-3 h-3 text-[#b8ff3c] shrink-0" />
+                        <span className="font-mono-tabular truncate">
+                          {activeWalk.isOnScooter ? 'Scooter' : 'Walking'}{' '}
+                          {activeWalk.remainingDistanceM}m
+                          {activeWalk.targetLabel ? ` · ${activeWalk.targetLabel}` : ''}
                         </span>
-                      );
-                    }
-                    if (dot.kind === 'tank_red') {
-                      // Enemy Heavy Vehicle (Tank, Heavy Truck, Aircraft): LARGE PROMINENT RED CIRCLE DOT
-                      return (
-                        <span
-                          key={dot.id}
-                          data-radar-dot="enemy-heavy-vehicle"
-                          style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center z-30 pointer-events-none"
+                        <span className="text-white/40">·</span>
+                        <button
+                          type="button"
+                          onClick={handleCancelClickToWalk}
+                          className="px-1.5 py-0.5 rounded bg-[#ff3b30] hover:bg-[#ef4444] text-white font-black tracking-wide text-[9px] uppercase cursor-pointer shrink-0"
                         >
-                          <span className="absolute inset-0 rounded-full border border-[#ff1e27]/80" />
-                          <span className="relative w-3.5 h-3.5 rounded-full bg-[#ff1e27] border-2 border-[#ffe066] shadow-[0_0_8px_#ff1e27]" />
-                        </span>
-                      );
-                    }
-                    if (dot.kind === 'enemy') {
-                      // Enemy Infantry / Pedestrian Attacker: SMALL RED DOT
-                      return (
-                        <span
-                          key={dot.id}
-                          data-radar-dot="enemy-infantry"
-                          style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff3b30] ring-1 ring-[#ff9aa8] shadow-[0_0_6px_#ff3b30] z-20 pointer-events-none"
-                        />
-                      );
-                    }
-                    if (dot.kind === 'barrel') {
-                      // Explosive Barrel: Small orange diamond
-                      return (
-                        <span
-                          key={dot.id}
-                          data-radar-dot="barrel"
-                          style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-[#ff6d00] border border-[#ffab40] shadow-[0_0_4px_#ff6d00] z-10 pointer-events-none"
-                        />
-                      );
-                    }
-                    if (dot.kind === 'pickup') {
-                      // Pickup drop (medkit, coin, ammo): Small bright cyan/yellow circle
-                      return (
-                        <span
-                          key={dot.id}
-                          data-radar-dot="pickup"
-                          style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#00e5ff] ring-1 ring-white shadow-[0_0_4px_#00e5ff] z-10 pointer-events-none"
-                        />
-                      );
-                    }
-                    if (dot.kind === 'crate_red' || dot.kind === 'crate_super' || dot.kind === 'crate_legend') {
-                      // Crate / Box dot
-                      const crateBg =
-                        dot.kind === 'crate_legend'
-                          ? 'bg-[#d500f9] border-[#ea80fc]'
-                          : dot.kind === 'crate_super'
-                            ? 'bg-[#ffd600] border-white'
-                            : 'bg-[#ff9100] border-[#ffe082]';
-                      return (
-                        <span
-                          key={dot.id}
-                          data-radar-dot={dot.kind}
-                          style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                          className={`absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-[2px] border ${crateBg} shadow-[0_0_4px_rgba(0,0,0,0.5)] z-10 pointer-events-none`}
-                        />
-                      );
-                    }
-                    let dotStyle = 'w-2.5 h-2.5 bg-[#2979ff] rounded-full border border-white z-10';
-                    if (dot.kind === 'player') {
-                      dotStyle =
-                        'w-3 h-3 bg-[#b8ff3c] rounded-full ring-2 ring-[#1a1a1a] shadow-[0_0_6px_#b8ff3c] z-20';
-                    } else if (dot.kind === 'tank_blue') {
-                      dotStyle =
-                        'w-3 h-2.5 bg-[#00d2ff] border border-white rounded-xs shadow-[0_0_5px_#00d2ff] z-10';
-                    }
-                    return (
-                      <span
-                        key={dot.id}
-                        style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                        className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none ${dotStyle}`}
-                      />
-                    );
-                  })}
-
-                </div>
-              );
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
             })()}
 
             {/* 3-Currency & Store Name Bar — Only Shown Inside Merchant Shop / Kiosk / Personal Wallet */}
@@ -8166,34 +8894,10 @@ export default function App() {
                         if (!rawFriend) return;
                         soundEngine.playPickup();
                         dispatchBuddyAction(`addSafezoneFriend:${rawFriend}`);
-                        const senderLabel = playerDisplayName || 'YOU';
-                        const senderAccount = hud.nearWalletId || playerUid || undefined;
-                        const inviteText = `Invited you to visit my Modern Japanese Wooden Pavilion Private House!`;
-                        const nowStr = new Date().toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        });
-                        setChatMessages((prev) => [
-                          ...prev,
-                          {
-                            id: `inv-${Date.now()}`,
-                            senderId: senderAccount,
-                            senderName: senderLabel,
-                            recipientId: rawFriend,
-                            recipientName: rawFriend,
-                            isSelf: true,
-                            text: inviteText,
-                            timestamp: nowStr,
-                            type: 'private',
-                          },
-                        ]);
-                        void insertSocialMessageToSupabase({
-                          sender_name: senderLabel,
-                          sender_near_account: senderAccount,
-                          recipient_name: rawFriend,
-                          message: inviteText,
-                          bubble_color: chatBubbleBgColor,
-                          room_id: 'house_interior',
+                        publishPlayerSocialMessage({
+                          text: 'Invited you to visit my Modern Japanese Wooden Pavilion Private House!',
+                          recipient: { id: rawFriend, name: rawFriend },
+                          roomId: 'house_interior',
                         });
                         setHouseInviteFriendInput('');
                         setHouseInviteFeedback(`Invitation sent to ${rawFriend}!`);
@@ -8219,16 +8923,10 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               soundEngine.playPickup();
-                              const senderLabel = playerDisplayName || 'YOU';
-                              const senderAccount = hud.nearWalletId || playerUid || undefined;
-                              const inviteText = `Come hang out inside my Private House!`;
-                              void insertSocialMessageToSupabase({
-                                sender_name: senderLabel,
-                                sender_near_account: senderAccount,
-                                recipient_name: friendId,
-                                message: inviteText,
-                                bubble_color: chatBubbleBgColor,
-                                room_id: 'house_interior',
+                              publishPlayerSocialMessage({
+                                text: 'Come hang out inside my Private House!',
+                                recipient: { id: friendId, name: friendId },
+                                roomId: 'house_interior',
                               });
                               setHouseInviteFeedback(`Invited ${friendId}!`);
                             }}
@@ -8516,19 +9214,38 @@ export default function App() {
               aria-label="Tactical Weapon & Character HUD"
               className="fixed bottom-3 right-3 z-30 pointer-events-auto flex flex-col items-end gap-2"
             >
-              <HudAudioVolumeControl
-                contextId="warzone"
-                popoverPlacement="top"
-                hideMusicButton
-                isMusicMuted={isMusicMuted}
-                isSfxMuted={isMuted}
-                musicVolumePct={musicVolumePct}
-                sfxVolumePct={audioVolumePct}
-                onToggleMusicMute={handleToggleMusic}
-                onToggleSfxMute={handleToggleAudio}
-                onChangeMusicVolumePct={handleChangeMusicVolumePct}
-                onChangeSfxVolumePct={handleChangeVolumePct}
-              />
+              <div className="flex items-center gap-2">
+                <HudWeatherAndTimeControl
+                  contextId="warzone"
+                  popoverPlacement="top"
+                  lightingPreset={lightingPreset}
+                  timeOfDayHours={timeOfDayHours}
+                  weatherCondition={weatherCondition}
+                  rainIntensityTier={rainIntensityTier}
+                  autoCycleEnabled={autoTimeCycle}
+                  cityLightsScale={cityLightsScale}
+                  onSelectTimePhase={handleSelectTimePhase}
+                  onCycleTimePhase={handleCycleLighting}
+                  onChangeTimeOfDayHours={handleChangeTimeOfDayHours}
+                  onSelectWeatherCondition={handleSelectWeatherCondition}
+                  onSelectRainIntensityTier={handleSelectRainIntensityTier}
+                  onToggleAutoCycle={handleToggleAutoTimeCycle}
+                  onChangeCityLightsScale={handleChangeCityLightsScale}
+                />
+                <HudAudioVolumeControl
+                  contextId="warzone"
+                  popoverPlacement="top"
+                  hideMusicButton
+                  isMusicMuted={isMusicMuted}
+                  isSfxMuted={isMuted}
+                  musicVolumePct={musicVolumePct}
+                  sfxVolumePct={audioVolumePct}
+                  onToggleMusicMute={handleToggleMusic}
+                  onToggleSfxMute={handleToggleAudio}
+                  onChangeMusicVolumePct={handleChangeMusicVolumePct}
+                  onChangeSfxVolumePct={handleChangeVolumePct}
+                />
+              </div>
               {/* Optional Nuclear Launcher targeting button */}
               {hud.hasDeployedNuclearLauncher && hud.nuclearStrikePhase === 'idle' && (
                 <div className="flex items-center gap-1.5">
@@ -8780,7 +9497,7 @@ export default function App() {
           {playMode !== 'editor' && (
             <div data-buddies-chat-bar="true" className="fixed bottom-3 left-4 z-30 w-[calc(100vw-2rem)] max-w-[540px] pointer-events-auto flex flex-col items-end">
               {/* Incoming Private Chat Notification Popup (Hidden during active NPC Dialogue) */}
-              {activeSpecialModal !== 'npc_merchant' && activePrivateNotificationToast && (
+              {!isAnyNpcChatBarMode && activePrivateNotificationToast && (
                 <button
                   type="button"
                   data-private-chat-toast="true"
@@ -8815,15 +9532,54 @@ export default function App() {
                 </button>
               )}
 
+              {!isAnyNpcChatBarMode && isEmotePickerOpen && (
+                <div
+                  data-social-emote-menu="true"
+                  className="mb-2 self-end flex items-center gap-1.5 bg-[#14161d]/95 border-3 border-black ring-2 ring-white shadow-[4px_4px_0_#000] px-2 py-1.5 rounded-lg"
+                >
+                  {SOCIAL_EMOTE_QUICK_LIST.map((emote) => (
+                    <button
+                      key={emote.id}
+                      type="button"
+                      data-social-emote-btn={emote.id}
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        dispatchBuddyAction(`playEmote:${emote.id}`);
+                        setIsEmotePickerOpen(false);
+                      }}
+                      className="-skew-x-6 px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95"
+                    >
+                      <span className="skew-x-6 inline-block">{emote.label}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    data-social-emote-stop="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      dispatchBuddyAction('clearEmote');
+                      setIsEmotePickerOpen(false);
+                    }}
+                    className="-skew-x-6 px-2 py-1 bg-slate-200 hover:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[10px] uppercase cursor-pointer active:scale-95"
+                  >
+                    <span className="skew-x-6 inline-block">STOP</span>
+                  </button>
+                </div>
+              )}
+
               <form
                 aria-label={
-                  activeSpecialModal === 'npc_merchant'
-                    ? 'NPC Merchant Chat Input'
+                  isAnyNpcChatBarMode
+                    ? 'NPC Dialogue Chat Input'
                     : 'Social Talk Chat Input'
                 }
                 data-social-talk-bar="true"
                 data-chat-route={
-                  activeSpecialModal === 'npc_merchant' ? 'npc_merchant' : 'social_world'
+                  activeSpecialModal === 'npc_merchant'
+                    ? 'npc_merchant'
+                    : isCitizenChatBarMode
+                      ? 'citizen_dialogue'
+                      : 'social_world'
                 }
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -8831,9 +9587,12 @@ export default function App() {
                   if (!trimmed) return;
                   const isNpcDomOpen =
                     typeof document !== 'undefined' &&
-                    document.querySelector(
+                    (document.querySelector(
                       '[data-npc-merchant-modal="true"][aria-hidden="false"]',
-                    ) !== null;
+                    ) !== null ||
+                      document.querySelector(
+                        '[data-citizen-chat-modal="true"][aria-hidden="false"]',
+                      ) !== null);
                   const target = resolveBottomChatSubmitTarget({
                     activeSpecialModal:
                       activeSpecialModal === 'npc_merchant' ||
@@ -8842,84 +9601,56 @@ export default function App() {
                         : activeSpecialModal,
                     isSocialChatModalOpen,
                     hasSelectedPrivateUser: Boolean(selectedPrivateUser),
-                    hasDomNpcDialogOpen: isNpcDomOpen,
+                    hasDomNpcDialogOpen: isNpcDomOpen || isCitizenChatBarMode,
                   });
 
                   if (target === 'npc_merchant') {
-                    // Strictly route ONLY to Hana/Kai dialogue; never publish to world chat or speech bubbles.
+                    // Strictly route ONLY to active NPC dialogue; never publish to world chat or speech bubbles.
                     window.dispatchEvent(
-                      new CustomEvent('npc-merchant-user-chat', {
-                        detail: { text: trimmed },
-                      }),
+                      new CustomEvent(
+                        isCitizenChatBarMode
+                          ? 'citizen-dialogue-user-chat'
+                          : 'npc-merchant-user-chat',
+                        { detail: { text: trimmed } },
+                      ),
                     );
                     setSocialChatText('');
                     return;
                   }
 
-                  const nowStr = new Date().toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
+                  const slashEmote = parseSocialEmoteCommand(trimmed);
+                  if (slashEmote) {
+                    soundEngine.playUiClick();
+                    dispatchBuddyAction(`playEmote:${slashEmote}`);
+                    setSocialChatText('');
+                    setIsEmotePickerOpen(false);
+                    return;
+                  }
 
-                  const senderLabel = playerDisplayName || 'YOU';
-                  const senderAccount = hud.nearWalletId || playerUid || undefined;
                   if (target === 'private_chat' && selectedPrivateUser) {
-                    const newPrivateMsg: ChatMessage = {
-                      id: `priv-${Date.now()}`,
-                      senderId: senderAccount,
-                      senderName: senderLabel,
-                      recipientName: selectedPrivateUser.name,
-                      recipientId: String(selectedPrivateUser.id),
-                      isSelf: true,
+                    publishPlayerSocialMessage({
                       text: trimmed,
-                      timestamp: nowStr,
-                      type: 'private',
-                    };
-                    setChatMessages((prev) => [...prev, newPrivateMsg]);
-                    void insertSocialMessageToSupabase({
-                      sender_name: senderLabel,
-                      sender_near_account: senderAccount,
-                      recipient_name: selectedPrivateUser.name,
-                      message: trimmed,
-                      bubble_color: chatBubbleBgColor,
-                      room_id: worldMode,
+                      recipient: selectedPrivateUser,
                     });
                   } else {
-                    const newMsg: ChatMessage = {
-                      id: `pub-${Date.now()}`,
-                      senderId: senderAccount,
-                      senderName: senderLabel,
-                      isSelf: true,
-                      text: trimmed,
-                      timestamp: nowStr,
-                      type: 'public',
-                    };
-                    setChatMessages((prev) => [...prev, newMsg]);
-                    dispatchBuddyAction(`socialTalk:${trimmed}`);
-                    void insertSocialMessageToSupabase({
-                      sender_name: senderLabel,
-                      sender_near_account: senderAccount,
-                      message: trimmed,
-                      bubble_color: chatBubbleBgColor,
-                      room_id: worldMode,
-                    });
+                    publishPlayerSocialMessage({ text: trimmed });
                   }
                   setSocialChatText('');
                 }}
                 className="w-full flex items-center gap-1.5 bg-[#14161d]/95 border-3 border-[#1a1a1a] ring-2 ring-white shadow-[4px_4px_0_#1a1a1a] px-2.5 py-1.5 rounded-lg"
               >
-                {activeSpecialModal === 'npc_merchant' && (
+                {isAnyNpcChatBarMode && (
                   <span
                     data-social-chat-mode="npc"
                     className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[10px] font-black uppercase shrink-0"
                   >
-                    {merchantLocation === 'lobby_cafe' ? 'HANA' : 'KAI'}
+                    {activeNpcChatBarLabel}
                   </span>
                 )}
                 <input
                   type="text"
                   data-social-chat-input="true"
-                  maxLength={activeSpecialModal === 'npc_merchant' ? 220 : 64}
+                  maxLength={isAnyNpcChatBarMode ? 220 : 64}
                   value={socialChatText}
                   onChange={(e) => setSocialChatText(e.target.value)}
                   onKeyDown={(e) => {
@@ -8929,11 +9660,13 @@ export default function App() {
                     }
                   }}
                   placeholder={
-                    activeSpecialModal === 'npc_merchant'
-                      ? `Ask ${merchantLocation === 'lobby_cafe' ? 'Hana' : 'Kai'} anything (or type buy / exchange)...`
+                    isAnyNpcChatBarMode
+                      ? activeSpecialModal === 'npc_merchant'
+                        ? `Ask ${activeNpcChatBarName} anything (or type buy / exchange)...`
+                        : `Chat with ${activeNpcChatBarName} (ask about gifts, tips, or district)...`
                       : isSocialChatModalOpen && selectedPrivateUser
                         ? `Whisper @${selectedPrivateUser.name}...`
-                        : 'Type a short message...'
+                        : 'Type message or /wave, /cheer, /dance...'
                   }
                   className="flex-1 min-w-0 px-2.5 py-1 bg-white text-[#14161d] font-bold text-xs rounded border-2 border-[#14161d] focus:outline-none focus:ring-2 focus:ring-[#10b981]"
                 />
@@ -8941,16 +9674,34 @@ export default function App() {
                   type="submit"
                   data-social-chat-send="true"
                   className={`-skew-x-12 px-3 py-1 font-black text-xs uppercase border-2 border-[#14161d] shadow-[2px_2px_0_#14161d] cursor-pointer active:scale-95 ${
-                    activeSpecialModal === 'npc_merchant'
+                    isAnyNpcChatBarMode
                       ? 'bg-[#facc15] hover:bg-[#fde047] text-black'
                       : 'bg-[#10b981] hover:bg-[#34d399] text-[#0f172a]'
                   }`}
                 >
                   <span className="skew-x-12 inline-block">
-                    {activeSpecialModal === 'npc_merchant' ? 'ASK' : 'SEND'}
+                    {isAnyNpcChatBarMode ? 'ASK' : 'SEND'}
                   </span>
                 </button>
-                {activeSpecialModal !== 'npc_merchant' && (
+                {!isAnyNpcChatBarMode && (
+                  <button
+                    type="button"
+                    data-social-emote-toggle="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsEmotePickerOpen((prev) => !prev);
+                    }}
+                    className={`-skew-x-12 px-2.5 py-1 font-black text-xs uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer active:scale-95 transition-colors ${
+                      isEmotePickerOpen
+                        ? 'bg-[#b8ff3c] text-black'
+                        : 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
+                    }`}
+                    title="Emotes (/wave, /cheer, /dance, /salute)"
+                  >
+                    <span className="skew-x-12 inline-block">EMOTE</span>
+                  </button>
+                )}
+                {!isAnyNpcChatBarMode && (
                   <button
                     type="button"
                     data-open-social-chat-btn="true"
@@ -8974,6 +9725,7 @@ export default function App() {
                         const next = !prev;
                         if (next) {
                           setIsKioskModalOpen(false);
+                          setIsCitizenDialogueOpen(false);
                           setActiveSpecialModal('none');
                           setActiveTeleportKioskModal('none');
                           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -9056,6 +9808,23 @@ export default function App() {
              ================================================================= */}
           {playMode !== 'editor' && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
             <div className="fixed bottom-16 sm:bottom-3 right-3 z-30 pointer-events-auto select-none flex items-center gap-2.5">
+              <HudWeatherAndTimeControl
+                contextId="city"
+                popoverPlacement="top"
+                lightingPreset={lightingPreset}
+                timeOfDayHours={timeOfDayHours}
+                weatherCondition={weatherCondition}
+                rainIntensityTier={rainIntensityTier}
+                autoCycleEnabled={autoTimeCycle}
+                cityLightsScale={cityLightsScale}
+                onSelectTimePhase={handleSelectTimePhase}
+                onCycleTimePhase={handleCycleLighting}
+                onChangeTimeOfDayHours={handleChangeTimeOfDayHours}
+                onSelectWeatherCondition={handleSelectWeatherCondition}
+                onSelectRainIntensityTier={handleSelectRainIntensityTier}
+                onToggleAutoCycle={handleToggleAutoTimeCycle}
+                onChangeCityLightsScale={handleChangeCityLightsScale}
+              />
               <HudQuickMountScooterControl
                 ownedScooterIds={ownedScooterIds}
                 equippedScooterKind={equippedScooterKind}
@@ -9066,6 +9835,7 @@ export default function App() {
                   !isInsidePrivateHouse &&
                   !isInsideGlasshouseCafe &&
                   !isInsideGrandCasino &&
+                  !isInsideBeautySalon &&
                   activeSpecialModal === 'none' &&
                   !hud.isRidingCityTram &&
                   hud.controlMode !== 'tank'
@@ -10065,54 +10835,11 @@ export default function App() {
           );
         }}
         onSendPublicChat={(text) => {
-          const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          const senderLabel = playerDisplayName || 'YOU';
-          const senderAccount = hud.nearWalletId || playerUid || undefined;
-          const newMsg: ChatMessage = {
-            id: `pub-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            senderId: senderAccount,
-            senderName: senderLabel,
-            isSelf: true,
-            text,
-            timestamp: nowStr,
-            type: 'public',
-          };
-          setChatMessages((prev) => [...prev, newMsg]);
-          dispatchBuddyAction(`socialTalk:${text}`);
-          void insertSocialMessageToSupabase({
-            sender_name: senderLabel,
-            sender_near_account: senderAccount,
-            message: text,
-            bubble_color: chatBubbleBgColor,
-            room_id: worldMode,
-          });
+          publishPlayerSocialMessage({ text });
         }}
         onSendPrivateChat={(recipient, text) => {
           if (recipient.isNpc) return;
-          const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          const senderLabel = playerDisplayName || 'YOU';
-          const senderAccount = hud.nearWalletId || playerUid || undefined;
-          const newMsg: ChatMessage = {
-            id: `priv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            senderId: senderAccount,
-            senderName: senderLabel,
-            recipientId: String(recipient.id),
-            recipientName: recipient.name,
-            isSelf: true,
-            text,
-            timestamp: nowStr,
-            type: 'private',
-          };
-          setChatMessages((prev) => [...prev, newMsg]);
-          dispatchBuddyAction(`socialTalk:[Whisper @${recipient.name}] ${text}`);
-          void insertSocialMessageToSupabase({
-            sender_name: senderLabel,
-            sender_near_account: senderAccount,
-            recipient_name: recipient.name,
-            message: text,
-            bubble_color: chatBubbleBgColor,
-            room_id: worldMode,
-          });
+          publishPlayerSocialMessage({ text, recipient });
         }}
       />
 
@@ -12145,6 +12872,7 @@ export default function App() {
           isPreloadComplete &&
           gameState === 'playing' &&
           !isFullMapOverview &&
+          !cityViewActive &&
           onboardingStep === 'completed' &&
           playMode !== 'editor'
         }
@@ -12158,6 +12886,7 @@ export default function App() {
           isFashionBoutiqueModalOpen ||
           isRealEstateCatalogModalOpen ||
           isGrandCasinoModalOpen ||
+          isCitizenDialogueOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
         }
@@ -12392,6 +13121,7 @@ export default function App() {
         const isDockBlockedByModal =
           gameState !== 'playing' ||
           playMode === 'editor' ||
+          cityViewActive ||
           onboardingStep !== 'completed' ||
           isKioskModalOpen ||
           isProfileModalOpen ||
@@ -12404,6 +13134,7 @@ export default function App() {
           isFashionBoutiqueModalOpen ||
           isRealEstateCatalogModalOpen ||
           isGrandCasinoModalOpen ||
+          isCitizenDialogueOpen ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none' ||
           activeCafeModal !== 'none' ||
@@ -12498,6 +13229,10 @@ export default function App() {
                   detail: { location },
                 }),
               );
+            }}
+            onTalkCitizen={(entity) => {
+              soundEngine.playUiClick();
+              openCitizenDialogueForId(String(entity.id));
             }}
             onWhisperEntity={(entity) => {
               soundEngine.playUiClick();
@@ -12631,6 +13366,9 @@ export default function App() {
           }
           if (isInsideGrandCasino) {
             dispatchBuddyAction('exitGrandCasino');
+          }
+          if (isInsideBeautySalon) {
+            dispatchBuddyAction('exitBeautySalon');
           }
           if (hud.worldMode === 'warzone') return;
           const def = DAILY_MISSIONS_CATALOG.find((m) => m.id === missionId);
@@ -12886,7 +13624,262 @@ export default function App() {
         onBuyPropertyListing={handleBuyPropertyListing}
         onCompletePropertyTransfer={handleCompletePropertyTransfer}
       />
+      <CitizenDialogueModal
+        isOpen={isCitizenDialogueOpen && hud.worldMode !== 'warzone'}
+        citizenId={activeCitizenId}
+        openSeq={citizenOpenSeq}
+        friendshipStore={citizenFriendshipStore}
+        caughtFishBucket={caughtFishBucket}
+        isRaining={weatherCondition === 'hujan'}
+        daytimePhase={
+          lightingPreset === 'night'
+            ? 'night'
+            : lightingPreset === 'dusk' || lightingPreset === 'dawn'
+              ? 'evening'
+              : 'day'
+        }
+        talkedBonusJustAwarded={citizenTalkedBonusJustAwarded}
+        playerBubbleBgColor={chatBubbleBgColor}
+        playerBubbleTextColor={chatBubbleTextColor}
+        onClose={() => setIsCitizenDialogueOpen(false)}
+        onGiveCatalogGift={(citizenId, giftId) => {
+          const giftRes = recordCitizenDailyGift(citizenFriendshipStoreRef.current, citizenId, {
+            kind: 'catalog',
+            giftId,
+          });
+          if (giftRes.accepted) {
+            soundEngine.playUiClick();
+            citizenFriendshipStoreRef.current = giftRes.store;
+            setCitizenFriendshipStore(giftRes.store);
+            saveCitizenFriendshipStore(giftRes.store);
+          }
+          return {
+            accepted: giftRes.accepted,
+            reactionLine: giftRes.reactionLine,
+            tier: giftRes.tier,
+            pointsAwarded: giftRes.pointsAwarded,
+          };
+        }}
+        onGiveFishGift={(citizenId, fish) => {
+          const giftRes = recordCitizenDailyGift(citizenFriendshipStoreRef.current, citizenId, {
+            kind: 'fish',
+            fish,
+          });
+          if (giftRes.accepted) {
+            soundEngine.playUiClick();
+            citizenFriendshipStoreRef.current = giftRes.store;
+            setCitizenFriendshipStore(giftRes.store);
+            saveCitizenFriendshipStore(giftRes.store);
+            setCaughtFishBucket((prev) => prev.filter((item) => item.id !== fish.id));
+          }
+          return {
+            accepted: giftRes.accepted,
+            reactionLine: giftRes.reactionLine,
+            tier: giftRes.tier,
+            pointsAwarded: giftRes.pointsAwarded,
+          };
+        }}
+        onVisitDirectoryCitizen={(profile: CitizenProfile) => {
+          soundEngine.playUiClick();
+          setIsCitizenDialogueOpen(false);
+          setActiveTeleportKioskModal(profile.stationId);
+        }}
+      />
       <XpGainCelebrationBanner banner={xpCelebrationBanner} />
+
+      {/* =====================================================================
+          14. CITY VIEW SIGHTSEEING OVERLAY (Minimap-Triggered Aerial & District Focus)
+         ===================================================================== */}
+      {isPreloadComplete &&
+        gameState === 'playing' &&
+        onboardingStep === 'completed' &&
+        cityViewActive && (
+          <div
+            data-city-view-hud="true"
+            className="fixed inset-0 z-[60] pointer-events-none select-none overflow-hidden"
+          >
+            {/* Floating 3D-Projected Active Place Label + Neighbor Switch Pills */}
+            {cityViewAnchors.active && (
+              <div
+                style={{
+                  left: `${cityViewAnchors.active.leftPct}%`,
+                  top: `${cityViewAnchors.active.topPct}%`,
+                }}
+                className="pointer-events-auto absolute -translate-x-1/2 -translate-y-full -mt-2 px-3.5 py-2 rounded-2xl bg-white/95 text-[#0f131c] shadow-[0_10px_28px_rgba(0,0,0,0.35)] border border-black/10 text-center flex flex-col items-center gap-1"
+              >
+                <div className="text-xs font-black tracking-wide leading-tight">
+                  {cityViewAnchors.active.label}
+                </div>
+                <div className="text-[10px] font-semibold text-slate-600 leading-tight">
+                  {cityViewAnchors.active.subtitle}
+                </div>
+                <button
+                  type="button"
+                  data-city-view-walk-here="true"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                    const dSpec = CITY_VIEW_DISTRICTS.find(
+                      (d) => d.id === cityViewAnchors.active?.id,
+                    );
+                    if (!dSpec) return;
+                    soundEngine.playUiConfirm();
+                    window.dispatchEvent(
+                      new CustomEvent('click-to-walk-navigate', {
+                        detail: {
+                          x: dSpec.lookAtPos.x,
+                          z: dSpec.lookAtPos.z,
+                          rawX: dSpec.lookAtPos.x,
+                          rawZ: dSpec.lookAtPos.z,
+                          label: dSpec.label,
+                          source: 'minimap',
+                        },
+                      }),
+                    );
+                    exitCityViewMode();
+                  }}
+                  className="mt-0.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#b8ff3c] hover:bg-[#a3e635] text-[#0f131c] border border-[#14161d] text-[10px] font-black tracking-wide shadow-xs cursor-pointer transition-transform active:scale-95"
+                >
+                  <Navigation className="w-2.5 h-2.5" />
+                  <span>Jalan ke sini</span>
+                </button>
+              </div>
+            )}
+
+            {cityViewAnchors.neighbors.map((nb) => (
+              <button
+                key={`city-view-nb-${nb.id}`}
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  selectCityViewTarget(nb.id);
+                }}
+                style={{
+                  left: `${nb.leftPct}%`,
+                  top: `${nb.topPct}%`,
+                }}
+                className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-[#0f131c]/72 hover:bg-[#0f131c]/90 text-white border border-white/25 backdrop-blur-md shadow-[0_8px_22px_rgba(0,0,0,0.32)] text-left cursor-pointer transition-all hover:scale-105 active:scale-95"
+              >
+                <div className="text-[11px] font-bold leading-tight">{nb.label}</div>
+                <div className="text-[9.5px] text-white/75 leading-tight">{nb.subtitle}</div>
+              </button>
+            ))}
+
+            {/* Top-Left District & Kota Overview Pills */}
+            <div className="pointer-events-auto fixed top-3 left-3 sm:top-4 sm:left-4 max-w-[calc(100vw-11rem)] sm:max-w-[540px] flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-2xl bg-[#0f131c]/75 border border-white/15 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
+                <button
+                  type="button"
+                  data-city-view-pill="kota"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    selectCityViewTarget('kota');
+                  }}
+                  className={`px-3 py-1 rounded-full text-[11px] font-bold tracking-wide cursor-pointer transition-all ${
+                    cityViewTarget === 'kota'
+                      ? 'bg-white text-[#0f131c] shadow-sm'
+                      : 'bg-white/10 text-white/85 hover:bg-white/20'
+                  }`}
+                >
+                  Kota
+                </button>
+                {CITY_VIEW_DISTRICTS.map((dist) => {
+                  const isActive = cityViewTarget === dist.id;
+                  return (
+                    <button
+                      key={dist.id}
+                      type="button"
+                      data-city-view-pill={dist.id}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        selectCityViewTarget(dist.id);
+                      }}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold tracking-wide cursor-pointer transition-all ${
+                        isActive
+                          ? 'bg-white text-[#0f131c] shadow-sm'
+                          : 'bg-white/10 text-white/85 hover:bg-white/20'
+                      }`}
+                    >
+                      {dist.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Top-Right Prev / Index / Next + Exit Button */}
+            <div className="pointer-events-auto fixed top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#0f131c]/75 border border-white/15 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.35)] text-white">
+                <button
+                  type="button"
+                  data-city-view-prev="true"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, -1));
+                  }}
+                  className="px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-white/15 cursor-pointer"
+                >
+                  &larr; Prev
+                </button>
+                <span className="px-1.5 text-[11px] font-mono font-bold text-white/80">
+                  {cityViewTarget === 'kota'
+                    ? 'Kota'
+                    : `${
+                        CITY_VIEW_DISTRICTS.findIndex((d) => d.id === cityViewTarget) + 1
+                      } / ${CITY_VIEW_DISTRICTS.length}`}
+                </span>
+                <button
+                  type="button"
+                  data-city-view-next="true"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, 1));
+                  }}
+                  className="px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-white/15 cursor-pointer"
+                >
+                  Next &rarr;
+                </button>
+              </div>
+              <button
+                type="button"
+                data-city-view-exit="true"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  exitCityViewMode();
+                }}
+                className="px-3.5 py-2 rounded-full bg-white text-[#0f131c] hover:bg-slate-100 text-[11px] font-black tracking-wide shadow-[0_10px_28px_rgba(0,0,0,0.35)] cursor-pointer transition-transform active:scale-95"
+              >
+                &times; Kembali
+              </button>
+            </div>
+
+            {/* Bottom-Center Click-to-Walk Hint inside 3D Aerial City View */}
+            <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0f131c]/78 text-white/90 border border-white/20 backdrop-blur-md shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[11px] font-semibold tracking-wide whitespace-nowrap">
+              Klik lokasi mana saja di peta 3D untuk berjalan ke sana · Drag untuk geser kamera
+            </div>
+
+            {/* Bottom-Right Weather & Time Pill inside City View */}
+            <div className="pointer-events-auto fixed bottom-3 right-3">
+              <HudWeatherAndTimeControl
+                contextId="city_view"
+                popoverPlacement="top"
+                lightingPreset={lightingPreset}
+                timeOfDayHours={timeOfDayHours}
+                weatherCondition={weatherCondition}
+                rainIntensityTier={rainIntensityTier}
+                autoCycleEnabled={autoTimeCycle}
+                cityLightsScale={cityLightsScale}
+                onSelectTimePhase={handleSelectTimePhase}
+                onCycleTimePhase={handleCycleLighting}
+                onChangeTimeOfDayHours={handleChangeTimeOfDayHours}
+                onSelectWeatherCondition={handleSelectWeatherCondition}
+                onSelectRainIntensityTier={handleSelectRainIntensityTier}
+                onToggleAutoCycle={handleToggleAutoTimeCycle}
+                onChangeCityLightsScale={handleChangeCityLightsScale}
+              />
+            </div>
+          </div>
+        )}
     </main>
   );
 }

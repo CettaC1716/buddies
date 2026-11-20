@@ -2343,27 +2343,35 @@ export function buildCashierCageBooth(
   const D = 2.25;
   const frontZ = D * 0.5 - 0.18;
 
-  // 1. Interior Floor & Stepped Lower Mahogany Enclosure Sides/Back (0..1.05m solid base + open upper side security grilles matching 3/4 isometric!)
-  addPart(g, styler, new RoundedBoxGeometry(W, 0.04, D, 2, 0.015), '#3a2216', 0, 0.02, 0, 0.003);
-  addPart(g, styler, new RoundedBoxGeometry(W + 0.04, H, 0.14, 2, 0.02), '#4d2312', 0, H * 0.5, -D * 0.5, 0.005, {
+  // 1. Interior Floor & Stepped Lower Mahogany Enclosure Sides/Back (0..1.05m solid base + open upper side security grilles)
+  const boothFloorZMin = -D * 0.5 + 0.07;
+  const boothFloorZMax = frontZ - 0.24;
+  addPart(g, styler, new RoundedBoxGeometry(W - 0.16, 0.04, boothFloorZMax - boothFloorZMin, 2, 0.015), '#3a2216', 0, 0.02, (boothFloorZMin + boothFloorZMax) * 0.5, 0.003);
+  addPart(g, styler, new RoundedBoxGeometry(W + 0.16, H, 0.14, 2, 0.02), '#4d2312', 0, H * 0.5, -D * 0.5, 0.005, {
     tex: tex.mahoganyWood,
     roughness: 0.42,
   });
-  // Left & Right Side Lower Mahogany Wainscots + Secure Side Door Pilasters (screen_ba437caf.png isometric view!)
+  const sideWainscotZMin = -D * 0.5 + 0.07;
+  const sideWainscotZMax = frontZ - 0.24;
+  const sideWainscotLen = sideWainscotZMax - sideWainscotZMin;
+  const sideWainscotMidZ = (sideWainscotZMin + sideWainscotZMax) * 0.5;
+  const sideSillZMax = D * 0.5 - 0.47;
+  const sideSillZMin = -D * 0.5 + 0.07;
+  // Left & Right Side Lower Mahogany Wainscots + Secure Side Door Pilasters
   for (const side of [-1, 1]) {
     const sx = side * (W * 0.5);
-    addPart(g, styler, new RoundedBoxGeometry(0.16, 1.05, D, 3, 0.02), '#4d2312', sx, 0.525, 0, 0.004, {
+    addPart(g, styler, new RoundedBoxGeometry(0.16, 1.04, sideWainscotLen, 3, 0.02), '#4d2312', sx, 0.52, sideWainscotMidZ, 0.004, {
       tex: tex.mahoganyWood,
       roughness: 0.42,
     });
-    // Side Carrara Marble Sill Ledge
-    addPart(g, styler, new RoundedBoxGeometry(0.28, 0.08, D + 0.06, 3, 0.02), '#f4f0e8', sx, 1.08, 0, 0.003, {
+    // Side Carrara Marble Sill Ledge abutting front marble ledge cleanly
+    addPart(g, styler, new RoundedBoxGeometry(0.28, 0.08, sideSillZMax - sideSillZMin, 3, 0.02), '#f4f0e8', sx, 1.08, (sideSillZMin + sideSillZMax) * 0.5, 0.003, {
       tex: tex.carraraMarble,
       roughness: 0.22,
       clearcoat: 0.48,
     });
     // Side Upper Corner Posts & Gilded Filigree Transom + Brass Security Bars
-    addPart(g, styler, new RoundedBoxGeometry(0.18, 1.48, 0.18, 3, 0.02), '#522512', sx, 1.85, -D * 0.5 + 0.08, 0.003, {
+    addPart(g, styler, new RoundedBoxGeometry(0.18, 1.48, 0.18, 3, 0.02), '#522512', sx, 1.85, -D * 0.5 + 0.16, 0.003, {
       tex: tex.mahoganyWood,
     });
     addPart(g, styler, new RoundedBoxGeometry(0.16, 0.24, D - 0.16, 2, 0.015), '#b5892e', sx, 2.38, 0, 0.002, {
@@ -2390,7 +2398,7 @@ export function buildCashierCageBooth(
 
   // 2. Heavy Front Mahogany Lower Paneled Counter w/ Stepped Base Plinth & Raised Beveled Panels
   addPart(g, styler, new RoundedBoxGeometry(W + 0.14, 0.14, 0.56, 3, 0.02), '#3e1a0d', 0, 0.07, frontZ, 0.004);
-  addPart(g, styler, new RoundedBoxGeometry(W + 0.08, 0.96, 0.48, 3, 0.022), '#4d2312', 0, 0.57, frontZ, 0.005, {
+  addPart(g, styler, new RoundedBoxGeometry(W + 0.08, 0.91, 0.48, 3, 0.022), '#4d2312', 0, 0.595, frontZ, 0.005, {
     tex: tex.mahoganyWood,
     roughness: 0.42,
   });
@@ -2550,10 +2558,18 @@ export function buildCashierCageBooth(
   );
   const tellerStoolSeatGeo = new THREE.CylinderGeometry(0.18, 0.17, 0.08, 18);
   const tellerStoolBackGeo = makeCurvedStoolBackrestGeo(0.32, 0.24, 0.05, 0.038);
+  const tellerSpineCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.42, 0.0),
+    new THREE.Vector3(0, 0.425, -0.14),
+    new THREE.Vector3(0, 0.50, -0.172),
+    new THREE.Vector3(0, 0.68, -0.172),
+  ]);
+  const tellerStoolSpineGeo = new THREE.TubeGeometry(tellerSpineCurve, 14, 0.014, 8, false);
   for (const tx of [-0.96, 0.96]) {
     const stoolG = new THREE.Group();
     stoolG.position.set(tx, 0.04, 0.12);
     addPart(stoolG, styler, tellerStoolBaseGeo, '#cbd5e1', 0, 0, 0, 0.002, { metalness: 0.8 });
+    addPart(stoolG, styler, tellerStoolSpineGeo, '#cbd5e1', 0, 0, 0, 0.002, { metalness: 0.8 });
     addPart(stoolG, styler, tellerStoolSeatGeo, '#29262f', 0, 0.47, 0, 0.003, {
       tex: tex.leatherTufted,
       roughness: 0.55,
@@ -2668,7 +2684,7 @@ export function buildLuxuryBarCounterAssembly(
 
   // 3 Arched Alcove Bays (Center Wide Arch + Twin Side Arches, matching screen_453c839d.png)
   const centerBayArchFrame = makeArchedRibbonExtrudeGeo(1.74, 0.62, 1.24, 0.14, 0.16, 0.014);
-  const sideBayArchFrame = makeArchedRibbonExtrudeGeo(0.98, 0.42, 1.38, 0.11, 0.16, 0.012);
+  const sideBayArchFrame = makeArchedRibbonExtrudeGeo(0.98, 0.42, 1.38, 0.11, 0.16, 0.014);
   const centerGlowArch = makeHalfArchGeo(1.52, 0.54, 1.22, 20);
   const sideGlowArch = makeHalfArchGeo(0.80, 0.36, 1.34, 16);
 
@@ -2683,7 +2699,7 @@ export function buildLuxuryBarCounterAssembly(
       isCenter ? centerGlowArch : sideGlowArch,
       '#ffe8b3',
       bx,
-      0.92,
+      isCenter ? 0.92 : 0.926,
       -0.98,
       0,
       { emissiveHex: '#fbbf24', emissiveIntensity: 0.65, roughness: 0.28 },
@@ -2694,7 +2710,7 @@ export function buildLuxuryBarCounterAssembly(
       isCenter ? centerBayArchFrame : sideBayArchFrame,
       '#5c2a14',
       bx,
-      0.92,
+      isCenter ? 0.92 : 0.926,
       -0.96,
       0.003,
       { tex: tex.mahoganyWood },
@@ -3058,7 +3074,7 @@ export function createSlotMachineGeoPack(): SlotMachineGeoPack {
     4,
     14,
   );
-  const waistCollarGeo = new RoundedBoxGeometry(0.608, 0.036, 0.465, 4, 0.014);
+  const waistCollarGeo = new RoundedBoxGeometry(0.588, 0.036, 0.444, 4, 0.014);
   const baseFrontRecessGeo = new RoundedBoxGeometry(0.45, 0.27, 0.024, 3, 0.008);
   const baseTrimStripGeo = new RoundedBoxGeometry(0.49, 0.018, 0.022, 3, 0.006);
 
@@ -3086,7 +3102,7 @@ export function createSlotMachineGeoPack(): SlotMachineGeoPack {
   };
 
   const sideCheekGeo = makeSmoothRoundedSideExtrude((s) => drawSlopingCabinetProfile(s, 0), 0.056, 0.011, 4, 16);
-  const coreCabinetGeo = makeSmoothRoundedSideExtrude((s) => drawSlopingCabinetProfile(s, -0.014), 0.492, 0.008, 3, 14);
+  const coreCabinetGeo = makeSmoothRoundedSideExtrude((s) => drawSlopingCabinetProfile(s, -0.014), 0.506, 0.008, 3, 14);
 
   // Continuous neon purple trim tube hugging front cheek contour
   const cheekNeonCurve = new THREE.CatmullRomCurve3([
@@ -3406,7 +3422,7 @@ export function buildElectronicSlotMachineAndStool(
     roughness: 0.56,
     metalness: 0.28,
   });
-  addPart(g, styler, geo.waistCollarGeo, '#202129', 0, 0.452, -0.002, 0.003, {
+  addPart(g, styler, geo.waistCollarGeo, '#202129', 0, 0.452, 0.006, 0.003, {
     roughness: 0.46,
     metalness: 0.34,
   });
@@ -3426,23 +3442,23 @@ export function buildElectronicSlotMachineAndStool(
     clearcoat: 0.25,
   });
   for (const side of [-1, 1]) {
-    addPart(g, styler, geo.sideCheekGeo, cabinetTheme.sideCheekHex, side * 0.270, 0, 0, 0.004, {
+    addPart(g, styler, geo.sideCheekGeo, cabinetTheme.sideCheekHex, side * 0.278, 0, 0, 0.004, {
       roughness: 0.42,
       metalness: 0.28,
       clearcoat: 0.3,
     });
     // Glowing Bank-Colored Neon Cheek Frame
-    addPart(g, styler, geo.cheekNeonTrimGeo, cabinetTheme.neonTrimHex, side * 0.255, 0, 0, 0, {
+    addPart(g, styler, geo.cheekNeonTrimGeo, cabinetTheme.neonTrimHex, side * 0.263, 0, 0, 0, {
       emissiveHex: cabinetTheme.neonEmissiveHex,
       emissiveIntensity: 0.68,
       roughness: 0.2,
     });
     // Gold Filigree Side Molding Rail & Rosette Medallion
-    addPart(g, styler, geo.cheekGoldTrimGeo, '#d4af37', side * 0.296, 0, 0, 0, {
+    addPart(g, styler, geo.cheekGoldTrimGeo, '#d4af37', side * 0.304, 0, 0, 0, {
       metalness: 0.86,
       roughness: 0.22,
     });
-    const rosette = addPart(g, styler, geo.rosetteDiscGeo, '#d4af37', side * 0.296, 0.78, 0.04, 0.002, {
+    const rosette = addPart(g, styler, geo.rosetteDiscGeo, '#d4af37', side * 0.304, 0.78, 0.04, 0.002, {
       metalness: 0.88,
       roughness: 0.20,
     });
@@ -3758,7 +3774,7 @@ export function buildBlackjackBaccaratTable(
   addPart(g, styler, new THREE.CylinderGeometry(0.018, 0.018, 0.04, 12), '#d4af37', -0.22, 0.63, -0.355, 0, {
     metalness: 0.88,
   }).rotation.x = Math.PI * 0.5;
-  addPart(g, styler, new RoundedBoxGeometry(0.16, 0.09, 0.05, 2, 0.012), '#d4af37', 0.36, 0.62, -0.34, 0.001, {
+  addPart(g, styler, new RoundedBoxGeometry(0.16, 0.09, 0.05, 2, 0.012), '#d4af37', 0.36, 0.62, -0.312, 0.001, {
     metalness: 0.86,
     roughness: 0.22,
   });
@@ -3799,7 +3815,7 @@ export function buildBlackjackBaccaratTable(
   for (const sideAng of [-0.62, 0.62]) {
     const bx = Math.sin(sideAng) * 1.18;
     const bz = -0.24 + Math.cos(sideAng) * 1.18;
-    const rail = addPart(g, styler, new THREE.CylinderGeometry(0.012, 0.012, 0.24, 10), '#d4af37', bx, 0.822, bz, 0, {
+    const rail = addPart(g, styler, new THREE.CylinderGeometry(0.012, 0.012, 0.24, 10), '#d4af37', bx, 0.814, bz, 0, {
       metalness: 0.88,
       roughness: 0.2,
     });
@@ -3811,9 +3827,9 @@ export function buildBlackjackBaccaratTable(
   // 3. Recessed Mahogany Dealer Chip Rack Tray, Angled Dealing Card Shoe, Discard Rack & Chip Stacks
   addPart(g, styler, new RoundedBoxGeometry(0.72, 0.036, 0.20, 3, 0.012), '#3f2012', 0, 0.785, -0.18, 0.002);
   const chipCols = ['#dc2626', '#2563eb', '#16a34a', '#18181b', '#eab308', '#a855f7'];
-  const chipStackGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.048, 12);
+  const chipStackGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.042, 12);
   for (let c = 0; c < chipCols.length; c++) {
-    addPart(g, styler, chipStackGeo, chipCols[c], -0.25 + c * 0.10, 0.806, -0.18, 0);
+    addPart(g, styler, chipStackGeo, chipCols[c], -0.25 + c * 0.10, 0.802, -0.18, 0);
   }
   // Angled Card Shoe on Left/Right & Transparent Discard Rack
   const shoe = addPart(g, styler, new RoundedBoxGeometry(0.13, 0.095, 0.23, 3, 0.016), '#1f2937', 0.74, 0.815, -0.14, 0.002, {
@@ -4024,7 +4040,7 @@ export function buildLuxuryRouletteTable(
     ],
     32,
   );
-  addPart(g, styler, wheelBowlGeo, '#4d2312', 0.86, 0.835, 0, 0.004, {
+  addPart(g, styler, wheelBowlGeo, '#4d2312', 0.86, 0.842, 0, 0.004, {
     tex: tex.mahoganyWood,
     roughness: 0.34,
     clearcoat: 0.45,
@@ -4039,7 +4055,7 @@ export function buildLuxuryRouletteTable(
       deflectorGeo,
       '#e7c667',
       0.86 + Math.cos(a) * 0.41,
-      0.975,
+      0.982,
       Math.sin(a) * 0.41,
       0,
       { metalness: 0.9, roughness: 0.18 },
@@ -4049,7 +4065,7 @@ export function buildLuxuryRouletteTable(
 
   // 4. Spinning Rotor (37-Pocket Wheel Disc + Turned Brass Turret Spindle + Cross Handles + Ivory Ball)
   const wheelRotor = new THREE.Group();
-  wheelRotor.position.set(0.86, 0.95, 0);
+  wheelRotor.position.set(0.86, 0.957, 0);
   addPart(wheelRotor, styler, new THREE.CylinderGeometry(0.385, 0.385, 0.028, 32), '#ffffff', 0, 0, 0, 0, {
     tex: tex.rouletteWheelDisc,
     roughness: 0.22,
@@ -4078,10 +4094,10 @@ export function buildLuxuryRouletteTable(
   const turretKnobGeo = new THREE.SphereGeometry(0.020, 10, 8);
   addPart(wheelRotor, styler, turretHandleGeo, '#e7c667', 0, 0.155, 0, 0, { metalness: 0.88 }).rotation.z =
     Math.PI * 0.5;
-  addPart(wheelRotor, styler, turretHandleGeo, '#e7c667', 0, 0.155, 0, 0, { metalness: 0.88 }).rotation.x =
+  addPart(wheelRotor, styler, turretHandleGeo, '#e7c667', 0, 0.162, 0, 0, { metalness: 0.88 }).rotation.x =
     Math.PI * 0.5;
-  for (const [kx, kz] of [[-0.115, 0], [0.115, 0], [0, -0.115], [0, 0.115]] as [number, number][]) {
-    addPart(wheelRotor, styler, turretKnobGeo, '#f5dc82', kx, 0.155, kz, 0, { metalness: 0.9 });
+  for (const [kx, ky, kz] of [[-0.115, 0.155, 0], [0.115, 0.155, 0], [0, 0.162, -0.115], [0, 0.162, 0.115]] as [number, number, number][]) {
+    addPart(wheelRotor, styler, turretKnobGeo, '#f5dc82', kx, ky, kz, 0, { metalness: 0.9 });
   }
   addPart(wheelRotor, styler, new THREE.SphereGeometry(0.021, 12, 10), '#fffbeb', 0.285, 0.028, 0, 0, {
     roughness: 0.12,
@@ -4093,8 +4109,8 @@ export function buildLuxuryRouletteTable(
   const rStoolBaseGeo = new THREE.LatheGeometry(
     [
       new THREE.Vector2(0, 0),
-      new THREE.Vector2(0.21, 0),
-      new THREE.Vector2(0.20, 0.024),
+      new THREE.Vector2(0.195, 0),
+      new THREE.Vector2(0.185, 0.024),
       new THREE.Vector2(0.055, 0.055),
       new THREE.Vector2(0.038, 0.085),
       new THREE.Vector2(0.036, 0.44),
@@ -4106,12 +4122,28 @@ export function buildLuxuryRouletteTable(
   const rStoolRingGeo = new THREE.TorusGeometry(0.175, 0.011, 8, 22);
   const rStoolSeatGeo = new RoundedBoxGeometry(0.44, 0.105, 0.42, 4, 0.042);
   const rStoolBackGeo = makeCurvedStoolBackrestGeo(0.40, 0.30, 0.06, 0.048);
+  const rStoolSpineGeo = new THREE.TubeGeometry(
+    new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.44, 0),
+      new THREE.Vector3(0, 0.445, -0.16),
+      new THREE.Vector3(0, 0.52, -0.21),
+      new THREE.Vector3(0, 0.70, -0.21),
+    ]),
+    14,
+    0.015,
+    8,
+    false,
+  );
 
   for (const rx of [-0.78, -0.25, 0.28]) {
     const stool = new THREE.Group();
     stool.position.set(rx, 0, 1.04);
     stool.rotation.y = Math.PI;
     addPart(stool, styler, rStoolBaseGeo, '#d4af37', 0, 0, 0, 0.002, {
+      metalness: 0.85,
+      roughness: 0.22,
+    });
+    addPart(stool, styler, rStoolSpineGeo, '#d4af37', 0, 0, 0, 0.002, {
       metalness: 0.85,
       roughness: 0.22,
     });

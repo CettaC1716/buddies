@@ -57,7 +57,7 @@ export const PROFILE_PHOTO_PRESETS: PhotoPresetOption[] = [
   {
     id: 'hq',
     label: 'COMMAND HQ',
-    url: '/assets/kiosk/hq_super_command.png',
+    url: '/assets/kiosk/hq_super_command.webp',
     cropClassName: 'object-cover object-center',
   },
 ];

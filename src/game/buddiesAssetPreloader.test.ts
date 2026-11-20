@@ -79,7 +79,7 @@ test('preloadAllUiAndKioskImages advances progress through 100% even in headless
     (loaded, total) => {
       steps.push([loaded, total]);
     },
-    ['/assets/kiosk/ar99_rifle.png', '/assets/kiosk/missing_optional.png'],
+    ['/assets/kiosk/ar99_rifle.webp', '/assets/kiosk/missing_optional.png'],
   );
   assert.equal(steps[0][0], 0);
   assert.equal(steps[steps.length - 1][0], 2);

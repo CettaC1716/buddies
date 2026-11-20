@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFLoader, GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
@@ -20,6 +21,11 @@ import {
   KioskSideHologramModelKind,
   shouldStripDetachedTreeBaseCollar,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
+  CITY_TRAFFIC_SIGNAL_POLE_SPECS,
+  CITY_TRAFFIC_SIGN_SPECS,
+  type CityTrafficSignKind,
+  type CityTrafficSignSpec,
+  type PlazaTrafficSignalPhase,
 } from './buddiesBlitzRules';
 import type { CafeMenuItemId } from './buddiesCafeRules';
 import {
@@ -29,21 +35,27 @@ import {
 } from './buddiesCafeFoodPropBuilder';
 import type { ScooterRiderRigPose } from './buddiesScooterRidePose';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
+import {
+  applySkinnedMeshSafeBoundingSphere,
+  computeInstancedBoundingVolumes,
+} from './buddiesHubRenderOptimizer';
 import { buildGrandCasino3D } from './buddiesGrandCasinoBuilder';
 import { buildSouthEastCoastalBeachfront3D } from './buddiesCoastalBeachBuilder';
 import {
-  buildUrbanScooterShowroomKiosk3D,
   createElectricScooterBike3D,
   createPushKickScooter3D,
 } from './buddiesUrbanScooterBuilder';
-import { buildRealEstateAndFurnitureKiosk3D } from './buddiesRealEstateKioskBuilder';
-import { buildFashionAndApparelKiosk3D } from './buddiesFashionKioskBuilder';
+import { buildPlazaCommercialArcade3D } from './buddiesPlazaKioskArcadeBuilder';
 import {
   PLANET_CURVATURE_STRENGTH,
   PLANET_HALF_EXTENT,
   PLANET_WORLD_PERIOD,
   PLANET_RIVERBED_DEPTH,
   PLANET_WATER_SURFACE_Y,
+  EAST_WATER_SURFACE_Y,
+  HARBOR_SEABED_DEEP_Y,
+  evaluateEastCoastalSandyMask,
+  evaluateHarborSeabedDrop,
   PLANET_BRIDGES,
   PlanetBridgeSpec,
   SCULPT_GRID_SIZE,
@@ -73,6 +85,14 @@ import {
   computePlanetSurfaceNormal,
   applyPlanetCurvatureToObject,
   evaluatePlanetWaterField,
+  OUTER_TRAM_SIDEWALK_WIDTH_M,
+  evaluateOuterTramSidewalkSdf,
+  isPointOnOuterTramSidewalk,
+  INNER_TRAM_SIDEWALK_WIDTH_M,
+  evaluateInnerTramSidewalkSdf,
+  isPointOnInnerTramSidewalk,
+  createHorizontalPolygonSlabGeometry,
+  getBaseProceduralGroundElevation,
 } from './buddiesPlanetCurvature';
 import {
   buildSouthPlazaLShapedGlasshouseCafe,
@@ -80,6 +100,184 @@ import {
   tagFrostedGlassGeometry,
   type CafeAssetStyler,
 } from './buddiesLShapedCafeAssets';
+import {
+  COASTAL_HILL_FULL_LOOP_SPLINE_POINTS,
+  COASTAL_HILL_RIDGE_ELEV_Y,
+  COASTAL_HILL_ROAD_HALF_WIDTH,
+  buildCoastalHillGlslSnippet,
+  evaluateCoastalHillRoadSample,
+  evaluateHillVillaPlateauSdf,
+  isPointInCoastalHillDrivewayGap,
+} from './buddiesCoastalHillsRules';
+import {
+  ANATOMICAL_SKIN_SHADER_PARAMS,
+  type AvatarOutlineCategory,
+  applyRigPostUpgradeAnatomyRules,
+  classifyAvatarOutlineCategory,
+  computeStandardizedAvatarRigMetrics,
+  computeStandardizedGroundRootY,
+  isBodySkinMeshName,
+  sanitizeAvatarAnatomyAndSkinSeams,
+} from './buddiesAvatarAnatomyRules';
+import {
+  applyCoveredSkinHemTuck,
+  applyLayeredGarmentClearance,
+  buildTargetBoneLookup,
+  classifyGarmentLayer,
+  classifyModularApparelMaterialHint,
+  extractTargetRigBindProfile,
+  resolveModularBoneMapping,
+  sanitizeAndNormalizeSkinAttributes,
+  smoothBoundaryTransitionWeights,
+  syncCompanionOutlineSkinWeights,
+  synchronizeModularBindAndGeometry,
+} from './buddiesWardrobeFitRules';
+import {
+  createCharacterSecondaryPhysicsController,
+  type CharacterSecondaryPhysicsController,
+  type CharacterSecondaryPhysicsState,
+  type SecondaryPhysicsLodMode,
+} from './buddiesHairSpringPhysics';
+import {
+  createCityWindowSpec,
+  tagCityWindowMesh,
+  type CityWindowKind,
+} from './buddiesWindowAuditRules';
+
+/** Build a continuous mitered strip BufferGeometry following a 2D polyline (closed or open). */
+function createMitredPolylineStripGeometry(
+  pts: [number, number][],
+  width: number,
+  height: number,
+  closedLoop = false,
+): THREE.BufferGeometry {
+  const n = pts.length;
+  const halfW = width * 0.5;
+  const y0 = -height * 0.5;
+  const y1 = height * 0.5;
+
+  const segCount = closedLoop ? n : n - 1;
+  const segRights: [number, number][] = [];
+  for (let i = 0; i < segCount; i++) {
+    const pA = pts[i];
+    const pB = pts[(i + 1) % n];
+    const dx = pB[0] - pA[0];
+    const dz = pB[1] - pA[1];
+    const len = Math.hypot(dx, dz) || 1;
+    const tx = dx / len;
+    const tz = dz / len;
+    segRights.push([-tz, tx]);
+  }
+
+  const leftPts: [number, number][] = [];
+  const rightPts: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    let mx = 0;
+    let mz = 0;
+    if (!closedLoop && i === 0) {
+      mx = segRights[0][0] * halfW;
+      mz = segRights[0][1] * halfW;
+    } else if (!closedLoop && i === n - 1) {
+      mx = segRights[n - 2][0] * halfW;
+      mz = segRights[n - 2][1] * halfW;
+    } else {
+      const rPrev = segRights[(i - 1 + segCount) % segCount];
+      const rNext = segRights[i % segCount];
+      const sx = rPrev[0] + rNext[0];
+      const sz = rPrev[1] + rNext[1];
+      const sLen = Math.hypot(sx, sz);
+      if (sLen > 1e-5) {
+        const ux = sx / sLen;
+        const uz = sz / sLen;
+        const dot = Math.max(0.25, ux * rPrev[0] + uz * rPrev[1]);
+        const miterLen = halfW / dot;
+        mx = ux * miterLen;
+        mz = uz * miterLen;
+      } else {
+        mx = rPrev[0] * halfW;
+        mz = rPrev[1] * halfW;
+      }
+    }
+    leftPts.push([pts[i][0] - mx, pts[i][1] - mz]);
+    rightPts.push([pts[i][0] + mx, pts[i][1] + mz]);
+  }
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+
+  const pushQuad = (
+    p0: [number, number, number],
+    p1: [number, number, number],
+    p2: [number, number, number],
+    p3: [number, number, number],
+  ) => {
+    const ux = p1[0] - p0[0];
+    const uy = p1[1] - p0[1];
+    const uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0];
+    const vy = p2[1] - p0[1];
+    const vz = p2[2] - p0[2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen;
+    ny /= nLen;
+    nz /= nLen;
+
+    positions.push(
+      p0[0], p0[1], p0[2],
+      p1[0], p1[1], p1[2],
+      p2[0], p2[1], p2[2],
+      p0[0], p0[1], p0[2],
+      p2[0], p2[1], p2[2],
+      p3[0], p3[1], p3[2],
+    );
+    for (let k = 0; k < 6; k++) {
+      normals.push(nx, ny, nz);
+    }
+    uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+  };
+
+  for (let i = 0; i < segCount; i++) {
+    const nextIdx = (i + 1) % n;
+    const l0 = leftPts[i];
+    const r0 = rightPts[i];
+    const l1 = leftPts[nextIdx];
+    const r1 = rightPts[nextIdx];
+
+    const r0Top: [number, number, number] = [r0[0], y1, r0[1]];
+    const r1Top: [number, number, number] = [r1[0], y1, r1[1]];
+    const l1Top: [number, number, number] = [l1[0], y1, l1[1]];
+    const l0Top: [number, number, number] = [l0[0], y1, l0[1]];
+
+    const r0Bot: [number, number, number] = [r0[0], y0, r0[1]];
+    const r1Bot: [number, number, number] = [r1[0], y0, r1[1]];
+    const l1Bot: [number, number, number] = [l1[0], y0, l1[1]];
+    const l0Bot: [number, number, number] = [l0[0], y0, l0[1]];
+
+    pushQuad(r0Top, r1Top, l1Top, l0Top);
+    pushQuad(l0Bot, l1Bot, r1Bot, r0Bot);
+    pushQuad(r0Bot, r1Bot, r1Top, r0Top);
+    pushQuad(l1Bot, l0Bot, l0Top, l1Top);
+
+    if (!closedLoop && i === 0) {
+      pushQuad(l0Bot, r0Bot, r0Top, l0Top);
+    }
+    if (!closedLoop && i === segCount - 1) {
+      pushQuad(r1Bot, l1Bot, l1Top, r1Top);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
 
 export { createElectricScooterBike3D, createPushKickScooter3D };
 export {
@@ -88,6 +286,10 @@ export {
   PLANET_WORLD_PERIOD,
   PLANET_RIVERBED_DEPTH,
   PLANET_WATER_SURFACE_Y,
+  EAST_WATER_SURFACE_Y,
+  HARBOR_SEABED_DEEP_Y,
+  evaluateEastCoastalSandyMask,
+  evaluateHarborSeabedDrop,
   PLANET_BRIDGES,
   SCULPT_GRID_SIZE,
   terrainSculptRgbaData,
@@ -116,6 +318,12 @@ export {
   computePlanetSurfaceNormal,
   applyPlanetCurvatureToObject,
   evaluatePlanetWaterField,
+  OUTER_TRAM_SIDEWALK_WIDTH_M,
+  evaluateOuterTramSidewalkSdf,
+  isPointOnOuterTramSidewalk,
+  INNER_TRAM_SIDEWALK_WIDTH_M,
+  evaluateInnerTramSidewalkSdf,
+  isPointOnInnerTramSidewalk,
 };
 export type { PlanetBridgeSpec };
 
@@ -129,7 +337,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
   uniform sampler2D uSculptMap;
 
   vec2 wrapPlanetVec2(vec2 p) {
-    return clamp(p, vec2(-130.0), vec2(130.0));
+    return clamp(p, vec2(-156.0), vec2(156.0));
   }
 
   float samplePlanetMultiOctaveNoise(vec2 p) {
@@ -161,8 +369,10 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     return min(a, b) - h * h * k * 0.25;
   }
 
+  ${buildCoastalHillGlslSnippet()}
+
   float evaluateWestPowerPlantSdf(vec2 p) {
-    return sdRoundedBox2D(p, vec2(-90.5, 0.0), vec2(14.0, 38.0), 2.4);
+    return sdRoundedBox2D(p, vec2(-94.75, 0.0), vec2(16.0, 38.0), 2.4);
   }
 
   float evaluateEastConstructionYardSdf(vec2 p) {
@@ -174,7 +384,10 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float westCornerBulge =
       smoothstep(-54.0, -90.0, p.x) * smoothstep(62.0, 102.0, abs(p.y)) * 11.5;
     float westPlantClear =
-      smoothstep(-76.0, -104.0, p.x) * (1.0 - smoothstep(36.0, 44.0, abs(p.y))) * 9.5;
+      smoothstep(-78.25, -108.75, p.x) *
+      (1.0 - smoothstep(-110.6, -111.7, p.x)) *
+      (1.0 - smoothstep(37.0, 42.5, abs(p.y))) *
+      16.0;
     float tennisClubClear =
       smoothstep(-74.0, -102.0, p.x) *
       (12.2 - 1.7 * smoothstep(-106.0, -112.0, p.x)) *
@@ -185,8 +398,13 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       (19.5 - 8.5 * smoothstep(-104.5, -113.5, p.x)) *
       smoothstep(-41.5, -48.0, p.y) *
       (1.0 - smoothstep(-99.5, -111.5, p.y));
+    float rearRoadClear =
+      smoothstep(-68.0, -58.0, p.x) *
+      (1.0 - smoothstep(95.0, 100.5, p.x)) *
+      (1.0 - smoothstep(111.8, 114.8, abs(p.y))) *
+      5.8;
     float eastCoastalOpen = smoothstep(96.5, 102.0, p.x) * 92.0;
-    float d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - grandCasinoClear - eastCoastalOpen;
+    float d0 = dBox + westCornerBulge - westPlantClear - tennisClubClear - grandCasinoClear - rearRoadClear - eastCoastalOpen;
     if (d0 < -6.5) {
       return vec4(d0, d0 - 6.0, d0 - 12.0, d0 - 18.0);
     }
@@ -221,25 +439,32 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
   }
 
   float evaluateOuterEmbankmentSdf(vec2 p) {
-    return max(evalEmbankmentTierOffsets(p).x, p.x - 109.2);
+    float neReclaim = smoothstep(-105.5, -96.0, p.y) * (1.0 - smoothstep(-54.0, -45.5, p.y));
+    float shorelineX = 110.0 + 16.5 * neReclaim;
+    float baseWalkSdf = max(evalEmbankmentTierOffsets(p).x, p.x - (shorelineX - 0.8));
+    vec3 hillRoad = evalCoastalHillRoad(p);
+    float hillRoadWalkSdf = hillRoad.x - 4.15;
+    float plateauWalkSdf = evaluateHillVillaPlateauSdf(p);
+    float drivewayApronSdf = evaluateHillVillaDrivewayApronSdf(p);
+    return min(baseWalkSdf, min(hillRoadWalkSdf, min(plateauWalkSdf, drivewayApronSdf)));
   }
 
   float evalMirroredCentralSCurveDist(vec2 p, float az) {
     vec2 q = vec2(p.x, az);
-    float s1 = sdSegment2D(q, vec2(-70.0, 15.0), vec2(-52.0, 15.0));
+    float s1 = sdSegment2D(q, vec2(-66.5, 15.0), vec2(-52.0, 15.0));
     float s2 = sdSegment2D(q, vec2(-52.0, 15.0), vec2(-41.0, 26.0));
     float s3 = sdSegment2D(q, vec2(-41.0, 26.0), vec2(-25.0, 26.0));
-    float s4 = sdSegment2D(q, vec2(-25.0, 26.0), vec2(-13.0, 14.0));
-    float s5 = sdSegment2D(q, vec2(-13.0, 0.0), vec2(-13.0, 14.0));
-    float s6 = sdSegment2D(q, vec2(-13.0, 14.0), vec2(9.0, 14.0));
-    float s7 = sdSegment2D(q, vec2(9.0, 14.0), vec2(19.0, 24.0));
-    float s8 = sdSegment2D(q, vec2(19.0, 24.0), vec2(42.0, 24.0));
+    float s4 = sdSegment2D(q, vec2(-25.0, 26.0), vec2(-14.2, 15.6));
+    float s5 = sdSegment2D(q, vec2(-14.2, 0.0), vec2(-14.2, 15.6));
+    float s6 = sdSegment2D(q, vec2(-14.2, 15.6), vec2(8.0, 15.6));
+    float s7 = sdSegment2D(q, vec2(8.0, 15.6), vec2(18.5, 26.5));
+    float s8 = sdSegment2D(q, vec2(18.5, 26.5), vec2(43.5, 26.5));
     float s9 = sdSegment2D(q, vec2(-25.0, 26.0), vec2(-18.0, 33.0));
-    float s10 = sdSegment2D(q, vec2(-18.0, 33.0), vec2(-18.0, 52.0));
-    float s11 = sdSegment2D(q, vec2(19.0, 24.0), vec2(19.0, 52.0));
-    float s12 = sdSegment2D(q, vec2(42.0, 24.0), vec2(52.0, 15.0));
-    float s13 = sdSegment2D(q, vec2(52.0, 15.0), vec2(70.0, 15.0));
-    float s14 = sdSegment2D(q, vec2(42.0, 24.0), vec2(42.0, 52.0));
+    float s10 = sdSegment2D(q, vec2(-18.0, 33.0), vec2(-18.0, 49.5));
+    float s11 = sdSegment2D(q, vec2(19.0, 26.5), vec2(19.0, 49.5));
+    float s12 = sdSegment2D(q, vec2(43.5, 26.5), vec2(54.5, 15.0));
+    float s13 = sdSegment2D(q, vec2(54.5, 15.0), vec2(66.5, 15.0));
+    float s14 = sdSegment2D(q, vec2(42.0, 26.5), vec2(42.0, 49.5));
     return min(
       min(min(min(s1, s2), min(s3, s4)), min(min(s5, s6), min(s7, s8))),
       min(min(min(s9, s10), min(s11, s12)), min(s13, s14))
@@ -250,31 +475,30 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float az = abs(p.y);
     vec2 q = vec2(p.x, az);
 
-    float dWest = sdSegment2D(q, vec2(-70.0, 0.0), vec2(-70.0, 44.0));
-    float dEast = sdSegment2D(q, vec2(70.0, 0.0), vec2(70.0, 44.0));
-    float dCollector = sdSegment2D(q, vec2(-62.0, 52.0), vec2(62.0, 52.0));
+    float dTramRingBox = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
+    float dTramRingRoad = abs(dTramRingBox + 1.95) - 5.85;
     float dHarborTurn = sdSegment2D(q, vec2(70.0, 15.0), vec2(76.5, 15.0));
-
-    float dCornerW = (p.x <= -62.0 && az >= 44.0) ? abs(length(q - vec2(-62.0, 44.0)) - 8.0) : 999.0;
-    float dCornerE = (p.x >= 62.0 && az >= 44.0) ? abs(length(q - vec2(62.0, 44.0)) - 8.0) : 999.0;
 
     float dBaseWestOuter = sdSegment2D(q, vec2(-60.0, 52.0), vec2(-60.0, 108.0));
     float dBaseEastOuter = sdSegment2D(q, vec2(60.0, 52.0), vec2(60.0, 108.0));
     float dComplexDiv1 = sdSegment2D(q, vec2(-30.0, 52.0), vec2(-30.0, 108.0));
     float dComplexDiv2 = sdSegment2D(q, vec2(0.0, 52.0), vec2(0.0, 108.0));
     float dComplexDiv3 = sdSegment2D(q, vec2(30.0, 52.0), vec2(30.0, 108.0));
-    float dBaseRear = sdSegment2D(q, vec2(-60.0, 108.0), vec2(60.0, 108.0));
+    float dBaseRear = sdSegment2D(q, vec2(-60.0, 108.0), vec2(96.0, 108.0));
     float dGateDrive1 = sdSegment2D(q, vec2(-45.0, 52.0), vec2(-45.0, 64.2));
     float dGateDrive2 = sdSegment2D(q, vec2(-15.0, 52.0), vec2(-15.0, 64.2));
     float dGateDrive3 = sdSegment2D(q, vec2(15.0, 52.0), vec2(15.0, 64.2));
     float dGateDrive4 = sdSegment2D(q, vec2(45.0, 52.0), vec2(45.0, 64.2));
 
     float dOuterAndBaseRing = min(
+      dTramRingRoad,
       min(
-        min(min(min(dWest, dEast), dCollector), min(dHarborTurn, min(dCornerW, dCornerE))),
-        min(min(dBaseWestOuter, dBaseEastOuter), min(min(dComplexDiv1, dComplexDiv2), min(dComplexDiv3, dBaseRear)))
-      ) - 3.9,
-      min(min(dGateDrive1, dGateDrive2), min(dGateDrive3, dGateDrive4)) - 2.6
+        min(
+          min(dHarborTurn, min(dBaseWestOuter, dBaseEastOuter)),
+          min(min(dComplexDiv1, dComplexDiv2), min(dComplexDiv3, dBaseRear))
+        ) - 3.9,
+        min(min(dGateDrive1, dGateDrive2), min(dGateDrive3, dGateDrive4)) - 2.6
+      )
     );
 
     float dCentralSCurve = evalMirroredCentralSCurveDist(p, az) - 4.2;
@@ -285,7 +509,8 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       float boxSdf = sdRoundedBox2D(vec2(clampedX, p.y), vec2(-64.05, -70.6), vec2(9.45, 7.35), 5.2);
       dCasinoValetLoop = abs(boxSdf) - 2.7 + eastFade;
     }
-    return min(min(dOuterAndBaseRing, dCentralSCurve), dCasinoValetLoop);
+    float dCoastalHillRoad = evalCoastalHillRoad(p).x - ${COASTAL_HILL_ROAD_HALF_WIDTH.toFixed(2)};
+    return min(min(min(dOuterAndBaseRing, dCentralSCurve), dCasinoValetLoop), dCoastalHillRoad);
   }
 
   float evaluateNwLakeSdf(vec2 p) {
@@ -305,8 +530,23 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dHarborDock = sdRoundedBox2D(p, vec2(93.0, 0.0), vec2(17.0, 46.0), 2.4);
     float dCoastalWall = sdRoundedBox2D(p, vec2(105.75, 0.0), vec2(4.25, 180.0), 0.8);
     float concreteSdf = min(dHarborDock, dCoastalWall);
-    float waterSdf = 110.0 - p.x;
+    float neReclaim = smoothstep(-105.5, -96.0, p.y) * (1.0 - smoothstep(-54.0, -45.5, p.y));
+    float waterSdf = (110.0 + 16.5 * neReclaim) - p.x;
     return vec2(concreteSdf, waterSdf);
+  }
+
+  float evaluateEastCoastalSandyMask(float z) {
+    float neSandy = smoothstep(-104.2, -101.8, z) * (1.0 - smoothstep(-48.5, -46.2, z));
+    float seSandy = smoothstep(46.2, 48.5, z) * (1.0 - smoothstep(102.0, 104.2, z));
+    return max(neSandy, seSandy);
+  }
+
+  float evalHarborSeabedDrop(vec2 p, float waterSdf) {
+    if (waterSdf >= 0.35) return 0.0;
+    float sandySlope = -1.65 * smoothstep(0.35, -14.0, waterSdf);
+    float quayDrop = -1.65 * smoothstep(0.15, -1.2, waterSdf);
+    float sandyMask = evaluateEastCoastalSandyMask(p.y);
+    return mix(quayDrop, sandySlope, sandyMask);
   }
 
   float evalModelEstateBaseDirtSdf(vec2 p) {
@@ -315,13 +555,57 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     return min(dPlot0, dSpur0);
   }
 
+  float evalOuterTramSidewalkSdf(vec2 p) {
+    float dTram = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
+    float d = abs(dTram - 6.13) - 2.20;
+    d = max(d, -sdRoundedBox2D(p, vec2(-91.965, 0.0), vec2(18.035, 110.0), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(-86.965, -74.05), vec2(23.035, 35.95), 0.0));
+    float az = abs(p.y);
+    if (az > 54.0) {
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-60.0, 59.5), vec2(3.93, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-30.0, 59.5), vec2(3.93, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(0.0, 59.5), vec2(3.93, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(30.0, 59.5), vec2(3.93, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(60.0, 59.5), vec2(3.93, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-45.0, 59.5), vec2(2.63, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-15.0, 59.5), vec2(2.63, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(15.0, 59.5), vec2(2.63, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(45.0, 59.5), vec2(2.63, 5.5), 0.0));
+    }
+    d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(77.5, 15.0), vec2(4.0, 3.93), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(79.675, 29.5), vec2(3.525, 9.3), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(85.01, 60.225), vec2(9.99, 14.775), 0.0));
+    return d;
+  }
+
+  float evalInnerTramSidewalkSdf(vec2 p) {
+    float dTram = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
+    float d = abs(dTram + 10.0) - 2.20;
+    float ax = abs(p.x);
+    float az = abs(p.y);
+    if (ax > 57.0 && ax < 63.0) {
+      d = max(d, -sdRoundedBox2D(vec2(ax, az), vec2(60.0, 15.0), vec2(3.0, 4.23), 0.0));
+    }
+    if (az > 39.0 && az < 45.0) {
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-18.0, 42.0), vec2(4.23, 3.0), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(19.0, 42.0), vec2(4.23, 3.0), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(42.0, 42.0), vec2(4.23, 3.0), 0.0));
+    }
+    d = max(d, -sdRoundedBox2D(p, vec2(-58.9, 0.0), vec2(3.35, 9.2), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.2, 3.35), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(-36.5, 40.87), vec2(9.2, 3.35), 0.0));
+    return d;
+  }
+
   float evalHaltePlatformSdf(vec2 p) {
-    float dCentral = sdRoundedBox2D(p, vec2(-61.66, 0.0), vec2(3.6, 9.4), 0.4);
-    float dNorth = sdRoundedBox2D(p, vec2(6.5, -44.67), vec2(9.4, 3.6), 0.4);
-    float dSouth = sdRoundedBox2D(p, vec2(-36.5, 44.67), vec2(9.4, 3.6), 0.4);
+    float dCentral = sdRoundedBox2D(p, vec2(-58.9, 0.0), vec2(3.6, 9.4), 0.4);
+    float dNorth = sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.4, 3.6), 0.4);
+    float dSouth = sdRoundedBox2D(p, vec2(-36.5, 40.87), vec2(9.4, 3.6), 0.4);
     float dBeach = sdRoundedBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4), 0.4);
-    float dPlazaSidewalk = sdRoundedBox2D(p, vec2(-75.25, 0.0), vec2(1.45, 38.2), 0.2);
+    float dPlazaSidewalk = sdRoundedBox2D(p, vec2(-76.38, 0.0), vec2(2.48, 38.2), 0.2);
     float dTennisClub = sdRoundedBox2D(p, vec2(-89.20, 51.90), vec2(15.20, 13.70), 0.3);
+    float dOuterTramSidewalk = evalOuterTramSidewalkSdf(p);
+    float dInnerTramSidewalk = evalInnerTramSidewalkSdf(p);
     float dGrandCasino = 50.0;
     if (p.x <= -62.5 && p.y <= -36.8 && p.y >= -105.5) {
       float dMainPerimeter = sdRoundedBox2D(p, vec2(-88.9, -70.6), vec2(12.75, 20.45), 0.8);
@@ -340,9 +624,23 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       );
     }
     return min(
-      dGrandCasino,
-      min(dTennisClub, min(dPlazaSidewalk, min(dCentral, min(dNorth, min(dSouth, dBeach)))))
+      min(dOuterTramSidewalk, dInnerTramSidewalk),
+      min(
+        dGrandCasino,
+        min(dTennisClub, min(dPlazaSidewalk, min(dCentral, min(dNorth, min(dSouth, dBeach)))))
+      )
     );
+  }
+
+  float evaluateCentralParkOctagonSdf(vec2 p) {
+    float az = abs(p.y);
+    float dWestNeck = sdRoundedBox2D(vec2(p.x, az), vec2(0.225, 0.0), vec2(9.725, 10.90), 0.0);
+    float dEastTail = sdRoundedBox2D(vec2(p.x, az), vec2(54.875, 0.0), vec2(2.425, 10.30), 0.0);
+    float dOctBox = max(max(9.95 - p.x, p.x - 52.45), az - 21.70);
+    float dDiagW = (p.x - 9.95) * -0.713684 + (az - 10.90) * 0.700468;
+    float dDiagE = (p.x - 41.45) * 0.719619 + (az - 21.70) * 0.694369;
+    float dOct = max(dOctBox, max(dDiagW, dDiagE));
+    return min(min(dWestNeck, dEastTail), dOct);
   }
 
   float evaluateBlitzGrassMaskFromSdfs(
@@ -373,12 +671,22 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 
     float hardPadSdf = min(dModelEstateDirt, dConstructionYardDirt);
     float padSafe = smoothstep(-0.3, 0.5, hardPadSdf);
-    float embSafe = 1.0 - smoothstep(-0.6, 0.8, embSdf);
+    float plateauSdf = evaluateHillVillaPlateauSdf(p);
+    float plateauGrassMask = 1.0 - smoothstep(-0.2, 0.6, plateauSdf);
+    float embSafe = max(1.0 - smoothstep(-0.6, 0.8, embSdf), plateauGrassMask);
+    vec3 hillRoad = evalCoastalHillRoad(p);
+    float hillRoadSafe = smoothstep(
+      ${(COASTAL_HILL_ROAD_HALF_WIDTH - 0.15).toFixed(2)},
+      ${(COASTAL_HILL_ROAD_HALF_WIDTH + 0.85).toFixed(2)},
+      hillRoad.x
+    );
 
     float halteSdf = evalHaltePlatformSdf(p);
     float halteSafe = smoothstep(-0.2, 0.6, halteSdf);
 
-    return clamp(grassMask * roadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe * halteSafe, 0.0, 1.0);
+    float centralParkSafe = smoothstep(-0.35, 0.25, evaluateCentralParkOctagonSdf(p));
+
+    return clamp(grassMask * roadSafe * hillRoadSafe * lakeSafe * harborSafe * westPlantSafe * padSafe * embSafe * halteSafe * centralParkSafe, 0.0, 1.0);
   }
 
   float evaluateBlitzGrassMask(vec2 p) {
@@ -388,23 +696,23 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       evaluateNwLakeSdf(p),
       evaluateSeHarborSdf(p),
       evaluateWestPowerPlantSdf(p),
-      evaluateOuterEmbankmentSdf(p)
+      max(evalEmbankmentTierOffsets(p).x, p.x - 109.2)
     );
   }
 
-  float getRawGroundElevation(vec2 rawP) {
+  float getRawGroundElevationWithTrough(vec2 rawP, float roadTroughScale) {
     vec2 p = wrapPlanetVec2(rawP);
-    vec2 sculptUv = clamp((p + 130.0) / 260.0, 0.0, 1.0);
+    vec2 sculptUv = clamp((p + 156.0) / 312.0, 0.0, 1.0);
     float sculptOffset = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
-    vec2 harborSdf = evaluateSeHarborSdf(p);
-    float harborDrop = -1.65 * smoothstep(0.15, -0.85, harborSdf.y);
+    vec2 harborSdf = evaluateSeHarborSdf(rawP);
+    float harborDrop = evalHarborSeabedDrop(rawP, harborSdf.y);
 
     float westPlantSdf = evaluateWestPowerPlantSdf(p);
     // Keep underlying procedural terrain mesh strictly inside the Plaza retaining walls (westPlantSdf < -0.40)
     // so CurvedPlanetGround NEVER pokes through the +0.09m Roadside Sidewalk ("di trotoar plaza masih ada tanah")
     float westPlantElev = (1.0 - smoothstep(-0.85, -0.40, westPlantSdf)) * 0.40;
-    if (p.x > -85.45 && p.x < -75.40 && abs(p.y) < 10.05) {
-      float stairCarveX = smoothstep(-85.45, -84.50, p.x);
+    if (p.x > -87.70 && p.x < -77.65 && abs(p.y) < 10.05) {
+      float stairCarveX = smoothstep(-87.70, -86.75, p.x);
       float stairCarveZ = 1.0 - smoothstep(9.60, 10.05, abs(p.y));
       westPlantElev = mix(westPlantElev, 0.0, stairCarveX * stairCarveZ);
     }
@@ -420,15 +728,35 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 
     float baseArenaElev = westPlantElev - lakeBasinDepression;
     vec4 embT = evalEmbankmentTierOffsets(p);
-    float embElev = 0.0;
+    float coastalHillBaseElev = 0.0;
     if (embT.x > -0.1) {
-      float step1 = smoothstep(0.0, 1.45, embT.x) * 3.2;
-      float step2 = smoothstep(0.0, 1.50, embT.y) * 2.9;
-      float step3 = smoothstep(0.0, 1.55, embT.z) * 2.7;
-      float step4 = smoothstep(0.0, 1.60, embT.w) * 2.6;
-      embElev = step1 + step2 + step3 + step4;
+      float b1 = smoothstep(0.0, 4.4, embT.x) * 4.8;
+      float b2 = smoothstep(-0.5, 6.2, embT.y) * 3.2;
+      float b3 = smoothstep(-0.5, 7.6, embT.z) * 2.2;
+      float b4 = smoothstep(-0.5, 9.2, embT.w) * 1.4;
+      coastalHillBaseElev = b1 + b2 + b3 + b4;
     }
-    return sculptOffset + harborDrop + max(baseArenaElev, embElev);
+    float plateauSdf = evaluateHillVillaPlateauSdf(p);
+    float plateauMask = 1.0 - smoothstep(-0.05, 5.8, plateauSdf);
+    float withPlateauElev = mix(coastalHillBaseElev, ${COASTAL_HILL_RIDGE_ELEV_Y.toFixed(2)}, plateauMask);
+    vec3 hillRoad = evalCoastalHillRoad(p);
+    float coastalTerrainElev = mix(withPlateauElev, hillRoad.y, hillRoad.z);
+
+    // Wide flat subsurface roadbed trough (<= 5.85m, tapering cleanly across 5.85..6.65m)
+    // so diagonal terrain mesh triangles never poke through curved shoulders or curbs
+    if (roadTroughScale > 0.001 && hillRoad.x < 6.65) {
+      float troughProfile = (1.0 - smoothstep(5.85, 6.65, hillRoad.x)) * smoothstep(0.04, 0.35, hillRoad.y);
+      float plateauOrApronSdf = min(plateauSdf, evaluateHillVillaDrivewayApronSdf(p));
+      float plateauClear = smoothstep(-0.15, 0.75, plateauOrApronSdf);
+      coastalTerrainElev -= 0.42 * roadTroughScale * troughProfile * plateauClear;
+    }
+
+    float rawTerrainElev = coastalTerrainElev > 0.0001 ? max(baseArenaElev, coastalTerrainElev) : baseArenaElev;
+    return sculptOffset + harborDrop + rawTerrainElev;
+  }
+
+  float getRawGroundElevation(vec2 rawP) {
+    return getRawGroundElevationWithTrough(rawP, 0.0);
   }
 
   float planetValueNoise(vec2 p) {
@@ -444,13 +772,18 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 `;
 
 /**
- * GLSL snippet for sampling crisp real-time DirectionalLight shadows + Blitz's 45° halftone dot edge
- * on both the Flat Splatmap Ground and InfiniteGrass blades.
+ * GLSL snippet for sampling soft real-time DirectionalLight shadows via hardware sampler2DShadow
+ * (PCFShadowMap in Three.js r186+) with 9-tap Vogel disk PCF + smooth fallback on BasicShadowMap.
  */
 const BLITZ_CAST_SHADOW_GLSL_SNIPPET = /* glsl */ `
-  uniform sampler2D uDirShadowMap;
+  #if defined(SHADOWMAP_TYPE_PCF) || defined(BLITZ_SHADOW_COMPARE)
+    uniform sampler2DShadow uDirShadowMap;
+  #else
+    uniform sampler2D uDirShadowMap;
+  #endif
   uniform mat4 uDirShadowMatrix;
   uniform float uHasDirShadow;
+  uniform float uDirShadowMapSize;
 
   float blitzHalftoneGrid(vec2 coord, float scale) {
     float c = 0.70710678;
@@ -458,6 +791,31 @@ const BLITZ_CAST_SHADOW_GLSL_SNIPPET = /* glsl */ `
     vec2 rot = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c) * scale;
     float dist = length(fract(rot) - 0.5);
     return smoothstep(0.24, 0.42, dist);
+  }
+
+  float sampleBlitzShadowTap(vec2 uv, float zRef) {
+    #if defined(SHADOWMAP_TYPE_PCF) || defined(BLITZ_SHADOW_COMPARE)
+      return texture(uDirShadowMap, vec3(uv, zRef));
+    #else
+      return smoothstep(-0.0006, 0.0014, texture2D(uDirShadowMap, uv).r - zRef);
+    #endif
+  }
+
+  float sampleBlitzCastShadowFast(vec3 worldPos) {
+    if (uHasDirShadow < 0.5) return 1.0;
+    vec4 sc = uDirShadowMatrix * vec4(worldPos, 1.0);
+    sc.xyz /= sc.w;
+    if (
+      sc.x <= 0.002 ||
+      sc.x >= 0.998 ||
+      sc.y <= 0.002 ||
+      sc.y >= 0.998 ||
+      sc.z >= 1.0 ||
+      sc.z <= 0.0
+    ) {
+      return 1.0;
+    }
+    return sampleBlitzShadowTap(sc.xy, sc.z - 0.0009);
   }
 
   float sampleBlitzCastShadow(vec3 worldPos) {
@@ -474,16 +832,40 @@ const BLITZ_CAST_SHADOW_GLSL_SNIPPET = /* glsl */ `
     ) {
       return 1.0;
     }
-    float zRef = shadowCoord.z - 0.0012;
-    vec2 texel = vec2(1.0 / 1024.0);
-    float s0 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy).r);
-    float s1 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(texel.x, texel.y) * 0.75).r);
-    float s2 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(-texel.x, -texel.y) * 0.75).r);
-    float s3 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(texel.x, -texel.y) * 0.75).r);
-    float s4 = step(zRef, texture2D(uDirShadowMap, shadowCoord.xy + vec2(-texel.x, texel.y) * 0.75).r);
-    return (s0 * 2.0 + s1 + s2 + s3 + s4) / 6.0;
+    float zRef = shadowCoord.z - 0.00075;
+    float mapRes = uDirShadowMapSize > 1.0 ? uDirShadowMapSize : 2048.0;
+    vec2 radius = vec2(1.45 / mapRes);
+    float sum = 0.0;
+    for (int i = 0; i < 9; i++) {
+      float fi = float(i);
+      float r = sqrt((fi + 0.5) / 9.0);
+      float theta = fi * 2.39996323;
+      vec2 offset = vec2(cos(theta), sin(theta)) * r * radius;
+      sum += sampleBlitzShadowTap(shadowCoord.xy + offset, zRef);
+    }
+    return sum / 9.0;
   }
 `;
+
+/**
+ * Ensures custom ShaderMaterials sampling `uDirShadowMap` keep `BLITZ_SHADOW_COMPARE` matching
+ * `THREE.PCFShadowMap` even when compiled with zero active scene shadow casters (e.g. during
+ * indoor precompilation), avoiding WebGL2 sampler2D/sampler2DShadow format mismatches.
+ */
+export function bindBlitzShadowSamplerShaderDefine(material: THREE.ShaderMaterial): void {
+  const prevOnBeforeCompile = material.onBeforeCompile;
+  material.onBeforeCompile = (parameters, renderer) => {
+    if (prevOnBeforeCompile) {
+      prevOnBeforeCompile.call(material, parameters, renderer);
+    }
+    if (renderer.shadowMap.enabled && parameters.shadowMapType === THREE.PCFShadowMap) {
+      parameters.defines = {
+        ...(parameters.defines || {}),
+        BLITZ_SHADOW_COMPARE: 1,
+      };
+    }
+  };
+}
 
 export interface BlitzWindUniforms {
   uTime: { value: number };
@@ -500,6 +882,530 @@ export interface BlitzWindUniforms {
   uDirShadowMap?: { value: THREE.Texture | null };
   uDirShadowMatrix?: { value: THREE.Matrix4 };
   uHasDirShadow?: { value: number };
+  uDirShadowMapSize?: { value: number };
+  sharedWaterUniforms?: UnifiedWaterSurfaceSharedUniforms;
+}
+
+/**
+ * Shared GLSL snippet for 60 FPS dual-layer Voronoi caustics, organic cellular foam lace,
+ * synchronized coastal swash phase, and concentric raindrop surface ripples.
+ */
+const WATER_AND_CAUSTICS_GLSL_SNIPPET = /* glsl */ `
+  vec2 hash22Water(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+  }
+
+  vec2 voronoiCellMetrics(vec2 uv, float phase) {
+    vec2 n = floor(uv);
+    vec2 f = fract(uv);
+    float d1 = 8.0;
+    float d2 = 8.0;
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(float(i), float(j));
+        vec2 o = hash22Water(n + g);
+        o = 0.5 + 0.42 * sin(phase + 6.2831853 * o);
+        vec2 r = g + o - f;
+        float d = dot(r, r);
+        if (d < d1) {
+          d2 = d1;
+          d1 = d;
+        } else if (d < d2) {
+          d2 = d;
+        }
+      }
+    }
+    float sq1 = sqrt(d1);
+    float sq2 = sqrt(d2);
+    return vec2(sq1, sq2 - sq1);
+  }
+
+  // Dual-layer counter-drifting organic liquid Voronoi caustics
+  float evalVoronoiCaustics(vec2 p, float t) {
+    vec2 warp = vec2(
+      sin(p.y * 0.65 + t * 0.85) * 0.38 + cos(p.x * 0.48 - t * 0.62) * 0.22,
+      cos(p.x * 0.62 - t * 0.78) * 0.38 + sin(p.y * 0.51 + t * 0.69) * 0.22
+    );
+    vec2 wp = p + warp;
+    vec2 uvA = wp * 0.56 + vec2(t * 0.22, -t * 0.17);
+    vec2 uvB = wp * 0.84 + vec2(-t * 0.19, t * 0.24) + vec2(4.3, -2.9);
+    vec2 mA = voronoiCellMetrics(uvA, t * 1.35);
+    vec2 mB = voronoiCellMetrics(uvB, -t * 1.62);
+    float webA = pow(clamp(mA.x, 0.0, 1.08), 3.1) * 0.68 + (1.0 - smoothstep(0.02, 0.26, mA.y)) * 0.42;
+    float webB = pow(clamp(mB.x, 0.0, 1.08), 3.1) * 0.68 + (1.0 - smoothstep(0.02, 0.26, mB.y)) * 0.42;
+    float web = 0.34 * (webA + webB) + 0.82 * (webA * webB);
+    return clamp(web, 0.0, 1.35);
+  }
+
+  // Perforated organic Voronoi cellular foam lace (holes inside cells, bubbly ridges around borders)
+  float evalVoronoiFoamLace(vec2 p, float t, vec2 driftVel) {
+    vec2 warp = vec2(sin(p.y * 0.8 + t * 0.9), cos(p.x * 0.75 - t * 0.85)) * 0.24;
+    vec2 wp = p + warp;
+    vec2 uv1 = wp * 1.32 + driftVel * t;
+    vec2 uv2 = wp * 2.55 - driftVel * t * 0.7 + vec2(3.1, 7.4);
+    vec2 m1 = voronoiCellMetrics(uv1, t * 0.95);
+    vec2 m2 = voronoiCellMetrics(uv2, -t * 1.25);
+    float ridge1 = smoothstep(0.30, 0.66, m1.x) * 0.72 + (1.0 - smoothstep(0.02, 0.22, m1.y)) * 0.36;
+    float ridge2 = smoothstep(0.34, 0.70, m2.x) * 0.50;
+    return clamp(ridge1 * 0.74 + ridge2 * 0.40, 0.0, 1.0);
+  }
+
+  // Concentric raindrop ripples for stormy water surfaces (0 extra draw calls)
+  vec3 evalWaterRainRipples(vec2 p, float t, float rainFactor) {
+    if (rainFactor <= 0.01) return vec3(0.0);
+    vec2 grad = vec2(0.0);
+    float crestGlow = 0.0;
+    for (int layer = 0; layer < 2; layer++) {
+      float scale = layer == 0 ? 0.68 : 1.12;
+      vec2 uv = p * scale + vec2(float(layer) * 5.3, float(layer) * -3.7);
+      vec2 cell = floor(uv);
+      vec2 f = fract(uv) - 0.5;
+      vec2 h = hash22Water(cell + vec2(float(layer) * 19.1, 7.3));
+      vec2 center = (h - 0.5) * 0.40;
+      vec2 dVec = f - center;
+      float dist = length(dVec);
+      float age = fract(t * (1.35 + float(layer) * 0.32) + h.x * 3.17 + h.y * 5.23);
+      float radius = age * 0.45;
+      float ringDelta = (dist - radius) * 20.0;
+      float envelope = exp(-ringDelta * ringDelta * 0.22) * (1.0 - age) * smoothstep(0.0, 0.10, age);
+      float edgeFade = 1.0 - smoothstep(0.32, 0.48, dist);
+      float strength = envelope * edgeFade;
+      vec2 dir = dist > 0.001 ? (dVec / dist) : vec2(0.0);
+      grad += dir * sin(ringDelta) * strength;
+      crestGlow += strength * max(0.0, cos(ringDelta));
+    }
+    return vec3(grad * (0.36 * rainFactor), crestGlow * 0.42 * rainFactor);
+  }
+
+  // Synchronized coastal wave swash phase (shared 1:1 between beach sand swash and ocean surf)
+  vec3 evalCoastalSwashState(vec2 p, float t) {
+    float alongShore = sin(p.y * 0.095) * 1.15 + sin(p.y * 0.23 + 1.4) * 0.45;
+    float phase = t * 1.65 + alongShore;
+    float raw = sin(phase);
+    float swash01 = 0.5 + 0.5 * sin(phase + 0.25 * raw);
+    float swashDeriv = cos(phase + 0.25 * raw);
+    float reachM = mix(-2.25, 1.55, swash01);
+    return vec3(swash01, swashDeriv, reachM);
+  }
+`;
+
+export interface UnifiedWaterSurfaceSharedUniforms {
+  uSunDirection: { value: THREE.Vector3 };
+  uSunColor: { value: THREE.Color };
+  uSkyColor: { value: THREE.Color };
+  uFogColor: { value: THREE.Color };
+  uRainFactor: { value: number };
+  uTimeOfDayNightFactor: { value: number };
+  uDuskDawnFactor: { value: number };
+  uWindStrength: { value: number };
+  uGroundLightTint: { value: THREE.Color };
+}
+
+export function createSharedWaterSurfaceUniforms(
+  windUniforms: BlitzWindUniforms,
+): UnifiedWaterSurfaceSharedUniforms {
+  if (windUniforms.sharedWaterUniforms) {
+    return windUniforms.sharedWaterUniforms;
+  }
+  const shared: UnifiedWaterSurfaceSharedUniforms = {
+    uSunDirection: { value: windUniforms.uLightDirection.value.clone().normalize() },
+    uSunColor: { value: new THREE.Color('#fff9e6') },
+    uSkyColor: { value: new THREE.Color('#6cb8f5') },
+    uFogColor: { value: new THREE.Color('#bae2ff') },
+    uRainFactor: { value: 0.0 },
+    uTimeOfDayNightFactor: { value: 0.0 },
+    uDuskDawnFactor: { value: 0.0 },
+    uWindStrength: { value: windUniforms.uWindStrength.value },
+    uGroundLightTint: { value: new THREE.Color('#ffffff') },
+  };
+  windUniforms.sharedWaterUniforms = shared;
+  return shared;
+}
+
+export interface CreateUnifiedWaterSurfaceMaterialOptions {
+  kind: 'ocean' | 'lake' | 'pool';
+  windUniforms: BlitzWindUniforms;
+  isSoftwareGl?: boolean;
+  sharedUniforms?: UnifiedWaterSurfaceSharedUniforms;
+  poolCenterXZ?: [number, number];
+  poolRadiusM?: number;
+  poolDepthM?: number;
+  poolHasSplash?: boolean;
+}
+
+/**
+ * Builds the 60 FPS translucent optical-depth water shader shared by EastOceanWaterSurface,
+ * OasisLakeWaterSurface, and architectural Plaza Water Basins (`kind: 'pool'`):
+ * - Beer-Lambert depth transmittance from analytic seabed/basin elevation (no depth prepass)
+ * - 4-cascade non-integer wave displacement + analytic normals + capillary & rain ripples
+ * - Fresnel sky reflection + sharp sun/moon specular glint (pow 96) synced to weather/time
+ * - Perforated Voronoi cellular shoreline swash foam + animated caustics + Linear THREE.Fog
+ */
+export function createUnifiedWaterSurfaceMaterial(
+  options: CreateUnifiedWaterSurfaceMaterialOptions,
+): THREE.ShaderMaterial {
+  const {
+    kind,
+    windUniforms,
+    sharedUniforms,
+    poolCenterXZ = [0, 0],
+    poolRadiusM = 3.2,
+    poolDepthM = 1.2,
+    poolHasSplash = false,
+  } = options;
+  const uSculptMap = windUniforms.uSculptMap || { value: getOrCreateSharedSculptTexture() };
+  const shared = sharedUniforms ?? createSharedWaterSurfaceUniforms(windUniforms);
+  const isOcean = kind === 'ocean';
+  const isPool = kind === 'pool';
+
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+    side: THREE.FrontSide,
+    uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+      uSculptMap,
+      uTime: windUniforms.uTime,
+      uIsOcean: { value: isOcean ? 1.0 : 0.0 },
+      uIsPool: { value: isPool ? 1.0 : 0.0 },
+      uPoolCenterXZ: { value: new THREE.Vector2(poolCenterXZ[0], poolCenterXZ[1]) },
+      uPoolRadiusM: { value: poolRadiusM },
+      uPoolDepthM: { value: poolDepthM },
+      uPoolHasSplash: { value: poolHasSplash ? 1.0 : 0.0 },
+      uWaveScale: { value: isOcean ? 1.0 : isPool ? 0.14 : 0.45 },
+      uSunDirection: shared.uSunDirection,
+      uSunColor: shared.uSunColor,
+      uSkyColor: shared.uSkyColor,
+      uFogColor: shared.uFogColor,
+      uRainFactor: shared.uRainFactor,
+      uTimeOfDayNightFactor: shared.uTimeOfDayNightFactor,
+      uDuskDawnFactor: shared.uDuskDawnFactor,
+      uWindStrength: shared.uWindStrength,
+    },
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uIsOcean;
+      uniform float uIsPool;
+      uniform vec2 uPoolCenterXZ;
+      uniform float uPoolRadiusM;
+      uniform float uWaveScale;
+      uniform float uWindStrength;
+
+      varying vec3 vWorldPos;
+      varying vec2 vWorldXZ;
+      varying vec3 vWaveNormal;
+      varying float vWaveY;
+      varying float vCrestFactor;
+      varying float vEffAmp;
+      #include <fog_pars_vertex>
+      ${PLANET_TERRAIN_GLSL_SNIPPET}
+
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        float shoreDamp = 1.0;
+        float sandyMaskV = 0.0;
+        vec2 harborSdfV = vec2(20.0, 20.0);
+        float roughDepth = 1.0;
+
+        if (uIsOcean > 0.5) {
+          harborSdfV = evaluateSeHarborSdf(wp.xz);
+          float bedY = evalHarborSeabedDrop(wp.xz, harborSdfV.y);
+          roughDepth = max(0.0, -0.16 - bedY);
+          float wallDamp = smoothstep(0.0, 1.4, -harborSdfV.y);
+          shoreDamp = smoothstep(0.02, 0.55, roughDepth) * wallDamp;
+          sandyMaskV = evaluateEastCoastalSandyMask(wp.z);
+        } else if (uIsPool > 0.5) {
+          float poolDistV = length(wp.xz - uPoolCenterXZ);
+          shoreDamp = smoothstep(0.02, -min(uPoolRadiusM * 0.45, 0.65), poolDistV - uPoolRadiusM);
+        } else {
+          float lakeSdfV = evaluateNwLakeSdf(wp.xz);
+          shoreDamp = smoothstep(0.20, -1.55, lakeSdfV);
+        }
+
+        float windWaveBoost = mix(0.85, 1.45, clamp(uWindStrength * 0.5, 0.0, 1.0));
+        float effAmp = uWaveScale * shoreDamp * windWaveBoost;
+
+        // Vertex shader evaluates strictly Nyquist-safe macro swells (lambda >= 14.2m vs 2.5m mesh spacing);
+        // shorter medium/capillary waves (k2/k3) are evaluated analytically per-pixel to eliminate moire stripes.
+        float k0 = 6.2831853 / 73.3;
+        float k1 = 6.2831853 / 15.7;
+
+        float p0 = wp.x * k0 * 0.88 + wp.z * k0 * 0.47 + uTime * 1.45;
+        float p1 = wp.x * k1 * 0.76 - wp.z * k1 * 0.65 + uTime * 2.15;
+
+        float h0 = sin(p0) * 0.068 * effAmp;
+        float h1 = sin(p1) * 0.042 * effAmp;
+
+        float shoreSwellAmp =
+          uIsOcean *
+          sandyMaskV *
+          smoothstep(-24.0, -4.5, harborSdfV.y) *
+          smoothstep(0.04, 0.35, roughDepth) *
+          0.024 *
+          windWaveBoost;
+        float shoreSwellPhase = harborSdfV.y * 0.44 + uTime * 1.65 + sin(wp.z * 0.11) * 1.2;
+        float hShore = sin(shoreSwellPhase) * shoreSwellAmp;
+
+        float waveY = h0 + h1 + hShore;
+        float dHdx =
+          cos(p0) * k0 * 0.88 * 0.068 * effAmp +
+          cos(p1) * k1 * 0.76 * 0.042 * effAmp -
+          cos(shoreSwellPhase) * 0.44 * shoreSwellAmp;
+        float dHdz =
+          cos(p0) * k0 * 0.47 * 0.068 * effAmp -
+          cos(p1) * k1 * 0.65 * 0.042 * effAmp +
+          cos(shoreSwellPhase) * (cos(wp.z * 0.11) * 0.132) * shoreSwellAmp;
+
+        wp.y += waveY;
+        vWorldPos = wp.xyz;
+        vWorldXZ = wp.xz;
+        vWaveY = waveY;
+        vWaveNormal = normalize(vec3(-dHdx, 1.0, -dHdz));
+        vCrestFactor = sin(p1);
+        vEffAmp = effAmp;
+
+        vec4 mvPosition = viewMatrix * wp;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uIsOcean;
+      uniform float uIsPool;
+      uniform vec2 uPoolCenterXZ;
+      uniform float uPoolRadiusM;
+      uniform float uPoolDepthM;
+      uniform float uPoolHasSplash;
+      uniform float uWaveScale;
+      uniform vec3 uSunDirection;
+      uniform vec3 uSunColor;
+      uniform vec3 uSkyColor;
+      uniform vec3 uFogColor;
+      uniform float uRainFactor;
+      uniform float uTimeOfDayNightFactor;
+      uniform float uDuskDawnFactor;
+      uniform float uWindStrength;
+
+      varying vec3 vWorldPos;
+      varying vec2 vWorldXZ;
+      varying vec3 vWaveNormal;
+      varying float vWaveY;
+      varying float vCrestFactor;
+      varying float vEffAmp;
+      #include <fog_pars_fragment>
+      ${PLANET_TERRAIN_GLSL_SNIPPET}
+      ${WATER_AND_CAUSTICS_GLSL_SNIPPET}
+
+      void main() {
+        float bedY = -0.16;
+        float waterDepth = 0.0;
+        float shoreFeather = 1.0;
+        float sandyMask = 0.0;
+        vec2 harborSdf = vec2(20.0, 20.0);
+        float lakeSdf = 20.0;
+        float poolDist = 0.0;
+        float poolWallDist = 0.0;
+        float poolRadialProfile = 0.0;
+
+        if (uIsOcean > 0.5) {
+          harborSdf = evaluateSeHarborSdf(vWorldXZ);
+          if (harborSdf.x <= -0.02 || harborSdf.y > 0.35) discard;
+          bedY = evalHarborSeabedDrop(vWorldXZ, harborSdf.y);
+          waterDepth = (-0.16 + vWaveY) - bedY;
+          if (waterDepth <= -0.01) discard;
+          sandyMask = evaluateEastCoastalSandyMask(vWorldXZ.y);
+          shoreFeather = smoothstep(0.0, 0.08, waterDepth);
+        } else if (uIsPool > 0.5) {
+          poolDist = length(vWorldXZ - uPoolCenterXZ);
+          if (poolDist > uPoolRadiusM) discard;
+          poolWallDist = uPoolRadiusM - poolDist;
+          float rNorm = clamp(poolDist / max(uPoolRadiusM, 0.01), 0.0, 1.0);
+          poolRadialProfile = sqrt(max(0.0, 1.0 - rNorm * rNorm * 0.88));
+          waterDepth = max(0.04, uPoolDepthM * poolRadialProfile + vWaveY);
+          shoreFeather = smoothstep(0.0, 0.055, poolWallDist);
+        } else {
+          lakeSdf = evaluateNwLakeSdf(vWorldXZ);
+          if (lakeSdf > 0.36) discard;
+          float lakeStep1 = (1.0 - smoothstep(-0.45, 0.85, lakeSdf)) * 0.48;
+          float lakeStep2 = (1.0 - smoothstep(-2.60, -1.10, lakeSdf)) * 0.52;
+          float lakeStep3 = (1.0 - smoothstep(-5.60, -3.20, lakeSdf)) * 0.55;
+          bedY = -(lakeStep1 + lakeStep2 + lakeStep3);
+          waterDepth = (-0.16 + vWaveY) - bedY;
+          if (waterDepth <= -0.01) discard;
+          shoreFeather = (1.0 - smoothstep(0.16, 0.35, lakeSdf)) * smoothstep(0.0, 0.07, waterDepth);
+        }
+
+        // View vector + Nyquist distance/grazing anti-aliasing filter so mid/far ocean never aliases or bands
+        vec3 toCam = cameraPosition - vWorldPos;
+        float viewDist = length(toCam);
+        vec3 V = toCam / max(viewDist, 1e-4);
+        float grazingFilter = smoothstep(0.03, 0.24, max(V.y, 0.0));
+        float shortWaveAtten = (1.0 - smoothstep(28.0, 95.0, viewDist)) * grazingFilter;
+        float macroKeep = mix(0.28, 1.0, 1.0 - smoothstep(45.0, 140.0, viewDist)) * mix(0.45, 1.0, grazingFilter);
+        vec3 macroN = normalize(mix(vec3(0.0, 1.0, 0.0), vWaveNormal, macroKeep));
+
+        // Per-pixel short-cascade normal derivatives (3.33m & 0.71m) + organic capillary ripples + raindrop rings
+        vec2 wPosRipple = mix(vWorldXZ, vWorldXZ * 1.65, uIsPool);
+        float k2 = 6.2831853 / 3.33;
+        float k3 = 6.2831853 / 0.71;
+        float p2 = -wPosRipple.x * k2 * 0.54 + wPosRipple.y * k2 * 0.84 + uTime * 3.10;
+        float p3 = wPosRipple.x * k3 * 0.62 + wPosRipple.y * k3 * 0.78 - uTime * 4.20;
+        float midScale = clamp(mix(vEffAmp, max(vEffAmp, 0.42), uIsPool), 0.0, 1.55) * shortWaveAtten;
+        vec2 shortGrad = (
+          vec2(sin(p2) * k2 * 0.54, -sin(p2) * k2 * 0.84) * 0.016 +
+          vec2(cos(p3) * k3 * 0.62, cos(p3) * k3 * 0.78) * 0.0045
+        ) * midScale;
+
+        float capWarp = sin(wPosRipple.x * 0.33 - wPosRipple.y * 0.29 + uTime * 0.72) * 1.45;
+        float rPhaseA = wPosRipple.x * 2.85 + wPosRipple.y * 1.95 + capWarp - uTime * 2.1;
+        float rPhaseB = -wPosRipple.x * 2.15 + wPosRipple.y * 3.45 - capWarp * 0.8 + uTime * 2.6;
+        float rPhaseC = wPosRipple.x * 4.10 - wPosRipple.y * 3.60 + capWarp * 0.5 - uTime * 3.1;
+        vec2 capGrad = (
+          vec2(cos(rPhaseA) * 2.85, cos(rPhaseA) * 1.95) * 0.0044 +
+          vec2(-cos(rPhaseB) * 2.15, cos(rPhaseB) * 3.45) * 0.0038 +
+          vec2(cos(rPhaseC) * 4.10, -cos(rPhaseC) * 3.60) * 0.0024
+        ) * mix(0.65, 1.0, uIsOcean) * shortWaveAtten;
+
+        if (uIsPool > 0.5 && uPoolHasSplash > 0.5) {
+          vec2 radialDir = poolDist > 0.02 ? ((vWorldXZ - uPoolCenterXZ) / poolDist) : vec2(0.0);
+          float splashEnv = smoothstep(0.04, 0.38, poolDist) * (1.0 - smoothstep(uPoolRadiusM * 0.72, uPoolRadiusM, poolDist));
+          capGrad += radialDir * cos(poolDist * 14.0 - uTime * 4.4) * 0.036 * splashEnv * shortWaveAtten;
+        }
+
+        vec3 rainRip = evalWaterRainRipples(vWorldXZ, uTime, uRainFactor);
+        vec3 N = normalize(macroN + vec3(shortGrad.x + capGrad.x + rainRip.x, 0.0, shortGrad.y + capGrad.y + rainRip.y));
+        if (N.y < 0.0) N = -N;
+
+        // Beer-Lambert optical water color & depth-dependent transparency (matches NW Oasis Lake palette)
+        float d = max(waterDepth, 0.0);
+        float shallowT = smoothstep(0.0, 0.25, d);
+        float midT = smoothstep(0.25, 1.08, d);
+        float deepT = smoothstep(1.08, 1.55, d);
+
+        vec3 shallowColDay = mix(vec3(0.07, 0.56, 0.61), vec3(0.06, 0.58, 0.62), 1.0 - uIsOcean);
+        vec3 midColDay = mix(vec3(0.025, 0.40, 0.52), vec3(0.02, 0.42, 0.50), 1.0 - uIsOcean);
+        vec3 deepColDay = mix(vec3(0.012, 0.15, 0.29), vec3(0.015, 0.20, 0.30), 1.0 - uIsOcean);
+
+        vec3 dayWaterCol = mix(shallowColDay, midColDay, shallowT * 0.55 + midT * 0.45);
+        dayWaterCol = mix(dayWaterCol, deepColDay, deepT * 0.85);
+        if (uIsPool > 0.5) {
+          float poolCaustic = evalVoronoiCaustics(vWorldXZ * 1.55, uTime);
+          dayWaterCol += vec3(0.06, 0.24, 0.28) * poolCaustic * (1.0 - deepT * 0.50);
+        }
+
+        vec3 weatherWaterScale = mix(vec3(1.0), vec3(0.20, 0.26, 0.44), uTimeOfDayNightFactor);
+        weatherWaterScale = mix(
+          weatherWaterScale,
+          uSkyColor * 0.72 + vec3(0.05, 0.12, 0.18),
+          clamp(uDuskDawnFactor * 0.45 + uRainFactor * 0.38, 0.0, 0.75)
+        );
+        vec3 bodyCol = dayWaterCol * weatherWaterScale;
+
+        float beerAlpha = 1.0 - exp(-d * 1.18);
+        float opticalAlpha = mix(mix(0.06, 0.36, uIsPool), mix(0.20, 0.48, uIsPool), shallowT);
+        opticalAlpha = mix(opticalAlpha, mix(0.64, 0.74, uIsPool), midT);
+        opticalAlpha = mix(opticalAlpha, 0.86, deepT);
+        opticalAlpha = mix(opticalAlpha, clamp(beerAlpha, 0.06, 0.88), 0.28);
+        if (uIsOcean > 0.5) {
+          opticalAlpha = mix(opticalAlpha, 1.0, smoothstep(-28.0, -56.0, harborSdf.y));
+        }
+
+        // Fresnel sky reflection + sun/moon specular glint
+        float ndotv = clamp(dot(N, V), 0.0, 1.0);
+        float fresnel = 0.03 + 0.92 * pow(max(1.0 - ndotv, 0.0), 4.0);
+        vec3 R = reflect(-V, N);
+        vec3 reflectSky = mix(uFogColor, uSkyColor * mix(1.0, 0.72, uTimeOfDayNightFactor), smoothstep(-0.05, 0.42, R.y));
+        reflectSky = mix(
+          reflectSky,
+          uSunColor * 0.85,
+          uDuskDawnFactor * 0.30 * (1.0 - smoothstep(0.05, 0.45, R.y))
+        );
+
+        vec3 L = normalize(uSunDirection);
+        vec3 H = normalize(L + V);
+        float ndoth = clamp(dot(N, H), 0.0, 1.0);
+        float specSharp = pow(max(ndoth, 1e-4), 96.0);
+        float specHalo = pow(max(ndoth, 1e-4), 42.0) * 0.08;
+        float sunVis = (1.0 - uRainFactor * 0.78) * mix(1.30, 0.42, uTimeOfDayNightFactor);
+        vec3 specGlint = uSunColor * (specSharp * 1.38 + specHalo) * sunVis;
+
+        float reflectMix = clamp(fresnel * mix(0.72, 0.58, uTimeOfDayNightFactor) * mix(1.0, 0.82, 1.0 - uIsOcean), 0.0, 0.86);
+        vec3 waterCol = mix(bodyCol, reflectSky, reflectMix) + specGlint;
+        waterCol += uSkyColor * rainRip.z * 0.55;
+
+        // Voronoi cellular shoreline swash foam + Harbor Quay / Oasis Lake / Plaza Pool edge foam
+        float foamAmt = 0.0;
+        if (uIsOcean > 0.5) {
+          if (harborSdf.y > -28.0) {
+            float lace = evalVoronoiFoamLace(vWorldXZ, uTime, vec2(-0.28, 0.12));
+            if (sandyMask > 0.001) {
+              vec3 swash = evalCoastalSwashState(vWorldXZ, uTime);
+              float distToReach = harborSdf.y - swash.z;
+              float primaryBand = (1.0 - smoothstep(0.10, 1.45, abs(distToReach + 0.35))) * smoothstep(-2.4, -0.5, harborSdf.y + 2.4);
+              float waveBandCoord = fract(-harborSdf.y * 0.22 - uTime * 0.28 + sin(vWorldXZ.y * 0.11) * 0.35);
+              float surfWaveMask = smoothstep(0.18, 0.65, d) * (1.0 - smoothstep(0.65, 1.15, d));
+              float secondaryBand = (1.0 - smoothstep(0.0, 0.24, abs(waveBandCoord - 0.5))) * surfWaveMask * 0.65;
+              float rawBeachFoam = max(primaryBand, secondaryBand);
+              float cellularFoam = smoothstep(0.28, 0.64, lace + rawBeachFoam * 0.52 - 0.25) * smoothstep(0.02, 0.35, rawBeachFoam);
+              foamAmt = max(foamAmt, cellularFoam * sandyMask * 0.92);
+            }
+            float quayMask = 1.0 - sandyMask;
+            if (quayMask > 0.001) {
+              float lapWave = sin(uTime * 1.9 + vWorldXZ.y * 0.42) * 0.25;
+              float quayBand = smoothstep(-1.15, -0.45, harborSdf.y + lapWave) * (1.0 - smoothstep(-0.32, 0.05, harborSdf.y));
+              float quayFoam = smoothstep(0.32, 0.66, lace + quayBand * 0.42 - 0.22) * smoothstep(0.05, 0.40, quayBand);
+              foamAmt = max(foamAmt, quayFoam * quayMask * 0.72);
+            }
+            float crestFactor = clamp(vCrestFactor * 0.55 + cos(p2) * 0.45 * shortWaveAtten, -1.0, 1.0);
+            float crestWhitecap = smoothstep(0.56, 0.88, crestFactor) * smoothstep(0.5, 1.4, d) * lace;
+            foamAmt = max(foamAmt, crestWhitecap * (0.22 + clamp(uWindStrength * 0.16, 0.0, 0.28)));
+          }
+        } else if (uIsPool > 0.5) {
+          float lace = evalVoronoiFoamLace(vWorldXZ * 1.45, uTime * 0.85, vec2(0.14, -0.12));
+          float lapWave = sin(uTime * 1.5 + vWorldXZ.x * 0.85 - vWorldXZ.y * 0.72) * 0.06;
+          float poolRim = smoothstep(0.30, 0.02, poolWallDist + lapWave);
+          float poolFoam = smoothstep(0.36, 0.68, lace + poolRim * 0.42 - 0.22) * smoothstep(0.04, 0.35, poolRim);
+          foamAmt = poolFoam * 0.46;
+          if (uPoolHasSplash > 0.5) {
+            float impactR = uPoolRadiusM * 0.68;
+            float jetRing = (1.0 - smoothstep(0.05, 0.36, abs(poolDist - impactR))) * smoothstep(0.32, 0.70, lace);
+            float centerPlume = (1.0 - smoothstep(0.05, 0.32, poolDist)) * 0.55 * smoothstep(0.28, 0.65, lace);
+            foamAmt = max(foamAmt, max(jetRing * 0.56, centerPlume));
+          }
+        } else {
+          float lace = evalVoronoiFoamLace(vWorldXZ * 1.15, uTime * 0.75, vec2(0.16, -0.14));
+          float lapWave = sin(uTime * 1.4 + vWorldXZ.x * 0.55 - vWorldXZ.y * 0.48) * 0.12;
+          float lakeRim = smoothstep(-0.85, -0.10, lakeSdf + lapWave) * (1.0 - smoothstep(-0.08, 0.28, lakeSdf));
+          float lakeFoam = smoothstep(0.34, 0.68, lace + lakeRim * 0.45 - 0.24) * smoothstep(0.05, 0.35, lakeRim);
+          foamAmt = lakeFoam * 0.62;
+        }
+
+        vec3 foamDayCol = vec3(0.92, 0.97, 1.0);
+        vec3 foamCol = foamDayCol * mix(vec3(1.0), uSunColor * 0.92 + vec3(0.10), 0.38) * mix(1.0, 0.38, uTimeOfDayNightFactor);
+        foamCol = mix(foamCol, uSkyColor * 0.82 + vec3(0.15), uRainFactor * 0.35);
+        waterCol = mix(waterCol, foamCol, clamp(foamAmt, 0.0, 0.95));
+
+        float farHorizonOpaque = uIsOcean > 0.5 ? smoothstep(-32.0, -58.0, harborSdf.y) : 0.0;
+        float nearAlpha = clamp(
+          max(opticalAlpha, fresnel * 0.42) + specSharp * 0.28 * sunVis + foamAmt * 0.42 + rainRip.z * 0.18,
+          0.0,
+          0.96
+        );
+        float finalAlpha = mix(nearAlpha, 1.0, farHorizonOpaque);
+        finalAlpha *= shoreFeather;
+        if (finalAlpha <= 0.004) discard;
+
+        gl_FragColor = vec4(waterCol, finalAlpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }
+    `,
+  });
 }
 
 let sharedSculptDataTexture: THREE.DataTexture | null = null;
@@ -686,6 +1592,7 @@ export function upgradeMeshToBlitzWorldMaterial(
   if (!mat) {
     mat = new THREE.ShaderMaterial({
       uniforms: {
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         uMap: { value: mapTex },
         uHasMap: { value: mapTex ? 1.0 : 0.0 },
         uBaseColor: { value: baseColor },
@@ -698,10 +1605,12 @@ export function upgradeMeshToBlitzWorldMaterial(
         uHighlightStep: { value: 0.6 },
         uEmissive: { value: new THREE.Color('#000000') },
       },
+      fog: true,
       vertexShader: /* glsl */ `
         varying vec2 vUv;
         varying vec3 vWorldNormal;
         varying vec3 vWorldPos;
+        #include <fog_pars_vertex>
         void main() {
           vUv = uv;
           #ifdef USE_INSTANCING
@@ -712,7 +1621,9 @@ export function upgradeMeshToBlitzWorldMaterial(
           vec4 worldPosition = worldMat * vec4(position, 1.0);
           vWorldPos = worldPosition.xyz;
           vWorldNormal = normalize(mat3(worldMat) * normal);
-          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+          vec4 mvPosition = viewMatrix * worldPosition;
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
@@ -731,6 +1642,7 @@ export function upgradeMeshToBlitzWorldMaterial(
         varying vec2 vUv;
         varying vec3 vWorldNormal;
         varying vec3 vWorldPos;
+        #include <fog_pars_fragment>
 
         // 45-degree halftone dot grid for cel-shaded shadow transitions
         float blitzHalftone(vec2 coord, float scale, float radius) {
@@ -775,6 +1687,7 @@ export function upgradeMeshToBlitzWorldMaterial(
           gl_FragColor = vec4(finalRgb, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
+          #include <fog_fragment>
         }
       `,
       side: THREE.DoubleSide,
@@ -819,24 +1732,31 @@ export function createBlitzStrokeMesh(
     if (!strokeMat) {
       strokeMat = new THREE.ShaderMaterial({
         uniforms: {
+          ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
           uStrokeWidth: { value: strokeWidth },
           uStrokeColor: { value: new THREE.Color(strokeColorHex) },
         },
+        fog: true,
         vertexShader: /* glsl */ `
           uniform float uStrokeWidth;
+          #include <fog_pars_vertex>
           void main() {
             vec3 extruded = position + normalize(normal) * uStrokeWidth;
             #ifdef USE_INSTANCING
-              gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(extruded, 1.0);
+              vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(extruded, 1.0);
             #else
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(extruded, 1.0);
+              vec4 mvPosition = modelViewMatrix * vec4(extruded, 1.0);
             #endif
+            gl_Position = projectionMatrix * mvPosition;
+            #include <fog_vertex>
           }
         `,
         fragmentShader: /* glsl */ `
           uniform vec3 uStrokeColor;
+          #include <fog_pars_fragment>
           void main() {
             gl_FragColor = vec4(uStrokeColor, 1.0);
+            #include <fog_fragment>
           }
         `,
         side: THREE.BackSide,
@@ -862,6 +1782,7 @@ function getSharedBakedStrokeMaterial(): THREE.MeshBasicMaterial {
     sharedBakedStrokeMat = new THREE.MeshBasicMaterial({
       color: 0x12121e,
       side: THREE.BackSide,
+      fog: true,
     });
   }
   return sharedBakedStrokeMat;
@@ -1051,6 +1972,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
 
   cached = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uShadowColor: { value: new THREE.Color('#2a2b36') },
       uBounceColor: { value: new THREE.Color('#75d424') },
       uLightDirection: srcMat.uniforms.uLightDirection,
@@ -1062,6 +1984,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
       uWindStrength: sharedWind?.uWindStrength ?? { value: 0.5 },
       uWindGust: sharedWind?.uWindGust ?? { value: 0 },
     },
+    fog: true,
     vertexShader: /* glsl */ `
       attribute vec4 aColorAndBounce;
       uniform float uWindPhase;
@@ -1075,6 +1998,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
       varying vec3 vWorldPos;
       varying vec2 vBotanicalUv;
       varying float vBotanicalLeafMask;
+      #include <fog_pars_vertex>
 
       void main() {
         vBaseColor = aColorAndBounce.rgb;
@@ -1123,7 +2047,9 @@ function getOrCreateBakedVertexColorWorldMaterial(
 
         vWorldPos = worldPosition.xyz;
         vWorldNormal = worldNorm;
-        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        vec4 mvPosition = viewMatrix * worldPosition;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
@@ -1140,6 +2066,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
       varying vec3 vWorldPos;
       varying vec2 vBotanicalUv;
       varying float vBotanicalLeafMask;
+      #include <fog_pars_fragment>
 
       float blitzHalftone(vec2 coord, float scale, float radius) {
         float c = cos(0.785398);
@@ -1181,6 +2108,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
           gl_FragColor = vec4(veinedCol * uLightColor, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
+          #include <fog_fragment>
           return;
         }
 
@@ -1203,6 +2131,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
         gl_FragColor = vec4(finalRgb, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
@@ -1487,6 +2416,33 @@ export function isBlitzColliderOrHelperNode(obj: THREE.Object3D): boolean {
 }
 
 /**
+ * Shared rolling meadow breeze deformation for InfiniteGrass & InfiniteGrassPetals.
+ * Combines slow traveling wind fronts, organic cross-ripples, and a calm-weather floor
+ * so meadow grass & wildflowers weave smoothly in clear weather without looking static.
+ */
+const BLITZ_GRASS_WIND_GLSL_SNIPPET = /* glsl */ `
+  vec2 getWindOffset(vec3 worldPos, float randSeed) {
+    vec2 dir = normalize(uWindDirection + vec2(0.0001));
+    vec2 perp = vec2(-dir.y, dir.x);
+    float along = dot(worldPos.xz, dir);
+    float across = dot(worldPos.xz, perp);
+    vec2 uvGust = worldPos.xz * 0.042 - dir * (uWindPhase * 0.011);
+    float noiseGust = texture2D(uWindNoiseTex, uvGust).r;
+
+    float primaryWave = sin(uWindPhase * 0.36 - along * 0.28 + across * 0.09 + (noiseGust - 0.5) * 3.2);
+    float crossWave = sin(uWindPhase * 0.23 + across * 0.34 - along * 0.14 + randSeed * 3.14159);
+    float gustEnvelope = smoothstep(0.28, 0.78, noiseGust) * (0.60 + 0.40 * uWindGust);
+    float d = mix(0.82, 1.24, randSeed);
+    float bladeFlutter = sin(uWindPhase * 0.58 * d + randSeed * 6.2831853) * 0.14;
+
+    float ampFloor = (0.48 + uWindStrength * 0.85) * (0.88 + 0.36 * uWindGust);
+    float forwardSway = (0.10 + gustEnvelope * 0.24 + primaryWave * (0.20 + 0.10 * gustEnvelope) + bladeFlutter * 0.65) * ampFloor;
+    float lateralSway = (crossWave * 0.16 + bladeFlutter * 0.85) * ampFloor;
+    return dir * forwardSway + perp * lateralSway;
+  }
+`;
+
+/**
  * Toroidal GPU-instanced InfiniteGrass & InfiniteGrassPetals shader system
  */
 export function createBlitzInfiniteGrassSystem(
@@ -1622,9 +2578,9 @@ export function createBlitzInfiniteGrassSystem(
 
   const windNoiseTex = createBlitzWindNoiseTexture();
 
-  // Persistent Tank Track & Footstep Trail Map (512x512 canvas covering [-130..+130]m flat Blitz arena)
-  const trailSpan = 260.0;
-  const trailHalfSpan = trailSpan * 0.5;
+  // Persistent Tank Track & Footstep Trail Map (512x512 canvas covering [-156..+156]m Blitz arena)
+  const trailSpan = PLANET_WORLD_PERIOD;
+  const trailHalfSpan = PLANET_HALF_EXTENT;
   const trailCanvas = document.createElement('canvas');
   trailCanvas.width = 512;
   trailCanvas.height = 512;
@@ -1660,18 +2616,21 @@ export function createBlitzInfiniteGrassSystem(
   const uDirShadowMap = windUniforms.uDirShadowMap || { value: null };
   const uDirShadowMatrix = windUniforms.uDirShadowMatrix || { value: new THREE.Matrix4() };
   const uHasDirShadow = windUniforms.uHasDirShadow || { value: 0.0 };
+  const uDirShadowMapSize = windUniforms.uDirShadowMapSize || { value: 2048.0 };
   windUniforms.uCurvatureStrength = uCurvatureStrength;
   windUniforms.uPlanetPivot = uViewPos;
   windUniforms.uSculptMap = uSculptMap;
   windUniforms.uDirShadowMap = uDirShadowMap;
   windUniforms.uDirShadowMatrix = uDirShadowMatrix;
   windUniforms.uHasDirShadow = uHasDirShadow;
+  windUniforms.uDirShadowMapSize = uDirShadowMapSize;
 
   // Toroidal Instanced InfiniteGrass Shader
   // Sun palette: #1b6e1e root -> #75d424 mid -> #d1f542 tip
   // Shadow palette: #083d12 root -> #1a7a24 mid -> #57b825 tip
   const grassMaterial = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uPlayerPos,
       uPlayerTrailPos,
       uViewPos,
@@ -1686,6 +2645,7 @@ export function createBlitzInfiniteGrassSystem(
       uDirShadowMap,
       uDirShadowMatrix,
       uHasDirShadow,
+      uDirShadowMapSize,
       uFieldSize: { value: fieldSize },
       uBladeHalfW: { value: bladeWidth * 0.5 },
       uBladeHeight: { value: bladeHeight },
@@ -1709,6 +2669,7 @@ export function createBlitzInfiniteGrassSystem(
       uFloorBlend: { value: 0.65 },
       uTrailDarkening: { value: 0.80 },
     },
+    fog: true,
     vertexShader: /* glsl */ `
       attribute vec2 aLocalAnchor;
       attribute vec2 aRandom;
@@ -1744,23 +2705,10 @@ export function createBlitzInfiniteGrassSystem(
       varying float vNoise;
       varying float vRandom;
       varying vec3 vWorldPos;
+      #include <fog_pars_vertex>
 
       ${PLANET_TERRAIN_GLSL_SNIPPET}
-
-      vec2 getWindOffset(vec3 worldPos, float randSeed) {
-        vec2 dir = normalize(uWindDirection + vec2(0.0001));
-        vec2 perp = vec2(-dir.y, dir.x);
-        vec2 uv1 = worldPos.xz * 0.01125 + dir * (uWindPhase * 0.0175);
-        vec2 uv2 = worldPos.xz * 0.034375 - dir * (uWindPhase * 0.02975);
-        float c = clamp(texture2D(uWindNoiseTex, uv1).r, 0.0, 1.0);
-        float l = texture2D(uWindNoiseTex, uv2).r - 0.5;
-        float d = mix(0.75, 1.35, randSeed);
-        float f = sin(uWindPhase * d + randSeed * 6.2831853) * 0.08;
-        float p = 1.0 + uWindGust * 1.15;
-        float m = (c * 0.42 + 0.24 + f) * uWindStrength * p;
-        float h = (l * 0.28 + f * 0.75) * uWindStrength * p;
-        return dir * m + perp * h;
-      }
+      ${BLITZ_GRASS_WIND_GLSL_SNIPPET}
 
       void main() {
         float halfField = uFieldSize * 0.5;
@@ -1778,6 +2726,10 @@ export function createBlitzInfiniteGrassSystem(
         }
 
         vec2 wp = anchor.xz;
+        if (evaluateCentralParkOctagonSdf(wp) <= 0.35) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
         // Smoothstep grass density from Blitz splatmap mask:
         // 1.0 on lush green meadow & small grass tuft islands, 0.0 on warm #d6a868 dirt paths & building pads
         float density = smoothstep(0.08, 0.78, evaluateBlitzGrassMask(wp));
@@ -1786,9 +2738,8 @@ export function createBlitzInfiniteGrassSystem(
           return;
         }
 
-        // Surviving grass blades are already outside lake/harbor/embankment/power-plant, so only sculpt offset applies
-        vec2 sculptUv = clamp((wrapPlanetVec2(wp) + 130.0) / 260.0, 0.0, 1.0);
-        anchor.y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
+        // Ground every surviving grass blade onto the true terrain elevation (including +8.50m Hilltop Villa Plateaus!)
+        anchor.y = getRawGroundElevation(wp);
 
         // Suppress grass blades underneath static Park Benches, Containers, and grounded Crates
         for (int i = 0; i < 64; i++) {
@@ -1809,8 +2760,8 @@ export function createBlitzInfiniteGrassSystem(
           return;
         }
 
-        // Sample persistent tank-track / character footstep / plane propwash trail map covering [-130..+130]m
-        vec2 trailUv = vec2((wp.x + 130.0) / 260.0, 1.0 - (wp.y + 130.0) / 260.0);
+        // Sample persistent tank-track / character footstep / plane propwash trail map covering [-156..+156]m
+        vec2 trailUv = vec2((wp.x + 156.0) / 312.0, 1.0 - (wp.y + 156.0) / 312.0);
         float trackCrush = texture2D(uTrailTex, clamp(trailUv, 0.0, 1.0)).r;
 
         float hScale = aBladeShape.x * density * mix(1.0, 0.45, trackCrush);
@@ -1898,7 +2849,9 @@ export function createBlitzInfiniteGrassSystem(
         vRandom = aRandom.x;
         vWorldPos = worldPos;
 
-        gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
+        vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
@@ -1917,21 +2870,15 @@ export function createBlitzInfiniteGrassSystem(
       varying float vNoise;
       varying float vRandom;
       varying vec3 vWorldPos;
+      #include <fog_pars_fragment>
 
       ${BLITZ_CAST_SHADOW_GLSL_SNIPPET}
 
       void main() {
         float patchFactor = smoothstep(0.18, 0.78, clamp(vNoise * 0.5 + 0.5, 0.0, 1.0));
-        // Fast single-tap directional shadow lookup per grass blade (naturally anti-aliased across dense blades)
-        float castShadow = 1.0;
-        if (uHasDirShadow > 0.5) {
-          vec4 sc = uDirShadowMatrix * vec4(vWorldPos, 1.0);
-          sc.xyz /= sc.w;
-          if (sc.x > 0.002 && sc.x < 0.998 && sc.y > 0.002 && sc.y < 0.998 && sc.z > 0.0 && sc.z < 1.0) {
-            castShadow = step(sc.z - 0.0014, texture2D(uDirShadowMap, sc.xy).r);
-          }
-        }
-        float litFactor = patchFactor * mix(0.12, 1.0, castShadow);
+        // Hardware-bilinear 2x2 PCF shadow lookup per grass blade (soft anti-aliased shadow edges at 60 FPS)
+        float castShadow = sampleBlitzCastShadowFast(vWorldPos);
+        float litFactor = patchFactor * mix(0.16, 1.0, castShadow);
 
         vec3 bottomCol = mix(uShadowBottom, uSunBottom, litFactor);
         vec3 midCol = mix(uShadowMid, uSunMid, litFactor);
@@ -1948,10 +2895,12 @@ export function createBlitzInfiniteGrassSystem(
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
   });
+  bindBlitzShadowSamplerShaderDefine(grassMaterial);
 
   const grassMesh = new THREE.InstancedMesh(bladeGeo, grassMaterial, count);
   grassMesh.name = 'InfiniteGrass';
@@ -1998,6 +2947,7 @@ export function createBlitzInfiniteGrassSystem(
 
   const petalMat = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uPlayerPos,
       uPlayerTrailPos,
       uViewPos,
@@ -2006,7 +2956,7 @@ export function createBlitzInfiniteGrassSystem(
       uExclusionRot,
       uSculptMap,
       uFieldSize: { value: fieldSize },
-      uPetalSize: { value: 0.22 },
+      uPetalSize: { value: 0.30 },
       uBladeHeight: { value: bladeHeight },
       uRobotRadius: { value: 2.35 },
       uWindNoiseTex: { value: windNoiseTex },
@@ -2020,6 +2970,7 @@ export function createBlitzInfiniteGrassSystem(
       uPetalColor3: { value: new THREE.Color('#ff5c8a') },
       uPetalColor4: { value: new THREE.Color('#38bdf8') },
     },
+    fog: true,
     vertexShader: /* glsl */ `
       attribute vec3 aPetalAnchor;
       attribute vec4 aPetalRandom;
@@ -2040,23 +2991,12 @@ export function createBlitzInfiniteGrassSystem(
       uniform float uWindStrength;
       uniform float uWindGust;
       varying float vColorSeed;
+      varying vec2 vPetalUv;
+      varying float vPetalVar;
+      #include <fog_pars_vertex>
 
       ${PLANET_TERRAIN_GLSL_SNIPPET}
-
-      vec2 getWindOffset(vec3 worldPos, float randSeed) {
-        vec2 dir = normalize(uWindDirection + vec2(0.0001));
-        vec2 perp = vec2(-dir.y, dir.x);
-        vec2 uv1 = worldPos.xz * 0.01125 + dir * (uWindPhase * 0.0175);
-        vec2 uv2 = worldPos.xz * 0.034375 - dir * (uWindPhase * 0.02975);
-        float c = clamp(texture2D(uWindNoiseTex, uv1).r, 0.0, 1.0);
-        float l = texture2D(uWindNoiseTex, uv2).r - 0.5;
-        float d = mix(0.75, 1.35, randSeed);
-        float f = sin(uWindPhase * d + randSeed * 6.2831853) * 0.08;
-        float p = 1.0 + uWindGust * 1.15;
-        float m = (c * 0.42 + 0.24 + f) * uWindStrength * p;
-        float h = (l * 0.28 + f * 0.75) * uWindStrength * p;
-        return dir * m + perp * h;
-      }
+      ${BLITZ_GRASS_WIND_GLSL_SNIPPET}
 
       void main() {
         float halfField = uFieldSize * 0.5;
@@ -2069,6 +3009,10 @@ export function createBlitzInfiniteGrassSystem(
           return;
         }
 
+        if (evaluateCentralParkOctagonSdf(anchor.xz) <= 0.35) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
         // Only grow flower specks where grass grows!
         float density = smoothstep(0.25, 0.82, evaluateBlitzGrassMask(anchor.xz));
         if (density <= 0.001) {
@@ -2106,9 +3050,9 @@ export function createBlitzInfiniteGrassSystem(
         fade *= playerHide;
 
         float yaw = aPetalRandom.x * 6.2831853;
-        float tiltX = (aPetalRandom.y - 0.5) * 1.1;
-        float tiltZ = (aPetalRandom.z - 0.5) * 1.1;
-        float scale = uPetalSize * (0.65 + aPetalRandom.w * 0.75) * fade;
+        float tiltX = (aPetalRandom.y - 0.5) * 0.65;
+        float tiltZ = (aPetalRandom.z - 0.5) * 0.65;
+        float scale = uPetalSize * (0.68 + aPetalRandom.w * 0.68) * fade;
 
         vec3 p = position * scale;
         float cy = cos(yaw), sy = sin(yaw);
@@ -2118,7 +3062,7 @@ export function createBlitzInfiniteGrassSystem(
         vec3 p2 = vec3(p1.x * cz - p1.y * sz, p1.x * sz + p1.y * cz, p1.z);
         vec3 p3 = vec3(p2.x * cy - p2.z * sy, p2.y, p2.x * sy + p2.z * cy);
 
-        float heightRatio = 0.16 + aPetalRandom.z * 0.52;
+        float heightRatio = 0.28 + aPetalRandom.z * 0.48;
         vec2 wind = getWindOffset(anchor, aPetalRandom.x) * (heightRatio * heightRatio);
         vec3 worldPos = vec3(
           anchor.x + p3.x + wind.x * fade,
@@ -2127,7 +3071,11 @@ export function createBlitzInfiniteGrassSystem(
         );
 
         vColorSeed = aPetalColor;
-        gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
+        vPetalUv = uv;
+        vPetalVar = aPetalRandom.y;
+        vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
@@ -2137,15 +3085,34 @@ export function createBlitzInfiniteGrassSystem(
       uniform vec3 uPetalColor3;
       uniform vec3 uPetalColor4;
       varying float vColorSeed;
+      varying vec2 vPetalUv;
+      varying float vPetalVar;
+      #include <fog_pars_fragment>
       void main() {
-        vec3 col = uPetalColor0;
-        if (vColorSeed >= 0.2 && vColorSeed < 0.4) col = uPetalColor1;
-        else if (vColorSeed >= 0.4 && vColorSeed < 0.6) col = uPetalColor2;
-        else if (vColorSeed >= 0.6 && vColorSeed < 0.8) col = uPetalColor3;
-        else if (vColorSeed >= 0.8) col = uPetalColor4;
+        vec2 p = vPetalUv * 2.0 - 1.0;
+        float r = length(p);
+        float angle = (r > 0.0001 ? atan(p.y, p.x) : 0.0) + vPetalVar * 6.2831853;
+        float petalCount = mix(5.0, 6.0, step(0.72, vPetalVar));
+        float lobe = pow(abs(cos(angle * (petalCount * 0.5))), 0.65);
+        float outerRadius = mix(0.32, 0.94, lobe);
+        if (r > outerRadius) discard;
+
+        vec3 baseCol = uPetalColor0;
+        if (vColorSeed >= 0.2 && vColorSeed < 0.4) baseCol = uPetalColor1;
+        else if (vColorSeed >= 0.4 && vColorSeed < 0.6) baseCol = uPetalColor2;
+        else if (vColorSeed >= 0.6 && vColorSeed < 0.8) baseCol = uPetalColor3;
+        else if (vColorSeed >= 0.8) baseCol = uPetalColor4;
+
+        float tipLight = smoothstep(0.22, 0.88, r / max(outerRadius, 0.001));
+        vec3 col = mix(baseCol * 0.78, min(vec3(1.0), baseCol * 1.12), tipLight);
+        float centerMask = 1.0 - smoothstep(0.18, 0.26, r);
+        vec3 centerCol = mix(vec3(0.95, 0.62, 0.05), vec3(1.0, 0.94, 0.48), 1.0 - smoothstep(0.0, 0.16, r));
+        col = mix(col, centerCol, centerMask);
+
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
@@ -2438,7 +3405,7 @@ export function populateRealBlitzTreeFromGlb(
     const sourceRoot = (refRoot || treeGltfScene.children[0] || treeGltfScene) as THREE.Object3D;
 
     const baseRefScale = sourceRoot.scale.x > 0.01 ? sourceRoot.scale.x : 0.4362676;
-    const refScale = baseRefScale * 1.75 * userScale;
+    const refScale = baseRefScale * 1.06 * userScale;
 
     if ((sourceRoot as THREE.Mesh).isMesh) {
       const srcTrunk = sourceRoot as THREE.Mesh;
@@ -2470,16 +3437,18 @@ export function populateRealBlitzTreeFromGlb(
       }
     });
   } else {
-    const refScale = 0.4362676 * 1.75 * userScale;
+    const fallbackTreeRatio = 1.06 / 1.75;
+    const refScale = 0.4362676 * 1.06 * userScale;
+    const fallbackTrunkScale = userScale * fallbackTreeRatio;
     const addTrunkLimb = (
       geo: THREE.BufferGeometry,
       pos: [number, number, number],
       rot: [number, number, number] = [0, 0, 0],
     ) => {
       const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#755341' }));
-      m.position.set(pos[0] * userScale, pos[1] * userScale, pos[2] * userScale);
+      m.position.set(pos[0] * fallbackTrunkScale, pos[1] * fallbackTrunkScale, pos[2] * fallbackTrunkScale);
       m.rotation.set(rot[0], rot[1], rot[2]);
-      m.scale.setScalar(userScale);
+      m.scale.setScalar(fallbackTrunkScale);
       m.castShadow = true;
       m.receiveShadow = true;
       upgradeMeshToBlitzWorldMaterial(m, windUniforms, '#755341');
@@ -2487,9 +3456,41 @@ export function populateRealBlitzTreeFromGlb(
       if (stroke) m.add(stroke);
       trunkGroup.add(m);
     };
-    addTrunkLimb(new THREE.CylinderGeometry(0.42, 0.68, 4.4, 8), [0, 2.2, 0]);
-    addTrunkLimb(new THREE.CylinderGeometry(0.24, 0.38, 2.8, 7), [0.65, 4.6, 0.35], [-0.28, 0.2, -0.36]);
-    addTrunkLimb(new THREE.CylinderGeometry(0.22, 0.36, 2.6, 7), [-0.58, 4.5, -0.32], [0.25, -0.3, 0.34]);
+    // Flared root-buttress Lathe trunk + 3 curved TubeGeometry primary boughs seated deeply into canopy cores
+    const trunkLatheGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.0, -0.18),
+        new THREE.Vector2(0.96, -0.18),
+        new THREE.Vector2(0.84, 0.14),
+        new THREE.Vector2(0.64, 0.72),
+        new THREE.Vector2(0.50, 1.85),
+        new THREE.Vector2(0.42, 3.25),
+        new THREE.Vector2(0.34, 4.45),
+        new THREE.Vector2(0.0, 4.55),
+      ],
+      12,
+    );
+    addTrunkLimb(trunkLatheGeo, [0, 0, 0]);
+    for (const limbPts of [
+      [
+        [0, 3.55, 0],
+        [0.42, 4.45, 0.22],
+        [0.95, 5.95, 0.48],
+      ],
+      [
+        [0, 3.45, 0],
+        [-0.38, 4.35, -0.20],
+        [-0.88, 5.75, -0.45],
+      ],
+      [
+        [0, 3.70, 0],
+        [-0.12, 4.75, 0.44],
+        [-0.26, 6.10, 0.82],
+      ],
+    ] as [number, number, number][][]) {
+      const boughCurve = new THREE.CatmullRomCurve3(limbPts.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+      addTrunkLimb(new THREE.TubeGeometry(boughCurve, 10, 0.24, 8, false), [0, 0, 0]);
+    }
 
     const fallbackMarkers = isPurpleTree ? DEFAULT_TREE_1B_MARKERS : DEFAULT_TREE_1A_MARKERS;
     const dummyQ = new THREE.Quaternion();
@@ -2525,6 +3526,7 @@ export function populateRealBlitzTreeFromGlb(
 
     foliageMaterial = new THREE.ShaderMaterial({
       uniforms: {
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         uLeafTex: { value: effectiveLeafMask },
         uColorA: { value: colorA },
         uColorB: { value: colorB },
@@ -2536,6 +3538,7 @@ export function populateRealBlitzTreeFromGlb(
         uWindStrength: windUniforms.uWindStrength,
         uWindGust: windUniforms.uWindGust,
       },
+      fog: true,
       vertexShader: /* glsl */ `
         attribute vec3 aLeafCenter;
         attribute vec3 aLeafLocalPos;
@@ -2549,10 +3552,19 @@ export function populateRealBlitzTreeFromGlb(
 
         varying vec2 vUv;
         varying vec3 vSphereNormal;
+        #include <fog_pars_vertex>
 
         void main() {
           vUv = uv;
-          float angle = aLeafPlaneSeed * 6.2831853;
+          vec3 treeWorldOrigin = (modelMatrix * instanceMatrix)[3].xyz;
+          float windAmp = max(0.62, uWindStrength);
+          float spatialPhase =
+            dot(treeWorldOrigin.xz, vec2(0.14, 0.11)) + dot(aLeafCenter.xz, vec2(0.28, 0.22));
+          float swayFactor = smoothstep(-0.75, 1.0, aLeafCenter.y);
+
+          float angle =
+            aLeafPlaneSeed * 6.2831853 +
+            sin(uWindPhase * 0.95 + aLeafPlaneSeed * 19.3 + spatialPhase) * 0.22 * windAmp * swayFactor;
           float s = sin(angle);
           float c = cos(angle);
           vec3 scaledLocal = aLeafLocalPos * uLeafScale;
@@ -2564,15 +3576,33 @@ export function populateRealBlitzTreeFromGlb(
           vec3 camUp = normalize(vec3(mv[0][1], mv[1][1], mv[2][1]));
           vec3 camFwd = normalize(vec3(mv[0][2], mv[1][2], mv[2][2]));
 
-          float swayFactor = smoothstep(-0.75, 1.0, aLeafCenter.y);
-          float phase = uWindPhase + aLeafPlaneSeed * 6.2831853;
-          float sway = (sin(phase) * 0.46 + uWindGust * 0.28) * uWindStrength * swayFactor;
-          vec3 windDisp = vec3(uWindDirection.x * sway, sin(phase * 0.73) * 0.1 * uWindStrength * swayFactor, uWindDirection.y * sway);
+          float macroWave =
+            sin(uWindPhase * 0.38 - spatialPhase) * 0.65 +
+            sin(uWindPhase * 0.21 + spatialPhase * 0.55) * 0.35;
+          float crownSway = (macroWave * 0.38 + uWindGust * 0.24) * windAmp * swayFactor;
+          float leafFlutter =
+            sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853 + aLeafCenter.x * 0.85) *
+            0.14 *
+            windAmp *
+            swayFactor;
+          float sway = crownSway + leafFlutter;
+          float vertBob =
+            (cos(uWindPhase * 0.52 - spatialPhase) * 0.08 +
+              sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853) * 0.05) *
+            windAmp *
+            swayFactor;
+          vec3 windDisp = vec3(
+            uWindDirection.x * sway - uWindDirection.y * leafFlutter * 0.45,
+            vertBob,
+            uWindDirection.y * sway + uWindDirection.x * leafFlutter * 0.45
+          );
 
           vec3 localPos = aLeafCenter + camRight * rotX + camUp * rotY + camFwd * ((aLeafPlaneSeed - 0.5) * 0.02) + windDisp;
           vSphereNormal = normalize(mat3(modelMatrix * instanceMatrix) * normalize(aLeafCenter + vec3(0.0, 0.35, 0.0)));
 
-          gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(localPos, 1.0);
+          vec4 mvPosition = viewMatrix * modelMatrix * instanceMatrix * vec4(localPos, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
@@ -2584,6 +3614,7 @@ export function populateRealBlitzTreeFromGlb(
 
         varying vec2 vUv;
         varying vec3 vSphereNormal;
+        #include <fog_pars_fragment>
 
         void main() {
           float mask = texture2D(uLeafTex, vUv).r;
@@ -2597,6 +3628,7 @@ export function populateRealBlitzTreeFromGlb(
           gl_FragColor = vec4(finalCol, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
+          #include <fog_fragment>
         }
       `,
       side: THREE.DoubleSide,
@@ -2614,20 +3646,36 @@ export function populateRealBlitzTreeFromGlb(
     matCache.depthMat = new THREE.ShaderMaterial({
       uniforms: {
         uLeafTex: { value: effectiveLeafMask },
-        uLeafScale: { value: 0.78 },
-        uAlphaThreshold: { value: 0.42 },
+        uLeafScale: { value: 0.86 },
+        uAlphaThreshold: { value: 0.40 },
+        uWindPhase: windUniforms.uWindPhase,
+        uWindDirection: windUniforms.uWindDirection,
+        uWindStrength: windUniforms.uWindStrength,
+        uWindGust: windUniforms.uWindGust,
       },
       vertexShader: /* glsl */ `
         attribute vec3 aLeafCenter;
         attribute vec3 aLeafLocalPos;
         attribute float aLeafPlaneSeed;
         uniform float uLeafScale;
+        uniform float uWindPhase;
+        uniform vec2 uWindDirection;
+        uniform float uWindStrength;
+        uniform float uWindGust;
         varying vec2 vUv;
         varying float vSeed;
         void main() {
           vUv = uv;
           vSeed = aLeafPlaneSeed;
-          float angle = aLeafPlaneSeed * 6.2831853;
+          vec3 treeWorldOrigin = (modelMatrix * instanceMatrix)[3].xyz;
+          float windAmp = max(0.62, uWindStrength);
+          float spatialPhase =
+            dot(treeWorldOrigin.xz, vec2(0.14, 0.11)) + dot(aLeafCenter.xz, vec2(0.28, 0.22));
+          float swayFactor = smoothstep(-0.75, 1.0, aLeafCenter.y);
+
+          float angle =
+            aLeafPlaneSeed * 6.2831853 +
+            sin(uWindPhase * 0.95 + aLeafPlaneSeed * 19.3 + spatialPhase) * 0.22 * windAmp * swayFactor;
           float s = sin(angle);
           float c = cos(angle);
           vec3 scaledLocal = aLeafLocalPos * uLeafScale;
@@ -2638,7 +3686,28 @@ export function populateRealBlitzTreeFromGlb(
           vec3 camRight = normalize(vec3(mv[0][0], mv[1][0], mv[2][0]));
           vec3 camUp = normalize(vec3(mv[0][1], mv[1][1], mv[2][1]));
 
-          vec3 localPos = aLeafCenter + camRight * rotX + camUp * rotY;
+          float macroWave =
+            sin(uWindPhase * 0.38 - spatialPhase) * 0.65 +
+            sin(uWindPhase * 0.21 + spatialPhase * 0.55) * 0.35;
+          float crownSway = (macroWave * 0.38 + uWindGust * 0.24) * windAmp * swayFactor;
+          float leafFlutter =
+            sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853 + aLeafCenter.x * 0.85) *
+            0.14 *
+            windAmp *
+            swayFactor;
+          float sway = crownSway + leafFlutter;
+          float vertBob =
+            (cos(uWindPhase * 0.52 - spatialPhase) * 0.08 +
+              sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853) * 0.05) *
+            windAmp *
+            swayFactor;
+          vec3 windDisp = vec3(
+            uWindDirection.x * sway - uWindDirection.y * leafFlutter * 0.45,
+            vertBob,
+            uWindDirection.y * sway + uWindDirection.x * leafFlutter * 0.45
+          );
+
+          vec3 localPos = aLeafCenter + camRight * rotX + camUp * rotY + windDisp;
           gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(localPos, 1.0);
         }
       `,
@@ -2648,7 +3717,7 @@ export function populateRealBlitzTreeFromGlb(
         varying vec2 vUv;
         varying float vSeed;
         void main() {
-          if (fract(vSeed * 19.0) > 0.62) discard;
+          if (fract(vSeed * 19.0) > 0.66) discard;
           if (texture2D(uLeafTex, vUv).r < uAlphaThreshold) discard;
           gl_FragColor = vec4(vec3(1.0 - gl_FragCoord.z), 1.0);
         }
@@ -3120,7 +4189,7 @@ export function populateRealBlitzTankFromGlb(
       metalness: 0.16,
     });
     const fallbackBodyMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.18, 0.44, 0.84),
+      new RoundedBoxGeometry(1.18, 0.44, 0.84, 2, 0.045),
       fallbackHullMat,
     );
     fallbackBodyMesh.name = 'Player_Body';
@@ -3155,7 +4224,7 @@ export function populateRealBlitzTankFromGlb(
       metalness: 0.22,
     });
     const fallbackTrackMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.055, 0.24),
+      new RoundedBoxGeometry(0.14, 0.055, 0.24, 1, 0.012),
       trackMat,
     );
     fallbackTrackMesh.name = 'Player_Track';
@@ -3242,7 +4311,7 @@ export function populateRealBlitzTankFromGlb(
   const baseTurretX = -0.02 * tankScale;
   const baseTurretY = 0.80 * tankScale;
   const baseBarrelX = 1.15 * tankScale;
-  const baseBarrelY = 0.47 * tankScale;
+  const baseBarrelY = 0.478 * tankScale;
   const baseBarrelZ = 0.42 * tankScale;
   turretGroup.position.set(baseTurretX, baseTurretY, 0);
   turretGroup.userData.baseTurretX = baseTurretX;
@@ -3341,11 +4410,11 @@ export function populateRealBlitzTankFromGlb(
   // 1A. Stationary Right-Side Lime-Green Armored Cannon Breech Shroud & Cyan Energy Core Window
   //     (Mounted stably to turretRoot at [1.15, 0.47, 0.42] so the housing stays steady while the barrel slides inside it!)
   const shroudOffsetX = 1.15;
-  const shroudOffsetY = 0.47;
+  const shroudOffsetY = 0.478;
   const shroudOffsetZ = 0.42;
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.68, 0.30, 0.34),
+    new RoundedBoxGeometry(0.68, 0.30, 0.34, 2, 0.032),
     '#ffffff',
     [shroudOffsetX - 1.00, shroudOffsetY + 0.02, shroudOffsetZ],
     [0, 0, -0.04],
@@ -3355,7 +4424,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.58, 0.075, 0.29),
+    new RoundedBoxGeometry(0.58, 0.075, 0.29, 1, 0.014),
     COL_LIME,
     [shroudOffsetX - 0.98, shroudOffsetY + 0.18, shroudOffsetZ],
     [0, 0, -0.06],
@@ -3364,7 +4433,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.72, 0.11, 0.36),
+    new RoundedBoxGeometry(0.72, 0.11, 0.36, 2, 0.020),
     COL_GUNMETAL,
     [shroudOffsetX - 1.02, shroudOffsetY - 0.14, shroudOffsetZ],
     [0, 0, 0],
@@ -3373,7 +4442,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.16, 0.28, 0.32),
+    new RoundedBoxGeometry(0.16, 0.28, 0.32, 2, 0.024),
     COL_GUNMETAL_DARK,
     [shroudOffsetX - 1.35, shroudOffsetY, shroudOffsetZ],
     [0, 0, 0],
@@ -3400,7 +4469,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.19, 0.22, 0.368),
+    new RoundedBoxGeometry(0.19, 0.22, 0.368, 2, 0.020),
     COL_GUNMETAL_DARK,
     [shroudOffsetX - 1.22, shroudOffsetY + 0.02, shroudOffsetZ],
     [0, 0, 0],
@@ -3409,7 +4478,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.125, 0.155, 0.382),
+    new RoundedBoxGeometry(0.125, 0.155, 0.382, 1, 0.014),
     COL_CYAN_GLOW,
     [shroudOffsetX - 1.22, shroudOffsetY + 0.02, shroudOffsetZ],
     [0, 0, 0],
@@ -3420,7 +4489,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.15, 0.045, 0.18),
+    new RoundedBoxGeometry(0.15, 0.045, 0.18, 1, 0.010),
     COL_GUNMETAL_DARK,
     [shroudOffsetX - 1.22, shroudOffsetY + 0.19, shroudOffsetZ - 0.03],
     [0, 0, 0],
@@ -3429,7 +4498,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.11, 0.055, 0.14),
+    new RoundedBoxGeometry(0.11, 0.055, 0.14, 1, 0.010),
     COL_CYAN_GLOW,
     [shroudOffsetX - 1.22, shroudOffsetY + 0.195, shroudOffsetZ - 0.03],
     [0, 0, 0],
@@ -3440,11 +4509,11 @@ export function populateRealBlitzTankFromGlb(
   );
 
   // 2A. Lower Dark Gunmetal Turret Tub / Skirt
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.96, 0.24, 0.88), COL_GUNMETAL, [-0.04, 0.12, 0], [0, 0, 0], [1, 1, 1], 0.018);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.96, 0.24, 0.88, 2, 0.032), COL_GUNMETAL, [-0.04, 0.12, 0], [0, 0, 0], [1, 1, 1], 0.018);
   // Sloped Front Lower Turret Nose + Chamfered Lime Spotlight Housing + Glowing Cyan Spotlight + 2 Amber Corner Dots
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.24, 0.22, 0.76), COL_GUNMETAL_DARK, [0.46, 0.14, 0], [0, 0, 0.18], [1, 1, 1], 0.016);
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.14, 0.17, 0.24), COL_LIME, [0.56, 0.16, 0], [0, 0, 0], [1, 1, 1], 0.014);
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.08, 0.13, 0.18), COL_GUNMETAL_DARK, [0.60, 0.16, 0], [0, 0, 0], [1, 1, 1], 0.01);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.24, 0.22, 0.76, 2, 0.028), COL_GUNMETAL_DARK, [0.46, 0.14, 0], [0, 0, 0.18], [1, 1, 1], 0.016);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.14, 0.17, 0.24, 2, 0.024), COL_LIME, [0.56, 0.16, 0], [0, 0, 0], [1, 1, 1], 0.014);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.08, 0.13, 0.18, 1, 0.016), COL_GUNMETAL_DARK, [0.60, 0.16, 0], [0, 0, 0], [1, 1, 1], 0.01);
   addTankPart(
     turretRoot,
     new THREE.CylinderGeometry(0.062, 0.062, 0.06, 14),
@@ -3474,9 +4543,9 @@ export function populateRealBlitzTankFromGlb(
   for (const side of [-1, 1]) {
     addTankPart(
       turretRoot,
-      new THREE.BoxGeometry(0.80, 0.19, 0.065),
+      new RoundedBoxGeometry(0.80, 0.19, 0.065, 1, 0.012),
       '#ffffff',
-      [-0.01, 0.135, side * 0.44],
+      [-0.01, 0.142, side * 0.44],
       [0, 0, 0],
       [1, 1, 1],
       0.012,
@@ -3485,7 +4554,7 @@ export function populateRealBlitzTankFromGlb(
     // Purple-slate stepped vent block under rear hose mount (clearly visible in LEFT/RIGHT SIDE VIEW & green-screen render)
     addTankPart(
       turretRoot,
-      new THREE.BoxGeometry(0.16, 0.13, 0.08),
+      new RoundedBoxGeometry(0.16, 0.13, 0.08, 1, 0.016),
       COL_PURPLE_VENT,
       [-0.42, 0.10, side * 0.42],
       [0, 0, -0.15],
@@ -3495,7 +4564,7 @@ export function populateRealBlitzTankFromGlb(
     for (const sx of [-0.29, -0.23, -0.17]) {
       addTankPart(
         turretRoot,
-        new THREE.BoxGeometry(0.022, 0.11, 0.082),
+        new RoundedBoxGeometry(0.022, 0.11, 0.082, 1, 0.006),
         COL_CYAN_GLOW,
         [sx, 0.14, side * 0.44],
         [0, 0, 0.18],
@@ -3511,7 +4580,7 @@ export function populateRealBlitzTankFromGlb(
   for (const side of [-1, 1]) {
     addTankPart(
       turretRoot,
-      new THREE.BoxGeometry(0.88, 0.15, 0.095),
+      new RoundedBoxGeometry(0.88, 0.15, 0.095, 2, 0.022),
       COL_LIME,
       [0.02, 0.28, side * 0.41],
       [0, 0, -0.14],
@@ -3521,7 +4590,7 @@ export function populateRealBlitzTankFromGlb(
     // Outer side hazard stripe plate with 8:1 aspect-ratio diagonal stripes (no stretched lines on top!)
     addTankPart(
       turretRoot,
-      new THREE.BoxGeometry(0.84, 0.082, 0.024),
+      new RoundedBoxGeometry(0.84, 0.082, 0.024, 1, 0.008),
       '#ffffff',
       [0.04, 0.285, side * 0.452],
       [0, 0, -0.14],
@@ -3532,7 +4601,7 @@ export function populateRealBlitzTankFromGlb(
     // Raised Rear Cockpit Side Pillar (slopes up toward rear cowling)
     addTankPart(
       turretRoot,
-      new THREE.BoxGeometry(0.36, 0.28, 0.10),
+      new RoundedBoxGeometry(0.36, 0.28, 0.10, 2, 0.024),
       COL_LIME,
       [-0.36, 0.42, side * 0.38],
       [0, 0, 0.24],
@@ -3542,10 +4611,10 @@ export function populateRealBlitzTankFromGlb(
   }
 
   // Front Cockpit Rim Cowl & Hazard Stripe Collar
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.20, 0.12, 0.78), COL_LIME, [0.44, 0.25, 0], [0, 0, 0], [1, 1, 1], 0.015);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.20, 0.12, 0.78, 2, 0.022), COL_LIME, [0.44, 0.25, 0], [0, 0, 0], [1, 1, 1], 0.015);
   addTankPart(
     turretRoot,
-    new THREE.BoxGeometry(0.03, 0.075, 0.72),
+    new RoundedBoxGeometry(0.03, 0.075, 0.72, 1, 0.008),
     '#ffffff',
     [0.535, 0.255, 0],
     [0, 0, 0],
@@ -3555,9 +4624,9 @@ export function populateRealBlitzTankFromGlb(
   );
 
   // Rear Turret Cowling Hump & Rear Top Hazard Stripe Bar (TOP, LEFT & RIGHT SIDE VIEW)
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.36, 0.34, 0.78), COL_GUNMETAL, [-0.46, 0.36, 0], [0, 0, 0], [1, 1, 1], 0.016);
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.28, 0.14, 0.80), COL_LIME, [-0.42, 0.54, 0], [0, 0, 0.12], [1, 1, 1], 0.016);
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.14, 0.06, 0.68), '#ffffff', [-0.32, 0.58, 0], [0, 0, 0], [1, 1, 1], 0.01, hazardTex);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.36, 0.34, 0.78, 2, 0.032), COL_GUNMETAL, [-0.46, 0.36, 0], [0, 0, 0], [1, 1, 1], 0.016);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.28, 0.14, 0.80, 2, 0.026), COL_LIME, [-0.42, 0.54, 0], [0, 0, 0.12], [1, 1, 1], 0.016);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.14, 0.06, 0.68, 1, 0.012), '#ffffff', [-0.32, 0.58, 0], [0, 0, 0], [1, 1, 1], 0.01, hazardTex);
 
   // Circular Glowing Cyan Pressure Gauge on Rear-Left Turret Wall (LEFT SIDE VIEW & green-screen render)
   addTankPart(
@@ -3610,7 +4679,7 @@ export function populateRealBlitzTankFromGlb(
     const cosHalf = Math.cos(u * Math.PI * 0.5);
     const xBase = 0.20 + 0.24 * cosHalf; // 0.44 at front center, 0.20 at side rails
     const xTop = 0.19 + 0.09 * cosHalf; // 0.28 at top center, 0.19 at side rails
-    const yBase = 0.305;
+    const yBase = 0.296;
     const yTop = 0.325 + 0.295 * arch; // 0.62 at top center, tapering to 0.38 at side rails
     const zBase = u * 0.355;
     const zTop = u * 0.325;
@@ -3693,12 +4762,12 @@ export function populateRealBlitzTankFromGlb(
   addTankPart(turretRoot, wsTopRimTubeGeo, '#bae6fd', [0, 0, 0], [0, 0, 0], [1, 1, 1], 0.008, undefined, true);
 
   // 2D. Cockpit Interior Floor, Brown Leather Tactical Bucket Seat & Dual Control Joysticks (TOP VIEW & LEFT SIDE VIEW)
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.66, 0.06, 0.68), COL_GUNMETAL_DARK, [-0.04, 0.22, 0], [0, 0, 0], [1, 1, 1], 0);
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.32, 0.08, 0.36), COL_SEAT_BROWN, [-0.10, 0.27, -0.02], [0, 0, 0], [1, 1, 1], 0.012);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.66, 0.06, 0.68, 1, 0.012), COL_GUNMETAL_DARK, [-0.04, 0.22, 0], [0, 0, 0], [1, 1, 1], 0);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.32, 0.08, 0.36, 2, 0.022), COL_SEAT_BROWN, [-0.10, 0.27, -0.02], [0, 0, 0], [1, 1, 1], 0.012);
   for (const bSide of [-1, 1]) {
     addTankPart(
       turretRoot,
-      new THREE.BoxGeometry(0.30, 0.10, 0.07),
+      new RoundedBoxGeometry(0.30, 0.10, 0.07, 2, 0.016),
       COL_SEAT_DARK,
       [-0.10, 0.29, -0.02 + bSide * 0.18],
       [0, 0, 0],
@@ -3710,17 +4779,17 @@ export function populateRealBlitzTankFromGlb(
   seatBackGroup.position.set(-0.24, 0.32, -0.02);
   seatBackGroup.rotation.z = 0.22;
   turretRoot.add(seatBackGroup);
-  addTankPart(seatBackGroup, new THREE.BoxGeometry(0.09, 0.34, 0.34), COL_SEAT_DARK, [0, 0.14, 0], [0, 0, 0], [1, 1, 1], 0.014);
+  addTankPart(seatBackGroup, new RoundedBoxGeometry(0.09, 0.34, 0.34, 2, 0.022), COL_SEAT_DARK, [0, 0.14, 0], [0, 0, 0], [1, 1, 1], 0.014);
   for (const ry of [0.05, 0.14, 0.23]) {
-    addTankPart(seatBackGroup, new THREE.BoxGeometry(0.105, 0.07, 0.28), COL_SEAT_BROWN, [0.01, ry, 0], [0, 0, 0], [1, 1, 1], 0.008);
+    addTankPart(seatBackGroup, new RoundedBoxGeometry(0.105, 0.07, 0.28, 2, 0.016), COL_SEAT_BROWN, [0.01, ry, 0], [0, 0, 0], [1, 1, 1], 0.008);
   }
-  addTankPart(seatBackGroup, new THREE.BoxGeometry(0.095, 0.11, 0.24), COL_SEAT_BROWN, [0.01, 0.35, 0], [0, 0, 0], [1, 1, 1], 0.012);
+  addTankPart(seatBackGroup, new RoundedBoxGeometry(0.095, 0.11, 0.24, 2, 0.020), COL_SEAT_BROWN, [0.01, 0.35, 0], [0, 0, 0], [1, 1, 1], 0.012);
 
   // Twin Pilot Control Joysticks & Angled Front Console Dashboard
-  addTankPart(turretRoot, new THREE.BoxGeometry(0.18, 0.10, 0.54), COL_SLATE, [0.25, 0.27, 0], [0, 0, -0.25], [1, 1, 1], 0.01);
+  addTankPart(turretRoot, new RoundedBoxGeometry(0.18, 0.10, 0.54, 2, 0.020), COL_SLATE, [0.25, 0.27, 0], [0, 0, -0.25], [1, 1, 1], 0.01);
   for (const jSide of [-1, 1]) {
     const jZ = -0.02 + jSide * 0.20;
-    addTankPart(turretRoot, new THREE.BoxGeometry(0.12, 0.07, 0.09), COL_GUNMETAL, [0.14, 0.26, jZ], [0, 0, 0], [1, 1, 1], 0.01);
+    addTankPart(turretRoot, new RoundedBoxGeometry(0.12, 0.07, 0.09, 1, 0.014), COL_GUNMETAL, [0.14, 0.26, jZ], [0, 0, 0], [1, 1, 1], 0.01);
     addTankPart(
       turretRoot,
       new THREE.CylinderGeometry(0.022, 0.026, 0.15, 10),
@@ -3868,7 +4937,7 @@ export function populateRealBlitzTankFromGlb(
     // Main 3-segment side fender skirt with 45° diagonal top hatching texture
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.76, 0.21, 0.28),
+      new RoundedBoxGeometry(0.76, 0.21, 0.28, 2, 0.024),
       '#ffffff',
       [-0.02, 0.56, side * 0.52],
       [0, 0, 0],
@@ -3879,7 +4948,7 @@ export function populateRealBlitzTankFromGlb(
     // Front sloped mudguard cheek with headlight bezel
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.32, 0.13, 0.27),
+      new RoundedBoxGeometry(0.32, 0.13, 0.27, 2, 0.020),
       '#ffffff',
       [0.46, 0.61, side * 0.51],
       [0, 0, -0.26],
@@ -3890,7 +4959,7 @@ export function populateRealBlitzTankFromGlb(
     // Rear sloped mudguard cheek
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.28, 0.13, 0.27),
+      new RoundedBoxGeometry(0.28, 0.13, 0.27, 2, 0.020),
       '#ffffff',
       [-0.49, 0.60, side * 0.51],
       [0, 0, 0.28],
@@ -3905,7 +4974,7 @@ export function populateRealBlitzTankFromGlb(
     const bogieZ = side * 0.705;
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.94, 0.25, 0.052),
+      new RoundedBoxGeometry(0.94, 0.25, 0.052, 2, 0.018),
       COL_GUNMETAL,
       [-0.03, 0.30, bogieZ],
       [0, 0, 0],
@@ -3914,7 +4983,7 @@ export function populateRealBlitzTankFromGlb(
     );
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.56, 0.165, 0.068),
+      new RoundedBoxGeometry(0.56, 0.165, 0.068, 2, 0.016),
       COL_LIME,
       [-0.03, 0.30, bogieZ + side * 0.006],
       [0, 0, 0],
@@ -3947,7 +5016,7 @@ export function populateRealBlitzTankFromGlb(
   // 4C. Front Center Hexagonal Nose Armor & 3 Glowing Warm-Orange Louvre Bars + Lower Ribbed Skid Plate
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(0.24, 0.38, 0.48),
+    new RoundedBoxGeometry(0.24, 0.38, 0.48, 2, 0.026),
     COL_LIME,
     [0.52, 0.49, 0],
     [0, 0, -0.22],
@@ -3956,7 +5025,7 @@ export function populateRealBlitzTankFromGlb(
   );
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(0.14, 0.33, 0.42),
+    new RoundedBoxGeometry(0.14, 0.33, 0.42, 2, 0.018),
     '#ffffff',
     [0.59, 0.46, 0],
     [0, 0, -0.22],
@@ -3968,7 +5037,7 @@ export function populateRealBlitzTankFromGlb(
   // Lower Front Ribbed Skid Plate under the Hexagonal Grille (visible in 3/4 green-screen render)
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(0.22, 0.12, 0.40),
+    new RoundedBoxGeometry(0.22, 0.12, 0.40, 2, 0.018),
     COL_LIME_DARK,
     [0.50, 0.25, 0],
     [0, 0, 0.32],
@@ -3978,7 +5047,7 @@ export function populateRealBlitzTankFromGlb(
   for (const rz of [-0.12, -0.04, 0.04, 0.12]) {
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.14, 0.09, 0.038),
+      new RoundedBoxGeometry(0.14, 0.09, 0.038, 1, 0.010),
       COL_GUNMETAL_DARK,
       [0.55, 0.24, rz],
       [0, 0, 0.32],
@@ -3991,7 +5060,7 @@ export function populateRealBlitzTankFromGlb(
   for (const side of [-1, 1]) {
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.10, 0.095, 0.165),
+      new RoundedBoxGeometry(0.10, 0.095, 0.165, 1, 0.014),
       COL_GUNMETAL_DARK,
       [0.55, 0.64, side * 0.50],
       [0, 0, -0.12],
@@ -4000,7 +5069,7 @@ export function populateRealBlitzTankFromGlb(
     );
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.045, 0.06, 0.125),
+      new RoundedBoxGeometry(0.045, 0.06, 0.125, 1, 0.010),
       '#fef08a',
       [0.59, 0.64, side * 0.50],
       [0, 0, -0.12],
@@ -4014,7 +5083,7 @@ export function populateRealBlitzTankFromGlb(
   // 4E. Left Fender Top Stowage Box & Front-Left Cyan Power Cell Module (TOP VIEW & st01_minitank.png)
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(0.38, 0.11, 0.20),
+    new RoundedBoxGeometry(0.38, 0.11, 0.20, 2, 0.020),
     COL_GUNMETAL,
     [-0.12, 0.76, -0.50],
     [0, 0, 0],
@@ -4024,7 +5093,7 @@ export function populateRealBlitzTankFromGlb(
   for (const strapX of [-0.20, -0.04]) {
     addTankPart(
       hullDetailsGroup,
-      new THREE.BoxGeometry(0.035, 0.12, 0.215),
+      new RoundedBoxGeometry(0.035, 0.12, 0.215, 1, 0.008),
       COL_GUNMETAL_DARK,
       [strapX, 0.76, -0.50],
       [0, 0, 0],
@@ -4034,7 +5103,7 @@ export function populateRealBlitzTankFromGlb(
   }
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(0.24, 0.085, 0.17),
+    new RoundedBoxGeometry(0.24, 0.085, 0.17, 2, 0.016),
     COL_GUNMETAL_DARK,
     [0.24, 0.75, -0.48],
     [0, 0, 0],
@@ -4058,7 +5127,7 @@ export function populateRealBlitzTankFromGlb(
   // 4F. Rear Hull Armored Engine Block (LEFT/RIGHT/TOP VIEW)
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(0.19, 0.29, 0.54),
+    new RoundedBoxGeometry(0.19, 0.29, 0.54, 2, 0.024),
     COL_GUNMETAL_DARK,
     [-0.66, 0.54, 0],
     [0, 0, 0.12],
@@ -4069,7 +5138,7 @@ export function populateRealBlitzTankFromGlb(
   // 4G. Bottom Hull Armored Belly Plate with 4 Riveted Plates & Louvered Vents (BOTTOM VIEW / TAMPAK BAWAH)
   addTankPart(
     hullDetailsGroup,
-    new THREE.BoxGeometry(1.12, 0.065, 0.88),
+    new RoundedBoxGeometry(1.12, 0.065, 0.88, 1, 0.014),
     '#ffffff',
     [-0.02, 0.18, 0],
     [0, 0, 0],
@@ -4121,7 +5190,6 @@ export function populateRealBlitzTankFromGlb(
       instMesh.name = `TrackBeltInstanced_${isRight ? 'R' : 'L'}`;
       instMesh.castShadow = !isSoftwareGl;
       instMesh.receiveShadow = !isSoftwareGl;
-      instMesh.frustumCulled = false;
       upgradeMeshToBlitzWorldMaterial(instMesh, windUniforms, tint);
 
       for (let i = 0; i < numSegments; i++) {
@@ -4134,6 +5202,10 @@ export function populateRealBlitzTankFromGlb(
         instMesh.setMatrixAt(i, segDummy.matrix);
       }
       instMesh.instanceMatrix.needsUpdate = true;
+      const trackBounds = computeInstancedBoundingVolumes(instMesh, {
+        padding: 0.25,
+        frustumCulled: true,
+      });
       trackGroup.add(instMesh);
 
       const strokeTemplate = createBlitzStrokeMesh(segGeo, 0.02);
@@ -4146,7 +5218,9 @@ export function populateRealBlitzTankFromGlb(
         strokeInst.name = `TrackBeltStrokeInstanced_${isRight ? 'R' : 'L'}`;
         strokeInst.castShadow = false;
         strokeInst.receiveShadow = false;
-        strokeInst.frustumCulled = false;
+        strokeInst.boundingBox = trackBounds.boundingBox.clone();
+        strokeInst.boundingSphere = trackBounds.boundingSphere.clone();
+        strokeInst.frustumCulled = true;
         strokeInst.userData.isModelStroke = true;
         strokeInst.instanceMatrix = instMesh.instanceMatrix;
         trackGroup.add(strokeInst);
@@ -4291,8 +5365,7 @@ export interface LoadedBlitzAssets {
   hBeamGltf: GLTF | null;
   forkliftGltf: GLTF | null;
   bulletGltf: GLTF | null;
-  charBuddiesGltf: GLTF | null;
-  manCharacterBuddiesGltf: GLTF | null;
+  mixamoLocomotionGltf: GLTF | null;
   playerFemaleGlb?: GLTF | null;
   playerMaleGlb?: GLTF | null;
   customLocomotionGlb?: GLTF | null;
@@ -4300,6 +5373,10 @@ export interface LoadedBlitzAssets {
   kaiCustomGlb?: GLTF | null;
   ambientFemaleNpcGlb?: GLTF | null;
   ambientMaleNpcGlb?: GLTF | null;
+  miraCustomGlb?: GLTF | null;
+  tariCustomGlb?: GLTF | null;
+  bimaCustomGlb?: GLTF | null;
+  kenjiCustomGlb?: GLTF | null;
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
@@ -4309,6 +5386,30 @@ export interface LoadedBlitzAssets {
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
+  nadiaIdleClip: THREE.AnimationClip | null;
+  nadiaWalkClip: THREE.AnimationClip | null;
+  nadiaRunClip: THREE.AnimationClip | null;
+  nadiaSitClip: THREE.AnimationClip | null;
+  miraIdleClip: THREE.AnimationClip | null;
+  miraWalkClip: THREE.AnimationClip | null;
+  miraRunClip: THREE.AnimationClip | null;
+  miraSitClip: THREE.AnimationClip | null;
+  bimaIdleClip: THREE.AnimationClip | null;
+  bimaWalkClip: THREE.AnimationClip | null;
+  bimaRunClip: THREE.AnimationClip | null;
+  bimaSitClip: THREE.AnimationClip | null;
+  kenjiIdleClip: THREE.AnimationClip | null;
+  kenjiWalkClip: THREE.AnimationClip | null;
+  kenjiRunClip: THREE.AnimationClip | null;
+  kenjiSitClip: THREE.AnimationClip | null;
+  tariIdleClip: THREE.AnimationClip | null;
+  tariWalkClip: THREE.AnimationClip | null;
+  tariRunClip: THREE.AnimationClip | null;
+  tariSitClip: THREE.AnimationClip | null;
+  rakaIdleClip: THREE.AnimationClip | null;
+  rakaWalkClip: THREE.AnimationClip | null;
+  rakaRunClip: THREE.AnimationClip | null;
+  rakaSitClip: THREE.AnimationClip | null;
   cafeWorkGltf?: GLTF | null;
   cafeEatGltf?: GLTF | null;
   sleepingGltf?: GLTF | null;
@@ -4327,12 +5428,30 @@ let loadedCafeEatGltf: GLTF | null = null;
 let loadedSleepingGltf: GLTF | null = null;
 let loadedBenchLoungeGltf: GLTF | null = null;
 const loadedCustomLocomotionGltf: GLTF | null = null;
-let loadedManCharacterBuddiesGltf: GLTF | null = null;
+let loadedMixamoLocomotionGltf: GLTF | null = null;
 let loadedChairCasualGltf: GLTF | null = null;
 let loadedSunLoungerGltf: GLTF | null = null;
 let loadedFishingCarryGltf: GLTF | null = null;
+let loadedMiraCustomGlb: GLTF | null = null;
+let loadedTariCustomGlb: GLTF | null = null;
+let loadedBimaCustomGlb: GLTF | null = null;
+let loadedKenjiCustomGlb: GLTF | null = null;
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 52;
+export function getCachedLoadedCitizenGlbs(): {
+  miraCustomGlb: GLTF | null;
+  tariCustomGlb: GLTF | null;
+  bimaCustomGlb: GLTF | null;
+  kenjiCustomGlb: GLTF | null;
+} {
+  return {
+    miraCustomGlb: cachedLoadedBlitzAssets?.miraCustomGlb ?? loadedMiraCustomGlb,
+    tariCustomGlb: cachedLoadedBlitzAssets?.tariCustomGlb ?? loadedTariCustomGlb,
+    bimaCustomGlb: cachedLoadedBlitzAssets?.bimaCustomGlb ?? loadedBimaCustomGlb,
+    kenjiCustomGlb: cachedLoadedBlitzAssets?.kenjiCustomGlb ?? loadedKenjiCustomGlb,
+  };
+}
+
+const BLITZ_3D_TOTAL_ASSET_TASKS = 61;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -4371,8 +5490,7 @@ export function getCachedLoadedBlitzAssets(): LoadedBlitzAssets | null {
 export async function loadAllRealBlitzAssets(
   renderer: THREE.WebGLRenderer,
   onCharacterGltfReady?: (
-    charBuddiesGltf: GLTF | null,
-    manCharacterBuddiesGltf: GLTF | null,
+    mixamoLocomotionGltf: GLTF | null,
     fishingRodGltf?: GLTF | null,
     playerFemaleGlb?: GLTF | null,
     hanaCustomGlb?: GLTF | null,
@@ -4388,8 +5506,7 @@ export async function loadAllRealBlitzAssets(
       const cached = cachedLoadedBlitzAssets;
       Promise.resolve().then(() => {
         onCharacterGltfReady(
-          cached.charBuddiesGltf,
-          cached.manCharacterBuddiesGltf,
+          cached.mixamoLocomotionGltf,
           cached.fishingRodGltf,
           cached.playerFemaleGlb,
           cached.hanaCustomGlb,
@@ -4407,8 +5524,7 @@ export async function loadAllRealBlitzAssets(
       inFlightLoadedBlitzAssetsPromise
         .then((loaded) => {
           onCharacterGltfReady(
-            loaded.charBuddiesGltf,
-            loaded.manCharacterBuddiesGltf,
+            loaded.mixamoLocomotionGltf,
             loaded.fishingRodGltf,
             loaded.playerFemaleGlb,
             loaded.hanaCustomGlb,
@@ -4530,302 +5646,285 @@ export async function loadAllRealBlitzAssets(
       return null;
     });
 
-  // Replacement jump: a user-supplied FBX take (root-motion) parsed at runtime.
-  // The take carries its forward travel on the hip track's Y component (0 ->
-  // 211.9cm) and its height arc on Z (-98.1..-42.9cm, i.e. 0.43..0.98 in rig
-  // units). The rig's baked jump keeps its height arc on Y within 0.38..0.65 —
-  // the unit's real height comes from the physics jump offset, the clip only
-  // poses the body. Remap: drop the travel, and rescale the height arc onto
-  // the baked range so the pose arc survives without stacking on the physics.
-  const loadJumpClip = (): Promise<THREE.AnimationClip | null> =>
+  // Standalone animation-only GLB overrides (baked offline onto Mixamo bone tracks, with
+  // Hips height/arc already normalized to rig units so runtime skips heavy FBXLoader parsing).
+  const animOnlyGltfLoader = new GLTFLoader();
+  type AnimationPackEntry<K extends string = string> = {
+    sourceClipName?: string;
+    targetClipName: K;
+  };
+  const loadAnimationPackFromGlb = <K extends string>(
+    url: string,
+    entries: readonly AnimationPackEntry<K>[],
+    label: string,
+  ): Promise<Record<K, THREE.AnimationClip | null>> =>
     trackAssetTask(
       (async () => {
+        const result = Object.fromEntries(
+          entries.map((entry) => [entry.targetClipName, null]),
+        ) as Record<K, THREE.AnimationClip | null>;
         try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/jump-2.fbx');
-          if (!res.ok) return null;
+          const res = await fetch(url);
+          if (!res.ok) return result;
           const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              for (let i = 0; i < vals.length; i += 3) {
-                const h = -vals[i + 2] * 0.01;
-                const arc = (h - 0.429) / 0.552;
-                vals[i] = 0;
-                vals[i + 1] = 0.38 + Math.min(1, Math.max(0, arc)) * 0.27;
-                vals[i + 2] = 0;
-              }
+          const gltf = await animOnlyGltfLoader.parseAsync(buf, '');
+          const clips = gltf.animations ?? [];
+          if (!clips.length) return result;
+          for (const entry of entries) {
+            const matched = entry.sourceClipName
+              ? clips.find((clip) => clip.name === entry.sourceClipName)
+              : clips[0];
+            if (!matched) continue;
+            const cloned = matched.clone();
+            cloned.name = entry.targetClipName;
+            if (gltf.scene) {
+              personalClipSourceSceneMap.set(cloned, gltf.scene);
             }
+            result[entry.targetClipName] = cloned;
           }
-          raw.name = 'unarmed_jump.001';
-          return raw;
+          return result;
         } catch (err) {
-          console.warn('[PreloadGate] Jump clip failed to load:', err);
-          return null;
+          console.warn(`[PreloadGate] ${label} failed to load:`, err);
+          return result;
         }
       })(),
     );
-  const jumpClipPromise = loadJumpClip();
+
+  const loadAnimationOnlyGlbClip = (
+    url: string,
+    clipName: string,
+    label: string,
+  ): Promise<THREE.AnimationClip | null> =>
+    loadAnimationPackFromGlb(url, [{ targetClipName: clipName }], label).then(
+      (pack) => pack[clipName] ?? null,
+    );
+
+  const loadFourStateNpcAnimPack = <P extends string>(
+    url: string,
+    targetPrefix: P,
+    sourceSuffix: string,
+    label: string,
+  ): Promise<
+    Record<
+      `${P}_idle.001` | `${P}_walk.001` | `${P}_run.001` | `${P}_sit.001`,
+      THREE.AnimationClip | null
+    >
+  > =>
+    loadAnimationPackFromGlb(
+      url,
+      [
+        { sourceClipName: `Idle_${sourceSuffix}`, targetClipName: `${targetPrefix}_idle.001` },
+        { sourceClipName: `Walk_${sourceSuffix}`, targetClipName: `${targetPrefix}_walk.001` },
+        { sourceClipName: `Run_${sourceSuffix}`, targetClipName: `${targetPrefix}_run.001` },
+        { sourceClipName: `Sit_${sourceSuffix}`, targetClipName: `${targetPrefix}_sit.001` },
+      ],
+      label,
+    ).then((pack) => {
+      for (const [clipName, clip] of Object.entries<THREE.AnimationClip | null>(pack)) {
+        if (clip) {
+          loadedCustomPelvisClips.set(clipName, clip);
+        }
+      }
+      return pack;
+    });
+
+  const jumpClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/jump-2-anim.glb',
+    'unarmed_jump.001',
+    'Jump clip',
+  );
   jumpClipPromise
     .then((c) => {
       loadedJumpClip = c;
     })
     .catch(() => {});
 
-  // Scooter bike riding idle: a user-supplied seated take, retargeted onto
-  // the Mixamo rig offline and shipped as an animation-only GLB whose track
-  // names match the character bones. Played for electric scooter bike
-  // riders instead of the generic sitting clip.
-  const loadScooterBikeClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const res = await fetch('/assets/scooter-bike-idle.glb');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const gltf = await new GLTFLoader().parseAsync(buf, '');
-          const raw = gltf.animations?.[0];
-          if (!raw) return null;
-          raw.name = 'scooter_bike_idle.001';
-          return raw;
-        } catch (err) {
-          console.warn('[PreloadGate] Scooter bike clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const scooterBikeClipPromise = loadScooterBikeClip();
+  const scooterBikeClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/scooter-bike-idle.glb',
+    'scooter_bike_idle.001',
+    'Scooter bike clip',
+  );
   scooterBikeClipPromise
     .then((c) => {
       loadedScooterBikeClip = c;
     })
     .catch(() => {});
 
-  // Standing-jump variant of the take above (user-supplied, in-place: its hip
-  // track has almost no travel). Height arc on Z is -72.8..-29.5cm (0.295..0.728
-  // in rig units); rescaled onto the same baked 0.38..0.65 range as the run jump.
-  const loadJumpIdleClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/jump-idle.fbx');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              for (let i = 0; i < vals.length; i += 3) {
-                const h = -vals[i + 2] * 0.01;
-                const arc = (h - 0.295) / 0.433;
-                vals[i] = 0;
-                vals[i + 1] = 0.38 + Math.min(1, Math.max(0, arc)) * 0.27;
-                vals[i + 2] = 0;
-              }
-            }
-          }
-          raw.name = 'unarmed_jump_idle.001';
-          return raw;
-        } catch (err) {
-          console.warn('[PreloadGate] Idle jump clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const jumpIdleClipPromise = loadJumpIdleClip();
+  const jumpIdleClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/jump-idle-anim.glb',
+    'unarmed_jump_idle.001',
+    'Idle jump clip',
+  );
   jumpIdleClipPromise
     .then((c) => {
       loadedJumpIdleClip = c;
     })
     .catch(() => {});
 
-  // Replacement idle: a user-supplied FBX take parsed at runtime. It is a true
-  // in-place idle (its hip track barely moves: height -51.8..-51.7cm on Z, i.e.
-  // ~0.52 in rig units — the same height the baked idle uses on Y). Remap the
-  // height onto Y and pin the rest, like the other runtime takes.
-  const loadIdleClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/idle-2.fbx');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              for (let i = 0; i < vals.length; i += 3) {
-                vals[i + 1] = -vals[i + 2] * 0.01;
-                vals[i] = 0;
-                vals[i + 2] = 0;
-              }
-            }
-          }
-          raw.name = 'idle.001';
-          return raw;
-        } catch (err) {
-          console.warn('[PreloadGate] Idle clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const idleClipPromise = loadIdleClip();
+  const idleClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/idle-2-anim.glb',
+    'idle.001',
+    'Idle clip',
+  );
   idleClipPromise
     .then((c) => {
       loadedIdleClip = c;
     })
     .catch(() => {});
 
-  // Kai's personal idle (fold-arms take, user-supplied Tripo/Mixamo FBX): only
-  // Kai's rig carries the override name that selects it. In this export the hip
-  // height rides on the position track's Z component as a constant ~0.5 (rig
-  // units, no centimetre scaling) — remap it onto Y like the other takes.
-  const loadKaiIdleClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/kai-idle.fbx');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          // Tripo exports carry per-bone position tracks and scale tracks
-          // (scales as low as 0.01) that this rig cannot consume — its baked
-          // clips are bone quaternions plus the hip position only. Reduce the
-          // take to exactly that shape before remapping the hip track.
-          raw.tracks = raw.tracks.filter(
-            (t) => t.name.endsWith('.quaternion') || /Hips\.position$/i.test(t.name),
-          );
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              for (let i = 0; i < vals.length; i += 3) {
-                vals[i + 1] = vals[i + 2];
-                vals[i] = 0;
-                vals[i + 2] = 0;
-              }
-            }
-          }
-          raw.name = 'kai_idle.001';
-          return raw;
-        } catch (err) {
-          console.warn('[PreloadGate] Kai idle clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const kaiIdleClipPromise = loadKaiIdleClip();
+  // Kai & Hana personal idles (only their rigs carry the override name selecting them)
+  const kaiIdleClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/kai-idle-anim.glb',
+    'kai_idle.001',
+    'Kai idle clip',
+  );
   kaiIdleClipPromise
     .then((c) => {
       loadedKaiIdleClip = c;
     })
     .catch(() => {});
 
-  // Hana's personal idle (user-supplied Tripo/Mixamo FBX), same export
-  // convention as Kai's take: hip height rides on the position track's Z
-  // (~0.55 rig units) and is remapped onto Y. Only Hana's rig selects it.
-  const loadHanaIdleClip = (): Promise<THREE.AnimationClip | null> =>
-    trackAssetTask(
-      (async () => {
-        try {
-          const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-          const res = await fetch('/assets/hana-idle.fbx');
-          if (!res.ok) return null;
-          const buf = await res.arrayBuffer();
-          const fbx = new FBXLoader().parse(buf, '');
-          const raw = (fbx as unknown as { animations?: THREE.AnimationClip[] }).animations?.[0];
-          if (!raw) return null;
-          raw.tracks = raw.tracks.filter((t) => !t.name.startsWith('ParentNode'));
-          // Tripo exports carry per-bone position tracks and scale tracks
-          // (scales as low as 0.01) that this rig cannot consume — its baked
-          // clips are bone quaternions plus the hip position only. Reduce the
-          // take to exactly that shape before remapping the hip track.
-          raw.tracks = raw.tracks.filter(
-            (t) => t.name.endsWith('.quaternion') || /Hips\.position$/i.test(t.name),
-          );
-          for (const t of raw.tracks) {
-            if (/Hips\.position$/i.test(t.name)) {
-              const vals = t.values;
-              for (let i = 0; i < vals.length; i += 3) {
-                vals[i + 1] = vals[i + 2];
-                vals[i] = 0;
-                vals[i + 2] = 0;
-              }
-            }
-          }
-          raw.name = 'hana_idle.001';
-          return raw;
-        } catch (err) {
-          console.warn('[PreloadGate] Hana idle clip failed to load:', err);
-          return null;
-        }
-      })(),
-    );
-  const hanaIdleClipPromise = loadHanaIdleClip();
+  const hanaIdleClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/hana-idle-anim.glb',
+    'hana_idle.001',
+    'Hana idle clip',
+  );
   hanaIdleClipPromise
     .then((c) => {
       loadedHanaIdleClip = c;
     })
     .catch(() => {});
 
-  const charBuddiesPromise = loadOptionalGltf('/assets/charbuddies.glb');
-  const manCharacterBuddiesPromise = loadOptionalGltf('/assets/mancharacterbuddies.glb').then(
+  // Nadia personal 4-state locomotion & sit set from /assets/nadia-anims.glb (PelvisRoot skeleton,
+  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to nadia_* clip overrides).
+  const nadiaAnimPackPromise = loadFourStateNpcAnimPack(
+    '/assets/nadia-anims.glb',
+    'nadia',
+    'blitz_Tangan_Di_Pinggul_Wanita_14',
+    'Nadia animation pack',
+  );
+
+  // Mira personal 4-state locomotion & sit set from /assets/mira-anims.glb (PelvisRoot skeleton,
+  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to mira_* clip overrides).
+  const miraAnimPackPromise = loadFourStateNpcAnimPack(
+    '/assets/mira-anims.glb',
+    'mira',
+    'blitz_Kasual_Harian_Wanita_1',
+    'Mira animation pack',
+  );
+
+  // Bima personal 4-state locomotion & sit set from /assets/bima-anims.glb (PelvisRoot skeleton,
+  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to bima_* clip overrides).
+  const bimaAnimPackPromise = loadFourStateNpcAnimPack(
+    '/assets/bima-anims.glb',
+    'bima',
+    'blitz_Kasual_Harian_Pria_15',
+    'Bima animation pack',
+  );
+
+  // Kenji personal 4-state locomotion & sit set from /assets/kenji-anims.glb (PelvisRoot skeleton,
+  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to kenji_* clip overrides).
+  const kenjiAnimPackPromise = loadFourStateNpcAnimPack(
+    '/assets/kenji-anims.glb',
+    'kenji',
+    'blitz_Kasual_Harian_3',
+    'Kenji animation pack',
+  );
+
+  // Tari personal 4-state locomotion & sit set from /assets/tari-anims.glb (PelvisRoot skeleton,
+  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to tari_* clip overrides).
+  const tariAnimPackPromise = loadFourStateNpcAnimPack(
+    '/assets/tari-anims.glb',
+    'tari',
+    'blitz_Lincah_Energik_Wanita_2',
+    'Tari animation pack',
+  );
+
+  // Raka personal 4-state locomotion & sit set from /assets/raka-anims.glb (PelvisRoot skeleton,
+  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to raka_* clip overrides).
+  const rakaAnimPackPromise = loadFourStateNpcAnimPack(
+    '/assets/raka-anims.glb',
+    'raka',
+    'blitz_Formal_Tenang_Pria_4',
+    'Raka animation pack',
+  );
+
+  const mixamoLocomotionPromise = loadOptionalGltf('/assets/mixamo-locomotion-anim.glb').then(
     (gltf) => {
-      loadedManCharacterBuddiesGltf = gltf;
+      loadedMixamoLocomotionGltf = gltf;
       return gltf;
     },
   );
-  const playerFemaleGlbPromise = loadOptionalGltf(
-    encodeURI('/assets/character_custom_idle_runway_catwalk_stylish_11 (3).glb'),
-  ).then((gltf) => {
-    if (gltf?.scene) {
-      gltf.scene.userData.useMixamoLocomotionSuite = true;
-    }
-    return gltf;
-  });
-  const playerMaleGlbPromise = loadOptionalGltf(
-    encodeURI('/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb'),
-  ).then((gltf) => {
-    if (gltf?.scene) {
-      gltf.scene.userData.useMixamoLocomotionSuite = true;
-    }
-    return gltf;
-  });
-  const hanaCustomGlbPromise = loadOptionalGltf('/assets/character_custom_idle_elegan_kalem_4.glb');
-  const kaiCustomGlbPromise = loadOptionalGltf(
-    encodeURI('/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (1).glb'),
+  const playerFemaleGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-player.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      return gltf;
+    },
   );
-  const ambientFemaleNpcGlbPromise = loadOptionalGltf(
-    '/assets/character_custom_sit_formal_tenang_2.glb',
-  ).then((gltf) => {
-    if (gltf?.scene) {
-      gltf.scene.userData.useMixamoLocomotionSuite = true;
-    }
-    return gltf;
-  });
-  const ambientMaleNpcGlbPromise = loadOptionalGltf(
-    '/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
-  ).then((gltf) => {
-    if (gltf?.scene) {
-      gltf.scene.userData.useMixamoLocomotionSuite = true;
-    }
-    return gltf;
-  });
+  const playerMaleGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-player.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      return gltf;
+    },
+  );
+  const hanaCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-04.glb');
+  const kaiCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-03.glb');
+  const ambientFemaleNpcGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-01.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      return gltf;
+    },
+  );
+  const ambientMaleNpcGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-01.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      return gltf;
+    },
+  );
+  const miraCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-02.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      loadedMiraCustomGlb = gltf;
+      return gltf;
+    },
+  );
+  const tariCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-03.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      loadedTariCustomGlb = gltf;
+      return gltf;
+    },
+  );
+  const bimaCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-02.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      loadedBimaCustomGlb = gltf;
+      return gltf;
+    },
+  );
+  const kenjiCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-04.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      loadedKenjiCustomGlb = gltf;
+      return gltf;
+    },
+  );
   const fishingRodPromise = loadOptionalGltf('/assets/fishing-rod.glb');
   const cafeWorkGltfPromise = loadOptionalGltf('/assets/cafe-work-anims.glb').then((gltf) => {
     loadedCafeWorkGltf = gltf;
@@ -4853,8 +5952,7 @@ export async function loadAllRealBlitzAssets(
   });
   if (onCharacterGltfReady) {
     Promise.all([
-      charBuddiesPromise,
-      manCharacterBuddiesPromise,
+      mixamoLocomotionPromise,
       fishingRodPromise,
       playerFemaleGlbPromise,
       hanaCustomGlbPromise,
@@ -4862,6 +5960,10 @@ export async function loadAllRealBlitzAssets(
       ambientMaleNpcGlbPromise,
       kaiCustomGlbPromise,
       playerMaleGlbPromise,
+      miraCustomGlbPromise,
+      tariCustomGlbPromise,
+      bimaCustomGlbPromise,
+      kenjiCustomGlbPromise,
       cafeWorkGltfPromise,
       cafeEatGltfPromise,
       sleepingClipPromise,
@@ -4875,11 +5977,16 @@ export async function loadAllRealBlitzAssets(
       idleClipPromise,
       kaiIdleClipPromise,
       hanaIdleClipPromise,
+      nadiaAnimPackPromise,
+      miraAnimPackPromise,
+      bimaAnimPackPromise,
+      kenjiAnimPackPromise,
+      tariAnimPackPromise,
+      rakaAnimPackPromise,
     ])
       .then(
         ([
-          charGltf,
-          manGltf,
+          mixamoLocomotionGltf,
           rodGltf,
           playerFemaleGltf,
           hanaCustomGltf,
@@ -4889,8 +5996,7 @@ export async function loadAllRealBlitzAssets(
           playerMaleGltf,
         ]) => {
           onCharacterGltfReady(
-            charGltf,
-            manGltf,
+            mixamoLocomotionGltf,
             rodGltf,
             playerFemaleGltf,
             hanaCustomGltf,
@@ -4939,14 +6045,17 @@ export async function loadAllRealBlitzAssets(
     loadOptionalGltf('/assets/buddies/models/h-beam.glb'),
     loadOptionalGltf('/assets/buddies/models/forklift.glb'),
     loadOptionalGltf('/assets/buddies/models/blitz-shell.glb'),
-    charBuddiesPromise,
-    manCharacterBuddiesPromise,
+    mixamoLocomotionPromise,
     playerFemaleGlbPromise,
     playerMaleGlbPromise,
     hanaCustomGlbPromise,
     kaiCustomGlbPromise,
     ambientFemaleNpcGlbPromise,
     ambientMaleNpcGlbPromise,
+    miraCustomGlbPromise,
+    tariCustomGlbPromise,
+    bimaCustomGlbPromise,
+    kenjiCustomGlbPromise,
     loadOptionalGltf('/assets/ar99-assault.glb'),
     fishingRodPromise,
     trackAssetTask(
@@ -4965,6 +6074,12 @@ export async function loadAllRealBlitzAssets(
     idleClipPromise,
     kaiIdleClipPromise,
     hanaIdleClipPromise,
+    nadiaAnimPackPromise,
+    miraAnimPackPromise,
+    bimaAnimPackPromise,
+    kenjiAnimPackPromise,
+    tariAnimPackPromise,
+    rakaAnimPackPromise,
     cafeWorkGltfPromise,
     cafeEatGltfPromise,
     benchLoungeGltfPromise,
@@ -5007,14 +6122,17 @@ export async function loadAllRealBlitzAssets(
       hBeamGltf,
       forkliftGltf,
       bulletGltf,
-      charBuddiesGltf,
-      manCharacterBuddiesGltf,
+      mixamoLocomotionGltf,
       playerFemaleGlb,
       playerMaleGlb,
       hanaCustomGlb,
       kaiCustomGlb,
       ambientFemaleNpcGlb,
       ambientMaleNpcGlb,
+      miraCustomGlb,
+      tariCustomGlb,
+      bimaCustomGlb,
+      kenjiCustomGlb,
       ar99AssaultGltf,
       fishingRodGltf,
       playerTrackPoints,
@@ -5026,6 +6144,12 @@ export async function loadAllRealBlitzAssets(
       idleClip,
       kaiIdleClip,
       hanaIdleClip,
+      nadiaAnimPack,
+      miraAnimPack,
+      bimaAnimPack,
+      kenjiAnimPack,
+      tariAnimPack,
+      rakaAnimPack,
       cafeWorkGltf,
       cafeEatGltf,
       benchLoungeGltf,
@@ -5070,14 +6194,17 @@ export async function loadAllRealBlitzAssets(
         hBeamGltf,
         forkliftGltf,
         bulletGltf,
-        charBuddiesGltf,
-        manCharacterBuddiesGltf,
+        mixamoLocomotionGltf,
         playerFemaleGlb,
         playerMaleGlb,
         hanaCustomGlb,
         kaiCustomGlb,
         ambientFemaleNpcGlb,
         ambientMaleNpcGlb,
+        miraCustomGlb,
+        tariCustomGlb,
+        bimaCustomGlb,
+        kenjiCustomGlb,
         ar99AssaultGltf,
         fishingRodGltf,
         playerTrackPoints,
@@ -5089,6 +6216,30 @@ export async function loadAllRealBlitzAssets(
         idleClip,
         kaiIdleClip,
         hanaIdleClip,
+        nadiaIdleClip: nadiaAnimPack['nadia_idle.001'],
+        nadiaWalkClip: nadiaAnimPack['nadia_walk.001'],
+        nadiaRunClip: nadiaAnimPack['nadia_run.001'],
+        nadiaSitClip: nadiaAnimPack['nadia_sit.001'],
+        miraIdleClip: miraAnimPack['mira_idle.001'],
+        miraWalkClip: miraAnimPack['mira_walk.001'],
+        miraRunClip: miraAnimPack['mira_run.001'],
+        miraSitClip: miraAnimPack['mira_sit.001'],
+        bimaIdleClip: bimaAnimPack['bima_idle.001'],
+        bimaWalkClip: bimaAnimPack['bima_walk.001'],
+        bimaRunClip: bimaAnimPack['bima_run.001'],
+        bimaSitClip: bimaAnimPack['bima_sit.001'],
+        kenjiIdleClip: kenjiAnimPack['kenji_idle.001'],
+        kenjiWalkClip: kenjiAnimPack['kenji_walk.001'],
+        kenjiRunClip: kenjiAnimPack['kenji_run.001'],
+        kenjiSitClip: kenjiAnimPack['kenji_sit.001'],
+        tariIdleClip: tariAnimPack['tari_idle.001'],
+        tariWalkClip: tariAnimPack['tari_walk.001'],
+        tariRunClip: tariAnimPack['tari_run.001'],
+        tariSitClip: tariAnimPack['tari_sit.001'],
+        rakaIdleClip: rakaAnimPack['raka_idle.001'],
+        rakaWalkClip: rakaAnimPack['raka_walk.001'],
+        rakaRunClip: rakaAnimPack['raka_run.001'],
+        rakaSitClip: rakaAnimPack['raka_sit.001'],
         cafeWorkGltf,
         cafeEatGltf,
         sleepingGltf: loadedSleepingGltf,
@@ -5116,6 +6267,13 @@ export async function loadAllRealBlitzAssets(
 
 let cachedLoadedBlitzAssets: LoadedBlitzAssets | null = null;
 const pendingBushLeafMaskMaterials = new Set<THREE.ShaderMaterial>();
+
+export function registerPendingLeafMaskMaterial(mat: THREE.ShaderMaterial): void {
+  pendingBushLeafMaskMaterials.add(mat);
+  if (cachedLoadedBlitzAssets?.treeFoliageTex && mat.uniforms?.uLeafTex) {
+    mat.uniforms.uLeafTex.value = cachedLoadedBlitzAssets.treeFoliageTex;
+  }
+}
 // Set the moment the sleeping FBX parse finishes, independently of the full asset
 // batch: character rigs are built early (onCharacterGltfReady) and their clip maps
 // must already see the sleeping clip at build time.
@@ -5126,6 +6284,25 @@ let loadedJumpIdleClip: THREE.AnimationClip | null = null;
 let loadedIdleClip: THREE.AnimationClip | null = null;
 let loadedKaiIdleClip: THREE.AnimationClip | null = null;
 let loadedHanaIdleClip: THREE.AnimationClip | null = null;
+const loadedCustomPelvisClips = new Map<string, THREE.AnimationClip>();
+const personalClipSourceSceneMap = new WeakMap<THREE.AnimationClip, THREE.Object3D>();
+const registeredCustomPelvisClips = new Map<string, THREE.AnimationClip>();
+
+export function registerMixamoLocomotionSuiteGltf(gltf: GLTF | null): void {
+  loadedMixamoLocomotionGltf = gltf;
+}
+
+export function registerCustomPelvisAnimationClip(
+  clipName: string,
+  clip: THREE.AnimationClip | null,
+): void {
+  if (clip) {
+    registeredCustomPelvisClips.set(clipName, clip);
+  } else {
+    registeredCustomPelvisClips.delete(clipName);
+    loadedCustomPelvisClips.delete(clipName);
+  }
+}
 let inFlightLoadedBlitzAssetsPromise: Promise<LoadedBlitzAssets> | null = null;
 let sharedChimneyPuffGeo: THREE.BufferGeometry | null = null;
 const CHIMNEY_SMOKE_PALETTE = ['#dce0e5', '#cfd4db', '#c2c8d0', '#b5bcc5', '#a6adb8'] as const;
@@ -5181,6 +6358,7 @@ const _propSpinQuat = new THREE.Quaternion();
 export function stepRealBlitzPropsAnimation(realPropsGroup: THREE.Group, timeSec: number) {
   for (let i = 0; i < realPropsGroup.children.length; i++) {
     const wrapper = realPropsGroup.children[i];
+    if (!wrapper.visible || wrapper.userData.__chunkCulledChildren) continue;
     const phase = (wrapper.userData.animPhase as number) || i * 0.9;
     const windFans = wrapper.userData.windFanNodes as
       | { mesh: THREE.Object3D; baseQuat: THREE.Quaternion }[]
@@ -5443,16 +6621,18 @@ export function buildRealBlitzBulletTemplates(
       geo.scale(1.0 / radialSpan, 1.0 / radialSpan, 1.0 / spanZ);
     }
     geo.computeVertexNormals();
+    geo.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geo, src.material);
     mesh.name = `${nodeName}_3DProjectile`;
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = true;
     mesh.castShadow = true;
     mesh.receiveShadow = false;
     upgradeMeshToBlitzWorldMaterial(mesh, windUniforms);
     const stroke = createBlitzStrokeMesh(geo, 0.045);
     if (stroke) {
-      stroke.frustumCulled = false;
+      stroke.geometry.computeBoundingSphere();
+      stroke.frustumCulled = true;
       mesh.add(stroke);
     }
     return mesh;
@@ -5806,19 +6986,18 @@ export function spawnRealBlitzPropFromGlb(
       for (let pIdx = 0; pIdx < puffsPerStack; pIdx++) {
         const colorHex = CHIMNEY_SMOKE_PALETTE[(pIdx + eIdx * 2) % CHIMNEY_SMOKE_PALETTE.length];
         const puffGrp = new THREE.Group();
-        puffGrp.frustumCulled = false;
 
         const puffMesh = new THREE.Mesh(
           sharedChimneyPuffGeo,
           new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.95 }),
         );
-        puffMesh.frustumCulled = false;
+        puffMesh.frustumCulled = true;
         puffMesh.castShadow = false;
         puffMesh.receiveShadow = false;
         upgradeMeshToBlitzWorldMaterial(puffMesh, windUniforms, colorHex);
         const puffStroke = createBlitzStrokeMesh(sharedChimneyPuffGeo, 0.018);
         if (puffStroke) {
-          puffStroke.frustumCulled = false;
+          puffStroke.frustumCulled = true;
           puffMesh.add(puffStroke);
         }
         puffGrp.add(puffMesh);
@@ -5827,7 +7006,7 @@ export function spawnRealBlitzPropFromGlb(
         const subLobe = new THREE.Mesh(sharedChimneyPuffGeo, puffMesh.material);
         subLobe.scale.set(0.76, 0.72, 0.82);
         subLobe.position.set(0.24, 0.10, -0.18);
-        subLobe.frustumCulled = false;
+        subLobe.frustumCulled = true;
         subLobe.castShadow = false;
         subLobe.receiveShadow = false;
         puffGrp.add(subLobe);
@@ -7041,10 +8220,10 @@ export function buildProceduralBlitzPlane(
 
   for (const side of [-1, 1]) {
     const hazardRailGeo = new THREE.ExtrudeGeometry(hazardSideShape, {
-      depth: 0.28,
+      depth: 0.29,
       bevelEnabled: false,
     });
-    hazardRailGeo.translate(0, 0, side > 0 ? 0.55 : -0.83);
+    hazardRailGeo.translate(0, 0, side > 0 ? 0.548 : -0.838);
     taperGeometryZByX(hazardRailGeo, evaluateHullWidthScaleAtX);
     normalizePlanarUVs(hazardRailGeo, 'x', 'y');
     addBlitzPart(
@@ -7115,7 +8294,7 @@ export function buildProceduralBlitzPlane(
   // Dark-Steel Transverse Cockpit Front Coaming Band (recessed below windshield so windshield arc is clean in TOP VIEW)
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.14, 0.18, 1.42),
+    new RoundedBoxGeometry(0.14, 0.18, 1.42, 1, 0.022),
     COL_STEEL,
     [0.50, 0.98, 0],
     [0, 0, 0],
@@ -7160,7 +8339,7 @@ export function buildProceduralBlitzPlane(
   // Dark-Steel Cockpit Backrest Arch & 3-Slot Rear Side Louver Boxes (|||)
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.14, 0.66, 1.06),
+    new RoundedBoxGeometry(0.14, 0.66, 1.06, 2, 0.024),
     COL_STEEL,
     [-0.44, 1.26, 0],
     [0, 0, 0],
@@ -7168,7 +8347,7 @@ export function buildProceduralBlitzPlane(
     0.02,
   );
   for (const side of [-1, 1]) {
-    const louverBoxGeo = new THREE.BoxGeometry(0.54, 0.30, 0.18);
+    const louverBoxGeo = new RoundedBoxGeometry(0.54, 0.30, 0.18, 2, 0.024);
     normalizePlanarUVs(louverBoxGeo, 'x', 'y');
     addBlitzPart(
       planeTiltGroup,
@@ -7213,13 +8392,13 @@ export function buildProceduralBlitzPlane(
     new THREE.SphereGeometry(0.08, 12, 10),
     new THREE.MeshBasicMaterial({ color: 0xb8ffff }),
   );
-  sensorCore.position.set(1.68, 1.27, 0);
+  sensorCore.position.set(1.692, 1.278, 0);
   planeTiltGroup.add(sensorCore);
 
   // Front Amber 3-Bar Headlight Grill & Twin Side Cheek Vents (protruding at nose tip so visible in ALL 4 VIEWS!)
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.22, 0.40, 0.58),
+    new RoundedBoxGeometry(0.22, 0.40, 0.58, 2, 0.032),
     COL_STEEL_DARK,
     [2.14, 0.58, 0],
     [0, 0, 0],
@@ -7228,22 +8407,22 @@ export function buildProceduralBlitzPlane(
   );
   const amberGlowMat = new THREE.MeshBasicMaterial({ color: 0xff8811 });
   const amberMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(COL_AMBER) });
-  const amberBackplate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.32, 0.48), amberGlowMat);
+  const amberBackplate = new THREE.Mesh(new RoundedBoxGeometry(0.22, 0.32, 0.48, 1, 0.018), amberGlowMat);
   amberBackplate.position.set(2.18, 0.58, 0);
   planeTiltGroup.add(amberBackplate);
   for (const barY of [0.47, 0.58, 0.69]) {
-    const lightBar = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.055, 0.44), amberMat);
+    const lightBar = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.055, 0.44, 1, 0.010), amberMat);
     lightBar.position.set(2.20, barY, 0);
     planeTiltGroup.add(lightBar);
   }
   for (const side of [-1, 1]) {
-    const cheekVentGeo = new THREE.BoxGeometry(0.24, 0.22, 0.16);
+    const cheekVentGeo = new RoundedBoxGeometry(0.24, 0.22, 0.16, 2, 0.020);
     normalizePlanarUVs(cheekVentGeo, 'x', 'y');
     addBlitzPart(
       planeTiltGroup,
       cheekVentGeo,
       '#ffffff',
-      [1.88, 0.54, side * 0.48],
+      [1.87, 0.54, side * 0.48],
       [0, -side * 0.28, 0],
       [1, 1, 1],
       0.018,
@@ -7257,7 +8436,7 @@ export function buildProceduralBlitzPlane(
   // Dark Cockpit Interior Tub Floor
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.96, 0.10, 0.96),
+    new RoundedBoxGeometry(0.96, 0.10, 0.96, 1, 0.018),
     COL_STEEL_DARK,
     [0.0, 0.74, 0],
     [0, 0, 0],
@@ -7268,7 +8447,7 @@ export function buildProceduralBlitzPlane(
   // Contoured Brown Leather Pilot Bucket Seat ("PILOT SEAT" in blueprint)
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.46, 0.14, 0.50),
+    new RoundedBoxGeometry(0.46, 0.14, 0.50, 2, 0.032),
     COL_SEAT,
     [-0.14, 0.86, 0],
     [0, 0, 0],
@@ -7277,7 +8456,7 @@ export function buildProceduralBlitzPlane(
   );
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.18, 0.58, 0.48),
+    new RoundedBoxGeometry(0.18, 0.58, 0.48, 2, 0.032),
     COL_SEAT,
     [-0.32, 1.18, 0],
     [0, 0, 0.10],
@@ -7286,7 +8465,7 @@ export function buildProceduralBlitzPlane(
   );
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.16, 0.22, 0.34),
+    new RoundedBoxGeometry(0.16, 0.22, 0.34, 2, 0.028),
     COL_SEAT_DARK,
     [-0.35, 1.48, 0],
     [0, 0, 0.08],
@@ -7296,7 +8475,7 @@ export function buildProceduralBlitzPlane(
   for (const side of [-1, 1]) {
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.44, 0.18, 0.10),
+      new RoundedBoxGeometry(0.44, 0.18, 0.10, 2, 0.024),
       COL_SEAT_DARK,
       [-0.14, 0.94, side * 0.23],
       [0, 0, 0],
@@ -7305,7 +8484,7 @@ export function buildProceduralBlitzPlane(
     );
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.18, 0.48, 0.10),
+      new RoundedBoxGeometry(0.18, 0.48, 0.10, 2, 0.024),
       COL_SEAT_DARK,
       [-0.30, 1.18, side * 0.23],
       [0, 0, 0.10],
@@ -7315,7 +8494,7 @@ export function buildProceduralBlitzPlane(
     // 4-Point Safety Harness Shoulder & Lap Straps (clearly visible in TOP VIEW)
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.14, 0.48, 0.08),
+      new RoundedBoxGeometry(0.14, 0.48, 0.08, 1, 0.016),
       COL_STEEL_DARK,
       [-0.23, 1.16, side * 0.11],
       [0, 0, 0.20],
@@ -7324,7 +8503,7 @@ export function buildProceduralBlitzPlane(
     );
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.32, 0.08, 0.08),
+      new RoundedBoxGeometry(0.32, 0.08, 0.08, 1, 0.016),
       COL_STEEL_DARK,
       [-0.12, 0.95, side * 0.12],
       [0, side * 0.25, 0],
@@ -7334,7 +8513,7 @@ export function buildProceduralBlitzPlane(
     // Cockpit Side Armrest Console + Glowing Green Button (TOP VIEW)
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.68, 0.14, 0.15),
+      new RoundedBoxGeometry(0.68, 0.14, 0.15, 2, 0.022),
       COL_STEEL,
       [0.02, 0.88, side * 0.38],
       [0, 0, 0],
@@ -7342,10 +8521,10 @@ export function buildProceduralBlitzPlane(
       0.014,
     );
     const consoleBtn = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.05, 0.07),
+      new RoundedBoxGeometry(0.14, 0.05, 0.07, 1, 0.010),
       new THREE.MeshBasicMaterial({ color: 0x38ff62 }),
     );
-    consoleBtn.position.set(0.06, 0.97, side * 0.38);
+    consoleBtn.position.set(0.06, 0.980, side * 0.38);
     planeTiltGroup.add(consoleBtn);
   }
   // Central Harness Chest Buckle
@@ -7371,7 +8550,7 @@ export function buildProceduralBlitzPlane(
   );
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.10, 0.14, 0.10),
+    new RoundedBoxGeometry(0.10, 0.14, 0.10, 2, 0.015),
     COL_STEEL,
     [0.16, 1.29, 0],
     [0, 0, -0.22],
@@ -7382,7 +8561,7 @@ export function buildProceduralBlitzPlane(
   // Cockpit Front Instrument Dashboard + Glowing Cyan Twin Oval HUD Screens (TOP VIEW)
   addBlitzPart(
     planeTiltGroup,
-    new THREE.BoxGeometry(0.28, 0.18, 0.88),
+    new RoundedBoxGeometry(0.28, 0.18, 0.88, 2, 0.022),
     COL_STEEL,
     [0.34, 0.90, 0],
     [0, 0, 0],
@@ -7399,10 +8578,10 @@ export function buildProceduralBlitzPlane(
     planeTiltGroup.add(hudScreen);
   }
   const centerHud = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, 0.04, 0.12),
+    new RoundedBoxGeometry(0.08, 0.04, 0.12, 2, 0.008),
     new THREE.MeshBasicMaterial({ color: 0x38ff62 }),
   );
-  centerHud.position.set(0.33, 1.01, 0);
+  centerHud.position.set(0.33, 1.018, 0);
   planeTiltGroup.add(centerHud);
 
   // Swept Symmetric Crescent Cyan Windshield (rotated in geometry space first so it is 100% symmetric in TOP VIEW!)
@@ -7460,7 +8639,7 @@ export function buildProceduralBlitzPlane(
     wingSkinShape.closePath();
 
     const topSkinGeo = new THREE.ExtrudeGeometry(wingSkinShape, {
-      depth: 0.022,
+      depth: 0.030,
       bevelEnabled: false,
     });
     topSkinGeo.rotateX(side === 1 ? Math.PI / 2 : -Math.PI / 2);
@@ -7469,7 +8648,7 @@ export function buildProceduralBlitzPlane(
       planeTiltGroup,
       topSkinGeo,
       '#ffffff',
-      [0, side === 1 ? 0.62 : 0.598, 0],
+      [0, side === 1 ? 0.624 : 0.594, 0],
       [0, 0, 0],
       [1, 1, 1],
       0,
@@ -7478,7 +8657,7 @@ export function buildProceduralBlitzPlane(
 
     // Lower Dark-Slate + Lime-Flap Wing Skin (1:1 BOTTOM VIEW texture)
     const botSkinGeo = new THREE.ExtrudeGeometry(wingSkinShape, {
-      depth: 0.022,
+      depth: 0.030,
       bevelEnabled: false,
     });
     botSkinGeo.rotateX(side === 1 ? Math.PI / 2 : -Math.PI / 2);
@@ -7487,7 +8666,7 @@ export function buildProceduralBlitzPlane(
       planeTiltGroup,
       botSkinGeo,
       '#ffffff',
-      [0, side === 1 ? 0.442 : 0.42, 0],
+      [0, side === 1 ? 0.446 : 0.416, 0],
       [0, 0, 0],
       [1, 1, 1],
       0,
@@ -7497,7 +8676,7 @@ export function buildProceduralBlitzPlane(
     // Yellow-Gold Wing-Root Collar Bracket (positioned at x = 0.56 so it is visible ahead of the wingtip pod in ALL 4 VIEWS!)
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.24, 0.28, 0.26),
+      new RoundedBoxGeometry(0.24, 0.28, 0.26, 2, 0.028),
       COL_GOLD,
       [0.56, 0.56, side * 0.88],
       [0, 0, 0],
@@ -7537,7 +8716,7 @@ export function buildProceduralBlitzPlane(
     // Lime-Green Upper Shoulder Fairing wrapping over the Wingtip Pod (LEFT & RIGHT SIDE VIEWS: y = 0.62..0.73)
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.94, 0.12, 0.28),
+      new RoundedBoxGeometry(0.94, 0.12, 0.28, 2, 0.022),
       COL_LIME,
       [-0.06, 0.67, side * 1.94],
       [0, 0, 0],
@@ -7607,7 +8786,7 @@ export function buildProceduralBlitzPlane(
   // Central dark-steel splitter spine between the twin jet engines (TOP VIEW)
   addBlitzPart(
     topThrustersGroup,
-    new THREE.BoxGeometry(0.46, 0.24, 0.12),
+    new RoundedBoxGeometry(0.46, 0.24, 0.12, 2, 0.022),
     COL_STEEL_DARK,
     [-1.60, 1.10, 0],
     [0, 0, 0],
@@ -7620,7 +8799,7 @@ export function buildProceduralBlitzPlane(
     bottomThrusterGroup,
     new THREE.CylinderGeometry(0.24, 0.28, 0.56, 16),
     COL_STEEL_MID,
-    [-1.62, 0.80, 0],
+    [-1.61, 0.80, 0],
     [0, 0, Math.PI / 2],
     [1, 1, 1],
     0.022,
@@ -7714,7 +8893,7 @@ export function buildProceduralBlitzPlane(
     );
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.36, 0.14, 0.42),
+      new RoundedBoxGeometry(0.36, 0.148, 0.42, 1, 0.016),
       COL_LIME,
       [-1.74, 0.775, side * 0.74],
       [0, 0, 0],
@@ -7879,7 +9058,7 @@ export function buildProceduralBlitzPlane(
     // Rear Tail Fins on Rocket Tube (x = -0.78, visible at back of outer pylon in BOTTOM & SIDE VIEWS)
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.24, 0.24, 0.05),
+      new RoundedBoxGeometry(0.24, 0.24, 0.05, 1, 0.010),
       COL_STEEL,
       [-0.78, 0.28, outerZ],
       [0, 0, 0],
@@ -7888,7 +9067,7 @@ export function buildProceduralBlitzPlane(
     );
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.24, 0.05, 0.24),
+      new RoundedBoxGeometry(0.24, 0.05, 0.24, 1, 0.010),
       COL_STEEL,
       [-0.78, 0.28, outerZ],
       [0, 0, 0],
@@ -7899,7 +9078,7 @@ export function buildProceduralBlitzPlane(
     // --- C. SEMI-RECESSED BELLY WHEEL BAY (BOTTOM VIEW: z = ±0.73, x = -0.05) ---
     addBlitzPart(
       planeTiltGroup,
-      new THREE.BoxGeometry(0.58, 0.12, 0.30),
+      new RoundedBoxGeometry(0.58, 0.12, 0.30, 2, 0.020),
       COL_STEEL_DARK,
       [-0.05, 0.13, side * 0.73],
       [0, 0, 0],
@@ -8195,11 +9374,18 @@ export interface CharBuddiesGlbRigController {
   firingAnimTimer: number;
   combatAimTimer: number;
   fishingCastTimer: number;
+  validNodeNames?: Set<string>;
   meshes: { mesh: THREE.Mesh; defaultMat: THREE.Material | THREE.Material[] }[];
+  secondaryPhysics?: CharacterSecondaryPhysicsController;
+  secWorldVelScratch?: THREE.Vector3;
+  secStateScratch?: CharacterSecondaryPhysicsState;
 }
 
 export interface BuddyCharacterRig {
   idleClipOverrideName?: string;
+  walkClipOverrideName?: string;
+  runClipOverrideName?: string;
+  sitClipOverrideName?: string;
   headMesh: THREE.Mesh;
   leftArmPivot: THREE.Group;
   rightArmPivot: THREE.Group;
@@ -8657,10 +9843,10 @@ export function populateAr99AssaultFromGlb(
   const ar99Root = template.clone(true);
   ar99Root.name = 'Ar99AssaultGlbRoot';
   // Map GLB (+X muzzle, -X buttstock, +Y up) -> BuddiesBlitz weapon space (+Z muzzle, -Z buttstock, +Y up)
-  // Proportional carbine length (1.20m) relative to 2.50m humanoid soldier
+  // Proportional carbine length (~1.12m) relative to 3.30m player avatar
   ar99Root.rotation.set(0, -Math.PI / 2, 0);
-  ar99Root.scale.setScalar(1.22);
-  ar99Root.position.set(0, -0.18, 0.08);
+  ar99Root.scale.setScalar(1.85);
+  ar99Root.position.set(0, -0.24, 0.10);
   ar99Root.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
@@ -8701,7 +9887,8 @@ export function populateFishingRodFromGlb(
   rodGlbRoot.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
-      mesh.frustumCulled = false;
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      mesh.frustumCulled = true;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -8752,7 +9939,7 @@ export function populateFishingRodFromGlb(
   // Align the cork grip above the spinning reel stem (`Object001`) to `[0, 0, 0]`, shaft to `+Z`,
   // and roll +90 deg around +Z so the spinning reel, guide rings, and internal nylon (`Thread_RodThread_0`)
   // hang straight DOWNWARD (`-Y`) and `Bone002..Bone010` flex downward toward the water!
-  const ROD_GLB_SCALE = 0.36;
+  const ROD_GLB_SCALE = 0.44;
   rodGlbRoot.scale.setScalar(ROD_GLB_SCALE);
   const qRodYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
   const qRodRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
@@ -10478,6 +11665,7 @@ export function buildBlitzDropPickupMesh(
 
 interface SanitizedCharBuddiesTemplate {
   isCustomSkeleton: boolean;
+  validNodeNames: Set<string>;
   clips: Map<string, THREE.AnimationClip>;
   bindQuats: Map<string, THREE.Quaternion>;
   boxCarryUpperQuats: Map<string, THREE.Quaternion>;
@@ -10650,19 +11838,45 @@ function isUpperBodyEatBone(shortName: string): boolean {
   return isUpperBodyBoneMatching(shortName, UPPER_BODY_EAT_BONE_PREFIXES);
 }
 
+/** Disposes unused PBR texture maps (`normalMap`, `roughnessMap`, etc.) once converted to unlit cel shaders. */
+function disposeUnusedPbrTextures(mat: THREE.Material, keepMap: THREE.Texture | null): void {
+  const std = mat as THREE.MeshStandardMaterial & THREE.MeshPhysicalMaterial;
+  const unusedKeys = [
+    'normalMap',
+    'roughnessMap',
+    'metalnessMap',
+    'aoMap',
+    'bumpMap',
+    'displacementMap',
+    'emissiveMap',
+  ] as const;
+  for (const key of unusedKeys) {
+    const tex = std[key] as THREE.Texture | null | undefined;
+    if (tex && tex !== keepMap && !tex.userData?.keepStylizedPbrTex) {
+      tex.dispose();
+    }
+    if (key in std) {
+      (std as unknown as Record<string, unknown>)[key] = null;
+    }
+  }
+}
+
 function convertToTripoAnimeCharacterMaterial(mat: THREE.Material): THREE.Material {
   if ((mat as THREE.MeshBasicMaterial).isMeshBasicMaterial) {
     return mat;
   }
   const stdMat = mat as THREE.MeshStandardMaterial;
   const baseMap = stdMat.map ?? null;
+  const lowerName = (stdMat.name || '').toLowerCase();
+  const isFaceTex = lowerName.includes('face') || lowerName.includes('head') || lowerName.includes('eye');
   if (baseMap) {
     baseMap.colorSpace = THREE.SRGBColorSpace;
-    baseMap.anisotropy = 8;
+    baseMap.anisotropy = isFaceTex ? 8 : 4;
     baseMap.minFilter = THREE.LinearMipmapLinearFilter;
     baseMap.magFilter = THREE.LinearFilter;
     baseMap.needsUpdate = true;
   }
+  disposeUnusedPbrTextures(stdMat, baseMap);
   return new THREE.MeshBasicMaterial({
     name: stdMat.name,
     map: baseMap,
@@ -10679,17 +11893,20 @@ function convertToStylizedPlayerCharacterMaterial(
   mat: THREE.Material,
   isHairMeshHint = false,
   isBodySkinMeshHint = false,
+  outlineCategory?: AvatarOutlineCategory,
 ): THREE.Material {
   const srcMat = mat as THREE.MeshBasicMaterial & THREE.MeshStandardMaterial;
   const baseMap = srcMat.map ?? null;
+  const lowerName = (srcMat.name || '').toLowerCase();
+  const isFaceTex = lowerName.includes('face') || lowerName.includes('head') || lowerName.includes('eye');
   if (baseMap) {
     baseMap.colorSpace = THREE.SRGBColorSpace;
-    baseMap.anisotropy = 8;
+    baseMap.anisotropy = isFaceTex ? 8 : 4;
     baseMap.minFilter = THREE.LinearMipmapLinearFilter;
     baseMap.magFilter = THREE.LinearFilter;
     baseMap.needsUpdate = true;
   }
-  const lowerName = (srcMat.name || '').toLowerCase();
+  disposeUnusedPbrTextures(srcMat, baseMap);
   const isOutlineMat = lowerName.includes('outline');
   if (isOutlineMat) {
     const isCutoutOutline = lowerName.includes('cutout') || Boolean(srcMat.map);
@@ -10712,7 +11929,7 @@ function convertToStylizedPlayerCharacterMaterial(
           '#include <begin_vertex>',
           /* glsl */ `
           #include <begin_vertex>
-          transformed += normal * 0.00135;
+          transformed += normal * ${ANATOMICAL_SKIN_SHADER_PARAMS.hairCutoutOutlineNormalOffsetM.toFixed(5)};
           `,
         );
         shader.fragmentShader = shader.fragmentShader.replace(
@@ -10734,7 +11951,16 @@ function convertToStylizedPlayerCharacterMaterial(
       thinHairOutlineMat.needsUpdate = true;
       return thinHairOutlineMat;
     }
-    // Crisp, razor-thin opaque anime ink outline matching world props (no blurry gray alpha halo)
+    const isSkinOutline =
+      outlineCategory === 'skin_hand' ||
+      outlineCategory === 'skin_ear' ||
+      outlineCategory === 'skin_head' ||
+      outlineCategory === 'skin_body' ||
+      lowerName.includes('skin');
+    const outlinePullM = isSkinOutline
+      ? ANATOMICAL_SKIN_SHADER_PARAMS.skinOutlineNormalOffsetM
+      : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlineNormalOffsetM;
+    // Crisp, razor-thin opaque anime ink outline with depth bias so thin skin hulls never poke or z-fight
     const thinOutlineMat = new THREE.MeshBasicMaterial({
       name: srcMat.name,
       color: new THREE.Color('#1c1a24'),
@@ -10742,16 +11968,26 @@ function convertToStylizedPlayerCharacterMaterial(
       transparent: false,
       opacity: 1,
       depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: isSkinOutline
+        ? ANATOMICAL_SKIN_SHADER_PARAMS.skinOutlinePolygonOffsetFactor
+        : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlinePolygonOffsetFactor,
+      polygonOffsetUnits: isSkinOutline
+        ? ANATOMICAL_SKIN_SHADER_PARAMS.skinOutlinePolygonOffsetUnits
+        : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlinePolygonOffsetUnits,
       toneMapped: false,
     });
-    thinOutlineMat.customProgramCacheKey = () => 'blitz-stylized-player-thin-outline-v2';
+    thinOutlineMat.customProgramCacheKey = () =>
+      isSkinOutline
+        ? 'blitz-stylized-player-skin-outline-v3'
+        : 'blitz-stylized-player-thin-outline-v3';
     thinOutlineMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         /* glsl */ `
         #include <begin_vertex>
-        // Pull inverted-hull normals inward so zero-offset seam verts tuck cleanly behind base mesh
-        transformed += normal * 0.00125;
+        // Pull inverted-hull normals subtly inward; skin hulls use minimal pull so thin fingers/ears stay clean
+        transformed += normal * ${outlinePullM.toFixed(5)};
         `,
       );
     };
@@ -10759,7 +11995,8 @@ function convertToStylizedPlayerCharacterMaterial(
     return thinOutlineMat;
   }
 
-  const isSkinMat = lowerName.includes('skin');
+  const isBlitzMaskMat = lowerName.startsWith('blitz_mask_');
+  const isSkinMat = lowerName.includes('skin') || isBlitzMaskMat;
   const isHairMat =
     !isSkinMat &&
     (isHairMeshHint ||
@@ -10779,9 +12016,9 @@ function convertToStylizedPlayerCharacterMaterial(
   });
   animeMat.customProgramCacheKey = () =>
     isSkinMat
-      ? isBodySkinMeshHint
-        ? 'blitz-stylized-player-bodyskin-v8'
-        : 'blitz-stylized-player-skin-v8'
+      ? isBodySkinMeshHint && !isBlitzMaskMat
+        ? 'blitz-stylized-player-bodyskin-v9'
+        : 'blitz-stylized-player-skin-v9'
       : isHairMat
         ? 'blitz-stylized-player-hair-v6'
         : 'blitz-stylized-player-cloth-v5';
@@ -10828,30 +12065,20 @@ function convertToStylizedPlayerCharacterMaterial(
         /* glsl */ `
         #ifdef USE_MAP
           vec4 centerTap = texture2D( map, vMapUv, 1.05 );
-          vec2 r1 = vec2( 0.0028 );
-          vec2 r2 = vec2( 0.0062 );
-          vec4 t1 = texture2D( map, vMapUv + vec2( r1.x, 0.0 ), 1.35 );
-          vec4 t2 = texture2D( map, vMapUv - vec2( r1.x, 0.0 ), 1.35 );
-          vec4 t3 = texture2D( map, vMapUv + vec2( 0.0, r1.y ), 1.35 );
-          vec4 t4 = texture2D( map, vMapUv - vec2( 0.0, r1.y ), 1.35 );
-          vec4 t5 = texture2D( map, vMapUv + vec2( r2.x * 0.7, r2.y * 0.7 ), 1.55 );
-          vec4 t6 = texture2D( map, vMapUv + vec2( -r2.x * 0.7, r2.y * 0.7 ), 1.55 );
-          vec4 t7 = texture2D( map, vMapUv + vec2( r2.x * 0.7, -r2.y * 0.7 ), 1.55 );
-          vec4 t8 = texture2D( map, vMapUv + vec2( -r2.x * 0.7, -r2.y * 0.7 ), 1.55 );
-          float w0 = 0.30;
-          float w1 = 0.11 * step( 0.42, t1.a );
-          float w2 = 0.11 * step( 0.42, t2.a );
-          float w3 = 0.11 * step( 0.42, t3.a );
-          float w4 = 0.11 * step( 0.42, t4.a );
-          float w5 = 0.065 * step( 0.42, t5.a );
-          float w6 = 0.065 * step( 0.42, t6.a );
-          float w7 = 0.065 * step( 0.42, t7.a );
-          float w8 = 0.065 * step( 0.42, t8.a );
-          float wSum = max( w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8, 0.001 );
+          vec2 r1 = vec2( 0.0036 );
+          vec4 t1 = texture2D( map, vMapUv + vec2( r1.x, 0.0 ), 1.45 );
+          vec4 t2 = texture2D( map, vMapUv - vec2( r1.x, 0.0 ), 1.45 );
+          vec4 t3 = texture2D( map, vMapUv + vec2( 0.0, r1.y ), 1.45 );
+          vec4 t4 = texture2D( map, vMapUv - vec2( 0.0, r1.y ), 1.45 );
+          float w0 = 0.36;
+          float w1 = 0.16 * step( 0.42, t1.a );
+          float w2 = 0.16 * step( 0.42, t2.a );
+          float w3 = 0.16 * step( 0.42, t3.a );
+          float w4 = 0.16 * step( 0.42, t4.a );
+          float wSum = max( w0 + w1 + w2 + w3 + w4, 0.001 );
           vec3 smoothRgb = (
             centerTap.rgb * w0 +
-            t1.rgb * w1 + t2.rgb * w2 + t3.rgb * w3 + t4.rgb * w4 +
-            t5.rgb * w5 + t6.rgb * w6 + t7.rgb * w7 + t8.rgb * w8
+            t1.rgb * w1 + t2.rgb * w2 + t3.rgb * w3 + t4.rgb * w4
           ) / wSum;
           float smoothAlpha = centerTap.a * 0.62 + ( t1.a + t2.a + t3.a + t4.a ) * 0.095;
           vec4 sampledDiffuseColor = vec4( smoothRgb, mix( centerTap.a, smoothAlpha, 0.44 ) );
@@ -10862,17 +12089,20 @@ function convertToStylizedPlayerCharacterMaterial(
         #endif
         `,
       );
-    } else if (isSkinMat && isBodySkinMeshHint) {
-      // Remove harsh posterized baked muscle/knuckle blotches in skin_shading.png on arms, hands, neck, legs & ears
-      // by referencing the character's own clean center-forehead skin texel so neck-to-face tone matches 100% seamlessly
+    } else if (isSkinMat && isBodySkinMeshHint && !isBlitzMaskMat) {
+      // Remove harsh posterized baked muscle/knuckle/inter-digit shadow blotches in skin_shading.png on hands, arms, neck, legs & ears
+      // by referencing the character's own clean center-forehead skin texel (with validity fallback guard for non-standard UVs).
       fragShader = fragShader.replace(
         '#include <map_fragment>',
         /* glsl */ `
         #ifdef USE_MAP
           vec4 rawSkinTap = texture2D( map, vMapUv );
-          vec4 cleanForeheadSkin = texture2D( map, vec2( 0.785, 0.28 ), 0.0 );
-          vec3 cleanBodySkinRgb = mix( cleanForeheadSkin.rgb, rawSkinTap.rgb, 0.045 );
-          cleanBodySkinRgb = max( cleanBodySkinRgb, cleanForeheadSkin.rgb * 0.972 );
+          vec4 cleanForeheadSkin = texture2D( map, vec2( ${ANATOMICAL_SKIN_SHADER_PARAMS.cleanForeheadU.toFixed(3)}, ${ANATOMICAL_SKIN_SHADER_PARAMS.cleanForeheadV.toFixed(2)} ), 0.0 );
+          float foreheadLuma = dot( cleanForeheadSkin.rgb, vec3( 0.299, 0.587, 0.114 ) );
+          float foreheadValid = step( 0.35, foreheadLuma ) * step( 0.50, cleanForeheadSkin.a );
+          vec3 targetSkinRgb = mix( cleanForeheadSkin.rgb, rawSkinTap.rgb, ${ANATOMICAL_SKIN_SHADER_PARAMS.rawSkinTapBlend.toFixed(3)} );
+          targetSkinRgb = max( targetSkinRgb, cleanForeheadSkin.rgb * ${ANATOMICAL_SKIN_SHADER_PARAMS.foreheadSkinFloor.toFixed(3)} );
+          vec3 cleanBodySkinRgb = mix( rawSkinTap.rgb, targetSkinRgb, foreheadValid );
           vec4 sampledDiffuseColor = vec4( cleanBodySkinRgb, rawSkinTap.a );
           #ifdef DECODE_VIDEO_TEXTURE
             sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
@@ -10963,14 +12193,14 @@ function convertToStylizedPlayerCharacterMaterial(
         isSkinMat
           ? /* glsl */ `
       // Blend world sun with an elevated camera-front-3/4 key vector so top of forearms, backs of hands,
-      // and face stay cleanly lit while undersides, inner palms, and under-chin hold soft dimensional shadow
-      vec3 camKeyL = normalize( viewWorld + vec3( 0.16, 0.86, 0.0 ) );
-      vec3 L = normalize( mix( worldL, camKeyL, 0.44 ) );
+      // inner palms, fingers, and face stay cleanly lit while still holding soft dimensional cel shadow
+      vec3 camKeyL = normalize( viewWorld + vec3( 0.14, 0.78, 0.0 ) );
+      vec3 L = normalize( mix( worldL, camKeyL, 0.50 ) );
       float ndl = dot( N, L );
-      float celLit = smoothstep( -0.26, 0.34, ndl );
+      float celLit = smoothstep( -0.34, 0.30, ndl );
       float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
-      float hemiShade = mix( 0.955, 1.02, hemi );
-      vec3 shadowTint = vec3( 0.918, 0.812, 0.796 );
+      float hemiShade = mix( 0.965, 1.02, hemi );
+      vec3 shadowTint = vec3( 0.935, 0.842, 0.824 );
       vec3 litTint = mix( vec3( 1.022 ), uStylizedLightColor, 0.11 );
       vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
       float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.6 ) * smoothstep( -0.05, 0.85, N.y );
@@ -10996,6 +12226,128 @@ function convertToStylizedPlayerCharacterMaterial(
   };
   animeMat.needsUpdate = true;
   return animeMat;
+}
+
+function isBlitzModularModel(root: THREE.Object3D | null | undefined): boolean {
+  if (!root) return false;
+  return Boolean(
+    root.getObjectByName('Blitz_BaseDoll_Female_Mesh') ||
+      root.getObjectByName('Blitz_BaseDoll_Male_Mesh'),
+  );
+}
+
+function createSmoothedOutlineGeometry(srcGeo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const outGeo = srcGeo.clone();
+  const posAttr = outGeo.getAttribute('position');
+  const nrmAttr = outGeo.getAttribute('normal');
+  if (!posAttr || !nrmAttr || posAttr.count === 0) return outGeo;
+
+  const sumByKey = new Map<string, [number, number, number]>();
+  for (let i = 0; i < posAttr.count; i++) {
+    const k = `${Math.round(posAttr.getX(i) * 10000)},${Math.round(posAttr.getY(i) * 10000)},${Math.round(posAttr.getZ(i) * 10000)}`;
+    const nx = nrmAttr.getX(i);
+    const ny = nrmAttr.getY(i);
+    const nz = nrmAttr.getZ(i);
+    const acc = sumByKey.get(k);
+    if (acc) {
+      acc[0] += nx;
+      acc[1] += ny;
+      acc[2] += nz;
+    } else {
+      sumByKey.set(k, [nx, ny, nz]);
+    }
+  }
+  for (let i = 0; i < posAttr.count; i++) {
+    const k = `${Math.round(posAttr.getX(i) * 10000)},${Math.round(posAttr.getY(i) * 10000)},${Math.round(posAttr.getZ(i) * 10000)}`;
+    const acc = sumByKey.get(k);
+    if (!acc) continue;
+    const len = Math.hypot(acc[0], acc[1], acc[2]);
+    if (len > 1e-6) {
+      nrmAttr.setXYZ(i, acc[0] / len, acc[1] / len, acc[2] / len);
+    }
+  }
+  nrmAttr.needsUpdate = true;
+  return outGeo;
+}
+
+function createBackSideOutlineMaterial(
+  srcMat: THREE.Material,
+  isHairMeshHint: boolean,
+): THREE.Material {
+  const stdMat = srcMat as THREE.MeshBasicMaterial & THREE.MeshStandardMaterial;
+  const baseMap = stdMat.map ?? null;
+  const lowerName = (stdMat.name || '').toLowerCase();
+  const isSkinMat = lowerName.includes('skin') || lowerName.startsWith('blitz_mask_');
+  const isHeadMat = lowerName === 'blitz_mask_head' || lowerName.startsWith('head_');
+  const isCutoutHair =
+    !isSkinMat &&
+    isHairMeshHint &&
+    Boolean(baseMap) &&
+    Boolean((stdMat.alphaTest && stdMat.alphaTest > 0.05) || stdMat.transparent);
+
+  if (isCutoutHair) {
+    const hairOutMat = new THREE.MeshBasicMaterial({
+      name: `${stdMat.name}_Outline`,
+      map: baseMap,
+      color: new THREE.Color('#211c24'),
+      side: THREE.BackSide,
+      transparent: false,
+      opacity: 1,
+      alphaTest: 0.48,
+      depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: 1.0,
+      polygonOffsetUnits: 1.0,
+      toneMapped: false,
+    });
+    hairOutMat.customProgramCacheKey = () => 'blitz-runtime-hair-backside-outline-v1';
+    hairOutMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+        #include <begin_vertex>
+        transformed += normal * ${ANATOMICAL_SKIN_SHADER_PARAMS.hairCutoutOutlineNormalOffsetM.toFixed(5)};
+        `,
+      );
+    };
+    hairOutMat.needsUpdate = true;
+    return hairOutMat;
+  }
+
+  const pushM = isHeadMat
+    ? ANATOMICAL_SKIN_SHADER_PARAMS.headOutlineNormalOffsetM
+    : isSkinMat
+      ? ANATOMICAL_SKIN_SHADER_PARAMS.skinOutlineNormalOffsetM
+      : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlineNormalOffsetM;
+  const outMat = new THREE.MeshBasicMaterial({
+    name: `${stdMat.name}_Outline`,
+    color: new THREE.Color('#1c1a24'),
+    side: THREE.BackSide,
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
+    polygonOffset: true,
+    polygonOffsetFactor: isSkinMat ? 2.0 : 1.0,
+    polygonOffsetUnits: isSkinMat ? 2.0 : 1.0,
+    toneMapped: false,
+  });
+  outMat.customProgramCacheKey = () =>
+    isHeadMat
+      ? 'blitz-runtime-head-outline-v1'
+      : isSkinMat
+        ? 'blitz-runtime-skin-outline-v1'
+        : 'blitz-runtime-cloth-outline-v1';
+  outMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      /* glsl */ `
+      #include <begin_vertex>
+      transformed += normal * ${pushM.toFixed(5)};
+      `,
+    );
+  };
+  outMat.needsUpdate = true;
+  return outMat;
 }
 
 const PELVIS_ROOT_TO_MIXAMO_BONE_MAP: readonly [string, string][] = [
@@ -11066,6 +12418,7 @@ interface PelvisRootMixamoRetargetContext {
   srcHipsWorldBindPos: THREE.Vector3;
   tgtHipTransNode: THREE.Object3D | null;
   tgtSpineTransNode: THREE.Object3D | null;
+  tgtSpineNeedsIndependentPos: boolean;
   tgtHipWorldBindPos: THREE.Vector3;
   tgtSpineOffsetFromHipBind: THREE.Vector3;
   hipsHeightRatio: number;
@@ -11102,7 +12455,7 @@ function createPelvisRootMixamoRetargetContext(
   const srcLocalBindPositions = new Map<string, THREE.Vector3>();
   const srcWorldBindQuats = new Map<string, THREE.Quaternion>();
   srcRoot.traverse((o) => {
-    if (o.name.startsWith('mixamorig')) {
+    if (o.name.toLowerCase().startsWith('mixamorig')) {
       const shortName = stripMixamoPrefix(o.name);
       srcBones.set(shortName, o as THREE.Bone);
       srcLocalBindQuats.set(shortName, o.quaternion.clone());
@@ -11139,10 +12492,18 @@ function createPelvisRootMixamoRetargetContext(
     srcHipsBone.getWorldPosition(srcHipsWorldBindPos);
   }
 
-  const tgtHipTransNode = tgtRoot.getObjectByName('Hip_Translation') ?? null;
-  const tgtSpineTransNode = tgtRoot.getObjectByName('Spine_Translation') ?? null;
+  const tgtHipTransNode =
+    tgtRoot.getObjectByName('Hip_Translation') ?? tgtRoot.getObjectByName('Hip') ?? null;
+  const tgtSpineTransNode =
+    tgtRoot.getObjectByName('Spine_Translation') ?? tgtRoot.getObjectByName('Spine') ?? null;
   const tgtHipNode = tgtRoot.getObjectByName('Hip') ?? tgtHipTransNode;
   const tgtSpineNode = tgtRoot.getObjectByName('Spine') ?? tgtSpineTransNode;
+  const tgtSpineNeedsIndependentPos = Boolean(
+    tgtSpineTransNode &&
+      tgtHipTransNode &&
+      tgtSpineTransNode !== tgtHipTransNode &&
+      tgtSpineTransNode.parent === tgtHipTransNode.parent,
+  );
   const tgtHipWorldBindPos = new THREE.Vector3(0, 0.8367, -0.0074);
   const tgtSpineWorldBindPos = new THREE.Vector3(0, 0.8654, 0);
   if (tgtHipNode) tgtHipNode.getWorldPosition(tgtHipWorldBindPos);
@@ -11168,6 +12529,7 @@ function createPelvisRootMixamoRetargetContext(
     srcHipsWorldBindPos,
     tgtHipTransNode,
     tgtSpineTransNode,
+    tgtSpineNeedsIndependentPos,
     tgtHipWorldBindPos,
     tgtSpineOffsetFromHipBind,
     hipsHeightRatio,
@@ -11208,6 +12570,13 @@ function retargetMixamoClipWithContext(
   evalClip.tracks = evalClip.tracks.filter(
     (tr) => tr.name.endsWith('.quaternion') || /Hips\.position$/i.test(tr.name),
   );
+  for (const tr of evalClip.tracks) {
+    const dotIdx = tr.name.indexOf('.');
+    if (dotIdx > 0) {
+      tr.name =
+        THREE.PropertyBinding.sanitizeNodeName(tr.name.slice(0, dotIdx)) + tr.name.slice(dotIdx);
+    }
+  }
   const srcMixer = new THREE.AnimationMixer(ctx.srcRoot);
   const srcAct = srcMixer.clipAction(evalClip);
   srcAct.play();
@@ -11216,7 +12585,9 @@ function retargetMixamoClipWithContext(
   const outHipTransVals =
     ctx.tgtHipTransNode?.parent && ctx.srcHipsBone ? new Float32Array(refTimes.length * 3) : null;
   const outSpineTransVals =
-    ctx.tgtSpineTransNode?.parent && ctx.srcHipsBone ? new Float32Array(refTimes.length * 3) : null;
+    ctx.tgtSpineNeedsIndependentPos && ctx.tgtSpineTransNode?.parent && ctx.srcHipsBone
+      ? new Float32Array(refTimes.length * 3)
+      : null;
 
   const qSrcW = new THREE.Quaternion();
   const qDelta = new THREE.Quaternion();
@@ -11312,14 +12683,14 @@ function retargetMixamoClipWithContext(
 
   srcMixer.stopAllAction();
   const outTracks: THREE.KeyframeTrack[] = [];
-  if (outHipTransVals) {
+  if (outHipTransVals && ctx.tgtHipTransNode) {
     outTracks.push(
-      new THREE.VectorKeyframeTrack('Hip_Translation.position', refTimes, outHipTransVals),
+      new THREE.VectorKeyframeTrack(`${ctx.tgtHipTransNode.name}.position`, refTimes, outHipTransVals),
     );
   }
-  if (outSpineTransVals) {
+  if (outSpineTransVals && ctx.tgtSpineTransNode) {
     outTracks.push(
-      new THREE.VectorKeyframeTrack('Spine_Translation.position', refTimes, outSpineTransVals),
+      new THREE.VectorKeyframeTrack(`${ctx.tgtSpineTransNode.name}.position`, refTimes, outSpineTransVals),
     );
   }
   for (let p = 0; p < ctx.activePairs.length; p++) {
@@ -11358,6 +12729,11 @@ class LazyMixamoPelvisClipMap extends Map<string, THREE.AnimationClip> {
 
   override has(key: string): boolean {
     return super.has(key) || this.pendingSrcClips.has(key);
+  }
+
+  override set(key: string, value: THREE.AnimationClip): this {
+    this.pendingSrcClips.delete(key);
+    return super.set(key, value);
   }
 
   override get(key: string): THREE.AnimationClip | undefined {
@@ -11538,326 +12914,537 @@ function retargetMixamoClipBetweenBindPoses(
 }
 
 /**
- * Welds open wrist boundary rings between `hands_skin` and `torso_*_skin` (position, normal, and
- * 50/50 ForeArm-Hand skin weights) and tucks open-boundary edges of `*_skin_Outline` / `ears_*_Outline`
- * inward along their inverted-hull normals so wrist/collar skin seams never show black outline rings or gaps.
+ * Sanitizes custom character GLB anatomy, skin seams, `_skin_1` wrist welds, finger/ear/head outline
+ * blotches, base normals, bone weights, and automated under-clothing skin culling/insets.
  */
 function sanitizeCustomCharacterSkinSeams(sceneRoot: THREE.Object3D): void {
   if (sceneRoot.userData?.__skinSeamsSanitized) return;
   sceneRoot.userData = sceneRoot.userData || {};
   sceneRoot.userData.__skinSeamsSanitized = true;
+  sanitizeAvatarAnatomyAndSkinSeams(sceneRoot);
+}
 
-  type OpenBoundaryTopology = {
-    posAttr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
-    nrmAttr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined;
-    vKeys: string[];
-    indicesByKey: Map<string, number[]>;
-    openBoundaryKeys: Set<string>;
-    oneRingKeys: Set<string>;
-  };
+function cloneDirectPelvisClipForNodes(
+  srcClip: THREE.AnimationClip,
+  clipName: string,
+  validNodeNames: Set<string>,
+): THREE.AnimationClip | null {
+  const cloned = srcClip.clone();
+  cloned.name = clipName;
+  cloned.tracks = cloned.tracks.filter((track) => {
+    const dotIdx = track.name.lastIndexOf('.');
+    const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
+    return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
+  });
+  return cloned.tracks.length > 0 ? cloned : null;
+}
 
-  const analyzeOpenBoundaryTopology = (
-    geo: THREE.BufferGeometry,
-  ): OpenBoundaryTopology | null => {
-    const posAttr = geo.getAttribute('position');
-    if (!posAttr || posAttr.count === 0) return null;
-    const nrmAttr = geo.getAttribute('normal');
-    const vKeys: string[] = new Array(posAttr.count);
-    const indicesByKey = new Map<string, number[]>();
-    for (let i = 0; i < posAttr.count; i++) {
-      const k = `${Math.round(posAttr.getX(i) * 2000)},${Math.round(posAttr.getY(i) * 2000)},${Math.round(posAttr.getZ(i) * 2000)}`;
-      vKeys[i] = k;
-      let bucket = indicesByKey.get(k);
-      if (!bucket) {
-        bucket = [];
-        indicesByKey.set(k, bucket);
-      }
-      bucket.push(i);
+function retargetPelvisPreRotClipToDirectPelvis(
+  srcClip: THREE.AnimationClip,
+  srcSceneRoot: THREE.Object3D,
+  tgtSceneRoot: THREE.Object3D,
+  outClipName: string,
+): THREE.AnimationClip | null {
+  let bestTimes: ArrayLike<number> | null = null;
+  for (const tr of srcClip.tracks) {
+    if (tr.name.endsWith('.quaternion') && (!bestTimes || tr.times.length > bestTimes.length)) {
+      bestTimes = tr.times;
     }
+  }
+  if (!bestTimes || bestTimes.length === 0) return null;
+  const refTimes = new Float32Array(bestTimes);
 
-    const edgeCounts = new Map<string, number>();
-    const neighborsByKey = new Map<string, Set<string>>();
-    const addNeighbor = (a: string, b: string) => {
-      let s = neighborsByKey.get(a);
-      if (!s) {
-        s = new Set<string>();
-        neighborsByKey.set(a, s);
-      }
-      s.add(b);
-    };
-    const recordTri = (i0: number, i1: number, i2: number) => {
-      const triKeys = [vKeys[i0], vKeys[i1], vKeys[i2]];
-      for (let e = 0; e < 3; e++) {
-        const ka = triKeys[e];
-        const kb = triKeys[(e + 1) % 3];
-        if (!ka || !kb || ka === kb) continue;
-        const edgeKey = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-        edgeCounts.set(edgeKey, (edgeCounts.get(edgeKey) ?? 0) + 1);
-        addNeighbor(ka, kb);
-        addNeighbor(kb, ka);
-      }
-    };
+  const srcRoot = cloneLightweightTransformTree(srcSceneRoot, false);
+  const tgtRoot = cloneLightweightTransformTree(tgtSceneRoot, false);
+  srcRoot.updateMatrixWorld(true);
+  tgtRoot.updateMatrixWorld(true);
 
-    const idxAttr = geo.getIndex();
-    if (idxAttr) {
-      for (let t = 0; t + 2 < idxAttr.count; t += 3) {
-        recordTri(idxAttr.getX(t), idxAttr.getX(t + 1), idxAttr.getX(t + 2));
-      }
-    } else {
-      for (let t = 0; t + 2 < posAttr.count; t += 3) {
-        recordTri(t, t + 1, t + 2);
-      }
-    }
-
-    const openBoundaryKeys = new Set<string>();
-    for (const [edgeKey, count] of edgeCounts.entries()) {
-      if (count === 1) {
-        const sep = edgeKey.indexOf('|');
-        if (sep > 0) {
-          openBoundaryKeys.add(edgeKey.slice(0, sep));
-          openBoundaryKeys.add(edgeKey.slice(sep + 1));
-        }
-      }
-    }
-
-    const oneRingKeys = new Set<string>();
-    for (const openKey of openBoundaryKeys) {
-      const nbrs = neighborsByKey.get(openKey);
-      if (!nbrs) continue;
-      for (const nk of nbrs) {
-        if (!openBoundaryKeys.has(nk)) {
-          oneRingKeys.add(nk);
-        }
-      }
-    }
-
-    return { posAttr, nrmAttr, vKeys, indicesByKey, openBoundaryKeys, oneRingKeys };
-  };
-
-  const meshesByLowerName = new Map<string, THREE.Mesh>();
-  const torsoSkinMeshes: THREE.Mesh[] = [];
-  const skinOutlineMeshes: THREE.Mesh[] = [];
-
-  sceneRoot.traverse((node) => {
-    if (!(node as THREE.Mesh).isMesh) return;
-    const mesh = node as THREE.Mesh;
-    const lower = (mesh.name || '').toLowerCase();
-    if (lower) {
-      meshesByLowerName.set(lower, mesh);
-    }
-    if (lower.startsWith('torso_') && lower.endsWith('_skin')) {
-      torsoSkinMeshes.push(mesh);
-    }
-    if (
-      lower.endsWith('_skin_outline') ||
-      (lower.startsWith('ears_') && lower.endsWith('_outline'))
-    ) {
-      skinOutlineMeshes.push(mesh);
+  const srcNodesByName = new Map<string, THREE.Object3D>();
+  const srcWorldBindQuats = new Map<string, THREE.Quaternion>();
+  srcRoot.traverse((o) => {
+    if (!o.name) return;
+    if (o.name.includes('_Translation') || o.name.includes('_PreRotation')) return;
+    if (!srcNodesByName.has(o.name)) {
+      srcNodesByName.set(o.name, o);
+      const wq = new THREE.Quaternion();
+      o.getWorldQuaternion(wq);
+      srcWorldBindQuats.set(o.name, wq);
     }
   });
 
-  const findArmBonePair = (
-    mesh: THREE.Mesh,
-    sampleVertIdx: number,
-  ): { foreArmIdx: number; handIdx: number } | null => {
-    const skinned = mesh as THREE.SkinnedMesh;
-    const bones = skinned.skeleton?.bones;
-    const jntAttr = mesh.geometry.getAttribute('skinIndex');
-    if (!bones || !jntAttr || sampleVertIdx >= jntAttr.count) return null;
-    let sidePrefix: 'Left' | 'Right' | null = null;
-    const slotIndices = [
-      jntAttr.getX(sampleVertIdx),
-      jntAttr.getY(sampleVertIdx),
-      jntAttr.getZ(sampleVertIdx),
-      jntAttr.getW(sampleVertIdx),
-    ];
-    for (const bIdx of slotIndices) {
-      const bName = bones[bIdx]?.name || '';
-      if (bName.startsWith('Right')) {
-        sidePrefix = 'Right';
-        break;
-      }
-      if (bName.startsWith('Left')) {
-        sidePrefix = 'Left';
-        break;
+  const tgtPairs: Array<[string, THREE.Object3D, THREE.Object3D, THREE.Quaternion, THREE.Quaternion]> = [];
+  tgtRoot.traverse((o) => {
+    if (!o.name || !o.parent) return;
+    const sNode = srcNodesByName.get(o.name);
+    const sBindW = srcWorldBindQuats.get(o.name);
+    if (!sNode || !sBindW) return;
+    const tBindW = new THREE.Quaternion();
+    o.getWorldQuaternion(tBindW);
+    tgtPairs.push([o.name, o, sNode, tBindW, sBindW]);
+  });
+  if (tgtPairs.length === 0) return null;
+
+  const sHipNode = srcRoot.getObjectByName('Hip') ?? null;
+  const sSpineNode = srcRoot.getObjectByName('Spine') ?? null;
+  const tHipNode = tgtRoot.getObjectByName('Hip') ?? null;
+  const tSpineNode = tgtRoot.getObjectByName('Spine') ?? null;
+  const sHipBindW = new THREE.Vector3(0, 0.837, 0);
+  const tHipBindW = new THREE.Vector3(0, 0.837, 0);
+  if (sHipNode) sHipNode.getWorldPosition(sHipBindW);
+  if (tHipNode) tHipNode.getWorldPosition(tHipBindW);
+  const heightRatio =
+    sHipBindW.y > 0.1 && tHipBindW.y > 0.1 ? tHipBindW.y / sHipBindW.y : 1.0;
+
+  const srcMixer = new THREE.AnimationMixer(srcRoot);
+  const srcAct = srcMixer.clipAction(srcClip);
+  srcAct.play();
+
+  const outQuatBuffers = tgtPairs.map(() => new Float32Array(refTimes.length * 4));
+  const outHipPosVals =
+    sHipNode && tHipNode?.parent ? new Float32Array(refTimes.length * 3) : null;
+  const outSpinePosVals =
+    sHipNode && sSpineNode && tSpineNode?.parent ? new Float32Array(refTimes.length * 3) : null;
+
+  const qSrcW = new THREE.Quaternion();
+  const qDelta = new THREE.Quaternion();
+  const qDesTgtW = new THREE.Quaternion();
+  const qParentW = new THREE.Quaternion();
+  const qLocalOut = new THREE.Quaternion();
+  const vSrcHipW = new THREE.Vector3();
+  const vSrcSpineW = new THREE.Vector3();
+  const vDesHipW = new THREE.Vector3();
+  const vDesSpineW = new THREE.Vector3();
+  const vLocal = new THREE.Vector3();
+
+  for (let f = 0; f < refTimes.length; f++) {
+    srcMixer.setTime(refTimes[f]);
+    srcRoot.updateMatrixWorld(true);
+
+    if (outHipPosVals && sHipNode && tHipNode?.parent) {
+      sHipNode.getWorldPosition(vSrcHipW);
+      vDesHipW.copy(vSrcHipW).multiplyScalar(heightRatio);
+      tHipNode.parent.updateWorldMatrix(true, false);
+      vLocal.copy(vDesHipW);
+      tHipNode.parent.worldToLocal(vLocal);
+      tHipNode.position.copy(vLocal);
+      tHipNode.updateMatrixWorld(true);
+      const base3 = f * 3;
+      outHipPosVals[base3] = vLocal.x;
+      outHipPosVals[base3 + 1] = vLocal.y;
+      outHipPosVals[base3 + 2] = vLocal.z;
+
+      if (outSpinePosVals && sSpineNode && tSpineNode?.parent) {
+        sSpineNode.getWorldPosition(vSrcSpineW);
+        vDesSpineW.copy(vSrcSpineW).sub(vSrcHipW).multiplyScalar(heightRatio).add(vDesHipW);
+        tSpineNode.parent.updateWorldMatrix(true, false);
+        vLocal.copy(vDesSpineW);
+        tSpineNode.parent.worldToLocal(vLocal);
+        tSpineNode.position.copy(vLocal);
+        tSpineNode.updateMatrixWorld(true);
+        outSpinePosVals[base3] = vLocal.x;
+        outSpinePosVals[base3 + 1] = vLocal.y;
+        outSpinePosVals[base3 + 2] = vLocal.z;
       }
     }
-    if (!sidePrefix) return null;
-    const foreArmIdx = bones.findIndex((b) => b.name === `${sidePrefix}ForeArm`);
-    const handIdx = bones.findIndex((b) => b.name === `${sidePrefix}Hand`);
-    if (foreArmIdx < 0 || handIdx < 0) return null;
-    return { foreArmIdx, handIdx };
-  };
 
-  const setWristHalfWeights = (
-    geo: THREE.BufferGeometry,
-    vertIndices: readonly number[],
-    foreArmIdx: number,
-    handIdx: number,
-  ) => {
-    const jntAttr = geo.getAttribute('skinIndex');
-    const wgtAttr = geo.getAttribute('skinWeight');
-    if (!jntAttr || !wgtAttr) return;
-    for (const vi of vertIndices) {
-      jntAttr.setXYZW(vi, foreArmIdx, handIdx, 0, 0);
-      wgtAttr.setXYZW(vi, 128 / 255, 127 / 255, 0, 0);
-    }
-    jntAttr.needsUpdate = true;
-    wgtAttr.needsUpdate = true;
-  };
+    for (let p = 0; p < tgtPairs.length; p++) {
+      const [, tNode, sNode, tBindW, sBindW] = tgtPairs[p];
+      sNode.getWorldQuaternion(qSrcW);
+      qDelta.copy(sBindW).invert().premultiply(qSrcW);
+      qDesTgtW.copy(qDelta).multiply(tBindW).normalize();
+      tNode.parent!.updateWorldMatrix(true, false);
+      tNode.parent!.getWorldQuaternion(qParentW);
+      qLocalOut.copy(qParentW).invert().multiply(qDesTgtW).normalize();
+      tNode.quaternion.copy(qLocalOut);
+      tNode.updateMatrixWorld(false);
 
-  // 1. Weld open wrist boundary rings between `hands_skin` and any `torso_*_skin` mesh
-  const handsMesh = meshesByLowerName.get('hands_skin');
-  const handsOutlineMesh = meshesByLowerName.get('hands_skin_outline');
-  if (handsMesh && torsoSkinMeshes.length > 0) {
-    const hTopo = analyzeOpenBoundaryTopology(handsMesh.geometry);
-    const hOutPosAttr = handsOutlineMesh?.geometry.getAttribute('position');
-    if (hTopo && hTopo.openBoundaryKeys.size > 0) {
-      for (const torsoMesh of torsoSkinMeshes) {
-        const tTopo = analyzeOpenBoundaryTopology(torsoMesh.geometry);
-        if (!tTopo || tTopo.openBoundaryKeys.size === 0) continue;
-        const torsoOutlineMesh = meshesByLowerName.get(
-          `${(torsoMesh.name || '').toLowerCase()}_outline`,
-        );
-        const tOutPosAttr = torsoOutlineMesh?.geometry.getAttribute('position');
-        let weldedAny = false;
-
-        for (const hKey of hTopo.openBoundaryKeys) {
-          const hVerts = hTopo.indicesByKey.get(hKey);
-          if (!hVerts || hVerts.length === 0) continue;
-          const h0 = hVerts[0];
-          const hx = hTopo.posAttr.getX(h0);
-          const hy = hTopo.posAttr.getY(h0);
-          const hz = hTopo.posAttr.getZ(h0);
-
-          let bestTKey: string | null = null;
-          let bestDist = 0.014;
-          for (const tKey of tTopo.openBoundaryKeys) {
-            const tVerts = tTopo.indicesByKey.get(tKey);
-            if (!tVerts || tVerts.length === 0) continue;
-            const t0 = tVerts[0];
-            const d = Math.hypot(
-              hx - tTopo.posAttr.getX(t0),
-              hy - tTopo.posAttr.getY(t0),
-              hz - tTopo.posAttr.getZ(t0),
-            );
-            if (d < bestDist) {
-              bestDist = d;
-              bestTKey = tKey;
-            }
-          }
-          if (!bestTKey) continue;
-          const tVerts = tTopo.indicesByKey.get(bestTKey)!;
-          const t0 = tVerts[0];
-          const tx = tTopo.posAttr.getX(t0);
-          const ty = tTopo.posAttr.getY(t0);
-          const tz = tTopo.posAttr.getZ(t0);
-          const mx = 0.5 * (hx + tx);
-          const my = 0.5 * (hy + ty);
-          const mz = 0.5 * (hz + tz);
-
-          let nx = 0;
-          let ny = 0;
-          let nz = 0;
-          if (hTopo.nrmAttr && tTopo.nrmAttr) {
-            nx = hTopo.nrmAttr.getX(h0) + tTopo.nrmAttr.getX(t0);
-            ny = hTopo.nrmAttr.getY(h0) + tTopo.nrmAttr.getY(t0);
-            nz = hTopo.nrmAttr.getZ(h0) + tTopo.nrmAttr.getZ(t0);
-            const nLen = Math.hypot(nx, ny, nz);
-            if (nLen > 1e-5) {
-              nx /= nLen;
-              ny /= nLen;
-              nz /= nLen;
-            }
-          }
-
-          for (const vi of hVerts) {
-            const dx = mx - hTopo.posAttr.getX(vi);
-            const dy = my - hTopo.posAttr.getY(vi);
-            const dz = mz - hTopo.posAttr.getZ(vi);
-            hTopo.posAttr.setXYZ(vi, mx, my, mz);
-            if (hOutPosAttr && vi < hOutPosAttr.count) {
-              hOutPosAttr.setXYZ(
-                vi,
-                hOutPosAttr.getX(vi) + dx,
-                hOutPosAttr.getY(vi) + dy,
-                hOutPosAttr.getZ(vi) + dz,
-              );
-            }
-            if (hTopo.nrmAttr && (nx !== 0 || ny !== 0 || nz !== 0)) {
-              hTopo.nrmAttr.setXYZ(vi, nx, ny, nz);
-            }
-          }
-          for (const vi of tVerts) {
-            const dx = mx - tTopo.posAttr.getX(vi);
-            const dy = my - tTopo.posAttr.getY(vi);
-            const dz = mz - tTopo.posAttr.getZ(vi);
-            tTopo.posAttr.setXYZ(vi, mx, my, mz);
-            if (tOutPosAttr && vi < tOutPosAttr.count) {
-              tOutPosAttr.setXYZ(
-                vi,
-                tOutPosAttr.getX(vi) + dx,
-                tOutPosAttr.getY(vi) + dy,
-                tOutPosAttr.getZ(vi) + dz,
-              );
-            }
-            if (tTopo.nrmAttr && (nx !== 0 || ny !== 0 || nz !== 0)) {
-              tTopo.nrmAttr.setXYZ(vi, nx, ny, nz);
-            }
-          }
-
-          const hBones = findArmBonePair(handsMesh, h0);
-          const tBones = findArmBonePair(torsoMesh, t0);
-          if (hBones && tBones) {
-            setWristHalfWeights(handsMesh.geometry, hVerts, hBones.foreArmIdx, hBones.handIdx);
-            setWristHalfWeights(torsoMesh.geometry, tVerts, tBones.foreArmIdx, tBones.handIdx);
-          }
-          weldedAny = true;
-        }
-
-        if (weldedAny) {
-          hTopo.posAttr.needsUpdate = true;
-          tTopo.posAttr.needsUpdate = true;
-          if (hTopo.nrmAttr) hTopo.nrmAttr.needsUpdate = true;
-          if (tTopo.nrmAttr) tTopo.nrmAttr.needsUpdate = true;
-          if (hOutPosAttr) hOutPosAttr.needsUpdate = true;
-          if (tOutPosAttr) tOutPosAttr.needsUpdate = true;
+      const outVals = outQuatBuffers[p];
+      const base4 = f * 4;
+      if (f > 0) {
+        const prevDot =
+          outVals[base4 - 4] * qLocalOut.x +
+          outVals[base4 - 3] * qLocalOut.y +
+          outVals[base4 - 2] * qLocalOut.z +
+          outVals[base4 - 1] * qLocalOut.w;
+        if (prevDot < 0) {
+          qLocalOut.set(-qLocalOut.x, -qLocalOut.y, -qLocalOut.z, -qLocalOut.w);
         }
       }
+      outVals[base4] = qLocalOut.x;
+      outVals[base4 + 1] = qLocalOut.y;
+      outVals[base4 + 2] = qLocalOut.z;
+      outVals[base4 + 3] = qLocalOut.w;
     }
   }
 
-  // 2. Tuck open-boundary rings on inverted-hull skin outline meshes (`*_skin_Outline` & `ears_*_Outline`)
-  // inward along their inward-facing normals so wrist, sleeve, ankle & neck skin cuts never draw black rings
-  for (const outMesh of skinOutlineMeshes) {
-    const topo = analyzeOpenBoundaryTopology(outMesh.geometry);
-    if (!topo || !topo.nrmAttr || topo.openBoundaryKeys.size === 0) continue;
-    let moved = false;
-    for (let i = 0; i < topo.posAttr.count; i++) {
-      const k = topo.vKeys[i];
-      const tuck = topo.openBoundaryKeys.has(k)
-        ? 0.0036
-        : topo.oneRingKeys.has(k)
-          ? 0.0014
-          : 0;
-      if (tuck <= 0) continue;
-      topo.posAttr.setXYZ(
-        i,
-        topo.posAttr.getX(i) + topo.nrmAttr.getX(i) * tuck,
-        topo.posAttr.getY(i) + topo.nrmAttr.getY(i) * tuck,
-        topo.posAttr.getZ(i) + topo.nrmAttr.getZ(i) * tuck,
+  srcMixer.stopAllAction();
+  const outTracks: THREE.KeyframeTrack[] = [];
+  if (outHipPosVals && tHipNode) {
+    outTracks.push(new THREE.VectorKeyframeTrack(`${tHipNode.name}.position`, refTimes, outHipPosVals));
+  }
+  if (outSpinePosVals && tSpineNode) {
+    outTracks.push(new THREE.VectorKeyframeTrack(`${tSpineNode.name}.position`, refTimes, outSpinePosVals));
+  }
+  for (let p = 0; p < tgtPairs.length; p++) {
+    outTracks.push(new THREE.QuaternionKeyframeTrack(`${tgtPairs[p][0]}.quaternion`, refTimes, outQuatBuffers[p]));
+  }
+  return new THREE.AnimationClip(outClipName, srcClip.duration, outTracks);
+}
+
+function syncLoadedPersonalClipsIntoTemplate(
+  clips: Map<string, THREE.AnimationClip>,
+  validNodeNames: Set<string>,
+  tgtSceneRoot?: THREE.Object3D,
+): void {
+  // Personal animation-only GLBs carry PelvisRoot skeletons (`PelvisRoot`/`Hip`/`Spine`)
+  // plus an `Armature` root; never match Mixamo skeletons (which also contain `Armature`)
+  // or those 3-track `Armature` stubs would enter Mixamo's lazy retarget map as frozen poses.
+  if (
+    !validNodeNames.has('PelvisRoot') &&
+    !(validNodeNames.has('Hip') && validNodeNames.has('Spine'))
+  ) {
+    return;
+  }
+  const hasDirectClip = (clipName: string): boolean => Map.prototype.has.call(clips, clipName);
+  const personalClips: Array<[string, THREE.AnimationClip | null | undefined]> = [
+    ['nadia_idle.001', cachedLoadedBlitzAssets?.nadiaIdleClip],
+    ['nadia_walk.001', cachedLoadedBlitzAssets?.nadiaWalkClip],
+    ['nadia_run.001', cachedLoadedBlitzAssets?.nadiaRunClip],
+    ['nadia_sit.001', cachedLoadedBlitzAssets?.nadiaSitClip],
+    ['mira_idle.001', cachedLoadedBlitzAssets?.miraIdleClip],
+    ['mira_walk.001', cachedLoadedBlitzAssets?.miraWalkClip],
+    ['mira_run.001', cachedLoadedBlitzAssets?.miraRunClip],
+    ['mira_sit.001', cachedLoadedBlitzAssets?.miraSitClip],
+    ['bima_idle.001', cachedLoadedBlitzAssets?.bimaIdleClip],
+    ['bima_walk.001', cachedLoadedBlitzAssets?.bimaWalkClip],
+    ['bima_run.001', cachedLoadedBlitzAssets?.bimaRunClip],
+    ['bima_sit.001', cachedLoadedBlitzAssets?.bimaSitClip],
+    [
+      'raka_idle.001',
+      cachedLoadedBlitzAssets?.rakaIdleClip ??
+        registeredCustomPelvisClips.get('bima_idle.001') ??
+        loadedCustomPelvisClips.get('bima_idle.001') ??
+        cachedLoadedBlitzAssets?.bimaIdleClip,
+    ],
+    ['raka_walk.001', cachedLoadedBlitzAssets?.rakaWalkClip],
+    ['raka_run.001', cachedLoadedBlitzAssets?.rakaRunClip],
+    ['raka_sit.001', cachedLoadedBlitzAssets?.rakaSitClip],
+    ['kenji_idle.001', cachedLoadedBlitzAssets?.kenjiIdleClip],
+    ['kenji_walk.001', cachedLoadedBlitzAssets?.kenjiWalkClip],
+    ['kenji_run.001', cachedLoadedBlitzAssets?.kenjiRunClip],
+    ['kenji_sit.001', cachedLoadedBlitzAssets?.kenjiSitClip],
+    ['tari_idle.001', cachedLoadedBlitzAssets?.tariIdleClip],
+    ['tari_walk.001', cachedLoadedBlitzAssets?.tariWalkClip],
+    ['tari_run.001', cachedLoadedBlitzAssets?.tariRunClip],
+    ['tari_sit.001', cachedLoadedBlitzAssets?.tariSitClip],
+  ];
+  const tgtNeedsPreRotRetarget =
+    Boolean(tgtSceneRoot) &&
+    validNodeNames.has('PelvisRoot') &&
+    !validNodeNames.has('Spine_PreRotation');
+  const adaptPersonalClip = (srcClip: THREE.AnimationClip, clipName: string): THREE.AnimationClip | null => {
+    const srcSceneRoot = personalClipSourceSceneMap.get(srcClip);
+    if (
+      tgtNeedsPreRotRetarget &&
+      tgtSceneRoot &&
+      srcSceneRoot &&
+      srcSceneRoot.getObjectByName('Spine_PreRotation')
+    ) {
+      const retargeted = retargetPelvisPreRotClipToDirectPelvis(
+        srcClip,
+        srcSceneRoot,
+        tgtSceneRoot,
+        clipName,
       );
-      moved = true;
+      if (retargeted && retargeted.tracks.length > 0) {
+        return retargeted;
+      }
     }
-    if (moved) {
-      topo.posAttr.needsUpdate = true;
+    return cloneDirectPelvisClipForNodes(srcClip, clipName, validNodeNames);
+  };
+  for (const [clipName, fallbackClip] of personalClips) {
+    const resolved =
+      registeredCustomPelvisClips.get(clipName) ??
+      loadedCustomPelvisClips.get(clipName) ??
+      fallbackClip;
+    if (resolved && !hasDirectClip(clipName)) {
+      const filtered = adaptPersonalClip(resolved, clipName);
+      if (filtered) {
+        clips.set(clipName, filtered);
+      }
     }
   }
+  for (const [clipName, srcClip] of registeredCustomPelvisClips.entries()) {
+    if (!hasDirectClip(clipName)) {
+      const filtered = adaptPersonalClip(srcClip, clipName);
+      if (filtered) {
+        clips.set(clipName, filtered);
+      }
+    }
+  }
+}
+
+function applySkinnedMeshSafeBounds(mesh: THREE.SkinnedMesh): void {
+  applySkinnedMeshSafeBoundingSphere(mesh, 1.85, 0.75);
+}
+
+function getMeshMaterialMatchSignature(mat: THREE.Material | THREE.Material[]): string | null {
+  if (Array.isArray(mat) || !mat) return null;
+  const mb = mat as THREE.MeshBasicMaterial;
+  if (!mb.isMeshBasicMaterial || mb.map || mb.transparent) return null;
+  const cacheKey =
+    typeof mb.customProgramCacheKey === 'function' ? mb.customProgramCacheKey() : mb.type;
+  return [
+    cacheKey,
+    mb.color ? mb.color.getHexString() : 'ffffff',
+    mb.side,
+    mb.opacity,
+    mb.alphaTest,
+    mb.polygonOffset ? 1 : 0,
+    mb.polygonOffsetFactor,
+    mb.polygonOffsetUnits,
+  ].join(':');
+}
+
+function areSkeletonsAndBindCompatible(a: THREE.SkinnedMesh, b: THREE.SkinnedMesh): boolean {
+  if (!a.skeleton || !b.skeleton) return false;
+  if (a.skeleton !== b.skeleton) {
+    if (a.skeleton.bones.length !== b.skeleton.bones.length) return false;
+    for (let i = 0; i < a.skeleton.bones.length; i++) {
+      if (a.skeleton.bones[i] !== b.skeleton.bones[i]) return false;
+    }
+  }
+  const ae = a.bindMatrix.elements;
+  const be = b.bindMatrix.elements;
+  for (let i = 0; i < 16; i++) {
+    if (Math.abs(ae[i] - be[i]) > 1e-4) return false;
+  }
+  return true;
+}
+
+function getOrderedMorphKeys(mesh: THREE.Mesh): string[] {
+  if (!mesh.morphTargetDictionary) return [];
+  return Object.entries(mesh.morphTargetDictionary)
+    .sort((a, b) => a[1] - b[1])
+    .map(([k]) => k);
+}
+
+function mergeCompatibleSkinnedMeshes(
+  meshes: THREE.SkinnedMesh[],
+  mergedName: string,
+): THREE.SkinnedMesh | null {
+  if (meshes.length < 2) return null;
+  const first = meshes[0];
+  const parent = first.parent;
+  const firstMatSig = getMeshMaterialMatchSignature(first.material);
+  if (!parent || !firstMatSig || !first.skeleton) return null;
+
+  const morphKeys = getOrderedMorphKeys(first);
+  const morphKeySet = new Set(morphKeys);
+
+  for (let i = 1; i < meshes.length; i++) {
+    const m = meshes[i];
+    if (m.parent !== parent) return null;
+    if (getMeshMaterialMatchSignature(m.material) !== firstMatSig) return null;
+    if (!areSkeletonsAndBindCompatible(first, m)) return null;
+    if (first.position.distanceToSquared(m.position) > 1e-8) return null;
+    if (Math.abs(1 - Math.abs(first.quaternion.dot(m.quaternion))) > 1e-6) return null;
+    if (first.scale.distanceToSquared(m.scale) > 1e-8) return null;
+    const mKeys = getOrderedMorphKeys(m);
+    if (mKeys.length !== morphKeys.length) return null;
+    for (const mk of mKeys) {
+      if (!morphKeySet.has(mk)) return null;
+    }
+    const infA = first.morphTargetInfluences;
+    const infB = m.morphTargetInfluences;
+    if (morphKeys.length > 0 && (Boolean(infA) !== Boolean(infB))) return null;
+    if (infA && infB) {
+      for (const mk of morphKeys) {
+        const ia = first.morphTargetDictionary![mk];
+        const ib = m.morphTargetDictionary![mk];
+        if (Math.abs((infA[ia] ?? 0) - (infB[ib] ?? 0)) > 1e-5) return null;
+      }
+    }
+  }
+
+  const sharedAttrNames: string[] = [];
+  for (const attrName of Object.keys(first.geometry.attributes)) {
+    if (meshes.every((m) => Boolean(m.geometry.getAttribute(attrName)))) {
+      sharedAttrNames.push(attrName);
+    }
+  }
+  if (!sharedAttrNames.includes('position')) return null;
+
+  let totalVerts = 0;
+  let totalIndices = 0;
+  for (const m of meshes) {
+    const pos = m.geometry.getAttribute('position');
+    if (!pos || pos.count === 0) return null;
+    totalVerts += pos.count;
+    totalIndices += m.geometry.index ? m.geometry.index.count : pos.count;
+  }
+
+  const mergedGeo = new THREE.BufferGeometry();
+  for (const attrName of sharedAttrNames) {
+    const sampleAttr = first.geometry.getAttribute(attrName) as THREE.BufferAttribute;
+    const itemSize = sampleAttr.itemSize;
+    if (attrName === 'skinIndex') {
+      const outArr = new Uint16Array(totalVerts * itemSize);
+      let vOff = 0;
+      for (const m of meshes) {
+        const attr = m.geometry.getAttribute(attrName) as THREE.BufferAttribute;
+        for (let vi = 0; vi < attr.count; vi++) {
+          const dst = (vOff + vi) * itemSize;
+          outArr[dst] = attr.getX(vi);
+          if (itemSize > 1) outArr[dst + 1] = attr.getY(vi);
+          if (itemSize > 2) outArr[dst + 2] = attr.getZ(vi);
+          if (itemSize > 3) outArr[dst + 3] = attr.getW(vi);
+        }
+        vOff += attr.count;
+      }
+      mergedGeo.setAttribute(attrName, new THREE.BufferAttribute(outArr, itemSize));
+    } else {
+      const outArr = new Float32Array(totalVerts * itemSize);
+      let vOff = 0;
+      for (const m of meshes) {
+        const attr = m.geometry.getAttribute(attrName) as THREE.BufferAttribute;
+        for (let vi = 0; vi < attr.count; vi++) {
+          const dst = (vOff + vi) * itemSize;
+          outArr[dst] = attr.getX(vi);
+          if (itemSize > 1) outArr[dst + 1] = attr.getY(vi);
+          if (itemSize > 2) outArr[dst + 2] = attr.getZ(vi);
+          if (itemSize > 3) outArr[dst + 3] = attr.getW(vi);
+        }
+        vOff += attr.count;
+      }
+      mergedGeo.setAttribute(attrName, new THREE.BufferAttribute(outArr, itemSize));
+    }
+  }
+
+  const IndexArrayCtor = totalVerts > 65535 ? Uint32Array : Uint16Array;
+  const mergedIndices = new IndexArrayCtor(totalIndices);
+  let iOff = 0;
+  let vBase = 0;
+  for (const m of meshes) {
+    const pos = m.geometry.getAttribute('position');
+    const idx = m.geometry.index;
+    if (idx) {
+      for (let ii = 0; ii < idx.count; ii++) {
+        mergedIndices[iOff++] = idx.getX(ii) + vBase;
+      }
+    } else {
+      for (let vi = 0; vi < pos.count; vi++) {
+        mergedIndices[iOff++] = vi + vBase;
+      }
+    }
+    vBase += pos.count;
+  }
+  mergedGeo.setIndex(new THREE.BufferAttribute(mergedIndices, 1));
+
+  if (
+    morphKeys.length > 0 &&
+    first.geometry.morphAttributes.position &&
+    meshes.every(
+      (m) =>
+        m.geometry.morphAttributes.position &&
+        m.geometry.morphAttributes.position.length >= morphKeys.length,
+    )
+  ) {
+    const outMorphPos: THREE.BufferAttribute[] = [];
+    for (const mk of morphKeys) {
+      const arr = new Float32Array(totalVerts * 3);
+      let mvBase = 0;
+      for (const m of meshes) {
+        const srcIdx = m.morphTargetDictionary![mk];
+        const mAttr = m.geometry.morphAttributes.position![srcIdx] as THREE.BufferAttribute;
+        const posAttr = m.geometry.getAttribute('position');
+        for (let vi = 0; vi < posAttr.count; vi++) {
+          const dst = (mvBase + vi) * 3;
+          arr[dst] = mAttr.getX(vi);
+          arr[dst + 1] = mAttr.getY(vi);
+          arr[dst + 2] = mAttr.getZ(vi);
+        }
+        mvBase += posAttr.count;
+      }
+      outMorphPos.push(new THREE.BufferAttribute(arr, 3));
+    }
+    mergedGeo.morphAttributes.position = outMorphPos;
+    mergedGeo.morphTargetsRelative = Boolean(first.geometry.morphTargetsRelative);
+  }
+
+  const mergedMesh = new THREE.SkinnedMesh(mergedGeo, first.material);
+  mergedMesh.name = mergedName;
+  mergedMesh.position.copy(first.position);
+  mergedMesh.quaternion.copy(first.quaternion);
+  mergedMesh.scale.copy(first.scale);
+  mergedMesh.castShadow = first.castShadow;
+  mergedMesh.receiveShadow = first.receiveShadow;
+  if (first.morphTargetDictionary) {
+    mergedMesh.morphTargetDictionary = { ...first.morphTargetDictionary };
+  }
+  if (first.morphTargetInfluences) {
+    mergedMesh.morphTargetInfluences = [...first.morphTargetInfluences];
+  }
+  mergedMesh.bind(first.skeleton, first.bindMatrix.clone());
+  applySkinnedMeshSafeBounds(mergedMesh);
+  return mergedMesh;
+}
+
+function areSkeletonBonesAndInversesEqual(a: THREE.Skeleton, b: THREE.Skeleton): boolean {
+  if (a === b) return true;
+  if (a.bones.length !== b.bones.length || a.boneInverses.length !== b.boneInverses.length) {
+    return false;
+  }
+  for (let i = 0; i < a.bones.length; i++) {
+    if (a.bones[i] !== b.bones[i]) return false;
+  }
+  for (let i = 0; i < a.boneInverses.length; i++) {
+    const ae = a.boneInverses[i].elements;
+    const be = b.boneInverses[i].elements;
+    for (let k = 0; k < 16; k++) {
+      if (Math.abs(ae[k] - be[k]) > 1e-4) return false;
+    }
+  }
+  return true;
+}
+
+/** Shares one `THREE.Skeleton` across all compatible cloned `SkinnedMesh`es so `Skeleton.update()` runs once per rig. */
+function deduplicateClonedRigSkeletons(rigRoot: THREE.Object3D): number {
+  const buckets = new Map<string, THREE.Skeleton[]>();
+  let deduplicatedCount = 0;
+  rigRoot.traverse((node) => {
+    const sm = node as THREE.SkinnedMesh;
+    if (!sm.isSkinnedMesh || !sm.skeleton || sm.skeleton.bones.length === 0) return;
+    const sk = sm.skeleton;
+    const key = `${sk.bones.length}:${sk.bones[0].uuid}:${sk.bones[sk.bones.length - 1].uuid}`;
+    const list = buckets.get(key);
+    if (list) {
+      for (const existing of list) {
+        if (areSkeletonBonesAndInversesEqual(sk, existing)) {
+          if (sk !== existing) {
+            sk.dispose();
+            sm.bind(existing, sm.bindMatrix);
+            deduplicatedCount++;
+          }
+          return;
+        }
+      }
+      list.push(sk);
+    } else {
+      buckets.set(key, [sk]);
+    }
+  });
+  return deduplicatedCount;
 }
 
 function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTemplate {
   const cachedCharBuddiesTemplate = cachedCharBuddiesTemplates.get(gltf);
   if (cachedCharBuddiesTemplate) {
+    syncLoadedPersonalClipsIntoTemplate(
+      cachedCharBuddiesTemplate.clips,
+      cachedCharBuddiesTemplate.validNodeNames,
+      gltf.scene,
+    );
     return cachedCharBuddiesTemplate;
   }
   let hipsBindX = 0.0019;
@@ -11868,7 +13455,9 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   let hasMixamoHips = false;
   let hasCustomPelvisRoot = false;
   let hasToonInkOutlineMat = false;
+  let hasAnyOutlineMesh = false;
   let isMaleCustomCharacter = false;
+  const isBlitzModular = isBlitzModularModel(gltf.scene);
   gltf.scene.traverse((node) => {
     if (node.name) {
       validNodeNames.add(node.name);
@@ -11880,9 +13469,11 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       }
       if (stripMixamoPrefix(node.name) === 'Hips') hasMixamoHips = true;
       if (node.name === 'PelvisRoot') hasCustomPelvisRoot = true;
+      if (node.name.toLowerCase().includes('outline')) hasAnyOutlineMesh = true;
       if (
         /^head_1\d\d/i.test(node.name) ||
-        /(?:1m|2m)(?:highres)?(?:pbr|_|$)/i.test(node.name)
+        /(?:1m|2m)(?:highres)?(?:pbr|_|$)/i.test(node.name) ||
+        node.name === 'Blitz_BaseDoll_Male_Mesh'
       ) {
         isMaleCustomCharacter = true;
       }
@@ -11898,7 +13489,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     }
   });
   const isCustomSkeleton = !hasMixamoHips && (hasCustomPelvisRoot || hasToonInkOutlineMat);
-  if (isCustomSkeleton) {
+  if (isCustomSkeleton && !isBlitzModular) {
     sanitizeCustomCharacterSkinSeams(gltf.scene);
   }
   const convertedMats = new Map<string, THREE.Material>();
@@ -11906,36 +13497,76 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     m: THREE.Material,
     isHairMeshHint: boolean,
     isBodySkinMeshHint: boolean,
+    outlineCategory: AvatarOutlineCategory,
   ): THREE.Material => {
-    const cacheKey = `${m.uuid}:${isHairMeshHint ? 1 : 0}:${isBodySkinMeshHint ? 1 : 0}`;
+    const cacheKey = `${m.uuid}:${isHairMeshHint ? 1 : 0}:${isBodySkinMeshHint ? 1 : 0}:${outlineCategory}`;
     let conv = convertedMats.get(cacheKey);
     if (!conv) {
       conv = isCustomSkeleton
-        ? convertToStylizedPlayerCharacterMaterial(m, isHairMeshHint, isBodySkinMeshHint)
+        ? convertToStylizedPlayerCharacterMaterial(
+            m,
+            isHairMeshHint,
+            isBodySkinMeshHint,
+            outlineCategory,
+          )
         : convertToTripoAnimeCharacterMaterial(m);
       convertedMats.set(cacheKey, conv);
     }
     return conv;
   };
+  const pendingRuntimeOutlines: Array<{
+    parent: THREE.Object3D;
+    baseMesh: THREE.SkinnedMesh;
+    isHairMeshHint: boolean;
+    origMaterials: THREE.Material[];
+  }> = [];
   gltf.scene.traverse((node) => {
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
       const lowerMeshName = (mesh.name || '').toLowerCase();
       const isOutlineMesh = lowerMeshName.includes('outline');
       const isHairMeshHint = lowerMeshName.includes('hair') && !isOutlineMesh;
-      const isBodySkinMeshHint =
+      const isBodySkinMeshHint = isBodySkinMeshName(mesh.name);
+      const origMats = Array.isArray(mesh.material)
+        ? [...mesh.material]
+        : mesh.material
+          ? [mesh.material]
+          : [];
+      if (
+        isCustomSkeleton &&
+        isBlitzModular &&
+        !hasToonInkOutlineMat &&
+        !hasAnyOutlineMesh &&
         !isOutlineMesh &&
-        !lowerMeshName.startsWith('head') &&
-        (lowerMeshName.endsWith('_skin') || lowerMeshName.startsWith('ears_'));
+        (mesh as THREE.SkinnedMesh).isSkinnedMesh &&
+        mesh.parent
+      ) {
+        pendingRuntimeOutlines.push({
+          parent: mesh.parent,
+          baseMesh: mesh as THREE.SkinnedMesh,
+          isHairMeshHint,
+          origMaterials: origMats,
+        });
+      }
       if (Array.isArray(mesh.material)) {
         mesh.material = mesh.material.map((m) =>
-          getAnimeMat(m, isHairMeshHint, isBodySkinMeshHint),
+          getAnimeMat(
+            m,
+            isHairMeshHint,
+            isBodySkinMeshHint,
+            classifyAvatarOutlineCategory(mesh.name, m.name),
+          ),
         );
       } else if (mesh.material) {
-        mesh.material = getAnimeMat(mesh.material, isHairMeshHint, isBodySkinMeshHint);
+        mesh.material = getAnimeMat(
+          mesh.material,
+          isHairMeshHint,
+          isBodySkinMeshHint,
+          classifyAvatarOutlineCategory(mesh.name, mesh.material.name),
+        );
       }
     }
-    if ((node as THREE.Bone).isBone && stripMixamoPrefix(node.name) === 'Hips') {
+    if (stripMixamoPrefix(node.name) === 'Hips') {
       hipsBindX = node.position.x;
       if (node.position.y > 0.1) {
         hipsBindY = node.position.y;
@@ -11943,6 +13574,120 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       hipsBindZ = node.position.z;
     }
   });
+  // Merge homogeneous Blitz_BaseDoll_*_Mesh_1..10 body-skin submeshes (preserving Head intact)
+  // so base + outline body skin render in 2 draw calls instead of 20.
+  if (isCustomSkeleton && isBlitzModular && pendingRuntimeOutlines.length >= 2) {
+    const bodySkinItems = pendingRuntimeOutlines.filter((item) =>
+      /^Blitz_BaseDoll_(?:Female|Male)_Mesh_\d+$/i.test(item.baseMesh.name || ''),
+    );
+    if (bodySkinItems.length >= 2) {
+      const mergedName = bodySkinItems[0].baseMesh.name.replace(/_\d+$/, '_BodySkin');
+      const mergedBodySkin = mergeCompatibleSkinnedMeshes(
+        bodySkinItems.map((it) => it.baseMesh),
+        mergedName,
+      );
+      if (mergedBodySkin) {
+        const bodySkinParent = bodySkinItems[0].parent;
+        const firstIdx = pendingRuntimeOutlines.indexOf(bodySkinItems[0]);
+        const mergedItemSet = new Set(bodySkinItems);
+        const repItem = {
+          parent: bodySkinParent,
+          baseMesh: mergedBodySkin,
+          isHairMeshHint: false,
+          origMaterials: bodySkinItems[0].origMaterials,
+        };
+        bodySkinParent.add(mergedBodySkin);
+        for (const it of bodySkinItems) {
+          it.parent.remove(it.baseMesh);
+          it.baseMesh.geometry.dispose();
+        }
+        const nextPending: typeof pendingRuntimeOutlines = [];
+        let inserted = false;
+        for (let pi = 0; pi < pendingRuntimeOutlines.length; pi++) {
+          const cur = pendingRuntimeOutlines[pi];
+          if (mergedItemSet.has(cur)) {
+            if (!inserted && pi >= firstIdx) {
+              nextPending.push(repItem);
+              inserted = true;
+            }
+          } else {
+            nextPending.push(cur);
+          }
+        }
+        if (!inserted) nextPending.push(repItem);
+        pendingRuntimeOutlines.length = 0;
+        pendingRuntimeOutlines.push(...nextPending);
+      }
+    }
+  }
+
+  const createdStaticClothOutlines: THREE.SkinnedMesh[] = [];
+  const staticClothExcludeRe =
+    /(?:hair|bangs|ponytail|twintail|braid|hairclip|ahoge|fringe|skirt|dress|apron|tunic|kilt|coattail|coat_tail|cape|cloak|scarf|ribbon|cravat|bowtie|shawl|collar|tassel|_skin|head)/i;
+  for (const item of pendingRuntimeOutlines) {
+    applySkinnedMeshSafeBounds(item.baseMesh);
+    const outGeo = createSmoothedOutlineGeometry(item.baseMesh.geometry);
+    const outMats = item.origMaterials.map((m) =>
+      createBackSideOutlineMaterial(m, item.isHairMeshHint),
+    );
+    const outMat = Array.isArray(item.baseMesh.material) ? outMats : outMats[0];
+    if (!outMat) continue;
+    const outMesh = new THREE.SkinnedMesh(outGeo, outMat);
+    outMesh.name = `${item.baseMesh.name}_Outline`;
+    outMesh.userData.isRuntimeOutlineMesh = true;
+    outMesh.position.copy(item.baseMesh.position);
+    outMesh.quaternion.copy(item.baseMesh.quaternion);
+    outMesh.scale.copy(item.baseMesh.scale);
+    outMesh.morphTargetDictionary = item.baseMesh.morphTargetDictionary;
+    outMesh.morphTargetInfluences = item.baseMesh.morphTargetInfluences;
+    outMesh.castShadow = false;
+    outMesh.receiveShadow = false;
+    outMesh.frustumCulled = true;
+    if (item.baseMesh.skeleton) {
+      outMesh.bind(item.baseMesh.skeleton, item.baseMesh.bindMatrix.clone());
+    }
+    applySkinnedMeshSafeBounds(outMesh);
+    item.parent.add(outMesh);
+
+    const baseNameLower = (item.baseMesh.name || '').toLowerCase();
+    if (
+      !item.isHairMeshHint &&
+      !Array.isArray(outMat) &&
+      !staticClothExcludeRe.test(baseNameLower) &&
+      !/^(?:hair|legs|feet|torso|blitz_basedoll)_/i.test(baseNameLower)
+    ) {
+      createdStaticClothOutlines.push(outMesh);
+    }
+  }
+
+  // Merge compatible static opaque clothing/accessory outlines sharing identical outline shader & morphs
+  if (createdStaticClothOutlines.length >= 2) {
+    const groups = new Map<string, THREE.SkinnedMesh[]>();
+    for (const om of createdStaticClothOutlines) {
+      const matSig = getMeshMaterialMatchSignature(om.material);
+      if (!matSig || !om.parent) continue;
+      const morphSig = getOrderedMorphKeys(om).join(',');
+      const key = `${om.parent.uuid}|${matSig}|${morphSig}`;
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(om);
+      else groups.set(key, [om]);
+    }
+    let staticGroupIdx = 0;
+    for (const bucket of groups.values()) {
+      if (bucket.length < 2) continue;
+      const mergedOutline = mergeCompatibleSkinnedMeshes(
+        bucket,
+        `Blitz_StaticClothOutlines_${staticGroupIdx++}_Outline`,
+      );
+      if (!mergedOutline || !bucket[0].parent) continue;
+      mergedOutline.userData.isRuntimeOutlineMesh = true;
+      bucket[0].parent.add(mergedOutline);
+      for (const om of bucket) {
+        om.parent?.remove(om);
+        om.geometry.dispose();
+      }
+    }
+  }
   const maxAllowedHipsY = Math.max(0.85, hipsBindY * 1.35);
   let clips: Map<string, THREE.AnimationClip> = new Map<string, THREE.AnimationClip>();
   for (const rawClip of gltf.animations) {
@@ -11953,7 +13698,17 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       const targetNodeName = dotIdx > 0 ? track.name.slice(0, dotIdx) : track.name;
       return Boolean(targetNodeName && validNodeNames.has(targetNodeName));
     });
-    if (!isCustomSkeleton) {
+    if (isCustomSkeleton) {
+      for (const track of rawClip.tracks) {
+        if (/^PelvisRoot\.position$/i.test(track.name)) {
+          const vals = track.values;
+          for (let i = 0; i < vals.length; i += 3) {
+            vals[i] = 0;
+            vals[i + 2] = 0;
+          }
+        }
+      }
+    } else {
       for (const track of rawClip.tracks) {
         // Lock root-motion X and Z on Hips.position so walk.001 & run.001 animate 100% in-place,
         // and clamp Hips Y to anatomical bounds so no track can ever push the character out of view
@@ -11976,21 +13731,28 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   }
   if (isCustomSkeleton) {
     const mixamoBindGltfSrc =
-      loadedManCharacterBuddiesGltf ??
-      cachedLoadedBlitzAssets?.manCharacterBuddiesGltf ??
-      cachedLoadedBlitzAssets?.charBuddiesGltf ??
+      loadedMixamoLocomotionGltf ??
+      cachedLoadedBlitzAssets?.mixamoLocomotionGltf ??
       null;
     const useMixamoLocomotionSuite = Boolean(gltf.scene.userData?.useMixamoLocomotionSuite);
+    const nativeClips = new Map(clips);
     let installedMixamoSuite = false;
-    if (useMixamoLocomotionSuite && mixamoBindGltfSrc && mixamoBindGltfSrc !== gltf) {
+    if (
+      (useMixamoLocomotionSuite || isBlitzModular) &&
+      mixamoBindGltfSrc &&
+      mixamoBindGltfSrc !== gltf
+    ) {
       const mixamoSuite = getSanitizedCharBuddiesTemplate(mixamoBindGltfSrc);
       const retargetCtx = createPelvisRootMixamoRetargetContext(
         mixamoBindGltfSrc.scene,
         gltf.scene,
       );
       if (retargetCtx && mixamoSuite.clips.size > 0) {
-        const lazyClips = new LazyMixamoPelvisClipMap(new Map(mixamoSuite.clips), retargetCtx);
-        for (const [nativeName, nativeClip] of clips.entries()) {
+        const filteredSuite = new Map(mixamoSuite.clips);
+        filteredSuite.delete('hana_idle.001');
+        filteredSuite.delete('kai_idle.001');
+        const lazyClips = new LazyMixamoPelvisClipMap(filteredSuite, retargetCtx);
+        for (const [nativeName, nativeClip] of nativeClips.entries()) {
           if (!lazyClips.has(nativeName)) {
             lazyClips.set(nativeName, nativeClip);
           }
@@ -11999,12 +13761,12 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
         installedMixamoSuite = true;
       }
     }
-    if (!installedMixamoSuite) {
+    if (!installedMixamoSuite || !useMixamoLocomotionSuite) {
     // Map embedded animations onto canonical clip names using distinct cloned AnimationClips
     // and inherit missing Walk/Run/Idle/Sit/Laying clips from the shared PelvisRoot locomotion GLB
     // so single-pose custom NPC GLBs can also patrol, idle, and sit seamlessly.
     const findNativeClip = (prefixRe: RegExp): THREE.AnimationClip | undefined => {
-      for (const [clipName, clip] of clips.entries()) {
+      for (const [clipName, clip] of nativeClips.entries()) {
         if (prefixRe.test(clipName)) return clip;
       }
       return undefined;
@@ -12028,8 +13790,9 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     const registerAliasClip = (
       srcClip: THREE.AnimationClip | undefined,
       canonicalName: string,
+      forceOverride = false,
     ) => {
-      if (!srcClip || clips.has(canonicalName)) return;
+      if (!srcClip || (!forceOverride && clips.has(canonicalName))) return;
       const cloned = srcClip.clone();
       cloned.name = canonicalName;
       clips.set(canonicalName, cloned);
@@ -12162,7 +13925,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     };
 
     const preferSharedLocomotion = Boolean(gltf.scene.userData?.preferSharedLocomotionClips);
-    const nativeIdle = preferSharedLocomotion ? undefined : findNativeClip(/^Idle/i);
+    const nativeIdle = preferSharedLocomotion ? undefined : findNativeClip(/(?:^|_)Idle(?:_|$)/i);
     const sharedIdleRaw = !nativeIdle ? findSharedClip(/^Idle/i) : undefined;
     const idleSrc =
       nativeIdle ??
@@ -12171,7 +13934,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
            ? buildCalmMaleIdleFromShared(sharedIdleRaw)
            : sharedIdleRaw
         : gltf.animations[0]);
-    const nativeWalk = preferSharedLocomotion ? undefined : findNativeClip(/^Walk/i);
+    const nativeWalk = preferSharedLocomotion ? undefined : findNativeClip(/(?:^|_)Walk(?:_|$)/i);
     const sharedWalkRaw = !nativeWalk ? findSharedClip(/^Walk/i) : undefined;
     const walkSrc =
       nativeWalk ??
@@ -12180,7 +13943,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
           ? dampenMalePelvisSway(sharedWalkRaw)
           : sharedWalkRaw
         : idleSrc);
-    const nativeRun = preferSharedLocomotion ? undefined : findNativeClip(/^Run/i);
+    const nativeRun = preferSharedLocomotion ? undefined : findNativeClip(/(?:^|_)Run(?:_|$)/i);
     const sharedRunRaw = !nativeRun ? findSharedClip(/^Run/i) : undefined;
     const runSrc =
       nativeRun ??
@@ -12190,22 +13953,25 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
           : sharedRunRaw
         : walkSrc);
     const sitSrc =
-      (preferSharedLocomotion ? undefined : findNativeClip(/^Sit/i)) ??
+      (preferSharedLocomotion ? undefined : findNativeClip(/(?:^|_)Sit(?:_|$)/i)) ??
       findSharedClip(/^Sit/i) ??
       idleSrc;
     const laySrc =
-      (preferSharedLocomotion ? undefined : findNativeClip(/^Laying/i)) ??
+      (preferSharedLocomotion ? undefined : findNativeClip(/(?:^|_)Laying(?:_|$)/i)) ??
       findSharedClip(/^Laying/i) ??
       sitSrc;
 
+    if (nativeIdle) {
+      registerAliasClip(nativeIdle, 'hana_idle.001', true);
+    }
     for (const idleAlias of ['idle.001', 'rifle_idle.001', 'rifle_aiming_idle.001', 'pistol_idle.001', 'fishing_idle.001']) {
-      registerAliasClip(idleSrc, idleAlias);
+      registerAliasClip(idleSrc, idleAlias, Boolean(nativeIdle && idleAlias === 'idle.001'));
     }
     for (const walkAlias of ['walk.001', 'walk_rifle.001', 'pistol_walk.001']) {
-      registerAliasClip(walkSrc, walkAlias);
+      registerAliasClip(walkSrc, walkAlias, Boolean(nativeWalk && walkAlias === 'walk.001'));
     }
     for (const runAlias of ['run.001', 'run_rifle.001', 'sprint_forward.001', 'pistol_run.001', 'jogging_with_box.001', 'unarmed_jump.001', 'unarmed_jump_idle.001', 'jump_up.001']) {
-      registerAliasClip(runSrc, runAlias);
+      registerAliasClip(runSrc, runAlias, Boolean(nativeRun && runAlias === 'run.001'));
     }
     for (const sitAlias of ['sitting.001', 'driving.001', 'scooter_bike_idle.001']) {
       registerAliasClip(sitSrc, sitAlias);
@@ -12217,18 +13983,20 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     // Retarget Kai's signature Mixamo idle (`kai_idle.001`) onto PelvisRoot custom skeletons
     // so Merchant Kai keeps his exact original idle posture & breathing when using his new custom GLB.
     const kaiIdleClipSrc = loadedKaiIdleClip ?? cachedLoadedBlitzAssets?.kaiIdleClip ?? null;
-    if (kaiIdleClipSrc && mixamoBindGltfSrc && !clips.has('kai_idle.001')) {
+    if (kaiIdleClipSrc && mixamoBindGltfSrc && !Map.prototype.has.call(clips, 'kai_idle.001')) {
       const retargetedKaiIdle = retargetMixamoClipToPelvisRoot(
         kaiIdleClipSrc,
         mixamoBindGltfSrc.scene,
         gltf.scene,
         'kai_idle.001',
+        true,
       );
       if (retargetedKaiIdle && retargetedKaiIdle.tracks.length > 0) {
         clips.set('kai_idle.001', retargetedKaiIdle);
       }
     }
     }
+    syncLoadedPersonalClipsIntoTemplate(clips, validNodeNames, gltf.scene);
   } else {
   // Merge retargetable beach/bed clips (`sleeping-anim.glb`, `bench-lounge-anim.glb`,
   // `chair-casual-anim.glb`, `sun-lounger-anim.glb`), dynamically adapting from each
@@ -12624,6 +14392,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
 
   const template: SanitizedCharBuddiesTemplate = {
     isCustomSkeleton,
+    validNodeNames,
     clips,
     bindQuats,
     boxCarryUpperQuats,
@@ -13550,7 +15319,8 @@ function solveTwoBoneArmPalmIkLocal(
  */
 export function upgradeBuddyRigWithCharBuddiesGlb(
   rig: BuddyCharacterRig,
-  gltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.charBuddiesGltf,
+  gltf: GLTF | null | undefined =
+    cachedLoadedBlitzAssets?.playerFemaleGlb ?? cachedLoadedBlitzAssets?.ambientFemaleNpcGlb,
   ar99AssaultGltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.ar99AssaultGltf,
   fishingRodGltf: GLTF | null | undefined = cachedLoadedBlitzAssets?.fishingRodGltf,
 ): void {
@@ -13581,7 +15351,16 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     rig.customGlbController.sourceGltf &&
     rig.customGlbController.sourceGltf !== gltf
   ) {
+    rig.customGlbController.secondaryPhysics?.dispose();
     rig.customGlbController.mixer.stopAllAction();
+    rig.customGlbController.glbRoot.traverse((node) => {
+      if ((node as THREE.Mesh).isMesh) {
+        const geo = (node as THREE.Mesh).geometry;
+        if (geo?.userData?.__isPerRigUniqueSkinGeometry || geo?.userData?.__isSupplementalSkinGeometry) {
+          geo.dispose();
+        }
+      }
+    });
     if (rig.customGlbController.glbRoot.parent) {
       rig.customGlbController.glbRoot.parent.remove(rig.customGlbController.glbRoot);
     }
@@ -13615,6 +15394,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   }
 
   const glbRoot = SkeletonUtils.clone(gltf.scene) as THREE.Group;
+  deduplicateClonedRigSkeletons(glbRoot);
   glbRoot.name = 'CharBuddiesGlbRoot';
   glbRoot.visible = true;
   glbRoot.rotation.order = 'YXZ';
@@ -13623,11 +15403,9 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     bodyGroup.parent.rotation.order = 'YXZ';
   }
   bodyGroup.visible = true;
-  // Calculate raw unscaled height of the GLTF model scene to normalize height across all character models (Male & Female)
-  const rawBox = new THREE.Box3().setFromObject(gltf.scene);
-  const rawHeight = rawBox.max.y - rawBox.min.y;
-  // Unified target height = 3.38m in bodyGroup space (~3.92m world height) so Merchant Hana & Kai and player characters stand at the exact same height
-  const unifiedModelScale = rawHeight > 0.5 ? 3.38 / rawHeight : 3.45;
+  // Normalize character proportions by anatomical sole-to-skull-crown height (excluding variable spiky hair & outlines)
+  // so Male & Female avatars and Town Folks NPCs match cleanly in camera portraits and gameplay.
+  const { unifiedModelScale } = computeStandardizedAvatarRigMetrics(gltf.scene);
   glbRoot.scale.setScalar(unifiedModelScale);
   glbRoot.position.set(0, 0, 0);
 
@@ -13647,15 +15425,27 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     }
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
+      const lowerMeshName = (mesh.name || '').toLowerCase();
+      // Isolate all index-trimmable skin & skin-outline BufferGeometries per cloned rig so customizing
+      // one NPC/player never mutates other characters sharing the same GLTF template.
+      if (lowerMeshName.includes('_skin')) {
+        ensurePerRigUniqueSkinGeometry(mesh);
+      }
       mesh.visible = true;
       // Disable shadow-map pass on SkinnedMesh submeshes (characters use ContactShadowDisc on the ground)
       // to eliminate 65-bone GPU vertex skinning duplication in the directional shadow pass
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      mesh.frustumCulled = false;
+      if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+        applySkinnedMeshSafeBounds(mesh as THREE.SkinnedMesh);
+      } else {
+        if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+        mesh.frustumCulled = true;
+      }
       meshes.push({ mesh, defaultMat: mesh.material });
     }
   });
+  applyRigPostUpgradeAnatomyRules(glbRoot);
 
   if (isSeatedRider) {
     // Only collapse lower calves/feet below the knee so the seated pelvis, waist, and upper thighs retain 100% full anatomical volume
@@ -13681,10 +15471,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     const tempMeasureHost = new THREE.Group();
     tempMeasureHost.add(glbRoot);
     tempMeasureHost.updateMatrixWorld(true);
-    _charInitBox3.setFromObject(glbRoot);
-    if (!_charInitBox3.isEmpty()) {
-      baseRootY = -_charInitBox3.min.y;
-    }
+    baseRootY = computeStandardizedGroundRootY(glbRoot, _charInitBox3);
     glbRoot.position.set(0, baseRootY, 0);
     tempMeasureHost.updateMatrixWorld(true);
     const bFoot = bones.get('LeftFoot');
@@ -13757,6 +15544,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   rig.customGlbController = {
     sourceGltf: gltf,
     isCustomSkeleton: template.isCustomSkeleton,
+    validNodeNames: template.validNodeNames,
     glbRoot,
     mixer,
     clips: template.clips,
@@ -13798,10 +15586,25 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     combatAimTimer: 0,
     fishingCastTimer: 0,
     meshes,
+    secondaryPhysics: createCharacterSecondaryPhysicsController(glbRoot),
+    secWorldVelScratch: new THREE.Vector3(),
   };
+  syncRigControllerDefaultMaterials(rig.customGlbController);
+
+  const isSelfContainedBlitzDoll = isBlitzModularModel(glbRoot);
+  if (isSelfContainedBlitzDoll) {
+    glbRoot.userData.isBlitzModularDoll = true;
+    bodyGroup.userData.isBlitzModularDoll = true;
+    return;
+  }
 
   const desiredTorsoUrl = bodyGroup.userData?.desiredTorsoAssetUrl as string | null | undefined;
-  if (desiredTorsoUrl) {
+  const desiredModularOutfit = bodyGroup.userData?.desiredModularOutfit as
+    | BuddyModularOutfitUrls
+    | undefined;
+  if (desiredModularOutfit) {
+    void setBuddyRigModularOutfitUrls(rig, desiredModularOutfit);
+  } else if (desiredTorsoUrl) {
     void setBuddyRigEquippedTorsoByUrl(rig, desiredTorsoUrl);
   }
 }
@@ -13815,8 +15618,21 @@ interface StoredRigDefaultTorsoState {
 }
 
 const modularApparelGltfPromiseCache = new Map<string, Promise<GLTF | null>>();
+let sharedModularApparelDracoLoader: DRACOLoader | null = null;
 
-function prepareModularApparelGltfMaterials(gltf: GLTF): GLTF {
+function getSharedModularApparelDracoLoader(): DRACOLoader {
+  if (!sharedModularApparelDracoLoader) {
+    sharedModularApparelDracoLoader = new DRACOLoader();
+    sharedModularApparelDracoLoader.setDecoderPath('/draco/');
+  }
+  return sharedModularApparelDracoLoader;
+}
+
+/**
+ * Normalizes materials on a modular apparel `GLTF` so skin segments (`_skin`, `_skin_1`, `hands_skin*`),
+ * hair cards, ink outlines, and clothing layers use consistent stylized shaders.
+ */
+export function prepareModularApparelGltfMaterials(gltf: GLTF): GLTF {
   if (gltf.scene.userData?.modularApparelPrepared) {
     return gltf;
   }
@@ -13824,14 +15640,28 @@ function prepareModularApparelGltfMaterials(gltf: GLTF): GLTF {
   gltf.scene.traverse((node) => {
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
-      const lowerName = (mesh.name || '').toLowerCase();
-      const isOutline = lowerName.includes('outline');
-      const isSkin = !isOutline && lowerName.endsWith('_skin');
       const convertOne = (m: THREE.Material): THREE.Material => {
-        const key = `${m.uuid}:${isSkin ? 1 : 0}`;
+        const hint = classifyModularApparelMaterialHint(mesh.name || '', m.name || '');
+        const outlineCategory = classifyAvatarOutlineCategory(mesh.name || '', m.name || '');
+        const key = `${m.uuid}:${hint.isOutline ? `out:${outlineCategory}` : hint.isHair ? 2 : hint.isBodySkin ? 1 : 0}`;
         let conv = convertedMats.get(key);
         if (!conv) {
-          conv = convertToStylizedPlayerCharacterMaterial(m, false, isSkin);
+          const matForConvert =
+            m.name === hint.normalizedMaterialName
+              ? m
+              : Object.assign(m.clone(), { name: hint.normalizedMaterialName });
+          conv = convertToStylizedPlayerCharacterMaterial(
+            matForConvert,
+            hint.isHair,
+            hint.isBodySkin,
+            outlineCategory,
+          );
+          conv.userData = {
+            ...(conv.userData ?? {}),
+            isBodySkinMaterial: hint.isBodySkin,
+            isHairMaterial: hint.isHair,
+            isOutlineMaterial: hint.isOutline,
+          };
           convertedMats.set(key, conv);
         }
         return conv;
@@ -13858,6 +15688,7 @@ export function loadModularApparelGltf(assetUrl: string): Promise<GLTF | null> {
     return existing;
   }
   const loader = new GLTFLoader();
+  loader.setDRACOLoader(getSharedModularApparelDracoLoader());
   const promise = new Promise<GLTF | null>((resolve) => {
     loader.load(
       normalizedUrl,
@@ -13875,11 +15706,66 @@ export function loadModularApparelGltf(assetUrl: string): Promise<GLTF | null> {
   return promise;
 }
 
+const pristineSkinIndexMap = new WeakMap<THREE.BufferGeometry, THREE.BufferAttribute | null>();
+const pristineSkinPositionMap = new WeakMap<THREE.BufferGeometry, THREE.BufferAttribute | null>();
+
+function getOrCapturePristineSkinIndex(
+  geometry: THREE.BufferGeometry,
+): THREE.BufferAttribute | null {
+  if (!pristineSkinIndexMap.has(geometry)) {
+    const idx = geometry.getIndex();
+    pristineSkinIndexMap.set(geometry, idx ? idx.clone() : null);
+  }
+  return pristineSkinIndexMap.get(geometry) ?? null;
+}
+
+function getOrCapturePristineSkinPosition(
+  geometry: THREE.BufferGeometry,
+): THREE.BufferAttribute | null {
+  if (!pristineSkinPositionMap.has(geometry)) {
+    const pos = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    pristineSkinPositionMap.set(geometry, pos ? pos.clone() : null);
+  }
+  return pristineSkinPositionMap.get(geometry) ?? null;
+}
+
+function restorePristineSkinPositions(geometry: THREE.BufferGeometry): void {
+  const origPos = pristineSkinPositionMap.get(geometry);
+  const curPos = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!origPos || !curPos || origPos.array.length !== curPos.array.length) return;
+  (curPos.array as Float32Array).set(origPos.array as Float32Array);
+  curPos.needsUpdate = true;
+}
+
+/**
+ * Clones a templated skin `BufferGeometry` once per character rig so trimming indices
+ * or tucking covered hems for a fitted outfit on one NPC/player never mutates other characters sharing the GLTF.
+ */
+function ensurePerRigUniqueSkinGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
+  const cur = mesh.geometry;
+  const origIdx = getOrCapturePristineSkinIndex(cur);
+  const origPos = getOrCapturePristineSkinPosition(cur);
+  if (cur.userData?.__isPerRigUniqueSkinGeometry) {
+    return cur;
+  }
+  const cloned = cur.clone();
+  cloned.userData = { ...(cloned.userData || {}), __isPerRigUniqueSkinGeometry: true };
+  if (origIdx) {
+    pristineSkinIndexMap.set(cloned, origIdx);
+  }
+  if (origPos) {
+    pristineSkinPositionMap.set(cloned, origPos);
+  }
+  mesh.geometry = cloned;
+  return cloned;
+}
+
 function createTrimmedTorsoSkinIndexBuffer(
   geometry: THREE.BufferGeometry,
   origIndex: THREE.BufferAttribute,
   sleeveCutoffAbsX: number,
-  collarKeepMinY: number,
+  frontCollarKeepMinY: number,
+  backCollarKeepMinY: number,
   hemCoverMinY: number,
 ): THREE.BufferAttribute {
   const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
@@ -13898,13 +15784,20 @@ function createTrimmedTorsoSkinIndexBuffer(
     const ya = posAttr.getY(ia);
     const yb = posAttr.getY(ib);
     const yc = posAttr.getY(ic);
+    const za = posAttr.getZ(ia);
+    const zb = posAttr.getZ(ib);
+    const zc = posAttr.getZ(ic);
     const avgAbsX = (xa + xb + xc) / 3;
     const maxAbsX = Math.max(xa, xb, xc);
     const avgY = (ya + yb + yc) / 3;
+    const avgZ = (za + zb + zc) / 3;
 
-    const isNeckSkin = avgAbsX < 0.19 && avgY >= collarKeepMinY;
+    const collarMinY = avgZ >= -0.015 ? frontCollarKeepMinY : backCollarKeepMinY;
+    // Keep collar/neck cylinder snug around neck (`< 0.105` below collar line, wider only near open neck base)
+    const neckMaxAbsX = avgY >= collarMinY + 0.055 ? 0.135 : 0.102;
+    const isNeckSkin = avgAbsX < neckMaxAbsX && avgY >= collarMinY;
     const isExposedLowerArmSkin = maxAbsX >= sleeveCutoffAbsX;
-    const isExposedLowerWaistSkin = avgAbsX < 0.22 && avgY < hemCoverMinY + 0.015;
+    const isExposedLowerWaistSkin = avgAbsX < 0.22 && avgY < hemCoverMinY + 0.012;
 
     if (isNeckSkin || isExposedLowerArmSkin || isExposedLowerWaistSkin) {
       kept.push(ia, ib, ic);
@@ -13914,20 +15807,808 @@ function createTrimmedTorsoSkinIndexBuffer(
   return new THREE.BufferAttribute(new IndexCtor(kept), 1);
 }
 
-/**
- * Synchronously binds a loaded modular torso `GLTF` onto an upgraded `BuddyCharacterRig`
- * (or restores the avatar's default built-in top when `torsoGltf === null`).
- */
-export function applyEquippedTorsoToBuddyRig(
-  rig: BuddyCharacterRig,
-  torsoGltf: GLTF | null,
-): boolean {
-  const controller = rig.customGlbController;
-  if (!controller || !controller.glbRoot) {
-    return false;
-  }
-  const glbRoot = controller.glbRoot;
+const SUPPLEMENTAL_SKIN_JOINT_NAMES = [
+  'Spine',
+  'Spine01',
+  'Spine02',
+  'Neck',
+  'LeftShoulder',
+  'LeftArm',
+  'LeftForeArm',
+  'LeftHand',
+  'RightShoulder',
+  'RightArm',
+  'RightForeArm',
+  'RightHand',
+] as const;
 
+type SupplementalJointName = (typeof SUPPLEMENTAL_SKIN_JOINT_NAMES)[number];
+
+interface SupplementalTubeRing {
+  cx: number;
+  cy: number;
+  cz: number;
+  axis: 'x' | 'y';
+  ra: number;
+  rb: number;
+  weights: ReadonlyArray<readonly [SupplementalJointName, number]>;
+}
+
+interface TubeBuilderArrays {
+  positions: number[];
+  normals: number[];
+  uvs: number[];
+  skinIndices: number[];
+  skinWeights: number[];
+  indices: number[];
+  outlinePositions: number[];
+  outlineNormals: number[];
+  outlineUvs: number[];
+  outlineSkinIndices: number[];
+  outlineSkinWeights: number[];
+  outlineIndices: number[];
+}
+
+function appendSkinnedTube(
+  arrays: TubeBuilderArrays,
+  jointIdxByName: ReadonlyMap<SupplementalJointName, number>,
+  rings: readonly SupplementalTubeRing[],
+  radialSegs: number,
+  flipWinding: boolean,
+  includeOutline: boolean,
+): void {
+  if (rings.length < 2) return;
+  const startVert = arrays.positions.length / 3;
+  const startOutVert = arrays.outlinePositions.length / 3;
+  const ringVertCount = radialSegs + 1;
+
+  for (let ri = 0; ri < rings.length; ri++) {
+    const ring = rings[ri];
+    const isEndCap = ri === 0 || ri === rings.length - 1;
+    const outlineExpand = isEndCap ? -0.0028 : 0.0022;
+
+    let j0 = 0;
+    let j1 = 0;
+    let j2 = 0;
+    let j3 = 0;
+    let w0 = 1;
+    let w1 = 0;
+    let w2 = 0;
+    let w3 = 0;
+    const resolvedWeights = ring.weights
+      .map(([jName, w]) => [jointIdxByName.get(jName) ?? 0, w] as const)
+      .filter(([, w]) => w > 0);
+    if (resolvedWeights.length > 0) {
+      const wSum = resolvedWeights.reduce((acc, [, w]) => acc + w, 0) || 1;
+      j0 = resolvedWeights[0][0];
+      w0 = resolvedWeights[0][1] / wSum;
+      if (resolvedWeights[1]) {
+        j1 = resolvedWeights[1][0];
+        w1 = resolvedWeights[1][1] / wSum;
+      }
+      if (resolvedWeights[2]) {
+        j2 = resolvedWeights[2][0];
+        w2 = resolvedWeights[2][1] / wSum;
+      }
+      if (resolvedWeights[3]) {
+        j3 = resolvedWeights[3][0];
+        w3 = resolvedWeights[3][1] / wSum;
+      }
+    }
+
+    for (let si = 0; si < ringVertCount; si++) {
+      const theta = (si / radialSegs) * Math.PI * 2;
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+
+      let px: number;
+      let py: number;
+      let pz: number;
+      let nx: number;
+      let ny: number;
+      let nz: number;
+      if (ring.axis === 'y') {
+        px = ring.cx + cosT * ring.ra;
+        py = ring.cy;
+        pz = ring.cz + sinT * ring.rb;
+        nx = cosT / Math.max(1e-4, ring.ra);
+        ny = 0;
+        nz = sinT / Math.max(1e-4, ring.rb);
+      } else {
+        px = ring.cx;
+        py = ring.cy + cosT * ring.ra;
+        pz = ring.cz + sinT * ring.rb;
+        nx = 0;
+        ny = cosT / Math.max(1e-4, ring.ra);
+        nz = sinT / Math.max(1e-4, ring.rb);
+      }
+      const nLen = Math.hypot(nx, ny, nz) || 1;
+      nx /= nLen;
+      ny /= nLen;
+      nz /= nLen;
+
+      arrays.positions.push(px, py, pz);
+      arrays.normals.push(nx, ny, nz);
+      // Sample center-forehead texel matching `isBodySkinMeshHint` (`vec2(0.785, 0.28)`)
+      arrays.uvs.push(0.785, 0.28);
+      arrays.skinIndices.push(j0, j1, j2, j3);
+      arrays.skinWeights.push(w0, w1, w2, w3);
+
+      if (includeOutline) {
+        arrays.outlinePositions.push(
+          px + nx * outlineExpand,
+          py + ny * outlineExpand,
+          pz + nz * outlineExpand,
+        );
+        // Outlines on PelvisRoot rigs use inverted normals + flipped triangle winding (`FrontSide` hull)
+        arrays.outlineNormals.push(-nx, -ny, -nz);
+        arrays.outlineUvs.push(0.785, 0.28);
+        arrays.outlineSkinIndices.push(j0, j1, j2, j3);
+        arrays.outlineSkinWeights.push(w0, w1, w2, w3);
+      }
+    }
+  }
+
+  for (let ri = 0; ri + 1 < rings.length; ri++) {
+    const r0 = startVert + ri * ringVertCount;
+    const r1 = startVert + (ri + 1) * ringVertCount;
+    const or0 = startOutVert + ri * ringVertCount;
+    const or1 = startOutVert + (ri + 1) * ringVertCount;
+    for (let si = 0; si < radialSegs; si++) {
+      const sNext = si + 1;
+      if (flipWinding) {
+        arrays.indices.push(r0 + si, r1 + sNext, r0 + sNext);
+        arrays.indices.push(r0 + si, r1 + si, r1 + sNext);
+      } else {
+        arrays.indices.push(r0 + si, r0 + sNext, r1 + sNext);
+        arrays.indices.push(r0 + si, r1 + sNext, r1 + si);
+      }
+      if (includeOutline) {
+        if (flipWinding) {
+          arrays.outlineIndices.push(or0 + si, or0 + sNext, or1 + sNext);
+          arrays.outlineIndices.push(or0 + si, or1 + sNext, or1 + si);
+        } else {
+          arrays.outlineIndices.push(or0 + si, or1 + sNext, or0 + sNext);
+          arrays.outlineIndices.push(or0 + si, or1 + si, or1 + sNext);
+        }
+      }
+    }
+  }
+}
+
+function buildSpineWeightStops(y: number): ReadonlyArray<readonly [SupplementalJointName, number]> {
+  if (y <= 0.94) {
+    return [
+      ['Spine', 0.92],
+      ['Spine01', 0.08],
+    ];
+  }
+  if (y <= 1.06) {
+    const t = (y - 0.94) / 0.12;
+    return [
+      ['Spine', (1 - t) * 0.72 + 0.12],
+      ['Spine01', 0.35 + 0.25 * Math.sin(t * Math.PI)],
+      ['Spine02', t * 0.65],
+    ];
+  }
+  if (y <= 1.29) {
+    return [['Spine02', 1]];
+  }
+  const neckBlend = Math.min(1, Math.max(0, (y - 1.29) / 0.055));
+  return [
+    ['Spine02', 1 - neckBlend],
+    ['Neck', neckBlend],
+  ];
+}
+
+function buildArmWeightStops(
+  sidePrefix: 'Left' | 'Right',
+  absX: number,
+): ReadonlyArray<readonly [SupplementalJointName, number]> {
+  const shoulderJoint: SupplementalJointName = `${sidePrefix}Shoulder`;
+  const armJoint: SupplementalJointName = `${sidePrefix}Arm`;
+  const foreArmJoint: SupplementalJointName = `${sidePrefix}ForeArm`;
+  const handJoint: SupplementalJointName = `${sidePrefix}Hand`;
+  if (absX <= 0.145) {
+    const t = Math.max(0, (absX - 0.105) / 0.04);
+    return [
+      ['Spine02', 0.32 * (1 - t)],
+      [shoulderJoint, 0.56 - 0.12 * t],
+      [armJoint, 0.12 + 0.44 * t],
+    ];
+  }
+  if (absX <= 0.215) {
+    const t = (absX - 0.145) / 0.07;
+    return [
+      [shoulderJoint, (1 - t) * 0.32],
+      [armJoint, 0.68 + t * 0.32],
+    ];
+  }
+  if (absX <= 0.34) {
+    return [[armJoint, 1]];
+  }
+  if (absX <= 0.46) {
+    const t = (absX - 0.34) / 0.12;
+    return [
+      [armJoint, 1 - t],
+      [foreArmJoint, t],
+    ];
+  }
+  if (absX <= 0.57) {
+    return [[foreArmJoint, 1]];
+  }
+  const handBlend = Math.min(0.45, Math.max(0, (absX - 0.57) / 0.06) * 0.45);
+  return [
+    [foreArmJoint, 1 - handBlend],
+    [handJoint, handBlend],
+  ];
+}
+
+/**
+ * Generates seamless anatomical skin bridges for shoulders/upper-arms, cropped midriffs,
+ * and open necklines when a modular torso `.glb` exposes body regions stripped from
+ * the character's underlying base `_skin` geometry.
+ */
+function createSupplementalTorsoSkinMeshes(
+  controller: NonNullable<BuddyCharacterRig['customGlbController']>,
+  glbRoot: THREE.Group,
+  hostParent: THREE.Object3D,
+  baseSkinMeshes: ReadonlyArray<{ mesh: THREE.Mesh; originalIndex: THREE.BufferAttribute | null }>,
+  sleeveCutoffAbsX: number,
+  frontCollarKeepMinY: number,
+  hemCoverMinY: number,
+): THREE.Mesh[] {
+  let existingArmMinAbsX = Infinity;
+  let existingWaistMaxY = -Infinity;
+  let existingFrontChestMinY = Infinity;
+  let skinMat: THREE.Material | null = null;
+  let outlineMat: THREE.Material | null = null;
+  let isMale = false;
+
+  glbRoot.traverse((node) => {
+    const lower = (node.name || '').toLowerCase();
+    if (
+      /^head_1\d\d/i.test(node.name) ||
+      /(?:1m|2m)(?:highres)?(?:pbr|_|$)/i.test(node.name)
+    ) {
+      isMale = true;
+    }
+    if ((node as THREE.Mesh).isMesh) {
+      const m = node as THREE.Mesh;
+      if (m.userData?.isCustomEquippedTorso || m.userData?.customEquippedSlot) return;
+      if (!skinMat && (lower.includes('_skin') || lower === 'hands_skin') && !lower.includes('outline')) {
+        skinMat = Array.isArray(m.material) ? m.material[0] : m.material;
+      }
+      if (!outlineMat && lower.includes('_skin_outline')) {
+        outlineMat = Array.isArray(m.material) ? m.material[0] : m.material;
+      }
+    }
+  });
+
+  if (!skinMat) return [];
+
+  for (const skinEntry of baseSkinMeshes) {
+    const lower = (skinEntry.mesh.name || '').toLowerCase();
+    if (lower.includes('outline')) continue;
+    const pos = skinEntry.mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos) continue;
+    for (let i = 0; i < pos.count; i++) {
+      const ax = Math.abs(pos.getX(i));
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      if (ax >= 0.15 && y >= 1.15 && y <= 1.35 && ax < existingArmMinAbsX) {
+        existingArmMinAbsX = ax;
+      }
+      if (ax < 0.15 && y >= 0.90 && y <= 1.06 && y > existingWaistMaxY) {
+        existingWaistMaxY = y;
+      }
+      if (ax < 0.12 && z > -0.02 && y >= 1.18 && y <= 1.35 && y < existingFrontChestMinY) {
+        existingFrontChestMinY = y;
+      }
+    }
+  }
+
+  let ringSumY = 0;
+  let ringSumZ = 0;
+  let ringCnt = 0;
+  if (Number.isFinite(existingArmMinAbsX)) {
+    for (const skinEntry of baseSkinMeshes) {
+      if ((skinEntry.mesh.name || '').toLowerCase().includes('outline')) continue;
+      const pos = skinEntry.mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!pos) continue;
+      for (let i = 0; i < pos.count; i++) {
+        const ax = Math.abs(pos.getX(i));
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+        if (Math.abs(ax - existingArmMinAbsX) <= 0.015 && y >= 1.15 && y <= 1.35) {
+          ringSumY += y;
+          ringSumZ += z;
+          ringCnt++;
+        }
+      }
+    }
+  }
+  const armCy = ringCnt > 0 ? ringSumY / ringCnt : 1.262;
+  const armCz = ringCnt > 0 ? ringSumZ / ringCnt : -0.070;
+
+  const isSleeveless = sleeveCutoffAbsX < 0.24;
+  const needArmBridge = sleeveCutoffAbsX < Math.min(0.54, existingArmMinAbsX - 0.012);
+  const needWaistBridge =
+    hemCoverMinY > 0.945 &&
+    (!Number.isFinite(existingWaistMaxY) || existingWaistMaxY < hemCoverMinY + 0.015);
+  const needCollarBridge =
+    (isSleeveless || frontCollarKeepMinY < 1.31) &&
+    (!Number.isFinite(existingFrontChestMinY) || existingFrontChestMinY > frontCollarKeepMinY + 0.015);
+
+  if (!needArmBridge && !needWaistBridge && !needCollarBridge) {
+    return [];
+  }
+
+  // Gather T-pose bind matrices from existing controller SkinnedMeshes so supplemental bones deform accurately at any animation pose
+  const boneInverseByName = new Map<string, THREE.Matrix4>();
+  for (const entry of controller.meshes) {
+    const sm = entry.mesh as THREE.SkinnedMesh;
+    if (!sm.isSkinnedMesh || !sm.skeleton) continue;
+    const bones = sm.skeleton.bones;
+    const inverses = sm.skeleton.boneInverses;
+    for (let bi = 0; bi < bones.length; bi++) {
+      const b = bones[bi];
+      const inv = inverses[bi];
+      if (!b || !inv) continue;
+      if (!boneInverseByName.has(b.name)) {
+        boneInverseByName.set(b.name, inv.clone());
+      }
+      const short = stripMixamoPrefix(b.name);
+      if (!boneInverseByName.has(short)) {
+        boneInverseByName.set(short, inv.clone());
+      }
+    }
+  }
+
+  const mappedBones: THREE.Bone[] = [];
+  const mappedInverses: THREE.Matrix4[] = [];
+  const jointIdxByName = new Map<SupplementalJointName, number>();
+  for (const jName of SUPPLEMENTAL_SKIN_JOINT_NAMES) {
+    const targetBone =
+      controller.bones.get(jName) ??
+      (glbRoot.getObjectByName(jName) as THREE.Bone | undefined);
+    if (!targetBone) continue;
+    let inv = boneInverseByName.get(targetBone.name) ?? boneInverseByName.get(jName);
+    if (!inv) {
+      targetBone.updateWorldMatrix(true, false);
+      inv = new THREE.Matrix4().copy(targetBone.matrixWorld).invert();
+    }
+    jointIdxByName.set(jName, mappedBones.length);
+    mappedBones.push(targetBone);
+    mappedInverses.push(inv.clone());
+  }
+  if (mappedBones.length === 0) return [];
+
+  const arrays: TubeBuilderArrays = {
+    positions: [],
+    normals: [],
+    uvs: [],
+    skinIndices: [],
+    skinWeights: [],
+    indices: [],
+    outlinePositions: [],
+    outlineNormals: [],
+    outlineUvs: [],
+    outlineSkinIndices: [],
+    outlineSkinWeights: [],
+    outlineIndices: [],
+  };
+
+  if (needArmBridge) {
+    const x0 = isSleeveless ? 0.098 : Math.max(0.118, sleeveCutoffAbsX - 0.035);
+    const x1 =
+      Number.isFinite(existingArmMinAbsX) && existingArmMinAbsX < 0.58
+        ? existingArmMinAbsX + 0.010
+        : 0.612;
+    const rBicep = isMale ? 0.043 : 0.036;
+    const rEnd = x1 > 0.45 ? (isMale ? 0.029 : 0.025) : rBicep;
+    const steps = 4;
+
+    for (const side of ['Left', 'Right'] as const) {
+      const sign = side === 'Left' ? 1 : -1;
+      const armRings: SupplementalTubeRing[] = [];
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        const xAbs = x0 + (x1 - x0) * t;
+        const sh = xAbs < 0.19 ? Math.max(0, 1 - (xAbs - x0) / Math.max(0.01, 0.19 - x0)) : 0;
+        const baseR = rBicep * (1 - t) + rEnd * t;
+        armRings.push({
+          cx: sign * xAbs,
+          cy: (isSleeveless ? 1.272 : 1.260) * (1 - t) + armCy * t - (isSleeveless ? 0.006 : 0.012) * sh,
+          cz: -0.066 * (1 - t) + armCz * t,
+          axis: 'x',
+          ra: baseR * (1 + (isSleeveless ? 0.34 : 0.24) * sh),
+          rb: baseR * (1 + (isSleeveless ? 0.22 : 0.18) * sh),
+          weights: buildArmWeightStops(side, xAbs),
+        });
+      }
+      appendSkinnedTube(arrays, jointIdxByName, armRings, 12, sign < 0, Boolean(outlineMat));
+    }
+  }
+
+  if (needWaistBridge) {
+    const yTop = Math.min(1.06, hemCoverMinY + 0.022);
+    const wScale = isMale ? 1.12 : 1.0;
+    const waistSpec: Array<{ y: number; rx: number; rz: number; cz: number }> = [
+      { y: 0.910, rx: 0.104 * wScale, rz: 0.068, cz: 0.008 },
+      { y: 0.945, rx: 0.110 * wScale, rz: 0.066, cz: 0.010 },
+      { y: 0.985, rx: 0.089 * wScale, rz: 0.055, cz: 0.014 },
+      { y: 1.010, rx: 0.084 * wScale, rz: 0.050, cz: 0.012 },
+      { y: yTop, rx: 0.078 * wScale, rz: 0.046, cz: 0.008 },
+    ].filter((s, idx, arr) => idx === 0 || s.y <= yTop + 0.001 || arr[idx - 1].y < yTop);
+    const waistRings: SupplementalTubeRing[] = waistSpec.map((s) => ({
+      cx: 0,
+      cy: s.y,
+      cz: s.cz,
+      axis: 'y',
+      ra: s.rx,
+      rb: s.rz,
+      weights: buildSpineWeightStops(s.y),
+    }));
+    appendSkinnedTube(arrays, jointIdxByName, waistRings, 14, true, Boolean(outlineMat));
+  }
+
+  if (needCollarBridge) {
+    const cScale = isMale ? 1.08 : 1.0;
+    const collarSpec = isSleeveless
+      ? [
+          { y: 1.120, rx: 0.118 * cScale, rz: 0.048, cz: -0.042 },
+          { y: 1.185, rx: 0.132 * cScale, rz: 0.048, cz: -0.046 },
+          { y: 1.240, rx: 0.142 * cScale, rz: 0.050, cz: -0.052 },
+          { y: 1.290, rx: 0.132 * cScale, rz: 0.050, cz: -0.060 },
+          { y: 1.320, rx: 0.118 * cScale, rz: 0.048, cz: -0.064 },
+          { y: 1.342, rx: 0.068 * cScale, rz: 0.044, cz: -0.064 },
+          { y: 1.358, rx: 0.042 * cScale, rz: 0.040, cz: -0.063 },
+        ]
+      : [
+          { y: 1.200, rx: 0.082 * cScale, rz: 0.041, cz: -0.044 },
+          { y: 1.245, rx: 0.072 * cScale, rz: 0.040, cz: -0.050 },
+          { y: 1.285, rx: 0.060 * cScale, rz: 0.041, cz: -0.057 },
+          { y: 1.320, rx: 0.049 * cScale, rz: 0.041, cz: -0.061 },
+          { y: 1.355, rx: 0.041 * cScale, rz: 0.038, cz: -0.063 },
+        ];
+    const collarRings: SupplementalTubeRing[] = collarSpec.map((s) => ({
+      cx: 0,
+      cy: s.y,
+      cz: s.cz,
+      axis: 'y',
+      ra: s.rx,
+      rb: s.rz,
+      weights: buildSpineWeightStops(s.y),
+    }));
+    appendSkinnedTube(arrays, jointIdxByName, collarRings, 14, true, false);
+  }
+
+  if (arrays.indices.length === 0) return [];
+
+  const bindBase =
+    (hostParent.children.find((c) => (c as THREE.SkinnedMesh).isSkinnedMesh) as THREE.SkinnedMesh | undefined)
+      ?.bindMatrix ?? new THREE.Matrix4();
+
+  const created: THREE.Mesh[] = [];
+  const makeSkinnedBuffer = (isOut: boolean): THREE.BufferGeometry => {
+    const geom = new THREE.BufferGeometry();
+    geom.userData = { __isSupplementalSkinGeometry: true };
+    geom.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(isOut ? arrays.outlinePositions : arrays.positions, 3),
+    );
+    geom.setAttribute(
+      'normal',
+      new THREE.Float32BufferAttribute(isOut ? arrays.outlineNormals : arrays.normals, 3),
+    );
+    geom.setAttribute(
+      'uv',
+      new THREE.Float32BufferAttribute(isOut ? arrays.outlineUvs : arrays.uvs, 2),
+    );
+    geom.setAttribute(
+      'skinIndex',
+      new THREE.Uint16BufferAttribute(
+        isOut ? arrays.outlineSkinIndices : arrays.skinIndices,
+        4,
+      ),
+    );
+    geom.setAttribute(
+      'skinWeight',
+      new THREE.Float32BufferAttribute(
+        isOut ? arrays.outlineSkinWeights : arrays.skinWeights,
+        4,
+      ),
+    );
+    geom.setIndex(isOut ? arrays.outlineIndices : arrays.indices);
+    return geom;
+  };
+
+  const skinGeom = makeSkinnedBuffer(false);
+  sanitizeAndNormalizeSkinAttributes(skinGeom, mappedBones.length, undefined, 0);
+  smoothBoundaryTransitionWeights(skinGeom, mappedBones, 'skin', { passes: 1 });
+  const skinMesh = new THREE.SkinnedMesh(skinGeom, skinMat);
+  skinMesh.name = 'torso_supplemental_skin';
+  skinMesh.userData.isCustomEquippedTorso = true;
+  skinMesh.userData.isSupplementalTorsoSkin = true;
+  skinMesh.castShadow = false;
+  skinMesh.receiveShadow = false;
+  applySkinnedMeshSafeBoundingSphere(skinMesh, 1.85, 0.75);
+  skinMesh.bind(
+    new THREE.Skeleton(mappedBones, mappedInverses.map((m) => m.clone())),
+    bindBase.clone(),
+  );
+  hostParent.add(skinMesh);
+  created.push(skinMesh);
+  controller.meshes.push({ mesh: skinMesh, defaultMat: skinMat });
+
+  if (outlineMat && arrays.outlineIndices.length > 0) {
+    const outGeom = makeSkinnedBuffer(true);
+    sanitizeAndNormalizeSkinAttributes(outGeom, mappedBones.length, undefined, 0);
+    const mappedBoneNames = mappedBones.map((b) => b.name);
+    syncCompanionOutlineSkinWeights(outGeom, skinGeom, mappedBoneNames, mappedBoneNames);
+    const outMesh = new THREE.SkinnedMesh(outGeom, outlineMat);
+    outMesh.name = 'torso_supplemental_skin_Outline';
+    outMesh.userData.isCustomEquippedTorso = true;
+    outMesh.userData.isSupplementalTorsoSkin = true;
+    outMesh.castShadow = false;
+    outMesh.receiveShadow = false;
+    applySkinnedMeshSafeBoundingSphere(outMesh, 1.85, 0.75);
+    outMesh.bind(
+      new THREE.Skeleton(mappedBones, mappedInverses.map((m) => m.clone())),
+      bindBase.clone(),
+    );
+    hostParent.add(outMesh);
+    created.push(outMesh);
+    controller.meshes.push({ mesh: outMesh, defaultMat: outlineMat });
+  }
+
+  return created;
+}
+
+function measureSynchronizedGarmentBounds(geometry: THREE.BufferGeometry): {
+  minY: number;
+  maxY: number;
+  waistRadius: number;
+} {
+  const pos = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!pos || pos.count === 0) {
+    return { minY: 0, maxY: 0, waistRadius: 0 };
+  }
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let waistRadius = 0;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    if (y >= 0.88 && y <= 0.99 && Math.abs(x) < 0.24) {
+      const r = Math.hypot(x, z);
+      if (r > waistRadius) waistRadius = r;
+    }
+  }
+  return {
+    minY: Number.isFinite(minY) ? minY : 0,
+    maxY: Number.isFinite(maxY) ? maxY : 0,
+    waistRadius,
+  };
+}
+
+function resolveModularMeshCompanionStem(meshName: string): string {
+  return (meshName || '')
+    .toLowerCase()
+    .replace(/_outline$/i, '')
+    .replace(/(?:_\d+|\.\d+)$/, '');
+}
+
+function findFallbackBodySkinMaterial(
+  meshes: ReadonlyArray<{ mesh: THREE.Mesh; defaultMat: THREE.Material | THREE.Material[] }>,
+): THREE.Material | null {
+  for (const entry of meshes) {
+    const lower = (entry.mesh.name || '').toLowerCase();
+    if (lower.includes('outline') || lower.startsWith('head')) continue;
+    if (lower === 'hands_skin' || lower.startsWith('hands_skin') || lower.includes('_skin')) {
+      const m = Array.isArray(entry.defaultMat) ? entry.defaultMat[0] : entry.defaultMat;
+      if (m) return m;
+    }
+  }
+  return null;
+}
+
+function resolveModularBodySkinFallbackMaterial(
+  meshName: string,
+  material: THREE.Material | THREE.Material[],
+  fallbackBodySkinMat: THREE.Material | null,
+): THREE.Material | THREE.Material[] {
+  if (!fallbackBodySkinMat) return material;
+  const lowerMesh = (meshName || '').toLowerCase();
+  if (lowerMesh.includes('outline')) return material;
+  const checkOne = (m: THREE.Material): THREE.Material => {
+    const hint = classifyModularApparelMaterialHint(meshName, m.name || '');
+    if (!hint.isBodySkin) return m;
+    const hasTextureMap = Boolean((m as THREE.MeshBasicMaterial).map);
+    return hasTextureMap ? m : fallbackBodySkinMat;
+  };
+  return Array.isArray(material) ? material.map(checkOne) : checkOne(material);
+}
+
+function cloneAndBindModularSkinnedMeshes(
+  sourceSkinnedMeshes: readonly THREE.SkinnedMesh[],
+  controller: NonNullable<BuddyCharacterRig['customGlbController']>,
+  hostParent: THREE.Object3D,
+  slotTag: 'torso' | ModularApparelSlotName,
+): THREE.Mesh[] {
+  const newlyAttached: THREE.Mesh[] = [];
+  if (sourceSkinnedMeshes.length === 0) return newlyAttached;
+
+  const targetProfile = extractTargetRigBindProfile(
+    controller.meshes,
+    controller.bones,
+    controller.glbRoot,
+  );
+  const targetLookup = buildTargetBoneLookup(controller.bones, controller.glbRoot);
+  const fallbackBodySkinMat = findFallbackBodySkinMaterial(controller.meshes);
+  const hasBilateralHands =
+    slotTag === 'hands' ? hasFullBilateralHandCoverage(sourceSkinnedMeshes) : false;
+
+  // Bind base meshes before companion _Outline meshes so outlines inherit exact smoothed weights
+  const orderedSources = [...sourceSkinnedMeshes].sort((a, b) => {
+    const aOut = (a.name || '').toLowerCase().includes('outline') ? 1 : 0;
+    const bOut = (b.name || '').toLowerCase().includes('outline') ? 1 : 0;
+    return aOut - bOut;
+  });
+
+  const companionByStem = new Map<
+    string,
+    {
+      baseGeom: THREE.BufferGeometry;
+      boneNames: string[];
+      layer: ReturnType<typeof classifyGarmentLayer>;
+      bounds: ReturnType<typeof measureSynchronizedGarmentBounds>;
+    }
+  >();
+
+  for (const srcSm of orderedSources) {
+    const srcBones = srcSm.skeleton?.bones ?? [];
+    if (srcBones.length === 0) continue;
+
+    const resolution = resolveModularBoneMapping(srcBones, targetLookup);
+    if (resolution.mappedBones.length === 0) continue;
+
+    const clonedGeom = srcSm.geometry.clone();
+    const fallbackBoneIdx = Math.max(
+      0,
+      resolution.mappedBones.findIndex((b) => /^(?:Hip|Hips|Spine|Spine02|Spine2|Head)$/i.test(b.name)),
+    );
+    const referenceBonePos = resolution.mappedBones.map(
+      (b) => targetProfile.boneBindPosByName.get(b.name) ?? null,
+    );
+
+    const meshName = srcSm.name || `CustomEquipped_${slotTag}`;
+    const isOutlineMesh = meshName.toLowerCase().includes('outline');
+    const resolvedMat = resolveModularBodySkinFallbackMaterial(
+      meshName,
+      srcSm.material,
+      fallbackBodySkinMat,
+    );
+    const clonedMesh = new THREE.SkinnedMesh(clonedGeom, resolvedMat);
+    clonedMesh.name = meshName;
+
+    const syncResult = synchronizeModularBindAndGeometry(
+      clonedGeom,
+      srcSm,
+      resolution.mappedBones,
+      targetProfile,
+      clonedMesh,
+    );
+
+    sanitizeAndNormalizeSkinAttributes(
+      clonedGeom,
+      resolution.mappedBones.length,
+      resolution.sourceToTargetSlot,
+      fallbackBoneIdx,
+      referenceBonePos,
+    );
+
+    const stem = resolveModularMeshCompanionStem(meshName);
+    const companion = companionByStem.get(stem);
+    const bounds = companion?.bounds ?? measureSynchronizedGarmentBounds(clonedGeom);
+    const layer =
+      companion?.layer ??
+      classifyGarmentLayer(meshName, {
+        minY: bounds.minY,
+        maxY: bounds.maxY,
+        waistRadius: bounds.waistRadius,
+        hasFullBilateralHands: slotTag === 'hands' ? hasBilateralHands : undefined,
+      });
+
+    const mappedBoneNames = resolution.mappedBones.map((b) => b.name);
+    if (isOutlineMesh && companion) {
+      syncCompanionOutlineSkinWeights(
+        clonedGeom,
+        companion.baseGeom,
+        mappedBoneNames,
+        companion.boneNames,
+      );
+    } else if (!isOutlineMesh) {
+      smoothBoundaryTransitionWeights(clonedGeom, resolution.mappedBones, layer, { passes: 2 });
+    }
+
+    const appliedClearance = applyLayeredGarmentClearance(clonedGeom, layer, {
+      isOutlineMesh,
+      companionBaseGeometry: companion?.baseGeom,
+      bounds: {
+        minY: bounds.minY,
+        maxY: bounds.maxY,
+        waistRadius: bounds.waistRadius,
+        hasFullBilateralHands: slotTag === 'hands' ? hasBilateralHands : undefined,
+      },
+    });
+
+    if (!isOutlineMesh) {
+      companionByStem.set(stem, {
+        baseGeom: clonedGeom,
+        boneNames: mappedBoneNames,
+        layer,
+        bounds,
+      });
+    }
+
+    if (slotTag === 'torso') {
+      clonedMesh.userData.isCustomEquippedTorso = true;
+    } else {
+      clonedMesh.userData.customEquippedSlot = slotTag;
+    }
+    clonedMesh.userData.wardrobeLayer = layer;
+    clonedMesh.userData.wardrobeClearanceM = appliedClearance;
+    clonedMesh.userData.wardrobeScaleMultiplier = syncResult.appliedScaleMultiplier;
+
+    clonedMesh.castShadow = false;
+    clonedMesh.receiveShadow = false;
+    applySkinnedMeshSafeBoundingSphere(clonedMesh, 1.85, 0.75);
+    clonedMesh.bindMode = targetProfile.bindMode;
+
+    const boundSkeleton = new THREE.Skeleton(resolution.mappedBones, syncResult.syncedInverses);
+    clonedMesh.bind(boundSkeleton, syncResult.syncedBindMatrix);
+
+    hostParent.add(clonedMesh);
+    newlyAttached.push(clonedMesh);
+    controller.meshes.push({ mesh: clonedMesh, defaultMat: clonedMesh.material });
+  }
+  return newlyAttached;
+}
+
+function collectGltfSkinnedMeshes(gltf: GLTF): THREE.SkinnedMesh[] {
+  const meshes: THREE.SkinnedMesh[] = [];
+  gltf.scene.traverse((node) => {
+    if ((node as THREE.SkinnedMesh).isSkinnedMesh) {
+      meshes.push(node as THREE.SkinnedMesh);
+    }
+  });
+  return meshes;
+}
+
+function detachAttachedRigMeshes(
+  controller: NonNullable<BuddyCharacterRig['customGlbController']>,
+  glbRoot: THREE.Group,
+  storageKey: string,
+): void {
+  const prevAttached = (glbRoot.userData[storageKey] ?? []) as THREE.Mesh[];
+  if (prevAttached.length === 0) return;
+  for (const oldMesh of prevAttached) {
+    if (oldMesh.parent) {
+      oldMesh.parent.remove(oldMesh);
+    }
+    oldMesh.geometry?.dispose();
+  }
+  const attachedSet = new Set<THREE.Mesh>(prevAttached);
+  controller.meshes = controller.meshes.filter((entry) => !attachedSet.has(entry.mesh));
+  glbRoot.userData[storageKey] = [];
+}
+
+function getDefaultTorsoStateOnRig(glbRoot: THREE.Group): StoredRigDefaultTorsoState {
   let storedState = glbRoot.userData.defaultTorsoState as StoredRigDefaultTorsoState | undefined;
   if (!storedState) {
     const defaultClothingMeshes: THREE.Mesh[] = [];
@@ -13939,9 +16620,10 @@ export function applyEquippedTorsoToBuddyRig(
       const lower = (mesh.name || '').toLowerCase();
       if (!lower.startsWith('torso_')) return;
       if (lower.includes('_skin')) {
+        ensurePerRigUniqueSkinGeometry(mesh);
         skinMeshes.push({
           mesh,
-          originalIndex: mesh.geometry.getIndex(),
+          originalIndex: getOrCapturePristineSkinIndex(mesh.geometry),
         });
       } else {
         defaultClothingMeshes.push(mesh);
@@ -13950,114 +16632,81 @@ export function applyEquippedTorsoToBuddyRig(
     storedState = { defaultClothingMeshes, skinMeshes };
     glbRoot.userData.defaultTorsoState = storedState;
   }
+  return storedState;
+}
 
-  // Remove and dispose any previously attached custom torso meshes on this rig
-  const prevAttached = (glbRoot.userData.attachedCustomTorsoMeshes ?? []) as THREE.Mesh[];
-  if (prevAttached.length > 0) {
-    for (const oldMesh of prevAttached) {
-      if (oldMesh.parent) {
-        oldMesh.parent.remove(oldMesh);
-      }
-      oldMesh.geometry?.dispose();
-    }
-    const attachedSet = new Set<THREE.Mesh>(prevAttached);
-    controller.meshes = controller.meshes.filter((entry) => !attachedSet.has(entry.mesh));
-    glbRoot.userData.attachedCustomTorsoMeshes = [];
+function applyTorsoSkinnedMeshesToBuddyRig(
+  rig: BuddyCharacterRig,
+  sourceSkinnedMeshes: readonly THREE.SkinnedMesh[],
+): boolean {
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
   }
+  const glbRoot = controller.glbRoot;
+  const storedState = getDefaultTorsoStateOnRig(glbRoot);
+
+  detachAttachedRigMeshes(controller, glbRoot, 'attachedCustomTorsoMeshes');
 
   // Restore default built-in top & full skin index buffers when unequipping
-  if (!torsoGltf) {
+  if (sourceSkinnedMeshes.length === 0) {
     for (const defMesh of storedState.defaultClothingMeshes) {
       defMesh.visible = true;
     }
     for (const skinEntry of storedState.skinMeshes) {
       skinEntry.mesh.visible = true;
-      const currentIdx = skinEntry.mesh.geometry.getIndex();
+      const geo = ensurePerRigUniqueSkinGeometry(skinEntry.mesh);
+      const currentIdx = geo.getIndex();
       if (currentIdx && currentIdx !== skinEntry.originalIndex) {
-        skinEntry.mesh.geometry.setIndex(skinEntry.originalIndex);
+        geo.setIndex(skinEntry.originalIndex);
       }
     }
     return true;
   }
 
-  prepareModularApparelGltfMaterials(torsoGltf);
-
-  const sourceSkinnedMeshes: THREE.SkinnedMesh[] = [];
-  let maxAbsX = 0;
-  let minY = Infinity;
-  let maxCollarY = -Infinity;
   let hasOwnSkinMesh = false;
-
-  torsoGltf.scene.traverse((node) => {
-    if ((node as THREE.SkinnedMesh).isSkinnedMesh) {
-      const sm = node as THREE.SkinnedMesh;
-      sourceSkinnedMeshes.push(sm);
-      const lower = (sm.name || '').toLowerCase();
-      if (lower.includes('_skin')) {
-        hasOwnSkinMesh = true;
-      } else if (!lower.includes('outline')) {
-        const pos = sm.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
-        if (pos) {
-          for (let i = 0; i < pos.count; i++) {
-            const ax = Math.abs(pos.getX(i));
-            const y = pos.getY(i);
-            if (ax > maxAbsX) maxAbsX = ax;
-            if (y < minY) minY = y;
-            if (ax < 0.14 && y > maxCollarY) maxCollarY = y;
-          }
-        }
-      }
+  for (const sm of sourceSkinnedMeshes) {
+    const lower = (sm.name || '').toLowerCase();
+    if (lower.includes('_skin')) {
+      hasOwnSkinMesh = true;
+      break;
     }
-  });
-
-  if (sourceSkinnedMeshes.length === 0) {
-    return false;
   }
 
   const hostParent: THREE.Object3D =
     storedState.defaultClothingMeshes[0]?.parent ?? glbRoot;
 
-  const newlyAttached: THREE.Mesh[] = [];
-  for (const srcSm of sourceSkinnedMeshes) {
-    const srcBones = srcSm.skeleton?.bones ?? [];
-    const srcInverses = srcSm.skeleton?.boneInverses ?? [];
-    if (srcBones.length === 0) continue;
-
-    const mappedBones: THREE.Bone[] = [];
-    let allMapped = true;
-    for (let bi = 0; bi < srcBones.length; bi++) {
-      const boneName = srcBones[bi].name;
-      const targetBone =
-        controller.bones.get(boneName) ??
-        controller.bones.get(stripMixamoPrefix(boneName));
-      if (!targetBone) {
-        allMapped = false;
-        break;
-      }
-      mappedBones.push(targetBone);
-    }
-    if (!allMapped) continue;
-
-    const clonedGeom = srcSm.geometry.clone();
-    const clonedMesh = new THREE.SkinnedMesh(clonedGeom, srcSm.material);
-    clonedMesh.name = srcSm.name || 'CustomEquippedTorsoMesh';
-    clonedMesh.userData.isCustomEquippedTorso = true;
-    clonedMesh.castShadow = false;
-    clonedMesh.receiveShadow = false;
-    clonedMesh.frustumCulled = false;
-    clonedMesh.bindMode = srcSm.bindMode;
-
-    const clonedInverses = srcInverses.map((inv) => inv.clone());
-    const boundSkeleton = new THREE.Skeleton(mappedBones, clonedInverses);
-    clonedMesh.bind(boundSkeleton, srcSm.bindMatrix.clone());
-
-    hostParent.add(clonedMesh);
-    newlyAttached.push(clonedMesh);
-    controller.meshes.push({ mesh: clonedMesh, defaultMat: clonedMesh.material });
-  }
+  const newlyAttached = cloneAndBindModularSkinnedMeshes(
+    sourceSkinnedMeshes,
+    controller,
+    hostParent,
+    'torso',
+  );
 
   if (newlyAttached.length === 0) {
     return false;
+  }
+
+  let maxAbsX = 0;
+  let minY = Infinity;
+  let maxFrontCollarY = -Infinity;
+  let maxBackCollarY = -Infinity;
+  for (const attached of newlyAttached) {
+    const lower = (attached.name || '').toLowerCase();
+    if (lower.includes('_skin') || lower.includes('outline')) continue;
+    const pos = attached.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos) continue;
+    for (let i = 0; i < pos.count; i++) {
+      const ax = Math.abs(pos.getX(i));
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      if (ax > maxAbsX) maxAbsX = ax;
+      if (y < minY) minY = y;
+      if (ax < 0.085 && y > 1.05) {
+        if (z > 0.01 && y > maxFrontCollarY) maxFrontCollarY = y;
+        if (z < -0.01 && y > maxBackCollarY) maxBackCollarY = y;
+      }
+    }
   }
 
   glbRoot.userData.attachedCustomTorsoMeshes = newlyAttached;
@@ -14073,25 +16722,77 @@ export function applyEquippedTorsoToBuddyRig(
       skinEntry.mesh.visible = false;
     }
   } else {
-    const sleeveCutoffAbsX = maxAbsX > 0.2 ? Math.max(0.18, maxAbsX - 0.048) : 0.18;
-    const collarKeepMinY = Number.isFinite(maxCollarY) ? Math.min(1.31, maxCollarY - 0.04) : 1.295;
+    const sleeveCutoffAbsX =
+      maxAbsX > 0.56
+        ? Math.max(0.585, maxAbsX - 0.032)
+        : maxAbsX > 0.2
+          ? Math.max(0.18, maxAbsX - 0.048)
+          : 0.18;
+    const frontCollarKeepMinY = Number.isFinite(maxFrontCollarY)
+      ? Math.min(1.22, maxFrontCollarY - 0.06)
+      : 1.22;
+    const backCollarKeepMinY = Number.isFinite(maxBackCollarY)
+      ? Math.min(1.30, maxBackCollarY - 0.03)
+      : 1.295;
     const hemCoverMinY = Number.isFinite(minY) ? minY : 0.78;
     for (const skinEntry of storedState.skinMeshes) {
       skinEntry.mesh.visible = true;
+      const geo = ensurePerRigUniqueSkinGeometry(skinEntry.mesh);
       if (skinEntry.originalIndex) {
         const trimmedIdx = createTrimmedTorsoSkinIndexBuffer(
-          skinEntry.mesh.geometry,
+          geo,
           skinEntry.originalIndex,
           sleeveCutoffAbsX,
-          collarKeepMinY,
+          frontCollarKeepMinY,
+          backCollarKeepMinY,
           hemCoverMinY,
         );
-        skinEntry.mesh.geometry.setIndex(trimmedIdx);
+        geo.setIndex(trimmedIdx);
       }
+    }
+    const supplementalSkin = createSupplementalTorsoSkinMeshes(
+      controller,
+      glbRoot,
+      hostParent,
+      storedState.skinMeshes,
+      sleeveCutoffAbsX,
+      frontCollarKeepMinY,
+      hemCoverMinY,
+    );
+    if (supplementalSkin.length > 0) {
+      newlyAttached.push(...supplementalSkin);
     }
   }
 
   return true;
+}
+
+function syncRigControllerDefaultMaterials(
+  controller: CharBuddiesGlbRigController | undefined | null,
+): void {
+  if (!controller) return;
+  for (const entry of controller.meshes) {
+    entry.defaultMat = entry.mesh.material;
+  }
+}
+
+/**
+ * Synchronously binds a loaded modular torso `GLTF` onto an upgraded `BuddyCharacterRig`
+ * (or restores the avatar's default built-in top when `torsoGltf === null`).
+ */
+export function applyEquippedTorsoToBuddyRig(
+  rig: BuddyCharacterRig,
+  torsoGltf: GLTF | null,
+): boolean {
+  const applied = !torsoGltf
+    ? applyTorsoSkinnedMeshesToBuddyRig(rig, [])
+    : (prepareModularApparelGltfMaterials(torsoGltf),
+      applyTorsoSkinnedMeshesToBuddyRig(rig, collectGltfSkinnedMeshes(torsoGltf)));
+  if (applied) {
+    rig.customGlbController?.secondaryPhysics?.refresh();
+    syncRigControllerDefaultMaterials(rig.customGlbController);
+  }
+  return applied;
 }
 
 /**
@@ -14122,7 +16823,513 @@ export async function setBuddyRigEquippedTorsoByUrl(
   if (!torsoGltf) {
     return false;
   }
-  return applyEquippedTorsoToBuddyRig(rig, torsoGltf);
+  const applied = applyEquippedTorsoToBuddyRig(rig, torsoGltf);
+  const tintHex = rig.bodyGroupRef?.userData?.citizenClothingTintHex as string | undefined;
+  if (applied && tintHex) {
+    applyCitizenClothingTint(rig, tintHex);
+  }
+  return applied;
+}
+
+export type ModularApparelSlotName = 'hair' | 'legs' | 'feet' | 'hands' | 'neck';
+
+export interface BuddyModularOutfitUrls {
+  costumeUrl?: string | null;
+  hairUrl?: string | null;
+  torsoUrl?: string | null;
+  legsUrl?: string | null;
+  feetUrl?: string | null;
+}
+
+function getDefaultSlotMeshesOnRig(
+  glbRoot: THREE.Group,
+  slot: ModularApparelSlotName,
+): THREE.Mesh[] {
+  const cacheKey = `defaultSlotMeshes_${slot}`;
+  const cached = glbRoot.userData[cacheKey] as THREE.Mesh[] | undefined;
+  if (cached) return cached;
+
+  const found: THREE.Mesh[] = [];
+  glbRoot.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    const mesh = node as THREE.Mesh;
+    if (mesh.userData?.isCustomEquippedTorso || mesh.userData?.customEquippedSlot) return;
+    const lower = (mesh.name || '').toLowerCase();
+    if (!lower.startsWith(`${slot}_`)) return;
+    // Keep underlying skin & its outline visible for legs/feet slots; swap complete shells for hair/hands/neck.
+    if ((slot === 'legs' || slot === 'feet') && lower.includes('_skin')) return;
+    found.push(mesh);
+  });
+  glbRoot.userData[cacheKey] = found;
+  return found;
+}
+
+function getDefaultSlotSkinStates(
+  glbRoot: THREE.Group,
+  slot: 'legs' | 'feet',
+): StoredRigDefaultTorsoState['skinMeshes'] {
+  const cacheKey = `defaultSlotSkinStates_${slot}`;
+  const cached = glbRoot.userData[cacheKey] as
+    | StoredRigDefaultTorsoState['skinMeshes']
+    | undefined;
+  if (cached) return cached;
+
+  const found: StoredRigDefaultTorsoState['skinMeshes'] = [];
+  glbRoot.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    const mesh = node as THREE.Mesh;
+    if (mesh.userData?.isCustomEquippedTorso || mesh.userData?.customEquippedSlot) return;
+    const lower = (mesh.name || '').toLowerCase();
+    if (lower.startsWith(`${slot}_`) && lower.includes('_skin')) {
+      ensurePerRigUniqueSkinGeometry(mesh);
+      found.push({ mesh, originalIndex: getOrCapturePristineSkinIndex(mesh.geometry) });
+    }
+  });
+  glbRoot.userData[cacheKey] = found;
+  return found;
+}
+
+function createTrimmedSlotSkinIndexBuffer(
+  geometry: THREE.BufferGeometry,
+  origIndex: THREE.BufferAttribute,
+  keepPredicate: (avgY: number) => boolean,
+): THREE.BufferAttribute {
+  const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!posAttr) return origIndex;
+  const srcArr = origIndex.array;
+  const kept: number[] = [];
+  for (let i = 0; i + 2 < origIndex.count; i += 3) {
+    const ia = Number(srcArr[i]);
+    const ib = Number(srcArr[i + 1]);
+    const ic = Number(srcArr[i + 2]);
+    const avgY = (posAttr.getY(ia) + posAttr.getY(ib) + posAttr.getY(ic)) / 3;
+    if (keepPredicate(avgY)) {
+      kept.push(ia, ib, ic);
+    }
+  }
+  const IndexCtor = posAttr.count > 65535 ? Uint32Array : Uint16Array;
+  return new THREE.BufferAttribute(new IndexCtor(kept), 1);
+}
+
+/**
+ * Returns true only when an equipped `hands_` package actually supplies full bilateral palm/finger
+ * geometry (or an explicit `_skin` mesh) rather than a partial bracelet/nail/ring accessory overlay.
+ */
+function hasFullBilateralHandCoverage(
+  sourceSkinnedMeshes: readonly THREE.SkinnedMesh[],
+): boolean {
+  let leftPalmTris = 0;
+  let rightPalmTris = 0;
+  for (const sm of sourceSkinnedMeshes) {
+    const lower = (sm.name || '').toLowerCase();
+    if (lower.includes('outline')) continue;
+    if (lower.includes('_skin')) return true;
+    const pos = sm.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos || pos.count < 3) continue;
+    const idx = sm.geometry.getIndex();
+    const triIndexCount = idx ? idx.count : pos.count;
+    for (let i = 0; i + 2 < triIndexCount; i += 3) {
+      const ia = idx ? idx.getX(i) : i;
+      const ib = idx ? idx.getX(i + 1) : i + 1;
+      const ic = idx ? idx.getX(i + 2) : i + 2;
+      const midX = (pos.getX(ia) + pos.getX(ib) + pos.getX(ic)) / 3;
+      const absX = Math.abs(midX);
+      if (absX < 0.635 || absX > 0.735) continue;
+      if (midX > 0) leftPalmTris++;
+      else rightPalmTris++;
+      if (leftPalmTris >= 160 && rightPalmTris >= 160) return true;
+    }
+  }
+  return false;
+}
+
+function applySlotSkinnedMeshesToBuddyRig(
+  rig: BuddyCharacterRig,
+  slot: ModularApparelSlotName,
+  sourceSkinnedMeshes: readonly THREE.SkinnedMesh[],
+): boolean {
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
+  }
+  const glbRoot = controller.glbRoot;
+  const defaultMeshes = getDefaultSlotMeshesOnRig(glbRoot, slot);
+  const attachedKey = `attachedCustomSlotMeshes_${slot}`;
+  detachAttachedRigMeshes(controller, glbRoot, attachedKey);
+
+  if (sourceSkinnedMeshes.length === 0) {
+    for (const defMesh of defaultMeshes) {
+      defMesh.visible = true;
+    }
+    if (slot === 'legs' || slot === 'feet') {
+      for (const skinEntry of getDefaultSlotSkinStates(glbRoot, slot)) {
+        const geo = ensurePerRigUniqueSkinGeometry(skinEntry.mesh);
+        restorePristineSkinPositions(geo);
+        const cur = geo.getIndex();
+        if (cur && cur !== skinEntry.originalIndex) {
+          geo.setIndex(skinEntry.originalIndex);
+        }
+      }
+    }
+    return true;
+  }
+
+  const hostParent: THREE.Object3D =
+    defaultMeshes[0]?.parent ??
+    getDefaultTorsoStateOnRig(glbRoot).defaultClothingMeshes[0]?.parent ??
+    glbRoot;
+  const newlyAttached = cloneAndBindModularSkinnedMeshes(
+    sourceSkinnedMeshes,
+    controller,
+    hostParent,
+    slot,
+  );
+
+  if (newlyAttached.length === 0) {
+    return false;
+  }
+
+  let minGarmentY = Infinity;
+  let maxGarmentY = -Infinity;
+  if (slot === 'legs' || slot === 'feet') {
+    for (const attached of newlyAttached) {
+      const lower = (attached.name || '').toLowerCase();
+      if (lower.includes('outline') || lower.includes('_skin')) continue;
+      const pos = attached.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (pos) {
+        for (let i = 0; i < pos.count; i++) {
+          const y = pos.getY(i);
+          if (y < minGarmentY) minGarmentY = y;
+          if (y > maxGarmentY) maxGarmentY = y;
+        }
+      }
+    }
+  }
+
+  glbRoot.userData[attachedKey] = newlyAttached;
+  const hideDefaultSlotMeshes =
+    slot !== 'hands' || hasFullBilateralHandCoverage(sourceSkinnedMeshes);
+  for (const defMesh of defaultMeshes) {
+    defMesh.visible = !hideDefaultSlotMeshes;
+  }
+  if (slot === 'legs' && Number.isFinite(minGarmentY)) {
+    // Shorts/skirts with distressed or arched hems need extra thigh height clearance compared to full pants
+    const maxKeepY = minGarmentY >= 0.40 ? minGarmentY + 0.065 : minGarmentY + 0.025;
+    for (const skinEntry of getDefaultSlotSkinStates(glbRoot, 'legs')) {
+      skinEntry.mesh.visible = true;
+      const geo = ensurePerRigUniqueSkinGeometry(skinEntry.mesh);
+      restorePristineSkinPositions(geo);
+      if (skinEntry.originalIndex) {
+        geo.setIndex(
+          createTrimmedSlotSkinIndexBuffer(
+            geo,
+            skinEntry.originalIndex,
+            (avgY) => avgY <= maxKeepY,
+          ),
+        );
+      }
+      // Smoothly tuck covered thigh skin inside shorts/skirt hem band so thigh skin never pokes out
+      if (minGarmentY >= 0.40) {
+        const isOutline = (skinEntry.mesh.name || '').toLowerCase().includes('outline');
+        applyCoveredSkinHemTuck(geo, minGarmentY, maxKeepY, 0.006, isOutline);
+      }
+    }
+  } else if (slot === 'feet' && Number.isFinite(maxGarmentY)) {
+    const minKeepY = maxGarmentY - 0.008;
+    for (const skinEntry of getDefaultSlotSkinStates(glbRoot, 'feet')) {
+      skinEntry.mesh.visible = true;
+      const geo = ensurePerRigUniqueSkinGeometry(skinEntry.mesh);
+      restorePristineSkinPositions(geo);
+      if (skinEntry.originalIndex) {
+        geo.setIndex(
+          createTrimmedSlotSkinIndexBuffer(
+            geo,
+            skinEntry.originalIndex,
+            (avgY) => avgY >= minKeepY,
+          ),
+        );
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Binds or restores a modular `hair`, `legs`, `feet`, `hands`, or `neck` apparel `.glb` onto an upgraded `BuddyCharacterRig`.
+ */
+export function applyEquippedApparelSlotToBuddyRig(
+  rig: BuddyCharacterRig,
+  slot: ModularApparelSlotName,
+  slotGltf: GLTF | null,
+): boolean {
+  const applied = !slotGltf
+    ? applySlotSkinnedMeshesToBuddyRig(rig, slot, [])
+    : (prepareModularApparelGltfMaterials(slotGltf),
+      applySlotSkinnedMeshesToBuddyRig(rig, slot, collectGltfSkinnedMeshes(slotGltf)));
+  if (applied) {
+    rig.customGlbController?.secondaryPhysics?.refresh();
+    syncRigControllerDefaultMaterials(rig.customGlbController);
+  }
+  return applied;
+}
+
+type CostumeMeshBucketKey = 'torso' | ModularApparelSlotName;
+
+const COSTUME_BUCKET_PREFIXES: ReadonlyArray<readonly [string, CostumeMeshBucketKey]> = [
+  ['torso_', 'torso'],
+  ['legs_', 'legs'],
+  ['feet_', 'feet'],
+  ['hands_', 'hands'],
+  ['neck_', 'neck'],
+  ['hair_', 'hair'],
+];
+
+function classifyCostumeMeshSlot(meshName: string): CostumeMeshBucketKey {
+  const lower = (meshName || '').toLowerCase();
+  for (const [prefix, slot] of COSTUME_BUCKET_PREFIXES) {
+    if (lower.startsWith(prefix)) {
+      return slot;
+    }
+  }
+  return 'torso';
+}
+
+/**
+ * Equips or unequips a bundled multi-part custom costume `.glb` (`torso_`, `legs_`, `feet_`, `hands_`, `neck_`, optional `hair_`)
+ * on an upgraded `BuddyCharacterRig`, leaving base slots not included in the costume intact (such as head, ears, or base hair).
+ */
+export function applyEquippedCostumeToBuddyRig(
+  rig: BuddyCharacterRig,
+  costumeGltf: GLTF | null,
+): boolean {
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
+  }
+  const glbRoot = controller.glbRoot;
+  const prevSlots = (glbRoot.userData.activeCostumeSlots ?? []) as CostumeMeshBucketKey[];
+
+  if (!costumeGltf) {
+    for (const prevSlot of prevSlots) {
+      if (prevSlot === 'torso') {
+        applyTorsoSkinnedMeshesToBuddyRig(rig, []);
+      } else {
+        applySlotSkinnedMeshesToBuddyRig(rig, prevSlot, []);
+      }
+    }
+    glbRoot.userData.activeCostumeSlots = [];
+    controller.secondaryPhysics?.refresh();
+    syncRigControllerDefaultMaterials(controller);
+    return true;
+  }
+
+  prepareModularApparelGltfMaterials(costumeGltf);
+  const buckets = new Map<CostumeMeshBucketKey, THREE.SkinnedMesh[]>();
+  for (const sm of collectGltfSkinnedMeshes(costumeGltf)) {
+    const bucketKey = classifyCostumeMeshSlot(sm.name);
+    const list = buckets.get(bucketKey);
+    if (list) {
+      list.push(sm);
+    } else {
+      buckets.set(bucketKey, [sm]);
+    }
+  }
+
+  for (const prevSlot of prevSlots) {
+    if (!buckets.has(prevSlot)) {
+      if (prevSlot === 'torso') {
+        applyTorsoSkinnedMeshesToBuddyRig(rig, []);
+      } else {
+        applySlotSkinnedMeshesToBuddyRig(rig, prevSlot, []);
+      }
+    }
+  }
+
+  const appliedSlots: CostumeMeshBucketKey[] = [];
+  let appliedAny = false;
+  for (const [slotKey, meshes] of buckets.entries()) {
+    const slotApplied =
+      slotKey === 'torso'
+        ? applyTorsoSkinnedMeshesToBuddyRig(rig, meshes)
+        : applySlotSkinnedMeshesToBuddyRig(rig, slotKey, meshes);
+    if (slotApplied) {
+      appliedSlots.push(slotKey);
+      appliedAny = true;
+    }
+  }
+  glbRoot.userData.activeCostumeSlots = appliedSlots;
+  if (appliedAny) {
+    controller.secondaryPhysics?.refresh();
+    syncRigControllerDefaultMaterials(controller);
+  }
+  return appliedAny;
+}
+
+/**
+ * Loads and equips a complete modular outfit (`costume`, `hair`, `torso`, `legs`, `feet`) on a `BuddyCharacterRig`,
+ * persisting across async base avatar upgrades cleanly.
+ */
+export async function setBuddyRigModularOutfitUrls(
+  rig: BuddyCharacterRig,
+  outfit: BuddyModularOutfitUrls,
+): Promise<boolean> {
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.desiredModularOutfit = { ...outfit };
+  }
+  const nextSeq = ((rig.bodyGroupRef?.userData?.modularOutfitSeq as number | undefined) ?? 0) + 1;
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.modularOutfitSeq = nextSeq;
+  }
+
+  const slotEntries: Array<readonly ['hair' | 'legs' | 'feet', string | null | undefined]> = [
+    ['hair', outfit.hairUrl],
+    ['legs', outfit.legsUrl],
+    ['feet', outfit.feetUrl],
+  ];
+
+  const [costumeGltf, torsoGltf, hairGltf, legsGltf, feetGltf] = await Promise.all([
+    outfit.costumeUrl?.trim()
+      ? loadModularApparelGltf(outfit.costumeUrl.trim())
+      : Promise.resolve(null),
+    outfit.torsoUrl?.trim() ? loadModularApparelGltf(outfit.torsoUrl.trim()) : Promise.resolve(null),
+    ...slotEntries.map(([, u]) =>
+      u?.trim() ? loadModularApparelGltf(u.trim()) : Promise.resolve(null),
+    ),
+  ]);
+
+  if (rig.bodyGroupRef && rig.bodyGroupRef.userData.modularOutfitSeq !== nextSeq) {
+    return false;
+  }
+
+  let ok = false;
+  if (outfit.costumeUrl !== undefined) {
+    ok = applyEquippedCostumeToBuddyRig(rig, costumeGltf) || ok;
+  }
+  if (torsoGltf !== null || (outfit.torsoUrl !== undefined && !costumeGltf)) {
+    ok = applyEquippedTorsoToBuddyRig(rig, torsoGltf) || ok;
+  }
+  const loadedBySlot: Record<'hair' | 'legs' | 'feet', GLTF | null> = {
+    hair: hairGltf,
+    legs: legsGltf,
+    feet: feetGltf,
+  };
+  for (const [slotName, rawUrl] of slotEntries) {
+    const slotGltf = loadedBySlot[slotName];
+    if (slotGltf !== null || (rawUrl !== undefined && !costumeGltf)) {
+      ok = applyEquippedApparelSlotToBuddyRig(rig, slotName, slotGltf) || ok;
+    }
+  }
+
+  const tintHex = rig.bodyGroupRef?.userData?.citizenClothingTintHex as string | undefined;
+  if (ok && tintHex) {
+    applyCitizenClothingTint(rig, tintHex);
+  }
+  return ok;
+}
+
+const _citizenTintColor = new THREE.Color();
+const _citizenTintTarget = new THREE.Color();
+const _citizenWhiteColor = new THREE.Color(0xffffff);
+
+/**
+ * Applies a non-destructive clothing tint to non-skin, non-hair, non-outline stylized
+ * garment materials on an upgraded custom PelvisRoot character rig while preserving
+ * `onBeforeCompile` and `customProgramCacheKey` shaders.
+ */
+export function applyCitizenClothingTint(
+  rig: BuddyCharacterRig,
+  tintHex: string | null | undefined,
+  blendStrength = 0.42,
+): boolean {
+  const cleanHex = tintHex?.trim();
+  if (!cleanHex) return false;
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.citizenClothingTintHex = cleanHex;
+  }
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
+  }
+
+  _citizenTintTarget.set(cleanHex);
+  const clampedBlend = Math.max(0, Math.min(1, blendStrength));
+  _citizenTintColor.copy(_citizenWhiteColor).lerp(_citizenTintTarget, clampedBlend);
+
+  const tintSingleMaterial = (mat: THREE.Material): THREE.Material => {
+    const lowerMatName = (mat.name || '').toLowerCase();
+    const cacheKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey() : '';
+    const isClothShader = !cacheKey || cacheKey.includes('cloth');
+    if (
+      !isClothShader ||
+      mat.userData?.isBodySkinMaterial ||
+      mat.userData?.isHairMaterial ||
+      mat.userData?.isOutlineMaterial ||
+      lowerMatName.includes('outline') ||
+      lowerMatName.includes('skin') ||
+      lowerMatName.includes('hair') ||
+      lowerMatName.includes('eye') ||
+      lowerMatName.includes('a1f8751f')
+    ) {
+      return mat;
+    }
+
+    const srcColorMat = mat as THREE.MeshBasicMaterial & THREE.MeshStandardMaterial;
+    if (!srcColorMat.color) return mat;
+
+    const alreadyCloned = Boolean(mat.userData?.isCitizenClonedClothMat);
+    const baseColor =
+      (mat.userData?.__citizenBaseColor as THREE.Color | undefined)?.clone() ??
+      srcColorMat.color.clone();
+
+    let targetMat = srcColorMat;
+    if (!alreadyCloned) {
+      const cloned = srcColorMat.clone() as THREE.MeshBasicMaterial & THREE.MeshStandardMaterial;
+      cloned.onBeforeCompile = mat.onBeforeCompile;
+      cloned.customProgramCacheKey = mat.customProgramCacheKey;
+      cloned.userData = {
+        ...(mat.userData ?? {}),
+        isCitizenClonedClothMat: true,
+        __citizenBaseColor: baseColor.clone(),
+      };
+      targetMat = cloned;
+    }
+
+    targetMat.color.copy(baseColor).multiply(_citizenTintColor);
+    targetMat.needsUpdate = true;
+    return targetMat;
+  };
+
+  let modified = false;
+  for (const entry of controller.meshes) {
+    const lowerMeshName = (entry.mesh.name || '').toLowerCase();
+    if (
+      lowerMeshName.includes('outline') ||
+      lowerMeshName.includes('hair') ||
+      lowerMeshName.includes('_skin') ||
+      lowerMeshName.startsWith('ears_') ||
+      lowerMeshName.startsWith('head') ||
+      lowerMeshName.includes('eye')
+    ) {
+      continue;
+    }
+
+    if (Array.isArray(entry.mesh.material)) {
+      const nextMats = entry.mesh.material.map(tintSingleMaterial);
+      entry.mesh.material = nextMats;
+      entry.defaultMat = nextMats;
+      modified = true;
+    } else if (entry.mesh.material) {
+      const nextMat = tintSingleMaterial(entry.mesh.material);
+      if (nextMat !== entry.mesh.material) {
+        entry.mesh.material = nextMat;
+        entry.defaultMat = nextMat;
+        modified = true;
+      } else if (entry.mesh.material.userData?.isCitizenClonedClothMat) {
+        modified = true;
+      }
+    }
+  }
+  return modified;
 }
 
 const SIT_VARIANT_CLIP_MAP: Record<SitAnimVariant, string> = {
@@ -14342,6 +17549,7 @@ function stepCharBuddiesGlbRigController(
   scooterRidePose: ScooterRiderRigPose | null = null,
   cafeWorkAction: CafeWorkAnimAction = 'idle',
   sittingVariant: SitAnimVariant = 'chair',
+  secondaryPhysicsLod?: SecondaryPhysicsLodMode,
 ) {
   // Skip skeletal mixer evaluation & bone world-matrix updates only when the unit root is hidden / chunk-culled
   if (rig.bodyGroupRef?.parent && !rig.bodyGroupRef.parent.visible) {
@@ -14353,6 +17561,7 @@ function stepCharBuddiesGlbRigController(
   const overrideMat =
     defaultHeadMat && rig.headMesh.material !== defaultHeadMat ? rig.headMesh.material : null;
   for (const entry of ctrl.meshes) {
+    if (entry.mesh.userData?.isRuntimeOutlineMesh) continue;
     const targetMat = overrideMat ?? entry.defaultMat;
     if (entry.mesh.material !== targetMat) {
       entry.mesh.material = targetMat;
@@ -14734,7 +17943,8 @@ function stepCharBuddiesGlbRigController(
       timeScale = forwardDir < -0.35 ? -1.0 : 1.0;
     } else if (!carryingCrate && (weaponId === 'unarmed' || weaponId === 'fishing_rod')) {
       // FEMALE / UNARMED BASIC LOCOMOTION PACK (NON-COMBAT)
-      const isUnarmedWalk = moveSpeed > 0 && moveSpeed < 6.35;
+      const unarmedWalkSpeedCap = rig.runClipOverrideName ? 3.8 : 6.35;
+      const isUnarmedWalk = moveSpeed > 0 && moveSpeed < unarmedWalkSpeedCap;
       if (strafeDir < -0.48 && Math.abs(forwardDir) <= 0.45) {
         if (isUnarmedWalk && ctrl.clips.has('unarmed_walk_strafe_left.001')) {
           targetClip = 'unarmed_walk_strafe_left.001';
@@ -14876,10 +18086,38 @@ function stepCharBuddiesGlbRigController(
     timeScale = 1.0;
   }
 
-  // A rig may carry a personal idle (e.g. Kai's fold-arms take): whenever the
-  // selection lands on the shared idle, swap in the rig's own take instead.
+  // A rig may carry a personal idle, walk, run, or sit take: swap in the rig's own clip when active.
+  if (
+    ctrl.validNodeNames &&
+    ((rig.idleClipOverrideName && !ctrl.clips.has(rig.idleClipOverrideName)) ||
+      (rig.walkClipOverrideName && !ctrl.clips.has(rig.walkClipOverrideName)) ||
+      (rig.runClipOverrideName && !ctrl.clips.has(rig.runClipOverrideName)) ||
+      (rig.sitClipOverrideName && !ctrl.clips.has(rig.sitClipOverrideName)))
+  ) {
+    syncLoadedPersonalClipsIntoTemplate(ctrl.clips, ctrl.validNodeNames);
+  }
   if (targetClip === 'idle.001' && rig.idleClipOverrideName && ctrl.clips.has(rig.idleClipOverrideName)) {
     targetClip = rig.idleClipOverrideName;
+  } else if (
+    targetClip === 'walk.001' &&
+    rig.walkClipOverrideName &&
+    ctrl.clips.has(rig.walkClipOverrideName)
+  ) {
+    targetClip = rig.walkClipOverrideName;
+  } else if (
+    targetClip === 'run.001' &&
+    rig.runClipOverrideName &&
+    ctrl.clips.has(rig.runClipOverrideName)
+  ) {
+    targetClip = rig.runClipOverrideName;
+  } else if (
+    (targetClip === 'sitting.001' ||
+      targetClip === 'bench_lounge.001' ||
+      targetClip === 'chair_casual.001') &&
+    rig.sitClipOverrideName &&
+    ctrl.clips.has(rig.sitClipOverrideName)
+  ) {
+    targetClip = rig.sitClipOverrideName;
   }
 
   const prevClipName = ctrl.activeClipName;
@@ -15118,14 +18356,19 @@ function stepCharBuddiesGlbRigController(
     (isSleeping && targetClip === 'sleeping.001') || isSitting
       ? CUSTOM_POSE_SURFACE_ANCHOR[targetClip]
       : undefined;
-  if (bodyGroup && (!isSeatedOrPiloting || surfaceAnchorSpec || needHandSampling || isSitting)) {
+  const didFloorPass = Boolean(
+    bodyGroup && (!isSeatedOrPiloting || surfaceAnchorSpec || needHandSampling || isSitting),
+  );
+  if (didFloorPass && bodyGroup) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
     if (!isSeatedOrPiloting) {
       const minFootY = measureLowestFootBoneLocalY(ctrl.bones, ctrl.glbRoot);
       if (Number.isFinite(minFootY)) {
         footGroundShiftY = (minFootY - ctrl.standingSoleOffsetY) * ctrl.glbRoot.scale.y;
-        ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
-        ctrl.glbRoot.updateWorldMatrix(true, true);
+        if (Math.abs(footGroundShiftY) > 1e-4) {
+          ctrl.glbRoot.position.y = ctrl.baseRootY - footGroundShiftY;
+          ctrl.glbRoot.updateWorldMatrix(false, true);
+        }
       }
     } else if (surfaceAnchorSpec) {
       alignBodyReferenceToSurfaceLocalY(
@@ -15276,6 +18519,30 @@ function stepCharBuddiesGlbRigController(
   } else {
     ctrl.hasHandBonePositions = false;
   }
+
+  if (ctrl.secondaryPhysics) {
+    const velScratch = ctrl.secWorldVelScratch ?? (ctrl.secWorldVelScratch = new THREE.Vector3());
+    const signedSpeed = isMoving ? moveSpeed * (forwardDir < -0.25 ? -1 : 1) : 0;
+    const sinY = Math.sin(yaw);
+    const cosY = Math.cos(yaw);
+    const strafeScale = Math.abs(strafeDir) > 0.15 ? moveSpeed * strafeDir * 0.65 : 0;
+    velScratch.set(
+      sinY * signedSpeed + cosY * strafeScale,
+      jumpOffset > 0.05 ? 1.4 : 0,
+      cosY * signedSpeed - sinY * strafeScale,
+    );
+    const yawRate = deltaYaw / Math.max(0.008, stepDt);
+    const breezePhase = nowMs * 0.0014;
+    const isScooterActive = Boolean(scooterRidePose && scooterRidePose.blend > 0.001 && bodyGroup);
+    const secState = ctrl.secStateScratch ?? (ctrl.secStateScratch = {});
+    secState.worldVelocity = velScratch;
+    secState.angularYawRate = yawRate;
+    secState.windX = 0.42 + Math.sin(breezePhase) * 0.24;
+    secState.windZ = 0.18 + Math.cos(breezePhase * 0.73) * 0.18;
+    secState.lod = secondaryPhysicsLod ?? 'full';
+    secState.skipRigMatrixWorldUpdate = didFloorPass || isScooterActive;
+    ctrl.secondaryPhysics.update(stepDt, secState);
+  }
 }
 
 /**
@@ -15315,6 +18582,7 @@ export function updateCharacterWeaponStance(
   cafeWorkAction: CafeWorkAnimAction = 'idle',
   sittingVariant: SitAnimVariant = 'chair',
   cafeConsumingItemId: CafeMenuItemId | null = rig.cafeConsumingItemId ?? null,
+  secondaryPhysicsLod?: SecondaryPhysicsLodMode,
 ) {
   rig.cafeConsumingItemId = cafeConsumingItemId;
   if (rig.customGlbController) {
@@ -15342,6 +18610,7 @@ export function updateCharacterWeaponStance(
       scooterRidePose,
       cafeWorkAction,
       sittingVariant,
+      secondaryPhysicsLod,
     );
   }
   const showCafeConsumingProp = Boolean(
@@ -15733,7 +19002,7 @@ export function buildProceduralBuddyAvatar(
   isSoftwareGl: boolean,
   isSeatedRider = false,
   preferredGender?: CharacterGender,
-  isPlayerAvatar = false,
+  _isPlayerAvatar = false,
 ): BuddyCharacterRig {
   if (windUniforms?.uLightDirection) {
     blitzStylizedCharUniforms.uLightDirection.value.copy(windUniforms.uLightDirection.value);
@@ -15910,12 +19179,10 @@ export function buildProceduralBuddyAvatar(
   };
 
   const resolvedGender = preferredGender ?? activeDefaultCharacterGender;
-  const femaleDefaultGltf = isPlayerAvatar
-    ? cachedLoadedBlitzAssets?.playerFemaleGlb ?? cachedLoadedBlitzAssets?.charBuddiesGltf
-    : cachedLoadedBlitzAssets?.charBuddiesGltf;
-  const maleDefaultGltf = isPlayerAvatar
-    ? cachedLoadedBlitzAssets?.playerMaleGlb ?? cachedLoadedBlitzAssets?.manCharacterBuddiesGltf
-    : cachedLoadedBlitzAssets?.manCharacterBuddiesGltf;
+  const femaleDefaultGltf =
+    cachedLoadedBlitzAssets?.playerFemaleGlb ?? cachedLoadedBlitzAssets?.ambientFemaleNpcGlb;
+  const maleDefaultGltf =
+    cachedLoadedBlitzAssets?.playerMaleGlb ?? cachedLoadedBlitzAssets?.ambientMaleNpcGlb;
   const defaultGltf =
     resolvedGender === 'male'
       ? maleDefaultGltf ?? femaleDefaultGltf
@@ -15931,6 +19198,1700 @@ export function buildProceduralBuddyAvatar(
   return rig;
 }
 
+// ============================================================================
+// URBAN TRAFFIC SIGNAGE 1:1 PBR MATERIALS, FILLETED PLATES & RETROREFLECTIVE ART
+// ============================================================================
+
+interface TrafficSignPbrMaterials {
+  envMap: THREE.Texture;
+  galvanizedMat: THREE.MeshStandardMaterial;
+  brushedAluminumMat: THREE.MeshStandardMaterial;
+  stopRedBackMat: THREE.MeshStandardMaterial;
+  zincHardwareMat: THREE.MeshStandardMaterial;
+  retroRoughnessMap: THREE.Texture;
+  retroBumpMap: THREE.Texture;
+}
+
+function signHash2D(x: number, y: number): number {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return n - Math.floor(n);
+}
+
+function createTrafficSignFallbackDataTex(
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  colorSpace: THREE.ColorSpace = THREE.NoColorSpace,
+): THREE.DataTexture {
+  const tex = new THREE.DataTexture(new Uint8Array([r, g, b, a]), 1, 1, THREE.RGBAFormat);
+  tex.colorSpace = colorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function finalizeTrafficSignTexture(
+  canvas: HTMLCanvasElement,
+  colorSpace: THREE.ColorSpace,
+  repeatWrapping: boolean,
+): THREE.CanvasTexture {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = colorSpace;
+  tex.wrapS = repeatWrapping ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+  tex.wrapT = repeatWrapping ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createTrafficSignOutdoorEnvMap(): THREE.Texture {
+  if (typeof document === 'undefined') {
+    const fallback = createTrafficSignFallbackDataTex(196, 214, 232, 255, THREE.SRGBColorSpace);
+    fallback.mapping = THREE.EquirectangularReflectionMapping;
+    return fallback;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    const fallback = createTrafficSignFallbackDataTex(196, 214, 232, 255, THREE.SRGBColorSpace);
+    fallback.mapping = THREE.EquirectangularReflectionMapping;
+    return fallback;
+  }
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, 128);
+  skyGrad.addColorStop(0.0, '#6aa8ea');
+  skyGrad.addColorStop(0.34, '#b2dbff');
+  skyGrad.addColorStop(0.49, '#f7ebd4');
+  skyGrad.addColorStop(0.53, '#b5aa94');
+  skyGrad.addColorStop(0.78, '#778478');
+  skyGrad.addColorStop(1.0, '#5c665d');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, 256, 128);
+
+  const sunHotspot = ctx.createRadialGradient(184, 34, 2, 184, 34, 42);
+  sunHotspot.addColorStop(0.0, 'rgba(255, 252, 235, 1.0)');
+  sunHotspot.addColorStop(0.4, 'rgba(255, 240, 198, 0.72)');
+  sunHotspot.addColorStop(1.0, 'rgba(255, 240, 198, 0.0)');
+  ctx.fillStyle = sunHotspot;
+  ctx.fillRect(136, 0, 96, 80);
+
+  const fillHotspot = ctx.createRadialGradient(56, 42, 2, 56, 42, 46);
+  fillHotspot.addColorStop(0.0, 'rgba(222, 240, 255, 0.78)');
+  fillHotspot.addColorStop(1.0, 'rgba(222, 240, 255, 0.0)');
+  ctx.fillStyle = fillHotspot;
+  ctx.fillRect(10, 0, 96, 92);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates 3-map hot-dip Dark Graphite Galvanized Steel PBR textures (#505963..#6c7682)
+ * using periodic Voronoi zinc spangle facets so poles, gussets, and baseplates read cleanly.
+ */
+function createGalvanizedSteelPbrSet(): {
+  map: THREE.Texture;
+  roughnessMap: THREE.Texture;
+  bumpMap: THREE.Texture;
+} {
+  if (typeof document === 'undefined') {
+    return {
+      map: createTrafficSignFallbackDataTex(92, 102, 114, 255, THREE.SRGBColorSpace),
+      roughnessMap: createTrafficSignFallbackDataTex(150, 150, 150, 255),
+      bumpMap: createTrafficSignFallbackDataTex(128, 128, 128, 255),
+    };
+  }
+  const size = 256;
+  const aCanvas = document.createElement('canvas');
+  const rCanvas = document.createElement('canvas');
+  const bCanvas = document.createElement('canvas');
+  aCanvas.width = rCanvas.width = bCanvas.width = size;
+  aCanvas.height = rCanvas.height = bCanvas.height = size;
+  const aCtx = aCanvas.getContext('2d');
+  const rCtx = rCanvas.getContext('2d');
+  const bCtx = bCanvas.getContext('2d');
+  if (!aCtx || !rCtx || !bCtx) {
+    return {
+      map: createTrafficSignFallbackDataTex(92, 102, 114, 255, THREE.SRGBColorSpace),
+      roughnessMap: createTrafficSignFallbackDataTex(150, 150, 150, 255),
+      bumpMap: createTrafficSignFallbackDataTex(128, 128, 128, 255),
+    };
+  }
+
+  const grid = 10;
+  const seedsX = new Float32Array(grid * grid);
+  const seedsY = new Float32Array(grid * grid);
+  const seedsShade = new Float32Array(grid * grid);
+  const seedsAngle = new Float32Array(grid * grid);
+  for (let gy = 0; gy < grid; gy++) {
+    for (let gx = 0; gx < grid; gx++) {
+      const idx = gy * grid + gx;
+      seedsX[idx] = gx + 0.18 + signHash2D(gx * 3.1, gy * 5.7) * 0.64;
+      seedsY[idx] = gy + 0.18 + signHash2D(gx * 7.3, gy * 2.9) * 0.64;
+      seedsShade[idx] = signHash2D(gx * 11.1, gy * 13.7);
+      seedsAngle[idx] = signHash2D(gx * 17.3, gy * 19.9) * Math.PI * 2;
+    }
+  }
+
+  const aImg = aCtx.createImageData(size, size);
+  const rImg = rCtx.createImageData(size, size);
+  const bImg = bCtx.createImageData(size, size);
+  const aData = aImg.data;
+  const rData = rImg.data;
+  const bData = bImg.data;
+
+  for (let py = 0; py < size; py++) {
+    const uy = (py / size) * grid;
+    const cy = Math.floor(uy);
+    for (let px = 0; px < size; px++) {
+      const ux = (px / size) * grid;
+      const cx = Math.floor(ux);
+      let bestD2 = 99;
+      let secondD2 = 99;
+      let bestIdx = 0;
+      let bestDx = 0;
+      let bestDy = 0;
+
+      for (let oy = -1; oy <= 1; oy++) {
+        const ny = (cy + oy + grid) % grid;
+        for (let ox = -1; ox <= 1; ox++) {
+          const nx = (cx + ox + grid) % grid;
+          const idx = ny * grid + nx;
+          let dx = seedsX[idx] - ux;
+          let dy = seedsY[idx] - uy;
+          if (dx > grid * 0.5) dx -= grid;
+          if (dx < -grid * 0.5) dx += grid;
+          if (dy > grid * 0.5) dy -= grid;
+          if (dy < -grid * 0.5) dy += grid;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) {
+            secondD2 = bestD2;
+            bestD2 = d2;
+            bestIdx = idx;
+            bestDx = dx;
+            bestDy = dy;
+          } else if (d2 < secondD2) {
+            secondD2 = d2;
+          }
+        }
+      }
+
+      const edgeGap = Math.min(1, Math.sqrt(secondD2) - Math.sqrt(bestD2));
+      const ang = seedsAngle[bestIdx];
+      const crystalStreak = Math.sin((bestDx * Math.cos(ang) + bestDy * Math.sin(ang)) * 18.0) * 0.5 + 0.5;
+      const facetVal = seedsShade[bestIdx] * 0.72 + crystalStreak * 0.28;
+      const rollBand = (signHash2D(px * 0.35, py * 1.4) - 0.5) * 0.08;
+      const luma = Math.max(0, Math.min(1, facetVal + rollBand));
+
+      // #505963 (80,89,99) to #6c7682 (108,118,130)
+      const rCol = Math.round(80 + luma * 28);
+      const gCol = Math.round(89 + luma * 29);
+      const bCol = Math.round(99 + luma * 31);
+      const roughByte = Math.round(118 + (1 - luma) * 52 + (edgeGap < 0.06 ? 18 : 0));
+      const bumpByte = Math.round(112 + facetVal * 32 - (edgeGap < 0.05 ? 16 : 0));
+
+      const pOff = (py * size + px) * 4;
+      aData[pOff] = rCol;
+      aData[pOff + 1] = gCol;
+      aData[pOff + 2] = bCol;
+      aData[pOff + 3] = 255;
+
+      rData[pOff] = rData[pOff + 1] = rData[pOff + 2] = roughByte;
+      rData[pOff + 3] = 255;
+
+      bData[pOff] = bData[pOff + 1] = bData[pOff + 2] = bumpByte;
+      bData[pOff + 3] = 255;
+    }
+  }
+  aCtx.putImageData(aImg, 0, 0);
+  rCtx.putImageData(rImg, 0, 0);
+  bCtx.putImageData(bImg, 0, 0);
+
+  return {
+    map: finalizeTrafficSignTexture(aCanvas, THREE.SRGBColorSpace, true),
+    roughnessMap: finalizeTrafficSignTexture(rCanvas, THREE.NoColorSpace, true),
+    bumpMap: finalizeTrafficSignTexture(bCanvas, THREE.NoColorSpace, true),
+  };
+}
+
+/**
+ * Generates Brushed Mill Aluminum (#ccd4dd) + Red Anodized Aluminum PBR textures.
+ */
+function createBrushedAluminumPbrSet(): {
+  map: THREE.Texture;
+  redMap: THREE.Texture;
+  roughnessMap: THREE.Texture;
+  bumpMap: THREE.Texture;
+} {
+  if (typeof document === 'undefined') {
+    return {
+      map: createTrafficSignFallbackDataTex(204, 212, 221, 255, THREE.SRGBColorSpace),
+      redMap: createTrafficSignFallbackDataTex(194, 38, 44, 255, THREE.SRGBColorSpace),
+      roughnessMap: createTrafficSignFallbackDataTex(112, 112, 112, 255),
+      bumpMap: createTrafficSignFallbackDataTex(128, 128, 128, 255),
+    };
+  }
+  const size = 256;
+  const aCanvas = document.createElement('canvas');
+  const redCanvas = document.createElement('canvas');
+  const rCanvas = document.createElement('canvas');
+  const bCanvas = document.createElement('canvas');
+  aCanvas.width = redCanvas.width = rCanvas.width = bCanvas.width = size;
+  aCanvas.height = redCanvas.height = rCanvas.height = bCanvas.height = size;
+  const aCtx = aCanvas.getContext('2d');
+  const redCtx = redCanvas.getContext('2d');
+  const rCtx = rCanvas.getContext('2d');
+  const bCtx = bCanvas.getContext('2d');
+  if (!aCtx || !redCtx || !rCtx || !bCtx) {
+    return {
+      map: createTrafficSignFallbackDataTex(204, 212, 221, 255, THREE.SRGBColorSpace),
+      redMap: createTrafficSignFallbackDataTex(194, 38, 44, 255, THREE.SRGBColorSpace),
+      roughnessMap: createTrafficSignFallbackDataTex(112, 112, 112, 255),
+      bumpMap: createTrafficSignFallbackDataTex(128, 128, 128, 255),
+    };
+  }
+
+  aCtx.fillStyle = '#ccd4dd';
+  aCtx.fillRect(0, 0, size, size);
+  redCtx.fillStyle = '#c4262c';
+  redCtx.fillRect(0, 0, size, size);
+  rCtx.fillStyle = 'rgb(112,112,112)';
+  rCtx.fillRect(0, 0, size, size);
+  bCtx.fillStyle = 'rgb(128,128,128)';
+  bCtx.fillRect(0, 0, size, size);
+
+  for (let y = 0; y < size; y++) {
+    const streak = signHash2D(y * 1.37, 4.19);
+    const bright = streak > 0.5;
+    const alpha = 0.06 + Math.abs(streak - 0.5) * 0.24;
+    aCtx.fillStyle = bright
+      ? `rgba(232, 239, 246, ${alpha.toFixed(3)})`
+      : `rgba(164, 174, 186, ${alpha.toFixed(3)})`;
+    aCtx.fillRect(0, y, size, 1);
+
+    redCtx.fillStyle = bright
+      ? `rgba(236, 78, 84, ${(alpha * 0.85).toFixed(3)})`
+      : `rgba(142, 22, 28, ${(alpha * 0.85).toFixed(3)})`;
+    redCtx.fillRect(0, y, size, 1);
+
+    const rShade = Math.round(92 + (1 - streak) * 44);
+    rCtx.fillStyle = `rgb(${rShade},${rShade},${rShade})`;
+    rCtx.fillRect(0, y, size, 1);
+
+    const bShade = Math.round(114 + streak * 28);
+    bCtx.fillStyle = `rgb(${bShade},${bShade},${bShade})`;
+    bCtx.fillRect(0, y, size, 1);
+  }
+
+  return {
+    map: finalizeTrafficSignTexture(aCanvas, THREE.SRGBColorSpace, true),
+    redMap: finalizeTrafficSignTexture(redCanvas, THREE.SRGBColorSpace, true),
+    roughnessMap: finalizeTrafficSignTexture(rCanvas, THREE.NoColorSpace, true),
+    bumpMap: finalizeTrafficSignTexture(bCanvas, THREE.NoColorSpace, true),
+  };
+}
+
+/**
+ * Generates Bright Zinc-Plated Hardware PBR textures + diamond-grade retroreflective micro-prism maps.
+ */
+function createZincAndRetroMicroSets(): {
+  zincMap: THREE.Texture;
+  zincRoughnessMap: THREE.Texture;
+  zincBumpMap: THREE.Texture;
+  retroRoughnessMap: THREE.Texture;
+  retroBumpMap: THREE.Texture;
+} {
+  if (typeof document === 'undefined') {
+    return {
+      zincMap: createTrafficSignFallbackDataTex(218, 226, 234, 255, THREE.SRGBColorSpace),
+      zincRoughnessMap: createTrafficSignFallbackDataTex(96, 96, 96, 255),
+      zincBumpMap: createTrafficSignFallbackDataTex(128, 128, 128, 255),
+      retroRoughnessMap: createTrafficSignFallbackDataTex(110, 110, 110, 255),
+      retroBumpMap: createTrafficSignFallbackDataTex(128, 128, 128, 255),
+    };
+  }
+
+  const zSize = 128;
+  const zACanvas = document.createElement('canvas');
+  const zRCanvas = document.createElement('canvas');
+  const zBCanvas = document.createElement('canvas');
+  zACanvas.width = zRCanvas.width = zBCanvas.width = zSize;
+  zACanvas.height = zRCanvas.height = zBCanvas.height = zSize;
+  const zACtx = zACanvas.getContext('2d');
+  const zRCtx = zRCanvas.getContext('2d');
+  const zBCtx = zBCanvas.getContext('2d');
+
+  if (zACtx && zRCtx && zBCtx) {
+    zACtx.fillStyle = '#dce4ec';
+    zACtx.fillRect(0, 0, zSize, zSize);
+    zRCtx.fillStyle = 'rgb(92,92,92)';
+    zRCtx.fillRect(0, 0, zSize, zSize);
+    zBCtx.fillStyle = 'rgb(128,128,128)';
+    zBCtx.fillRect(0, 0, zSize, zSize);
+    for (let i = 0; i < 240; i++) {
+      const x = signHash2D(i * 1.7, 3.1) * zSize;
+      const y = signHash2D(5.3, i * 2.3) * zSize;
+      const r = 3 + signHash2D(i, 9.7) * 8;
+      const bright = signHash2D(i * 4.1, 1.2) > 0.45;
+      zACtx.fillStyle = bright ? 'rgba(242,247,252,0.22)' : 'rgba(176,188,200,0.20)';
+      zACtx.beginPath();
+      zACtx.arc(x, y, r, 0, Math.PI * 2);
+      zACtx.fill();
+      zRCtx.fillStyle = bright ? 'rgba(72,72,72,0.25)' : 'rgba(122,122,122,0.25)';
+      zRCtx.beginPath();
+      zRCtx.arc(x, y, r, 0, Math.PI * 2);
+      zRCtx.fill();
+      zBCtx.fillStyle = bright ? 'rgba(146,146,146,0.28)' : 'rgba(110,110,110,0.28)';
+      zBCtx.beginPath();
+      zBCtx.arc(x, y, r, 0, Math.PI * 2);
+      zBCtx.fill();
+    }
+  }
+
+  // Retroreflective micro-prismatic diamond grid (512x512, UV [0..1] matches face textures 1:1)
+  const mSize = 512;
+  const mRCanvas = document.createElement('canvas');
+  const mBCanvas = document.createElement('canvas');
+  mRCanvas.width = mBCanvas.width = mSize;
+  mRCanvas.height = mBCanvas.height = mSize;
+  const mRCtx = mRCanvas.getContext('2d');
+  const mBCtx = mBCanvas.getContext('2d');
+  if (mRCtx && mBCtx) {
+    mRCtx.fillStyle = 'rgb(118,118,118)';
+    mRCtx.fillRect(0, 0, mSize, mSize);
+    mBCtx.fillStyle = 'rgb(128,128,128)';
+    mBCtx.fillRect(0, 0, mSize, mSize);
+    const cell = 16;
+    mRCtx.strokeStyle = 'rgba(74, 74, 74, 0.45)';
+    mRCtx.lineWidth = 1.2;
+    mBCtx.strokeStyle = 'rgba(164, 164, 164, 0.42)';
+    mBCtx.lineWidth = 1.2;
+    for (let d = -mSize; d < mSize * 2; d += cell) {
+      mRCtx.beginPath();
+      mRCtx.moveTo(d, 0);
+      mRCtx.lineTo(d + mSize, mSize);
+      mRCtx.moveTo(d + mSize, 0);
+      mRCtx.lineTo(d, mSize);
+      mRCtx.stroke();
+
+      mBCtx.beginPath();
+      mBCtx.moveTo(d, 0);
+      mBCtx.lineTo(d + mSize, mSize);
+      mBCtx.moveTo(d + mSize, 0);
+      mBCtx.lineTo(d, mSize);
+      mBCtx.stroke();
+    }
+  }
+
+  return {
+    zincMap: finalizeTrafficSignTexture(zACanvas, THREE.SRGBColorSpace, true),
+    zincRoughnessMap: finalizeTrafficSignTexture(zRCanvas, THREE.NoColorSpace, true),
+    zincBumpMap: finalizeTrafficSignTexture(zBCanvas, THREE.NoColorSpace, true),
+    retroRoughnessMap: finalizeTrafficSignTexture(mRCanvas, THREE.NoColorSpace, false),
+    retroBumpMap: finalizeTrafficSignTexture(mBCanvas, THREE.NoColorSpace, false),
+  };
+}
+
+function createTrafficSignPbrMaterials(): TrafficSignPbrMaterials {
+  const envMap = createTrafficSignOutdoorEnvMap();
+  const galv = createGalvanizedSteelPbrSet();
+  const alum = createBrushedAluminumPbrSet();
+  const zincAndRetro = createZincAndRetroMicroSets();
+
+  return {
+    envMap,
+    galvanizedMat: new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: galv.map,
+      roughnessMap: galv.roughnessMap,
+      bumpMap: galv.bumpMap,
+      bumpScale: 0.011,
+      metalness: 0.58,
+      roughness: 0.62,
+      envMap,
+      envMapIntensity: 0.95,
+    }),
+    brushedAluminumMat: new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: alum.map,
+      roughnessMap: alum.roughnessMap,
+      bumpMap: alum.bumpMap,
+      bumpScale: 0.006,
+      metalness: 0.72,
+      roughness: 0.44,
+      envMap,
+      envMapIntensity: 1.08,
+    }),
+    stopRedBackMat: new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: alum.redMap,
+      roughnessMap: alum.roughnessMap,
+      bumpMap: alum.bumpMap,
+      bumpScale: 0.006,
+      metalness: 0.52,
+      roughness: 0.44,
+      envMap,
+      envMapIntensity: 0.92,
+    }),
+    zincHardwareMat: new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: zincAndRetro.zincMap,
+      roughnessMap: zincAndRetro.zincRoughnessMap,
+      bumpMap: zincAndRetro.zincBumpMap,
+      bumpScale: 0.005,
+      metalness: 0.78,
+      roughness: 0.36,
+      envMap,
+      envMapIntensity: 1.16,
+    }),
+    retroRoughnessMap: zincAndRetro.retroRoughnessMap,
+    retroBumpMap: zincAndRetro.retroBumpMap,
+  };
+}
+
+function createInsetConvexPolygonPoints(
+  pts: ReadonlyArray<readonly [number, number]>,
+  inset: number,
+): [number, number][] {
+  const n = pts.length;
+  const out: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i - 1 + n) % n];
+    const curr = pts[i];
+    const next = pts[(i + 1) % n];
+    const bx = prev[0] - curr[0];
+    const by = prev[1] - curr[1];
+    const bLen = Math.hypot(bx, by) || 1;
+    const fx = next[0] - curr[0];
+    const fy = next[1] - curr[1];
+    const fLen = Math.hypot(fx, fy) || 1;
+    const uBx = bx / bLen;
+    const uBy = by / bLen;
+    const uFx = fx / fLen;
+    const uFy = fy / fLen;
+    const dot = Math.max(-0.999, Math.min(0.999, uBx * uFx + uBy * uFy));
+    const sinHalf = Math.sqrt(Math.max(1e-6, (1 - dot) * 0.5));
+    const bisX = uBx + uFx;
+    const bisY = uBy + uFy;
+    const bisLen = Math.hypot(bisX, bisY) || 1;
+    const dist = inset / sinHalf;
+    out.push([curr[0] + (bisX / bisLen) * dist, curr[1] + (bisY / bisLen) * dist]);
+  }
+  return out;
+}
+
+function traceRoundedConvexPolygon(
+  path: THREE.Path,
+  pts: ReadonlyArray<readonly [number, number]>,
+  cornerRadius: number,
+  clockwise: boolean,
+): void {
+  const ordered = clockwise ? [...pts].reverse() : pts;
+  const n = ordered.length;
+  for (let i = 0; i < n; i++) {
+    const prev = ordered[(i - 1 + n) % n];
+    const curr = ordered[i];
+    const next = ordered[(i + 1) % n];
+    const bx = prev[0] - curr[0];
+    const by = prev[1] - curr[1];
+    const bLen = Math.hypot(bx, by) || 1;
+    const fx = next[0] - curr[0];
+    const fy = next[1] - curr[1];
+    const fLen = Math.hypot(fx, fy) || 1;
+    const uBx = bx / bLen;
+    const uBy = by / bLen;
+    const uFx = fx / fLen;
+    const uFy = fy / fLen;
+    const dot = Math.max(-0.999, Math.min(0.999, uBx * uFx + uBy * uFy));
+    const sinHalf = Math.sqrt(Math.max(1e-6, (1 - dot) * 0.5));
+    const cosHalf = Math.sqrt(Math.max(1e-6, (1 + dot) * 0.5));
+    const trim = cornerRadius * (cosHalf / sinHalf);
+    const bisX = uBx + uFx;
+    const bisY = uBy + uFy;
+    const bisLen = Math.hypot(bisX, bisY) || 1;
+    const distCenter = cornerRadius / sinHalf;
+    const cx = curr[0] + (bisX / bisLen) * distCenter;
+    const cy = curr[1] + (bisY / bisLen) * distCenter;
+    const t1x = curr[0] + uBx * trim;
+    const t1y = curr[1] + uBy * trim;
+    const t2x = curr[0] + uFx * trim;
+    const t2y = curr[1] + uFy * trim;
+    const aStart = Math.atan2(t1y - cy, t1x - cx);
+    const aEnd = Math.atan2(t2y - cy, t2x - cx);
+    if (i === 0) {
+      path.moveTo(t1x, t1y);
+    } else {
+      path.lineTo(t1x, t1y);
+    }
+    path.absarc(cx, cy, cornerRadius, aStart, aEnd, clockwise);
+  }
+  path.closePath();
+}
+
+function createRoundedPolygonPlateGeos(
+  outerPts: ReadonlyArray<readonly [number, number]>,
+  cornerRadius: number,
+  bezelWidth: number,
+  depth: number,
+): {
+  bodyGeo: THREE.BufferGeometry;
+  rimGeo: THREE.BufferGeometry;
+  faceGeo: THREE.BufferGeometry;
+  faceInnerPts: [number, number][];
+  uvSpanMax: number;
+  uvYCenter: number;
+} {
+  const outerShape = new THREE.Shape();
+  traceRoundedConvexPolygon(outerShape, outerPts, cornerRadius, false);
+
+  const bodyGeo = new THREE.ExtrudeGeometry(outerShape, {
+    depth: 0.022,
+    bevelEnabled: true,
+    bevelThickness: 0.004,
+    bevelSize: 0.004,
+    bevelSegments: 2,
+    curveSegments: 8,
+  });
+  bodyGeo.translate(0, 0, 0.004);
+
+  const innerPts = createInsetConvexPolygonPoints(outerPts, bezelWidth);
+  const rimOuterPts = createInsetConvexPolygonPoints(outerPts, 0.005);
+  const rimOuterCorner = Math.max(0.010, cornerRadius - 0.005);
+  const innerCorner = Math.max(0.008, cornerRadius - bezelWidth);
+
+  const rimShape = new THREE.Shape();
+  traceRoundedConvexPolygon(rimShape, rimOuterPts, rimOuterCorner, false);
+  const rimHole = new THREE.Path();
+  traceRoundedConvexPolygon(rimHole, innerPts, innerCorner, true);
+  rimShape.holes.push(rimHole);
+
+  const rimGeo = new THREE.ExtrudeGeometry(rimShape, {
+    depth: 0.010,
+    bevelEnabled: true,
+    bevelThickness: 0.0035,
+    bevelSize: 0.003,
+    bevelSegments: 2,
+    curveSegments: 8,
+  });
+  rimGeo.translate(0, 0, Math.max(0.028, depth + 0.006));
+
+  const faceShape = new THREE.Shape();
+  traceRoundedConvexPolygon(faceShape, innerPts, innerCorner, false);
+  const faceGeo = new THREE.ShapeGeometry(faceShape, 8);
+  faceGeo.computeBoundingBox();
+  const bb = faceGeo.boundingBox;
+  const spanX = bb ? bb.max.x - bb.min.x : 1.0;
+  const spanY = bb ? bb.max.y - bb.min.y : 1.0;
+  const uvSpanMax = Math.max(spanX, spanY, 0.01);
+  const uvYCenter = bb ? 0.5 * (bb.min.y + bb.max.y) : 0;
+
+  const pos = faceGeo.attributes.position;
+  const uvArr = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uvArr[i * 2] = 0.5 + pos.getX(i) / uvSpanMax;
+    uvArr[i * 2 + 1] = 0.5 + (pos.getY(i) - uvYCenter) / uvSpanMax;
+  }
+  faceGeo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+
+  return { bodyGeo, rimGeo, faceGeo, faceInnerPts: innerPts, uvSpanMax, uvYCenter };
+}
+
+function createRoundedRectPlateGeos(
+  width: number,
+  height: number,
+  cornerRadius: number,
+  bezelWidth: number,
+  depth: number,
+): {
+  bodyGeo: THREE.BufferGeometry;
+  rimGeo: THREE.BufferGeometry;
+  faceGeo: THREE.BufferGeometry;
+} {
+  const hw = width * 0.5;
+  const hh = height * 0.5;
+  const outerPts: ReadonlyArray<readonly [number, number]> = [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [-hw, hh],
+  ];
+  const outerShape = new THREE.Shape();
+  traceRoundedConvexPolygon(outerShape, outerPts, cornerRadius, false);
+
+  const bodyGeo = new THREE.ExtrudeGeometry(outerShape, {
+    depth: 0.022,
+    bevelEnabled: true,
+    bevelThickness: 0.004,
+    bevelSize: 0.004,
+    bevelSegments: 2,
+    curveSegments: 8,
+  });
+  bodyGeo.translate(0, 0, 0.004);
+
+  const innerPts = createInsetConvexPolygonPoints(outerPts, bezelWidth);
+  const rimOuterPts = createInsetConvexPolygonPoints(outerPts, 0.005);
+  const rimOuterCorner = Math.max(0.010, cornerRadius - 0.005);
+  const innerCorner = Math.max(0.008, cornerRadius - bezelWidth);
+  const rimShape = new THREE.Shape();
+  traceRoundedConvexPolygon(rimShape, rimOuterPts, rimOuterCorner, false);
+  const rimHole = new THREE.Path();
+  traceRoundedConvexPolygon(rimHole, innerPts, innerCorner, true);
+  rimShape.holes.push(rimHole);
+
+  const rimGeo = new THREE.ExtrudeGeometry(rimShape, {
+    depth: 0.010,
+    bevelEnabled: true,
+    bevelThickness: 0.0035,
+    bevelSize: 0.003,
+    bevelSegments: 2,
+    curveSegments: 8,
+  });
+  rimGeo.translate(0, 0, Math.max(0.028, depth + 0.006));
+
+  const faceShape = new THREE.Shape();
+  traceRoundedConvexPolygon(faceShape, innerPts, innerCorner, false);
+  const faceGeo = new THREE.ShapeGeometry(faceShape, 8);
+  const innerW = Math.max(0.01, width - bezelWidth * 2);
+  const innerH = Math.max(0.01, height - bezelWidth * 2);
+  const pos = faceGeo.attributes.position;
+  const uvArr = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uvArr[i * 2] = 0.5 + pos.getX(i) / innerW;
+    uvArr[i * 2 + 1] = 0.5 + pos.getY(i) / innerH;
+  }
+  faceGeo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+
+  return { bodyGeo, rimGeo, faceGeo };
+}
+
+function createCircularPlateGeos(
+  radius: number,
+  depth: number,
+  rimTubeRadius: number,
+): {
+  bodyGeo: THREE.BufferGeometry;
+  rimGeo: THREE.BufferGeometry;
+  faceGeo: THREE.BufferGeometry;
+} {
+  const bodyGeo = new THREE.CylinderGeometry(radius, radius, depth, 40);
+  bodyGeo.rotateX(Math.PI / 2);
+  bodyGeo.translate(0, 0, depth * 0.5);
+
+  const rimGeo = new THREE.TorusGeometry(radius - rimTubeRadius * 0.55, rimTubeRadius, 12, 44);
+  rimGeo.translate(0, 0, Math.max(depth, 0.026) + 0.004);
+
+  const faceGeo = new THREE.CircleGeometry(radius - rimTubeRadius * 1.15, 40);
+  return { bodyGeo, rimGeo, faceGeo };
+}
+
+function createCChannelRailGeo(
+  length: number,
+  height = 0.056,
+  depth = 0.028,
+  flangeThick = 0.008,
+): THREE.BufferGeometry {
+  const hh = height * 0.5;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -hh);
+  shape.lineTo(depth, -hh);
+  shape.lineTo(depth, -hh + flangeThick);
+  shape.lineTo(flangeThick, -hh + flangeThick);
+  shape.lineTo(flangeThick, hh - flangeThick);
+  shape.lineTo(depth, hh - flangeThick);
+  shape.lineTo(depth, hh);
+  shape.lineTo(0, hh);
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: length,
+    bevelEnabled: false,
+    curveSegments: 2,
+  });
+  // Rotate so extrusion axis (+Z) aligns horizontally along X, centered at x = 0, and z spans [0..depth]
+  geo.rotateY(-Math.PI / 2);
+  geo.translate(length * 0.5, 0, 0);
+  return geo;
+}
+
+function createTrafficSignGussetGeo(): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0.062, 0.032);
+  shape.lineTo(0.215, 0.032);
+  shape.lineTo(0.215, 0.052);
+  shape.lineTo(0.082, 0.305);
+  shape.lineTo(0.062, 0.305);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.026,
+    bevelEnabled: true,
+    bevelThickness: 0.003,
+    bevelSize: 0.002,
+    bevelSegments: 1,
+  });
+  geo.translate(0, 0, -0.013);
+  return geo;
+}
+
+function createChamferedSquareBaseplateGeo(
+  size: number,
+  thickness: number,
+  cornerRadius: number,
+): THREE.BufferGeometry {
+  const h = size * 0.5;
+  const shape = new THREE.Shape();
+  traceRoundedConvexPolygon(
+    shape,
+    [
+      [-h, -h],
+      [h, -h],
+      [h, h],
+      [-h, h],
+    ],
+    cornerRadius,
+    false,
+  );
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    bevelEnabled: true,
+    bevelThickness: 0.005,
+    bevelSize: 0.005,
+    bevelSegments: 2,
+    curveSegments: 4,
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, 0.005, 0);
+  return geo;
+}
+
+function traceRoundedPolygonOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  pts: ReadonlyArray<readonly [number, number]>,
+  cornerRadiusPx: number,
+): void {
+  const n = pts.length;
+  const startX = (pts[n - 1][0] + pts[0][0]) * 0.5;
+  const startY = (pts[n - 1][1] + pts[0][1]) * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  for (let i = 0; i < n; i++) {
+    const curr = pts[i];
+    const next = pts[(i + 1) % n];
+    ctx.arcTo(curr[0], curr[1], next[0], next[1], cornerRadiusPx);
+  }
+  ctx.closePath();
+}
+
+function paintRetroreflectiveSheen(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  baseHex: string,
+  topTintHex: string,
+): void {
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0.0, topTintHex);
+  grad.addColorStop(0.55, baseHex);
+  grad.addColorStop(1.0, baseHex);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+}
+
+/**
+ * Draws a crisp vector walking pedestrian striding over 5 perspective crosswalk stripes,
+ * matching the rounded-triangle pedestrian crosswalk model sheet (`aaaf5f3b.jpg`).
+ */
+function drawWalkingPedestrianCrosswalkGraphic(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  scale: number,
+  fgHex: string,
+): void {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+
+  // 1. Five tapered perspective zebra crosswalk bars along bottom
+  ctx.fillStyle = fgHex;
+  const stripeTopY = 58;
+  const stripeBotY = 114;
+  const stripes: ReadonlyArray<readonly [number, number, number, number]> = [
+    [-116, -90, -148, -110],
+    [-64, -40, -76, -46],
+    [-12, 12, -14, 14],
+    [40, 64, 46, 76],
+    [90, 116, 110, 148],
+  ];
+  for (const [tx0, tx1, bx0, bx1] of stripes) {
+    ctx.beginPath();
+    ctx.moveTo(tx0, stripeTopY);
+    ctx.lineTo(tx1, stripeTopY);
+    ctx.lineTo(bx1, stripeBotY);
+    ctx.lineTo(bx0, stripeBotY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 2. Smooth vector walking pedestrian figure striding left (matching model sheet aaaf5f3b.jpg)
+  ctx.fillStyle = fgHex;
+  ctx.strokeStyle = fgHex;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(-4, -92, 20, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Torso (clean slightly-tilted rounded silhouette)
+  ctx.beginPath();
+  ctx.moveTo(-19, -64);
+  ctx.quadraticCurveTo(-4, -70, 14, -62);
+  ctx.lineTo(18, -2);
+  ctx.quadraticCurveTo(2, 6, -15, -2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Front reaching arm (bent smoothly forward-down)
+  ctx.lineWidth = 19;
+  ctx.beginPath();
+  ctx.moveTo(-11, -56);
+  ctx.lineTo(-34, -30);
+  ctx.lineTo(-46, -12);
+  ctx.stroke();
+
+  // Trailing arm (swinging back)
+  ctx.beginPath();
+  ctx.moveTo(11, -54);
+  ctx.lineTo(32, -28);
+  ctx.lineTo(44, -8);
+  ctx.stroke();
+
+  // Front striding leg
+  ctx.lineWidth = 23;
+  ctx.beginPath();
+  ctx.moveTo(-6, -2);
+  ctx.lineTo(-24, 38);
+  ctx.lineTo(-38, 72);
+  ctx.stroke();
+
+  // Trailing push-off leg
+  ctx.beginPath();
+  ctx.moveTo(9, -2);
+  ctx.lineTo(28, 36);
+  ctx.lineTo(48, 72);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawVectorTramPictogram(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  scale: number,
+  fgHex: string,
+  bgHex: string,
+  withPantograph: boolean,
+): void {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+
+  if (withPantograph) {
+    ctx.strokeStyle = fgHex;
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-36, -110);
+    ctx.lineTo(36, -110);
+    ctx.moveTo(0, -110);
+    ctx.lineTo(-24, -88);
+    ctx.lineTo(0, -68);
+    ctx.lineTo(24, -88);
+    ctx.lineTo(0, -110);
+    ctx.stroke();
+  }
+
+  // Sleek rounded tram cab body
+  ctx.fillStyle = fgHex;
+  traceRoundedPolygonOnCanvas(
+    ctx,
+    [
+      [-58, -68],
+      [58, -68],
+      [58, 56],
+      [-58, 56],
+    ],
+    18,
+  );
+  ctx.fill();
+
+  // Twin upper windshields
+  ctx.fillStyle = bgHex;
+  traceRoundedPolygonOnCanvas(
+    ctx,
+    [
+      [-42, -46],
+      [-4, -46],
+      [-4, 4],
+      [-42, 4],
+    ],
+    6,
+  );
+  ctx.fill();
+  traceRoundedPolygonOnCanvas(
+    ctx,
+    [
+      [4, -46],
+      [42, -46],
+      [42, 4],
+      [4, 4],
+    ],
+    6,
+  );
+  ctx.fill();
+
+  // Destination strip + dual round headlights
+  traceRoundedPolygonOnCanvas(
+    ctx,
+    [
+      [-26, -60],
+      [26, -60],
+      [26, -51],
+      [-26, -51],
+    ],
+    4,
+  );
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-32, 32, 10, 0, Math.PI * 2);
+  ctx.arc(32, 32, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Perspective steel rails underneath
+  ctx.strokeStyle = fgHex;
+  ctx.lineWidth = 10;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-36, 62);
+  ctx.lineTo(-68, 104);
+  ctx.moveTo(36, 62);
+  ctx.lineTo(68, 104);
+  ctx.moveTo(-48, 82);
+  ctx.lineTo(48, 82);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawHighwayDirectionArrow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  dir: 'left' | 'right',
+  scale: number,
+  colorHex: string,
+): void {
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (dir === 'left') ctx.scale(-1, 1);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = colorHex;
+  ctx.beginPath();
+  ctx.moveTo(-48, -14);
+  ctx.lineTo(6, -14);
+  ctx.lineTo(-6, -34);
+  ctx.lineTo(14, -34);
+  ctx.lineTo(52, 0);
+  ctx.lineTo(14, 34);
+  ctx.lineTo(-6, 34);
+  ctx.lineTo(6, 14);
+  ctx.lineTo(-48, 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function flipWayfindingArrowLabel(rawText: string): string {
+  const trimmed = rawText.trim();
+  if (trimmed.endsWith('->')) {
+    return `<- ${trimmed.slice(0, -2).trim()}`;
+  }
+  if (trimmed.startsWith('<-')) {
+    return `${trimmed.slice(2).trim()} ->`;
+  }
+  return trimmed;
+}
+
+function paintTrafficSignFaceCanvas(
+  kind: CityTrafficSignKind,
+  polyProjection?: {
+    innerPts: ReadonlyArray<readonly [number, number]>;
+    uvSpanMax: number;
+    uvYCenter: number;
+  },
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const projectPoly = (pts: ReadonlyArray<readonly [number, number]>) =>
+    pts.map(([x, y]): [number, number] => [
+      (0.5 + x / (polyProjection?.uvSpanMax ?? 1)) * size,
+      (0.5 - (y - (polyProjection?.uvYCenter ?? 0)) / (polyProjection?.uvSpanMax ?? 1)) * size,
+    ]);
+
+  if (kind === 'stop') {
+    paintRetroreflectiveSheen(ctx, size, size, '#c81e24', '#dd272d');
+    if (polyProjection) {
+      const insetPts = createInsetConvexPolygonPoints(polyProjection.innerPts, 0.022);
+      const canvasPts = projectPoly(insetPts);
+      traceRoundedPolygonOnCanvas(ctx, canvasPts, 10);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 22;
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 22;
+      const octPts: [number, number][] = [];
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4 + Math.PI / 8;
+        octPts.push([256 + Math.cos(a) * 224, 256 + Math.sin(a) * 224]);
+      }
+      traceRoundedPolygonOnCanvas(ctx, octPts, 12);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 148px "Arial Narrow", "Helvetica Neue", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('STOP', 256, 264);
+  } else if (kind === 'do_not_enter') {
+    paintRetroreflectiveSheen(ctx, size, size, '#c81e24', '#dd272d');
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.arc(256, 256, 238, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    traceRoundedPolygonOnCanvas(
+      ctx,
+      [
+        [84, 212],
+        [428, 212],
+        [428, 300],
+        [84, 300],
+      ],
+      8,
+    );
+    ctx.fill();
+  } else if (kind === 'no_parking') {
+    paintRetroreflectiveSheen(ctx, size, size, '#19549c', '#2265b8');
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.arc(256, 256, 240, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#c81e24';
+    ctx.lineWidth = 48;
+    ctx.beginPath();
+    ctx.arc(256, 256, 206, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 42;
+    ctx.beginPath();
+    ctx.moveTo(110, 110);
+    ctx.lineTo(402, 402);
+    ctx.stroke();
+  } else if (kind === 'speed_limit_30' || kind === 'speed_limit_50') {
+    const limitLabel = kind === 'speed_limit_50' ? '50' : '30';
+    paintRetroreflectiveSheen(ctx, size, size, '#f2f5f8', '#ffffff');
+    ctx.strokeStyle = '#c81e24';
+    ctx.lineWidth = 54;
+    ctx.beginPath();
+    ctx.arc(256, 256, 212, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#111827';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '800 44px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText('SPEED', 256, 134);
+    ctx.font = '900 170px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText(limitLabel, 256, 266);
+    ctx.font = '800 44px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText('km/h', 256, 382);
+  } else if (kind === 'pedestrian_warning') {
+    paintRetroreflectiveSheen(ctx, size, size, '#f5c716', '#fad836');
+    if (polyProjection) {
+      const borderPts = createInsetConvexPolygonPoints(polyProjection.innerPts, 0.026);
+      const canvasPts = projectPoly(borderPts);
+      traceRoundedPolygonOnCanvas(ctx, canvasPts, 14);
+      ctx.strokeStyle = '#14181f';
+      ctx.lineWidth = 26;
+      ctx.stroke();
+    }
+    drawWalkingPedestrianCrosswalkGraphic(ctx, 256, 316, 1.04, '#14181f');
+  } else if (kind === 'tram_crossing' || kind === 'sharp_curve') {
+    paintRetroreflectiveSheen(ctx, size, size, '#f5c716', '#fad836');
+    traceRoundedPolygonOnCanvas(
+      ctx,
+      [
+        [30, 30],
+        [482, 30],
+        [482, 482],
+        [30, 482],
+      ],
+      34,
+    );
+    ctx.strokeStyle = '#14181f';
+    ctx.lineWidth = 24;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(256, 256);
+    // Canvas2D Y points down, so +PI/4 clockwise pre-rotation cancels Three.js +PI/4 CCW headGrp.rotation.z
+    ctx.rotate(Math.PI / 4);
+    if (kind === 'tram_crossing') {
+      drawVectorTramPictogram(ctx, 0, 8, 1.16, '#14181f', '#f5c716', true);
+    } else {
+      ctx.strokeStyle = '#14181f';
+      ctx.fillStyle = '#14181f';
+      ctx.lineWidth = 44;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-64, 114);
+      ctx.lineTo(-64, -22);
+      ctx.quadraticCurveTo(-64, -64, -22, -64);
+      ctx.lineTo(54, -64);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(32, -112);
+      ctx.lineTo(108, -64);
+      ctx.lineTo(32, -16);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  } else {
+    // Transit / Halte / Crosswalk Blue Signs
+    paintRetroreflectiveSheen(ctx, size, size, '#19549c', '#2163b4');
+    traceRoundedPolygonOnCanvas(
+      ctx,
+      [
+        [24, 24],
+        [488, 24],
+        [488, 488],
+        [24, 488],
+      ],
+      36,
+    );
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 18;
+    ctx.stroke();
+
+    if (kind === 'tram_lane_only') {
+      drawVectorTramPictogram(ctx, 256, 198, 1.15, '#ffffff', '#19549c', true);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 62px "Helvetica Neue", Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TREM ONLY', 256, 408);
+    } else if (kind === 'halte_stop') {
+      drawVectorTramPictogram(ctx, 256, 174, 1.02, '#ffffff', '#19549c', true);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 78px "Helvetica Neue", Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('HALTE', 256, 356);
+      ctx.font = '800 46px "Helvetica Neue", Arial, sans-serif';
+      ctx.fillText('LINE T1', 256, 424);
+    } else {
+      // Pedestrian Crosswalk Blue Sign
+      ctx.fillStyle = '#ffffff';
+      traceRoundedPolygonOnCanvas(
+        ctx,
+        [
+          [256, 62],
+          [78, 356],
+          [434, 356],
+        ],
+        20,
+      );
+      ctx.fill();
+      drawWalkingPedestrianCrosswalkGraphic(ctx, 256, 256, 0.72, '#14181f');
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 54px "Helvetica Neue", Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('CROSSWALK', 256, 424);
+    }
+  }
+
+  return canvas;
+}
+
+function paintWayfindingBladeCanvas(
+  rawText: string,
+  variant: 'green' | 'blue',
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const w = 1024;
+  const h = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  if (variant === 'green') {
+    paintRetroreflectiveSheen(ctx, w, h, '#0f6f4a', '#16875b');
+  } else {
+    paintRetroreflectiveSheen(ctx, w, h, '#19549c', '#2265b8');
+  }
+
+  traceRoundedPolygonOnCanvas(
+    ctx,
+    [
+      [20, 20],
+      [w - 20, 20],
+      [w - 20, h - 20],
+      [20, h - 20],
+    ],
+    34,
+  );
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 13;
+  ctx.stroke();
+
+  const trimmed = rawText.trim();
+  let arrow: 'left' | 'right' | 'none' = 'none';
+  let labelText = trimmed;
+  if (trimmed.endsWith('->')) {
+    arrow = 'right';
+    labelText = trimmed.slice(0, -2).trim();
+  } else if (trimmed.startsWith('<-')) {
+    arrow = 'left';
+    labelText = trimmed.slice(2).trim();
+  }
+
+  const arrowPad = arrow === 'none' ? 68 : 162;
+  const availWidth = w - 136 - (arrow === 'none' ? 0 : 94);
+  let fontPx = 80;
+  ctx.font = `800 ${fontPx}px "Helvetica Neue", Arial, sans-serif`;
+  while (fontPx > 46 && ctx.measureText(labelText).width > availWidth) {
+    fontPx -= 4;
+    ctx.font = `800 ${fontPx}px "Helvetica Neue", Arial, sans-serif`;
+  }
+
+  const textCenterX =
+    arrow === 'right'
+      ? (68 + (w - arrowPad)) * 0.5
+      : arrow === 'left'
+      ? (arrowPad + (w - 68)) * 0.5
+      : w * 0.5;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(labelText, textCenterX, h * 0.52);
+
+  if (arrow === 'right') {
+    drawHighwayDirectionArrow(ctx, w - 110, h * 0.5, 'right', 0.96, '#ffffff');
+  } else if (arrow === 'left') {
+    drawHighwayDirectionArrow(ctx, 110, h * 0.5, 'left', 0.96, '#ffffff');
+  }
+
+  return canvas;
+}
+
+/**
+ * Builds and bakes 1:1 Industrial Urban Traffic & Wayfinding Sign assemblies at Plaza Global Scale
+ * (~4.25m galvanized tubular steel post, 0.52m square beveled baseplate + 4 gussets + 4 anchor bolts,
+ * 2 anti-twist clamping collars, 2 horizontal C-channel stiffener ribs + semicircular zinc U-bolts,
+ * extruded rounded sign plates with rolled aluminum safety rims & retroreflective PBR Canvas faces).
+ */
+export function buildCityTrafficSignsGroup(
+  specs: readonly CityTrafficSignSpec[],
+  isSoftwareGl: boolean,
+  targetGroup?: THREE.Group,
+): THREE.Group {
+  const citySignsGroup = targetGroup ?? new THREE.Group();
+  if (!citySignsGroup.name) {
+    citySignsGroup.name = 'CityTrafficSigns3D';
+  }
+
+  const signPbr = createTrafficSignPbrMaterials();
+  const signTempGeos: THREE.BufferGeometry[] = [];
+  const trackSignGeo = <T extends THREE.BufferGeometry>(g: T): T => {
+    signTempGeos.push(g);
+    return g;
+  };
+
+  // Exact Global-Scale Sign Plate Geometries (Plaza Avatar ~3.312m / Streetlamps ~4.62m)
+  const octOuterPts: [number, number][] = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4 + Math.PI / 8;
+    octOuterPts.push([Math.cos(a) * 0.47, Math.sin(a) * 0.47]);
+  }
+  const octPlateGeos = createRoundedPolygonPlateGeos(octOuterPts, 0.044, 0.016, 0.024);
+  trackSignGeo(octPlateGeos.bodyGeo);
+  trackSignGeo(octPlateGeos.rimGeo);
+  trackSignGeo(octPlateGeos.faceGeo);
+
+  const triS = 1.131;
+  const triHalfS = triS * 0.5;
+  const triSharpH = triS * Math.sqrt(3) * 0.5;
+  const triYBot = -0.457;
+  const triOuterPts: readonly [number, number][] = [
+    [0, triYBot + triSharpH],
+    [-triHalfS, triYBot],
+    [triHalfS, triYBot],
+  ] as unknown as readonly [number, number][];
+  const triPlateGeos = createRoundedPolygonPlateGeos(triOuterPts, 0.064, 0.016, 0.024);
+  trackSignGeo(triPlateGeos.bodyGeo);
+  trackSignGeo(triPlateGeos.rimGeo);
+  trackSignGeo(triPlateGeos.faceGeo);
+
+  const circlePlateGeos = createCircularPlateGeos(0.47, 0.030, 0.013);
+  trackSignGeo(circlePlateGeos.bodyGeo);
+  trackSignGeo(circlePlateGeos.rimGeo);
+  trackSignGeo(circlePlateGeos.faceGeo);
+
+  const squarePlateGeos = createRoundedRectPlateGeos(0.86, 0.86, 0.055, 0.016, 0.024);
+  trackSignGeo(squarePlateGeos.bodyGeo);
+  trackSignGeo(squarePlateGeos.rimGeo);
+  trackSignGeo(squarePlateGeos.faceGeo);
+
+  const diamondPlateGeos = createRoundedRectPlateGeos(0.66, 0.66, 0.052, 0.016, 0.024);
+  trackSignGeo(diamondPlateGeos.bodyGeo);
+  trackSignGeo(diamondPlateGeos.rimGeo);
+  trackSignGeo(diamondPlateGeos.faceGeo);
+
+  const wayfindingBladeGeos = createRoundedRectPlateGeos(1.88, 0.43, 0.055, 0.016, 0.024);
+  trackSignGeo(wayfindingBladeGeos.bodyGeo);
+  trackSignGeo(wayfindingBladeGeos.rimGeo);
+  trackSignGeo(wayfindingBladeGeos.faceGeo);
+
+  const createTrafficSignTex = (kind: CityTrafficSignKind): THREE.CanvasTexture | null => {
+    const polyProjection =
+      kind === 'stop'
+        ? {
+            innerPts: octPlateGeos.faceInnerPts,
+            uvSpanMax: octPlateGeos.uvSpanMax,
+            uvYCenter: octPlateGeos.uvYCenter,
+          }
+        : kind === 'pedestrian_warning'
+        ? {
+            innerPts: triPlateGeos.faceInnerPts,
+            uvSpanMax: triPlateGeos.uvSpanMax,
+            uvYCenter: triPlateGeos.uvYCenter,
+          }
+        : undefined;
+    const canvas = paintTrafficSignFaceCanvas(kind, polyProjection);
+    if (!canvas) return null;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+
+  const makeRetroFaceMaterial = (
+    tex: THREE.CanvasTexture | null,
+    fallbackColor: number,
+  ): THREE.MeshStandardMaterial =>
+    new THREE.MeshStandardMaterial({
+      color: tex ? 0xffffff : fallbackColor,
+      map: tex,
+      roughnessMap: signPbr.retroRoughnessMap,
+      bumpMap: signPbr.retroBumpMap,
+      bumpScale: 0.004,
+      roughness: 0.42,
+      metalness: 0.14,
+      envMap: signPbr.envMap,
+      envMapIntensity: 0.55,
+      emissive: new THREE.Color('#ffffff'),
+      emissiveMap: tex,
+      emissiveIntensity: tex ? 0.22 : 0.0,
+    });
+
+  const wayfindingBladeMatCache = new Map<string, THREE.MeshStandardMaterial>();
+  const createWayfindingBladeMat = (
+    text: string,
+    variant: 'green' | 'blue' = 'green',
+  ): THREE.MeshStandardMaterial => {
+    const key = `${variant}:${text}`;
+    const existing = wayfindingBladeMatCache.get(key);
+    if (existing) return existing;
+    const canvas = paintWayfindingBladeCanvas(text, variant);
+    let tex: THREE.CanvasTexture | null = null;
+    if (canvas) {
+      tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+    }
+    const mat = makeRetroFaceMaterial(tex, variant === 'green' ? 0x0f6f4a : 0x19549c);
+    wayfindingBladeMatCache.set(key, mat);
+    return mat;
+  };
+
+  const signFaceTexCache = new Map<CityTrafficSignKind, THREE.MeshStandardMaterial>();
+  const getSignFaceMat = (kind: CityTrafficSignKind): THREE.MeshStandardMaterial => {
+    let cached = signFaceTexCache.get(kind);
+    if (cached) return cached;
+    const tex = createTrafficSignTex(kind);
+    const fallbackColor =
+      kind === 'stop' || kind === 'do_not_enter'
+        ? 0xc81e24
+        : kind === 'tram_crossing' || kind === 'sharp_curve' || kind === 'pedestrian_warning'
+        ? 0xf5c716
+        : kind === 'speed_limit_30' || kind === 'speed_limit_50'
+        ? 0xf2f5f8
+        : 0x19549c;
+    cached = makeRetroFaceMaterial(tex, fallbackColor);
+    signFaceTexCache.set(kind, cached);
+    return cached;
+  };
+
+  // Shared Post, Baseplate, Collar & U-Bolt Hardware Geometries
+  const signBaseplateLowerGeo = trackSignGeo(createChamferedSquareBaseplateGeo(0.52, 0.026, 0.044));
+  const signBaseplateStepGeo = trackSignGeo(createChamferedSquareBaseplateGeo(0.34, 0.014, 0.032));
+  const signWeldCollarGeo = trackSignGeo(new THREE.CylinderGeometry(0.088, 0.104, 0.044, 16));
+  const signGussetGeo = trackSignGeo(createTrafficSignGussetGeo());
+  const signWasherGeo = trackSignGeo(new THREE.CylinderGeometry(0.030, 0.030, 0.008, 12));
+  const signAnchorNutGeo = trackSignGeo(new THREE.CylinderGeometry(0.021, 0.021, 0.022, 6));
+  const signAnchorStudGeo = trackSignGeo(new THREE.CylinderGeometry(0.011, 0.011, 0.014, 8));
+
+  const signPostGeo = trackSignGeo(new THREE.CylinderGeometry(0.064, 0.067, 5.75, 18));
+  {
+    const uv = signPostGeo.getAttribute('uv');
+    if (uv) {
+      for (let i = 0; i < uv.count; i++) {
+        uv.setY(i, uv.getY(i) * 12.0);
+      }
+      uv.needsUpdate = true;
+    }
+  }
+  const signCapCollarGeo = trackSignGeo(new THREE.CylinderGeometry(0.072, 0.070, 0.024, 18));
+  const signCapDomeGeo = trackSignGeo(new THREE.CylinderGeometry(0.046, 0.072, 0.034, 18));
+
+  const signCollarBandGeo = trackSignGeo(new THREE.CylinderGeometry(0.076, 0.076, 0.056, 16));
+  const signCollarEarGeo = trackSignGeo(new RoundedBoxGeometry(0.072, 0.044, 0.032, 1, 0.008));
+  const signCollarBoltGeo = trackSignGeo(new THREE.CylinderGeometry(0.010, 0.010, 0.056, 8));
+  signCollarBoltGeo.rotateX(Math.PI / 2);
+  const signCollarNutGeo = trackSignGeo(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 6));
+  signCollarNutGeo.rotateX(Math.PI / 2);
+
+  const signMountCollarGeo = trackSignGeo(new THREE.CylinderGeometry(0.069, 0.069, 0.046, 16));
+  const signUBoltArcGeo = trackSignGeo(new THREE.TorusGeometry(0.078, 0.012, 8, 18, Math.PI));
+  signUBoltArcGeo.rotateX(-Math.PI / 2);
+  const signUBoltLegSingleGeo = trackSignGeo(new THREE.CylinderGeometry(0.012, 0.012, 0.088, 8));
+  signUBoltLegSingleGeo.rotateX(Math.PI / 2);
+  const signUBoltLegDualGeo = trackSignGeo(new THREE.CylinderGeometry(0.012, 0.012, 0.168, 8));
+  signUBoltLegDualGeo.rotateX(Math.PI / 2);
+  const signSaddlePlateGeo = trackSignGeo(new RoundedBoxGeometry(0.22, 0.044, 0.014, 1, 0.004));
+  const signSecurityNutGeo = trackSignGeo(new THREE.CylinderGeometry(0.019, 0.019, 0.016, 6));
+  signSecurityNutGeo.rotateX(Math.PI / 2);
+
+  const cChannelCache = new Map<number, THREE.BufferGeometry>();
+  const getCChannelGeo = (len: number): THREE.BufferGeometry => {
+    let g = cChannelCache.get(len);
+    if (!g) {
+      g = trackSignGeo(createCChannelRailGeo(len, 0.056, 0.028, 0.008));
+      cChannelCache.set(len, g);
+    }
+    return g;
+  };
+
+  const addSignPart = (
+    parent: THREE.Object3D,
+    geo: THREE.BufferGeometry,
+    mat: THREE.Material,
+    pos: readonly [number, number, number],
+    rot: readonly [number, number, number] = [0, 0, 0],
+    castShadow = true,
+  ): THREE.Mesh => {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    mesh.rotation.set(rot[0], rot[1], rot[2]);
+    mesh.castShadow = !isSoftwareGl && castShadow;
+    mesh.receiveShadow = !isSoftwareGl;
+    parent.add(mesh);
+    return mesh;
+  };
+
+  for (const sSpec of specs) {
+    const signGrp = new THREE.Group();
+    signGrp.name = `TrafficSign_${sSpec.id}`;
+    signGrp.position.set(sSpec.x, sSpec.y, sSpec.z);
+    signGrp.rotation.y = sSpec.rotY;
+    citySignsGroup.add(signGrp);
+
+    // 1. Flanged 0.52m Square Beveled Galvanized Steel Baseplate + 4 Tapered Gussets + 4 Zinc Anchor Bolts
+    addSignPart(signGrp, signBaseplateLowerGeo, signPbr.galvanizedMat, [0, 0, 0], [0, 0, 0], false);
+    addSignPart(signGrp, signBaseplateStepGeo, signPbr.galvanizedMat, [0, 0.032, 0], [0, 0, 0], false);
+    addSignPart(signGrp, signWeldCollarGeo, signPbr.galvanizedMat, [0, 0.062, 0], [0, 0, 0], false);
+    for (const rotG of [0, Math.PI / 2, Math.PI, -Math.PI / 2] as const) {
+      addSignPart(signGrp, signGussetGeo, signPbr.galvanizedMat, [0, 0, 0], [0, rotG, 0], false);
+    }
+    for (const [bx, bz] of [
+      [-0.185, -0.185],
+      [0.185, -0.185],
+      [-0.185, 0.185],
+      [0.185, 0.185],
+    ] as const) {
+      addSignPart(signGrp, signWasherGeo, signPbr.zincHardwareMat, [bx, 0.039, bz], [0, 0, 0], false);
+      addSignPart(signGrp, signAnchorNutGeo, signPbr.zincHardwareMat, [bx, 0.054, bz], [0, 0, 0], false);
+      addSignPart(signGrp, signAnchorStudGeo, signPbr.zincHardwareMat, [bx, 0.072, bz], [0, 0, 0], false);
+    }
+
+    // 2. Tubular Galvanized Steel Post (~5.75m shaft, ~5.82m total cap) + 2 Anti-Twist Clamping Collars
+    addSignPart(signGrp, signPostGeo, signPbr.galvanizedMat, [0, 2.905, 0], [0, 0, 0], true);
+    addSignPart(signGrp, signCapCollarGeo, signPbr.galvanizedMat, [0, 5.792, 0], [0, 0, 0], false);
+    addSignPart(signGrp, signCapDomeGeo, signPbr.galvanizedMat, [0, 5.821, 0], [0, 0, 0], false);
+    for (const clampY of [2.25, 4.10]) {
+      addSignPart(signGrp, signCollarBandGeo, signPbr.galvanizedMat, [0, clampY, 0], [0, 0, 0], false);
+      for (const xSide of [-1, 1] as const) {
+        addSignPart(signGrp, signCollarEarGeo, signPbr.galvanizedMat, [xSide * 0.088, clampY, 0], [0, 0, 0], false);
+        addSignPart(signGrp, signCollarBoltGeo, signPbr.zincHardwareMat, [xSide * 0.102, clampY, 0], [0, 0, 0], false);
+        addSignPart(signGrp, signCollarNutGeo, signPbr.zincHardwareMat, [xSide * 0.102, clampY, 0.022], [0, 0, 0], false);
+        addSignPart(signGrp, signCollarNutGeo, signPbr.zincHardwareMat, [xSide * 0.102, clampY, -0.022], [0, 0, 0], false);
+      }
+    }
+
+    const addMountBracketAt = (yRib: number, ribLength: number, dualSided: boolean) => {
+      addSignPart(signGrp, signMountCollarGeo, signPbr.galvanizedMat, [0, yRib, 0], [0, 0, 0], false);
+      addSignPart(signGrp, getCChannelGeo(ribLength), signPbr.zincHardwareMat, [0, yRib, 0.066], [0, 0, 0], false);
+      addSignPart(signGrp, signSaddlePlateGeo, signPbr.zincHardwareMat, [0, yRib, 0.058], [0, 0, 0], false);
+      if (dualSided) {
+        addSignPart(signGrp, getCChannelGeo(ribLength), signPbr.zincHardwareMat, [0, yRib, -0.066], [0, Math.PI, 0], false);
+        addSignPart(signGrp, signSaddlePlateGeo, signPbr.zincHardwareMat, [0, yRib, -0.058], [0, 0, 0], false);
+      } else {
+        addSignPart(signGrp, signUBoltArcGeo, signPbr.zincHardwareMat, [0, yRib, 0], [0, 0, 0], false);
+      }
+      for (const xSide of [-1, 1] as const) {
+        addSignPart(
+          signGrp,
+          dualSided ? signUBoltLegDualGeo : signUBoltLegSingleGeo,
+          signPbr.zincHardwareMat,
+          [xSide * 0.078, yRib, dualSided ? 0 : 0.044],
+          [0, 0, 0],
+          false,
+        );
+        addSignPart(signGrp, signSecurityNutGeo, signPbr.zincHardwareMat, [xSide * 0.078, yRib, 0.068], [0, 0, 0], false);
+        addSignPart(signGrp, signSecurityNutGeo, signPbr.zincHardwareMat, [xSide * 0.102, yRib, 0.048], [0, 0, 0], false);
+        if (dualSided) {
+          addSignPart(signGrp, signSecurityNutGeo, signPbr.zincHardwareMat, [xSide * 0.078, yRib, -0.068], [0, 0, 0], false);
+          addSignPart(signGrp, signSecurityNutGeo, signPbr.zincHardwareMat, [xSide * 0.102, yRib, -0.048], [0, 0, 0], false);
+        }
+      }
+    };
+
+    if (sSpec.kind === 'street_wayfinding') {
+      // Twin Stacked Rounded Blades: Emerald Green Upper (y=5.25m) + Highway Blue Lower (y=4.65m)
+      const rows: ReadonlyArray<{ dy: number; variant: 'green' | 'blue'; text: string }> = [
+        { dy: 5.25, variant: 'green', text: sSpec.label ?? 'CENTRAL PLAZA ->' },
+        { dy: 4.65, variant: 'blue', text: sSpec.subLabel ?? '<- HALTE TREM T1' },
+      ];
+      for (const row of rows) {
+        addMountBracketAt(row.dy, 1.42 * 1.20, true);
+        const frontMat = createWayfindingBladeMat(row.text, row.variant);
+        const backMat = createWayfindingBladeMat(flipWayfindingArrowLabel(row.text), row.variant);
+        for (const zDir of [1, -1] as const) {
+          const bladeGrp = new THREE.Group();
+          bladeGrp.position.set(0, row.dy, zDir * 0.102);
+          bladeGrp.scale.setScalar(1.20);
+          if (zDir < 0) bladeGrp.rotation.y = Math.PI;
+          signGrp.add(bladeGrp);
+          addSignPart(bladeGrp, wayfindingBladeGeos.bodyGeo, signPbr.brushedAluminumMat, [0, 0, 0], [0, 0, 0], true);
+          addSignPart(bladeGrp, wayfindingBladeGeos.rimGeo, signPbr.brushedAluminumMat, [0, 0, 0], [0, 0, 0], false);
+          addSignPart(
+            bladeGrp,
+            wayfindingBladeGeos.faceGeo,
+            zDir > 0 ? frontMat : backMat,
+            [0, 0, 0.0355],
+            [0, 0, 0],
+            false,
+          );
+        }
+      }
+      continue;
+    }
+
+    // 3. Single-Plate Signs at Global Scale (y = 3.74m) + 2 Horizontal C-Channel Stiffeners + Rear U-Bolts
+    const isDiamond = sSpec.kind === 'tram_crossing' || sSpec.kind === 'sharp_curve';
+    const isRound =
+      sSpec.kind === 'do_not_enter' ||
+      sSpec.kind === 'no_parking' ||
+      sSpec.kind === 'speed_limit_30' ||
+      sSpec.kind === 'speed_limit_50';
+
+    const ribSpecs: ReadonlyArray<{ dy: number; len: number }> =
+      sSpec.kind === 'pedestrian_warning'
+        ? [
+            { dy: -0.26, len: 0.74 },
+            { dy: 0.08, len: 0.40 },
+          ]
+        : isDiamond
+        ? [
+            { dy: -0.20, len: 0.42 },
+            { dy: 0.20, len: 0.42 },
+          ]
+        : isRound || sSpec.kind === 'stop'
+        ? [
+            { dy: -0.22, len: 0.68 },
+            { dy: 0.22, len: 0.68 },
+          ]
+        : [
+            { dy: -0.22, len: 0.70 },
+            { dy: 0.22, len: 0.70 },
+          ];
+    for (const rib of ribSpecs) {
+      addMountBracketAt(5.15 + rib.dy * 1.20, rib.len * 1.20, false);
+    }
+
+    const headGrp = new THREE.Group();
+    headGrp.position.set(0, 5.15, 0.102);
+    headGrp.scale.setScalar(1.20);
+    if (isDiamond) {
+      headGrp.rotation.z = Math.PI / 4;
+    }
+    signGrp.add(headGrp);
+
+    const plateGeos =
+      sSpec.kind === 'stop'
+        ? octPlateGeos
+        : isRound
+        ? circlePlateGeos
+        : sSpec.kind === 'pedestrian_warning'
+        ? triPlateGeos
+        : isDiamond
+        ? diamondPlateGeos
+        : squarePlateGeos;
+    const bodyMat = sSpec.kind === 'stop' ? signPbr.stopRedBackMat : signPbr.brushedAluminumMat;
+    const faceMat = getSignFaceMat(sSpec.kind);
+
+    addSignPart(headGrp, plateGeos.bodyGeo, bodyMat, [0, 0, 0], [0, 0, 0], true);
+    addSignPart(headGrp, plateGeos.rimGeo, signPbr.brushedAluminumMat, [0, 0, 0], [0, 0, 0], false);
+    addSignPart(headGrp, plateGeos.faceGeo, faceMat, [0, 0, 0.0355], [0, 0, 0], false);
+  }
+
+  bakeStaticGroupMeshes(citySignsGroup, { minShadowCasterSpan: 0.65 });
+  for (const tempGeo of signTempGeos) {
+    tempGeo.dispose();
+  }
+  return citySignsGroup;
+}
+
 export interface CurvedPlanetEnvironment {
   groundMesh: THREE.Mesh;
   waterMesh: THREE.Mesh;
@@ -15938,6 +20899,18 @@ export interface CurvedPlanetEnvironment {
   roadsGroup: THREE.Group;
   natureGroup: THREE.Group;
   sunbeamGroup: THREE.Group;
+  updateCityTrafficSignals(params: {
+    plazaPhase: PlazaTrafficSignalPhase;
+    plazaNorthWalkAllowed: boolean;
+    plazaSouthWalkAllowed: boolean;
+    eastPhase: PlazaTrafficSignalPhase;
+    eastWalkAllowed: boolean;
+  }): void;
+  updatePlazaTrafficSignals?(
+    phase: PlazaTrafficSignalPhase,
+    northWalkAllowed: boolean,
+    southWalkAllowed: boolean,
+  ): void;
   update(
     pivotX: number,
     pivotZ: number,
@@ -15968,26 +20941,38 @@ export function createCurvedPlanetEnvironment(
   const uDirShadowMap = windUniforms.uDirShadowMap || { value: null };
   const uDirShadowMatrix = windUniforms.uDirShadowMatrix || { value: new THREE.Matrix4() };
   const uHasDirShadow = windUniforms.uHasDirShadow || { value: 0.0 };
+  const uDirShadowMapSize = windUniforms.uDirShadowMapSize || { value: 2048.0 };
   windUniforms.uPlanetPivot = uPlanetPivot;
   windUniforms.uCurvatureStrength = uCurvatureStrength;
   windUniforms.uSculptMap = uSculptMap;
   windUniforms.uDirShadowMap = uDirShadowMap;
   windUniforms.uDirShadowMatrix = uDirShadowMatrix;
   windUniforms.uHasDirShadow = uHasDirShadow;
+  windUniforms.uDirShadowMapSize = uDirShadowMapSize;
 
-  const segs = isSoftwareGl ? 128 : 168;
-  const groundGeo = new THREE.PlaneGeometry(360, 360, segs, segs);
+  const segs = isSoftwareGl ? 224 : 336;
+  const groundGeo = new THREE.PlaneGeometry(540, 540, segs, segs);
   groundGeo.rotateX(-Math.PI / 2);
+
+  const sharedWaterUniforms = createSharedWaterSurfaceUniforms(windUniforms);
 
   const groundMat = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uPlanetPivot,
       uSculptMap,
       uDirShadowMap,
       uDirShadowMatrix,
       uHasDirShadow,
+      uDirShadowMapSize,
       uTime: windUniforms.uTime,
       uLightDirection: windUniforms.uLightDirection,
+      uSunDirection: sharedWaterUniforms.uSunDirection,
+      uSunColor: sharedWaterUniforms.uSunColor,
+      uSkyColor: sharedWaterUniforms.uSkyColor,
+      uRainFactor: sharedWaterUniforms.uRainFactor,
+      uTimeOfDayNightFactor: sharedWaterUniforms.uTimeOfDayNightFactor,
+      uGroundLightTint: sharedWaterUniforms.uGroundLightTint,
       // Authentic Buddies Blitz Floor Splatmap Palette (Warm Golden-Tan #eab664 + Lush Green Grass + Asphalt + Oasis Lake + Harbor Dock)
       uDirtMain: { value: new THREE.Color('#eab664') },
       uDirtDeep: { value: new THREE.Color('#d29a48') },
@@ -15997,34 +20982,52 @@ export function createCurvedPlanetEnvironment(
       uGrassBright: { value: new THREE.Color('#75d424') },
       uDirtShadowTint: { value: new THREE.Color('#94682e') },
       uGrassShadowTint: { value: new THREE.Color('#1a6620') },
+      // San Francisco Coastal Hill & Stratified Sandstone Cut-Cliff Palette
+      uCliffCream: { value: new THREE.Color('#ebe2cf') },
+      uCliffBuff: { value: new THREE.Color('#d5c2a0') },
+      uCliffOchre: { value: new THREE.Color('#ba9e78') },
+      uHillGrassMid: { value: new THREE.Color('#56b838') },
+      uHillGrassBright: { value: new THREE.Color('#86dd44') },
     },
+    fog: true,
     vertexShader: /* glsl */ `
       varying vec3 vFlatWorldPos;
       varying vec3 vNormalW;
+      #include <fog_pars_vertex>
 
       ${PLANET_TERRAIN_GLSL_SNIPPET}
 
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        float rawElev = getRawGroundElevation(worldPos.xz);
+        float rawElev = getRawGroundElevationWithTrough(worldPos.xz, 1.0);
         worldPos.y = rawElev;
         vFlatWorldPos = worldPos.xyz;
 
-        if (abs(rawElev) > 0.002) {
-          float eps = 0.85;
-          float hX = getRawGroundElevation(worldPos.xz + vec2(eps, 0.0));
-          float hZ = getRawGroundElevation(worldPos.xz + vec2(0.0, eps));
-          vNormalW = normalize(vec3(-(hX - rawElev) / eps, 1.0, -(hZ - rawElev) / eps));
+        if (abs(rawElev) > 0.002 || evalEmbankmentTierOffsets(worldPos.xz).x > -2.5) {
+          float eps = 0.65;
+          float hXp = getRawGroundElevationWithTrough(worldPos.xz + vec2(eps, 0.0), 1.0);
+          float hXm = getRawGroundElevationWithTrough(worldPos.xz - vec2(eps, 0.0), 1.0);
+          float hZp = getRawGroundElevationWithTrough(worldPos.xz + vec2(0.0, eps), 1.0);
+          float hZm = getRawGroundElevationWithTrough(worldPos.xz - vec2(0.0, eps), 1.0);
+          vNormalW = normalize(vec3(-(hXp - hXm) / (2.0 * eps), 1.0, -(hZp - hZm) / (2.0 * eps)));
         } else {
           vNormalW = vec3(0.0, 1.0, 0.0);
         }
 
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = viewMatrix * worldPos;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
       uniform vec3 uLightDirection;
+      uniform vec3 uSunDirection;
+      uniform vec3 uSunColor;
+      uniform vec3 uSkyColor;
+      uniform float uRainFactor;
+      uniform float uTimeOfDayNightFactor;
+      uniform vec3 uGroundLightTint;
       uniform vec3 uDirtMain;
       uniform vec3 uDirtDeep;
       uniform vec3 uDirtHighlight;
@@ -16033,181 +21036,243 @@ export function createCurvedPlanetEnvironment(
       uniform vec3 uGrassBright;
       uniform vec3 uDirtShadowTint;
       uniform vec3 uGrassShadowTint;
+      uniform vec3 uCliffCream;
+      uniform vec3 uCliffBuff;
+      uniform vec3 uCliffOchre;
+      uniform vec3 uHillGrassMid;
+      uniform vec3 uHillGrassBright;
 
       varying vec3 vFlatWorldPos;
       varying vec3 vNormalW;
+      #include <fog_pars_fragment>
 
       ${PLANET_TERRAIN_GLSL_SNIPPET}
       ${BLITZ_CAST_SHADOW_GLSL_SNIPPET}
+      ${WATER_AND_CAUSTICS_GLSL_SNIPPET}
 
-      vec2 evalZebraCrosswalk(vec2 p, vec2 center, vec2 halfSpan, bool stripesAlongX) {
-        vec2 d = abs(p - center) - halfSpan;
-        if (max(d.x, d.y) > 0.0) return vec2(0.0);
-        float coord = stripesAlongX ? (p.x - center.x) : (p.y - center.y);
-        return vec2(step(0.38, fract(coord * 0.85)), 1.0);
+      vec2 evalZebraCrosswalk(vec2 p, vec2 center, vec2 halfSpan, bool stripesAlongX, vec4 gradP) {
+        vec2 local = p - center;
+        float across = stripesAlongX ? local.x : local.y;
+        float along = stripesAlongX ? local.y : local.x;
+        float acrossHalf = stripesAlongX ? halfSpan.x : halfSpan.y;
+        float alongHalf = stripesAlongX ? halfSpan.y : halfSpan.x;
+
+        if (abs(across) > acrossHalf + 0.25 || abs(along) > alongHalf + 0.55) {
+          return vec2(0.0);
+        }
+
+        float aaX = max(abs(gradP.x) + abs(gradP.z), 0.004);
+        float aaY = max(abs(gradP.y) + abs(gradP.w), 0.004);
+        float aaAcross = stripesAlongX ? aaX : aaY;
+        float aaAlong = stripesAlongX ? aaY : aaX;
+
+        // Clean setback envelope (stops centerlines/shoulder lines smoothly before entering crosswalk)
+        float mBoxAcross = 1.0 - smoothstep(-aaAcross, aaAcross, abs(across) - (acrossHalf + 0.12));
+        float mBoxAlong = 1.0 - smoothstep(-aaAlong, aaAlong, abs(along) - (alongHalf + 0.42));
+        float inBox = mBoxAcross * mBoxAlong;
+
+        // Evenly spaced, symmetric zebra stripes (even bar count -> zero clipped edge slivers)
+        float nBars = max(2.0, 2.0 * floor((acrossHalf * 2.0 - 0.25) / 2.0));
+        float halfCount = nBars * 0.5;
+        float barHalfW = acrossHalf < 2.5 ? 0.24 : 0.26;
+        float outerMargin = acrossHalf < 2.5 ? 0.20 : 0.24;
+        float outerCenter = acrossHalf - outerMargin - barHalfW;
+        float period = outerCenter / max(halfCount - 0.5, 0.5);
+
+        float u = abs(across);
+        float barIdx = clamp(floor(u / period), 0.0, halfCount - 1.0);
+        float barCenter = (barIdx + 0.5) * period;
+        float dAcross = abs(u - barCenter) - barHalfW;
+        float dAlong = abs(along) - (alongHalf - 0.08);
+        float mAcross = 1.0 - smoothstep(-aaAcross, aaAcross, dAcross);
+        float mAlong = 1.0 - smoothstep(-aaAlong, aaAlong, dAlong);
+        return vec2(mAcross * mAlong, inBox);
       }
 
-      float evalSegmentCenterDash(vec2 p, vec2 a, vec2 b, float trimStart, float trimEnd) {
-        vec2 minAB = min(a, b) - vec2(0.30);
-        vec2 maxAB = max(a, b) + vec2(0.30);
+      float evalSegmentCenterDash(vec2 p, vec2 a, vec2 b, float trimStart, float trimEnd, vec4 gradP) {
+        vec2 minAB = min(a, b) - vec2(0.32);
+        vec2 maxAB = max(a, b) + vec2(0.32);
         if (p.x < minAB.x || p.x > maxAB.x || p.y < minAB.y || p.y > maxAB.y) return 0.0;
-        vec2 pa = p - a;
         vec2 ba = b - a;
         float len = length(ba);
-        float along = dot(pa, ba) / max(len, 1e-4);
-        if (along < trimStart || along > len - trimEnd) return 0.0;
-        float h = clamp(along / max(len, 1e-4), 0.0, 1.0);
-        float perpDist = length(pa - ba * h);
-        float lineMask = 1.0 - smoothstep(0.12, 0.25, perpDist);
-        if (lineMask <= 0.001) return 0.0;
-        float dash = step(0.42, fract(along * 0.16));
-        return lineMask * dash;
+        float usableLen = len - trimStart - trimEnd;
+        if (usableLen < 1.3) return 0.0;
+
+        vec2 dir = ba / max(len, 1e-4);
+        vec2 pa = p - a;
+        float along = dot(pa, dir);
+        float u = along - trimStart;
+        if (u < -0.25 || u > usableLen + 0.25) return 0.0;
+
+        float signedPerp = pa.x * dir.y - pa.y * dir.x;
+        float dPerp = abs(signedPerp) - 0.145;
+
+        // Phase-fitted symmetric dashes across [0, usableLen] -> zero clipped orphan dots at bends/junctions
+        float dAlong = 99.0;
+        if (usableLen <= 4.6) {
+          float dashHalf = 0.5 * clamp(usableLen * 0.68, 1.3, 2.8);
+          dAlong = abs(u - 0.5 * usableLen) - dashHalf;
+        } else {
+          float duty = 0.54;
+          float nDashes = max(2.0, floor((usableLen + 2.6) / 5.1 + 0.5));
+          float pitch = usableLen / (nDashes - 1.0 + duty);
+          float dashLen = pitch * duty;
+          float gapLen = pitch - dashLen;
+          float dashIdx = clamp(floor((u + 0.5 * gapLen) / pitch), 0.0, nDashes - 1.0);
+          float dashCenter = dashIdx * pitch + 0.5 * dashLen;
+          dAlong = abs(u - dashCenter) - 0.5 * dashLen;
+        }
+
+        vec2 perpDir = vec2(-dir.y, dir.x);
+        float aaAlong = max(abs(dot(gradP.xy, dir)) + abs(dot(gradP.zw, dir)), 0.004);
+        float aaPerp = max(abs(dot(gradP.xy, perpDir)) + abs(dot(gradP.zw, perpDir)), 0.004);
+        float mAlong = 1.0 - smoothstep(-aaAlong, aaAlong, dAlong);
+        float mPerp = 1.0 - smoothstep(-aaPerp, aaPerp, dPerp);
+        return mAlong * mPerp;
       }
 
-      float evalAllRoadCenterMarkings(vec2 p) {
+      vec2 evalAllRoadCenterMarkings(vec2 p, vec4 gradP) {
         vec2 mp = vec2(p.x, abs(p.y));
         vec2 ap = abs(p);
+        float aaX = max(abs(gradP.x) + abs(gradP.z), 0.004);
+        float aaY = max(abs(gradP.y) + abs(gradP.w), 0.004);
+        float aaWorld = max(aaX, aaY);
 
-        // 1. Autonomous Tram Loop ("2 markah putus-putus, seperti layaknya jalur untuk trem otonom"):
-        //    Exact signed distance to the Outer Ring Highway Loop (x = ±70.0, z = ±52.0, R = 8.0m corners)
+        // 1. Autonomous Tram Loop ("2 markah putus-putus, seperti layaknya jalur untuk trem otonom")
+        //    placed on the INNER Halte-adjacent side (dTramSigned = -5.00m -> |x| = 65.0, |z| = 47.0, R = 3.0m)
+        //    with a white dashed Car-Lane Separator at dTramSigned = -2.20m leaving [-2.20m .. +3.90m] (6.10m) for cars beside the tram:
         float dTramSigned = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
         float tramDash = 0.0;
-        if (abs(dTramSigned) < 1.35) {
-          // Twin parallel dashed guide lines at ±0.85m from the tramway centerline (1.70m gauge)
-          float dTwinLine = abs(abs(dTramSigned) - 0.85);
-          float twinLineMask = 1.0 - smoothstep(0.10, 0.22, dTwinLine);
-          float sTram = 0.0;
-          if (ap.y <= 44.0) {
-            sTram = ap.y;
-          } else if (ap.x > 62.0 && ap.y > 44.0) {
-            sTram = 44.0 + 8.0 * atan(ap.y - 44.0, ap.x - 62.0);
-          } else {
-            sTram = 56.56637 + (62.0 - ap.x);
+        float carLaneDivider = 0.0;
+        if (dTramSigned > -6.50 && dTramSigned < -1.80) {
+          // Signalized approach clear zones prevent tiny dash stubs between stop bars and zebra crosswalks
+          bool inWestSignalApproach = (p.x < -60.0) && ((p.y > -13.60 && p.y < -3.50) || (p.y > 3.50 && p.y < 13.60));
+          bool inEastSignalApproach = (p.x > 60.0) && (abs(p.y) < 3.85);
+          if (!inWestSignalApproach && !inEastSignalApproach) {
+            // Anisotropic tangent/normal screen-space AA along the rounded ring loop
+            vec2 ringTan = (ap.y <= 44.0)
+              ? vec2(0.0, 1.0)
+              : (ap.x > 62.0 && ap.y > 44.0)
+                ? normalize(vec2(-(ap.y - 44.0), ap.x - 62.0))
+                : vec2(1.0, 0.0);
+            vec2 ringNorm = vec2(-ringTan.y, ringTan.x);
+            float aaAlongRing = max(abs(dot(gradP.xy, ringTan)) + abs(dot(gradP.zw, ringTan)), 0.004);
+            float aaPerpRing = max(abs(dot(gradP.xy, ringNorm)) + abs(dot(gradP.zw, ringNorm)), 0.004);
+
+            // Twin parallel golden-amber dashed guide lines at ±0.85m around dTramSigned = -5.00m
+            if (abs(dTramSigned + 5.00) < 1.35) {
+              float sTram = 0.0;
+              if (ap.y <= 44.0) {
+                sTram = ap.y;
+              } else if (ap.x > 62.0 && ap.y > 44.0) {
+                sTram = 44.0 + 3.0 * atan(ap.y - 44.0, ap.x - 62.0);
+              } else {
+                sTram = 48.71239 + (62.0 - ap.x);
+              }
+              // Exact quarter-loop multiple (110.71239m / 20 = 5.53562m) -> seamless across x=0 & z=0
+              float tramPitch = 5.53562;
+              float tramCycleIdx = floor(sTram / tramPitch + 0.5);
+              float dTramAlong = abs(sTram - tramCycleIdx * tramPitch) - 1.40;
+              float dTwinLine = abs(abs(dTramSigned + 5.00) - 0.85) - 0.135;
+              tramDash = (1.0 - smoothstep(-aaAlongRing, aaAlongRing, dTramAlong))
+                       * (1.0 - smoothstep(-aaPerpRing, aaPerpRing, dTwinLine));
+            }
+            // Crisp dashed white tram-vs-car lane divider at dTramSigned = -2.20m (true R = 5.80m corner)
+            float dLaneDivSigned = dTramSigned + 2.20;
+            if (abs(dLaneDivSigned) < 0.35) {
+              float sLane = 0.0;
+              if (ap.y <= 44.0) {
+                sLane = ap.y;
+              } else if (ap.x > 62.0 && ap.y > 44.0) {
+                sLane = 44.0 + 5.8 * atan(ap.y - 44.0, ap.x - 62.0);
+              } else {
+                sLane = 53.11062 + (62.0 - ap.x);
+              }
+              // Exact quarter-loop multiple (115.11062m / 20 = 5.75553m) -> seamless across x=0 & z=0
+              float lanePitch = 5.75553;
+              float laneCycleIdx = floor(sLane / lanePitch + 0.5);
+              float dLaneAlong = abs(sLane - laneCycleIdx * lanePitch) - 1.45;
+              float dLanePerp = abs(dLaneDivSigned) - 0.135;
+              carLaneDivider = (1.0 - smoothstep(-aaAlongRing, aaAlongRing, dLaneAlong))
+                             * (1.0 - smoothstep(-aaPerpRing, aaPerpRing, dLanePerp));
+            }
           }
-          tramDash = twinLineMask * step(0.40, fract(sTram * 0.18));
         }
 
         // 2. Single Dashed Center Line for ALL Other Roads in the Arena:
         float singleDash = 0.0;
-        if (abs(dTramSigned) > 3.4) {
+        if (dTramSigned > 3.4 || dTramSigned < -7.5) {
           if (mp.y <= 52.5) {
-            // A. Central Warzone Mirrored S-Curve Roads (s1..s14 with true Euclidean arc-length dashes)
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-70.0, 15.0), vec2(-52.0, 15.0), 3.8, 0.3));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-52.0, 15.0), vec2(-41.0, 26.0), 0.3, 0.3));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-41.0, 26.0), vec2(-25.0, 26.0), 0.3, 0.6));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-13.0, 14.0), 0.6, 0.6));
-            singleDash = max(singleDash, evalSegmentCenterDash(p, vec2(-13.0, -14.0), vec2(-13.0, 14.0), 0.6, 0.6));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-13.0, 14.0), vec2(9.0, 14.0), 0.8, 0.3));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(9.0, 14.0), vec2(19.0, 24.0), 0.3, 0.6));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 24.0), vec2(42.0, 24.0), 0.8, 0.8));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-18.0, 33.0), 0.8, 0.3));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-18.0, 33.0), vec2(-18.0, 52.0), 0.3, 3.8));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 24.0), vec2(19.0, 52.0), 0.8, 3.8));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 24.0), vec2(52.0, 15.0), 0.8, 0.3));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(52.0, 15.0), vec2(70.0, 15.0), 0.3, 3.8));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 24.0), vec2(42.0, 52.0), 0.8, 3.8));
+            // A. Central Warzone Enlarged Mirrored S-Curve Roads (synced 1:1 to evalMirroredCentralSCurveDist)
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-66.5, 15.0), vec2(-52.0, 15.0), 9.30, 0.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-52.0, 15.0), vec2(-41.0, 26.0), 0.85, 0.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-41.0, 26.0), vec2(-25.0, 26.0), 0.85, 1.65, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-14.2, 15.6), 1.65, 1.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(p, vec2(-14.2, -15.6), vec2(-14.2, 15.6), 1.85, 1.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-14.2, 15.6), vec2(8.0, 15.6), 1.85, 0.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(8.0, 15.6), vec2(18.5, 26.5), 0.85, 1.95, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(18.5, 26.5), vec2(43.5, 26.5), 2.60, 3.60, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-18.0, 33.0), 1.65, 0.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-18.0, 33.0), vec2(-18.0, 49.5), 0.85, 10.20, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(19.0, 26.5), vec2(19.0, 49.5), 2.60, 10.20, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(43.5, 26.5), vec2(54.5, 15.0), 2.00, 0.85, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(54.5, 15.0), vec2(66.5, 15.0), 0.85, 9.20, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 26.5), vec2(42.0, 49.5), 2.60, 10.20, gradP));
           }
           if (mp.y >= 51.5) {
             // B. Base Complex Dividing Roads & Outer Base Ring Roads (North & South, az in [52..108])
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 52.0), vec2(-60.0, 108.0), 3.8, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 52.0), vec2(-30.0, 108.0), 3.8, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 52.0), vec2(0.0, 108.0), 3.8, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 52.0), vec2(30.0, 108.0), 3.8, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 52.0), vec2(60.0, 108.0), 3.8, 2.4));
+            //    Cleanly trimmed outside z=58.0 crosswalks (trimStart=8.9) and z=108.0 rear collector throat (trimEnd=4.6)
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 52.0), vec2(-60.0, 108.0), 8.9, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 52.0), vec2(-30.0, 108.0), 8.9, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 52.0), vec2(0.0, 108.0), 8.9, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 52.0), vec2(30.0, 108.0), 8.9, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 52.0), vec2(60.0, 108.0), 8.9, 4.6, gradP));
 
-            // Rear Base Collector Road at |z| = 108.0 (4 spans between the 5 vertical complex roads)
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 108.0), vec2(-30.0, 108.0), 2.4, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 108.0), vec2(0.0, 108.0), 2.4, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 108.0), vec2(30.0, 108.0), 2.4, 2.4));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 108.0), vec2(60.0, 108.0), 2.4, 2.4));
+            // Rear Base Collector Road at |z| = 108.0 (clean 4.6m junction setbacks at every T-intersection & coastal switchback throat)
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 108.0), vec2(-30.0, 108.0), 4.6, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 108.0), vec2(0.0, 108.0), 4.6, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 108.0), vec2(30.0, 108.0), 4.6, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 108.0), vec2(60.0, 108.0), 4.6, 4.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 108.0), vec2(96.0, 108.0), 4.6, 4.6, gradP));
 
             // 4 Base Gate Driveway Spurs (x = ±45, ±15, |z| in [52.0..64.2])
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 3.8, 0.8));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-15.0, 52.0), vec2(-15.0, 64.2), 3.8, 0.8));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(15.0, 52.0), vec2(15.0, 64.2), 3.8, 0.8));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 4.6, 1.4, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-15.0, 52.0), vec2(-15.0, 64.2), 4.6, 1.4, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(15.0, 52.0), vec2(15.0, 64.2), 4.6, 1.4, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(45.0, 52.0), vec2(45.0, 64.2), 4.6, 1.4, gradP));
 
-            // Grand Casino Semi-Circular Valet Drop-Off Loop Centerline Dashes (North of Central Plaza)
-            if (p.x <= -63.6 && p.y <= -60.5 && p.y >= -80.8) {
-              float dValetCenter = abs(sdRoundedBox2D(p, vec2(-64.05, -70.6), vec2(9.45, 7.35), 5.2));
-              float valetLineMask = 1.0 - smoothstep(0.11, 0.23, dValetCenter);
-              if (valetLineMask > 0.001) {
-                float sValet = atan(p.y + 70.6, p.x + 68.3) * 5.2 + p.x * 0.35 + p.y * 0.35;
-                singleDash = max(singleDash, valetLineMask * step(0.42, fract(sValet * 0.22)));
+            // Grand Casino Semi-Circular Valet Drop-Off Loop Centerline Dashes (true arc-length + anisotropic AA)
+            if (p.x <= -67.15 && p.y <= -60.5 && p.y >= -80.8) {
+              float dValetCenter = abs(sdRoundedBox2D(p, vec2(-64.05, -70.6), vec2(9.45, 7.35), 5.2)) - 0.13;
+              float vy = abs(p.y + 70.6);
+              float sValet = 0.0;
+              if (p.x <= -68.3 && vy <= 2.15) {
+                sValet = vy;
+              } else if (p.x <= -68.3) {
+                sValet = 2.15 + 5.2 * atan(vy - 2.15, -68.3 - p.x);
+              } else {
+                sValet = 10.31814 + (p.x + 68.3);
               }
+              float valetPitch = 3.45;
+              float valetCycleIdx = floor(sValet / valetPitch + 0.5);
+              float dValetAlong = abs(sValet - valetCycleIdx * valetPitch) - 0.82;
+              singleDash = max(
+                singleDash,
+                (1.0 - smoothstep(-aaWorld, aaWorld, dValetAlong))
+                  * (1.0 - smoothstep(-aaWorld, aaWorld, dValetCenter))
+              );
             }
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(45.0, 52.0), vec2(45.0, 64.2), 3.8, 0.8));
           }
         }
 
-        return max(tramDash, singleDash);
-      }
-
-      vec3 applyContourTerraceLevel(
-        vec3 baseCol,
-        float t,
-        float riserW,
-        vec2 p,
-        float soilNoise,
-        float fineNoise,
-        vec3 grassDark,
-        vec3 grassBright,
-        float tierSeed
-      ) {
-        // 1. Deep cool-green drop shadow cast in front of the cliff toe (t in [-2.4, 0.0], linear RGB)
-        float toeShadow = smoothstep(-2.40, -1.50, t) * (1.0 - smoothstep(-0.10, 0.12, t));
-        vec3 shadowTint = mix(baseCol * 0.42, uGrassShadowTint * 0.85, 0.65);
-        vec3 col = mix(baseCol, shadowTint, toeShadow * 0.78);
-
-        float onTier = smoothstep(-0.12, 0.10, t);
-        if (onTier <= 0.001) return col;
-
-        // 2. Weathered Gray-Buff Limestone/Slate Cliff Riser (t in [0.0, riserW], linear RGB)
-        float u = clamp(t / riserW, 0.0, 1.0);
-        // Linear RGB equivalents of sRGB #59584f (dark slate), #8a8778 (mid limestone), #bfbaa7 (sunlit bevel)
-        vec3 rockDark = vec3(0.100, 0.098, 0.078);
-        vec3 rockMid = vec3(0.254, 0.242, 0.188);
-        vec3 rockLight = vec3(0.518, 0.488, 0.386);
-
-        vec3 rockCol = mix(rockDark, rockMid, smoothstep(0.16, 0.40, u + (soilNoise - 0.5) * 0.16));
-        rockCol = mix(rockCol, rockLight, smoothstep(0.64, 0.82, u + (fineNoise - 0.5) * 0.14));
-
-        // Hand-drawn vertical/diagonal rock block facet joints & fracture crevices
-        float tangentCoord = (p.x - p.y) * 0.24 + (p.x + p.y) * 0.18 + tierSeed * 1.73;
-        float blockJoint = 1.0 - smoothstep(0.03, 0.09, abs(fract(tangentCoord + u * 0.22 + (fineNoise - 0.5) * 0.18) - 0.5));
-        float diagCrack = 1.0 - smoothstep(0.025, 0.075, abs(fract(tangentCoord * 2.05 - u * 0.38 + soilNoise * 0.35) - 0.5));
-        float facetCrease = 1.0 - smoothstep(0.04, 0.13, abs(u - (0.66 + (fineNoise - 0.5) * 0.14)));
-        float rockInk = max(blockJoint * 0.82, max(diagCrack * 0.58, facetCrease * 0.50));
-        rockCol = mix(rockCol, vec3(0.018, 0.022, 0.016), rockInk);
-
-        // 3. Lush Green Grass Terrace Ledge (t > riserW) + Bright Sunlit Yellow-Green Overhang Rim (linear RGB)
-        float ledgeDist = max(0.0, t - riserW);
-        vec3 ledgeGrass = mix(grassDark, grassBright, smoothstep(0.22, 0.82, soilNoise));
-        float rimBand = 1.0 - smoothstep(0.35, 1.25 + fineNoise * 0.55, ledgeDist);
-        // Linear RGB equivalent of sunlit yellow-green rim #b2e65e
-        ledgeGrass = mix(ledgeGrass, vec3(0.445, 0.795, 0.115), rimBand * 0.70);
-
-        // Hand-drawn comic grass blade tuft ticks along the terrace rim
-        float tuftWave = abs(fract((p.x * 0.45 - p.y * 0.49) + tierSeed * 0.9 + soilNoise * 0.6) - 0.5);
-        float grassTuft = (1.0 - smoothstep(0.03, 0.08, tuftWave)) *
-          smoothstep(0.20, 0.40, ledgeDist) *
-          (1.0 - smoothstep(0.65, 1.05, ledgeDist));
-        ledgeGrass = mix(ledgeGrass, vec3(0.015, 0.055, 0.010), grassTuft * 0.72);
-
-        float onLedge = smoothstep(riserW - 0.12, riserW + 0.12, t);
-        vec3 tierCol = mix(rockCol, ledgeGrass, onLedge);
-
-        // 4. Crisp Dark-Ink Comic Outlines at Cliff Bottom Toe (t ≈ 0.07) and Top Lip (t ≈ riserW - 0.05)
-        float toeLine = 1.0 - smoothstep(0.05, 0.18, abs(t - 0.07));
-        float lipLine = 1.0 - smoothstep(0.05, 0.18, abs(t - (riserW - 0.05)));
-        float outline = max(toeLine * 0.92, lipLine * 0.88);
-        tierCol = mix(tierCol, vec3(0.010, 0.014, 0.009), outline);
-
-        return mix(col, tierCol, onTier);
+        return vec2(max(tramDash, singleDash), carLaneDivider);
       }
 
       void main() {
         vec2 p = vFlatWorldPos.xz;
+        vec4 gradP = vec4(dFdx(p), dFdy(p));
         float roadSdf = evaluateRoadNetworkSdf(p);
+        float aaRoadSdf = max(fwidth(roadSdf), 0.004);
         float lakeSdf = evaluateNwLakeSdf(p);
         vec2 harborSdf = evaluateSeHarborSdf(p);
         float westPlantSdf = evaluateWestPowerPlantSdf(p);
@@ -16231,80 +21296,87 @@ export function createCurvedPlanetEnvironment(
         vec3 surfaceCol = mix(dirtCol, grassCol, smoothstep(0.08, 0.78, grassMask));
         surfaceCol = mix(surfaceCol, uGrassEdge, edgeBand * 0.55);
 
-        // 2. Expanded Right-Side Industrial Harbor Concrete Dock, Coastal Concrete Seawall & Open East Ocean (x > 34)
-        //    Note: In the South-East Coastal Beachfront & Park zone (x > 74.5, z in [45.0..104.5]),
-        //    the concrete seawall opens into warm Golden Beach Sand, Natural Dunes & Gentle Foaming Surf!
+        float centralParkSdf = evaluateCentralParkOctagonSdf(p);
+        float inCentralParkMask = 1.0 - smoothstep(-0.35, 0.25, centralParkSdf);
+        if (inCentralParkMask > 0.001) {
+          vec3 parkTurfBase = mix(uGrassFloor * vec3(0.76, 0.96, 0.80), uGrassFloor * vec3(0.84, 1.02, 0.86), 0.5);
+          surfaceCol = mix(surfaceCol, parkTurfBase, inCentralParkMask);
+        }
+
+        // 2. Expanded Right-Side Industrial Harbor Concrete Dock, Coastal Concrete Seawall & Sunlit East Seabed
         float beachFeather = (soilNoise - 0.5) * 2.2;
-        float seBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * (1.0 - smoothstep(109.2, 111.5, p.x))
+        float seBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * smoothstep(-3.0, 0.4, harborSdf.y)
                           * smoothstep(44.2, 47.5, p.y + beachFeather) * (1.0 - smoothstep(102.5, 105.2, p.y + beachFeather));
-        float neBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * (1.0 - smoothstep(109.2, 111.5, p.x))
-                          * smoothstep(-105.2, -102.5, p.y + beachFeather) * (1.0 - smoothstep(-47.5, -44.2, p.y + beachFeather));
+        float neBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * smoothstep(-3.0, 0.4, harborSdf.y)
+                          * smoothstep(-105.2, -102.5, p.y + beachFeather) * (1.0 - smoothstep(-21.5, -18.5, p.y + beachFeather));
         float coastalBeachZone = max(seBeachZone, neBeachZone);
-        float seBeachShoreline = smoothstep(45.2, 47.5, p.y) * (1.0 - smoothstep(102.5, 104.8, p.y));
-        float neBeachShoreline = smoothstep(-104.8, -102.5, p.y) * (1.0 - smoothstep(-47.5, -45.2, p.y));
-        float coastalBeachShoreline = max(seBeachShoreline, neBeachShoreline);
+        float coastalBeachShoreline = evaluateEastCoastalSandyMask(p.y);
         float concreteMask = (1.0 - smoothstep(-0.35, 0.35, harborSdf.x)) * (1.0 - smoothstep(0.05, 0.45, coastalBeachZone));
-        float seaMask = 1.0 - smoothstep(-0.35, 0.25, harborSdf.y);
-        float seaShoreMask = (1.0 - smoothstep(0.0, 1.8, harborSdf.y)) * (1.0 - concreteMask);
+        float seaMask = 1.0 - smoothstep(-0.35, 0.35, harborSdf.y);
+        float seaShoreMask = (1.0 - smoothstep(0.0, 1.8, harborSdf.y)) * (1.0 - concreteMask) * (1.0 - coastalBeachShoreline);
         if (seaShoreMask > 0.001) {
-          vec3 sandyBankCol = mix(vec3(0.76, 0.67, 0.50), vec3(0.62, 0.55, 0.42), soilNoise);
+          vec3 sandyBankCol = mix(uDirtDeep * 0.82, uDirtMain * 0.72, soilNoise);
           surfaceCol = mix(surfaceCol, sandyBankCol, seaShoreMask * 0.85);
         }
         if (concreteMask > 0.001) {
-          vec3 dockCol = mix(vec3(0.47, 0.50, 0.54), vec3(0.55, 0.58, 0.62), soilNoise);
+          vec3 dockCol = mix(vec3(0.47, 0.50, 0.54), vec3(0.55, 0.58, 0.62), soilNoise) * uGroundLightTint;
           // Concrete slab expansion grid lines
           vec2 gridDist = abs(fract(p / 6.0 - 0.5) - 0.5) * 6.0;
           float jointLine = 1.0 - smoothstep(0.04, 0.12, min(gridDist.x, gridDist.y));
-          dockCol = mix(dockCol, vec3(0.34, 0.37, 0.41), jointLine * 0.55);
+          dockCol = mix(dockCol, vec3(0.34, 0.37, 0.41) * uGroundLightTint, jointLine * 0.55);
 
           // Landward concrete curb along the West edge of the Harbor Dock & Coastal Seawall
           float landwardCurb = smoothstep(-0.85, -0.20, harborSdf.x) * step(p.x, 108.5);
-          dockCol = mix(dockCol, vec3(0.30, 0.33, 0.38), landwardCurb * 0.72);
+          dockCol = mix(dockCol, vec3(0.30, 0.33, 0.38) * uGroundLightTint, landwardCurb * 0.72);
 
           // Vertical concrete quay wall coping & hazard stripe along x = 110.0
           float quayCoping = smoothstep(-0.05, 0.22, harborSdf.y) * (1.0 - smoothstep(0.65, 1.15, harborSdf.y));
           float hazardStripe = step(0.5, fract(p.y * 0.42));
-          dockCol = mix(dockCol, mix(vec3(0.14, 0.16, 0.20), vec3(0.95, 0.74, 0.12), hazardStripe), quayCoping * 0.90);
+          dockCol = mix(dockCol, mix(vec3(0.14, 0.16, 0.20), vec3(0.95, 0.74, 0.12), hazardStripe) * uGroundLightTint, quayCoping * 0.90);
           surfaceCol = mix(surfaceCol, dockCol, concreteMask);
         }
+
+        vec3 sandDeep = uDirtDeep * vec3(1.04, 1.06, 1.14);
+        vec3 sandMain = uDirtMain * vec3(1.06, 1.10, 1.24);
+        vec3 sandBright = uDirtHighlight * vec3(0.96, 0.95, 0.96);
+        float causticSunScale = mix(1.0, 0.18, uTimeOfDayNightFactor) * (1.0 - 0.68 * uRainFactor);
+
         if (seaMask > 0.001) {
-          // Shoreline 60 FPS 4-Cascade Non-Integer Wavelengths ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Whitecap Foam
-          float k0 = 6.2831853 / 73.3;
-          float k1 = 6.2831853 / 15.7;
-          float k2 = 6.2831853 / 3.33;
-          float k3 = 6.2831853 / 0.71;
-          float c0 = sin(p.x * k0 * 0.88 + p.y * k0 * 0.47 + uTime * 1.45);
-          float c1 = sin(p.x * k1 * 0.76 - p.y * k1 * 0.65 + uTime * 2.15);
-          float c2 = cos(-p.x * k2 * 0.54 + p.y * k2 * 0.84 + uTime * 3.10);
-          float c3 = sin(p.x * k3 * 0.62 + p.y * k3 * 0.78 - uTime * 4.20);
-          float ripple = (c0 * 0.35 + c1 * 0.35 + c2 * 0.20 + c3 * 0.10) * 0.5 + 0.5;
-          float jacobianWhitecap = smoothstep(0.54, 0.86, c1 * 0.55 + c2 * 0.45);
+          float seaBedY = evalHarborSeabedDrop(p, harborSdf.y);
+          float seaDepth = max(0.0, -0.16 - seaBedY);
 
-          vec3 deepHarborCol = vec3(0.04, 0.22, 0.33);
-          vec3 midHarborCol = mix(vec3(0.11, 0.45, 0.60), vec3(0.14, 0.62, 0.74), coastalBeachShoreline);
-          vec3 seaCol = mix(deepHarborCol, midHarborCol, smoothstep(-18.0, -1.2, harborSdf.y));
-          seaCol = mix(seaCol, vec3(0.65, 0.88, 0.96), smoothstep(0.68, 0.92, ripple) * 0.26);
-          seaCol = mix(seaCol, vec3(0.92, 0.98, 1.0), jacobianWhitecap * 0.28);
+          float bedRipple = sin(p.x * 2.1 + sin(p.y * 0.42) * 1.6 + n2 * 1.4) * 0.5 + 0.5;
+          float bedPebbles = smoothstep(0.68, 0.88, n3);
+          vec3 shallowSeaSand = mix(sandDeep, sandMain, smoothstep(0.18, 0.82, soilNoise));
+          shallowSeaSand = mix(shallowSeaSand, sandDeep * 0.80, bedRipple * 0.16 + bedPebbles * 0.20);
 
-          // Submerged vertical concrete quay/seawall face & cast drop-shadow band along the East Seawall edge (x = 110.0)
-          // (Suppressed along both North-East Taman Ria & South-East sandy beach shorelines where gentle surf meets golden sand)
-          float quayDist = p.x - 110.0;
-          float submergedWallFace = (1.0 - smoothstep(0.05, 0.95, quayDist)) * (1.0 - coastalBeachShoreline);
-          vec3 wetConcreteWall = mix(vec3(0.20, 0.24, 0.29), vec3(0.32, 0.36, 0.41), 1.0 - smoothstep(0.1, 0.85, quayDist));
-          seaCol = mix(seaCol, wetConcreteWall, submergedWallFace * 0.78);
+          float deepBedT = clamp(
+            max(smoothstep(0.16, 1.38, seaDepth), smoothstep(-3.0, -14.0, harborSdf.y) * 0.85),
+            0.0,
+            1.0
+          );
+          vec3 deepMaritimeTealSand = vec3(0.11, 0.31, 0.36) * uGroundLightTint;
+          vec3 seaBedCol = mix(shallowSeaSand, deepMaritimeTealSand, deepBedT * 0.88);
 
-          float wallDropShadow = smoothstep(0.15, 0.85, quayDist) * (1.0 - smoothstep(0.85, 3.6, quayDist)) * (1.0 - coastalBeachShoreline);
-          seaCol *= mix(1.0, 0.46, wallDropShadow);
+          // Dual-layer Voronoi caustics brightest in shallow clear water & around pier pilings
+          float caustics = evalVoronoiCaustics(p, uTime);
+          float causticDepthWeight =
+            smoothstep(-0.25, 0.35, 0.35 - harborSdf.y) *
+            mix(1.0, 0.30, smoothstep(0.45, 1.42, seaDepth));
+          vec3 causticTint = mix(vec3(0.74, 0.96, 1.0), uSunColor, 0.55);
+          seaBedCol += causticTint * caustics * 0.54 * causticDepthWeight * causticSunScale;
 
-          // Shoreline Depth-Gated Shore Swash & Stranded Voronoi Lace Foam (only evaluated within WATER_SHORE_DEEP < 26m)
-          if (harborSdf.y > -26.0) {
-            float foam = smoothstep(-2.25, -0.85, harborSdf.y) * (1.0 - smoothstep(-0.85, -0.15, harborSdf.y));
-            float beachSurfWave = sin(p.x * 1.65 + uTime * 2.4 + sin(p.y * 0.28) * 1.8) * 0.5 + 0.5;
-            float lacePattern = smoothstep(0.32, 0.78, n3 * 0.65 + c2 * 0.35);
-            float extraBeachFoam = coastalBeachShoreline * smoothstep(-4.2, -0.15, harborSdf.y) * smoothstep(0.52, 0.86, beachSurfWave) * (0.65 + 0.35 * lacePattern);
-            seaCol = mix(seaCol, vec3(0.93, 0.98, 1.0), clamp(foam * (0.72 + 0.22 * ripple) + extraBeachFoam * 0.88, 0.0, 1.0));
-          }
-          surfaceCol = mix(surfaceCol, seaCol, seaMask);
+          // Contact AO along concrete Harbor Quay wall (x = 110.0) and under Bianglala pier deck
+          float quayDist = max(0.0, -harborSdf.y);
+          float quayWallAO = (1.0 - smoothstep(0.2, 3.8, quayDist)) * (1.0 - coastalBeachShoreline);
+          seaBedCol *= mix(1.0, 0.36, quayWallAO);
+
+          float underPierAO =
+            smoothstep(110.0, 112.5, p.x) * (1.0 - smoothstep(125.0, 130.5, p.x)) *
+            smoothstep(-43.2, -40.5, p.y) * (1.0 - smoothstep(-24.5, -21.8, p.y));
+          seaBedCol *= mix(1.0, 0.56, underPierAO);
+
+          surfaceCol = mix(surfaceCol, seaBedCol, seaMask);
         }
 
         // 2B. West Elevated Concrete Power Plant Platform ("Lantai Beton Gardu Pembangkit Listrik & 4 Cerobong Asap", y = +1.40m)
@@ -16328,162 +21400,300 @@ export function createCurvedPlanetEnvironment(
           surfaceCol = mix(surfaceCol, plantConcrete, westPlantMask);
         }
 
-        // 2C. North-East Taman Ria Beachfront Sand (z < -46) & South-East Coastal Beachfront Sand (z > +46)
+        // 2C. North-East Taman Ria & South-East Beachfront Dry Sand + Dynamic Wet Sand Swash
         if (coastalBeachZone > 0.001) {
-          // Warm sun-drenched Golden Coastal Beach Sand in Linear RGB (harmonized with Blitz's uDirtMain / uDirtHighlight palette!)
           float duneWave1 = sin(p.x * 0.95 + sin(p.y * 0.22) * 2.4 + n2 * 1.6) * 0.5 + 0.5;
           float duneWave2 = sin(p.x * 2.6 - p.y * 0.45 + n3 * 2.2) * 0.5 + 0.5;
           float duneRipple = duneWave1 * 0.68 + duneWave2 * 0.32;
-          vec3 sandDeep = uDirtDeep * vec3(1.04, 1.06, 1.14);
-          vec3 sandMain = uDirtMain * vec3(1.06, 1.10, 1.24);
-          vec3 sandBright = uDirtHighlight * vec3(0.96, 0.95, 0.96);
           vec3 dryGoldenSand = mix(sandDeep, sandMain, smoothstep(0.18, 0.82, soilNoise));
           dryGoldenSand = mix(dryGoldenSand, sandBright, smoothstep(0.35, 0.92, duneRipple) * 0.44 + warmPatch * 0.22);
 
           // Soft ambient occlusion shadow beneath the Elevated Timber Boardwalks
           float underSeBoardwalk = smoothstep(77.4, 79.0, p.x) * (1.0 - smoothstep(92.0, 94.2, p.x))
                                  * smoothstep(45.5, 47.2, p.y) * (1.0 - smoothstep(101.8, 103.5, p.y));
-          float underNeBoardwalk = smoothstep(94.8, 96.4, p.x) * (1.0 - smoothstep(108.5, 110.2, p.x))
-                                 * smoothstep(-74.8, -73.2, p.y) * (1.0 - smoothstep(-47.0, -45.0, p.y));
+          float underNeBoardwalk = smoothstep(101.0, 102.6, p.x) * (1.0 - smoothstep(116.2, 117.8, p.x))
+                                 * smoothstep(-75.2, -73.6, p.y) * (1.0 - smoothstep(-22.0, -20.5, p.y));
           dryGoldenSand *= mix(1.0, 0.68, max(underSeBoardwalk, underNeBoardwalk));
 
-          // Wet tidal sand & shallow turquoise water lap along the East shoreline (x in [103.2..110.2])
-          float wetSandFactor = smoothstep(102.8 + (n2 - 0.5) * 1.4, 108.6, p.x);
-          vec3 dampSandCol = sandDeep * vec3(0.62, 0.64, 0.68);
-          vec3 shallowTurquoise = vec3(0.12, 0.52, 0.64);
-          vec3 wetSandCol = mix(dampSandCol, shallowTurquoise, smoothstep(106.8, 109.8, p.x));
-          float shoreWave = sin(p.x * 1.75 + uTime * 2.2 + sin(p.y * 0.30) * 1.8) * 0.5 + 0.5;
-          float shoreFoamLine = smoothstep(105.8, 108.4, p.x) * (1.0 - smoothstep(108.9, 110.2, p.x)) * smoothstep(0.56, 0.86, shoreWave);
-          vec3 beachCol = mix(dryGoldenSand, wetSandCol, wetSandFactor);
-          beachCol = mix(beachCol, vec3(0.90, 0.97, 1.0), shoreFoamLine * 0.80);
-          surfaceCol = mix(surfaceCol, beachCol, coastalBeachZone * (1.0 - seaMask));
+          // Dry sand covers landward side cleanly, blending seamlessly across shoreline into seaBedCol
+          float landSandBlend = coastalBeachZone * (1.0 - seaMask);
+          surfaceCol = mix(surfaceCol, dryGoldenSand, landSandBlend);
+
+          // Synchronized Wet Sand Swash + thin translucent swash sheet + Voronoi cellular foam (harborSdf.y in [-2.6..+6.2])
+          if (coastalBeachShoreline > 0.001 && harborSdf.y < 7.5 && harborSdf.y > -2.8) {
+            vec3 swash = evalCoastalSwashState(p, uTime);
+            float reachM = swash.z;
+            float wetLimit = mix(5.0, 6.2, swash.x) + (n2 - 0.5) * 1.1;
+            float wetMask =
+              coastalBeachZone *
+              coastalBeachShoreline *
+              (1.0 - smoothstep(1.2, wetLimit, harborSdf.y)) *
+              smoothstep(-2.75, -1.85, harborSdf.y);
+
+            vec3 wetSandCol = sandDeep * 0.56;
+            vec3 Vground = normalize(cameraPosition - vFlatWorldPos);
+            vec3 Hwet = normalize(normalize(uSunDirection) + Vground);
+            float wetGloss =
+              pow(max(Hwet.y, 1e-4), 38.0) *
+              (1.0 - smoothstep(0.8, 4.6, max(0.0, harborSdf.y - reachM))) *
+              0.30 *
+              mix(1.0, 0.35, uTimeOfDayNightFactor) *
+              (1.0 - uRainFactor * 0.65);
+            wetSandCol += uSunColor * wetGloss;
+
+            // Paper-thin swash sheet advancing/retreating above y = -0.16m shoreline
+            float swashSheetMask =
+              (1.0 - smoothstep(reachM - 0.16, reachM + 0.08, harborSdf.y)) *
+              smoothstep(-2.60, -1.95, harborSdf.y);
+            if (swashSheetMask > 0.001) {
+              vec3 swashFilmCol = mix(
+                wetSandCol,
+                mix(vec3(0.08, 0.54, 0.62) * uGroundLightTint, uSkyColor, 0.30),
+                0.24
+              );
+              float swashCaustics = evalVoronoiCaustics(p, uTime);
+              swashFilmCol += uSunColor * swashCaustics * 0.24 * causticSunScale;
+              wetSandCol = mix(wetSandCol, swashFilmCol, swashSheetMask);
+            }
+
+            // Organic Voronoi cellular lace foam along advancing/retreating swash tongue
+            float swashRimDist = abs(harborSdf.y - reachM);
+            if (swashRimDist < 0.95 && reachM > -2.2) {
+              float lace = evalVoronoiFoamLace(p, uTime, vec2(-0.28, 0.12));
+              float rimEnv = 1.0 - smoothstep(0.08, 0.85, swashRimDist);
+              float swashFoam = smoothstep(0.30, 0.65, lace + rimEnv * 0.48 - 0.24) * rimEnv;
+              vec3 foamTint = vec3(0.92, 0.97, 1.0) * mix(vec3(1.0), uSunColor * 0.92 + vec3(0.10), 0.36) * mix(1.0, 0.38, uTimeOfDayNightFactor);
+              wetSandCol = mix(wetSandCol, foamTint, swashFoam * 0.88);
+            }
+
+            surfaceCol = mix(surfaceCol, wetSandCol, wetMask);
+          }
         }
 
-        // 3. Central-West Turquoise Oasis Lake & 3-Level Concave Basin Depression ("Level Cekungan Danau")
-        float shoreMask = 1.0 - smoothstep(0.0, 2.2, lakeSdf);
+        // 3. Central-West Oasis Lake Bed: Sunlit Warm Sandy-Pebble Floor + Mineral Silt + Dual-Layer Voronoi Caustics
+        float shoreMask = (1.0 - smoothstep(0.25, 2.15, lakeSdf)) * smoothstep(-0.25, 0.35, lakeSdf);
         if (shoreMask > 0.001) {
-          vec3 pebbleBankCol = mix(vec3(0.76, 0.67, 0.50), vec3(0.58, 0.50, 0.36), soilNoise);
-          // Sloped shoreline bank rim contour line at lakeSdf ≈ 0.45
-          float bankRimLine = 1.0 - smoothstep(0.06, 0.22, abs(lakeSdf - 0.45));
-          pebbleBankCol = mix(pebbleBankCol, vec3(0.32, 0.27, 0.18), bankRimLine * 0.55);
-          surfaceCol = mix(surfaceCol, pebbleBankCol, shoreMask * 0.88);
+          float pebbleGrain = smoothstep(0.60, 0.86, n3) * 0.6 + smoothstep(0.64, 0.88, planetValueNoise(p * 3.8)) * 0.4;
+          vec3 pebbleBankCol = mix(sandDeep * 0.92, sandMain * 0.86, soilNoise);
+          pebbleBankCol = mix(pebbleBankCol, sandDeep * 0.66, (1.0 - smoothstep(0.35, 1.05, lakeSdf)) * 0.55 + pebbleGrain * 0.18);
+          surfaceCol = mix(surfaceCol, pebbleBankCol, shoreMask * 0.90);
         }
-        float lakeWaterMask = 1.0 - smoothstep(-0.25, 0.25, lakeSdf);
+        float lakeWaterMask = 1.0 - smoothstep(0.15, 0.55, lakeSdf);
         if (lakeWaterMask > 0.001) {
-          float ripple = sin(p.x * 0.75 - uTime * 1.6) * cos(p.y * 0.75 + uTime * 1.3) * 0.5 + 0.5;
-          vec3 shallowShelfCol = vec3(0.18, 0.62, 0.72);
-          vec3 midBasinCol = vec3(0.09, 0.43, 0.55);
-          vec3 deepBasinCol = vec3(0.04, 0.24, 0.35);
+          float ls1 = (1.0 - smoothstep(-0.45, 0.85, lakeSdf)) * 0.48;
+          float ls2 = (1.0 - smoothstep(-2.60, -1.10, lakeSdf)) * 0.52;
+          float ls3 = (1.0 - smoothstep(-5.60, -3.20, lakeSdf)) * 0.55;
+          float lakeDepth = max(0.0, -0.16 + (ls1 + ls2 + ls3));
 
-          // 3 distinct stepped underwater basin terraces (Shallow Shelf -> Mid Terrace -> Deep Basin)
-          float inMidBasin = 1.0 - smoothstep(-2.15, -1.55, lakeSdf);
-          float inDeepBasin = 1.0 - smoothstep(-4.65, -3.95, lakeSdf);
-          vec3 lakeCol = mix(shallowShelfCol, midBasinCol, inMidBasin);
-          lakeCol = mix(lakeCol, deepBasinCol, inDeepBasin);
+          float finePebblesA = smoothstep(0.62, 0.86, planetValueNoise(p * 3.4));
+          float finePebblesB = smoothstep(0.66, 0.88, planetValueNoise(p * 7.8 + vec2(4.2, -6.1)));
+          vec3 lakeSandBed = mix(sandDeep, sandMain, smoothstep(0.20, 0.80, soilNoise));
+          lakeSandBed = mix(lakeSandBed, sandDeep * 0.72, finePebblesA * 0.32);
+          lakeSandBed = mix(lakeSandBed, vec3(0.42, 0.46, 0.44) * uGroundLightTint, finePebblesB * 0.24);
 
-          // Crisp underwater contour step riser lines & bevels at lakeSdf = -1.85 and -4.30
-          float stepRiser1 = 1.0 - smoothstep(0.08, 0.26, abs(lakeSdf - -1.85));
-          float stepRiser2 = 1.0 - smoothstep(0.08, 0.26, abs(lakeSdf - -4.30));
-          float stepLip1 = 1.0 - smoothstep(0.10, 0.34, abs(lakeSdf - -1.55));
-          float stepLip2 = 1.0 - smoothstep(0.10, 0.34, abs(lakeSdf - -3.95));
-          lakeCol = mix(lakeCol, vec3(0.36, 0.78, 0.86), max(stepLip1, stepLip2) * 0.48);
-          lakeCol = mix(lakeCol, vec3(0.02, 0.14, 0.22), max(stepRiser1, stepRiser2) * 0.72);
+          // Smooth continuous depth gradient (NO harsh black contour stepRiser ink lines!)
+          float deepSiltT = smoothstep(0.28, 1.32, lakeDepth);
+          vec3 deepOasisSilt = vec3(0.045, 0.22, 0.27) * uGroundLightTint;
+          vec3 lakeBedCol = mix(lakeSandBed, deepOasisSilt, deepSiltT * 0.90);
 
-          lakeCol = mix(lakeCol, vec3(0.68, 0.92, 0.96), smoothstep(0.76, 0.94, ripple) * 0.18);
-          float shoreFoam = smoothstep(-0.95, -0.1, lakeSdf);
-          lakeCol = mix(lakeCol, vec3(0.86, 0.96, 0.98), shoreFoam * 0.58);
-          surfaceCol = mix(surfaceCol, lakeCol, lakeWaterMask);
+          // Dual-layer Voronoi caustics brightest in crystal shallows & softening naturally toward deep center
+          float lakeCaustics = evalVoronoiCaustics(p * 1.15, uTime * 0.92);
+          float lakeCausticWeight =
+            smoothstep(-0.04, 0.12, lakeDepth + 0.04) *
+            mix(1.0, 0.24, smoothstep(0.30, 1.30, lakeDepth));
+          vec3 lakeCausticTint = mix(vec3(0.76, 0.97, 1.0), uSunColor, 0.55);
+          lakeBedCol += lakeCausticTint * lakeCaustics * 0.54 * lakeCausticWeight * causticSunScale;
+
+          surfaceCol = mix(surfaceCol, lakeBedCol, lakeWaterMask);
         }
 
         // 4. Asphalt Road Network (Outer Ring Road + Widened Base Outer Ring Road + Mirrored S-Curve Roads + Dashed Center Lines + Zebra Crosswalks)
         float roadMask = (1.0 - smoothstep(-0.25, 0.25, roadSdf)) * (1.0 - concreteMask);
         if (roadMask > 0.001) {
-          vec3 asphaltCol = mix(vec3(0.17, 0.19, 0.23), vec3(0.21, 0.24, 0.28), soilNoise);
-          // Raised curb border along road edges
-          float curbBand = smoothstep(-0.75, -0.15, roadSdf);
-          asphaltCol = mix(asphaltCol, vec3(0.32, 0.36, 0.42), curbBand * 0.82);
+          float aaX = max(abs(gradP.x) + abs(gradP.z), 0.004);
+          float aaY = max(abs(gradP.y) + abs(gradP.w), 0.004);
+          float aggNoise = planetValueNoise(p * 6.4) * 0.56 + planetValueNoise(p * 17.5 + vec2(4.7, -3.1)) * 0.44;
+          vec3 asphaltCol = mix(vec3(0.105, 0.118, 0.142), vec3(0.142, 0.158, 0.186), soilNoise);
+          asphaltCol *= mix(0.92, 1.08, aggNoise);
+
+          // Subtle tire-wear track darkening along primary travel bands (~2.0m inside road borders)
+          float laneWear = 1.0 - smoothstep(0.0, 1.35, abs(roadSdf + 2.05));
+          asphaltCol *= mix(1.0, 0.94, laneWear);
+
+          // Crisp concrete gutter bevel & raised curb border along road edges
+          float gutterAO = 1.0 - smoothstep(0.0, 0.14, abs(roadSdf + 0.38));
+          asphaltCol *= mix(1.0, 0.84, gutterAO * 0.65);
+          float curbBand = smoothstep(-0.36, -0.10, roadSdf);
+          asphaltCol = mix(asphaltCol, vec3(0.29, 0.33, 0.38), curbBand * 0.84);
+
+          // Wet-asphalt rain darkening prior to road-paint layering
+          asphaltCol *= mix(1.0, 0.68, uRainFactor);
 
           // North-South Mirrored Zebra Crosswalks across key intersections (vec2(stripe, inBox))
           vec2 mp = vec2(p.x, abs(p.y));
           vec2 zc = vec2(0.0);
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(-18.0, 46.5), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(19.0, 46.5), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(42.0, 46.5), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(73.2, 15.0), vec2(2.2, 3.2), false));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(-60.0, 15.0), vec2(2.2, 3.2), false));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(60.0, 15.0), vec2(2.2, 3.2), false));
-          zc = max(zc, evalZebraCrosswalk(p, vec2(-70.0, 0.0), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(p, vec2(70.0, 0.0), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(-60.0, 58.0), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(-30.0, 58.0), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(0.0, 58.0), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(30.0, 58.0), vec2(3.2, 2.2), true));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(60.0, 58.0), vec2(3.2, 2.2), true));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(-18.0, 42.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(19.0, 42.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(42.0, 42.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(-60.0, 15.0), vec2(2.2, 3.2), false, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(60.0, 15.0), vec2(2.2, 3.2), false, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(-68.05, 8.6), vec2(5.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(68.05, 0.0), vec2(5.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(-60.0, 58.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(-30.0, 58.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(0.0, 58.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(30.0, 58.0), vec2(3.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(mp, vec2(60.0, 58.0), vec2(3.2, 2.2), true, gradP));
           // Grand Casino Valet Drop-Off Loop Throat Crosswalks (North & South junctions along x = -65.45)
-          zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -63.25), vec2(1.35, 2.15), false));
-          zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -77.95), vec2(1.35, 2.15), false));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -63.25), vec2(1.35, 2.15), false, gradP));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -77.95), vec2(1.35, 2.15), false, gradP));
 
-          // Center Dashed Markings (Twin Parallel Dashed Lines on Autonomous Tram Loop + Single Dashed Line on All Other Roads)
-          float centerDash = evalAllRoadCenterMarkings(p) * (1.0 - zc.y);
-          asphaltCol = mix(asphaltCol, vec3(0.95, 0.80, 0.28), centerDash * 0.92);
-          asphaltCol = mix(asphaltCol, vec3(0.92, 0.94, 0.97), zc.x * 0.88);
+          // Solid Off-White Stop Bars upstream of Signalized Plaza West & East Harbor Crosswalks (anisotropic AA)
+          float tramStopBar = 0.0;
+          // 1) Central Plaza West signalized approaches (tram northbound -Z + two-way outer car lane)
+          if (p.x >= -73.50 && p.x <= -62.55 && abs(p.y) <= 12.25) {
+            float fullSpanM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - -68.03) - 5.25); // [-73.28 .. -62.78]
+            float carOnlyM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - -70.68) - 2.60);  // [-73.28 .. -68.08]
+            float yNbNorth = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -5.40) - 0.21);
+            float yNbSouth = 1.0 - smoothstep(-aaY, aaY, abs(p.y - 11.80) - 0.21);
+            float ySbNorth = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -11.40) - 0.21);
+            tramStopBar = max(fullSpanM * max(yNbNorth, yNbSouth), carOnlyM * ySbNorth);
+          }
+          // 2) East Harbor Crosswalk signalized approaches (tram southbound +Z + two-way outer car lane)
+          if (p.x >= 62.55 && p.x <= 73.50 && abs(p.y) <= 3.75) {
+            float fullSpanEastM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - 68.03) - 5.25); // [62.78 .. 73.28]
+            float carOnlyEastM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - 70.68) - 2.60);  // [68.08 .. 73.28]
+            float yEastSb = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -3.20) - 0.21);
+            float yEastNb = 1.0 - smoothstep(-aaY, aaY, abs(p.y - 3.20) - 0.21);
+            tramStopBar = max(tramStopBar, max(fullSpanEastM * yEastSb, carOnlyEastM * yEastNb));
+          }
+
+          // Crisp subtle white shoulder edge lines along highway borders (roadSdf inside curb band)
+          float dShoulder = abs(roadSdf + 0.56) - 0.062;
+          float shoulderLine = (1.0 - smoothstep(-aaRoadSdf, aaRoadSdf, dShoulder)) * (1.0 - zc.y) * (1.0 - tramStopBar);
+
+          // Center & Lane Divider Markings (Twin Amber Tram Rails + White Car-Lane Divider + Single Road Dashes)
+          vec2 roadMarks = evalAllRoadCenterMarkings(p, gradP) * (1.0 - max(zc.y, tramStopBar));
+
+          // Balanced road-paint palette: warm golden-amber (#f2c64b) and off-white (#edf2f7) in linear RGB
+          vec3 amberPaint = vec3(0.89, 0.58, 0.08);
+          vec3 whitePaint = vec3(0.84, 0.88, 0.92);
+          float paintGrain = mix(0.91, 1.0, aggNoise);
+          float amberMask = clamp(roadMarks.x, 0.0, 1.0);
+          float brightWhiteMask = clamp(max(max(zc.x, tramStopBar), roadMarks.y), 0.0, 1.0);
+          float shoulderMask = clamp(shoulderLine * (1.0 - brightWhiteMask) * (1.0 - amberMask), 0.0, 1.0);
+          float totalPaintMask = clamp(max(max(brightWhiteMask, amberMask), shoulderMask * 0.65), 0.0, 1.0);
+
+          asphaltCol = mix(asphaltCol, whitePaint * paintGrain, shoulderMask * 0.54);
+          asphaltCol = mix(asphaltCol, amberPaint * paintGrain, amberMask * 0.92);
+          asphaltCol = mix(asphaltCol, whitePaint * paintGrain, brightWhiteMask * 0.90);
+
+          // Respect time-of-day / weather ground light tint
+          asphaltCol *= uGroundLightTint;
+
+          // Subtle thermoplastic road-paint satin sheen + realistic wet-asphalt rain reflection
+          vec3 Vroad = normalize(cameraPosition - vFlatWorldPos);
+          vec3 Hroad = normalize(normalize(uSunDirection) + Vroad);
+          float fresnelRoad = pow(1.0 - max(Vroad.y, 0.0), 3.2);
+          float puddleMask = smoothstep(0.32, 0.72, n1 * 0.60 + n2 * 0.40);
+          float wetSheen = uRainFactor * mix(0.45, 1.0, puddleMask);
+          float sunVis = mix(1.0, 0.30, uTimeOfDayNightFactor);
+
+          asphaltCol = mix(
+            asphaltCol,
+            uSkyColor * 0.58 * uGroundLightTint,
+            wetSheen * mix(0.10, 0.38, fresnelRoad) * (1.0 - totalPaintMask * 0.45)
+          );
+          float dryPaintSheen = pow(max(Hroad.y, 1e-4), 32.0) * totalPaintMask * 0.045 * (1.0 - uRainFactor);
+          float wetSpec = pow(max(Hroad.y, 1e-4), mix(26.0, 52.0, totalPaintMask)) * wetSheen * 0.22;
+          asphaltCol += uSunColor * (dryPaintSheen + wetSpec) * sunVis;
 
           surfaceCol = mix(surfaceCol, asphaltCol, roadMask);
         }
 
-        // 5. Outer Perimeter Hill Embankment ("Tanggul Bukit dengan Lekukan Level"):
-        //    4-Level Stepped Contour Hillside with Gray-Buff Limestone Cliff Risers,
-        //    Lush Green Grass Terrace Ledges, Sunlit Rim Highlights & Cast Cliff Drop Shadows
-        float embMask = smoothstep(-2.6, 0.25, embT.x);
-        if (embMask > 0.001) {
-          // Lush green grass fringe along the foot of Level 1 cliff (outside roads & sea)
-          float footGrassMask = smoothstep(-2.55, -0.15, embT.x) * (1.0 - roadMask) * (1.0 - seaMask) * (1.0 - concreteMask);
-          vec3 footGrassCol = mix(uGrassFloor * 0.90, uGrassBright * 0.88, soilNoise);
-          surfaceCol = mix(surfaceCol, footGrassCol, footGrassMask * 0.92);
+        // 5. San Francisco-Inspired Coastal Hill Terrain:
+        //    Smooth bright green grassy slopes/bluffs + warm stratified limestone/sandstone cut-cliffs
+        //    along steep cut-slopes (1.0 - vNormalW.y), zero dark contour ink lines.
+        vec3 hillNormal = normalize(vNormalW);
+        float slopeSteep = 1.0 - clamp(hillNormal.y, 0.0, 1.0);
+        float plateauFlatMask = 1.0 - smoothstep(-0.25, 0.9, evaluateHillVillaPlateauSdf(p));
+        float coastalSlopeRegion =
+          max(smoothstep(-2.4, 0.35, embT.x), smoothstep(0.08, 0.65, vFlatWorldPos.y)) *
+          (1.0 - roadMask) *
+          (1.0 - seaMask) *
+          (1.0 - concreteMask) *
+          (1.0 - westPlantMask) *
+          (1.0 - plateauFlatMask);
+        if (coastalSlopeRegion > 0.001) {
+          float crestLift = smoothstep(3.5, 11.2, vFlatWorldPos.y);
+          vec3 hillGrassCol = mix(
+            uHillGrassMid,
+            uHillGrassBright,
+            smoothstep(0.18, 0.86, soilNoise * 0.82 + crestLift * 0.24)
+          );
+          hillGrassCol = mix(hillGrassCol, uHillGrassBright * vec3(1.06, 1.04, 0.90), warmPatch * crestLift * 0.18);
 
-          // Apply the 4 undulating contour terrace levels (Level 1 -> Level 4, in linear RGB)
-          surfaceCol = applyContourTerraceLevel(
-            surfaceCol, embT.x, 1.45, p, soilNoise, n3,
-            uGrassFloor * vec3(0.95, 0.98, 0.92), uGrassBright * vec3(0.92, 0.96, 0.90), 1.0
-          );
-          surfaceCol = applyContourTerraceLevel(
-            surfaceCol, embT.y, 1.50, p, soilNoise, n3,
-            uGrassFloor * vec3(1.06, 1.04, 0.96), uGrassBright * vec3(1.02, 1.02, 0.94), 2.0
-          );
-          surfaceCol = applyContourTerraceLevel(
-            surfaceCol, embT.z, 1.55, p, soilNoise, n3,
-            uGrassFloor * vec3(1.18, 1.12, 1.00), uGrassBright * vec3(1.12, 1.08, 0.98), 3.0
-          );
-          surfaceCol = applyContourTerraceLevel(
-            surfaceCol, embT.w, 1.60, p, soilNoise, n3,
-            uGrassFloor * vec3(1.30, 1.20, 1.04), uGrassBright * vec3(1.22, 1.15, 1.02), 4.0
-          );
+          // Gentle cool-green ambient shading right at the hill toe (no ink stroke)
+          float toeSoftAO = smoothstep(-2.1, -0.5, embT.x) * (1.0 - smoothstep(-0.1, 1.2, embT.x));
+          hillGrassCol = mix(hillGrassCol, uGrassShadowTint * 1.15, toeSoftAO * 0.22);
+
+          // Warm stratified limestone/sandstone cut-cliffs (#ebe2cf -> #d5c2a0 -> #ba9e78) on steep cut slopes
+          float cliffMask = smoothstep(0.055, 0.195, slopeSteep) * smoothstep(0.18, 0.62, vFlatWorldPos.y);
+          vec3 slopeTerrainCol = hillGrassCol;
+          if (cliffMask > 0.001) {
+            float strataCoord = vFlatWorldPos.y * 1.42 + n1 * 0.58 + n2 * 0.26 + sin(p.x * 0.075 + p.y * 0.068) * 0.32;
+            float strataBand = sin(strataCoord * 3.14159265) * 0.5 + 0.5;
+            float fineStrata = sin(strataCoord * 7.4 + n3 * 1.3) * 0.5 + 0.5;
+            vec3 cliffCol = mix(uCliffOchre, uCliffBuff, smoothstep(0.16, 0.66, strataBand));
+            cliffCol = mix(cliffCol, uCliffCream, smoothstep(0.60, 0.94, strataBand * 0.72 + fineStrata * 0.28));
+
+            // Warm sandy soil bevel transition where grass overhangs top of cut-cliff
+            float cliffRim = smoothstep(0.12, 0.45, cliffMask) * (1.0 - smoothstep(0.55, 0.92, cliffMask));
+            cliffCol = mix(cliffCol, uCliffOchre * vec3(0.95, 0.98, 0.82), cliffRim * 0.30);
+            slopeTerrainCol = mix(hillGrassCol, cliffCol, cliffMask);
+          }
+
+          slopeTerrainCol *= uGroundLightTint;
+          surfaceCol = mix(surfaceCol, slopeTerrainCol, coastalSlopeRegion);
         }
 
-        // Slope shading (subtle 3D hill relief without washing out the cel-shaded terraces)
-        float ndl = clamp(dot(normalize(vNormalW), normalize(uLightDirection)) * 0.5 + 0.5, 0.0, 1.0);
-        float slopeContrast = mix(0.15, 0.18, smoothstep(-0.2, 0.5, embSdf));
+        // Slope shading (subtle 3D coastal hill & cut-cliff directional relief)
+        float ndl = clamp(dot(hillNormal, normalize(uLightDirection)) * 0.5 + 0.5, 0.0, 1.0);
+        float slopeContrast = mix(0.12, 0.20, max(smoothstep(-0.2, 0.5, embSdf), smoothstep(0.05, 0.25, slopeSteep)));
         surfaceCol *= mix(1.0 - slopeContrast, 1.0 + slopeContrast * 0.22, ndl);
 
-        // Crisp real-time cast shadows from trees, Blitz Tank, Blitz Plane, buildings & spinning turbine.glb blades!
+        // Soft real-time 9-tap Vogel-disk PCF cast shadows from palm fronds, trees, stilt cabin, vehicles & buildings
         float castShadow = sampleBlitzCastShadow(vFlatWorldPos);
         float shadowStrength = 1.0 - castShadow;
         if (shadowStrength > 0.005) {
           float halftone = blitzHalftoneGrid(p, 2.4);
           float edgeMask = smoothstep(0.08, 0.52, shadowStrength) * (1.0 - smoothstep(0.52, 0.92, shadowStrength));
-          float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * 0.16, 0.0, 1.0);
-          vec3 naturalShadowTarget = mix(uDirtShadowTint, uGrassShadowTint, smoothstep(0.15, 0.75, grassMask));
           float pavedMask = clamp(roadMask + concreteMask + westPlantMask, 0.0, 1.0);
-          vec3 shadowTarget = mix(naturalShadowTarget, surfaceCol * vec3(0.48, 0.50, 0.58), pavedMask);
-          surfaceCol = mix(surfaceCol, shadowTarget, stylizedShadow * 0.46);
+          float underwaterShadowMask = clamp(seaMask + lakeWaterMask, 0.0, 1.0);
+          // Smooth organic dappled shadows on beach sand, grass & shallow water without harsh halftone dots
+          float softOrganicMask = clamp(coastalBeachZone + underwaterShadowMask, 0.0, 1.0);
+          float halftoneWeight = (1.0 - softOrganicMask) * mix(0.02, 0.07, pavedMask);
+          float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * halftoneWeight, 0.0, 1.0);
+          vec3 naturalShadowTarget = mix(uDirtShadowTint, uGrassShadowTint, smoothstep(0.15, 0.75, max(grassMask, inCentralParkMask)));
+          vec3 beachSandShadowTarget = surfaceCol * vec3(0.32, 0.36, 0.46);
+          naturalShadowTarget = mix(naturalShadowTarget, beachSandShadowTarget, coastalBeachZone * 0.90);
+          vec3 shadowTarget = mix(
+            naturalShadowTarget,
+            surfaceCol * vec3(0.42, 0.48, 0.56),
+            max(pavedMask, underwaterShadowMask)
+          );
+          float shadowOpacity = mix(0.48, 0.62, coastalBeachZone);
+          surfaceCol = mix(surfaceCol, shadowTarget, stylizedShadow * shadowOpacity);
         }
 
         gl_FragColor = vec4(surfaceCol, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
   });
+  bindBlitzShadowSamplerShaderDefine(groundMat);
 
   const groundMesh = new THREE.Mesh(groundGeo, groundMat);
   groundMesh.name = 'CurvedPlanetGround';
@@ -16491,8 +21701,36 @@ export function createCurvedPlanetEnvironment(
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
 
-  const waterMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));
-  waterMesh.visible = false;
+  const eastOceanGeo = new THREE.PlaneGeometry(
+    235,
+    560,
+    isSoftwareGl ? 72 : 112,
+    isSoftwareGl ? 150 : 220,
+  );
+  eastOceanGeo.rotateX(-Math.PI / 2);
+  eastOceanGeo.computeBoundingBox();
+  if (eastOceanGeo.boundingBox) {
+    eastOceanGeo.boundingBox.min.y -= 0.35;
+    eastOceanGeo.boundingBox.max.y += 0.35;
+  }
+  eastOceanGeo.computeBoundingSphere();
+  if (eastOceanGeo.boundingSphere) {
+    eastOceanGeo.boundingSphere.radius += 0.35;
+  }
+  const eastOceanMat = createUnifiedWaterSurfaceMaterial({
+    kind: 'ocean',
+    windUniforms,
+    isSoftwareGl,
+    sharedUniforms: sharedWaterUniforms,
+  });
+  const waterMesh = new THREE.Mesh(eastOceanGeo, eastOceanMat);
+  waterMesh.name = 'EastOceanWaterSurface';
+  waterMesh.position.set(222.5, EAST_WATER_SURFACE_Y, 0.0);
+  waterMesh.renderOrder = 2;
+  waterMesh.frustumCulled = true;
+  waterMesh.castShadow = false;
+  waterMesh.receiveShadow = false;
+  scene.add(waterMesh);
   const planetCoreMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));
   planetCoreMesh.visible = false;
   const roadsGroup = new THREE.Group();
@@ -16712,7 +21950,7 @@ export function createCurvedPlanetEnvironment(
   // =========================================================================
   const westPlantGroup = new THREE.Group();
   westPlantGroup.name = 'WestLobbyShoppingPlaza3D';
-  westPlantGroup.position.set(-90.5, 0, 0.0);
+  westPlantGroup.position.set(-92.75, 0, 0.0);
   roadsGroup.add(westPlantGroup);
 
   const lobbyConcreteTex = getLv1AndoPlasterWallTexture();
@@ -17096,13 +22334,13 @@ export function createCurvedPlanetEnvironment(
   //    PLAZA PAVING, AND 1:1 URBAN PLAZA TO STREET STAIRCASE (ARCHITECTURAL MODEL SHEET)
   //    Preserves exact 28m x 76m footprint (x in [-104.5, -76.5], z in [-38.0, +38.0])
   // -------------------------------------------------------------------------
-  // Lower Basalt Sub-Base Plinth (recessed around the East Urban Staircase bay lx in [+5.20 .. +14.10], lz in [-10.00 .. +10.00])
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(24.20, 0.48, 76.4), '#8a8d88', [-2.00, 0.24, 0], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
+  // Lower Basalt Sub-Base Plinth (recessed around the East Urban Staircase bay lx in [+5.20 .. +14.10], lz in [-10.00 .. +10.00], widened -4.0m backward)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(28.20, 0.48, 76.4), '#8a8d88', [-4.00, 0.24, 0], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
   addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.10, 0.48, 28.2), '#8a8d88', [12.05, 0.24, -24.1], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
   addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.10, 0.48, 28.2), '#8a8d88', [12.05, 0.24, 24.1], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
 
-  // Main West & Central Upper Plaza Deck (lx in [-13.90 .. +5.20], full 75.8m length, top at y = +2.50m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(19.10, 2.02, 75.8), '#e5e2da', [-4.35, 1.49, 0], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  // Main West & Central Upper Plaza Deck (lx in [-17.90 .. +5.20], full 75.8m length, top at y = +2.50m)
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(23.10, 2.02, 75.8), '#e5e2da', [-6.35, 1.49, 0], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
   // East-North Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [-37.90 .. -10.00], top at y = +2.50m)
   addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.02, 27.9), '#e5e2da', [9.55, 1.49, -23.95], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
   // East-South Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [+10.00 .. +37.90], top at y = +2.50m)
@@ -17268,51 +22506,65 @@ export function createCurvedPlanetEnvironment(
   }
 
   // F. Continuous Urban Pedestrian Concrete Sidewalk & Roadside Curb along the ENTIRE East Plaza Road Edge
-  //    - Connects seamlessly from the bottom of the staircase (lx = +13.605) and North/South Plaza walls (lx = +13.92)
-  //      all the way to the West Ring Road asphalt edge at lx = +16.60 (worldX = -73.90m)!
+  //    - West Plaza retaining wall & balustrade sit at worldX = -78.70 / -78.83 (lx = +14.05 / +13.92 in shifted
+  //      westPlantGroup -92.75), aligned flush with the Tennis Court East Fence/Hedge at worldX = -78.82!
+  //    - Widened 4.80m Sidewalk spans lx in [13.92 .. 18.72] (worldX in [-78.83 .. -74.03]) up to the curb at lx = +18.82
+  //      (worldX = -73.93m)!
   //    - Uses dedicated `lobbySidewalkPaverTex` (square urban concrete flagstones, distinct from Plaza & Stairs)
-  // 1) Central Staircase Landing Sidewalk (lz in [-10.00 .. +10.00], lx in [13.605 .. 16.47])
+  // 1) Central Staircase Landing Sidewalk (lz in [-10.00 .. +10.00], lx in [13.605 .. 18.72])
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(2.865, 0.09, 20.00),
+    new THREE.BoxGeometry(5.115, 0.09, 20.00),
     '#bcc3cc',
-    [15.0375, 0.045, 0.0],
+    [16.1625, 0.045, 0.0],
     [0, 0, 0],
     0.012,
     lobbySidewalkPaverTex,
     2.2,
   );
-  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [13.92 .. 16.47];
+  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [13.92 .. 18.72];
   //    strokeW = 0 so zero BackSide outline lip crosses the flush z = -38.10 Grand Casino sidewalk seam!)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(2.55, 0.09, 28.10),
+    new THREE.BoxGeometry(4.80, 0.09, 28.10),
     '#bcc3cc',
-    [15.195, 0.045, -24.05],
+    [16.32, 0.045, -24.05],
     [0, 0, 0],
     0,
     lobbySidewalkPaverTex,
     2.2,
   );
-  // 3) South Plaza Roadside Sidewalk Promenade (lz in [+10.00 .. +38.10], lx in [13.92 .. 16.47])
+  // NE Granite Return Curb along z = -38.00 linking the widened Plaza Sidewalk [-78.83..-76.58] cleanly to Grand Casino's West Edge (-76.58)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(2.55, 0.09, 28.10),
-    '#bcc3cc',
-    [15.195, 0.045, 24.05],
+    new THREE.BoxGeometry(2.35, 0.105, 0.20),
+    '#8f96a0',
+    [15.095, 0.0525, -38.00],
     [0, 0, 0],
-    0.012,
+    0,
+    lobbyConcreteTex,
+    2.2,
+  );
+  // 3) South Plaza Roadside Sidewalk Promenade (lz in [+10.00 .. +38.10], lx in [13.92 .. 18.72],
+  //    joining the Tennis Court East Sidewalk [-78.82 .. -74.03] 100% flush at worldZ = +38.10!)
+  addLobbyPart(
+    urbanStaircaseGrp,
+    new THREE.BoxGeometry(4.80, 0.09, 28.10),
+    '#bcc3cc',
+    [16.32, 0.045, 24.05],
+    [0, 0, 0],
+    0,
     lobbySidewalkPaverTex,
     2.2,
   );
   // 4) Continuous Full-Length Roadside Granite Curb Beam right along the Asphalt Road Edge
-  //    (lx = +16.57 -> worldX = -73.93, lz in [-38.10 .. +38.15]; North end joins Grand Casino curb at z = -38.10
+  //    (lx = +18.82 -> worldX = -73.93, lz in [-38.10 .. +38.15]; North end joins Grand Casino curb at z = -38.10
   //    and South end flows continuously into the Tennis Court curb at z = +38.10!)
   addLobbyPart(
     urbanStaircaseGrp,
     new THREE.BoxGeometry(0.20, 0.105, 76.25),
     '#8f96a0',
-    [16.57, 0.0525, 0.025],
+    [18.82, 0.0525, 0.025],
     [0, 0, 0],
     0.010,
     lobbyConcreteTex,
@@ -17324,7 +22576,7 @@ export function createCurvedPlanetEnvironment(
       urbanStaircaseGrp,
       new THREE.BoxGeometry(0.46, 0.03, 0.92),
       '#383e45',
-      [16.92, 0.015, drainZ],
+      [19.17, 0.015, drainZ],
       [0, 0, 0],
       0.008,
       lobbyDrainGrilleTex,
@@ -17582,6 +22834,7 @@ export function createCurvedPlanetEnvironment(
 
   const sharedPlazaLeafShrubMat = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uLeafTex: { value: initialPlazaBushLeafMask },
       uColorMain: { value: new THREE.Color('#217a34') },
       uColorDepth: { value: new THREE.Color('#185c27') },
@@ -17594,6 +22847,7 @@ export function createCurvedPlanetEnvironment(
       uWindStrength: windUniforms.uWindStrength,
       uWindGust: windUniforms.uWindGust,
     },
+    fog: true,
     vertexShader: /* glsl */ `
       attribute vec3 aLeafCenter;
       attribute vec3 aLeafLocalPos;
@@ -17609,6 +22863,7 @@ export function createCurvedPlanetEnvironment(
       varying float vLeafShade;
       varying vec3 vCanopyNormalW;
       varying float vSunTipMask;
+      #include <fog_pars_vertex>
 
       void main() {
         vUv = uv;
@@ -17659,7 +22914,9 @@ export function createCurvedPlanetEnvironment(
         vCanopyNormalW = normalize(mat3(worldMat) * localCanopyN);
         vSunTipMask = smoothstep(-0.14, 0.56, clampedCenter.y) * smoothstep(0.22, 0.82, length(clampedCenter));
 
-        gl_Position = projectionMatrix * viewMatrix * vec4(finalWorldPos, 1.0);
+        vec4 mvPosition = viewMatrix * vec4(finalWorldPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
@@ -17674,6 +22931,7 @@ export function createCurvedPlanetEnvironment(
       varying float vLeafShade;
       varying vec3 vCanopyNormalW;
       varying float vSunTipMask;
+      #include <fog_pars_fragment>
 
       void main() {
         float mask = texture2D(uLeafTex, vUv).r;
@@ -17690,6 +22948,7 @@ export function createCurvedPlanetEnvironment(
         gl_FragColor = vec4(finalCol, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
@@ -17831,6 +23090,7 @@ export function createCurvedPlanetEnvironment(
 
     const flowerMat = new THREE.ShaderMaterial({
       uniforms: {
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         uLeafTex: { value: initialPlazaBushLeafMask },
         uLeafScale: { value: 1.72 },
         uAlphaThreshold: { value: 0.28 },
@@ -17840,6 +23100,7 @@ export function createCurvedPlanetEnvironment(
         uWindStrength: windUniforms.uWindStrength,
         uWindGust: windUniforms.uWindGust,
       },
+      fog: true,
       vertexShader: /* glsl */ `
         attribute vec3 aLeafCenter;
         attribute vec3 aLeafLocalPos;
@@ -17858,6 +23119,7 @@ export function createCurvedPlanetEnvironment(
         varying vec3 vMainCol;
         varying vec3 vDepthCol;
         varying vec3 vCanopyNormalW;
+        #include <fog_pars_vertex>
 
         void main() {
           vUv = uv;
@@ -17907,7 +23169,9 @@ export function createCurvedPlanetEnvironment(
           vPetalShade = clamp((0.25 + 0.75 * max(heightLift * 0.90, radialOut * 0.82)) * petalSeedTone, 0.0, 1.0);
           vCanopyNormalW = normalize(mat3(worldMat) * normalize(vec3(clampedCenter.x, clampedCenter.y + 0.30, clampedCenter.z)));
 
-          gl_Position = projectionMatrix * viewMatrix * vec4(finalWorldPos, 1.0);
+          vec4 mvPosition = viewMatrix * vec4(finalWorldPos, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
@@ -17920,6 +23184,7 @@ export function createCurvedPlanetEnvironment(
         varying vec3 vMainCol;
         varying vec3 vDepthCol;
         varying vec3 vCanopyNormalW;
+        #include <fog_pars_fragment>
 
         void main() {
           float mask = texture2D(uLeafTex, vUv).r;
@@ -17931,6 +23196,7 @@ export function createCurvedPlanetEnvironment(
           gl_FragColor = vec4(finalCol, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
+          #include <fog_fragment>
         }
       `,
       side: THREE.DoubleSide,
@@ -18040,149 +23306,14 @@ export function createCurvedPlanetEnvironment(
   const COL_PLAZA_POST = '#38424d';
   const COL_PLAZA_POST_CAP = '#4f5b69';
 
-  const createMitredPolylineStripGeometry = (
-    pts: [number, number][],
-    width: number,
-    height: number,
-    closedLoop = false,
-  ): THREE.BufferGeometry => {
-    const n = pts.length;
-    const halfW = width * 0.5;
-    const y0 = -height * 0.5;
-    const y1 = height * 0.5;
-
-    const segCount = closedLoop ? n : n - 1;
-    const segRights: [number, number][] = [];
-    for (let i = 0; i < segCount; i++) {
-      const pA = pts[i];
-      const pB = pts[(i + 1) % n];
-      const dx = pB[0] - pA[0];
-      const dz = pB[1] - pA[1];
-      const len = Math.hypot(dx, dz) || 1;
-      const tx = dx / len;
-      const tz = dz / len;
-      segRights.push([-tz, tx]);
-    }
-
-    const leftPts: [number, number][] = [];
-    const rightPts: [number, number][] = [];
-    for (let i = 0; i < n; i++) {
-      let mx = 0;
-      let mz = 0;
-      if (!closedLoop && i === 0) {
-        mx = segRights[0][0] * halfW;
-        mz = segRights[0][1] * halfW;
-      } else if (!closedLoop && i === n - 1) {
-        mx = segRights[n - 2][0] * halfW;
-        mz = segRights[n - 2][1] * halfW;
-      } else {
-        const rPrev = segRights[(i - 1 + segCount) % segCount];
-        const rNext = segRights[i % segCount];
-        const sx = rPrev[0] + rNext[0];
-        const sz = rPrev[1] + rNext[1];
-        const sLen = Math.hypot(sx, sz);
-        if (sLen > 1e-5) {
-          const ux = sx / sLen;
-          const uz = sz / sLen;
-          const dot = Math.max(0.25, ux * rPrev[0] + uz * rPrev[1]);
-          const miterLen = halfW / dot;
-          mx = ux * miterLen;
-          mz = uz * miterLen;
-        } else {
-          mx = rPrev[0] * halfW;
-          mz = rPrev[1] * halfW;
-        }
-      }
-      leftPts.push([pts[i][0] - mx, pts[i][1] - mz]);
-      rightPts.push([pts[i][0] + mx, pts[i][1] + mz]);
-    }
-
-    const positions: number[] = [];
-    const normals: number[] = [];
-    const uvs: number[] = [];
-
-    const pushQuad = (
-      p0: [number, number, number],
-      p1: [number, number, number],
-      p2: [number, number, number],
-      p3: [number, number, number],
-    ) => {
-      const ux = p1[0] - p0[0];
-      const uy = p1[1] - p0[1];
-      const uz = p1[2] - p0[2];
-      const vx = p2[0] - p0[0];
-      const vy = p2[1] - p0[1];
-      const vz = p2[2] - p0[2];
-      let nx = uy * vz - uz * vy;
-      let ny = uz * vx - ux * vz;
-      let nz = ux * vy - uy * vx;
-      const nLen = Math.hypot(nx, ny, nz) || 1;
-      nx /= nLen;
-      ny /= nLen;
-      nz /= nLen;
-
-      positions.push(
-        p0[0], p0[1], p0[2],
-        p1[0], p1[1], p1[2],
-        p2[0], p2[1], p2[2],
-        p0[0], p0[1], p0[2],
-        p2[0], p2[1], p2[2],
-        p3[0], p3[1], p3[2],
-      );
-      for (let k = 0; k < 6; k++) {
-        normals.push(nx, ny, nz);
-      }
-      uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
-    };
-
-    for (let i = 0; i < segCount; i++) {
-      const nextIdx = (i + 1) % n;
-      const l0 = leftPts[i];
-      const r0 = rightPts[i];
-      const l1 = leftPts[nextIdx];
-      const r1 = rightPts[nextIdx];
-
-      const r0Top: [number, number, number] = [r0[0], y1, r0[1]];
-      const r1Top: [number, number, number] = [r1[0], y1, r1[1]];
-      const l1Top: [number, number, number] = [l1[0], y1, l1[1]];
-      const l0Top: [number, number, number] = [l0[0], y1, l0[1]];
-
-      const r0Bot: [number, number, number] = [r0[0], y0, r0[1]];
-      const r1Bot: [number, number, number] = [r1[0], y0, r1[1]];
-      const l1Bot: [number, number, number] = [l1[0], y0, l1[1]];
-      const l0Bot: [number, number, number] = [l0[0], y0, l0[1]];
-
-      // Top (+Y), Bottom (-Y), Right Wall (+R), Left Wall (-R)
-      pushQuad(r0Top, r1Top, l1Top, l0Top);
-      pushQuad(l0Bot, l1Bot, r1Bot, r0Bot);
-      pushQuad(r0Bot, r1Bot, r1Top, r0Top);
-      pushQuad(l1Bot, l0Bot, l0Top, l1Top);
-
-      if (!closedLoop && i === 0) {
-        pushQuad(l0Bot, r0Bot, r0Top, l0Top);
-      }
-      if (!closedLoop && i === segCount - 1) {
-        pushQuad(r1Bot, l1Bot, l1Top, r1Top);
-      }
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geo.computeBoundingBox();
-    geo.computeBoundingSphere();
-    return geo;
-  };
-
   // Single Continuous 10-Point Perimeter Path wrapping all 8 corners (including the staircase planter top returns at lx = 5.25, lz = ±8.46) with exact 45-degree miters
   const plazaPerimeterPath: [number, number][] = [
     [5.25, -8.46],
     [5.25, -10.00],
     [13.65, -10.00],
     [13.65, -37.65],
-    [-13.65, -37.65],
-    [-13.65, 37.65],
+    [-17.65, -37.65],
+    [-17.65, 37.65],
     [13.65, 37.65],
     [13.65, 10.00],
     [5.25, 10.00],
@@ -18201,23 +23332,23 @@ export function createCurvedPlanetEnvironment(
     true,
   );
 
-  // 2) Continuous Mitred Clear Glass Balustrade Panels
+  // 2) Continuous Mitred Clear Glass Balustrade Panels (1.85m above plaza slab)
   addToonRailingPart(
     westPlantGroup,
-    createMitredPolylineStripGeometry(plazaPerimeterPath, 0.10, 0.84),
+    createMitredPolylineStripGeometry(plazaPerimeterPath, 0.10, 1.42),
     COL_PLAZA_GLASS,
-    [0, 3.30, 0],
+    [0, 3.59, 0],
     [0, 0, 0],
     0,
     true,
   );
 
-  // 3) Continuous Mitred Slatted Timber Top Handrail
+  // 3) Continuous Mitred Slatted Timber Top Handrail (+1.85m guard height vs 3.30m avatar)
   addToonRailingPart(
     westPlantGroup,
     createMitredPolylineStripGeometry(plazaPerimeterPath, 0.26, 0.11),
     COL_PLAZA_TIMBER_RAIL,
-    [0, 3.76, 0],
+    [0, 4.35, 0],
     [0, 0, 0],
     0.011,
     false,
@@ -18226,7 +23357,7 @@ export function createCurvedPlanetEnvironment(
 
   // 4) Stanchion Posts & Base Caps along the Perimeter (including all 6 corner nodes + intermediate spans)
   const addPlazaPerimeterPost = (px: number, pz: number) => {
-    addToonRailingPart(westPlantGroup, new THREE.BoxGeometry(0.18, 0.92, 0.18), COL_PLAZA_POST, [px, 3.28, pz], [0, 0, 0], 0.010);
+    addToonRailingPart(westPlantGroup, new THREE.BoxGeometry(0.18, 1.50, 0.18), COL_PLAZA_POST, [px, 3.58, pz], [0, 0, 0], 0.010);
     addToonRailingPart(westPlantGroup, new THREE.BoxGeometry(0.24, 0.06, 0.24), COL_PLAZA_POST_CAP, [px, 2.89, pz], [0, 0, 0], 0.008);
   };
   for (const [cx, cz] of plazaPerimeterPath) {
@@ -18239,9 +23370,9 @@ export function createCurvedPlanetEnvironment(
     addPlazaPerimeterPost(13.65, -pz);
   }
   for (let pz = -33.0; pz <= 33.0; pz += 4.4) {
-    addPlazaPerimeterPost(-13.65, pz);
+    addPlazaPerimeterPost(-17.65, pz);
   }
-  for (let px = -9.6; px <= 9.6; px += 4.8) {
+  for (let px = -14.4; px <= 9.6; px += 4.8) {
     addPlazaPerimeterPost(px, -37.65);
     addPlazaPerimeterPost(px, 37.65);
   }
@@ -18309,12 +23440,13 @@ export function createCurvedPlanetEnvironment(
   };
 
   // -------------------------------------------------------------------------
-  // 4. ARCHITECTURAL MODEL SHEET — REAL ESTATE & FURNITURE SHOWROOM KIOSK
-  //    (Kios Kantor Agen Properti Rumah & Showroom Furnitur Minimalis — `screen_722f4ee5.png`)
-  //    Placed along the West Plaza border at local (-10.2, 2.50, -13.8), facing East (+X) toward Central Plaza,
-  //    with Merchant Hana stationed on the Central Plaza tiles directly in front (`screenshot_16_16283bb7.png`).
+  // 4. ARCHITECTURAL MODEL SHEET — UNIFIED 3-BAY CIVIC COMMERCIAL ARCADE
+  //    (Fashion Boutique Bay 1 [South], Real Estate & Design Studio Bay 2 [Center],
+  //     Urban Scooter & Mobility Bay 3 [North])
+  //    Placed along West Central Plaza at world (-100.10, 2.50, -4.40) facing East (+X),
+  //    leaving a clean 1.50m walkable rear service alley beside west_wall_west.
   // -------------------------------------------------------------------------
-  buildRealEstateAndFurnitureKiosk3D({
+  buildPlazaCommercialArcade3D({
     westPlantGroup,
     isSoftwareGl,
     sharedClearGlassMat: sharedLobbyClearGlassMat,
@@ -18329,52 +23461,8 @@ export function createCurvedPlanetEnvironment(
       concreteTex: lobbyConcreteTex,
       louverTex: lobbyLouverTex,
     },
-  });
-
-  // -------------------------------------------------------------------------
-  // 4B-2. ARCHITECTURAL MODEL SHEET: URBAN SCOOTER & E-MOBILITY SHOWROOM KIOSK
-  //       (Renovated Central Plaza West Kiosk + 2 Non-Rideable Front Display Scooters:
-  //        Modern Urban Electric Scooter `screen_8a1fbcde.png` & Modern Urban Push Scooter `screen_e2bde276.png`)
-  //       Placed along the West Plaza border at local (-10.2, 2.50, -4.4), facing East (+X) toward Central Plaza.
-  // -------------------------------------------------------------------------
-  buildUrbanScooterShowroomKiosk3D({
-    westPlantGroup,
-    isSoftwareGl,
-    sharedClearGlassMat: sharedLobbyClearGlassMat,
-    createMitredPolylineStripGeometry,
-    addLobbyPart,
-    createBlitzStrokeMesh,
-    textures: {
-      steelRoofTex: lobbySteelRoofTex,
-      granitePaverTex: lobbyGranitePaverTex,
-      verticalTimberTex: lobbyVerticalTimberTex,
-      timberTex: lobbyTimberTex,
-      concreteTex: lobbyConcreteTex,
-      louverTex: lobbyLouverTex,
-    },
-  });
-
-  // -------------------------------------------------------------------------
-  // 4B-3. ARCHITECTURAL MODEL SHEET: MODERN FASHION & APPAREL BOUTIQUE KIOSK
-  //       (Kios Toko Baju & Butik Pakaian Modern — `screen_aad784ba.png` & `screenshot_12_60bb245f.png`)
-  //       Placed along the West Plaza border at local (-10.2, 2.50, +5.0), facing East (+X) toward Central Plaza,
-  //       achieving exact 9.40m center-to-center symmetry across Real Estate (-13.8), Scooter (-4.4), & Fashion (+5.0).
-  // -------------------------------------------------------------------------
-  buildFashionAndApparelKiosk3D({
-    westPlantGroup,
-    isSoftwareGl,
-    sharedClearGlassMat: sharedLobbyClearGlassMat,
-    createMitredPolylineStripGeometry,
-    addLobbyPart,
-    createBlitzStrokeMesh,
-    textures: {
-      steelRoofTex: lobbySteelRoofTex,
-      granitePaverTex: lobbyGranitePaverTex,
-      verticalTimberTex: lobbyVerticalTimberTex,
-      timberTex: lobbyTimberTex,
-      concreteTex: lobbyConcreteTex,
-      louverTex: lobbyLouverTex,
-    },
+    createPlazaLeafPetalShrubInstanced,
+    createPlazaFlowerPetalClusterInstanced,
   });
 
   // 4G. 2 Outdoor Café Tables with Cream Octagonal Parasol Umbrellas moved near the Flowering Pink Tree on the East-South Plaza Wing (pindah kursi payung.png)
@@ -18783,8 +23871,8 @@ export function createCurvedPlanetEnvironment(
       [sideSign * 5.88, 4.18],
       [sideSign * 5.88, 1.35],
     ] as [number, number][]) {
-      addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.38, 0.76, 0.38), COL_CH_STONE, [px, 0.42, pz], [0, 0, 0], 0.009, lobbyConcreteTex);
-      addChToonPart(civicHallGrp, new THREE.BoxGeometry(0.44, 0.08, 0.44), COL_CH_STONE_DARK, [px, 0.82, pz], [0, 0, 0], 0.008);
+      addChToonPart(civicHallGrp, new RoundedBoxGeometry(0.38, 0.76, 0.38, 2, 0.022), COL_CH_STONE, [px, 0.42, pz], [0, 0, 0], 0.009, lobbyConcreteTex);
+      addChToonPart(civicHallGrp, new RoundedBoxGeometry(0.44, 0.08, 0.44, 2, 0.014), COL_CH_STONE_DARK, [px, 0.82, pz], [0, 0, 0], 0.008);
     }
 
     // Classical Vase-Shaped Stone Balusters along Front & Side Runs
@@ -18814,8 +23902,8 @@ export function createCurvedPlanetEnvironment(
     const bedCenterZ = 3.15;
     const lampX = sideSign * 4.75;
     const lampZ = 3.25;
-    addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.45, 0.34, 1.56), COL_CH_STONE_DARK, [bedCenterX, 0.21, bedCenterZ], [0, 0, 0], 0.009, lobbyConcreteTex);
-    addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.25, 0.05, 1.36), '#4a3525', [bedCenterX, 0.39, bedCenterZ], [0, 0, 0], 0, undefined, 1.0, false);
+    addChToonPart(civicHallGrp, new RoundedBoxGeometry(3.45, 0.34, 1.56, 2, 0.024), COL_CH_STONE_DARK, [bedCenterX, 0.21, bedCenterZ], [0, 0, 0], 0.009, lobbyConcreteTex);
+    addChToonPart(civicHallGrp, new RoundedBoxGeometry(3.25, 0.05, 1.36, 1, 0.008), '#4a3525', [bedCenterX, 0.39, bedCenterZ], [0, 0, 0], 0, undefined, 1.0, false);
 
     // Lush Pure Dark-Green Leaf-Petal Shrubs + Swaying Pink & Purple Blossom Clusters
     for (let f = 0; f < 9; f++) {
@@ -19009,14 +24097,14 @@ export function createCurvedPlanetEnvironment(
 
   // --- PART 3: MAIN ONE-STORY NEOCLASSICAL CIVIC HALL BODY, EXPOSED BRICK QUOINS & PORTICO STEPS ---
   // Stepped Grey-Stone Foundation Plinth (9.24m W x 5.64m D, y = 0.04m .. 0.42m)
-  addChToonPart(civicHallGrp, new THREE.BoxGeometry(9.24, 0.38, 5.64), COL_CH_STONE_DARK, [0, 0.23, -0.55], [0, 0, 0], 0.011, lobbyConcreteTex, 1.8);
-  // 3 Wide Front Stone Entrance Steps leading up to the Portico (z = +2.25 .. +2.95)
-  addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.96, 0.12, 1.42), COL_CH_STONE, [0, 0.10, 2.38], [0, 0, 0], 0.009, lobbyConcreteTex);
-  addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.72, 0.12, 1.16), COL_CH_STONE, [0, 0.22, 2.25], [0, 0, 0], 0.009, lobbyConcreteTex);
-  addChToonPart(civicHallGrp, new THREE.BoxGeometry(3.52, 0.14, 0.92), COL_CH_STONE, [0, 0.35, 2.13], [0, 0, 0], 0.009, lobbyConcreteTex);
+  addChToonPart(civicHallGrp, new RoundedBoxGeometry(9.24, 0.38, 5.64, 2, 0.028), COL_CH_STONE_DARK, [0, 0.23, -0.55], [0, 0, 0], 0.011, lobbyConcreteTex, 1.8);
+  // 3 Wide Front Stone Entrance Steps leading up to the Portico (staggered yMin/yMax by >= 0.008m to prevent coplanar faces)
+  addChToonPart(civicHallGrp, new RoundedBoxGeometry(3.96, 0.132, 1.42, 2, 0.020), COL_CH_STONE, [0, 0.100, 2.38], [0, 0, 0], 0.009, lobbyConcreteTex);
+  addChToonPart(civicHallGrp, new RoundedBoxGeometry(3.72, 0.132, 1.16, 2, 0.020), COL_CH_STONE, [0, 0.220, 2.25], [0, 0, 0], 0.009, lobbyConcreteTex);
+  addChToonPart(civicHallGrp, new RoundedBoxGeometry(3.52, 0.148, 0.92, 2, 0.022), COL_CH_STONE, [0, 0.348, 2.13], [0, 0, 0], 0.009, lobbyConcreteTex);
 
   // Main Cream-Stucco Building Body (8.96m W x 3.16m H x 5.36m D, centered at z = -0.55, y = 0.42m .. 3.58m)
-  addChToonPart(civicHallGrp, new THREE.BoxGeometry(8.96, 3.16, 5.36), COL_CH_STUCCO, [0, 2.00, -0.55], [0, 0, 0], 0.013, lobbyConcreteTex, 1.4);
+  addChToonPart(civicHallGrp, new RoundedBoxGeometry(8.96, 3.16, 5.36, 2, 0.036), COL_CH_STUCCO, [0, 2.00, -0.55], [0, 0, 0], 0.013, lobbyConcreteTex, 1.4);
 
   // Alternating Exposed Terracotta Brick Corner Quoins on all 4 Building Corners
   for (const cxSign of [-1, 1]) {
@@ -19030,7 +24118,7 @@ export function createCurvedPlanetEnvironment(
         const qy = 0.58 + q * 0.32;
         addChToonPart(
           civicHallGrp,
-          new THREE.BoxGeometry(qw, 0.26, qd),
+          new RoundedBoxGeometry(qw, 0.26, qd, 1, 0.018),
           q % 3 === 0 ? COL_CH_BRICK_DARK : COL_CH_BRICK,
           [qx - cxSign * (qw * 0.5 - 0.03), qy, qz - czSign * (qd * 0.5 - 0.03)],
           [0, 0, 0],
@@ -19048,7 +24136,7 @@ export function createCurvedPlanetEnvironment(
     [-2.85, 2.98, 2.14, 0.52, 0.20, 0.06],
     [4.49, 2.92, -1.65, 0.06, 0.26, 0.78],
   ] as [number, number, number, number, number, number][]) {
-    addChToonPart(civicHallGrp, new THREE.BoxGeometry(bw, bh, bd), COL_CH_BRICK, [bx, by, bz], [0, 0, 0], 0.006, undefined, 1.0, false);
+    addChToonPart(civicHallGrp, new RoundedBoxGeometry(bw, bh, bd, 1, 0.012), COL_CH_BRICK, [bx, by, bz], [0, 0, 0], 0.006, undefined, 1.0, false);
   }
 
   // Continuous 45° Mitred Sage-Green Molded Eaves Cornice & Frieze Band around the Building Top (y = 3.56m)
@@ -19085,28 +24173,34 @@ export function createCurvedPlanetEnvironment(
     const cx = colSide * 1.44;
     const cz = 0.56;
     // Square pedestal plinth + torus base + tapered column shaft + capital
-    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.56, 0.42, 0.56), COL_CH_STONE, [cx, 0.63, cz], [0, 0, 0], 0.009, lobbyConcreteTex);
+    addChToonPart(porticoGrp, new RoundedBoxGeometry(0.56, 0.42, 0.56, 2, 0.022), COL_CH_STONE, [cx, 0.63, cz], [0, 0, 0], 0.009, lobbyConcreteTex);
     addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.24, 0.26, 0.10, 12), COL_CH_STONE_DARK, [cx, 0.89, cz], [0, 0, 0], 0.007);
     addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.19, 0.23, 2.38, 12), '#e8dec9', [cx, 2.13, cz], [0, 0, 0], 0.010);
     addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.26, 0.20, 0.12, 12), COL_CH_STONE, [cx, 3.36, cz], [0, 0, 0], 0.008);
-    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.54, 0.10, 0.54), COL_CH_STONE_DARK, [cx, 3.47, cz], [0, 0, 0], 0.008);
+    addChToonPart(porticoGrp, new RoundedBoxGeometry(0.54, 0.10, 0.54, 1, 0.016), COL_CH_STONE_DARK, [cx, 3.47, cz], [0, 0, 0], 0.008);
   }
 
   // Portico Entablature, Triangular Pediment, Pitched Slate Roof & "MAYOR'S OFFICE" Plaque
-  addChToonPart(porticoGrp, new THREE.BoxGeometry(3.64, 0.24, 0.96), COL_CH_SAGE, [0, 3.62, 0.38], [0, 0, 0], 0.010);
+  addChToonPart(porticoGrp, new RoundedBoxGeometry(3.64, 0.24, 0.96, 2, 0.022), COL_CH_SAGE, [0, 3.62, 0.38], [0, 0, 0], 0.010);
   // Triangular Pediment Tympanum & Raking Cornices
   const pedShape = new THREE.Shape();
   pedShape.moveTo(-1.86, 0);
   pedShape.lineTo(1.86, 0);
   pedShape.lineTo(0, 1.18);
   pedShape.closePath();
-  const pedGeo = new THREE.ExtrudeGeometry(pedShape, { depth: 0.88, bevelEnabled: false });
-  pedGeo.translate(0, 0, -0.44);
+  const pedGeo = new THREE.ExtrudeGeometry(pedShape, {
+    depth: 0.85,
+    bevelEnabled: true,
+    bevelThickness: 0.015,
+    bevelSize: 0.012,
+    bevelSegments: 2,
+  });
+  pedGeo.translate(0, 0, -0.425);
   addChToonPart(porticoGrp, pedGeo, COL_CH_STUCCO, [0, 3.74, 0.38], [0, 0, 0], 0.010, lobbyConcreteTex);
   for (const rSide of [-1, 1]) {
     addChToonPart(
       porticoGrp,
-      new THREE.BoxGeometry(2.26, 0.14, 0.98),
+      new RoundedBoxGeometry(2.26, 0.14, 0.98, 2, 0.018),
       COL_CH_SAGE,
       [rSide * 0.96, 4.34, 0.38],
       [0, 0, -rSide * 0.56],
@@ -19114,7 +24208,7 @@ export function createCurvedPlanetEnvironment(
     );
     addChToonPart(
       porticoGrp,
-      new THREE.BoxGeometry(2.30, 0.08, 1.04),
+      new RoundedBoxGeometry(2.30, 0.08, 1.04, 1, 0.014),
       COL_CH_SLATE,
       [rSide * 0.96, 4.43, 0.38],
       [0, 0, -rSide * 0.56],
@@ -19124,7 +24218,7 @@ export function createCurvedPlanetEnvironment(
   // Framed "MAYOR'S OFFICE" Plaque centered in the Portico Tympanum
   addChToonPart(
     porticoGrp,
-    new THREE.BoxGeometry(1.16, 0.54, 0.08),
+    new RoundedBoxGeometry(1.16, 0.54, 0.08, 1, 0.012),
     '#ffffff',
     [0, 4.10, 0.84],
     [0, 0, 0],
@@ -19134,33 +24228,35 @@ export function createCurvedPlanetEnvironment(
     false,
   );
 
-  // Arched Double Wooden Entrance Doors, Semicircular Fanlight Transom & 2 Coach Wall Lanterns
-  addChToonPart(porticoGrp, new THREE.BoxGeometry(1.64, 2.26, 0.14), COL_CH_STONE, [0, 1.55, 0.02], [0, 0, 0], 0.009);
+  // Arched Double Wooden Entrance Doors, Elliptical Fanlight Transom & 2 Coach Wall Lanterns (3.86m world doors)
+  addChToonPart(porticoGrp, new RoundedBoxGeometry(1.64, 2.84, 0.14, 2, 0.018), COL_CH_STONE, [0, 1.84, 0.02], [0, 0, 0], 0.009);
   for (const dSide of [-1, 1]) {
     const dx = dSide * 0.35;
-    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.66, 2.02, 0.10), COL_CH_WOOD, [dx, 1.43, 0.05], [0, 0, 0], 0.008, lobbyTimberTex);
+    addChToonPart(porticoGrp, new RoundedBoxGeometry(0.66, 2.72, 0.10, 1, 0.014), COL_CH_WOOD, [dx, 1.78, 0.05], [0, 0, 0], 0.008, lobbyTimberTex);
     // Upper door glass pane & lower recessed wood panel
-    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.46, 0.78, 0.12), '#9ec2cc', [dx, 1.82, 0.05], [0, 0, 0], 0.006, lobbyWindowTex);
-    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.46, 0.68, 0.12), COL_CH_WOOD_DARK, [dx, 0.90, 0.05], [0, 0, 0], 0.006);
+    addChToonPart(porticoGrp, new RoundedBoxGeometry(0.46, 1.26, 0.12, 1, 0.010), '#9ec2cc', [dx, 2.30, 0.05], [0, 0, 0], 0.006, lobbyWindowTex);
+    addChToonPart(porticoGrp, new RoundedBoxGeometry(0.46, 0.90, 0.12, 1, 0.010), COL_CH_WOOD_DARK, [dx, 1.01, 0.05], [0, 0, 0], 0.006);
     // Brass door handle
-    addChToonPart(porticoGrp, new THREE.SphereGeometry(0.038, 6, 6), COL_CH_GOLD, [dSide * 0.10, 1.32, 0.12], [0, 0, 0], 0.004, undefined, 1.0, false);
+    addChToonPart(porticoGrp, new THREE.SphereGeometry(0.042, 6, 6), COL_CH_GOLD, [dSide * 0.10, 1.56, 0.12], [0, 0, 0], 0.004, undefined, 1.0, false);
   }
-  // Semicircular Arched Fanlight Transom above the Double Doors (y = 2.52m)
+  // Elliptical Arched Fanlight Transom above the Double Doors (y = 3.14m..3.50m, clears tympanum plaque)
   const doorArchGeo = new THREE.CylinderGeometry(0.76, 0.76, 0.14, 14, 1, false, 0, Math.PI);
   doorArchGeo.rotateZ(Math.PI / 2);
   doorArchGeo.rotateY(Math.PI / 2);
-  addChToonPart(porticoGrp, doorArchGeo, COL_CH_SAGE, [0, 2.52, 0.04], [0, 0, 0], 0.008);
+  doorArchGeo.scale(1, 0.48, 1);
+  addChToonPart(porticoGrp, doorArchGeo, COL_CH_SAGE, [0, 3.14, 0.04], [0, 0, 0], 0.008);
   const doorTransomGlass = new THREE.CylinderGeometry(0.64, 0.64, 0.16, 14, 1, false, 0, Math.PI);
   doorTransomGlass.rotateZ(Math.PI / 2);
   doorTransomGlass.rotateY(Math.PI / 2);
-  addChToonPart(porticoGrp, doorTransomGlass, '#a8cbd4', [0, 2.52, 0.05], [0, 0, 0], 0.006, undefined, 1.0, false);
+  doorTransomGlass.scale(1, 0.48, 1);
+  addChToonPart(porticoGrp, doorTransomGlass, '#a8cbd4', [0, 3.14, 0.05], [0, 0, 0], 0.006, undefined, 1.0, false);
 
   // 2 Vintage Coach Wall Lanterns flanking the Entrance Door
   for (const lSide of [-1, 1]) {
     const lx = lSide * 1.02;
-    addChToonPart(porticoGrp, new THREE.BoxGeometry(0.08, 0.22, 0.14), '#2b3036', [lx, 2.18, 0.06], [0, 0, 0], 0.005, undefined, 1.0, false);
-    addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.12, 0.08, 0.26, 4), '#ffe896', [lx, 2.18, 0.16], [0, Math.PI / 4, 0], 0.006, undefined, 1.0, false);
-    addChToonPart(porticoGrp, new THREE.ConeGeometry(0.15, 0.12, 4), '#2b3036', [lx, 2.36, 0.16], [0, Math.PI / 4, 0], 0.005, undefined, 1.0, false);
+    addChToonPart(porticoGrp, new RoundedBoxGeometry(0.08, 0.22, 0.14, 1, 0.012), '#2b3036', [lx, 2.48, 0.06], [0, 0, 0], 0.005, undefined, 1.0, false);
+    addChToonPart(porticoGrp, new THREE.CylinderGeometry(0.12, 0.08, 0.26, 4), '#ffe896', [lx, 2.48, 0.16], [0, Math.PI / 4, 0], 0.006, undefined, 1.0, false);
+    addChToonPart(porticoGrp, new THREE.ConeGeometry(0.15, 0.12, 4), '#2b3036', [lx, 2.66, 0.16], [0, Math.PI / 4, 0], 0.005, undefined, 1.0, false);
   }
 
   // --- PART 5: 6 MULLIONED WINDOWS WITH SAGE-GREEN LOUVERED SHUTTERS & BLOOMING WINDOW BOXES ---
@@ -19175,19 +24271,19 @@ export function createCurvedPlanetEnvironment(
     civicHallGrp.add(wGrp);
 
     // Stone lintel & sill + white window frame + glass pane + 6-pane crossbars
-    addChToonPart(wGrp, new THREE.BoxGeometry(1.06, 0.12, 0.12), COL_CH_STONE, [0, 0.72, 0.02], [0, 0, 0], 0.007);
-    addChToonPart(wGrp, new THREE.BoxGeometry(0.96, 1.28, 0.08), '#f5f1e6', [0, 0.04, 0.01], [0, 0, 0], 0.008);
-    addChToonPart(wGrp, new THREE.BoxGeometry(0.82, 1.14, 0.09), '#96bcc7', [0, 0.04, 0.015], [0, 0, 0], 0.006, lobbyWindowTex);
-    addChToonPart(wGrp, new THREE.BoxGeometry(0.05, 1.14, 0.11), '#f5f1e6', [0, 0.04, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
+    addChToonPart(wGrp, new RoundedBoxGeometry(1.06, 0.12, 0.12, 1, 0.016), COL_CH_STONE, [0, 0.72, 0.02], [0, 0, 0], 0.007);
+    addChToonPart(wGrp, new RoundedBoxGeometry(0.96, 1.28, 0.08, 1, 0.014), '#f5f1e6', [0, 0.04, 0.01], [0, 0, 0], 0.008);
+    addChToonPart(wGrp, new RoundedBoxGeometry(0.82, 1.14, 0.09, 1, 0.010), '#96bcc7', [0, 0.04, 0.015], [0, 0, 0], 0.006, lobbyWindowTex);
+    addChToonPart(wGrp, new RoundedBoxGeometry(0.05, 1.14, 0.11, 1, 0.008), '#f5f1e6', [0, 0.04, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
     for (const my of [-0.18, 0.24]) {
-      addChToonPart(wGrp, new THREE.BoxGeometry(0.82, 0.045, 0.11), '#f5f1e6', [0, my, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
+      addChToonPart(wGrp, new RoundedBoxGeometry(0.82, 0.045, 0.11, 1, 0.008), '#f5f1e6', [0, my, 0.02], [0, 0, 0], 0, undefined, 1.0, false);
     }
 
-    // Left & Right Sage-Green Louvered Wooden Shutters
+    // Left & Right Sage-Green Louvered Wooden Shutters with wrought-iron pintle barrels & strap hinges bridging casing to shutter
     for (const sSide of [-1, 1]) {
       addChToonPart(
         wGrp,
-        new THREE.BoxGeometry(0.38, 1.24, 0.06),
+        new RoundedBoxGeometry(0.38, 1.24, 0.06, 1, 0.012),
         COL_CH_SAGE,
         [sSide * 0.69, 0.04, 0.02],
         [0, 0, 0],
@@ -19195,11 +24291,35 @@ export function createCurvedPlanetEnvironment(
         lobbyLouverTex,
         1.2,
       );
+      for (const hingeY of [-0.36, 0.44]) {
+        addChToonPart(
+          wGrp,
+          new THREE.CylinderGeometry(0.018, 0.018, 0.14, 8),
+          '#2b3036',
+          [sSide * 0.49, hingeY, 0.032],
+          [0, 0, 0],
+          0.004,
+          undefined,
+          1.0,
+          false,
+        );
+        addChToonPart(
+          wGrp,
+          new RoundedBoxGeometry(0.24, 0.045, 0.036, 1, 0.008),
+          '#2b3036',
+          [sSide * 0.57, hingeY, 0.034],
+          [0, 0, 0],
+          0.004,
+          undefined,
+          1.0,
+          false,
+        );
+      }
     }
 
     // Wooden Window Flower Box + Staircase-Style Leaf-Petal Shrubs, Pink/Lilac Petals & Trailing Vines
-    addChToonPart(wGrp, new THREE.BoxGeometry(1.04, 0.22, 0.26), COL_CH_WOOD, [0, -0.68, 0.11], [0, 0, 0], 0.007, lobbyTimberTex);
-    addChToonPart(wGrp, new THREE.BoxGeometry(0.96, 0.03, 0.19), '#4a3525', [0, -0.575, 0.11], [0, 0, 0], 0, undefined, 1.0, false);
+    addChToonPart(wGrp, new RoundedBoxGeometry(1.04, 0.22, 0.26, 2, 0.022), COL_CH_WOOD, [0, -0.68, 0.11], [0, 0, 0], 0.007, lobbyTimberTex);
+    addChToonPart(wGrp, new RoundedBoxGeometry(0.96, 0.03, 0.19, 1, 0.008), '#4a3525', [0, -0.575, 0.11], [0, 0, 0], 0, undefined, 1.0, false);
 
     const cosR = Math.cos(rotY);
     const sinR = Math.sin(rotY);
@@ -19526,6 +24646,7 @@ export function createCurvedPlanetEnvironment(
     const bGrp = new THREE.Group();
     bGrp.position.set(bx, 0.04, bz);
     bGrp.rotation.y = rotY;
+    bGrp.scale.setScalar(1.25);
     civicHallGrp.add(bGrp);
 
     // Slatted dark-green seat & backrest + cast-iron legs & scroll armrests
@@ -19889,12 +25010,11 @@ export function createCurvedPlanetEnvironment(
     addToonLampPart(lGrp, new THREE.SphereGeometry(0.040, 6, 6), COL_IRON_ACCENT, [0, 4.19, 0], [0, 0, 0], 0.0065, false);
     addToonLampPart(lGrp, new THREE.ConeGeometry(0.024, 0.09, 6), COL_IRON_DARK, [0, 4.255, 0], [0, 0, 0], 0.0065, false);
   };
-  // West Plaza Lampposts: north corner at lx = -12.2 (lz = -28.5), Cafe Hana front at lx = -5.6 (lz = -9.5),
-  // and South L-Wing symmetric aligned pair at lz = +11.6 (lx = -2.8 & lx = -12.4)!
-  buildUrbanPromenadeLampPole(-12.2, -28.5, Math.PI / 2);
-  buildUrbanPromenadeLampPole(-5.6, -9.5, Math.PI / 2);
+  // West Plaza Lampposts (shifted -4.0m West with the expanded rear retaining wall):
+  buildUrbanPromenadeLampPole(-16.2, -28.5, Math.PI / 2);
+  buildUrbanPromenadeLampPole(-16.4, -19.2, Math.PI / 2);
   buildUrbanPromenadeLampPole(-2.8, 11.6, Math.PI / 2);
-  buildUrbanPromenadeLampPole(-12.4, 11.6, Math.PI / 2);
+  buildUrbanPromenadeLampPole(-16.4, 11.6, Math.PI / 2);
   for (const lz of [-28.5, -12.4, 12.4, 21.6]) {
     buildUrbanPromenadeLampPole(12.4, lz, -Math.PI / 2);
   }
@@ -20264,7 +25384,7 @@ export function createCurvedPlanetEnvironment(
         const postZ = czSign * (halfD - postSize * 0.5);
         addToonBenchPart(
           pBoxGrp,
-          new THREE.BoxGeometry(postSize, heightY, postSize),
+          new RoundedBoxGeometry(postSize, heightY, postSize, 1, 0.012),
           COL_TIMBER_POST,
           [postX, heightY * 0.5, postZ],
           [0, 0, 0],
@@ -20273,35 +25393,29 @@ export function createCurvedPlanetEnvironment(
         );
       }
 
+      const planterRailPath: [number, number][] = [
+        [-(halfW - 0.026), -(halfD - 0.026)],
+        [halfW - 0.026, -(halfD - 0.026)],
+        [halfW - 0.026, halfD - 0.026],
+        [-(halfW - 0.026), halfD - 0.026],
+      ];
+      const planterRailGeo = createMitredPolylineStripGeometry(planterRailPath, 0.050, 0.054, true);
       for (const ry of [0.065, heightY - 0.038]) {
-        for (const zSide of [-1, 1]) {
-          addToonBenchPart(
-            pBoxGrp,
-            new THREE.BoxGeometry(widthX - postSize * 1.5, 0.054, 0.050),
-            COL_TIMBER_RAIL,
-            [0, ry, zSide * (halfD - 0.026)],
-            [0, 0, 0],
-            0.0075,
-            false,
-          );
-        }
-        for (const xSide of [-1, 1]) {
-          addToonBenchPart(
-            pBoxGrp,
-            new THREE.BoxGeometry(0.050, 0.054, depthZ - postSize * 1.5),
-            COL_TIMBER_RAIL,
-            [xSide * (halfW - 0.026), ry, 0],
-            [0, 0, 0],
-            0.0075,
-            false,
-          );
-        }
+        addToonBenchPart(
+          pBoxGrp,
+          planterRailGeo,
+          COL_TIMBER_RAIL,
+          [0, ry - 0.027, 0],
+          [0, 0, 0],
+          0.0075,
+          false,
+        );
       }
 
       // Main Planter Wooden Core Box (with bold Blitz Toon Outline) & Dark Soil Bed
       addToonBenchPart(
         pBoxGrp,
-        new THREE.BoxGeometry(widthX - 0.04, heightY - 0.06, depthZ - 0.04),
+        new RoundedBoxGeometry(widthX - 0.04, heightY - 0.06, depthZ - 0.04, 2, 0.016),
         '#c98c4e',
         [0, heightY * 0.5, 0],
         [0, 0, 0],
@@ -20310,7 +25424,7 @@ export function createCurvedPlanetEnvironment(
       );
       addToonBenchPart(
         pBoxGrp,
-        new THREE.BoxGeometry(widthX - 0.12, 0.04, depthZ - 0.12),
+        new RoundedBoxGeometry(widthX - 0.12, 0.04, depthZ - 0.12, 1, 0.008),
         '#4a3525',
         [0, heightY - 0.025, 0],
         [0, 0, 0],
@@ -20552,9 +25666,9 @@ export function createCurvedPlanetEnvironment(
   const TENNIS_CLUB_GOLDEN_SCALE = 1.35;
   const tennisClubGrp = new THREE.Group();
   tennisClubGrp.name = 'TennisClubAndClayCourtGroup3D';
-  // Placed at worldX = -88.00, worldZ = +50.85 (no 2-story house; North edge at lz = -9.20 -> worldZ = +38.43
-  // attaches 100% flush against the Central Plaza South Retaining Wall at worldZ = +38.33!)
-  tennisClubGrp.position.set(2.5, 0.0, 50.85);
+  // Placed at worldX = -88.00, worldZ = +50.85 (compensated +2.25m for westPlantGroup -92.75 setback;
+  // North edge attaches 100% flush against the Central Plaza South Retaining Wall & Sidewalk at worldZ = +38.10!)
+  tennisClubGrp.position.set(4.75, 0.0, 50.85);
   tennisClubGrp.scale.setScalar(TENNIS_CLUB_GOLDEN_SCALE);
   westPlantGroup.add(tennisClubGrp);
 
@@ -20964,25 +26078,31 @@ export function createCurvedPlanetEnvironment(
     false,
   );
 
-  // Continuous 45° Mitred U-Shaped Roadside & Perimeter Granite Curb Beam (#8f96a0)
-  // Connects directly into the Central Plaza's Roadside Granite Curb at lx = +10.422, lz = -9.444 (worldX = -73.93, worldZ = +38.10)!
+  // Continuous 45° Mitred Roadside & Perimeter Granite Curb Beam (#8f96a0), left open along
+  // worldZ in [+44.00 .. +55.15] (`lz in [-5.074 .. +3.186]`) so Tennis Court joins the SW Outer Tram Sidewalk flush!
+  const spectatorNorthCurbPath: [number, number][] = [
+    [10.422, -9.444],
+    [10.422, -5.074],
+  ];
   const spectatorOuterCurbPath: [number, number][] = [
     [-12.22, -9.25],
     [-12.22, 11.07],
     [10.422, 11.07],
-    [10.422, -9.444],
+    [10.422, 3.186],
   ];
-  addTennisToonPart(
-    tennisClubGrp,
-    createMitredPolylineStripGeometry(spectatorOuterCurbPath, 0.148, 0.0778, false),
-    '#8f96a0',
-    [0, 0.0389, 0],
-    [0, 0, 0],
-    0.008,
-    lobbyConcreteTex,
-    1.63,
-    false,
-  );
+  for (const curbPath of [spectatorNorthCurbPath, spectatorOuterCurbPath]) {
+    addTennisToonPart(
+      tennisClubGrp,
+      createMitredPolylineStripGeometry(curbPath, 0.148, 0.0778, false),
+      '#8f96a0',
+      [0, 0.0389, 0],
+      [0, 0, 0],
+      0.008,
+      lobbyConcreteTex,
+      1.63,
+      false,
+    );
+  }
 
   // =========================================================================
   // PART 2: 4-SIDED COURTSIDE CHAIN-LINK FENCING & CONTINUOUS MITRED CURB WALLS
@@ -21606,71 +26726,60 @@ export function createCurvedPlanetEnvironment(
     const routeGlassTex = makeTransitRouteGlassTexture(stationTitle);
     const digitalDisplayTex = makeDigitalArrivalDisplayTexture(stationTitle, routeSub);
 
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.4, 0.16, 6.64), COL_SH_CURB, [0, 0.08, -2.13], [0, 0, 0], 0.016, lobbyBasaltTex);
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.4, 0.10, 6.60), COL_SH_PLATFORM, [0, 0.21, -2.13], [0, 0, 0], 0.016, lobbyConcreteTex);
+    // Deep-grounded Halte concrete & basalt platform deck (skirt extends to y = -0.34m so curved terrain never reveals underside gaps; staggered >= 6mm to prevent Z-fighting)
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(15.32, 0.50, 6.66, 2, 0.024), COL_SH_CURB, [0, -0.09, -2.13], [0, 0, 0], 0.016, lobbyBasaltTex);
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(15.40, 0.114, 6.60, 2, 0.020), COL_SH_PLATFORM, [0, 0.203, -2.13], [0, 0, 0], 0.016, lobbyConcreteTex);
 
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.32, 0.03, 0.28), COL_SH_TACTILE, [0, 0.268, 0.96], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(15.32, 0.032, 0.28, 1, 0.007), COL_SH_TACTILE, [0, 0.266, 0.96], [0, 0, 0], 0.008);
     for (let tx = -7.2; tx <= 7.2; tx += 0.6) {
-      addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(0.03, 0.035, 0.28), '#a16207', [tx, 0.27, 0.96], [0, 0, 0], 0);
+      addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(0.032, 0.044, 0.264, 1, 0.005), '#a16207', [tx, 0.266, 0.96], [0, 0, 0], 0);
     }
 
+    // Solid grounded chamfered wedge ramps on both ends (inner edge flush at y = +0.26m, outer edge grounded at y = +0.005m, skirt to y = -0.35m; NO iron railings!)
     for (const sideSign of [-1, 1] as const) {
-      const rampCenterX = sideSign * 8.44;
-      const rampSlopeZ = sideSign * 0.125;
+      const rampCenterX = sideSign * 8.45;
+      const innerX = -sideSign * 0.76;
+      const outerX = sideSign * 0.742;
+      const wedgeShape = new THREE.Shape();
+      wedgeShape.moveTo(outerX, -0.342);
+      wedgeShape.lineTo(innerX, -0.342);
+      wedgeShape.lineTo(innerX, 0.246);
+      wedgeShape.lineTo(outerX, 0.000);
+      wedgeShape.closePath();
+      const rampWedgeGeo = new THREE.ExtrudeGeometry(wedgeShape, {
+        depth: 6.52,
+        bevelEnabled: true,
+        bevelSize: 0.008,
+        bevelThickness: 0.012,
+        bevelSegments: 2,
+      });
+      rampWedgeGeo.translate(0, 0, -3.26);
       addLobbyPart(
         shelterStructureGrp,
-        new THREE.BoxGeometry(1.50, 0.14, 6.54),
+        rampWedgeGeo,
         COL_SH_PLATFORM,
-        [rampCenterX, 0.13, -2.13],
-        [0, 0, rampSlopeZ],
-        0.014,
+        [rampCenterX, 0.0, -2.13],
+        [0, 0, 0],
+        0.012,
         lobbyConcreteTex,
       );
-      for (const railZ of [-5.22, 0.95]) {
-        for (const postOffX of [-0.58, 0.0, 0.58]) {
-          const postH = 0.86;
-          const postY = 0.14 + (1 - (postOffX * sideSign + 0.58) / 1.16) * 0.10 + postH * 0.5;
-          addLobbyPart(
-            shelterStructureGrp,
-            new THREE.CylinderGeometry(0.032, 0.032, postH, 8),
-            '#64748b',
-            [rampCenterX + postOffX, postY, railZ],
-            [0, 0, 0],
-            0.006,
-          );
-        }
+      for (const bolX of [sideSign * 7.58, sideSign * 9.08]) {
+        const isInner = Math.abs(bolX) < 7.8;
+        const bolH = isInner ? 0.88 : 0.96;
+        const bolCenterY = isInner ? 0.25 + bolH * 0.5 : -0.06 + bolH * 0.5;
         addLobbyPart(
           shelterStructureGrp,
-          new THREE.BoxGeometry(1.36, 0.045, 0.045),
-          '#94a3b8',
-          [rampCenterX, 0.98, railZ],
-          [0, 0, rampSlopeZ],
-          0.006,
-        );
-        addLobbyPart(
-          shelterStructureGrp,
-          new THREE.BoxGeometry(1.36, 0.035, 0.035),
-          '#94a3b8',
-          [rampCenterX, 0.62, railZ],
-          [0, 0, rampSlopeZ],
-          0.005,
-        );
-      }
-      for (const bolX of [sideSign * 7.58, sideSign * 9.12]) {
-        const bolBaseY = Math.abs(bolX) < 7.8 ? 0.26 : 0.04;
-        addLobbyPart(
-          shelterStructureGrp,
-          new THREE.CylinderGeometry(0.075, 0.085, 0.88, 10),
+          new THREE.CylinderGeometry(0.075, 0.085, bolH, 10),
           COL_SH_BOLLARD,
-          [bolX, bolBaseY + 0.44, 0.98],
+          [bolX, bolCenterY, 0.98],
           [0, 0, 0],
           0.008,
         );
         addLobbyPart(
           shelterStructureGrp,
-          new THREE.SphereGeometry(0.08, 10, 8),
+          new THREE.SphereGeometry(0.070, 10, 8),
           '#fbbf24',
-          [bolX, bolBaseY + 0.89, 0.98],
+          [bolX, bolCenterY + bolH * 0.5 + 0.01, 0.98],
           [0, 0, 0],
           0,
         );
@@ -21680,7 +26789,7 @@ export function createCurvedPlanetEnvironment(
     for (const colX of [-6.8, 0.0, 6.8]) {
       addLobbyPart(
         shelterStructureGrp,
-        new THREE.BoxGeometry(0.28, 4.65, 0.30),
+        new RoundedBoxGeometry(0.28, 4.65, 0.30, 2, 0.022),
         COL_SH_STEEL,
         [colX, 2.56, -4.20],
         [0, 0, 0],
@@ -21697,7 +26806,7 @@ export function createCurvedPlanetEnvironment(
       );
       addLobbyPart(
         shelterStructureGrp,
-        new THREE.BoxGeometry(0.24, 0.22, 3.60),
+        new RoundedBoxGeometry(0.24, 0.22, 3.60, 2, 0.020),
         COL_SH_STEEL,
         [colX, 4.94, -2.80],
         [-0.045, 0, 0],
@@ -21708,7 +26817,7 @@ export function createCurvedPlanetEnvironment(
     for (const mulX of [-3.4, 3.4]) {
       addLobbyPart(
         shelterStructureGrp,
-        new THREE.BoxGeometry(0.12, 4.42, 0.14),
+        new RoundedBoxGeometry(0.12, 4.42, 0.14, 1, 0.014),
         COL_SH_STEEL,
         [mulX, 2.46, -4.20],
         [0, 0, 0],
@@ -21722,14 +26831,14 @@ export function createCurvedPlanetEnvironment(
     roofCanopyGrp.rotation.x = -0.045;
     shelterStructureGrp.add(roofCanopyGrp);
 
-    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.2, 0.16, 3.72), COL_SH_ROOF_TOP, [0, 0.07, 0], [0, 0, 0], 0.018, lobbySteelRoofTex);
-    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(15.4, 0.22, 3.85), COL_SH_ROOF_FASCIA, [0, -0.02, 0], [0, 0, 0], 0.018, lobbyConcreteTex);
-    addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(14.8, 0.05, 3.42), '#f1f5f9', [0, -0.13, 0], [0, 0, 0], 0);
+    addLobbyPart(roofCanopyGrp, new RoundedBoxGeometry(15.2, 0.16, 3.72, 2, 0.022), COL_SH_ROOF_TOP, [0, 0.076, 0], [0, 0, 0], 0.018, lobbySteelRoofTex);
+    addLobbyPart(roofCanopyGrp, new RoundedBoxGeometry(15.4, 0.22, 3.85, 2, 0.024), COL_SH_ROOF_FASCIA, [0, -0.02, 0], [0, 0, 0], 0.018, lobbyConcreteTex);
+    addLobbyPart(roofCanopyGrp, new RoundedBoxGeometry(14.8, 0.05, 3.42, 1, 0.010), '#f1f5f9', [0, -0.136, 0], [0, 0, 0], 0);
     for (const lx of [-4.6, 0.0, 4.6]) {
-      addLobbyPart(roofCanopyGrp, new THREE.BoxGeometry(3.4, 0.04, 0.24), '#fef08a', [lx, -0.15, 0.35], [0, 0, 0], 0);
+      addLobbyPart(roofCanopyGrp, new RoundedBoxGeometry(3.4, 0.036, 0.24, 1, 0.008), '#fef08a', [lx, -0.160, 0.35], [0, 0, 0], 0);
     }
 
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(15.1, 0.12, 0.14), '#64748b', [0, 4.86, -4.44], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(15.1, 0.12, 0.14, 1, 0.014), '#64748b', [0, 4.86, -4.44], [0, 0, 0], 0.008);
     addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.06, 0.06, 4.68, 10), '#64748b', [6.52, 2.52, -4.44], [0, 0, 0], 0.008);
     addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.08, 0.08, 0.20, 10), '#334155', [6.52, 0.24, -4.44], [0, 0, 0], 0.006);
 
@@ -21742,13 +26851,13 @@ export function createCurvedPlanetEnvironment(
     const windbreakGlass = new THREE.Mesh(new THREE.PlaneGeometry(13.3, 3.65), windbreakMat);
     windbreakGlass.position.set(0, 2.28, -4.18);
     shelterStructureGrp.add(windbreakGlass);
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 0.42, -4.18], [0, 0, 0], 0.008);
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(13.4, 0.09, 0.12), COL_SH_STEEL, [0, 4.14, -4.18], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(13.4, 0.09, 0.12, 1, 0.012), COL_SH_STEEL, [0, 0.42, -4.18], [0, 0, 0], 0.008);
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(13.4, 0.09, 0.12, 1, 0.012), COL_SH_STEEL, [0, 4.14, -4.18], [0, 0, 0], 0.008);
 
     for (const brkX of [-4.15, -2.65]) {
       addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.03, 0.03, 0.46, 8), COL_SH_STEEL, [brkX, 4.68, -2.85], [0, 0, 0], 0.005);
     }
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(2.28, 0.52, 0.18), COL_SH_STEEL, [-3.4, 4.30, -2.85], [0, 0, 0], 0.012);
+    addLobbyPart(shelterStructureGrp, new RoundedBoxGeometry(2.28, 0.52, 0.18, 2, 0.024), COL_SH_STEEL, [-3.4, 4.30, -2.85], [0, 0, 0], 0.012);
     const arrivalScreenMat = new THREE.MeshBasicMaterial({ map: digitalDisplayTex });
     for (const zFace of [-0.095, 0.095]) {
       const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.12, 0.40), arrivalScreenMat);
@@ -21757,18 +26866,27 @@ export function createCurvedPlanetEnvironment(
       shelterStructureGrp.add(scr);
     }
 
+    // Global-scale ergonomic Halte passenger bench (4.60m wide, 0.78m seat height matching 3.312m avatars & Plaza benches; no iron pipe rails)
     const benchGrp = new THREE.Group();
-    benchGrp.position.set(-2.6, 0.26, -3.66);
+    benchGrp.position.set(-2.6, 0.26, -3.48);
     shelterStructureGrp.add(benchGrp);
-    for (const legX of [-1.45, 0.0, 1.45]) {
-      addLobbyPart(benchGrp, new THREE.BoxGeometry(0.10, 0.42, 0.48), COL_SH_STEEL, [legX, 0.21, 0], [0, 0, 0], 0.008);
-      addLobbyPart(benchGrp, new THREE.BoxGeometry(0.08, 0.46, 0.08), COL_SH_STEEL, [legX, 0.62, -0.22], [-0.14, 0, 0], 0.008);
+    for (const legX of [-1.95, -0.65, 0.65, 1.95]) {
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(0.22, 0.044, 0.80, 1, 0.010), '#334155', [legX, 0.018, 0], [0, 0, 0], 0.006);
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(0.14, 0.72, 0.68, 2, 0.016), COL_SH_STEEL, [legX, 0.38, 0], [0, 0, 0], 0.010);
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(0.12, 0.84, 0.12, 1, 0.014), COL_SH_STEEL, [legX, 1.14, -0.34], [-0.14, 0, 0], 0.010);
     }
-    addLobbyPart(benchGrp, new THREE.BoxGeometry(3.45, 0.07, 0.52), COL_SH_BENCH_WOOD, [0, 0.44, 0.02], [0, 0, 0], 0.012, lobbyTimberTex);
-    addLobbyPart(benchGrp, new THREE.BoxGeometry(3.45, 0.38, 0.07), COL_SH_BENCH_WOOD, [0, 0.72, -0.24], [-0.14, 0, 0], 0.012, lobbyTimberTex);
-    addLobbyPart(shelterStructureGrp, new THREE.BoxGeometry(1.65, 0.06, 0.10), COL_SH_STEEL, [-5.6, 0.96, -3.96], [0.22, 0, 0], 0.008);
-    for (const lrX of [-6.3, -4.9]) {
-      addLobbyPart(shelterStructureGrp, new THREE.CylinderGeometry(0.032, 0.032, 0.72, 8), COL_SH_STEEL, [lrX, 0.62, -4.00], [0, 0, 0], 0.006);
+    for (const armX of [-2.22, 0.0, 2.22]) {
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(0.10, 0.07, 0.66, 1, 0.014), COL_SH_STEEL, [armX, 1.05, 0.02], [0, 0, 0], 0.008);
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(0.09, 0.28, 0.09, 1, 0.012), COL_SH_STEEL, [armX, 0.90, 0.28], [0, 0, 0], 0.008);
+    }
+    for (const seatZ of [-0.21, 0.02, 0.25]) {
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(4.60, 0.09, 0.21, 2, 0.018), COL_SH_BENCH_WOOD, [0, 0.78, seatZ], [0, 0, 0], 0.012, lobbyTimberTex);
+    }
+    for (const [backY, backZ] of [
+      [1.10, -0.36],
+      [1.42, -0.405],
+    ] as const) {
+      addLobbyPart(benchGrp, new RoundedBoxGeometry(4.60, 0.27, 0.09, 2, 0.018), COL_SH_BENCH_WOOD, [0, backY, backZ], [-0.14, 0, 0], 0.012, lobbyTimberTex);
     }
 
     bakeStaticGroupMeshes(shelterStructureGrp, { minShadowCasterSpan: 0.45 });
@@ -21794,7 +26912,7 @@ export function createCurvedPlanetEnvironment(
     'central_plaza',
     'HALTE CENTRAL PLAZA',
     'TRAM T1 -> NORTH / SOUTH RESIDENCE',
-    -63.8,
+    -61.03,
     0.0,
     -Math.PI / 2,
   );
@@ -21802,8 +26920,8 @@ export function createCurvedPlanetEnvironment(
     'north_residence',
     'HALTE NORTH RESIDENCE',
     'TRAM T1 -> CENTRAL PLAZA / SOUTH',
-    6.5,
-    -46.8,
+    3.5,
+    -43.0,
     Math.PI,
   );
   buildModernUrbanTramStopShelter(
@@ -21811,7 +26929,7 @@ export function createCurvedPlanetEnvironment(
     'HALTE SOUTH RESIDENCE',
     'TRAM T1 -> CENTRAL PLAZA / NORTH',
     -36.5,
-    46.8,
+    43.0,
     0,
   );
 
@@ -21878,8 +26996,8 @@ export function createCurvedPlanetEnvironment(
     excGrp.rotation.y = rotY;
     excGrp.scale.setScalar(1.32);
 
-    // 1. Twin Heavy Caterpillar Crawler Tracks (#1e222d)
-    const trackGeo = new THREE.BoxGeometry(1.05, 0.92, 4.45);
+    // 1. Twin Heavy Caterpillar Crawler Tracks (#1e222d) with chamfered rounded tread caps
+    const trackGeo = new RoundedBoxGeometry(1.05, 0.92, 4.45, 2, 0.14);
     for (const tx of [-1.35, 1.35]) {
       const trk = new THREE.Mesh(trackGeo, new THREE.MeshStandardMaterial({ color: '#1e222d', roughness: 0.88 }));
       trk.position.set(tx, 0.46, 0);
@@ -21892,14 +27010,14 @@ export function createCurvedPlanetEnvironment(
     }
 
     // 2. Undercarriage Axle Frame & Turntable Deck (#333947)
-    const underGeo = new THREE.BoxGeometry(2.45, 0.48, 3.15);
+    const underGeo = new RoundedBoxGeometry(2.45, 0.48, 3.15, 2, 0.08);
     const underMesh = new THREE.Mesh(underGeo, new THREE.MeshStandardMaterial({ color: '#333947', roughness: 0.85 }));
     underMesh.position.set(0, 0.72, 0);
     upgradeMeshToBlitzWorldMaterial(underMesh, windUniforms, '#333947');
     excGrp.add(underMesh);
 
     // 3. Yellow Construction Upper Engine House & Counterweight (#f59e0b)
-    const houseGeo = new THREE.BoxGeometry(2.85, 1.32, 3.55);
+    const houseGeo = new RoundedBoxGeometry(2.85, 1.32, 3.55, 2, 0.10);
     const houseMesh = new THREE.Mesh(houseGeo, new THREE.MeshStandardMaterial({ color: '#f59e0b', roughness: 0.76 }));
     houseMesh.position.set(0, 1.62, -0.25);
     houseMesh.castShadow = !isSoftwareGl;
@@ -21909,7 +27027,7 @@ export function createCurvedPlanetEnvironment(
     if (houseStroke) houseMesh.add(houseStroke);
     excGrp.add(houseMesh);
 
-    const counterWeightGeo = new THREE.BoxGeometry(2.92, 1.15, 0.82);
+    const counterWeightGeo = new RoundedBoxGeometry(2.92, 1.15, 0.82, 3, 0.14);
     const cwMesh = new THREE.Mesh(counterWeightGeo, new THREE.MeshStandardMaterial({ color: '#1e222d', roughness: 0.85 }));
     cwMesh.position.set(0, 1.54, -1.95);
     upgradeMeshToBlitzWorldMaterial(cwMesh, windUniforms, '#1e222d');
@@ -21918,7 +27036,7 @@ export function createCurvedPlanetEnvironment(
     excGrp.add(cwMesh);
 
     // 4. Operator Cab on Left Side (#eab308 + dark tinted glass)
-    const cabGeo = new THREE.BoxGeometry(1.18, 1.48, 1.68);
+    const cabGeo = new RoundedBoxGeometry(1.18, 1.48, 1.68, 2, 0.08);
     const cabMesh = new THREE.Mesh(cabGeo, new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.5 }));
     cabMesh.position.set(-0.78, 2.75, 0.45);
     cabMesh.castShadow = !isSoftwareGl;
@@ -21927,42 +27045,121 @@ export function createCurvedPlanetEnvironment(
     if (cabStroke) cabMesh.add(cabStroke);
     excGrp.add(cabMesh);
 
-    const cabRoofGeo = new THREE.BoxGeometry(1.28, 0.18, 1.82);
+    const cabRoofGeo = new RoundedBoxGeometry(1.28, 0.18, 1.82, 2, 0.05);
     const cabRoof = new THREE.Mesh(cabRoofGeo, new THREE.MeshStandardMaterial({ color: '#f59e0b', roughness: 0.75 }));
     cabRoof.position.set(-0.78, 3.55, 0.45);
     upgradeMeshToBlitzWorldMaterial(cabRoof, windUniforms, '#f59e0b');
     excGrp.add(cabRoof);
 
-    // 5. Articulated Hydraulic Excavator Boom, Stick & Digging Bucket
-    const boomGeo = new THREE.BoxGeometry(0.52, 0.62, 3.85);
+    // 5. Contoured Gooseneck Hydraulic Excavator Boom, Tapered Stick, Pivot Pins & Curved Digging Bucket
+    const boomShape = new THREE.Shape();
+    boomShape.moveTo(0.55, 1.85);
+    boomShape.lineTo(0.55, 2.26);
+    boomShape.lineTo(2.02, 3.84);
+    boomShape.lineTo(2.68, 3.98);
+    boomShape.lineTo(4.02, 3.70);
+    boomShape.lineTo(4.06, 3.42);
+    boomShape.lineTo(2.66, 3.44);
+    boomShape.lineTo(2.06, 3.24);
+    boomShape.lineTo(0.85, 1.85);
+    boomShape.closePath();
+    const boomGeo = new THREE.ExtrudeGeometry(boomShape, {
+      depth: 0.46,
+      bevelEnabled: true,
+      bevelThickness: 0.035,
+      bevelSize: 0.03,
+      bevelSegments: 2,
+    });
+    boomGeo.translate(0, 0, -0.23);
+    boomGeo.rotateY(-Math.PI / 2);
     const boomMesh = new THREE.Mesh(boomGeo, new THREE.MeshStandardMaterial({ color: '#f59e0b', roughness: 0.76 }));
-    boomMesh.position.set(0.35, 2.85, 2.35);
-    boomMesh.rotation.x = -0.42;
+    boomMesh.position.set(0.35, 0, 0);
     boomMesh.castShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(boomMesh, windUniforms, '#f59e0b');
     const boomStroke = createBlitzStrokeMesh(boomGeo, 0.024);
     if (boomStroke) boomMesh.add(boomStroke);
     excGrp.add(boomMesh);
 
-    const stickGeo = new THREE.BoxGeometry(0.42, 0.48, 2.85);
+    const stickShape = new THREE.Shape();
+    stickShape.moveTo(3.26, 3.44);
+    stickShape.lineTo(3.60, 3.72);
+    stickShape.lineTo(4.22, 3.56);
+    stickShape.lineTo(5.62, 1.54);
+    stickShape.lineTo(5.42, 1.40);
+    stickShape.lineTo(3.80, 3.12);
+    stickShape.closePath();
+    const stickGeo = new THREE.ExtrudeGeometry(stickShape, {
+      depth: 0.34,
+      bevelEnabled: true,
+      bevelThickness: 0.03,
+      bevelSize: 0.028,
+      bevelSegments: 2,
+    });
+    stickGeo.translate(0, 0, -0.17);
+    stickGeo.rotateY(-Math.PI / 2);
     const stickMesh = new THREE.Mesh(stickGeo, new THREE.MeshStandardMaterial({ color: '#f59e0b', roughness: 0.76 }));
-    stickMesh.position.set(0.35, 2.35, 4.45);
-    stickMesh.rotation.x = 0.68;
+    stickMesh.position.set(0.35, 0, 0);
     stickMesh.castShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(stickMesh, windUniforms, '#f59e0b');
     const stickStroke = createBlitzStrokeMesh(stickGeo, 0.022);
     if (stickStroke) stickMesh.add(stickStroke);
     excGrp.add(stickMesh);
 
-    const bucketGeo = new THREE.BoxGeometry(1.15, 0.88, 1.05);
+    // Hydraulic boom/stick pivot hinge pins & actuator rams
+    const pinGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.56, 12);
+    pinGeo.rotateZ(Math.PI / 2);
+    for (const [py, pz] of [
+      [2.04, 0.72],
+      [3.54, 3.88],
+      [1.48, 5.48],
+    ] as const) {
+      const pinMesh = new THREE.Mesh(pinGeo, new THREE.MeshStandardMaterial({ color: '#1e222d', roughness: 0.6 }));
+      pinMesh.position.set(0.35, py, pz);
+      upgradeMeshToBlitzWorldMaterial(pinMesh, windUniforms, '#1e222d');
+      excGrp.add(pinMesh);
+    }
+    const ramBarrelGeo = new THREE.CylinderGeometry(0.09, 0.09, 1.55, 10);
+    const ramMesh = new THREE.Mesh(ramBarrelGeo, new THREE.MeshStandardMaterial({ color: '#475569', roughness: 0.5 }));
+    ramMesh.position.set(0.35, 3.92, 2.72);
+    ramMesh.rotation.x = 1.18;
+    upgradeMeshToBlitzWorldMaterial(ramMesh, windUniforms, '#475569');
+    excGrp.add(ramMesh);
+
+    const bucketShape = new THREE.Shape();
+    bucketShape.moveTo(5.08, 1.68);
+    bucketShape.lineTo(5.58, 1.62);
+    bucketShape.lineTo(5.68, 1.24);
+    bucketShape.lineTo(5.38, 0.82);
+    bucketShape.lineTo(4.68, 0.74);
+    bucketShape.lineTo(4.58, 0.92);
+    bucketShape.lineTo(5.16, 1.00);
+    bucketShape.lineTo(5.32, 1.28);
+    bucketShape.closePath();
+    const bucketGeo = new THREE.ExtrudeGeometry(bucketShape, {
+      depth: 1.04,
+      bevelEnabled: true,
+      bevelThickness: 0.035,
+      bevelSize: 0.03,
+      bevelSegments: 2,
+    });
+    bucketGeo.translate(0, 0, -0.52);
+    bucketGeo.rotateY(-Math.PI / 2);
     const bucketMesh = new THREE.Mesh(bucketGeo, new THREE.MeshStandardMaterial({ color: '#1e222d', roughness: 0.88 }));
-    bucketMesh.position.set(0.35, 1.12, 5.25);
-    bucketMesh.rotation.x = 0.35;
+    bucketMesh.position.set(0.35, 0, 0);
     bucketMesh.castShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(bucketMesh, windUniforms, '#1e222d');
     const bucketStroke = createBlitzStrokeMesh(bucketGeo, 0.024);
     if (bucketStroke) bucketMesh.add(bucketStroke);
     excGrp.add(bucketMesh);
+
+    const toothGeo = new THREE.ConeGeometry(0.08, 0.30, 5);
+    toothGeo.rotateX(-Math.PI / 2);
+    for (const tzOff of [-0.36, -0.12, 0.12, 0.36]) {
+      const toothMesh = new THREE.Mesh(toothGeo, new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.5 }));
+      toothMesh.position.set(0.35 + tzOff, 0.78, 4.56);
+      upgradeMeshToBlitzWorldMaterial(toothMesh, windUniforms, '#94a3b8');
+      excGrp.add(toothMesh);
+    }
 
     constructionYardGroup.add(excGrp);
   };
@@ -22194,6 +27391,7 @@ export function createCurvedPlanetEnvironment(
   // Custom Blitz Palm Frond ShaderMaterial (lush tropical emerald #238c3a -> sunlit lime-green #66cc38 + deep canopy shadow #135924)
   const palmFrondShaderMat = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uFrondTex: { value: palmFrondMaskTex },
       uColorA: { value: new THREE.Color('#238c3a') },
       uColorB: { value: new THREE.Color('#66cc38') },
@@ -22206,6 +27404,7 @@ export function createCurvedPlanetEnvironment(
       uWindStrength: windUniforms.uWindStrength,
       uWindGust: windUniforms.uWindGust,
     },
+    fog: true,
     vertexShader: /* glsl */ `
       uniform float uWindPhase;
       uniform vec2 uWindDirection;
@@ -22214,6 +27413,7 @@ export function createCurvedPlanetEnvironment(
 
       varying vec2 vUv;
       varying vec3 vNormalW;
+      #include <fog_pars_vertex>
 
       void main() {
         vUv = uv;
@@ -22233,7 +27433,9 @@ export function createCurvedPlanetEnvironment(
         worldPos.y += (sin(phase * 0.85) * 0.14 * arcFactor + flutter) * uWindStrength;
 
         vNormalW = normalize(mat3(modelMatrix) * normal);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = viewMatrix * worldPos;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
@@ -22247,6 +27449,7 @@ export function createCurvedPlanetEnvironment(
 
       varying vec2 vUv;
       varying vec3 vNormalW;
+      #include <fog_pars_fragment>
 
       void main() {
         vec4 maskSample = texture2D(uFrondTex, vUv);
@@ -22266,6 +27469,7 @@ export function createCurvedPlanetEnvironment(
         gl_FragColor = vec4(finalCol, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
@@ -22274,13 +27478,35 @@ export function createCurvedPlanetEnvironment(
   const palmFrondDepthMat = new THREE.ShaderMaterial({
     uniforms: {
       uFrondTex: { value: palmFrondMaskTex },
-      uAlphaThreshold: { value: 0.36 },
+      uAlphaThreshold: { value: 0.20 },
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+      uWindGust: windUniforms.uWindGust,
     },
     vertexShader: /* glsl */ `
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
       varying vec2 vUv;
       void main() {
         vUv = uv;
-        gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+
+        float arcFactor = smoothstep(0.06, 1.0, uv.y);
+        float edgeFlutter = abs(uv.x - 0.5) * 2.0 * smoothstep(0.15, 0.9, uv.y);
+        float seedPhase = worldPos.x * 0.42 + worldPos.z * 0.37 + uv.y * 2.2;
+        float phase = uWindPhase + seedPhase;
+        float sway = (sin(phase) * 0.38 + uWindGust * 0.24) * uWindStrength * arcFactor;
+        float flutter = sin(phase * 2.3 + uv.x * 6.0) * 0.07 * uWindStrength * edgeFlutter;
+
+        worldPos.x += uWindDirection.x * sway;
+        worldPos.z += uWindDirection.y * sway;
+        worldPos.y += (sin(phase * 0.85) * 0.14 * arcFactor + flutter) * uWindStrength;
+
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
     fragmentShader: /* glsl */ `
@@ -22623,6 +27849,7 @@ export function createCurvedPlanetEnvironment(
 
   const coastalFlowerFoliageShaderMat = new THREE.ShaderMaterial({
     uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uAtlasTex: { value: coastalFlowerAtlasTex },
       uLeafShadow: { value: new THREE.Color('#135924') },
       uLeafMain: { value: new THREE.Color('#238c3a') },
@@ -22636,6 +27863,7 @@ export function createCurvedPlanetEnvironment(
       uWindStrength: windUniforms.uWindStrength,
       uWindGust: windUniforms.uWindGust,
     },
+    fog: true,
     vertexShader: /* glsl */ `
       attribute vec3 color;
       uniform float uWindPhase;
@@ -22646,6 +27874,7 @@ export function createCurvedPlanetEnvironment(
       varying vec2 vUv;
       varying vec3 vNormalW;
       varying vec3 vFlowerColor;
+      #include <fog_pars_vertex>
 
       void main() {
         vUv = uv;
@@ -22664,7 +27893,9 @@ export function createCurvedPlanetEnvironment(
         worldPos.y += flutter;
 
         vNormalW = normalize(mat3(modelMatrix) * normal);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = viewMatrix * worldPos;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
@@ -22680,6 +27911,7 @@ export function createCurvedPlanetEnvironment(
       varying vec2 vUv;
       varying vec3 vNormalW;
       varying vec3 vFlowerColor;
+      #include <fog_pars_fragment>
 
       void main() {
         vec4 maskSample = texture2D(uAtlasTex, vUv);
@@ -22710,6 +27942,7 @@ export function createCurvedPlanetEnvironment(
         gl_FragColor = vec4(finalCol, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
@@ -23318,59 +28551,33 @@ export function createCurvedPlanetEnvironment(
     constructionYardGroup.add(grp);
   };
 
-  // 1B. Translucent 3D Oasis Lake Water Surface Plane (y = -0.16m) over the 3-Level Concave Lake Basin (-1.55m depth)
-  //     Upgraded with Shoreline 60 FPS 4-Cascade Non-Integer Wave Synthesis ([73.3m, 15.7m, 3.33m, 0.71m]) + Jacobian Foam!
-  const lakeSurfaceGeo = new THREE.PlaneGeometry(28.0, 30.0, 24, 24);
+  // 1B. Translucent 3D Oasis Lake Water Surface Plane (y = -0.16m) over the Sunlit Sandy/Pebble Basin (-1.55m depth)
+  //     Uses unified Beer-Lambert optical depth, Fresnel sky reflection, sun/moon glint, rain ripples & Voronoi foam!
+  const lakeSegs = isSoftwareGl ? 36 : 48;
+  const lakeSurfaceGeo = new THREE.PlaneGeometry(32.0, 34.0, lakeSegs, lakeSegs);
   lakeSurfaceGeo.rotateX(-Math.PI / 2);
-  const lakeSurfaceMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    uniforms: {
-      uTime: windUniforms.uTime,
-    },
-    vertexShader: /* glsl */ `
-      uniform float uTime;
-      varying vec2 vWorldXZ;
-      varying float vWaveCrest;
-      void main() {
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWorldXZ = wp.xz;
-        float k1 = 6.2831853 / 15.7;
-        float k2 = 6.2831853 / 3.33;
-        float w1 = sin(wp.x * k1 * 0.76 - wp.z * k1 * 0.65 + uTime * 2.15) * 0.025;
-        float w2 = cos(-wp.x * k2 * 0.54 + wp.z * k2 * 0.84 + uTime * 3.10) * 0.012;
-        wp.y += w1 + w2;
-        vWaveCrest = clamp((w1 + w2) * 18.0 + 0.5, 0.0, 1.0);
-        gl_Position = projectionMatrix * viewMatrix * wp;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform float uTime;
-      varying vec2 vWorldXZ;
-      varying float vWaveCrest;
-      ${PLANET_TERRAIN_GLSL_SNIPPET}
-      void main() {
-        float lakeSdf = evaluateNwLakeSdf(vWorldXZ);
-        if (lakeSdf > 0.05) discard;
-        float edgeAlpha = 1.0 - smoothstep(-0.35, 0.05, lakeSdf);
-        float k1 = 6.2831853 / 15.7;
-        float k2 = 6.2831853 / 3.33;
-        float k3 = 6.2831853 / 0.71;
-        float ripple1 = sin(vWorldXZ.x * k1 * 0.76 - vWorldXZ.y * k1 * 0.65 + uTime * 2.15);
-        float ripple2 = cos(-vWorldXZ.x * k2 * 0.54 + vWorldXZ.y * k2 * 0.84 + uTime * 3.10);
-        float capillary = sin(vWorldXZ.x * k3 * 0.62 + vWorldXZ.y * k3 * 0.78 - uTime * 4.20);
-        float caustic = smoothstep(0.42, 0.84, ripple1 * 0.45 + ripple2 * 0.40 + capillary * 0.15);
-        float shoreRing = smoothstep(-1.05, -0.14, lakeSdf) * (1.0 - smoothstep(-0.14, 0.05, lakeSdf));
-        vec3 waterCol = mix(vec3(0.14, 0.62, 0.74), vec3(0.78, 0.97, 1.0), max(caustic * 0.46 + vWaveCrest * 0.14, shoreRing * 0.82));
-        float alpha = edgeAlpha * mix(0.38, 0.70, max(caustic * 0.5, shoreRing));
-        gl_FragColor = vec4(waterCol, alpha);
-      }
-    `,
+  lakeSurfaceGeo.computeBoundingBox();
+  if (lakeSurfaceGeo.boundingBox) {
+    lakeSurfaceGeo.boundingBox.min.y -= 0.35;
+    lakeSurfaceGeo.boundingBox.max.y += 0.35;
+  }
+  lakeSurfaceGeo.computeBoundingSphere();
+  if (lakeSurfaceGeo.boundingSphere) {
+    lakeSurfaceGeo.boundingSphere.radius += 0.35;
+  }
+  const lakeSurfaceMat = createUnifiedWaterSurfaceMaterial({
+    kind: 'lake',
+    windUniforms,
+    isSoftwareGl,
+    sharedUniforms: sharedWaterUniforms,
   });
   const lakeSurfaceMesh = new THREE.Mesh(lakeSurfaceGeo, lakeSurfaceMat);
   lakeSurfaceMesh.name = 'OasisLakeWaterSurface';
-  lakeSurfaceMesh.position.set(-31.0, -0.16, 0.0);
+  lakeSurfaceMesh.position.set(-31.0, EAST_WATER_SURFACE_Y, 0.0);
   lakeSurfaceMesh.renderOrder = 2;
+  lakeSurfaceMesh.frustumCulled = true;
+  lakeSurfaceMesh.castShadow = false;
+  lakeSurfaceMesh.receiveShadow = false;
   roadsGroup.add(lakeSurfaceMesh);
 
   // 2. Southern Dermaga Colorful Shipping Container Terminal Stacks (Northern Dermaga claimed by Taman Ria!)
@@ -23408,7 +28615,17 @@ export function createCurvedPlanetEnvironment(
   const companionStoneGeo = new THREE.DodecahedronGeometry(0.95, 0);
   companionStoneGeo.scale(1.2, 0.68, 1.05);
 
+  const isFlatGentleHilltop = (x: number, z: number, radiusM: number, maxSpanM = 0.65): boolean => {
+    const e0 = getRawGroundElevation(x, z);
+    const e1 = getRawGroundElevation(x + radiusM, z);
+    const e2 = getRawGroundElevation(x - radiusM, z);
+    const e3 = getRawGroundElevation(x, z + radiusM);
+    const e4 = getRawGroundElevation(x, z - radiusM);
+    return Math.max(e0, e1, e2, e3, e4) - Math.min(e0, e1, e2, e3, e4) <= maxSpanM;
+  };
+
   const addTerraceBushCluster = (x: number, z: number, rotY: number, scale: number, seed: number) => {
+    if (!isFlatGentleHilltop(x, z, Math.max(1.25, 1.45 * scale), 0.65)) return;
     const baseElev = getRawGroundElevation(x, z);
     const bushGrp = new THREE.Group();
     bushGrp.position.set(x, baseElev + 0.35 * scale, z);
@@ -23453,14 +28670,15 @@ export function createCurvedPlanetEnvironment(
   };
 
   const addTerraceLimestoneBoulder = (x: number, z: number, rotY: number, scale: number, seed: number) => {
+    if (!isFlatGentleHilltop(x, z, Math.max(1.35, 1.55 * scale), 0.62)) return;
     const baseElev = getRawGroundElevation(x, z);
     const boulderGrp = new THREE.Group();
     boulderGrp.position.set(x, baseElev + 0.32 * scale, z);
     boulderGrp.rotation.y = rotY;
     boulderGrp.scale.setScalar(scale);
 
-    const bodyCol = seed % 2 === 0 ? '#8e8b7c' : '#827f72';
-    const topCol = '#bab5a4';
+    const bodyCol = seed % 2 === 0 ? '#cbb694' : '#bfa882';
+    const topCol = '#e7dcc6';
 
     const baseMesh = new THREE.Mesh(
       flatBoulderBaseGeo,
@@ -23535,8 +28753,18 @@ export function createCurvedPlanetEnvironment(
     return [ux * r, uz * r];
   };
 
+  const isClearTerraceAccent = (px: number, pz: number): boolean => {
+    if (px >= 95.5) return false;
+    if (Math.abs(pz) < 114.2 && px > -64.0) return false;
+    if (evaluateHillVillaPlateauSdf(px, pz) < 2.2) return false;
+    if (evaluateCoastalHillRoadSample(px, pz).distToCenterM < COASTAL_HILL_ROAD_HALF_WIDTH + 2.5) {
+      return false;
+    }
+    return true;
+  };
+
   let accentSeed = 0;
-  // 1. North & South Terraced Embankment Bushes & Flat Limestone Boulders (100% N/S Mirrored, x <= 94m so East Coast stays clear)
+  // 1. North & South Coastal Bluff Bushes & Sandstone Boulders (100% N/S Mirrored, clear of roads & Villa Plateaus)
   const nsBushRays: [number, number, 1 | 2 | 3, number][] = [
     [-78, 118, 1, 0.96],
     [-60, 120, 2, 1.05],
@@ -23550,7 +28778,7 @@ export function createCurvedPlanetEnvironment(
   for (const [rx, rz, ledge, bScale] of nsBushRays) {
     for (const zSign of [-1, 1] as const) {
       const [px, pz] = solveTerracePoint(rx, zSign * rz, ledge);
-      if (px < 94.0) {
+      if (isClearTerraceAccent(px, pz)) {
         addTerraceBushCluster(px, pz, (accentSeed * 1.1) % 6.28, bScale, accentSeed++);
       }
     }
@@ -23566,13 +28794,13 @@ export function createCurvedPlanetEnvironment(
   for (const [rx, rz, ledge, rYaw, rScale] of nsBoulderRays) {
     for (const zSign of [-1, 1] as const) {
       const [px, pz] = solveTerracePoint(rx, zSign * rz, ledge);
-      if (px < 94.0) {
+      if (isClearTerraceAccent(px, pz)) {
         addTerraceLimestoneBoulder(px, pz, zSign * rYaw, rScale, accentSeed++);
       }
     }
   }
 
-  // 2. West Terraced Embankment Bushes & Flat Limestone Boulders (100% N/S Mirrored along the West hill border)
+  // 2. West Coastal Bluff Bushes & Sandstone Boulders (100% N/S Mirrored along the West hill border)
   const westBushRays: [number, number, 1 | 2 | 3, number][] = [
     [-106, 28, 2, 1.04],
     [-108, 48, 2, 0.94],
@@ -23582,7 +28810,9 @@ export function createCurvedPlanetEnvironment(
   for (const [wx, wz, ledge, wScale] of westBushRays) {
     for (const zSign of [-1, 1] as const) {
       const [px, pz] = solveTerracePoint(wx, zSign * wz, ledge);
-      addTerraceBushCluster(px, pz, (accentSeed * 0.9) % 6.28, wScale, accentSeed++);
+      if (isClearTerraceAccent(px, pz)) {
+        addTerraceBushCluster(px, pz, (accentSeed * 0.9) % 6.28, wScale, accentSeed++);
+      }
     }
   }
 
@@ -23594,7 +28824,612 @@ export function createCurvedPlanetEnvironment(
   for (const [rx, rz, ledge, rYaw, rScale] of westBoulderRays) {
     for (const zSign of [-1, 1] as const) {
       const [px, pz] = solveTerracePoint(rx, zSign * rz, ledge);
-      addTerraceLimestoneBoulder(px, pz, zSign * rYaw, rScale, accentSeed++);
+      if (isClearTerraceAccent(px, pz)) {
+        addTerraceLimestoneBoulder(px, pz, zSign * rYaw, rScale, accentSeed++);
+      }
+    }
+  }
+
+  // 3. Coastal Switchback Island Peninsula Bushes & Sandstone Boulders (between winding hairpin bends)
+  const switchbackIslandAccents: Array<{ x: number; az: number; kind: 'bush' | 'boulder'; scale: number; yaw: number }> = [
+    { x: 76.5, az: 128.8, kind: 'bush', scale: 1.05, yaw: 0.4 },
+    { x: 60.0, az: 128.4, kind: 'boulder', scale: 0.96, yaw: -0.35 },
+    { x: 70.0, az: 129.0, kind: 'bush', scale: 0.92, yaw: 1.8 },
+    { x: 56.5, az: 141.2, kind: 'bush', scale: 0.98, yaw: 2.3 },
+    { x: 40.5, az: 138.8, kind: 'boulder', scale: 0.90, yaw: 0.6 },
+    { x: -72.0, az: 132.0, kind: 'bush', scale: 1.06, yaw: 0.9 },
+    { x: -115.5, az: 72.0, kind: 'bush', scale: 0.95, yaw: 1.4 },
+    { x: -116.5, az: 22.0, kind: 'bush', scale: 1.02, yaw: 0.7 },
+    { x: -116.0, az: 42.0, kind: 'boulder', scale: 0.94, yaw: -0.5 },
+  ];
+  for (const item of switchbackIslandAccents) {
+    for (const zSign of [-1, 1] as const) {
+      const px = item.x;
+      const pz = zSign * item.az;
+      if (!isClearTerraceAccent(px, pz)) continue;
+      if (item.kind === 'bush') {
+        addTerraceBushCluster(px, pz, zSign * item.yaw, item.scale, accentSeed++);
+      } else {
+        addTerraceLimestoneBoulder(px, pz, zSign * item.yaw, item.scale, accentSeed++);
+      }
+    }
+  }
+
+  // =========================================================================
+  // 2C-2. SAN FRANCISCO COASTAL SWITCHBACK & TWIN PEAKS RIDGE ROAD 3D STRUCTURE
+  //       Smooth 3D lofted asphalt spline ribbon + curved UV lane markings + concrete curbs
+  //       + outer coastal guardrails/parapet posts sitting cleanly above recessed terrain trough
+  // =========================================================================
+  const coastalHillRoadGroup = new THREE.Group();
+  coastalHillRoadGroup.name = 'CoastalHillRoadStructure3D';
+  roadsGroup.add(coastalHillRoadGroup);
+
+  {
+    const sPts = COASTAL_HILL_FULL_LOOP_SPLINE_POINTS;
+    const nPts = sPts.length;
+    const tangentsX = new Float32Array(nPts);
+    const tangentsZ = new Float32Array(nPts);
+    const normalsX = new Float32Array(nPts);
+    const normalsZ = new Float32Array(nPts);
+    const cumArc = new Float32Array(nPts);
+
+    for (let i = 0; i < nPts; i++) {
+      const prev = sPts[Math.max(0, i - 1)];
+      const next = sPts[Math.min(nPts - 1, i + 1)];
+      const dx = next.x - prev.x;
+      const dz = next.z - prev.z;
+      const len = Math.max(1e-5, Math.hypot(dx, dz));
+      tangentsX[i] = dx / len;
+      tangentsZ[i] = dz / len;
+      normalsX[i] = -tangentsZ[i];
+      normalsZ[i] = tangentsX[i];
+      if (i > 0) {
+        cumArc[i] = cumArc[i - 1] + Math.hypot(sPts[i].x - sPts[i - 1].x, sPts[i].z - sPts[i - 1].z);
+      }
+    }
+    const totalLoopArc = cumArc[nPts - 1];
+    const halfLoopArc = totalLoopArc * 0.5;
+    const smooth01 = (e0: number, e1: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+      return t * t * (3 - 2 * t);
+    };
+    const evalHalfW = (endDist: number) =>
+      COASTAL_HILL_ROAD_HALF_WIDTH + 0.25 * (1.0 - smooth01(0.0, 8.0, endDist));
+    const evalDeckY = (elevY: number, endDist: number) => {
+      const flatJoinLift = 0.014 * (1.0 - smooth01(0.02, 0.38, elevY));
+      const endFade = smooth01(0.0, 0.5, endDist);
+      return elevY + flatJoinLift * endFade;
+    };
+
+    // 1. Lofted Asphalt Ribbon (7 verts per ring with beveled edge & -0.62m side skirts so 0 terrain triangles poke through)
+    const deckPos: number[] = [];
+    const deckUv: number[] = [];
+    const deckEndDist: number[] = [];
+    const deckHalfW: number[] = [];
+    const deckIndices: number[] = [];
+
+    for (let i = 0; i < nPts; i++) {
+      const p = sPts[i];
+      const endDist = Math.min(cumArc[i], totalLoopArc - cumArc[i]);
+      const hw = evalHalfW(endDist);
+      const dy = evalDeckY(p.y, endDist);
+      const nx = normalsX[i];
+      const nz = normalsZ[i];
+      const ringSpecs: Array<[number, number]> = [
+        [-(hw + 0.26), p.y - 0.62],
+        [-(hw + 0.12), dy - 0.05],
+        [-hw, dy],
+        [0, dy],
+        [hw, dy],
+        [hw + 0.12, dy - 0.05],
+        [hw + 0.26, p.y - 0.62],
+      ];
+      for (const [lat, vy] of ringSpecs) {
+        deckPos.push(p.x + nx * lat, vy, p.z + nz * lat);
+        deckUv.push(cumArc[i], lat);
+        deckEndDist.push(endDist);
+        deckHalfW.push(hw);
+      }
+      if (i < nPts - 1) {
+        const b0 = i * 7;
+        const b1 = (i + 1) * 7;
+        for (let k = 0; k < 6; k++) {
+          deckIndices.push(b0 + k, b0 + k + 1, b1 + k);
+          deckIndices.push(b0 + k + 1, b1 + k + 1, b1 + k);
+        }
+      }
+    }
+
+    const deckGeo = new THREE.BufferGeometry();
+    deckGeo.setAttribute('position', new THREE.Float32BufferAttribute(deckPos, 3));
+    deckGeo.setAttribute('uv', new THREE.Float32BufferAttribute(deckUv, 2));
+    deckGeo.setAttribute('aEndDist', new THREE.Float32BufferAttribute(deckEndDist, 1));
+    deckGeo.setAttribute('aHalfWidth', new THREE.Float32BufferAttribute(deckHalfW, 1));
+    deckGeo.setIndex(deckIndices);
+    deckGeo.computeVertexNormals();
+    deckGeo.computeBoundingBox();
+    deckGeo.computeBoundingSphere();
+
+    const deckMat = new THREE.ShaderMaterial({
+      uniforms: {
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+        uDirShadowMap,
+        uDirShadowMatrix,
+        uHasDirShadow,
+        uDirShadowMapSize,
+        uLightDirection: windUniforms.uLightDirection,
+        uSunDirection: sharedWaterUniforms.uSunDirection,
+        uSunColor: sharedWaterUniforms.uSunColor,
+        uSkyColor: sharedWaterUniforms.uSkyColor,
+        uRainFactor: sharedWaterUniforms.uRainFactor,
+        uTimeOfDayNightFactor: sharedWaterUniforms.uTimeOfDayNightFactor,
+        uGroundLightTint: sharedWaterUniforms.uGroundLightTint,
+        uHalfLoopArc: { value: halfLoopArc },
+      },
+      fog: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      vertexShader: /* glsl */ `
+        attribute float aEndDist;
+        attribute float aHalfWidth;
+
+        varying vec3 vWorldPos;
+        varying vec3 vNormalW;
+        varying vec2 vRoadUV;
+        varying float vEndDist;
+        varying float vHalfWidth;
+        #include <fog_pars_vertex>
+
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          vNormalW = normalize(mat3(modelMatrix) * normal);
+          vRoadUV = uv;
+          vEndDist = aEndDist;
+          vHalfWidth = aHalfWidth;
+          vec4 mvPosition = viewMatrix * wp;
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uLightDirection;
+        uniform vec3 uSunDirection;
+        uniform vec3 uSunColor;
+        uniform vec3 uSkyColor;
+        uniform float uRainFactor;
+        uniform float uTimeOfDayNightFactor;
+        uniform vec3 uGroundLightTint;
+        uniform float uHalfLoopArc;
+
+        varying vec3 vWorldPos;
+        varying vec3 vNormalW;
+        varying vec2 vRoadUV;
+        varying float vEndDist;
+        varying float vHalfWidth;
+        #include <fog_pars_fragment>
+
+        ${PLANET_TERRAIN_GLSL_SNIPPET}
+        ${BLITZ_CAST_SHADOW_GLSL_SNIPPET}
+
+        void main() {
+          vec2 p = vWorldPos.xz;
+          float n1 = planetValueNoise(p * 0.22);
+          float n2 = planetValueNoise(p * 0.68 + vec2(11.3, -7.9));
+          float n3 = planetValueNoise(p * 1.85 + vec2(-5.4, 19.1));
+          float soilNoise = n1 * 0.55 + n2 * 0.30 + n3 * 0.15;
+          float aggNoise = planetValueNoise(p * 6.4) * 0.56 + planetValueNoise(p * 17.5 + vec2(4.7, -3.1)) * 0.44;
+
+          vec3 asphaltCol = mix(vec3(0.105, 0.118, 0.142), vec3(0.142, 0.158, 0.186), soilNoise);
+          asphaltCol *= mix(0.92, 1.08, aggNoise);
+
+          float lat = vRoadUV.y;
+          float absLat = abs(lat);
+          float hw = vHalfWidth;
+
+          // Subtle tire-wear track darkening along both uphill/downhill lanes
+          float laneWear = 1.0 - smoothstep(0.0, 1.25, abs(absLat - (hw - 2.0)));
+          asphaltCol *= mix(1.0, 0.94, laneWear);
+
+          // Gutter darkening & edge bevel next to concrete curbs
+          float gutterAO = 1.0 - smoothstep(0.0, 0.16, abs(absLat - (hw - 0.25)));
+          asphaltCol *= mix(1.0, 0.85, gutterAO * 0.55);
+
+          // Wet-asphalt rain darkening
+          asphaltCol *= mix(1.0, 0.68, uRainFactor);
+
+          float aaU = max(fwidth(vRoadUV.x), 0.015);
+          float aaV = max(fwidth(lat), 0.008);
+
+          // 1) Crisp white shoulder edge lines (suppressed smoothly across the 3 Villa Driveway openings!)
+          float az = abs(p.y);
+          float inNsDriveway =
+            smoothstep(-35.5, -34.2, p.x) * (1.0 - smoothstep(4.2, 5.5, p.x)) *
+            smoothstep(139.0, 140.0, az) * (1.0 - smoothstep(142.2, 143.2, az));
+          float inWestDriveway =
+            (1.0 - smoothstep(25.2, 26.5, az)) *
+            smoothstep(-132.0, -131.0, p.x) * (1.0 - smoothstep(-129.4, -128.4, p.x));
+          float drivewayGap = clamp(max(inNsDriveway, inWestDriveway), 0.0, 1.0);
+
+          float dShoulder = abs(absLat - (hw - 0.56)) - 0.062;
+          float shoulderLine =
+            (1.0 - smoothstep(-aaV, aaV, dShoulder)) *
+            (1.0 - drivewayGap) *
+            smoothstep(0.8, 2.0, vEndDist);
+
+          // 2) Curved golden-amber dashed centerline (symmetric around West Crest z = 0)
+          float sSym = abs(vRoadUV.x - uHalfLoopArc);
+          float pitch = 5.1;
+          float dashHalf = 1.38;
+          float cycleLocal = abs(mod(sSym + pitch * 0.5, pitch) - pitch * 0.5);
+          float dDashAlong = cycleLocal - dashHalf;
+          float dDashAcross = abs(lat) - 0.145;
+          float amberDash =
+            (1.0 - smoothstep(-aaU, aaU, dDashAlong)) *
+            (1.0 - smoothstep(-aaV, aaV, dDashAcross)) *
+            smoothstep(2.6, 3.8, vEndDist);
+
+          vec3 amberPaint = vec3(0.89, 0.58, 0.08);
+          vec3 whitePaint = vec3(0.84, 0.88, 0.92);
+          float paintGrain = mix(0.91, 1.0, aggNoise);
+          float amberMask = clamp(amberDash, 0.0, 1.0);
+          float shoulderMask = clamp(shoulderLine * (1.0 - amberMask), 0.0, 1.0);
+          float totalPaintMask = clamp(max(amberMask, shoulderMask * 0.65), 0.0, 1.0);
+
+          asphaltCol = mix(asphaltCol, whitePaint * paintGrain, shoulderMask * 0.56);
+          asphaltCol = mix(asphaltCol, amberPaint * paintGrain, amberMask * 0.92);
+          asphaltCol *= uGroundLightTint;
+
+          float ndl = clamp(dot(normalize(vNormalW), normalize(uLightDirection)) * 0.5 + 0.5, 0.0, 1.0);
+          asphaltCol *= mix(0.92, 1.04, ndl);
+
+          vec3 Vroad = normalize(cameraPosition - vWorldPos);
+          vec3 Hroad = normalize(normalize(uSunDirection) + Vroad);
+          float fresnelRoad = pow(1.0 - max(Vroad.y, 0.0), 3.2);
+          float puddleMask = smoothstep(0.32, 0.72, n1 * 0.60 + n2 * 0.40);
+          float wetSheen = uRainFactor * mix(0.45, 1.0, puddleMask);
+          float sunVis = mix(1.0, 0.30, uTimeOfDayNightFactor);
+
+          asphaltCol = mix(
+            asphaltCol,
+            uSkyColor * 0.58 * uGroundLightTint,
+            wetSheen * mix(0.10, 0.38, fresnelRoad) * (1.0 - totalPaintMask * 0.45)
+          );
+          float dryPaintSheen = pow(max(Hroad.y, 1e-4), 32.0) * totalPaintMask * 0.045 * (1.0 - uRainFactor);
+          float wetSpec = pow(max(Hroad.y, 1e-4), mix(26.0, 52.0, totalPaintMask)) * wetSheen * 0.22;
+          asphaltCol += uSunColor * (dryPaintSheen + wetSpec) * sunVis;
+
+          float castShadow = sampleBlitzCastShadow(vWorldPos);
+          float shadowStrength = 1.0 - castShadow;
+          if (shadowStrength > 0.005) {
+            float halftone = blitzHalftoneGrid(p, 2.4);
+            float edgeMask = smoothstep(0.08, 0.52, shadowStrength) * (1.0 - smoothstep(0.52, 0.92, shadowStrength));
+            float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * 0.07, 0.0, 1.0);
+            asphaltCol = mix(asphaltCol, asphaltCol * vec3(0.42, 0.48, 0.56), stylizedShadow * 0.48);
+          }
+
+          gl_FragColor = vec4(asphaltCol, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          #include <fog_fragment>
+        }
+      `,
+    });
+    bindBlitzShadowSamplerShaderDefine(deckMat);
+
+    const deckMesh = new THREE.Mesh(deckGeo, deckMat);
+    deckMesh.name = 'CoastalHillRoadAsphaltRibbon';
+    deckMesh.receiveShadow = true;
+    deckMesh.castShadow = false;
+    deckMesh.frustumCulled = true;
+    coastalHillRoadGroup.add(deckMesh);
+
+    // 2. Concrete Curbs + Outer Coastal Guardrails & Parapet Posts (skipping Villa Driveway Gaps!)
+    const curbGeos: THREE.BufferGeometry[] = [];
+    const railGeos: THREE.BufferGeometry[] = [];
+    const postMatrices: THREE.Matrix4[] = [];
+
+    const buildEdgeStripSegmentGeo = (
+      idxStart: number,
+      idxEnd: number,
+      sideSign: -1 | 1,
+      profile: ReadonlyArray<[number, number]>,
+      withFlaredTerminals = false,
+    ): THREE.BufferGeometry => {
+      const pCount = profile.length;
+      const positions: number[] = [];
+      const indices: number[] = [];
+      const runVertIndices: number[] = [];
+      for (let i = idxStart; i <= idxEnd; i++) runVertIndices.push(i);
+
+      const pushRing = (
+        px: number,
+        py: number,
+        pz: number,
+        nx: number,
+        nz: number,
+        hw: number,
+        flareLat = 0,
+        dropDy = 0,
+        scaleProfile = 1,
+      ) => {
+        const midLat = profile.reduce((acc, p) => acc + p[0], 0) / pCount;
+        const midDy = profile.reduce((acc, p) => acc + p[1], 0) / pCount;
+        for (const [latOff, dy] of profile) {
+          const sLat = midLat + (latOff - midLat) * scaleProfile + flareLat;
+          const sDy = midDy + (dy - midDy) * scaleProfile + dropDy;
+          const r = hw + sLat;
+          positions.push(px + nx * r, py + sDy, pz + nz * r);
+        }
+      };
+
+      const ringTotal = withFlaredTerminals ? runVertIndices.length + 2 : runVertIndices.length;
+
+      if (withFlaredTerminals) {
+        const p = sPts[idxStart];
+        const endDist = Math.min(cumArc[idxStart], totalLoopArc - cumArc[idxStart]);
+        const hw = evalHalfW(endDist);
+        const nx = normalsX[idxStart] * sideSign;
+        const nz = normalsZ[idxStart] * sideSign;
+        pushRing(
+          p.x - tangentsX[idxStart] * 0.34,
+          p.y,
+          p.z - tangentsZ[idxStart] * 0.34,
+          nx,
+          nz,
+          hw,
+          0.11,
+          -0.06,
+          0.62,
+        );
+      }
+
+      for (const i of runVertIndices) {
+        const p = sPts[i];
+        const endDist = Math.min(cumArc[i], totalLoopArc - cumArc[i]);
+        const hw = evalHalfW(endDist);
+        const nx = normalsX[i] * sideSign;
+        const nz = normalsZ[i] * sideSign;
+        const isStartEdge = withFlaredTerminals && i === idxStart;
+        const isEndEdge = withFlaredTerminals && i === idxEnd;
+        const flare = isStartEdge || isEndEdge ? 0.03 : 0.0;
+        pushRing(p.x, p.y, p.z, nx, nz, hw, flare, 0, 1);
+      }
+
+      if (withFlaredTerminals) {
+        const p = sPts[idxEnd];
+        const endDist = Math.min(cumArc[idxEnd], totalLoopArc - cumArc[idxEnd]);
+        const hw = evalHalfW(endDist);
+        const nx = normalsX[idxEnd] * sideSign;
+        const nz = normalsZ[idxEnd] * sideSign;
+        pushRing(
+          p.x + tangentsX[idxEnd] * 0.34,
+          p.y,
+          p.z + tangentsZ[idxEnd] * 0.34,
+          nx,
+          nz,
+          hw,
+          0.11,
+          -0.06,
+          0.62,
+        );
+      }
+
+      for (let rIdx = 0; rIdx < ringTotal - 1; rIdx++) {
+        const b0 = rIdx * pCount;
+        const b1 = (rIdx + 1) * pCount;
+        for (let k = 0; k < pCount - 1; k++) {
+          if (sideSign > 0) {
+            indices.push(b0 + k, b0 + k + 1, b1 + k);
+            indices.push(b0 + k + 1, b1 + k + 1, b1 + k);
+          } else {
+            indices.push(b0 + k, b1 + k, b0 + k + 1);
+            indices.push(b0 + k + 1, b1 + k, b1 + k + 1);
+          }
+        }
+      }
+      // Cap both ends cleanly
+      const lastRing = (ringTotal - 1) * pCount;
+      for (let k = 1; k < pCount - 1; k++) {
+        if (sideSign > 0) {
+          indices.push(0, k + 1, k);
+          indices.push(lastRing, lastRing + k, lastRing + k + 1);
+        } else {
+          indices.push(0, k, k + 1);
+          indices.push(lastRing, lastRing + k + 1, lastRing + k);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      g.setIndex(indices);
+      g.computeVertexNormals();
+      return g;
+    };
+
+    const curbProfile: ReadonlyArray<[number, number]> = [
+      [-0.06, -0.45],
+      [0.04, 0.12],
+      [0.42, 0.12],
+      [0.50, -0.68],
+      [-0.06, -0.45],
+    ];
+    const railUpperProfile: ReadonlyArray<[number, number]> = [
+      [0.16, 0.64],
+      [0.16, 0.78],
+      [0.27, 0.78],
+      [0.27, 0.64],
+      [0.16, 0.64],
+    ];
+    const railLowerProfile: ReadonlyArray<[number, number]> = [
+      [0.17, 0.40],
+      [0.17, 0.51],
+      [0.26, 0.51],
+      [0.26, 0.40],
+      [0.17, 0.40],
+    ];
+
+    const dummyPost = new THREE.Object3D();
+    const pushGuardrailPostAt = (idx: number, sideSign: -1 | 1) => {
+      const a = sPts[idx];
+      const endDist = Math.min(cumArc[idx], totalLoopArc - cumArc[idx]);
+      const hw = evalHalfW(endDist);
+      const postR = hw + 0.24;
+      const px = a.x + normalsX[idx] * sideSign * postR;
+      const pz = a.z + normalsZ[idx] * sideSign * postR;
+      const yaw = Math.atan2(tangentsX[idx], tangentsZ[idx]);
+      dummyPost.position.set(px, a.y + 0.42, pz);
+      dummyPost.rotation.set(0, yaw, 0);
+      dummyPost.scale.set(1, 1, 1);
+      dummyPost.updateMatrix();
+      postMatrices.push(dummyPost.matrix.clone());
+    };
+
+    for (const sideSign of [-1, 1] as const) {
+      const nSegs = nPts - 1;
+      const eligibleRail = new Array<boolean>(nSegs).fill(false);
+      const railFlags = new Array<boolean>(nSegs).fill(false);
+
+      let curbRunStart = -1;
+      for (let i = 0; i < nSegs; i++) {
+        const a = sPts[i];
+        const b = sPts[i + 1];
+        const midArc = 0.5 * (cumArc[i] + cumArc[i + 1]);
+        const endDist = Math.min(midArc, totalLoopArc - midArc);
+        const hw = evalHalfW(endDist);
+        const outNx = 0.5 * (normalsX[i] + normalsX[i + 1]) * sideSign;
+        const outNz = 0.5 * (normalsZ[i] + normalsZ[i + 1]) * sideSign;
+        const mx = 0.5 * (a.x + b.x) + outNx * hw;
+        const mz = 0.5 * (a.z + b.z) + outNz * hw;
+        const my = 0.5 * (a.y + b.y);
+        const inDriveway = isPointInCoastalHillDrivewayGap(mx, mz);
+
+        const wantsCurb = endDist >= 3.8 && !inDriveway;
+        if (wantsCurb) {
+          if (curbRunStart < 0) curbRunStart = i;
+        } else if (curbRunStart >= 0) {
+          curbGeos.push(buildEdgeStripSegmentGeo(curbRunStart, i, sideSign, curbProfile, false));
+          curbRunStart = -1;
+        }
+
+        const plateauNearby = evaluateHillVillaPlateauSdf(mx + outNx * 1.8, mz + outNz * 1.8) < 1.2;
+        const canPlaceRail = endDist >= 4.6 && !inDriveway && !plateauNearby;
+        eligibleRail[i] = canPlaceRail;
+        if (canPlaceRail) {
+          const e26 = getBaseProceduralGroundElevation(mx + outNx * 2.6, mz + outNz * 2.6);
+          const e38 = getBaseProceduralGroundElevation(mx + outNx * 3.8, mz + outNz * 3.8);
+          const e52 = getBaseProceduralGroundElevation(mx + outNx * 5.2, mz + outNz * 5.2);
+          const minDrop = Math.min(e26, e38, e52);
+          const isDropOffCliff = my > 0.35 && minDrop < my - 0.16 && e26 < my + 0.14;
+          railFlags[i] = isDropOffCliff;
+        }
+      }
+      if (curbRunStart >= 0) {
+        curbGeos.push(buildEdgeStripSegmentGeo(curbRunStart, nSegs, sideSign, curbProfile, false));
+      }
+
+      // 2-pass hysteresis smoothing on guardrails:
+      // Pass 1: bridge small <= 5-segment false gaps bounded by true rails when all bridged segs are eligible
+      let iGap = 0;
+      while (iGap < nSegs) {
+        if (!railFlags[iGap]) {
+          let gEnd = iGap;
+          while (gEnd < nSegs && !railFlags[gEnd]) gEnd++;
+          const gapLen = gEnd - iGap;
+          if (iGap > 0 && gEnd < nSegs && gapLen <= 5) {
+            let allElig = true;
+            for (let k = iGap; k < gEnd; k++) {
+              if (!eligibleRail[k]) {
+                allElig = false;
+                break;
+              }
+            }
+            if (allElig) {
+              for (let k = iGap; k < gEnd; k++) railFlags[k] = true;
+            }
+          }
+          iGap = gEnd;
+        } else {
+          iGap++;
+        }
+      }
+
+      // Pass 2: emit continuous runs >= 4.5m with flared W-beam terminals & anchor posts at both ends
+      let rIdx = 0;
+      while (rIdx < nSegs) {
+        if (railFlags[rIdx]) {
+          const runStart = rIdx;
+          while (rIdx < nSegs && railFlags[rIdx]) rIdx++;
+          const runEnd = rIdx;
+          const runArc = cumArc[runEnd] - cumArc[runStart];
+          if (runArc < 4.5) continue;
+
+          railGeos.push(buildEdgeStripSegmentGeo(runStart, runEnd, sideSign, railUpperProfile, true));
+          railGeos.push(buildEdgeStripSegmentGeo(runStart, runEnd, sideSign, railLowerProfile, true));
+
+          pushGuardrailPostAt(runStart, sideSign);
+          let distSincePost = 0;
+          for (let k = runStart + 1; k < runEnd; k++) {
+            distSincePost += cumArc[k] - cumArc[k - 1];
+            const distToEnd = cumArc[runEnd] - cumArc[k];
+            if (distSincePost >= 3.2 && distToEnd >= 1.35) {
+              pushGuardrailPostAt(k, sideSign);
+              distSincePost = 0;
+            }
+          }
+          pushGuardrailPostAt(runEnd, sideSign);
+        } else {
+          rIdx++;
+        }
+      }
+    }
+
+    if (curbGeos.length > 0) {
+      const mergedCurbGeo = mergeGeometries(curbGeos, false);
+      curbGeos.forEach((g) => g.dispose());
+      if (mergedCurbGeo) {
+        const curbMesh = new THREE.Mesh(
+          mergedCurbGeo,
+          new THREE.MeshStandardMaterial({ color: '#b4bcc6', roughness: 0.88 }),
+        );
+        curbMesh.name = 'CoastalHillRoadCurbs';
+        curbMesh.castShadow = !isSoftwareGl;
+        curbMesh.receiveShadow = true;
+        upgradeMeshToBlitzWorldMaterial(curbMesh, windUniforms, '#b4bcc6');
+        coastalHillRoadGroup.add(curbMesh);
+      }
+    }
+
+    if (railGeos.length > 0) {
+      const mergedRailGeo = mergeGeometries(railGeos, false);
+      railGeos.forEach((g) => g.dispose());
+      if (mergedRailGeo) {
+        const railMesh = new THREE.Mesh(
+          mergedRailGeo,
+          new THREE.MeshStandardMaterial({ color: '#dce4ec', roughness: 0.55, metalness: 0.15 }),
+        );
+        railMesh.name = 'CoastalHillRoadGuardrailRails';
+        railMesh.castShadow = !isSoftwareGl;
+        railMesh.receiveShadow = true;
+        upgradeMeshToBlitzWorldMaterial(railMesh, windUniforms, '#dce4ec');
+        coastalHillRoadGroup.add(railMesh);
+      }
+    }
+
+    if (postMatrices.length > 0) {
+      const postGeo = new THREE.BoxGeometry(0.18, 0.96, 0.18);
+      const postMat = new THREE.MeshStandardMaterial({ color: '#788494', roughness: 0.72 });
+      const postMesh = new THREE.InstancedMesh(postGeo, postMat, postMatrices.length);
+      postMesh.name = 'CoastalHillRoadGuardrailPosts';
+      for (let i = 0; i < postMatrices.length; i++) {
+        postMesh.setMatrixAt(i, postMatrices[i]);
+      }
+      postMesh.instanceMatrix.needsUpdate = true;
+      postMesh.castShadow = !isSoftwareGl;
+      postMesh.receiveShadow = true;
+      upgradeMeshToBlitzWorldMaterial(postMesh, windUniforms, '#788494');
+      computeInstancedBoundingVolumes(postMesh, { padding: 0.5, frustumCulled: true });
+      coastalHillRoadGroup.add(postMesh);
     }
   }
 
@@ -23622,6 +29457,567 @@ export function createCurvedPlanetEnvironment(
   });
   roadsGroup.add(grandCasino.group);
 
+  // =========================================================================
+  // 2A-TRAM-SIDEWALK. 4.40m URBAN PEDESTRIAN SIDEWALK RINGS (OUTER & INNER TRAM LOOP)
+  //                   Matches exact zebra crosswalk width (2 * 2.20m = 4.40m),
+  //                   flagstone paver grid (worldTileMeters = 2.2m, yTop = +0.09m),
+  //                   and #8f96a0 granite curbs (yTop = +0.105m) of Plaza / Casino
+  // =========================================================================
+  const tramOuterSidewalkGroup = new THREE.Group();
+  tramOuterSidewalkGroup.name = 'TramOuterRingSidewalk3D';
+  roadsGroup.add(tramOuterSidewalkGroup);
+
+  const tramInnerSidewalkGroup = new THREE.Group();
+  tramInnerSidewalkGroup.name = 'TramInnerRingSidewalk3D';
+  roadsGroup.add(tramInnerSidewalkGroup);
+
+  {
+    const sidewalkMatchedTint = `#${new THREE.Color('#bcc3cc')
+      .lerp(new THREE.Color('#ffffff'), 0.65)
+      .getHexString()}`;
+    const curbMatchedTint = `#${new THREE.Color('#8f96a0')
+      .lerp(new THREE.Color('#ffffff'), 0.65)
+      .getHexString()}`;
+
+    const createSidewalkGroupBuilders = (targetGroup: THREE.Group) => {
+      const addSlabPoly = (ptsWorldXZ: readonly [number, number][]) => {
+        const geo = createHorizontalPolygonSlabGeometry(
+          ptsWorldXZ,
+          -0.06,
+          0.09,
+          2.2,
+          (wx, wz) => [wx / 2.2, wz / 2.2],
+        );
+        const mesh = new THREE.Mesh(
+          geo,
+          new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: lobbySidewalkPaverTex,
+            roughness: 0.65,
+            metalness: 0.08,
+          }),
+        );
+        mesh.castShadow = false;
+        mesh.receiveShadow = !isSoftwareGl;
+        mesh.raycast = () => {};
+        upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, sidewalkMatchedTint, 0.08);
+        targetGroup.add(mesh);
+      };
+
+      const addCurbRun = (pts: [number, number][], closedLoop: boolean) => {
+        const curbGeo = createMitredPolylineStripGeometry(pts, 0.20, 0.145, closedLoop);
+        const curbMesh = new THREE.Mesh(
+          curbGeo,
+          new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: lobbyConcreteTex,
+            roughness: 0.65,
+            metalness: 0.08,
+          }),
+        );
+        curbMesh.position.set(0, 0.0325, 0);
+        curbMesh.castShadow = false;
+        curbMesh.receiveShadow = !isSoftwareGl;
+        curbMesh.raycast = () => {};
+        upgradeMeshToBlitzWorldMaterial(curbMesh, windUniforms, curbMatchedTint, 0.08);
+        const curbStroke = createBlitzStrokeMesh(curbGeo, 0.009);
+        if (curbStroke) curbMesh.add(curbStroke);
+        targetGroup.add(curbMesh);
+      };
+
+      const addCurbedRect = (xMin: number, xMax: number, zMin: number, zMax: number) => {
+        addSlabPoly([
+          [xMin, zMin],
+          [xMax, zMin],
+          [xMax, zMax],
+          [xMin, zMax],
+        ]);
+        addCurbRun(
+          [
+            [xMin + 0.10, zMin + 0.10],
+            [xMax - 0.10, zMin + 0.10],
+            [xMax - 0.10, zMax - 0.10],
+            [xMin + 0.10, zMax - 0.10],
+          ],
+          true,
+        );
+      };
+
+      const addOpenSeamRect = (
+        xMin: number,
+        xMax: number,
+        zMin: number,
+        zMax: number,
+        openEdge: 'xMin' | 'xMax' | 'zMin' | 'zMax',
+      ) => {
+        addSlabPoly([
+          [xMin, zMin],
+          [xMax, zMin],
+          [xMax, zMax],
+          [xMin, zMax],
+        ]);
+        const cx0 = openEdge === 'xMin' ? xMin : xMin + 0.10;
+        const cx1 = openEdge === 'xMax' ? xMax : xMax - 0.10;
+        const cz0 = openEdge === 'zMin' ? zMin : zMin + 0.10;
+        const cz1 = openEdge === 'zMax' ? zMax : zMax - 0.10;
+        if (openEdge === 'zMin') {
+          addCurbRun([[cx0, cz0], [cx0, cz1], [cx1, cz1], [cx1, cz0]], false);
+        } else if (openEdge === 'zMax') {
+          addCurbRun([[cx0, cz1], [cx0, cz0], [cx1, cz0], [cx1, cz1]], false);
+        } else if (openEdge === 'xMin') {
+          addCurbRun([[cx0, cz0], [cx1, cz0], [cx1, cz1], [cx0, cz1]], false);
+        } else {
+          addCurbRun([[cx1, cz0], [cx0, cz0], [cx0, cz1], [cx1, cz1]], false);
+        }
+      };
+
+      return { addSlabPoly, addCurbRun, addCurbedRect, addOpenSeamRect };
+    };
+
+    const {
+      addSlabPoly: addSidewalkSlabPoly,
+      addCurbRun: addSidewalkCurbRun,
+      addCurbedRect: addCurbedRectSidewalk,
+    } = createSidewalkGroupBuilders(tramOuterSidewalkGroup);
+
+    const {
+      addSlabPoly: addInnerSlabPoly,
+      addCurbRun: addInnerCurbRun,
+      addCurbedRect: addInnerCurbedRect,
+      addOpenSeamRect: addInnerOpenSeamRect,
+    } = createSidewalkGroupBuilders(tramInnerSidewalkGroup);
+
+    // 1. North & South Outer Ring Collector Sidewalk Blocks (width = 4.40m: |z| in [55.93 .. 60.33])
+    const nsXIntervals: ReadonlyArray<readonly [number, number]> = [
+      [-56.07, -47.63],
+      [-42.37, -33.93],
+      [-26.07, -17.63],
+      [-12.37, -3.93],
+      [3.93, 12.37],
+      [17.63, 26.07],
+      [33.93, 42.37],
+      [47.63, 56.07],
+    ];
+    for (const [x0, x1] of nsXIntervals) {
+      addCurbedRectSidewalk(x0, x1, -60.33, -55.93);
+      addCurbedRectSidewalk(x0, x1, 55.93, 60.33);
+    }
+
+    // 2. East-Central Outer Tram Sidewalk Block between Harbor Entrance Spurs (x in [73.93 .. 78.33], z in [-11.07 .. +11.07])
+    addCurbedRectSidewalk(73.93, 78.33, -11.07, 11.07);
+
+    // 3. SW Curved Outer Corner Sidewalk joining Tennis Court (x = -73.93) to (-63.93, +55.77..+60.33)
+    const sampleArcXZ = (
+      cx: number,
+      cz: number,
+      r: number,
+      aStart: number,
+      aEnd: number,
+      steps: number,
+    ): [number, number][] => {
+      const pts: [number, number][] = [];
+      for (let i = 0; i <= steps; i++) {
+        const th = aStart + (i / steps) * (aEnd - aStart);
+        pts.push([cx + Math.cos(th) * r, cz + Math.sin(th) * r]);
+      }
+      return pts;
+    };
+
+    const swThIn1 = Math.acos(-1.93 / 11.93);
+    const swThOut0 = Math.acos(-1.93 / 16.33);
+    const swThOut1 = Math.acos(-11.93 / 16.33);
+    const swOuterZRoad = 44.0 + Math.sqrt(16.33 * 16.33 - 1.93 * 1.93);
+    addSidewalkSlabPoly([
+      ...sampleArcXZ(-62.0, 44.0, 11.93, Math.PI, swThIn1, 14),
+      [-63.93, swOuterZRoad],
+      ...sampleArcXZ(-62.0, 44.0, 16.33, swThOut0, swThOut1, 14).slice(1),
+    ]);
+    addSidewalkCurbRun(
+      [
+        [-73.93, 44.0],
+        ...sampleArcXZ(-62.0, 44.0, 12.03, Math.PI, swThIn1, 14).slice(1),
+        [-64.03, swOuterZRoad - 0.1],
+        ...sampleArcXZ(-62.0, 44.0, 16.23, swThOut0, swThOut1, 14).slice(1),
+      ],
+      false,
+    );
+
+    // 4. NE Curved Outer Corner + East-North Sidewalk (around (+62, -44) from x = +63.93 to z = -18.93)
+    const neThIn0 = -Math.acos(1.93 / 11.93);
+    const neThOut1 = -Math.acos(1.93 / 16.33);
+    addSidewalkSlabPoly([
+      ...sampleArcXZ(62.0, -44.0, 11.93, neThIn0, 0.0, 14),
+      [73.93, -18.93],
+      [78.33, -18.93],
+      ...sampleArcXZ(62.0, -44.0, 16.33, 0.0, neThOut1, 14),
+    ]);
+    addSidewalkCurbRun(
+      [
+        [64.03, -44.0 - Math.sqrt(12.03 * 12.03 - 2.03 * 2.03)],
+        ...sampleArcXZ(62.0, -44.0, 12.03, -Math.acos(2.03 / 12.03), 0.0, 14).slice(1),
+        [74.03, -19.03],
+        [78.23, -19.03],
+        ...sampleArcXZ(62.0, -44.0, 16.23, 0.0, -Math.acos(2.03 / 16.23), 14),
+      ],
+      true,
+    );
+
+    // 5. East-South Sidewalk + SE Curved Corner framing Beachfront Harbor Halte & SE Beachfront Curb
+    const seThIn1 = Math.acos(1.93 / 11.93);
+    const seThOut0 = Math.acos(1.93 / 16.33);
+    const seThOutClip = Math.acos(13.02 / 16.33);
+    const seOuterZRoad = 44.0 + Math.sqrt(16.33 * 16.33 - 1.93 * 1.93);
+    const seBeachJoinZ = 44.0 + Math.sqrt(16.33 * 16.33 - 13.02 * 13.02);
+    addSidewalkSlabPoly([
+      ...sampleArcXZ(62.0, 44.0, 11.93, 0.0, seThIn1, 14),
+      [63.93, seOuterZRoad],
+      ...sampleArcXZ(62.0, 44.0, 16.33, seThOut0, seThOutClip, 10).slice(1),
+      [75.02, 45.45],
+      [78.33, 45.45],
+      [78.33, 38.8],
+      [76.12, 38.8],
+      [76.12, 20.2],
+      [78.33, 20.2],
+      [78.33, 18.93],
+      [73.93, 18.93],
+    ]);
+    addSidewalkCurbRun(
+      [
+        [76.12, 20.3],
+        [78.23, 20.3],
+        [78.23, 19.03],
+        [74.03, 19.03],
+        [74.03, 44.0],
+        ...sampleArcXZ(62.0, 44.0, 12.03, 0.0, Math.acos(2.03 / 12.03), 14).slice(1),
+        [64.03, seOuterZRoad - 0.1],
+        ...sampleArcXZ(62.0, 44.0, 16.23, Math.acos(2.03 / 16.23), Math.acos(13.02 / 16.23), 10).slice(
+          1,
+        ),
+        [75.02, seBeachJoinZ - 0.05],
+      ],
+      false,
+    );
+    addSidewalkCurbRun(
+      [
+        [76.12, 38.7],
+        [78.23, 38.7],
+        [78.23, 45.35],
+        [75.02, 45.35],
+      ],
+      false,
+    );
+
+    // ---------------------------------------------------------------------
+    // INNER TRAM RING 4.40m SIDEWALK (|x| in [57.80 .. 62.20], |z| in [39.80 .. 44.20])
+    // ---------------------------------------------------------------------
+    const addInnerLCornerSidewalk = (
+      sx: -1 | 1,
+      sz: -1 | 1,
+      legXEnd: number,
+      openAtLegXEnd: boolean,
+    ) => {
+      addInnerSlabPoly([
+        [sx * 62.20, sz * 19.23],
+        [sx * 62.20, sz * 44.00],
+        [sx * 62.00, sz * 44.20],
+        [legXEnd, sz * 44.20],
+        [legXEnd, sz * 39.80],
+        [sx * 57.80, sz * 39.80],
+        [sx * 57.80, sz * 19.23],
+      ]);
+      const legCurbX = openAtLegXEnd ? legXEnd : legXEnd - sx * 0.10;
+      addInnerCurbRun(
+        [
+          [legCurbX, sz * 39.90],
+          [sx * 57.90, sz * 39.90],
+          [sx * 57.90, sz * 19.33],
+          [sx * 62.10, sz * 19.33],
+          [sx * 62.10, sz * 43.96],
+          [sx * 61.96, sz * 44.10],
+          [legCurbX, sz * 44.10],
+        ],
+        !openAtLegXEnd,
+      );
+    };
+
+    // 4 L-Corner wings (NW, NE, SE closed; SW open at South Halte West ramp x = -45.70)
+    addInnerLCornerSidewalk(-1, -1, -22.23, false);
+    addInnerLCornerSidewalk(1, -1, 46.23, false);
+    addInnerLCornerSidewalk(1, 1, 46.23, false);
+    addInnerLCornerSidewalk(-1, 1, -45.70, true);
+
+    // West Central Halte aprons (open against Halte ramps at z = ±9.20) & East-Central straight block
+    addInnerOpenSeamRect(-62.20, -57.80, 9.20, 10.77, 'zMin');
+    addInnerOpenSeamRect(-62.20, -57.80, -10.77, -9.20, 'zMax');
+    addInnerCurbedRect(57.80, 62.20, -10.77, 10.77);
+
+    // North intermediate collector blocks (joining North Residence Halte at x = -5.70 / +12.70)
+    addInnerOpenSeamRect(-13.77, -5.70, -44.20, -39.80, 'xMax');
+    addInnerOpenSeamRect(12.70, 14.77, -44.20, -39.80, 'xMin');
+    addInnerCurbedRect(23.23, 37.77, -44.20, -39.80);
+
+    // South intermediate collector blocks (joining South Residence Halte East ramp at x = -27.30)
+    addInnerOpenSeamRect(-27.30, -22.23, 39.80, 44.20, 'xMin');
+    addInnerCurbedRect(-13.77, 14.77, 39.80, 44.20);
+    addInnerCurbedRect(23.23, 37.77, 39.80, 44.20);
+  }
+
+  bakeStaticGroupMeshes(tramOuterSidewalkGroup, { minShadowCasterSpan: 0.55 });
+  bakeStaticGroupMeshes(tramInnerSidewalkGroup, { minShadowCasterSpan: 0.55 });
+
+  // =========================================================================
+  // 2D. BLUEPRINT CURVED-CANTILEVER TRAFFIC SIGNAL POLES & CITY ROAD SIGNAGE
+  //     Faithfully follows the 4-view Industrial Traffic Signal Model Sheet:
+  //     concrete pedestal + flanged bolted baseplate + gusset ribs + curved
+  //     tubular steel cantilever mast + hooded 3-aspect LED head w/ backplate
+  //     & rear access hatch + mid-mast pedestrian signals & activator button.
+  // =========================================================================
+  const plazaSignalsGroup = new THREE.Group();
+  plazaSignalsGroup.name = 'PlazaTrafficSignalPoles3D';
+  roadsGroup.add(plazaSignalsGroup);
+
+  const citySignsGroup = new THREE.Group();
+  citySignsGroup.name = 'CityTrafficSigns3D';
+  roadsGroup.add(citySignsGroup);
+
+  const createPedSignalTex = (kind: 'walk' | 'stop'): THREE.CanvasTexture | null => {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#0f131c';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, 120, 120);
+    ctx.fillStyle = kind === 'walk' ? '#22c55e' : '#ff2e3b';
+    // Stylized pedestrian pictogram (head + torso + arms + legs)
+    ctx.beginPath();
+    ctx.arc(64, 31, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = kind === 'walk' ? '#22c55e' : '#ff2e3b';
+    ctx.lineWidth = 10;
+    if (kind === 'walk') {
+      ctx.beginPath();
+      ctx.moveTo(64, 46);
+      ctx.lineTo(62, 76);
+      ctx.moveTo(64, 52);
+      ctx.lineTo(42, 68);
+      ctx.moveTo(64, 52);
+      ctx.lineTo(86, 65);
+      ctx.moveTo(62, 76);
+      ctx.lineTo(42, 106);
+      ctx.moveTo(62, 76);
+      ctx.lineTo(84, 106);
+      ctx.stroke();
+    } else {
+      // Standing stop figure with palm barrier bar
+      ctx.beginPath();
+      ctx.moveTo(64, 45);
+      ctx.lineTo(64, 78);
+      ctx.moveTo(46, 54);
+      ctx.lineTo(64, 50);
+      ctx.lineTo(82, 54);
+      ctx.moveTo(54, 78);
+      ctx.lineTo(54, 106);
+      ctx.moveTo(74, 78);
+      ctx.lineTo(74, 106);
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+
+  const pedWalkTex = createPedSignalTex('walk');
+  const pedStopTex = createPedSignalTex('stop');
+
+  const sigPlazaRedMat = new THREE.MeshBasicMaterial({ color: 0x381014 });
+  const sigPlazaAmberMat = new THREE.MeshBasicMaterial({ color: 0x382908 });
+  const sigPlazaGreenMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+  const sigEastRedMat = new THREE.MeshBasicMaterial({ color: 0x381014 });
+  const sigEastAmberMat = new THREE.MeshBasicMaterial({ color: 0x382908 });
+  const sigEastGreenMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+
+  const makePedPanelMat = (tex: THREE.CanvasTexture | null, activeHex: number) =>
+    new THREE.MeshBasicMaterial({ color: activeHex, map: tex });
+
+  const sigPedPlazaNorthWalkMat = makePedPanelMat(pedWalkTex, 0x1e2e24);
+  const sigPedPlazaNorthStopMat = makePedPanelMat(pedStopTex, 0xffffff);
+  const sigPedPlazaSouthWalkMat = makePedPanelMat(pedWalkTex, 0x1e2e24);
+  const sigPedPlazaSouthStopMat = makePedPanelMat(pedStopTex, 0xffffff);
+  const sigPedEastWalkMat = makePedPanelMat(pedWalkTex, 0x1e2e24);
+  const sigPedEastStopMat = makePedPanelMat(pedStopTex, 0xffffff);
+
+  // Build Curved Steel Cantilever Traffic Signal matching the 4-view blueprint
+  const visorHoodGeo = new THREE.CylinderGeometry(
+    0.155,
+    0.155,
+    0.22,
+    12,
+    1,
+    true,
+    -Math.PI * 0.62,
+    Math.PI * 1.24,
+  );
+  visorHoodGeo.rotateZ(Math.PI / 2);
+  visorHoodGeo.rotateY(Math.PI / 2);
+  const boltCylGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.07, 6);
+  const aspectLensGeo = new THREE.CircleGeometry(0.125, 16);
+  const pedFaceGeo = new THREE.PlaneGeometry(0.24, 0.24);
+  const signalDynamicExcludes = new Set<THREE.Object3D>();
+
+  for (const poleSpec of CITY_TRAFFIC_SIGNAL_POLE_SPECS) {
+    const poleGrp = new THREE.Group();
+    poleGrp.name = `TrafficSignalPole_${poleSpec.id}`;
+    poleGrp.position.set(poleSpec.x, poleSpec.y, poleSpec.z);
+    plazaSignalsGroup.add(poleGrp);
+
+    const { armDirX, armReachM, boomHeightY, zone } = poleSpec;
+
+    // 1. Concrete Pedestal Base (chamfered square footing) + Flanged Steel Baseplate & 4 Anchor Bolts
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.72, 0.22, 0.72), '#9ca3af', [0, 0.11, 0], [0, 0, 0], 0.010);
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.62, 0.08, 0.62), '#cbd5e1', [0, 0.26, 0], [0, 0, 0], 0.008);
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.46, 0.055, 0.46), '#374151', [0, 0.325, 0], [0, 0, 0], 0.008);
+    for (const [bx, bz] of [
+      [-0.16, -0.16],
+      [0.16, -0.16],
+      [-0.16, 0.16],
+      [0.16, 0.16],
+    ] as const) {
+      addLobbyPart(poleGrp, boltCylGeo, '#64748b', [bx, 0.37, bz], [0, 0, 0], 0.004);
+    }
+    // 4 Tapered Steel Baseplate Gusset Ribs
+    for (const dir of [-1, 1] as const) {
+      addLobbyPart(poleGrp, new THREE.BoxGeometry(0.12, 0.24, 0.04), '#1f2937', [dir * 0.145, 0.46, 0], [0, 0, -dir * 0.22], 0.005);
+      addLobbyPart(poleGrp, new THREE.BoxGeometry(0.04, 0.24, 0.12), '#1f2937', [0, 0.46, dir * 0.145], [dir * 0.22, 0, 0], 0.005);
+    }
+
+    // 2. Stepped Lower Mast Column + Splice Collar + Utility Conduit & Junction Housing
+    addLobbyPart(poleGrp, new THREE.CylinderGeometry(0.118, 0.138, 2.30, 12), '#272f3b', [0, 1.49, 0], [0, 0, 0], 0.010);
+    addLobbyPart(poleGrp, new THREE.CylinderGeometry(0.138, 0.142, 0.12, 12), '#334155', [0, 2.66, 0], [0, 0, 0], 0.007);
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.14, 0.30, 0.11), '#1f2937', [0, 0.72, -0.155], [0, 0, 0], 0.006);
+    addLobbyPart(poleGrp, new THREE.CylinderGeometry(0.025, 0.025, 2.05, 6), '#475569', [0, 1.65, -0.14], [0, 0, 0], 0.004);
+
+    // 3. Curved Tubular Steel Cantilever Arm sweeping smoothly over road/track
+    const bendRadius = 1.05;
+    const bendStartY = boomHeightY - bendRadius;
+    const curvePts: THREE.Vector3[] = [
+      new THREE.Vector3(0, 2.66, 0),
+      new THREE.Vector3(0, bendStartY, 0),
+    ];
+    for (let s = 1; s <= 5; s++) {
+      const ang = (s / 5) * (Math.PI * 0.5);
+      curvePts.push(
+        new THREE.Vector3(
+          armDirX * (bendRadius * (1 - Math.cos(ang))),
+          bendStartY + bendRadius * Math.sin(ang),
+          0,
+        ),
+      );
+    }
+    curvePts.push(new THREE.Vector3(armDirX * armReachM, boomHeightY, 0));
+    const cantileverCurve = new THREE.CatmullRomCurve3(curvePts, false, 'catmullrom', 0.25);
+    const boomTubeGeo = new THREE.TubeGeometry(cantileverCurve, 26, 0.082, 10, false);
+    addLobbyPart(poleGrp, boomTubeGeo, '#272f3b', [0, 0, 0], [0, 0, 0], 0.009);
+    addLobbyPart(
+      poleGrp,
+      new THREE.CylinderGeometry(0.092, 0.092, 0.12, 10),
+      '#334155',
+      [armDirX * armReachM, boomHeightY, 0],
+      [0, 0, Math.PI / 2],
+      0.005,
+    );
+
+    // 4. Suspended 3-Aspect LED Signal Head + Backplate + Hooded Visors + Rear Access Hatch
+    const headX = armDirX * Math.max(1.35, armReachM - 0.35);
+    const headCenterY = boomHeightY - 0.92;
+    // Overhead clamp collar & vertical hanger strut
+    addLobbyPart(poleGrp, new THREE.CylinderGeometry(0.105, 0.105, 0.16, 10), '#111827', [headX, boomHeightY, 0], [0, 0, Math.PI / 2], 0.005);
+    addLobbyPart(poleGrp, new THREE.CylinderGeometry(0.044, 0.044, 0.38, 8), '#1f2937', [headX, boomHeightY - 0.22, 0], [0, 0, 0], 0.006);
+    // Signal Backplate + Enclosed Body Housing + Weatherproof Access Hatch Collar
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.66, 1.44, 0.06), '#1e293b', [headX, headCenterY, 0], [0, 0, 0], 0.008);
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.46, 1.24, 0.32), '#111827', [headX, headCenterY, 0], [0, 0, 0], 0.009);
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.24, 0.36, 0.38), '#334155', [headX, headCenterY + 0.04, 0], [0, 0, 0], 0.005);
+
+    const redMat = zone === 'east_harbor' ? sigEastRedMat : sigPlazaRedMat;
+    const amberMat = zone === 'east_harbor' ? sigEastAmberMat : sigPlazaAmberMat;
+    const greenMat = zone === 'east_harbor' ? sigEastGreenMat : sigPlazaGreenMat;
+    const aspectRows = [
+      { dy: 0.37, mat: redMat },
+      { dy: 0.0, mat: amberMat },
+      { dy: -0.37, mat: greenMat },
+    ] as const;
+    for (const asp of aspectRows) {
+      const ly = headCenterY + asp.dy;
+      for (const zDir of [-1, 1] as const) {
+        const lens = new THREE.Mesh(aspectLensGeo, asp.mat);
+        lens.position.set(headX, ly, zDir * 0.168);
+        if (zDir < 0) lens.rotation.y = Math.PI;
+        poleGrp.add(lens);
+        signalDynamicExcludes.add(lens);
+        // Curved hooded sun visor over each lens
+        addLobbyPart(
+          poleGrp,
+          visorHoodGeo,
+          '#111827',
+          [headX, ly + 0.02, zDir * 0.26],
+          [0, zDir > 0 ? 0 : Math.PI, 0],
+          0.004,
+        );
+      }
+    }
+
+    // 5. Twin Mid-Mast Hooded Pedestrian Signals + Push-Button Activator Unit
+    const pedStopMat =
+      zone === 'plaza_north'
+        ? sigPedPlazaNorthStopMat
+        : zone === 'plaza_south'
+        ? sigPedPlazaSouthStopMat
+        : sigPedEastStopMat;
+    const pedWalkMat =
+      zone === 'plaza_north'
+        ? sigPedPlazaNorthWalkMat
+        : zone === 'plaza_south'
+        ? sigPedPlazaSouthWalkMat
+        : sigPedEastWalkMat;
+
+    // Twin flanking housings at y = 2.18m (matching front elevation flanking boxes in blueprint)
+    for (const xSide of [-1, 1] as const) {
+      const boxX = xSide * 0.28;
+      addLobbyPart(poleGrp, new THREE.BoxGeometry(0.18, 0.62, 0.32), '#111827', [boxX, 2.18, 0], [0, 0, 0], 0.007);
+      const stopFace = new THREE.Mesh(pedFaceGeo, pedStopMat);
+      stopFace.position.set(boxX + xSide * 0.095, 2.31, 0);
+      stopFace.rotation.y = xSide > 0 ? Math.PI / 2 : -Math.PI / 2;
+      poleGrp.add(stopFace);
+      signalDynamicExcludes.add(stopFace);
+      const walkFace = new THREE.Mesh(pedFaceGeo, pedWalkMat);
+      walkFace.position.set(boxX + xSide * 0.095, 2.04, 0);
+      walkFace.rotation.y = xSide > 0 ? Math.PI / 2 : -Math.PI / 2;
+      poleGrp.add(walkFace);
+      signalDynamicExcludes.add(walkFace);
+      // Side sun hood shades
+      addLobbyPart(poleGrp, new THREE.BoxGeometry(0.14, 0.03, 0.28), '#1f2937', [boxX + xSide * 0.14, 2.45, 0], [0, 0, -xSide * 0.18], 0.003);
+      addLobbyPart(poleGrp, new THREE.BoxGeometry(0.14, 0.03, 0.28), '#1f2937', [boxX + xSide * 0.14, 2.18, 0], [0, 0, -xSide * 0.18], 0.003);
+    }
+
+    // Pedestrian Push-Button Activator Box at reachable waist/chest height (y = 1.18m)
+    addLobbyPart(poleGrp, new THREE.BoxGeometry(0.16, 0.28, 0.16), '#334155', [armDirX * 0.14, 1.18, 0], [0, 0, 0], 0.006);
+    addLobbyPart(poleGrp, new THREE.CylinderGeometry(0.038, 0.042, 0.045, 10), '#fbbf24', [armDirX * 0.23, 1.16, 0], [0, 0, Math.PI / 2], 0.004);
+  }
+
+  // 2E. MAPPED URBAN ROAD & TRAM TRACK TRAFFIC SIGNS (CityTrafficSigns3D)
+  buildCityTrafficSignsGroup(CITY_TRAFFIC_SIGN_SPECS, isSoftwareGl, citySignsGroup);
+
+  bakeStaticGroupMeshes(plazaSignalsGroup, {
+    minShadowCasterSpan: 0.55,
+    excludeObjects: signalDynamicExcludes,
+  });
   bakeStaticGroupMeshes(quayGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(westPlantGroup, {
     minShadowCasterSpan: 0.55,
@@ -23637,6 +30033,29 @@ export function createCurvedPlanetEnvironment(
   planetCoreMesh.updateMatrix();
   planetCoreMesh.matrixAutoUpdate = false;
 
+  const updateAllSignals = (params: {
+    plazaPhase: PlazaTrafficSignalPhase;
+    plazaNorthWalkAllowed: boolean;
+    plazaSouthWalkAllowed: boolean;
+    eastPhase: PlazaTrafficSignalPhase;
+    eastWalkAllowed: boolean;
+  }) => {
+    sigPlazaRedMat.color.setHex(params.plazaPhase === 'tram_red' ? 0xff2e3b : 0x381014);
+    sigPlazaAmberMat.color.setHex(params.plazaPhase === 'tram_amber' ? 0xfbbf24 : 0x382908);
+    sigPlazaGreenMat.color.setHex(params.plazaPhase === 'tram_green' ? 0x22c55e : 0x092e1a);
+
+    sigPedPlazaNorthWalkMat.color.setHex(params.plazaNorthWalkAllowed ? 0xffffff : 0x1e2e24);
+    sigPedPlazaNorthStopMat.color.setHex(params.plazaNorthWalkAllowed ? 0x2c1418 : 0xffffff);
+    sigPedPlazaSouthWalkMat.color.setHex(params.plazaSouthWalkAllowed ? 0xffffff : 0x1e2e24);
+    sigPedPlazaSouthStopMat.color.setHex(params.plazaSouthWalkAllowed ? 0x2c1418 : 0xffffff);
+
+    sigEastRedMat.color.setHex(params.eastPhase === 'tram_red' ? 0xff2e3b : 0x381014);
+    sigEastAmberMat.color.setHex(params.eastPhase === 'tram_amber' ? 0xfbbf24 : 0x382908);
+    sigEastGreenMat.color.setHex(params.eastPhase === 'tram_green' ? 0x22c55e : 0x092e1a);
+    sigPedEastWalkMat.color.setHex(params.eastWalkAllowed ? 0xffffff : 0x1e2e24);
+    sigPedEastStopMat.color.setHex(params.eastWalkAllowed ? 0x2c1418 : 0xffffff);
+  };
+
   return {
     groundMesh,
     waterMesh,
@@ -23644,6 +30063,20 @@ export function createCurvedPlanetEnvironment(
     roadsGroup,
     natureGroup,
     sunbeamGroup,
+    updateCityTrafficSignals: updateAllSignals,
+    updatePlazaTrafficSignals(
+      phase: PlazaTrafficSignalPhase,
+      northWalkAllowed: boolean,
+      southWalkAllowed: boolean,
+    ) {
+      updateAllSignals({
+        plazaPhase: phase,
+        plazaNorthWalkAllowed: northWalkAllowed,
+        plazaSouthWalkAllowed: southWalkAllowed,
+        eastPhase: phase,
+        eastWalkAllowed: false,
+      });
+    },
     update(
       pivotX: number,
       pivotZ: number,
@@ -23653,6 +30086,54 @@ export function createCurvedPlanetEnvironment(
     ) {
       getOrCreateSharedSculptTexture();
       uPlanetPivot.value.set(pivotX, 0, pivotZ);
+
+      // Sync water lighting, sky reflection, fog color, rain ripples & time-of-day uniforms
+      const weatherEnv = scene.userData?.weatherEnvState as
+        | {
+            nightFactor01?: number;
+            duskDawnFactor01?: number;
+            rainFactor01?: number;
+            windStrength?: number;
+            skyColorHex?: number;
+            sunColorHex?: number;
+            fogColorHex?: number;
+            sunDirX?: number;
+            sunDirY?: number;
+            sunDirZ?: number;
+          }
+        | undefined;
+      if (
+        weatherEnv?.sunDirX !== undefined &&
+        weatherEnv?.sunDirY !== undefined &&
+        weatherEnv?.sunDirZ !== undefined
+      ) {
+        sharedWaterUniforms.uSunDirection.value
+          .set(weatherEnv.sunDirX, weatherEnv.sunDirY, weatherEnv.sunDirZ)
+          .normalize();
+      } else {
+        sharedWaterUniforms.uSunDirection.value.copy(windUniforms.uLightDirection.value).normalize();
+      }
+      if (weatherEnv?.sunColorHex !== undefined) {
+        sharedWaterUniforms.uSunColor.value.setHex(weatherEnv.sunColorHex);
+      } else {
+        sharedWaterUniforms.uSunColor.value.copy(windUniforms.uLightColor.value);
+      }
+      if (scene.fog instanceof THREE.Fog) {
+        sharedWaterUniforms.uFogColor.value.copy(scene.fog.color);
+      } else if (weatherEnv?.fogColorHex !== undefined) {
+        sharedWaterUniforms.uFogColor.value.setHex(weatherEnv.fogColorHex);
+      }
+      if (weatherEnv?.skyColorHex !== undefined) {
+        sharedWaterUniforms.uSkyColor.value.setHex(weatherEnv.skyColorHex);
+      } else if (scene.fog instanceof THREE.Fog) {
+        sharedWaterUniforms.uSkyColor.value.copy(scene.fog.color);
+      }
+      sharedWaterUniforms.uRainFactor.value = weatherEnv?.rainFactor01 ?? 0.0;
+      sharedWaterUniforms.uTimeOfDayNightFactor.value = weatherEnv?.nightFactor01 ?? 0.0;
+      sharedWaterUniforms.uDuskDawnFactor.value = weatherEnv?.duskDawnFactor01 ?? 0.0;
+      sharedWaterUniforms.uWindStrength.value =
+        weatherEnv?.windStrength ?? windUniforms.uWindStrength.value;
+
       const cullActive = chunkCullRadius > 0;
       const rSq = chunkCullRadius * chunkCullRadius;
 
@@ -23675,9 +30156,11 @@ export function createCurvedPlanetEnvironment(
       const dzSeBeach = Math.max(44 - pivotZ, 0, pivotZ - 105);
       seBeachGroup.visible = !cullActive || dxSeBeach * dxSeBeach + dzSeBeach * dzSeBeach <= rSq;
 
-      // 4. East Harbor Quay Wall & Containers (x in [90, 114])
+      // 4. East Harbor Quay Wall & Containers (x in [90, 114]) & East Ocean Surface (x in [105, 340])
       const dxQuay = Math.max(90 - pivotX, 0, pivotX - 114);
       quayGroup.visible = !cullActive || dxQuay <= chunkCullRadius;
+      const dxSea = Math.max(105 - pivotX, 0, pivotX - 340);
+      waterMesh.visible = !cullActive || dxSea <= chunkCullRadius;
 
       // 5. NW Oasis Fishing Lake Water Surface (x in [-52, -10], z in [-24, +24])
       const dxLake = Math.max(-52 - pivotX, 0, pivotX - -10);
@@ -23693,10 +30176,17 @@ export function createCurvedPlanetEnvironment(
       coastalAmusementPark.dispose();
       grandCasino.dispose();
       scene.remove(groundMesh);
+      scene.remove(waterMesh);
       scene.remove(roadsGroup);
       scene.remove(natureGroup);
       groundGeo.dispose();
       groundMat.dispose();
+      eastOceanGeo.dispose();
+      eastOceanMat.dispose();
+      lakeSurfaceGeo.dispose();
+      lakeSurfaceMat.dispose();
+      planetCoreMesh.geometry.dispose();
+      (planetCoreMesh.material as THREE.Material).dispose();
       containerGeo.dispose();
     },
   };
@@ -25337,7 +31827,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const frameX of [-0.62, 0.62]) {
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.24, 0.32, 5.45),
+      new RoundedBoxGeometry(0.24, 0.32, 5.45, 2, 0.024),
       COL_CHASSIS_DARK,
       [frameX, 0.92, -0.05],
       [0, 0, 0],
@@ -25345,11 +31835,38 @@ export function populateRealBlitzDumpTruckFromGlb(
       0.016,
     );
   }
+  // Chamfered Steel Dump-Bed Sub-Frame Rails atop Main Chassis (y = 1.05..1.21, z = -2.76..+0.42)
+  const subFrameShape = new THREE.Shape();
+  subFrameShape.moveTo(-2.74, 1.06);
+  subFrameShape.lineTo(0.40, 1.06);
+  subFrameShape.lineTo(0.28, 1.20);
+  subFrameShape.lineTo(-2.74, 1.20);
+  subFrameShape.closePath();
+  const subFrameGeo = new THREE.ExtrudeGeometry(subFrameShape, {
+    depth: 0.16,
+    bevelEnabled: true,
+    bevelSize: 0.012,
+    bevelThickness: 0.012,
+    bevelSegments: 2,
+  });
+  subFrameGeo.translate(0, 0, -0.08);
+  subFrameGeo.rotateY(-Math.PI / 2);
+  for (const subX of [-0.58, 0.58]) {
+    addTruckPart(
+      cabAndChassisStaticGroup,
+      subFrameGeo.clone(),
+      COL_BUMPER_STEEL,
+      [subX, 0, 0],
+      [0, 0, 0],
+      [1, 1, 1],
+      0.012,
+    );
+  }
   // Fuel / Hydraulic Reservoir Tank on Chassis + 2 Vertical Straps (SIDE ELEVATION & 3/4 Render)
   for (const side of [-1, 1]) {
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.46, 0.44, 0.96),
+      new RoundedBoxGeometry(0.46, 0.44, 0.96, 2, 0.045),
       '#35393e',
       [side * 0.95, 0.98, 0.22],
       [0, 0, 0],
@@ -25359,7 +31876,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     for (const sz of [-0.04, 0.48]) {
       addTruckPart(
         cabAndChassisStaticGroup,
-        new THREE.BoxGeometry(0.48, 0.46, 0.05),
+        new RoundedBoxGeometry(0.48, 0.46, 0.05, 1, 0.010),
         COL_CHASSIS_DARK,
         [side * 0.95, 0.98, sz],
         [0, 0, 0],
@@ -25370,7 +31887,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Iconic Yellow & Black 45° Diagonal Hazard Stripe Side Guard Rail + 2 L-Brackets (SIDE ELEVATION & 3/4 Render)
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.11, 0.27, 1.84),
+      new RoundedBoxGeometry(0.11, 0.27, 1.84, 2, 0.016),
       '#ffffff',
       [side * 1.30, 0.88, -0.14],
       [0, 0, 0],
@@ -25381,7 +31898,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     for (const bz of [-0.74, 0.46]) {
       addTruckPart(
         cabAndChassisStaticGroup,
-        new THREE.BoxGeometry(0.32, 0.28, 0.10),
+        new RoundedBoxGeometry(0.32, 0.28, 0.10, 1, 0.016),
         COL_BUMPER_STEEL,
         [side * 1.12, 0.98, bz],
         [0, 0, 0],
@@ -25389,12 +31906,39 @@ export function populateRealBlitzDumpTruckFromGlb(
         0.01,
       );
     }
-    // Rear Wheel Mudguard Arch Fender
+    // Curved Beveled Rear Wheel-Arch Mudguard Fender arching over dual rear tires (z = -1.68)
+    const rearArchShape = new THREE.Shape();
+    const rearArchSegs = 10;
+    const rArchIn = 0.69;
+    const rArchOut = 0.77;
+    const rAngStart = 2.66;
+    const rAngEnd = 0.48;
+    for (let s = 0; s <= rearArchSegs; s++) {
+      const th = THREE.MathUtils.lerp(rAngStart, rAngEnd, s / rearArchSegs);
+      const pz = -1.68 + Math.cos(th) * rArchOut;
+      const py = 0.63 + Math.sin(th) * rArchOut;
+      if (s === 0) rearArchShape.moveTo(pz, py);
+      else rearArchShape.lineTo(pz, py);
+    }
+    for (let s = rearArchSegs; s >= 0; s--) {
+      const th = THREE.MathUtils.lerp(rAngStart, rAngEnd, s / rearArchSegs);
+      rearArchShape.lineTo(-1.68 + Math.cos(th) * rArchIn, 0.63 + Math.sin(th) * rArchIn);
+    }
+    rearArchShape.closePath();
+    const rearArchGeo = new THREE.ExtrudeGeometry(rearArchShape, {
+      depth: 0.66,
+      bevelEnabled: true,
+      bevelSize: 0.014,
+      bevelThickness: 0.014,
+      bevelSegments: 2,
+    });
+    rearArchGeo.translate(0, 0, -0.33);
+    rearArchGeo.rotateY(-Math.PI / 2);
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.68, 0.18, 1.56),
+      rearArchGeo,
       COL_BUMPER_STEEL,
-      [side * 1.08, 1.38, -1.68],
+      [side * 1.08, 0, 0],
       [0, 0, 0],
       [1, 1, 1],
       0.014,
@@ -25404,7 +31948,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // 1B. Rear Underride Bumper & Dual Red/Amber Taillight Clusters (REAR ELEVATION)
   addTruckPart(
     cabAndChassisStaticGroup,
-    new THREE.BoxGeometry(2.36, 0.24, 0.22),
+    new RoundedBoxGeometry(2.36, 0.24, 0.22, 2, 0.024),
     COL_BUMPER_STEEL,
     [0, 0.82, -2.84],
     [0, 0, 0],
@@ -25415,7 +31959,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     const tx = side * 0.86;
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.46, 0.18, 0.12),
+      new RoundedBoxGeometry(0.46, 0.18, 0.12, 1, 0.016),
       COL_CHASSIS_DARK,
       [tx, 0.82, -2.92],
       [0, 0, 0],
@@ -25425,7 +31969,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Red outer brake light + Orange inner turn indicator
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.18, 0.11, 0.06),
+      new RoundedBoxGeometry(0.18, 0.11, 0.06, 1, 0.008),
       '#dc2626',
       [tx + side * 0.10, 0.82, -2.96],
       [0, 0, 0],
@@ -25436,7 +31980,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     );
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.18, 0.11, 0.06),
+      new RoundedBoxGeometry(0.18, 0.11, 0.06, 1, 0.008),
       '#ea580c',
       [tx - side * 0.10, 0.82, -2.96],
       [0, 0, 0],
@@ -25451,7 +31995,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // Main Lower & Upper Cab Box
   addTruckPart(
     cabAndChassisStaticGroup,
-    new THREE.BoxGeometry(2.56, 1.72, 2.02),
+    new RoundedBoxGeometry(2.56, 1.72, 2.02, 2, 0.045),
     '#ffffff',
     [0, 1.92, 1.62],
     [0, 0, 0],
@@ -25462,7 +32006,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // Sloped Faceted Roof Cap & Brow Visor (SIDE ELEVATION & FRONT VIEW)
   addTruckPart(
     cabAndChassisStaticGroup,
-    new THREE.BoxGeometry(2.48, 0.18, 1.92),
+    new RoundedBoxGeometry(2.48, 0.18, 1.92, 2, 0.036),
     COL_CAB_ROOF,
     [0, 2.84, 1.58],
     [0.04, 0, 0],
@@ -25473,7 +32017,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const side of [-1, 1]) {
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(1.28, 0.82, 0.34),
+      new RoundedBoxGeometry(1.28, 0.82, 0.34, 2, 0.036),
       COL_CAB_GREY,
       [side * 0.61, 1.48, 2.66],
       [0, -side * 0.11, 0],
@@ -25483,7 +32027,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Split 2-Pane Tinted Front Windshield (Left & Right angled trapezoidal glass panes + central mullion)
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(1.06, 0.74, 0.08),
+      new RoundedBoxGeometry(1.06, 0.74, 0.08, 1, 0.012),
       '#ffffff',
       [side * 0.58, 2.28, 2.63],
       [-0.18, -side * 0.10, 0],
@@ -25494,7 +32038,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Side Door Window + Rear Quarter Window on Cab Left & Right Sides (SIDE ELEVATION)
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.06, 0.66, 0.94),
+      new RoundedBoxGeometry(0.06, 0.66, 0.94, 1, 0.010),
       '#ffffff',
       [side * 1.27, 2.24, 1.92],
       [0, 0, 0],
@@ -25504,7 +32048,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     );
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.06, 0.56, 0.36),
+      new RoundedBoxGeometry(0.06, 0.56, 0.36, 1, 0.010),
       '#ffffff',
       [side * 1.27, 2.26, 1.06],
       [0, 0, 0],
@@ -25515,7 +32059,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Recessed Door Handle
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.07, 0.09, 0.24),
+      new RoundedBoxGeometry(0.07, 0.09, 0.24, 1, 0.012),
       COL_CHASSIS_DARK,
       [side * 1.275, 1.56, 1.62],
       [0, 0, 0],
@@ -25525,7 +32069,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Heavy C-Bracket Side Rearview Mirror (FRONT VIEW & 3/4 Render)
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.12, 0.48, 0.22),
+      new RoundedBoxGeometry(0.12, 0.48, 0.22, 2, 0.022),
       COL_BUMPER_STEEL,
       [side * 1.46, 2.18, 2.28],
       [0, -side * 0.15, 0],
@@ -25535,7 +32079,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     for (const armY of [1.94, 2.40]) {
       addTruckPart(
         cabAndChassisStaticGroup,
-        new THREE.BoxGeometry(0.22, 0.05, 0.05),
+        new RoundedBoxGeometry(0.22, 0.05, 0.05, 1, 0.010),
         COL_CHASSIS_DARK,
         [side * 1.36, armY, 2.30],
         [0, 0, 0],
@@ -25543,12 +32087,39 @@ export function populateRealBlitzDumpTruckFromGlb(
         0,
       );
     }
-    // Front Flared Wheel Arch Overfender & 2 Cab Boarding Steps
+    // Curved Beveled Front Wheel-Arch Overfender wrapping front tire (z = 1.78) + 2 Boarding Steps
+    const frontArchShape = new THREE.Shape();
+    const frontArchSegs = 10;
+    const fArchIn = 0.72;
+    const fArchOut = 0.84;
+    const fAngStart = 2.66;
+    const fAngEnd = 0.48;
+    for (let s = 0; s <= frontArchSegs; s++) {
+      const th = THREE.MathUtils.lerp(fAngStart, fAngEnd, s / frontArchSegs);
+      const pz = 1.78 + Math.cos(th) * fArchOut;
+      const py = 0.66 + Math.sin(th) * fArchOut;
+      if (s === 0) frontArchShape.moveTo(pz, py);
+      else frontArchShape.lineTo(pz, py);
+    }
+    for (let s = frontArchSegs; s >= 0; s--) {
+      const th = THREE.MathUtils.lerp(fAngStart, fAngEnd, s / frontArchSegs);
+      frontArchShape.lineTo(1.78 + Math.cos(th) * fArchIn, 0.66 + Math.sin(th) * fArchIn);
+    }
+    frontArchShape.closePath();
+    const frontArchGeo = new THREE.ExtrudeGeometry(frontArchShape, {
+      depth: 0.30,
+      bevelEnabled: true,
+      bevelSize: 0.014,
+      bevelThickness: 0.014,
+      bevelSegments: 2,
+    });
+    frontArchGeo.translate(0, 0, -0.15);
+    frontArchGeo.rotateY(-Math.PI / 2);
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.32, 0.24, 1.44),
+      frontArchGeo,
       COL_BUMPER_STEEL,
-      [side * 1.22, 1.24, 1.78],
+      [side * 1.22, 0, 0],
       [0, 0, 0],
       [1, 1, 1],
       0.014,
@@ -25556,7 +32127,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     for (const stepY of [0.76, 0.96]) {
       addTruckPart(
         cabAndChassisStaticGroup,
-        new THREE.BoxGeometry(0.24, 0.06, 0.36),
+        new RoundedBoxGeometry(0.24, 0.06, 0.36, 1, 0.012),
         COL_CAB_DARK,
         [side * 1.22, stepY, 2.42],
         [0, 0, 0],
@@ -25568,7 +32139,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // Central Windshield Divider Mullion Pillar
   addTruckPart(
     cabAndChassisStaticGroup,
-    new THREE.BoxGeometry(0.12, 0.78, 0.12),
+    new RoundedBoxGeometry(0.12, 0.78, 0.12, 1, 0.016),
     COL_CAB_DARK,
     [0, 2.28, 2.69],
     [-0.18, 0, 0],
@@ -25613,7 +32184,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // Full-width Heavy Front Steel Bumper
   addTruckPart(
     cabAndChassisStaticGroup,
-    new THREE.BoxGeometry(2.68, 0.44, 0.36),
+    new RoundedBoxGeometry(2.68, 0.44, 0.36, 2, 0.040),
     COL_BUMPER_STEEL,
     [0, 0.86, 2.78],
     [0, 0, 0],
@@ -25623,7 +32194,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // Central Slatted Radiator Grille
   addTruckPart(
     cabAndChassisStaticGroup,
-    new THREE.BoxGeometry(1.04, 0.64, 0.14),
+    new RoundedBoxGeometry(1.04, 0.64, 0.14, 2, 0.020),
     '#ffffff',
     [0, 1.32, 2.78],
     [0, 0, 0],
@@ -25635,7 +32206,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const bx of [-0.52, 0.52]) {
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.15, 0.96, 0.22),
+      new RoundedBoxGeometry(0.15, 0.96, 0.22, 2, 0.024),
       COL_CHASSIS_DARK,
       [bx, 1.12, 2.92],
       [0, 0, 0],
@@ -25646,7 +32217,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const by of [1.18, 1.52]) {
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(1.16, 0.12, 0.20),
+      new RoundedBoxGeometry(1.16, 0.12, 0.20, 2, 0.022),
       COL_BUMPER_STEEL,
       [0, by, 2.93],
       [0, 0, 0],
@@ -25660,7 +32231,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Upper recessed rectangular headlight bezel & glowing white lamp
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.40, 0.22, 0.12),
+      new RoundedBoxGeometry(0.40, 0.22, 0.12, 1, 0.018),
       COL_CHASSIS_DARK,
       [hx, 1.24, 2.78],
       [0, -side * 0.10, 0],
@@ -25669,7 +32240,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     );
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.30, 0.13, 0.14),
+      new RoundedBoxGeometry(0.30, 0.13, 0.14, 1, 0.012),
       '#e2f1ff',
       [hx, 1.24, 2.79],
       [0, -side * 0.10, 0],
@@ -25681,7 +32252,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Lower wide rectangular bumper driving light bezel & glowing white lamp
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.46, 0.20, 0.12),
+      new RoundedBoxGeometry(0.46, 0.20, 0.12, 1, 0.018),
       COL_CHASSIS_DARK,
       [hx, 0.86, 2.93],
       [0, 0, 0],
@@ -25690,7 +32261,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     );
     addTruckPart(
       cabAndChassisStaticGroup,
-      new THREE.BoxGeometry(0.36, 0.12, 0.14),
+      new RoundedBoxGeometry(0.36, 0.12, 0.14, 1, 0.012),
       '#ffffff',
       [hx, 0.86, 2.94],
       [0, 0, 0],
@@ -25796,12 +32367,12 @@ export function populateRealBlitzDumpTruckFromGlb(
 
   // ==========================================================================
   // 3. REAR-HINGED HYDRAULIC DUMP VESSEL (Fits 4x 1.32m World Crates Snugly!)
-  //    Hinged at Rear Pivot (0, 1.18, -2.76) in suspensionBodyGroup.
+  //    Hinged at Rear Pivot (0, 1.24, -2.76) atop chamfered sub-frame in suspensionBodyGroup.
   //    In vesselPivotGroup local space: z = 0 is Rear Tailgate, z = +3.16 is Front Wall.
   // ==========================================================================
   const vesselPivotGroup = new THREE.Group();
   vesselPivotGroup.name = 'DumpTruck_HydraulicVesselPivot';
-  vesselPivotGroup.position.set(0, 1.18, -2.76);
+  vesselPivotGroup.position.set(0, 1.24, -2.76);
   suspensionBodyGroup.add(vesselPivotGroup);
 
   const vesselStaticGroup = new THREE.Group();
@@ -25811,7 +32382,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // 3A. Heavy Steel Dump Bed Floor & Under-Bed Longitudinal Support Stringers
   addTruckPart(
     vesselStaticGroup,
-    new THREE.BoxGeometry(2.96, 0.18, 3.22),
+    new RoundedBoxGeometry(2.96, 0.18, 3.22, 2, 0.024),
     COL_VESSEL_INNER,
     [0, 0.09, 1.58],
     [0, 0, 0],
@@ -25820,7 +32391,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   );
   addTruckPart(
     vesselStaticGroup,
-    new THREE.BoxGeometry(3.08, 0.16, 3.26),
+    new RoundedBoxGeometry(3.08, 0.16, 3.26, 2, 0.024),
     COL_VESSEL_DARK,
     [0, -0.04, 1.58],
     [0, 0, 0],
@@ -25834,7 +32405,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Main side wall plate
     addTruckPart(
       vesselStaticGroup,
-      new THREE.BoxGeometry(0.16, 1.32, 3.18),
+      new RoundedBoxGeometry(0.16, 1.32, 3.18, 2, 0.024),
       '#ffffff',
       [wallX, 0.78, 1.58],
       [0, 0, 0],
@@ -25845,7 +32416,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Top longitudinal box rail
     addTruckPart(
       vesselStaticGroup,
-      new THREE.BoxGeometry(0.24, 0.16, 3.24),
+      new RoundedBoxGeometry(0.24, 0.16, 3.24, 2, 0.024),
       COL_VESSEL_DARK,
       [wallX + side * 0.02, 1.42, 1.58],
       [0, 0, 0],
@@ -25855,7 +32426,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Bottom longitudinal rub-rail
     addTruckPart(
       vesselStaticGroup,
-      new THREE.BoxGeometry(0.24, 0.18, 3.24),
+      new RoundedBoxGeometry(0.24, 0.18, 3.24, 2, 0.024),
       COL_VESSEL_DARK,
       [wallX + side * 0.02, 0.14, 1.58],
       [0, 0, 0],
@@ -25866,7 +32437,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     for (const ribZ of [0.68, 1.54, 2.40]) {
       addTruckPart(
         vesselStaticGroup,
-        new THREE.BoxGeometry(0.12, 1.18, 0.28),
+        new RoundedBoxGeometry(0.12, 1.18, 0.28, 2, 0.020),
         COL_VESSEL_RIB,
         [wallX + side * 0.09, 0.78, ribZ],
         [0.24, 0, 0],
@@ -25877,7 +32448,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Rear Corner Tailgate Hinge Post & Top Hinge Lug
     addTruckPart(
       vesselStaticGroup,
-      new THREE.BoxGeometry(0.26, 1.52, 0.28),
+      new RoundedBoxGeometry(0.26, 1.52, 0.28, 2, 0.026),
       COL_VESSEL_DARK,
       [wallX + side * 0.02, 0.80, 0.06],
       [0, 0, 0],
@@ -25889,7 +32460,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // 3C. Front Headboard Wall & Forward-Overhanging Cab-Protector Canopy Lip (SIDE ELEVATION "160" & 3/4 Render)
   addTruckPart(
     vesselStaticGroup,
-    new THREE.BoxGeometry(3.04, 1.56, 0.18),
+    new RoundedBoxGeometry(3.04, 1.56, 0.18, 2, 0.026),
     COL_VESSEL_DARK,
     [0, 0.84, 3.12],
     [0, 0, 0],
@@ -25899,7 +32470,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   // Slanted upper headboard riser + horizontal forward canopy shield overhanging the rear cab roof
   addTruckPart(
     vesselStaticGroup,
-    new THREE.BoxGeometry(3.06, 0.46, 0.24),
+    new RoundedBoxGeometry(3.06, 0.46, 0.24, 2, 0.026),
     COL_VESSEL_DARK,
     [0, 1.72, 3.22],
     [-0.38, 0, 0],
@@ -25908,7 +32479,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   );
   addTruckPart(
     vesselStaticGroup,
-    new THREE.BoxGeometry(3.08, 0.18, 0.96),
+    new RoundedBoxGeometry(3.08, 0.18, 0.96, 2, 0.028),
     COL_VESSEL_DARK,
     [0, 1.92, 3.66],
     [0.05, 0, 0],
@@ -25918,7 +32489,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const side of [-1, 1]) {
     addTruckPart(
       vesselStaticGroup,
-      new THREE.BoxGeometry(0.16, 0.42, 0.72),
+      new RoundedBoxGeometry(0.16, 0.42, 0.72, 2, 0.022),
       COL_VESSEL_DARK,
       [side * 1.45, 1.70, 3.46],
       [-0.32, 0, 0],
@@ -25930,17 +32501,17 @@ export function populateRealBlitzDumpTruckFromGlb(
   bakeStaticGroupMeshes(vesselStaticGroup);
 
   // ==========================================================================
-  // 4. SWINGING REAR TAILGATE (tailgatePivotGroup — Hinged at Upper-Rear (0, 1.48, 0.02))
+  // 4. SWINGING REAR TAILGATE (tailgatePivotGroup — Hinged at Upper-Rear (0, 1.505, 0.02))
   // ==========================================================================
   const tailgatePivotGroup = new THREE.Group();
   tailgatePivotGroup.name = 'DumpTruck_TailgatePivot';
-  tailgatePivotGroup.position.set(0, 1.48, 0.02);
+  tailgatePivotGroup.position.set(0, 1.505, 0.02);
   vesselPivotGroup.add(tailgatePivotGroup);
 
   // Main Tailgate Door Panel (hangs downward from hinge y = 0 to y = -1.36)
   addTruckPart(
     tailgatePivotGroup,
-    new THREE.BoxGeometry(2.76, 1.32, 0.16),
+    new RoundedBoxGeometry(2.76, 1.32, 0.16, 2, 0.024),
     COL_VESSEL_DARK,
     [0, -0.68, -0.04],
     [0, 0, 0],
@@ -25951,7 +32522,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const ty of [-0.14, -1.22]) {
     addTruckPart(
       tailgatePivotGroup,
-      new THREE.BoxGeometry(2.88, 0.18, 0.22),
+      new RoundedBoxGeometry(2.88, 0.18, 0.22, 2, 0.024),
       COL_VESSEL_RIB,
       [0, ty, -0.06],
       [0, 0, 0],
@@ -25964,7 +32535,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     for (const ly of [-0.42, -0.92]) {
       addTruckPart(
         tailgatePivotGroup,
-        new THREE.BoxGeometry(0.14, 0.13, 0.48),
+        new RoundedBoxGeometry(0.14, 0.13, 0.48, 1, 0.016),
         COL_VESSEL_RIB,
         [side * 1.48, ly, 0.12],
         [-0.12, 0, 0],
@@ -25973,7 +32544,7 @@ export function populateRealBlitzDumpTruckFromGlb(
       );
       addTruckPart(
         tailgatePivotGroup,
-        new THREE.BoxGeometry(0.32, 0.13, 0.14),
+        new RoundedBoxGeometry(0.32, 0.13, 0.14, 1, 0.016),
         COL_VESSEL_RIB,
         [side * 1.36, ly, -0.10],
         [0, 0, 0],
@@ -25986,7 +32557,7 @@ export function populateRealBlitzDumpTruckFromGlb(
   for (const lx of [-0.66, 0.66]) {
     addTruckPart(
       tailgatePivotGroup,
-      new THREE.BoxGeometry(0.16, 0.24, 0.14),
+      new RoundedBoxGeometry(0.16, 0.24, 0.14, 1, 0.016),
       COL_VESSEL_RIB,
       [lx, -1.26, -0.12],
       [0, 0, 0],
@@ -26014,7 +32585,8 @@ export function populateRealBlitzDumpTruckFromGlb(
 
   const buildStyledCylinder = (geo: THREE.BufferGeometry, hex: string) => {
     const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: hex }));
-    m.frustumCulled = false;
+    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+    m.frustumCulled = true;
     m.castShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(m, windUniforms, hex);
     const st = createBlitzStrokeMesh(geo, 0.018);
@@ -26030,7 +32602,7 @@ export function populateRealBlitzDumpTruckFromGlb(
     collar: THREE.Mesh;
   }[] = [];
 
-  for (const sideX of [-0.42, 0.42]) {
+  for (const sideX of [-0.435, 0.435]) {
     const ramRoot = new THREE.Group();
     ramRoot.position.set(sideX, 0, 0);
     const outerBarrel = buildStyledCylinder(outerBarrelGeo, '#1b1e28');
@@ -26051,10 +32623,10 @@ export function populateRealBlitzDumpTruckFromGlb(
 
   // 2x2 crate positions inside vesselPivotGroup (vessel interior is x in [-1.36, +1.36], z in [0.16, 3.00])
   const slotPositions: [number, number, number][] = [
-    [-0.67, 0.84, 2.26], // Slot 0: Front-Left
-    [0.67, 0.84, 2.26],  // Slot 1: Front-Right
-    [-0.67, 0.84, 0.90], // Slot 2: Rear-Left
-    [0.67, 0.84, 0.90],  // Slot 3: Rear-Right
+    [-0.67, 0.805, 2.26], // Slot 0: Front-Left
+    [0.67, 0.805, 2.26],  // Slot 1: Front-Right
+    [-0.67, 0.805, 0.90], // Slot 2: Rear-Left
+    [0.67, 0.805, 0.90],  // Slot 3: Rear-Right
   ];
 
   const populateCargoSlotCrateVisual = (
@@ -26078,7 +32650,7 @@ export function populateRealBlitzDumpTruckFromGlb(
             : '#ef4444';
     addTruckPart(
       slotGrp,
-      new THREE.BoxGeometry(1.24, 1.24, 1.24),
+      new RoundedBoxGeometry(1.24, 1.24, 1.24, 2, 0.045),
       fallbackHex,
       [0, 0, 0],
       [0, 0, 0],
@@ -26107,11 +32679,11 @@ export function populateRealBlitzDumpTruckFromGlb(
     // Slide crates rearward along the tilted bed as they dump out
     cargoSlotsGroup.position.z = hydState.crateSlideOffsetZ;
 
-    // Attachment on underside of tilted vessel at local (0, -0.04, 2.45) relative to vesselPivotGroup (0, 1.18, -2.76)
+    // Attachment on underside of tilted vessel at local (0, -0.04, 2.45) relative to vesselPivotGroup (0, 1.24, -2.76)
     const theta = hydState.vesselTiltRad;
     const dy0 = -0.04;
     const dz0 = 2.45;
-    const attachY = 1.18 + dy0 * Math.cos(theta) + dz0 * Math.sin(theta);
+    const attachY = 1.24 + dy0 * Math.cos(theta) + dz0 * Math.sin(theta);
     const attachZ = -2.76 - dy0 * Math.sin(theta) + dz0 * Math.cos(theta);
 
     const vecY = attachY - 0.86;
@@ -26142,7 +32714,8 @@ export function populateRealBlitzDumpTruckFromGlb(
       bodyPitchRad = 0,
       bodyRollRad = 0,
     ) => {
-      const wheelSpin = deltaForwardMeters / (0.66 * truckScale);
+      const effectiveWheelScale = truckScale * Math.max(0.25, bodyGroup.scale.x || 1);
+      const wheelSpin = deltaForwardMeters / (0.66 * effectiveWheelScale);
       for (const w of wheelMeshes) {
         w.rotation.x += wheelSpin;
       }
@@ -26740,13 +33313,15 @@ export function buildProceduralSkyshieldTurret(
     m.position.set(pos[0], pos[1], pos[2]);
     m.rotation.set(rot[0], rot[1], rot[2]);
     m.scale.set(scale[0], scale[1], scale[2]);
-    m.frustumCulled = false;
+    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+    m.frustumCulled = true;
     m.castShadow = !isSoftwareGl;
     m.receiveShadow = !isSoftwareGl;
     if (strokeWidth > 0) {
       const stroke = createBlitzStrokeMesh(geo, strokeWidth);
       if (stroke) {
-        stroke.frustumCulled = false;
+        if (!stroke.geometry.boundingSphere) stroke.geometry.computeBoundingSphere();
+        stroke.frustumCulled = true;
         m.add(stroke);
       }
     }
@@ -27179,7 +33754,8 @@ export function buildProceduralSkyshieldTurret(
     hullStrokeGeo.setAttribute('position', new THREE.Float32BufferAttribute(hullStrokePos, 3));
     const hullStrokeMesh = createBlitzStrokeMesh(hullStrokeGeo, 0.022);
     if (hullStrokeMesh) {
-      hullStrokeMesh.frustumCulled = false;
+      hullStrokeMesh.geometry.computeBoundingSphere();
+      hullStrokeMesh.frustumCulled = true;
       yawGroup.add(hullStrokeMesh);
     }
   }
@@ -28332,25 +34908,25 @@ export function buildMilitaryBaseMasterplan(
     for (const gzOff of [-4.85, 0.0, 4.85]) {
       const jointZ = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.11), lobbyTileJointMat);
       jointZ.rotation.x = -Math.PI / 2;
-      jointZ.position.set(cx, 0.043, plotZ + gzOff);
+      jointZ.position.set(cx, 0.049, plotZ + gzOff);
       floorGrp.add(jointZ);
     }
 
     // 4. Short Front Gate Driveway Apron outside the plot gate (lx in [21.8, 28.6])
     const apronCurb = new THREE.Mesh(new THREE.PlaneGeometry(7.0, 5.5), roadCurbMat);
     apronCurb.rotation.x = -Math.PI / 2;
-    apronCurb.position.set(25.2, 0.032, plotZ);
+    apronCurb.position.set(25.2, 0.037, plotZ);
     floorGrp.add(apronCurb);
 
     const apronSlab = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 5.1), roadAsphaltMat);
     apronSlab.rotation.x = -Math.PI / 2;
-    apronSlab.position.set(25.2, 0.038, plotZ);
+    apronSlab.position.set(25.2, 0.0435, plotZ);
     floorGrp.add(apronSlab);
 
     for (let gx = 22.8; gx <= 27.6; gx += 2.2) {
       const dash = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.22), roadDashMat);
       dash.rotation.x = -Math.PI / 2;
-      dash.position.set(gx, 0.044, plotZ);
+      dash.position.set(gx, 0.050, plotZ);
       floorGrp.add(dash);
     }
     return floorGrp;
@@ -28505,6 +35081,29 @@ export function buildMilitaryBaseMasterplan(
     }
   };
 
+  const hqWindowGlassMeshes: THREE.Object3D[] = [];
+  const hangarWindowGlassMeshes: THREE.Object3D[] = [];
+  const barracksWindowGlassMeshes: THREE.Object3D[] = [];
+  const checkpointWindowGlassMeshes: THREE.Object3D[] = [];
+  const plazaManorWindowGlassMeshes: THREE.Object3D[] = [];
+  let baseWindowSeq = 0;
+  const tagBaseWindowMesh = (
+    mesh: THREE.Mesh,
+    bucket: THREE.Object3D[],
+    idPrefix: string,
+    kind: CityWindowKind,
+    baseColorHex: string,
+    row = 1,
+  ): THREE.Mesh => {
+    const idx = baseWindowSeq++;
+    tagCityWindowMesh(
+      mesh,
+      createCityWindowSpec(`${idPrefix}-${idx}`, kind, baseColorHex, row, idx),
+    );
+    bucket.push(mesh);
+    return mesh;
+  };
+
   // 1. Dark Polished Basalt Foundation Plinth & Pristine White 2-Story Architectural Concrete Core
   addBasePart(hqGroup, new THREE.BoxGeometry(6.54, 0.10, 6.14), HQ_SLATE_DARK, [0, 0.05, 0], [0, 0, 0], [1, 1, 1], 0.014);
   addBasePart(hqGroup, new THREE.BoxGeometry(6.46, 0.28, 6.06), '#5c6068', [0, 0.16, 0], [0, 0, 0], [1, 1, 1], 0.02, lv1BasaltPlinthTex);
@@ -28543,23 +35142,26 @@ export function buildMilitaryBaseMasterplan(
     addBasePart(hqGroup, new THREE.BoxGeometry(0.16, 0.095, 1.16), HQ_CEDAR, [3.08, ly, 2.06], [0, 0, 0.12], [1, 1, 1], 0.006, lv1HorizTimberTex);
   }
 
-  // B. Floor 2 4-Pane Panoramic Tinted Command Window (z in [-2.64, +1.42], y in [3.14, 4.66])
-  addBasePart(hqGroup, new THREE.BoxGeometry(0.16, 1.54, 4.08), HQ_SLATE_DARK, [3.05, 3.90, -0.60], [0, 0, 0], [1, 1, 1], 0.018);
-  addBasePart(hqGroup, new THREE.BoxGeometry(0.22, 0.08, 4.16), HQ_SLATE, [3.09, 3.12, -0.60], [0, 0, 0], [1, 1, 1], 0.010);
-  for (const wz of [-2.10, -1.10, -0.10, 0.90]) {
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.18, 1.36, 0.90), HQ_GLASS, [3.07, 3.90, wz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  // B. Floor 2 4-Pane Panoramic Tinted Command Window (z in [-2.64, +1.36] clearing Koushi edge +1.43, y in [3.14, 4.66])
+  addBasePart(hqGroup, new THREE.BoxGeometry(0.16, 1.54, 4.00), HQ_SLATE_DARK, [3.05, 3.90, -0.64], [0, 0, 0], [1, 1, 1], 0.018);
+  addBasePart(hqGroup, new THREE.BoxGeometry(0.22, 0.08, 4.08), HQ_SLATE, [3.09, 3.12, -0.64], [0, 0, 0], [1, 1, 1], 0.010);
+  for (const wz of [-2.12, -1.14, -0.16, 0.82]) {
+    const pane = addBasePart(hqGroup, new THREE.BoxGeometry(0.18, 1.36, 0.86), HQ_GLASS, [3.07, 3.90, wz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(pane, hqWindowGlassMeshes, 'base-hq-f2-front', 'upper_floor', HQ_GLASS, 2);
   }
 
   // C. Floor 1 Minimalist Entrance Portal (projecting box frame at z = +0.18, y in [0.22, 2.46])
   addBasePart(hqGroup, new THREE.BoxGeometry(0.50, 2.26, 2.10), HQ_PORTAL_GRAY, [3.24, 1.34, 0.18], [0, 0, 0], [1, 1, 1], 0.018, lv1BasaltPlinthTex);
-  addBasePart(hqGroup, new THREE.BoxGeometry(0.52, 2.04, 1.76), HQ_SLATE_DARK, [3.26, 1.24, 0.18], [0, 0, 0], [1, 1, 1], 0.014);
-  // Double Dark Glazed Portal Doors + Vertical Steel Handles + Upper Transom Glass + 2-Step Entry Threshold
+  addBasePart(hqGroup, new THREE.BoxGeometry(0.52, 2.10, 1.76), HQ_SLATE_DARK, [3.26, 1.27, 0.18], [0, 0, 0], [1, 1, 1], 0.014);
+  // Double Dark Glazed Portal Doors (1.82 -> 3.92m world) + Vertical Steel Handles + Upper Transom Glass + 2-Step Entry Threshold
   for (const dz of [-0.24, 0.60]) {
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.54, 1.52, 0.76), HQ_GLASS, [3.27, 1.02, dz], [0, 0, 0], [1, 1, 1], 0.01, lv1WindowPaneTex);
+    const doorPane = addBasePart(hqGroup, new THREE.BoxGeometry(0.54, 1.82, 0.76), HQ_GLASS, [3.27, 1.17, dz], [0, 0, 0], [1, 1, 1], 0.01, lv1WindowPaneTex);
+    tagBaseWindowMesh(doorPane, hqWindowGlassMeshes, 'base-hq-f1-front-door', 'storefront', HQ_GLASS, 1);
     const handleZ = dz < 0.18 ? dz + 0.28 : dz - 0.28;
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.05, 0.46, 0.04), '#d8dce2', [3.56, 1.04, handleZ], [0, 0, 0], [1, 1, 1], 0.006);
+    addBasePart(hqGroup, new THREE.BoxGeometry(0.05, 0.52, 0.04), '#d8dce2', [3.56, 1.16, handleZ], [0, 0, 0], [1, 1, 1], 0.006);
   }
-  addBasePart(hqGroup, new THREE.BoxGeometry(0.54, 0.30, 1.60), HQ_GLASS, [3.27, 2.02, 0.18], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  const frontTransom = addBasePart(hqGroup, new THREE.BoxGeometry(0.54, 0.16, 1.60), HQ_GLASS, [3.27, 2.18, 0.18], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  tagBaseWindowMesh(frontTransom, hqWindowGlassMeshes, 'base-hq-f1-front-transom', 'storefront', HQ_GLASS, 1);
   addBasePart(hqGroup, new THREE.BoxGeometry(0.76, 0.16, 2.22), '#5c6068', [3.48, 0.14, 0.18], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
   addBasePart(hqGroup, new THREE.BoxGeometry(0.96, 0.08, 2.36), HQ_SLATE_DARK, [3.62, 0.04, 0.18], [0, 0, 0], [1, 1, 1], 0.010);
 
@@ -28588,13 +35190,15 @@ export function buildMilitaryBaseMasterplan(
   // 4. Upper-Right Bay (viewed from -X, right is +Z: z in [+0.24, +1.84], y in [3.16, 4.64]): 2-Pane Window
   addBasePart(hqGroup, new THREE.BoxGeometry(0.16, 1.48, 1.60), HQ_SLATE_DARK, [-3.06, 3.90, 1.04], [0, 0, 0], [1, 1, 1], 0.016);
   for (const rwz of [0.66, 1.42]) {
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.18, 1.30, 0.66), HQ_GLASS, [-3.08, 3.90, rwz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    const rwPane = addBasePart(hqGroup, new THREE.BoxGeometry(0.18, 1.30, 0.66), HQ_GLASS, [-3.08, 3.90, rwz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(rwPane, hqWindowGlassMeshes, 'base-hq-f2-rear', 'upper_floor', HQ_GLASS, 2);
   }
   // 5. Floor 1 Narrow Horizontal 2-Pane Transom Windows below Timber Beam (y = 2.24)
   for (const tz of [-1.28, 1.04]) {
     addBasePart(hqGroup, new THREE.BoxGeometry(0.16, 0.38, 1.92), HQ_SLATE_DARK, [-3.06, 2.24, tz], [0, 0, 0], [1, 1, 1], 0.012);
     for (const subOff of [-0.44, 0.44]) {
-      addBasePart(hqGroup, new THREE.BoxGeometry(0.18, 0.26, 0.82), HQ_GLASS, [-3.08, 2.24, tz + subOff], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+      const trPane = addBasePart(hqGroup, new THREE.BoxGeometry(0.18, 0.26, 0.82), HQ_GLASS, [-3.08, 2.24, tz + subOff], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+      tagBaseWindowMesh(trPane, hqWindowGlassMeshes, 'base-hq-f1-rear-transom', 'upper_floor', HQ_GLASS, 1);
     }
   }
   // 6. Twin Ground-Level Rear HVAC Chiller Cabinets & 3 Vertical Conduit Riser Pipes with L-Elbows on Right (+Z) Bay
@@ -28629,15 +35233,18 @@ export function buildMilitaryBaseMasterplan(
   addBasePart(hqGroup, new THREE.BoxGeometry(2.70, 1.54, 0.16), HQ_SLATE_DARK, [1.14, 3.90, 2.86], [0, 0, 0], [1, 1, 1], 0.016);
   addBasePart(hqGroup, new THREE.BoxGeometry(2.78, 0.08, 0.22), HQ_SLATE, [1.14, 3.12, 2.90], [0, 0, 0], [1, 1, 1], 0.010);
   for (const wx of [0.28, 1.14, 2.00]) {
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.78, 1.36, 0.18), HQ_GLASS, [wx, 3.90, 2.88], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    const pane = addBasePart(hqGroup, new THREE.BoxGeometry(0.78, 1.36, 0.18), HQ_GLASS, [wx, 3.90, 2.88], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(pane, hqWindowGlassMeshes, 'base-hq-f2-left', 'upper_floor', HQ_GLASS, 2);
   }
   // Floor 1 Secondary Minimalist Entrance Portal (x = +0.55, z = +3.02)
   addBasePart(hqGroup, new THREE.BoxGeometry(2.00, 2.26, 0.48), HQ_PORTAL_GRAY, [0.55, 1.34, 3.00], [0, 0, 0], [1, 1, 1], 0.018, lv1BasaltPlinthTex);
-  addBasePart(hqGroup, new THREE.BoxGeometry(1.70, 2.04, 0.50), HQ_SLATE_DARK, [0.55, 1.24, 3.02], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(hqGroup, new THREE.BoxGeometry(1.70, 2.10, 0.50), HQ_SLATE_DARK, [0.55, 1.27, 3.02], [0, 0, 0], [1, 1, 1], 0.014);
   for (const dx of [0.16, 0.94]) {
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.70, 1.52, 0.52), HQ_GLASS, [dx, 1.02, 3.03], [0, 0, 0], [1, 1, 1], 0.01, lv1WindowPaneTex);
+    const dPane = addBasePart(hqGroup, new THREE.BoxGeometry(0.70, 1.82, 0.52), HQ_GLASS, [dx, 1.17, 3.03], [0, 0, 0], [1, 1, 1], 0.01, lv1WindowPaneTex);
+    tagBaseWindowMesh(dPane, hqWindowGlassMeshes, 'base-hq-f1-left-door', 'storefront', HQ_GLASS, 1);
   }
-  addBasePart(hqGroup, new THREE.BoxGeometry(1.50, 0.30, 0.52), HQ_GLASS, [0.55, 2.02, 3.03], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  const leftTransom = addBasePart(hqGroup, new THREE.BoxGeometry(1.50, 0.16, 0.52), HQ_GLASS, [0.55, 2.18, 3.03], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  tagBaseWindowMesh(leftTransom, hqWindowGlassMeshes, 'base-hq-f1-left-transom', 'storefront', HQ_GLASS, 1);
   addBasePart(hqGroup, new THREE.BoxGeometry(2.12, 0.16, 0.72), '#5c6068', [0.55, 0.14, 3.22], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
   // Concealed Utilities Cabinet on Right Side of Left Elevation (x = +2.16, z = +2.94)
   addBasePart(hqGroup, new THREE.BoxGeometry(0.68, 0.88, 0.24), '#c8c6be', [2.16, 0.68, 2.94], [0, 0, 0], [1, 1, 1], 0.012, louverTex);
@@ -28646,10 +35253,11 @@ export function buildMilitaryBaseMasterplan(
   // RIGHT ELEVATION (-Z): Floor 2 3-Pane Window + Koushi Panel, Floor 1 Double Koushi Shutter,
   // Vertical Conduit Pipe, Radar Mounting Bracket, and Full-Height Exterior Metal Ladder
   // =========================================================================
-  // 1. Floor 2 3-Pane Window (x in [-0.15, +2.45]) + Adjacent Koushi Louver Bay (x in [-0.96, -0.15])
-  addBasePart(hqGroup, new THREE.BoxGeometry(2.62, 1.54, 0.16), HQ_SLATE_DARK, [1.15, 3.90, -2.86], [0, 0, 0], [1, 1, 1], 0.016);
-  for (const wx of [0.32, 1.15, 1.98]) {
-    addBasePart(hqGroup, new THREE.BoxGeometry(0.76, 1.36, 0.18), HQ_GLASS, [wx, 3.90, -2.88], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  // 1. Floor 2 3-Pane Window (x in [-0.07, +2.47], clean 6cm concrete reveal clear of Koushi [-0.97, -0.13])
+  addBasePart(hqGroup, new THREE.BoxGeometry(2.54, 1.54, 0.16), HQ_SLATE_DARK, [1.20, 3.90, -2.86], [0, 0, 0], [1, 1, 1], 0.016);
+  for (const wx of [0.38, 1.20, 2.02]) {
+    const pane = addBasePart(hqGroup, new THREE.BoxGeometry(0.74, 1.36, 0.18), HQ_GLASS, [wx, 3.90, -2.88], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(pane, hqWindowGlassMeshes, 'base-hq-f2-right', 'upper_floor', HQ_GLASS, 2);
   }
   addBasePart(hqGroup, new THREE.BoxGeometry(0.84, 1.54, 0.16), HQ_CEDAR_DARK, [-0.55, 3.90, -2.86], [0, 0, 0], [1, 1, 1], 0.014);
   for (let r = 0; r < 8; r++) {
@@ -28909,7 +35517,8 @@ export function buildMilitaryBaseMasterplan(
   addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 1.54, 5.88), LV3_SLATE_DARK, [2.82, 5.58, 0], [0, 0, 0], [1, 1, 1], 0.018);
   for (let pi = 0; pi < 8; pi++) {
     const pz = -2.48 + pi * 0.71;
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.20, 1.36, 0.62), LV3_GLASS, [2.84, 5.58, pz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    const bridgePane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.20, 1.36, 0.62), LV3_GLASS, [2.84, 5.58, pz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(bridgePane, hangarWindowGlassMeshes, 'base-hangar-l3-bridge', 'upper_floor', LV3_GLASS, 3);
   }
 
   // Sleek Low-Pitch Floating Butterfly / V-Roof (sloping upward from center x = 0 valley toward Front +X and Rear -X eaves!)
@@ -28961,25 +35570,28 @@ export function buildMilitaryBaseMasterplan(
     addBasePart(hangarGroup, new THREE.BoxGeometry(0.14, 3.94, 0.72), LV3_CEDAR, [3.25, 2.47, cz], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
   }
 
-  // B. Armored Entrance Portal (Ground Floor Center: z = -0.15, y in [0.24, 2.68])
-  addBasePart(hangarGroup, new THREE.BoxGeometry(0.58, 2.48, 2.40), LV3_PORTAL_DARK, [3.44, 1.48, -0.15], [0, 0, 0], [1, 1, 1], 0.020, lv1BasaltPlinthTex);
-  addBasePart(hangarGroup, new THREE.BoxGeometry(0.60, 2.18, 2.00), '#d8d5cc', [3.46, 1.38, -0.15], [0, 0, 0], [1, 1, 1], 0.014, lv1AndoPlasterTex);
+  // B. Armored Entrance Portal (Ground Floor Center: z = -0.15, y in [0.24, 2.98])
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.58, 2.74, 2.40), LV3_PORTAL_DARK, [3.44, 1.61, -0.15], [0, 0, 0], [1, 1, 1], 0.020, lv1BasaltPlinthTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.60, 2.44, 2.00), '#d8d5cc', [3.46, 1.51, -0.15], [0, 0, 0], [1, 1, 1], 0.014, lv1AndoPlasterTex);
   for (const dz of [-0.56, 0.26]) {
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.62, 1.88, 0.76), '#464d56', [3.48, 1.24, dz], [0, 0, 0], [1, 1, 1], 0.012, lv1SlateRoofTex);
+    addBasePart(hangarGroup, new THREE.BoxGeometry(0.62, 2.28, 0.76), '#464d56', [3.48, 1.44, dz], [0, 0, 0], [1, 1, 1], 0.012, lv1SlateRoofTex);
     // Armored vertical vision slit + heavy blast door lock bar
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.64, 0.42, 0.14), LV3_GLASS, [3.50, 1.46, dz], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.64, 0.36, 0.12), LV3_SLATE_DARK, [3.50, 1.06, dz + (dz < -0.15 ? 0.22 : -0.22)], [0, 0, 0], [1, 1, 1], 0.008);
+    const slitPane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.64, 0.48, 0.14), LV3_GLASS, [3.50, 1.72, dz], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+    tagBaseWindowMesh(slitPane, hangarWindowGlassMeshes, 'base-hangar-blast-slit', 'civic', LV3_GLASS, 1);
+    addBasePart(hangarGroup, new THREE.BoxGeometry(0.64, 0.36, 0.12), LV3_SLATE_DARK, [3.50, 1.24, dz + (dz < -0.15 ? 0.22 : -0.22)], [0, 0, 0], [1, 1, 1], 0.008);
   }
   addBasePart(hangarGroup, new THREE.BoxGeometry(0.86, 0.24, 2.56), LV3_STONE_PLINTH, [3.68, 0.12, -0.15], [0, 0, 0], [1, 1, 1], 0.014, lv3AshlarStoneTex);
 
-  // C. Tactical Operations Level 2 4-Pane Ribbon Window (z in [-2.48, +1.12], y = 3.68) & Ground-Right 3-Pane Window (z in [-2.48, -1.38], y = 1.45)
-  addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 0.98, 3.64), LV3_SLATE_DARK, [3.25, 3.68, -0.68], [0, 0, 0], [1, 1, 1], 0.016);
-  for (const wz of [-2.02, -1.12, -0.22, 0.68]) {
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 0.80, 0.80), LV3_GLASS, [3.27, 3.68, wz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  // C. Tactical Operations Level 2 4-Pane Ribbon Window (z in [-2.35, +0.97], 7cm reveal clear of piers [-2.42, +1.04]) & Ground-Right 3-Pane Window ([-2.35, -1.21])
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 0.98, 3.32), LV3_SLATE_DARK, [3.25, 3.68, -0.69], [0, 0, 0], [1, 1, 1], 0.016);
+  for (const wz of [-1.92, -1.10, -0.28, 0.54]) {
+    const pane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 0.80, 0.72), LV3_GLASS, [3.27, 3.68, wz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(pane, hangarWindowGlassMeshes, 'base-hangar-l2-front', 'upper_floor', LV3_GLASS, 2);
   }
-  addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 1.40, 1.18), LV3_SLATE_DARK, [3.25, 1.45, -1.94], [0, 0, 0], [1, 1, 1], 0.014);
-  for (const gwz of [-2.28, -1.94, -1.60]) {
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 1.20, 0.28), LV3_GLASS, [3.27, 1.45, gwz], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 1.40, 1.14), LV3_SLATE_DARK, [3.25, 1.45, -1.78], [0, 0, 0], [1, 1, 1], 0.014);
+  for (const gwz of [-2.12, -1.78, -1.44]) {
+    const gPane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 1.20, 0.28), LV3_GLASS, [3.27, 1.45, gwz], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+    tagBaseWindowMesh(gPane, hangarWindowGlassMeshes, 'base-hangar-f1-front', 'civic', LV3_GLASS, 1);
   }
 
   // =========================================================================
@@ -29020,18 +35632,20 @@ export function buildMilitaryBaseMasterplan(
   // 3. Rear Left Bay 4-Pane Window (z in [-2.68, -0.58], y = 2.95), Rear Service Door (z = -1.15), & Level 3 Clerestory Windows (y = 5.95)
   addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 0.88, 2.14), LV3_SLATE_DARK, [-3.25, 2.95, -1.62], [0, 0, 0], [1, 1, 1], 0.014);
   for (const rwz of [-2.36, -1.86, -1.36, -0.86]) {
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 0.70, 0.42), LV3_GLASS, [-3.27, 2.95, rwz], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+    const rwPane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 0.70, 0.42), LV3_GLASS, [-3.27, 2.95, rwz], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+    tagBaseWindowMesh(rwPane, hangarWindowGlassMeshes, 'base-hangar-l2-rear', 'upper_floor', LV3_GLASS, 2);
   }
-  addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 1.74, 0.88), '#8b887e', [-3.26, 1.14, -1.15], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 2.18, 0.88), '#8b887e', [-3.26, 1.36, -1.15], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
   for (const cwz of [-1.85, 1.65]) {
     addBasePart(hangarGroup, new THREE.BoxGeometry(0.16, 0.46, 1.88), LV3_SLATE_DARK, [-2.82, 5.95, cwz], [0, 0, 0], [1, 1, 1], 0.012);
     for (const cOff of [-0.56, 0.0, 0.56]) {
-      addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 0.32, 0.50), LV3_GLASS, [-2.84, 5.95, cwz + cOff], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+      const cwPane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.18, 0.32, 0.50), LV3_GLASS, [-2.84, 5.95, cwz + cOff], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+      tagBaseWindowMesh(cwPane, hangarWindowGlassMeshes, 'base-hangar-l3-rear-clerestory', 'upper_floor', LV3_GLASS, 3);
     }
   }
 
   // =========================================================================
-  // LEFT SIDE ELEVATION (+Z): Warm Timber Cladding (Koushi), Level 2 3-Pane Window,
+  // LEFT SIDE ELEVATION (+Z): Warm Timber Cladding (Koushi), Level 2 Window,
   // Ground 2-Pane Window, Level 3 Dual Koushi Louver Bays, and Drainage Downspouts
   // =========================================================================
   // 1. Right Bay Full-Height Vertical Warm Timber Cladding (x in [+1.05, +2.85], y in [0.50, 4.42])
@@ -29039,16 +35653,18 @@ export function buildMilitaryBaseMasterplan(
   for (let i = 0; i < 12; i++) {
     addBasePart(hangarGroup, new THREE.BoxGeometry(0.068, 3.94, 0.18), LV3_CEDAR, [1.12 + i * 0.15, 2.47, 3.48], [0, 0, 0], [1, 1, 1], 0.006);
   }
-  // 2. Left Bay Upper 3-Pane Window (x in [-2.85, -0.25], y = 3.35), Timber Spandrel (y = 2.28), Lower Koushi & 2-Pane Window
-  addBasePart(hangarGroup, new THREE.BoxGeometry(2.64, 1.40, 0.16), LV3_SLATE_DARK, [-1.55, 3.35, 3.45], [0, 0, 0], [1, 1, 1], 0.016);
-  for (const wx of [-2.36, -1.55, -0.74]) {
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.74, 1.22, 0.18), LV3_GLASS, [wx, 3.35, 3.48], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+  // 2. Left Bay positioned inside [-1.92, -0.24] clear of concrete wing wall (-2.02) and center pier (-0.14)
+  addBasePart(hangarGroup, new THREE.BoxGeometry(1.66, 1.40, 0.16), LV3_SLATE_DARK, [-1.08, 3.35, 3.45], [0, 0, 0], [1, 1, 1], 0.016);
+  for (const wx of [-1.46, -0.70]) {
+    const lwPane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.68, 1.22, 0.18), LV3_GLASS, [wx, 3.35, 3.48], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(lwPane, hangarWindowGlassMeshes, 'base-hangar-l2-left', 'upper_floor', LV3_GLASS, 2);
   }
-  addBasePart(hangarGroup, new THREE.BoxGeometry(2.64, 0.26, 0.18), LV3_CEDAR, [-1.55, 2.28, 3.46], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
-  addBasePart(hangarGroup, new THREE.BoxGeometry(1.28, 1.62, 0.16), LV3_CEDAR, [-2.22, 1.28, 3.45], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
-  addBasePart(hangarGroup, new THREE.BoxGeometry(1.28, 1.50, 0.16), LV3_SLATE_DARK, [-0.88, 1.24, 3.45], [0, 0, 0], [1, 1, 1], 0.014);
-  for (const lwx of [-1.16, -0.60]) {
-    addBasePart(hangarGroup, new THREE.BoxGeometry(0.48, 1.30, 0.18), LV3_GLASS, [lwx, 1.24, 3.48], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(1.68, 0.26, 0.18), LV3_CEDAR, [-1.08, 2.28, 3.46], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.76, 1.62, 0.16), LV3_CEDAR, [-1.52, 1.28, 3.45], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.80, 1.50, 0.16), LV3_SLATE_DARK, [-0.66, 1.24, 3.45], [0, 0, 0], [1, 1, 1], 0.014);
+  for (const lwx of [-0.84, -0.48]) {
+    const lowPane = addBasePart(hangarGroup, new THREE.BoxGeometry(0.28, 1.30, 0.18), LV3_GLASS, [lwx, 1.24, 3.48], [0, 0, 0], [1, 1, 1], 0.006, lv1WindowPaneTex);
+    tagBaseWindowMesh(lowPane, hangarWindowGlassMeshes, 'base-hangar-f1-left', 'civic', LV3_GLASS, 1);
   }
   // 3. Level 3 Dual Upper Vertical Timber Louver (Koushi) Bays on +Z Wall (x = -1.65 and x = +1.65, y = 5.58)
   for (const ux of [-1.65, 1.65]) {
@@ -29077,17 +35693,17 @@ export function buildMilitaryBaseMasterplan(
   for (let ry = 0.48; ry <= 4.72; ry += 0.32) {
     addBasePart(hangarGroup, new THREE.CylinderGeometry(0.022, 0.022, 0.44, 6), LV3_SLATE_DARK, [lv3LadderX, ry, -3.76], [0, 0, Math.PI / 2], [1, 1, 1], 0);
   }
-  // Maintenance Catwalk Platform, Support Brackets & Railing on Right Half of -Z Wall (y = 2.38)
-  addBasePart(hangarGroup, new THREE.BoxGeometry(2.88, 0.14, 0.70), LV3_SLATE_DARK, [-1.35, 2.38, -3.76], [0, 0, 0], [1, 1, 1], 0.014, lv1SlateRoofTex);
+  // Maintenance Catwalk Platform, Support Brackets & Railing on Right Half of -Z Wall (y = 2.62, clears raised service door)
+  addBasePart(hangarGroup, new THREE.BoxGeometry(2.88, 0.14, 0.70), LV3_SLATE_DARK, [-1.35, 2.62, -3.76], [0, 0, 0], [1, 1, 1], 0.014, lv1SlateRoofTex);
   for (const cxPost of [-2.72, -1.80, -0.88, 0.04]) {
-    addBasePart(hangarGroup, new THREE.CylinderGeometry(0.03, 0.03, 0.50, 6), LV3_SLATE_DARK, [cxPost, 2.63, -4.06], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(hangarGroup, new THREE.CylinderGeometry(0.03, 0.03, 0.50, 6), LV3_SLATE_DARK, [cxPost, 2.87, -4.06], [0, 0, 0], [1, 1, 1], 0.008);
   }
-  addBasePart(hangarGroup, new THREE.BoxGeometry(2.88, 0.045, 0.045), LV3_SLATE_DARK, [-1.35, 2.86, -4.06], [0, 0, 0], [1, 1, 1], 0.008);
-  addBasePart(hangarGroup, new THREE.BoxGeometry(2.88, 0.045, 0.045), LV3_SLATE_DARK, [-1.35, 2.64, -4.06], [0, 0, 0], [1, 1, 1], 0.008);
-  // 3. Secure Service Access Door (x = -1.65, y = 1.18) with Slanted Timber/Metal Awning Hood & Stone Steps
-  addBasePart(hangarGroup, new THREE.BoxGeometry(1.08, 1.90, 0.16), LV3_PORTAL_DARK, [-1.65, 1.24, -3.46], [0, 0, 0], [1, 1, 1], 0.014);
-  addBasePart(hangarGroup, new THREE.BoxGeometry(0.88, 1.74, 0.18), '#948f82', [-1.65, 1.20, -3.48], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
-  addBasePart(hangarGroup, new THREE.BoxGeometry(1.42, 0.12, 0.62), LV3_CEDAR, [-1.65, 2.18, -3.72], [-0.22, 0, 0], [1, 1, 1], 0.014, lv1HorizTimberTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(2.88, 0.045, 0.045), LV3_SLATE_DARK, [-1.35, 3.10, -4.06], [0, 0, 0], [1, 1, 1], 0.008);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(2.88, 0.045, 0.045), LV3_SLATE_DARK, [-1.35, 2.88, -4.06], [0, 0, 0], [1, 1, 1], 0.008);
+  // 3. Secure Service Access Door (x = -1.65, 2.08m -> 3.08m world) with Slanted Timber/Metal Awning Hood & Stone Steps
+  addBasePart(hangarGroup, new THREE.BoxGeometry(1.08, 2.22, 0.16), LV3_PORTAL_DARK, [-1.65, 1.36, -3.46], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(0.88, 2.08, 0.18), '#948f82', [-1.65, 1.29, -3.48], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(hangarGroup, new THREE.BoxGeometry(1.42, 0.12, 0.62), LV3_CEDAR, [-1.65, 2.48, -3.72], [-0.22, 0, 0], [1, 1, 1], 0.014, lv1HorizTimberTex);
   addBasePart(hangarGroup, new THREE.BoxGeometry(1.24, 0.22, 0.56), LV3_STONE_PLINTH, [-1.65, 0.14, -3.72], [0, 0, 0], [1, 1, 1], 0.012, lv3AshlarStoneTex);
   // Level 3 Upper Service Door & Clerestory Louver Vent on -Z Wall (y = 5.48)
   addBasePart(hangarGroup, new THREE.BoxGeometry(0.86, 1.42, 0.16), LV3_PORTAL_DARK, [-1.55, 5.44, -3.12], [0, 0, 0], [1, 1, 1], 0.012, louverTex);
@@ -29143,30 +35759,29 @@ export function buildMilitaryBaseMasterplan(
   for (let pIdx = 0; pIdx < puffsCount; pIdx++) {
     const colorHex = CHIMNEY_SMOKE_PALETTE[pIdx % CHIMNEY_SMOKE_PALETTE.length];
     const puffGrp = new THREE.Group();
-    puffGrp.frustumCulled = false;
 
     const puffMesh = new THREE.Mesh(
       sharedChimneyPuffGeo,
       new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.95 }),
     );
-    puffMesh.frustumCulled = false;
+    puffMesh.frustumCulled = true;
     upgradeMeshToBlitzWorldMaterial(puffMesh, windUniforms, colorHex);
     const puffStroke = createBlitzStrokeMesh(sharedChimneyPuffGeo, 0.015);
     if (puffStroke) {
-      puffStroke.frustumCulled = false;
+      puffStroke.frustumCulled = true;
       puffMesh.add(puffStroke);
     }
     puffGrp.add(puffMesh);
 
     const subLobe = new THREE.Mesh(
       sharedChimneyPuffGeo,
-      new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.95 }),
+      puffMesh.material,
     );
     subLobe.scale.set(0.68, 0.62, 0.68);
     subLobe.position.set(0.20, 0.08, -0.14);
-    subLobe.frustumCulled = false;
-    upgradeMeshToBlitzWorldMaterial(subLobe, windUniforms, colorHex);
+    subLobe.frustumCulled = true;
     puffGrp.add(subLobe);
+    bakeStaticGroupMeshes(puffGrp);
 
     hangarSmokeContainer.add(puffGrp);
     const puffData: ChimneySmokePuff = {
@@ -29234,9 +35849,9 @@ export function buildMilitaryBaseMasterplan(
     parent.add(planterGrp);
 
     // Minimalist Concrete Planter Box + Dark Basalt Base Rim + Moss Bed
-    addBasePart(planterGrp, new THREE.BoxGeometry(boxW, 0.34, boxD), COL_PLANTER_CONC, [0, 0.17, 0], [0, 0, 0], [1, 1, 1], 0.014, lv1AndoPlasterTex);
-    addBasePart(planterGrp, new THREE.BoxGeometry(boxW + 0.04, 0.06, boxD + 0.04), COL_BASALT_DARK, [0, 0.34, 0], [0, 0, 0], [1, 1, 1], 0.01);
-    addBasePart(planterGrp, new THREE.BoxGeometry(boxW - 0.08, 0.06, boxD - 0.08), COL_BONSAI_LIGHT, [0, 0.36, 0], [0, 0, 0], [1, 1, 1], 0);
+    addBasePart(planterGrp, new RoundedBoxGeometry(boxW, 0.326, boxD, 2, 0.022), COL_PLANTER_CONC, [0, 0.175, 0], [0, 0, 0], [1, 1, 1], 0.014, lv1AndoPlasterTex);
+    addBasePart(planterGrp, new RoundedBoxGeometry(boxW + 0.04, 0.06, boxD + 0.04, 1, 0.012), COL_BASALT_DARK, [0, 0.345, 0], [0, 0, 0], [1, 1, 1], 0.01);
+    addBasePart(planterGrp, new RoundedBoxGeometry(boxW - 0.08, 0.06, boxD - 0.08, 1, 0.010), COL_BONSAI_LIGHT, [0, 0.365, 0], [0, 0, 0], [1, 1, 1], 0);
 
     // Gnarled S-Curved Bonsai Trunk & Branches
     addBasePart(planterGrp, new THREE.CylinderGeometry(0.055, 0.085, 0.52, 7), '#5c3e26', [-0.04, 0.58, 0], [0.12, 0, -0.24], [1, 1, 1], 0.01);
@@ -29263,32 +35878,32 @@ export function buildMilitaryBaseMasterplan(
   };
 
   // 1. Polished Basalt Stone Foundation Plinth, Column Pedestal Blocks & Stepped Entry Pads
-  addBasePart(barracksGroup, new THREE.BoxGeometry(5.12, 0.38, 6.48), COL_BASALT_PLINTH, [-0.04, 0.19, 0], [0, 0, 0], [1, 1, 1], 0.020, lv1BasaltPlinthTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(5.26, 0.10, 6.62), COL_BASALT_DARK, [-0.04, 0.05, 0], [0, 0, 0], [1, 1, 1], 0.014);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(5.18, 0.06, 6.54), COL_BASALT_DARK, [-0.04, 0.39, 0], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(5.12, 0.38, 6.48, 2, 0.024), COL_BASALT_PLINTH, [-0.04, 0.19, 0], [0, 0, 0], [1, 1, 1], 0.020, lv1BasaltPlinthTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(5.26, 0.10, 6.62, 1, 0.016), COL_BASALT_DARK, [-0.04, 0.056, 0], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(5.18, 0.06, 6.54, 1, 0.012), COL_BASALT_DARK, [-0.04, 0.388, 0], [0, 0, 0], [1, 1, 1], 0.012);
   // Front Polished Basalt Foundation Pads under Floating Engawa Deck (x = +2.88)
   for (const padZ of [-2.85, -1.55, 0.25, 1.65, 2.85]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.46, 0.34, 0.46), COL_BASALT_DARK, [2.88, 0.17, padZ], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.46, 0.320, 0.46, 2, 0.018), COL_BASALT_DARK, [2.88, 0.180, padZ], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
   }
   // Front Center Stepped Stone Threshold in front of Glazed Sliding Panels (z = -0.68)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.64, 0.14, 1.58), COL_BASALT_PLINTH, [3.34, 0.07, -0.68], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.44, 0.26, 1.40), COL_BASALT_PLINTH, [3.18, 0.13, -0.68], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.64, 0.14, 1.58, 2, 0.018), COL_BASALT_PLINTH, [3.34, 0.07, -0.68], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.44, 0.26, 1.40, 2, 0.018), COL_BASALT_PLINTH, [3.18, 0.13, -0.68], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
 
   // 2. Floating Engawa Wooden Deck (Front +X, wrapping Left Side +Z, and visible Rear Side Deck Ends z = ±3.28)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(1.06, 0.14, 6.68), COL_KUMA_CEDAR, [2.66, 0.39, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1HorizTimberTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(1.10, 0.05, 6.72), COL_KUMA_CEDAR_DARK, [2.66, 0.31, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(1.06, 0.14, 6.68, 2, 0.020), COL_KUMA_CEDAR, [2.66, 0.39, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1HorizTimberTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(1.10, 0.05, 6.72, 1, 0.012), COL_KUMA_CEDAR_DARK, [2.66, 0.31, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
   // Left Side (+Z) Continuation of Floating Engawa Deck & Steps
-  addBasePart(barracksGroup, new THREE.BoxGeometry(4.20, 0.14, 0.72), COL_KUMA_CEDAR, [1.02, 0.39, 3.08], [0, 0, 0], [1, 1, 1], 0.016, lv1HorizTimberTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.56, 0.16, 0.70), COL_BASALT_PLINTH, [3.36, 0.08, 3.08], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(4.20, 0.14, 0.72, 2, 0.020), COL_KUMA_CEDAR, [1.02, 0.39, 3.08], [0, 0, 0], [1, 1, 1], 0.016, lv1HorizTimberTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.56, 0.16, 0.70, 2, 0.018), COL_BASALT_PLINTH, [3.36, 0.08, 3.08], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
   // Side Cantilevered Engawa Bench/Deck Ends visible at Left & Right ends of Rear Elevation (z = ±3.26)
   for (const endSign of [-1, 1]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.92, 0.12, 0.44), COL_KUMA_CEDAR, [-1.92, 0.42, endSign * 3.24], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.84, 0.28, 0.38), COL_BASALT_PLINTH, [-1.92, 0.14, endSign * 3.22], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.92, 0.12, 0.44, 2, 0.016), COL_KUMA_CEDAR, [-1.92, 0.42, endSign * 3.24], [0, 0, 0], [1, 1, 1], 0.012, lv1HorizTimberTex);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.84, 0.28, 0.38, 2, 0.016), COL_BASALT_PLINTH, [-1.92, 0.14, endSign * 3.22], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
   }
 
   // 3. Main Ground-Floor Architectural Core (Pristine White Plaster Facade + Exposed Cedar Columns)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(4.48, 2.38, 5.88), COL_ANDO_PLASTER, [-0.04, 1.59, -0.04], [0, 0, 0], [1, 1, 1], 0.022, lv1AndoPlasterTex);
-  // Exposed Structural Warm Timber Corner & Bay Columns + Horizontal Nageshi / Sill Beams
+  addBasePart(barracksGroup, new RoundedBoxGeometry(4.48, 2.38, 5.88, 2, 0.028), COL_ANDO_PLASTER, [-0.04, 1.59, -0.04], [0, 0, 0], [1, 1, 1], 0.022, lv1AndoPlasterTex);
+  // Exposed Structural Warm Timber Corner & Bay Columns + Horizontal Nageshi / Sill Beams (2.396m height clears plaster Ymin/Ymax by 8mm)
   for (const [cx, cz] of [
     [2.21, -2.96],
     [2.21, -2.16],
@@ -29300,48 +35915,49 @@ export function buildMilitaryBaseMasterplan(
     [-2.29, 2.86],
     [2.88, 2.88], // Front-left Engawa porch post
   ] as [number, number][]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.18, 2.38, 0.18), COL_KUMA_CEDAR_DARK, [cx, 1.59, cz], [0, 0, 0], [1, 1, 1], 0.014);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.18, 2.396, 0.18, 1, 0.016), COL_KUMA_CEDAR_DARK, [cx, 1.59, cz], [0, 0, 0], [1, 1, 1], 0.014);
     // Dressed basalt column base shoe (tsuka-ishi)
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.24, 0.10, 0.24), COL_BASALT_DARK, [cx, 0.43, cz], [0, 0, 0], [1, 1, 1], 0.01);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.24, 0.104, 0.24, 1, 0.012), COL_BASALT_DARK, [cx, 0.424, cz], [0, 0, 0], [1, 1, 1], 0.01);
   }
 
   // =========================================================================
   // FRONT ELEVATION (+X): Minimalist Glazed Sliding Panels, Vertical Timber Louvers (Koushi),
   // Exterior Wall Sconces, Rain Chains, and Twin Corner Bonsai Planter Boxes
   // =========================================================================
-  // A. Minimalist Glazed Sliding Panels (z in [-2.12, +0.52], y in [0.46, 2.68])
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 2.22, 2.66), COL_SLATE_ZINC_DARK, [2.20, 1.56, -0.80], [0, 0, 0], [1, 1, 1], 0.014);
+  // A. Minimalist Glazed Sliding Panels (z in [-2.05, +0.45] clearing cedar columns -2.07 / +0.47, y in [0.46, 2.68])
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 2.22, 2.50, 2, 0.016), COL_SLATE_ZINC_DARK, [2.20, 1.56, -0.80], [0, 0, 0], [1, 1, 1], 0.014);
   // Warm interior shoji screen backing behind glass
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.08, 2.08, 2.48), COL_SHOJI_WARM, [2.16, 1.56, -0.80], [0, 0, 0], [1, 1, 1], 0);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.08, 2.08, 2.36, 1, 0.010), COL_SHOJI_WARM, [2.16, 1.56, -0.80], [0, 0, 0], [1, 1, 1], 0);
   // 2 Large Sliding Glass Door Panels with dark anodized frames & brushed steel handles
   for (const [paneZ, xOff] of [
     [-1.42, 2.23],
     [-0.18, 2.25],
   ] as [number, number][]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.06, 2.10, 1.24), COL_SLATE_ZINC_DARK, [xOff, 1.56, paneZ], [0, 0, 0], [1, 1, 1], 0.012);
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.07, 1.96, 1.10), COL_GLASS_SLIDE, [xOff + 0.01, 1.56, paneZ], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
-    // Subtle vertical & horizontal interior shoji kumiko lattice strips
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.075, 1.96, 0.03), COL_SHOJI_WARM, [xOff + 0.012, 1.56, paneZ], [0, 0, 0], [1, 1, 1], 0);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.06, 2.10, 1.24, 1, 0.010), COL_SLATE_ZINC_DARK, [xOff, 1.56, paneZ], [0, 0, 0], [1, 1, 1], 0.012);
+    const slideGlass = addBasePart(barracksGroup, new RoundedBoxGeometry(0.07, 1.96, 1.10, 1, 0.008), COL_GLASS_SLIDE, [xOff + 0.01, 1.56, paneZ], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    tagBaseWindowMesh(slideGlass, barracksWindowGlassMeshes, 'base-barracks-f1-front-slide', 'storefront', COL_GLASS_SLIDE, 1);
+    // Subtle vertical & horizontal interior shoji kumiko lattice strips (inset by 8mm vertically from glass frame)
+    addBasePart(barracksGroup, new THREE.BoxGeometry(0.075, 1.944, 0.03), COL_SHOJI_WARM, [xOff + 0.012, 1.56, paneZ], [0, 0, 0], [1, 1, 1], 0);
     addBasePart(barracksGroup, new THREE.BoxGeometry(0.075, 0.03, 1.08), COL_SHOJI_WARM, [xOff + 0.012, 1.18, paneZ], [0, 0, 0], [1, 1, 1], 0);
   }
 
   // B. Front Vertical Timber Louvers (Koushi Screen on Left-Center Bay: z in [+0.62, +2.12])
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.10, 2.22, 1.52), COL_BASALT_DARK, [2.18, 1.56, 1.37], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.10, 2.22, 1.52, 1, 0.012), COL_BASALT_DARK, [2.18, 1.56, 1.37], [0, 0, 0], [1, 1, 1], 0.012);
   for (let i = 0; i < 12; i++) {
     const lz = 0.67 + i * 0.126;
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.12, 2.24, 0.052), COL_KUMA_CEDAR, [2.24, 1.56, lz], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.12, 2.24, 0.052, 1, 0.008), COL_KUMA_CEDAR, [2.24, 1.56, lz], [0, 0, 0], [1, 1, 1], 0.008);
   }
 
   // C. Modern Exterior Wall Sconces on Left (z = +2.52) and Right (z = -2.56) White Plaster Piers
   for (const sconceZ of [-2.56, 2.52]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.12, 0.36, 0.16), COL_SLATE_ZINC_DARK, [2.24, 1.72, sconceZ], [0, 0, 0], [1, 1, 1], 0.01);
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.13, 0.24, 0.10), '#ffe6a3', [2.25, 1.72, sconceZ], [0, 0, 0], [1, 1, 1], 0);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.12, 0.36, 0.16, 1, 0.012), COL_SLATE_ZINC_DARK, [2.24, 1.72, sconceZ], [0, 0, 0], [1, 1, 1], 0.01);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.13, 0.24, 0.10, 1, 0.008), '#ffe6a3', [2.25, 1.72, sconceZ], [0, 0, 0], [1, 1, 1], 0);
   }
 
   // D. Lower Cantilevered Perimeter Eave Canopy (Slate Zinc Fascia + Warm Natural Timber Soffit)
   // Positioned at y = 2.74..2.88 with rear overhang x = -2.66 so the rear transom windows at y = 2.36 remain clearly visible!
-  addBasePart(barracksGroup, new THREE.BoxGeometry(5.88, 0.10, 7.28), COL_KUMA_SOFFIT, [0.28, 2.75, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1HorizTimberTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(5.98, 0.13, 7.38), COL_SLATE_ZINC, [0.28, 2.84, 0.0], [0, 0, 0], [1, 1, 1], 0.018, lv1SlateRoofTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(5.88, 0.10, 7.28, 2, 0.016), COL_KUMA_SOFFIT, [0.28, 2.75, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1HorizTimberTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(5.98, 0.13, 7.38, 2, 0.020), COL_SLATE_ZINC, [0.28, 2.84, 0.0], [0, 0, 0], [1, 1, 1], 0.018, lv1SlateRoofTex);
 
   // E. Rain Chains (Kusari-doi) & Front Left/Right Minimalist Concrete Planter Boxes with Bonsai
   for (const sideSign of [-1, 1]) {
@@ -29358,17 +35974,18 @@ export function buildMilitaryBaseMasterplan(
   // (Standing-Seam Slate Zinc Roof + Angled Warm Natural Timber Soffit Wings)
   // =========================================================================
   // Clerestory Recessed Core (y in [2.90, 3.64])
-  addBasePart(barracksGroup, new THREE.BoxGeometry(4.16, 0.76, 5.72), COL_ANDO_PLASTER, [-0.04, 3.28, -0.04], [0, 0, 0], [1, 1, 1], 0.018, lv1AndoPlasterTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(4.16, 0.76, 5.72, 2, 0.022), COL_ANDO_PLASTER, [-0.04, 3.28, -0.04], [0, 0, 0], [1, 1, 1], 0.018, lv1AndoPlasterTex);
 
   // Front (+X) High Clerestory Ribbon Windows (right bay z in [-2.12, +0.52]) & Upper Koushi Louvers (left bay z in [+0.62, +2.12])
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.12, 0.52, 2.64), COL_SLATE_ZINC_DARK, [2.04, 3.28, -0.80], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.12, 0.52, 2.64, 1, 0.012), COL_SLATE_ZINC_DARK, [2.04, 3.28, -0.80], [0, 0, 0], [1, 1, 1], 0.012);
   for (const cwz of [-1.66, -0.80, 0.06]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.38, 0.78), COL_GLASS_SLIDE, [2.05, 3.28, cwz], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    const cwPane = addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.38, 0.78, 1, 0.008), COL_GLASS_SLIDE, [2.05, 3.28, cwz], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    tagBaseWindowMesh(cwPane, barracksWindowGlassMeshes, 'base-barracks-f2-front-clerestory', 'upper_floor', COL_GLASS_SLIDE, 2);
   }
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.10, 0.52, 1.52), COL_BASALT_DARK, [2.02, 3.28, 1.37], [0, 0, 0], [1, 1, 1], 0.01);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.10, 0.52, 1.52, 1, 0.010), COL_BASALT_DARK, [2.02, 3.28, 1.37], [0, 0, 0], [1, 1, 1], 0.01);
   for (let i = 0; i < 12; i++) {
     const lz = 0.67 + i * 0.126;
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.12, 0.52, 0.05), COL_KUMA_CEDAR, [2.06, 3.28, lz], [0, 0, 0], [1, 1, 1], 0.006);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.12, 0.52, 0.05, 1, 0.008), COL_KUMA_CEDAR, [2.06, 3.28, lz], [0, 0, 0], [1, 1, 1], 0.006);
   }
 
   // Triangular Gable Tympanum Walls on Left (+Z) and Right (-Z) Elevations (low-pitch gable peak at x = -0.04, y = 4.34)
@@ -29399,7 +36016,7 @@ export function buildMilitaryBaseMasterplan(
     // Warm Natural Timber Soffit Underside
     addBasePart(
       barracksGroup,
-      new THREE.BoxGeometry(slopeLen, 0.09, 7.32),
+      new RoundedBoxGeometry(slopeLen, 0.09, 7.32, 2, 0.014),
       COL_KUMA_SOFFIT,
       [cx, cy - 0.05, 0.0],
       [0, 0, tiltZ],
@@ -29410,7 +36027,7 @@ export function buildMilitaryBaseMasterplan(
     // Textured Slate Zinc Upper Roof Deck & Fascia
     addBasePart(
       barracksGroup,
-      new THREE.BoxGeometry(slopeLen + 0.10, 0.12, 7.44),
+      new RoundedBoxGeometry(slopeLen + 0.10, 0.12, 7.44, 2, 0.018),
       COL_SLATE_ZINC,
       [cx, cy + 0.04, 0.0],
       [0, 0, tiltZ],
@@ -29422,7 +36039,7 @@ export function buildMilitaryBaseMasterplan(
     for (let sz = -3.36; sz <= 3.37; sz += 0.56) {
       addBasePart(
         barracksGroup,
-        new THREE.BoxGeometry(slopeLen + 0.06, 0.045, 0.045),
+        new RoundedBoxGeometry(slopeLen + 0.06, 0.045, 0.045, 1, 0.008),
         COL_SLATE_ZINC_DARK,
         [cx, cy + 0.11, sz],
         [0, 0, tiltZ],
@@ -29434,7 +36051,7 @@ export function buildMilitaryBaseMasterplan(
     const eaveEdgeX = -0.04 + xSide * (slopeSpanX * 0.98);
     addBasePart(
       barracksGroup,
-      new THREE.BoxGeometry(0.14, 0.15, 7.48),
+      new RoundedBoxGeometry(0.14, 0.15, 7.48, 2, 0.016),
       COL_SLATE_ZINC_DARK,
       [eaveEdgeX, 3.63, 0.0],
       [0, 0, 0],
@@ -29443,28 +36060,23 @@ export function buildMilitaryBaseMasterplan(
     );
   }
   // Central Slate-Zinc Roof Ridge Cap Beam along Z
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.34, 0.13, 7.48), COL_SLATE_ZINC_DARK, [-0.04, 4.38, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.34, 0.13, 7.48, 2, 0.018), COL_SLATE_ZINC_DARK, [-0.04, 4.38, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
 
   // =========================================================================
   // REAR ELEVATION (-X, Primary Isometric Camera View in media_1793874066313_c17f49fd.png):
-  // 1:1 with Rear Elevation in media_1793865876424_cbec31b6.jpg:
-  // - Warm Natural Timber Soffit Wing Panels framing the 5-Pane High Clerestory Ribbon Windows
-  // - 4-Pane Lower Transom Ribbon Windows (2 Left Bay, 2 Right Bay) clearly visible below lower eave
-  // - Modern Horizontal Timber Cladding (Textured + 3D Shiplap Cedar Planks & Structural Beams)
-  // - Flush Rear Service Door with Dark Zinc Frame, Lever Handle & Stepped Basalt Entry Stairs
-  // - Concealed Rainwater Downspouts with Collector Hoppers & Pipe Brackets at both rear corners
   // =========================================================================
   // 1. Upper Clerestory 5-Pane Ribbon Windows (y = 3.28, z in [-2.22, +2.22]) + Warm Natural Timber Soffit Wing Panels (z in [±2.24, ±3.48])
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.50, 4.48), COL_SLATE_ZINC_DARK, [-2.14, 3.28, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.50, 4.48, 1, 0.014), COL_SLATE_ZINC_DARK, [-2.14, 3.28, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
   for (const rwz of [-1.76, -0.88, 0.0, 0.88, 1.76]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.16, 0.36, 0.78), COL_GLASS_SLIDE, [-2.15, 3.28, rwz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    const rwPane = addBasePart(barracksGroup, new RoundedBoxGeometry(0.16, 0.36, 0.78, 1, 0.008), COL_GLASS_SLIDE, [-2.15, 3.28, rwz], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+    tagBaseWindowMesh(rwPane, barracksWindowGlassMeshes, 'base-barracks-f2-rear-clerestory', 'upper_floor', COL_GLASS_SLIDE, 2);
   }
   // Angled Warm Natural Timber Soffit Wing Panels flanking the Clerestory Ribbon Windows on Rear (-X) and Front (+X)
   for (const wingSign of [-1, 1]) {
     const wingZ = wingSign * 2.84;
     addBasePart(
       barracksGroup,
-      new THREE.BoxGeometry(0.18, 0.48, 1.18),
+      new RoundedBoxGeometry(0.18, 0.48, 1.18, 2, 0.016),
       COL_KUMA_SOFFIT,
       [-2.18, 3.30, wingZ],
       [wingSign * 0.14, 0, 0],
@@ -29474,7 +36086,7 @@ export function buildMilitaryBaseMasterplan(
     );
     addBasePart(
       barracksGroup,
-      new THREE.BoxGeometry(0.18, 0.48, 1.18),
+      new RoundedBoxGeometry(0.18, 0.48, 1.18, 2, 0.016),
       COL_KUMA_SOFFIT,
       [2.08, 3.30, wingZ],
       [wingSign * 0.14, 0, 0],
@@ -29485,67 +36097,69 @@ export function buildMilitaryBaseMasterplan(
   }
 
   // 2. Horizontal Cedar Structural Sill, Mid-Transom Rail (y = 2.14), and Top Eave Beam (y = 2.64) on Rear Wall (-X)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.10, 5.76), COL_KUMA_CEDAR_DARK, [-2.29, 0.45, -0.02], [0, 0, 0], [1, 1, 1], 0.010);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.16, 0.11, 5.76), COL_KUMA_CEDAR_DARK, [-2.29, 2.14, -0.02], [0, 0, 0], [1, 1, 1], 0.012);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.16, 0.10, 5.76), COL_KUMA_CEDAR_DARK, [-2.29, 2.64, -0.02], [0, 0, 0], [1, 1, 1], 0.010);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.10, 5.76, 1, 0.012), COL_KUMA_CEDAR_DARK, [-2.29, 0.45, -0.02], [0, 0, 0], [1, 1, 1], 0.010);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.16, 0.11, 5.76, 1, 0.012), COL_KUMA_CEDAR_DARK, [-2.29, 2.14, -0.02], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.16, 0.10, 5.76, 1, 0.012), COL_KUMA_CEDAR_DARK, [-2.29, 2.64, -0.02], [0, 0, 0], [1, 1, 1], 0.010);
 
   // 3. Lower 4-Pane Transom Ribbon Window Band (y = 2.39, between y = 2.19 and y = 2.59 — 2 panes in Left Bay, 2 panes in Right Bay)
   for (const baySign of [-1, 1]) {
     const bayCenterZ = baySign * 1.43;
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.40, 2.68), COL_SLATE_ZINC_DARK, [-2.29, 2.39, bayCenterZ], [0, 0, 0], [1, 1, 1], 0.012);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.40, 2.68, 1, 0.012), COL_SLATE_ZINC_DARK, [-2.29, 2.39, bayCenterZ], [0, 0, 0], [1, 1, 1], 0.012);
     for (const subSign of [-1, 1]) {
       const paneZ = bayCenterZ + subSign * 0.65;
-      addBasePart(barracksGroup, new THREE.BoxGeometry(0.16, 0.28, 1.18), COL_GLASS_SLIDE, [-2.31, 2.39, paneZ], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+      const trPane = addBasePart(barracksGroup, new RoundedBoxGeometry(0.16, 0.28, 1.18, 1, 0.008), COL_GLASS_SLIDE, [-2.31, 2.39, paneZ], [0, 0, 0], [1, 1, 1], 0.008, lv1WindowPaneTex);
+      tagBaseWindowMesh(trPane, barracksWindowGlassMeshes, 'base-barracks-f1-rear-transom', 'upper_floor', COL_GLASS_SLIDE, 1);
     }
   }
 
-  // 4. Modern Horizontal Timber Cladding (y = 0.50..2.08 across Left Bay z in [-2.82, -0.09] and Right Bay z in [+0.09, +2.80])
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.06, 1.60, 5.66), COL_KUMA_CEDAR, [-2.27, 1.30, -0.02], [0, 0, 0], [1, 1, 1], 0, lv1HorizTimberTex);
+  // 4. Modern Horizontal Timber Cladding (y = 0.50..2.08 across Left Bay z in [-2.82, -0.09] and Right Bay z in [+0.09, +2.80]; backing inset by 10mm from planks)
+  addBasePart(barracksGroup, new THREE.BoxGeometry(0.06, 1.60, 5.64), COL_KUMA_CEDAR, [-2.27, 1.30, -0.02], [0, 0, 0], [1, 1, 1], 0, lv1HorizTimberTex);
   for (let row = 0; row < 9; row++) {
     const py = 0.56 + row * 0.175;
     const plankCol = row % 2 === 0 ? COL_KUMA_CEDAR : COL_KUMA_CEDAR_ALT;
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.09, 0.145, 5.66), plankCol, [-2.29, py, -0.02], [0, 0, 0], [1, 1, 1], 0.008, lv1HorizTimberTex);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.09, 0.145, 5.66, 1, 0.008), plankCol, [-2.29, py, -0.02], [0, 0, 0], [1, 1, 1], 0.008, lv1HorizTimberTex);
   }
 
-  // 5. Flush Rear Service Door (Right Bay of Rear Elevation: z = +1.44, y = 0.42..2.12) + Stepped Basalt Entry Stairs
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.16, 1.74, 0.98), COL_SLATE_ZINC_DARK, [-2.31, 1.28, 1.44], [0, 0, 0], [1, 1, 1], 0.014);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.18, 1.62, 0.84), '#7b8088', [-2.32, 1.26, 1.44], [0, 0, 0], [1, 1, 1], 0.012);
+  // 5. Flush Rear Service Door (Right Bay of Rear Elevation: z = +1.44, 1.98 -> 3.29m world) + Stepped Basalt Entry Stairs
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.16, 2.12, 0.98, 2, 0.016), COL_SLATE_ZINC_DARK, [-2.31, 1.46, 1.44], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.18, 1.98, 0.84, 1, 0.014), '#7b8088', [-2.32, 1.43, 1.44], [0, 0, 0], [1, 1, 1], 0.012);
   // Subtle recessed inner door panel & brushed dark zinc lever handle
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.19, 1.46, 0.68), '#858a92', [-2.325, 1.26, 1.44], [0, 0, 0], [1, 1, 1], 0.006);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.22, 0.045, 0.15), COL_SLATE_ZINC_DARK, [-2.35, 1.20, 1.15], [0, 0, 0], [1, 1, 1], 0.008);
-  // 2-Tier Stepped Basalt Stone Rear Entry Stairs (tucked cleanly within building perimeter)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.46, 0.26, 1.18), COL_BASALT_PLINTH, [-2.54, 0.13, 1.44], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.68, 0.12, 1.32), COL_BASALT_DARK, [-2.70, 0.06, 1.44], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.19, 1.80, 0.68, 1, 0.010), '#858a92', [-2.325, 1.43, 1.44], [0, 0, 0], [1, 1, 1], 0.006);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.22, 0.045, 0.15, 1, 0.008), COL_SLATE_ZINC_DARK, [-2.35, 1.46, 1.15], [0, 0, 0], [1, 1, 1], 0.008);
+  // 2-Tier Stepped Basalt Stone Rear Entry Stairs (staggered yMin to eliminate coplanar ground plane)
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.46, 0.25, 1.18, 2, 0.016), COL_BASALT_PLINTH, [-2.54, 0.135, 1.44], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.68, 0.12, 1.32, 2, 0.016), COL_BASALT_DARK, [-2.70, 0.06, 1.44], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
 
   // 6. Concealed Rainwater Downspouts at Left & Right Rear Corners (z = -2.92 and z = +2.86) with Collector Hoppers & Wall Brackets
   for (const dSide of [-2.92, 2.86]) {
     // Vertical rainwater downspout pipe
     addBasePart(barracksGroup, new THREE.CylinderGeometry(0.042, 0.042, 2.38, 8), COL_SLATE_ZINC_DARK, [-2.38, 1.56, dSide], [0, 0, 0], [1, 1, 1], 0.01);
     // Upper rainwater collector hopper box under lower eave
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.16, 0.14), COL_SLATE_ZINC_DARK, [-2.38, 2.66, dSide], [0, 0, 0], [1, 1, 1], 0.01);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.16, 0.14, 1, 0.012), COL_SLATE_ZINC_DARK, [-2.38, 2.66, dSide], [0, 0, 0], [1, 1, 1], 0.01);
     // 3 Pipe wall mounting brackets
     for (const by of [0.82, 1.56, 2.28]) {
-      addBasePart(barracksGroup, new THREE.BoxGeometry(0.12, 0.05, 0.11), COL_SLATE_ZINC, [-2.35, by, dSide], [0, 0, 0], [1, 1, 1], 0.006);
+      addBasePart(barracksGroup, new RoundedBoxGeometry(0.12, 0.05, 0.11, 1, 0.008), COL_SLATE_ZINC, [-2.35, by, dSide], [0, 0, 0], [1, 1, 1], 0.006);
     }
   }
 
   // =========================================================================
   // LEFT SIDE ELEVATION (+Z): Modern Timber Screening (Koushi) Window Bay, Gable Framing & Side Bonsai Planter
   // =========================================================================
-  // Recessed Timber Window Frame (x in [-0.78, +1.08], y in [0.82, 2.26], z = +2.86)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(1.94, 1.48, 0.14), COL_KUMA_CEDAR_DARK, [0.15, 1.54, 2.86], [0, 0, 0], [1, 1, 1], 0.016);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(1.80, 1.34, 0.10), COL_GLASS_SLIDE, [0.15, 1.54, 2.84], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(2.14, 0.10, 0.28), COL_SLATE_ZINC_DARK, [0.15, 2.30, 2.92], [0, 0, 0], [1, 1, 1], 0.012);
+  // Timber Window Frame & Glass flush proud of plaster wall zMax = +2.90 (zero buried panes!)
+  addBasePart(barracksGroup, new RoundedBoxGeometry(1.94, 1.48, 0.10, 2, 0.016), COL_KUMA_CEDAR_DARK, [0.15, 1.54, 2.94], [0, 0, 0], [1, 1, 1], 0.016);
+  const leftSideGlass = addBasePart(barracksGroup, new RoundedBoxGeometry(1.80, 1.34, 0.04, 1, 0.008), COL_GLASS_SLIDE, [0.15, 1.54, 2.93], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+  tagBaseWindowMesh(leftSideGlass, barracksWindowGlassMeshes, 'base-barracks-f1-left', 'upper_floor', COL_GLASS_SLIDE, 1);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(2.14, 0.10, 0.18, 1, 0.014), COL_SLATE_ZINC_DARK, [0.15, 2.30, 2.98], [0, 0, 0], [1, 1, 1], 0.012);
   // Vertical Koushi slats on left half (x in [+0.15, +0.98]) + Horizontal shutter slats on right half (x in [-0.68, +0.12])
   for (let i = 0; i < 7; i++) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.055, 1.34, 0.16), COL_KUMA_CEDAR, [0.22 + i * 0.12, 1.54, 2.89], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.055, 1.34, 0.06, 1, 0.008), COL_KUMA_CEDAR, [0.22 + i * 0.12, 1.54, 2.965], [0, 0, 0], [1, 1, 1], 0.008);
   }
   for (let j = 0; j < 8; j++) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.76, 0.07, 0.16), COL_KUMA_CEDAR, [-0.28, 0.96 + j * 0.16, 2.89], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.76, 0.07, 0.06, 1, 0.008), COL_KUMA_CEDAR, [-0.28, 0.96 + j * 0.16, 2.965], [0, 0, 0], [1, 1, 1], 0.008);
   }
   // Left Side Wall Sconce + Side Bonsai Planter Box at Rear-Left (-X, +Z)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.34, 0.12), COL_SLATE_ZINC_DARK, [1.56, 1.74, 2.88], [0, 0, 0], [1, 1, 1], 0.01);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.10, 0.22, 0.13), '#ffe6a3', [1.56, 1.74, 2.89], [0, 0, 0], [1, 1, 1], 0);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.34, 0.12, 1, 0.012), COL_SLATE_ZINC_DARK, [1.56, 1.74, 2.88], [0, 0, 0], [1, 1, 1], 0.01);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.10, 0.22, 0.13, 1, 0.008), '#ffe6a3', [1.56, 1.74, 2.89], [0, 0, 0], [1, 1, 1], 0);
   addJapaneseBonsaiPlanter(barracksGroup, -1.35, 0.0, 3.24, 1.32, 0.56, 1.0);
 
   // =========================================================================
@@ -29553,21 +36167,21 @@ export function buildMilitaryBaseMasterplan(
   // =========================================================================
   // Gable-Peak Vertical Timber Struts & Louver Screen on BOTH +Z and -Z Gable Tympanums
   for (const gableZ of [-2.94, 2.86]) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.14, 0.70, 0.12), COL_KUMA_CEDAR_DARK, [-0.04, 3.95, gableZ], [0, 0, 0], [1, 1, 1], 0.01);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.14, 0.70, 0.12, 1, 0.012), COL_KUMA_CEDAR_DARK, [-0.04, 3.95, gableZ], [0, 0, 0], [1, 1, 1], 0.01);
     for (const gx of [-0.92, 0.84]) {
-      addBasePart(barracksGroup, new THREE.BoxGeometry(0.12, 0.42, 0.12), COL_KUMA_CEDAR_DARK, [gx, 3.81, gableZ], [0, 0, 0], [1, 1, 1], 0.01);
+      addBasePart(barracksGroup, new RoundedBoxGeometry(0.12, 0.42, 0.12, 1, 0.012), COL_KUMA_CEDAR_DARK, [gx, 3.81, gableZ], [0, 0, 0], [1, 1, 1], 0.01);
     }
     // Horizontal tie-beam at base of gable triangle
-    addBasePart(barracksGroup, new THREE.BoxGeometry(4.36, 0.10, 0.12), COL_KUMA_CEDAR_DARK, [-0.04, 3.62, gableZ], [0, 0, 0], [1, 1, 1], 0.01);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(4.36, 0.10, 0.12, 1, 0.012), COL_KUMA_CEDAR_DARK, [-0.04, 3.62, gableZ], [0, 0, 0], [1, 1, 1], 0.01);
   }
   // Front-Left Bay Vertical Timber Louvers wrapping the -Z side (x in [+0.82, +2.14], z = -3.02)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(1.36, 2.22, 0.10), COL_BASALT_DARK, [1.48, 1.56, -2.98], [0, 0, 0], [1, 1, 1], 0.01);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(1.36, 2.22, 0.10, 1, 0.012), COL_BASALT_DARK, [1.48, 1.56, -2.98], [0, 0, 0], [1, 1, 1], 0.01);
   for (let i = 0; i < 9; i++) {
-    addBasePart(barracksGroup, new THREE.BoxGeometry(0.055, 2.24, 0.12), COL_KUMA_CEDAR, [0.88 + i * 0.15, 1.56, -3.01], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(barracksGroup, new RoundedBoxGeometry(0.055, 2.24, 0.12, 1, 0.008), COL_KUMA_CEDAR, [0.88 + i * 0.15, 1.56, -3.01], [0, 0, 0], [1, 1, 1], 0.008);
   }
   // Flush Utility Access Panel at Rear-Right of -Z wall (x = -1.48, y = 1.16, z = -3.00)
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.86, 1.34, 0.10), COL_SLATE_ZINC_DARK, [-1.48, 1.16, -2.99], [0, 0, 0], [1, 1, 1], 0.012);
-  addBasePart(barracksGroup, new THREE.BoxGeometry(0.74, 1.22, 0.12), '#dfdcd4', [-1.48, 1.16, -3.00], [0, 0, 0], [1, 1, 1], 0.01, lv1AndoPlasterTex);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.86, 1.34, 0.10, 1, 0.012), COL_SLATE_ZINC_DARK, [-1.48, 1.16, -2.99], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(barracksGroup, new RoundedBoxGeometry(0.74, 1.22, 0.12, 1, 0.010), '#dfdcd4', [-1.48, 1.16, -3.00], [0, 0, 0], [1, 1, 1], 0.01, lv1AndoPlasterTex);
 
   // Keep barracksTurbinePivot group reference valid without placing an unwanted black cylinder on the roof
   const barracksTurbinePivot = new THREE.Group();
@@ -29750,7 +36364,8 @@ export function buildMilitaryBaseMasterplan(
   // Outward-slanted 4-sided glass enclosure (wider at top than bottom, matching blueprint!)
   const slantedCabinGeo = new THREE.CylinderGeometry(1.68, 1.48, 0.94, 4);
   slantedCabinGeo.rotateY(Math.PI / 4);
-  addBasePart(towerRoot, slantedCabinGeo, '#ffffff', [0, towerH + 1.40, 0], [0, 0, 0], [1, 1, 1], 0.018, win3PaneTex);
+  const cabinGlassMesh = addBasePart(towerRoot, slantedCabinGeo, '#ffffff', [0, towerH + 1.40, 0], [0, 0, 0], [1, 1, 1], 0.018, win3PaneTex);
+  tagBaseWindowMesh(cabinGlassMesh, checkpointWindowGlassMeshes, 'base-watchtower-cabin', 'civic', '#8fb9c4', 3);
   // 4 Slanted Corner Cabin Mullions
   for (const cx of [-1, 1]) {
     for (const cz of [-1, 1]) {
@@ -29939,18 +36554,18 @@ export function buildMilitaryBaseMasterplan(
   // Bake static meshes & outlines per building group (cutting thousands of draw calls to ~20 while preserving animations & buildingViewMode!)
   bakeStaticGroupMeshes(radarPivotGroup, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(hqGroup, {
-    excludeObjects: new Set<THREE.Object3D>([radarPivotGroup, ...acFanBlades]),
+    excludeObjects: new Set<THREE.Object3D>([radarPivotGroup, ...acFanBlades, ...hqWindowGlassMeshes]),
     minShadowCasterSpan: 0.55,
   });
   bakeStaticGroupMeshes(lv3DishClone, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(lv3PlanarRadar, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(hangarGroup, {
-    excludeObjects: new Set<THREE.Object3D>([hangarSmokeContainer, lv3DishClone, lv3PlanarRadar]),
+    excludeObjects: new Set<THREE.Object3D>([hangarSmokeContainer, lv3DishClone, lv3PlanarRadar, ...hangarWindowGlassMeshes]),
     minShadowCasterSpan: 0.55,
   });
   bakeStaticGroupMeshes(barracksTurbinePivot, { minShadowCasterSpan: 0.55 });
   bakeStaticGroupMeshes(barracksGroup, {
-    excludeObjects: new Set<THREE.Object3D>([barracksTurbinePivot]),
+    excludeObjects: new Set<THREE.Object3D>([barracksTurbinePivot, ...barracksWindowGlassMeshes]),
     minShadowCasterSpan: 0.55,
   });
   bakeStaticGroupMeshes(searchlightPivotGroup, { minShadowCasterSpan: 0.55 });
@@ -29961,6 +36576,7 @@ export function buildMilitaryBaseMasterplan(
       searchlightPivotGroup,
       boomArmPivotLeft,
       boomArmPivotRight,
+      ...checkpointWindowGlassMeshes,
     ]),
     minShadowCasterSpan: 0.55,
   });
@@ -29999,18 +36615,18 @@ export function buildMilitaryBaseMasterplan(
   const PM_LEAF_LIGHT = '#4f8f54';
 
   // 1. Stone Foundation Plinth, Front Classical Porch Landing & 3 Entrance Steps (+X Front)
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.64, 0.12, 6.24), PM_STONE_DARK, [0.0, 0.06, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1BasaltPlinthTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.48, 0.28, 6.08), PM_STONE, [0.0, 0.24, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1BasaltPlinthTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.96, 0.38, 2.38), PM_STONE, [2.56, 0.19, 0.0], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.30, 0.28, 2.18), PM_STONE, [3.08, 0.14, 0.0], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.30, 0.18, 2.28), PM_STONE, [3.32, 0.09, 0.0], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.28, 0.09, 2.38), PM_STONE_DARK, [3.54, 0.045, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(4.64, 0.12, 6.24, 2, 0.022), PM_STONE_DARK, [0.0, 0.06, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(4.48, 0.28, 6.08, 2, 0.024), PM_STONE, [0.0, 0.24, 0.0], [0, 0, 0], [1, 1, 1], 0.016, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.96, 0.372, 2.38, 2, 0.022), PM_STONE, [2.56, 0.194, 0.0], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.30, 0.28, 2.18, 2, 0.018), PM_STONE, [3.08, 0.14, 0.0], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.30, 0.172, 2.28, 2, 0.016), PM_STONE, [3.32, 0.094, 0.0], [0, 0, 0], [1, 1, 1], 0.012, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.28, 0.09, 2.38, 2, 0.014), PM_STONE_DARK, [3.54, 0.045, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1BasaltPlinthTex);
 
   // 2. Two-Story Cream Stucco Body + Mid-Floor Stone Belt Course + Sage Eaves Cornice
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.28, 3.72, 5.88), PM_STUCCO, [0.0, 2.24, 0.0], [0, 0, 0], [1, 1, 1], 0.022, lv1AndoPlasterTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.40, 0.12, 6.00), PM_STONE, [0.0, 2.28, 0.0], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.50, 0.15, 6.10), PM_SAGE, [0.0, 4.13, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(4.58, 0.07, 6.18), PM_SAGE_DARK, [0.0, 4.22, 0.0], [0, 0, 0], [1, 1, 1], 0.010);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(4.28, 3.72, 5.88, 2, 0.032), PM_STUCCO, [0.0, 2.24, 0.0], [0, 0, 0], [1, 1, 1], 0.022, lv1AndoPlasterTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(4.40, 0.12, 6.00, 2, 0.018), PM_STONE, [0.0, 2.28, 0.0], [0, 0, 0], [1, 1, 1], 0.014, lv1BasaltPlinthTex);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(4.50, 0.15, 6.10, 2, 0.020), PM_SAGE, [0.0, 4.13, 0.0], [0, 0, 0], [1, 1, 1], 0.014);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(4.58, 0.07, 6.18, 1, 0.014), PM_SAGE_DARK, [0.0, 4.22, 0.0], [0, 0, 0], [1, 1, 1], 0.010);
 
   // 3. Alternating Terracotta Brick Corner Quoins along all 4 Corners (2 Stories)
   for (const cxSign of [-1, 1]) {
@@ -30024,7 +36640,7 @@ export function buildMilitaryBaseMasterplan(
         const qy = 0.56 + q * 0.32;
         addBasePart(
           plazaManorPlotTemplate,
-          new THREE.BoxGeometry(qw, 0.24, qd),
+          new RoundedBoxGeometry(qw, 0.24, qd, 1, 0.016),
           q % 3 === 0 ? PM_BRICK_DARK : PM_BRICK,
           [qxCorner - cxSign * (qw * 0.5 - 0.03), qy, qzCorner - czSign * (qd * 0.5 - 0.03)],
           [0, 0, 0],
@@ -30035,121 +36651,151 @@ export function buildMilitaryBaseMasterplan(
     }
   }
 
-  // 4. Front (+X) Projecting Classical 2-Column Pediment Portico, Arched Double Doors & Coach Lanterns
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.10, 1.88, 1.38), PM_STONE, [2.15, 1.32, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
+  // 4. Front (+X) Projecting Classical 2-Column Pediment Portico, Arched Double Doors (2.12 -> 3.52m world) & Coach Lanterns
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.10, 2.48, 1.38, 1, 0.014), PM_STONE, [2.15, 1.62, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
   for (const dSide of [-1, 1]) {
     const dz = dSide * 0.31;
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.08, 1.50, 0.54), PM_SAGE_DARK, [2.18, 1.13, dz], [0, 0, 0], [1, 1, 1], 0.010);
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.09, 0.58, 0.38), PM_WOOD, [2.19, 0.80, dz], [0, 0, 0], [1, 1, 1], 0.006, lv1HorizTimberTex);
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.09, 0.58, 0.38), '#9ec2cc', [2.19, 1.48, dz], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
-    addBasePart(plazaManorPlotTemplate, new THREE.SphereGeometry(0.032, 6, 6), PM_GOLD, [2.24, 1.08, dSide * 0.08], [0, 0, 0], [1, 1, 1], 0);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.08, 2.12, 0.54, 1, 0.012), PM_SAGE_DARK, [2.18, 1.44, dz], [0, 0, 0], [1, 1, 1], 0.010);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.09, 0.84, 0.38, 1, 0.008), PM_WOOD, [2.19, 0.92, dz], [0, 0, 0], [1, 1, 1], 0.006, lv1HorizTimberTex);
+    const pmDoorGlass = addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.09, 0.86, 0.38, 1, 0.006), '#9ec2cc', [2.19, 1.91, dz], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    tagBaseWindowMesh(pmDoorGlass, plazaManorWindowGlassMeshes, 'base-plaza-manor-door', 'storefront', '#9ec2cc', 1);
+    addBasePart(plazaManorPlotTemplate, new THREE.SphereGeometry(0.036, 6, 6), PM_GOLD, [2.24, 1.40, dSide * 0.08], [0, 0, 0], [1, 1, 1], 0);
   }
   // Semicircular Arched Fanlight Transom Frame + Glazing above Double Doors
   const pmFanFrameShape = new THREE.Shape();
-  pmFanFrameShape.absarc(0, 0, 0.62, 0, Math.PI, false);
+  pmFanFrameShape.absarc(0, 0, 0.61, 0, Math.PI, false);
   pmFanFrameShape.closePath();
-  const pmFanFrameGeo = new THREE.ExtrudeGeometry(pmFanFrameShape, { depth: 0.10, bevelEnabled: false });
+  const pmFanFrameGeo = new THREE.ExtrudeGeometry(pmFanFrameShape, {
+    depth: 0.085,
+    bevelEnabled: true,
+    bevelThickness: 0.008,
+    bevelSize: 0.008,
+    bevelSegments: 2,
+  });
   pmFanFrameGeo.rotateY(Math.PI / 2);
-  addBasePart(plazaManorPlotTemplate, pmFanFrameGeo, PM_SAGE, [2.14, 1.88, 0.0], [0, 0, 0], [1, 1, 1], 0.009);
+  addBasePart(plazaManorPlotTemplate, pmFanFrameGeo, PM_SAGE, [2.14, 2.50, 0.0], [0, 0, 0], [1, 1, 1], 0.009);
   const pmFanGlassShape = new THREE.Shape();
   pmFanGlassShape.absarc(0, 0, 0.50, 0, Math.PI, false);
   pmFanGlassShape.closePath();
   const pmFanGlassGeo = new THREE.ExtrudeGeometry(pmFanGlassShape, { depth: 0.11, bevelEnabled: false });
   pmFanGlassGeo.rotateY(Math.PI / 2);
-  addBasePart(plazaManorPlotTemplate, pmFanGlassGeo, '#a8cbd4', [2.15, 1.88, 0.0], [0, 0, 0], [1, 1, 1], 0);
+  const pmFanGlass = addBasePart(plazaManorPlotTemplate, pmFanGlassGeo, '#a8cbd4', [2.15, 2.50, 0.0], [0, 0, 0], [1, 1, 1], 0);
+  tagBaseWindowMesh(pmFanGlass, plazaManorWindowGlassMeshes, 'base-plaza-manor-fanlight', 'civic', '#a8cbd4', 1);
 
   // Twin Classical Stone Portico Columns
   for (const colSide of [-1, 1]) {
     const cz = colSide * 0.98;
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.36, 0.34, 0.36), PM_STONE, [2.82, 0.55, cz], [0, 0, 0], [1, 1, 1], 0.010, lv1BasaltPlinthTex);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.36, 0.352, 0.36, 2, 0.018), PM_STONE, [2.82, 0.544, cz], [0, 0, 0], [1, 1, 1], 0.010, lv1BasaltPlinthTex);
     addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.16, 0.18, 0.09, 10), PM_STONE_DARK, [2.82, 0.76, cz], [0, 0, 0], [1, 1, 1], 0.008);
-    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.125, 0.15, 2.02, 10), '#e8dec9', [2.82, 1.81, cz], [0, 0, 0], [1, 1, 1], 0.012);
-    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.18, 0.13, 0.10, 10), PM_STONE, [2.82, 2.86, cz], [0, 0, 0], [1, 1, 1], 0.009);
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.36, 0.08, 0.36), PM_STONE_DARK, [2.82, 2.95, cz], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.125, 0.15, 2.48, 10), '#e8dec9', [2.82, 2.04, cz], [0, 0, 0], [1, 1, 1], 0.012);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.18, 0.13, 0.10, 10), PM_STONE, [2.82, 3.32, cz], [0, 0, 0], [1, 1, 1], 0.009);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.36, 0.08, 0.36, 1, 0.012), PM_STONE_DARK, [2.82, 3.41, cz], [0, 0, 0], [1, 1, 1], 0.008);
   }
   // Portico Entablature, Triangular Pediment & Slate Portico Roof
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.86, 0.18, 2.48), PM_SAGE, [2.56, 3.07, 0.0], [0, 0, 0], [1, 1, 1], 0.011);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.86, 0.18, 2.48, 2, 0.018), PM_SAGE, [2.56, 3.53, 0.0], [0, 0, 0], [1, 1, 1], 0.011);
   const pmPorticoPedShape = new THREE.Shape();
   pmPorticoPedShape.moveTo(-1.24, 0.0);
   pmPorticoPedShape.lineTo(1.24, 0.0);
   pmPorticoPedShape.lineTo(0.0, 0.70);
   pmPorticoPedShape.closePath();
-  const pmPorticoPedGeo = new THREE.ExtrudeGeometry(pmPorticoPedShape, { depth: 0.84, bevelEnabled: false });
+  const pmPorticoPedGeo = new THREE.ExtrudeGeometry(pmPorticoPedShape, {
+    depth: 0.82,
+    bevelEnabled: true,
+    bevelThickness: 0.012,
+    bevelSize: 0.010,
+    bevelSegments: 2,
+  });
   pmPorticoPedGeo.rotateY(Math.PI / 2);
-  addBasePart(plazaManorPlotTemplate, pmPorticoPedGeo, PM_STUCCO, [2.14, 3.16, 0.0], [0, 0, 0], [1, 1, 1], 0.011, lv1AndoPlasterTex);
+  addBasePart(plazaManorPlotTemplate, pmPorticoPedGeo, PM_STUCCO, [2.15, 3.62, 0.0], [0, 0, 0], [1, 1, 1], 0.011, lv1AndoPlasterTex);
   for (const rSide of [-1, 1]) {
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.92, 0.10, 1.44), PM_SAGE, [2.56, 3.53, rSide * 0.63], [-rSide * 0.52, 0, 0], [1, 1, 1], 0.009);
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.96, 0.07, 1.48), PM_SLATE, [2.56, 3.60, rSide * 0.63], [-rSide * 0.52, 0, 0], [1, 1, 1], 0.009, lv1SlateRoofTex);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.92, 0.10, 1.44, 2, 0.014), PM_SAGE, [2.56, 3.99, rSide * 0.63], [-rSide * 0.52, 0, 0], [1, 1, 1], 0.009);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.96, 0.07, 1.48, 1, 0.012), PM_SLATE, [2.56, 4.06, rSide * 0.63], [-rSide * 0.52, 0, 0], [1, 1, 1], 0.009, lv1SlateRoofTex);
   }
   // Gold Crest Emblem in Portico Tympanum + Twin Coach Wall Lanterns
-  addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.18, 0.18, 0.06, 12), PM_GOLD, [3.00, 3.44, 0.0], [0, 0, Math.PI / 2], [1, 1, 1], 0.006);
+  addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.18, 0.18, 0.06, 12), PM_GOLD, [3.00, 3.90, 0.0], [0, 0, Math.PI / 2], [1, 1, 1], 0.006);
   for (const lSide of [-1, 1]) {
     const lz = lSide * 0.82;
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.10, 0.18, 0.07), '#2b3036', [2.19, 1.56, lz], [0, 0, 0], [1, 1, 1], 0.006);
-    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.085, 0.06, 0.20, 4), '#ffe896', [2.25, 1.56, lz], [0, Math.PI / 4, 0], [1, 1, 1], 0.006);
-    addBasePart(plazaManorPlotTemplate, new THREE.ConeGeometry(0.11, 0.09, 4), '#2b3036', [2.25, 1.69, lz], [0, Math.PI / 4, 0], [1, 1, 1], 0.006);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.10, 0.18, 0.07, 1, 0.010), '#2b3036', [2.19, 2.02, lz], [0, 0, 0], [1, 1, 1], 0.006);
+    addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.085, 0.06, 0.20, 4), '#ffe896', [2.25, 2.02, lz], [0, Math.PI / 4, 0], [1, 1, 1], 0.006);
+    addBasePart(plazaManorPlotTemplate, new THREE.ConeGeometry(0.11, 0.09, 4), '#2b3036', [2.25, 2.15, lz], [0, Math.PI / 4, 0], [1, 1, 1], 0.006);
   }
 
   // Twin Classical Stone Planters flanking the Front Steps
   for (const uSide of [-1, 1]) {
     const uz = uSide * 1.45;
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.46, 0.34, 0.46), PM_STONE_DARK, [3.34, 0.17, uz], [0, 0, 0], [1, 1, 1], 0.009, lv1BasaltPlinthTex);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.46, 0.34, 0.46, 2, 0.020), PM_STONE_DARK, [3.34, 0.17, uz], [0, 0, 0], [1, 1, 1], 0.009, lv1BasaltPlinthTex);
     addBasePart(plazaManorPlotTemplate, new THREE.DodecahedronGeometry(0.28, 1), PM_LEAF_DARK, [3.34, 0.46, uz], [0, 0.4, 0], [1.1, 0.9, 1.1], 0.008);
     addBasePart(plazaManorPlotTemplate, new THREE.DodecahedronGeometry(0.17, 0), uSide > 0 ? PM_FLOWER_PINK : PM_FLOWER_BLUE, [3.34, 0.64, uz], [0, 0, 0], [1, 1, 1], 0.006);
   }
 
-  // 5. Shuttered Mullioned Windows Helper (Cream Frames, 6-Pane Crossbars, Sage Louvered Shutters, Flower Boxes)
+  // 5. Shuttered Mullioned Windows Helper (Cream Frames, 6-Pane Crossbars, Sage Louvered Shutters, Strap Hinges, Flower Boxes)
   const addManorShutteredWindow = (
     wx: number,
     wy: number,
     wz: number,
     rotY: number,
     withFlowerBox: boolean,
+    shutterWidth = 0.28,
+    windowRow = 1,
   ) => {
     const wGrp = new THREE.Group();
     wGrp.position.set(wx, wy, wz);
     wGrp.rotation.y = rotY;
     plazaManorPlotTemplate.add(wGrp);
 
-    addBasePart(wGrp, new THREE.BoxGeometry(0.84, 0.10, 0.10), PM_STONE, [0, 0.56, 0.02], [0, 0, 0], [1, 1, 1], 0.008);
-    addBasePart(wGrp, new THREE.BoxGeometry(0.76, 0.96, 0.07), '#f5f1e6', [0, 0.03, 0.01], [0, 0, 0], [1, 1, 1], 0.008);
-    addBasePart(wGrp, new THREE.BoxGeometry(0.64, 0.84, 0.08), '#8fb9c4', [0, 0.03, 0.015], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
-    addBasePart(wGrp, new THREE.BoxGeometry(0.04, 0.84, 0.095), '#f5f1e6', [0, 0.03, 0.02], [0, 0, 0], [1, 1, 1], 0);
+    addBasePart(wGrp, new RoundedBoxGeometry(0.84, 0.10, 0.10, 1, 0.014), PM_STONE, [0, 0.56, 0.02], [0, 0, 0], [1, 1, 1], 0.008);
+    addBasePart(wGrp, new RoundedBoxGeometry(0.76, 0.96, 0.072, 1, 0.012), '#f5f1e6', [0, 0.03, 0.012], [0, 0, 0], [1, 1, 1], 0.008);
+    const manorGlass = addBasePart(wGrp, new RoundedBoxGeometry(0.64, 0.84, 0.082, 1, 0.008), '#8fb9c4', [0, 0.03, 0.017], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    tagBaseWindowMesh(
+      manorGlass,
+      plazaManorWindowGlassMeshes,
+      'base-plaza-manor-win',
+      windowRow >= 2 ? 'upper_floor' : 'civic',
+      '#8fb9c4',
+      windowRow,
+    );
+    // Vertical mullion inset by 8mm vertically from glass frame to avoid coplanar Ymin/Ymax Z-fighting
+    addBasePart(wGrp, new THREE.BoxGeometry(0.04, 0.824, 0.095), '#f5f1e6', [0, 0.03, 0.02], [0, 0, 0], [1, 1, 1], 0);
     for (const my of [-0.14, 0.20]) {
       addBasePart(wGrp, new THREE.BoxGeometry(0.64, 0.04, 0.095), '#f5f1e6', [0, my, 0.02], [0, 0, 0], [1, 1, 1], 0);
     }
+    const shutterCenterOffset = 0.38 + shutterWidth * 0.5 + 0.02;
     for (const sSide of [-1, 1]) {
-      addBasePart(wGrp, new THREE.BoxGeometry(0.28, 0.92, 0.055), PM_SAGE, [sSide * 0.54, 0.03, 0.02], [0, 0, 0], [1, 1, 1], 0.007, louverTex);
+      addBasePart(wGrp, new RoundedBoxGeometry(shutterWidth, 0.92, 0.055, 1, 0.010), PM_SAGE, [sSide * shutterCenterOffset, 0.03, 0.028], [0, 0, 0], [1, 1, 1], 0.007, louverTex);
+      for (const hingeY of [-0.26, 0.32]) {
+        addBasePart(wGrp, new THREE.CylinderGeometry(0.014, 0.014, 0.11, 8), '#2b3036', [sSide * 0.39, hingeY, 0.030], [0, 0, 0], [1, 1, 1], 0);
+        addBasePart(wGrp, new RoundedBoxGeometry(0.18, 0.036, 0.028, 1, 0.006), '#2b3036', [sSide * 0.45, hingeY, 0.032], [0, 0, 0], [1, 1, 1], 0);
+      }
     }
     if (withFlowerBox) {
-      addBasePart(wGrp, new THREE.BoxGeometry(0.84, 0.16, 0.20), PM_WOOD_DARK, [0, -0.50, 0.08], [0, 0, 0], [1, 1, 1], 0.007, lv1HorizTimberTex);
+      addBasePart(wGrp, new RoundedBoxGeometry(0.84, 0.16, 0.20, 2, 0.016), PM_WOOD_DARK, [0, -0.50, 0.08], [0, 0, 0], [1, 1, 1], 0.007, lv1HorizTimberTex);
       for (const fx of [-0.24, 0.0, 0.24]) {
         addBasePart(wGrp, new THREE.DodecahedronGeometry(0.11, 1), PM_LEAF_LIGHT, [fx, -0.37, 0.10], [0, fx * 2, 0], [1.1, 0.8, 1.0], 0.005);
         addBasePart(wGrp, new THREE.DodecahedronGeometry(0.075, 0), fx === 0 ? PM_FLOWER_BLUE : PM_FLOWER_PINK, [fx, -0.30, 0.12], [0, 0, 0], [1, 1, 1], 0.004);
       }
     } else {
-      addBasePart(wGrp, new THREE.BoxGeometry(0.84, 0.08, 0.12), PM_STONE_DARK, [0, -0.47, 0.04], [0, 0, 0], [1, 1, 1], 0.006);
+      addBasePart(wGrp, new RoundedBoxGeometry(0.84, 0.08, 0.12, 1, 0.012), PM_STONE_DARK, [0, -0.47, 0.04], [0, 0, 0], [1, 1, 1], 0.006);
     }
   };
 
-  // Front (+X) 1st & 2nd Floor Windows
-  addManorShutteredWindow(2.14, 1.38, -2.02, Math.PI / 2, true);
-  addManorShutteredWindow(2.14, 1.38, 2.02, Math.PI / 2, true);
-  addManorShutteredWindow(2.14, 3.22, -2.02, Math.PI / 2, true);
-  addManorShutteredWindow(2.14, 3.36, 0.0, Math.PI / 2, false);
-  addManorShutteredWindow(2.14, 3.22, 2.02, Math.PI / 2, true);
+  // Front (+X) 1st & 2nd Floor Windows at z = ±1.92 (outer shutters 2.58 < 2.62 quoins, inner 1.26 > 1.24 portico pediment)
+  // (Center 2F ghost window removed so nothing is buried inside the projecting portico pediment.)
+  addManorShutteredWindow(2.14, 1.38, -1.92, Math.PI / 2, true, 0.26, 1);
+  addManorShutteredWindow(2.14, 1.38, 1.92, Math.PI / 2, true, 0.26, 1);
+  addManorShutteredWindow(2.14, 3.22, -1.92, Math.PI / 2, true, 0.26, 2);
+  addManorShutteredWindow(2.14, 3.22, 1.92, Math.PI / 2, true, 0.26, 2);
 
   // Side (+Z Left & -Z Right) & Rear (-X) Windows
   for (const sZ of [-2.94, 2.94]) {
     const ry = sZ > 0 ? 0 : Math.PI;
-    addManorShutteredWindow(-1.05, 1.38, sZ, ry, false);
-    addManorShutteredWindow(1.05, 1.38, sZ, ry, false);
-    addManorShutteredWindow(-1.05, 3.22, sZ, ry, false);
-    addManorShutteredWindow(1.05, 3.22, sZ, ry, false);
+    addManorShutteredWindow(-1.05, 1.38, sZ, ry, false, 0.28, 1);
+    addManorShutteredWindow(1.05, 1.38, sZ, ry, false, 0.28, 1);
+    addManorShutteredWindow(-1.05, 3.22, sZ, ry, false, 0.28, 2);
+    addManorShutteredWindow(1.05, 3.22, sZ, ry, false, 0.28, 2);
   }
   for (const rZ of [-1.62, 1.62]) {
-    addManorShutteredWindow(-2.14, 1.38, rZ, -Math.PI / 2, false);
-    addManorShutteredWindow(-2.14, 3.22, rZ, -Math.PI / 2, false);
+    addManorShutteredWindow(-2.14, 1.38, rZ, -Math.PI / 2, false, 0.28, 1);
+    addManorShutteredWindow(-2.14, 3.22, rZ, -Math.PI / 2, false, 0.28, 2);
   }
 
   // 6. Pitched Charcoal-Slate Gable Roof, Twin Front Dormers & Symmetrical Brick Chimneys
@@ -30164,34 +36810,65 @@ export function buildMilitaryBaseMasterplan(
   for (const xSide of [-1, 1]) {
     const slopeX = xSide * 1.15;
     const slopeRotZ = -xSide * 0.56;
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(2.86, 0.13, 6.26), PM_SLATE, [slopeX, 4.86, 0.0], [0, 0, slopeRotZ], [1, 1, 1], 0.016, lv1SlateRoofTex);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(2.86, 0.13, 6.26, 2, 0.020), PM_SLATE, [slopeX, 4.86, 0.0], [0, 0, slopeRotZ], [1, 1, 1], 0.016, lv1SlateRoofTex);
     for (const zEnd of [-3.06, 3.06]) {
-      addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(2.88, 0.15, 0.14), PM_SAGE_DARK, [slopeX, 4.84, zEnd], [0, 0, slopeRotZ], [1, 1, 1], 0.008);
+      addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(2.88, 0.15, 0.14, 2, 0.016), PM_SAGE_DARK, [slopeX, 4.84, zEnd], [0, 0, slopeRotZ], [1, 1, 1], 0.008);
     }
   }
-  addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.24, 0.14, 6.32), PM_SLATE_DARK, [0.0, 5.58, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
+  addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.24, 0.14, 6.32, 2, 0.018), PM_SLATE_DARK, [0.0, 5.58, 0.0], [0, 0, 0], [1, 1, 1], 0.012);
 
-  // Twin Front Gable Dormer Windows on Front (+X) Roof Slope
+  // Twin Front Gable Dormer Windows on Front (+X) Roof Slope with Continuous Beveled Extruded Gable Roofs & Tympanum Fill
+  const dormerTympanumShape = new THREE.Shape();
+  dormerTympanumShape.moveTo(-0.42, 0.70);
+  dormerTympanumShape.lineTo(0.42, 0.70);
+  dormerTympanumShape.lineTo(0.0, 0.96);
+  dormerTympanumShape.closePath();
+  const dormerTympanumGeo = new THREE.ExtrudeGeometry(dormerTympanumShape, { depth: 0.84, bevelEnabled: false });
+  dormerTympanumGeo.translate(0, 0, -0.42);
+  dormerTympanumGeo.rotateY(-Math.PI / 2);
+
+  const dormerGableRoofShape = new THREE.Shape();
+  dormerGableRoofShape.moveTo(0.0, 1.006);
+  dormerGableRoofShape.lineTo(0.52, 0.680);
+  dormerGableRoofShape.lineTo(0.49, 0.612);
+  dormerGableRoofShape.lineTo(0.0, 0.922);
+  dormerGableRoofShape.lineTo(-0.49, 0.612);
+  dormerGableRoofShape.lineTo(-0.52, 0.680);
+  dormerGableRoofShape.closePath();
+  const dormerGableRoofGeo = new THREE.ExtrudeGeometry(dormerGableRoofShape, {
+    depth: 1.04,
+    bevelEnabled: true,
+    bevelSize: 0.012,
+    bevelThickness: 0.012,
+    bevelSegments: 2,
+  });
+  dormerGableRoofGeo.translate(0, 0, -0.52);
+  dormerGableRoofGeo.rotateY(-Math.PI / 2);
+
   for (const dZ of [-1.42, 1.42]) {
     const dGrp = new THREE.Group();
-    dGrp.position.set(1.36, 4.46, dZ);
+    // Raised slightly to y = 4.54 so dormer window frame (4.66) sits cleanly above slate slope (4.617 at x = 1.66)
+    dGrp.position.set(1.36, 4.54, dZ);
     plazaManorPlotTemplate.add(dGrp);
-    addBasePart(dGrp, new THREE.BoxGeometry(0.88, 0.72, 0.84), PM_STUCCO, [-0.14, 0.36, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1AndoPlasterTex);
-    addBasePart(dGrp, new THREE.BoxGeometry(0.08, 0.52, 0.58), '#f5f1e6', [0.31, 0.38, 0.0], [0, 0, 0], [1, 1, 1], 0.007);
-    addBasePart(dGrp, new THREE.BoxGeometry(0.09, 0.42, 0.46), '#8fb9c4', [0.32, 0.38, 0.0], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
-    for (const rZ of [-1, 1]) {
-      addBasePart(dGrp, new THREE.BoxGeometry(1.06, 0.08, 0.58), PM_SLATE_DARK, [-0.12, 0.82, rZ * 0.23], [-rZ * 0.56, 0, 0], [1, 1, 1], 0.008, lv1SlateRoofTex);
-    }
+    addBasePart(dGrp, new RoundedBoxGeometry(0.88, 0.72, 0.84, 2, 0.018), PM_STUCCO, [-0.14, 0.36, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1AndoPlasterTex);
+    addBasePart(dGrp, dormerTympanumGeo.clone(), PM_STUCCO, [-0.14, 0.0, 0.0], [0, 0, 0], [1, 1, 1], 0.010, lv1AndoPlasterTex);
+    addBasePart(dGrp, new RoundedBoxGeometry(0.08, 0.52, 0.58, 1, 0.010), '#f5f1e6', [0.31, 0.38, 0.0], [0, 0, 0], [1, 1, 1], 0.007);
+    const dormerGlass = addBasePart(dGrp, new RoundedBoxGeometry(0.09, 0.42, 0.46, 1, 0.008), '#8fb9c4', [0.32, 0.38, 0.0], [0, 0, 0], [1, 1, 1], 0, lv1WindowPaneTex);
+    tagBaseWindowMesh(dormerGlass, plazaManorWindowGlassMeshes, 'base-plaza-manor-dormer', 'dormer', '#8fb9c4', 3);
+    addBasePart(dGrp, dormerGableRoofGeo.clone(), PM_SLATE_DARK, [-0.12, 0.0, 0.0], [0, 0, 0], [1, 1, 1], 0.008, lv1SlateRoofTex);
   }
 
   // Twin Symmetrical Terracotta Brick Chimneys on Left & Right Ends
   for (const cZ of [-2.46, 2.46]) {
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.56, 1.42, 0.56), PM_BRICK, [-0.36, 5.18, cZ], [0, 0, 0], [1, 1, 1], 0.012);
-    addBasePart(plazaManorPlotTemplate, new THREE.BoxGeometry(0.66, 0.11, 0.66), PM_STONE, [-0.36, 5.92, cZ], [0, 0, 0], [1, 1, 1], 0.009);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.56, 1.42, 0.56, 2, 0.020), PM_BRICK, [-0.36, 5.18, cZ], [0, 0, 0], [1, 1, 1], 0.012);
+    addBasePart(plazaManorPlotTemplate, new RoundedBoxGeometry(0.66, 0.11, 0.66, 2, 0.016), PM_STONE, [-0.36, 5.92, cZ], [0, 0, 0], [1, 1, 1], 0.009);
     addBasePart(plazaManorPlotTemplate, new THREE.CylinderGeometry(0.11, 0.13, 0.28, 8), PM_BRICK_DARK, [-0.36, 6.10, cZ], [0, 0, 0], [1, 1, 1], 0.008);
   }
 
-  bakeStaticGroupMeshes(plazaManorPlotTemplate, { minShadowCasterSpan: 0.45 });
+  bakeStaticGroupMeshes(plazaManorPlotTemplate, {
+    excludeObjects: new Set<THREE.Object3D>(plazaManorWindowGlassMeshes),
+    minShadowCasterSpan: 0.45,
+  });
   plazaManorPlotTemplate.visible = false;
 
   // =========================================================================
@@ -30939,25 +37616,42 @@ export function buildMilitaryBaseMasterplan(
     helipadBuiltGroup.position.set(6.8, 0, -5.6);
     helipadBuiltGroup.visible = false;
     plotRoot.add(helipadBuiltGroup);
-    addBasePart(helipadBuiltGroup, new THREE.BoxGeometry(4.6, 0.14, 4.6), COL_CONCRETE_DARK, [0, 0.07, 0], [0, 0, 0], [1, 1, 1], 0.022, undefined, false);
+    addBasePart(helipadBuiltGroup, new RoundedBoxGeometry(4.6, 0.14, 4.6, 2, 0.025), COL_CONCRETE_DARK, [0, 0.07, 0], [0, 0, 0], [1, 1, 1], 0.022, undefined, false);
     addBasePart(helipadBuiltGroup, new THREE.CylinderGeometry(2.0, 2.1, 0.06, 24), COL_STEEL, [0, 0.16, 0], [0, 0, 0], [1, 1, 1], 0.016, undefined, false);
     const hRing = new THREE.Mesh(new THREE.RingGeometry(1.55, 1.82, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(COL_GOLD), side: THREE.DoubleSide }));
     hRing.rotation.x = -Math.PI / 2;
-    hRing.position.set(0, 0.20, 0);
+    hRing.position.set(0, 0.198, 0);
     helipadBuiltGroup.add(hRing);
-    // 'H' letter oriented facing RIGHT (+relZ, towards central driveway & Kiosk)
-    for (const hx of [-0.52, 0.52]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(1.50, 0.04, 0.28), hWhiteMat);
-      bar.position.set(0, 0.20, hx);
-      helipadBuiltGroup.add(bar);
-    }
-    const hCross = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 1.04), hWhiteMat);
-    hCross.position.set(0, 0.20, 0);
-    helipadBuiltGroup.add(hCross);
+    // Continuous chamfered 'H' insignia extruded as one seamless polygon facing RIGHT (+relZ)
+    const hPadShape = new THREE.Shape();
+    hPadShape.moveTo(-0.742, -0.652);
+    hPadShape.lineTo(0.742, -0.652);
+    hPadShape.lineTo(0.742, -0.388);
+    hPadShape.lineTo(0.132, -0.388);
+    hPadShape.lineTo(0.132, 0.388);
+    hPadShape.lineTo(0.742, 0.388);
+    hPadShape.lineTo(0.742, 0.652);
+    hPadShape.lineTo(-0.742, 0.652);
+    hPadShape.lineTo(-0.742, 0.388);
+    hPadShape.lineTo(-0.132, 0.388);
+    hPadShape.lineTo(-0.132, -0.388);
+    hPadShape.lineTo(-0.742, -0.388);
+    hPadShape.closePath();
+    const hPadGeo = new THREE.ExtrudeGeometry(hPadShape, {
+      depth: 0.036,
+      bevelEnabled: true,
+      bevelSize: 0.008,
+      bevelThickness: 0.008,
+      bevelSegments: 1,
+    });
+    hPadGeo.rotateX(-Math.PI / 2);
+    const hPadMesh = new THREE.Mesh(hPadGeo, hWhiteMat);
+    hPadMesh.position.set(0, 0.190, 0);
+    helipadBuiltGroup.add(hPadMesh);
     // Directional exit chevron pointing RIGHT (+relZ)
     const heliExitArrow = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.45, 3), new THREE.MeshBasicMaterial({ color: new THREE.Color(COL_GOLD) }));
     heliExitArrow.rotation.x = Math.PI / 2;
-    heliExitArrow.position.set(0, 0.20, 2.02);
+    heliExitArrow.position.set(0, 0.208, 2.04);
     helipadBuiltGroup.add(heliExitArrow);
     bakeStaticGroupMeshes(helipadBuiltGroup, { minShadowCasterSpan: 0.65 });
 
@@ -30975,28 +37669,28 @@ export function buildMilitaryBaseMasterplan(
     parkingBuiltGroup.visible = false;
     plotRoot.add(parkingBuiltGroup);
     // Open-air (roofless) concrete vehicle pad (4.6m wide along lx, 5.6m long along relZ facing RIGHT +relZ)
-    addBasePart(parkingBuiltGroup, new THREE.BoxGeometry(4.6, 0.12, 5.6), COL_CONCRETE_DARK, [0, 0.06, 0], [0, 0, 0], [1, 1, 1], 0.02, undefined, false);
+    addBasePart(parkingBuiltGroup, new RoundedBoxGeometry(4.6, 0.12, 5.6, 2, 0.022), COL_CONCRETE_DARK, [0, 0.06, 0], [0, 0, 0], [1, 1, 1], 0.02, undefined, false);
     // Left & Right yellow stall lines running along relZ toward the +relZ exit
     for (const stallX of [-2.05, 2.05]) {
       const stallLine = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 5.0), roadDashMat);
       stallLine.rotation.x = -Math.PI / 2;
-      stallLine.position.set(stallX, 0.13, 0);
+      stallLine.position.set(stallX, 0.130, 0);
       parkingBuiltGroup.add(stallLine);
     }
-    // Rear yellow boundary line + low wheel-stop curb at -relZ (back of bay near left fence)
+    // Rear yellow boundary line + low wheel-stop curb at -relZ (staggered heights avoid coplanar intersections)
     const rearStallLine = new THREE.Mesh(new THREE.PlaneGeometry(4.28, 0.18), roadDashMat);
     rearStallLine.rotation.x = -Math.PI / 2;
-    rearStallLine.position.set(0, 0.13, -2.5);
+    rearStallLine.position.set(0, 0.136, -2.5);
     parkingBuiltGroup.add(rearStallLine);
-    addBasePart(parkingBuiltGroup, new THREE.BoxGeometry(3.0, 0.16, 0.24), COL_STEEL, [0, 0.16, -2.18], [0, 0, 0], [1, 1, 1], 0.012, undefined, false);
+    addBasePart(parkingBuiltGroup, new RoundedBoxGeometry(3.0, 0.16, 0.24, 2, 0.022), COL_STEEL, [0, 0.16, -2.18], [0, 0, 0], [1, 1, 1], 0.012, undefined, false);
     // Forward exit arrow on floor pointing RIGHT (+relZ, directly across toward Kiosk & exit driveway)
     const bayExitStem = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 1.1), roadDashMat);
     bayExitStem.rotation.x = -Math.PI / 2;
-    bayExitStem.position.set(0, 0.13, 1.65);
+    bayExitStem.position.set(0, 0.138, 1.65);
     parkingBuiltGroup.add(bayExitStem);
     const bayExitHead = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.52, 3), roadDashMat);
     bayExitHead.rotation.x = Math.PI / 2;
-    bayExitHead.position.set(0, 0.13, 2.32);
+    bayExitHead.position.set(0, 0.144, 2.32);
     parkingBuiltGroup.add(bayExitHead);
     bakeStaticGroupMeshes(parkingBuiltGroup, { minShadowCasterSpan: 0.65 });
 
@@ -31019,21 +37713,38 @@ export function buildMilitaryBaseMasterplan(
         if (presetId === 'sakura_grove' || presetId === 'golden_park') {
           const isSakura = presetId === 'sakura_grove';
 
-          // 1. Raised Japanese Cedar & Granite Garden Planter Box (Kotak Pot Taman Sudut Kayu Cedar & Granit)
-          addBasePart(gGrp, new THREE.BoxGeometry(2.32, 0.08, 2.12), COL_CONCRETE_DARK, [gx, 0.04, gz], [0, 0, 0], [1, 1, 1], 0.014, undefined, false);
-          addBasePart(gGrp, new THREE.BoxGeometry(2.32, 0.24, 0.16), '#8c532b', [gx, 0.16, gz - 0.98], [0, 0, 0], [1, 1, 1], 0.012, undefined, false);
-          addBasePart(gGrp, new THREE.BoxGeometry(2.32, 0.24, 0.16), '#8c532b', [gx, 0.16, gz + 0.98], [0, 0, 0], [1, 1, 1], 0.012, undefined, false);
-          addBasePart(gGrp, new THREE.BoxGeometry(0.16, 0.24, 1.80), '#8c532b', [gx - 1.08, 0.16, gz], [0, 0, 0], [1, 1, 1], 0.012, undefined, false);
-          addBasePart(gGrp, new THREE.BoxGeometry(0.16, 0.24, 1.80), '#8c532b', [gx + 1.08, 0.16, gz], [0, 0, 0], [1, 1, 1], 0.012, undefined, false);
+          // 1. Raised Japanese Cedar & Granite Garden Planter Box with continuous 45° mitered timber rim
+          addBasePart(gGrp, new RoundedBoxGeometry(2.32, 0.08, 2.12, 1, 0.016), COL_CONCRETE_DARK, [gx, 0.04, gz], [0, 0, 0], [1, 1, 1], 0.014, undefined, false);
+          addBasePart(
+            gGrp,
+            createMitredPolylineStripGeometry(
+              [
+                [-1.08, -0.98],
+                [1.08, -0.98],
+                [1.08, 0.98],
+                [-1.08, 0.98],
+              ],
+              0.16,
+              0.24,
+              true,
+            ),
+            '#8c532b',
+            [gx, 0.204, gz],
+            [0, 0, 0],
+            [1, 1, 1],
+            0.012,
+            undefined,
+            false,
+          );
           // Dark Fertile Soil Bed
-          addBasePart(gGrp, new THREE.BoxGeometry(2.00, 0.06, 1.80), '#2d221b', [gx, 0.22, gz], [0, 0, 0], [1, 1, 1], 0.01, undefined, false);
+          addBasePart(gGrp, new RoundedBoxGeometry(2.00, 0.06, 1.80, 1, 0.012), '#2d221b', [gx, 0.24, gz], [0, 0, 0], [1, 1, 1], 0.01, undefined, false);
 
           // Warm Garden Lamp Post (Lampu Taman) beside each Sakura Planter Corner
           const lampOffsetX = gx > 0 ? -1.42 : 1.42;
           const lampOffsetZ = gz > 0 ? -1.28 : 1.28;
           addBasePart(gGrp, new THREE.CylinderGeometry(0.16, 0.20, 0.14, 8), COL_CONCRETE_DARK, [gx + lampOffsetX, 0.07, gz + lampOffsetZ], [0, 0, 0], [1, 1, 1], 0.01, undefined, false);
           addBasePart(gGrp, new THREE.CylinderGeometry(0.06, 0.08, 1.45, 8), '#27272a', [gx + lampOffsetX, 0.80, gz + lampOffsetZ], [0, 0, 0], [1, 1, 1], 0.008, undefined, false);
-          addBasePart(gGrp, new THREE.BoxGeometry(0.32, 0.36, 0.32), '#fde047', [gx + lampOffsetX, 1.62, gz + lampOffsetZ], [0, 0, 0], [1, 1, 1], 0.01, undefined, false);
+          addBasePart(gGrp, new RoundedBoxGeometry(0.32, 0.36, 0.32, 2, 0.022), '#fde047', [gx + lampOffsetX, 1.62, gz + lampOffsetZ], [0, 0, 0], [1, 1, 1], 0.01, undefined, false);
           addBasePart(gGrp, new THREE.ConeGeometry(0.28, 0.18, 4), '#27272a', [gx + lampOffsetX, 1.88, gz + lampOffsetZ], [0, Math.PI / 4, 0], [1, 1, 1], 0.01, undefined, false);
 
           // 2. Real Blitz Tree Trunk & Leaf-Card Cluster Canopy (cachedTreeMaterials #a369ff->#ff75d8 / #2cb84b->#ffd23f + windUniforms, scale 0.48)
@@ -31044,7 +37755,7 @@ export function buildMilitaryBaseMasterplan(
           gGrp.add(treeHolder);
           gardenExcludeSet.add(treeHolder);
 
-          const treeScale = 0.48;
+          const treeScale = 0.68;
           populateRealBlitzTreeFromGlb(
             treeHolder,
             cachedLoadedBlitzAssets
@@ -32074,7 +38785,7 @@ function buildLoftedTramCarShellGeometries(isFrontCar: boolean): {
   const halfWid = CITY_TRAM_SPEC.carWidth * 0.5;  // 1.79m (1.25x)
   const scaleL = CITY_TRAM_SPEC.carLength / 7.20;
   const scaleH = CITY_TRAM_SPEC.carHeight / 3.54;
-  const baseBotY = 0.18 * scaleH;
+  const baseBotY = 0.195 * scaleH;
   const baseTopY = CITY_TRAM_SPEC.carHeight;      // 4.42m (1.25x)
 
   const loop = getFullTramCrossSectionLoop();
@@ -32228,9 +38939,9 @@ function buildContouredBellowsRibGeometry(
   thicknessX: number,
   widthScale: number,
   heightScale: number,
+  botY = 0.20,
 ): THREE.BufferGeometry {
   const halfWid = CITY_TRAM_SPEC.carWidth * 0.5 * widthScale;
-  const botY = 0.20;
   const topY = CITY_TRAM_SPEC.carHeight * heightScale;
   const loop = getFullTramCrossSectionLoop();
   const numProf = loop.length;
@@ -32348,11 +39059,11 @@ export function createProceduralCityTramConsist(
     bogiePivot.scale.set(scaleL, scaleH, scaleW);
     parent.add(bogiePivot);
 
-    // Bogie H-frame bolster & yellow magnetic brake shoe visible in the Low-Floor Bogie Skirt cutout
-    addTramPart(bogiePivot, new THREE.BoxGeometry(1.75, 0.24, 1.84), COL_BOGIE_DARK, [0, 0.04, 0], [0, 0, 0], [1, 1, 1], 0.016, 0.85);
+    // Bogie H-frame bolster & yellow magnetic brake shoe visible in the Low-Floor Bogie Skirt cutout (8mm Y clearance from side frame)
+    addTramPart(bogiePivot, new RoundedBoxGeometry(1.75, 0.24, 1.84, 2, 0.028), COL_BOGIE_DARK, [0, 0.04, 0], [0, 0, 0], [1, 1, 1], 0.016, 0.85);
     for (const zSide of [-0.88, 0.88]) {
-      addTramPart(bogiePivot, new THREE.BoxGeometry(0.68, 0.14, 0.16), COL_SAFETY_YELLOW, [0, -0.14, zSide], [0, 0, 0], [1, 1, 1], 0.012, 0.7);
-      addTramPart(bogiePivot, new THREE.BoxGeometry(1.56, 0.18, 0.18), '#262c38', [0, 0.02, zSide * 1.06], [0, 0, 0], [1, 1, 1], 0.014, 0.8);
+      addTramPart(bogiePivot, new RoundedBoxGeometry(0.68, 0.14, 0.16, 1, 0.018), COL_SAFETY_YELLOW, [0, -0.148, zSide], [0, 0, 0], [1, 1, 1], 0.012, 0.7);
+      addTramPart(bogiePivot, new RoundedBoxGeometry(1.56, 0.18, 0.18, 2, 0.024), '#262c38', [0, 0.02, zSide * 1.06], [0, 0, 0], [1, 1, 1], 0.014, 0.8);
     }
 
     const wheelCylGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.15, 16);
@@ -32361,7 +39072,7 @@ export function createProceduralCityTramConsist(
     hubCylGeo.rotateX(Math.PI / 2);
     const axleBarGeo = new THREE.CylinderGeometry(0.07, 0.07, 1.82, 8);
     axleBarGeo.rotateX(Math.PI / 2);
-    const spokeBarGeo = new THREE.BoxGeometry(0.46, 0.08, 0.19);
+    const spokeBarGeo = new RoundedBoxGeometry(0.46, 0.08, 0.19, 1, 0.014);
 
     const wheelAxles: THREE.Group[] = [];
     for (const axX of [-0.54, 0.54]) {
@@ -32433,7 +39144,7 @@ export function createProceduralCityTramConsist(
     const hvacX = (isFrontCar ? -1.45 : 1.35) * scaleL;
     addTramPart(
       bodyStaticGroup,
-      new THREE.BoxGeometry(2.35 * scaleL, 0.18 * scaleH, 1.72 * scaleW),
+      new RoundedBoxGeometry(2.35 * scaleL, 0.18 * scaleH, 1.72 * scaleW, 2, 0.036),
       COL_HVAC_GREY,
       [hvacX, 3.58 * scaleH, 0],
       [0, 0, 0],
@@ -32443,7 +39154,7 @@ export function createProceduralCityTramConsist(
     );
     addTramPart(
       bodyStaticGroup,
-      new THREE.BoxGeometry(1.95 * scaleL, 0.08 * scaleH, 1.78 * scaleW),
+      new RoundedBoxGeometry(1.95 * scaleL, 0.08 * scaleH, 1.78 * scaleW, 1, 0.016),
       COL_BELT_BLACK,
       [hvacX, 3.60 * scaleH, 0],
       [0, 0, 0],
@@ -32469,7 +39180,7 @@ export function createProceduralCityTramConsist(
     // Sleek sculpted camera winglet arm mounted on upper front A-pillar (`1. FRONT ELEVATION`)
     addTramPart(
       car1StaticBody,
-      new THREE.BoxGeometry(0.36 * scaleL, 0.16 * scaleH, 0.32 * scaleW),
+      new RoundedBoxGeometry(0.36 * scaleL, 0.16 * scaleH, 0.32 * scaleW, 2, 0.026),
       COL_SHELL_WHITE,
       [2.32 * scaleL, 2.68 * scaleH, zSide * 1.42 * scaleW],
       [0, -zSide * 0.22, -0.12],
@@ -32480,7 +39191,7 @@ export function createProceduralCityTramConsist(
     // Vertical downward-curving camera sensor pod tip
     addTramPart(
       car1StaticBody,
-      new THREE.BoxGeometry(0.18 * scaleL, 0.26 * scaleH, 0.14 * scaleW),
+      new RoundedBoxGeometry(0.18 * scaleL, 0.26 * scaleH, 0.14 * scaleW, 2, 0.022),
       COL_BELT_BLACK,
       [2.24 * scaleL, 2.54 * scaleH, zSide * 1.52 * scaleW],
       [0, 0, zSide * 0.15],
@@ -32493,23 +39204,23 @@ export function createProceduralCityTramConsist(
   // 3D Low-Profile Single-Arm Pantograph ("LOW-PROFILE PANTOGRAPH") on Car 1's roof
   const pantoGroup = new THREE.Group();
   pantoGroup.position.set(0.85 * scaleL, 3.52 * scaleH, 0);
-  pantoGroup.scale.set(scaleL, scaleH, scaleW);
+  pantoGroup.scale.set(scaleL, 0.72, scaleW);
   car1StaticBody.add(pantoGroup);
   // Roof insulator plinth & base frame
-  addTramPart(pantoGroup, new THREE.BoxGeometry(1.18, 0.10, 1.16), '#222733', [0, 0.05, 0], [0, 0, 0], [1, 1, 1], 0.014, 0.72);
+  addTramPart(pantoGroup, new RoundedBoxGeometry(1.18, 0.10, 1.16, 1, 0.018), '#222733', [0, 0.05, 0], [0, 0, 0], [1, 1, 1], 0.014, 0.72);
   for (const ix of [-0.48, 0.48]) {
     for (const iz of [-0.48, 0.48]) {
-      addTramPart(pantoGroup, new THREE.CylinderGeometry(0.07, 0.08, 0.14, 8), '#94a3b8', [ix, 0.07, iz], [0, 0, 0], [1, 1, 1], 0, 0.5);
+      addTramPart(pantoGroup, new THREE.CylinderGeometry(0.07, 0.08, 0.14, 8), '#94a3b8', [ix, 0.078, iz], [0, 0, 0], [1, 1, 1], 0, 0.5);
     }
   }
   // Lower single-arm main boom angled backward (-X)
-  addTramPart(pantoGroup, new THREE.BoxGeometry(1.12, 0.08, 0.14), '#334155', [-0.18, 0.34, 0], [0, 0, -0.46], [1, 1, 1], 0.014, 0.6);
+  addTramPart(pantoGroup, new RoundedBoxGeometry(1.12, 0.08, 0.14, 1, 0.014), '#334155', [-0.18, 0.34, 0], [0, 0, -0.46], [1, 1, 1], 0.014, 0.6);
   // Upper single-arm linkage angled forward (+X) to the collector head
-  addTramPart(pantoGroup, new THREE.BoxGeometry(1.18, 0.07, 0.11), '#475569', [-0.10, 0.74, 0], [0, 0, 0.42], [1, 1, 1], 0.012, 0.6);
+  addTramPart(pantoGroup, new RoundedBoxGeometry(1.18, 0.07, 0.11, 1, 0.014), '#475569', [-0.10, 0.74, 0], [0, 0, 0.42], [1, 1, 1], 0.012, 0.6);
   // Overhead twin carbon-strip contact pan bow at y = +0.96m (world y = 4.48m)
-  addTramPart(pantoGroup, new THREE.BoxGeometry(0.32, 0.06, 1.76), '#181c24', [0.38, 0.96, 0], [0, 0, 0], [1, 1, 1], 0.014, 0.7);
+  addTramPart(pantoGroup, new RoundedBoxGeometry(0.32, 0.06, 1.76, 1, 0.012), '#181c24', [0.38, 0.96, 0], [0, 0, 0], [1, 1, 1], 0.014, 0.7);
   for (const zHorn of [-0.88, 0.88]) {
-    addTramPart(pantoGroup, new THREE.BoxGeometry(0.34, 0.05, 0.22), COL_SAFETY_YELLOW, [0.38, 0.93, zHorn], [zHorn * 0.28, 0, 0], [1, 1, 1], 0, 0.6);
+    addTramPart(pantoGroup, new RoundedBoxGeometry(0.34, 0.05, 0.22, 1, 0.010), COL_SAFETY_YELLOW, [0.38, 0.93, zHorn], [zHorn * 0.28, 0, 0], [1, 1, 1], 0, 0.6);
   }
 
   bakeStaticGroupMeshes(car1StaticBody, { minShadowCasterSpan: 0.45 });
@@ -32531,7 +39242,7 @@ export function createProceduralCityTramConsist(
   // Additional low-profile roof equipment pod on Car 2 matching side elevation blueprint
   addTramPart(
     car2StaticBody,
-    new THREE.BoxGeometry(0.95 * scaleL, 0.12 * scaleH, 1.18 * scaleW),
+    new RoundedBoxGeometry(0.95 * scaleL, 0.12 * scaleH, 1.18 * scaleW, 2, 0.024),
     COL_HVAC_GREY,
     [-0.55 * scaleL, 3.55 * scaleH, 0],
     [0, 0, 0],
@@ -32553,16 +39264,17 @@ export function createProceduralCityTramConsist(
   rootGroup.add(jointGroup);
 
   const NUM_BELLOWS_PLEATS = 11;
-  const outerPleatGeo = buildContouredBellowsRibGeometry(0.135 * scaleL, 0.985, 0.985);
-  const innerPleatGeo = buildContouredBellowsRibGeometry(0.135 * scaleL, 0.945, 0.965);
-  const centerRingGeo = buildContouredBellowsRibGeometry(0.145 * scaleL, 0.992, 0.992);
-
   const bellowsPleats: THREE.Group[] = [];
+  const pleatGeos: THREE.BufferGeometry[] = [];
   for (let i = 0; i < NUM_BELLOWS_PLEATS; i++) {
     const pleatGrp = new THREE.Group();
     const isCenterSeam = i === 5;
     const isOuterPleat = i % 2 === 0;
-    const geo = isCenterSeam ? centerRingGeo : isOuterPleat ? outerPleatGeo : innerPleatGeo;
+    const thicknessX = ((isCenterSeam ? 0.145 : 0.135) + (i - 5) * 0.0012) * scaleL;
+    const widthScale = isCenterSeam ? 0.992 : isOuterPleat ? 0.985 : 0.945;
+    const heightScale = isCenterSeam ? 0.996 : isOuterPleat ? 0.980 + i * 0.0012 : 0.960 + i * 0.0012;
+    const geo = buildContouredBellowsRibGeometry(thicknessX, widthScale, heightScale, 0.190 + i * 0.005);
+    pleatGeos.push(geo);
     const col = isCenterSeam ? '#475569' : isOuterPleat ? '#262b35' : '#14171f';
 
     addTramPart(
@@ -32673,9 +39385,7 @@ export function createProceduralCityTramConsist(
       car2SideTex.dispose();
       frontCabTex.dispose();
       rearCabTex.dispose();
-      outerPleatGeo.dispose();
-      innerPleatGeo.dispose();
-      centerRingGeo.dispose();
+      for (const g of pleatGeos) g.dispose();
     },
   };
 }
@@ -32708,8 +39418,8 @@ export function buildSelfServiceTacticalKioskMesh(
     side: THREE.BackSide,
   });
 
-  // Golden Scale Standard: S = 1.40 (2.25 * 0.62 -> ~2.54m tall, proportional to player character)
-  const S = 1.40;
+  // Real-world Kiosk Scale: S = 1.70 (~3.08m tall beside 3.30m player avatar)
+  const S = 1.70;
 
   const addKioskPart = (
     geom: THREE.BufferGeometry,
@@ -32767,13 +39477,13 @@ export function buildSelfServiceTacticalKioskMesh(
   // -------------------------------------------------------------------------
   // 1. KIOSK BASE PLATE (550 x 700 footprint on Left)
   // -------------------------------------------------------------------------
-  addKioskPart(new THREE.BoxGeometry(0.64, 0.022, 0.78), COL_BLACK_PORT, [kx, 0.011, 0], [0, 0, 0], [1, 1, 1], 0);
-  addKioskPart(new THREE.BoxGeometry(0.62, 0.042, 0.76), COL_KIOSK_WHITE, [kx, 0.035, 0], [0, 0, 0], [1, 1, 1], 0.010);
+  addKioskPart(new RoundedBoxGeometry(0.64, 0.022, 0.78, 1, 0.008), COL_BLACK_PORT, [kx, 0.011, 0], [0, 0, 0], [1, 1, 1], 0);
+  addKioskPart(new RoundedBoxGeometry(0.62, 0.042, 0.76, 2, 0.012), COL_KIOSK_WHITE, [kx, 0.036, 0], [0, 0, 0], [1, 1, 1], 0.010);
 
   // -------------------------------------------------------------------------
   // 2. CENTRAL PEDESTAL COLUMN (640mm front / 680mm rear height)
   // -------------------------------------------------------------------------
-  addKioskPart(new THREE.BoxGeometry(0.26, 0.78, 0.24), COL_KIOSK_WHITE, [kx, 0.44, -0.02], [0, 0, 0], [1, 1, 1], 0.012);
+  addKioskPart(new RoundedBoxGeometry(0.26, 0.78, 0.24, 2, 0.018), COL_KIOSK_WHITE, [kx, 0.44, -0.02], [0, 0, 0], [1, 1, 1], 0.012);
   // Subtle recessed side trim strips along column
   addKioskPart(new THREE.BoxGeometry(0.27, 0.72, 0.08), COL_KIOSK_PANEL, [kx, 0.44, -0.02], [0, 0, 0], [1, 1, 1], 0);
 
@@ -32801,7 +39511,7 @@ export function buildSelfServiceTacticalKioskMesh(
   // Angled support bracket under keypad module
   addKioskPart(new THREE.BoxGeometry(0.22, 0.14, 0.14), COL_KIOSK_TRIM, [kx, 0.65, 0.08], [0.35, 0, 0], [1, 1, 1], 0.008);
   // Protruding dark metallic keypad / mini-display housing
-  addKioskPart(new THREE.BoxGeometry(0.32, 0.15, 0.12), COL_KEYPAD_BODY, [kx, 0.69, 0.14], [-0.28, 0, 0], [1, 1, 1], 0.010);
+  addKioskPart(new RoundedBoxGeometry(0.32, 0.15, 0.12, 2, 0.018), COL_KEYPAD_BODY, [kx, 0.69, 0.14], [-0.28, 0, 0], [1, 1, 1], 0.010);
   // Mini LCD screen inside keypad housing
   addKioskPart(new THREE.BoxGeometry(0.24, 0.052, 0.02), COL_DARK_BEZEL, [kx, 0.71, 0.195], [-0.28, 0, 0], [1, 1, 1], 0);
   // 6 small indicator buttons (oo o ooo) below mini LCD screen
@@ -32820,11 +39530,11 @@ export function buildSelfServiceTacticalKioskMesh(
   // 4. UPPER TOUCHSCREEN KIOSK HEAD (820mm tall, tapered 180mm -> 120mm side profile)
   // -------------------------------------------------------------------------
   // Rear vertical core cabinet
-  addKioskPart(new THREE.BoxGeometry(0.52, 1.04, 0.22), COL_KIOSK_WHITE, [kx, 1.32, -0.02], [0, 0, 0], [1, 1, 1], 0.014);
+  addKioskPart(new RoundedBoxGeometry(0.52, 1.04, 0.22, 2, 0.024), COL_KIOSK_WHITE, [kx, 1.32, -0.02], [0, 0, 0], [1, 1, 1], 0.014);
   // Tapered forward-tilted front screen cheek housing (matching SIDE ELEVATION 180mm bottom -> 120mm top)
-  addKioskPart(new THREE.BoxGeometry(0.50, 0.84, 0.12), COL_KIOSK_WHITE, [kx, 1.40, 0.06], [-0.075, 0, 0], [1, 1, 1], 0.010);
+  addKioskPart(new RoundedBoxGeometry(0.50, 0.84, 0.12, 2, 0.016), COL_KIOSK_WHITE, [kx, 1.40, 0.06], [-0.075, 0, 0], [1, 1, 1], 0.010);
   // Lower vertical chin block (120mm height, 180mm depth) containing Ticket Printer & QR Scanner
-  addKioskPart(new THREE.BoxGeometry(0.52, 0.24, 0.26), COL_KIOSK_WHITE, [kx, 0.92, 0.01], [0, 0, 0], [1, 1, 1], 0.012);
+  addKioskPart(new RoundedBoxGeometry(0.52, 0.24, 0.26, 2, 0.020), COL_KIOSK_WHITE, [kx, 0.92, 0.01], [0, 0, 0], [1, 1, 1], 0.012);
   // Horizontal chin divider seam
   addKioskPart(new THREE.BoxGeometry(0.525, 0.012, 0.265), COL_DARK_BEZEL, [kx, 1.04, 0.01], [0, 0, 0], [1, 1, 1], 0);
 
@@ -32884,14 +39594,14 @@ export function buildSelfServiceTacticalKioskMesh(
     [sx - 0.17, 0.25],
     [sx + 0.17, 0.25],
   ] as [number, number][]) {
-    addKioskPart(new THREE.BoxGeometry(0.065, 0.04, 0.065), COL_BLACK_PORT, [fx, 0.02, fz], [0, 0, 0], [1, 1, 1], 0);
+    addKioskPart(new RoundedBoxGeometry(0.065, 0.034, 0.065, 1, 0.008), COL_BLACK_PORT, [fx, 0.024, fz], [0, 0, 0], [1, 1, 1], 0);
   }
   // Silver-Gray Scale Chassis Frame
-  addKioskPart(new THREE.BoxGeometry(0.46, 0.065, 0.66), COL_SCALE_FRAME, [sx, 0.065, 0], [0, 0, 0], [1, 1, 1], 0.010);
+  addKioskPart(new RoundedBoxGeometry(0.46, 0.065, 0.66, 2, 0.014), COL_SCALE_FRAME, [sx, 0.065, 0], [0, 0, 0], [1, 1, 1], 0.010);
   // Dark Charcoal-Steel Weighing Pan Top Surface
-  addKioskPart(new THREE.BoxGeometry(0.42, 0.024, 0.62), COL_SCALE_PAN, [sx, 0.102, 0], [0, 0, 0], [1, 1, 1], 0.006);
+  addKioskPart(new RoundedBoxGeometry(0.42, 0.024, 0.62, 1, 0.008), COL_SCALE_PAN, [sx, 0.102, 0], [0, 0, 0], [1, 1, 1], 0.006);
   // Subtle metallic sheen stripe on weighing pan
-  addKioskPart(new THREE.BoxGeometry(0.12, 0.026, 0.56), COL_KEYPAD_BODY, [sx, 0.103, 0], [0, 0.32, 0], [1, 1, 1], 0);
+  addKioskPart(new RoundedBoxGeometry(0.12, 0.026, 0.56, 1, 0.006), COL_KEYPAD_BODY, [sx, 0.103, 0], [0, 0.32, 0], [1, 1, 1], 0);
 
   // Immediately merge all static parts of the Kiosk + Digital Luggage Scale Platform into a single mesh!
   bakeStaticGroupMeshes(staticPartsGroup, { minShadowCasterSpan: 0.35 });
@@ -32925,7 +39635,7 @@ export function buildSelfServiceTacticalKioskMesh(
   // -------------------------------------------------------------------------
   const holoRoot = new THREE.Group();
   holoRoot.position.set(sx * S, 0.116 * S, 0);
-  holoRoot.scale.setScalar(0.62);
+  holoRoot.scale.setScalar(0.62 * (S / 1.40));
   kioskRoot.add(holoRoot);
 
   const holoSolidMat = new THREE.MeshBasicMaterial({
@@ -32956,24 +39666,24 @@ export function buildSelfServiceTacticalKioskMesh(
   // Glowing Projector Ring & Beam on the Scale Platform Surface
   const emitterRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.39, 24), holoRingMat);
   emitterRing.rotation.x = -Math.PI / 2;
-  emitterRing.position.y = 0.015;
+  emitterRing.position.y = 0.014;
   holoRoot.add(emitterRing);
 
   const emitterOuterRing = new THREE.Mesh(new THREE.RingGeometry(0.43, 0.47, 24), holoRingMat);
   emitterOuterRing.rotation.x = -Math.PI / 2;
-  emitterOuterRing.position.y = 0.014;
+  emitterOuterRing.position.y = 0.022;
   holoRoot.add(emitterOuterRing);
 
   const emitterCoreDisc = new THREE.Mesh(new THREE.CircleGeometry(0.26, 20), holoBeamMat);
   emitterCoreDisc.rotation.x = -Math.PI / 2;
-  emitterCoreDisc.position.y = 0.012;
+  emitterCoreDisc.position.y = 0.030;
   holoRoot.add(emitterCoreDisc);
 
   const emitterBeam = new THREE.Mesh(
     new THREE.CylinderGeometry(0.42, 0.28, 1.25, 16, 1, true),
     holoBeamMat,
   );
-  emitterBeam.position.y = 0.64;
+  emitterBeam.position.y = 0.665;
   holoRoot.add(emitterBeam);
 
   const holoTurntable = new THREE.Group();
@@ -33213,8 +39923,8 @@ export function buildBlackCityTransitKioskMesh(
     side: THREE.BackSide,
   });
 
-  // Sleek tall urban totem scale (~2.71m total height, proportional circular base)
-  const S = 1.12;
+  // Sleek tall urban totem scale (~3.19m total height beside 3.30m avatar)
+  const S = 1.32;
 
   const addPart = (
     geom: THREE.BufferGeometry,
@@ -33301,7 +40011,7 @@ export function buildBlackCityTransitKioskMesh(
   // -------------------------------------------------------------------------
   // Lower forward-leaning column core
   addPart(
-    new THREE.BoxGeometry(0.62, 0.98, 0.28),
+    new RoundedBoxGeometry(0.62, 0.98, 0.28, 2, 0.022),
     COL_MONOLITH_BLACK,
     [0, 0.56, 0.02],
     [0.16, 0, 0],
@@ -33311,7 +40021,7 @@ export function buildBlackCityTransitKioskMesh(
   // Sculpted side ergonomic sweep cheeks on lower pedestal
   for (const sxSign of [-1, 1] as const) {
     addPart(
-      new THREE.BoxGeometry(0.05, 0.96, 0.31),
+      new RoundedBoxGeometry(0.05, 0.96, 0.31, 1, 0.012),
       COL_SWEEP_METALLIC,
       [sxSign * 0.315, 0.57, 0.02],
       [0.16, 0, 0],
@@ -33327,7 +40037,7 @@ export function buildBlackCityTransitKioskMesh(
   // -------------------------------------------------------------------------
   // Main forward-projecting reader knee block
   addPart(
-    new THREE.BoxGeometry(0.76, 0.18, 0.36),
+    new RoundedBoxGeometry(0.76, 0.18, 0.36, 2, 0.022),
     COL_MONOLITH_CHARCOAL,
     [0, 1.06, 0.13],
     [-0.18, 0, 0],
@@ -33336,7 +40046,7 @@ export function buildBlackCityTransitKioskMesh(
   );
   // Chamfered underside lip housing the cyan LED bar
   addPart(
-    new THREE.BoxGeometry(0.72, 0.06, 0.28),
+    new RoundedBoxGeometry(0.72, 0.06, 0.28, 1, 0.012),
     COL_MONOLITH_BLACK,
     [0, 0.97, 0.14],
     [0.28, 0, 0],
@@ -33401,7 +40111,7 @@ export function buildBlackCityTransitKioskMesh(
   // -------------------------------------------------------------------------
   // Main upper monolith cabinet tilted slightly back (-0.09 rad)
   addPart(
-    new THREE.BoxGeometry(0.76, 1.26, 0.23),
+    new RoundedBoxGeometry(0.76, 1.26, 0.23, 2, 0.024),
     COL_MONOLITH_BLACK,
     [0, 1.75, 0.03],
     [-0.09, 0, 0],
@@ -33411,7 +40121,7 @@ export function buildBlackCityTransitKioskMesh(
   // Brushed metallic ergonomic side sweep cheek ribs along upper cabinet
   for (const sxSign of [-1, 1] as const) {
     addPart(
-      new THREE.BoxGeometry(0.048, 1.24, 0.25),
+      new RoundedBoxGeometry(0.048, 1.24, 0.25, 1, 0.012),
       COL_SWEEP_METALLIC,
       [sxSign * 0.382, 1.75, 0.03],
       [-0.09, 0, 0],
@@ -33423,7 +40133,7 @@ export function buildBlackCityTransitKioskMesh(
   }
   // Tapered Top Crown Hood
   addPart(
-    new THREE.BoxGeometry(0.74, 0.08, 0.18),
+    new RoundedBoxGeometry(0.74, 0.08, 0.18, 2, 0.016),
     COL_MONOLITH_CHARCOAL,
     [0, 2.39, -0.01],
     [-0.09, 0, 0],
@@ -33632,7 +40342,7 @@ export function buildBlackCityTransitKioskMesh(
 
   // Glowing Cyan Horizontal LED Strip beneath the angled reader lip
   const cyanLedStrip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.62 * S, 0.022 * S, 0.024 * S),
+    new RoundedBoxGeometry(0.62 * S, 0.022 * S, 0.024 * S, 1, 0.006),
     new THREE.MeshBasicMaterial({ color: 0x00f2ff }),
   );
   cyanLedStrip.position.set(0, 0.965 * S, 0.285 * S);
@@ -33659,7 +40369,22 @@ export function buildBlackCityTransitKioskMesh(
   return kioskRoot;
 }
 
-
-
-
-
+const viteHotCtx = (
+  import.meta as unknown as {
+    hot?: {
+      dispose?: (cb: () => void) => void;
+      accept?: (cb: () => void) => void;
+    };
+  }
+).hot;
+if (viteHotCtx) {
+  viteHotCtx.dispose?.(() => {
+    cachedLoadedBlitzAssets = null;
+    inFlightLoadedBlitzAssetsPromise = null;
+  });
+  viteHotCtx.accept?.(() => {
+    if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+      window.location.reload();
+    }
+  });
+}

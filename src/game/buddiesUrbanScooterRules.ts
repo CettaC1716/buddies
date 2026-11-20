@@ -11,12 +11,26 @@ export type UrbanScooterKind = 'electric_scooter_bike' | 'push_kick_scooter';
 export const SCOOTER_RIDE_MODEL_SCALE = 2.0;
 
 /**
+ * Target real-world per-kind ride scales calibrated against the outdoor standing avatar (`~3.30m`).
+ * Kept alongside `SCOOTER_RIDE_MODEL_SCALE` until `BuddiesBlitzArena.tsx` switches riders by kind in Phase 2B.
+ */
+export const SCOOTER_RIDE_MODEL_SCALE_BY_KIND: Record<UrbanScooterKind, number> = {
+  electric_scooter_bike: 1.48,
+  push_kick_scooter: 2.0,
+};
+
+/**
  * Rider body lift (world units) while riding, per kind: positioned so the
  * rider's hips sit inside the saddle bucket (bike) or stand with knees softly
  * flexed over the deck (kick scooter) at SCOOTER_RIDE_MODEL_SCALE.
  */
 export const SCOOTER_RIDER_LIFT_M: Record<UrbanScooterKind, number> = {
   electric_scooter_bike: 0.635,
+  push_kick_scooter: 0.23,
+};
+
+export const SCOOTER_RIDER_LIFT_BY_KIND_M: Record<UrbanScooterKind, number> = {
+  electric_scooter_bike: 0.25,
   push_kick_scooter: 0.23,
 };
 
@@ -28,6 +42,15 @@ export const SCOOTER_RIDER_BACK_OFFSET_M: Record<UrbanScooterKind, number> = {
   electric_scooter_bike: -0.37,
   push_kick_scooter: 0,
 };
+
+export const SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M: Record<UrbanScooterKind, number> = {
+  electric_scooter_bike: -0.27,
+  push_kick_scooter: 0,
+};
+
+export function getScooterRideModelScale(kind: UrbanScooterKind): number {
+  return SCOOTER_RIDE_MODEL_SCALE_BY_KIND[kind];
+}
 
 export interface ScooterHandlebarGeometrySpec {
   steeringPivot: { x: number; y: number; z: number };
@@ -255,39 +278,49 @@ export interface StaticDisplayScooterPlacement {
 }
 
 /**
- * Central Plaza Urban Scooter Showroom Layout (`screenshot_12_f23594d9.png`).
- * Anchored inside `westPlantGroup` (`(-90.5, 0, 0)`) at local `(-10.2, 2.50, -1.2)`,
+ * Unified 3-Bay Civic Commercial Arcade — Bay 3 (Right / North) Urban Scooter & Mobility
+ * (`Kios Kendaraan Skuter Bike & Push Scooter`).
+ *
+ * Bay 3 center sits at `world = (-100.10, 2.50, -11.15)` (`arcade localX = +6.75`),
  * facing East (`+X`, `rotation.y = Math.PI / 2`) onto the Central Plaza Upper Deck (`y = 2.50m`).
  */
 export const URBAN_SCOOTER_SHOP_LAYOUT = {
-  westPlantOriginX: -90.5,
+  westPlantOriginX: -92.75,
   westPlantOriginZ: 0.0,
-  kioskLocalX: -10.2,
+  kioskLocalX: -13.60,
   kioskLocalY: 2.50,
-  kioskLocalZ: -4.4,
+  kioskLocalZ: -11.15,
   kioskRotY: Math.PI / 2,
-  kioskScale: 1.48,
-  worldCenterX: -100.7,
+  kioskScale: 1.0,
+  worldCenterX: -106.35,
   worldBaseY: 2.50,
-  worldCenterZ: -4.4,
-  // Outdoor A-Frame Sign positioned outside front-right (North-East) corner, keeping entrance door clear
+  worldCenterZ: -11.15,
+  // Outdoor A-Frame Sign positioned beside Bay 3's double doors on the front cobblestone apron
   aFrameSignLocal: {
-    x: 1.66,
-    y: 0.01,
-    z: 2.06,
+    x: -1.10,
+    y: 0.045,
+    z: 4.05,
     rotY: 0.34,
   },
-  // Low floating 3D interaction triangle spot right beside the bottom-right of the A-Frame sign (`screenshot_13_e308ec4b.png`)
+  // Low floating 3D interaction triangle right beside/in front of Bay 3's double doors & A-Frame sign
   interactionMarkerLocal: {
-    x: 2.28,
+    x: 0.0,
     y: 0.0,
-    z: 2.26,
+    z: 4.95,
   },
-  // Front-Right Glass Entrance Door span in kiosk-local X (kept 100% clear of outdoor displays)
-  entranceDoorLocalXMin: 0.78,
-  entranceDoorLocalXMax: 2.04,
-  entranceDoorFrontLocalZ: 1.54,
-  // 2 Non-Rideable Static Showcase Scooters in front of Left & Center Display Windows
+  // Double-leaf Glass Entrance Door span in bay-local X (kept 100% clear of charging dock & scooters)
+  entranceDoorLocalXMin: -1.90,
+  entranceDoorLocalXMax: 0.10,
+  entranceDoorFrontLocalZ: 2.50,
+  // Tubular Steel U-Loop Charging Dock Rack clearly visible behind/between the 2 showcase scooters
+  chargingDockLocal: {
+    x: 2.02,
+    y: 0.045,
+    z: 2.98,
+    halfWidthLocal: 0.88,
+    halfDepthLocal: 0.28,
+  },
+  // 2 Non-Rideable Static Showcase Scooters docked neatly on Bay 3 cobblestone apron (no overhang)
   frontStaticDisplays: [
     {
       id: 'lobby_scooter_display_bike',
@@ -296,14 +329,14 @@ export const URBAN_SCOOTER_SHOP_LAYOUT = {
       isNft: true,
       isStaticDisplay: true,
       isRideable: false,
-      localX: -1.22,
-      localY: 0.0,
-      localZ: 2.58,
-      localRotY: 0.54,
-      localScale: 1.04,
+      localX: 1.38,
+      localY: 0.045,
+      localZ: 3.66,
+      localRotY: 0.56,
+      localScale: 1.48,
       steerAngleRad: 0.16,
-      plinthHalfWidthLocal: 0.44,
-      plinthHalfLengthLocal: 1.04,
+      plinthHalfWidthLocal: 0.36,
+      plinthHalfLengthLocal: 0.96,
       plinthHeightLocal: 0.045,
     },
     {
@@ -313,14 +346,14 @@ export const URBAN_SCOOTER_SHOP_LAYOUT = {
       isNft: true,
       isStaticDisplay: true,
       isRideable: false,
-      localX: 0.14,
-      localY: 0.0,
-      localZ: 2.46,
-      localRotY: 0.46,
-      localScale: 1.12,
+      localX: 2.75,
+      localY: 0.045,
+      localZ: 3.68,
+      localRotY: 0.44,
+      localScale: 1.72,
       steerAngleRad: 0.20,
-      plinthHalfWidthLocal: 0.30,
-      plinthHalfLengthLocal: 0.62,
+      plinthHalfWidthLocal: 0.26,
+      plinthHalfLengthLocal: 0.54,
       plinthHeightLocal: 0.045,
     },
   ] as readonly StaticDisplayScooterPlacement[],
@@ -364,11 +397,11 @@ const _scooterMarkerWorld = kioskLocalToWorldPose(
  * right beside/in front of the Urban Scooter Showroom A-Frame sidewalk sign (`screenshot_13_e308ec4b.png`).
  */
 export const URBAN_SCOOTER_SHOP_TRIGGER = {
-  x: _scooterMarkerWorld.x, // -97.355
-  z: _scooterMarkerWorld.z, // -7.774
+  x: _scooterMarkerWorld.x, // -95.15
+  z: _scooterMarkerWorld.z, // -11.15
   deckY: URBAN_SCOOTER_SHOP_LAYOUT.worldBaseY, // 2.50
   markerOffsetY: 0.38, // Low floating 3D triangle ~38cm above the plaza tiles
-  triggerRadius: 3.45,
+  triggerRadius: 2.30,
 } as const;
 
 export function evaluateUrbanScooterShopProximity(
@@ -403,8 +436,8 @@ export function computeScooterWheelSpinDeltaRad(
 }
 
 /**
- * Builds synchronized static OBB colliders for the Central Plaza Urban Scooter Showroom
- * and its 2 non-rideable outdoor display scooters (`y = 2.50m` Plaza Deck).
+ * Builds synchronized static OBB colliders for Bay 3's Charging Dock Rack,
+ * 2 non-rideable outdoor display scooters, and Scooter A-Frame sign.
  */
 export function computeScooterShopWorldColliders(): StaticWorldStructureObb[] {
   const s = URBAN_SCOOTER_SHOP_LAYOUT.kioskScale;
@@ -414,26 +447,32 @@ export function computeScooterShopWorldColliders(): StaticWorldStructureObb[] {
     URBAN_SCOOTER_SHOP_LAYOUT.aFrameSignLocal.z,
     URBAN_SCOOTER_SHOP_LAYOUT.aFrameSignLocal.rotY,
   );
+  const dockWorld = kioskLocalToWorldPose(
+    URBAN_SCOOTER_SHOP_LAYOUT.chargingDockLocal.x,
+    URBAN_SCOOTER_SHOP_LAYOUT.chargingDockLocal.y,
+    URBAN_SCOOTER_SHOP_LAYOUT.chargingDockLocal.z,
+    0,
+  );
 
   const colliders: StaticWorldStructureObb[] = [
     {
-      id: 'lobby_scooter_kiosk_body',
-      x: -100.55,
-      z: URBAN_SCOOTER_SHOP_LAYOUT.worldCenterZ,
-      halfX: 2.62,
-      halfZ: 3.30,
+      id: 'lobby_scooter_charging_dock',
+      x: +dockWorld.x.toFixed(2),
+      z: +dockWorld.z.toFixed(2),
+      halfX: +URBAN_SCOOTER_SHOP_LAYOUT.chargingDockLocal.halfDepthLocal.toFixed(2),
+      halfZ: +URBAN_SCOOTER_SHOP_LAYOUT.chargingDockLocal.halfWidthLocal.toFixed(2),
       rotY: 0,
-      heightY: 6.9,
+      heightY: 3.30,
       mat: 'metal',
     },
     {
       id: 'lobby_scooter_kiosk_sign',
       x: +signWorld.x.toFixed(2),
       z: +signWorld.z.toFixed(2),
-      halfX: 0.42,
-      halfZ: 0.42,
+      halfX: 0.34,
+      halfZ: 0.34,
       rotY: 0,
-      heightY: 3.85,
+      heightY: 3.55,
       mat: 'wood',
     },
   ];

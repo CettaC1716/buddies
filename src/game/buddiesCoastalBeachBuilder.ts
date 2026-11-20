@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { BEACHFRONT_STILT_CABIN_SPEC } from './buddiesPlanetCurvature';
 
 export interface CoastalBeachfrontBuildOptions<TWind> {
   parentGroup: THREE.Group;
@@ -53,10 +54,18 @@ function makeCanvas2d(w: number, h: number): {
   return { canvas, ctx };
 }
 
-function makeFallbackDataTex(r: number, g: number, b: number, a = 255): THREE.DataTexture {
+function makeFallbackDataTex(
+  r: number,
+  g: number,
+  b: number,
+  a = 255,
+  colorSpace: THREE.ColorSpace = THREE.SRGBColorSpace,
+): THREE.DataTexture {
   const data = new Uint8Array([r, g, b, a]);
   const tex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = colorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   tex.needsUpdate = true;
   return tex;
 }
@@ -65,132 +74,600 @@ function finalizeCoastalTex(
   canvas: HTMLCanvasElement,
   wrapS: THREE.Wrapping = THREE.RepeatWrapping,
   wrapT: THREE.Wrapping = THREE.RepeatWrapping,
+  colorSpace: THREE.ColorSpace = THREE.SRGBColorSpace,
 ): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = colorSpace;
   tex.wrapS = wrapS;
   tex.wrapT = wrapT;
+  tex.anisotropy = 4;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
   return tex;
 }
 
-/**
- * Continuous Mid-Res Teak / Driftwood Timber Planks (1024x512):
- * Layered harmonic wood-grain fibers, warm chamfer bevel highlights along every board edge,
- * organic knots, staggered butt joints, and subtle countersunk bronze fasteners.
- */
-function createCoastalTimberPlankTexture(): THREE.Texture {
-  const { canvas, ctx } = makeCanvas2d(1024, 512);
-  if (!canvas || !ctx) return makeFallbackDataTex(206, 170, 124);
+export interface PbrTextureTriplet {
+  map: THREE.Texture;
+  bumpMap: THREE.Texture;
+  roughnessMap: THREE.Texture;
+}
 
-  ctx.fillStyle = '#d8ba92';
-  ctx.fillRect(0, 0, 1024, 512);
-  const plankRows = 10;
-  const rowH = 512 / plankRows;
-  const tones = ['#e0c49d', '#d3b287', '#e3caa6', '#cea97d', '#dabf98'];
+export type PbrTimberVariant =
+  | 'coastal_oak'
+  | 'boardwalk_deck'
+  | 'cabin_cedar'
+  | 'galleon_hull'
+  | 'pastel_blue_door'
+  | 'weatherboard';
 
-  for (let r = 0; r < plankRows; r++) {
-    const y0 = r * rowH;
-    const midY = y0 + rowH * 0.5;
-    const base = tones[r % tones.length];
-
-    const grad = ctx.createLinearGradient(0, y0, 0, y0 + rowH);
-    grad.addColorStop(0.0, '#ebd3af');
-    grad.addColorStop(0.14, base);
-    grad.addColorStop(0.84, base);
-    grad.addColorStop(0.95, '#b69066');
-    grad.addColorStop(1.0, '#937049');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, y0, 1024, rowH);
-
-    // Continuous sweeping organic wood-grain splines across the entire 1024px plank
-    for (let g = 0; g < 11; g++) {
-      const freq = 0.011 + ((g + r) % 4) * 0.004;
-      const amp = 2.2 + (g % 3) * 1.4;
-      const phase = r * 1.7 + g * 0.9;
-      const gy0 = y0 + 5 + (g / 11) * (rowH - 12);
-      ctx.strokeStyle =
-        g % 3 === 0 ? 'rgba(116, 80, 44, 0.16)' : 'rgba(246, 226, 194, 0.15)';
-      ctx.lineWidth = g % 4 === 0 ? 1.8 : 1.0;
-      ctx.beginPath();
-      for (let x = 0; x <= 1024; x += 24) {
-        const yy = gy0 + Math.sin(x * freq + phase) * amp;
-        if (x === 0) ctx.moveTo(x, yy);
-        else ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
-    }
-
-    // Subtle concentric oval wood knot per alternating course
-    if (r % 2 === 1) {
-      const kx = ((r * 263 + 180) % 760) + 120;
-      const ky = midY + ((r % 3) - 1) * 7;
-      for (let k = 3; k >= 1; k--) {
-        ctx.strokeStyle = `rgba(110, 74, 40, ${0.14 + (4 - k) * 0.05})`;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.ellipse(kx, ky, k * 14, k * 4.2, 0.06, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-
-    // Fine bevel groove shadow line + staggered plank butt joint with bronze screw heads
-    ctx.fillStyle = '#8b6844';
-    ctx.fillRect(0, y0 + rowH - 2, 1024, 2);
-
-    const buttX = ((r * 293 + 96) % 780) + 120;
-    ctx.fillStyle = '#99754f';
-    ctx.fillRect(buttX, y0 + 1, 2.5, rowH - 3);
-    ctx.fillStyle = '#755635';
-    for (const sx of [buttX - 8, buttX + 7]) {
-      for (const sy of [y0 + 10, y0 + rowH - 13]) {
-        ctx.beginPath();
-        ctx.arc(sx, sy, 2.1, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
+const PBR_SIN_LUT_SIZE = 1024;
+const PBR_SIN_LUT = (() => {
+  const arr = new Float32Array(PBR_SIN_LUT_SIZE);
+  for (let i = 0; i < PBR_SIN_LUT_SIZE; i++) {
+    arr[i] = Math.sin((i / PBR_SIN_LUT_SIZE) * Math.PI * 2);
   }
-  return finalizeCoastalTex(canvas);
+  return arr;
+})();
+
+function fastLutSin(turns: number): number {
+  const idx = ((turns * PBR_SIN_LUT_SIZE) % PBR_SIN_LUT_SIZE + PBR_SIN_LUT_SIZE) & (PBR_SIN_LUT_SIZE - 1);
+  return PBR_SIN_LUT[idx];
+}
+
+function hash2dPeriodic(ix: number, iy: number, px: number, py: number, seed: number): number {
+  const wx = ((ix % px) + px) % px;
+  const wy = ((iy % py) + py) % py;
+  let h = (wx * 374761393 + wy * 668265263 + seed * 1442695041) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function smoothNoise2dPeriodic(u: number, v: number, px: number, py: number, seed: number): number {
+  const x = u * px;
+  const y = v * py;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n00 = hash2dPeriodic(x0, y0, px, py, seed);
+  const n10 = hash2dPeriodic(x0 + 1, y0, px, py, seed);
+  const n01 = hash2dPeriodic(x0, y0 + 1, px, py, seed);
+  const n11 = hash2dPeriodic(x0 + 1, y0 + 1, px, py, seed);
+  const nx0 = n00 + (n10 - n00) * sx;
+  const nx1 = n01 + (n11 - n01) * sx;
+  return nx0 + (nx1 - nx0) * sy;
+}
+
+function clampByte(v: number): number {
+  return v <= 0 ? 0 : v >= 255 ? 255 : v | 0;
+}
+
+function smoothstep01(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+export const SHARED_PBR_WOOD_LIGHTING_UNIFORM = {
+  uWoodFillScale: { value: 1.0 },
+};
+
+const pbrWoodWarmFillCacheKey = () => 'pbr-wood-warm-fill-v1';
+
+function applyPbrWoodWarmFillCompile(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.uniforms.uWoodFillScale = SHARED_PBR_WOOD_LIGHTING_UNIFORM.uWoodFillScale;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uWoodFillScale;')
+    .replace(
+      '#include <lights_fragment_end>',
+      `#include <lights_fragment_end>
+vec3 woodWorldNormal = transformNormalByInverseViewMatrix( geometryNormal, viewMatrix );
+float wHemi = clamp( woodWorldNormal.y * 0.5 + 0.5, 0.0, 1.0 );
+vec3 warmSandyBounce = mix( vec3( 0.36, 0.25, 0.18 ), vec3( 0.32, 0.29, 0.24 ), wHemi );
+reflectedLight.indirectDiffuse += diffuseColor.rgb * warmSandyBounce * uWoodFillScale;`,
+    );
 }
 
 /**
- * Continuous Mid-Res Coastal Painted Cedar Weatherboard (512x512).
+ * Shared `THREE.MeshStandardMaterial` cache keyed by `(colorHex, map.uuid, bumpMap.uuid, roughness)`
+ * (+ roughnessMap/bumpScale/metalness/side) so `bakeStaticGroupMeshes` merges wooden components
+ * into minimal GPU draw calls while preserving real-time PBR bump/roughness & shadows.
  */
-function createCoastalWeatherboardTexture(): THREE.Texture {
-  const { canvas, ctx } = makeCanvas2d(512, 512);
-  if (!canvas || !ctx) return makeFallbackDataTex(244, 237, 224);
-
-  ctx.fillStyle = '#f5eee2';
-  ctx.fillRect(0, 0, 512, 512);
-  const lapCount = 10;
-  const lapH = 512 / lapCount;
-  for (let i = 0; i < lapCount; i++) {
-    const y = i * lapH;
-    const grad = ctx.createLinearGradient(0, y, 0, y + lapH);
-    grad.addColorStop(0.0, '#fbf6ec');
-    grad.addColorStop(0.72, '#efe6d6');
-    grad.addColorStop(0.92, '#c8baa3');
-    grad.addColorStop(1.0, '#a3947e');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, y, 512, lapH);
-
-    // Subtle continuous brushed woodgrain undertone under cream paint
-    for (let g = 0; g < 6; g++) {
-      ctx.strokeStyle = 'rgba(155, 138, 114, 0.12)';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      const gy = y + 8 + g * ((lapH - 14) / 6);
-      for (let x = 0; x <= 512; x += 32) {
-        const yy = gy + Math.sin(x * 0.025 + i + g) * 1.4;
-        if (x === 0) ctx.moveTo(x, yy);
-        else ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#9b8d78';
-    ctx.fillRect(0, y + lapH - 2.2, 512, 2.2);
+export function getOrCreatePbrWoodMaterial(
+  cache: Map<string, THREE.MeshStandardMaterial>,
+  opts: {
+    colorHex?: string;
+    textures: PbrTextureTriplet;
+    roughness?: number;
+    bumpScale?: number;
+    metalness?: number;
+    side?: THREE.Side;
+    vertexColors?: boolean;
+  },
+): THREE.MeshStandardMaterial {
+  const vertexColors = opts.vertexColors ?? false;
+  const colorHex = vertexColors ? '#ffffff' : (opts.colorHex ?? '#ffffff').toLowerCase();
+  const roughness = opts.roughness ?? 0.88;
+  const bumpScale = opts.bumpScale ?? 0.032;
+  const metalness = opts.metalness ?? 0.02;
+  const side = opts.side ?? THREE.FrontSide;
+  const key = `${colorHex}_${opts.textures.map.uuid}_${opts.textures.bumpMap.uuid}_${opts.textures.roughnessMap.uuid}_${roughness.toFixed(3)}_${bumpScale.toFixed(4)}_${metalness.toFixed(3)}_${side}_${vertexColors ? 1 : 0}`;
+  let mat = cache.get(key);
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(colorHex),
+      map: opts.textures.map,
+      bumpMap: opts.textures.bumpMap,
+      bumpScale,
+      roughnessMap: opts.textures.roughnessMap,
+      roughness,
+      metalness,
+      vertexColors,
+      fog: true,
+      side,
+    });
+    mat.customProgramCacheKey = pbrWoodWarmFillCacheKey;
+    mat.onBeforeCompile = applyPbrWoodWarmFillCompile;
+    mat.userData.isPbrWoodMaterial = true;
+    cache.set(key, mat);
   }
-  return finalizeCoastalTex(canvas);
+  return mat;
+}
+
+/**
+ * High-resolution 1:1 UV-locked procedural timber PBR texture generator (`1024x512` / `1024x1024`)
+ * outputting synchronized:
+ *  - `map`: Sun-baked warm coastal oak / cedar / driftwood / mahogany / pastel-blue painted timber
+ *  - `bumpMap`: Chamfered bevel plank grooves, multi-octave curved grain relief, knots & countersunk nails
+ *  - `roughnessMap`: Matte tongue-and-groove crevices (`0.94+`) vs warm satin-matte board surfaces (`0.72–0.84`)
+ */
+export function createPbrTimberTextureSet(variant: PbrTimberVariant): PbrTextureTriplet {
+  const isSquare = variant !== 'coastal_oak';
+  const width = variant === 'pastel_blue_door' ? 512 : 1024;
+  const height = variant === 'pastel_blue_door' ? 512 : isSquare ? 1024 : 512;
+
+  if (typeof document === 'undefined') {
+    const fallbackRgb: Record<PbrTimberVariant, [number, number, number]> = {
+      coastal_oak: [228, 189, 139],
+      boardwalk_deck: [228, 189, 139],
+      cabin_cedar: [214, 157, 119],
+      galleon_hull: [198, 138, 93],
+      pastel_blue_door: [104, 154, 194],
+      weatherboard: [232, 222, 206],
+    };
+    const [r, g, b] = fallbackRgb[variant];
+    return {
+      map: makeFallbackDataTex(r, g, b, 255, THREE.SRGBColorSpace),
+      bumpMap: makeFallbackDataTex(180, 180, 180, 255, THREE.NoColorSpace),
+      roughnessMap: makeFallbackDataTex(204, 204, 204, 255, THREE.NoColorSpace),
+    };
+  }
+
+  const albedoPair = makeCanvas2d(width, height);
+  const bumpPair = makeCanvas2d(width, height);
+  const roughPair = makeCanvas2d(width, height);
+  if (!albedoPair.canvas || !albedoPair.ctx || !bumpPair.canvas || !bumpPair.ctx || !roughPair.canvas || !roughPair.ctx) {
+    return {
+      map: makeFallbackDataTex(228, 189, 139, 255, THREE.SRGBColorSpace),
+      bumpMap: makeFallbackDataTex(180, 180, 180, 255, THREE.NoColorSpace),
+      roughnessMap: makeFallbackDataTex(204, 204, 204, 255, THREE.NoColorSpace),
+    };
+  }
+
+  const albedoImg = albedoPair.ctx.createImageData(width, height);
+  const bumpImg = bumpPair.ctx.createImageData(width, height);
+  const roughImg = roughPair.ctx.createImageData(width, height);
+  if (!albedoImg?.data || !bumpImg?.data || !roughImg?.data) {
+    return {
+      map: makeFallbackDataTex(228, 189, 139, 255, THREE.SRGBColorSpace),
+      bumpMap: makeFallbackDataTex(180, 180, 180, 255, THREE.NoColorSpace),
+      roughnessMap: makeFallbackDataTex(204, 204, 204, 255, THREE.NoColorSpace),
+    };
+  }
+
+  const tonesByVariant: Record<PbrTimberVariant, readonly [number, number, number][]> = {
+    coastal_oak: [
+      [232, 192, 142],
+      [224, 184, 134],
+      [238, 200, 148],
+      [218, 178, 128],
+      [228, 189, 139],
+      [222, 182, 132],
+    ],
+    boardwalk_deck: [
+      [233, 194, 143],
+      [224, 185, 135],
+      [238, 200, 148],
+      [219, 179, 129],
+      [229, 190, 140],
+      [222, 182, 132],
+      [236, 197, 146],
+      [218, 178, 128],
+    ],
+    cabin_cedar: [
+      [216, 158, 120],
+      [209, 152, 114],
+      [224, 168, 130],
+      [204, 148, 110],
+      [212, 156, 118],
+    ],
+    galleon_hull: [
+      [200, 140, 94],
+      [192, 133, 88],
+      [210, 150, 104],
+      [186, 128, 84],
+      [196, 137, 92],
+    ],
+    pastel_blue_door: [
+      [104, 154, 194],
+      [96, 146, 186],
+      [110, 160, 200],
+      [92, 140, 180],
+    ],
+    weatherboard: [
+      [234, 224, 208],
+      [226, 216, 198],
+      [238, 229, 214],
+      [222, 212, 194],
+    ],
+  };
+
+  const rows =
+    variant === 'boardwalk_deck'
+      ? 16
+      : variant === 'galleon_hull'
+        ? 14
+        : variant === 'pastel_blue_door'
+          ? 6
+          : 10;
+  const rowH = height / rows;
+  const palette = tonesByVariant[variant];
+  const isLapSiding = variant === 'cabin_cedar' || variant === 'weatherboard';
+  const isPainted = variant === 'pastel_blue_door' || variant === 'weatherboard';
+  const hasButtJoints = !isLapSiding && variant !== 'pastel_blue_door';
+  const hasKnots = !isPainted;
+
+  const rowParams = Array.from({ length: rows }, (_, r) => {
+    const buttU1 = ((r * 293 + 117) % 740 + 130) / 1024;
+    const buttU2 = (buttU1 + 0.5) % 1.0;
+    const knotU = ((r * 419 + 193) % 760 + 130) / 1024;
+    const knotFracY = 0.28 + ((r * 37) % 44) / 100;
+    const tone = palette[r % palette.length];
+    return {
+      buttPx1: buttU1 * width,
+      buttPx2: buttU2 * width,
+      knotPx: knotU * width,
+      knotPy: knotFracY * rowH,
+      hasKnot: hasKnots && r % 2 === 1,
+      tone,
+      phase: r * 1.37 + (variant.length * 0.41),
+      freq: 5.5 + (r % 4) * 1.4,
+    };
+  });
+
+  const aData = albedoImg.data;
+  const bData = bumpImg.data;
+  const rData = roughImg.data;
+
+  for (let py = 0; py < height; py++) {
+    const rowFloat = (py / height) * rows;
+    const rIdx = Math.min(rows - 1, rowFloat | 0);
+    const rp = rowParams[rIdx];
+    const rowY = py - rIdx * rowH;
+    const rowFrac = rowY / rowH;
+
+    // Distance in pixels to top/bottom horizontal groove
+    const dTop = rowY;
+    const dBot = rowH - rowY;
+    const dHoriz = dTop < dBot ? dTop : dBot;
+
+    for (let px = 0; px < width; px++) {
+      const u = px / width;
+      const v = py / height;
+
+      // Determine plank segment along X for staggered butt-joint tone shifts
+      let dButt = 9999;
+      let segMod = 1.0;
+      if (hasButtJoints) {
+        const d1 = Math.min(Math.abs(px - rp.buttPx1), width - Math.abs(px - rp.buttPx1));
+        const d2 = Math.min(Math.abs(px - rp.buttPx2), width - Math.abs(px - rp.buttPx2));
+        dButt = d1 < d2 ? d1 : d2;
+        const inSegB =
+          rp.buttPx1 < rp.buttPx2
+            ? px >= rp.buttPx1 && px < rp.buttPx2
+            : px >= rp.buttPx1 || px < rp.buttPx2;
+        segMod = inSegB ? 0.975 : 1.02;
+      }
+
+      const dGroove = dHoriz < dButt ? dHoriz : dButt;
+
+      // Multi-octave organic curved grain + knot flow deflection
+      const macroWarp =
+        smoothNoise2dPeriodic(u, v, 6, 12, 11) * 0.42 +
+        smoothNoise2dPeriodic(u, v, 14, 24, 29) * 0.16;
+      let knotDeflect = 0;
+      let knotCoreDarken = 0;
+      let knotBumpDip = 0;
+      let knotRoughAdd = 0;
+
+      if (rp.hasKnot) {
+        let dxk = px - rp.knotPx;
+        if (dxk > width * 0.5) dxk -= width;
+        if (dxk < -width * 0.5) dxk += width;
+        const dyk = rowY - rp.knotPy;
+        const ellipDist = Math.hypot(dxk * 0.24, dyk * 1.15);
+        if (ellipDist < 22) {
+          const kEnv = 1.0 - ellipDist / 22;
+          const kEnvSq = kEnv * kEnv;
+          knotDeflect = (dyk >= 0 ? 1 : -1) * kEnvSq * 0.55;
+          knotCoreDarken = kEnvSq * (ellipDist < 7 ? 0.14 : 0.07);
+          knotBumpDip = kEnvSq * 0.10;
+          knotRoughAdd = kEnvSq * 0.05;
+        }
+      }
+
+      const grainArg = rowFrac * rp.freq + macroWarp * 1.9 + knotDeflect + rp.phase;
+      const ringWave = fastLutSin(grainArg * 0.55) * 0.5 + 0.5;
+      const fineFiber = smoothNoise2dPeriodic(u, v, 48, 120, 47);
+      const grainContrast = isPainted ? 0.05 : 0.10;
+      const grainShade =
+        1.0 + (ringWave - 0.5) * grainContrast + (fineFiber - 0.5) * (isPainted ? 0.04 : 0.06);
+
+      // Chamfer bevel & groove profile + lap siding shadow
+      let bevelAlbedo = 1.0;
+      let baseBump = 0.86 + (ringWave - 0.5) * 0.055 + (fineFiber - 0.5) * 0.03;
+      let baseRough = isPainted ? 0.82 : 0.82 + (ringWave - 0.5) * 0.04 + (fineFiber - 0.5) * 0.03;
+
+      if (isLapSiding) {
+        // Horizontal clapboard profile: subtle upper tuck, warm belly, soft lower shadow overhang
+        if (rowFrac > 0.88) {
+          const dropT = (rowFrac - 0.88) / 0.12;
+          bevelAlbedo = 1.0 - dropT * 0.22;
+          baseBump = 0.88 * (1.0 - dropT * 0.48);
+          baseRough = 0.83 + dropT * 0.11;
+        } else if (rowFrac < 0.10) {
+          const topT = rowFrac / 0.10;
+          bevelAlbedo = 0.88 + topT * 0.12;
+          baseBump = 0.56 + topT * 0.30;
+          baseRough = 0.88 - topT * 0.06;
+        } else {
+          // Subtle upward tilt luminance gradient on lap face
+          bevelAlbedo = 1.02 - rowFrac * 0.03;
+          baseBump = 0.76 + rowFrac * 0.14;
+        }
+      } else {
+        // Chamfered tongue-and-groove planks with warm golden-brown seams
+        if (dGroove < 2.2) {
+          const gT = dGroove / 2.2;
+          bevelAlbedo = 0.70 + gT * 0.16;
+          baseBump = 0.42 + gT * 0.22;
+          baseRough = 0.93 - gT * 0.03;
+        } else if (dGroove < 6.5) {
+          const bT = smoothstep01(2.2, 6.5, dGroove);
+          const edgeRim = dHoriz < 6.5 && dTop < dBot ? 1.04 : 0.96;
+          bevelAlbedo = 0.86 + (edgeRim - 0.86) * bT;
+          baseBump = 0.64 + (0.86 - 0.64) * bT;
+          baseRough = 0.90 - (0.90 - baseRough) * bT;
+        } else if (rowFrac < 0.14) {
+          bevelAlbedo = 1.03;
+        } else if (rowFrac > 0.88) {
+          bevelAlbedo = 0.96;
+        }
+      }
+
+      // Subtle countersunk fastener nail heads near butt joints & mid-joists
+      let nailDark = 1.0;
+      if (hasButtJoints) {
+        const nailY1 = rowH * 0.28;
+        const nailY2 = rowH * 0.72;
+        const dyN = Math.min(Math.abs(rowY - nailY1), Math.abs(rowY - nailY2));
+        if (dyN < 3.6) {
+          const joistX1 = (rp.buttPx1 + width * 0.25) % width;
+          const joistX2 = (rp.buttPx1 + width * 0.75) % width;
+          const dxN = Math.min(
+            Math.abs(px - (rp.buttPx1 - 10)),
+            Math.abs(px - (rp.buttPx1 + 10)),
+            Math.abs(px - (rp.buttPx2 - 10)),
+            Math.abs(px - (rp.buttPx2 + 10)),
+            Math.abs(px - joistX1),
+            Math.abs(px - joistX2),
+          );
+          if (dxN < 3.6) {
+            const nr = Math.hypot(dxN, dyN);
+            if (nr < 2.2) {
+              nailDark = 0.78;
+              baseBump = 0.58;
+              baseRough = 0.76;
+            } else if (nr < 3.5) {
+              nailDark = 0.88;
+              baseBump *= 0.82;
+            }
+          }
+        }
+      }
+
+      const finalShade = grainShade * bevelAlbedo * segMod * (1.0 - knotCoreDarken) * nailDark;
+      const outIdx = (py * width + px) * 4;
+
+      aData[outIdx] = clampByte(rp.tone[0] * finalShade);
+      aData[outIdx + 1] = clampByte(rp.tone[1] * finalShade);
+      aData[outIdx + 2] = clampByte(rp.tone[2] * finalShade);
+      aData[outIdx + 3] = 255;
+
+      const bumpByte = clampByte((baseBump - knotBumpDip) * 255);
+      bData[outIdx] = bumpByte;
+      bData[outIdx + 1] = bumpByte;
+      bData[outIdx + 2] = bumpByte;
+      bData[outIdx + 3] = 255;
+
+      const roughByte = clampByte((baseRough + knotRoughAdd) * 255);
+      rData[outIdx] = roughByte;
+      rData[outIdx + 1] = roughByte;
+      rData[outIdx + 2] = roughByte;
+      rData[outIdx + 3] = 255;
+    }
+  }
+
+  albedoPair.ctx.putImageData(albedoImg, 0, 0);
+  bumpPair.ctx.putImageData(bumpImg, 0, 0);
+  roughPair.ctx.putImageData(roughImg, 0, 0);
+
+  return {
+    map: finalizeCoastalTex(albedoPair.canvas, THREE.RepeatWrapping, THREE.RepeatWrapping, THREE.SRGBColorSpace),
+    bumpMap: finalizeCoastalTex(bumpPair.canvas, THREE.RepeatWrapping, THREE.RepeatWrapping, THREE.NoColorSpace),
+    roughnessMap: finalizeCoastalTex(roughPair.canvas, THREE.RepeatWrapping, THREE.RepeatWrapping, THREE.NoColorSpace),
+  };
+}
+
+/**
+ * Stepped Terracotta-Cedar Wood Shingle Roof PBR Texture Set (`1024x1024`):
+ * Staggered split-cedar shingles in warm terracotta/burnt-sienna tones with vertical wood grain,
+ * crisp split gaps, and deep stepped horizontal overlap shadows (`bumpMap` + `roughnessMap`).
+ */
+export function createPbrTerracottaShingleTextures(): PbrTextureTriplet {
+  const size = 1024;
+  if (typeof document === 'undefined') {
+    return {
+      map: makeFallbackDataTex(211, 146, 107, 255, THREE.SRGBColorSpace),
+      bumpMap: makeFallbackDataTex(180, 180, 180, 255, THREE.NoColorSpace),
+      roughnessMap: makeFallbackDataTex(212, 212, 212, 255, THREE.NoColorSpace),
+    };
+  }
+
+  const albedoPair = makeCanvas2d(size, size);
+  const bumpPair = makeCanvas2d(size, size);
+  const roughPair = makeCanvas2d(size, size);
+  if (!albedoPair.canvas || !albedoPair.ctx || !bumpPair.canvas || !bumpPair.ctx || !roughPair.canvas || !roughPair.ctx) {
+    return {
+      map: makeFallbackDataTex(211, 146, 107, 255, THREE.SRGBColorSpace),
+      bumpMap: makeFallbackDataTex(180, 180, 180, 255, THREE.NoColorSpace),
+      roughnessMap: makeFallbackDataTex(212, 212, 212, 255, THREE.NoColorSpace),
+    };
+  }
+
+  const albedoImg = albedoPair.ctx.createImageData(size, size);
+  const bumpImg = bumpPair.ctx.createImageData(size, size);
+  const roughImg = roughPair.ctx.createImageData(size, size);
+  if (!albedoImg?.data || !bumpImg?.data || !roughImg?.data) {
+    return {
+      map: makeFallbackDataTex(211, 146, 107, 255, THREE.SRGBColorSpace),
+      bumpMap: makeFallbackDataTex(180, 180, 180, 255, THREE.NoColorSpace),
+      roughnessMap: makeFallbackDataTex(212, 212, 212, 255, THREE.NoColorSpace),
+    };
+  }
+
+  const shingleTones: readonly [number, number, number][] = [
+    [198, 124, 92],
+    [214, 144, 102],
+    [226, 178, 134],
+    [204, 130, 95],
+    [218, 152, 110],
+    [196, 120, 88],
+    [224, 172, 128],
+  ];
+
+  const rows = 10;
+  const cols = 8;
+  const colW = size / cols;
+  const aData = albedoImg.data;
+  const bData = bumpImg.data;
+  const rData = roughImg.data;
+
+  for (let py = 0; py < size; py++) {
+    const rowFloat = (py / size) * rows;
+    const rIdx = Math.min(rows - 1, rowFloat | 0);
+    const rowFrac = rowFloat - rIdx;
+    const staggerPx = (rIdx % 2) * (colW * 0.5);
+
+    for (let px = 0; px < size; px++) {
+      const shiftedX = (px + staggerPx) % size;
+      const colFloat = shiftedX / colW;
+      const cIdx = Math.min(cols - 1, colFloat | 0);
+      const colFrac = colFloat - cIdx;
+
+      // Subtle per-shingle wavy bottom edge offset
+      const tileSeed = (rIdx * 13 + cIdx * 7) % 19;
+      const tone = shingleTones[(rIdx * 5 + cIdx * 3) % shingleTones.length];
+      const u = px / size;
+      const v = py / size;
+
+      const splitGrain = smoothNoise2dPeriodic(u, v, 96, 16, 73);
+      const coarseVar = smoothNoise2dPeriodic(u, v, 16, 16, 91);
+      const shadeGrain = 0.94 + splitGrain * 0.10 + (coarseVar - 0.5) * 0.07;
+
+      // Soft vertical split gap between individual cedar shingles
+      const dSidePx = Math.min(colFrac, 1.0 - colFrac) * colW;
+      let sideMul = 1.0;
+      let sideBump = 1.0;
+      let sideRough = 0.0;
+      if (dSidePx < 2.2) {
+        const st = dSidePx / 2.2;
+        sideMul = 0.72 + st * 0.16;
+        sideBump = 0.52 + st * 0.34;
+        sideRough = 0.09 * (1.0 - st);
+      } else if (dSidePx < 4.8) {
+        const bt = smoothstep01(2.2, 4.8, dSidePx);
+        sideMul = 0.88 + bt * 0.12;
+        sideBump = 0.86 + bt * 0.14;
+      }
+
+      // Stepped overlapping horizontal shingle lip (`rowFrac = 0.0` top underlap -> `0.90` thick butt -> `1.0` soft shadow)
+      const lipEdge = 0.89 + ((tileSeed % 5) - 2) * 0.008;
+      let stepAlbedo = 1.0;
+      let stepBump = 0.76;
+      let stepRough = 0.84;
+
+      if (rowFrac > lipEdge) {
+        const dropT = (rowFrac - lipEdge) / (1.0 - lipEdge);
+        stepAlbedo = 0.66 + (1.0 - dropT) * 0.18;
+        stepBump = 0.42 + (1.0 - dropT) * 0.24;
+        stepRough = 0.93;
+      } else if (rowFrac < 0.10) {
+        const topT = rowFrac / 0.10;
+        stepAlbedo = 0.86 + topT * 0.14;
+        stepBump = 0.58 + topT * 0.16;
+        stepRough = 0.89 - topT * 0.06;
+      } else {
+        const slopeT = (rowFrac - 0.10) / (lipEdge - 0.10);
+        stepAlbedo = 0.96 + slopeT * 0.06;
+        stepBump = 0.68 + slopeT * 0.24;
+        stepRough = 0.83 + (1.0 - slopeT) * 0.04;
+      }
+
+      const finalShade = shadeGrain * stepAlbedo * sideMul;
+      const outIdx = (py * size + px) * 4;
+
+      aData[outIdx] = clampByte(tone[0] * finalShade);
+      aData[outIdx + 1] = clampByte(tone[1] * finalShade);
+      aData[outIdx + 2] = clampByte(tone[2] * finalShade);
+      aData[outIdx + 3] = 255;
+
+      const bVal = clampByte(Math.min(1, stepBump * sideBump + (splitGrain - 0.5) * 0.045) * 255);
+      bData[outIdx] = bVal;
+      bData[outIdx + 1] = bVal;
+      bData[outIdx + 2] = bVal;
+      bData[outIdx + 3] = 255;
+
+      const rVal = clampByte(Math.min(0.98, stepRough + sideRough + (splitGrain - 0.5) * 0.04) * 255);
+      rData[outIdx] = rVal;
+      rData[outIdx + 1] = rVal;
+      rData[outIdx + 2] = rVal;
+      rData[outIdx + 3] = 255;
+    }
+  }
+
+  albedoPair.ctx.putImageData(albedoImg, 0, 0);
+  bumpPair.ctx.putImageData(bumpImg, 0, 0);
+  roughPair.ctx.putImageData(roughImg, 0, 0);
+
+  return {
+    map: finalizeCoastalTex(albedoPair.canvas, THREE.RepeatWrapping, THREE.RepeatWrapping, THREE.SRGBColorSpace),
+    bumpMap: finalizeCoastalTex(bumpPair.canvas, THREE.RepeatWrapping, THREE.RepeatWrapping, THREE.NoColorSpace),
+    roughnessMap: finalizeCoastalTex(roughPair.canvas, THREE.RepeatWrapping, THREE.RepeatWrapping, THREE.NoColorSpace),
+  };
 }
 
 /**
@@ -519,6 +996,78 @@ function makeGablePedimentGeo(width: number, peakH: number, thickness: number): 
 }
 
 /**
+ * Closed 45°-mitered rectangular perimeter rim/fascia collar in XZ centered at origin (`ExtrudeGeometry`).
+ * Eliminates corner butt gaps and overlapping box Z-fighting.
+ */
+function makeMitredFrameExtrudeGeo(
+  outerW: number,
+  outerD: number,
+  rimThick: number,
+  height: number,
+  bevelSize = 0.012,
+): THREE.BufferGeometry {
+  const b = Math.min(bevelSize, rimThick * 0.35, height * 0.35);
+  const hw = Math.max(0.05, outerW * 0.5 - b);
+  const hd = Math.max(0.05, outerD * 0.5 - b);
+  const ihw = Math.max(0.02, outerW * 0.5 - rimThick + b);
+  const ihd = Math.max(0.02, outerD * 0.5 - rimThick + b);
+
+  const outer = new THREE.Shape();
+  outer.moveTo(-hw, -hd);
+  outer.lineTo(hw, -hd);
+  outer.lineTo(hw, hd);
+  outer.lineTo(-hw, hd);
+  outer.closePath();
+
+  const inner = new THREE.Path();
+  inner.moveTo(-ihw, -ihd);
+  inner.lineTo(-ihw, ihd);
+  inner.lineTo(ihw, ihd);
+  inner.lineTo(ihw, -ihd);
+  inner.closePath();
+  outer.holes.push(inner);
+
+  const geo = makeBeveledExtrudeGeo(outer, Math.max(0.01, height - b * 2), b, b, 2, 4);
+  geo.rotateX(-Math.PI / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Continuous U-shaped mitered sill plate opening toward +Z (for 3-sided kiosk bases seated on deck).
+ */
+function makeUShapedSillExtrudeGeo(
+  outerW: number,
+  outerD: number,
+  sillThick: number,
+  height: number,
+  bevelSize = 0.010,
+): THREE.BufferGeometry {
+  const b = Math.min(bevelSize, sillThick * 0.35, height * 0.35);
+  const hw = Math.max(0.05, outerW * 0.5 - b);
+  const hd = Math.max(0.05, outerD * 0.5 - b);
+  const ihw = Math.max(0.02, outerW * 0.5 - sillThick + b);
+  const ihd = Math.max(0.02, outerD * 0.5 - sillThick + b);
+
+  const s = new THREE.Shape();
+  // In 2D prior to rotateX(-PI/2): shape y maps to -z, so back (-Z) is +hd and front (+Z) is -hd
+  s.moveTo(-hw, -hd);
+  s.lineTo(-ihw, -hd);
+  s.lineTo(-ihw, ihd);
+  s.lineTo(ihw, ihd);
+  s.lineTo(ihw, -hd);
+  s.lineTo(hw, -hd);
+  s.lineTo(hw, hd);
+  s.lineTo(-hw, hd);
+  s.closePath();
+
+  const geo = makeBeveledExtrudeGeo(s, Math.max(0.01, height - b * 2), b, b, 2, 4);
+  geo.rotateX(-Math.PI / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
  * Smooth Lathe-turned circular top / disc with rounded bullnose outer edge (`r` is outer radius).
  */
 function makeBullnoseDiscGeo(
@@ -830,6 +1379,38 @@ function makeTorpedoRescueBuoyGeo(): THREE.BufferGeometry {
 }
 
 /**
+ * Scales cylinder side UVs in world meters while keeping end-caps cleanly planar.
+ */
+export function applyCylinderWoodMetricUvs<T extends THREE.BufferGeometry>(
+  geo: T,
+  radiusMeters: number,
+  heightMeters: number,
+  tileU = 2.0,
+  tileV = 2.0,
+): T {
+  const pos = geo.getAttribute('position');
+  const norm = geo.getAttribute('normal');
+  const uv = geo.getAttribute('uv');
+  if (!pos || !norm || !uv) return geo;
+
+  const circ = Math.max(0.4, Math.PI * 2 * radiusMeters);
+  const repeatU = Math.max(0.5, circ / tileU);
+  const repeatV = Math.max(0.5, heightMeters / tileV);
+
+  for (let i = 0; i < pos.count; i++) {
+    if (Math.abs(norm.getY(i)) > 0.72) {
+      uv.setXY(i, pos.getX(i) / tileU, pos.getZ(i) / tileV);
+    } else {
+      // Map cylinder height along U so longitudinal wood grain runs vertically along pilings/poles
+      uv.setXY(i, uv.getY(i) * repeatV, uv.getX(i) * repeatU);
+    }
+  }
+  uv.needsUpdate = true;
+  geo.userData.preserveCustomUv = true;
+  return geo;
+}
+
+/**
  * Continuous Metric Triplanar/Box UV Projector:
  * Works seamlessly on rounded boxes, beveled extrusions, curved gables, and timber slats
  * so procedural grain runs uninterrupted along each part's longest dimension.
@@ -842,6 +1423,7 @@ function applyBeachContinuousBoxUVs(
   weatherboardTex?: THREE.Texture,
   concreteTex?: THREE.Texture,
   travertineTex?: THREE.Texture,
+  extraWoodTexs?: readonly THREE.Texture[],
 ) {
   if (!mapTex || geo.userData.preserveCustomUv) return;
   const posAttr = geo.attributes.position as THREE.BufferAttribute | undefined;
@@ -862,14 +1444,20 @@ function applyBeachContinuousBoxUVs(
   const verticalDominant = spanY > Math.max(spanX, spanZ) * 1.15;
 
   const isBoardwalk = mapTex === boardwalkTex;
+  const isWoodLike =
+    mapTex === timberTex ||
+    isBoardwalk ||
+    Boolean(extraWoodTexs && extraWoodTexs.includes(mapTex));
   const unitM =
     mapTex === weatherboardTex
-      ? 1.75
+      ? 2.2
       : mapTex === concreteTex || mapTex === travertineTex
         ? 2.75
-        : mapTex === timberTex
-          ? 2.1
-          : 1.9;
+        : isBoardwalk
+          ? 3.2
+          : isWoodLike
+            ? 2.15
+            : 1.9;
 
   for (let i = 0; i < posAttr.count; i++) {
     const px = posAttr.getX(i);
@@ -883,7 +1471,7 @@ function applyBeachContinuousBoxUVs(
     let v: number;
     if (ny >= nx && ny >= nz) {
       // Top / bottom faces
-      if (mapTex === timberTex && !isBoardwalk && spanZ > spanX * 1.1) {
+      if (isWoodLike && !isBoardwalk && spanZ > spanX * 1.1) {
         u = pz / unitM;
         v = px / unitM;
       } else {
@@ -892,7 +1480,7 @@ function applyBeachContinuousBoxUVs(
       }
     } else if (nx >= nz) {
       // +/- X side faces
-      if (mapTex === timberTex && verticalDominant) {
+      if (isWoodLike && verticalDominant) {
         u = py / unitM;
         v = pz / unitM;
       } else {
@@ -901,17 +1489,13 @@ function applyBeachContinuousBoxUVs(
       }
     } else {
       // +/- Z front/back faces
-      if (mapTex === timberTex && verticalDominant) {
+      if (isWoodLike && verticalDominant) {
         u = py / unitM;
         v = px / unitM;
       } else {
         u = px / unitM;
         v = py / unitM;
       }
-    }
-    if (isBoardwalk) {
-      u *= 0.28;
-      v *= 0.28;
     }
     uvAttr.setXY(i, u, v);
   }
@@ -941,14 +1525,35 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   seBeachGroup.name = 'SouthEastBeachfrontPark3D';
   parentGroup.add(seBeachGroup);
 
-  const coastalTimberTex = createCoastalTimberPlankTexture();
-  const boardwalkDeckTex = coastalTimberTex.clone();
-  boardwalkDeckTex.wrapS = THREE.RepeatWrapping;
-  boardwalkDeckTex.wrapT = THREE.RepeatWrapping;
-  boardwalkDeckTex.repeat.set(3.2, 8.5);
-  boardwalkDeckTex.needsUpdate = true;
+  const coastalOakSet = createPbrTimberTextureSet('coastal_oak');
+  const boardwalkDeckSet = createPbrTimberTextureSet('boardwalk_deck');
+  const cabinCedarSet = createPbrTimberTextureSet('cabin_cedar');
+  const galleonHullSet = createPbrTimberTextureSet('galleon_hull');
+  const pastelDoorSet = createPbrTimberTextureSet('pastel_blue_door');
+  const weatherboardSet = createPbrTimberTextureSet('weatherboard');
+  const terracottaShingleSet = createPbrTerracottaShingleTextures();
 
-  const coastalWeatherboardTex = createCoastalWeatherboardTexture();
+  const coastalTimberTex = coastalOakSet.map;
+  const boardwalkDeckTex = boardwalkDeckSet.map;
+  const coastalWeatherboardTex = weatherboardSet.map;
+
+  const pbrWoodTripletByMap = new Map<string, PbrTextureTriplet>([
+    [coastalOakSet.map.uuid, coastalOakSet],
+    [boardwalkDeckSet.map.uuid, boardwalkDeckSet],
+    [cabinCedarSet.map.uuid, cabinCedarSet],
+    [galleonHullSet.map.uuid, galleonHullSet],
+    [pastelDoorSet.map.uuid, pastelDoorSet],
+    [weatherboardSet.map.uuid, weatherboardSet],
+    [terracottaShingleSet.map.uuid, terracottaShingleSet],
+  ]);
+  const extraWoodMaps = [
+    cabinCedarSet.map,
+    galleonHullSet.map,
+    pastelDoorSet.map,
+    terracottaShingleSet.map,
+  ];
+  const pbrWoodMatCache = new Map<string, THREE.MeshStandardMaterial>();
+
   const coastalAwningTex = createCoastalStripedAwningTexture();
   const coastalSailClothTex = createCoastalSailClothTexture();
   const showerPebbleTex = createShowerPebbleBasinTexture();
@@ -956,6 +1561,32 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   const coastalHempRopeTex = createCoastalHempRopeTexture();
   const kioskChalkboardTex = createKioskChalkboardTexture();
   const surfSignTex = createSurfRentalSignTexture();
+
+  // Map legacy coastal wood hex shades onto warm sunny honey-pine PBR tint multipliers
+  // (never multiplies brown x brown; preserves clear hierarchy between deck vs structural framing)
+  const resolvePbrWoodTint = (rawHex: string): string => {
+    const h = rawHex.toLowerCase();
+    if (h === '#ffffff' || h === '#f5efe4' || h === '#eee6d6') return '#ffffff';
+    if (h === '#d5af80' || h === '#d4ae7e' || h === '#cfa576' || h === '#c89d6c' || h === '#f5e2cc') {
+      return '#fff6ea';
+    }
+    if (h === '#ecd4bc') return '#faebd7';
+    if (
+      h === '#b88b5b' ||
+      h === '#b88652' ||
+      h === '#b68959' ||
+      h === '#b58858' ||
+      h === '#a67b4e' ||
+      h === '#dfc0a0'
+    ) {
+      return '#f4dec4';
+    }
+    if (h === '#cfa984') return '#e6c49e';
+    if (h === '#9e7448' || h === '#8f673e' || h === '#876139' || h === '#7d5934' || h === '#b8926e') {
+      return '#d8b38c';
+    }
+    return rawHex;
+  };
 
   const addBeachPart = (
     parent: THREE.Object3D,
@@ -965,6 +1596,7 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     rot: [number, number, number] = [0, 0, 0],
     strokeW = 0.018,
     mapTex?: THREE.Texture,
+    pbrOverrides?: { roughness?: number; bumpScale?: number; metalness?: number; side?: THREE.Side },
   ): THREE.Mesh => {
     applyBeachContinuousBoxUVs(
       geo,
@@ -974,7 +1606,28 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
       coastalWeatherboardTex,
       lobbyConcreteTex,
       coastalTravertineTex,
+      extraWoodMaps,
     );
+    const pbrTriplet = mapTex ? pbrWoodTripletByMap.get(mapTex.uuid) : undefined;
+    if (pbrTriplet) {
+      const pbrMat = getOrCreatePbrWoodMaterial(pbrWoodMatCache, {
+        colorHex: resolvePbrWoodTint(colorHex),
+        textures: pbrTriplet,
+        roughness: pbrOverrides?.roughness ?? (pbrTriplet === weatherboardSet ? 0.86 : 0.88),
+        bumpScale: pbrOverrides?.bumpScale ?? 0.032,
+        metalness: pbrOverrides?.metalness ?? 0.02,
+        side: pbrOverrides?.side ?? THREE.FrontSide,
+      });
+      const mesh = new THREE.Mesh(geo, pbrMat);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.rotation.set(rot[0], rot[1], rot[2]);
+      mesh.castShadow = !isSoftwareGl;
+      mesh.receiveShadow = !isSoftwareGl;
+      // Zero cartoon outline and zero cel-step shader override on PBR timber!
+      parent.add(mesh);
+      return mesh;
+    }
+
     const effectiveTint = mapTex ? '#ffffff' : colorHex;
     const mesh = new THREE.Mesh(
       geo,
@@ -1280,11 +1933,11 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   addBeachPart(pergolaRoofPivot, mainHeaderBeamGeo, COL_DRIFTWOOD_DARK, [0, 0, -2.8], [0, 0, 0], 0.016, coastalTimberTex);
   const tieBeamGeo = makeRoundedBoxGeo(0.26, 0.24, PERG_D + 1.3, 0.038, 2);
   for (const cx of [-4.9, 0.0, 4.9]) {
-    addBeachPart(pergolaRoofPivot, tieBeamGeo, COL_DRIFTWOOD_DARK, [cx, 0.12, 0], [0, 0, 0], 0.014, coastalTimberTex);
+    addBeachPart(pergolaRoofPivot, tieBeamGeo, COL_DRIFTWOOD_DARK, [cx, 0.16, 0], [0, 0, 0], 0.014, coastalTimberTex);
   }
   const rafterGeo = makeRoundedBoxGeo(0.14, 0.20, PERG_D + 1.4, 0.032, 2);
   for (let rx = -5.2; rx <= 5.21; rx += 0.65) {
-    addBeachPart(pergolaRoofPivot, rafterGeo, COL_DRIFTWOOD, [rx, 0.28, 0], [0, 0, 0], 0.011, coastalTimberTex);
+    addBeachPart(pergolaRoofPivot, rafterGeo, COL_DRIFTWOOD, [rx, 0.34, 0], [0, 0, 0], 0.011, coastalTimberTex);
   }
 
   // Continuous smooth doubly-curved linen canvas sail cloths (zero broken segments)
@@ -1309,10 +1962,10 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
 
   // 2 Bullnose Coastal Café Tables + 6 Contoured Circular Stools
   const tableTopGeo = makeBullnoseDiscGeo(0.82, 0.09, 24, 0.025);
-  const tableColGeo = new THREE.CylinderGeometry(0.10, 0.12, 0.74, 16);
+  const tableColGeo = applyCylinderWoodMetricUvs(new THREE.CylinderGeometry(0.10, 0.12, 0.74, 16), 0.11, 0.74);
   const tableFootGeo = makeBullnoseDiscGeo(0.41, 0.06, 20, 0.02);
   const stoolTopGeo = makeBullnoseDiscGeo(0.28, 0.07, 22, 0.022);
-  const stoolLegGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.44, 14);
+  const stoolLegGeo = applyCylinderWoodMetricUvs(new THREE.CylinderGeometry(0.06, 0.08, 0.44, 14), 0.07, 0.44);
   for (const tblX of [-0.8, 2.6]) {
     addBeachPart(beachPergolaGrp, tableTopGeo, '#cfa576', [tblX, 0.82, 0.2], [0, 0, 0], 0.012, coastalTimberTex);
     addBeachPart(beachPergolaGrp, tableColGeo, COL_DRIFTWOOD_DARK, [tblX, 0.44, 0.2], [0, 0, 0], 0.009, coastalTimberTex);
@@ -1487,24 +2140,35 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     coastalTimberTex,
   );
 
-  const kioskPostGeo = makeRoundedBoxGeo(0.24, KIOSK_WALL_H, 0.24, 0.04, 2);
+  // Continuous U-shaped floor sill plate seated directly into sub-deck (eliminating 0.020m air gap)
+  addBeachPart(
+    juiceKioskGrp,
+    makeUShapedSillExtrudeGeo(KIOSK_W + 0.06, KIOSK_D + 0.06, 0.28, 0.075, 0.014),
+    COL_DRIFTWOOD_DARK,
+    [0, 0.125, -0.02],
+    [0, 0, 0],
+    0.011,
+    coastalTimberTex,
+  );
+
+  const kioskPostGeo = makeRoundedBoxGeo(0.24, KIOSK_WALL_H + 0.05, 0.24, 0.04, 2);
   for (const cx of [-2.42, 2.42]) {
     for (const cz of [-1.72, 1.72]) {
-      addBeachPart(juiceKioskGrp, kioskPostGeo, COL_DRIFTWOOD, [cx, 0.12 + KIOSK_WALL_H * 0.5, cz], [0, 0, 0], 0.014, coastalTimberTex);
+      addBeachPart(juiceKioskGrp, kioskPostGeo, COL_DRIFTWOOD, [cx, 0.095 + (KIOSK_WALL_H + 0.05) * 0.5, cz], [0, 0, 0], 0.014, coastalTimberTex);
     }
   }
 
-  // Weatherboard Rear Wall & Door
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(KIOSK_W - 0.16, KIOSK_WALL_H, 0.22, 0.03, 2), '#f5efe4', [0, 0.12 + KIOSK_WALL_H * 0.5, -1.68], [0, 0, 0], 0.015, coastalWeatherboardTex);
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(1.22, 2.28, 0.08, 0.025, 2), COL_DRIFTWOOD, [-0.95, 1.26, -1.80], [0, 0, 0], 0.012, coastalTimberTex);
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(1.06, 2.14, 0.10, 0.022, 2), '#eee6d6', [-0.95, 1.26, -1.82], [0, 0, 0], 0.011);
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.68, 0.42, 0.12, 0.015, 1), '#876139', [-0.95, 0.56, -1.83], [0, 0, 0], 0.008, lobbyLouverTex);
-  addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.055, 14, 12), '#d97706', [-0.52, 1.18, -1.88], [0, 0, 0], 0.006);
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.88, 0.38, 0.09, 0.018, 1), COL_DRIFTWOOD, [1.15, 2.48, -1.81], [0, 0, 0], 0.010, lobbyLouverTex);
+  // Weatherboard Rear Wall & Door (inset slightly from post top/bottom and faces so zero coplanar ZF)
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(KIOSK_W - 0.24, KIOSK_WALL_H + 0.02, 0.18, 0.03, 2), '#f5efe4', [0, 0.105 + (KIOSK_WALL_H + 0.02) * 0.5, -1.68], [0, 0, 0], 0, coastalWeatherboardTex);
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(1.22, 2.30, 0.08, 0.025, 2), COL_DRIFTWOOD, [-0.95, 1.245, -1.78], [0, 0, 0], 0, coastalTimberTex);
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(1.06, 2.14, 0.10, 0.022, 2), '#eee6d6', [-0.95, 1.255, -1.80], [0, 0, 0], 0, coastalWeatherboardTex);
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.68, 0.42, 0.12, 0.015, 1), '#876139', [-0.95, 0.56, -1.81], [0, 0, 0], 0, lobbyLouverTex);
+  addBeachPart(juiceKioskGrp, new THREE.SphereGeometry(0.055, 14, 12), '#d97706', [-0.52, 1.18, -1.86], [0, 0, 0], 0.006);
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.88, 0.38, 0.09, 0.018, 1), COL_DRIFTWOOD, [1.15, 2.48, -1.79], [0, 0, 0], 0, lobbyLouverTex);
 
   // Left & Right Side Walls with True Triangular Extruded Gables + Curved Mini Awnings
-  const kioskSideWallGeo = makeRoundedBoxGeo(0.22, KIOSK_WALL_H, KIOSK_D - 0.16, 0.03, 2);
-  const kioskGableGeo = makeGablePedimentGeo(KIOSK_D - 0.16, 0.94, 0.20);
+  const kioskSideWallGeo = makeRoundedBoxGeo(0.18, KIOSK_WALL_H + 0.008, KIOSK_D - 0.28, 0.03, 2);
+  const kioskGableGeo = makeGablePedimentGeo(KIOSK_D - 0.24, 0.94, 0.18);
   const makeSideAwningGeo = (dir: number) => {
     const g = makeCurvedAwningShellGeo(1.18, 0.68, 0.04, 0.055);
     g.rotateX(0.38);
@@ -1514,11 +2178,11 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   const sideAwningGeos = { [-1]: makeSideAwningGeo(-1), [1]: makeSideAwningGeo(1) } as const;
   for (const sx of [-2.38, 2.38]) {
     const dir = sx < 0 ? -1 : 1;
-    addBeachPart(juiceKioskGrp, kioskSideWallGeo, '#f5efe4', [sx, 0.12 + KIOSK_WALL_H * 0.5, 0], [0, 0, 0], 0.015, coastalWeatherboardTex);
-    addBeachPart(juiceKioskGrp, kioskGableGeo, '#f5efe4', [sx, KIOSK_WALL_H + 0.08, 0], [0, Math.PI / 2, 0], 0.012, coastalWeatherboardTex);
-    addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.10, 1.24, 1.04, 0.02, 2), COL_DRIFTWOOD, [sx + dir * 0.09, 1.92, 0.05], [0, 0, 0], 0.010, coastalTimberTex);
-    addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.12, 1.06, 0.86, 0.015, 1), '#a8845c', [sx + dir * 0.10, 1.92, 0.05], [0, 0, 0], 0.009, lobbyLouverTex);
-    addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.32, 0.24, 1.12, 0.03, 2), COL_DRIFTWOOD, [sx + dir * 0.24, 1.18, 0.05], [0, 0, 0], 0.011, coastalTimberTex);
+    addBeachPart(juiceKioskGrp, kioskSideWallGeo, '#f5efe4', [sx, 0.10 + (KIOSK_WALL_H + 0.008) * 0.5, 0], [0, 0, 0], 0, coastalWeatherboardTex);
+    addBeachPart(juiceKioskGrp, kioskGableGeo, '#f5efe4', [sx, KIOSK_WALL_H + 0.08, 0], [0, Math.PI / 2, 0], 0, coastalWeatherboardTex);
+    addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.10, 1.24, 1.04, 0.02, 2), COL_DRIFTWOOD, [sx + dir * 0.09, 1.92, 0.05], [0, 0, 0], 0, coastalTimberTex);
+    addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.12, 1.06, 0.86, 0.015, 1), '#a8845c', [sx + dir * 0.10, 1.92, 0.05], [0, 0, 0], 0, lobbyLouverTex);
+    addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.32, 0.24, 1.12, 0.03, 2), COL_DRIFTWOOD, [sx + dir * 0.24, 1.18, 0.05], [0, 0, 0], 0, coastalTimberTex);
     addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(0.24, 0.06, 1.02, 0.015, 1), '#4a3525', [sx + dir * 0.24, 1.29, 0.05], [0, 0, 0], 0.007);
     addBeachPart(juiceKioskGrp, sideAwningGeos[dir], '#ffffff', [sx + dir * 0.36, 2.66, 0.05], [0, 0, 0], 0.010, coastalAwningTex);
   }
@@ -1531,10 +2195,10 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     addBeachPart(juiceKioskGrp, smallSoilGeo, '#4a3525', [kpX, 0.54, kpZ], [0, 0, 0], 0.007);
   }
 
-  // Front Counter Bay + Menu + Rounded Bullnose Service Ledge
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(KIOSK_W - 0.2, 1.16, 0.24, 0.03, 2), '#f5efe4', [0, 0.70, 1.66], [0, 0, 0], 0.015, coastalWeatherboardTex);
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(1.38, 1.68, 0.22, 0.025, 2), '#f5efe4', [-1.72, 2.12, 1.66], [0, 0, 0], 0.012, coastalWeatherboardTex);
-  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(KIOSK_W - 0.2, 0.42, 0.24, 0.025, 2), '#f5efe4', [0, 3.06, 1.66], [0, 0, 0], 0.012, coastalWeatherboardTex);
+  // Front Counter Bay + Menu + Rounded Bullnose Service Ledge (grounded into sub-deck)
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(KIOSK_W - 0.24, 1.20, 0.20, 0.03, 2), '#f5efe4', [0, 0.695, 1.66], [0, 0, 0], 0.015, coastalWeatherboardTex);
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(1.38, 1.68, 0.20, 0.025, 2), '#f5efe4', [-1.72, 2.12, 1.66], [0, 0, 0], 0.012, coastalWeatherboardTex);
+  addBeachPart(juiceKioskGrp, makeRoundedBoxGeo(KIOSK_W - 0.24, 0.42, 0.20, 0.025, 2), '#f5efe4', [0, 3.06, 1.66], [0, 0, 0], 0.012, coastalWeatherboardTex);
 
   const chalkGeo = makeRoundedBoxGeo(1.16, 1.38, 0.08, 0.02, 2);
   chalkGeo.userData.preserveCustomUv = true;
@@ -1570,12 +2234,12 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
 
   // Sculpted Round Wooden Bar Stools with Bullnose Tops & Tubular Torus Footrest Rings
   const barStoolTopGeo = makeBullnoseDiscGeo(0.30, 0.08, 24, 0.025);
-  const barStoolLegGeo = new THREE.CylinderGeometry(0.032, 0.026, 0.78, 12);
+  const barStoolLegGeo = applyCylinderWoodMetricUvs(new THREE.CylinderGeometry(0.032, 0.026, 0.78, 12), 0.03, 0.78);
   const barStoolRingGeo = new THREE.TorusGeometry(0.21, 0.022, 10, 24);
   barStoolRingGeo.rotateX(Math.PI / 2);
   for (const stoolX of [-1.85, -0.85]) {
     const stoolZ = 2.42;
-    addBeachPart(juiceKioskGrp, barStoolTopGeo, '#c89d6c', [stoolX, 0.88, stoolZ], [0, 0, 0], 0.011, coastalTimberTex);
+    addBeachPart(juiceKioskGrp, barStoolTopGeo, '#c89d6c', [stoolX, 0.88, stoolZ], [0, 0, 0], 0, coastalTimberTex);
     for (const [lx, lz] of [
       [-0.16, -0.16],
       [0.16, -0.16],
@@ -1588,11 +2252,11 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
         COL_DRIFTWOOD_DARK,
         [stoolX + lx, 0.48, stoolZ + lz],
         [lz * 0.25, 0, -lx * 0.25],
-        0.007,
+        0,
         coastalTimberTex,
       );
     }
-    addBeachPart(juiceKioskGrp, barStoolRingGeo, COL_DRIFTWOOD_DARK, [stoolX, 0.34, stoolZ], [0, 0, 0], 0.006);
+    addBeachPart(juiceKioskGrp, barStoolRingGeo, COL_DRIFTWOOD_DARK, [stoolX, 0.34, stoolZ], [0, 0, 0], 0, coastalTimberTex);
   }
 
   // Hanging Green Coconuts & Woven Lathe Sun Hat
@@ -1686,9 +2350,9 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   addBeachPart(surfRackGrp, rackXBraceGeo, COL_DRIFTWOOD_DARK, [0, 1.18, -0.26], [0.16, 0, -0.44], 0.012, coastalTimberTex);
   addBeachPart(surfRackGrp, makeRoundedBoxGeo(5.45, 0.16, 0.18, 0.035, 2), COL_DRIFTWOOD, [0, 1.98, 0.0], [0, 0, 0], 0.014, coastalTimberTex);
 
-  const dividerPegGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.68, 14);
+  const dividerPegGeo = applyCylinderWoodMetricUvs(new THREE.CylinderGeometry(0.04, 0.04, 0.68, 14), 0.04, 0.68);
   for (let pIdx = 0; pIdx < 6; pIdx++) {
-    addBeachPart(surfRackGrp, dividerPegGeo, COL_DRIFTWOOD_DARK, [-1.75 + pIdx * 0.70, 1.98, 0.28], [Math.PI / 2, 0, 0], 0.009, coastalTimberTex);
+    addBeachPart(surfRackGrp, dividerPegGeo, COL_DRIFTWOOD_DARK, [-1.75 + pIdx * 0.70, 1.98, 0.28], [Math.PI / 2, 0, 0], 0, coastalTimberTex);
   }
 
   const surfboardsSpec: {
@@ -1776,20 +2440,21 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
       addBeachPart(lifeguardGrp, lgStiltGeo, COL_DRIFTWOOD, [lx, 1.15, lz], [lz * 0.08, 0, -lx * 0.08], 0.014, coastalTimberTex);
     }
   }
-  const lgBraceGeo = makeRoundedBoxGeo(2.15, 0.12, 0.10, 0.02, 2);
+  const lgBraceGeo = makeRoundedBoxGeo(2.15, 0.12, 0.08, 0.02, 2);
   for (const sideZ of [-0.95, 0.95]) {
-    addBeachPart(lifeguardGrp, lgBraceGeo, COL_DRIFTWOOD_DARK, [0, 1.18, sideZ], [0, 0, 0.68], 0.011, coastalTimberTex);
-    addBeachPart(lifeguardGrp, lgBraceGeo, COL_DRIFTWOOD_DARK, [0, 1.18, sideZ], [0, 0, -0.68], 0.011, coastalTimberTex);
+    addBeachPart(lifeguardGrp, lgBraceGeo, COL_DRIFTWOOD_DARK, [0, 1.18, sideZ - 0.024], [0, 0, 0.68], 0.011, coastalTimberTex);
+    addBeachPart(lifeguardGrp, lgBraceGeo, COL_DRIFTWOOD_DARK, [0, 1.18, sideZ + 0.024], [0, 0, -0.68], 0.011, coastalTimberTex);
   }
-  addBeachPart(lifeguardGrp, makeRoundedBoxGeo(2.85, 0.16, 2.95, 0.04, 2), '#c89d6c', [0, 2.28, 0.10], [0, 0, 0], 0.016, coastalTimberTex);
-  addBeachPart(lifeguardGrp, makeRoundedBoxGeo(2.82, 0.08, 0.10, 0.025, 2), '#f5efe4', [0, 3.05, 1.50], [0, 0, 0], 0.011);
-  const lgRailGeo = makeRoundedBoxGeo(0.10, 0.08, 2.85, 0.025, 2);
+  addBeachPart(lifeguardGrp, makeRoundedBoxGeo(2.85, 0.16, 2.95, 0.04, 2), '#c89d6c', [0, 2.28, 0.10], [0, 0, 0], 0, coastalTimberTex);
+  // Continuous 45°-mitered U-shaped veranda handrail around Watchtower deck (flipped to open toward -Z)
+  const lgURailGeo = makeUShapedSillExtrudeGeo(2.82, 2.90, 0.12, 0.085, 0.018);
+  lgURailGeo.rotateY(Math.PI);
+  addBeachPart(lifeguardGrp, lgURailGeo, '#f5efe4', [0, 3.05, 0.10], [0, 0, 0], 0, coastalWeatherboardTex);
   const lgRailPostGeo = makeRoundedBoxGeo(0.12, 0.78, 0.12, 0.025, 2);
   for (const rx of [-1.35, 1.35]) {
-    addBeachPart(lifeguardGrp, lgRailGeo, '#f5efe4', [rx, 3.05, 0.10], [0, 0, 0], 0.011);
-    addBeachPart(lifeguardGrp, lgRailPostGeo, COL_DRIFTWOOD, [rx, 2.68, 1.48], [0, 0, 0], 0.009, coastalTimberTex);
+    addBeachPart(lifeguardGrp, lgRailPostGeo, COL_DRIFTWOOD, [rx, 2.68, 1.48], [0, 0, 0], 0, coastalTimberTex);
   }
-  addBeachPart(lifeguardGrp, makeRoundedBoxGeo(1.95, 2.05, 1.95, 0.04, 2), '#f5efe4', [0, 3.38, -0.18], [0, 0, 0], 0.016, coastalWeatherboardTex);
+  addBeachPart(lifeguardGrp, makeRoundedBoxGeo(1.95, 2.05, 1.95, 0.04, 2), '#f5efe4', [0, 3.38, -0.18], [0, 0, 0], 0, coastalWeatherboardTex);
   addBeachPart(lifeguardGrp, makeRoundedBoxGeo(2.02, 0.68, 2.02, 0.035, 2), '#38485c', [0, 3.68, -0.18], [0, 0, 0], 0.011);
   const lgRoofPanelGeo = makeRoundedBoxGeo(2.55, 0.12, 1.55, 0.03, 2);
   for (const rSide of [-1, 1] as const) {
@@ -1940,6 +2605,748 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   buildAdirondackBeachChair(96.2, 85.0, Math.PI / 2 + 0.05);
   buildAdirondackBeachChair(96.2, 88.2, Math.PI / 2 - 0.10);
   buildAdirondackBeachChair(97.5, 49.5, Math.PI / 2 - 0.20);
+
+  // =========================================================================
+  // 7. BEACHFRONT STILT TIMBER CABIN ("RUMAH PAPAN PANGGUNG TEPI PANTAI" — 1:1 VIDEO 1)
+  // =========================================================================
+  const stiltCabinGrp = new THREE.Group();
+  stiltCabinGrp.name = 'BeachfrontStiltTimberCabin';
+  stiltCabinGrp.position.set(BEACHFRONT_STILT_CABIN_SPEC.centerX, 0.0, BEACHFRONT_STILT_CABIN_SPEC.centerZ);
+  seBeachGroup.add(stiltCabinGrp);
+
+  {
+    const c = BEACHFRONT_STILT_CABIN_SPEC;
+    const deckY = c.deckTopY;
+    const dMinX = c.deckMinX - c.centerX; // -3.7
+    const dMaxX = c.deckMaxX - c.centerX; // +4.8
+    const dMinZ = c.deckMinZ - c.centerZ; // -4.0
+    const dMaxZ = c.deckMaxZ - c.centerZ; // +4.0
+    const dMidX = (dMinX + dMaxX) * 0.5; // +0.55
+    const dMidZ = (dMinZ + dMaxZ) * 0.5; // 0.0
+    const dW = dMaxX - dMinX; // 8.5
+    const dD = dMaxZ - dMinZ; // 8.0
+
+    const cabMinX = c.cabinBodyMinX - c.centerX; // -1.6
+    const cabMaxX = c.cabinBodyMaxX - c.centerX; // +2.5
+    const cabMinZ = c.cabinBodyMinZ - c.centerZ; // -3.2
+    const cabMaxZ = c.cabinBodyMaxZ - c.centerZ; // +1.6
+    const cabMidX = (cabMinX + cabMaxX) * 0.5; // +0.45
+    const cabMidZ = (cabMinZ + cabMaxZ) * 0.5; // -0.8
+    const cabW = cabMaxX - cabMinX; // 4.1
+    const cabD = cabMaxZ - cabMinZ; // 4.8
+
+    const stMinZ = c.stairMinZ - c.centerZ; // -2.0
+    const stMaxZ = c.stairMaxZ - c.centerZ; // +0.4
+    const stMidZ = (stMinZ + stMaxZ) * 0.5; // -0.8
+    const stW = stMaxZ - stMinZ; // 2.4
+
+    const coastalTimberDark = galleonHullSet.map;
+    const cabinSidingTex = cabinCedarSet.map;
+    const shingleRoofTex = terracottaShingleSet.map;
+    const pastelDoorTex = pastelDoorSet.map;
+
+    // Helper for dedicated non-timber details (cached per look so bakeStaticGroupMeshes merges cleanly)
+    const cabinAccentMatCache = new Map<string, THREE.MeshStandardMaterial>();
+    const addCabinAccentMesh = (
+      parent: THREE.Object3D,
+      geo: THREE.BufferGeometry,
+      optsMat: THREE.MeshStandardMaterialParameters,
+      pos: [number, number, number],
+      rot: [number, number, number] = [0, 0, 0],
+      castShadow = true,
+      receiveShadow = true,
+    ) => {
+      const colStr = optsMat.color ? new THREE.Color(optsMat.color).getHexString() : 'ffffff';
+      const emStr = optsMat.emissive ? new THREE.Color(optsMat.emissive).getHexString() : '000000';
+      const mKey = `${colStr}_${emStr}_${(optsMat.emissiveIntensity ?? 0).toFixed(2)}_${(optsMat.roughness ?? 0.5).toFixed(2)}_${(optsMat.metalness ?? 0).toFixed(2)}`;
+      let mat = cabinAccentMatCache.get(mKey);
+      if (!mat) {
+        mat = new THREE.MeshStandardMaterial({ fog: true, ...optsMat });
+        cabinAccentMatCache.set(mKey, mat);
+      }
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(pos[0], pos[1], pos[2]);
+      m.rotation.set(rot[0], rot[1], rot[2]);
+      m.castShadow = !isSoftwareGl && castShadow;
+      m.receiveShadow = !isSoftwareGl && receiveShadow;
+      parent.add(m);
+      return m;
+    };
+
+    // 7A. Round Timber Stilt Pilings (down to -1.85m into sand & ocean seabed) + Floor Girders + Diagonal Braces
+    const stiltPilingGeo = applyCylinderWoodMetricUvs(
+      new THREE.CylinderGeometry(0.21, 0.24, 2.66, 16),
+      0.22,
+      2.66,
+    );
+    const stiltCollarGeo = applyCylinderWoodMetricUvs(
+      new THREE.CylinderGeometry(0.245, 0.255, 0.14, 16),
+      0.25,
+      0.14,
+    );
+    const pilingXs = [-3.45, -1.0, 1.5, 4.55] as const;
+    const pilingZs = [-3.75, -1.25, 1.25, 3.75] as const;
+    for (const px of pilingXs) {
+      for (const pz of pilingZs) {
+        addBeachPart(stiltCabinGrp, stiltPilingGeo, '#dfc0a0', [px, -0.55, pz], [0, 0, 0], 0, coastalTimberDark, {
+          bumpScale: 0.034,
+          roughness: 0.9,
+        });
+        addBeachPart(stiltCabinGrp, stiltCollarGeo, '#b8926e', [px, 0.62, pz], [0, 0, 0], 0, coastalTimberDark);
+      }
+    }
+
+    // Main horizontal support girders (W-E & N-S) + deck rim fascia
+    const girderWEGeo = makeRoundedBoxGeo(dW - 0.16, 0.24, 0.24, 0.03, 2);
+    for (const pz of pilingZs) {
+      addBeachPart(stiltCabinGrp, girderWEGeo, '#dfc0a0', [dMidX, 0.72, pz], [0, 0, 0], 0, coastalTimberDark);
+    }
+    const girderNSGeo = makeRoundedBoxGeo(0.22, 0.22, dD - 0.16, 0.03, 2);
+    for (const px of [-3.45, 4.55]) {
+      addBeachPart(stiltCabinGrp, girderNSGeo, '#dfc0a0', [px, 0.72, dMidZ], [0, 0, 0], 0, coastalTimberDark);
+    }
+
+    // Diagonal cross-bracing timbers between outer pilings (East ocean side + South & North flanks)
+    const addDiagonalBrace = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
+      const pA = new THREE.Vector3(ax, ay, az);
+      const pB = new THREE.Vector3(bx, by, bz);
+      const dir = new THREE.Vector3().subVectors(pB, pA);
+      const len = dir.length();
+      const braceMesh = addBeachPart(
+        stiltCabinGrp,
+        makeRoundedBoxGeo(0.11, len, 0.11, 0.02, 1),
+        '#b8926e',
+        [(ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5],
+        [0, 0, 0],
+        0,
+        coastalTimberDark,
+      );
+      braceMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    };
+    for (let i = 0; i + 1 < pilingZs.length; i++) {
+      addDiagonalBrace(4.525, -0.22, pilingZs[i], 4.525, 0.58, pilingZs[i + 1]);
+      addDiagonalBrace(4.575, 0.58, pilingZs[i], 4.575, -0.22, pilingZs[i + 1]);
+    }
+    for (let i = 0; i + 1 < pilingXs.length; i++) {
+      for (const sideZ of [-3.75, 3.75] as const) {
+        addDiagonalBrace(pilingXs[i], -0.18, sideZ - 0.025, pilingXs[i + 1], 0.58, sideZ - 0.025);
+        addDiagonalBrace(pilingXs[i], 0.58, sideZ + 0.025, pilingXs[i + 1], -0.18, sideZ + 0.025);
+      }
+    }
+
+    // 7B. Walkable Veranda Plank Deck + Continuous 45°-Mitered Perimeter Bullnose Trim & Fascia
+    addBeachPart(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(dW - 0.44, 0.14, dD - 0.44, 0.02, 2),
+      '#ffffff',
+      [dMidX, deckY - 0.072, dMidZ],
+      [0, 0, 0],
+      0,
+      boardwalkDeckTex,
+      { bumpScale: 0.032, roughness: 0.86 },
+    );
+    // Single closed mitered perimeter bullnose border collar (`ExtrudeGeometry`, zero corner overlaps/gaps)
+    addBeachPart(
+      stiltCabinGrp,
+      makeMitredFrameExtrudeGeo(dW, dD, 0.22, 0.15, 0.018),
+      '#f5e2cc',
+      [dMidX, deckY - 0.075, dMidZ],
+      [0, 0, 0],
+      0,
+      coastalTimberTex,
+    );
+    // Single closed mitered perimeter skirt fascia inset beneath overhang
+    addBeachPart(
+      stiltCabinGrp,
+      makeMitredFrameExtrudeGeo(dW - 0.12, dD - 0.12, 0.08, 0.22, 0.012),
+      '#dfc0a0',
+      [dMidX, deckY - 0.25, dMidZ],
+      [0, 0, 0],
+      0,
+      coastalTimberDark,
+    );
+
+    // 7C. 4-Step Timber Staircase Descending West to Golden Beach Sand (world x = 103.5 .. 104.7)
+    const stairTreadGeo = makeRoundedBoxGeo(0.35, 0.075, stW - 0.08, 0.022, 2);
+    for (let s = 0; s < 4; s++) {
+      const topY = (s + 1) * (deckY / 4);
+      const sx = -4.75 + s * 0.30;
+      addBeachPart(
+        stiltCabinGrp,
+        stairTreadGeo,
+        '#ffffff',
+        [sx, topY - 0.0375, stMidZ],
+        [0, 0, 0],
+        0,
+        boardwalkDeckTex,
+      );
+      const riserH = Math.max(0.08, topY - 0.075);
+      addBeachPart(
+        stiltCabinGrp,
+        makeRoundedBoxGeo(0.24, riserH, stW - 0.16, 0.015, 1),
+        '#cfa984',
+        [sx + 0.04, riserH * 0.5, stMidZ],
+        [0, 0, 0],
+        0,
+        coastalTimberTex,
+      );
+    }
+    const stairSlopeAngle = Math.atan2(deckY, 1.2);
+    const stairSlopeLen = Math.hypot(1.2, deckY) + 0.24;
+    const stringerGeo = makeRoundedBoxGeo(stairSlopeLen, 0.22, 0.12, 0.024, 2);
+    const stairHandrailGeo = makeRoundedBoxGeo(stairSlopeLen + 0.12, 0.09, 0.13, 0.024, 2);
+    const lowerNewelGeo = makeRoundedBoxGeo(0.17, 2.28, 0.17, 0.03, 2);
+    const postCapGeo = makeRoundedBoxGeo(0.22, 0.07, 0.22, 0.022, 2);
+    for (const szSide of [stMinZ + 0.02, stMaxZ - 0.02]) {
+      addBeachPart(stiltCabinGrp, stringerGeo, '#dfc0a0', [-4.30, deckY * 0.44, szSide], [0, 0, stairSlopeAngle], 0, coastalTimberDark);
+      addBeachPart(stiltCabinGrp, lowerNewelGeo, '#dfc0a0', [-4.90, 0.77, szSide], [0, 0, 0], 0, coastalTimberDark);
+      addBeachPart(stiltCabinGrp, postCapGeo, '#b8926e', [-4.90, 1.93, szSide], [0, 0, 0], 0, coastalTimberDark);
+      addBeachPart(stiltCabinGrp, stairHandrailGeo, '#f5e2cc', [-4.26, deckY * 0.5 + 1.86, szSide], [0, 0, stairSlopeAngle], 0, coastalTimberTex);
+    }
+
+    // 7D. Veranda Perimeter Railings (1.85m chest-height guard vs 3.30m avatar; Newel Posts, Top/Bottom Rails & Balusters)
+    const railPostPlaced = new Set<string>();
+    const cabinRailPostGeo = makeRoundedBoxGeo(0.16, 1.91, 0.16, 0.028, 2);
+    const cabinBalusterGeo = makeRoundedBoxGeo(0.065, 1.60, 0.065, 0.015, 1);
+
+    const buildCabinRailingRun = (x1: number, z1: number, x2: number, z2: number) => {
+      const dx = x2 - x1;
+      const dz = z2 - z1;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.3) return;
+      const yaw = Math.atan2(dx, dz);
+      const midX = (x1 + x2) * 0.5;
+      const midZ = (z1 + z2) * 0.5;
+      const railSpan = Math.max(0.2, len - 0.14);
+
+      addBeachPart(
+        stiltCabinGrp,
+        makeRoundedBoxGeo(0.14, 0.085, railSpan, 0.022, 2),
+        '#f5e2cc',
+        [midX, deckY + 1.85, midZ],
+        [0, yaw, 0],
+        0,
+        coastalTimberTex,
+      );
+      addBeachPart(
+        stiltCabinGrp,
+        makeRoundedBoxGeo(0.095, 0.075, railSpan, 0.018, 1),
+        '#cfa984',
+        [midX, deckY + 0.18, midZ],
+        [0, yaw, 0],
+        0,
+        coastalTimberTex,
+      );
+
+      const postSpans = Math.max(1, Math.round(len / 2.2));
+      for (let i = 0; i <= postSpans; i++) {
+        const t = i / postSpans;
+        const px = x1 + dx * t;
+        const pz = z1 + dz * t;
+        const key = `${px.toFixed(2)}_${pz.toFixed(2)}`;
+        if (!railPostPlaced.has(key)) {
+          railPostPlaced.add(key);
+          addBeachPart(stiltCabinGrp, cabinRailPostGeo, '#dfc0a0', [px, deckY + 0.955, pz], [0, yaw, 0], 0, coastalTimberDark);
+          addBeachPart(stiltCabinGrp, postCapGeo, '#b8926e', [px, deckY + 1.935, pz], [0, yaw, 0], 0, coastalTimberDark);
+        }
+      }
+
+      const balusterCount = Math.max(2, Math.floor(len / 0.36));
+      for (let b = 1; b < balusterCount; b++) {
+        const t = b / balusterCount;
+        const bx = x1 + dx * t;
+        const bz = z1 + dz * t;
+        // Skip balusters that collide directly with intermediate newel posts
+        const nearPost = Array.from({ length: postSpans + 1 }, (_, i) => i / postSpans).some(
+          (pt) => Math.abs(t - pt) * len < 0.16,
+        );
+        if (nearPost) continue;
+        addBeachPart(stiltCabinGrp, cabinBalusterGeo, '#ffffff', [bx, deckY + 1.015, bz], [0, yaw, 0], 0, coastalTimberTex);
+      }
+    };
+
+    const railEdgeXMin = dMinX + 0.12;
+    const railEdgeXMax = dMaxX - 0.12;
+    const railEdgeZMin = dMinZ + 0.12;
+    const railEdgeZMax = dMaxZ - 0.12;
+    buildCabinRailingRun(railEdgeXMin, railEdgeZMin, railEdgeXMax, railEdgeZMin);
+    buildCabinRailingRun(railEdgeXMax, railEdgeZMin, railEdgeXMax, railEdgeZMax);
+    buildCabinRailingRun(railEdgeXMax, railEdgeZMax, railEdgeXMin, railEdgeZMax);
+    buildCabinRailingRun(railEdgeXMin, railEdgeZMin, railEdgeXMin, stMinZ + 0.02);
+    buildCabinRailingRun(railEdgeXMin, stMaxZ - 0.02, railEdgeXMin, railEdgeZMax);
+
+    // 7E. Cabin Body: Solid Core + 14 Layered 3D Horizontal Clapboard Courses + Corner Timber Columns + Gables
+    const wallH = 5.18; // Eave top Y = 0.96 + 5.18 = 6.14m (fits 4.05m door + lintel cleanly for 3.30m outdoor Buddy)
+    const eaveY = deckY + wallH; // 6.14m
+    const ridgeH = 1.60;
+    const ridgeY = eaveY + ridgeH; // 7.74m
+
+    // Solid interior core wall preventing light leaks behind horizontal plank reliefs
+    addBeachPart(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(cabW - 0.14, wallH - 0.06, cabD - 0.14, 0.02, 1),
+      '#cfa984',
+      [cabMidX, deckY + wallH * 0.5, cabMidZ],
+      [0, 0, 0],
+      0,
+      cabinSidingTex,
+    );
+
+    // Layered 3D horizontal clapboard planks along all 4 cabin walls
+    const lapCourses = 14;
+    const courseH = wallH / lapCourses;
+    const clapNSGeo = makeRoundedBoxGeo(cabW - 0.06, courseH + 0.016, 0.055, 0.014, 1);
+    const clapWEGeo = makeRoundedBoxGeo(0.055, courseH + 0.016, cabD - 0.06, 0.014, 1);
+    for (let k = 0; k < lapCourses; k++) {
+      const cy = deckY + (k + 0.5) * courseH;
+      const tint = k % 3 === 0 ? '#ffffff' : k % 3 === 1 ? '#f5e2cc' : '#ecd4bc';
+      for (const sideZ of [cabMinZ + 0.02, cabMaxZ - 0.02]) {
+        addBeachPart(stiltCabinGrp, clapNSGeo, tint, [cabMidX, cy, sideZ], [0, 0, 0], 0, cabinSidingTex);
+      }
+      for (const sideX of [cabMinX + 0.02, cabMaxX - 0.02]) {
+        addBeachPart(stiltCabinGrp, clapWEGeo, tint, [sideX, cy, cabMidZ], [0, 0, 0], 0, cabinSidingTex);
+      }
+    }
+
+    // 4 Corner Structural Timber Posts + Base Sill Skirt + Eave Frieze Trim
+    const cornerColGeo = makeRoundedBoxGeo(0.22, wallH + 0.04, 0.22, 0.032, 2);
+    for (const cx of [cabMinX + 0.05, cabMaxX - 0.05]) {
+      for (const cz of [cabMinZ + 0.05, cabMaxZ - 0.05]) {
+        addBeachPart(stiltCabinGrp, cornerColGeo, '#dfc0a0', [cx, deckY + wallH * 0.5, cz], [0, 0, 0], 0, coastalTimberDark);
+      }
+    }
+    addBeachPart(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(cabW + 0.08, 0.14, cabD + 0.08, 0.02, 1),
+      '#b8926e',
+      [cabMidX, deckY + 0.07, cabMidZ],
+      [0, 0, 0],
+      0,
+      coastalTimberDark,
+    );
+    addBeachPart(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(cabW + 0.06, 0.16, cabD + 0.06, 0.02, 1),
+      '#dfc0a0',
+      [cabMidX, eaveY - 0.08, cabMidZ],
+      [0, 0, 0],
+      0,
+      coastalTimberDark,
+    );
+
+    // West & East Triangular Gable Pediments with continuous horizontal clapboard UVs + Attic Louver Vents
+    const makeCabinGableGeo = () => {
+      const g = makeGablePedimentGeo(cabD - 0.08, ridgeH, 0.14);
+      const pos = g.getAttribute('position');
+      const uv = g.getAttribute('uv');
+      if (pos && uv) {
+        for (let i = 0; i < pos.count; i++) {
+          uv.setXY(i, (pos.getX(i) + cabD * 0.5) / 2.2, pos.getY(i) / 2.2);
+        }
+        uv.needsUpdate = true;
+      }
+      g.userData.preserveCustomUv = true;
+      return g;
+    };
+    const cabinGableGeo = makeCabinGableGeo();
+    const atticLouverFrameGeo = makeGablePedimentGeo(1.36, 0.56, 0.08);
+    for (const gx of [cabMinX + 0.06, cabMaxX - 0.06]) {
+      const dir = gx < cabMidX ? -1 : 1;
+      addBeachPart(stiltCabinGrp, cabinGableGeo, '#ffffff', [gx, eaveY - 0.02, cabMidZ], [0, Math.PI / 2, 0], 0, cabinSidingTex);
+      addBeachPart(stiltCabinGrp, atticLouverFrameGeo, '#b8926e', [gx + dir * 0.07, eaveY + 0.36, cabMidZ], [0, Math.PI / 2, 0], 0, coastalTimberDark);
+      for (let lv = 0; lv < 3; lv++) {
+        const lw = 0.98 - lv * 0.28;
+        addBeachPart(
+          stiltCabinGrp,
+          makeRoundedBoxGeo(0.06, 0.055, lw, 0.01, 1),
+          '#ffffff',
+          [gx + dir * 0.10, eaveY + 0.46 + lv * 0.12, cabMidZ],
+          [0, 0, 0],
+          0,
+          lobbyLouverTex,
+        );
+      }
+    }
+
+    // 7F. Pastel Blue Panel Door + Brass Hardware (West Facade at lx = cabMinX, lz = -0.80, 1:1 Video 1 0:05)
+    {
+      const doorGrp = new THREE.Group();
+      doorGrp.position.set(cabMinX - 0.02, deckY, stMidZ);
+      stiltCabinGrp.add(doorGrp);
+
+      // Doorway timber casing (jambs, header lintel & threshold sill sized cleanly to 4.05m door height)
+      addBeachPart(doorGrp, makeRoundedBoxGeo(0.14, 4.14, 0.15, 0.024, 2), '#dfc0a0', [-0.03, 2.07, -0.86], [0, 0, 0], 0, coastalTimberDark);
+      addBeachPart(doorGrp, makeRoundedBoxGeo(0.14, 4.14, 0.15, 0.024, 2), '#dfc0a0', [-0.03, 2.07, 0.86], [0, 0, 0], 0, coastalTimberDark);
+      addBeachPart(doorGrp, makeRoundedBoxGeo(0.16, 0.20, 1.92, 0.028, 2), '#dfc0a0', [-0.04, 4.19, 0], [0, 0, 0], 0, coastalTimberDark);
+      addBeachPart(doorGrp, makeRoundedBoxGeo(0.24, 0.08, 1.94, 0.02, 2), '#b8926e', [-0.06, 0.04, 0], [0, 0, 0], 0, coastalTimberDark);
+
+      // Pastel Blue Vertical-Plank Door Slab (`#ffffff` shows true `#6294be` coastal slate-blue wood texture)
+      const doorSlabGeo = makeRoundedBoxGeo(0.09, 4.05, 1.56, 0.02, 2);
+      addBeachPart(doorGrp, doorSlabGeo, '#ffffff', [-0.02, 2.045, 0], [0, 0, 0], 0, pastelDoorTex, {
+        bumpScale: 0.032,
+        roughness: 0.85,
+      });
+      // Upper & Lower recessed door panel moldings
+      for (const [py, ph] of [
+        [3.02, 1.40],
+        [1.12, 1.48],
+      ] as const) {
+        addBeachPart(doorGrp, makeRoundedBoxGeo(0.04, ph, 1.16, 0.012, 1), '#dceaf7', [-0.06, py, 0], [0, 0, 0], 0, pastelDoorTex);
+      }
+      // Wrought-iron strap hinges (hinge side) & warm burnished brass doorknob + escutcheon plate
+      for (const hy of [1.05, 3.15]) {
+        addCabinAccentMesh(
+          doorGrp,
+          makeRoundedBoxGeo(0.03, 0.12, 0.56, 0.008, 1),
+          { color: '#272c36', roughness: 0.52, metalness: 0.55 },
+          [-0.08, hy, -0.46],
+        );
+      }
+      addCabinAccentMesh(
+        doorGrp,
+        makeRoundedBoxGeo(0.03, 0.24, 0.09, 0.008, 1),
+        { color: '#d4a246', roughness: 0.34, metalness: 0.72 },
+        [-0.08, 1.92, 0.58],
+      );
+      addCabinAccentMesh(
+        doorGrp,
+        new THREE.SphereGeometry(0.065, 14, 12),
+        { color: '#e5b95c', roughness: 0.28, metalness: 0.78 },
+        [-0.14, 1.92, 0.58],
+      );
+    }
+
+    // 7G. Framed Coastal Windows + Glass + Cross-Mullions + Open Plank Shutters + Planter Boxes
+    const addCabinWindow = (
+      wx: number,
+      wy: number,
+      wz: number,
+      rotY: number,
+      winW: number,
+      winH: number,
+      withFlowerBox: boolean,
+    ) => {
+      const wGrp = new THREE.Group();
+      wGrp.position.set(wx, wy, wz);
+      wGrp.rotation.y = rotY;
+      stiltCabinGrp.add(wGrp);
+
+      // Outer timber frame & overhanging windowsill
+      addBeachPart(wGrp, makeRoundedBoxGeo(winW + 0.20, winH + 0.20, 0.10, 0.022, 2), '#dfc0a0', [0, 0, 0], [0, 0, 0], 0, coastalTimberDark);
+      addBeachPart(wGrp, makeRoundedBoxGeo(winW + 0.32, 0.10, 0.18, 0.022, 2), '#b8926e', [0, -winH * 0.5 - 0.12, 0.04], [0, 0, 0], 0, coastalTimberDark);
+      // Warm coastal reflective glass pane
+      addCabinAccentMesh(
+        wGrp,
+        makeRoundedBoxGeo(winW - 0.08, winH - 0.08, 0.06, 0.01, 1),
+        { color: '#78a8c4', roughness: 0.16, metalness: 0.14 },
+        [0, 0, 0.035],
+        [0, 0, 0],
+        false,
+        true,
+      );
+      // Center vertical & horizontal timber mullions
+      addBeachPart(wGrp, makeRoundedBoxGeo(0.06, winH - 0.04, 0.09, 0.01, 1), '#f5e2cc', [0, 0, 0.045], [0, 0, 0], 0, coastalTimberTex);
+      addBeachPart(wGrp, makeRoundedBoxGeo(winW - 0.04, 0.06, 0.09, 0.01, 1), '#f5e2cc', [0, 0.08, 0.045], [0, 0, 0], 0, coastalTimberTex);
+      // Open plank side shutters seated flush into window casing + wrought-iron strap hinges (zero floating gap)
+      const shutterW = Math.min(0.46, winW * 0.42);
+      const shutterGeo = makeRoundedBoxGeo(shutterW, winH + 0.04, 0.06, 0.014, 1);
+      const hingeStrapGeo = makeRoundedBoxGeo(0.20, 0.055, 0.025, 0.008, 1);
+      for (const sSide of [-1, 1] as const) {
+        addBeachPart(
+          wGrp,
+          shutterGeo,
+          '#ffffff',
+          [sSide * (winW * 0.5 + shutterW * 0.5 + 0.095), 0, 0.03],
+          [0, 0, 0],
+          0,
+          pastelDoorTex,
+        );
+        for (const hy of [-winH * 0.28, winH * 0.28]) {
+          addCabinAccentMesh(
+            wGrp,
+            hingeStrapGeo,
+            { color: '#272c36', roughness: 0.52, metalness: 0.55 },
+            [sSide * (winW * 0.5 + 0.115), hy, 0.060],
+          );
+        }
+      }
+      if (withFlowerBox) {
+        addBeachPart(
+          wGrp,
+          makeRoundedBoxGeo(winW + 0.16, 0.24, 0.28, 0.025, 2),
+          '#f5e2cc',
+          [0, -winH * 0.5 - 0.28, 0.14],
+          [0, 0, 0],
+          0,
+          coastalTimberTex,
+        );
+        const foliageGeo = new THREE.DodecahedronGeometry(0.14, 1);
+        const bloomGeo = new THREE.DodecahedronGeometry(0.085, 0);
+        for (let fi = -2; fi <= 2; fi++) {
+          const fx = fi * (winW * 0.19);
+          addCabinAccentMesh(wGrp, foliageGeo, { color: '#459448', roughness: 0.88 }, [fx, -winH * 0.5 - 0.12, 0.16]);
+          if (fi % 2 === 0) {
+            addCabinAccentMesh(
+              wGrp,
+              bloomGeo,
+              { color: fi === 0 ? '#fb7185' : '#fef08a', roughness: 0.72 },
+              [fx, -winH * 0.5 - 0.02, 0.18],
+            );
+          }
+        }
+      }
+    };
+
+    // West Porch Window (south of Blue Door), South Veranda Window, East Ocean Picture Window
+    addCabinWindow(cabMinX - 0.03, deckY + 2.38, 0.88, -Math.PI / 2, 1.05, 1.32, true);
+    addCabinWindow(cabMidX, deckY + 2.42, cabMaxZ + 0.03, 0, 1.68, 1.36, true);
+    addCabinWindow(cabMaxX + 0.03, deckY + 2.42, cabMidZ, Math.PI / 2, 1.82, 1.44, true);
+
+    // 7H. Terracotta-Cedar Wood Shingle Roof, Overhang Eaves, Exposed Rafter Tails & Brick Chimney
+    const roofPitch = Math.atan2(ridgeH, cabD * 0.5); // ~32.0 deg
+    const roofLenX = cabW + 1.50; // 5.60m (0.75m gable overhang on West & East)
+    const roofHorizHalfZ = cabD * 0.5 + 0.76; // 3.16m horizontal half-span
+    const roofSlopeW = roofHorizHalfZ / Math.cos(roofPitch); // ~3.73m slope chord
+
+    const makeRoofSlopeGeo = (zSide: -1 | 1) => {
+      const g = makeRoundedBoxGeo(roofLenX, 0.13, roofSlopeW, 0.025, 2);
+      const pos = g.getAttribute('position');
+      const uv = g.getAttribute('uv');
+      const norm = g.getAttribute('normal');
+      if (pos && uv && norm) {
+        for (let i = 0; i < pos.count; i++) {
+          const px = pos.getX(i);
+          const py = pos.getY(i);
+          const pz = pos.getZ(i);
+          if (Math.abs(norm.getY(i)) >= Math.abs(norm.getX(i)) && Math.abs(norm.getY(i)) >= Math.abs(norm.getZ(i))) {
+            // Orient shingles so overlapping bottom lip points downhill toward the outer eave
+            uv.setXY(i, px / 2.5, (zSide > 0 ? -pz : pz) / 2.4);
+          } else {
+            uv.setXY(i, (px + pz) / 2.4, py / 2.4);
+          }
+        }
+        uv.needsUpdate = true;
+      }
+      g.userData.preserveCustomUv = true;
+      return g;
+    };
+
+    const slopeCenterZOff = roofHorizHalfZ * 0.5;
+    const slopeCenterY = ridgeY - slopeCenterZOff * Math.tan(roofPitch);
+    for (const zSide of [-1, 1] as const) {
+      const rotX = zSide * roofPitch;
+      addBeachPart(
+        stiltCabinGrp,
+        makeRoofSlopeGeo(zSide),
+        '#ffffff',
+        [cabMidX, slopeCenterY + 0.04, cabMidZ + zSide * slopeCenterZOff],
+        [rotX, 0, 0],
+        0,
+        shingleRoofTex,
+        { bumpScale: 0.034, roughness: 0.88 },
+      );
+      // Finished warm timber eave soffit deck beneath shingles
+      addBeachPart(
+        stiltCabinGrp,
+        makeRoundedBoxGeo(roofLenX - 0.08, 0.06, roofSlopeW - 0.06, 0.015, 1),
+        '#f5e2cc',
+        [cabMidX, slopeCenterY - 0.04, cabMidZ + zSide * slopeCenterZOff],
+        [rotX, 0, 0],
+        0,
+        coastalTimberTex,
+      );
+      // Outer eave fascia trim board
+      const eaveOuterZ = cabMidZ + zSide * roofHorizHalfZ;
+      const eaveOuterY = ridgeY - roofHorizHalfZ * Math.tan(roofPitch) - 0.04;
+      addBeachPart(
+        stiltCabinGrp,
+        makeRoundedBoxGeo(roofLenX + 0.06, 0.18, 0.08, 0.02, 2),
+        '#dfc0a0',
+        [cabMidX, eaveOuterY, eaveOuterZ],
+        [rotX, 0, 0],
+        0,
+        coastalTimberDark,
+      );
+    }
+
+    // Terracotta-Cedar Ridge Cap Beam
+    addBeachPart(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(roofLenX + 0.10, 0.16, 0.28, 0.035, 2),
+      '#dfc0a0',
+      [cabMidX, ridgeY + 0.09, cabMidZ],
+      [0, 0, 0],
+      0,
+      shingleRoofTex,
+    );
+
+    // Gable Slope Bargeboards (West & East ends) + 9 Full-Slope Exposed Rafter Tails per slope
+    const bargeGeo = makeRoundedBoxGeo(0.11, 0.22, roofSlopeW + 0.06, 0.025, 2);
+    for (const endX of [cabMidX - roofLenX * 0.5 + 0.03, cabMidX + roofLenX * 0.5 - 0.03]) {
+      for (const zSide of [-1, 1] as const) {
+        addBeachPart(
+          stiltCabinGrp,
+          bargeGeo,
+          '#dfc0a0',
+          [endX, slopeCenterY - 0.02, cabMidZ + zSide * slopeCenterZOff],
+          [zSide * roofPitch, 0, 0],
+          0,
+          coastalTimberDark,
+        );
+      }
+    }
+
+    // Exposed rafters (3.64m length >= 0.65m keeps castShadow=true after baking, casting crisp eaves shadows!)
+    const cabinRafterGeo = makeRoundedBoxGeo(0.11, 0.16, roofSlopeW - 0.04, 0.024, 2);
+    for (let rx = cabMidX - roofLenX * 0.5 + 0.38; rx <= cabMidX + roofLenX * 0.5 - 0.34; rx += 0.60) {
+      for (const zSide of [-1, 1] as const) {
+        addBeachPart(
+          stiltCabinGrp,
+          cabinRafterGeo,
+          '#b8926e',
+          [rx, slopeCenterY - 0.14, cabMidZ + zSide * slopeCenterZOff],
+          [zSide * roofPitch, 0, 0],
+          0,
+          coastalTimberDark,
+        );
+      }
+    }
+
+    // Small Terracotta Brick Chimney on North Slope
+    addCabinAccentMesh(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(0.76, 1.85, 0.76, 0.03, 2),
+      { color: '#a85a44', roughness: 0.92, metalness: 0.02 },
+      [cabMidX + 0.92, eaveY + 1.25, cabMidZ - 1.15],
+    );
+    addCabinAccentMesh(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(0.92, 0.14, 0.92, 0.025, 2),
+      { color: '#c4b8a6', roughness: 0.88, metalness: 0.02 },
+      [cabMidX + 0.92, eaveY + 2.22, cabMidZ - 1.15],
+    );
+    addCabinAccentMesh(
+      stiltCabinGrp,
+      new THREE.CylinderGeometry(0.16, 0.19, 0.34, 12),
+      { color: '#784434', roughness: 0.9, metalness: 0.02 },
+      [cabMidX + 0.92, eaveY + 2.42, cabMidZ - 1.15],
+    );
+
+    // 7I. Video 1 Signature Porch Props: Burlap Sacks ("Karung Goni"), Wooden Crate, Barrel & Warm Lanterns
+    // Wooden cargo crate tucked against West cabin wall south of the door
+    addBeachPart(
+      stiltCabinGrp,
+      makeRoundedBoxGeo(0.62, 0.52, 0.62, 0.03, 2),
+      '#f5e2cc',
+      [cabMinX - 0.42, deckY + 0.26, 0.98],
+      [0, 0.12, 0],
+      0,
+      coastalTimberTex,
+    );
+    // Pair of cinched burlap sacks (`LatheGeometry`) beside the crate/door (0:04-0:08 Video 1)
+    const burlapSackGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.0, 0.0),
+        new THREE.Vector2(0.24, 0.0),
+        new THREE.Vector2(0.32, 0.18),
+        new THREE.Vector2(0.29, 0.44),
+        new THREE.Vector2(0.11, 0.60),
+        new THREE.Vector2(0.18, 0.72),
+        new THREE.Vector2(0.0, 0.70),
+      ],
+      16,
+    );
+    burlapSackGeo.computeVertexNormals();
+    addCabinAccentMesh(
+      stiltCabinGrp,
+      burlapSackGeo,
+      { color: '#c2a476', roughness: 0.95, metalness: 0.0 },
+      [cabMinX - 0.38, deckY, 0.26],
+      [0.06, 0.3, -0.05],
+    );
+    addCabinAccentMesh(
+      stiltCabinGrp,
+      burlapSackGeo,
+      { color: '#b39464', roughness: 0.95, metalness: 0.0 },
+      [cabMinX - 0.74, deckY, 0.46],
+      [-0.08, -0.4, 0.08],
+    );
+
+    // Nautical timber barrel & coiled rope on South-East ocean balcony corner
+    const cabinBarrelGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.0, 0.0),
+        new THREE.Vector2(0.28, 0.0),
+        new THREE.Vector2(0.35, 0.28),
+        new THREE.Vector2(0.35, 0.56),
+        new THREE.Vector2(0.28, 0.84),
+        new THREE.Vector2(0.0, 0.84),
+      ],
+      16,
+    );
+    cabinBarrelGeo.computeVertexNormals();
+    addBeachPart(stiltCabinGrp, cabinBarrelGeo, '#dfc0a0', [dMaxX - 0.65, deckY, dMaxZ - 0.65], [0, 0, 0], 0, coastalTimberDark);
+    for (const hoopY of [0.16, 0.68]) {
+      addCabinAccentMesh(
+        stiltCabinGrp,
+        new THREE.CylinderGeometry(0.34, 0.34, 0.06, 16),
+        { color: '#334155', roughness: 0.5, metalness: 0.55 },
+        [dMaxX - 0.65, deckY + hoopY, dMaxZ - 0.65],
+      );
+    }
+    addBeachPart(
+      stiltCabinGrp,
+      new THREE.TorusGeometry(0.22, 0.05, 10, 18),
+      '#d6be94',
+      [dMaxX - 1.35, deckY + 0.05, dMaxZ - 0.55],
+      [Math.PI / 2, 0, 0],
+      0,
+      coastalHempRopeTex,
+    );
+
+    // Warm Porch & Ocean-Balcony Lanterns
+    const addCabinLantern = (lx: number, ly: number, lz: number, bracketDirX: number) => {
+      const lGrp = new THREE.Group();
+      lGrp.position.set(lx, ly, lz);
+      stiltCabinGrp.add(lGrp);
+      if (bracketDirX !== 0) {
+        addCabinAccentMesh(
+          lGrp,
+          makeRoundedBoxGeo(0.28, 0.06, 0.06, 0.01, 1),
+          { color: '#272c36', roughness: 0.52, metalness: 0.55 },
+          [-bracketDirX * 0.14, 0.22, 0],
+        );
+      }
+      addCabinAccentMesh(
+        lGrp,
+        new THREE.ConeGeometry(0.18, 0.14, 6),
+        { color: '#272c36', roughness: 0.5, metalness: 0.55 },
+        [0, 0.16, 0],
+      );
+      addCabinAccentMesh(
+        lGrp,
+        new THREE.CylinderGeometry(0.11, 0.09, 0.24, 8),
+        {
+          color: '#ffe08a',
+          emissive: '#ffb84d',
+          emissiveIntensity: 0.72,
+          roughness: 0.28,
+        },
+        [0, 0, 0],
+        [0, 0, 0],
+        false,
+        false,
+      );
+      addCabinAccentMesh(
+        lGrp,
+        new THREE.CylinderGeometry(0.12, 0.10, 0.05, 6),
+        { color: '#272c36', roughness: 0.5, metalness: 0.55 },
+        [0, -0.14, 0],
+      );
+    };
+    addCabinLantern(cabMinX - 0.22, deckY + 2.68, stMidZ - 1.06, -1);
+    addCabinLantern(railEdgeXMax, deckY + 1.50, dMidZ, 0);
+  }
 
   return {
     seBeachGroup,

@@ -12,6 +12,7 @@ import {
   computeChannelStateAfterToggleMute,
 } from './buddiesRealEstateKioskRules';
 import { buildRealEstateAndFurnitureKiosk3D } from './buddiesRealEstateKioskBuilder';
+import { buildPlazaCommercialArcade3D } from './buddiesPlazaKioskArcadeBuilder';
 import { soundEngine } from './audio';
 import {
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
@@ -41,57 +42,67 @@ function createSimpleStripGeo(
   );
 }
 
-test('Real Estate & Furniture Kiosk world coordinates align cleanly with Central Plaza and Hana placement', () => {
+test('Unified Arcade Bay 2 (Real Estate Studio) world coordinates align cleanly with Central Plaza and Hana placement', () => {
   const center = realEstateKioskLocalToWorldPose(0, 0, 0, 0);
-  assert.equal(center.x, -100.7);
+  assert.equal(center.x, -106.35);
   assert.equal(center.y, 2.5);
-  assert.equal(center.z, -13.8);
+  assert.equal(center.z, -4.4);
 
-  // Front display glass (`localZ = +1.54`) faces East (`+X`) onto Central Plaza
+  // Front entrance door (`localZ = +2.50`) faces East (`+X`) onto Central Plaza
   const frontDoor = realEstateKioskLocalToWorldPose(
-    1.41,
+    2.33,
     0,
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.entranceDoorFrontLocalZ,
     0,
   );
-  assert.ok(frontDoor.x > -98.5 && frontDoor.x < -98.3);
-  assert.ok(frontDoor.z < -15.5); // North-East bay corresponds to right entrance door
+  assert.ok(frontDoor.x > -103.95 && frontDoor.x < -103.75);
+  assert.ok(frontDoor.z < -6.5); // North-East door sits cleanly to the right of Bay 2 storefront window
 
-  // Outdoor A-Frame sidewalk sign sits on the front-right Granite Plaza Paver Base
+  // Outdoor A-Frame sidewalk sign sits on the front cobblestone apron
   const signPose = realEstateKioskLocalToWorldPose(
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.aFrameSignLocal.x,
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.aFrameSignLocal.y,
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.aFrameSignLocal.z,
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.aFrameSignLocal.rotY,
   );
-  assert.ok(signPose.x > -98.1 && signPose.x < -97.6);
-  assert.ok(signPose.z < -16.3 && signPose.z > -16.9);
-  assert.ok(signPose.y > 2.60 && signPose.y < 2.63);
+  assert.ok(signPose.x > -102.45 && signPose.x < -102.15);
+  assert.ok(signPose.z < -5.8 && signPose.z > -6.2);
+  assert.ok(signPose.y > 2.53 && signPose.y < 2.56);
 
-  // Hana stands on the open Central Plaza tiles East (`+X`) of the stepped Granite Plaza Paver Base
+  // Hana stands on the open Central Plaza tiles East (`+X`) of the cobblestone apron curb
   const graniteFrontEdge = realEstateKioskLocalToWorldPose(
     0,
     0,
-    0.14 + REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.granitePaverBaseDepthLocal * 0.5,
+    2.50 + REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.granitePaverBaseDepthLocal,
     0,
   );
   const hana = REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld;
   assert.ok(
-    hana.x - graniteFrontEdge.x >= 1.35,
-    `Expected Hana (${hana.x}) to stand >= 1.35m East of granite paver edge (${graniteFrontEdge.x})`,
+    hana.x - graniteFrontEdge.x >= 0.45,
+    `Expected Hana (${hana.x}) to stand >= 0.45m East of cobblestone curb (${graniteFrontEdge.x})`,
   );
   assert.equal(hana.y, 2.5);
   assert.equal(hana.rotY, Math.PI / 2);
 });
 
-test('Real Estate Kiosk static OBB colliders do not overlap Merchant Hana or her East interaction zone', () => {
+test('Unified Arcade static OBB colliders maintain 1.50m rear alley clearance and clear Merchant Hana', () => {
   const colliders = computeRealEstateKioskWorldColliders();
-  assert.equal(colliders.length, 2);
+  assert.equal(colliders.length, 5);
 
-  const body = colliders.find((c) => c.id === 'lobby_realestate_kiosk_body');
+  const body = colliders.find((c) => c.id === 'lobby_kiosk_arcade_body');
+  const bench = colliders.find((c) => c.id === 'lobby_kiosk_arcade_bench');
+  const planterS = colliders.find((c) => c.id === 'lobby_kiosk_arcade_planter_s');
+  const planterN = colliders.find((c) => c.id === 'lobby_kiosk_arcade_planter_n');
   const sign = colliders.find((c) => c.id === 'lobby_realestate_kiosk_sign');
-  assert.ok(body, 'Expected lobby_realestate_kiosk_body collider');
+  assert.ok(body, 'Expected lobby_kiosk_arcade_body collider');
+  assert.ok(bench, 'Expected lobby_kiosk_arcade_bench collider');
+  assert.ok(planterS, 'Expected lobby_kiosk_arcade_planter_s collider');
+  assert.ok(planterN, 'Expected lobby_kiosk_arcade_planter_n collider');
   assert.ok(sign, 'Expected lobby_realestate_kiosk_sign collider');
+
+  // Walkable rear service alley between west_wall_west East face (-110.40) and arcade West wall
+  const rearAlleyGapM = body.x - body.halfX - -110.40;
+  assert.ok(rearAlleyGapM >= 1.44, `Rear alley gap ${rearAlleyGapM.toFixed(3)}m must fit 2*0.72m player collider`);
 
   const hana = REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld;
   const hanaHalf = 0.52;
@@ -105,6 +116,67 @@ test('Real Estate Kiosk static OBB colliders do not overlap Merchant Hana or her
       `Merchant Hana OBB must not intersect ${obb.id}`,
     );
   }
+});
+
+test('buildPlazaCommercialArcade3D builds unified 3-bay arcade, skylights, furniture, dock and signs with finite geometry', () => {
+  const westPlantGroup = new THREE.Group();
+  const sharedClearGlassMat = new THREE.MeshStandardMaterial({
+    color: 0xdbeafe,
+    transparent: true,
+    opacity: 0.32,
+  });
+
+  const arcadeGrp = buildPlazaCommercialArcade3D({
+    westPlantGroup,
+    isSoftwareGl: true,
+    sharedClearGlassMat,
+    createMitredPolylineStripGeometry: createSimpleStripGeo,
+    addLobbyPart: (parent, geo, colorHex, pos, rot = [0, 0, 0]) => {
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshStandardMaterial({ color: colorHex }),
+      );
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.rotation.set(rot[0], rot[1], rot[2]);
+      parent.add(mesh);
+      return mesh;
+    },
+    createBlitzStrokeMesh: () => null,
+    textures: {},
+  });
+
+  assert.equal(arcadeGrp.name, 'LobbyPlazaCommercialArcade3D');
+  assert.ok(arcadeGrp.getObjectByName('FashionMannequinTrenchCoat'));
+  assert.ok(arcadeGrp.getObjectByName('RealEstateArchitecturalScaleModel'));
+  assert.ok(arcadeGrp.getObjectByName('RealEstateConsultationDeskZone'));
+  assert.ok(arcadeGrp.getObjectByName('ShowroomInteriorFurnitureVignette'));
+  assert.ok(arcadeGrp.getObjectByName('StaticDisplayElectricScooterBike'));
+  assert.ok(arcadeGrp.getObjectByName('StaticDisplayPushKickScooter'));
+  assert.ok(arcadeGrp.getObjectByName('ArcadeScooterChargingDockRack'));
+  assert.ok(arcadeGrp.getObjectByName('ArcadeFrontCivicBench'));
+  assert.ok(arcadeGrp.getObjectByName('ArcadePlanterSouth'));
+  assert.ok(arcadeGrp.getObjectByName('ArcadePlanterNorth'));
+  assert.ok(arcadeGrp.getObjectByName('FashionBoutiqueAFrameSidewalkSign'));
+  assert.ok(arcadeGrp.getObjectByName('RealEstateAFrameSidewalkSign'));
+  assert.ok(arcadeGrp.getObjectByName('UrbanScooterAFrameSidewalkSign'));
+
+  let skylightCount = 0;
+  let rearDoorCount = 0;
+  arcadeGrp.traverse((obj) => {
+    if (obj.name === 'ArcadeRoofSkylightMonitor') skylightCount += 1;
+    if (obj.name === 'ArcadeRearStaffDoor') rearDoorCount += 1;
+    if (obj instanceof THREE.Mesh) {
+      const posAttr = obj.geometry.getAttribute('position');
+      assert.ok(posAttr, 'Mesh must have position attribute');
+      for (let i = 0; i < posAttr.count; i++) {
+        assert.ok(Number.isFinite(posAttr.getX(i)));
+        assert.ok(Number.isFinite(posAttr.getY(i)));
+        assert.ok(Number.isFinite(posAttr.getZ(i)));
+      }
+    }
+  });
+  assert.equal(skylightCount, 3, 'Must include 3 rooftop clerestory skylights');
+  assert.equal(rearDoorCount, 3, 'Must include 3 rear service staff doors');
 });
 
 test('buildRealEstateAndFurnitureKiosk3D builds all 4-quadrant architectural zones with finite geometry', () => {
@@ -194,7 +266,7 @@ test('Audio mixer state transitions & SoundEngine independent Music / Sound FX v
 });
 
 test('Central Plaza standalone teleport kiosk sits beside NW staircase balustrade corner facing West (-X)', () => {
-  assert.equal(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX, -86.55);
+  assert.equal(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX, -88.80);
   assert.equal(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskY, 2.5);
   assert.equal(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ, -9.4);
   assert.equal(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskRotY, -Math.PI / 2);
@@ -205,13 +277,13 @@ test('Central Plaza standalone teleport kiosk sits beside NW staircase balustrad
   assert.ok(Math.abs(screenDirX - -1) < 1e-6);
   assert.ok(Math.abs(screenDirZ) < 1e-6);
 
-  // Circular 0.98m baseplate clears the West balustrade curb face (-85.52) and staircase walkway (z >= -8.40)
+  // Circular 0.98m baseplate clears the West balustrade curb face (-87.77) and staircase walkway (z >= -8.40)
   const padRadius = 0.98;
-  assert.ok(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX + padRadius < -85.52);
+  assert.ok(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX + padRadius < -87.77);
   assert.ok(CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ + padRadius < -8.4);
 
-  // Approaching from West/Left (-88.3, -9.4) triggers central_plaza proximity; old spot (-86.85, -21.85) does not
-  const nearNewSpot = evaluateNearestCityTransitKioskProximity(-88.3, -9.4, 'safezone', 3.5);
+  // Approaching from West/Left (-90.55, -9.4) triggers central_plaza proximity; old spot (-86.85, -21.85) does not
+  const nearNewSpot = evaluateNearestCityTransitKioskProximity(-90.55, -9.4, 'safezone', 3.5);
   assert.equal(nearNewSpot.isNear, true);
   assert.equal(nearNewSpot.station?.id, 'central_plaza');
 
@@ -219,7 +291,7 @@ test('Central Plaza standalone teleport kiosk sits beside NW staircase balustrad
   assert.equal(oldHouseFrontSpot.isNear, false);
 
   const centralSpec = getCityTransitDestinationById('central_plaza');
-  assert.equal(centralSpec.spawnX, -88.55);
+  assert.equal(centralSpec.spawnX, -90.80);
   assert.equal(centralSpec.spawnZ, -9.4);
 });
 
@@ -251,12 +323,12 @@ test('Classic Plaza Manor Model House door triangle sits on front circular medal
   const { PLAZA_MODEL_HOUSE_DOOR_TRIGGER, evaluatePlazaModelHouseDoorProximity } = await import(
     './buddiesRealEstateKioskRules'
   );
-  assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x, -91.3);
+  assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x, -93.55);
   assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z, -24.26);
   assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.houseStyle, 'plaza_manor');
 
-  // Must sit squarely in the portico opening between West (-94.05) and East (-88.55) balustrades
-  assert.ok(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x > -94.05 && PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x < -88.55);
+  // Must sit squarely in the portico opening between West (-96.30) and East (-90.80) balustrades
+  assert.ok(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x > -96.30 && PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x < -90.80);
 
   const atMedallion = evaluatePlazaModelHouseDoorProximity(
     PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x,

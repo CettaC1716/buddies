@@ -190,5 +190,40 @@ describe('SocialChatModal & CharacterProfileModal pure rules', () => {
       false,
     );
   });
+
+  it('deduplicates fast Broadcast messages against echoed DB realtime rows for peers and preserves bubble styles', () => {
+    const peerBroadcastPublic: ChatMessage = {
+      id: 'bc-9001',
+      clientMsgId: 'bc-9001',
+      senderId: 'alex.testnet',
+      senderName: 'AlexRunner',
+      text: 'Meet at the glasshouse cafe!',
+      timestamp: '10:30 AM',
+      createdAtMs: 500_000,
+      bubbleBgColor: '#fbcfe8',
+      bubbleTextColor: '#0f172a',
+      type: 'public',
+    };
+    const peerDbPublic: ChatMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440077',
+      senderId: 'alex.testnet',
+      senderName: 'AlexRunner',
+      text: 'Meet at the glasshouse cafe!',
+      timestamp: '10:30 AM',
+      createdAtMs: 500_550,
+      type: 'public',
+    };
+
+    const deduped = deduplicateChatMessages(
+      [peerBroadcastPublic, peerDbPublic],
+      'Buddy Male',
+      'buddy.testnet',
+    );
+    assert.equal(deduped.length, 1);
+    assert.equal(deduped[0].id, peerDbPublic.id);
+    assert.equal(deduped[0].bubbleBgColor, '#fbcfe8');
+    assert.equal(deduped[0].bubbleTextColor, '#0f172a');
+    assert.equal(deduped[0].isSelf, false);
+  });
 });
 

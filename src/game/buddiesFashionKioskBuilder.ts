@@ -1,5 +1,11 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { FASHION_APPAREL_KIOSK_LAYOUT } from './buddiesFashionKioskRules';
+import { computeDeterministicWindowSeed, tagCityWindowMesh } from './buddiesNightLightingRules';
+
+function makeRoundedFashionBox(w: number, h: number, d: number, r = 0.012, seg = 2): THREE.BufferGeometry {
+  return new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w * 0.42, h * 0.42, d * 0.42));
+}
 
 export interface FashionKioskBuilderOptions {
   westPlantGroup: THREE.Group;
@@ -35,7 +41,7 @@ export interface FashionKioskBuilderOptions {
   };
 }
 
-interface KioskPartHelper {
+export interface KioskPartHelper {
   addPart(
     parent: THREE.Object3D,
     geo: THREE.BufferGeometry,
@@ -83,7 +89,7 @@ function makeFallbackDataTex(r: number, g: number, b: number): THREE.DataTexture
  * Procedural Wooden A-Frame Sidewalk Sign Face (`FASHION & APPAREL BOUTIQUE`)
  * matching Quadrant 2 & Quadrant 4 of `screen_aad784ba.png`.
  */
-function getFashionBoutiqueAFrameSignTexture(): THREE.Texture {
+export function getFashionBoutiqueAFrameSignTexture(): THREE.Texture {
   if (_cachedFashionAFrameSignTex) return _cachedFashionAFrameSignTex;
   const { canvas, ctx } = createCanvas2D(256, 360);
   if (!ctx) {
@@ -159,13 +165,13 @@ function getFashionBoutiqueAFrameSignTexture(): THREE.Texture {
   return tex;
 }
 
-type MannequinOutfitVariant = 'trench_coat' | 'aline_dress' | 'tailored_midi';
+export type MannequinOutfitVariant = 'trench_coat' | 'aline_dress' | 'tailored_midi';
 
 /**
  * Builds a composite 10–14 part sculptural boutique mannequin on a brushed-steel tripod stand
  * matching Quadrant 1, Quadrant 2, and Quadrant 4 of `screen_aad784ba.png`.
  */
-function buildBoutiqueMannequin(
+export function buildBoutiqueMannequin(
   parent: THREE.Object3D,
   partHelper: KioskPartHelper,
   pos: [number, number, number],
@@ -420,7 +426,7 @@ function buildBoutiqueMannequin(
 /**
  * Builds a structured luxury leather handbag / tote bag (`4–6 parts`) with arched handles & brass clasp.
  */
-function buildStructuredHandbag(
+export function buildStructuredHandbag(
   parent: THREE.Object3D,
   partHelper: KioskPartHelper,
   pos: [number, number, number],
@@ -487,7 +493,7 @@ function buildStructuredHandbag(
  * Builds a brushed-steel boutique hanging garment rail with curated shirts/coats/jackets on wooden hangers,
  * optional lower display plinth, and optional top warm-oak handbag shelf (`screen_aad784ba.png`).
  */
-function buildBoutiqueGarmentRack(
+export function buildBoutiqueGarmentRack(
   parent: THREE.Object3D,
   partHelper: KioskPartHelper,
   pos: [number, number, number],
@@ -512,7 +518,7 @@ function buildBoutiqueGarmentRack(
   for (const sx of [-halfW, halfW]) {
     partHelper.addPart(
       rGrp,
-      new THREE.BoxGeometry(0.045, 0.036, 0.48),
+      makeRoundedFashionBox(0.052, 0.036, 0.48, 0.010),
       COL_STEEL_FRAME,
       [sx, 0.018, 0],
       [0, 0, 0],
@@ -520,16 +526,16 @@ function buildBoutiqueGarmentRack(
     );
     partHelper.addPart(
       rGrp,
-      new THREE.CylinderGeometry(0.020, 0.022, 1.42, 10),
+      new THREE.CylinderGeometry(0.021, 0.024, 1.404, 12),
       COL_STEEL_FRAME,
-      [sx, 0.72, 0],
+      [sx, 0.738, 0],
       [0, 0, 0],
       0.005,
     );
   }
   partHelper.addPart(
     rGrp,
-    new THREE.CylinderGeometry(0.018, 0.018, railWidth + 0.04, 10),
+    new THREE.CylinderGeometry(0.018, 0.018, railWidth + 0.01, 10),
     COL_CHROME_RAIL,
     [0, 1.38, 0],
     [0, 0, Math.PI / 2],
@@ -539,9 +545,9 @@ function buildBoutiqueGarmentRack(
   if (withLowerShoePlinth) {
     partHelper.addPart(
       rGrp,
-      new THREE.BoxGeometry(railWidth - 0.06, 0.14, 0.42),
+      makeRoundedFashionBox(railWidth - 0.02, 0.13, 0.40, 0.016),
       '#e5ded1',
-      [0, 0.09, 0],
+      [0, 0.088, 0],
       [0, 0, 0],
       0.006,
     );
@@ -550,9 +556,9 @@ function buildBoutiqueGarmentRack(
   if (withTopBagShelf) {
     partHelper.addPart(
       rGrp,
-      new THREE.BoxGeometry(railWidth + 0.10, 0.045, 0.42),
+      makeRoundedFashionBox(railWidth + 0.12, 0.048, 0.44, 0.014),
       COL_HANGER_OAK,
-      [0, 1.46, 0],
+      [0, 1.464, 0],
       [0, 0, 0],
       0.007,
       woodTex,
@@ -560,7 +566,7 @@ function buildBoutiqueGarmentRack(
     buildStructuredHandbag(
       rGrp,
       partHelper,
-      [-railWidth * 0.24, 1.483, 0.02],
+      [-railWidth * 0.24, 1.488, 0.02],
       0.08,
       '#b9895a',
       '#7c522b',
@@ -569,7 +575,7 @@ function buildBoutiqueGarmentRack(
     buildStructuredHandbag(
       rGrp,
       partHelper,
-      [railWidth * 0.22, 1.483, -0.01],
+      [railWidth * 0.22, 1.488, -0.01],
       -0.12,
       '#dfd6c7',
       '#6b533b',
@@ -590,7 +596,7 @@ function buildBoutiqueGarmentRack(
     gGrp.rotation.y = Math.PI / 2 + (i % 2 === 0 ? 0.06 : -0.06);
     rGrp.add(gGrp);
 
-    // Chrome hanger hook + angled wooden coat hanger bar
+    // Chrome hanger hook + contoured wooden coat hanger bar
     partHelper.addPart(
       gGrp,
       new THREE.CylinderGeometry(0.006, 0.006, 0.075, 6),
@@ -604,7 +610,7 @@ function buildBoutiqueGarmentRack(
     );
     partHelper.addPart(
       gGrp,
-      new THREE.BoxGeometry(0.34, 0.026, 0.022),
+      makeRoundedFashionBox(0.34, 0.026, 0.022, 0.008),
       COL_HANGER_OAK,
       [0, -0.075, 0],
       [0, 0, 0],
@@ -614,10 +620,10 @@ function buildBoutiqueGarmentRack(
       false,
     );
 
-    // Sculpted draped garment body + shoulder yoke + draped sleeves
+    // Sculpted rounded draped garment body + shoulder yoke + draped sleeves
     partHelper.addPart(
       gGrp,
-      new THREE.BoxGeometry(0.36, garmentLen, 0.068),
+      makeRoundedFashionBox(0.36, garmentLen, 0.072, 0.024),
       gColor,
       [0, -0.09 - garmentLen * 0.5, 0],
       [0, 0, 0],
@@ -636,6 +642,152 @@ function buildBoutiqueGarmentRack(
   }
 
   return rGrp;
+}
+
+export function buildFashionAccessoriesShelving(
+  parent: THREE.Object3D,
+  partHelper: KioskPartHelper,
+  pos: [number, number, number],
+  rotY: number,
+  textures: { timberTex?: THREE.Texture; verticalTimberTex?: THREE.Texture },
+): THREE.Group {
+  const COL_TIMBER = '#c28a54';
+  const COL_OAK_LIGHT = '#d8ad7c';
+  const shelfGrp = new THREE.Group();
+  shelfGrp.name = 'FashionApparelAccessoriesDisplay';
+  shelfGrp.position.set(pos[0], pos[1], pos[2]);
+  shelfGrp.rotation.y = rotY;
+  parent.add(shelfGrp);
+
+  // Lower closed oak credenza base (`y in [0.0 .. 0.48]`)
+  partHelper.addPart(
+    shelfGrp,
+    makeRoundedFashionBox(0.86, 0.48, 0.46, 0.016),
+    COL_OAK_LIGHT,
+    [0, 0.24, 0],
+    [0, 0, 0],
+    0.008,
+    textures.timberTex,
+  );
+  // Warm vertical timber backing panel recessed inside side gables & base/crown (`ZF=0`)
+  partHelper.addPart(
+    shelfGrp,
+    makeRoundedFashionBox(0.75, 1.40, 0.036, 0.008),
+    COL_TIMBER,
+    [0, 1.19, -0.195],
+    [0, 0, 0],
+    0.007,
+    textures.verticalTimberTex,
+  );
+  for (const gx of [-0.396, 0.396]) {
+    partHelper.addPart(
+      shelfGrp,
+      makeRoundedFashionBox(0.048, 1.42, 0.44, 0.012),
+      COL_OAK_LIGHT,
+      [gx, 1.19, 0],
+      [0, 0, 0],
+      0.007,
+      textures.timberTex,
+    );
+  }
+  // 2 Intermediate oak shelves rabbet-inset `-0.008m` inside gables + full overhanging mitered crown top
+  for (const sy of [0.94, 1.40]) {
+    partHelper.addPart(
+      shelfGrp,
+      makeRoundedFashionBox(0.77, 0.04, 0.41, 0.010),
+      COL_OAK_LIGHT,
+      [0, sy, 0.008],
+      [0, 0, 0],
+      0.006,
+      textures.timberTex,
+    );
+  }
+  partHelper.addPart(
+    shelfGrp,
+    makeRoundedFashionBox(0.86, 0.045, 0.46, 0.014),
+    COL_OAK_LIGHT,
+    [0, 1.915, 0],
+    [0, 0, 0],
+    0.006,
+    textures.timberTex,
+  );
+
+  // Tier 4 (Top Crown `y = 1.938`): Structured Taupe Leather Tote Bag
+  buildStructuredHandbag(
+    shelfGrp,
+    partHelper,
+    [0.0, 1.938, 0.02],
+    0.05,
+    '#a68a6d',
+    '#6b4e35',
+    1.02,
+  );
+
+  // Tier 3 (Upper Cubby `y = 1.42`): Sculpted Wide-Brim Boutique Wool Hat + Grosgrain Ribbon
+  const hatGrp = new THREE.Group();
+  hatGrp.position.set(0.0, 1.42, 0.03);
+  shelfGrp.add(hatGrp);
+  partHelper.addPart(
+    hatGrp,
+    new THREE.CylinderGeometry(0.22, 0.23, 0.022, 18),
+    '#dfd5c5',
+    [0, 0.015, 0],
+    [0, 0, 0],
+    0.005,
+  );
+  partHelper.addPart(
+    hatGrp,
+    new THREE.CylinderGeometry(0.115, 0.132, 0.13, 16),
+    '#dfd5c5',
+    [0, 0.085, 0],
+    [0, 0, 0],
+    0.005,
+  );
+  partHelper.addPart(
+    hatGrp,
+    new THREE.CylinderGeometry(0.134, 0.135, 0.032, 16),
+    '#2b3038',
+    [0, 0.042, 0],
+    [0, 0, 0],
+    0.003,
+  );
+
+  // Tier 2 (Middle Cubby `y = 0.96`): Neat Stacks of Folded Cashmere & Merino Knitwear
+  const knitStackColorsLeft = ['#cbd5e1', '#f1ece1', '#525b68'];
+  for (let k = 0; k < knitStackColorsLeft.length; k++) {
+    partHelper.addPart(
+      shelfGrp,
+      new THREE.BoxGeometry(0.30, 0.065, 0.28),
+      knitStackColorsLeft[k],
+      [-0.17, 0.995 + k * 0.068, 0.02],
+      [0, k * 0.04, 0],
+      0.005,
+    );
+  }
+  const knitStackColorsRight = ['#c8a27a', '#94a3b8'];
+  for (let k = 0; k < knitStackColorsRight.length; k++) {
+    partHelper.addPart(
+      shelfGrp,
+      new THREE.BoxGeometry(0.28, 0.065, 0.26),
+      knitStackColorsRight[k],
+      [0.18, 0.995 + k * 0.068, 0.02],
+      [0, -k * 0.05, 0],
+      0.005,
+    );
+  }
+
+  // Tier 1 (Lower Cubby `y = 0.48`): Structured Cognac Shoulder Bag
+  buildStructuredHandbag(
+    shelfGrp,
+    partHelper,
+    [0.0, 0.48, 0.03],
+    -0.06,
+    '#9c6638',
+    '#5c3818',
+    0.96,
+  );
+
+  return shelfGrp;
 }
 
 /**
@@ -722,18 +874,29 @@ export function buildFashionAndApparelKiosk3D(
     return mesh;
   };
 
+  let glassPaneCounter = 0;
   const addGlassPane = (
     parent: THREE.Object3D,
     w: number,
     h: number,
     pos: [number, number, number],
     rot: [number, number, number] = [0, 0, 0],
+    windowId?: string,
   ): THREE.Mesh => {
+    const id = windowId ?? `fashion_kiosk_storefront_${glassPaneCounter++}`;
     const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), opts.sharedClearGlassMat);
+    gMesh.name = `FashionKioskStorefrontGlass_${id}`;
     gMesh.position.set(pos[0], pos[1], pos[2]);
     gMesh.rotation.set(rot[0], rot[1], rot[2]);
     gMesh.castShadow = false;
     gMesh.receiveShadow = false;
+    tagCityWindowMesh(gMesh, {
+      id,
+      kind: 'storefront',
+      seed: computeDeterministicWindowSeed(id),
+      baseColorHex: '#d6f4ff',
+      baseOpacity: 0.30,
+    });
     parent.add(gMesh);
     return gMesh;
   };
@@ -836,7 +999,7 @@ export function buildFashionAndApparelKiosk3D(
         new THREE.CylinderGeometry(0.065, 0.065, 0.02, 10),
         COL_LED_WARM,
         '#ffe59e',
-        0.85,
+        0.62,
         [lx, 2.655, lz],
       );
     }
@@ -865,15 +1028,15 @@ export function buildFashionAndApparelKiosk3D(
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(kioskGrp, 1.30, 2.38, [-1.43, 1.47, 1.54], [0, 0, 0]);
-  addGlassPane(kioskGrp, 1.32, 2.38, [0.0, 1.47, 1.54], [0, 0, 0]);
+  addGlassPane(kioskGrp, 1.25, 2.38, [-1.41, 1.47, 1.54], [0, 0, 0], 'fashion_front_left');
+  addGlassPane(kioskGrp, 1.32, 2.38, [0.0, 1.47, 1.54], [0, 0, 0], 'fashion_front_center');
 
   // Right Bay Framed Glass Entrance Door (`x in [+0.78 .. +2.04]`) + Brushed Steel Pull Handle
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.09), '#383f49', [0.82, 1.42, 1.54], [0, 0, 0], 0.007);
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(0.08, 2.40, 0.09), '#383f49', [2.00, 1.42, 1.54], [0, 0, 0], 0.007);
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(1.24, 0.09, 0.09), '#383f49', [1.41, 2.58, 1.54], [0, 0, 0], 0.007);
   partHelper.addPart(kioskGrp, new THREE.BoxGeometry(1.24, 0.08, 0.09), '#383f49', [1.41, 0.25, 1.54], [0, 0, 0], 0.007);
-  addGlassPane(kioskGrp, 1.10, 2.24, [1.41, 1.42, 1.54], [0, 0, 0]);
+  addGlassPane(kioskGrp, 1.09, 2.22, [1.41, 1.415, 1.54], [0, 0, 0], 'fashion_front_door');
 
   partHelper.addPart(
     kioskGrp,
@@ -925,9 +1088,9 @@ export function buildFashionAndApparelKiosk3D(
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(kioskGrp, 0.90, 2.38, [2.14, 1.47, 0.98], [0, Math.PI / 2, 0]);
-  addGlassPane(kioskGrp, 0.90, 2.38, [2.14, 1.47, 0.0], [0, Math.PI / 2, 0]);
-  addGlassPane(kioskGrp, 0.90, 2.38, [2.14, 1.47, -0.98], [0, Math.PI / 2, 0]);
+  addGlassPane(kioskGrp, 0.88, 2.38, [2.14, 1.47, 0.99], [0, Math.PI / 2, 0], 'fashion_north_front');
+  addGlassPane(kioskGrp, 0.86, 2.38, [2.14, 1.47, 0.0], [0, Math.PI / 2, 0], 'fashion_north_center');
+  addGlassPane(kioskGrp, 0.88, 2.38, [2.14, 1.47, -0.99], [0, Math.PI / 2, 0], 'fashion_north_rear');
 
   // South Side (`-X = -2.14`): Front Display Glass Bay (`z in [+0.18 .. +1.44]`) +
   // Vertical Timber Cladding Feature Wall (`z in [-1.44 .. +0.12]`, visible behind trench mannequin in Quadrant 1!)
@@ -948,7 +1111,7 @@ export function buildFashionAndApparelKiosk3D(
     [0, 0, 0],
     0.007,
   );
-  addGlassPane(kioskGrp, 1.24, 2.38, [-2.14, 1.47, 0.82], [0, -Math.PI / 2, 0]);
+  addGlassPane(kioskGrp, 1.23, 2.38, [-2.14, 1.47, 0.82], [0, -Math.PI / 2, 0], 'fashion_south_front');
   partHelper.addPart(
     kioskGrp,
     new THREE.BoxGeometry(0.16, 2.48, 1.54),
@@ -1100,7 +1263,7 @@ export function buildFashionAndApparelKiosk3D(
         new THREE.CylinderGeometry(0.075, 0.075, 0.028, 10),
         COL_LED_WARM,
         '#ffe59e',
-        0.95,
+        0.68,
         [sx, -0.082, sz],
       );
     }
@@ -1112,7 +1275,7 @@ export function buildFashionAndApparelKiosk3D(
         new THREE.CylinderGeometry(0.070, 0.070, 0.028, 10),
         COL_LED_WARM,
         '#ffe59e',
-        0.95,
+        0.68,
         [sxSide, -0.082, szSide],
       );
     }
@@ -1197,133 +1360,12 @@ export function buildFashionAndApparelKiosk3D(
   );
   sideFacingRack.name = 'FashionBoutiqueSideGarmentRack';
 
-  // =========================================================================
-  // 8. INTERIOR BOUTIQUE MERCHANDISING — 4-TIER OAK APPAREL & ACCESSORIES DISPLAY
-  //    (`x = 1.58, y = 0.22, z = -0.96`, visible through `+X` Rear Glazing & Front Door)
-  // =========================================================================
-  const shelfGrp = new THREE.Group();
-  shelfGrp.name = 'FashionApparelAccessoriesDisplay';
-  shelfGrp.position.set(1.58, 0.22, -0.96);
-  shelfGrp.rotation.y = Math.PI / 2; // Faces `+X` Panoramic Side Glass (Quadrant 2 & Quadrant 4)
-  kioskGrp.add(shelfGrp);
-
-  // Lower closed oak credenza base (`y in [0.0 .. 0.48]`)
-  partHelper.addPart(
-    shelfGrp,
-    new THREE.BoxGeometry(0.84, 0.48, 0.44),
-    COL_OAK_LIGHT,
-    [0, 0.24, 0],
-    [0, 0, 0],
-    0.008,
-    opts.textures.timberTex,
-  );
-  // Warm vertical timber backing panel + twin tall oak side gables (`y in [0.48 .. 1.92]`)
-  partHelper.addPart(
-    shelfGrp,
-    new THREE.BoxGeometry(0.84, 1.44, 0.045),
-    COL_TIMBER,
-    [0, 1.20, -0.198],
-    [0, 0, 0],
-    0.007,
-    opts.textures.verticalTimberTex,
-  );
-  for (const gx of [-0.40, 0.40]) {
-    partHelper.addPart(
-      shelfGrp,
-      new THREE.BoxGeometry(0.04, 1.44, 0.44),
-      COL_OAK_LIGHT,
-      [gx, 1.20, 0],
-      [0, 0, 0],
-      0.007,
-      opts.textures.timberTex,
-    );
-  }
-  // 3 Horizontal oak display shelves + top crown shelf (`y = 0.94, 1.40, 1.90`)
-  for (const sy of [0.94, 1.40, 1.90]) {
-    partHelper.addPart(
-      shelfGrp,
-      new THREE.BoxGeometry(0.84, 0.04, 0.44),
-      COL_OAK_LIGHT,
-      [0, sy, 0],
-      [0, 0, 0],
-      0.006,
-      opts.textures.timberTex,
-    );
-  }
-
-  // Tier 4 (Top Crown `y = 1.92`): Structured Taupe Leather Tote Bag
-  buildStructuredHandbag(
-    shelfGrp,
+  buildFashionAccessoriesShelving(
+    kioskGrp,
     partHelper,
-    [0.0, 1.92, 0.02],
-    0.05,
-    '#a68a6d',
-    '#6b4e35',
-    1.02,
-  );
-
-  // Tier 3 (Upper Cubby `y = 1.42`): Sculpted Wide-Brim Boutique Wool Hat + Grosgrain Ribbon
-  const hatGrp = new THREE.Group();
-  hatGrp.position.set(0.0, 1.42, 0.03);
-  shelfGrp.add(hatGrp);
-  partHelper.addPart(
-    hatGrp,
-    new THREE.CylinderGeometry(0.22, 0.23, 0.022, 18),
-    '#dfd5c5',
-    [0, 0.015, 0],
-    [0, 0, 0],
-    0.005,
-  );
-  partHelper.addPart(
-    hatGrp,
-    new THREE.CylinderGeometry(0.115, 0.132, 0.13, 16),
-    '#dfd5c5',
-    [0, 0.085, 0],
-    [0, 0, 0],
-    0.005,
-  );
-  partHelper.addPart(
-    hatGrp,
-    new THREE.CylinderGeometry(0.134, 0.135, 0.032, 16),
-    '#2b3038',
-    [0, 0.042, 0],
-    [0, 0, 0],
-    0.003,
-  );
-
-  // Tier 2 (Middle Cubby `y = 0.96`): Neat Stacks of Folded Cashmere & Merino Knitwear
-  const knitStackColorsLeft = ['#cbd5e1', '#f1ece1', '#525b68'];
-  for (let k = 0; k < knitStackColorsLeft.length; k++) {
-    partHelper.addPart(
-      shelfGrp,
-      new THREE.BoxGeometry(0.30, 0.065, 0.28),
-      knitStackColorsLeft[k],
-      [-0.17, 0.995 + k * 0.068, 0.02],
-      [0, k * 0.04, 0],
-      0.005,
-    );
-  }
-  const knitStackColorsRight = ['#c8a27a', '#94a3b8'];
-  for (let k = 0; k < knitStackColorsRight.length; k++) {
-    partHelper.addPart(
-      shelfGrp,
-      new THREE.BoxGeometry(0.28, 0.065, 0.26),
-      knitStackColorsRight[k],
-      [0.18, 0.995 + k * 0.068, 0.02],
-      [0, -k * 0.05, 0],
-      0.005,
-    );
-  }
-
-  // Tier 1 (Lower Cubby `y = 0.48`): Structured Cognac Shoulder Bag
-  buildStructuredHandbag(
-    shelfGrp,
-    partHelper,
-    [0.0, 0.48, 0.03],
-    -0.06,
-    '#9c6638',
-    '#5c3818',
-    0.96,
+    [1.58, 0.22, -0.96],
+    Math.PI / 2,
+    opts.textures,
   );
 
   // =========================================================================

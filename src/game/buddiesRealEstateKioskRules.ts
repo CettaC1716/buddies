@@ -7,51 +7,49 @@ export interface RealEstateKioskVec3 {
 }
 
 /**
- * Architectural Model Sheet Specification (`screen_722f4ee5.png` & `screenshot_16_16283bb7.png`):
- * COMPACT GLASS & STEEL REAL ESTATE & FURNITURE SHOWROOM KIOSK
- * ("Kios Kantor Agen Properti Rumah & Showroom Furnitur Minimalis")
+ * Unified 3-Bay Civic Commercial Arcade — Bay 2 (Center) Real Estate & Design Studio
+ * (`Kios Agen Properti & Desain Rumah`).
  *
- * Anchored inside `westPlantGroup` (`(-90.5, 0, 0)`) at local `(-10.2, 2.50, -13.8)`,
- * rotated `+Math.PI / 2` so local `+Z` faces East (`+X`) onto Central Plaza (`y = 2.50m`),
- * and local `+X` faces North (`-Z`) toward the Municipal Hall plaza promenade.
+ * Anchored inside `westPlantGroup` (`(-90.5, 0, 0)`) at unified arcade center
+ * `world = (-100.10, 2.50, -4.40)`, `rotation.y = +Math.PI / 2`, `scale = 1.0`.
  */
 export const REAL_ESTATE_FURNITURE_KIOSK_LAYOUT = {
-  westPlantOriginX: -90.5,
+  westPlantOriginX: -92.75,
   westPlantOriginZ: 0.0,
-  kioskLocalX: -10.2,
+  kioskLocalX: -13.60,
   kioskLocalY: 2.50,
-  kioskLocalZ: -13.8,
+  kioskLocalZ: -4.40,
   kioskRotY: Math.PI / 2,
-  kioskScale: 1.48,
-  worldCenterX: -100.7,
+  kioskScale: 1.0,
+  worldCenterX: -106.35,
   worldBaseY: 2.50,
-  worldCenterZ: -13.8,
-  // Stepped Granite Plaza Paver Base (`Granite Plaza Paver Base` in all 4 views of `screen_722f4ee5.png`)
-  granitePaverBaseWidthLocal: 5.18,
-  granitePaverBaseDepthLocal: 4.12,
-  granitePaverBaseHeightLocal: 0.075,
-  // Front-Right Glass Entrance Door span in kiosk-local X
-  entranceDoorLocalXMin: 0.78,
-  entranceDoorLocalXMax: 2.04,
-  entranceDoorFrontLocalZ: 1.54,
-  // Wooden A-Frame Sidewalk Sign ("REAL ESTATE & INTERIOR STUDIO") on Granite Paver Base front-right corner
+  worldCenterZ: -4.40,
+  // Unified Civic Fan-Pattern Cobblestone Apron dimensions (per bay width 6.75m, front apron +2.45m)
+  granitePaverBaseWidthLocal: 6.75,
+  granitePaverBaseDepthLocal: 2.45,
+  granitePaverBaseHeightLocal: 0.045,
+  // Front-Right Glass Entrance Door span in bay-local X
+  entranceDoorLocalXMin: 1.65,
+  entranceDoorLocalXMax: 2.95,
+  entranceDoorFrontLocalZ: 2.50,
+  // Wooden A-Frame Sidewalk Sign ("REAL ESTATE & INTERIOR STUDIO") on front cobblestone apron
   aFrameSignLocal: {
-    x: 1.88,
-    y: 0.075,
-    z: 1.94,
+    x: 1.60,
+    y: 0.045,
+    z: 4.05,
     rotY: 0.30,
   },
-  // Low floating 3D interaction triangle right beside the bottom-right edge of the wooden A-Frame sign
+  // Low floating 3D interaction triangle right beside the wooden A-Frame sign on open plaza pavers
   interactionMarkerLocal: {
-    x: 2.38,
+    x: 2.20,
     y: 0.0,
-    z: 2.22,
+    z: 4.90,
   },
-  // Merchant Hana world placement directly on the Central Plaza tiles in front of the left showroom bay (well clear of the North A-Frame sign & 3D triangle)
+  // Merchant Hana world placement directly on the open Central Plaza tiles in front of Center Bay 2
   hanaMerchantWorld: {
-    x: -95.95,
+    x: -100.90,
     y: 2.50,
-    z: -11.55,
+    z: -3.15,
     rotY: Math.PI / 2,
   },
 } as const;
@@ -99,7 +97,7 @@ export const REAL_ESTATE_CATALOG_TRIGGER = {
   z: _realEstateCatalogMarkerWorld.z,
   deckY: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.worldBaseY,
   markerOffsetY: 0.38,
-  triggerRadius: 2.55,
+  triggerRadius: 2.20,
 } as const;
 
 export function evaluateRealEstateCatalogProximity(
@@ -123,7 +121,7 @@ export function evaluateRealEstateCatalogProximity(
  * Classic Plaza Manor Model House double entrance doors (`x = -91.3, z = -24.26`).
  */
 export const PLAZA_MODEL_HOUSE_DOOR_TRIGGER = {
-  x: -91.3,
+  x: -93.55,
   z: -24.26,
   deckY: 2.5,
   markerOffsetY: 0.56,
@@ -147,9 +145,8 @@ export function evaluatePlazaModelHouseDoorProximity(
 }
 
 /**
- * Builds synchronized static OBB colliders for the renovated Central Plaza
- * Real Estate & Furniture Showroom Kiosk and its outdoor A-Frame sidewalk sign
- * (replacing the legacy gelato kiosk body + barstools colliders).
+ * Builds synchronized static OBB colliders for the unified 3-Bay Civic Commercial Arcade
+ * shell (building body, front bench, flanking sandstone planters) and Bay 2's A-Frame sign.
  */
 export function computeRealEstateKioskWorldColliders(): StaticWorldStructureObb[] {
   const signWorld = realEstateKioskLocalToWorldPose(
@@ -158,26 +155,59 @@ export function computeRealEstateKioskWorldColliders(): StaticWorldStructureObb[
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.aFrameSignLocal.z,
     REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.aFrameSignLocal.rotY,
   );
+  const benchWorld = realEstateKioskLocalToWorldPose(-7.85, 0, 3.45, 0);
+  const planterSouthWorld = realEstateKioskLocalToWorldPose(-10.55, 0, 3.45, 0);
+  const planterNorthWorld = realEstateKioskLocalToWorldPose(10.55, 0, 3.45, 0);
 
   return [
     {
-      id: 'lobby_realestate_kiosk_body',
-      x: -100.55,
-      z: -13.8,
-      halfX: 2.62,
-      halfZ: 3.30,
+      id: 'lobby_kiosk_arcade_body',
+      x: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.worldCenterX,
+      z: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.worldCenterZ,
+      halfX: 2.55,
+      halfZ: 10.62,
       rotY: 0,
-      heightY: 6.9,
-      mat: 'metal',
+      heightY: 9.5,
+      mat: 'concrete',
+    },
+    {
+      id: 'lobby_kiosk_arcade_bench',
+      x: +benchWorld.x.toFixed(2),
+      z: +benchWorld.z.toFixed(2),
+      halfX: 0.38,
+      halfZ: 0.94,
+      rotY: 0,
+      heightY: 3.45,
+      mat: 'wood',
+    },
+    {
+      id: 'lobby_kiosk_arcade_planter_s',
+      x: +planterSouthWorld.x.toFixed(2),
+      z: +planterSouthWorld.z.toFixed(2),
+      halfX: 0.46,
+      halfZ: 0.46,
+      rotY: 0,
+      heightY: 3.65,
+      mat: 'concrete',
+    },
+    {
+      id: 'lobby_kiosk_arcade_planter_n',
+      x: +planterNorthWorld.x.toFixed(2),
+      z: +planterNorthWorld.z.toFixed(2),
+      halfX: 0.46,
+      halfZ: 0.46,
+      rotY: 0,
+      heightY: 3.65,
+      mat: 'concrete',
     },
     {
       id: 'lobby_realestate_kiosk_sign',
       x: +signWorld.x.toFixed(2),
       z: +signWorld.z.toFixed(2),
-      halfX: 0.42,
-      halfZ: 0.42,
+      halfX: 0.34,
+      halfZ: 0.34,
       rotY: 0,
-      heightY: 3.92,
+      heightY: 3.55,
       mat: 'wood',
     },
   ];

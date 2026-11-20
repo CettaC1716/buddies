@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import {
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
+  CITY_TRAFFIC_SIGNAL_POLE_SPECS,
   IndividualCommanderBaseState,
   isCommanderBasePlotActive,
 } from './buddiesBlitzRules';
 import {
+  BEACHFRONT_STILT_CABIN_SPEC,
   resetTerrainSculptGrid,
   restoreTerrainSculptGrid,
 } from './buddiesPlanetCurvature';
@@ -18,6 +20,10 @@ import {
 } from './buddiesBlitzTypes';
 import { getCoastalAmusementParkObstacles } from './buddiesAmusementParkRules';
 import {
+  getCentralParkObstacles,
+  isPointInsideCentralIslandEnvelope,
+} from './buddiesCentralParkRules';
+import {
   getGrandCasinoObstacles,
   isInsideNorthGrandCasinoFootprint,
 } from './buddiesGrandCasinoRules';
@@ -28,7 +34,7 @@ import {
 } from './buddiesRealEstateKioskRules';
 import { computeFashionKioskWorldColliders } from './buddiesFashionKioskRules';
 
-export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v55';
+export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v56';
 
 /**
  * Single 180°-Rotationally Symmetric Base Section Generator (`buildTeamBaseQuadrant`):
@@ -86,56 +92,56 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     ...buildTeamBaseQuadrant('red', -1, 200),
     { id: 502, kind: 'giant_pipe', x: -5.5, z: -22.5, rotY: 0.0, scale: 1.12 },
     { id: 503, kind: 'giant_pipe', x: -5.5, z: 22.5, rotY: 0.0, scale: 1.12 },
-    { id: 504, kind: 'pipe_cluster', x: 7.5, z: -5.6, rotY: 0.0, scale: 1.08 },
-    { id: 505, kind: 'pipe_cluster', x: 7.5, z: 5.6, rotY: Math.PI, scale: 1.08 },
-    { id: 506, kind: 'tree_purple', x: -4.5, z: -7.2, rotY: 0.35, scale: 1.08 },
-    { id: 507, kind: 'tree_purple', x: -4.5, z: 7.2, rotY: -0.35, scale: 1.08 },
-    { id: 508, kind: 'tree_gold', x: 3.2, z: -7.2, rotY: 0.65, scale: 1.08 },
-    { id: 509, kind: 'tree_gold', x: 3.2, z: 7.2, rotY: -0.65, scale: 1.08 },
-    { id: 510, kind: 'tree_purple', x: 12.5, z: -5.5, rotY: 0.15, scale: 1.08 },
-    { id: 511, kind: 'tree_purple', x: 12.5, z: 5.5, rotY: -0.15, scale: 1.08 },
-    { id: 512, kind: 'tree_gold', x: 16.5, z: 0.0, rotY: 0.45, scale: 1.1 },
+    { id: 504, kind: 'pipe_cluster', x: 86.5, z: 21.5, rotY: 0.0, scale: 1.08 },
+    { id: 505, kind: 'pipe_cluster', x: 86.5, z: 38.5, rotY: Math.PI, scale: 1.08 },
+    { id: 506, kind: 'tree_purple', x: -52.0, z: -28.0, rotY: 0.35, scale: 1.08 },
+    { id: 507, kind: 'tree_purple', x: -52.0, z: 26.0, rotY: -0.35, scale: 1.08 },
+    { id: 508, kind: 'tree_gold', x: -40.0, z: -35.0, rotY: 0.65, scale: 1.08 },
+    { id: 509, kind: 'tree_gold', x: -40.0, z: 35.0, rotY: -0.65, scale: 1.08 },
+    { id: 510, kind: 'tree_purple', x: -51.0, z: -8.0, rotY: 0.15, scale: 1.08 },
+    { id: 511, kind: 'tree_purple', x: -51.0, z: 7.5, rotY: -0.15, scale: 1.08 },
+    { id: 512, kind: 'tree_gold', x: -39.5, z: -16.5, rotY: 0.45, scale: 1.1 },
 
     { id: 550, kind: 'tree_gold', x: -9.5, z: -28.0, rotY: 0.25, scale: 1.14 },
     { id: 551, kind: 'tree_purple', x: -2.5, z: -24.5, rotY: -0.45, scale: 1.12 },
     { id: 552, kind: 'tree_gold', x: 6.5, z: -25.5, rotY: 0.75, scale: 1.15 },
-    { id: 553, kind: 'tree_purple', x: 11.0, z: -32.5, rotY: -0.65, scale: 1.1 },
-    { id: 554, kind: 'tree_gold', x: 2.5, z: -38.5, rotY: 0.35, scale: 1.12 },
-    { id: 555, kind: 'tree_purple', x: -8.5, z: -38.5, rotY: 0.95, scale: 1.08 },
-    { id: 556, kind: 'tree_gold', x: 9.5, z: -39.0, rotY: -0.25, scale: 1.12 },
+    { id: 553, kind: 'tree_purple', x: -74.0, z: 98.0, rotY: -0.65, scale: 1.1 },
+    { id: 554, kind: 'tree_gold', x: 2.5, z: -35.2, rotY: 0.35, scale: 1.12 },
+    { id: 555, kind: 'tree_purple', x: -8.5, z: -37.2, rotY: 0.95, scale: 1.08 },
+    { id: 556, kind: 'tree_gold', x: 72.5, z: -101.0, rotY: -0.25, scale: 1.12 },
     { id: 557, kind: 'flower_cluster', x: 0.0, z: -35.0, rotY: 0.4, scale: 1.35 },
     { id: 558, kind: 'river_rock', x: 2.0, z: -32.0, rotY: 0.8, scale: 1.4 },
 
     { id: 560, kind: 'tree_gold', x: -9.5, z: 28.0, rotY: -0.25, scale: 1.14 },
     { id: 561, kind: 'tree_purple', x: -2.5, z: 24.5, rotY: 0.45, scale: 1.12 },
     { id: 562, kind: 'tree_gold', x: 6.5, z: 25.5, rotY: -0.75, scale: 1.15 },
-    { id: 563, kind: 'tree_purple', x: 11.0, z: 32.5, rotY: 0.65, scale: 1.1 },
-    { id: 564, kind: 'tree_gold', x: 2.5, z: 41.5, rotY: -0.35, scale: 1.12 },
-    { id: 565, kind: 'tree_purple', x: -8.5, z: 38.5, rotY: -0.95, scale: 1.08 },
-    { id: 566, kind: 'tree_gold', x: 9.5, z: 42.0, rotY: 0.25, scale: 1.12 },
+    { id: 563, kind: 'tree_purple', x: -71.5, z: 62.5, rotY: 0.65, scale: 1.1 },
+    { id: 564, kind: 'tree_gold', x: 2.5, z: 35.8, rotY: -0.35, scale: 1.12 },
+    { id: 565, kind: 'tree_purple', x: -6.8, z: 37.8, rotY: -0.95, scale: 1.08 },
+    { id: 566, kind: 'tree_gold', x: 72.5, z: 101.0, rotY: 0.25, scale: 1.12 },
     { id: 567, kind: 'flower_cluster', x: 0.0, z: 35.0, rotY: -0.4, scale: 1.35 },
     { id: 568, kind: 'river_rock', x: -1.0, z: 32.0, rotY: -0.8, scale: 1.4 },
 
-    { id: 570, kind: 'tree_gold', x: 28.5, z: 0.0, rotY: 0.45, scale: 1.14 },
-    { id: 571, kind: 'tree_purple', x: 25.5, z: -8.5, rotY: -0.35, scale: 1.12 },
-    { id: 572, kind: 'tree_purple', x: 25.5, z: 8.5, rotY: 0.35, scale: 1.12 },
-    { id: 573, kind: 'tree_gold', x: 28.0, z: -14.5, rotY: -0.55, scale: 1.12 },
-    { id: 574, kind: 'tree_gold', x: 28.0, z: 14.5, rotY: 0.55, scale: 1.12 },
-    { id: 575, kind: 'flower_cluster', x: 26.5, z: -4.2, rotY: 0.6, scale: 1.32 },
-    { id: 576, kind: 'flower_cluster', x: 26.5, z: 4.2, rotY: -0.6, scale: 1.32 },
-    { id: 577, kind: 'tree_purple', x: 38.5, z: -6.5, rotY: 0.25, scale: 1.14 },
-    { id: 578, kind: 'tree_purple', x: 38.5, z: 6.5, rotY: -0.25, scale: 1.14 },
-    { id: 579, kind: 'tree_gold', x: 46.5, z: 0.0, rotY: -0.4, scale: 1.16 },
+    { id: 570, kind: 'tree_gold', x: -39.5, z: 16.5, rotY: 0.45, scale: 1.14 },
+    { id: 571, kind: 'tree_purple', x: 72.5, z: -60.0, rotY: -0.35, scale: 1.12 },
+    { id: 572, kind: 'tree_purple', x: 72.5, z: 62.5, rotY: 0.35, scale: 1.12 },
+    { id: 573, kind: 'tree_gold', x: 72.5, z: -83.0, rotY: -0.55, scale: 1.12 },
+    { id: 574, kind: 'tree_gold', x: 72.5, z: 83.0, rotY: 0.55, scale: 1.12 },
+    { id: 575, kind: 'flower_cluster', x: -44.5, z: -9.8, rotY: 0.6, scale: 1.32 },
+    { id: 576, kind: 'flower_cluster', x: -44.5, z: 9.8, rotY: -0.6, scale: 1.32 },
+    { id: 577, kind: 'tree_purple', x: -79.5, z: 70.5, rotY: 0.25, scale: 1.14 },
+    { id: 578, kind: 'tree_purple', x: -92.0, z: 70.5, rotY: -0.25, scale: 1.14 },
+    { id: 579, kind: 'tree_gold', x: -103.5, z: 69.5, rotY: -0.4, scale: 1.16 },
     { id: 590, kind: 'tree_gold', x: 31.0, z: -36.5, rotY: 0.35, scale: 1.14 },
     { id: 591, kind: 'tree_gold', x: 31.0, z: 36.5, rotY: -0.35, scale: 1.14 },
-    { id: 592, kind: 'tree_purple', x: 54.5, z: -34.0, rotY: -0.45, scale: 1.14 },
-    { id: 593, kind: 'tree_purple', x: 54.5, z: 34.0, rotY: 0.45, scale: 1.14 },
-    { id: 594, kind: 'tree_gold', x: 60.5, z: -28.0, rotY: 0.55, scale: 1.12 },
-    { id: 595, kind: 'tree_gold', x: 60.5, z: 28.0, rotY: -0.55, scale: 1.12 },
+    { id: 592, kind: 'tree_purple', x: 54.5, z: -27.5, rotY: -0.45, scale: 1.14 },
+    { id: 593, kind: 'tree_purple', x: 54.5, z: 27.5, rotY: 0.45, scale: 1.14 },
+    { id: 594, kind: 'tree_gold', x: -26.0, z: -36.0, rotY: 0.55, scale: 1.12 },
+    { id: 595, kind: 'tree_gold', x: -29.0, z: 34.5, rotY: -0.55, scale: 1.12 },
     { id: 596, kind: 'flower_cluster', x: 52.0, z: -38.5, rotY: 0.5, scale: 1.32 },
     { id: 597, kind: 'flower_cluster', x: 52.0, z: 38.5, rotY: -0.5, scale: 1.32 },
-    { id: 598, kind: 'river_rock', x: 48.0, z: -8.5, rotY: 0.7, scale: 1.35 },
-    { id: 599, kind: 'river_rock', x: 48.0, z: 8.5, rotY: -0.7, scale: 1.35 },
+    { id: 598, kind: 'river_rock', x: -37.2, z: -11.8, rotY: 0.7, scale: 1.35 },
+    { id: 599, kind: 'river_rock', x: -37.2, z: 11.8, rotY: -0.7, scale: 1.35 },
 
     // Tree 491 removed from South Plaza L-Shaped Glasshouse Cafe interior ("hapus pohon yang di dadlam cafe kaca")
 
@@ -165,8 +171,8 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 333, kind: 'tree_purple', x: -28.5, z: 15.2, rotY: 0.5, scale: 1.1 },
     { id: 334, kind: 'tree_gold', x: -48.5, z: -36.5, rotY: 0.6, scale: 1.1 },
     { id: 335, kind: 'tree_gold', x: -48.5, z: 36.5, rotY: -0.6, scale: 1.1 },
-    { id: 336, kind: 'tree_purple', x: -69.5, z: -96.8, rotY: -0.3, scale: 1.12 },
-    { id: 337, kind: 'tree_purple', x: -68.5, z: 58.5, rotY: 0.3, scale: 1.12 },
+    { id: 336, kind: 'tree_purple', x: -86.0, z: 82.0, rotY: -0.3, scale: 1.12 },
+    { id: 337, kind: 'tree_purple', x: -74.0, z: 82.0, rotY: 0.3, scale: 1.12 },
 
     { id: 401, kind: 'crane', x: 105.8, z: 21.5, rotY: Math.PI / 2, scale: 1.38 },
     { id: 431, kind: 'forklift', x: 88.5, z: 29.5, rotY: Math.PI, scale: 1.18 },
@@ -177,34 +183,22 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 522, kind: 'bench', x: -1.0, z: 29.8, rotY: -Math.PI / 2, scale: 1.35 },
     { id: 523, kind: 'bench', x: -1.0, z: 34.2, rotY: -Math.PI / 2, scale: 1.35 },
     { id: 581, kind: 'recycle_bin', x: -1.0, z: 36.6, rotY: -Math.PI / 2, scale: 1.08 },
-    { id: 524, kind: 'bench', x: 23.8, z: 0.0, rotY: Math.PI / 2, scale: 1.35 },
-    { id: 525, kind: 'bench', x: 25.2, z: 0.0, rotY: -Math.PI / 2, scale: 1.35 },
-    { id: 582, kind: 'recycle_bin', x: 24.5, z: -2.3, rotY: 0.0, scale: 1.08 },
-    { id: 583, kind: 'recycle_bin', x: 24.5, z: 2.3, rotY: Math.PI, scale: 1.08 },
+    { id: 524, kind: 'bench', x: -47.5, z: -10.2, rotY: -Math.PI / 2, scale: 1.35 },
+    { id: 525, kind: 'bench', x: -47.5, z: 10.2, rotY: -Math.PI / 2, scale: 1.35 },
+    { id: 582, kind: 'recycle_bin', x: -47.5, z: -7.8, rotY: -Math.PI / 2, scale: 1.08 },
+    { id: 583, kind: 'recycle_bin', x: -47.5, z: 7.8, rotY: -Math.PI / 2, scale: 1.08 },
     { id: 526, kind: 'bench', x: -44.2, z: -2.0, rotY: -Math.PI / 2, scale: 1.35 },
     { id: 527, kind: 'bench', x: -44.2, z: 2.0, rotY: -Math.PI / 2, scale: 1.35 },
     { id: 584, kind: 'recycle_bin', x: -44.2, z: -4.2, rotY: -Math.PI / 2, scale: 1.08 },
     { id: 585, kind: 'recycle_bin', x: -44.2, z: 4.2, rotY: -Math.PI / 2, scale: 1.08 },
-    { id: 528, kind: 'bench', x: -9.5, z: -44.6, rotY: 0.0, scale: 1.35 },
-    { id: 529, kind: 'bench', x: -9.5, z: 44.6, rotY: Math.PI, scale: 1.35 },
-    { id: 586, kind: 'recycle_bin', x: -12.0, z: -44.6, rotY: 0.0, scale: 1.08 },
-    { id: 587, kind: 'recycle_bin', x: -12.0, z: 44.6, rotY: Math.PI, scale: 1.08 },
+    { id: 528, kind: 'bench', x: -9.5, z: -41.8, rotY: 0.0, scale: 1.35 },
+    { id: 529, kind: 'bench', x: -9.5, z: 41.8, rotY: Math.PI, scale: 1.35 },
+    { id: 586, kind: 'recycle_bin', x: -12.0, z: -41.8, rotY: 0.0, scale: 1.08 },
+    { id: 587, kind: 'recycle_bin', x: -12.0, z: 41.8, rotY: Math.PI, scale: 1.08 },
 
-    { id: 530, kind: 'lamppost_1b', x: -6.2, z: -7.2, rotY: 0.0, scale: 1.15 },
-    { id: 531, kind: 'lamppost_1b', x: -6.2, z: 7.2, rotY: Math.PI / 2, scale: 1.15 },
-    { id: 532, kind: 'lamppost_1b', x: 25.8, z: -30.8, rotY: Math.PI / 2, scale: 1.15 },
-    { id: 533, kind: 'lamppost_1b', x: 25.8, z: 30.8, rotY: 0.0, scale: 1.15 },
-    { id: 534, kind: 'lamppost_1b', x: -61.2, z: -43.2, rotY: 0.0, scale: 1.15 },
-    { id: 535, kind: 'lamppost_1b', x: -61.2, z: 43.2, rotY: Math.PI / 2, scale: 1.15 },
-    { id: 536, kind: 'lamppost_1b', x: 61.2, z: -43.2, rotY: -Math.PI / 2, scale: 1.15 },
-    { id: 537, kind: 'lamppost_1b', x: 61.2, z: 43.2, rotY: Math.PI, scale: 1.15 },
-
-    { id: 538, kind: 'lamppost_1a', x: -3.5, z: -45.2, rotY: 0.0, scale: 1.15 },
-    { id: 539, kind: 'lamppost_1a', x: 0.0, z: 45.2, rotY: Math.PI, scale: 1.15 },
-    { id: 540, kind: 'lamppost_1a', x: -64.8, z: -84.5, rotY: -Math.PI / 2, scale: 1.15 },
-    { id: 541, kind: 'lamppost_1a', x: -64.8, z: 78.0, rotY: -Math.PI / 2, scale: 1.15 },
-    { id: 542, kind: 'lamppost_1a', x: 64.8, z: -78.0, rotY: Math.PI / 2, scale: 1.15 },
-    { id: 543, kind: 'lamppost_1a', x: 64.8, z: 78.0, rotY: Math.PI / 2, scale: 1.15 },
+    // Relocated from Central Island per CENTRAL_PARK_PROP_RELOCATION_MANIFEST (off sidewalks & roads)
+    { id: 530, kind: 'lamppost_1b', x: -55.5, z: -24.5, rotY: 0.0, scale: 1.15 },
+    { id: 531, kind: 'lamppost_1b', x: -55.5, z: 24.5, rotY: Math.PI / 2, scale: 1.15 },
   ],
 };
 
@@ -214,11 +208,11 @@ export function cloneDefaultLayout(): ArenaMapLayout {
 
 /**
  * Returns true if world (x, z) falls inside the South Plaza L-Shaped Glasshouse Cafe footprint
- * (Main Hall: x in [-103.6, -77.4], z in [22.9, 37.1]; West L-Wing: x in [-103.6, -92.6], z in [13.7, 23.2]).
+ * (Main Hall: x in [-105.85, -79.65], z in [22.9, 37.1]; West L-Wing: x in [-105.85, -94.85], z in [13.7, 23.2]).
  */
 export function isInsideSouthPlazaGlasshouseFootprint(x: number, z: number): boolean {
-  const inMainHall = x >= -103.6 && x <= -77.4 && z >= 22.9 && z <= 37.1;
-  const inWestWing = x >= -103.6 && x <= -92.6 && z >= 13.7 && z <= 23.2;
+  const inMainHall = x >= -105.85 && x <= -79.65 && z >= 22.9 && z <= 37.1;
+  const inWestWing = x >= -105.85 && x <= -94.85 && z >= 13.7 && z <= 23.2;
   return inMainHall || inWestWing;
 }
 
@@ -237,7 +231,8 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
             p.id !== 491 &&
             !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
             !isInsideCoastalAmusementParkFootprint(p.x, p.z) &&
-            !isInsideNorthGrandCasinoFootprint(p.x, p.z),
+            !isInsideNorthGrandCasinoFootprint(p.x, p.z) &&
+            !isPointInsideCentralIslandEnvelope(p.x, p.z),
         );
         if (Array.isArray(parsed.sculptData) && parsed.sculptData.length > 0) {
           restoreTerrainSculptGrid(parsed.sculptData);
@@ -261,11 +256,11 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
 export const HALTE_GOLDEN_SCALE_CONFIG = {
   characterHeightM: 3.85,
   halteCanopyClearanceM: 5.05,
-  kioskScaleS: 1.4, // 0.62x of legacy 2.25 -> ~2.54m height (0.66x character height)
-  kioskColliderHeightY: 2.55,
+  kioskScaleS: 1.70, // scaled ~1.21x from 1.40 -> ~3.08m height, proportional to outdoor avatar
+  kioskColliderHeightY: 3.10,
   lobbyParasolScale: 1.62, // raised from 1.38 so umbrella canopy clears 3.85m character head (~3.95m)
   lobbyLampPoleScale: 1.06, // sleek ~4.81m promenade lamp pole matching the 5.05m Halte canopy
-  streetLamppostBaseHeightM: 4.35, // at 1.15x layout scale -> 5.00m (down from 8.51m giant lamppost)
+  streetLamppostBaseHeightM: 5.92, // at 1.15x layout scale -> 6.81m streetlamp height
   beachShowerScale: 1.72, // raised from 1.55 so rain showerhead sits at ~4.44m (above 3.85m character head)
   beachSurfRackScale: 1.18, // calibrated from 1.48 so surfboards stand ~3.71m instead of 4.66m
 } as const;
@@ -308,18 +303,17 @@ export function getPropBaseHeight(kind: PlacedMapProp['kind']): number {
     case 'h_beam':
       return 2.45;
     case 'barricade':
-      return 1.42;
+      return 1.68;
     case 'explosive_barrel':
     case 'barrel_1c':
       return 1.38;
     case 'hydrant':
-      return 1.18;
+      return 1.39;
     case 'recycle_bin':
-      return 1.22;
+      return 1.44;
     case 'bench':
-      // Scaled x1.16 (from 1.08) so park benches match full-size 3.91 avatars,
-      // same rebalance as vehicles after the fog-of-war shrink fix.
-      return 1.2528;
+      // Calibrated so at 1.35x layout scale benches stand ~1.48m tall (~0.45 * 3.30m avatar).
+      return 1.096;
     case 'wheelbarrow':
       return 1.14;
     case 'pallet_1a':
@@ -582,16 +576,16 @@ export function buildStaticWorldStructuresList(params: {
   const showerRatio = HALTE_GOLDEN_SCALE_CONFIG.beachShowerScale / 1.55;
   const surfRackRatio = HALTE_GOLDEN_SCALE_CONFIG.beachSurfRackScale / 1.48;
   const structures: StaticWorldStructureObb[] = [
-    // Open Central Plaza Perimeter Colliders (+2.50m Plaza Level: North, South, West parapets + East outer wing parapets, leaving the 20m-wide Urban Plaza Staircase z in [-10.0, +10.0] open to The City)
-    { id: 'west_wall_north', x: -90.5, z: -38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_south', x: -90.5, z: 38.05, halfX: 14.05, halfZ: 0.28, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_west', x: -104.5, z: 0.0, halfX: 0.35, halfZ: 38.2, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_east_n', x: -76.45, z: -24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
-    { id: 'west_wall_east_s', x: -76.45, z: 24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    // Open Central Plaza Perimeter Colliders (+2.50m Plaza Level: North, South, West parapets + East outer wing parapets flush with Tennis Court Fence -78.82)
+    { id: 'west_wall_north', x: -94.75, z: -38.05, halfX: 16.05, halfZ: 0.28, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_south', x: -94.75, z: 38.05, halfX: 16.05, halfZ: 0.28, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_west', x: -110.75, z: 0.0, halfX: 0.35, halfZ: 38.2, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_east_n', x: -78.70, z: -24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
+    { id: 'west_wall_east_s', x: -78.70, z: 24.0, halfX: 0.28, halfZ: 14.0, rotY: 0, heightY: 3.5, mat: 'concrete', isRetainingWall: true },
 
     // South Plaza Grand L-Shaped Botanical Glasshouse Cafe (+2.50m Plaza Level, spanning West-to-East fence & West wing, clear of East Parasol Cafe Tables), Modern Coffee & Gelato Kiosks
-    { id: 'lobby_glasshouse_l_main', x: -90.50, z: 30.00, halfX: 12.85, halfZ: 6.85, rotY: 0, heightY: 9.6, mat: 'metal' },
-    { id: 'lobby_glasshouse_l_wing', x: -98.10, z: 18.60, halfX: 5.25, halfZ: 4.65, rotY: 0, heightY: 9.6, mat: 'metal' },
+    { id: 'lobby_glasshouse_l_main', x: -92.75, z: 30.00, halfX: 12.85, halfZ: 6.85, rotY: 0, heightY: 9.6, mat: 'metal' },
+    { id: 'lobby_glasshouse_l_wing', x: -100.35, z: 18.60, halfX: 5.25, halfZ: 4.65, rotY: 0, heightY: 9.6, mat: 'metal' },
     ...computeRealEstateKioskWorldColliders(),
     ...computeScooterShopWorldColliders(),
     ...computeFashionKioskWorldColliders(),
@@ -606,30 +600,30 @@ export function buildStaticWorldStructuresList(params: {
       mat: 'wood',
     },
     { id: 'npc_merchant_kai', x: 85.8, z: 60.0, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
-    { id: 'lobby_parasol_table_n', x: -81.7, z: 13.31, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
-    { id: 'lobby_parasol_table_s', x: -81.7, z: 19.09, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
-    // Grand Neoclassical Municipal Hall & Clock Tower on North Central Plaza (world center x = -91.3, z = -29.2, scale = 1.42)
-    { id: 'lobby_civic_hall_main_body', x: -91.30, z: -29.98, halfX: 6.45, halfZ: 3.90, rotY: 0, heightY: 14.5, mat: 'concrete' },
-    { id: 'lobby_civic_hall_balustrade_w', x: -96.90, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_civic_hall_balustrade_e', x: -85.70, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
-    { id: 'lobby_civic_hall_kiosk_w', x: -98.61, z: -27.99, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
-    { id: 'lobby_civic_hall_kiosk_e', x: -83.99, z: -28.42, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
+    { id: 'lobby_parasol_table_n', x: -83.95, z: 13.31, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
+    { id: 'lobby_parasol_table_s', x: -83.95, z: 19.09, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
+    // Grand Neoclassical Municipal Hall & Clock Tower on North Central Plaza (world center x = -93.55, z = -29.2, scale = 1.42)
+    { id: 'lobby_civic_hall_main_body', x: -93.55, z: -29.98, halfX: 6.45, halfZ: 3.90, rotY: 0, heightY: 14.5, mat: 'concrete' },
+    { id: 'lobby_civic_hall_balustrade_w', x: -99.15, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
+    { id: 'lobby_civic_hall_balustrade_e', x: -87.95, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
+    { id: 'lobby_civic_hall_kiosk_w', x: -100.86, z: -27.99, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
+    { id: 'lobby_civic_hall_kiosk_e', x: -86.24, z: -28.42, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
     // 8 Vintage Park Lampposts with Flower Baskets along West & East Central Plaza Promenade (+2.50m Plaza Level + 4.30m height = 6.80m)
-    { id: 'lobby_vintage_lamppost_w1', x: -102.7, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_w2', x: -96.1, z: -9.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_w3', x: -93.3, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_w4', x: -102.9, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e1', x: -78.3, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e2', x: -78.3, z: -12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e3', x: -78.3, z: 12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e4', x: -78.1, z: 21.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w1', x: -108.95, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w2', x: -109.15, z: -19.2, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w3', x: -95.55, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w4', x: -109.15, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e1', x: -80.55, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e2', x: -80.55, z: -12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e3', x: -80.55, z: 12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_e4', x: -80.35, z: 21.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     // 2 Aligned Vintage Park Benches & Planter Boxes along East-North Plaza Promenade
-    { id: 'lobby_vintage_bench_planter_en', x: -78.60, z: -16.40, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
-    { id: 'lobby_vintage_bench_planter_en_2', x: -78.60, z: -23.60, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
+    { id: 'lobby_vintage_bench_planter_en', x: -80.85, z: -16.40, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
+    { id: 'lobby_vintage_bench_planter_en_2', x: -80.85, z: -23.60, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
     // Urban Plaza to Street Staircase — North & South 4-Tier Stepped Side Concrete Planters, Glass-Steel Balustrades & Twin Central Handrail Divider
-    { id: 'lobby_stair_planter_n', x: -81.1, z: -9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
-    { id: 'lobby_stair_planter_s', x: -81.1, z: 9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
-    { id: 'lobby_stair_center_handrail', x: -81.08, z: 0.0, halfX: 4.36, halfZ: 0.22, rotY: 0, heightY: 3.5, mat: 'metal' },
+    { id: 'lobby_stair_planter_n', x: -83.35, z: -9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
+    { id: 'lobby_stair_planter_s', x: -83.35, z: 9.20, halfX: 4.25, halfZ: 0.84, rotY: 0, heightY: 3.5, mat: 'concrete' },
+    { id: 'lobby_stair_center_handrail', x: -83.33, z: 0.0, halfX: 4.36, halfZ: 0.22, rotY: 0, heightY: 3.5, mat: 'metal' },
     // Standalone Scenic Clay Tennis Court Colliders (Attached flush to Central Plaza South Wall at z = +38.43, with Courtside Benches, Net, Umpire Chair & 4-Sided Fencing)
     { id: 'tennis_porch_bench_l', x: -92.32, z: 39.58, halfX: 1.22, halfZ: 0.48, rotY: 0, heightY: 1.50, mat: 'wood' },
     { id: 'tennis_porch_bench_r', x: -85.30, z: 39.58, halfX: 1.22, halfZ: 0.48, rotY: 0, heightY: 1.50, mat: 'wood' },
@@ -642,8 +636,8 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'tennis_fence_south_w', x: -94.88, z: 62.73, halfX: 3.92, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
     { id: 'tennis_fence_south_e', x: -82.74, z: 62.73, halfX: 3.92, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
     // Central Plaza Halte Trem Shelter Colliders (Windbreak Wall, Black Transit Kiosk, Ticket Machine & Slatted Passenger Bench)
-    { id: 'lobby_tram_shelter_windbreak', x: -59.6, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
-    { id: 'halte_teleport_kiosk', x: -61.95, z: 0.0, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'lobby_tram_shelter_windbreak', x: -56.83, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'halte_teleport_kiosk', x: -59.18, z: 0.0, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     {
       id: 'central_plaza_info_transit_kiosk',
       x: CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
@@ -654,19 +648,30 @@ export function buildStaticWorldStructuresList(params: {
       heightY: 4.65,
       mat: 'metal',
     },
-    { id: 'halte_ticket_machine', x: -59.96, z: -5.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
-    { id: 'halte_passenger_bench', x: -60.14, z: 2.60, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
+    { id: 'halte_ticket_machine', x: -57.19, z: -5.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
+    { id: 'halte_passenger_bench', x: -57.55, z: -2.60, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
     // North Residence & South Residence Rail Halte Colliders + Standalone Black Transit Kiosks at Beachfront Harbor & NW Fishing Lake
-    { id: 'north_residence_shelter_windbreak', x: 6.5, z: -42.6, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
-    { id: 'north_residence_transit_kiosk', x: 6.5, z: -44.95, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
-    { id: 'north_residence_passenger_bench', x: 9.1, z: -43.14, halfX: 1.72, halfZ: 0.34, rotY: 0, heightY: 1.25, mat: 'wood' },
-    { id: 'south_residence_shelter_windbreak', x: -36.5, z: 42.6, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
-    { id: 'south_residence_transit_kiosk', x: -36.5, z: 44.95, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'north_residence_shelter_windbreak', x: 3.5, z: -38.8, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'north_residence_transit_kiosk', x: 3.5, z: -41.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'north_residence_passenger_bench', x: 6.1, z: -39.52, halfX: 2.30, halfZ: 0.42, rotY: 0, heightY: 1.82, mat: 'wood' },
+    { id: 'south_residence_shelter_windbreak', x: -36.5, z: 38.8, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'south_residence_transit_kiosk', x: -36.5, z: 41.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'beachfront_harbor_shelter_windbreak', x: 81.68, z: 29.5, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
     { id: 'beachfront_harbor_transit_kiosk', x: 79.35, z: 29.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'beachfront_kai_transit_kiosk', x: 84.85, z: 65.65, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
-    { id: 'beachfront_harbor_passenger_bench', x: 81.16, z: 26.9, halfX: 0.34, halfZ: 1.72, rotY: 0, heightY: 1.25, mat: 'wood' },
+    { id: 'beachfront_harbor_passenger_bench', x: 80.98, z: 26.9, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
     { id: 'nw_fishing_lake_transit_kiosk', x: -44.5, z: -6.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    // Blueprint Curved-Cantilever Traffic Signal Concrete Pedestals (Plaza West & East Harbor Crosswalks)
+    ...CITY_TRAFFIC_SIGNAL_POLE_SPECS.map((pole) => ({
+      id: `traffic_signal_${pole.id}`,
+      x: pole.x,
+      z: pole.z,
+      halfX: 0.24,
+      halfZ: 0.24,
+      rotY: 0,
+      heightY: pole.boomHeightY,
+      mat: 'metal' as const,
+    })),
 
     // South-East Coastal Beachfront & Park Structures (Pergola Pavilion, Tables, Pots, Planters, Shower Station, Juice Kiosk, Surfboard Rack, Lifeguard Watchtower, Loungers, Chairs, Palms & Railings)
     { id: 'beach_planter_w1', x: 78.55, z: 51.0, halfX: 0.52, halfZ: 3.78, rotY: 0, heightY: 2.2, mat: 'concrete' },
@@ -707,6 +712,88 @@ export function buildStaticWorldStructuresList(params: {
     // Surfboard Rental Rack & Coastal Lifeguard Watchtower
     { id: 'beach_surfboard_rack', x: 83.8, z: 49.5, halfX: +(1.28 * surfRackRatio).toFixed(2), halfZ: +(3.98 * surfRackRatio).toFixed(2), rotY: -0.18, heightY: +(5.5 * surfRackRatio).toFixed(2), mat: 'wood' },
     { id: 'beach_lifeguard_tower', x: 101.6, z: 67.5, halfX: 3.45, halfZ: 2.35, rotY: 0, heightY: 7.5, mat: 'wood' },
+
+    // Beachfront Stilt Timber Cabin ("Rumah Papan Panggung Tepi Pantai") — Cabin Body + Walkable Veranda Perimeter Railings (West Stair Opening Clear)
+    {
+      id: 'beach_stilt_cabin_body',
+      x: (BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMinX + BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMaxX) * 0.5,
+      z: (BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMinZ + BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMaxZ) * 0.5,
+      halfX: (BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMaxX - BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMinX) * 0.5 + 0.08,
+      halfZ: (BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMaxZ - BEACHFRONT_STILT_CABIN_SPEC.cabinBodyMinZ) * 0.5 + 0.08,
+      rotY: 0,
+      heightY: 7.4,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_rail_n',
+      x: (BEACHFRONT_STILT_CABIN_SPEC.deckMinX + BEACHFRONT_STILT_CABIN_SPEC.deckMaxX) * 0.5,
+      z: BEACHFRONT_STILT_CABIN_SPEC.deckMinZ + 0.12,
+      halfX: (BEACHFRONT_STILT_CABIN_SPEC.deckMaxX - BEACHFRONT_STILT_CABIN_SPEC.deckMinX) * 0.5,
+      halfZ: 0.16,
+      rotY: 0,
+      heightY: 2.3,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_rail_s',
+      x: (BEACHFRONT_STILT_CABIN_SPEC.deckMinX + BEACHFRONT_STILT_CABIN_SPEC.deckMaxX) * 0.5,
+      z: BEACHFRONT_STILT_CABIN_SPEC.deckMaxZ - 0.12,
+      halfX: (BEACHFRONT_STILT_CABIN_SPEC.deckMaxX - BEACHFRONT_STILT_CABIN_SPEC.deckMinX) * 0.5,
+      halfZ: 0.16,
+      rotY: 0,
+      heightY: 2.3,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_rail_e',
+      x: BEACHFRONT_STILT_CABIN_SPEC.deckMaxX - 0.12,
+      z: (BEACHFRONT_STILT_CABIN_SPEC.deckMinZ + BEACHFRONT_STILT_CABIN_SPEC.deckMaxZ) * 0.5,
+      halfX: 0.16,
+      halfZ: (BEACHFRONT_STILT_CABIN_SPEC.deckMaxZ - BEACHFRONT_STILT_CABIN_SPEC.deckMinZ) * 0.5,
+      rotY: 0,
+      heightY: 2.3,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_rail_w_n',
+      x: BEACHFRONT_STILT_CABIN_SPEC.deckMinX + 0.12,
+      z: (BEACHFRONT_STILT_CABIN_SPEC.deckMinZ + BEACHFRONT_STILT_CABIN_SPEC.stairMinZ) * 0.5,
+      halfX: 0.16,
+      halfZ: (BEACHFRONT_STILT_CABIN_SPEC.stairMinZ - BEACHFRONT_STILT_CABIN_SPEC.deckMinZ) * 0.5,
+      rotY: 0,
+      heightY: 2.3,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_rail_w_s',
+      x: BEACHFRONT_STILT_CABIN_SPEC.deckMinX + 0.12,
+      z: (BEACHFRONT_STILT_CABIN_SPEC.stairMaxZ + BEACHFRONT_STILT_CABIN_SPEC.deckMaxZ) * 0.5,
+      halfX: 0.16,
+      halfZ: (BEACHFRONT_STILT_CABIN_SPEC.deckMaxZ - BEACHFRONT_STILT_CABIN_SPEC.stairMaxZ) * 0.5,
+      rotY: 0,
+      heightY: 2.3,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_stair_rail_n',
+      x: (BEACHFRONT_STILT_CABIN_SPEC.stairMinX + BEACHFRONT_STILT_CABIN_SPEC.stairMaxX) * 0.5,
+      z: BEACHFRONT_STILT_CABIN_SPEC.stairMinZ - 0.10,
+      halfX: (BEACHFRONT_STILT_CABIN_SPEC.stairMaxX - BEACHFRONT_STILT_CABIN_SPEC.stairMinX) * 0.5,
+      halfZ: 0.14,
+      rotY: 0,
+      heightY: 2.0,
+      mat: 'wood',
+    },
+    {
+      id: 'beach_stilt_cabin_stair_rail_s',
+      x: (BEACHFRONT_STILT_CABIN_SPEC.stairMinX + BEACHFRONT_STILT_CABIN_SPEC.stairMaxX) * 0.5,
+      z: BEACHFRONT_STILT_CABIN_SPEC.stairMaxZ + 0.10,
+      halfX: (BEACHFRONT_STILT_CABIN_SPEC.stairMaxX - BEACHFRONT_STILT_CABIN_SPEC.stairMinX) * 0.5,
+      halfZ: 0.14,
+      rotY: 0,
+      heightY: 2.0,
+      mat: 'wood',
+    },
 
     // Nautical Rope Railings & Staircase Side Handrails
     { id: 'beach_railing_north', x: 85.2, z: 46.3, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: 2.4, mat: 'wood' },
@@ -755,6 +842,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'cont_stack_harbor_se', x: 101.5, z: 33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
     ...getCoastalAmusementParkObstacles(),
     ...getGrandCasinoObstacles(),
+    ...getCentralParkObstacles(),
   ];
 
   const gardenCornersLocal: readonly [number, number][] = [

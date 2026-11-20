@@ -22,6 +22,7 @@ import {
   createCasinoTexturePack,
   populateCasinoInteriorProps,
 } from './buddiesGrandCasinoInteriorAssets';
+import { computeInstancedBoundingVolumes } from './buddiesHubRenderOptimizer';
 
 export interface CasinoInteriorSceneHandle {
   root: THREE.Group;
@@ -423,7 +424,7 @@ function bakeCasinoGroup(
       bakedMesh.name = `${group.name || 'CasinoGroup'}_BakedOpaque`;
       bakedMesh.castShadow = false;
       bakedMesh.receiveShadow = false;
-      bakedMesh.frustumCulled = false;
+      bakedMesh.frustumCulled = true;
       bakedMesh.raycast = () => {};
       group.add(bakedMesh);
     }
@@ -441,7 +442,7 @@ function bakeCasinoGroup(
       bakedStroke.name = `${group.name || 'CasinoGroup'}_BakedStroke`;
       bakedStroke.castShadow = false;
       bakedStroke.receiveShadow = false;
-      bakedStroke.frustumCulled = false;
+      bakedStroke.frustumCulled = true;
       bakedStroke.raycast = () => {};
       bakedStroke.userData.isModelStroke = true;
       group.add(bakedStroke);
@@ -557,7 +558,6 @@ export function buildGrandCasinoInterior(): CasinoInteriorSceneHandle {
   const baseChevronMat = new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false });
   const chevronInst = new THREE.InstancedMesh(baseChevronGeo, baseChevronMat, markerSpecs.length);
   chevronInst.name = 'CasinoStationChevronInstanced';
-  chevronInst.frustumCulled = false;
   chevronInst.raycast = () => {};
   root.add(chevronInst);
 
@@ -570,7 +570,6 @@ export function buildGrandCasinoInterior(): CasinoInteriorSceneHandle {
       markerSpecs.length,
     );
     chevronStrokeInst.name = 'CasinoStationChevronStrokeInstanced';
-    chevronStrokeInst.frustumCulled = false;
     chevronStrokeInst.raycast = () => {};
     root.add(chevronStrokeInst);
   }
@@ -614,7 +613,6 @@ export function buildGrandCasinoInterior(): CasinoInteriorSceneHandle {
   });
   const outerCoinInst = new THREE.InstancedMesh(outerCoinGeo, outerCoinMat, seatCount);
   outerCoinInst.name = 'CasinoSeatOuterCoinInstanced';
-  outerCoinInst.frustumCulled = false;
   outerCoinInst.raycast = () => {};
   root.add(outerCoinInst);
 
@@ -629,7 +627,6 @@ export function buildGrandCasinoInterior(): CasinoInteriorSceneHandle {
   });
   const innerCoinInst = new THREE.InstancedMesh(innerCoinGeo, innerCoinMat, seatCount);
   innerCoinInst.name = 'CasinoSeatInnerCoinInstanced';
-  innerCoinInst.frustumCulled = false;
   innerCoinInst.raycast = () => {};
   root.add(innerCoinInst);
 
@@ -785,8 +782,14 @@ export function buildGrandCasinoInterior(): CasinoInteriorSceneHandle {
     if (innerCoinInst.instanceColor) innerCoinInst.instanceColor.needsUpdate = true;
   };
 
-  // Initialize instance matrices and colors cleanly prior to first render
+  // Initialize instance matrices and colors cleanly prior to first render, then compute tight frustum bounds
   syncInstances(0, null, 0, 0);
+  computeInstancedBoundingVolumes(chevronInst, { padding: 0.35, frustumCulled: true });
+  if (chevronStrokeInst) {
+    computeInstancedBoundingVolumes(chevronStrokeInst, { padding: 0.35, frustumCulled: true });
+  }
+  computeInstancedBoundingVolumes(outerCoinInst, { padding: 0.25, frustumCulled: true });
+  computeInstancedBoundingVolumes(innerCoinInst, { padding: 0.25, frustumCulled: true });
 
   const updateVisuals = (
     timeSec: number,

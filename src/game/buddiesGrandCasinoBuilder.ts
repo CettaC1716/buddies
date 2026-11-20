@@ -1,6 +1,15 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { BlitzWindUniforms } from './buddiesBlitzShadersAndAssets';
 import { GRAND_CASINO_MASTERPLAN } from './buddiesGrandCasinoRules';
+import { createHorizontalPolygonSlabGeometry as createHorizontalPolygonSlabGeo } from './buddiesPlanetCurvature';
+import { enableInstancedWindowEmissiveAttribute } from './buddiesNightLightingRules';
+import {
+  createCityWindowSpec,
+  tagCityWindowInstancedMesh,
+  tagCityWindowMesh,
+  type CityWindowSpec,
+} from './buddiesWindowAuditRules';
 
 export interface CasinoFlowerClusterSpec {
   matrix: THREE.Matrix4;
@@ -182,55 +191,6 @@ function createMitredStripGeo(
 }
 
 /**
- * Builds a flat horizontal polygon slab in `(worldX, worldZ)` spanning `[yBottom, yTop]`
- * with metric planar UVs so procedural paver/cobblestone textures tile without distortion.
- */
-function createHorizontalPolygonSlabGeo(
-  ptsWorldXZ: readonly [number, number][],
-  yBottom: number,
-  yTop: number,
-  uvTileMeters = 2.4,
-  uvMapper?: (wx: number, wz: number) => [number, number],
-): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  for (let i = 0; i < ptsWorldXZ.length; i++) {
-    const [wx, wz] = ptsWorldXZ[i];
-    if (i === 0) shape.moveTo(wx, -wz);
-    else shape.lineTo(wx, -wz);
-  }
-  shape.closePath();
-
-  const depth = Math.max(0.01, yTop - yBottom);
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: false,
-    curveSegments: 12,
-  });
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(0, yBottom, 0);
-
-  const pos = geo.getAttribute('position');
-  const uv = geo.getAttribute('uv');
-  if (pos && uv) {
-    for (let i = 0; i < pos.count; i++) {
-      const wx = pos.getX(i);
-      const wz = pos.getZ(i);
-      if (uvMapper) {
-        const [u, v] = uvMapper(wx, wz);
-        uv.setXY(i, u, v);
-      } else {
-        uv.setXY(i, wx / uvTileMeters, wz / uvTileMeters);
-      }
-    }
-    uv.needsUpdate = true;
-  }
-  geo.computeVertexNormals();
-  geo.computeBoundingBox();
-  geo.computeBoundingSphere();
-  return geo;
-}
-
-/**
  * Builds a Mansard hipped truncated-pyramid roof volume from `(halfX0, halfZ0)` at `y0`
  * to `(halfX1, halfZ1)` at `y1`.
  */
@@ -285,7 +245,18 @@ function createMansardFrustumGeo(
       p3[0], p3[1], p3[2],
     );
     for (let k = 0; k < 6; k++) normals.push(nx, ny, nz);
-    uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+    const botSpan = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]);
+    const topSpan = Math.hypot(p2[0] - p3[0], p2[2] - p3[2]);
+    const slopeSpan = Math.hypot(
+      (p3[0] + p2[0]) * 0.5 - (p0[0] + p1[0]) * 0.5,
+      (p3[1] + p2[1]) * 0.5 - (p0[1] + p1[1]) * 0.5,
+      (p3[2] + p2[2]) * 0.5 - (p0[2] + p1[2]) * 0.5,
+    );
+    const uBot = botSpan / 2.6;
+    const uTop = topSpan / 2.6;
+    const uOff = (uBot - uTop) * 0.5;
+    const vLen = slopeSpan / 2.6;
+    uvs.push(0, 0, uBot, 0, uOff + uTop, vLen, 0, 0, uOff + uTop, vLen, uOff, vLen);
   };
 
   pushFace(b2, b1, t1, t2);
@@ -354,17 +325,50 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   dynamicFoliageGroup.name = 'GrandCasinoFoliageGroup';
   root.add(dynamicFoliageGroup);
 
+  const dynamicWindowsGroup = new THREE.Group();
+  dynamicWindowsGroup.name = 'GrandCasinoWindowsGroup';
+  root.add(dynamicWindowsGroup);
+
   const disposableTextures: THREE.Texture[] = [];
   const disposableGeos: THREE.BufferGeometry[] = [];
+  const disposableMats: THREE.Material[] = [];
+
+  interface CasinoWindowInstanceRecord {
+    matrix: THREE.Matrix4;
+    spec: CityWindowSpec;
+  }
+  const upperWindowInstances: CasinoWindowInstanceRecord[] = [];
+  const civicWindowInstances: CasinoWindowInstanceRecord[] = [];
+  const dormerWindowInstances: CasinoWindowInstanceRecord[] = [];
+  let casinoWinSeq = 0;
+
+  const pushCasinoInstancedWindow = (
+    collector: CasinoWindowInstanceRecord[],
+    parent: THREE.Object3D,
+    dims: readonly [number, number, number],
+    pos: readonly [number, number, number],
+    rot: readonly [number, number, number],
+    idPrefix: string,
+    kind: CityWindowSpec['kind'],
+    row: number,
+  ) => {
+    const idx = casinoWinSeq++;
+    const anchor = new THREE.Object3D();
+    anchor.position.set(pos[0], pos[1], pos[2]);
+    anchor.rotation.set(rot[0], rot[1], rot[2]);
+    anchor.scale.set(dims[0], dims[1], dims[2]);
+    parent.add(anchor);
+    root.updateMatrixWorld(true);
+    const spec = createCityWindowSpec(`${idPrefix}-${idx}`, kind, COL_CASINO_DAY_GLASS, row, idx);
+    collector.push({ matrix: anchor.matrixWorld.clone(), spec });
+    parent.remove(anchor);
+  };
 
   // Beaux-Arts / Second Empire Palette (matching 4-View Model Sheet)
-  const COL_LIMESTONE_MAIN = '#efe5d0';
   const COL_LIMESTONE_WARM = '#e4d6bc';
   const COL_LIMESTONE_PLINTH = '#d4c5a8';
   const COL_LIMESTONE_TRIM = '#f6efe0';
   const COL_GRANITE_CURB = '#cbc6bc';
-  const COL_SLATE_ROOF = '#4e5b69';
-  const COL_SLATE_DARK = '#38434f';
   const COL_COPPER_VERDIGRIS = '#6eb09b';
   const COL_COPPER_DEEP = '#508c79';
   const COL_COPPER_HIGHLIGHT = '#89c7b2';
@@ -372,81 +376,331 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   const COL_GOLD_BRIGHT = '#f0c764';
   const COL_GOLD_BRONZE = '#9a7224';
   const COL_RED_CARPET = '#b8262e';
-  const COL_RED_CARPET_TRIM = '#e3b94b';
   const COL_WROUGHT_IRON = '#2d3640';
   const COL_WINDOW_FRAME = '#3d372e';
+  const COL_CASINO_DAY_GLASS = '#c6e2f7';
   const COL_WARM_LOBBY_GLOW = '#ffe094';
   const COL_WARM_WINDOW = '#f5d284';
   const COL_SERVICE_DOOR = '#785437';
   const COL_SOIL_DARK = '#59402b';
 
-  // Procedural Canvas Textures (stone pavers & granite fan cobblestone)
-  const sidewalkPaverTex = (() => {
+  // Procedural Beaux-Arts Architectural CanvasTextures (stone pavers, ashlar masonry, slate, copper, frieze & glass)
+  const makeCasinoTex = (
+    w: number,
+    h: number,
+    draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+    repeat = true,
+  ): THREE.CanvasTexture => {
     const c = document.createElement('canvas');
-    c.width = 256;
-    c.height = 256;
+    c.width = w;
+    c.height = h;
     const ctx = c.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#ddd6c7';
-      ctx.fillRect(0, 0, 256, 256);
-      const shades = ['#e5dfd1', '#d7d0c0', '#dfd8c9', '#cfc7b6'];
-      const n = 4;
-      const cell = 256 / n;
-      for (let r = 0; r < n; r++) {
-        const off = (r % 2) * (cell * 0.5);
-        for (let col = -1; col <= n; col++) {
-          ctx.fillStyle = shades[(r * 3 + col + 4) % shades.length];
-          ctx.fillRect(col * cell + off + 2, r * cell + 2, cell - 4, cell - 4);
-        }
-      }
-    }
+    if (ctx) draw(ctx, w, h);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = THREE.RepeatWrapping;
-    t.wrapT = THREE.RepeatWrapping;
+    t.wrapS = repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    t.wrapT = repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    t.needsUpdate = true;
     disposableTextures.push(t);
     return t;
-  })();
+  };
 
-  const valetCobbleTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = 512;
-    c.height = 512;
-    const ctx = c.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#c4c9d1';
-      ctx.fillRect(0, 0, 512, 512);
-      const cols = ['#d5dae2', '#bfc5ce', '#dce0e7', '#b4bac4'];
-      const sx = 128;
-      const sy = 86;
-      for (let row = -1; row <= 7; row++) {
-        const cy = row * sy;
-        const shift = (row % 2) * (sx * 0.5);
-        for (let col = -1; col <= 5; col++) {
-          const cx = col * sx + shift;
-          for (let ring = 4; ring >= 1; ring--) {
-            const rad = ring * 18;
-            ctx.beginPath();
-            ctx.arc(cx, cy, rad, Math.PI * 1.12, Math.PI * 1.88);
-            ctx.strokeStyle = cols[(row + col + ring + 8) % cols.length];
-            ctx.lineWidth = 14;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(cx, cy, rad + 7, Math.PI * 1.1, Math.PI * 1.9);
-            ctx.strokeStyle = '#8b919c';
-            ctx.lineWidth = 2.0;
-            ctx.stroke();
-          }
+  const sidewalkPaverTex = makeCasinoTex(256, 256, (ctx) => {
+    ctx.fillStyle = '#ddd6c7';
+    ctx.fillRect(0, 0, 256, 256);
+    const shades = ['#e5dfd1', '#d7d0c0', '#dfd8c9', '#cfc7b6'];
+    const n = 4;
+    const cell = 256 / n;
+    for (let r = 0; r < n; r++) {
+      const off = (r % 2) * (cell * 0.5);
+      for (let col = -1; col <= n; col++) {
+        ctx.fillStyle = shades[(r * 3 + col + 4) % shades.length];
+        ctx.fillRect(col * cell + off + 2, r * cell + 2, cell - 4, cell - 4);
+      }
+    }
+  });
+
+  const valetCobbleTex = makeCasinoTex(512, 512, (ctx) => {
+    ctx.fillStyle = '#c4c9d1';
+    ctx.fillRect(0, 0, 512, 512);
+    const cols = ['#d5dae2', '#bfc5ce', '#dce0e7', '#b4bac4'];
+    const sx = 128;
+    const sy = 86;
+    for (let row = -1; row <= 7; row++) {
+      const cy = row * sy;
+      const shift = (row % 2) * (sx * 0.5);
+      for (let col = -1; col <= 5; col++) {
+        const cx = col * sx + shift;
+        for (let ring = 4; ring >= 1; ring--) {
+          const rad = ring * 18;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rad, Math.PI * 1.12, Math.PI * 1.88);
+          ctx.strokeStyle = cols[(row + col + ring + 8) % cols.length];
+          ctx.lineWidth = 14;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(cx, cy, rad + 7, Math.PI * 1.1, Math.PI * 1.9);
+          ctx.strokeStyle = '#8b919c';
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
         }
       }
     }
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = THREE.RepeatWrapping;
-    t.wrapT = THREE.RepeatWrapping;
-    disposableTextures.push(t);
-    return t;
-  })();
+  });
+
+  // 1. Dressed French Limestone Ashlar Masonry (fine mortar courses + subtle travertine variation)
+  const limestoneAshlarTex = makeCasinoTex(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#cbbca0';
+    ctx.fillRect(0, 0, w, h);
+    const tones = ['#efe5d0', '#ebe0c8', '#f3ead8', '#e5d8bd'];
+    const rows = 8;
+    const cols = 4;
+    const rh = h / rows;
+    const cw = w / cols;
+    for (let r = 0; r < rows; r++) {
+      const shift = (r % 2) * (cw * 0.5);
+      for (let c = -1; c <= cols; c++) {
+        const bx = c * cw + shift;
+        const by = r * rh;
+        ctx.fillStyle = tones[(r * 5 + c * 3 + 16) % tones.length];
+        ctx.fillRect(bx + 2, by + 2, cw - 4, rh - 4);
+        ctx.fillStyle = 'rgba(255,252,245,0.28)';
+        ctx.fillRect(bx + 2, by + 2, cw - 4, 3);
+        ctx.fillStyle = 'rgba(130,115,90,0.16)';
+        ctx.fillRect(bx + 2, by + rh - 5, cw - 4, 3);
+      }
+    }
+  });
+
+  // 2. Second-Empire Scalloped / Stepped Slate Roof Shingles
+  const mansardSlateTex = makeCasinoTex(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#333d48';
+    ctx.fillRect(0, 0, w, h);
+    const slates = ['#4d5b6a', '#44515f', '#576676', '#3d4956'];
+    const rows = 14;
+    const cols = 12;
+    const rh = h / rows;
+    const cw = w / cols;
+    for (let r = 0; r < rows; r++) {
+      const shift = (r % 2) * (cw * 0.5);
+      for (let c = -1; c <= cols; c++) {
+        const px = c * cw + shift;
+        const py = r * rh;
+        ctx.fillStyle = slates[(r * 7 + c * 11 + 24) % slates.length];
+        ctx.beginPath();
+        ctx.roundRect(px + 1.5, py + 1.5, cw - 3, rh - 3, 4);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(210,225,240,0.14)';
+        ctx.fillRect(px + 3, py + 2.5, cw - 6, 2);
+        ctx.fillStyle = 'rgba(20,26,33,0.34)';
+        ctx.fillRect(px + 1.5, py + rh - 3.5, cw - 3, 3);
+      }
+    }
+  });
+
+  // 3. Verdigris Patinated Copper Panel & Standing Seam Texture (Dome & Roof Ribbing)
+  const verdigrisCopperTex = makeCasinoTex(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#5d9e8a';
+    ctx.fillRect(0, 0, w, h);
+    const panels = 8;
+    const pw = w / panels;
+    const shades = ['#6eb09b', '#79bca6', '#61a38f', '#82c4af', '#589784'];
+    for (let p = 0; p < panels; p++) {
+      ctx.fillStyle = shades[p % shades.length];
+      ctx.fillRect(p * pw + 3, 0, pw - 6, h);
+      // Patina clouding inside copper bay
+      ctx.fillStyle = 'rgba(175,228,210,0.22)';
+      ctx.fillRect(p * pw + 6, ((p * 73) % (h * 0.6)), pw - 12, h * 0.28);
+      ctx.fillStyle = 'rgba(38,76,66,0.26)';
+      ctx.fillRect(p * pw, 0, 3, h);
+    }
+    for (let ring = 1; ring < 6; ring++) {
+      ctx.fillStyle = 'rgba(38,76,66,0.24)';
+      ctx.fillRect(0, (ring / 6) * h, w, 3);
+      ctx.fillStyle = 'rgba(200,245,230,0.20)';
+      ctx.fillRect(0, (ring / 6) * h + 3, w, 2);
+    }
+  });
+
+  // 4. Baroque Gilded Acanthus Scroll Relief Texture (Entablature Frieze & Porte-Cochere Pediment)
+  const gildedScrollFriezeTex = makeCasinoTex(512, 192, (ctx, w, h) => {
+    ctx.fillStyle = '#8b651d';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#d4a23b';
+    ctx.fillRect(0, 14, w, h - 28);
+    ctx.fillStyle = '#a87d28';
+    ctx.fillRect(0, 26, w, h - 52);
+    // Repeating Baroque acanthus spiral medallions & leaf scrolls
+    const spirals = 8;
+    const sw = w / spirals;
+    for (let i = 0; i < spirals; i++) {
+      const cx = (i + 0.5) * sw;
+      const cy = h * 0.5;
+      ctx.strokeStyle = '#f8d675';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(cx - 10, cy, 22, 0.3, Math.PI * 1.65);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + 10, cy, 18, Math.PI * 0.65, Math.PI * 2.1);
+      ctx.stroke();
+      ctx.fillStyle = '#ffe99c';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // 5. Classical 20-Fluted Limestone Column Shaft Texture
+  const flutedColumnTex = makeCasinoTex(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#f2ead9';
+    ctx.fillRect(0, 0, w, h);
+    const flutes = 16;
+    const fw = w / flutes;
+    for (let f = 0; f < flutes; f++) {
+      const fx = f * fw;
+      ctx.fillStyle = 'rgba(170,152,124,0.34)';
+      ctx.fillRect(fx + 2, 0, fw * 0.52, h);
+      ctx.fillStyle = 'rgba(255,252,245,0.45)';
+      ctx.fillRect(fx + fw * 0.58, 0, fw * 0.32, h);
+    }
+  });
+
+  // 6. Cool-Neutral Beaux-Arts Casement Glass (with tailored slate drape shadows so daytime stays cool sky-tinted
+  //    and night `InstancedMesh` color/emissive modulation turns active windows warm gold without day wash-out)
+  const luxuryWindowGlassTex = makeCasinoTex(
+    256,
+    384,
+    (ctx, w, h) => {
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#eef6fc');
+      grad.addColorStop(0.55, '#d2e4f3');
+      grad.addColorStop(1, '#b0cde4');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      // Tailored charcoal-slate interior drape shadows on left/right edges
+      ctx.fillStyle = 'rgba(42,56,78,0.28)';
+      ctx.fillRect(0, 0, 32, h);
+      ctx.fillRect(w - 32, 0, 32, h);
+      // Crisp diagonal sky specular highlight band
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.24);
+      ctx.lineTo(w * 0.65, 0);
+      ctx.lineTo(w, 0);
+      ctx.lineTo(0, h * 0.48);
+      ctx.closePath();
+      ctx.fill();
+    },
+    false,
+  );
+
+  // 7. Etched Mahogany & Bronze Grand Double Lobby Doors Texture (cool beveled glass lites in daytime)
+  const grandDoorGlassTex = makeCasinoTex(
+    512,
+    384,
+    (ctx, w, h) => {
+      ctx.fillStyle = '#5c3c24'; // rich mahogany surround
+      ctx.fillRect(0, 0, w, h);
+      for (const side of [0, 1]) {
+        const dx = side * (w * 0.5) + 18;
+        const dw = w * 0.5 - 36;
+        // Bronze/gold door stiles + tall cool beveled glass lite + sculpted lower wood kickpanel
+        ctx.fillStyle = '#c89b3c';
+        ctx.fillRect(dx, 14, dw, h - 28);
+        const liteX = dx + 16;
+        const liteY = 30;
+        const liteW = dw - 32;
+        const liteH = h * 0.62;
+        const paneGrad = ctx.createLinearGradient(0, liteY, 0, liteY + liteH);
+        paneGrad.addColorStop(0, '#dceefb');
+        paneGrad.addColorStop(1, '#abcde7');
+        ctx.fillStyle = paneGrad;
+        ctx.fillRect(liteX, liteY, liteW, liteH);
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
+        ctx.beginPath();
+        ctx.moveTo(liteX, liteY + liteH * 0.36);
+        ctx.lineTo(liteX + liteW * 0.68, liteY);
+        ctx.lineTo(liteX + liteW, liteY);
+        ctx.lineTo(liteX, liteY + liteH * 0.62);
+        ctx.closePath();
+        ctx.fill();
+        // Ornamental golden arch fretwork inside glass pane
+        ctx.strokeStyle = '#c89b3c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(dx + dw * 0.5, 92, (dw - 54) * 0.44, Math.PI, 0);
+        ctx.stroke();
+        // Raised mahogany lower door panel
+        ctx.fillStyle = '#472d1b';
+        ctx.fillRect(dx + 14, h * 0.72, dw - 28, h * 0.20);
+      }
+    },
+    false,
+  );
+
+  // 8. Plush Royal Crimson Velvet Carpet with Gold Border Stripes
+  const crimsonCarpetTex = makeCasinoTex(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#a8222a';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#bd2a33';
+    ctx.fillRect(28, 0, w - 56, h);
+    // Twin woven gold trim borders along left/right edges
+    ctx.fillStyle = '#e6bd53';
+    ctx.fillRect(10, 0, 12, h);
+    ctx.fillRect(w - 22, 0, 12, h);
+    ctx.fillStyle = '#fff0a6';
+    ctx.fillRect(14, 0, 3, h);
+    ctx.fillRect(w - 17, 0, 3, h);
+  });
+
+  // 9. Porte-Cochere Verdigris-Aqua Glazed Skylight Pane Grid Texture
+  const skylightMullionTex = makeCasinoTex(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#a7dce3';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(225,248,252,0.36)';
+    ctx.fillRect(10, 10, w - 20, h - 20);
+    ctx.strokeStyle = '#4f8978';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.5, 0);
+    ctx.lineTo(w * 0.5, h);
+    ctx.moveTo(0, h * 0.5);
+    ctx.lineTo(w, h * 0.5);
+    ctx.stroke();
+  });
+
+  const applyBoxPlanarUvs = (geo: THREE.BufferGeometry, tileW = 3.2, tileH = tileW): THREE.BufferGeometry => {
+    const pos = geo.getAttribute('position');
+    const norm = geo.getAttribute('normal');
+    const uv = geo.getAttribute('uv');
+    if (!pos || !uv) return geo;
+    for (let i = 0; i < pos.count; i++) {
+      const nx = norm ? Math.abs(norm.getX(i)) : 0;
+      const ny = norm ? Math.abs(norm.getY(i)) : 0;
+      if (ny > 0.65) {
+        uv.setXY(i, pos.getX(i) / tileW, pos.getZ(i) / tileH);
+      } else if (nx > 0.65) {
+        uv.setXY(i, pos.getZ(i) / tileW, pos.getY(i) / tileH);
+      } else {
+        uv.setXY(i, pos.getX(i) / tileW, pos.getY(i) / tileH);
+      }
+    }
+    uv.needsUpdate = true;
+    return geo;
+  };
+
+  const scaleGeoUvs = (geo: THREE.BufferGeometry, su: number, sv: number): THREE.BufferGeometry => {
+    const uv = geo.getAttribute('uv');
+    if (!uv) return geo;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+    }
+    uv.needsUpdate = true;
+    return geo;
+  };
 
   const addOpaquePart = (
     parent: THREE.Object3D,
@@ -475,6 +729,7 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     mesh.receiveShadow = !isSoftwareGl;
     mesh.raycast = () => {};
     upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, colorHex, bounceStrength);
+    mat.dispose();
     if (strokeWidth > 0) {
       const st = createBlitzStrokeMesh(geo, strokeWidth);
       if (st) mesh.add(st);
@@ -483,11 +738,21 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     return mesh;
   };
 
-  // Shared Reusable Unit Geometries
-  const unitBoxGeo = new THREE.BoxGeometry(1, 1, 1);
-  const colShaftGeo = new THREE.CylinderGeometry(0.42, 0.47, 1.0, 14);
-  const colCapBellGeo = new THREE.CylinderGeometry(0.62, 0.43, 0.68, 12);
-  const balusterGeo = new THREE.CylinderGeometry(0.09, 0.12, 0.72, 8);
+  // Shared Reusable Geometries
+  const colShaftGeo = scaleGeoUvs(new THREE.CylinderGeometry(0.41, 0.47, 1.0, 18), 1.5, 1.0);
+  const colCapBellGeo = new THREE.CylinderGeometry(0.64, 0.42, 0.72, 14);
+  const balusterGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0, 0.0),
+      new THREE.Vector2(0.13, 0.0),
+      new THREE.Vector2(0.11, 0.12),
+      new THREE.Vector2(0.15, 0.30),
+      new THREE.Vector2(0.08, 0.52),
+      new THREE.Vector2(0.12, 0.68),
+      new THREE.Vector2(0.12, 0.74),
+    ],
+    8,
+  );
   const urnBodyGeo = new THREE.LatheGeometry(
     [
       new THREE.Vector2(0.0, 0.0),
@@ -501,7 +766,7 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     ],
     12,
   );
-  disposableGeos.push(unitBoxGeo, colShaftGeo, colCapBellGeo, balusterGeo, urnBodyGeo);
+  disposableGeos.push(colShaftGeo, colCapBellGeo, balusterGeo, urnBodyGeo);
 
   const addScaledBox = (
     parent: THREE.Object3D,
@@ -514,10 +779,85 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     strokeWidth = 0.011,
     castShadow = true,
     emissiveHex?: string,
+    tex?: THREE.Texture,
+    tileW = 3.2,
+    tileH = tileW,
   ) => {
-    const g = new THREE.BoxGeometry(sx, sy, sz);
+    const minDim = Math.min(sx, sy, sz);
+    const radius = Math.max(0.003, Math.min(0.026, minDim * 0.14));
+    const g = new RoundedBoxGeometry(sx, sy, sz, minDim > 0.28 ? 2 : 1, radius);
+    if (tex) applyBoxPlanarUvs(g, tileW, tileH);
     disposableGeos.push(g);
-    return addOpaquePart(parent, g, colorHex, pos, rot, strokeWidth, castShadow, undefined, emissiveHex);
+    return addOpaquePart(parent, g, colorHex, pos, rot, strokeWidth, castShadow, tex, emissiveHex);
+  };
+
+  /** Continuous beveled cruciform extrusion uniting Main Building + East/West Foyers cleanly without corner Z-fighting. */
+  const createCruciformTierGeo = (
+    minX: number,
+    maxX: number,
+    minZ: number,
+    maxZ: number,
+    eastOutX: number,
+    westOutX: number,
+    eastHalfZ: number,
+    westHalfZ: number,
+    bottomY: number,
+    topY: number,
+    bevel = 0.016,
+    tileW = 3.2,
+    tileH = tileW,
+  ) => {
+    const rawPts: [number, number][] = [
+      [minX, -minZ],
+      [maxX, -minZ],
+      [maxX, -(cz - eastHalfZ)],
+      [eastOutX, -(cz - eastHalfZ)],
+      [eastOutX, -(cz + eastHalfZ)],
+      [maxX, -(cz + eastHalfZ)],
+      [maxX, -maxZ],
+      [minX, -maxZ],
+      [minX, -(cz + westHalfZ)],
+      [westOutX, -(cz + westHalfZ)],
+      [westOutX, -(cz - westHalfZ)],
+      [minX, -(cz - westHalfZ)],
+    ];
+    let area2 = 0;
+    for (let i = 0; i < rawPts.length; i++) {
+      const [x0, y0] = rawPts[i];
+      const [x1, y1] = rawPts[(i + 1) % rawPts.length];
+      area2 += x0 * y1 - x1 * y0;
+    }
+    const sign = area2 >= 0 ? 1 : -1;
+    const h = Math.max(0.04, topY - bottomY);
+    const b = Math.max(0, Math.min(bevel, h * 0.34));
+    const insetPts: THREE.Vector2[] = [];
+    for (let i = 0; i < rawPts.length; i++) {
+      const pPrev = rawPts[(i - 1 + rawPts.length) % rawPts.length];
+      const pCur = rawPts[i];
+      const pNext = rawPts[(i + 1) % rawPts.length];
+      const l1 = Math.max(1e-5, Math.hypot(pCur[0] - pPrev[0], pCur[1] - pPrev[1]));
+      const l2 = Math.max(1e-5, Math.hypot(pNext[0] - pCur[0], pNext[1] - pCur[1]));
+      const n1x = sign * (-(pCur[1] - pPrev[1]) / l1);
+      const n1y = sign * ((pCur[0] - pPrev[0]) / l1);
+      const n2x = sign * (-(pNext[1] - pCur[1]) / l2);
+      const n2y = sign * ((pNext[0] - pCur[0]) / l2);
+      insetPts.push(new THREE.Vector2(pCur[0] + (n1x + n2x) * b, pCur[1] + (n1y + n2y) * b));
+    }
+    const shape = new THREE.Shape(insetPts);
+    shape.closePath();
+    const coreH = Math.max(0.01, h - 2 * b);
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: coreH,
+      bevelEnabled: b > 0.001,
+      bevelThickness: b,
+      bevelSize: b,
+      bevelSegments: b > 0.001 ? 2 : 1,
+    });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, bottomY + b, 0);
+    applyBoxPlanarUvs(geo, tileW, tileH);
+    disposableGeos.push(geo);
+    return geo;
   };
 
   // Leaf-Petal Shrub & Flower Collectors (calm-wind pure dark-green topiaries & garden blooms)
@@ -795,7 +1135,7 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   }
   medianPts.push([-64.05, arcNorthCz - islandArcRad]);
 
-  const medianSlabGeo = createHorizontalPolygonSlabGeo(medianPts, -0.06, 0.14, 2.4);
+  const medianSlabGeo = createHorizontalPolygonSlabGeo(medianPts, -0.05, 0.14, 2.4);
   disposableGeos.push(medianSlabGeo);
   addOpaquePart(
     staticGroup,
@@ -887,46 +1227,159 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   const mainL = mb.maxZ - mb.minZ; // 33.6
   const foyerSpanZ = mb.foyerHalfZ * 2; // 14.4
 
-  // 2A. Stepped Granite & Rusticated Limestone Plinth Base (`y = 0.08 .. 0.72m`)
-  addScaledBox(staticGroup, mainW + 0.68, 0.64, mainL + 0.68, COL_LIMESTONE_PLINTH, [mainCx, 0.40, cz], [0, 0, 0], 0.014);
-  addScaledBox(staticGroup, 1.95, 0.64, foyerSpanZ + 0.68, COL_LIMESTONE_PLINTH, [mb.foyerEastMaxX - 0.72, 0.40, cz], [0, 0, 0], 0.014);
-  addScaledBox(staticGroup, 1.45, 0.64, 12.8, COL_LIMESTONE_PLINTH, [mb.foyerWestMinX + 0.55, 0.40, cz], [0, 0, 0], 0.014);
+  // 2A. Continuous Cruciform Granite & Rusticated Limestone Plinth Base (`y = 0.08 .. 0.64m`) + Water-Table Sill (`0.64 .. 0.72m`)
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.34, mb.maxX + 0.34, mb.minZ - 0.34, mb.maxZ + 0.34,
+      mb.foyerEastMaxX + 0.255, mb.foyerWestMinX - 0.175, mb.foyerHalfZ + 0.34, 6.40,
+      0.08, 0.64, 0.018, 2.8, 2.8,
+    ),
+    COL_LIMESTONE_PLINTH,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.014,
+    true,
+    limestoneAshlarTex,
+  );
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.26, mb.maxX + 0.26, mb.minZ - 0.26, mb.maxZ + 0.26,
+      mb.foyerEastMaxX + 0.22, mb.foyerWestMinX - 0.14, mb.foyerHalfZ + 0.26, 6.26,
+      0.64, 0.72, 0.016, 2.8, 2.8,
+    ),
+    COL_LIMESTONE_TRIM,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.010,
+    false,
+  );
 
-  // 2B. Main 2-Story Cream Limestone Architectural Volumes (`y = 0.72 .. 11.55m`)
-  addScaledBox(staticGroup, mainW, 10.85, mainL, COL_LIMESTONE_MAIN, [mainCx, 6.14, cz], [0, 0, 0], 0.016);
-  addScaledBox(staticGroup, 1.65, 10.85, foyerSpanZ, COL_LIMESTONE_WARM, [mb.foyerEastMaxX - 0.62, 6.14, cz], [0, 0, 0], 0.015);
-  addScaledBox(staticGroup, 1.15, 10.85, 12.4, COL_LIMESTONE_WARM, [mb.foyerWestMinX + 0.45, 6.14, cz], [0, 0, 0], 0.015);
+  // 2B. Main 2-Story Dressed French Limestone Masonry Volumes (`y = 0.72 .. 11.55m`, East/West Foyers abut Main cleanly)
+  addScaledBox(staticGroup, mainW, 10.83, mainL, '#ffffff', [mainCx, 6.135, cz], [0, 0, 0], 0.016, true, undefined, limestoneAshlarTex, 3.6);
+  const eastFoyerOutX = mb.foyerEastMaxX + 0.205;
+  const eastFoyerW = eastFoyerOutX - mb.maxX;
+  addScaledBox(staticGroup, eastFoyerW, 10.83, foyerSpanZ, '#f8f2e4', [mb.maxX + eastFoyerW * 0.5, 6.135, cz], [0, 0, 0], 0.015, true, undefined, limestoneAshlarTex, 3.6);
+  const westFoyerOutX = mb.foyerWestMinX - 0.125;
+  const westFoyerW = mb.minX - westFoyerOutX;
+  addScaledBox(staticGroup, westFoyerW, 10.83, 12.4, '#f8f2e4', [mb.minX - westFoyerW * 0.5, 6.135, cz], [0, 0, 0], 0.015, true, undefined, limestoneAshlarTex, 3.6);
 
-  // Ground-Story Horizontal Rustication Bands & Mid-Story Belt Course (`y = 6.42m`)
+  // Corner Rusticated Quoin Blocks (alternating long/short carved masonry stones on all 4 main corners + Foyer)
+  const quoinCorners: [number, number][] = [
+    [mb.minX, mb.minZ],
+    [mb.maxX, mb.minZ],
+    [mb.maxX, mb.maxZ],
+    [mb.minX, mb.maxZ],
+    [mb.foyerEastMaxX + 0.20, cz - mb.foyerHalfZ],
+    [mb.foyerEastMaxX + 0.20, cz + mb.foyerHalfZ],
+  ];
+  for (let qRow = 0; qRow < 12; qRow++) {
+    const qy = 1.05 + qRow * 0.88;
+    const isLong = qRow % 2 === 0;
+    const qSpan = isLong ? 0.92 : 0.64;
+    for (const [qx, qz] of quoinCorners) {
+      addScaledBox(staticGroup, qSpan, 0.46, qSpan, isLong ? COL_LIMESTONE_TRIM : COL_LIMESTONE_WARM, [qx, qy, qz], [0, 0, 0], 0.008, false);
+    }
+  }
+
+  // Ground-Story Horizontal Rustication Bands & Continuous Cruciform Mid-Story Belt Course (`y = 6.23 .. 6.61m`)
   for (let bandIdx = 0; bandIdx < 4; bandIdx++) {
     const by = 1.65 + bandIdx * 1.12;
     addScaledBox(staticGroup, mainW + 0.16, 0.10, mainL + 0.16, COL_LIMESTONE_PLINTH, [mainCx, by, cz], [0, 0, 0], 0, false);
   }
-  addScaledBox(staticGroup, mainW + 0.56, 0.38, mainL + 0.56, COL_LIMESTONE_TRIM, [mainCx, 6.42, cz], [0, 0, 0], 0.011);
-  addScaledBox(staticGroup, 1.95, 0.38, foyerSpanZ + 0.56, COL_LIMESTONE_TRIM, [mb.foyerEastMaxX - 0.62, 6.42, cz], [0, 0, 0], 0.011);
-  addScaledBox(staticGroup, 1.45, 0.38, 12.8, COL_LIMESTONE_TRIM, [mb.foyerWestMinX + 0.45, 6.42, cz], [0, 0, 0], 0.011);
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.19, mb.maxX + 0.19, mb.minZ - 0.19, mb.maxZ + 0.19,
+      mb.foyerEastMaxX + 0.22, mb.foyerWestMinX - 0.16, mb.foyerHalfZ + 0.19, 6.26,
+      6.09, 6.23, 0.014, 3.2, 3.2,
+    ),
+    COL_LIMESTONE_PLINTH,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.007,
+    false,
+  );
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.28, mb.maxX + 0.28, mb.minZ - 0.28, mb.maxZ + 0.28,
+      mb.foyerEastMaxX + 0.355, mb.foyerWestMinX - 0.275, mb.foyerHalfZ + 0.28, 6.40,
+      6.23, 6.61, 0.018, 3.2, 3.2,
+    ),
+    COL_LIMESTONE_TRIM,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.011,
+  );
 
-  // 2C. Full Classical Entablature (`y = 11.55 .. 12.85m`): Architrave + Gilded Frieze + Modillion Cornice
-  addScaledBox(staticGroup, mainW + 0.48, 0.36, mainL + 0.48, COL_LIMESTONE_TRIM, [mainCx, 11.73, cz], [0, 0, 0], 0.011);
-  addScaledBox(staticGroup, mainW + 0.42, 0.48, mainL + 0.42, COL_GOLD_MAIN, [mainCx, 12.15, cz], [0, 0, 0], 0.010);
-  addScaledBox(staticGroup, mainW + 1.18, 0.46, mainL + 1.18, COL_LIMESTONE_TRIM, [mainCx, 12.62, cz], [0, 0, 0], 0.014);
+  // 2C. Continuous Cruciform Classical Entablature (`y = 11.55 .. 12.85m`): Architrave + Baroque Gilded Relief Frieze + Dentil Cornice
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.24, mb.maxX + 0.24, mb.minZ - 0.24, mb.maxZ + 0.24,
+      mb.foyerEastMaxX + 0.425, mb.foyerWestMinX - 0.355, mb.foyerHalfZ + 0.24, 6.55,
+      11.55, 11.91, 0.018, 3.2, 3.2,
+    ),
+    COL_LIMESTONE_TRIM,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.011,
+  );
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.21, mb.maxX + 0.21, mb.minZ - 0.21, mb.maxZ + 0.21,
+      mb.foyerEastMaxX + 0.40, mb.foyerWestMinX - 0.32, mb.foyerHalfZ + 0.21, 6.50,
+      11.91, 12.39, 0.016, 4.2, 0.48,
+    ),
+    '#ffffff',
+    [0, 0, 0],
+    [0, 0, 0],
+    0.010,
+    true,
+    gildedScrollFriezeTex,
+  );
+  addOpaquePart(
+    staticGroup,
+    createCruciformTierGeo(
+      mb.minX - 0.59, mb.maxX + 0.59, mb.minZ - 0.59, mb.maxZ + 0.59,
+      mb.foyerEastMaxX + 0.705, mb.foyerWestMinX - 0.585, mb.foyerHalfZ + 0.59, 6.72,
+      12.39, 12.85, 0.022, 3.2, 3.2,
+    ),
+    COL_LIMESTONE_TRIM,
+    [0, 0, 0],
+    [0, 0, 0],
+    0.014,
+  );
 
-  addScaledBox(staticGroup, 2.05, 0.36, foyerSpanZ + 0.48, COL_LIMESTONE_TRIM, [mb.foyerEastMaxX - 0.60, 11.73, cz], [0, 0, 0], 0.011);
-  addScaledBox(staticGroup, 2.00, 0.48, foyerSpanZ + 0.42, COL_GOLD_MAIN, [mb.foyerEastMaxX - 0.60, 12.15, cz], [0, 0, 0], 0.010);
-  addScaledBox(staticGroup, 2.45, 0.46, foyerSpanZ + 1.18, COL_LIMESTONE_TRIM, [mb.foyerEastMaxX - 0.52, 12.62, cz], [0, 0, 0], 0.014);
-
-  addScaledBox(staticGroup, 1.55, 1.28, 13.1, COL_LIMESTONE_TRIM, [mb.foyerWestMinX + 0.42, 12.20, cz], [0, 0, 0], 0.012);
-
-  for (let mz = mb.minZ + 1.2; mz <= mb.maxZ - 1.1; mz += 1.6) {
+  for (let mz = mb.minZ + 0.8; mz <= mb.maxZ - 0.7; mz += 0.95) {
     const eastX = Math.abs(mz - cz) <= mb.foyerHalfZ ? mb.foyerEastMaxX + 0.35 : mb.maxX + 0.35;
-    addScaledBox(staticGroup, 0.42, 0.22, 0.24, COL_LIMESTONE_PLINTH, [eastX, 12.34, mz], [0, 0, 0], 0, false);
+    addScaledBox(staticGroup, 0.38, 0.22, 0.20, COL_LIMESTONE_PLINTH, [eastX, 12.36, mz], [0, 0, 0], 0, false);
+    addScaledBox(staticGroup, 0.34, 0.22, 0.20, COL_LIMESTONE_PLINTH, [Math.abs(mz - cz) <= 6.2 ? mb.foyerWestMinX - 0.35 : mb.minX - 0.35, 12.36, mz], [0, 0, 0], 0, false);
   }
-  for (let mx = mb.minX + 1.5; mx <= mb.maxX - 1.4; mx += 1.8) {
-    addScaledBox(staticGroup, 0.24, 0.22, 0.42, COL_LIMESTONE_PLINTH, [mx, 12.34, mb.minZ - 0.35], [0, 0, 0], 0, false);
-    addScaledBox(staticGroup, 0.24, 0.22, 0.42, COL_LIMESTONE_PLINTH, [mx, 12.34, mb.maxZ + 0.35], [0, 0, 0], 0, false);
+  for (let mx = mb.minX + 0.9; mx <= mb.maxX - 0.8; mx += 0.95) {
+    addScaledBox(staticGroup, 0.20, 0.22, 0.38, COL_LIMESTONE_PLINTH, [mx, 12.36, mb.minZ - 0.35], [0, 0, 0], 0, false);
+    addScaledBox(staticGroup, 0.20, 0.22, 0.38, COL_LIMESTONE_PLINTH, [mx, 12.36, mb.maxZ + 0.35], [0, 0, 0], 0, false);
   }
 
-  // 2D. Paired Corinthian Columns & Engaged Pilasters Helper (`y = 0.72 .. 11.55m`)
+  // 2D. Fluted Corinthian Columns w/ Turned Attic Bases, Acanthus Crown & Corner Volute Capitals (`y = 0.72 .. 11.55m`)
+  const atticBaseGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0, 0.0),
+      new THREE.Vector2(0.62, 0.0),
+      new THREE.Vector2(0.62, 0.09),
+      new THREE.Vector2(0.51, 0.17),
+      new THREE.Vector2(0.58, 0.25),
+      new THREE.Vector2(0.47, 0.34),
+      new THREE.Vector2(0.0, 0.34),
+    ],
+    14,
+  );
+  const acanthusLeafRingGeo = new THREE.CylinderGeometry(0.56, 0.44, 0.28, 8);
+  disposableGeos.push(atticBaseGeo, acanthusLeafRingGeo);
+
   const addCorinthianColumn = (
     wx: number,
     wz: number,
@@ -937,48 +1390,68 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     const totalH = topY - baseY;
     addScaledBox(
       staticGroup,
-      1.26 * radiusScale,
-      0.42,
-      1.26 * radiusScale,
+      1.28 * radiusScale,
+      0.34,
+      1.28 * radiusScale,
       COL_LIMESTONE_PLINTH,
-      [wx, baseY + 0.21, wz],
+      [wx, baseY + 0.17, wz],
       [0, 0, 0],
       0.009,
     );
-    const torusGeo = new THREE.CylinderGeometry(0.55 * radiusScale, 0.60 * radiusScale, 0.24, 12);
-    disposableGeos.push(torusGeo);
-    addOpaquePart(staticGroup, torusGeo, COL_LIMESTONE_TRIM, [wx, baseY + 0.54, wz], [0, 0, 0], 0.008);
+    const atticMesh = addOpaquePart(staticGroup, atticBaseGeo, COL_LIMESTONE_TRIM, [wx, baseY + 0.34, wz], [0, 0, 0], 0.008);
+    atticMesh.scale.setScalar(radiusScale);
 
-    const shaftH = Math.max(1.0, totalH - 1.52);
+    const shaftH = Math.max(1.0, totalH - 1.62);
     const shaftMesh = addOpaquePart(
       staticGroup,
       colShaftGeo,
-      COL_LIMESTONE_TRIM,
-      [wx, baseY + 0.66 + shaftH * 0.5, wz],
+      '#ffffff',
+      [wx, baseY + 0.68 + shaftH * 0.5, wz],
       [0, 0, 0],
       0.010,
+      true,
+      flutedColumnTex,
     );
     shaftMesh.scale.set(radiusScale, shaftH, radiusScale);
 
-    const collarGeo = new THREE.CylinderGeometry(0.49 * radiusScale, 0.49 * radiusScale, 0.12, 12);
+    const collarGeo = new THREE.CylinderGeometry(0.50 * radiusScale, 0.50 * radiusScale, 0.13, 14);
     disposableGeos.push(collarGeo);
-    addOpaquePart(staticGroup, collarGeo, COL_GOLD_MAIN, [wx, topY - 0.82, wz], [0, 0, 0], 0.006, false);
+    addOpaquePart(staticGroup, collarGeo, COL_GOLD_MAIN, [wx, topY - 0.88, wz], [0, 0, 0], 0.006, false);
 
+    // Lower & upper carved Acanthus foliage tiers + 4 diagonal corner Volute curls under Abacus
+    const leafTier1 = addOpaquePart(staticGroup, acanthusLeafRingGeo, COL_GOLD_MAIN, [wx, topY - 0.66, wz], [0, 0, 0], 0.007, false);
+    leafTier1.scale.set(radiusScale * 0.92, 0.95, radiusScale * 0.92);
     const capBell = addOpaquePart(
       staticGroup,
       colCapBellGeo,
       COL_GOLD_BRIGHT,
-      [wx, topY - 0.44, wz],
-      [0, 0, 0],
+      [wx, topY - 0.42, wz],
+      [0, Math.PI / 8, 0],
       0.008,
     );
     capBell.scale.set(radiusScale, 1.0, radiusScale);
 
+    for (const vx of [-1, 1] as const) {
+      for (const vz of [-1, 1] as const) {
+        addScaledBox(
+          staticGroup,
+          0.22 * radiusScale,
+          0.22 * radiusScale,
+          0.22 * radiusScale,
+          COL_GOLD_BRIGHT,
+          [wx + vx * 0.50 * radiusScale, topY - 0.22, wz + vz * 0.50 * radiusScale],
+          [0, Math.PI / 4, 0],
+          0.004,
+          false,
+        );
+      }
+    }
+
     addScaledBox(
       staticGroup,
-      1.34 * radiusScale,
+      1.38 * radiusScale,
       0.16,
-      1.34 * radiusScale,
+      1.38 * radiusScale,
       COL_LIMESTONE_TRIM,
       [wx, topY - 0.08, wz],
       [0, 0, 0],
@@ -1004,9 +1477,9 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
 
   // 2E. Beaux-Arts Windows Helper (matching 4-View Model Sheet):
   // - Ground Floor (`Lantai 1`): Classical Triangular Pediment (`fronton` segitiga) on twin carved
-  //   stone console corbels + moulded limestone architrave + recessed `2x3` casement panes + sill.
+  //   stone console corbels + moulded limestone architrave + warm draped casement panes + dado apron.
   // - Upper Piano Nobile (`Lantai 2`): Classical Horizontal Cornice Lintel + Carved Center Keystone
-  //   + end brackets + moulded limestone architrave + recessed `2x3` casement panes + sill.
+  //   + sunken balustrade spandrel dado panel below sill + warm curtain-draped `2x3` casement panes.
   const normalAxisToYaw = (normalAxis: '+X' | '-X' | '+Z' | '-Z') =>
     normalAxis === '+X'
       ? 0
@@ -1017,14 +1490,28 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
           : Math.PI * 0.5;
 
   const addUpperPianoNobileWindow = (winGrp: THREE.Object3D) => {
-    // Projecting Moulded Stone Sill + Twin Sill Apron Blocks (`y = 7.00 .. 7.34m`)
+    // Projecting Moulded Stone Sill + Sunken Dado Panel Framing 3 Miniature Stone Balusters (`y = 6.62 .. 7.34m`)
     addScaledBox(winGrp, 0.36, 0.22, 2.34, COL_LIMESTONE_TRIM, [0.14, 7.22, 0], [0, 0, 0], 0.008);
+    addScaledBox(winGrp, 0.14, 0.44, 1.88, COL_LIMESTONE_PLINTH, [0.05, 6.84, 0], [0, 0, 0], 0.005, false);
+    for (const bzOff of [-0.52, 0.0, 0.52]) {
+      const bm = addOpaquePart(winGrp, balusterGeo, COL_LIMESTONE_TRIM, [0.11, 6.60, bzOff], [0, 0, 0], 0, false);
+      bm.scale.set(0.85, 0.72, 0.85);
+    }
     addScaledBox(winGrp, 0.24, 0.22, 0.22, COL_LIMESTONE_PLINTH, [0.10, 7.02, -0.82], [0, 0, 0], 0.006, false);
     addScaledBox(winGrp, 0.24, 0.22, 0.22, COL_LIMESTONE_PLINTH, [0.10, 7.02, 0.82], [0, 0, 0], 0.006, false);
 
-    // Deep Recessed Dark Casement Surround + Warm-Lit Glass (`2x3` Muntin Grid)
+    // Deep Recessed Dark Casement Surround + Warm Curtain-Draped Glass (`2x3` Muntin Grid)
     addScaledBox(winGrp, 0.14, 2.74, 1.80, COL_WINDOW_FRAME, [0.05, 8.68, 0], [0, 0, 0], 0, false);
-    addScaledBox(winGrp, 0.12, 2.58, 1.62, COL_WARM_WINDOW, [0.09, 8.68, 0], [0, 0, 0], 0.005, false, COL_WARM_WINDOW);
+    pushCasinoInstancedWindow(
+      upperWindowInstances,
+      winGrp,
+      [0.12, 2.58, 1.62],
+      [0.09, 8.68, 0],
+      [0, 0, 0],
+      'casino-upper',
+      'upper_floor',
+      2,
+    );
     addScaledBox(winGrp, 0.18, 2.62, 0.09, COL_WINDOW_FRAME, [0.13, 8.68, 0], [0, 0, 0], 0, false);
     addScaledBox(winGrp, 0.18, 0.08, 1.64, COL_WINDOW_FRAME, [0.13, 8.22, 0], [0, 0, 0], 0, false);
     addScaledBox(winGrp, 0.18, 0.08, 1.64, COL_WINDOW_FRAME, [0.13, 9.14, 0], [0, 0, 0], 0, false);
@@ -1056,9 +1543,18 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     addScaledBox(winGrp, 0.26, 0.26, 0.22, COL_LIMESTONE_PLINTH, [0.11, 1.54, -0.86], [0, 0, 0], 0.006, false);
     addScaledBox(winGrp, 0.26, 0.26, 0.22, COL_LIMESTONE_PLINTH, [0.11, 1.54, 0.86], [0, 0, 0], 0.006, false);
 
-    // Deep Recessed Casement Surround + Warm-Lit Glass (`2x3` Casement Panes)
+    // Deep Recessed Casement Surround + Warm Curtain-Draped Glass (`2x3` Casement Panes)
     addScaledBox(winGrp, 0.14, 3.04, 1.84, COL_WINDOW_FRAME, [0.05, 3.42, 0], [0, 0, 0], 0, false);
-    addScaledBox(winGrp, 0.12, 2.86, 1.66, COL_WARM_WINDOW, [0.09, 3.42, 0], [0, 0, 0], 0.005, false, COL_WARM_WINDOW);
+    pushCasinoInstancedWindow(
+      civicWindowInstances,
+      winGrp,
+      [0.12, 2.86, 1.66],
+      [0.09, 3.42, 0],
+      [0, 0, 0],
+      'casino-ground',
+      'civic',
+      1,
+    );
     addScaledBox(winGrp, 0.18, 2.90, 0.09, COL_WINDOW_FRAME, [0.13, 3.42, 0], [0, 0, 0], 0, false);
     addScaledBox(winGrp, 0.18, 0.08, 1.68, COL_WINDOW_FRAME, [0.13, 2.92, 0], [0, 0, 0], 0, false);
     addScaledBox(winGrp, 0.18, 0.08, 1.68, COL_WINDOW_FRAME, [0.13, 3.92, 0], [0, 0, 0], 0, false);
@@ -1092,13 +1588,13 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     addFacadeWindowPair(wx, mb.minZ, '-Z');
     addFacadeWindowPair(wx, mb.maxZ, '+Z');
   }
-  // West Rear Elevation Windows (5 symmetrical bays)
+  // West Rear Elevation Windows (5 symmetrical bays; center bay flush with projecting westFoyerOutX wall)
   for (const wz of [cz - 12.9, cz - 7.9, cz, cz + 7.9, cz + 12.9]) {
-    const westX = Math.abs(wz - cz) <= 6.0 ? mb.foyerWestMinX : mb.minX;
+    const westX = Math.abs(wz - cz) <= 6.0 ? westFoyerOutX : mb.minX;
     addFacadeWindowPair(westX, wz, '-X');
   }
 
-  // 2F. North & South Side Service Doors + Upper Piano Nobile Window (matching Side Profile Elevation)
+  // 2F. North & South Side Service Doors + Iron Stair Handrails + Upper Piano Nobile Window (`Side Profile`)
   for (const sideSign of [-1, 1] as const) {
     const sz = sideSign < 0 ? mb.minZ : mb.maxZ;
     const srvGrp = new THREE.Group();
@@ -1106,13 +1602,48 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     srvGrp.rotation.y = sideSign < 0 ? Math.PI * 0.5 : -Math.PI * 0.5;
     staticGroup.add(srvGrp);
 
-    addScaledBox(srvGrp, 1.45, 0.22, 3.2, COL_GRANITE_CURB, [0.72, 0.19, 0], [0, 0, 0], 0.008);
+    addScaledBox(srvGrp, 1.45, 0.24, 3.2, COL_GRANITE_CURB, [0.72, 0.17, 0], [0, 0, 0], 0.008);
     addScaledBox(srvGrp, 1.02, 0.22, 2.9, COL_GRANITE_CURB, [0.51, 0.41, 0], [0, 0, 0], 0.008);
     addScaledBox(srvGrp, 0.60, 0.22, 2.6, COL_GRANITE_CURB, [0.30, 0.63, 0], [0, 0, 0], 0.008);
+    // Wrought-Iron Handrails along Side Service Steps (`3/4 Isometric` & `Side Profile`)
+    for (const hSide of [-1.42, 1.42]) {
+      const railGeo = new THREE.TubeGeometry(
+        new THREE.CatmullRomCurve3([
+          new THREE.Vector3(1.34, 0.30, hSide),
+          new THREE.Vector3(1.34, 1.04, hSide),
+          new THREE.Vector3(0.24, 1.56, hSide),
+          new THREE.Vector3(0.24, 0.74, hSide),
+        ]),
+        14,
+        0.032,
+        6,
+        false,
+      );
+      disposableGeos.push(railGeo);
+      addOpaquePart(srvGrp, railGeo, COL_WROUGHT_IRON, [0, 0, 0], [0, 0, 0], 0.005, false);
+    }
 
-    addScaledBox(srvGrp, 0.32, 3.65, 2.38, COL_LIMESTONE_TRIM, [0.12, 2.55, 0], [0, 0, 0], 0.009);
-    addScaledBox(srvGrp, 0.18, 3.25, 1.72, COL_SERVICE_DOOR, [0.10, 2.36, 0], [0, 0, 0], 0.008);
-    addScaledBox(srvGrp, 0.22, 0.52, 1.48, COL_WARM_WINDOW, [0.12, 3.55, 0], [0, 0, 0], 0.005, false, COL_WARM_WINDOW);
+    // Flanking limestone jamb piers + transom mullion bar keep wood door & transom cleanly un-occluded
+    addScaledBox(srvGrp, 0.36, 3.65, 0.36, COL_LIMESTONE_TRIM, [0.16, 2.55, -1.01], [0, 0, 0], 0.009);
+    addScaledBox(srvGrp, 0.36, 3.65, 0.36, COL_LIMESTONE_TRIM, [0.16, 2.55, 1.01], [0, 0, 0], 0.009);
+    addScaledBox(srvGrp, 0.30, 0.16, 1.68, COL_LIMESTONE_TRIM, [0.18, 3.22, 0], [0, 0, 0], 0.009);
+    addScaledBox(srvGrp, 0.10, 2.42, 1.66, COL_SERVICE_DOOR, [0.23, 1.95, 0], [0, 0, 0], 0.008);
+    // Raised paneled timber stiles + brass handle on outer face of service door
+    addScaledBox(srvGrp, 0.04, 0.88, 0.56, '#4f3322', [0.29, 2.48, -0.38], [0, 0, 0], 0.007);
+    addScaledBox(srvGrp, 0.04, 0.88, 0.56, '#4f3322', [0.29, 2.48, 0.38], [0, 0, 0], 0.007);
+    addScaledBox(srvGrp, 0.04, 0.72, 0.56, '#4f3322', [0.29, 1.42, -0.38], [0, 0, 0], 0.007);
+    addScaledBox(srvGrp, 0.04, 0.72, 0.56, '#4f3322', [0.29, 1.42, 0.38], [0, 0, 0], 0.007);
+    addScaledBox(srvGrp, 0.05, 0.24, 0.07, '#d9b44a', [0.31, 1.92, 0.62], [0, 0, 0], 0.004);
+    pushCasinoInstancedWindow(
+      civicWindowInstances,
+      srvGrp,
+      [0.10, 0.56, 1.66],
+      [0.24, 3.58, 0],
+      [0, 0, 0],
+      'casino-service-transom',
+      'civic',
+      1,
+    );
     addScaledBox(srvGrp, 0.48, 0.28, 2.76, COL_LIMESTONE_TRIM, [0.20, 4.48, 0], [0, 0, 0], 0.009);
 
     addUpperPianoNobileWindow(srvGrp);
@@ -1123,7 +1654,7 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
 
   // =========================================================================
   // 3. ROOFTOP BALUSTRADE, STEEP SLATE & COPPER MANSARD ROOF, ORNATE DORMERS
-  //    & MONUMENTAL RIBBED VERDIGRIS COPPER DOME (`+23.25m`)
+  //    & MONUMENTAL RIBBED VERDIGRIS COPPER DOME (`+24.65m`)
   // =========================================================================
   const roofBalustradePts: [number, number][] = [
     [mb.minX - 0.15, mb.minZ - 0.15],
@@ -1143,12 +1674,12 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
 
   for (let bz = mb.minZ + 0.6; bz <= mb.maxZ - 0.5; bz += 0.95) {
     const eastX = Math.abs(bz - cz) <= mb.foyerHalfZ + 0.15 ? mb.foyerEastMaxX + 0.20 : mb.maxX + 0.15;
-    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [eastX, 13.43, bz], [0, 0, 0], 0, false);
-    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [mb.minX - 0.15, 13.43, bz], [0, 0, 0], 0, false);
+    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [eastX, 13.09, bz], [0, 0, 0], 0, false);
+    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [mb.minX - 0.15, 13.09, bz], [0, 0, 0], 0, false);
   }
   for (let bx = mb.minX + 0.8; bx <= mb.maxX - 0.7; bx += 0.95) {
-    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [bx, 13.43, mb.minZ - 0.15], [0, 0, 0], 0, false);
-    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [bx, 13.43, mb.maxZ + 0.15], [0, 0, 0], 0, false);
+    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [bx, 13.09, mb.minZ - 0.15], [0, 0, 0], 0, false);
+    addOpaquePart(staticGroup, balusterGeo, COL_LIMESTONE_WARM, [bx, 13.09, mb.maxZ + 0.15], [0, 0, 0], 0, false);
   }
   for (const [px, pz] of roofBalustradePts) {
     addScaledBox(staticGroup, 0.68, 1.24, 0.68, COL_LIMESTONE_TRIM, [px, 13.47, pz], [0, 0, 0], 0.009);
@@ -1157,12 +1688,34 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     addOpaquePart(staticGroup, finSpire, COL_COPPER_VERDIGRIS, [px, 14.43, pz], [0, 0, 0], 0.007);
   }
 
-  // 3B. Steep Second-Empire Slate Mansard Roof + Verdigris Copper Ribs & Cresting (`y = 12.90 .. 17.55m`)
+  // 3B. Steep Second-Empire Slate Mansard Roof + Copper Hip Ridge Ribs + Victorian Fleur-de-Lis Cresting
   const mainMansardGeo = createMansardFrustumGeo(8.35, 16.05, 6.25, 13.85, 4.65);
-  const foyerMansardGeo = createMansardFrustumGeo(4.85, 6.65, 3.55, 5.35, 4.85);
+  const foyerMansardGeo = createMansardFrustumGeo(4.85, 6.65, 3.55, 5.35, 4.38);
   disposableGeos.push(mainMansardGeo, foyerMansardGeo);
-  addOpaquePart(staticGroup, mainMansardGeo, COL_SLATE_ROOF, [mainCx, 15.22, cz], [0, 0, 0], 0.016);
-  addOpaquePart(staticGroup, foyerMansardGeo, COL_SLATE_DARK, [mb.foyerEastMaxX - 4.45, 15.32, cz], [0, 0, 0], 0.015);
+  addOpaquePart(staticGroup, mainMansardGeo, '#ffffff', [mainCx, 15.22, cz], [0, 0, 0], 0.016, true, mansardSlateTex);
+  addOpaquePart(staticGroup, foyerMansardGeo, '#eef3f8', [mb.foyerEastMaxX - 4.45, 15.08, cz], [0, 0, 0], 0.015, true, mansardSlateTex);
+
+  // Standing-Seam Copper Hip Ridge Caps on the 4 Main Mansard Corners & 2 East Foyer Corners
+  for (const sx of [-1, 1] as const) {
+    for (const sz of [-1, 1] as const) {
+      const hipCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(mainCx + sx * 8.35, 12.90, cz + sz * 16.05),
+        new THREE.Vector3(mainCx + sx * 6.25, 17.55, cz + sz * 13.85),
+      ]);
+      const hipGeo = new THREE.TubeGeometry(hipCurve, 4, 0.14, 6, false);
+      disposableGeos.push(hipGeo);
+      addOpaquePart(staticGroup, hipGeo, COL_COPPER_VERDIGRIS, [0, 0, 0], [0, 0, 0], 0.007, false);
+    }
+  }
+  for (const sz of [-1, 1] as const) {
+    const fHipCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(mb.foyerEastMaxX - 4.45 + 4.85, 12.90, cz + sz * 6.65),
+      new THREE.Vector3(mb.foyerEastMaxX - 4.45 + 3.55, 17.27, cz + sz * 5.35),
+    ]);
+    const fHipGeo = new THREE.TubeGeometry(fHipCurve, 4, 0.14, 6, false);
+    disposableGeos.push(fHipGeo);
+    addOpaquePart(staticGroup, fHipGeo, COL_COPPER_VERDIGRIS, [0, 0, 0], [0, 0, 0], 0.007, false);
+  }
 
   const mansardDeckPts: [number, number][] = [
     [mainCx - 6.25, cz - 13.85],
@@ -1172,18 +1725,29 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   ];
   const mansardCurbGeo = createMitredStripGeo(mansardDeckPts, 0.44, 0.30, true);
   disposableGeos.push(mansardCurbGeo);
-  addOpaquePart(staticGroup, mansardCurbGeo, COL_COPPER_VERDIGRIS, [0, 17.58, 0], [0, 0, 0], 0.010);
+  addOpaquePart(staticGroup, mansardCurbGeo, '#ffffff', [0, 17.58, 0], [0, 0, 0], 0.010, true, verdigrisCopperTex);
 
-  const crestRailGeo = createMitredStripGeo(mansardDeckPts, 0.10, 0.10, true);
-  disposableGeos.push(crestRailGeo);
-  addOpaquePart(staticGroup, crestRailGeo, COL_WROUGHT_IRON, [0, 18.22, 0], [0, 0, 0], 0.006);
+  // Ornamental Victorian Wrought-Iron Roof Cresting (double rails + hoop scroll + fleur-de-lis finials)
+  const crestRailBotGeo = createMitredStripGeo(mansardDeckPts, 0.08, 0.07, true);
+  const crestRailTopGeo = createMitredStripGeo(mansardDeckPts, 0.09, 0.07, true);
+  const crestLanceGeo = new THREE.ConeGeometry(0.055, 0.34, 5);
+  const crestHoopGeo = new THREE.TorusGeometry(0.11, 0.022, 5, 10);
+  disposableGeos.push(crestRailBotGeo, crestRailTopGeo, crestLanceGeo, crestHoopGeo);
+  addOpaquePart(staticGroup, crestRailBotGeo, COL_WROUGHT_IRON, [0, 17.88, 0], [0, 0, 0], 0.005);
+  addOpaquePart(staticGroup, crestRailTopGeo, COL_WROUGHT_IRON, [0, 18.20, 0], [0, 0, 0], 0.005);
+
+  const addCrestUnit = (x: number, z: number, rotY: number) => {
+    addScaledBox(staticGroup, 0.07, 0.56, 0.07, COL_WROUGHT_IRON, [x, 18.04, z], [0, rotY, 0], 0, false);
+    addOpaquePart(staticGroup, crestLanceGeo, COL_WROUGHT_IRON, [x, 18.42, z], [0, rotY, 0], 0, false);
+    addOpaquePart(staticGroup, crestHoopGeo, COL_WROUGHT_IRON, [x, 18.04, z], [0, rotY, 0], 0, false);
+  };
   for (let czIdx = -13.2; czIdx <= 13.25; czIdx += 0.85) {
-    addScaledBox(staticGroup, 0.08, 0.62, 0.08, COL_WROUGHT_IRON, [mainCx + 6.25, 18.02, cz + czIdx], [0, 0, 0], 0, false);
-    addScaledBox(staticGroup, 0.08, 0.62, 0.08, COL_WROUGHT_IRON, [mainCx - 6.25, 18.02, cz + czIdx], [0, 0, 0], 0, false);
+    addCrestUnit(mainCx + 6.25, cz + czIdx, Math.PI * 0.5);
+    addCrestUnit(mainCx - 6.25, cz + czIdx, Math.PI * 0.5);
   }
   for (let cxIdx = -5.6; cxIdx <= 5.65; cxIdx += 0.85) {
-    addScaledBox(staticGroup, 0.08, 0.62, 0.08, COL_WROUGHT_IRON, [mainCx + cxIdx, 18.02, cz - 13.85], [0, 0, 0], 0, false);
-    addScaledBox(staticGroup, 0.08, 0.62, 0.08, COL_WROUGHT_IRON, [mainCx + cxIdx, 18.02, cz + 13.85], [0, 0, 0], 0, false);
+    addCrestUnit(mainCx + cxIdx, cz - 13.85, 0);
+    addCrestUnit(mainCx + cxIdx, cz + 13.85, 0);
   }
   for (const [cpx, cpz] of mansardDeckPts) {
     const spireGeo = new THREE.ConeGeometry(0.16, 1.15, 8);
@@ -1191,7 +1755,26 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     addOpaquePart(staticGroup, spireGeo, COL_COPPER_VERDIGRIS, [cpx, 18.30, cpz], [0, 0, 0], 0.007);
   }
 
-  // 3C. Ornate Mansard Dormer Windows (Central Grand Segmental Dormer + 6 Wing Dormers)
+  // 3C. Ornate Beaux-Arts Mansard Dormer Windows (S-Scroll Volute Cheeks, Arched Casements & Verdigris Bell Caps)
+  const cheekVoluteShape = new THREE.Shape();
+  cheekVoluteShape.moveTo(-0.55, 0.0);
+  cheekVoluteShape.lineTo(0.0, 0.0);
+  cheekVoluteShape.lineTo(0.0, 1.85);
+  cheekVoluteShape.quadraticCurveTo(-0.22, 1.82, -0.28, 1.40);
+  cheekVoluteShape.quadraticCurveTo(-0.32, 0.72, -0.58, 0.36);
+  cheekVoluteShape.closePath();
+  const baseCheekVoluteGeo = new THREE.ExtrudeGeometry(cheekVoluteShape, {
+    depth: 0.22,
+    bevelEnabled: true,
+    bevelThickness: 0.02,
+    bevelSize: 0.02,
+    bevelSegments: 2,
+    curveSegments: 8,
+  });
+  baseCheekVoluteGeo.translate(0, 0, -0.11);
+  baseCheekVoluteGeo.computeVertexNormals();
+  disposableGeos.push(baseCheekVoluteGeo);
+
   const addMansardDormer = (
     wx: number,
     wy: number,
@@ -1205,27 +1788,53 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     staticGroup.add(dGrp);
 
     const s = isGrandCenter ? 1.48 : 1.0;
-    addScaledBox(dGrp, 1.85 * s, 2.35 * s, 1.86 * s, COL_LIMESTONE_MAIN, [0, 1.18 * s, 0], [0, 0, 0], 0.011);
-    addScaledBox(dGrp, 0.18, 1.65 * s, 1.12 * s, COL_WARM_WINDOW, [0.92 * s, 1.12 * s, 0], [0, 0, 0], 0.006, false, COL_WARM_WINDOW);
-    addScaledBox(dGrp, 0.24, 1.65 * s, 0.08, COL_WINDOW_FRAME, [0.96 * s, 1.12 * s, 0], [0, 0, 0], 0, false);
+    addScaledBox(dGrp, 1.85 * s, 2.35 * s, 1.86 * s, '#ffffff', [0, 1.18 * s, 0], [0, 0, 0], 0.011, true, undefined, limestoneAshlarTex, 1.8, 1.8);
+    // Warm-lit arched casement window + divided muntin transom (strictly flush proud of dormer ashlar face)
+    pushCasinoInstancedWindow(
+      dormerWindowInstances,
+      dGrp,
+      [0.14, 1.65 * s, 1.12 * s],
+      [0.925 * s + 0.04, 1.12 * s, 0],
+      [0, 0, 0],
+      'casino-dormer',
+      'dormer',
+      3,
+    );
+    addScaledBox(dGrp, 0.10, 1.65 * s, 0.08, COL_WINDOW_FRAME, [0.925 * s + 0.09, 1.12 * s, 0], [0, 0, 0], 0, false);
+    for (const tz of [-0.30 * s, 0.30 * s]) {
+      addScaledBox(dGrp, 0.10, 0.08, 0.52 * s, COL_WINDOW_FRAME, [0.925 * s + 0.09, 1.18 * s, tz], [0, 0, 0], 0, false);
+    }
 
-    addScaledBox(dGrp, 0.42 * s, 1.45 * s, 0.28 * s, COL_LIMESTONE_TRIM, [0.76 * s, 0.88 * s, -0.98 * s], [0, 0, 0], 0.008);
-    addScaledBox(dGrp, 0.42 * s, 1.45 * s, 0.28 * s, COL_LIMESTONE_TRIM, [0.76 * s, 0.88 * s, 0.98 * s], [0, 0, 0], 0.008);
+    // Sculpted Flanking Pilasters + Left & Right S-Scroll Cheek Volutes (`3/4 Isometric` "Ornate Dormer Windows")
+    addScaledBox(dGrp, 0.44 * s, 1.95 * s, 0.28 * s, COL_LIMESTONE_TRIM, [0.76 * s, 1.08 * s, -0.96 * s], [0, 0, 0], 0.008);
+    addScaledBox(dGrp, 0.44 * s, 1.95 * s, 0.28 * s, COL_LIMESTONE_TRIM, [0.76 * s, 1.08 * s, 0.96 * s], [0, 0, 0], 0.008);
+    for (const vSide of [-1, 1] as const) {
+      const volMesh = addOpaquePart(dGrp, baseCheekVoluteGeo, COL_LIMESTONE_WARM, [0.78 * s, 0.06 * s, vSide * 1.12 * s], [0, 0, 0], 0.007, false);
+      volMesh.scale.setScalar(s);
+    }
 
-    // Note: `.rotateZ(Math.PI / 2)` alone aligns CylinderGeometry's theta=[0..PI] arch upright facing +X!
-    const hoodGeo = new THREE.CylinderGeometry(1.06 * s, 1.06 * s, 1.95 * s, 14, 1, false, 0, Math.PI);
+    // Arched Verdigris Copper Dome Hood + Molded Stone Pediment Rim + Finial Orb & Spire
+    const hoodGeo = scaleGeoUvs(new THREE.CylinderGeometry(1.08 * s, 1.08 * s, 1.98 * s, 16, 1, false, 0, Math.PI), 1.5, 1.0);
     hoodGeo.rotateZ(Math.PI / 2);
     disposableGeos.push(hoodGeo);
-    addOpaquePart(dGrp, hoodGeo, COL_COPPER_VERDIGRIS, [0.02 * s, 2.28 * s, 0], [0, 0, 0], 0.010);
+    addOpaquePart(dGrp, hoodGeo, '#ffffff', [0.02 * s, 2.28 * s, 0], [0, 0, 0], 0.010, true, verdigrisCopperTex);
 
-    const ringGeo = new THREE.CylinderGeometry(1.14 * s, 1.14 * s, 0.26 * s, 14, 1, false, 0, Math.PI);
+    const ringGeo = new THREE.CylinderGeometry(1.16 * s, 1.16 * s, 0.28 * s, 16, 1, false, 0, Math.PI);
     ringGeo.rotateZ(Math.PI / 2);
     disposableGeos.push(ringGeo);
     addOpaquePart(dGrp, ringGeo, COL_LIMESTONE_TRIM, [0.90 * s, 2.28 * s, 0], [0, 0, 0], 0.009);
 
-    const dormSpire = new THREE.ConeGeometry(0.12 * s, 0.52 * s, 8);
+    if (isGrandCenter) {
+      // Grand Center Dormer Carved Cartouche Medallion + Gold Ring Bezel (`Front Elevation`)
+      const medGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.16, 16);
+      medGeo.rotateZ(Math.PI / 2);
+      disposableGeos.push(medGeo);
+      addOpaquePart(dGrp, medGeo, COL_GOLD_BRIGHT, [1.06 * s, 2.75 * s, 0], [0, 0, 0], 0.007, false);
+    }
+
+    const dormSpire = new THREE.ConeGeometry(0.12 * s, 0.62 * s, 8);
     disposableGeos.push(dormSpire);
-    addOpaquePart(dGrp, dormSpire, COL_GOLD_MAIN, [0.88 * s, 3.58 * s, 0], [0, 0, 0], 0.006);
+    addOpaquePart(dGrp, dormSpire, COL_GOLD_MAIN, [0.88 * s, 3.62 * s, 0], [0, 0, 0], 0.006);
   };
 
   addMansardDormer(mb.foyerEastMaxX - 1.35, 13.05, cz, 0, true);
@@ -1236,81 +1845,111 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   addMansardDormer(mb.minX + 1.45, 13.55, cz - 9.8, Math.PI, false);
   addMansardDormer(mb.minX + 1.45, 13.55, cz + 9.8, Math.PI, false);
 
-  // 3D. Monumental Ribbed Verdigris Copper Dome (`y = 17.25 .. 24.38m`)
+  // 3D. Monumental Ribbed Verdigris Copper Dome (`y = 17.25 .. 26.60m`) w/ Stepped Drum Plinth & Lantern Cupola
   const domeCx = mb.foyerEastMaxX - 5.2;
-  const drumBaseGeo = new THREE.CylinderGeometry(4.75, 4.95, 1.85, 16);
-  const drumCorniceGeo = new THREE.CylinderGeometry(5.05, 4.82, 0.34, 16);
-  disposableGeos.push(drumBaseGeo, drumCorniceGeo);
-  addOpaquePart(staticGroup, drumBaseGeo, COL_LIMESTONE_WARM, [domeCx, 18.05, cz], [0, 0, 0], 0.014);
-  addOpaquePart(staticGroup, drumCorniceGeo, COL_COPPER_DEEP, [domeCx, 19.12, cz], [0, 0, 0], 0.011);
+  const domeLift = 0.68;
+  const drumPlinthGeo = scaleGeoUvs(new THREE.CylinderGeometry(5.06, 5.28, 0.86, 24), 4.0, 0.6);
+  const drumBaseGeo = scaleGeoUvs(new THREE.CylinderGeometry(4.66, 4.80, 1.92, 24), 4.0, 1.0);
+  const drumCorniceGeo = scaleGeoUvs(new THREE.CylinderGeometry(5.12, 4.86, 0.36, 24), 4.0, 0.4);
+  disposableGeos.push(drumPlinthGeo, drumBaseGeo, drumCorniceGeo);
+  addOpaquePart(staticGroup, drumPlinthGeo, '#ffffff', [domeCx, 17.56, cz], [0, 0, 0], 0.014, true, limestoneAshlarTex);
+  addOpaquePart(staticGroup, drumBaseGeo, '#ffffff', [domeCx, 18.08 + domeLift, cz], [0, 0, 0], 0.014, true, limestoneAshlarTex);
+  addOpaquePart(staticGroup, drumCorniceGeo, '#ffffff', [domeCx, 19.16 + domeLift, cz], [0, 0, 0], 0.011, true, verdigrisCopperTex);
 
   for (let dIdx = 0; dIdx < 12; dIdx++) {
     const ang = (dIdx / 12) * Math.PI * 2;
     const dx = Math.cos(ang);
     const dz = Math.sin(ang);
-    const colGeo = new THREE.CylinderGeometry(0.16, 0.18, 1.55, 8);
+    const colGeo = new THREE.CylinderGeometry(0.16, 0.19, 1.62, 8);
     disposableGeos.push(colGeo);
-    addOpaquePart(staticGroup, colGeo, COL_LIMESTONE_TRIM, [domeCx + dx * 4.82, 18.12, cz + dz * 4.82], [0, 0, 0], 0.006, false);
+    addOpaquePart(staticGroup, colGeo, COL_LIMESTONE_TRIM, [domeCx + dx * 4.92, 18.14 + domeLift, cz + dz * 4.92], [0, 0, 0], 0.006, false);
 
     const midAng = ang + Math.PI / 12;
-    addScaledBox(
+    const mx = domeCx + Math.cos(midAng) * 4.82;
+    const mz = cz + Math.sin(midAng) * 4.82;
+    pushCasinoInstancedWindow(
+      civicWindowInstances,
       staticGroup,
-      0.18,
-      0.96,
-      0.56,
-      COL_WARM_WINDOW,
-      [domeCx + Math.cos(midAng) * 4.72, 18.15, cz + Math.sin(midAng) * 4.72],
+      [0.16, 1.04, 0.64],
+      [mx, 18.15 + domeLift, mz],
       [0, -midAng, 0],
-      0.005,
-      false,
-      COL_WARM_WINDOW,
+      'casino-dome-drum',
+      'civic',
+      4,
     );
+    // Molded sill & stone arch pediment hood proudly clearing the 24-gon drum cylinder
+    addScaledBox(staticGroup, 0.24, 0.10, 0.78, COL_LIMESTONE_TRIM, [mx, 17.60 + domeLift, mz], [0, -midAng, 0], 0.004, false);
+    const archKey = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10, 1, false, 0, Math.PI);
+    archKey.rotateZ(Math.PI / 2);
+    disposableGeos.push(archKey);
+    addOpaquePart(staticGroup, archKey, COL_LIMESTONE_TRIM, [mx, 18.67 + domeLift, mz], [0, -midAng, 0], 0.004, false);
   }
 
-  const domeCupolaGeo = new THREE.LatheGeometry(
-    [
-      new THREE.Vector2(4.72, 0.0),
-      new THREE.Vector2(4.65, 0.55),
-      new THREE.Vector2(4.28, 1.35),
-      new THREE.Vector2(3.55, 2.15),
-      new THREE.Vector2(2.45, 2.78),
-      new THREE.Vector2(1.22, 3.15),
-      new THREE.Vector2(0.0, 3.24),
-    ],
-    20,
+  const domeCupolaGeo = scaleGeoUvs(
+    new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(4.78, 0.0),
+        new THREE.Vector2(4.68, 0.62),
+        new THREE.Vector2(4.28, 1.42),
+        new THREE.Vector2(3.52, 2.22),
+        new THREE.Vector2(2.42, 2.86),
+        new THREE.Vector2(1.22, 3.22),
+        new THREE.Vector2(0.0, 3.30),
+      ],
+      24,
+    ),
+    2.5,
+    1.5,
   );
   disposableGeos.push(domeCupolaGeo);
-  addOpaquePart(staticGroup, domeCupolaGeo, COL_COPPER_VERDIGRIS, [domeCx, 19.26, cz], [0, 0, 0], 0.016);
+  addOpaquePart(staticGroup, domeCupolaGeo, '#ffffff', [domeCx, 19.30 + domeLift, cz], [0, 0, 0], 0.016, true, verdigrisCopperTex);
+
+  // Horizontal Patinated Copper Waist Ring & 12 Heavy Beaded Structural Ribs
+  const domeCollarGeo = new THREE.TorusGeometry(4.36, 0.11, 8, 28);
+  domeCollarGeo.rotateX(Math.PI / 2);
+  disposableGeos.push(domeCollarGeo);
+  addOpaquePart(staticGroup, domeCollarGeo, COL_COPPER_DEEP, [domeCx, 20.55 + domeLift, cz], [0, 0, 0], 0.007, false);
 
   const ribCurvePts = [
-    new THREE.Vector3(4.74, 0.02, 0),
-    new THREE.Vector3(4.32, 1.36, 0),
-    new THREE.Vector3(2.50, 2.80, 0),
-    new THREE.Vector3(1.10, 3.18, 0),
+    new THREE.Vector3(4.80, 0.02, 0),
+    new THREE.Vector3(4.32, 1.42, 0),
+    new THREE.Vector3(2.48, 2.86, 0),
+    new THREE.Vector3(1.12, 3.24, 0),
   ];
-  const singleRibGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ribCurvePts), 12, 0.09, 6, false);
+  const singleRibGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ribCurvePts), 14, 0.11, 6, false);
   disposableGeos.push(singleRibGeo);
   for (let rIdx = 0; rIdx < 12; rIdx++) {
     addOpaquePart(
       staticGroup,
       singleRibGeo,
       COL_COPPER_HIGHLIGHT,
-      [domeCx, 19.26, cz],
+      [domeCx, 19.30 + domeLift, cz],
       [0, (rIdx / 12) * Math.PI * 2, 0],
       0.005,
       false,
     );
   }
 
-  const lanternDrumGeo = new THREE.CylinderGeometry(1.08, 1.18, 1.15, 10);
-  const lanternCapGeo = new THREE.SphereGeometry(1.12, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  // Open 8-Column Lantern Cupola Pavilion atop the Main Dome
+  const lanternDrumGeo = new THREE.CylinderGeometry(1.12, 1.24, 0.34, 12);
+  const lanternCoreGeo = new THREE.CylinderGeometry(0.76, 0.76, 0.96, 10);
+  const lanternCorniceGeo = new THREE.CylinderGeometry(1.28, 1.14, 0.18, 12);
+  const lanternCapGeo = scaleGeoUvs(new THREE.SphereGeometry(1.14, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.56), 1.5, 1.0);
   const orbGeo = new THREE.SphereGeometry(0.28, 10, 8);
-  const finialSpireGeo = new THREE.ConeGeometry(0.14, 1.45, 8);
-  disposableGeos.push(lanternDrumGeo, lanternCapGeo, orbGeo, finialSpireGeo);
-  addOpaquePart(staticGroup, lanternDrumGeo, COL_COPPER_DEEP, [domeCx, 22.85 - 0.88, cz], [0, 0, 0], 0.009);
-  addOpaquePart(staticGroup, lanternCapGeo, COL_COPPER_VERDIGRIS, [domeCx, 22.45, cz], [0, 0, 0], 0.009);
-  addOpaquePart(staticGroup, orbGeo, COL_GOLD_BRIGHT, [domeCx, 23.62, cz], [0, 0, 0], 0.006);
-  addOpaquePart(staticGroup, finialSpireGeo, COL_GOLD_MAIN, [domeCx, 24.38, cz], [0, 0, 0], 0.007);
+  const finialSpireGeo = new THREE.ConeGeometry(0.14, 1.50, 8);
+  disposableGeos.push(lanternDrumGeo, lanternCoreGeo, lanternCorniceGeo, lanternCapGeo, orbGeo, finialSpireGeo);
+  addOpaquePart(staticGroup, lanternDrumGeo, COL_COPPER_DEEP, [domeCx, 22.42 + domeLift, cz], [0, 0, 0], 0.008);
+  addOpaquePart(staticGroup, lanternCoreGeo, COL_WARM_WINDOW, [domeCx, 22.98 + domeLift, cz], [0, 0, 0], 0, false, undefined, COL_WARM_WINDOW);
+  for (let lc = 0; lc < 8; lc++) {
+    const la = (lc / 8) * Math.PI * 2;
+    const lcColGeo = new THREE.CylinderGeometry(0.08, 0.095, 0.98, 6);
+    disposableGeos.push(lcColGeo);
+    addOpaquePart(staticGroup, lcColGeo, COL_LIMESTONE_TRIM, [domeCx + Math.cos(la) * 1.04, 22.98 + domeLift, cz + Math.sin(la) * 1.04], [0, 0, 0], 0.005, false);
+  }
+  addOpaquePart(staticGroup, lanternCorniceGeo, COL_COPPER_DEEP, [domeCx, 23.52 + domeLift, cz], [0, 0, 0], 0.008);
+  addOpaquePart(staticGroup, lanternCapGeo, '#ffffff', [domeCx, 23.58 + domeLift, cz], [0, 0, 0], 0.009, true, verdigrisCopperTex);
+  addOpaquePart(staticGroup, orbGeo, COL_GOLD_BRIGHT, [domeCx, 24.42 + domeLift, cz], [0, 0, 0], 0.006);
+  addOpaquePart(staticGroup, finialSpireGeo, COL_GOLD_MAIN, [domeCx, 25.24 + domeLift, cz], [0, 0, 0], 0.007);
 
   // =========================================================================
   // 4. GRAND COVERED PORTE-COCHERE (`5.45m` Valet Clearance, Inset Column
@@ -1321,30 +1960,31 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   const pcWidthZ = pc.halfZ * 2; // 8.30m
 
   // 4A. Twin Outer Clustered Corinthian Column Piers Inset on the Median Island (`x = -68.85, z = cz ± 2.72`)
-  // Compact `1.28m x 1.38m` pedestal footprint guarantees >= 0.75m clearance from the curved asphalt road!
   for (const zSign of [-1, 1] as const) {
     const pierZ = cz + zSign * pc.frontColumnOffsetZ;
     const pierX = pc.frontColumnX;
-    // Paneled Limestone Pedestal Base (`y = 0.14 .. 1.48m`, sitting cleanly on `y = 0.14m` Median Island!)
-    addScaledBox(staticGroup, 1.28, 0.30, 1.38, COL_GRANITE_CURB, [pierX, 0.27, pierZ], [0, 0, 0], 0.010);
-    addScaledBox(staticGroup, 1.12, 0.92, 1.22, COL_LIMESTONE_WARM, [pierX, 0.88, pierZ], [0, 0, 0], 0.011);
-    addScaledBox(staticGroup, 1.24, 0.18, 1.34, COL_LIMESTONE_TRIM, [pierX, 1.43, pierZ], [0, 0, 0], 0.009);
+    addScaledBox(staticGroup, 1.30, 0.30, 1.40, COL_GRANITE_CURB, [pierX, 0.27, pierZ], [0, 0, 0], 0.010);
+    addScaledBox(staticGroup, 1.14, 0.92, 1.24, '#ffffff', [pierX, 0.88, pierZ], [0, 0, 0], 0.011, true, undefined, limestoneAshlarTex, 1.4, 1.2);
+    // Recessed inset dado medallion plaque on pier front
+    addScaledBox(staticGroup, 0.08, 0.54, 0.72, COL_LIMESTONE_PLINTH, [pierX + 0.56, 0.88, pierZ], [0, 0, 0], 0.005, false);
+    addScaledBox(staticGroup, 1.26, 0.18, 1.36, COL_LIMESTONE_TRIM, [pierX, 1.43, pierZ], [0, 0, 0], 0.009);
 
-    // Paired Clustered Corinthian Columns on each Pedestal (`y = 1.52 .. 5.45m`)
     addCorinthianColumn(pierX, pierZ - 0.32, 1.52, pc.valetClearanceY, 0.54);
     addCorinthianColumn(pierX, pierZ + 0.32, 1.52, pc.valetClearanceY, 0.54);
 
-    // Engaged Matching Columns at the Lobby Foyer Wall (`x = mb.foyerEastMaxX + 0.35`)
     const engagedX = mb.foyerEastMaxX + 0.35;
-    addScaledBox(staticGroup, 1.06, 1.36, 1.36, COL_LIMESTONE_WARM, [engagedX - 0.12, 0.78, pierZ], [0, 0, 0], 0.010);
+    addScaledBox(staticGroup, 1.06, 1.36, 1.36, '#ffffff', [engagedX - 0.12, 0.78, pierZ], [0, 0, 0], 0.010, true, undefined, limestoneAshlarTex, 1.4, 1.4);
     addCorinthianColumn(engagedX, pierZ - 0.32, 1.46, pc.valetClearanceY, 0.54);
     addCorinthianColumn(engagedX, pierZ + 0.32, 1.46, pc.valetClearanceY, 0.54);
   }
 
-  // 4B. Porte-Cochere Entablature Ring (`y = 5.45 .. 6.55m`) & Coffered Ceiling Soffit
+  // 4B. Porte-Cochere Entablature Ring (`y = 5.45 .. 6.55m`), Gilded Acanthus Frieze & Coffered Soffit
   addScaledBox(staticGroup, pcSpanX, 0.34, pcWidthZ, COL_LIMESTONE_TRIM, [pcCenterX, 5.62, cz], [0, 0, 0], 0.012);
-  addScaledBox(staticGroup, pcSpanX - 0.12, 0.44, pcWidthZ - 0.12, COL_GOLD_MAIN, [pcCenterX, 6.01, cz], [0, 0, 0], 0.010);
+  addScaledBox(staticGroup, pcSpanX - 0.12, 0.44, pcWidthZ - 0.12, '#ffffff', [pcCenterX, 6.01, cz], [0, 0, 0], 0.010, true, undefined, gildedScrollFriezeTex, 3.8, 0.44);
   addScaledBox(staticGroup, pcSpanX + 0.48, 0.34, pcWidthZ + 0.56, COL_LIMESTONE_TRIM, [pcCenterX + 0.08, 6.40, cz], [0, 0, 0], 0.013);
+  for (let dzOff = -pcWidthZ * 0.48; dzOff <= pcWidthZ * 0.48; dzOff += 0.65) {
+    addScaledBox(staticGroup, 0.22, 0.14, 0.16, COL_LIMESTONE_PLINTH, [pc.maxX + 0.22, 6.24, cz + dzOff], [0, 0, 0], 0, false);
+  }
 
   for (let cxOff = -3.2; cxOff <= 3.3; cxOff += 3.2) {
     for (const czOff of [-1.95, 1.95]) {
@@ -1374,56 +2014,63 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     }
   }
 
-  // 4C. Ornate Gilded Classical Triangular Pediment (`x = pc.maxX`, `y = 6.55 .. 8.35m`)
+  // 4C. Ornate Baroque Gilded Triangular Pediment (`x = pc.maxX`, `y = 6.55 .. 8.35m`)
   const pcPedOuterGeo = createClassicalPedimentGeo(pcWidthZ + 0.68, 1.78, 0.70);
-  const pcPedTympanumGeo = createClassicalPedimentGeo(pcWidthZ - 1.05, 1.30, 0.34);
+  const pcPedTympanumGeo = scaleGeoUvs(createClassicalPedimentGeo(pcWidthZ - 1.05, 1.30, 0.34), 0.25, 0.6);
   disposableGeos.push(pcPedOuterGeo, pcPedTympanumGeo);
   addOpaquePart(staticGroup, pcPedOuterGeo, COL_LIMESTONE_TRIM, [pc.maxX - 0.12, 6.56, cz], [0, 0, 0], 0.013);
-  addOpaquePart(staticGroup, pcPedTympanumGeo, COL_GOLD_MAIN, [pc.maxX + 0.10, 6.68, cz], [0, 0, 0], 0.009);
+  addOpaquePart(staticGroup, pcPedTympanumGeo, '#ffffff', [pc.maxX + 0.10, 6.68, cz], [0, 0, 0], 0.009, true, gildedScrollFriezeTex);
 
-  const crestMedallionGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.22, 16);
+  const crestMedallionGeo = new THREE.CylinderGeometry(0.54, 0.54, 0.22, 16);
   crestMedallionGeo.rotateZ(Math.PI / 2);
-  disposableGeos.push(crestMedallionGeo);
-  addOpaquePart(staticGroup, crestMedallionGeo, COL_GOLD_BRIGHT, [pc.maxX + 0.26, 7.28, cz], [0, 0, 0], 0.008, false, undefined, '#ffd56b');
+  const crestWreathGeo = new THREE.TorusGeometry(0.62, 0.09, 6, 16);
+  crestWreathGeo.rotateY(Math.PI / 2);
+  disposableGeos.push(crestMedallionGeo, crestWreathGeo);
+  addOpaquePart(staticGroup, crestMedallionGeo, COL_GOLD_BRIGHT, [pc.maxX + 0.28, 7.28, cz], [0, 0, 0], 0.008, false, undefined, '#ffd56b');
+  addOpaquePart(staticGroup, crestWreathGeo, COL_GOLD_MAIN, [pc.maxX + 0.32, 7.28, cz], [0, 0, 0], 0.006, false);
   for (const sSign of [-1, 1] as const) {
-    addScaledBox(staticGroup, 0.18, 0.26, 1.55, COL_GOLD_BRIGHT, [pc.maxX + 0.24, 7.06, cz + sSign * 1.35], [sSign * -0.18, 0, 0], 0.006, false);
+    addScaledBox(staticGroup, 0.18, 0.22, 1.75, COL_GOLD_BRIGHT, [pc.maxX + 0.24, 7.06, cz + sSign * 1.48], [sSign * -0.18, 0, 0], 0.006, false);
   }
 
-  // 4D. Barrel-Vaulted Verdigris Copper & Frosted Skylight Glass Canopy (`y = 6.55 .. 8.45m`)
+  // 4D. Barrel-Vaulted Verdigris Copper & Glazed Mullioned Skylight Canopy (`y = 6.55 .. 8.45m`)
   const vaultArc = Math.PI * 0.56;
   const vaultRadius = 4.75;
   const vaultLength = pcSpanX - 0.55;
   const vaultBaseY = 6.55 - Math.cos(vaultArc * 0.5) * vaultRadius + 0.04;
 
-  const innerSkylightLinerGeo = new THREE.CylinderGeometry(
-    vaultRadius - 0.04,
-    vaultRadius - 0.04,
-    vaultLength - 0.08,
-    22,
-    1,
-    true,
-    (Math.PI - vaultArc) * 0.5,
-    vaultArc,
+  const innerSkylightLinerGeo = scaleGeoUvs(
+    new THREE.CylinderGeometry(
+      vaultRadius - 0.04,
+      vaultRadius - 0.04,
+      vaultLength - 0.08,
+      24,
+      1,
+      true,
+      (Math.PI - vaultArc) * 0.5,
+      vaultArc,
+    ),
+    6.0,
+    5.0,
   );
   innerSkylightLinerGeo.rotateZ(Math.PI / 2);
   disposableGeos.push(innerSkylightLinerGeo);
   addOpaquePart(
     staticGroup,
     innerSkylightLinerGeo,
-    '#bde4ef',
+    '#ffffff',
     [pcCenterX - 0.18, vaultBaseY, cz],
     [0, 0, 0],
     0,
     false,
-    undefined,
-    '#8ac9dc',
+    skylightMullionTex,
+    '#7cc4d1',
   );
 
   const archVaultGlassGeo = new THREE.CylinderGeometry(
     vaultRadius,
     vaultRadius,
     vaultLength,
-    22,
+    24,
     1,
     true,
     (Math.PI - vaultArc) * 0.5,
@@ -1438,7 +2085,27 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   glassVaultMesh.raycast = () => {};
   staticGroup.add(glassVaultMesh);
 
-  const vaultRibGeo = new THREE.TorusGeometry(vaultRadius + 0.045, 0.08, 8, 22, vaultArc);
+  // Front & Rear Glazed Arched Lunettes (chorded upper segment only, keeping driveway archway completely open below)
+  const lunetteTheta0 = (Math.PI - vaultArc) * 0.5;
+  const lunetteTheta1 = (Math.PI + vaultArc) * 0.5;
+  const lunetteR = vaultRadius - 0.06;
+  const lunetteShape = new THREE.Shape();
+  lunetteShape.moveTo(Math.cos(lunetteTheta0) * lunetteR, Math.sin(lunetteTheta0) * lunetteR);
+  lunetteShape.absarc(0, 0, lunetteR, lunetteTheta0, lunetteTheta1, false);
+  lunetteShape.closePath();
+  const lunetteGeo = scaleGeoUvs(
+    new THREE.ExtrudeGeometry(lunetteShape, { depth: 0.08, bevelEnabled: false, curveSegments: 18 }),
+    0.32,
+    0.32,
+  );
+  lunetteGeo.translate(0, 0, -0.04);
+  lunetteGeo.rotateY(Math.PI * 0.5);
+  disposableGeos.push(lunetteGeo);
+  for (const lx of [pc.minX + 0.45, pc.maxX - 0.90]) {
+    addOpaquePart(staticGroup, lunetteGeo, '#ffffff', [lx, vaultBaseY, cz], [0, 0, 0], 0, false, skylightMullionTex, '#7cc4d1');
+  }
+
+  const vaultRibGeo = new THREE.TorusGeometry(vaultRadius + 0.045, 0.085, 8, 22, vaultArc);
   vaultRibGeo.rotateZ((Math.PI - vaultArc) * 0.5);
   vaultRibGeo.rotateY(Math.PI / 2);
   disposableGeos.push(vaultRibGeo);
@@ -1490,10 +2157,10 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   }
 
   // =========================================================================
-  // 5. GRAND LOBBY ENTRANCE, CRIMSON RED CARPET, GILDED DOUBLE DOORS,
+  // 5. GRAND LOBBY ENTRANCE, GOLD-BORDERED CRIMSON CARPET, GILDED DOUBLE DOORS,
   //    REFINED BRASS BIRDCAGE BELLHOP CARTS & CENTRAL PLAZA VINTAGE BENCHES
   // =========================================================================
-  // 5A. Wide Granite Lobby Steps (`x = -78.40 .. -76.55`) + Plush Crimson Red Carpet Runner
+  // 5A. Wide Granite Lobby Steps (`x = -78.40 .. -76.55`) + Woven Gold-Bordered Crimson Carpet (`crimsonCarpetTex`)
   const stairWidthsZ = [5.1, 4.8, 4.5, 4.2];
   for (let sIdx = 0; sIdx < 4; sIdx++) {
     const stepX = innerCurbX - 0.38 - sIdx * 0.46;
@@ -1512,54 +2179,59 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     addScaledBox(
       staticGroup,
       0.54,
-      0.032,
+      0.034,
       3.10,
-      COL_RED_CARPET,
+      '#ffffff',
       [stepX + 0.02, stepY + 0.096, cz],
       [0, 0, 0],
       0.004,
       false,
-    );
-    addScaledBox(
-      staticGroup,
-      0.54,
-      0.036,
-      0.13,
-      COL_RED_CARPET_TRIM,
-      [stepX + 0.02, stepY + 0.098, cz - 1.48],
-      [0, 0, 0],
-      0,
-      false,
-    );
-    addScaledBox(
-      staticGroup,
-      0.54,
-      0.036,
-      0.13,
-      COL_RED_CARPET_TRIM,
-      [stepX + 0.02, stepY + 0.098, cz + 1.48],
-      [0, 0, 0],
-      0,
-      false,
+      undefined,
+      crimsonCarpetTex,
+      1.0,
+      3.10,
     );
   }
-  addScaledBox(staticGroup, 1.25, 0.028, 3.10, COL_RED_CARPET, [innerCurbX - 0.68, 0.108, cz], [0, 0, 0], 0.005, false);
+  addScaledBox(staticGroup, 1.25, 0.030, 3.10, '#ffffff', [innerCurbX - 0.68, 0.108, cz], [0, 0, 0], 0.005, false, undefined, crimsonCarpetTex, 1.25, 3.10);
 
-  // 5B. Gilded Grand Double Lobby Doors, Sidelights & Transom (`x = mb.foyerEastMaxX`, `y = 0.72 .. 5.20m`)
+  // 5B. Gilded Mahogany & Etched-Glass Grand Double Lobby Doors, Radial Arch Transom & Bronze Sconces
   const doorWallX = mb.foyerEastMaxX; // -78.40
-  addScaledBox(staticGroup, 0.36, 4.55, 4.40, COL_GOLD_BRONZE, [doorWallX + 0.08, 3.00, cz], [0, 0, 0], 0.011);
-  addScaledBox(staticGroup, 0.18, 4.15, 3.92, COL_WARM_LOBBY_GLOW, [doorWallX + 0.18, 2.86, cz], [0, 0, 0], 0, false, COL_WARM_LOBBY_GLOW);
+  addScaledBox(staticGroup, 0.38, 4.55, 4.44, COL_GOLD_BRONZE, [doorWallX + 0.08, 3.00, cz], [0, 0, 0], 0.011);
+  const lobbyDoorGlassGeo = new THREE.BoxGeometry(0.20, 4.15, 3.94);
+  const lobbyDoorGlassMat = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    map: grandDoorGlassTex,
+    roughness: 0.38,
+    metalness: 0.06,
+  });
+  disposableGeos.push(lobbyDoorGlassGeo);
+  disposableMats.push(lobbyDoorGlassMat);
+  const lobbyDoorGlassMesh = new THREE.Mesh(lobbyDoorGlassGeo, lobbyDoorGlassMat);
+  lobbyDoorGlassMesh.name = 'GrandCasinoLobbyDoorGlass';
+  lobbyDoorGlassMesh.position.set(doorWallX + 0.18, 2.86, cz);
+  lobbyDoorGlassMesh.raycast = () => {};
+  tagCityWindowMesh(
+    lobbyDoorGlassMesh,
+    createCityWindowSpec('casino-grand-lobby-door', 'civic', '#ffffff', 1, 0),
+  );
+  dynamicWindowsGroup.add(lobbyDoorGlassMesh);
   for (const dz of [-1.96, -0.98, 0.0, 0.98, 1.96]) {
-    addScaledBox(staticGroup, 0.24, 4.20, 0.13, COL_GOLD_MAIN, [doorWallX + 0.24, 2.88, cz + dz], [0, 0, 0], 0.006, false);
+    addScaledBox(staticGroup, 0.26, 4.20, 0.13, COL_GOLD_MAIN, [doorWallX + 0.24, 2.88, cz + dz], [0, 0, 0], 0.006, false);
   }
-  addScaledBox(staticGroup, 0.26, 0.18, 3.96, COL_GOLD_MAIN, [doorWallX + 0.25, 3.92, cz], [0, 0, 0], 0.006, false);
-  addScaledBox(staticGroup, 0.28, 0.92, 0.08, COL_GOLD_BRIGHT, [doorWallX + 0.32, 2.25, cz - 0.18], [0, 0, 0], 0, false);
-  addScaledBox(staticGroup, 0.28, 0.92, 0.08, COL_GOLD_BRIGHT, [doorWallX + 0.32, 2.25, cz + 0.18], [0, 0, 0], 0, false);
+  addScaledBox(staticGroup, 0.28, 0.18, 3.98, COL_GOLD_MAIN, [doorWallX + 0.25, 3.92, cz], [0, 0, 0], 0.006, false);
+  addScaledBox(staticGroup, 0.28, 0.92, 0.08, COL_GOLD_BRIGHT, [doorWallX + 0.34, 2.25, cz - 0.18], [0, 0, 0], 0, false);
+  addScaledBox(staticGroup, 0.28, 0.92, 0.08, COL_GOLD_BRIGHT, [doorWallX + 0.34, 2.25, cz + 0.18], [0, 0, 0], 0, false);
+  // Twin Bronze Wall Coach Lantern Sconces flanking the Grand Entrance Doors
+  for (const sZ of [-2.45, 2.45]) {
+    addScaledBox(staticGroup, 0.26, 0.14, 0.16, COL_GOLD_BRONZE, [doorWallX + 0.26, 3.35, cz + sZ], [0, 0, 0], 0.005, false);
+    addScaledBox(staticGroup, 0.22, 0.42, 0.22, COL_WARM_LOBBY_GLOW, [doorWallX + 0.38, 3.62, cz + sZ], [0, 0, 0], 0.004, false, COL_WARM_LOBBY_GLOW);
+  }
 
-  // Upper Foyer Piano Nobile Windows flanking the Porte-Cochere Roof Vault (`cz ± 3.55`)
-  for (const fz of [cz - 3.55, cz + 3.55]) {
+  // Upper Foyer Piano Nobile Windows positioned outside Porte-Cochere vault/cornice (<= 4.43) & inside corner quoins (<= 6.74)
+  for (const fz of [cz - 5.56, cz + 5.56]) {
     const fWinGrp = new THREE.Group();
-    fWinGrp.position.set(mb.foyerEastMaxX, 0, fz);
+    fWinGrp.position.set(mb.foyerEastMaxX + 0.21, 0, fz);
+    fWinGrp.scale.set(1, 1, 0.85);
     staticGroup.add(fWinGrp);
     addUpperPianoNobileWindow(fWinGrp);
   }
@@ -1913,9 +2585,11 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
       [0.538, -0.118, 0.076, -0.12],
     ];
     for (const [sy, sz, sDepth, sPitch] of seatSlats) {
+      const slatGeo = new RoundedBoxGeometry(benchSpanW, 0.034, sDepth, 1, 0.008);
+      disposableGeos.push(slatGeo);
       addToonBenchPart(
         bGrp,
-        new THREE.BoxGeometry(benchSpanW, 0.034, sDepth),
+        slatGeo,
         COL_TIMBER_SLAT,
         [0, sy, sz],
         [sPitch, 0, 0],
@@ -1931,9 +2605,11 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
       [1.006, -0.270, 0.096, -0.26],
     ];
     for (const [by, bz, bHeight, bPitch] of backSlats) {
+      const bSlatGeo = new RoundedBoxGeometry(benchSpanW, bHeight, 0.034, 1, 0.008);
+      disposableGeos.push(bSlatGeo);
       addToonBenchPart(
         bGrp,
-        new THREE.BoxGeometry(benchSpanW, bHeight, 0.034),
+        bSlatGeo,
         COL_TIMBER_SLAT,
         [0, by, bz],
         [bPitch, 0, 0],
@@ -1970,22 +2646,41 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     addPlazaVintageParkBenchOnly(bench.x, bench.z, bench.rotY);
   }
 
-  // 5E. 6 Vintage Cast-Iron Street Lamps (`~4.95m` tall, matching Front Elevation & 3/4 Isometric View)
-  const lampBasePedGeo = new THREE.CylinderGeometry(0.22, 0.30, 0.72, 10);
-  const lampPoleGeo = new THREE.CylinderGeometry(0.08, 0.13, 3.35, 10);
-  const lampLanternGlassGeo = new THREE.CylinderGeometry(0.26, 0.18, 0.58, 8);
-  const lampLanternCapGeo = new THREE.ConeGeometry(0.32, 0.32, 8);
-  disposableGeos.push(lampBasePedGeo, lampPoleGeo, lampLanternGlassGeo, lampLanternCapGeo);
+  // 5E. 6 Fluted Victorian Cast-Iron Boulevard Lamps (`~4.95m` tall, matching Front Elevation & 3/4 Isometric View)
+  const lampBasePedGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0, 0.0),
+      new THREE.Vector2(0.32, 0.0),
+      new THREE.Vector2(0.32, 0.14),
+      new THREE.Vector2(0.24, 0.24),
+      new THREE.Vector2(0.18, 0.56),
+      new THREE.Vector2(0.22, 0.72),
+      new THREE.Vector2(0.14, 0.86),
+      new THREE.Vector2(0.0, 0.86),
+    ],
+    8,
+  );
+  const lampPoleGeo = new THREE.CylinderGeometry(0.075, 0.125, 3.15, 8);
+  const lampCollarGeo = new THREE.TorusGeometry(0.125, 0.025, 6, 12);
+  lampCollarGeo.rotateX(Math.PI / 2);
+  const lampLanternGlassGeo = new THREE.CylinderGeometry(0.28, 0.18, 0.60, 4);
+  lampLanternGlassGeo.rotateY(Math.PI / 4);
+  const lampLanternCapGeo = new THREE.CylinderGeometry(0.04, 0.33, 0.30, 4);
+  lampLanternCapGeo.rotateY(Math.PI / 4);
+  const lampFinialOrbGeo = new THREE.SphereGeometry(0.065, 6, 5);
+  disposableGeos.push(lampBasePedGeo, lampPoleGeo, lampCollarGeo, lampLanternGlassGeo, lampLanternCapGeo, lampFinialOrbGeo);
 
   const addVintageStreetLamp = (wx: number, wz: number, baseY = 0.09) => {
     const lGrp = new THREE.Group();
     lGrp.position.set(wx, baseY, wz);
     staticGroup.add(lGrp);
 
-    addOpaquePart(lGrp, lampBasePedGeo, COL_WROUGHT_IRON, [0, 0.36, 0], [0, 0, 0], 0.007);
-    addOpaquePart(lGrp, lampPoleGeo, COL_WROUGHT_IRON, [0, 2.38, 0], [0, 0, 0], 0.006);
-    addOpaquePart(lGrp, lampLanternGlassGeo, COL_WARM_LOBBY_GLOW, [0, 4.35, 0], [0, 0, 0], 0.006, false, undefined, COL_WARM_LOBBY_GLOW);
-    addOpaquePart(lGrp, lampLanternCapGeo, COL_WROUGHT_IRON, [0, 4.80, 0], [0, 0, 0], 0.006);
+    addOpaquePart(lGrp, lampBasePedGeo, COL_WROUGHT_IRON, [0, 0.0, 0], [0, Math.PI / 8, 0], 0.007);
+    addOpaquePart(lGrp, lampPoleGeo, COL_WROUGHT_IRON, [0, 2.40, 0], [0, 0, 0], 0.006);
+    addOpaquePart(lGrp, lampCollarGeo, COL_WROUGHT_IRON, [0, 3.96, 0], [0, 0, 0], 0.005, false);
+    addOpaquePart(lGrp, lampLanternGlassGeo, '#fff3cf', [0, 4.32, 0], [0, 0, 0], 0.006, false, undefined, COL_WARM_LOBBY_GLOW);
+    addOpaquePart(lGrp, lampLanternCapGeo, COL_WROUGHT_IRON, [0, 4.76, 0], [0, 0, 0], 0.006);
+    addOpaquePart(lGrp, lampFinialOrbGeo, COL_GOLD_MAIN, [0, 4.96, 0], [0, 0, 0], 0, false);
   };
   for (const lamp of GRAND_CASINO_MASTERPLAN.streetLamps) {
     const isMedian = lamp.id.includes('median');
@@ -2062,13 +2757,57 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     dynamicFoliageGroup.add(flowerInst);
   }
 
-  // Bake ALL static Grand Casino meshes into minimal vertex-color + stroke + glass draw calls!
+  // Emit 3 instanced window glass batches (MeshStandardMaterial so instanceColor supports per-window night lighting)
+  const unitWindowGeo = new THREE.BoxGeometry(1, 1, 1);
+  disposableGeos.push(unitWindowGeo);
+  const emitCasinoInstancedWindows = (
+    name: string,
+    records: readonly CasinoWindowInstanceRecord[],
+  ) => {
+    if (records.length === 0) return;
+    const batchGeo = unitWindowGeo.clone();
+    disposableGeos.push(batchGeo);
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: luxuryWindowGlassTex,
+      roughness: 0.34,
+      metalness: 0.06,
+    });
+    enableInstancedWindowEmissiveAttribute(batchGeo, mat, records.length);
+    disposableMats.push(mat);
+    const inst = new THREE.InstancedMesh(batchGeo, mat, records.length);
+    inst.name = name;
+    inst.castShadow = false;
+    inst.receiveShadow = false;
+    inst.raycast = () => {};
+    const dayGlassColor = new THREE.Color(COL_CASINO_DAY_GLASS);
+    for (let i = 0; i < records.length; i++) {
+      dayGlassColor.set(records[i].spec.baseColorHex ?? COL_CASINO_DAY_GLASS);
+      inst.setMatrixAt(i, records[i].matrix);
+      inst.setColorAt(i, dayGlassColor);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    tagCityWindowInstancedMesh(
+      inst,
+      records[0].spec,
+      records.map((r) => r.spec),
+    );
+    dynamicWindowsGroup.add(inst);
+  };
+
+  emitCasinoInstancedWindows('GrandCasinoUpperWindowsInstanced', upperWindowInstances);
+  emitCasinoInstancedWindows('GrandCasinoCivicWindowsInstanced', civicWindowInstances);
+  emitCasinoInstancedWindows('GrandCasinoDormerWindowsInstanced', dormerWindowInstances);
+
+  // Bake ALL static Grand Casino meshes into minimal vertex-color + stroke draw calls!
   bakeStaticGroupMeshes(staticGroup, { minShadowCasterSpan: 0.55 });
 
   return {
     group: root,
     dispose() {
       for (const g of disposableGeos) g.dispose();
+      for (const m of disposableMats) m.dispose();
       for (const t of disposableTextures) t.dispose();
     },
   };
